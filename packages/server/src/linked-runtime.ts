@@ -11,6 +11,7 @@ import { hostname } from "node:os"
 import { z } from "zod"
 import {
   HOSTED_OAUTH_SCOPES,
+  LINKED_CAPABILITIES,
   LinkedHostReply,
 } from "@worktable/hosted-contract"
 import { ensureAppDir } from "./app-storage.ts"
@@ -22,6 +23,7 @@ import { linkedConnectorBinary } from "./linked-connector.ts"
 import { setLinkedSharing } from "./linked-sharing.ts"
 import { invalidateAllDocumentShares } from "./share-store.ts"
 import { revokeAllLinks } from "./share-links-lifecycle.ts"
+import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import { isHosted } from "./hosted.ts"
 import { currentTeamWorktable, requireTeamDatabase } from "./team-database.ts"
 import {
@@ -505,6 +507,9 @@ function launch(): void {
                   bootNonce,
                   port,
                   connected,
+                  ...(sharingPreviewEnabled()
+                    ? { capabilities: [LINKED_CAPABILITIES.SHARE_TICKETS] }
+                    : {}),
                 }),
                 signal: signal(),
                 redirect: "error",

@@ -17,6 +17,13 @@ import { createHash } from "node:crypto"
 import { SignJWT } from "jose"
 import { setAppDirOverride } from "./app-storage.ts"
 import { rotateWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
+import { hashSharePassword } from "./share-link-credentials.ts"
+import {
+  closeShareLinkStores,
+  createShareLink,
+  revokeShareLink,
+} from "./share-links-store.ts"
+import { useResolvedDocumentHandle } from "./document-query.ts"
 import { createLinkedIngress } from "./linked-ingress.ts"
 import { drainWorkspaceChanges } from "./workspace-events.ts"
 import { createHtmlDocument } from "./html-document-create.ts"
@@ -450,3 +457,106 @@ it("keeps agent permissions bounded and fences revoked, replaced and draining wo
   await rotateWorkspaceCollaborationEpoch()
   expect((await fetch(await mcpRequest())).status).toBe(403)
 })
+
+it("carries password unlocks and frame tickets over authenticated Link requests", async () => {
+  const previous = process.env["WORKTABLE_SHARING_PREVIEW"]
+  process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+  try {
+    ingress.setSharingOrigin("https://share.example.test")
+    await createHtmlDocument({
+      spaceId: "space",
+      explicitId: "protected",
+      name: "Protected",
+      html: "<h1>Protected report</h1>",
+      createdBy: "test",
+      permissions: {
+        network: false,
+        records: {},
+        state: { read: false, write: false },
+      },
+      versionSource: "test",
+      versionUpdatedBy: "test",
+    })
+    const documentId = (await useResolvedDocumentHandle(
+      { spaceId: "space", path: "protected", materializeIdentity: true },
+      (handle) => handle.documentId
+    )) as string
+    const password = "test-only password"
+    const { token, link } = createShareLink({
+      workspaceEpoch: ingress.binding.workspaceEpoch,
+      spaceId: "space",
+      documentId,
+      kind: "html",
+      label: "",
+      level: "view",
+      createdBy: { id: "local:owner", name: "Owner" },
+      expiresAt: null,
+      passwordHash: await hashSharePassword(password),
+      comments: {
+        acceptComments: true,
+        anonymousAllowed: false,
+        showSharerName: false,
+        visitorsSee: "own",
+      },
+    })
+    const request = async (
+      path: string,
+      capability = token,
+      unlock?: string,
+      value?: string
+    ) =>
+      fetch(
+        await createLinkedRequest({
+          origin: server.url.origin,
+          key,
+          binding: ingress.binding,
+          grant: { kind: "share", capability, ...(unlock ? { unlock } : {}) },
+          method: value === undefined ? "GET" : "POST",
+          path,
+          ...(value === undefined
+            ? {}
+            : {
+                body: new TextEncoder().encode(
+                  JSON.stringify({ password: value })
+                ),
+              }),
+        })
+      )
+    expect((await request("/public/share")).status).toBe(401)
+    expect(
+      (await request("/public/share/unlock", token, undefined, "wrong")).status
+    ).toBe(401)
+    const unlocked = await request(
+      "/public/share/unlock",
+      token,
+      undefined,
+      password
+    )
+    expect(unlocked.status).toBe(200)
+    const { ticket } = await unlocked.json()
+    const projection = await request("/public/share", token, ticket)
+    expect(projection.status).toBe(200)
+    const { contentTicket } = await projection.json()
+    expect(contentTicket).not.toContain(token)
+    expect((await request("/public/share/content", token, ticket)).status).toBe(
+      404
+    )
+    const content = await request("/public/share/content", contentTicket)
+    expect(content.status).toBe(200)
+    expect(await content.text()).toContain("Protected report")
+    expect((await request("/public/share/content", ticket)).status).toBe(404)
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    expect((await request("/public/share/content", contentTicket)).status).toBe(
+      403
+    )
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    revokeShareLink(link.id, "local:owner")
+    expect((await request("/public/share/content", contentTicket)).status).toBe(
+      404
+    )
+  } finally {
+    if (previous === undefined) delete process.env["WORKTABLE_SHARING_PREVIEW"]
+    else process.env["WORKTABLE_SHARING_PREVIEW"] = previous
+    closeShareLinkStores()
+  }
+}, 20_000)

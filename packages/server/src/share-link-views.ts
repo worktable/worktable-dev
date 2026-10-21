@@ -1,3 +1,8 @@
+import { sharingPreviewEnabled } from "./sharing-preview.ts"
+import {
+  shareTicketLinkId,
+  validShareTicket,
+} from "./share-link-credentials.ts"
 import { resolve } from "node:path"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import {
@@ -24,7 +29,11 @@ import {
   ShareLinksStoreError,
   type StoredShareLink,
 } from "./share-links-store.ts"
-import { effectiveSharingPolicy, linkBlockedBy } from "./share-policy.ts"
+import {
+  effectiveExpiresAt,
+  effectiveSharingPolicy,
+  linkBlockedBy,
+} from "./share-policy.ts"
 import { readWidgetDocument } from "./widget-store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 
@@ -50,6 +59,8 @@ export interface ShareLinkView {
   title: string
   /** The content revision now, or null when the document has none. */
   revision: string | null
+  expiresAt: number | null
+  ticketSecret: Uint8Array | null
 }
 
 /**
@@ -58,19 +69,46 @@ export interface ShareLinkView {
  * "unavailable" for a link that exists but must not be served.
  */
 export async function resolveShareLinkView(
-  token: string
-): Promise<ShareLinkView | "unavailable" | null> {
-  const found = findShareLinkForView(token)
+  capability: string,
+  options: { content?: boolean; unlock?: string; allowLocked?: boolean } = {}
+): Promise<
+  ShareLinkView | "unavailable" | "expired" | "password-required" | null
+> {
+  const preview = sharingPreviewEnabled()
+  const frameId =
+    options.content && preview ? shareTicketLinkId(capability, "frame") : null
+  // Once frame tickets are active, HTML frames cannot use the bearer link.
+  if (options.content && preview && !frameId) return "unavailable"
+  const found = frameId
+    ? findShareLinkWithPolicy(frameId)
+    : findShareLinkForView(capability)
   if (!found) return null
   const { link } = found
   const now = Date.now()
   if (
-    link.revokedAt !== null ||
-    (link.expiresAt !== null && link.expiresAt <= now) ||
-    linkBlockedBy(link, effectiveSharingPolicy(found.policy), now) !== null ||
-    link.workspaceEpoch !== (await getWorkspaceCollaborationEpoch())
-  ) {
+    frameId &&
+    (link.kind !== "html" ||
+      !found.unlockSecret ||
+      !validShareTicket(capability, found.unlockSecret, link, "frame", now))
+  )
     return "unavailable"
+  const policy = effectiveSharingPolicy(found.policy)
+  const blocked = linkBlockedBy(link, policy, now)
+  if (
+    link.revokedAt !== null ||
+    (blocked !== null && blocked !== "expiry-cap") ||
+    link.workspaceEpoch !== (await getWorkspaceCollaborationEpoch())
+  )
+    return "unavailable"
+  const expiresAt = effectiveExpiresAt(link, policy)
+  if (expiresAt !== null && expiresAt <= now)
+    return preview ? "expired" : "unavailable"
+  if (!frameId && link.hasPassword && !options.allowLocked) {
+    if (
+      !found.unlockSecret ||
+      !validShareTicket(options.unlock, found.unlockSecret, link, "unlock", now)
+    )
+      return "password-required"
   }
   let snapshot: Awaited<ReturnType<typeof readDocumentIdentities>>
   try {
@@ -89,6 +127,8 @@ export async function resolveShareLinkView(
   )
   return {
     link,
+    expiresAt,
+    ticketSecret: found.unlockSecret,
     path: target.path,
     title: target.title,
     revision: revisions.get(target.path) ?? null,
@@ -112,6 +152,7 @@ export function shareLinkStillOpens(link: StoredShareLink): boolean {
   return Boolean(
     found &&
     found.link.revokedAt === null &&
+    found.link.passwordRevision === link.passwordRevision &&
     !(found.link.expiresAt !== null && found.link.expiresAt <= now) &&
     linkBlockedBy(found.link, effectiveSharingPolicy(found.policy), now) ===
       null

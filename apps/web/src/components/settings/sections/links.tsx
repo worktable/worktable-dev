@@ -1,3 +1,4 @@
+import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { useRef, useState } from "react"
 import {
   useInfiniteQuery,
@@ -191,6 +192,7 @@ function useSharingPolicy(enabled: boolean) {
 }
 
 function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {
+  const preview = useDeploymentInfo().data?.capabilities.sharingPreview === true
   const { query, update } = useSharingPolicy(enabled)
   const policy = query.data?.policy
 
@@ -270,6 +272,19 @@ function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {
             </SettingRow>
           ) : null}
           <SpacesSetting policy={policy} onChange={update} />
+          {preview ? (
+            <SettingRow
+              label="Require a password"
+              description="Links without a password stop opening while this is on."
+            >
+              <Switch
+                checked={policy.requirePassword}
+                onCheckedChange={(requirePassword) =>
+                  update({ requirePassword })
+                }
+              />
+            </SettingRow>
+          ) : null}
           <SettingRow
             className="flex-col items-start sm:flex-row sm:items-center"
             label="Longest expiry"
@@ -451,9 +466,16 @@ function noteRevoked(
         links: current.links.filter((link) => link.id !== revoked.id),
       }
   )
-  const remaining = queryClient.getQueryData<DocumentShareLinks>(shareLinksQueryKey(before.spaceId, before.path))
-  if (remaining) notePageLinks(queryClient, before.spaceId, before.path, remaining.links)
-  else void queryClient.invalidateQueries({ queryKey: documentQueryKeys.page(before.spaceId, before.path), exact: true })
+  const remaining = queryClient.getQueryData<DocumentShareLinks>(
+    shareLinksQueryKey(before.spaceId, before.path)
+  )
+  if (remaining)
+    notePageLinks(queryClient, before.spaceId, before.path, remaining.links)
+  else
+    void queryClient.invalidateQueries({
+      queryKey: documentQueryKeys.page(before.spaceId, before.path),
+      exact: true,
+    })
 }
 
 function LinkList({ enabled, titled }: { enabled: boolean; titled: boolean }) {

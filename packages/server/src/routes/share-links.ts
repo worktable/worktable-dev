@@ -14,6 +14,11 @@ import {
 } from "@worktable/types"
 import { Hono, type Context } from "hono"
 import { z } from "zod"
+import {
+  hashSharePassword,
+  SharePasswordBusy,
+} from "../share-link-credentials.ts"
+import { sharingPreviewEnabled } from "../sharing-preview.ts"
 import { mapWithConcurrency } from "../bounded-concurrency.ts"
 import { getWorkspaceCollaborationEpoch } from "../collaboration-epoch.ts"
 import { publicShareKind } from "../document-page-service.ts"
@@ -65,6 +70,10 @@ shareLinksRouter.use("*", async (c, next) => {
 })
 
 shareLinksRouter.onError((error, c) => {
+  if (error instanceof SharePasswordBusy) {
+    c.header("Retry-After", "1")
+    return c.json({ error: "Try again shortly", code: "BUSY" }, 503)
+  }
   // A store from a later version stays closed to this one.
   if (error instanceof ShareLinksStoreError) {
     return c.json(
@@ -285,7 +294,7 @@ shareLinksRouter.post("/", async (c) => {
     policy,
   })
   if (!decision.allowed) return denied(c, decision)
-  if (input.data.password !== undefined) {
+  if (input.data.password !== undefined && !sharingPreviewEnabled()) {
     return invalid(
       c,
       "Passwords aren't available yet",
@@ -298,6 +307,12 @@ shareLinksRouter.post("/", async (c) => {
   const { data: space } = await readSpace(target.spaceId)
   if (!space || getSpaceArchiveInfo(space)) return notFound(c)
 
+  if (policy.requirePassword && !input.data.password)
+    return invalid(c, "A password is required", "PASSWORD_REQUIRED")
+  const passwordHash =
+    input.data.password === undefined
+      ? undefined
+      : await hashSharePassword(input.data.password)
   const workspaceEpoch = await getWorkspaceCollaborationEpoch()
   // The id is made durable first, as comments do, so the link follows the
   // document through renames and moves. Creating under the document's path
@@ -313,6 +328,11 @@ shareLinksRouter.post("/", async (c) => {
       // Policy and membership may change during document resolution. Nothing
       // asynchronous separates this final authorization from the insert.
       const latestPolicy = currentSharingPolicy()
+      if (
+        (passwordHash && !sharingPreviewEnabled()) ||
+        (latestPolicy.requirePassword && !passwordHash)
+      )
+        return { passwordDenied: true }
       const latestDecision = authorizeShareAction(
         identity,
         "create",
@@ -337,11 +357,18 @@ shareLinksRouter.post("/", async (c) => {
           createdBy: sharerOf(identity!),
           expiresAt,
           comments,
+          ...(passwordHash ? { passwordHash } : {}),
         }),
         place: { path: handle.document.path, title: handle.document.title },
       }
     }
   )
+  if (created && "passwordDenied" in created)
+    return invalid(
+      c,
+      "A password is required or unavailable",
+      "PASSWORD_REQUIRED"
+    )
   if (created && "denied" in created && created.denied)
     return denied(c, created.denied)
   if (created && "expiryPolicy" in created && created.expiryPolicy)
@@ -388,7 +415,7 @@ shareLinksRouter.patch("/:linkId", async (c) => {
     policy,
   })
   if (!decision.allowed) return denied(c, decision)
-  if (input.data.password !== undefined) {
+  if (input.data.password !== undefined && !sharingPreviewEnabled()) {
     return invalid(
       c,
       "Passwords aren't available yet",
@@ -406,7 +433,40 @@ shareLinksRouter.patch("/:linkId", async (c) => {
   if (expiresAt !== undefined && !expiryAllowed(expiresAt, policy)) {
     return expiryTooLong(c, policy)
   }
+  const passwordHash =
+    input.data.password === undefined
+      ? undefined
+      : input.data.password === null
+        ? null
+        : await hashSharePassword(input.data.password)
+  const latest = getShareLink(link.id)
+  if (!latest) return notFound(c)
+  if (latest.revokedAt !== null)
+    return c.json({ error: "This link was revoked", code: "LINK_REVOKED" }, 409)
+  const latestPolicy = currentSharingPolicy()
+  const latestDecision = authorizeShareAction(
+    identity,
+    "manage",
+    latest.spaceId,
+    {
+      ...(input.data.level ? { level: input.data.level } : {}),
+      creatorId: latest.createdById,
+      policy: latestPolicy,
+    }
+  )
+  if (!latestDecision.allowed) return denied(c, latestDecision)
+  if (passwordHash !== undefined && !sharingPreviewEnabled())
+    return invalid(c, "Passwords aren't available", "PASSWORD_NOT_AVAILABLE")
+  if (
+    latestPolicy.requirePassword &&
+    (passwordHash === null ||
+      (passwordHash === undefined && !latest.hasPassword))
+  )
+    return invalid(c, "A password is required", "PASSWORD_REQUIRED")
+  if (expiresAt !== undefined && !expiryAllowed(expiresAt, latestPolicy))
+    return expiryTooLong(c, latestPolicy)
   const updated = updateShareLink(link.id, {
+    ...(passwordHash !== undefined ? { passwordHash } : {}),
     ...(input.data.label !== undefined ? { label: input.data.label } : {}),
     ...(expiresAt !== undefined ? { expiresAt } : {}),
     ...(input.data.comments ? { comments: input.data.comments } : {}),
@@ -414,7 +474,12 @@ shareLinksRouter.patch("/:linkId", async (c) => {
   if (!updated) return notFound(c)
   const places = await placesOf([updated])
   return c.json({
-    link: publicLink(updated, places.get(updated.id) ?? null, true, policy),
+    link: publicLink(
+      updated,
+      places.get(updated.id) ?? null,
+      true,
+      currentSharingPolicy()
+    ),
   })
 })
 

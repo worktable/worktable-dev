@@ -1,3 +1,4 @@
+import { supportedSharePasswordHash } from "./share-link-credentials.ts"
 import { Database } from "bun:sqlite"
 import {
   defaultSharingPolicy,
@@ -69,6 +70,8 @@ export interface StoredShareLink {
   createdAt: number
   expiresAt: number | null
   hasPassword: boolean
+  passwordHash: string | null
+  passwordRevision: number
   comments: ShareLinkCommentSettings
   revokedAt: number | null
   revokedReason: string | null
@@ -96,6 +99,7 @@ interface LinkRow {
   created_at: number
   expires_at: number | null
   password_hash: string | null
+  password_rev: number
   grant_json: string | null
   pinned_version: string | null
   accept_comments: number
@@ -123,6 +127,7 @@ const LINK_COLUMN_NAMES = [
   "created_at",
   "expires_at",
   "password_hash",
+  "password_rev",
   "grant_json",
   "pinned_version",
   "accept_comments",
@@ -153,7 +158,11 @@ function servable(row: LinkRow): boolean {
   return (
     (row.kind === "doc" || row.kind === "html") &&
     row.level === "view" &&
-    row.password_hash === null &&
+    (row.password_hash === null ||
+      (sharingPreviewEnabled() &&
+        supportedSharePasswordHash(row.password_hash))) &&
+    Number.isSafeInteger(row.password_rev) &&
+    row.password_rev >= 0 &&
     row.grant_json === null &&
     row.pinned_version === null &&
     flag(row.accept_comments) !== null &&
@@ -178,6 +187,8 @@ function storedLink(row: LinkRow): StoredShareLink {
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     hasPassword: row.password_hash !== null,
+    passwordHash: row.password_hash,
+    passwordRevision: row.password_rev,
     comments: {
       acceptComments: row.accept_comments === 1,
       anonymousAllowed: row.anonymous_allowed === 1,
@@ -343,6 +354,33 @@ function v1AlreadyDrained(): boolean {
   return value
 }
 
+/** Created only on a mutation or boot migration, never by a visitor GET. */
+function ensureShareUnlockSecret(): void {
+  openDatabase(true)!
+    .query(
+      "INSERT OR IGNORE INTO share_meta (key, value) VALUES ('unlock_secret', ?)"
+    )
+    .run(randomBytes(32).toString("base64url"))
+}
+
+function decodeUnlockSecret(
+  value: string | null | undefined
+): Uint8Array | null {
+  return value && /^[A-Za-z0-9_-]{43}$/.test(value)
+    ? Buffer.from(value, "base64url")
+    : null
+}
+
+export function shareUnlockSecret(): Uint8Array | null {
+  const value = openDatabase(false)
+    ?.query<
+      { value: string },
+      []
+    >("SELECT value FROM share_meta WHERE key = 'unlock_secret'")
+    .get()?.value
+  return decodeUnlockSecret(value)
+}
+
 // ── Tokens ───────────────────────────────────────────────────
 
 function tokenDigest(token: string): Buffer {
@@ -365,6 +403,7 @@ export interface NewShareLink {
   createdBy: { id: string; name: string }
   expiresAt: number | null
   comments: ShareLinkCommentSettings
+  passwordHash?: string
   now?: number
 }
 
@@ -374,14 +413,15 @@ export function createShareLink(input: NewShareLink): {
   token: string
 } {
   const db = openDatabase(true)!
+  ensureShareUnlockSecret()
   const token = randomBytes(32).toString("base64url")
   const id = newLinkId()
   db.query(
     `INSERT INTO share_links (id, token_hash, token_hint, link_key,
       workspace_epoch, space_id, document_id, kind, label, level,
       created_by_id, created_by_name, created_at, expires_at,
-      accept_comments, anonymous_allowed, show_sharer_name, visitors_see)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      accept_comments, anonymous_allowed, show_sharer_name, visitors_see, password_hash, password_rev)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     tokenDigest(token),
@@ -400,7 +440,9 @@ export function createShareLink(input: NewShareLink): {
     input.comments.acceptComments ? 1 : 0,
     input.comments.anonymousAllowed ? 1 : 0,
     input.comments.showSharerName ? 1 : 0,
-    input.comments.visitorsSee
+    input.comments.visitorsSee,
+    input.passwordHash ?? null,
+    input.passwordHash ? 1 : 0
   )
   return { link: getShareLink(id)!, token }
 }
@@ -492,6 +534,7 @@ export function settleV1ShareLinks(
  * store serves links whatever the sharing preview says.
  */
 export function markV1SharesDrained(now = Date.now()): void {
+  ensureShareUnlockSecret()
   openDatabase(true)!
     .query(
       "INSERT OR IGNORE INTO share_meta (key, value) VALUES ('v1_drained_at', ?)"
@@ -506,6 +549,8 @@ export function markV1SharesDrained(now = Date.now()): void {
 }
 
 export interface ShareLinkChange {
+  /** undefined leaves the password unchanged; null removes it. */
+  passwordHash?: string | null
   label?: string
   expiresAt?: number | null
   comments?: Partial<ShareLinkCommentSettings>
@@ -526,6 +571,10 @@ export function updateShareLink(
   }
   const bit = (value: boolean) => (value ? 1 : 0)
   const comments = change.comments ?? {}
+  if (change.passwordHash !== undefined) {
+    set("password_hash", change.passwordHash)
+    sets.push("password_rev = password_rev + 1")
+  }
   if (change.label !== undefined) set("label", change.label)
   if (change.expiresAt !== undefined) set("expires_at", change.expiresAt)
   if (comments.acceptComments !== undefined) {
@@ -635,15 +684,26 @@ export function revokeAllShareLinks(reason: ShareLinkRevocationReason): number {
  */
 export function findShareLinkForView(
   token: string
-): { link: StoredShareLink; policy: SharingPolicy } | null {
+): {
+  link: StoredShareLink
+  policy: SharingPolicy
+  unlockSecret: Uint8Array | null
+} | null {
   if (!TOKEN_PATTERN.test(token)) return null
   const db = openDatabase(false)
   if (!db) return null
   const digest = tokenDigest(token)
   const row = db
-    .query<LinkRow & { policy_revision: number | null }, [Buffer]>(
-      `SELECT ${JOINED_LINK_COLUMNS}, p.revision AS policy_revision
+    .query<
+      LinkRow & {
+        policy_revision: number | null
+        unlock_secret: string | null
+      },
+      [Buffer]
+    >(
+      `SELECT ${JOINED_LINK_COLUMNS}, p.revision AS policy_revision, m.value AS unlock_secret
        FROM share_links l LEFT JOIN share_policy p ON p.id = 1
+       LEFT JOIN share_meta m ON m.key = 'unlock_secret'
        WHERE l.token_hash = ?`
     )
     .get(digest)
@@ -655,24 +715,40 @@ export function findShareLinkForView(
   return {
     link: storedLink(row),
     policy: policyAt(db, row.policy_revision ?? 0),
+    unlockSecret: decodeUnlockSecret(row.unlock_secret),
   }
 }
 
 /** A link by id and the owner policy as it stands, to check a view again. */
 export function findShareLinkWithPolicy(
   id: string
-): { link: StoredShareLink; policy: SharingPolicy } | null {
+): {
+  link: StoredShareLink
+  policy: SharingPolicy
+  unlockSecret: Uint8Array | null
+} | null {
   const db = openDatabase(false)
   if (!db) return null
   const row = db
-    .query<LinkRow & { policy_revision: number | null }, [string]>(
-      `SELECT ${JOINED_LINK_COLUMNS}, p.revision AS policy_revision
+    .query<
+      LinkRow & {
+        policy_revision: number | null
+        unlock_secret: string | null
+      },
+      [string]
+    >(
+      `SELECT ${JOINED_LINK_COLUMNS}, p.revision AS policy_revision, m.value AS unlock_secret
        FROM share_links l LEFT JOIN share_policy p ON p.id = 1
+       LEFT JOIN share_meta m ON m.key = 'unlock_secret'
        WHERE l.id = ?`
     )
     .get(id)
   return row
-    ? { link: storedLink(row), policy: policyAt(db, row.policy_revision ?? 0) }
+    ? {
+        link: storedLink(row),
+        policy: policyAt(db, row.policy_revision ?? 0),
+        unlockSecret: decodeUnlockSecret(row.unlock_secret),
+      }
     : null
 }
 

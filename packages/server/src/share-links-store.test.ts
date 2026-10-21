@@ -144,10 +144,14 @@ async function createLink(
 
 async function view(
   token: string,
-  surface = "/public/share"
+  surface = "/public/share",
+  unlock?: string
 ): Promise<Response> {
   return await app().request(surface, {
-    headers: { "x-worktable-share-capability": token },
+    headers: {
+      "x-worktable-share-capability": token,
+      ...(unlock ? { "x-worktable-share-unlock": unlock } : {}),
+    },
   })
 }
 
@@ -205,6 +209,96 @@ async function useHtmlStorageV2(): Promise<void> {
 }
 
 describe("share links", () => {
+  it("requires passwords, binds unlocks to current credentials, and expires links", async () => {
+    await writeDoc("space", "plan", "# Plan")
+    const password = "test-only visitor password"
+    const created = await createLink("plan", { password })
+    expect(JSON.stringify(created)).not.toContain("argon2")
+    expect((await view(created.token)).status).toBe(401)
+    const unlock = (value: string) =>
+      app().request("/public/share/unlock", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-worktable-share-capability": created.token,
+        },
+        body: JSON.stringify({ password: value }),
+      })
+    expect((await unlock("wrong")).status).toBe(401)
+    const response = await unlock(password)
+    expect(response.status).toBe(200)
+    const unlocked = (await response.json()) as {
+      ticket: string
+      maxAge: number
+    }
+    expect(unlocked.maxAge).toBeLessThanOrEqual(12 * 60 * 60)
+    expect(
+      (await view(created.token, "/public/share", unlocked.ticket)).status
+    ).toBe(200)
+    const changed = await send(
+      "PATCH",
+      `/api/shares/links/${created.link.id}`,
+      { password: "replacement password" }
+    )
+    expect(changed.status).toBe(200)
+    expect(
+      (await view(created.token, "/public/share", unlocked.ticket)).status
+    ).toBe(401)
+    expect((await unlock(password)).status).toBe(401)
+    const next = (await (await unlock("replacement password")).json()) as {
+      ticket: string
+    }
+    updateShareLink(created.link.id, { expiresAt: Date.now() - 1 })
+    expect(
+      (await view(created.token, "/public/share", next.ticket)).status
+    ).toBe(410)
+    revokeShareLink(created.link.id, "local:owner")
+    expect(
+      (await view(created.token, "/public/share", next.ticket)).status
+    ).toBe(404)
+  })
+
+  it("keeps pending legacy HTML links usable without exposing their bearer token in frames", async () => {
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    await createHtmlDocument({
+      spaceId: "space",
+      explicitId: "legacy",
+      name: "Legacy",
+      html: "<h1>Legacy report</h1>",
+      createdBy: "test",
+      permissions: {
+        network: false,
+        records: {},
+        state: { read: false, write: false },
+      },
+      versionSource: "test",
+      versionUpdatedBy: "test",
+    })
+    const legacy = await createDocumentShare({
+      kind: "html",
+      spaceId: "space",
+      artifactKey: "legacy",
+    })
+    markV1SharesDrained()
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    const outer = await view(legacy.token)
+    expect(outer.status).toBe(200)
+    const { contentTicket } = (await outer.json()) as { contentTicket: string }
+    expect(contentTicket).not.toContain(legacy.token)
+    expect((await view(legacy.token, "/public/share/content")).status).toBe(404)
+    const frame = await view(contentTicket, "/public/share/content")
+    expect(frame.status).toBe(200)
+    expect(await frame.text()).toContain("Legacy report")
+    await stopDocumentShare({
+      kind: "html",
+      spaceId: "space",
+      artifactKey: "legacy",
+    })
+    expect((await view(contentTicket, "/public/share/content")).status).toBe(
+      404
+    )
+  })
+
   it("opens several links to one document on their own, and revoking one leaves the rest", async () => {
     await writeDoc("space", "plan", "# Plan\n\nShared detail.")
     const acme = await createLink("plan", { label: "Acme" })
@@ -249,7 +343,7 @@ describe("share links", () => {
     expect(JSON.stringify(listed)).not.toContain(board.token)
 
     updateShareLink(board.link.id, { expiresAt: Date.now() - 1 })
-    expect((await view(board.token)).status).toBe(404)
+    expect((await view(board.token)).status).toBe(410)
     expect((await documentLinks("plan")).links[0]?.status).toBe("expired")
 
     // A view whose render outlasts a revoke is not sent.
@@ -440,7 +534,11 @@ describe("share links", () => {
 
     const moved = await moveHtmlDocument("space", "status", "boards/status")
     expect(moved.ok).toBe(true)
-    const content = await view(token, "/public/share/content")
+    const frame = (await (await view(token)).json()) as {
+      contentTicket: string
+    }
+    expect((await view(token, "/public/share/content")).status).toBe(404)
+    const content = await view(frame.contentTicket, "/public/share/content")
     expect(content.status).toBe(200)
     const html = await content.text()
     expect(html).toContain("Operational")
@@ -549,7 +647,7 @@ describe("share links", () => {
     ).toContain("Today's link.")
   })
 
-  it("lets only people share, and only view links without a password for now", async () => {
+  it("lets only people share, and keeps passwords behind the preview", async () => {
     await writeDoc("space", "plan", "# Plan")
     const target = { kind: "doc", spaceId: "space", path: "plan" }
     expect(
@@ -577,6 +675,9 @@ describe("share links", () => {
     })
     expect(comment.status).toBe(400)
     expect(await comment.json()).toMatchObject({ code: "LEVEL_NOT_AVAILABLE" })
+    expect(existsSync(shareLinksDatabasePath())).toBe(false)
+    markV1SharesDrained()
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     const password = await send("POST", "/api/shares/links", {
       target,
       password: "correct horse battery",
@@ -585,6 +686,7 @@ describe("share links", () => {
     expect(await password.json()).toMatchObject({
       code: "PASSWORD_NOT_AVAILABLE",
     })
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
     const past = await send("POST", "/api/shares/links", {
       target,
       expiresAt: new Date(Date.now() - 60_000).toISOString(),
@@ -594,7 +696,6 @@ describe("share links", () => {
       target: { ...target, path: "../plan" },
     })
     expect(escaping.status).toBe(400)
-    expect(existsSync(shareLinksDatabasePath())).toBe(false)
   })
 })
 
@@ -681,7 +782,16 @@ describe("moving today's links into links v2", () => {
         .projectionHtml
     ).toContain("Moved over.")
     expect(
-      await (await view(status.token, "/public/share/content")).text()
+      await (
+        await view(
+          (
+            (await (await view(status.token)).json()) as {
+              contentTicket: string
+            }
+          ).contentTicket,
+          "/public/share/content"
+        )
+      ).text()
     ).toContain("Operational")
     for (const token of [retired.token, removed.token, "E".repeat(43)]) {
       expect((await view(token)).status).toBe(404)
@@ -1048,7 +1158,7 @@ describe("owner policy", () => {
     )
     db.close()
     expect((await savePolicy({ maxExpiryDays: 7 })).status).toBe(200)
-    expect((await view(token)).status).toBe(404)
+    expect((await view(token)).status).toBe(410)
     expect((await documentLinks("plan")).links[0]).toMatchObject({
       status: "blocked",
       blockedBy: "expiry-cap",

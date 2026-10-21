@@ -57,6 +57,10 @@ function SelectContent({
   return (
     <SelectPrimitive.Portal container={container}>
       <SelectPrimitive.Positioner
+        // Item alignment uses fixed viewport positioning. A modal portal is
+        // inside a transformed containing block, so use anchored placement.
+        alignItemWithTrigger={container ? false : undefined}
+        collisionBoundary={container ?? undefined}
         className="isolate z-50 outline-none"
         align={align}
         side={side}

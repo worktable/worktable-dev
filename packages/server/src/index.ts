@@ -80,8 +80,7 @@ import { sharesRouter } from "./routes/shares.ts"
 import { linkGrantsRouter } from "./routes/link-grants.ts"
 import { publicSharesRouter } from "./routes/public-shares.ts"
 import { flushShareLinkUse, sweepRevokedShareLinks } from "./share-links-store.ts"
-import { sweepVisitorComments, closeVisitorCommentStores } from "./visitor-comment-store.ts"
-import { sharingPreviewEnabled } from "./sharing-preview.ts"
+import { sweepVisitorComments, closeVisitorCommentStores, prepareVisitorCommentStore } from "./visitor-comment-store.ts"
 import { settleShareLinkReconciles } from "./share-links-lifecycle.ts"
 import { startV1ShareLinkDrain } from "./share-links-drain.ts"
 import { publicInvitationsRouter } from "./routes/public-invitations.ts"
@@ -1388,6 +1387,12 @@ export function startServer(
     }
   }
 
+  // Recover existing private SQLite state before any request can read it.
+  if (!workspaceRejected) {
+    try { prepareVisitorCommentStore(); }
+    catch { console.error("[visitor-comments] storage unavailable"); }
+  }
+
   // Resolve findings left open by the retired wiki lint, ~30s after boot so it
   // never delays startup. WORKTABLE_SKIP_LINT_RETIREMENT=1 exists for the test
   // runner (same rationale as the starter-seed guard above).
@@ -1447,10 +1452,9 @@ export function startServer(
       } catch (err) {
         console.error("[share-links] revoked link sweep error:", logError(err));
       }
-      if (sharingPreviewEnabled()) {
-        try { sweepVisitorComments(); }
-        catch { console.error("[visitor-comments] retention unavailable"); }
-      }
+      // Retention still erases prior data after the preview is disabled.
+      try { sweepVisitorComments(); }
+      catch { console.error("[visitor-comments] retention unavailable"); }
     };
     retentionBootTimer = setTimeout(sweep, RETENTION_BOOT_DELAY_MS);
     retentionBootTimer.unref?.();

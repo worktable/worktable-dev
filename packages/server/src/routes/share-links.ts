@@ -21,6 +21,12 @@ import {
   SharePasswordBusy,
 } from "../share-link-credentials.ts"
 import { sharingPreviewEnabled } from "../sharing-preview.ts"
+import {
+  visitorCommentNamespace,
+  visitorNamespaceStillCurrent,
+  notifyVisitorComments,
+} from "../visitor-comment-access.ts"
+import { pauseVisitorComments } from "../visitor-comment-store.ts"
 import { prepareShareLinkAccess } from "../link-sharing-access.ts"
 import { spaceGeneration } from "../workspace-read-model.ts"
 import { linkSchemaGeneration } from "../link-schema-generation.ts"
@@ -606,6 +612,12 @@ shareLinksRouter.patch("/:linkId", async (c) => {
       : input.data.password === null
         ? null
         : await hashSharePassword(input.data.password)
+  const resume =
+    sharingPreviewEnabled() && input.data.comments?.acceptComments === true
+      ? await visitorCommentNamespace()
+      : null
+  if (resume && !(await visitorNamespaceStillCurrent(resume)))
+    return notFound(c)
   const latest = getShareLink(link.id)
   if (!latest) return notFound(c)
   if (latest.revokedAt !== null)
@@ -638,7 +650,9 @@ shareLinksRouter.patch("/:linkId", async (c) => {
   if (expiresAt !== undefined && !expiryAllowed(expiresAt, latestPolicy))
     return expiryTooLong(c, latestPolicy)
   const updated = updateShareLink(link.id, {
-    ...(input.data.level ? {level:input.data.level as "view" | "comment"} : {}),
+    ...(input.data.level
+      ? { level: input.data.level as "view" | "comment" }
+      : {}),
     ...(input.data.grant !== undefined ? { grant: input.data.grant } : {}),
     ...(passwordHash !== undefined ? { passwordHash } : {}),
     ...(input.data.label !== undefined ? { label: input.data.label } : {}),
@@ -646,6 +660,10 @@ shareLinksRouter.patch("/:linkId", async (c) => {
     ...(input.data.comments ? { comments: input.data.comments } : {}),
   })
   if (!updated) return notFound(c)
+  if (resume) {
+    pauseVisitorComments(resume.worktableId, updated.id, false)
+    notifyVisitorComments(updated.spaceId, updated.documentId, updated.id)
+  }
   const places = await placesOf([updated])
   return c.json({
     link: publicLink(

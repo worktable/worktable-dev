@@ -1,9 +1,13 @@
 import type { Context } from "hono"
-import type { DocumentId, VisitorComment } from "@worktable/types"
+import type {
+  DocumentId,
+  VisitorComment,
+  SharingPolicy,
+} from "@worktable/types"
 import { isHumanWorkspaceOwner } from "./auth.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { readDocumentIdentities } from "./document-query.ts"
-import { authorizeShareAction } from "./share-policy.ts"
+import { authorizeShareAction, currentSharingPolicy } from "./share-policy.ts"
 import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import { teamsEnabled } from "./team-database.ts"
 import { canAccessSpace, requireTeamHuman } from "./team-policy.ts"
@@ -109,12 +113,14 @@ export async function visitorDocumentInSpace(
 export function canDeleteVisitorComment(
   c: Context,
   spaceId: string,
-  row: StoredVisitorComment
+  row: StoredVisitorComment,
+  policy?: SharingPolicy
 ): boolean {
   return (
     visitorCommentReader(c, spaceId) &&
     authorizeShareAction(c.get("identity"), "manage", spaceId, {
       creatorId: row.link_creator,
+      ...(policy ? { policy } : {}),
     }).allowed
   )
 }
@@ -123,6 +129,15 @@ export function memberVisitorComments(
   spaceId: string,
   rows: StoredVisitorComment[]
 ): VisitorComment[] {
+  if (!rows.length) return []
+  const policy = currentSharingPolicy()
+  const deletions = new Map<string, boolean>()
+  for (const row of rows)
+    if (!deletions.has(row.link_creator))
+      deletions.set(
+        row.link_creator,
+        canDeleteVisitorComment(c, spaceId, row, policy)
+      )
   const replies = visitorReplies(rows.map((row) => row.id))
   return rows.map((row) => ({
     id: row.id,
@@ -149,6 +164,6 @@ export function memberVisitorComments(
             annotationId: row.annotation_id,
           }
         : null,
-    canDelete: canDeleteVisitorComment(c, spaceId, row),
+    canDelete: deletions.get(row.link_creator)!,
   }))
 }

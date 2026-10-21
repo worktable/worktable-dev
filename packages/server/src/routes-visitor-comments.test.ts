@@ -19,6 +19,8 @@ import { writeDoc, writeSpace } from "./store.ts"
 import { visitorCommentNamespace } from "./visitor-comment-access.ts"
 import {
   closeVisitorCommentStores,
+  commentPause,
+  pauseVisitorComments,
   receiveVisitorComment,
 } from "./visitor-comment-store.ts"
 import {
@@ -285,6 +287,7 @@ it("isolates visitors on a comment link and rechecks link settings after a held 
       )
     )
   }
+  closeVisitorCommentStores()
   const before = await snapshot()
   expect(
     (
@@ -352,4 +355,22 @@ it("isolates visitors on a comment link and rechecks link settings after a held 
   expect(after.comments.map((row: { body: string }) => row.body)).not.toContain(
     "must not be saved"
   )
+  const context = await visitorCommentNamespace()
+  pauseVisitorComments(context.worktableId, made.link.id, true)
+  expect(commentPause(context.worktableId, made.link.id)).not.toBeNull()
+  expect(
+    (
+      await server.request(`/api/shares/links/${made.link.id}`, {
+        method: "PATCH",
+        headers: json,
+        body: JSON.stringify({ comments: { acceptComments: true } }),
+      })
+    ).status
+  ).toBe(200)
+  expect(commentPause(context.worktableId, made.link.id)).toBeNull()
+  expect(
+    (await (await server.request("/public/share/comments", { headers })).json())
+      .accepting
+  ).toBe(true)
+  expect((await send("Resumed", "request_resumed_body")).status).toBe(201)
 })

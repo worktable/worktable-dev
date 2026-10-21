@@ -1,5 +1,13 @@
 import { Database } from "bun:sqlite"
-import { chmodSync, existsSync, mkdirSync, realpathSync } from "node:fs"
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readSync,
+  realpathSync,
+} from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { nanoid } from "nanoid"
 import type { VisitorCommentStatus } from "@worktable/types"
@@ -11,7 +19,12 @@ import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
 // authenticated, capability-scoped visitor routes.
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
-const stores = new Map<string, { db: Database | null; retry: number }>()
+interface StoreConnections {
+  reader: Database | null
+  writer: Database | null
+  retry: number
+}
+const stores = new Map<string, StoreConnections>()
 
 export class VisitorCommentsUnavailable extends Error {}
 export class VisitorCommentRefused extends Error {
@@ -56,34 +69,65 @@ function storePath(): string {
   return join(app, "visitor-comments", workspaceCacheKey(), "comments.sqlite")
 }
 
-function rememberStore(
-  key: string,
-  entry: { db: Database | null; retry: number }
-): void {
+function rememberStore(key: string, entry: StoreConnections): void {
   stores.delete(key)
   stores.set(key, entry)
   while (stores.size > 8) {
     const oldest = stores.keys().next().value!
-    stores.get(oldest)?.db?.close()
+    stores.get(oldest)?.reader?.close()
+    stores.get(oldest)?.writer?.close()
     stores.delete(oldest)
   }
 }
 
+/** A WAL connection may create sidecars even when the main DB is read-only.
+ * The private store uses rollback journaling; cold reads refuse legacy WAL
+ * until boot or an explicit writer finishes recovery outside the read path. */
+function requireReadOnlyFile(path: string): void {
+  const header = Buffer.alloc(20)
+  const file = openSync(path, "r")
+  try {
+    if (
+      readSync(file, header, 0, 20, 0) !== 20 ||
+      header.toString("ascii", 0, 16) !== "SQLite format 3\0" ||
+      header[18] !== 1 ||
+      header[19] !== 1
+    )
+      throw new VisitorCommentsUnavailable()
+  } finally {
+    closeSync(file)
+  }
+}
+
 function database(create = false): Database | null {
-  // Physical path checks happen once per opened store, not once per request.
   const key = `${getAppDir()}\0${getWorkspaceRoot()}\0${workspaceCacheKey()}`
   const cached = stores.get(key)
-  if (cached?.db || (!create && cached && cached.retry > Date.now()))
-    return cached.db
+  if (create && cached?.writer) return cached.writer
+  if (
+    !create &&
+    (cached?.reader || (cached && !cached.writer && cached.retry > Date.now()))
+  )
+    return cached.reader
   const path = storePath()
   if (!create && !existsSync(path)) {
-    rememberStore(key, { db: null, retry: Date.now() + 60_000 })
+    rememberStore(key, {
+      reader: null,
+      writer: null,
+      retry: Date.now() + 60_000,
+    })
     return null
   }
   let db: Database | undefined
   try {
-    if (create) mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-    db = new Database(path, { create })
+    if (!create) requireReadOnlyFile(path)
+    else {
+      cached?.reader?.close()
+      if (cached) cached.reader = null
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+    }
+    db = create
+      ? new Database(path, { create: true })
+      : new Database(path, { readonly: true, create: false })
     const version = (
       db.query("PRAGMA user_version").get() as { user_version: number }
     ).user_version
@@ -91,9 +135,20 @@ function database(create = false): Database | null {
       throw new VisitorCommentsUnavailable()
     if (create) {
       chmodSync(path, 0o600)
+      const previous = (
+        db.query("PRAGMA journal_mode").get() as { journal_mode: string }
+      ).journal_mode
       db.exec(
-        "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON"
+        "PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON; PRAGMA temp_store=MEMORY"
       )
+      if (
+        (
+          db.query("PRAGMA journal_mode=DELETE").get() as {
+            journal_mode: string
+          }
+        ).journal_mode !== "delete"
+      )
+        throw new VisitorCommentsUnavailable()
       if (version === 0)
         db.transaction(() => {
           db!.exec(`CREATE TABLE visitor_comments (
@@ -117,14 +172,29 @@ function database(create = false): Database | null {
             PRIMARY KEY(worktableId,link_id,client_key));
           PRAGMA user_version=1;`)
         }).immediate()
-    } else db.exec("PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON")
-    rememberStore(key, { db, retry: Infinity })
+
+      // Forget free pages and historical WAL text from the preview's old format.
+      if (previous === "wal") db.exec("VACUUM")
+    } else
+      db.exec(
+        "PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA query_only=ON; PRAGMA temp_store=MEMORY"
+      )
+    rememberStore(key, {
+      reader: create ? null : db,
+      writer: create ? db : (cached?.writer ?? null),
+      retry: Infinity,
+    })
     return db
   } catch (error) {
     db?.close()
     if (error instanceof VisitorCommentsUnavailable) throw error
     throw new VisitorCommentsUnavailable("Visitor comments are unavailable")
   }
+}
+
+/** Existing private state is recovered at boot; this never creates a store. */
+export function prepareVisitorCommentStore(): void {
+  if (existsSync(storePath())) database(true)
 }
 
 // The portable Worktable ID is retained by operator restore.
@@ -462,8 +532,8 @@ export function finishVisitorComment(
 
 /** Called only at boot and daily, never by a view or a comment request. */
 export function sweepVisitorComments(now = Date.now()): void {
-  const db = database()
-  if (!db) return
+  if (!database()) return
+  const db = database(true)!
   db.transaction(() => {
     db.query(
       "UPDATE visitor_comments SET client_key=NULL WHERE received_at<?"
@@ -481,6 +551,9 @@ export function sweepVisitorComments(now = Date.now()): void {
   }).immediate()
 }
 export function closeVisitorCommentStores(): void {
-  for (const entry of stores.values()) entry.db?.close()
+  for (const entry of stores.values()) {
+    entry.reader?.close()
+    entry.writer?.close()
+  }
   stores.clear()
 }

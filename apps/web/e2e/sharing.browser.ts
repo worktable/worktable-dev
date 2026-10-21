@@ -135,6 +135,7 @@ test.afterAll(async () => {
 test("creates, copies, and stops one Doc link from the persistent header action", async ({
   page,
   context,
+  browserName,
 }) => {
   let sharingEnabled = false
   const createGate = deferred()
@@ -142,9 +143,31 @@ test("creates, copies, and stops one Doc link from the persistent header action"
     createGate: createGate.promise,
     sharingEnabled: () => sharingEnabled,
   })
-  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: harness.webUrl,
-  })
+  let copiedText = ""
+  if (browserName === "chromium") {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: harness.webUrl,
+    })
+  } else {
+    // Playwright cannot grant clipboard permissions in Firefox or WebKit.
+    // Chromium exercises the system clipboard; these engines mock that OS
+    // boundary while keeping the full create/copy/stop interaction and bytes.
+    await page.exposeFunction("recordShareClipboard", (text: string) => {
+      copiedText = text
+    })
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        value: {
+          writeText: (text: string) =>
+            (
+              window as unknown as {
+                recordShareClipboard: (text: string) => Promise<void>
+              }
+            ).recordShareClipboard(text),
+        },
+      })
+    })
+  }
   await page.goto(appUrl("/spaces/share-browser/documents/launch-plan"), {
     waitUntil: "domcontentloaded",
   })
@@ -185,9 +208,11 @@ test("creates, copies, and stops one Doc link from the persistent header action"
   await expect(dialog.getByText(/move or rename this document/i)).toBeVisible()
   await dialog.getByRole("button", { name: "Copy link" }).click()
   await expect(dialog.getByRole("button", { name: "Copied" })).toBeVisible()
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
-    "https://share.worktable.cloud/s/"
-  )
+  const clipboard =
+    browserName === "chromium"
+      ? await page.evaluate(() => navigator.clipboard.readText())
+      : copiedText
+  expect(clipboard).toBe(await shareUrl.inputValue())
   await dialog.getByRole("button", { name: "Done" }).click()
   await expect(shareButton).toHaveAttribute("title", "Share link active")
 

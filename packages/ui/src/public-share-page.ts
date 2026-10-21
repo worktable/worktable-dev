@@ -12,12 +12,19 @@ export const PUBLIC_SHARE_ASSET_PATHS = {
   icon: "/gateway/assets/worktable-icon.svg",
   mermaid: "/gateway/assets/mermaid.min.js",
   diagrams: "/gateway/assets/public-share-diagrams.js",
+  live: "/gateway/assets/public-share-live.js",
 } as const
 
 /** The only scripts a share page may load; the gateway CSP admits these exact paths. */
 export const PUBLIC_SHARE_SCRIPT_PATHS = [
   PUBLIC_SHARE_ASSET_PATHS.mermaid,
   PUBLIC_SHARE_ASSET_PATHS.diagrams,
+] as const
+
+/** A live page admits its narrow broker in addition to the document scripts. */
+export const PUBLIC_SHARE_LIVE_SCRIPT_PATHS = [
+  ...PUBLIC_SHARE_SCRIPT_PATHS,
+  PUBLIC_SHARE_ASSET_PATHS.live,
 ] as const
 
 type PublicDocumentPage =
@@ -51,6 +58,8 @@ function escapeHtml(value: string): string {
 
 function themeVariables(mode: "light" | "dark"): string {
   const colors = themeConfig.modes[mode]
+  const finish = themeConfig.finishes[mode]
+  const elevation = themeConfig.elevation[mode]
   const backdrop = themeConfig.backdrop[mode]
   return `
     color-scheme: ${mode};
@@ -62,11 +71,21 @@ function themeVariables(mode: "light" | "dark"): string {
     --muted-foreground: ${colors.mutedForeground};
     --surface-tint: ${colors.decorative};
     --border: ${colors.border};
+    --overlay: ${colors.overlay};
+    --overlay-border: ${colors.overlayBorder};
+    --floating-shadow: ${elevation.floatingShadow};
     --card-border: ${colors.cardBorder};
     --surface-hover: ${colors.surfaceHover};
     --surface-inset: ${colors.surfaceInset};
     --primary: ${themeConfig.accents.primary[mode]};
     --primary-text: ${themeConfig.accents.primaryText[mode]};
+    --primary-top: ${finish.primaryFaceTop};
+    --primary-bottom: ${finish.primaryFaceBottom};
+    --primary-highlight: ${finish.primaryHighlight};
+    --primary-edge: ${finish.primaryEdge};
+    --primary-shadow: ${finish.primaryShadow};
+    --contrast: ${colors.contrastForeground};
+    --destructive: ${themeConfig.status.destructive[mode]};
     --code-accent-foreground: ${themeConfig.accents.technicalInk[mode]};
     --code-accent-background: color-mix(in oklch, ${themeConfig.accents.technical[mode]} ${themeConfig.content.inlineCode[mode].surfaceMix}, transparent);
     --grid-line: ${backdrop.lineColor};
@@ -245,6 +264,15 @@ ${DOCUMENT_CONTENT_CSS}
 .unavailable .large-mark svg { display: block; width: 100%; height: 100%; }
 .unavailable h1 { margin: 0; font-family: var(--font-display); font-size: 1.75rem; font-weight: 400; line-height: 1.2; letter-spacing: -.02em; }
 .unavailable p { max-width: 28rem; margin: .875rem auto 0; color: var(--muted-foreground); }
+.unavailable button { padding: 0; border: 0; color: var(--primary-text); background: none; font: inherit; font-weight: 500; text-decoration: underline; text-decoration-color: color-mix(in oklch, var(--primary) 40%, transparent); text-underline-offset: 2px; cursor: pointer; }
+.unavailable button:hover { text-decoration-color: var(--primary); }
+.unavailable button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: .125rem; }
+.html-shell .unavailable-shell { min-height: 100%; }
+.live-link-prompt { position: fixed; bottom: 1.5rem; left: 50%; z-index: 20; display: flex; align-items: center; gap: .5rem; width: max-content; max-width: calc(100vw - 2rem); padding: .5rem .5rem .5rem 1rem; transform: translateX(-50%); border: 1px solid var(--overlay-border); border-radius: var(--radius); color: var(--foreground); background: var(--overlay); box-shadow: var(--floating-shadow); font-size: .875rem; }
+.live-link-prompt span { min-width: 0; margin-right: .5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-link-prompt button { min-height: 2.25rem; flex: none; padding: 0 .875rem; border: 1px solid var(--border); border-radius: calc(var(--radius) * .75); color: var(--foreground); background: transparent; font: inherit; font-weight: 500; cursor: pointer; }
+.live-link-prompt button[data-primary] { border-color: transparent; color: var(--contrast); background: linear-gradient(to bottom, var(--primary-top), var(--primary-bottom)); box-shadow: inset 0 1px 0 var(--primary-highlight), 0 2px 0 var(--primary-edge), 0 5px 9px -5px var(--primary-shadow); }
+.live-link-prompt button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 999px; background: var(--scrollbar-thumb); background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background-color: var(--scrollbar-thumb-hover); }
@@ -310,6 +338,16 @@ function diagramScripts(projectionHtml: string): string {
   return `<script type="application/json" id="worktable-diagram-config">${configs}</script>${PUBLIC_SHARE_SCRIPT_PATHS.map((path) => `<script src="${path}" defer></script>`).join("")}`
 }
 
+/** JSON for a script data block, which must never close its element. */
+function scriptJson(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, "\\u003c")
+}
+
+/** The live script's settings, then the script that reads them. */
+function liveScripts(config: unknown): string {
+  return `<script type="application/json" id="worktable-live-config">${scriptJson(config)}</script><script src="${PUBLIC_SHARE_ASSET_PATHS.live}" defer></script>`
+}
+
 export function renderPublicDocumentPage(
   document: PublicDocumentPage,
   iconSvg: string
@@ -331,5 +369,51 @@ export function renderPublicShareUnavailablePage(iconSvg: string): string {
   return pageDocument(
     "Document unavailable",
     `<body>${header(iconSvg)}<main class="unavailable-shell"><section class="unavailable"><span class="large-mark" aria-hidden="true">${iconSvg}</span><h1>This document isn't available</h1><p>The link may have been stopped, or the document may no longer exist.</p></section></main></body>`
+  )
+}
+
+/**
+ * An HTML link whose tool runs live on the link's data. The live script frames
+ * the tool once it is ready to broker its calls, so the frame's first message
+ * always has a listener.
+ */
+export function renderPublicLivePage(
+  document: { title: string; sourceUrl?: string },
+  frame: { url: string; poll: number },
+  iconSvg: string
+): string {
+  return pageDocument(
+    "Shared HTML document",
+    `<body class="html-page">${header(iconSvg, document.title, document.sourceUrl)}<main class="html-shell"><noscript><div class="unavailable-shell"><section class="unavailable"><h1>This tool needs JavaScript</h1></section></div></noscript></main>${liveScripts({ frame: { url: frame.url, title: document.title }, poll: frame.poll })}</body>`
+  )
+}
+
+function statusPage(
+  iconSvg: string,
+  title: string,
+  heading: string,
+  text: string,
+  action = "",
+  scripts = ""
+): string {
+  return pageDocument(
+    title,
+    `<body>${header(iconSvg)}<main class="unavailable-shell"><section class="unavailable"><span class="large-mark" aria-hidden="true">${iconSvg}</span><h1>${heading}</h1>${text ? `<p>${text}</p>` : ""}${action}</section></main>${scripts}</body>`
+  )
+}
+
+/**
+ * The waking page for a Worktable whose links may run live. Instead of
+ * reloading on a timer, the live script asks the Worktable whether it is up
+ * and reloads once it is, or stops after a minute and offers to try again.
+ */
+export function renderPublicShareLiveOpeningPage(iconSvg: string): string {
+  return statusPage(
+    iconSvg,
+    "Opening document",
+    "Opening the document",
+    "This can take a few seconds.",
+    '<noscript><p><a href="">Try again</a></p></noscript>',
+    liveScripts({ waking: true })
   )
 }

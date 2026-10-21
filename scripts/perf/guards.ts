@@ -155,13 +155,17 @@ function property(
 
 // ── Polling ─────────────────────────────────────────────────
 
-/** `refetchInterval` options and `setInterval` timers in the web app. */
+/** Web polling, plus every timer in the public visitor broker. */
 export function findPolling(sources: Source[]): Site[] {
   const sites: Site[] = []
   for (const source of sources) {
     if (
       !source.text.includes("refetchInterval") &&
-      !source.text.includes("setInterval")
+      !source.text.includes("setInterval") &&
+      !(
+        source.file === "packages/ui/src/public-share-live.js" &&
+        source.text.includes("setTimeout")
+      )
     )
       continue
     walk(parse(source), (node) => {
@@ -173,9 +177,19 @@ export function findPolling(sources: Source[]): Site[] {
         sites.push(siteOf(source, node, "refetchInterval"))
       if (
         ts.isCallExpression(node) &&
-        /(?:^|\.)setInterval$/.test(node.expression.getText())
+        (/(?:^|\.)setInterval$/.test(node.expression.getText()) ||
+          (source.file === "packages/ui/src/public-share-live.js" &&
+            /(?:^|\.)setTimeout$/.test(node.expression.getText())))
       )
-        sites.push(siteOf(source, node, "setInterval"))
+        sites.push(
+          siteOf(
+            source,
+            node,
+            node.expression.getText().endsWith("setTimeout")
+              ? "setTimeout"
+              : "setInterval"
+          )
+        )
     })
   }
   return sites
@@ -631,17 +645,30 @@ export function runGuards(base: string | null): {
 } {
   const web = trackedSources("apps/web/src")
   const server = trackedSources("packages/server/src")
+  const visitor = {
+    file: "packages/ui/src/public-share-live.js",
+    text: readFileSync(
+      join(REPO_ROOT, "packages/ui/src/public-share-live.js"),
+      "utf8"
+    ),
+  }
   const polling = readJson<Allowlist>(POLLING_FILE)
   const invalidation = readJson<Allowlist>(INVALIDATION_FILE)
   const catalog = readJson<Allowlist>(CATALOG_FILE)
   const budgets = readJson<Budgets>(BUDGETS_FILE)
 
   const problems = [
-    ...compareAllowlist("Polling", POLLING_FILE, findPolling(web), polling, {
-      withKind: false,
-      register:
-        "New polling. Prefer a socket event or a refetch when the user acts; poll only when nothing tells the client about the change.",
-    }),
+    ...compareAllowlist(
+      "Polling",
+      POLLING_FILE,
+      findPolling([...web, visitor]),
+      polling,
+      {
+        withKind: false,
+        register:
+          "New polling. Prefer a socket event or a refetch when the user acts; poll only when nothing tells the client about the change.",
+      }
+    ),
     ...compareAllowlist(
       "Query invalidation",
       INVALIDATION_FILE,

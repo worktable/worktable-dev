@@ -56,7 +56,7 @@ export function effectiveLinkGrant(
     // fromEntries defines own keys, so no id can reach the prototype.
     collections: Object.fromEntries(collections),
     limits: grant.limits,
-    state: grant.state === "team-read" && permissions?.state?.read !== true ? "visitor" : grant.state,
+    state: grant.state === "team-read" && (permissions === undefined || permissions.state?.read === false) ? "visitor" : grant.state,
   };
 }
 

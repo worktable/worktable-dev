@@ -188,6 +188,18 @@ async function pageIntegration(
   )
 }
 
+/**
+ * How a document is shared by link: as a Doc or an HTML Doc, or null when it
+ * has no safe public projection. The page's sharing capability uses the same
+ * test.
+ */
+export async function publicShareKind(
+  handle: ResolvedDocumentHandle
+): Promise<LegacyShareKind | null> {
+  if (handle.formatCapabilities?.publicProjection !== "safe") return null
+  return (await pageIntegration(handle))?.legacyShareKind ?? null
+}
+
 function rendererForHandle(
   handle: ResolvedDocumentHandle,
   integration: DocumentPageIntegration | null,

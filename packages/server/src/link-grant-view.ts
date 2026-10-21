@@ -43,7 +43,8 @@ export function linkQueryFailure(error: unknown): { status: 400 | 403; body: { e
   return null;
 }
 
-export const LINK_SEARCH_MAX_LENGTH = 200;
+import { LINK_SEARCH_MAX_LENGTH } from "./link-query-limits.ts";
+export { LINK_SEARCH_MAX_LENGTH } from "./link-query-limits.ts";
 
 // ---- Link keys ----------------------------------------------------------
 

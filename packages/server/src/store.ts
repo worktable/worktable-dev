@@ -1118,7 +1118,7 @@ export async function setSpaceArchived(
     return { space: null, error: error ?? `Space not found: ${spaceId}` };
   }
   if (archived) {
-    await invalidateHostedDocumentSharesForSpace(spaceId);
+    await invalidateHostedDocumentSharesForSpace(spaceId, "archived");
   }
   await notifyWorkspaceChangeAndWait({ type: "space", spaceId });
   return { space: updated, error: null };
@@ -1140,7 +1140,7 @@ export async function deleteSpace(spaceId: string): Promise<void> {
         await rm(dir, { recursive: true, force: true });
       }
       retireTeamSpacePolicy(spaceId);
-      await invalidateHostedDocumentSharesForSpace(spaceId);
+      await invalidateHostedDocumentSharesForSpace(spaceId, "removed");
       await notifyWorkspaceChangeAndWait({ type: "space", spaceId });
     });
   });
@@ -1580,7 +1580,7 @@ export async function setDocArchived(
     if (archived) {
       await invalidateHostedDocumentShares([
         { kind: "doc", spaceId, artifactKey: sanitized },
-      ]);
+      ], "archived");
     }
     // Archive state changes what derived consumers (lint, indexes) should see,
     // even though the doc file itself is untouched.
@@ -1635,7 +1635,8 @@ export async function setDocsArchivedByPrefix(
           kind: "doc" as const,
           spaceId,
           artifactKey: path,
-        }))
+        })),
+        "archived"
       );
     }
     for (const path of paths) {

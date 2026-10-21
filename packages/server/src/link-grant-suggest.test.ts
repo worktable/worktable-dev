@@ -66,6 +66,21 @@ const PERMISSIONS: WidgetFile["permissions"] = {
 };
 
 describe("suggestLinkGrant", () => {
+  it("warns about omitted search fields and later reads of an observed collection", () => {
+    const suggestion = suggestLinkGrant({
+      permissions: PERMISSIONS,
+      html: 'worktable.records.query("deals", { select: ["name"] }); button.onclick = () => worktable.records.query("deals", { select: ["amount"] });',
+      observed: [
+        { collectionId: "deals", query: { search: "private note", select: ["name"] } },
+        { collectionId: "deals", query: { search: "x".repeat(201), aggregate: { select: { n: { fn: "count" } } } } },
+      ],
+      schemas,
+    });
+    expect(suggestion.warnings.map((warning) => warning.code)).toEqual(expect.arrayContaining(["search_fields", "later_reads", "unsupported_reads"]));
+    expect(suggestion.grant.collections.deals!.fields).toEqual(["name"]);
+    expect(suggestion.fixedReads.deals).toHaveLength(1);
+    expect(suggestion.fixedReads.deals![0]!.query.search).toBe("private note");
+  });
   it("suggests the least a tool's first load needs, and says what it may have missed", () => {
     const suggestion = suggestLinkGrant({ permissions: PERMISSIONS, html: HTML, observed: OBSERVED, schemas });
     const scoped = { rows: null, timestamps: true, mode: "scoped" } as const;
@@ -90,9 +105,12 @@ describe("suggestLinkGrant", () => {
     });
     expect(suggestion.warnings.map((warning) => [warning.code, warning.collectionId])).toEqual([
       ["dynamic_collection", undefined],
+      ["later_reads", "contacts"],
       ["whole_records", "contacts"],
+      ["later_reads", "deals"],
       ["fields_left_out", "deals"],
       ["static_only", "notes"],
+      ["later_reads", "orders"],
       ["archived_rows", "orders"],
       ["small_groups_hidden", "orders"],
       ["declared_unseen", "archive"],

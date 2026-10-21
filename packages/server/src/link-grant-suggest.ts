@@ -18,6 +18,7 @@ import {
   type SummaryRules,
   type WidgetFile,
 } from "@worktable/types";
+import { LINK_SEARCH_MAX_LENGTH } from "./link-query-limits.ts";
 import type { ObservedRecordQuery } from "./html-preview.ts";
 import { canonicalJson, canonicalPredicate, canonicalRecordQuery, compareText } from "./link-fixed-reads.ts";
 import { forEachLeaf, isRecordKey, validateLinkGrant } from "./link-grant.ts";
@@ -29,6 +30,9 @@ import { canWidgetRecord } from "./widget-runtime-policy.ts";
 
 export type LinkGrantSuggestionWarningCode =
   | "whole_records"
+  | "search_fields"
+  | "later_reads"
+  | "unsupported_reads"
   | "fields_left_out"
   | "archived_rows"
   | "small_groups_hidden"
@@ -179,7 +183,20 @@ export function suggestLinkGrant(input: {
     const reads = asked.get(collectionId) ?? [];
     const rows = sharedRowCondition(schema, reads);
     const rules = summaries.get(collectionId);
-    if (reads.length > 0) fixedReads[collectionId] = reads.slice(0, MAX_FIXED_READS).map((query, i) => ({ id: `read-${i + 1}`, query, params: {} }));
+    const saveableReads = reads.filter((read) => (read.search?.length ?? 0) <= LINK_SEARCH_MAX_LENGTH);
+    if (saveableReads.length !== reads.length) warnings.push({
+      code: "unsupported_reads", collectionId,
+      message: `Some ${nameOf(collectionId)} searches exceed the link's ${LINK_SEARCH_MAX_LENGTH}-character limit and cannot be saved.`,
+    });
+    if (reads.some((read) => read.search)) warnings.push({
+      code: "search_fields", collectionId,
+      message: `This tool searches all ${nameOf(collectionId)} fields. A link searches only the fields it shows, so matching records or totals may differ.`,
+    });
+    if (named.includes(collectionId) && asked.has(collectionId)) warnings.push({
+      code: "later_reads", collectionId,
+      message: `This preview saw ${nameOf(collectionId)} reads on first load only. Later actions may need different fields or rows; check those actions before sharing.`,
+    });
+    if (saveableReads.length > 0) fixedReads[collectionId] = saveableReads.slice(0, MAX_FIXED_READS).map((query, i) => ({ id: `read-${i + 1}`, query, params: {} }));
     if (reads.length > MAX_FIXED_READS) {
       warnings.push({
         code: "too_many_reads",

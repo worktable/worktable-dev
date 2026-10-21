@@ -15,6 +15,7 @@ import {
   ShareArtifactInput,
   sharedArtifactIdentityIsCurrent,
 } from "../shared-artifact.ts"
+import { shareLinksRouter } from "./share-links.ts"
 
 export const sharesRouter = new Hono()
 
@@ -30,6 +31,8 @@ sharesRouter.use("*", async (c, next) => {
   c.header("Cache-Control", "no-store")
   return next()
 })
+
+sharesRouter.route("/links", shareLinksRouter)
 
 function publicShare(
   share: DocumentShare,

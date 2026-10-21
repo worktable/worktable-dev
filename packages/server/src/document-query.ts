@@ -51,6 +51,7 @@ import { resolveDocAliasIn, type DocAliases } from "./doc-aliases.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
 import {
   getDocMetaFactsMaps,
+  getSpaceArchiveInfo,
   readSpace,
   sanitizeDocPath,
   type DocLifetimeFacts,
@@ -107,6 +108,7 @@ interface DocumentQueryContext {
   registry: DocumentFormatRegistry
   docArchives: ReadonlyMap<string, unknown>
   docLifetimes: ReadonlyMap<string, DocLifetimeFacts>
+  spaceArchived: boolean
 }
 
 type ClassifiedEntry =
@@ -355,7 +357,13 @@ async function documentQueryContext(
   )
   const { archives: docArchives, lifetimes: docLifetimes } =
     await getDocMetaFactsMaps(spaceId, metadataPaths)
-  return { catalog, registry, docArchives, docLifetimes }
+  return {
+    catalog,
+    registry,
+    docArchives,
+    docLifetimes,
+    spaceArchived: Boolean(getSpaceArchiveInfo(space)),
+  }
 }
 
 /**
@@ -420,6 +428,62 @@ export async function readDocumentCatalogSnapshot(
   options: { lockHeld?: boolean } = {}
 ): Promise<DocumentCatalog> {
   return (await snapshotDocumentQueryContext(spaceId, options)).catalog
+}
+
+/** A Space's durable documents by id, as one read-model snapshot sees them. */
+export interface DocumentIdentities {
+  /** Whether the Space itself is archived. */
+  spaceArchived: boolean
+  /**
+   * Documents that open, with the path and title they have now. Archived
+   * documents and those whose path another claim also holds are left out.
+   */
+  current: ReadonlyMap<string, { path: string; title: string }>
+  /** Documents that are archived. */
+  archived: ReadonlySet<string>
+}
+
+const identitiesByContext = new WeakMap<
+  DocumentQueryContext,
+  DocumentIdentities
+>()
+
+function documentIdentities(context: DocumentQueryContext): DocumentIdentities {
+  const known = identitiesByContext.get(context)
+  if (known) return known
+  const current = new Map<string, { path: string; title: string }>()
+  const archived = new Set<string>()
+  for (const entry of context.catalog.entries) {
+    if (entry.kind !== "document") continue
+    for (const claim of claimsFor(entry)) {
+      if (claim.kind !== "document" || claim.identity !== "durable") continue
+      if (isArchived(claim, context.docArchives)) {
+        archived.add(claim.documentId)
+      } else {
+        current.set(claim.documentId, { path: claim.path, title: claim.title })
+      }
+    }
+  }
+  const identities = {
+    spaceArchived: context.spaceArchived,
+    current,
+    archived,
+  }
+  identitiesByContext.set(context, identities)
+  return identities
+}
+
+/**
+ * Where each durable document of a Space is now, from its read-model
+ * snapshot: no lock and no file reads while the snapshot is current. Computed
+ * once per snapshot.
+ */
+export async function readDocumentIdentities(
+  spaceId: string,
+  options: { lockHeld?: boolean } = {}
+): Promise<{ catalog: DocumentCatalog; identities: DocumentIdentities }> {
+  const context = await snapshotDocumentQueryContext(spaceId, options)
+  return { catalog: context.catalog, identities: documentIdentities(context) }
 }
 
 function entryKey(entry: DocumentCatalogEntry): string {

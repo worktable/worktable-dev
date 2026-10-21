@@ -3,10 +3,11 @@
 // granted field that disappears, or turns into something a link can't show,
 // closes the collection rather than widening it.
 
-import { normalizeRecordFieldType, RecordFieldTypeSchema, recordTitleFieldKey, type LinkGrant, type RecordCollectionSchema, type RecordPredicate } from "@worktable/types";
+import { normalizeRecordFieldType, RecordFieldTypeSchema, recordTitleFieldKey, SHARING_RECORD_ACCESS, type LinkGrant, type RecordCollectionSchema, type RecordPredicate, type SharingPolicy, type WidgetFile } from "@worktable/types";
 import { fixedReadIssues } from "./link-fixed-reads.ts";
 import { readRecordCollectionSchema } from "./record-store.ts";
 import { parsePredicate, RecordQueryShapeError } from "./record-query.ts";
+import { canWidgetRecord } from "./widget-runtime-policy.ts";
 
 export interface LinkGrantIssue {
   collectionId: string;
@@ -26,6 +27,37 @@ const recordKeyIssue = (name: string) => `Field "${name}" has a name records use
  *  which names a row. */
 export function isSummaryDimension(type: string): boolean {
   return DIMENSION_TYPES.has(normalizeRecordFieldType(type));
+}
+
+/**
+ * What a link may read on this call: its grant, narrowed by what its tool may
+ * read now and by the owner policy, so a republish or a tighter policy
+ * narrows a link and never widens it.
+ * - A collection stays only if the tool may read it (a `*` entry counts) and
+ *   the policy allows its mode. Otherwise it is unavailable; it is never
+ *   switched to another mode.
+ * - Fields and row conditions come only from the grant.
+ * - Writes are reserved, so a collection that sets them is unavailable.
+ * - Limits are the grant's: the policy sets none yet.
+ * - The team's saved state shows only if the tool may read state.
+ */
+export function effectiveLinkGrant(
+  grant: LinkGrant,
+  permissions: WidgetFile["permissions"] | undefined,
+  policy: Pick<SharingPolicy, "records">,
+): LinkGrant {
+  const widest = SHARING_RECORD_ACCESS.indexOf(policy.records);
+  const collections = Object.entries(grant.collections).filter(([collectionId, collection]) =>
+    canWidgetRecord({ permissions }, collectionId, "read") &&
+    SHARING_RECORD_ACCESS.indexOf(collection.mode) <= widest &&
+    !collection.writes);
+  return {
+    version: grant.version,
+    // fromEntries defines own keys, so no id can reach the prototype.
+    collections: Object.fromEntries(collections),
+    limits: grant.limits,
+    state: grant.state === "team-read" && permissions?.state?.read !== true ? "visitor" : grant.state,
+  };
 }
 
 /** The live schemas of every collection a grant names. Missing or unreadable
@@ -86,6 +118,8 @@ export function validateLinkGrant(grant: LinkGrant, schemas: ReadonlyMap<string,
           if (leaf === "id") return;
           if (leaf.includes(".")) add(`The row condition can't follow "${leaf}" into another collection.`);
           else if (leaf === "data" || !field(leaf)) add(`The row condition uses "${leaf}", which isn't a field of this collection.`);
+          // A row without such a field would read an inherited value instead.
+          else if (leaf in Object.prototype) add(`The row condition can't use the field "${leaf}".`);
           else if (typeOf(leaf) === "document") add(`The row condition can't use the document field "${leaf}".`);
         });
       } catch (error) {

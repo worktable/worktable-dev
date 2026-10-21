@@ -5,6 +5,7 @@
 // the read leaves open. The server then runs the saved read, never the
 // visitor's query.
 
+import { LINK_SEARCH_MAX_LENGTH } from "./link-query-limits.ts";
 import { createHash } from "node:crypto";
 import type { CollectionGrant, FixedParam, FixedRead, FixedReadQuery, LinkGrant, RecordCollectionSchema, RecordPredicate, RecordPredicateOp, RecordQuery } from "@worktable/types";
 import { normalizeRecordFieldType } from "@worktable/types";
@@ -248,6 +249,9 @@ export function fixedReadIssues(collectionId: string, grant: LinkGrant, schemas:
     if (canonicalJson(canonical) !== canonicalJson(read.query)) {
       issues.push(`Saved read "${read.id}" isn't in canonical form.`);
       continue;
+    }
+    if (canonical.search !== undefined && canonical.search.length > LINK_SEARCH_MAX_LENGTH) {
+      issues.push(`Saved read "${read.id}" searches more than ${LINK_SEARCH_MAX_LENGTH} characters.`);
     }
     const positions = new Map(queryValues(canonical).map((position) => [position.pointer, position]));
     for (const pointer of Object.keys(read.params)) {

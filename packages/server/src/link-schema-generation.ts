@@ -1,0 +1,25 @@
+import { onRecordChanged } from "./record-events.ts"
+import { onWorkspaceChange } from "./workspace-events.ts"
+
+// A record-schema edit must invalidate visitor validation without rebuilding
+// the member document catalog or reloading schemas on every visitor query.
+let clock = 0
+let resetAt = 0
+const spaces = new Map<string, number>()
+export function linkSchemaGeneration(spaceId: string): number {
+  return Math.max(resetAt, spaces.get(spaceId) ?? 0)
+}
+onRecordChanged((event) => {
+  if (event.kind === "collection") spaces.set(event.spaceId, ++clock)
+})
+onWorkspaceChange((event) => {
+  if (event.type === "workspaceReset") {
+    resetAt = ++clock
+    spaces.clear()
+  } else if (
+    event.type === "recordCollection" ||
+    event.type === "recordCollectionReconcile"
+  ) {
+    spaces.set(event.spaceId, ++clock)
+  }
+})

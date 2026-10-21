@@ -142,8 +142,10 @@ describe("team context", () => {
     // The same policy event can arrive on more than one Space socket.
     invalidateSharingQueries(queryClient, 8)
     expect(stale(sharingPage)).toBe(false)
+    // A recovered sharing store restarts its own revision sequence.
     invalidateSharingQueries(queryClient, 7)
-    expect(stale(sharingPage)).toBe(false)
+    expect(stale(sharingPage)).toBe(true)
+    queryClient.setQueryData(sharingPage, refreshed)
     invalidateSharingQueries(queryClient, 9)
     expect(stale(sharingPage)).toBe(true)
     expect(stale(content)).toBe(false)

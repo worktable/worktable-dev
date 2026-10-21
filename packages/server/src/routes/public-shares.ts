@@ -1,5 +1,5 @@
 import { linkBridge } from "../link-bridge.ts"
-import { readLinkTool } from "../link-tool.ts"
+import { LinkToolChanged, readLinkTool } from "../link-tool.ts"
 import {
   SHARE_UNLOCK_HEADER,
   ShareUnlockRequest,
@@ -422,8 +422,8 @@ export function createPublicSharesRouter(
   const router = new Hono()
   router.post("/bridge", linkBridge(getShareOrigin))
   router.onError((error, c) => {
-    if (error instanceof SharePasswordBusy)
-      return busy(c.req.raw, false, getShareOrigin() ?? "")
+    if (error instanceof SharePasswordBusy || error instanceof LinkToolChanged)
+      return busy(c.req.raw, c.req.path.endsWith("/content"), getShareOrigin() ?? "")
     console.error(
       "[public-share] unavailable:",
       error instanceof Error ? error.name : "error"

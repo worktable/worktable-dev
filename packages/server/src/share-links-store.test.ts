@@ -1,3 +1,4 @@
+import { advanceGenerationOnWrite } from "./shared-reads.ts"
 import { LinkGrantSchema } from "@worktable/types"
 import { createHash } from "node:crypto"
 import { buildRecordCollectionSchema, writeRecordCollectionSchema, writeRecord } from "./record-store.ts"
@@ -55,6 +56,8 @@ import {
   flushShareLinkUse,
   importV1ShareLink,
   revokeShareLink,
+  restoreSharingPolicy,
+  sharingPolicyForBackup,
   markV1SharesDrained,
   shareLinksDatabasePath,
   updateShareLink,
@@ -103,6 +106,7 @@ const agent: TokenIdentity = {
 
 function app(identity: TokenIdentity = person()): Hono {
   const next = new Hono()
+  next.use("*", advanceGenerationOnWrite)
   next.use("*", async (c, proceed) => {
     c.set("identity", identity)
     await proceed()
@@ -280,6 +284,26 @@ describe("share links", () => {
     expect(stalled.status).toBe(429)
     expect(stalled.headers.get("Retry-After")).toBe("1")
     expect((await bridge(created.token)).status).toBe(200)
+    // Both reads overlap behind the same middleware as the hosted router.
+    const originalRead = linkQueries.queryRecordsForLink
+    let entered = 0
+    let releaseReads!: () => void
+    const readGate = new Promise<void>((resolve) => { releaseReads = resolve })
+    const safety = setTimeout(() => releaseReads(), 1000)
+    const overlap = spyOn(linkQueries, "queryRecordsForLink").mockImplementation(async (...args) => {
+      if (++entered === 2) releaseReads()
+      await readGate
+      return originalRead(...args)
+    })
+    try {
+      const reads = await Promise.all([bridge(created.token), bridge(created.token)])
+      expect(entered).toBe(2)
+      expect(reads.map((read) => read.status)).toEqual([200, 200])
+    } finally { releaseReads(); clearTimeout(safety); overlap.mockRestore() }
+    await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "document" }, secret: { type: "text" } } }))
+    expect((await bridge(created.token)).status).toBe(403)
+    await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, secret: { type: "text" } } }))
+    expect((await readRecords(created.token)).status).toBe(200)
     const original = linkQueries.queryRecordsForLink
     const paused = spyOn(linkQueries, "queryRecordsForLink").mockImplementation(async (...args) => {
       const read = await original(...args)
@@ -1408,19 +1432,28 @@ describe("owner policy", () => {
         maxExpiryDays: 30,
       })
       // The owner loosens the policy after the backup.
-      expect((await savePolicy({})).status).toBe(200)
+      expect((await savePolicy({ maxExpiryDays: 90 })).status).toBe(200)
 
-      const recover = async (operationId: string) => {
+      const differentCapture = join(snapshots, "different-capture")
+      const differentSnapshot = await writeWorkspaceSnapshot(differentCapture, {
+        captureTeamState: true,
+      })
+
+      const recover = async (
+        operationId: string,
+        source = captured,
+        selected = snapshot
+      ) => {
         await cp(
-          captured,
+          source,
           join(await operatorSnapshotDirectory(operationId), "download"),
           { recursive: true }
         )
         await rm(workspaceDir, { recursive: true, force: true })
         await recoverMissingWorkspaceSnapshot(
           operationId,
-          snapshot.workspaceId,
-          snapshot.sourceCheckpoint
+          selected.workspaceId,
+          selected.sourceCheckpoint
         )
       }
 
@@ -1431,12 +1464,66 @@ describe("owner policy", () => {
       // A machine that lost everything gets the policy back, but no links.
       closeShareLinkStores()
       await rm(join(appDir, "sharing"), { recursive: true, force: true })
+      // Publication can fail after the app-owned policy was prepared. That
+      // unfinished store must take the next chosen snapshot, including after
+      // process state is discarded; a published store must keep its policy.
+      const originalRename = fsPromises.rename
+      const publication = spyOn(fsPromises, "rename").mockImplementation(
+        async (from, to) => {
+          if (String(to) === workspaceDir)
+            throw new Error("workspace publication failed")
+          return originalRename(from, to)
+        }
+      )
+      try {
+        await expect(recover("recovery-publication-failed")).rejects.toThrow(
+          "workspace publication failed"
+        )
+      } finally {
+        publication.mockRestore()
+      }
+      expect(existsSync(workspaceDir)).toBe(false)
+      expect(await restoreSharingPolicy(null)).toBe(true)
+      expect(sharingPolicyForBackup()).toBeNull()
+      closeShareLinkStores()
+      await recover("recovery-selected-next", differentCapture, differentSnapshot)
+      expect(await policyNow()).toMatchObject({
+        paused: false,
+        maxExpiryDays: 90,
+      })
+      await recover("recovery-published-store-keeps-policy")
+      expect(await policyNow()).toMatchObject({
+        paused: false,
+        maxExpiryDays: 90,
+      })
+      closeShareLinkStores()
+      await rm(join(appDir, "sharing"), { recursive: true, force: true })
       await recover("recovery-fresh-machine")
       expect(await policyNow()).toMatchObject({
         paused: true,
         maxExpiryDays: 30,
       })
       expect((await view(token)).status).toBe(404)
+      closeShareLinkStores()
+      const unreadable = new Database(shareLinksDatabasePath())
+      unreadable.query("UPDATE share_policy SET policy = ? WHERE id = 1").run("{")
+      unreadable.close()
+      await expect(
+        writeWorkspaceSnapshot(join(snapshots, "bad-policy"), {
+          captureTeamState: true,
+        })
+      ).rejects.toThrow("Saved sharing policy is unreadable")
+      expect(existsSync(join(snapshots, "bad-policy"))).toBe(false)
+      closeShareLinkStores()
+      const futureStore = new Database(shareLinksDatabasePath())
+      futureStore.exec("PRAGMA user_version = 99")
+      futureStore.close()
+      await expect(
+        writeWorkspaceSnapshot(join(snapshots, "future-policy"), {
+          captureTeamState: true,
+        })
+      ).rejects.toThrow("unsupported version")
+      expect(existsSync(join(snapshots, "future-policy"))).toBe(false)
     } finally {
       await rm(snapshots, { recursive: true, force: true })
     }

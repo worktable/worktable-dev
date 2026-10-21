@@ -11,6 +11,7 @@ test("visitor admission bounds overload, admits other links, and recovers after 
   })
   const first = (await pool.acquire("first"))!
   const waiting = pool.acquire("first")
+  expect(await pool.acquire("first")).toBeNull() // Other links still have queue capacity.
   const other = (await pool.acquire("other"))!
   const expired = pool.acquire("other")
   expect(await pool.acquire("overflow")).toBeNull()

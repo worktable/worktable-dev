@@ -6,6 +6,7 @@ import type { RecordFile, ResolvedDocumentReference } from "@worktable/types"
 import type { RecordFieldColumn, RowHeight } from "@/lib/records"
 import { isSafeHttpUrl, optionColorClass, recordTitle, relationIds } from "@/lib/records"
 import { documentReferencesQueryOptions } from "@/lib/docs-queries"
+import { useRecordCollectionSchema } from "@/lib/queries"
 
 /** Merged `expanded` maps from every loaded query page, keyed collection → id. */
 export type ExpandedRecords = Record<string, Record<string, RecordFile>>
@@ -284,7 +285,8 @@ function RelationChip({
   // honors includeArchived, so a valid link to an archived record has no
   // target here. Only the server's integrity sweep marks a chip broken.
   const target = collectionId ? expanded?.[collectionId]?.[recordId] : undefined
-  const label = target ? recordTitle(target) : recordId
+  const targetSchema = useRecordCollectionSchema(spaceId, target ? collectionId : undefined)
+  const label = target ? recordTitle(target, targetSchema) : recordId
   const chip = (
     <span
       className={`inline-flex max-w-48 items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs ${

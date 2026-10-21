@@ -73,10 +73,20 @@ External YAML edits must preserve valid envelopes and quoted timestamp strings.
 
 A write checks the fields it changes, so a value that no longer fits the schema
 doesn't block edits to other fields. MCP writes refuse fields the schema doesn't
-declare; add a field with `upsert_collection` first. A record is named by its
-`title` or `name` field, or else the first required string field. A record
-created without an id gets one from the first words of that field, or a short
-random id when there is none.
+declare; add a field with `upsert_collection` first.
+
+A collection's `titleField` names the field that names each record in lists,
+links and generated ids; choose it with **Use as record title** in the schema
+editor. Without one, a record is named by its `title` or `name` field, or else
+the first required string field. A record created without an id gets one from
+the first words of that field, or a short random id when there is none.
+
+A field with `unique: true` (**Unique** in the schema editor) holds each
+non-empty value at most once, across archived records too. Creating a record
+whose value another record already holds returns that record instead: MCP
+reports `created: false` with `matchedBy`, and REST and HTML Docs answer
+`409 CONFLICT`. An update to a value another record holds is refused, and a
+field can only be made unique once its values are.
 
 Legacy `string`, `enum`, and `reference` remain readable. `enum` uses select
 semantics. Legacy references retain their looser string validation; they are not

@@ -508,6 +508,52 @@ export const UpdateRecordInput = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
+/** Records one create_many or update_many call may write. */
+export const RECORD_BATCH_LIMIT = 100
+
+const PreviewRecordIdInput = z
+  .string()
+  .describe(
+    'Lowercase letters, digits and hyphens, starting and ending with a letter or digit, e.g. "ds-3f2a9c". An id that already exists is never overwritten.'
+  )
+
+export const CreateRecordsInput = z.object({
+  spaceId: z.string(),
+  collectionId: z.string(),
+  records: z
+    .array(
+      z.object({
+        recordId: PreviewRecordIdInput.optional(),
+        data: z.record(z.string(), z.unknown()),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+      })
+    )
+    .min(1)
+    .max(RECORD_BATCH_LIMIT)
+    .describe(
+      "Up to 100 records. If any row has an invalid recordId, an undeclared field or a value its field doesn't allow, nothing is written and the error lists every such row. Otherwise rows are written in order and each result names its row. A row whose recordId, or whose value in a unique field, a record already holds (including an earlier row in the same call) is skipped, never overwritten: created: false, with matchedBy for a unique field. A unique-field match wins over a new recordId."
+    ),
+})
+
+export const UpdateRecordsInput = z.object({
+  spaceId: z.string(),
+  collectionId: z.string(),
+  recordIds: z
+    .array(z.string())
+    .min(1)
+    .max(RECORD_BATCH_LIMIT)
+    .optional()
+    .describe("The records to change. Give recordIds or where, not both."),
+  where: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      "Change the records this filter matches, written as in query. It may match at most 100 records."
+    ),
+  data: z.record(z.string(), z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+})
+
 export const DeleteRecordInput = z.object({
   spaceId: z.string(),
   collectionId: z.string(),
@@ -1030,6 +1076,42 @@ export const RecordsWriteInput = z.strictObject({
     actionSchema("upsert_collection", UpsertRecordCollectionInput.shape),
     actionSchema("create", CreateRecordInput.shape),
     actionSchema("update", UpdateRecordInput.shape),
+  ]),
+})
+
+/** Preview surface: the released record writes plus batches. */
+export const RecordsWriteInputPreview = z.strictObject({
+  request: z.discriminatedUnion("action", [
+    actionSchema("upsert_collection", {
+      ...UpsertRecordCollectionInput.shape,
+      titleField: z
+        .string()
+        .nullable()
+        .optional()
+        .describe(
+          "The field that names each record in lists, links and generated ids (a text, URL, email, person or select field). null clears it."
+        ),
+      fields: z
+        .record(
+          z.string(),
+          RecordFieldInput.extend({
+            unique: z
+              .boolean()
+              .optional()
+              .describe(
+                "No two records may hold the same value. create with a value another record has returns that record with created: false and matchedBy."
+              ),
+          })
+        )
+        .optional(),
+    }),
+    actionSchema("create", {
+      ...CreateRecordInput.shape,
+      recordId: PreviewRecordIdInput.optional(),
+    }),
+    actionSchema("update", UpdateRecordInput.shape),
+    actionSchema("create_many", CreateRecordsInput.shape),
+    actionSchema("update_many", UpdateRecordsInput.shape),
   ]),
 })
 

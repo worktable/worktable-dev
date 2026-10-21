@@ -114,6 +114,12 @@ describe("MCP action-level scope enforcement", () => {
   })
 
   it("keeps mixed capability tools action-aware", () => {
+    // update_many with a where filter reads records to choose its targets.
+    const byIds = { action: "update_many", spaceId: "s", collectionId: "c", recordIds: ["r"], data: {} }
+    const byWhere = { action: "update_many", spaceId: "s", collectionId: "c", where: { status: "open" }, data: {} }
+    expect(mcpToolAuthorized("worktable_records_write", byIds, ["records:write"])).toBe(true)
+    expect(mcpToolAuthorized("worktable_records_write", byWhere, ["records:write"])).toBe(false)
+    expect(mcpToolAuthorized("worktable_records_write", byWhere, ["records:write", "records:read"])).toBe(true)
     expect(
       mcpToolAuthorized("worktable_discover", { action: "state" }, ["search:read"])
     ).toBe(true)

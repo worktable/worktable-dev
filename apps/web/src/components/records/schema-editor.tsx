@@ -35,7 +35,7 @@ import type {
   RecordCollectionSummary,
   RecordField,
 } from "@worktable/types"
-import { normalizeRecordFieldType } from "@worktable/types"
+import { normalizeRecordFieldType, TITLE_FIELD_TYPES } from "@worktable/types"
 import { queryKeys } from "@/lib/queries"
 import { updateRecordCollection } from "@/lib/records-api"
 import { columnLabel, fieldLabel } from "@/lib/records"
@@ -98,6 +98,19 @@ function slugifyFieldKey(name: string): string {
     .replace(/^-|-$/g, "")
 }
 
+/** Field types a value can be unique in (the server enforces the same set). */
+const UNIQUE_TYPES = new Set([
+  "string",
+  "text",
+  "url",
+  "email",
+  "person",
+  "number",
+  "date",
+  "datetime",
+  "select",
+])
+
 /** Metadata keys only make sense for specific types; a retype clears the
  *  rest (undefined keys drop from the JSON payload). */
 function clearInapplicableMetadata(spec: RecordField): RecordField {
@@ -111,6 +124,7 @@ function clearInapplicableMetadata(spec: RecordField): RecordField {
     inverse: type === "relation" ? spec.inverse : undefined,
     onDelete: type === "relation" ? spec.onDelete : undefined,
     unit: type === "number" ? spec.unit : undefined,
+    unique: UNIQUE_TYPES.has(type) ? spec.unique : undefined,
   }
 }
 
@@ -164,6 +178,7 @@ export function SchemaEditorDialog({
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [fields, setFields] = useState<DraftField[]>([])
+  const [titleField, setTitleField] = useState<string | null>(null)
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
@@ -185,6 +200,7 @@ export function SchemaEditorDialog({
     seededForRef.current = collectionId
     setName(schema?.name ?? collectionId)
     setDescription(schema?.description ?? "")
+    setTitleField(schema?.titleField ?? null)
     setFields(
       Object.entries(schema?.fields ?? {}).map(([key, spec]) => ({
         key,
@@ -201,6 +217,7 @@ export function SchemaEditorDialog({
   const dirty = useMemo(() => {
     if (name !== (schema?.name ?? collectionId)) return true
     if (description !== (schema?.description ?? "")) return true
+    if (titleField !== (schema?.titleField ?? null)) return true
     const originalKeys = Object.keys(schema?.fields ?? {})
     if (fields.length !== originalKeys.length) return true
     return fields.some(
@@ -209,7 +226,7 @@ export function SchemaEditorDialog({
         field.original === undefined ||
         JSON.stringify(field.spec) !== JSON.stringify(field.original)
     )
-  }, [name, description, fields, schema, collectionId])
+  }, [name, description, titleField, fields, schema, collectionId])
 
   // Relations the user added or edited must name a target before saving —
   // a target-less relation can't link, expand, or be integrity-checked.
@@ -230,6 +247,17 @@ export function SchemaEditorDialog({
 
   const updateField = (key: string, patch: Partial<RecordField>) => {
     setSaveError(null)
+    // A retype to a type that can't name records also drops the title choice,
+    // whose checkbox would otherwise be hidden while the server refuses it.
+    if (
+      patch.type !== undefined &&
+      key === titleField &&
+      !(TITLE_FIELD_TYPES as readonly string[]).includes(
+        normalizeRecordFieldType(patch.type)
+      )
+    ) {
+      setTitleField(null)
+    }
     setFields((prev) =>
       prev.map((field) => {
         if (field.key !== key) return field
@@ -259,6 +287,7 @@ export function SchemaEditorDialog({
   const removeField = (key: string) => {
     setSaveError(null)
     setFields((prev) => prev.filter((field) => field.key !== key))
+    if (titleField === key) setTitleField(null)
     if (expandedKey === key) setExpandedKey(null)
   }
 
@@ -312,6 +341,12 @@ export function SchemaEditorDialog({
         fields: Object.fromEntries(
           fields.map((field) => [field.key, field.spec])
         ),
+        // null only when clearing a title field the schema had.
+        ...(titleField
+          ? { titleField }
+          : schema?.titleField
+            ? { titleField: null }
+            : {}),
       })
       void queryClient.invalidateQueries({
         queryKey: queryKeys.recordCollections(spaceId),
@@ -403,6 +438,10 @@ export function SchemaEditorDialog({
                       )
                     }
                     onChange={(patch) => updateField(field.key, patch)}
+                    isTitle={titleField === field.key}
+                    onTitleChange={(isTitle) =>
+                      setTitleField(isTitle ? field.key : null)
+                    }
                     onRemove={() => removeField(field.key)}
                     onMoveUp={() => moveField(field.key, -1)}
                     onMoveDown={() => moveField(field.key, 1)}
@@ -447,6 +486,7 @@ export function SchemaEditorDialog({
   )
 }
 
+
 function FieldRow({
   field,
   collections,
@@ -454,6 +494,8 @@ function FieldRow({
   expanded,
   onToggle,
   onChange,
+  isTitle,
+  onTitleChange,
   onRemove,
   onMoveUp,
   onMoveDown,
@@ -466,6 +508,8 @@ function FieldRow({
   expanded: boolean
   onToggle: () => void
   onChange: (patch: Partial<RecordField>) => void
+  isTitle: boolean
+  onTitleChange: (isTitle: boolean) => void
   onRemove: () => void
   onMoveUp: () => void
   onMoveDown: () => void
@@ -498,7 +542,9 @@ function FieldRow({
           </span>
           <span className="ml-auto shrink-0 text-xs text-muted-foreground">
             {TYPE_LABELS[normalized] ?? field.spec.type}
+            {isTitle ? " · title" : ""}
             {field.spec.required ? " · required" : ""}
+            {field.spec.unique ? " · unique" : ""}
           </span>
         </button>
         <span className="flex shrink-0">
@@ -623,6 +669,26 @@ function FieldRow({
                 }
               />
               Required
+            </label>
+          )}
+          {(TITLE_FIELD_TYPES as readonly string[]).includes(normalized) && (
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={isTitle}
+                onCheckedChange={(checked) => onTitleChange(checked === true)}
+              />
+              Use as record title
+            </label>
+          )}
+          {UNIQUE_TYPES.has(normalized) && (
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={field.spec.unique ?? false}
+                onCheckedChange={(checked) =>
+                  onChange({ unique: checked === true ? true : undefined })
+                }
+              />
+              Unique
             </label>
           )}
 

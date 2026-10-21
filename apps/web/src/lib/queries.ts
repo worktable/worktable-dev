@@ -164,6 +164,13 @@ export function useRecordCollections(spaceId: string) {
   return useQuery(recordCollectionsQueryOptions(spaceId))
 }
 
+/** A collection's schema from the cached collections list, for labels such as
+ *  relation chips that name records by the target's title field. */
+export function useRecordCollectionSchema(spaceId: string, collectionId: string | undefined) {
+  const { data } = useQuery({ ...recordCollectionsQueryOptions(spaceId), enabled: Boolean(collectionId) })
+  return data?.find((collection) => collection.id === collectionId)?.schema
+}
+
 export function useRecords(spaceId: string, collectionId: string, enabled = true) {
   return useQuery({ ...recordsQueryOptions(spaceId, collectionId), enabled })
 }

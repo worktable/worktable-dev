@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it } from "bun:test"
+import { afterEach, beforeEach, expect, it, spyOn } from "bun:test"
 import { Hono } from "hono"
 import { SignJWT, exportJWK, generateKeyPair } from "jose"
 import { ACTOR_HEADERS, GATEWAY_HEADER } from "@worktable/hosted-contract"
@@ -17,6 +17,7 @@ import { createAnnotation } from "./annotation-store.ts"
 import { requireIdentity, trustedLocalIdentity, verifyBearer } from "./auth.ts"
 import { resetAuthServerJwtState } from "./oauth-jwt.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
+import * as documentQuery from "./document-query.ts"
 import { dispatchOperation } from "./mcp/dispatcher.ts"
 import { warmSearchIndex } from "./search-index.ts"
 import { activityRouter, pendingRouter } from "./routes/activity.ts"
@@ -25,7 +26,7 @@ import { documentsRouter } from "./routes/documents.ts"
 import { searchRouter } from "./routes/search.ts"
 import { visitorCommentsRouter } from "./routes/visitor-comments.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
-import { writeDoc, writeSpace } from "./store.ts"
+import { readSpace, writeDoc, writeSpace } from "./store.ts"
 import { activateLocalTeams } from "./team-activation.ts"
 import { clearTeamAuthInstances, getTeamAuth } from "./team-auth.ts"
 import { closeTeamDatabases, currentTeamWorktable } from "./team-database.ts"
@@ -39,12 +40,15 @@ import {
 import { createToken, type TokenIdentity } from "./token-store.ts"
 import {
   notifyVisitorComments,
+  notifyRetainedVisitorComments,
   visitorCommentNamespace,
 } from "./visitor-comment-access.ts"
 import {
   closeVisitorCommentStores,
   receiveVisitorComment,
+  sweepVisitorComments,
 } from "./visitor-comment-store.ts"
+import { pendingVisitorComments } from "./visitor-comment-pending.ts"
 import {
   ensureWorkspaceManifest,
   setWorkspaceRootOverride,
@@ -174,6 +178,36 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
     scopes: ["*"],
     agent: null,
     principal: { id: "local:owner", type: "human", displayName: "Owner" },
+  }
+  const { data: space } = await readSpace("space")
+  if (!space) throw new Error("Expected fixture Space")
+  const catalogReads = spyOn(documentQuery, "readDocumentIdentities")
+  try {
+    expect(
+      await pendingVisitorComments(
+        owner,
+        [
+          ...Array.from({ length: 6 }, (_, index) => ({
+            ...space,
+            id: `unrelated-${index}`,
+          })),
+          space,
+        ],
+        undefined,
+        () => true
+      )
+    ).toEqual([
+      expect.objectContaining({
+        kind: "visitorComments",
+        documentId,
+        count: 1,
+      }),
+    ])
+    expect(catalogReads.mock.calls.map(([spaceId]) => spaceId)).toEqual([
+      "space",
+    ])
+  } finally {
+    catalogReads.mockRestore()
   }
   wsManager.subscribe(
     {
@@ -520,4 +554,16 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
   expect(
     (await app.request(privatePath, { headers: memberHeaders })).status
   ).toBe(403)
+  mayEdit = true
+  const noticesBeforeRetention = visitorNotices().length
+  await notifyRetainedVisitorComments(
+    sweepVisitorComments(Date.now() + 181 * 24 * 3_600_000)
+  )
+  expect(visitorNotices()).toHaveLength(noticesBeforeRetention + 1)
+  expect(visitorNotices().at(-1)).toEqual({
+    type: "visitor_comments_changed",
+    spaceId: "space",
+    data: { documentId, linkId: "synthetic-link" },
+  })
+  expect(messages.join()).not.toContain(sentinel)
 }, 20_000)

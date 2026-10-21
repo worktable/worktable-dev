@@ -1,4 +1,6 @@
-import { workspaceCacheKey } from "./workspace.ts"
+import { stat } from "node:fs/promises"
+import { join } from "node:path"
+import { getSpacesDir, workspaceCacheKey } from "./workspace.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { publicShareKind } from "./document-page-service.ts"
@@ -152,7 +154,17 @@ async function moveShare(
 ): Promise<boolean> {
   if (findShareLinkByToken(share.token)) return true
   const { data: space } = await readSpace(share.spaceId)
-  if (!space || getSpaceArchiveInfo(space)) return true
+  if (!space) {
+    // A malformed or temporarily unreadable Space is not a deleted Space.
+    // Confirm absence; every other failure leaves its legacy URLs pending.
+    try {
+      await stat(join(getSpacesDir(), share.spaceId, "space.json"))
+      return false
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "ENOENT"
+    }
+  }
+  if (getSpaceArchiveInfo(space)) return true
   // Archived documents resolve as not found. The id is made durable first,
   // as a new link's is, so the link follows the document from now on.
   const resolution = await useResolvedDocumentHandle(

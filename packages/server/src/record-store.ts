@@ -748,6 +748,8 @@ export interface RecordReadView {
   admit(collectionId: string, query: RecordQuery): RecordQuery;
   /** Binds a next-page cursor to this reader and the admitted query. */
   sealCursor(collectionId: string, query: RecordQuery, cursor: string): string;
+  /** The groups of an aggregate answer the reader may see. */
+  shownGroups(collectionId: string, groups: Record<string, unknown>[]): Record<string, unknown>[];
 }
 
 // A reader with a view runs only on the view's rows and fields: no archived
@@ -774,6 +776,7 @@ async function queryRecordsInView(
       { groupEachValue: options.groupEachValue },
     );
     if (result.nextCursor) result.nextCursor = view.sealCursor(collectionId, query, result.nextCursor);
+    if (result.groups) result.groups = view.shownGroups(collectionId, result.groups);
     return result;
   } catch (error) {
     if (error instanceof RecordQueryShapeError) throw new RecordQueryError([error.message]);

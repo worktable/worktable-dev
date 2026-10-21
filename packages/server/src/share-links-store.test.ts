@@ -8,6 +8,7 @@ import {
   type SharingPolicy,
 } from "@worktable/types"
 import { Hono } from "hono"
+import * as fsPromises from "node:fs/promises"
 import { existsSync } from "node:fs"
 import {
   cp,
@@ -288,7 +289,11 @@ describe("share links", () => {
     expect((await view(open.token)).status).toBe(200)
     const nextExpiry = Date.now() + 60_000
     updateShareLink(open.link.id, { expiresAt: nextExpiry })
-    expect(await page()).toEqual({ activeLinks: 1, canCreate: true, nextExpiry: new Date(nextExpiry).toISOString() })
+    expect(await page()).toEqual({
+      activeLinks: 1,
+      canCreate: true,
+      nextExpiry: new Date(nextExpiry).toISOString(),
+    })
 
     closeShareLinkStores()
     const db = new Database(shareLinksDatabasePath())
@@ -763,6 +768,46 @@ describe("moving today's links into links v2", () => {
     expect((await view(later.token)).status).toBe(200)
   })
 
+  it("keeps unreadable Spaces pending and never finalizes a failed legacy rewrite", async () => {
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    await writeDoc("space", "plan", "# Plan")
+    const plan = await legacyLink("plan")
+    await useResolvedDocumentHandle(
+      { spaceId: "space", path: "plan", materializeIdentity: true },
+      (handle) => handle.documentId
+    )
+    const spaceFile = join(workspaceDir, "spaces", "space", "space.json")
+    const originalSpace = await readFile(spaceFile, "utf8")
+    await writeFile(spaceFile, "invalid json")
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    await drainV1ShareLinks()
+    expect(JSON.parse(await readFile(v1File(), "utf8")).shares).toHaveLength(1)
+    await writeFile(spaceFile, originalSpace)
+    const originalRename = fsPromises.rename
+    const failingWrite = spyOn(fsPromises, "rename").mockImplementation(
+      async (from, to) => {
+        if (String(to) === v1File())
+          throw Object.assign(new Error("write unavailable"), { code: "EIO" })
+        return originalRename(from, to)
+      }
+    )
+    try {
+      await expect(drainV1ShareLinks()).rejects.toThrow("write unavailable")
+    } finally {
+      failingWrite.mockRestore()
+    }
+    expect(JSON.parse(await readFile(v1File(), "utf8")).shares).toHaveLength(1)
+    // An older binary revokes the still-present share after the failed write.
+    await stopDocumentShare({
+      kind: "doc",
+      spaceId: "space",
+      artifactKey: "plan",
+    })
+    await drainV1ShareLinks()
+    expect((await view(plan.token)).status).toBe(404)
+    expect((await documentLinks("plan")).links).toHaveLength(0)
+  })
+
   it("makes a legacy link manageable after its path conflict is resolved", async () => {
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     await writeDoc("space", "plan", "# Plan")
@@ -817,6 +862,16 @@ describe("moving today's links into links v2", () => {
       })
       expect(turnedOn.status).toBe(200)
 
+      // The settings response returns before the background drain. Wait on
+      // its durable outcome, without starting a second drain from the test.
+      const deadline = Date.now() + 2000
+      while (
+        JSON.parse(await readFile(v1File(), "utf8")).shares.length &&
+        Date.now() < deadline
+      ) {
+        // test-policy: external-readiness-backoff — wait for the settings-triggered drain.
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
       expect(await v1FileAsOlderBinaryReadsIt(plan.token)).toBeNull()
       expect((await documentLinks("plan")).links).toHaveLength(1)
       expect((await view(plan.token)).status).toBe(200)

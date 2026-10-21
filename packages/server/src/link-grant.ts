@@ -19,6 +19,14 @@ const DIMENSION_TYPES = new Set(["select", "multi_select", "boolean"]);
  *  the record before its data, so a data field under one of them would be
  *  filtered, sorted and grouped by the wrong value. */
 const VIEW_RECORD_KEYS = new Set(["id", "version", "kind", "collectionId", "createdAt", "updatedAt", "data"]);
+const isRecordKey = (name: string) => VIEW_RECORD_KEYS.has(name) || name in Object.prototype;
+const recordKeyIssue = (name: string) => `Field "${name}" has a name records use for themselves, so links can't show it.`;
+
+/** Whether totals may be split by a field of this type: few values, none of
+ *  which names a row. */
+export function isSummaryDimension(type: string): boolean {
+  return DIMENSION_TYPES.has(normalizeRecordFieldType(type));
+}
 
 /**
  * What a link may read on this call: its grant, narrowed by what its tool may
@@ -79,14 +87,20 @@ export function validateLinkGrant(grant: LinkGrant, schemas: ReadonlyMap<string,
       return spec ? normalizeRecordFieldType(spec.type) : undefined;
     };
 
-    for (const name of collection.fields) {
+    // `fields` is what rows show. A summaries view shows no rows and reads
+    // only its groupings and measures, so leftover row fields don't matter.
+    const rowFields = collection.mode === "summaries" ? [] : collection.fields;
+    for (const name of rowFields) {
       const spec = field(name);
       const type = typeOf(name);
       if (!spec) add(`Field "${name}" doesn't exist.`);
-      else if (VIEW_RECORD_KEYS.has(name) || name in Object.prototype) add(`Field "${name}" has a name records use for themselves, so links can't show it.`);
+      else if (isRecordKey(name)) add(recordKeyIssue(name));
       else if (type === "document") add(`Field "${name}" holds document links, which links can't show yet.`);
       else if (type === "relation" && (!spec.references || !Object.hasOwn(grant.collections, spec.references))) {
         add(`Field "${name}" points at a collection this link doesn't open.`);
+      } else if (type === "relation" && grant.collections[spec.references!]!.mode === "summaries") {
+        // Its values would name rows the link shows only as totals.
+        add(`Field "${name}" points at a collection this link shows only as totals.`);
       }
     }
 
@@ -111,16 +125,19 @@ export function validateLinkGrant(grant: LinkGrant, schemas: ReadonlyMap<string,
     if (collection.summaries) {
       // Rows are never shown in summaries, so dimensions are chosen for what
       // a total may be split by: low-cardinality fields that don't name a row.
+      // Groupings and measures are the fields a summaries view reads.
       const titleField = recordTitleFieldKey(schema);
       for (const name of collection.summaries.groupBy) {
         const spec = field(name);
         if (!spec) add(`Summary grouping "${name}" isn't a field of this collection.`);
-        else if (!DIMENSION_TYPES.has(typeOf(name)!) || spec.unique === true || name === titleField) {
+        else if (isRecordKey(name)) add(recordKeyIssue(name));
+        else if (!isSummaryDimension(spec.type) || spec.unique === true || name === titleField) {
           add(`Summaries can't be grouped by "${name}". Use a select, multi-select or yes/no field.`);
         }
       }
       for (const name of collection.summaries.measures) {
         if (!field(name)) add(`Summary measure "${name}" isn't a field of this collection.`);
+        else if (isRecordKey(name)) add(recordKeyIssue(name));
         else if (typeOf(name) !== "number") add(`Summary measure "${name}" must be a number field.`);
       }
     }

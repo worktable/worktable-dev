@@ -446,13 +446,6 @@ systemRouter.put("/settings", async (c) => {
     const sharingPreviewWasOn = sharingPreviewEnabled();
     const result = await updateServerSettingsWithResult(body);
     const merged = result.settings;
-    // Turning the sharing preview on moves today's links into links (v2)
-    // once. Awaited so the next request sees them there; a move that fails
-    // leaves them where they were and runs again at the next boot.
-    if (!sharingPreviewWasOn && sharingPreviewEnabled()) {
-      const { startV1ShareLinkDrain } = await import("../share-links-drain.ts");
-      await startV1ShareLinkDrain();
-    }
     // A retention-policy change triggers an immediate full sweep so the new
     // limit takes effect now, not at the next 24h tick. Awaited so the caller
     // (and tests) observe a consistent post-sweep state; the new policy is
@@ -474,6 +467,12 @@ systemRouter.put("/settings", async (c) => {
           500,
         );
       }
+    }
+    if (!sharingPreviewWasOn && sharingPreviewEnabled()) {
+      const { startV1ShareLinkDrain } = await import("../share-links-drain.ts");
+      // The response does not wait for catalog discovery or migration I/O.
+      const timer = setTimeout(() => { void startV1ShareLinkDrain(); }, 0);
+      timer.unref?.();
     }
     return c.json(withEnvironmentOverrides(merged));
   } catch (err) {

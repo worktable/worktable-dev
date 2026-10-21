@@ -218,4 +218,31 @@ describe("preview launch failures", () => {
       describePreviewLaunchFailure("Error: spawn ENOENT\nstack", selfHosted)
     ).toBe("Managed preview browser could not start: Error: spawn ENOENT")
   })
+
+  test("name missing system libraries and the packages that provide them", () => {
+    const glib =
+      "Error: Preview browser exited: /r/chrome-headless-shell: error while loading shared libraries: libglib-2.0.so.0: cannot open shared object file: No such file or directory"
+    expect(
+      describePreviewLaunchFailure(glib, {
+        ...selfHosted,
+        debian: { time64: false },
+      })
+    ).toBe(
+      "The preview browser needs system libraries this host doesn't have: libglib-2.0.so.0. Install them with `sudo apt-get install libglib2.0-0`."
+    )
+    const alsa =
+      "Error: Preview browser exited: /r/headless_shell: symbol lookup error: /r/headless_shell: undefined symbol: snd_device_name_get_hint, version ALSA_0.9"
+    expect(
+      describePreviewLaunchFailure(alsa, { ...selfHosted, debian: { time64: true } })
+    ).toContain("libasound.so.2. Install them with `sudo apt-get install libasound2t64`.")
+    // Without Debian or Ubuntu, and on Cloud, there's no command to suggest.
+    expect(
+      describePreviewLaunchFailure(glib, { ...selfHosted, debian: null })
+    ).toBe(
+      "The preview browser needs system libraries this host doesn't have: libglib-2.0.so.0."
+    )
+    expect(
+      describePreviewLaunchFailure(glib, { ...selfHosted, hosted: true })
+    ).toBe("This host is missing system libraries the preview browser needs.")
+  })
 })

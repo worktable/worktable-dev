@@ -5,7 +5,11 @@ import {
 import { isHosted } from "./hosted.ts"
 import {
   classifyPreviewSandboxFailure,
+  debianRelease,
+  describeMissingLibraries,
+  missingPreviewLibraries,
   userNamespacesRestricted,
+  type DebianRelease,
   type PreviewSandboxFailure,
 } from "./preview-sandbox.ts"
 import { AsyncLocalStorage } from "node:async_hooks"
@@ -186,8 +190,10 @@ interface PoolOptions {
 }
 
 async function launchWorker(): Promise<Worker> {
+  let executable: string | undefined
   try {
     const { driver, executablePath } = resolveRuntime()
+    executable = executablePath
     const worker = await launchPreviewBrowserProcess(driver, executablePath)
     launchStatus = "ready"
     launchFailure = undefined
@@ -196,7 +202,11 @@ async function launchWorker(): Promise<Worker> {
   } catch (error) {
     launchStatus = "failed"
     launchFailureKind = classifyPreviewSandboxFailure(String(error))
-    launchFailure = describePreviewLaunchFailure(String(error))
+    launchFailure = describePreviewLaunchFailure(
+      String(error),
+      undefined,
+      executable
+    )
     throw new PreviewBrowserError("PREVIEW_UNAVAILABLE", launchFailure)
   }
 }
@@ -204,15 +214,27 @@ async function launchWorker(): Promise<Worker> {
 /** Names the host change that lets the sandboxed browser start. */
 export function describePreviewLaunchFailure(
   details: string,
-  host: { hosted: boolean; userNamespacesRestricted: boolean } = {
+  host: {
+    hosted: boolean
+    userNamespacesRestricted: boolean
+    debian?: DebianRelease
+  } = {
     hosted: isHosted(),
     userNamespacesRestricted: userNamespacesRestricted(),
-  }
+  },
+  executable?: string
 ): string {
   const failure = classifyPreviewSandboxFailure(
     details,
     host.userNamespacesRestricted
   )
+  if (failure === "libraries")
+    return host.hosted
+      ? "This host is missing system libraries the preview browser needs."
+      : describeMissingLibraries(
+          missingPreviewLibraries(details, executable),
+          host.debian !== undefined ? host.debian : debianRelease()
+        )
   // Cloud operators fix the host themselves, so tenants get the generic message.
   if (failure === "root" && !host.hosted)
     return "Worktable is running as root, and its preview browser can't start its sandbox as root. Run Worktable as a regular user."

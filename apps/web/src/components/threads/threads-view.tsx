@@ -16,7 +16,6 @@ import {
   XIcon,
 } from "lucide-react"
 import {
-  THREAD_TITLE_MAX_LENGTH,
   threadBodyMentionsIdentity,
   threadLocationKey,
   type ParticipantRef,
@@ -86,6 +85,8 @@ import {
   threadDraftKey,
   type ThreadDraftState,
 } from "@/lib/thread-submission"
+import { THREAD_TITLE_MAX_LENGTH } from "@worktable/types/constants"
+import { useThreadRename } from "@/lib/thread-naming"
 import { RenameDialog } from "@/components/docs/rename-dialog"
 import { NewThreadPanel } from "./new-thread-panel"
 import { ThreadComposer } from "./thread-composer"
@@ -275,6 +276,7 @@ function ThreadDetail({
   const participantsQuery = useThreadParticipants()
   const createMutations = useThreadMutations(createLocation)
   const replyMutations = useThreadMutations(selectedLocation)
+  const renameMutation = useThreadRename(selectedLocation)
   const draftLocation = threadId ? selectedLocation : createLocation
   const activeDraftKey = threadDraftKey(draftLocation, threadId)
   const [drafts, setDrafts] = useState<ThreadDraftCollection>(() =>
@@ -715,7 +717,7 @@ function ThreadDetail({
           maxLength={THREAD_TITLE_MAX_LENGTH}
           onRename={async (title) => {
             try {
-              await replyMutations.rename.mutateAsync({
+              await renameMutation.mutateAsync({
                 threadId,
                 title,
                 expectedTitle: renameTitle ?? threadQuery.data.thread.title,

@@ -1,7 +1,7 @@
 import { z } from "zod"
+import { THREAD_TITLE_MAX_LENGTH } from "./constants"
 
 export const THREAD_IDENTITY_NAME_MAX_LENGTH = 120
-export const THREAD_TITLE_MAX_LENGTH = 160
 export const ThreadTitleSchema = z
   .string()
   .trim()
@@ -192,10 +192,6 @@ export const ThreadV3Schema = z
     /** @deprecated Retained only to preserve V1 Space integration keys. */
     spaceId: z.string().min(1).optional(),
     title: z.string().min(1).max(160),
-    /** Absent on older threads; preserve names that differ from the first-message fallback. */
-    titleSource: z.enum(["message", "named"]).optional(),
-    /** Original explicit creation title, retained across renames for retry matching. */
-    creationTitle: ThreadTitleSchema.optional(),
     /** Append-only conversation roster for attribution and discovery, never authorization. */
     members: z.array(ThreadMemberSchema).min(1),
     identities: z.array(ConversationIdentitySchema).min(1),

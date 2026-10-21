@@ -716,6 +716,13 @@ test("a long thread list keeps its order and place when a thread opens", async (
   // same place in it.
   await page.setViewportSize({ width: 412, height: 915 })
   await expect(list).toBeHidden()
-  await page.getByRole("button", { name: "Back to threads" }).click()
+  await page
+    .getByRole("banner")
+    .getByRole("button", { name: "List thread 001", exact: true })
+    .click()
+  await page
+    .getByRole("dialog", { name: "Page", exact: true })
+    .getByRole("link", { name: "Threads", exact: true })
+    .click()
   await expect(oldest).toBeInViewport()
 })

@@ -616,7 +616,7 @@ describe("thread service", () => {
       })
       const path = threadPath("connected-agents", first.threadId)
       const stored = JSON.parse(await readFile(path, "utf8"))
-      delete stored.titleSource
+      delete stored["worktable.threadTitle"]
       if (chosen) stored.title = "Previously chosen topic"
       await writeFile(path, JSON.stringify(stored))
       expect(
@@ -629,6 +629,29 @@ describe("thread service", () => {
           })
         ).title
       ).toBe(chosen ? "Previously chosen topic" : "A useful topic")
+    }
+  })
+
+  it("preserves portable title edits and opaque metadata through reads, renames, and retries", async () => {
+    for (const opaqueState of [false, true]) {
+      const input = { to: "Atlas", body: "Please help with login", idempotencyKey: `portable-topic-${opaqueState}` }
+      const first = await postThreadMessage(finn, input)
+      const path = threadPath("connected-agents", first.threadId)
+      const stored = JSON.parse(await readFile(path, "utf8"))
+      stored.titleSource = { tool: "external", source: 7 }
+      stored.creationTitle = ["opaque", "metadata"]
+      if (opaqueState) stored["worktable.threadTitle"] = { version: 99, other: "preserved" }
+      stored.title = "Portable chosen title"
+      await writeFile(path, JSON.stringify(stored))
+      const target = { location: first.location, threadId: first.threadId }
+      expect((await readThreadMessages(finn, first.threadId, { location: first.location })).thread.title).toBe(stored.title)
+      expect((await renameThreadTitle({ ...target, title: "Automatic replacement", onlyIfAutomatic: true })).title).toBe(stored.title)
+      await renameThreadTitle({ ...target, title: "Explicit rename" })
+      const saved = JSON.parse(await readFile(path, "utf8"))
+      expect(saved.titleSource).toEqual(stored.titleSource)
+      expect(saved.creationTitle).toEqual(stored.creationTitle)
+      if (opaqueState) expect(saved["worktable.threadTitle"]).toEqual(stored["worktable.threadTitle"])
+      expect((await postThreadMessage(finn, input)).messageId).toBe(first.messageId)
     }
   })
 

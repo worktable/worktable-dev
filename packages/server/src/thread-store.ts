@@ -1,3 +1,4 @@
+import { z } from "zod"
 import { assertSpaceAccess, assertCurrentTeamIdentity, assertWorktableThreadAccess, canAccessWorktableThreads, currentRequestIdentity, canAccessSpace } from "./team-policy.ts";
 import {
   copyFile,
@@ -175,11 +176,24 @@ function titleFromBody(body: string): string {
   }…`
 }
 
+// Keep owned naming state separate from arbitrary portable metadata. Unknown
+// values (including future versions) remain readable and are never overwritten.
+const TITLE_STATE_KEY = "worktable.threadTitle"
+const TitleStateSchema = z.object({
+  version: z.literal(1),
+  source: z.enum(["message", "named"]),
+  creationTitle: ThreadTitleSchema.optional(),
+}).passthrough()
+
+function titleState(thread: Thread) {
+  return TitleStateSchema.safeParse(thread[TITLE_STATE_KEY]).data
+}
+
 function hasAutomaticTitle(thread: Thread): boolean {
+  if (thread.title !== titleFromBody(thread.messages[0]!.body)) return false
   return (
-    thread.titleSource === "message" ||
-    (thread.titleSource === undefined &&
-      thread.title === titleFromBody(thread.messages[0]!.body))
+    thread[TITLE_STATE_KEY] === undefined ||
+    titleState(thread)?.source === "message"
   )
 }
 
@@ -785,7 +799,7 @@ function sameMessageIntent(
     message.authorMemberId === input.author.id &&
     message.authorIdentityId === intent.authorIdentityId &&
     message.body === input.body &&
-    (message.sequence !== 1 || thread.creationTitle === input.title) &&
+    (message.sequence !== 1 || titleState(thread)?.creationTitle === input.title) &&
     message.inReplyTo === replyTarget &&
     responseTargetMatchesRetry(thread, message, input) &&
     sameIdentitySet(
@@ -1066,8 +1080,11 @@ export async function createThread(
       id: threadId,
       location,
       title: input.title === undefined ? titleFromBody(input.body) : ThreadTitleSchema.parse(input.title),
-      titleSource: input.title === undefined ? "message" : "named",
-      ...(input.title === undefined ? {} : { creationTitle: ThreadTitleSchema.parse(input.title) }),
+      [TITLE_STATE_KEY]: {
+        version: 1,
+        source: input.title === undefined ? "message" : "named",
+        ...(input.title === undefined ? {} : { creationTitle: ThreadTitleSchema.parse(input.title) }),
+      },
       members,
       identities,
       revision: 1,
@@ -1222,7 +1239,7 @@ export async function renameThread(
   const title = ThreadTitleSchema.parse(input.title)
   return persistThreadMutation(location, threadId, (thread, now) => {
     if (input.onlyIfAutomatic && !hasAutomaticTitle(thread)) return thread
-    if (thread.title === title && thread.titleSource === "named") return thread
+    if (thread.title === title && !hasAutomaticTitle(thread)) return thread
     if (
       input.expectedTitle !== undefined &&
       thread.title !== input.expectedTitle
@@ -1232,10 +1249,13 @@ export async function renameThread(
         "The thread name changed. Close and reopen Rename to use the latest name."
       )
     }
+    const state = titleState(thread)
     return {
       ...thread,
       title,
-      titleSource: "named",
+      ...(thread[TITLE_STATE_KEY] === undefined || state
+        ? { [TITLE_STATE_KEY]: { ...state, version: 1, source: "named" } }
+        : {}),
       revision: thread.revision + 1,
       updatedAt: now,
     }

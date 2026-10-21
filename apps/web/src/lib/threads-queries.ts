@@ -9,8 +9,6 @@ import type {
   ThreadLocation,
   ThreadPostResponse,
   ThreadReadResult,
-  ThreadListItem,
-  ThreadRenameResult,
 } from "@worktable/types"
 import { threadLocationKey } from "@worktable/types"
 import { abandonableRead } from "./http"
@@ -23,7 +21,6 @@ import {
   postThreadReply,
   readThread,
   readThreadMessage,
-  renameThread,
   type ThreadListScope,
 } from "./threads-api"
 
@@ -185,14 +182,6 @@ export function useThreadMutations(location: ThreadLocation) {
   }
 
   return {
-    rename: useMutation({
-      mutationFn: (input: {
-        threadId: string
-        title: string
-        expectedTitle: string
-      }) => renameThread(location, input.threadId, input),
-      onSuccess: (renamed) => applyThreadRename(queryClient, location, renamed),
-    }),
     assignMessage: useMutation({
       mutationFn: (input: {
         threadId: string
@@ -295,43 +284,6 @@ export function useThreadMutations(location: ThreadLocation) {
       // The composer clears as soon as the post succeeds; nothing is reread.
       onSuccess: showPosted,
     }),
-  }
-}
-
-/** A rename changes metadata only; keep the cached conversation and list rows. */
-export function applyThreadRename(
-  queryClient: QueryClient,
-  location: ThreadLocation,
-  renamed: ThreadRenameResult
-): void {
-  const metadata = {
-    title: renamed.title,
-    revision: renamed.revision,
-    updatedAt: renamed.updatedAt,
-  }
-  queryClient.setQueryData<ThreadReadResult>(
-    threadQueryKeys.detail(location, renamed.threadId),
-    (current) =>
-      current && current.thread.revision <= renamed.revision
-        ? { ...current, thread: { ...current.thread, ...metadata } }
-        : current
-  )
-  for (const scope of [{ kind: "all" } as const, location]) {
-    queryClient.setQueryData<{ threads: ThreadListItem[] }>(
-      threadQueryKeys.list(scope),
-      (current) =>
-        current && {
-          ...current,
-          threads: current.threads.map((thread) =>
-            thread.id === renamed.threadId &&
-            threadLocationKey(thread.location) ===
-              threadLocationKey(location) &&
-            thread.revision <= renamed.revision
-              ? { ...thread, ...metadata }
-              : thread
-          ).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-        }
-    )
   }
 }
 

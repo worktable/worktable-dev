@@ -180,6 +180,16 @@ function useSharingPolicy(enabled: boolean) {
       )
     },
     onSettled: async (saved, error) => {
+      const state = queryClient.getQueryState<SharingPolicyResponse>(
+        SHARE_POLICY_QUERY_KEY
+      )
+      // A socket or focus read can already carry another owner's newer save.
+      // If cancelling that read, replace it after installing our response.
+      const revalidate =
+        state?.fetchStatus === "fetching" ||
+        state?.isInvalidated === true ||
+        (state?.data?.revision ?? 0) >
+          (saved?.revision ?? confirmed.current?.revision ?? 0)
       await queryClient.cancelQueries({
         queryKey: SHARE_POLICY_QUERY_KEY,
         exact: true,
@@ -205,6 +215,11 @@ function useSharingPolicy(enabled: boolean) {
         authoritative ? confirmed.current?.revision : undefined,
         { keepPolicy: authoritative }
       )
+      if (authoritative && revalidate)
+        void queryClient.invalidateQueries({
+          queryKey: SHARE_POLICY_QUERY_KEY,
+          exact: true,
+        })
     },
   })
   const update = (change: Partial<SharingPolicy>) => {

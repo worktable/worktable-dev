@@ -207,6 +207,22 @@ export function reviewRecordSchema(input: {
     })
   }
 
+  // Reported when a collection is created without a title field, or when an
+  // edit removes its last one, not again on every later schema change.
+  const lostTitle =
+    fields.length > 0 &&
+    identityField(input.schema) === null &&
+    (isInitialSchema || identityField(input.existingSchema) !== null)
+  if (lostTitle) {
+    warnings.push({
+      code: "missing_recognizable_title",
+      message:
+        "No field can name these records: there is no title or name field and no required string field.",
+      suggestion:
+        "Add a short required string field such as title, so records are recognizable in lists.",
+    })
+  }
+
   const provenanceFields = fields
     .map(([key]) => key)
     .filter(
@@ -237,6 +253,9 @@ export function reviewRecordCreate(input: {
   const identity = recordPracticeIdentity(input.data, input.schema)
 
   if (!identity) {
+    // A schema with no title field is reported once, when it is saved; only
+    // a record that leaves its schema's title field empty is reported here.
+    if (input.schema && identityField(input.schema) === null) return warnings
     warnings.push({
       code: "missing_recognizable_title",
       message: "This record has no short human-recognizable title or name.",

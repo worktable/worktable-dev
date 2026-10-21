@@ -1,6 +1,6 @@
 import { ownerIdentity } from "./auth.ts";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -87,9 +87,18 @@ describe("record schema v2: new field types, read-lift, version stamping", () =>
         owners: { type: "relation", references: "people", many: true },
         homepage: { type: "url" },
         contact: { type: "email" },
+        due: { type: "date" },
+        at: { type: "datetime" },
       },
     });
     const cases: [Record<string, unknown>, number][] = [
+      [{ due: "2026-10-19" }, 201],
+      [{ due: "2026-9-1" }, 201],
+      [{ due: "Sep 1" }, 400],
+      [{ due: "2026-02-30" }, 400],
+      [{ at: "2026-10-19T08:45:13.365Z" }, 201],
+      [{ at: "2026-10-19T08:45" }, 201],
+      [{ at: "yesterday" }, 400],
       [{ status: "open" }, 201],
       [{ status: "nope" }, 400],
       [{ tags: ["red", "blue"] }, 201],
@@ -108,6 +117,24 @@ describe("record schema v2: new field types, read-lift, version stamping", () =>
       const res = await req(app, "POST", "/api/spaces/meta/records/tasks", { data: { title: "t", ...data } });
       expect(res.status).toBe(expected);
     }
+  });
+
+  it("validates only the fields an update changes", async () => {
+    await req(app, "POST", "/api/spaces/meta/records", {
+      id: "tasks",
+      name: "Tasks",
+      fields: { title: { type: "string" }, due: { type: "date" } },
+    });
+    await req(app, "POST", "/api/spaces/meta/records/tasks", { id: "old", data: { title: "Old" } });
+    // A value written before the rule (or by hand) stays readable and does
+    // not block edits to other fields.
+    const path = join(testDir, "spaces", "meta", "records", "tasks", "old.yaml");
+    writeFileSync(path, readFileSync(path, "utf8").replace('title: "Old"', 'title: "Old"\n  due: "Sep 1"'));
+    const edit = await req(app, "PATCH", "/api/spaces/meta/records/tasks/old", { data: { title: "Renamed" } });
+    expect(edit.status).toBe(200);
+    expect(edit.json.record.data).toEqual({ title: "Renamed", due: "Sep 1" });
+    const badDate = await req(app, "PATCH", "/api/spaces/meta/records/tasks/old", { data: { due: "Oct 2" } });
+    expect(badDate.status).toBe(400);
   });
 
   it("read-lifts v1 spellings: enum behaves as select, reference keeps its looser string contract", async () => {

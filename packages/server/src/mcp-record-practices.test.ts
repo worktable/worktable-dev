@@ -201,7 +201,8 @@ describe("MCP record-practice advisories", () => {
       collectionId: "events",
       data: { occurred_on: "2026-07-13" },
     })) as { record: { id: string }; warnings?: RecordPracticeWarning[] }
-    expect(untitled.record.id).toBe("record")
+    // Nothing names the record, so it gets a short random id, not "record".
+    expect(untitled.record.id).toMatch(/^rec-[0-9a-f]{10}$/)
     expect(warningCodes(untitled)).toContain("missing_recognizable_title")
     expect(
       existsSync(
@@ -211,7 +212,7 @@ describe("MCP record-practice advisories", () => {
           "product",
           "records",
           "events",
-          "record.yaml"
+          `${untitled.record.id}.yaml`
         )
       )
     ).toBe(true)
@@ -264,6 +265,111 @@ describe("MCP record-practice advisories", () => {
       warnings?: RecordPracticeWarning[]
     }
     expect(warningCodes(payload)).not.toContain("duplicate_title")
+  })
+})
+
+describe("MCP record fields", () => {
+  async function seedTasks(): Promise<void> {
+    await createSpace()
+    await dispatchOperation("records.upsert_collection", {
+      spaceId: "product",
+      collectionId: "tasks",
+      name: "Tasks",
+      fields: {
+        title: { type: "string", required: true },
+        status: { type: "select", values: ["open", "done"] },
+      },
+    })
+  }
+
+  it("refuses fields the schema does not declare and names the ones it does", async () => {
+    await seedTasks()
+    await expect(
+      dispatchOperation("records.create", {
+        spaceId: "product",
+        collectionId: "tasks",
+        recordId: "t1",
+        data: { title: "One", stauts: "open" },
+      })
+    ).rejects.toThrow(
+      'Field "stauts" is not in the schema of collection "tasks". Check the spelling, or add it with upsert_collection first. Declared fields: title, status.'
+    )
+    // Refused before anything is written.
+    await expect(
+      dispatchOperation("records.read", {
+        spaceId: "product",
+        collectionId: "tasks",
+        recordId: "t1",
+      })
+    ).rejects.toThrow("Record not found")
+    await dispatchOperation("records.create", {
+      spaceId: "product",
+      collectionId: "tasks",
+      recordId: "t1",
+      data: { title: "One" },
+    })
+    await expect(
+      dispatchOperation("records.update", {
+        spaceId: "product",
+        collectionId: "tasks",
+        recordId: "t1",
+        data: { owner: "ada" },
+      })
+    ).rejects.toThrow('Field "owner" is not in the schema')
+  })
+
+  it("makes a short, valid id from a long title", async () => {
+    await createSpace()
+    await dispatchOperation("records.upsert_collection", {
+      spaceId: "product",
+      collectionId: "notes",
+      name: "Notes",
+      fields: { title: { type: "string", required: true } },
+    })
+    const created = (await dispatchOperation("records.create", {
+      spaceId: "product",
+      collectionId: "notes",
+      data: { title: "Non-technical user can't give ChatGPT access to his vault except by copying" },
+    })) as { record: { id: string } }
+    // The first words, cut at a word boundary near 40 characters.
+    expect(created.record.id).toBe("non-technical-user-can-t-give-chatgpt")
+    const unbroken = (await dispatchOperation("records.create", {
+      spaceId: "product",
+      collectionId: "notes",
+      data: { title: `${"a".repeat(63)} rest` },
+    })) as { record: { id: string } }
+    expect(unbroken.record.id).toBe("a".repeat(40))
+  })
+
+  it("reports a schema with no title field once, when it is saved", async () => {
+    await createSpace()
+    const saved = (await dispatchOperation("records.upsert_collection", {
+      spaceId: "product",
+      collectionId: "quotes",
+      name: "Quotes",
+      fields: { quote: { type: "text", required: true }, url: { type: "url" } },
+    })) as { warnings?: RecordPracticeWarning[] }
+    expect(warningCodes(saved)).toContain("missing_recognizable_title")
+
+    const widened = (await dispatchOperation("records.upsert_collection", {
+      spaceId: "product",
+      collectionId: "quotes",
+      name: "Quotes",
+      fields: {
+        quote: { type: "text", required: true },
+        url: { type: "url" },
+        note: { type: "text" },
+      },
+    })) as { warnings?: RecordPracticeWarning[] }
+    expect(warningCodes(widened)).not.toContain("missing_recognizable_title")
+
+    const created = (await dispatchOperation("records.create", {
+      spaceId: "product",
+      collectionId: "quotes",
+      data: { quote: "Agents keep losing context.", url: "https://example.com/q" },
+    })) as { record: { id: string }; warnings?: RecordPracticeWarning[] }
+    expect(created.warnings).toBeUndefined()
+    expect(created.record.id).toMatch(/^rec-[0-9a-f]{10}$/)
   })
 })
 

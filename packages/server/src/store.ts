@@ -601,7 +601,9 @@ export function slugify(text: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
-    .slice(0, 64);
+    .slice(0, 64)
+    // Cutting at 64 can land on a hyphen; ids may not end in one.
+    .replace(/-+$/, "");
 }
 
 /**

@@ -333,9 +333,25 @@ export async function writeRecordCollectionSchema(
   return { data: parsed.data, error: null };
 }
 
-function validateAgainstSchema(data: Record<string, unknown>, schema: RecordCollectionSchema | null): string | null {
+// A year-month-day calendar date (ISO 8601, month and day may be unpadded),
+// optionally followed by a time and offset.
+const ISO_DATE = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+
+function isIsoDate(value: string): boolean {
+  const match = ISO_DATE.exec(value);
+  if (!match || Number.isNaN(Date.parse(value))) return false;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const calendar = new Date(Date.UTC(year, month - 1, day));
+  return calendar.getUTCMonth() === month - 1 && calendar.getUTCDate() === day;
+}
+
+/** Check record data against the schema. `onlyKeys` limits the check to the
+ *  fields a write changes, so an update to one field is not refused over an
+ *  unrelated stored value that a later schema or a hand edit made invalid. */
+function validateAgainstSchema(data: Record<string, unknown>, schema: RecordCollectionSchema | null, onlyKeys?: ReadonlySet<string>): string | null {
   if (!schema) return null;
   for (const [field, spec] of Object.entries(schema.fields)) {
+    if (onlyKeys && !onlyKeys.has(field)) continue;
     const value = data[field];
     const type = normalizeRecordFieldType(spec.type);
     const emptyRequiredSelection = Array.isArray(value) && value.length === 0 && (
@@ -359,7 +375,9 @@ function validateAgainstSchema(data: Record<string, unknown>, schema: RecordColl
         if (invalid !== undefined) return `Field ${field} values must be one of: ${spec.values.join(", ")}`;
       }
     }
-    if ((type === "date" || type === "datetime") && typeof value !== "string") return `Field ${field} must be a ${type} string`;
+    if ((type === "date" || type === "datetime") && (typeof value !== "string" || !isIsoDate(value))) {
+      return `Field ${field} must be an ISO 8601 ${type === "date" ? "date (YYYY-MM-DD)" : "date-time (YYYY-MM-DDTHH:MM:SSZ)"}`;
+    }
     if (type === "url") {
       if (typeof value !== "string") return `Field ${field} must be a URL string`;
       try {
@@ -763,7 +781,7 @@ export async function readRecord(spaceId: string, collectionId: string, recordId
 async function writeRecordInner(
   spaceId: string,
   record: RecordFile,
-  opts?: { skipDataValidation?: boolean }
+  opts?: { skipDataValidation?: boolean; onlyKeys?: ReadonlySet<string> }
 ): Promise<{ data: RecordFile | null; error: string | null }> {
   const parsed = RecordFileSchema.safeParse(record);
   if (!parsed.success) return { data: null, error: parsed.error.message };
@@ -773,7 +791,7 @@ async function writeRecordInner(
 async function writeRecordValidated(
   spaceId: string,
   record: RecordFile,
-  opts?: { skipDataValidation?: boolean }
+  opts?: { skipDataValidation?: boolean; onlyKeys?: ReadonlySet<string> }
 ): Promise<{ data: RecordFile | null; error: string | null }> {
   const parsed = { data: record };
   // Lifecycle-only writes (archive/restore) leave `data` untouched, so they
@@ -785,7 +803,7 @@ async function writeRecordValidated(
     const normalized = normalizeDocumentFields(parsed.data.data, schema);
     if (normalized.error || !normalized.data) return { data: null, error: normalized.error ?? "Invalid document field" };
     parsed.data.data = normalized.data;
-    const validationError = validateAgainstSchema(parsed.data.data, schema);
+    const validationError = validateAgainstSchema(parsed.data.data, schema, opts?.onlyKeys);
     if (validationError) return { data: null, error: validationError };
   }
   await ensureRecordDirs(spaceId, parsed.data.collectionId);
@@ -853,12 +871,43 @@ async function createRecordInner(spaceId: string, collectionId: string, input: {
   // the (different) per-record-path lock, so there is no deadlock.
   return withStoreWriteLock(`${collectionDir(spaceId, collectionId)}#create`, async () => {
     const existing = await listRecords(spaceId, collectionId, { includeArchived: true });
-    const baseId = slugify(String(input.data["title"] ?? input.data["name"] ?? "record"));
+    const schema = (await readRecordCollectionSchema(spaceId, collectionId)).data;
+    const baseId = recordIdFromTitle(recordTitleValue(input.data, schema)) || randomRecordId();
     const id = await deduplicateSlug(baseId, existing.map((record) => record.id));
     const record = buildRecordFile({ id, collectionId, data: input.data, metadata: input.metadata, createdBy: input.createdBy });
     const written = await writeRecord(spaceId, record);
     return written.data ? { ...written, created: true } : written;
   });
+}
+
+/** The value that names a record: its title or name, else the first required
+ *  string field (the same rule the web uses for a record's title). */
+function recordTitleValue(data: Record<string, unknown>, schema: RecordCollectionSchema | null): string | null {
+  const keys = ["title", "name"];
+  for (const [key, field] of Object.entries(schema?.fields ?? {})) {
+    if (field.required && normalizeRecordFieldType(field.type) === "string") keys.push(key);
+  }
+  for (const key of keys) {
+    const value = data[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return null;
+}
+
+/** A readable id from a record's title: its first words, cut at a word
+ *  boundary near 40 characters so a long summary doesn't become a long id. */
+function recordIdFromTitle(title: string | null): string {
+  const slug = slugify(title ?? "");
+  if (slug.length <= RECORD_ID_LENGTH) return slug;
+  const cut = slug.lastIndexOf("-", RECORD_ID_LENGTH);
+  return (cut >= RECORD_ID_LENGTH / 2 ? slug.slice(0, cut) : slug.slice(0, RECORD_ID_LENGTH)).replace(/-+$/, "");
+}
+
+const RECORD_ID_LENGTH = 40;
+
+/** A short id for a record with nothing to name it by. */
+function randomRecordId(): string {
+  return `rec-${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}`;
 }
 
 export async function updateRecord(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string }): Promise<{ data: RecordFile | null; error: string | null }> {
@@ -881,7 +930,7 @@ async function updateRecordInner(spaceId: string, collectionId: string, recordId
     // and keys it leaves out keep their stored values.
     const metadata = patch.metadata ? { ...existing.metadata, ...patch.metadata } : existing.metadata;
     const record = buildRecordFile({ id: recordId, collectionId, data: { ...existing.data, ...(patch.data ?? {}) }, metadata, createdBy: patch.updatedBy, existing });
-    return writeRecordInner(spaceId, record);
+    return writeRecordInner(spaceId, record, { onlyKeys: new Set(Object.keys(patch.data ?? {})) });
   });
 }
 

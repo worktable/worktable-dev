@@ -119,6 +119,7 @@ export const OPERATION_DEFINITIONS = {
   "threads.wait": tool("threads:read", "none"),
   "threads.post": tool("threads:write", "workspace"),
   "threads.assign_response": tool("threads:write", "workspace"),
+  "threads.rename": tool("threads:write", "workspace"),
   "thread_delivery.register_participant": tool("threads:participate", "none"),
   "thread_delivery.claim": tool("threads:participate", "none"),
   "thread_delivery.accept": tool("threads:participate", "none"),
@@ -133,10 +134,12 @@ export const OPERATION_DEFINITIONS = {
 export type OperationId = keyof typeof OPERATION_DEFINITIONS
 
 /** Operations only the preview MCP surface offers (see mcp/surface.ts). */
-export const PREVIEW_OPERATIONS: ReadonlySet<OperationId> = new Set<OperationId>([
-  "records.create_many",
-  "records.update_many",
-])
+export const PREVIEW_OPERATIONS: ReadonlySet<OperationId> =
+  new Set<OperationId>([
+    "threads.rename",
+    "records.create_many",
+    "records.update_many",
+  ])
 
 function tool(
   scope: string | null,
@@ -291,6 +294,7 @@ export const WORKTABLE_TOOL_ROUTES: Record<
   worktable_threads_write: {
     post: "threads.post",
     assign_response: "threads.assign_response",
+    rename: "threads.rename",
   },
   worktable_thread_delivery: {
     register_participant: "thread_delivery.register_participant",

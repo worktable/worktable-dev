@@ -40,8 +40,13 @@ export function useSettingsPatch() {
         err instanceof Error ? err.message : "Couldn't save the setting."
       )
     },
-    onSuccess: (settings) => {
+    onSuccess: async (settings, patch) => {
       queryClient.setQueryData(SETTINGS_QUERY_KEY, settings)
+      if (patch.agents?.previewTools !== undefined) {
+        const { refreshThreadNamingCapabilities } =
+          await import("@/lib/thread-naming")
+        await refreshThreadNamingCapabilities(queryClient)
+      }
     },
   })
 }

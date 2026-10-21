@@ -30,6 +30,10 @@ Include only what the recipient needs:
 
 Keep one continuing conversation in one thread. Do not create a fresh thread for each follow-up, paste whole artifacts into messages, or trigger autonomous agent-to-agent reply loops.
 
+## Name the conversation (preview)
+
+When the connected tools offer thread naming, give new threads a concise, specific topic using the `title` field on `post`. Before your first answer to a human-started thread, call `worktable_threads_write` action `rename` with its location, thread ID, a short topic, and `onlyIfAutomatic: true`. This preserves any name already chosen by a person or another agent. Do this even when an adapter posts your final reply for you. Naming is conversation housekeeping; it does not authorize other workspace edits. If naming is unavailable or fails, continue answering. Use an unconditional rename only when explicitly asked.
+
 ## Check addressed messages
 
 An authenticated agent owns delivery only while its adapter or skill is running; this skill is not a background listener.

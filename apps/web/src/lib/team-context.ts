@@ -1,4 +1,3 @@
-import { invalidateSharingQueries } from "./sharing-cache"
 import { runtimePath } from "./runtime-path"
 import { fetchSpaces, type SpaceView } from "./api"
 import {
@@ -99,7 +98,9 @@ export function acceptTeamContext(value: unknown): void {
   }
   if (next.policyRevision !== previous.policyRevision) {
     const client = teamQueryClient()
-    if (client) invalidateSharingQueries(client)
+    if (client) void import("./sharing-cache").then(({ invalidateSharingQueries }) => {
+      invalidateSharingQueries(client)
+    })
   }
   if (changed) void refreshTeamAccess(next.access!)
 }

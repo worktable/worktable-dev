@@ -371,12 +371,6 @@ export function pageShareAccess(
     if (error instanceof ShareLinksStoreError) return null
     throw error
   }
-  const create = authorizeShareAction(identity, "create", spaceId, { policy })
-  if (create.allowed) return { canCreate: true }
-  if (create.blockedBy === "paused" || create.blockedBy === "space") {
-    return { canCreate: false }
-  }
-  return authorizeShareAction(identity, "manage", spaceId, { policy }).allowed
-    ? { canCreate: false }
-    : null
+  if (!authorizeShareAction(identity, "read", spaceId, { policy }).allowed) return null
+  return { canCreate: authorizeShareAction(identity, "create", spaceId, { policy }).allowed }
 }

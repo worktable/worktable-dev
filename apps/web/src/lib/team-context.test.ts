@@ -127,6 +127,9 @@ describe("team context", () => {
     acceptTeamContext({ worktableId: "wt_a", memberId: "mem_1", policyRevision: 6, access: "fp-1" })
     // A replayed older response never moves the tab backwards.
     acceptTeamContext({ worktableId: "wt_a", memberId: "mem_1", policyRevision: 4, access: "fp-0" })
+    await import("./sharing-cache")
+    // Allow the asynchronous policy-only module to apply this revision.
+    await Promise.resolve()
     expect(stale(sharingPage)).toBe(true)
     expect(stale(links)).toBe(true)
     expect(stale(ordinaryPage)).toBe(false)

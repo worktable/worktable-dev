@@ -32,6 +32,12 @@ import { listDocuments } from "./document-query.ts"
 import { listPending } from "./pending.ts"
 import { advanceGenerationOnWrite, shareInFlightReads } from "./shared-reads.ts"
 import { setDocArchived, writeDoc, writeSpace } from "./store.ts"
+import { setAppDirOverride } from "./app-storage.ts"
+import {
+  closeVisitorCommentStores,
+  commentPause,
+  pauseVisitorComments,
+} from "./visitor-comment-store.ts"
 import { updateWidgetMetadata } from "./widget-store.ts"
 import { writeManagedFixtureHtml } from "./fixtures/managed-content.ts"
 import { WorkspaceWatcher } from "./watcher.ts"
@@ -219,7 +225,12 @@ describe("workspace read model", () => {
     const manifestPath = join(root, "worktable.workspace.json")
     const aliasPath = spacePath(spaceId, "doc-aliases.json")
     const aliases = (exact: Record<string, string>) =>
-      JSON.stringify({ type: "worktable.doc-aliases", version: 1, exact, prefixes: {} })
+      JSON.stringify({
+        type: "worktable.doc-aliases",
+        version: 1,
+        exact,
+        prefixes: {},
+      })
     await writeFile(
       metaPath,
       JSON.stringify({
@@ -327,7 +338,9 @@ describe("workspace read model", () => {
     )
     created.release?.()
     const rename = async (name: string) =>
-      (await updateWidgetMetadata(spaceId, "boards/status", { name })).release?.()
+      (
+        await updateWidgetMetadata(spaceId, "boards/status", { name })
+      ).release?.()
     // The first rename also gives the Doc its durable identity.
     await rename("Renamed once")
     setSystemTime(new Date(Date.now() + 60_000))
@@ -409,11 +422,18 @@ describe("workspace read model", () => {
 })
 
 describe("shared in-flight reads", () => {
-  function app() {
+  function app(
+    path = "/api/recent",
+    data: () => Record<string, unknown> = () => ({})
+  ) {
     let calls = 0
     let release: () => void = () => undefined
     const gate = new Promise<void>((resolve) => {
       release = resolve
+    })
+    let started!: () => void
+    const entered = new Promise<void>((resolve) => {
+      started = resolve
     })
     const instance = new Hono()
     instance.use("*", async (c, next) => {
@@ -423,14 +443,16 @@ describe("shared in-flight reads", () => {
     })
     instance.use("*", advanceGenerationOnWrite)
     instance.use("/api/*", shareInFlightReads)
-    instance.get("/api/recent", async (c) => {
+    instance.get(path, async (c) => {
       calls += 1
       const call = calls
+      const snapshot = data()
+      started()
       await gate
-      return c.json({ call })
+      return c.json({ call, ...snapshot })
     })
     instance.post("/api/spaces", (c) => c.json({ ok: true }, 201))
-    return { instance, calls: () => calls, release: () => release() }
+    return { instance, entered, calls: () => calls, release: () => release() }
   }
 
   it("shares one computation among identical requests made while it runs", async () => {
@@ -466,5 +488,42 @@ describe("shared in-flight reads", () => {
     )
     expect(beforeBody).toEqual({ call: 1 })
     expect(afterBody).toEqual({ call: 2 })
+  })
+  it("fences Pending at a private commit while ordinary reads continue sharing", async () => {
+    const privateApp = await mkdtemp(
+      join(tmpdir(), "worktable-pending-private-")
+    )
+    setAppDirOverride(privateApp)
+    const pending = app("/api/pending", () => ({
+      paused: commentPause("worktable", "link"),
+    }))
+    const ordinary = app()
+    try {
+      const before = pending.instance.request("/api/pending")
+      const ordinaryBefore = ordinary.instance.request("/api/recent")
+      await Promise.all([pending.entered, ordinary.entered])
+      pauseVisitorComments("worktable", "link", true)
+      const after = pending.instance.request("/api/pending")
+      const ordinaryAfter = ordinary.instance.request("/api/recent")
+      pending.release()
+      ordinary.release()
+      const bodies = await Promise.all(
+        [before, after, ordinaryBefore, ordinaryAfter].map(async (response) =>
+          (await response).json()
+        )
+      )
+      expect(bodies.slice(0, 2)).toEqual([
+        { call: 1, paused: null },
+        { call: 2, paused: "sharer" },
+      ])
+      expect(bodies[2]).toEqual(bodies[3])
+      expect([pending.calls(), ordinary.calls()]).toEqual([2, 1])
+    } finally {
+      pending.release()
+      ordinary.release()
+      closeVisitorCommentStores()
+      setAppDirOverride(null)
+      await rm(privateApp, { recursive: true, force: true })
+    }
   })
 })

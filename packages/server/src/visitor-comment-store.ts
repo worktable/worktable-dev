@@ -3,6 +3,7 @@ import {
   chmodSync,
   closeSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readSync,
@@ -26,6 +27,30 @@ interface StoreConnections {
 }
 const stores = new Map<string, StoreConnections>()
 
+let visitorGeneration = 0
+export function visitorCommentGeneration(): number {
+  return visitorGeneration
+}
+const changeListeners = new Set<() => void>()
+
+/** Private backup notifications carry no visitor content or document events. */
+export function onVisitorCommentStoreChange(listener: () => void): () => void {
+  changeListeners.add(listener)
+  return () => {
+    changeListeners.delete(listener)
+  }
+}
+function notifyStoreChange(): void {
+  visitorGeneration += 1
+  for (const listener of changeListeners) {
+    try {
+      listener()
+    } catch {
+      /* The deferred backup audit recovers missed reports. */
+    }
+  }
+}
+
 export class VisitorCommentsUnavailable extends Error {}
 export class VisitorCommentRefused extends Error {
   readonly status: 409 | 429
@@ -44,19 +69,34 @@ export class VisitorCommentRefused extends Error {
 function physicalPath(path: string): string {
   let parent = resolve(path)
   const tail: string[] = []
-  while (!existsSync(parent)) {
+  while (true) {
+    try {
+      // lstat sees a dangling symlink too: never mistake it for a safe new file.
+      lstatSync(parent)
+      break
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+        throw new VisitorCommentsUnavailable()
+    }
     const next = dirname(parent)
     if (next === parent) throw new VisitorCommentsUnavailable()
     tail.unshift(relative(next, parent))
     parent = next
   }
-  return join(realpathSync(parent), ...tail)
+  try {
+    return join(realpathSync(parent), ...tail)
+  } catch {
+    throw new VisitorCommentsUnavailable()
+  }
 }
 
 function storePath(): string {
   const app = physicalPath(getAppDir())
   const root = physicalPath(getWorkspaceRoot())
-  const within = relative(root, app)
+  const path = physicalPath(
+    join(app, "visitor-comments", workspaceCacheKey(), "comments.sqlite")
+  )
+  const within = relative(root, path)
   if (
     !within ||
     (!isAbsolute(within) &&
@@ -66,7 +106,7 @@ function storePath(): string {
     throw new VisitorCommentsUnavailable(
       "Visitor comments need storage outside the workspace"
     )
-  return join(app, "visitor-comments", workspaceCacheKey(), "comments.sqlite")
+  return path
 }
 
 function rememberStore(key: string, entry: StoreConnections): void {
@@ -262,6 +302,7 @@ export function pauseVisitorComments(
       "INSERT INTO visitor_link_state(worktableId,link_id,paused) VALUES(?,?,?) ON CONFLICT(worktableId,link_id) DO UPDATE SET paused=excluded.paused"
     )
     .run(worktableId, linkId, paused ? "sharer" : null)
+  notifyStoreChange()
 }
 
 export function receiveVisitorComment(input: {
@@ -279,6 +320,7 @@ export function receiveVisitorComment(input: {
   requestId: string
 }): { id: string; receivedAt: string } {
   const db = database(true)!
+  let wrote = false
   // Refusals are values until the transaction commits: a cap can also pause
   // the link. Throwing inside would roll that abuse control back.
   const result = db
@@ -346,6 +388,7 @@ export function receiveVisitorComment(input: {
         db.query(
           "INSERT INTO visitor_cap_hits VALUES(?,?,?,?) ON CONFLICT(worktableId,link_id,client_key) DO UPDATE SET at=excluded.at"
         ).run(input.worktableId, input.linkId, input.clientKey, now)
+        wrote = true
         spike ||=
           (
             db
@@ -357,10 +400,12 @@ export function receiveVisitorComment(input: {
             }
           ).n > 3
       }
-      if (spike)
+      if (spike) {
         db.query(
           "INSERT INTO visitor_link_state VALUES(?,?,'spike') ON CONFLICT(worktableId,link_id) DO UPDATE SET paused='spike'"
         ).run(input.worktableId, input.linkId)
+        wrote = true
+      }
       if (
         spike ||
         totals.workspaceDay >= 500 ||
@@ -394,9 +439,11 @@ export function receiveVisitorComment(input: {
         now,
         input.requestId
       )
+      wrote = true
       return { id, receivedAt: new Date(now).toISOString() }
     })
     .immediate()
+  if (wrote) notifyStoreChange()
   if (result instanceof VisitorCommentRefused) throw result
   return result
 }
@@ -508,6 +555,7 @@ export function appendVisitorReply(
       Date.now()
     )
   }).immediate()
+  notifyStoreChange()
 }
 export function finishVisitorComment(
   worktableId: string,
@@ -515,40 +563,60 @@ export function finishVisitorComment(
   deletedBy?: string
 ): void {
   const db = database(true)!
+  let writes = 0
   if (deletedBy)
     db.transaction(() => {
-      db.query(
-        "DELETE FROM visitor_replies WHERE comment_id IN (SELECT id FROM visitor_comments WHERE worktableId=? AND id=?)"
-      ).run(worktableId, id)
-      db.query(
-        "UPDATE visitor_comments SET status='deleted',body=NULL,visitor_name=NULL,deleted_by=?,deleted_at=? WHERE worktableId=? AND id=?"
-      ).run(deletedBy, Date.now(), worktableId, id)
+      writes += db
+        .query(
+          "DELETE FROM visitor_replies WHERE comment_id IN (SELECT id FROM visitor_comments WHERE worktableId=? AND id=?)"
+        )
+        .run(worktableId, id).changes
+      writes += db
+        .query(
+          "UPDATE visitor_comments SET status='deleted',body=NULL,visitor_name=NULL,deleted_by=?,deleted_at=? WHERE worktableId=? AND id=?"
+        )
+        .run(deletedBy, Date.now(), worktableId, id).changes
     }).immediate()
   else
-    db.query(
-      "UPDATE visitor_comments SET status='done' WHERE worktableId=? AND id=? AND status='new'"
-    ).run(worktableId, id)
+    writes += db
+      .query(
+        "UPDATE visitor_comments SET status='done' WHERE worktableId=? AND id=? AND status='new'"
+      )
+      .run(worktableId, id).changes
+  if (writes) notifyStoreChange()
 }
 
 /** Called only at boot and daily, never by a view or a comment request. */
 export function sweepVisitorComments(now = Date.now()): void {
   if (!database()) return
   const db = database(true)!
+  let writes = 0
   db.transaction(() => {
-    db.query(
-      "UPDATE visitor_comments SET client_key=NULL WHERE received_at<?"
-    ).run(now - 7 * DAY)
-    db.query(
-      "UPDATE visitor_comments SET body=NULL,visitor_name=NULL WHERE status='passed' AND passed_at<?"
-    ).run(now - 30 * DAY)
-    db.query(
-      "DELETE FROM visitor_replies WHERE comment_id IN (SELECT id FROM visitor_comments WHERE status='passed' AND passed_at<?)"
-    ).run(now - 30 * DAY)
-    db.query(
-      "DELETE FROM visitor_comments WHERE (status IN ('new','done') AND received_at<?) OR (status='deleted' AND deleted_at<?)"
-    ).run(now - 180 * DAY, now - 30 * DAY)
-    db.query("DELETE FROM visitor_cap_hits WHERE at<?").run(now - 600_000)
+    writes += db
+      .query(
+        "UPDATE visitor_comments SET client_key=NULL WHERE client_key IS NOT NULL AND received_at<?"
+      )
+      .run(now - 7 * DAY).changes
+    writes += db
+      .query(
+        "UPDATE visitor_comments SET body=NULL,visitor_name=NULL WHERE status='passed' AND (body IS NOT NULL OR visitor_name IS NOT NULL) AND passed_at<?"
+      )
+      .run(now - 30 * DAY).changes
+    writes += db
+      .query(
+        "DELETE FROM visitor_replies WHERE comment_id IN (SELECT id FROM visitor_comments WHERE status='passed' AND passed_at<?)"
+      )
+      .run(now - 30 * DAY).changes
+    writes += db
+      .query(
+        "DELETE FROM visitor_comments WHERE (status IN ('new','done') AND received_at<?) OR (status='deleted' AND deleted_at<?)"
+      )
+      .run(now - 180 * DAY, now - 30 * DAY).changes
+    writes += db
+      .query("DELETE FROM visitor_cap_hits WHERE at<?")
+      .run(now - 600_000).changes
   }).immediate()
+  if (writes) notifyStoreChange()
 }
 export function closeVisitorCommentStores(): void {
   for (const entry of stores.values()) {

@@ -315,8 +315,11 @@ async function checkGrant(
     : null
 }
 
+const LinkIdSchema = z.string().regex(/^lnk_[A-Za-z0-9_-]{22}$/)
+
 const AccessInput = z.strictObject({
   target: ShareTargetSchema,
+  linkId: LinkIdSchema.optional(),
   grant: LinkGrantSchema.optional(),
   observe: z.boolean().default(false),
 })
@@ -328,19 +331,40 @@ shareLinksRouter.post("/access", async (c) => {
     return invalid(c, "This access is too large")
   const parsed = AccessInput.safeParse(body)
   if (!parsed.success) return invalid(c, parsed.error.message)
-  const { target, grant, observe } = parsed.data
+  const { target, grant, observe, linkId } = parsed.data
   if (target.kind !== "html" || !safeTarget(target)) return notFound(c)
   const identity = identityOf(c)
   const revision = readSharingPolicy().revision
   const policy = currentSharingPolicy()
-  const decision = authorizeShareAction(identity, "create", target.spaceId, {
+  const link = linkId ? getShareLink(linkId) : null
+  if (
+    linkId &&
+    (!link ||
+      link.revokedAt !== null ||
+      link.kind !== "html" ||
+      link.spaceId !== target.spaceId)
+  )
+    return notFound(c)
+  const action = link ? "manage" : "create"
+  const decision = authorizeShareAction(identity, action, target.spaceId, {
     policy,
+    ...(link ? { creatorId: link.createdById } : {}),
   })
   if (!decision.allowed) return denied(c, decision)
-  if (!policy.liveLinks)
-    return invalid(c, "Live links aren't allowed here", "LIVE_NOT_AVAILABLE")
   const source = spaceGeneration(target.spaceId)
   const schema = linkSchemaGeneration(target.spaceId)
+  if (
+    link &&
+    (await useResolvedDocumentHandle(
+      { spaceId: target.spaceId, path: target.path, snapshot: true },
+      async (handle) =>
+        handle.documentId === link.documentId &&
+        (await publicShareKind(handle)) === "html"
+    )) !== true
+  )
+    return notFound(c)
+  if (!policy.liveLinks)
+    return invalid(c, "Live links aren't allowed here", "LIVE_NOT_AVAILABLE")
   const access = await prepareShareLinkAccess({
     ...target,
     grant,
@@ -350,9 +374,20 @@ shareLinksRouter.post("/access", async (c) => {
     signal: c.req.raw.signal,
   })
   if (!access) return notFound(c)
+  const currentLink = linkId ? getShareLink(linkId) : null
+  if (
+    link &&
+    (!currentLink ||
+      currentLink.revokedAt !== null ||
+      currentLink.spaceId !== link.spaceId ||
+      currentLink.documentId !== link.documentId ||
+      currentLink.kind !== link.kind)
+  )
+    return notFound(c)
   const latest = currentSharingPolicy()
-  const allowed = authorizeShareAction(identity, "create", target.spaceId, {
+  const allowed = authorizeShareAction(identity, action, target.spaceId, {
     policy: latest,
+    ...(currentLink ? { creatorId: currentLink.createdById } : {}),
   })
   if (!allowed.allowed) return denied(c, allowed)
   if (!sharingPreviewEnabled() || !latest.liveLinks) return notFound(c)
@@ -514,8 +549,6 @@ shareLinksRouter.post("/", async (c) => {
   }
   return c.json(body, 201)
 })
-
-const LinkIdSchema = z.string().regex(/^lnk_[A-Za-z0-9_-]{22}$/)
 
 function linkFor(c: Context): StoredShareLink | null {
   const id = LinkIdSchema.safeParse(c.req.param("linkId"))

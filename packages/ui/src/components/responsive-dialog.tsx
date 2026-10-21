@@ -116,25 +116,18 @@ function ResponsiveDialogContent({
   className,
   children,
   showCloseButton,
+  onEscapeKeyDown,
   ...props
-}: React.ComponentProps<"div"> & { showCloseButton?: boolean }) {
+}: React.ComponentProps<"div"> & {
+  showCloseButton?: boolean
+  onEscapeKeyDown?: (event: KeyboardEvent) => void
+}) {
   const { isMobile, keyboardFriendly } = useResponsiveDialog()
 
   if (isMobile) {
     return (
       <DrawerContent
-        // Vaul's document capture listener runs before a nested Base UI
-        // popup handles Escape. Let that popup dismiss before the sheet.
-        onEscapeKeyDown={(event) => {
-          const target = event.target
-          if (
-            target instanceof Element &&
-            target
-              .closest('[data-slot="drawer-content"]')
-              ?.querySelector('[data-slot$="-content"][data-open]')
-          )
-            event.preventDefault()
-        }}
+        onEscapeKeyDown={onEscapeKeyDown}
         className={cn(
           keyboardFriendly
             ? "data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-1rem)]"
@@ -143,7 +136,7 @@ function ResponsiveDialogContent({
         )}
         {...props}
       >
-        <div className={cn("flex min-h-0 flex-1 flex-col px-5 pt-7 pb-0")}>
+        <div className="flex min-h-0 flex-1 flex-col px-5 pt-7 pb-0">
           {children}
         </div>
       </DrawerContent>
@@ -255,14 +248,11 @@ function ResponsiveDialogBody({
   className,
   ...props
 }: React.ComponentProps<"div">) {
-  const { isMobile } = useResponsiveDialog()
-
   return (
     <div
       data-slot="responsive-dialog-body"
       className={cn(
-        "min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-1 py-4 [scrollbar-gutter:stable]",
-        isMobile ? "-mx-1" : "-mx-1",
+        "-mx-1 min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-1 py-4 [scrollbar-gutter:stable]",
         className
       )}
       {...props}

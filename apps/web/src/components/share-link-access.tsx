@@ -52,6 +52,10 @@ function rowFilters(rows: RecordPredicate | null): RecordFilter[] | null {
   return null
 }
 
+function validGroupSize(size: number): boolean {
+  return Number.isInteger(size) && size >= 2 && size <= 1000
+}
+
 function Choice({
   checked,
   disabled,
@@ -141,6 +145,11 @@ export function ShareLinkAccessEditor({
   onChange: (grant: LinkGrant) => void
   onCheck: () => void
 }) {
+  const invalidTotals = Object.values(grant?.collections ?? {}).some(
+    (collection) =>
+      collection.mode === "summaries" &&
+      !validGroupSize(collection.summaries!.minGroupSize)
+  )
   function changeCollection(id: string, value: CollectionGrant | null) {
     if (!grant) return
     const collections = { ...grant.collections }
@@ -439,7 +448,13 @@ export function ShareLinkAccessEditor({
                               type="number"
                               min={2}
                               max={1000}
-                              value={collection.summaries!.minGroupSize}
+                              step={1}
+                              aria-invalid={
+                                !validGroupSize(
+                                  collection.summaries!.minGroupSize
+                                )
+                              }
+                              value={collection.summaries!.minGroupSize || ""}
                               onChange={(event) =>
                                 changeCollection(id, {
                                   ...collection,
@@ -451,6 +466,16 @@ export function ShareLinkAccessEditor({
                               }
                             />
                           </label>
+                          {!validGroupSize(
+                            collection.summaries!.minGroupSize
+                          ) ? (
+                            <p
+                              role="alert"
+                              className="text-xs text-destructive"
+                            >
+                              Choose a whole number from 2 to 1000.
+                            </p>
+                          ) : null}
                         </div>
                       )}
                       {collection.mode === "fixed" ? (
@@ -466,13 +491,23 @@ export function ShareLinkAccessEditor({
             })}
             <Choice
               checked={grant.state === "team-read"}
-              disabled={disabled || busy || !access.stateReadable}
+              disabled={
+                disabled ||
+                busy ||
+                (!access.stateReadable && grant.state !== "team-read")
+              }
               onChange={(enabled) =>
                 onChange({ ...grant, state: enabled ? "team-read" : "visitor" })
               }
             >
               Read team saved state
             </Choice>
+            {!access.stateReadable ? (
+              <p className="text-xs text-muted-foreground">
+                This tool no longer allows team saved state. Clear this access
+                to keep it off.
+              </p>
+            ) : null}
             {checked ? (
               <div className="space-y-1" aria-live="polite">
                 {access.sentences.map((sentence, index) => (
@@ -513,7 +548,7 @@ export function ShareLinkAccessEditor({
           type="button"
           variant="outline"
           size="sm"
-          disabled={disabled || busy}
+          disabled={disabled || busy || invalidTotals}
           onClick={onCheck}
         >
           {busy ? <Loader2 className="size-4 animate-spin" /> : null}

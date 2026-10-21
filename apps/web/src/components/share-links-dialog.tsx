@@ -75,13 +75,13 @@ import {
   type ShareLinkExpiry,
 } from "@/lib/share-links"
 import {
-  checkShareLinkAccess,
   createShareLink,
   getDocumentShareLinks,
   revokeShareLink,
   shareLinksQueryKey,
   updateShareLink,
 } from "@/lib/share-api"
+import { checkShareLinkAccess } from "@/lib/share-link-access-api"
 
 interface LinkDraft {
   label: string
@@ -254,14 +254,16 @@ export function ShareLinksDialog({
     mutationFn: ({
       grant,
       observe,
+      linkId,
     }: {
       grant?: LinkGrant
       observe: boolean
+      linkId?: string
       version: number
     }) =>
       checkShareLinkAccess(
         { kind: target.kind, spaceId, path },
-        { grant, observe }
+        { grant, observe, linkId }
       ),
     onSuccess: (result, input) => {
       if (input.version !== accessVersion.current) return
@@ -278,9 +280,13 @@ export function ShareLinksDialog({
     resetProbe()
   }, [open, resetProbe])
 
-  function checkAccess(grant?: LinkGrant, observe = false) {
+  function checkAccess(
+    grant?: LinkGrant,
+    observe = false,
+    linkId = editing?.kind === "edit" ? editing.link.id : undefined
+  ) {
     const version = ++accessVersion.current
-    probe.mutate({ grant, observe, version })
+    probe.mutate({ grant, observe, version, linkId })
   }
   function changeGrant(grant: LinkGrant | null) {
     accessVersion.current++
@@ -367,7 +373,7 @@ export function ShareLinksDialog({
         : NEW_LINK
     )
     if (preview && next?.kind === "edit" && next.link.grant)
-      checkAccess(next.link.grant)
+      checkAccess(next.link.grant, false, next.link.id)
   }
 
   function cancelEditing() {
@@ -391,6 +397,16 @@ export function ShareLinksDialog({
       <ResponsiveDialog open={open} onOpenChange={handleOpenChange}>
         <ResponsiveDialogContent
           ref={setPortalContainer}
+          // Vaul captures Escape before a nested Base UI popup dismisses.
+          // Keep that popup's first Escape inside this sharing sheet.
+          onEscapeKeyDown={(event) => {
+            if (
+              portalContainer?.querySelector(
+                '[data-slot$="-content"][data-open]'
+              )
+            )
+              event.preventDefault()
+          }}
           className={
             draft.grant
               ? "overflow-clip sm:max-w-lg"

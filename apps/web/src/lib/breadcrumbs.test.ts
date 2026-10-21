@@ -106,6 +106,18 @@ describe("buildBreadcrumbs", () => {
       ["Threads", "/spaces/$spaceId/threads/$"],
       ["Launch plan"],
     ])
+    expect(
+      buildBreadcrumbs({
+        pathname: "/threads/worktable/abc",
+        titleOverride: "Launch plan",
+      }).at(-1)?.mobileHidden
+    ).toBe(false)
+    expect(
+      buildBreadcrumbs({
+        pathname: "/threads",
+        titleOverride: "New thread",
+      }).at(-1)?.mobileHidden
+    ).toBe(true)
     // The thread list is the current page when no thread is selected.
     expect(
       summary(

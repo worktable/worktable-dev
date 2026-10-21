@@ -7,10 +7,15 @@ import {
   type ThreadListItem,
   type ThreadLocation,
   ThreadMessageIdSchema,
+  ThreadTitleSchema,
   type ThreadSummary,
 } from "@worktable/types"
 import { hasScope } from "../token-store.ts"
-import { assertSpaceAccess } from "../team-policy.ts"
+import {
+  assertSpaceAccess,
+  canAccessSpace,
+  canAccessWorktableThreads,
+} from "../team-policy.ts"
 import {
   assignResponseRequest,
   listThreadParticipantsForDisplay,
@@ -18,13 +23,16 @@ import {
   postThreadMessageWithStored,
   readThreadMessage,
   readThreadMessages,
+  renameThreadTitle,
   waitForThreadReply,
 } from "../thread-service.ts"
 import { ThreadError } from "../thread-store.ts"
 import { ThreadParticipantError } from "../participant-store.ts"
 import { ThreadDeliveryError } from "../thread-delivery-store.ts"
+import { configuredMcpSurface } from "../mcp/surface.ts"
 
 const PostThreadSchema = z.object({
+  title: ThreadTitleSchema.optional(),
   to: z.string().trim().min(1).optional(),
   body: z.string().min(1).max(100_000),
   idempotencyKey: z.string().trim().min(1).max(200),
@@ -60,13 +68,15 @@ function errorResponse(
         : error.code === "THREAD_NOT_FOUND" ||
             error.code === "PARTICIPANT_NOT_FOUND"
           ? 404
-          : error.code === "THREAD_STORE_INCOMPLETE"
-            ? 503
-            : error.code === "AMBIGUOUS_THREAD_LOCATION"
-              ? 409
-              : error.code === "LEASE_LOST"
+          : error.code === "TITLE_CONFLICT"
+            ? 409
+            : error.code === "THREAD_STORE_INCOMPLETE"
+              ? 503
+              : error.code === "AMBIGUOUS_THREAD_LOCATION"
                 ? 409
-                : 400
+                : error.code === "LEASE_LOST"
+                  ? 409
+                  : 400
     return c.json({ error: error.message, code: error.code }, status)
   }
   throw error
@@ -215,6 +225,15 @@ threadsRouter.post("/", async (c) => {
       400
     )
   }
+  if (parsed.data.title !== undefined && configuredMcpSurface() !== "preview") {
+    return c.json(
+      {
+        error: "Thread naming requires Preview agent tools",
+        code: "PREVIEW_REQUIRED",
+      },
+      403
+    )
+  }
   try {
     const posted = await postThreadMessageWithStored(c.get("identity"), {
       ...parsed.data,
@@ -277,11 +296,54 @@ threadsRouter.get("/:threadId", async (c) => {
     )
   }
   try {
-    return c.json(
-      await readThreadMessages(c.get("identity"), c.req.param("threadId"), {
+    return c.json({
+      ...(await readThreadMessages(c.get("identity"), c.req.param("threadId"), {
         location: routeLocation(c),
         after,
         before,
+      })),
+      canRename:
+        configuredMcpSurface() === "preview" &&
+        hasScope(c.get("identity").scopes, "threads:write") &&
+        (c.req.param("spaceId")
+          ? canAccessSpace(c.req.param("spaceId")!, "edit", c.get("identity"))
+          : canAccessWorktableThreads("edit", c.get("identity"))),
+    })
+  } catch (error) {
+    return errorResponse(c, error)
+  }
+})
+
+threadsRouter.patch("/:threadId", async (c) => {
+  const denied = requireThreadScope(c, "threads:write")
+  if (denied) return denied
+  if (configuredMcpSurface() !== "preview") {
+    return c.json(
+      {
+        error: "Thread naming requires Preview agent tools",
+        code: "PREVIEW_REQUIRED",
+      },
+      403
+    )
+  }
+  const parsed = z
+    .object({
+      title: ThreadTitleSchema,
+      expectedTitle: z.string().optional(),
+      onlyIfAutomatic: z.boolean().optional(),
+    })
+    .safeParse(await c.req.json().catch(() => null))
+  if (!parsed.success)
+    return c.json(
+      { error: parsed.error.message, code: "VALIDATION_ERROR" },
+      400
+    )
+  try {
+    return c.json(
+      await renameThreadTitle({
+        ...parsed.data,
+        location: routeLocation(c),
+        threadId: c.req.param("threadId"),
       })
     )
   } catch (error) {

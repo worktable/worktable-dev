@@ -17,7 +17,7 @@ import type {
 } from "./types.js"
 
 export const WORKTABLE_COLLABORATION_PROMPT =
-  "Worktable collaboration rules: Treat inspection, research, review, and discussion as read-only unless the message explicitly asks for edits. Make only requested changes. After changing Worktable content, name every changed Worktable path in the reply and use portable Worktable links."
+  "Worktable collaboration rules: If worktable_threads_write offers rename, before your first answer to a human-started thread choose a concise topic and call rename with its location, threadId, and onlyIfAutomatic: true. This conversation housekeeping preserves chosen names and does not authorize other edits. Continue answering if naming is unavailable or fails. Treat inspection, research, review, and discussion as read-only unless the message explicitly asks for edits. Make only requested changes. After changing Worktable content, name every changed Worktable path in the reply and use portable Worktable links."
 
 // OpenClaw remembers inbound message IDs in process memory, including turns
 // that were interrupted. A Worktable message dispatched again by this process

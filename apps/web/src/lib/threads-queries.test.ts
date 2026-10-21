@@ -5,14 +5,16 @@ import type {
   ThreadReadResult,
 } from "@worktable/types"
 
-import { QueryClient } from "@tanstack/react-query"
+import { QueryClient, QueryObserver } from "@tanstack/react-query"
 import {
   applyPostedThreadMessage,
   applyThreadAssignment,
   mergeThreadPage,
   refreshThreadWindow,
+  refreshThreadNamingCapabilities,
   threadQueryKeys,
 } from "./threads-queries"
+import { applyThreadRename } from "./thread-naming"
 import { applyThreadPayload } from "./ws"
 
 const createdAt = "2026-08-15T10:00:00.000Z"
@@ -87,6 +89,72 @@ function result(
 }
 
 describe("thread query refresh", () => {
+  test("refreshes open-thread naming permissions when preview changes without refreshing lists", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+    })
+    const current = result([message(1)], {
+      revision: 1,
+      oldestCursor: 1,
+      hasOlder: false,
+    })
+    const key = threadQueryKeys.detail(current.location, current.thread.id)
+    const listKey = threadQueryKeys.list({ kind: "all" })
+    let previewEnabled = false
+    let reads = 0
+    client.setQueryData(key, { ...current, canRename: false })
+    client.setQueryData(listKey, { threads: [] })
+    const observer = new QueryObserver(client, {
+      queryKey: key,
+      queryFn: async () => {
+        reads++
+        return { ...current, canRename: previewEnabled }
+      },
+    })
+    const unsubscribe = observer.subscribe(() => {})
+    try {
+      for (const enabled of [true, false]) {
+        previewEnabled = enabled
+        await refreshThreadNamingCapabilities(client)
+        expect(observer.getCurrentResult().data?.canRename).toBe(enabled)
+        expect(client.getQueryState(listKey)?.isInvalidated).toBe(false)
+      }
+      expect(reads).toBe(2)
+    } finally {
+      unsubscribe()
+      client.clear()
+    }
+  })
+
+  test("renames cached metadata without replacing messages or overwriting newer state", () => {
+    const client = new QueryClient()
+    const current = result([message(8), message(9)], {
+      revision: 9,
+      oldestCursor: 8,
+      hasOlder: true,
+    })
+    const key = threadQueryKeys.detail(current.location, current.thread.id)
+    client.setQueryData(key, current)
+    applyThreadRename(client, current.location, {
+      threadId: current.thread.id,
+      title: "Named topic",
+      revision: 10,
+      updatedAt: createdAt,
+    })
+    const renamed = client.getQueryData<ThreadReadResult>(key)!
+    expect(renamed.thread.title).toBe("Named topic")
+    expect(renamed.messages).toBe(current.messages)
+    expect(renamed.oldestCursor).toBe(8)
+    expect(renamed.hasOlder).toBe(true)
+    applyThreadRename(client, current.location, {
+      threadId: current.thread.id,
+      title: "Stale name",
+      revision: 9,
+      updatedAt: createdAt,
+    })
+    expect(client.getQueryData(key)).toBe(renamed)
+  })
+
   test("applies a new assignment to both cached message views immediately", () => {
     const assigned = {
       ...message(1),

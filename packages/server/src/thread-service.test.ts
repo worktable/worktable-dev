@@ -37,6 +37,7 @@ import {
   progressDelivery,
   readThreadMessage,
   readThreadMessages,
+  renameThreadTitle,
   waitForThreadReply,
 } from "./thread-service.ts"
 import { assignThreadMessage, threadPath } from "./thread-store.ts"
@@ -520,6 +521,138 @@ describe("thread service", () => {
       messageId: first.messageId,
       createdThread: false,
     })
+  })
+
+  it("keeps creation retries stable after an explicit title is renamed", async () => {
+    const input = {
+      to: "Atlas",
+      body: "Please investigate the error",
+      title: "  Login failures  ",
+      idempotencyKey: "named-creation",
+    }
+    const first = await postThreadMessage(finn, input)
+    const location = first.location
+    expect(
+      (await readThreadMessages(finn, first.threadId, { location })).thread
+        .title
+    ).toBe("Login failures")
+    await renameThreadTitle({
+      location,
+      threadId: first.threadId,
+      title: "Authentication recovery",
+    })
+    expect((await postThreadMessage(finn, input)).messageId).toBe(
+      first.messageId
+    )
+    await expect(
+      postThreadMessage(finn, { ...input, title: "Different topic" })
+    ).rejects.toThrow()
+    const read = await readThreadMessages(finn, first.threadId, { location })
+    expect(read.thread.title).toBe("Authentication recovery")
+    expect(read.messages).toHaveLength(1)
+  })
+
+  it("names automatic titles once without losing concurrent replies or overwriting chosen names", async () => {
+    const first = await postThreadMessage(owner, {
+      to: "Atlas",
+      body: "Can you help with login?",
+      idempotencyKey: "automatic-topic",
+    })
+    const input = { location: first.location, threadId: first.threadId }
+    const [named] = await Promise.all([
+      renameThreadTitle({
+        ...input,
+        title: "Login troubleshooting",
+        onlyIfAutomatic: true,
+      }),
+      postThreadMessage(atlas, {
+        ...input,
+        body: "I will investigate",
+        idempotencyKey: "first-answer",
+      }),
+    ])
+    expect(named.title).toBe("Login troubleshooting")
+    expect(
+      (
+        await renameThreadTitle({
+          ...input,
+          title: "Another agent's name",
+          onlyIfAutomatic: true,
+        })
+      ).title
+    ).toBe("Login troubleshooting")
+    await expect(
+      renameThreadTitle({
+        ...input,
+        title: "Stale edit",
+        expectedTitle: "Can you help with login?",
+      })
+    ).rejects.toMatchObject({ code: "TITLE_CONFLICT" })
+    await renameThreadTitle({ ...input, title: "Can you help with login?" })
+    expect(
+      (
+        await renameThreadTitle({
+          ...input,
+          title: "Automatic replacement",
+          onlyIfAutomatic: true,
+        })
+      ).title
+    ).toBe("Can you help with login?")
+    expect(
+      (
+        await readThreadMessages(owner, first.threadId, {
+          location: first.location,
+        })
+      ).messages
+    ).toHaveLength(2)
+  })
+
+  it("recognizes legacy fallback titles while preserving legacy chosen titles", async () => {
+    for (const chosen of [false, true]) {
+      const first = await postThreadMessage(finn, {
+        to: "Atlas",
+        body: "Hello there",
+        idempotencyKey: `legacy-topic-${chosen}`,
+      })
+      const path = threadPath("connected-agents", first.threadId)
+      const stored = JSON.parse(await readFile(path, "utf8"))
+      delete stored["worktable.threadTitle"]
+      if (chosen) stored.title = "Previously chosen topic"
+      await writeFile(path, JSON.stringify(stored))
+      expect(
+        (
+          await renameThreadTitle({
+            location: first.location,
+            threadId: first.threadId,
+            title: "A useful topic",
+            onlyIfAutomatic: true,
+          })
+        ).title
+      ).toBe(chosen ? "Previously chosen topic" : "A useful topic")
+    }
+  })
+
+  it("preserves portable title edits and opaque metadata through reads, renames, and retries", async () => {
+    for (const opaqueState of [false, true]) {
+      const input = { to: "Atlas", body: "Please help with login", idempotencyKey: `portable-topic-${opaqueState}` }
+      const first = await postThreadMessage(finn, input)
+      const path = threadPath("connected-agents", first.threadId)
+      const stored = JSON.parse(await readFile(path, "utf8"))
+      stored.titleSource = { tool: "external", source: 7 }
+      stored.creationTitle = ["opaque", "metadata"]
+      if (opaqueState) stored["worktable.threadTitle"] = { version: 99, other: "preserved" }
+      stored.title = "Portable chosen title"
+      await writeFile(path, JSON.stringify(stored))
+      const target = { location: first.location, threadId: first.threadId }
+      expect((await readThreadMessages(finn, first.threadId, { location: first.location })).thread.title).toBe(stored.title)
+      expect((await renameThreadTitle({ ...target, title: "Automatic replacement", onlyIfAutomatic: true })).title).toBe(stored.title)
+      await renameThreadTitle({ ...target, title: "Explicit rename" })
+      const saved = JSON.parse(await readFile(path, "utf8"))
+      expect(saved.titleSource).toEqual(stored.titleSource)
+      expect(saved.creationTitle).toEqual(stored.creationTitle)
+      if (opaqueState) expect(saved["worktable.threadTitle"]).toEqual(stored["worktable.threadTitle"])
+      expect((await postThreadMessage(finn, input)).messageId).toBe(first.messageId)
+    }
   })
 
   it("derives a concise readable title from the first message", async () => {

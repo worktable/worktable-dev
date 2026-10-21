@@ -1,3 +1,4 @@
+import { z } from "zod"
 import { assertSpaceAccess, assertCurrentTeamIdentity, assertWorktableThreadAccess, canAccessWorktableThreads, currentRequestIdentity, canAccessSpace } from "./team-policy.ts";
 import {
   copyFile,
@@ -24,6 +25,7 @@ import {
   PortableThreadSchema,
   prospectiveDefaultConversationIdentities,
   ThreadV3Schema,
+  ThreadTitleSchema,
   threadBodyMentionsIdentity,
   threadLocation,
   threadLocationKey,
@@ -57,6 +59,7 @@ export type ThreadErrorCode =
   | "THREAD_SPACE_MISMATCH"
   | "AMBIGUOUS_THREAD_LOCATION"
   | "FORBIDDEN"
+  | "TITLE_CONFLICT"
 
 export class ThreadError extends Error {
   readonly code: ThreadErrorCode
@@ -69,6 +72,8 @@ export class ThreadError extends Error {
 }
 
 export interface AppendThreadMessageInput {
+  /** Only new threads accept an explicit creation title. */
+  title?: string
   author: ParticipantRef
   authorIdentityId?: string
   recipient?: ParticipantRef
@@ -169,6 +174,27 @@ function titleFromBody(body: string): string {
       ? clipped.slice(0, lastWordBoundary).trimEnd()
       : clipped
   }…`
+}
+
+// Keep owned naming state separate from arbitrary portable metadata. Unknown
+// values (including future versions) remain readable and are never overwritten.
+const TITLE_STATE_KEY = "worktable.threadTitle"
+const TitleStateSchema = z.object({
+  version: z.literal(1),
+  source: z.enum(["message", "named"]),
+  creationTitle: ThreadTitleSchema.optional(),
+}).passthrough()
+
+function titleState(thread: Thread) {
+  return TitleStateSchema.safeParse(thread[TITLE_STATE_KEY]).data
+}
+
+function hasAutomaticTitle(thread: Thread): boolean {
+  if (thread.title !== titleFromBody(thread.messages[0]!.body)) return false
+  return (
+    thread[TITLE_STATE_KEY] === undefined ||
+    titleState(thread)?.source === "message"
+  )
 }
 
 async function writeThreadFile(thread: Thread): Promise<void> {
@@ -773,6 +799,7 @@ function sameMessageIntent(
     message.authorMemberId === input.author.id &&
     message.authorIdentityId === intent.authorIdentityId &&
     message.body === input.body &&
+    (message.sequence !== 1 || titleState(thread)?.creationTitle === input.title) &&
     message.inReplyTo === replyTarget &&
     responseTargetMatchesRetry(thread, message, input) &&
     sameIdentitySet(
@@ -1052,7 +1079,12 @@ export async function createThread(
       version: 3,
       id: threadId,
       location,
-      title: titleFromBody(input.body),
+      title: input.title === undefined ? titleFromBody(input.body) : ThreadTitleSchema.parse(input.title),
+      [TITLE_STATE_KEY]: {
+        version: 1,
+        source: input.title === undefined ? "message" : "named",
+        ...(input.title === undefined ? {} : { creationTitle: ThreadTitleSchema.parse(input.title) }),
+      },
       members,
       identities,
       revision: 1,
@@ -1195,6 +1227,38 @@ async function persistThreadMutation(
       threadId,
     })
     return next
+  })
+}
+
+/** Rename under the same lock as replies, preserving both concurrent messages and chosen names. */
+export async function renameThread(
+  location: ThreadLocation,
+  threadId: string,
+  input: { title: string; expectedTitle?: string; onlyIfAutomatic?: boolean }
+): Promise<Thread> {
+  const title = ThreadTitleSchema.parse(input.title)
+  return persistThreadMutation(location, threadId, (thread, now) => {
+    if (input.onlyIfAutomatic && !hasAutomaticTitle(thread)) return thread
+    if (thread.title === title && !hasAutomaticTitle(thread)) return thread
+    if (
+      input.expectedTitle !== undefined &&
+      thread.title !== input.expectedTitle
+    ) {
+      throw new ThreadError(
+        "TITLE_CONFLICT",
+        "The thread name changed. Close and reopen Rename to use the latest name."
+      )
+    }
+    const state = titleState(thread)
+    return {
+      ...thread,
+      title,
+      ...(thread[TITLE_STATE_KEY] === undefined || state
+        ? { [TITLE_STATE_KEY]: { ...state, version: 1, source: "named" } }
+        : {}),
+      revision: thread.revision + 1,
+      updatedAt: now,
+    }
   })
 }
 

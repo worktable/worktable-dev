@@ -11971,7 +11971,7 @@
   {
     "name": "worktable_threads_write",
     "title": "Write Worktable threads",
-    "description": "Post messages and manage reply assignments in Worktable threads.",
+    "description": "Post messages, name conversations, and manage reply assignments in Worktable threads. Give new threads a concise topic using title. Before your first answer to a human-started conversation, call rename with a short topic and onlyIfAutomatic: true; this preserves any title already chosen by a person or another agent. If your adapter posts the reply for you, still call rename before answering. Use an unconditional rename only when explicitly asked to change a title.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -12092,6 +12092,12 @@
                   "type": "number",
                   "minimum": 0,
                   "maximum": 25
+                },
+                "title": {
+                  "description": "A short, specific topic for a new thread. For an existing thread, use rename instead.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
                 }
               },
               "required": [
@@ -12169,6 +12175,72 @@
                 "identityId"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "rename"
+                },
+                "location": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "worktable"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "space"
+                        },
+                        "spaceId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "spaceId"
+                      ]
+                    }
+                  ]
+                },
+                "threadId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "expectedTitle": {
+                  "description": "The title you read. Refuses a conflicting rename if someone changed it.",
+                  "type": "string"
+                },
+                "onlyIfAutomatic": {
+                  "description": "Use true when naming a human-started conversation before your first answer. Leaves an already chosen title unchanged.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "action",
+                "location",
+                "threadId",
+                "title"
+              ],
+              "additionalProperties": false
             }
           ]
         }
@@ -12183,7 +12255,7 @@
       "type": "object",
       "properties": {
         "threadId": {
-          "description": "Returned by action \"post\" or \"assign_response\".",
+          "description": "Returned by action \"post\", \"assign_response\" or \"rename\".",
           "type": "string"
         },
         "location": {
@@ -12236,7 +12308,7 @@
           "type": "boolean"
         },
         "revision": {
-          "description": "Returned by action \"assign_response\".",
+          "description": "Returned by action \"assign_response\" or \"rename\".",
           "type": "integer",
           "exclusiveMinimum": 0,
           "maximum": 9007199254740991
@@ -12251,11 +12323,18 @@
               "type": "null"
             }
           ]
+        },
+        "title": {
+          "description": "Returned by action \"rename\" (the saved title, including when a conditional rename leaves it unchanged).",
+          "type": "string"
+        },
+        "updatedAt": {
+          "description": "Returned by action \"rename\".",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
-      "description": "Structured result from worktable_threads_write. Fields vary by request.action.",
       "definitions": {
         "ThreadLocation": {
           "oneOf": [

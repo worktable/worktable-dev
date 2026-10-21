@@ -13,7 +13,7 @@ export function invalidateSharingQueries(
 ): void {
   // A tab can receive the same revision on several Space streams.
   if (revision !== undefined) {
-    if (revision <= (revisions.get(client) ?? -1)) return
+    if (revision === revisions.get(client)) return
     revisions.set(client, revision)
   }
   for (const query of client.getQueryCache().findAll()) {

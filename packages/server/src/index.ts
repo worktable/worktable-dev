@@ -1,3 +1,4 @@
+import { finalizeRestoredSharingPolicy } from "./share-links-store.ts";
 import { recoverTeamInitialization } from "./team-initialization.ts";
 import { resetTeamSpacePoliciesAfterContentReplacement, finalizePendingTeamSpacePolicyReset } from "./team-policy.ts";
 import { serveTeamDirectory, TEAM_DIRECTORY_PATH } from "./team-directory.ts"
@@ -1251,6 +1252,7 @@ export function startServer(
   // without a password exposes nothing.
   recoverTeamInitialization();
   finalizePendingTeamSpacePolicyReset();
+  finalizeRestoredSharingPolicy();
   const bindIsLoopback =
     hostname === undefined || isLoopbackBindHost(hostname);
   const exposedBind = authRequired() || !bindIsLoopback;

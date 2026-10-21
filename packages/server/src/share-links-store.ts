@@ -12,6 +12,7 @@ import {
 } from "@worktable/types"
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
 import { chmodSync, existsSync, mkdirSync } from "node:fs"
+import { chmod, link, mkdir, open, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { getAppDir } from "./app-storage.ts"
 import { sharingPreviewEnabled } from "./sharing-preview.ts"
@@ -1080,48 +1081,164 @@ export function saveSharingPolicy(
   return { policy, revision: saved.revision }
 }
 
-/**
- * The saved policy as stored, for operator backups: settings a later
- * version added travel with it. Null before an owner saves one, and when
- * the store is one this version can't open, which never fails a backup.
- */
+/** The saved policy, including future fields. An unreadable policy fails a backup. */
 export function sharingPolicyForBackup(): Record<string, unknown> | null {
+  const row = openDatabase(false)
+    ?.query<
+      { policy: string },
+      []
+    >("SELECT policy FROM share_policy WHERE id = 1")
+    .get()
+  if (!row) return null
+  let value: unknown
   try {
-    const row = openDatabase(false)
-      ?.query<
-        { policy: string },
-        []
-      >("SELECT policy FROM share_policy WHERE id = 1")
-      .get()
-    const value: unknown = row ? JSON.parse(row.policy) : null
-    return value !== null && typeof value === "object" && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : null
-  } catch (error) {
-    if (error instanceof ShareLinksStoreError || error instanceof SyntaxError) {
-      return null
-    }
-    throw error
+    value = JSON.parse(row.policy)
+  } catch {
+    throw new ShareLinksStoreError("Saved sharing policy is unreadable")
   }
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new ShareLinksStoreError("Saved sharing policy is unreadable")
+  return value as Record<string, unknown>
+}
+
+const PENDING_POLICY_RESTORE = "pending-policy-restore"
+
+/** Only a store made by an unpublished recovery may take another snapshot's policy. */
+function replacePendingRestoredPolicy(
+  db: Database,
+  policy: Record<string, unknown> | null
+): boolean {
+  return db.transaction(() => {
+    const pending = db
+      .query<
+        { value: string },
+        [string]
+      >("SELECT value FROM share_meta WHERE key = ?")
+      .get(PENDING_POLICY_RESTORE)?.value
+    const saved = db
+      .query<
+        { revision: number; updated_by: string },
+        []
+      >("SELECT revision, updated_by FROM share_policy WHERE id = 1")
+      .get()
+    if (
+      !pending ||
+      !(pending === "none" || /^[1-9][0-9]*$/.test(pending)) ||
+      (saved
+        ? saved.updated_by !== "restore" || pending !== String(saved.revision)
+        : pending !== "none")
+    )
+      return false
+    if (db.query("SELECT 1 FROM share_links LIMIT 1").get()) return false
+    if (
+      saved &&
+      (!Number.isSafeInteger(saved.revision) ||
+        saved.revision >= Number.MAX_SAFE_INTEGER)
+    )
+      return false
+    const revision = (saved?.revision ?? 0) + 1
+    if (policy)
+      db.query(
+        "INSERT OR REPLACE INTO share_policy (id, policy, revision, updated_by, updated_at) VALUES (1, ?, ?, 'restore', ?)"
+      ).run(JSON.stringify(policy), revision, Date.now())
+    else db.query("DELETE FROM share_policy WHERE id = 1").run()
+    db.query("UPDATE share_meta SET value = ? WHERE key = ?").run(
+      policy ? String(revision) : "none",
+      PENDING_POLICY_RESTORE
+    )
+    policyCache = null
+    return true
+  })()
 }
 
 /**
- * Restore a backed-up policy onto a machine with no links store yet, as
- * after a full recovery. Where a store exists its policy stays, so an older,
- * looser one never replaces it over live links. Returns whether it was
- * restored.
+ * Install a policy before publishing a recovered workspace. The store starts
+ * as a complete, durable file; its marker stays until publication succeeds.
+ * A failed or interrupted recovery may therefore retry a different snapshot.
+ * Any store with an owner's save or a link remains authoritative.
  */
-export function restoreSharingPolicy(policy: Record<string, unknown>): boolean {
+export async function restoreSharingPolicy(
+  policy: Record<string, unknown> | null
+): Promise<boolean> {
   const path = shareLinksDatabasePath()
-  if (databases.has(path) || existsSync(path)) return false
-  const restored = openDatabase(true)!
-    .query(
-      `INSERT INTO share_policy (id, policy, revision, updated_by, updated_at)
-       VALUES (1, ?, 1, 'restore', ?) ON CONFLICT (id) DO NOTHING`
+  if (databases.has(path) || existsSync(path)) {
+    let db: Database | null
+    try {
+      db = openDatabase(false)
+    } catch (error) {
+      if (error instanceof ShareLinksStoreError) return false
+      throw error
+    }
+    return db ? replacePendingRestoredPolicy(db, policy) : false
+  }
+  if (!policy) return false
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+  const staged = `${path}.restore-${randomBytes(16).toString("hex")}`
+  let db: Database | null = null
+  try {
+    db = new Database(staged, { create: true, strict: true })
+    await chmod(staged, 0o600)
+    // Close a complete single-file database before its no-replace publication.
+    db.exec("PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL")
+    migrate(db)
+    db.transaction(() => {
+      db!
+        .query(
+          "INSERT INTO share_policy (id, policy, revision, updated_by, updated_at) VALUES (1, ?, 1, 'restore', ?)"
+        )
+        .run(JSON.stringify(policy), Date.now())
+      db!
+        .query("INSERT INTO share_meta (key, value) VALUES (?, '1')")
+        .run(PENDING_POLICY_RESTORE)
+    })()
+    db.close()
+    db = null
+    try {
+      await link(staged, path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return false
+      throw error
+    }
+    const parent = await open(dirname(path), "r")
+    try {
+      await parent.sync()
+    } finally {
+      await parent.close()
+    }
+    policyCache = null
+    return true
+  } finally {
+    db?.close()
+    await rm(staged, { force: true })
+    await rm(`${staged}-journal`, { force: true })
+  }
+}
+
+/** Publication completed, or the restored workspace reached its first boot. */
+export function finalizeRestoredSharingPolicy(): void {
+  let db: Database | null
+  let marker: string | undefined
+  try {
+    db = openDatabase(false)
+    marker = db
+      ?.query<
+        { value: string },
+        [string]
+      >("SELECT value FROM share_meta WHERE key = ?")
+      .get(PENDING_POLICY_RESTORE)?.value
+  } catch (error) {
+    // An unreadable sharing store closes sharing without blocking the app.
+    if (
+      error instanceof ShareLinksStoreError ||
+      (error instanceof Error && error.name === "SQLiteError")
     )
-    .run(JSON.stringify(policy), Date.now())
-  policyCache = null
-  return restored.changes > 0
+      return
+    throw error
+  }
+  if (marker === "none" || (marker && /^[1-9][0-9]*$/.test(marker)))
+    db!
+      .query("DELETE FROM share_meta WHERE key = ?")
+      .run(PENDING_POLICY_RESTORE)
 }
 
 // ── Changes ──────────────────────────────────────────────────

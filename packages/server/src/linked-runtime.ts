@@ -512,6 +512,7 @@ function launch(): void {
                         capabilities: [
                           LINKED_CAPABILITIES.SHARE_TICKETS,
                           LINKED_CAPABILITIES.SHARE_BRIDGE,
+                          LINKED_CAPABILITIES.SHARE_READ_HINTS,
                         ],
                       }
                     : {}),

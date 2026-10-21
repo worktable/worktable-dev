@@ -254,7 +254,9 @@ export function linkBridge(getShareOrigin: () => string | null) {
             refused = failure(
               response.body.code === "LINK_LIMIT"
                 ? "LINK_QUERY_BUDGET"
-                : response.body.code,
+                : response.status === 403
+                  ? "LINK_FORBIDDEN"
+                  : response.body.code,
               response.status,
               response.body.error,
               response.headers?.["Retry-After"]

@@ -619,6 +619,42 @@ it("carries bounded live bridge calls and reserves MCP capacity while share bodi
       ok: true,
       result: {},
     })
+    const projection = await fetch(await createLinkedRequest({
+      origin: server.url.origin, key, binding: ingress.binding,
+      grant: { kind: "share", capability: token }, method: "GET", path: "/public/share",
+    }))
+    expect(projection.status).toBe(200)
+    const { contentTicket, live } = await projection.json()
+    const frameRequest = (contentRevision?: string) => createLinkedRequest({
+      origin: server.url.origin, key, binding: ingress.binding,
+      grant: { kind: "share", capability: contentTicket, ...(contentRevision ? { contentRevision } : {}) },
+      method: "GET", path: "/public/share/content",
+    })
+    const frame = await fetch(await frameRequest())
+    expect(frame.status).toBe(200)
+    expect(await frame.text()).toContain("Live report")
+    expect((await fetch(await frameRequest(live.rev))).status).toBe(304)
+    const wrongPath = await createLinkedRequest({
+      origin: server.url.origin, key, binding: ingress.binding,
+      grant: { kind: "share", capability: token, contentRevision: live.rev },
+      method: "POST", path: "/public/share/bridge", body,
+    })
+    expect((await fetch(wrongPath)).status).toBe(403)
+    const clientCall = await createLinkedRequest({
+      origin: server.url.origin, key, binding: ingress.binding,
+      grant: { kind: "share", capability: token, clientAddress: "a".repeat(32) },
+      method: "POST", path: "/public/share/bridge", body,
+    })
+    expect((await fetch(clientCall)).status).toBe(200)
+    const forbiddenRead = await createLinkedRequest({
+      origin: server.url.origin, key, binding: ingress.binding,
+      grant: { kind: "share", capability: token },
+      method: "POST", path: "/public/share/bridge",
+      body: new TextEncoder().encode(JSON.stringify({ v: 1, op: "records.query", collection: "ungranted", query: {} })),
+    })
+    const refused = await fetch(forbiddenRead)
+    expect(refused.status).toBe(403)
+    expect((await refused.json()).error.code).toBe("LINK_FORBIDDEN")
     expect(
       (await fetch(await request(new Uint8Array(16 * 1024 + 1)))).status
     ).toBe(403)

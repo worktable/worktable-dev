@@ -1,3 +1,4 @@
+import { advanceGenerationOnWrite } from "./shared-reads.ts"
 import { LinkGrantSchema } from "@worktable/types"
 import { createHash } from "node:crypto"
 import { buildRecordCollectionSchema, writeRecordCollectionSchema, writeRecord } from "./record-store.ts"
@@ -103,6 +104,7 @@ const agent: TokenIdentity = {
 
 function app(identity: TokenIdentity = person()): Hono {
   const next = new Hono()
+  next.use("*", advanceGenerationOnWrite)
   next.use("*", async (c, proceed) => {
     c.set("identity", identity)
     await proceed()
@@ -280,6 +282,26 @@ describe("share links", () => {
     expect(stalled.status).toBe(429)
     expect(stalled.headers.get("Retry-After")).toBe("1")
     expect((await bridge(created.token)).status).toBe(200)
+    // Both reads overlap behind the same middleware as the hosted router.
+    const originalRead = linkQueries.queryRecordsForLink
+    let entered = 0
+    let releaseReads!: () => void
+    const readGate = new Promise<void>((resolve) => { releaseReads = resolve })
+    const safety = setTimeout(() => releaseReads(), 1000)
+    const overlap = spyOn(linkQueries, "queryRecordsForLink").mockImplementation(async (...args) => {
+      if (++entered === 2) releaseReads()
+      await readGate
+      return originalRead(...args)
+    })
+    try {
+      const reads = await Promise.all([bridge(created.token), bridge(created.token)])
+      expect(entered).toBe(2)
+      expect(reads.map((read) => read.status)).toEqual([200, 200])
+    } finally { releaseReads(); clearTimeout(safety); overlap.mockRestore() }
+    await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "document" }, secret: { type: "text" } } }))
+    expect((await bridge(created.token)).status).toBe(403)
+    await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, secret: { type: "text" } } }))
+    expect((await readRecords(created.token)).status).toBe(200)
     const original = linkQueries.queryRecordsForLink
     const paused = spyOn(linkQueries, "queryRecordsForLink").mockImplementation(async (...args) => {
       const read = await original(...args)

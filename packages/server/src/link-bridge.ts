@@ -18,7 +18,8 @@ import { queryRecordsForLink } from "./link-query.ts"
 import { linkReadPool } from "./link-read-pool.ts"
 import { linkReadMemo } from "./link-read-memo.ts"
 import { linkChangeJournal } from "./link-change-journal.ts"
-import { readLinkTool } from "./link-tool.ts"
+import { linkSchemaGeneration } from "./link-schema-generation.ts"
+import { LinkToolChanged, readLinkTool } from "./link-tool.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 import { recordIndex, recordIndexEnabled } from "./record-index.ts"
 import { listRecords, readWidgetState } from "./record-store.ts"
@@ -167,6 +168,7 @@ export function linkBridge(getShareOrigin: () => string | null) {
       if (!sharingPreviewEnabled()) return unavailable()
       let result: unknown = {}
       let refused: Response | null = null
+      let changed = false
       if (call.op !== "ping") {
         const generation = workspaceGeneration()
         const tool = await readLinkTool(view)
@@ -204,6 +206,7 @@ export function linkBridge(getShareOrigin: () => string | null) {
               view.link.grantRevision,
               view.link.passwordRevision,
               generation,
+              tool.schemaGeneration,
               policy,
               call,
             ])
@@ -277,24 +280,24 @@ export function linkBridge(getShareOrigin: () => string | null) {
         } else {
           result = linkChangeJournal.changes(view.link.id, call.since)
         }
-        if (
+        changed =
           workspaceGeneration() !== generation ||
-          spaceGeneration(view.link.spaceId) !== tool.generation
-        )
-          return busy()
+          spaceGeneration(view.link.spaceId) !== tool.generation ||
+          linkSchemaGeneration(view.link.spaceId) !== tool.schemaGeneration
       }
-      if (Date.now() > deadline) return busy()
       if (
         !sharingPreviewEnabled() ||
         !shareLinkStillOpens(view.link, view.policyRevision)
       )
         return unavailable()
+      if (changed || Date.now() > deadline) return busy()
       if (refused) return refused
       const body = JSON.stringify({ ok: true, result })
       return Buffer.byteLength(body) > 1024 * 1024
         ? failure("LINK_BUSY", 503, "This result is too large.", "1")
         : new Response(body, { headers: HEADERS })
     } catch (error) {
+      if (error instanceof LinkToolChanged) return busy()
       if (error instanceof ShareLinksStoreError) return unavailable()
       if (error instanceof LinkRecordsBusy)
         return failure("LINK_BUSY", 503, "Try again in a moment.", "1")

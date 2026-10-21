@@ -1,3 +1,4 @@
+import { linkSchemaGeneration } from "./link-schema-generation.ts"
 import { createHash } from "node:crypto"
 import { createLinkKey, type LinkKey } from "./link-grant-view.ts"
 import { injectWidgetRuntime } from "./widget-authoring.ts"
@@ -11,12 +12,17 @@ import { workspaceCacheKey } from "./workspace.ts"
 import { runAsLinkVisitor, withLinkGrantRead } from "./team-policy.ts"
 import type { ShareLinkView } from "./share-link-views.ts"
 
+export class LinkToolChanged extends Error {
+  override name = "LinkToolChanged"
+}
+
 export interface LinkTool {
   html: string
   revision: string
   key: LinkKey
   permissions: WidgetFile["permissions"]
   generation: number
+  schemaGeneration: number
   schemas: ReadonlyMap<string, RecordCollectionSchema>
 }
 
@@ -31,7 +37,8 @@ const MAX_BYTES = 16 * 1024 * 1024
 
 export function readLinkTool(view: ShareLinkView): Promise<LinkTool | null> {
   const generation = spaceGeneration(view.link.spaceId)
-  const key = `${workspaceCacheKey()}\0${view.link.id}\0${view.link.spaceId}\0${view.link.documentId}\0${view.path}\0${view.link.grantRevision}\0${generation}`
+  const schemaGeneration = linkSchemaGeneration(view.link.spaceId)
+  const key = `${workspaceCacheKey()}\0${view.link.id}\0${view.link.spaceId}\0${view.link.documentId}\0${view.path}\0${view.link.grantRevision}\0${generation}\0${schemaGeneration}`
   const cached = tools.get(key)
   if (cached) return cached.value
   const entry = {
@@ -56,11 +63,11 @@ export function readLinkTool(view: ShareLinkView): Promise<LinkTool | null> {
             readLinkGrantSchemas(view.link.spaceId, grant),
           ])
           if (
-            !data ||
-            data.widget.archive ||
-            spaceGeneration(view.link.spaceId) !== generation
+            spaceGeneration(view.link.spaceId) !== generation ||
+            linkSchemaGeneration(view.link.spaceId) !== schemaGeneration
           )
-            return { tool: null }
+            throw new LinkToolChanged()
+          if (!data || data.widget.archive) return { tool: null }
           const html = injectWidgetRuntime(data.html, "", "", { mode: "share" })
           entry.bytes =
             Buffer.byteLength(html) +
@@ -72,6 +79,7 @@ export function readLinkTool(view: ShareLinkView): Promise<LinkTool | null> {
             key: createLinkKey(view.link.linkKey),
             permissions: data.widget.permissions,
             generation,
+            schemaGeneration,
             schemas,
           }
           for (const [oldKey, old] of tools) {

@@ -644,6 +644,7 @@ it("carries bounded live bridge calls and reserves MCP capacity while share bodi
       overloaded = await fetch(await request())
       if (overloaded.status === 429) break
       await overloaded.body?.cancel()
+      // test-policy: external-readiness-backoff. Wait for the six real socket uploads to reach admission.
       await Bun.sleep(5)
     }
     expect(overloaded?.status).toBe(429)

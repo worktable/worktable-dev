@@ -1,3 +1,4 @@
+import { refreshThreadNamingCapabilities } from "./thread-naming-cache"
 import { describe, expect, test } from "bun:test"
 import type {
   ThreadActivity,
@@ -11,7 +12,6 @@ import {
   applyThreadAssignment,
   mergeThreadPage,
   refreshThreadWindow,
-  refreshThreadNamingCapabilities,
   threadQueryKeys,
 } from "./threads-queries"
 import { applyThreadRename } from "./thread-naming"

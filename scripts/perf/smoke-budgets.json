@@ -87,13 +87,15 @@
       "max": 9
     },
     "cold js, open Threads": {
-      "max": 27
+      "max": 28,
+      "why": "Links settings reuses the shared Empty component with Threads. Rollup extracts its existing code into one 0.6 KB gzip chunk, measured in Namespace run 39604137679; the established empty-state primitive stays shared."
     },
     "requests, cold, open a thread": {
       "max": 10
     },
     "cold js, open a thread": {
-      "max": 27
+      "max": 28,
+      "why": "Links settings reuses the shared Empty component with Threads. Rollup extracts its existing code into one 0.6 KB gzip chunk, measured in Namespace run 39604137679; the established empty-state primitive stays shared."
     },
     "requests, first, open the app at Home": {
       "max": 11

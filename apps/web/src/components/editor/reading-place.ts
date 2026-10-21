@@ -6,15 +6,20 @@
  * pane rather than a scroll offset.
  */
 export interface ReadingPlace {
-  /** The block's text, which every rendering shows the same. */
+  /**
+   * The block's text, which every rendering shows the same. Empty when no
+   * text is in view, such as among images at the end of a Doc.
+   */
   text: string
   /** Which block with that text, counting from the top. */
   occurrence: number
   /** The block's distance from the top of the scrolling pane. */
   offset: number
+  /** How far the pane was scrolled, for when there is no text to go by. */
+  scrollTop: number
 }
 
-const BLOCKS = "h1, h2, h3, h4, h5, h6, p, li, pre, th, td, summary"
+const BLOCKS = "h1, h2, h3, h4, h5, h6, p, li, pre, th, td, summary, blockquote"
 // A line pressed against the top edge isn't the one being read, and on a
 // phone the editor scrolls a caret there down by this much.
 const EDGE = 16
@@ -65,7 +70,7 @@ function blocks(root: Element): { element: Element; text: string }[] {
 }
 
 /** The first block that starts clear of the top, or the one the pane starts inside. */
-export function readingPlace(root: Element): ReadingPlace | null {
+export function readingPlace(root: Element): ReadingPlace {
   const top = root.getBoundingClientRect().top
   const all = blocks(root)
   const starts = all.findIndex(({ element }) => lineTop(element) >= top + EDGE)
@@ -76,12 +81,14 @@ export function readingPlace(root: Element): ReadingPlace | null {
           ({ element }) => element.getBoundingClientRect().bottom > top
         )
   const block = all[at]
-  if (!block) return null
+  if (!block)
+    return { text: "", occurrence: 0, offset: 0, scrollTop: root.scrollTop }
   return {
     text: block.text,
     occurrence: all.slice(0, at).filter((other) => other.text === block.text)
       .length,
     offset: lineTop(block.element) - top,
+    scrollTop: root.scrollTop,
   }
 }
 
@@ -93,6 +100,10 @@ export function restoreReadingPlace(
   root: Element,
   place: ReadingPlace
 ): Element | null {
+  if (!place.text) {
+    root.scrollTop = place.scrollTop
+    return null
+  }
   const match = blocks(root).filter((block) => block.text === place.text)[
     place.occurrence
   ]

@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Large collections stay quick while agents write:** Each record an agent saves now updates just that record, instead of making Worktable rescan the whole collection and every open table and HTML Doc reload it.
+
 ## [0.1.25] - 2026-10-20
 
 ### Added
@@ -330,8 +334,6 @@ infrastructure and personal context out of release notes.
 
 - **Local installation:** Installation links point to the supported CLI setup while signed Desktop downloads are unavailable in the current release.
 
-
-
 ## [0.1.5] - 2026-09-20
 
 ### Added
@@ -558,7 +560,6 @@ infrastructure and personal context out of release notes.
 
 ## [0.0.39] - 2026-07-22
 
-
 ### Added
 
 - **Connect Worktable Desktop to your own server:** save multiple self-hosted Worktable origins, sign in with the server's owner page, and switch or forget connections without disturbing local workspaces.
@@ -576,7 +577,6 @@ infrastructure and personal context out of release notes.
 
 ## [0.0.38] - 2026-07-20
 
-
 ### Changed
 
 - **Cloud sign-out now syncs across tabs:** signing out of Worktable Cloud in one tab signs you out of every other open tab too.
@@ -584,7 +584,6 @@ infrastructure and personal context out of release notes.
 - **Connected agents favor Worktable for durable work:** agents now default to keeping context and artifacts in your workspace, preferring HTML docs for visual or interactive results.
 
 ## [0.0.37] - 2026-07-20
-
 
 ### Highlights
 
@@ -608,7 +607,6 @@ infrastructure and personal context out of release notes.
 
 ## [0.0.36] - 2026-07-17
 
-
 ### Changed
 
 - **Settings adapt to your deployment:** Worktable Cloud hides local-only controls like Workspace URL and update checks, showing only settings that apply to your install.
@@ -620,7 +618,6 @@ infrastructure and personal context out of release notes.
 
 ## [0.0.35] - 2026-07-16
 
-
 ### Fixed
 
 - **Safer agent pairing:** connecting a client now checks every selected client before writing any config, and rolls back all changes if a check fails.
@@ -628,7 +625,6 @@ infrastructure and personal context out of release notes.
 ## [0.0.34] - 2026-07-16
 
 ## [0.0.33] - 2026-07-16
-
 
 ### Added
 
@@ -645,14 +641,12 @@ infrastructure and personal context out of release notes.
 
 ## [0.0.32] - 2026-07-15
 
-
 ### Changed
 
 - **Cloud agent connections use OAuth:** Worktable Cloud's Agents settings now walk you through OAuth sign-in instead of local access tokens, which aren't available there.
 - **Smoother Cloud first run:** setting up a new Worktable Cloud workspace now shows a live status page instead of reloading, and takes you in automatically once it's ready.
 
 ## [0.0.31] - 2026-07-14
-
 
 ### Highlights
 
@@ -676,7 +670,6 @@ infrastructure and personal context out of release notes.
 
 ## [0.0.30] - 2026-07-13
 
-
 ### Added
 
 - **Shareable links from agent replies:** when an agent creates or edits a doc or widget, it can now share a clickable link back to you in chat.
@@ -691,13 +684,11 @@ infrastructure and personal context out of release notes.
 
 ## [0.0.29] - 2026-07-11
 
-
 ### Fixed
 
 - **Sidebar search polish:** result rows now have clear spacing, pressing Enter opens the top result, and excerpts no longer show raw markdown or repeat the title.
 
 ## [0.0.28] - 2026-07-11
-
 
 ### Highlights
 
@@ -719,7 +710,6 @@ infrastructure and personal context out of release notes.
 
 ## [0.0.27] - 2026-07-11
 
-
 ### Added
 
 - **CLI agent pairing:** `worktable agent invite` and `worktable agent connect` pair a remote agent straight from the command line, no client config to hand-translate.
@@ -729,7 +719,6 @@ infrastructure and personal context out of release notes.
 - **No more raw tokens in setup output:** `worktable setup` and `mcp setup` point you to agent pairing instead of printing a bearer token and connection snippet.
 
 ## [0.0.26] - 2026-07-11
-
 
 ### Added
 
@@ -741,7 +730,6 @@ infrastructure and personal context out of release notes.
 - **Connections replace access tokens:** the Agents settings list shows connected clients and machines with a last-seen status, instead of raw token records.
 
 ## [0.0.25] - 2026-07-10
-
 
 ### Highlights
 
@@ -763,7 +751,6 @@ infrastructure and personal context out of release notes.
 _Maintenance release._
 
 ## [0.0.23] - 2026-07-08
-
 
 ### Highlights
 
@@ -791,7 +778,6 @@ _Maintenance release._
 
 ## [0.0.22] - 2026-07-07
 
-
 ### Added
 
 - **Doc export:** download any doc as a `.md` file, or print and save it as a clean PDF, from the header's export menu.
@@ -801,7 +787,6 @@ _Maintenance release._
 - **Mobile topbar icon:** shows the Worktable app icon instead of a generic lightning bolt.
 
 ## [0.0.21] - 2026-07-05
-
 
 ### Added
 
@@ -826,7 +811,6 @@ _Maintenance release._
 
 ## [0.0.19] - 2026-07-04
 
-
 ### Highlights
 
 - **Doc freshness in the app:** every open doc shows who last touched it and how long ago, stale docs get a sidebar marker, and Mark Reviewed clears it.
@@ -850,7 +834,6 @@ _Maintenance release._
 - **Review accuracy:** simply opening an agent-written doc no longer marks it reviewed; only actually editing or interacting with the content does.
 
 ## [0.0.18] - 2026-07-03
-
 
 ### Added
 

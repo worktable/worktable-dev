@@ -356,11 +356,36 @@ describe("WorkspaceWatcher", () => {
       threadId: "thr_abcdefghijkl",
     })
   })
-  it("normalizes ambiguous record temp and directory activity to a collection reconcile", () => {
+  it("maps Worktable's own atomic-write temp files to the record or schema they replace", () => {
     expect(
       parseChangedPath(
         "/workspace/spaces",
         "space/records/ideas/idea.yaml.tmp",
+        "/workspace/spaces"
+      )
+    ).toEqual({
+      type: "record",
+      spaceId: "space",
+      collectionId: "ideas",
+      recordId: "idea",
+    })
+    expect(
+      parseChangedPath(
+        "/workspace/spaces",
+        "space/records/ideas/schema.yaml.tmp",
+        "/workspace/spaces"
+      )
+    ).toEqual({
+      type: "recordCollection",
+      spaceId: "space",
+      collectionId: "ideas",
+    })
+  })
+  it("normalizes ambiguous record temp and directory activity to a collection reconcile", () => {
+    expect(
+      parseChangedPath(
+        "/workspace/spaces",
+        "space/records/ideas/Not An Id.yaml.tmp",
         "/workspace/spaces"
       )
     ).toEqual({

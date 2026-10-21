@@ -173,6 +173,18 @@ function collectionSentences(
   input: DescribeAbilitiesInput
 ): string[] {
   const name = collectionName(input.collections, id)
+  return [
+    ...readSentences(id, name, grant, input),
+    ...writeSentences(id, name, grant, input.collections),
+  ]
+}
+
+function readSentences(
+  id: string,
+  name: string,
+  grant: CollectionGrant,
+  input: DescribeAbilitiesInput
+): string[] {
   const condition = describeRows(id, grant.rows, input)
   if (grant.mode === "summaries") {
     const groups = (grant.summaries?.groupBy ?? []).map((field) =>
@@ -185,20 +197,14 @@ function collectionSentences(
   }
   const { shown, hidden } = fieldLists(id, grant, input.collections)
   const listed = shown.length > 0 ? `: ${listFields(shown)}` : ""
-  const sentences: string[] = []
-  if (grant.mode === "fixed") {
-    const reads = grant.fixed?.length ?? 0
-    const saved = reads === 1 ? "the read" : `the ${reads} reads`
-    sentences.push(
-      `${LINK_SUBJECT} see ${name}${condition} only through ${saved} saved with this link${listed}.`
-    )
-  } else {
-    sentences.push(
-      `${LINK_SUBJECT} see ${countedName(name, own(input.counts ?? {}, id), grant.rows !== null)}${condition}${listed}.`
-    )
-  }
+  const reads = grant.fixed?.length ?? 0
+  const saved = reads === 1 ? "the read" : `the ${reads} reads`
+  const sentences = [
+    grant.mode === "fixed"
+      ? `${LINK_SUBJECT} see ${name}${condition} only through ${saved} saved with this link${listed}.`
+      : `${LINK_SUBJECT} see ${countedName(name, own(input.counts ?? {}, id), grant.rows !== null)}${condition}${listed}.`,
+  ]
   if (hidden.length > 0) sentences.push(`Hidden: ${listFields(hidden)}.`)
-  sentences.push(...writeSentences(id, name, grant, input.collections))
   return sentences
 }
 

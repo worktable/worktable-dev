@@ -43,7 +43,21 @@ const ShareLinkPasswordSchema = z.string().min(8).max(128)
 export const VisitorsSeeSchema = z.enum(["own", "all"])
 export type VisitorsSee = z.infer<typeof VisitorsSeeSchema>
 
-// Without defaults, so a partial update never resets the settings it omits.
+// Settings live in two forms: without defaults for inputs, so an update or a
+// replacement never quietly resets what it omits, and with defaults for
+// creating and reading stored values.
+function withDefaults<S extends Record<string, z.ZodType>>(
+  shape: S,
+  defaults: { [K in keyof S]: z.output<S[K]> }
+): { [K in keyof S]: z.ZodDefault<S[K]> } {
+  return Object.fromEntries(
+    Object.entries(shape).map(([key, schema]) => [
+      key,
+      schema.default(defaults[key] as never),
+    ])
+  ) as { [K in keyof S]: z.ZodDefault<S[K]> }
+}
+
 const CommentSettingsFieldsSchema = z.strictObject({
   /** The sharer's switch. Turning it on also resumes comments paused after a burst. */
   acceptComments: z.boolean(),
@@ -68,21 +82,12 @@ export const DEFAULT_SHARE_LINK_COMMENT_SETTINGS: Readonly<ShareLinkCommentSetti
     visitorsSee: "own",
   }
 
-const { shape: commentFields } = CommentSettingsFieldsSchema
-export const ShareLinkCommentSettingsSchema = z.strictObject({
-  acceptComments: commentFields.acceptComments.default(
-    DEFAULT_SHARE_LINK_COMMENT_SETTINGS.acceptComments
-  ),
-  anonymousAllowed: commentFields.anonymousAllowed.default(
-    DEFAULT_SHARE_LINK_COMMENT_SETTINGS.anonymousAllowed
-  ),
-  showSharerName: commentFields.showSharerName.default(
-    DEFAULT_SHARE_LINK_COMMENT_SETTINGS.showSharerName
-  ),
-  visitorsSee: commentFields.visitorsSee.default(
-    DEFAULT_SHARE_LINK_COMMENT_SETTINGS.visitorsSee
-  ),
-})
+export const ShareLinkCommentSettingsSchema = z.strictObject(
+  withDefaults(
+    CommentSettingsFieldsSchema.shape,
+    DEFAULT_SHARE_LINK_COMMENT_SETTINGS
+  )
+)
 
 export interface ShareLinkComments extends ShareLinkCommentSettings {
   /** Comments were paused automatically after a burst; `acceptComments: true` resumes them. */
@@ -194,43 +199,59 @@ export const SHARING_RECORD_ACCESS = [
 
 const DAYS = z.number().int().min(1).max(3650)
 
-/** Defaults reproduce sharing as it was before owner policy existed. */
-export const SharingPolicySchema = z.strictObject({
+/** A whole owner policy, as `PUT /api/shares/policy` takes it: every field is required. */
+export const SharingPolicyInputSchema = z.strictObject({
   /** Stops every link, and visitor comments, at once. */
-  paused: z.boolean().default(false),
-  whoMayShare: z
-    .enum(["owners", "space-managers", "editors"])
-    .default("space-managers"),
-  spaces: z
-    .discriminatedUnion("mode", [
-      z.strictObject({ mode: z.literal("all") }),
-      z.strictObject({
-        mode: z.literal("selected"),
-        spaceIds: z.array(z.string().min(1).max(256)).max(1000),
-      }),
-    ])
-    .default({ mode: "all" }),
-  requirePassword: z.boolean().default(false),
-  maxExpiryDays: DAYS.nullable().default(null),
+  paused: z.boolean(),
+  whoMayShare: z.enum(["owners", "space-managers", "editors"]),
+  spaces: z.discriminatedUnion("mode", [
+    z.strictObject({ mode: z.literal("all") }),
+    z.strictObject({
+      mode: z.literal("selected"),
+      spaceIds: z.array(z.string().min(1).max(256)).max(1000),
+    }),
+  ]),
+  requirePassword: z.boolean(),
+  maxExpiryDays: DAYS.nullable(),
   levels: z
     .array(ShareLinkLevelSchema)
     .min(1)
     .refine((levels) => new Set(levels).size === levels.length, {
       message: "Levels must be unique",
-    })
-    .default(["view"]),
-  liveLinks: z.boolean().default(false),
-  records: z.enum(SHARING_RECORD_ACCESS).default("scoped"),
+    }),
+  liveLinks: z.boolean(),
+  records: z.enum(SHARING_RECORD_ACCESS),
   /** The expiry a new link that reaches Records starts with. */
-  recordsDefaultExpiryDays: DAYS.nullable().default(30),
+  recordsDefaultExpiryDays: DAYS.nullable(),
   /** Comment links take comments. Off stops new comments without stopping the links. */
-  allowComments: z.boolean().default(true),
+  allowComments: z.boolean(),
   /** Sharers may set a link's Visitors See to every comment on it. */
-  allowVisitorsSeeAll: z.boolean().default(true),
+  allowVisitorsSeeAll: z.boolean(),
   /** Agents can't make links. A later version widens this to `view`. */
-  agentLinks: z.enum(["off"]).default("off"),
+  agentLinks: z.enum(["off"]),
 })
-export type SharingPolicy = z.infer<typeof SharingPolicySchema>
+export type SharingPolicy = z.infer<typeof SharingPolicyInputSchema>
+
+/** Sharing as it was before owner policy existed. */
+const DEFAULT_SHARING_POLICY: Readonly<SharingPolicy> = {
+  paused: false,
+  whoMayShare: "space-managers",
+  spaces: { mode: "all" },
+  requirePassword: false,
+  maxExpiryDays: null,
+  levels: ["view"],
+  liveLinks: false,
+  records: "scoped",
+  recordsDefaultExpiryDays: 30,
+  allowComments: true,
+  allowVisitorsSeeAll: true,
+  agentLinks: "off",
+}
+
+/** A stored owner policy. Fields it lacks, such as ones added later, take their defaults. */
+export const SharingPolicySchema = z.strictObject(
+  withDefaults(SharingPolicyInputSchema.shape, DEFAULT_SHARING_POLICY)
+)
 
 export function defaultSharingPolicy(): SharingPolicy {
   return SharingPolicySchema.parse({})
@@ -247,18 +268,17 @@ export const SHARING_PREVIEW_POLICY_KEYS = [
   "allowVisitorsSeeAll",
 ] as const satisfies readonly (keyof SharingPolicy)[]
 
-/** What the share dialog needs from the owner policy; sharers who aren't owners see only this. */
-export type SharerPolicy = Pick<
+/**
+ * What the share dialog needs from the owner policy; sharers who aren't
+ * owners see only this. Pause, Spaces and who may share reach the dialog as
+ * `canCreate` and `createBlockedBy`.
+ */
+export type SharerPolicy = Omit<
   SharingPolicy,
-  | "levels"
-  | "maxExpiryDays"
-  | "requirePassword"
-  | "recordsDefaultExpiryDays"
-  | "allowComments"
-  | "allowVisitorsSeeAll"
+  "paused" | "whoMayShare" | "spaces" | "agentLinks"
 >
 
-/** `GET` and `PUT /api/shares/policy`. `PUT` takes a whole policy. */
+/** `GET` and `PUT /api/shares/policy`. */
 export interface SharingPolicyResponse {
   policy: SharingPolicy
   canEdit: boolean

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { LinkGrantSchema } from "./link-grants"
-import type { RecordPredicate } from "./records"
+import { RecordPredicateSchema, type RecordPredicate } from "./records"
 
 const rows: RecordPredicate = {
   and: [
@@ -73,6 +73,17 @@ describe("LinkGrantSchema", () => {
         collections: { "*": { fields: [] } },
       }).success
     ).toBe(false)
+  })
+
+  it("stops at the engine's depth limit, however deep the input", () => {
+    const nested = (depth: number) => {
+      let node: RecordPredicate = { field: "stage", op: "eq", value: "won" }
+      for (let level = 0; level < depth; level++) node = { not: node }
+      return node
+    }
+    expect(RecordPredicateSchema.safeParse(nested(20)).success).toBe(true)
+    expect(RecordPredicateSchema.safeParse(nested(21)).success).toBe(false)
+    expect(RecordPredicateSchema.safeParse(nested(100_000)).success).toBe(false)
   })
 
   it("keeps the write boundary free of deletes", () => {

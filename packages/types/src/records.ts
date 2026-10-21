@@ -169,13 +169,6 @@ function predicateValueProblem(op: RecordPredicateOp, value: unknown): string | 
   return null;
 }
 
-function predicateDepth(node: RecordPredicate): number {
-  if ("and" in node) return 1 + Math.max(...node.and.map(predicateDepth));
-  if ("or" in node) return 1 + Math.max(...node.or.map(predicateDepth));
-  if ("not" in node) return 1 + predicateDepth(node.not);
-  return 0;
-}
-
 const RecordPredicateLeafSchema = z
   .strictObject({ field: z.string().min(1), op: RecordPredicateOpSchema, value: z.unknown().optional() })
   .superRefine((leaf, ctx) => {
@@ -183,24 +176,25 @@ const RecordPredicateLeafSchema = z
     if (problem) ctx.addIssue({ code: "custom", message: problem, path: ["value"] });
   });
 
-const RecordPredicateNodeSchema: z.ZodType<RecordPredicate> = z.lazy(() =>
-  z.union([
-    z.strictObject({ and: z.array(RecordPredicateNodeSchema).min(1).max(50) }),
-    z.strictObject({ or: z.array(RecordPredicateNodeSchema).min(1).max(50) }),
-    z.strictObject({ not: RecordPredicateNodeSchema }),
+// One schema per level, so the depth limit holds while parsing: a tree
+// deeper than the limit fails at the last level instead of recursing on.
+function predicateSchemaAt(depth: number): z.ZodType<RecordPredicate> {
+  if (depth === RECORD_PREDICATE_MAX_DEPTH) return RecordPredicateLeafSchema;
+  const child = predicateSchemaAt(depth + 1);
+  return z.union([
+    z.strictObject({ and: z.array(child).min(1) }),
+    z.strictObject({ or: z.array(child).min(1) }),
+    z.strictObject({ not: child }),
     RecordPredicateLeafSchema,
-  ]),
-);
+  ]);
+}
 
 /**
  * A predicate tree in the canonical form the query engine's parser returns.
  * Unlike `RecordQuery.where`, it never accepts a flat filter map, so stored
  * conditions (link grants, saved reads) have exactly one spelling.
  */
-export const RecordPredicateSchema: z.ZodType<RecordPredicate> = RecordPredicateNodeSchema.refine(
-  (tree) => predicateDepth(tree) <= RECORD_PREDICATE_MAX_DEPTH,
-  { message: `Predicate tree too deep (max ${RECORD_PREDICATE_MAX_DEPTH} levels)` },
-);
+export const RecordPredicateSchema = predicateSchemaAt(0);
 
 export interface RecordQueryResult {
   records: RecordFile[];

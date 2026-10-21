@@ -435,6 +435,10 @@ for (const appearance of [
       height: appearance.height,
     })
     await page.emulateMedia({ colorScheme: appearance.colorScheme })
+    await page.addInitScript(
+      (theme) => localStorage.setItem("theme", theme),
+      appearance.colorScheme
+    )
     const at = new Date().toISOString()
     const initialGrant = {
       version: 1 as const,
@@ -564,7 +568,16 @@ for (const appearance of [
     await page.goto(appUrl("/spaces/share-browser/documents/status-card"), {
       waitUntil: "domcontentloaded",
     })
-    await page.getByRole("button", { name: "Share document" }).click()
+    if (appearance.width < 640) {
+      await page
+        .locator("[data-worktable-app-header]")
+        .getByRole("button", { name: "Status card", exact: true })
+        .click()
+      await page
+        .getByRole("dialog", { name: "Page", exact: true })
+        .getByRole("button", { name: "Share", exact: true })
+        .click()
+    } else await page.getByRole("button", { name: "Share document" }).click()
     const dialog = page.getByRole("dialog", { name: "Share document" })
     await dialog.getByRole("switch", { name: "Live tool", exact: true }).click()
     await expect(

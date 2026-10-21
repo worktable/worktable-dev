@@ -1157,7 +1157,7 @@ function BlockNoteDocPage({
     spaceId,
     docPath,
     previewRevision,
-    validated && previewRevision === revision && !opening
+    validated && previewRevision === revision
   )
   const previewContent = Array.isArray(previewQuery.data?.content)
     ? previewQuery.data.content

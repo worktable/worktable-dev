@@ -55,7 +55,10 @@ export function validateLinkGrant(grant: LinkGrant, schemas: ReadonlyMap<string,
       return spec ? normalizeRecordFieldType(spec.type) : undefined;
     };
 
-    for (const name of collection.fields) {
+    // `fields` is what rows show. A summaries view shows no rows and reads
+    // only its groupings and measures, so leftover row fields don't matter.
+    const rowFields = collection.mode === "summaries" ? [] : collection.fields;
+    for (const name of rowFields) {
       const spec = field(name);
       const type = typeOf(name);
       if (!spec) add(`Field "${name}" doesn't exist.`);

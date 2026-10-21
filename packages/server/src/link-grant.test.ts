@@ -450,7 +450,8 @@ describe("link grants against live schemas", () => {
           writes: { update: true },
         },
         tallies: {
-          fields: [],
+          // Row fields left over from a scoped grant: a summaries view never reads them.
+          fields: ["gone", "kind", "note"],
           mode: "summaries",
           summaries: { groupBy: ["region", "paid", "label", "code", "note", "kind"], measures: ["amount", "paid", "version", "gone"] },
         },

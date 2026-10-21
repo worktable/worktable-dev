@@ -13,7 +13,8 @@ import { CanonicalIdSchema } from "./widgets"
 // app directory, where agents can't write, so a republished tool can narrow a
 // link but never widen it.
 
-const FieldKeySchema = z.string().min(1).max(128)
+// Any key a collection schema can hold; the lists that carry keys are capped.
+const FieldKeySchema = z.string().min(1)
 
 /** How a link reads one collection. */
 export const LINK_RECORD_MODES = ["scoped", "summaries", "fixed"] as const

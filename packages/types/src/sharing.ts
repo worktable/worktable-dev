@@ -4,7 +4,7 @@ import { CanonicalIdSchema, IsoTimestampSchema } from "./widgets"
 
 // Share links: several per document, each with its own label, level, expiry
 // and password, revocable on its own. Owner policy applies every time a link
-// is used. Every route here is for people only; agents never reach them.
+// is used. Only people manage links; agents never reach these shapes.
 
 // ---- Links ---------------------------------------------------------------
 
@@ -112,7 +112,7 @@ export const CreateShareLinkInputSchema = z.strictObject({
     DEFAULT_SHARE_LINK_COMMENT_SETTINGS
   ),
 })
-export type CreateShareLinkInput = z.infer<typeof CreateShareLinkInputSchema>
+export type CreateShareLinkInput = z.input<typeof CreateShareLinkInputSchema>
 
 /** Only the fields present change. A new or removed password voids every unlocked visit. */
 export const UpdateShareLinkInputSchema = z.strictObject({
@@ -122,7 +122,7 @@ export const UpdateShareLinkInputSchema = z.strictObject({
   password: ShareLinkPasswordSchema.nullable().optional(),
   comments: CommentSettingsFieldsSchema.partial().optional(),
 })
-export type UpdateShareLinkInput = z.infer<typeof UpdateShareLinkInputSchema>
+export type UpdateShareLinkInput = z.input<typeof UpdateShareLinkInputSchema>
 
 export interface ShareLink {
   id: string
@@ -149,7 +149,7 @@ export interface ShareLink {
   comments: ShareLinkComments
 }
 
-/** `GET /api/shares?kind&spaceId&path`. */
+/** A document's links, for its share dialog. */
 export interface DocumentShareLinks {
   links: ShareLink[]
   canCreate: boolean
@@ -159,13 +159,13 @@ export interface DocumentShareLinks {
   policy: SharerPolicy
 }
 
-/** `POST /api/shares`. The only response that carries the link's URL. */
+/** A link just made: the only time its URL is returned. */
 export interface CreatedShareLink {
   link: ShareLink
   url: string
 }
 
-/** `GET /api/shares/all`. */
+/** One page of the links a reader may manage, across Spaces. */
 export interface ShareLinksPage {
   links: ShareLink[]
   nextCursor: string | null
@@ -200,7 +200,7 @@ export const SHARING_RECORD_ACCESS = [
 
 const DAYS = z.number().int().min(1).max(3650)
 
-/** A whole owner policy, as `PUT /api/shares/policy` takes it: every field is required. */
+/** A whole owner policy as an owner saves it: every field is required. */
 export const SharingPolicyInputSchema = z.strictObject({
   /** Stops every link, and visitor comments, at once. */
   paused: z.boolean(),
@@ -279,7 +279,7 @@ export type SharerPolicy = Omit<
   "paused" | "whoMayShare" | "spaces" | "agentLinks"
 >
 
-/** `GET` and `PUT /api/shares/policy`. */
+/** The owner policy, and whether the reader may change it. */
 export interface SharingPolicyResponse {
   policy: SharingPolicy
   canEdit: boolean
@@ -334,7 +334,7 @@ export interface VisitorCommentReply {
   createdAt: string
 }
 
-/** `GET /api/spaces/:spaceId/visitor-comments?documentId&status`. */
+/** A document's visitor comments, for members. */
 export interface VisitorCommentsResponse {
   comments: VisitorComment[]
 }
@@ -342,7 +342,7 @@ export interface VisitorCommentsResponse {
 export const VisitorCommentReplyInputSchema = z.strictObject({
   body: CommentBodySchema,
 })
-export type VisitorCommentReplyInput = z.infer<
+export type VisitorCommentReplyInput = z.input<
   typeof VisitorCommentReplyInputSchema
 >
 
@@ -355,7 +355,7 @@ export const PassVisitorCommentInputSchema = z.strictObject({
   quote: CommentBodySchema,
   includeName: z.boolean(),
 })
-export type PassVisitorCommentInput = z.infer<
+export type PassVisitorCommentInput = z.input<
   typeof PassVisitorCommentInputSchema
 >
 
@@ -372,7 +372,7 @@ export interface VisitorCommentForVisitor {
   replies: { body: string; from: string; at: string }[]
 }
 
-/** `GET /comments` on a share link. With Visitors See `own`, every comment is the visitor's own. */
+/** A link's comments as its share page shows them. With Visitors See `own`, every comment is the visitor's own. */
 export interface VisitorCommentsForVisitor {
   accepting: boolean
   anonymousAllowed: boolean
@@ -380,7 +380,7 @@ export interface VisitorCommentsForVisitor {
   comments: VisitorCommentForVisitor[]
 }
 
-/** `POST /comments` on a share link. A name is required unless the visitor comments anonymously. */
+/** A visitor's new comment. A name is required unless the visitor comments anonymously. */
 export const VisitorCommentInputSchema = z
   .strictObject({
     name: z
@@ -408,7 +408,7 @@ export const VisitorCommentInputSchema = z
       })
     }
   })
-export type VisitorCommentInput = z.infer<typeof VisitorCommentInputSchema>
+export type VisitorCommentInput = z.input<typeof VisitorCommentInputSchema>
 
 export interface VisitorCommentCreated {
   id: string

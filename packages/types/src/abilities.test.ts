@@ -66,7 +66,7 @@ describe("describeAbilities for links", () => {
         },
       })
     ).toBe(
-      "Anyone with this link can see totals of Opportunities by Client and Stage, never individual records."
+      "Anyone with this link can see totals of Opportunities by Client and Stage, never individual records. Totals include the sum and average of Amount."
     )
   })
 

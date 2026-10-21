@@ -190,9 +190,21 @@ function readSentences(
       fieldName(input.collections, id, field)
     )
     const by = groups.length > 0 ? ` by ${joinWords(groups, "and")}` : ""
-    return [
+    const sentences = [
       `${LINK_SUBJECT} see totals of ${name}${by}${condition}, never individual records.`,
     ]
+    // Name the fields totals read and what they compute, beyond counting rows.
+    const measures = (grant.summaries?.measures ?? []).map((field) =>
+      fieldName(input.collections, id, field)
+    )
+    const computed = (grant.summaries?.fns ?? []).flatMap((fn) =>
+      fn === "count" ? [] : [MEASURE_WORDS[fn]]
+    )
+    if (measures.length > 0 && computed.length > 0)
+      sentences.push(
+        `Totals include the ${joinWords(computed, "and")} of ${listNames(measures)}.`
+      )
+    return sentences
   }
   const { shown, hidden } = fieldLists(id, grant, input.collections)
   const listed = shown.length > 0 ? `: ${listFields(shown)}` : ""
@@ -205,6 +217,17 @@ function readSentences(
   ]
   if (hidden.length > 0) sentences.push(`Hidden: ${listFields(hidden)}.`)
   return sentences
+}
+
+const MEASURE_WORDS: Record<
+  Exclude<NonNullable<CollectionGrant["summaries"]>["fns"][number], "count">,
+  string
+> = {
+  sum: "sum",
+  avg: "average",
+  min: "lowest value",
+  max: "highest value",
+  unique: "number of different values",
 }
 
 function countedName(

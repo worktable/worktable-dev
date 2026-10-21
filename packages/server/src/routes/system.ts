@@ -5,6 +5,7 @@ import {
   authRequired,
   canOperateHost,
   canManageUserSettings,
+  isHumanWorkspaceOwner,
   mcpBearerRequired,
   publicSurfaceAuthRequired,
 } from "../auth.ts";
@@ -208,6 +209,25 @@ function managesSomeSpace(c: Context): boolean {
   return levels ? [...levels.values()].includes("manage") : false;
 }
 
+/**
+ * Whether the caller may see and manage share links. Like the sharing routes,
+ * only people: in Teams an owner or a member who manages a Space, otherwise
+ * the Worktable's human owner. Never an agent, whatever its token allows.
+ */
+function managesShareLinks(c: Context): boolean {
+  const identity = c.get("identity");
+  if (
+    !identity ||
+    identity.agent !== null ||
+    identity.principal.type !== "human" ||
+    identity.operatorVerification
+  ) {
+    return false;
+  }
+  if (!teamsEnabled()) return isHumanWorkspaceOwner(c);
+  return canManageUserSettings(c) || managesSomeSpace(c);
+}
+
 // GET /api/system/deployment — authoritative product capabilities for this
 // process. The web app uses this instead of inferring deployment from agent auth.
 systemRouter.get("/deployment", (c) => {
@@ -222,9 +242,10 @@ systemRouter.get("/deployment", (c) => {
       softwareUpdates: deployment.mode !== "cloud" && operator, updateChecks: deployment.mode !== "cloud" && operator,
       workspaceClear: deployment.mode !== "cloud" && owner,
       previewStatus: deployment.mode !== "cloud" && operator,
-      shareLinks: deployment.capabilities.shareLinks && (owner || managesSomeSpace(c)),
     });
   }
+  deployment.capabilities.shareLinks =
+    deployment.capabilities.shareLinks && managesShareLinks(c);
   return c.json(deployment);
 });
 

@@ -8,9 +8,9 @@ import { getDocumentShare, shareQueryKey } from "@/lib/share-api"
 
 /**
  * How the open page shares its document: by several links, whose summary
- * comes with the page; by today's single link, read with its own request; or
- * not at all here. Once links v2 is on, a page without its summary offers no
- * sharing rather than the old link.
+ * comes with the page, or by today's single link, read with its own request.
+ * Once links v2 is on, a page read before it was (which has no summary)
+ * still shares by links, never through the old routes.
  */
 export function useShareMode(
   target: PageShareTarget | undefined
@@ -18,8 +18,7 @@ export function useShareMode(
   const available = useDocumentSharingAvailable()
   const linksActive = useDeploymentInfo().data?.capabilities.shareLinks === true
   if (!target || !available) return null
-  if (target.links) return "links"
-  return linksActive ? null : "legacy"
+  return target.links || linksActive ? "links" : "legacy"
 }
 
 /** A document's public link, shared by the share dialog and its triggers. */

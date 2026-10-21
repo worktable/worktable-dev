@@ -12,6 +12,7 @@ import { setAppDirOverride } from "./app-storage.ts";
 import { readUpdateStatus, writeUpdateStatus } from "./update-runner.ts";
 import { trustedLocalIdentity } from "./auth.ts";
 import { createToken } from "./token-store.ts";
+import { setLinkedSharing } from "./linked-sharing.ts";
 
 // Real temp dirs, no mocks: the version route's canUpdate is derived from an
 // actual install.sh on disk plus the launcher env contract, so we exercise both.
@@ -586,5 +587,24 @@ describe("GET /api/system/deployment", () => {
     expect(getDeploymentInfo().capabilities).toMatchObject({ documentSharing: true, shareLinks: true });
     delete process.env["WORKTABLE_HTML_SHARE_BASE_URL"];
     expect(getDeploymentInfo().capabilities).toMatchObject({ documentSharing: false, shareLinks: false });
+  });
+
+  it("offers share links to the owner, never to an agent acting for them", async () => {
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1";
+    setLinkedSharing({
+      workspaceId: "ws_synthetic",
+      shareOrigin: "https://share.example.test",
+      htmlShareOrigin: "https://html.example.test",
+    });
+    try {
+      const shareLinks = async (headers: Record<string, string> = {}) =>
+        ((await (await app().request("/api/system/deployment", { headers })).json()) as DeploymentInfo)
+          .capabilities.shareLinks;
+      const { token } = await createToken({ scopes: ["*"], agent: "ci" });
+      expect(await shareLinks()).toBe(true);
+      expect(await shareLinks({ Authorization: `Bearer ${token}` })).toBe(false);
+    } finally {
+      setLinkedSharing(null);
+    }
   });
 });

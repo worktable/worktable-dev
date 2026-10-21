@@ -110,14 +110,28 @@ interface ShareDocumentActionProps {
  */
 export function ShareDocumentAction(props: ShareDocumentActionProps) {
   const mode = useShareMode(props.target)
-  if (mode === "links" && props.target.links) {
-    return <ShareLinksAction {...props} summary={props.target.links} />
+  if (mode === "links") {
+    return (
+      <ShareLinksAction
+        {...props}
+        summary={props.target.links ?? UNREAD_SUMMARY}
+      />
+    )
   }
   if (mode === "legacy") return <LegacyShareDocumentAction {...props} />
   return null
 }
 
 // ── Links (v2) ───────────────────────────────────────────────
+
+/**
+ * For a page read before links v2 was on: the dialog's list says how many
+ * links there are once it opens.
+ */
+const UNREAD_SUMMARY: DocumentSharingSummary = {
+  activeLinks: 0,
+  canCreate: true,
+}
 
 interface LinkDraft {
   label: string

@@ -3,15 +3,16 @@
 // records that carry only granted fields, opaque ids and relation values that
 // point at rows the link can also see. The visitor's query never touches a
 // stored record, so no filter, sort, cursor, aggregate, expand or backlink can
-// reach what the grant hides.
+// reach what the grant hides. A collection granted as summaries answers only
+// totals, and only for groups of at least the grant's minimum size.
 
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { normalizeRecordFieldType, type CollectionGrant, type LinkGrant, type RecordCollectionSchema, type RecordFile, type RecordQuery } from "@worktable/types";
-import { forEachLeaf, readLinkGrantSchemas, validateLinkGrant } from "./link-grant.ts";
+import { normalizeRecordFieldType, type CollectionGrant, type LinkGrant, type RecordCollectionSchema, type RecordFile, type RecordPredicate, type RecordQuery, type SummaryRules } from "@worktable/types";
+import { forEachLeaf, isSummaryDimension, readLinkGrantSchemas, validateLinkGrant } from "./link-grant.ts";
 import { filterRows, flatWhereToPredicate, isPredicateTree, parsePredicate, type FieldTypeMap } from "./record-query.ts";
 import { listRecords, RecordQueryError, type RecordReadView } from "./record-store.ts";
 
-export type LinkQueryErrorCode = "LINK_COLLECTION_NOT_AVAILABLE" | "LINK_FIELD_NOT_AVAILABLE" | "LINK_SEARCH_TOO_LONG" | "LINK_CURSOR_INVALID";
+export type LinkQueryErrorCode = "LINK_COLLECTION_NOT_AVAILABLE" | "LINK_FIELD_NOT_AVAILABLE" | "LINK_SUMMARIES_ONLY" | "LINK_SEARCH_TOO_LONG" | "LINK_CURSOR_INVALID";
 
 /** A query the link can't run. The message never depends on hidden data:
  *  a hidden field or collection gets the same answer as a missing one. */
@@ -28,6 +29,7 @@ export class LinkQueryError extends Error {
 
 const collectionNotAvailable = () => new LinkQueryError("LINK_COLLECTION_NOT_AVAILABLE", "This link can't read that collection.", 403);
 const fieldNotAvailable = (name: string) => new LinkQueryError("LINK_FIELD_NOT_AVAILABLE", `This link can't read the field "${name}".`, 403);
+const summariesOnly = (message: string) => new LinkQueryError("LINK_SUMMARIES_ONLY", message, 403);
 
 /** The response for a failed link query, or null when the error isn't one. */
 export function linkQueryFailure(error: unknown): { status: 400 | 403; body: { error: string; code: string } } | null {
@@ -107,8 +109,8 @@ interface ReadableCollection {
 /**
  * Opens the view a grant gives of one Space. The grant is checked against the
  * live schemas here, every time: a collection whose grant no longer fits its
- * schema can't be read at all. This stage serves scoped grants; summaries and
- * fixed reads stay unavailable until their rules exist.
+ * schema can't be read at all. Scoped and summaries grants are served; fixed
+ * reads stay unavailable until their rules exist.
  */
 export async function openLinkReadView(spaceId: string, grant: LinkGrant, key: LinkKey): Promise<RecordReadView> {
   const schemas = await readLinkGrantSchemas(spaceId, grant);
@@ -116,16 +118,19 @@ export async function openLinkReadView(spaceId: string, grant: LinkGrant, key: L
   const readable = new Map<string, ReadableCollection>();
   for (const [collectionId, collectionGrant] of Object.entries(grant.collections)) {
     const schema = schemas.get(collectionId);
-    if (!schema || blocked.has(collectionId) || collectionGrant.mode !== "scoped") continue;
+    if (!schema || blocked.has(collectionId) || collectionGrant.mode === "fixed") continue;
     readable.set(collectionId, { grant: collectionGrant, schema, fields: projectFields(schema, collectionGrant) });
   }
   const loadRows = (collectionId: string) => listRecords(spaceId, collectionId, { includeArchived: false });
   return new LinkReadView(spaceId, readable, grant.limits.rowsPerQuery, key, loadRows);
 }
 
+// A summaries grant shows no rows, so it reads only its groupings and
+// measures; `fields` is what a scoped grant's rows show.
 function projectFields(schema: RecordCollectionSchema, grant: CollectionGrant): FieldTypeMap {
   const fields: FieldTypeMap = {};
-  for (const name of grant.fields) {
+  const names = grant.mode === "summaries" ? [...grant.summaries!.groupBy, ...grant.summaries!.measures] : grant.fields;
+  for (const name of names) {
     if (!Object.hasOwn(schema.fields, name)) continue;
     const spec = schema.fields[name]!;
     if (normalizeRecordFieldType(spec.type) === "document") continue;
@@ -199,6 +204,12 @@ class LinkReadView implements RecordReadView {
     return rows;
   }
 
+  /** Whether the link shows this collection's rows one by one: a summaries
+   *  collection is never a relation, expand or backlink target. */
+  private showsRows(collectionId: string): boolean {
+    return this.readable.get(collectionId)?.grant.mode === "scoped";
+  }
+
   private async buildRows(collectionId: string, collection: ReadableCollection): Promise<RecordFile[]> {
     // Relation values survive only when they point at a row the target's own
     // grant shows; anything else reads as no value.
@@ -206,13 +217,14 @@ class LinkReadView implements RecordReadView {
     for (const [name, spec] of Object.entries(collection.fields)) {
       if (normalizeRecordFieldType(spec.type) !== "relation") continue;
       const target = spec.references;
-      const visible = target && this.readable.has(target)
+      const visible = target && this.showsRows(target)
         ? new Set((await this.visibleStoredRows(target)).map((record) => record.id))
         : new Set<string>();
       targets.set(name, { collectionId: target ?? "", visible });
     }
     const fieldNames = Object.keys(collection.fields);
-    const showTimes = collection.grant.timestamps;
+    const summaries = collection.grant.mode === "summaries";
+    const showTimes = !summaries && collection.grant.timestamps;
     const rows = (await this.visibleStoredRows(collectionId)).map((stored) => {
       const data: Record<string, unknown> = {};
       for (const name of fieldNames) {
@@ -235,6 +247,13 @@ class LinkReadView implements RecordReadView {
     });
     // Order by what the link shows, so nothing downstream (group order,
     // backlink lists) follows stored ids or hidden times.
+    if (summaries) {
+      // Totals add rows in an order set by their values alone, so not even
+      // the last digit of a sum follows ids or times. Rows with equal values
+      // are interchangeable.
+      const keyed = rows.map((row) => [canonicalJson(row.data), row] as const);
+      return keyed.sort(([a], [b]) => compareText(a, b)).map(([, row]) => row);
+    }
     return rows.sort((a, b) =>
       (showTimes ? compareText(b.updatedAt, a.updatedAt) : 0) || compareText(a.id, b.id));
   }
@@ -248,6 +267,8 @@ class LinkReadView implements RecordReadView {
   admit(collectionId: string, query: RecordQuery): RecordQuery {
     const fields = this.fields(collectionId);
     if (!fields) throw collectionNotAvailable();
+    const { grant } = this.readable.get(collectionId)!;
+    if (grant.mode === "summaries") return admitSummaries(fields, grant.summaries!, query);
     const admitted: RecordQuery = { ...query, includeArchived: false, limit: Math.min(query.limit ?? this.rowsPerQuery, this.rowsPerQuery) };
 
     if (query.where && Object.keys(query.where).length > 0) {
@@ -276,7 +297,7 @@ class LinkReadView implements RecordReadView {
       }
     }
     if (query.backlinks) {
-      const sourceFields = this.fields(query.backlinks.collection);
+      const sourceFields = this.showsRows(query.backlinks.collection) ? this.fields(query.backlinks.collection) : null;
       if (!sourceFields) throw collectionNotAvailable();
       if (!Object.hasOwn(sourceFields, query.backlinks.field)) throw fieldNotAvailable(query.backlinks.field);
     }
@@ -305,13 +326,31 @@ class LinkReadView implements RecordReadView {
     }
   }
 
-  /** The readable collection a granted relation field points at. */
+  /** The collection a granted relation field points at, when the link shows
+   *  its rows. */
   private relationTarget(collectionId: string, name: string): string | null {
     const fields = this.fields(collectionId)!;
     if (!Object.hasOwn(fields, name)) return null;
     const spec = fields[name]!;
     if (normalizeRecordFieldType(spec.type) !== "relation" || !spec.references) return null;
-    return this.readable.has(spec.references) ? spec.references : null;
+    return this.showsRows(spec.references) ? spec.references : null;
+  }
+
+  // Too-small groups are dropped, never pooled: an "other" bucket would give
+  // them back by subtraction from the total. Groups come in key order, so
+  // their order says nothing about the rows behind them.
+  shownGroups(collectionId: string, groups: Record<string, unknown>[]): Record<string, unknown>[] {
+    const collection = this.readable.get(collectionId);
+    if (collection?.grant.mode !== "summaries") return groups;
+    const { minGroupSize } = collection.grant.summaries!;
+    return groups
+      .filter((group) => (group[GROUP_SIZE] as number) >= minGroupSize)
+      .map((group) => {
+        const shown = { ...group };
+        delete shown[GROUP_SIZE];
+        return shown;
+      })
+      .sort((a, b) => compareText(canonicalJson(a["key"]), canonicalJson(b["key"])));
   }
 
   // Cursors carry only view values, so they reveal nothing on their own. The
@@ -331,6 +370,65 @@ class LinkReadView implements RecordReadView {
     }
     return cursor;
   }
+}
+
+// ---- Summaries ----------------------------------------------------------
+
+/** The only keys a summaries query may carry. Archived rows stay out
+ *  whatever it asks, as on every link read. */
+const SUMMARY_QUERY_KEYS = new Set(["aggregate", "where", "includeArchived"]);
+const SUMMARY_FILTER_OPS = new Set(["eq", "in"]);
+/** The hidden count each group carries until shownGroups judges it. */
+const GROUP_SIZE = "__wt_n";
+
+/**
+ * Admits a query on a collection the link shows only as totals: one
+ * aggregate over the grant's groupings, functions and measures, filtered at
+ * most to cells of those groupings. A name the link doesn't read gets the
+ * same answer as a missing one; a name it reads but can't use this way is
+ * refused as summaries-only.
+ */
+function admitSummaries(fields: FieldTypeMap, rules: SummaryRules, query: RecordQuery): RecordQuery {
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && !SUMMARY_QUERY_KEYS.has(key)) throw summariesOnly(`This link shows only totals, so a query can't use "${key}".`);
+  }
+  if (!query.aggregate) throw summariesOnly("This link shows only totals, so a query must ask for an aggregate.");
+  const readable = (name: string) => Object.hasOwn(fields, name);
+  const dimension = (name: string) => rules.groupBy.includes(name) && isSummaryDimension(fields[name]!.type);
+  const measure = (name: string) => rules.measures.includes(name) && normalizeRecordFieldType(fields[name]!.type) === "number";
+
+  const { groupBy, select } = query.aggregate;
+  if (groupBy !== undefined) {
+    if (!readable(groupBy)) throw fieldNotAvailable(groupBy);
+    if (!dimension(groupBy)) throw summariesOnly(`This link can't group totals by "${groupBy}".`);
+  }
+  for (const [alias, spec] of Object.entries(select)) {
+    if (alias.startsWith("__wt")) throw summariesOnly('Aggregate names starting with "__wt" are reserved.');
+    if (spec.field !== undefined && !readable(spec.field)) throw fieldNotAvailable(spec.field);
+    if (!rules.fns.includes(spec.fn)) throw summariesOnly(`This link can't compute "${spec.fn}".`);
+    if (spec.field !== undefined && !measure(spec.field)) throw summariesOnly(`This link can't summarize "${spec.field}".`);
+    if (spec.field === undefined && spec.fn !== "count") throw summariesOnly(`"${spec.fn}" needs one of this link's measures.`);
+  }
+  if (query.where && Object.keys(query.where).length > 0) {
+    const tree = parsePredicate(isPredicateTree(query.where, fields) ? query.where : flatWhereToPredicate(query.where)!, 0, fields);
+    forEachLeaf(tree, (path) => {
+      if (!readable(path)) throw fieldNotAvailable(path);
+    });
+    requireCellFilter(tree, dimension);
+  }
+  return {
+    ...(query.where ? { where: query.where } : {}),
+    includeArchived: false,
+    aggregate: { ...(groupBy !== undefined ? { groupBy } : {}), select: { ...select, [GROUP_SIZE]: { fn: "count" } } },
+  };
+}
+
+/** Totals filter only to cells: equality on groupings, joined by "and". */
+function requireCellFilter(node: RecordPredicate, dimension: (name: string) => boolean): void {
+  if ("and" in node) return node.and.forEach((child) => requireCellFilter(child, dimension));
+  if ("or" in node || "not" in node) throw summariesOnly('This link filters totals only with conditions joined by "and".');
+  if (!dimension(node.field)) throw summariesOnly(`This link can't filter totals by "${node.field}".`);
+  if (!SUMMARY_FILTER_OPS.has(node.op)) throw summariesOnly('This link filters totals only with "eq" and "in".');
 }
 
 /** What a cursor is bound to: the collection, everything that decides which

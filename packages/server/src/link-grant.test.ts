@@ -21,6 +21,8 @@ import { setWorkspaceRootOverride } from "./workspace.ts";
 // fields, hidden and archived rows, the envelope (format version, createdBy,
 // metadata, unknown top-level keys), unshown times, and every stored id, which in "a" is a slug
 // of the title. A link query that answers differently in the two leaks.
+// Orders are granted only as totals, so there only the groupings and measures
+// of visible rows match: even the order rows are stored in differs.
 
 const SCHEMAS = {
   deals: {
@@ -37,6 +39,16 @@ const SCHEMAS = {
   clients: { name: { type: "text" }, tier: { type: "select", values: ["public", "private"] }, secret: { type: "text" } },
   activities: { title: { type: "text" }, deal: { type: "relation", references: "deals" }, kind: { type: "select", values: ["call", "private"] }, body: { type: "text" } },
   vault: { name: { type: "text" } },
+  orders: {
+    title: { type: "text" },
+    region: { type: "select", values: ["eu", "us"] },
+    channel: { type: "select", values: ["web", "shop"] },
+    amount: { type: "number" },
+    cost: { type: "number" },
+    status: { type: "select", values: ["open", "paid", "void"] },
+    owner: { type: "person" },
+    deal: { type: "relation", references: "deals" },
+  },
 } as const;
 
 const GRANT: LinkGrant = LinkGrantSchema.parse({
@@ -45,9 +57,65 @@ const GRANT: LinkGrant = LinkGrantSchema.parse({
     deals: { rows: { field: "region", op: "eq", value: "eu" }, fields: ["name", "stage", "amount", "client"] },
     clients: { rows: { field: "tier", op: "eq", value: "public" }, fields: ["name"], timestamps: false },
     activities: { rows: { field: "kind", op: "eq", value: "call" }, fields: ["title", "deal"] },
+    orders: {
+      rows: { field: "status", op: "neq", value: "void" },
+      fields: [],
+      mode: "summaries",
+      summaries: { groupBy: ["region", "channel"], measures: ["amount"] },
+    },
   },
   limits: { rowsPerQuery: 2 },
 });
+
+// The (region, channel, amount) of every visible order, the same in both
+// workspaces. "us" holds the smallest amount, and the "eu" sum changes in its
+// last digit with the order its amounts are added in.
+const ORDERS: [string, string, number][] = [
+  ["eu", "web", 0.1], ["eu", "web", 0.2], ["eu", "web", 0.3], ["eu", "web", 0.4], ["eu", "shop", 0.7], ["eu", "shop", 1.1],
+  ["us", "web", 0.05], ["us", "web", 2], ["us", "web", 4], ["us", "web", 5], ["us", "shop", 3],
+];
+
+// Totals of orders the grant allows. Groups of fewer than five are dropped.
+const COUNT = { n: { fn: "count" } };
+const TOTALS = { n: { fn: "count" }, total: { fn: "sum", field: "amount" }, mean: { fn: "avg", field: "amount" } };
+const SUMMARY_QUERIES = [
+  { aggregate: { select: TOTALS } },
+  { aggregate: { groupBy: "region", select: TOTALS } },
+  { aggregate: { groupBy: "channel", select: COUNT } },
+  { aggregate: { groupBy: "region", select: {} } },
+  { where: { region: "eu" }, aggregate: { groupBy: "channel", select: TOTALS } },
+  { where: { field: "channel", op: "eq", value: "shop" }, aggregate: { select: COUNT } },
+  { where: { and: [{ field: "region", op: "in", value: ["eu", "us"] }, { channel: "web" }] }, aggregate: { select: TOTALS } },
+  { includeArchived: true, aggregate: { groupBy: "channel", select: TOTALS } },
+];
+
+// Everything else a summaries link refuses: a name it doesn't read gets the
+// same answer as a missing one.
+const ONLY = "LINK_SUMMARIES_ONLY";
+const HIDDEN = "LINK_FIELD_NOT_AVAILABLE";
+const ANY_TOTAL = { aggregate: { select: COUNT } };
+const SUMMARY_REFUSALS: [Record<string, unknown>, string][] = [
+  [{}, ONLY],
+  [{ where: { region: "eu" } }, ONLY],
+  ...[{ select: ["amount"] }, { expand: { deal: true } }, { backlinks: { collection: "activities", field: "deal" } }, { cursor: "x" }, { search: "eu" }, { orderBy: "amount" }, { limit: 1 }]
+    .map((extra): [Record<string, unknown>, string] => [{ ...ANY_TOTAL, ...extra }, ONLY]),
+  [{ aggregate: { groupBy: "amount", select: COUNT } }, ONLY],
+  ...["min", "max", "unique"].map((fn): [Record<string, unknown>, string] => [{ aggregate: { select: { x: { fn, field: "amount" } } } }, ONLY]),
+  [{ aggregate: { select: { x: { fn: "sum", field: "region" } } } }, ONLY],
+  [{ aggregate: { select: { x: { fn: "sum" } } } }, ONLY],
+  [{ aggregate: { select: { __wt_n: { fn: "count" } } } }, ONLY],
+  ...([["neq", "us"], ["contains", "u"], ["isEmpty", true], ["gt", "a"], ["has", "eu"]] as const)
+    .map(([op, value]): [Record<string, unknown>, string] => [{ ...ANY_TOTAL, where: { field: "region", op, value } }, ONLY]),
+  [{ ...ANY_TOTAL, where: { or: [{ region: "eu" }, { channel: "web" }] } }, ONLY],
+  [{ ...ANY_TOTAL, where: { not: { region: "eu" } } }, ONLY],
+  [{ ...ANY_TOTAL, where: { amount: 1 } }, ONLY],
+  ...["status", "title", "cost", "owner", "deal", "id", "createdAt", "createdBy", "nonexistent"].flatMap((name): [Record<string, unknown>, string][] => [
+    [{ aggregate: { groupBy: name, select: COUNT } }, HIDDEN],
+    [{ aggregate: { select: { x: { fn: "sum", field: name } } } }, HIDDEN],
+    [{ ...ANY_TOTAL, where: { field: name, op: "eq", value: "x" } }, HIDDEN],
+  ]),
+  [{ ...ANY_TOTAL, where: { field: "deal.name", op: "eq", value: "Renewal" } }, HIDDEN],
+];
 
 interface Seed {
   collection: keyof typeof SCHEMAS;
@@ -85,6 +153,21 @@ function variant(v: "a" | "b"): Seed[] {
     { collection: "activities", id: id("intro-call", "a-2"), label: "lr-act-2", data: { title: "Intro call", deal: hiddenDeal, kind: "call" }, times: T1, envelope },
     { collection: "activities", id: id("private-note", "a-9"), data: { title: a ? "Private note" : "Note", deal: a ? d1 : d3, kind: "private", body: a ? "salary" : "" }, envelope },
     { collection: "vault", id: id("crown-jewels", "v-1"), data: { name: a ? "Crown jewels" : "Spoons" }, envelope },
+    // Ids in "a" run the other way, so rows taken in id order would add up
+    // differently. Void and archived orders would lift "shop" over five.
+    ...ORDERS.map(([region, channel, amount], i): Seed => ({
+      collection: "orders",
+      id: a ? `order-${"kjihgfedcba"[i]}` : `o-${i + 1}`,
+      data: { title: a ? `Order ${i}` : `#${i}`, region, channel, amount, cost: a ? amount * 3 : 0, status: a ? "open" : "paid", owner: a ? "alice" : "bob", deal: a ? d1 : d3 },
+      times: a ? T1 : T2,
+      envelope,
+    })),
+    ...(a
+      ? (["us", "eu", "us"] as const).map((region, i): Seed => ({ collection: "orders", id: `void-${i}`, data: { region, channel: "shop", amount: 500, status: "void" }, envelope }))
+      : [{ collection: "orders", id: "o-void", data: { region: "eu", channel: "web", amount: 5, status: "void" }, envelope } as Seed]),
+    ...(a
+      ? [{ collection: "orders", id: "old-order", data: { region: "us", channel: "shop", amount: 40, status: "open" }, envelope: { ...envelope, archive: { archivedAt: T1, archivedBy: "member:alice" } } } as Seed]
+      : []),
   ];
 }
 
@@ -128,9 +211,9 @@ async function seed(v: "a" | "b") {
   } satisfies LinkKey;
 }
 
-async function ask(v: "a" | "b", collectionId: string, query: unknown): Promise<{ status: number; body: unknown }> {
+async function ask(v: "a" | "b", collectionId: string, query: unknown, key = labelledKeys[v]): Promise<{ status: number; body: unknown }> {
   try {
-    const view = await openLinkReadView(SPACES[v], GRANT, labelledKeys[v]);
+    const view = await openLinkReadView(SPACES[v], GRANT, key);
     return { status: 200, body: await queryRecords(SPACES[v], collectionId, query, { view }) };
   } catch (error) {
     const failure = linkQueryFailure(error);
@@ -213,6 +296,9 @@ describe("a link's read view", () => {
       ["deals", { aggregate: { groupBy: "createdBy", select: { n: { fn: "count" } } } }],
       ["deals", { aggregate: { select: { most: { fn: "max", field: "margin" } } } }],
       ["deals", { aggregate: { select: { least: { fn: "min", field: "margin" } } } }],
+      // A collection shown only as totals, and never as rows from elsewhere.
+      ...[...SUMMARY_QUERIES, ...SUMMARY_REFUSALS.map(([query]) => query)].map((query): [string, unknown] => ["orders", query]),
+      ["deals", { backlinks: { collection: "orders", field: "region" } }],
       // Unshown times can't be read, sorted or filtered.
       ["clients", {}],
       ["clients", { orderBy: "updatedAt" }],
@@ -274,6 +360,31 @@ describe("a link's read view", () => {
   });
 });
 
+describe("a link that shows only totals", () => {
+  useWorkspace(true);
+
+  it("answers only for groups of at least five, and refuses every other read", async () => {
+    const key = await seed("a");
+    const groups = async (query: unknown) => ((await ask("a", "orders", query, key)).body as { groups?: unknown[] }).groups;
+    expect(await groups({ aggregate: { select: TOTALS } })).toEqual([{ n: 11, total: expect.closeTo(16.85), mean: expect.closeTo(16.85 / 11) }]);
+    // Groups come in key order, which says nothing about the amounts in them.
+    expect(await groups({ aggregate: { groupBy: "region", select: TOTALS } })).toEqual([
+      { key: "eu", n: 6, total: expect.closeTo(2.8), mean: expect.closeTo(2.8 / 6) },
+      { key: "us", n: 5, total: expect.closeTo(14.05), mean: expect.closeTo(14.05 / 5) },
+    ]);
+    // Three "shop" orders are visible: the void and archived ones don't count.
+    expect(await groups({ aggregate: { groupBy: "channel", select: COUNT } })).toEqual([{ key: "web", n: 8 }]);
+    expect(await groups({ includeArchived: true, aggregate: { groupBy: "channel", select: COUNT } })).toEqual([{ key: "web", n: 8 }]);
+    // Dropped groups aren't pooled anywhere, and a small total is dropped whole.
+    expect(await groups({ where: { region: "eu" }, aggregate: { groupBy: "channel", select: COUNT } })).toEqual([]);
+    expect(await groups({ where: { channel: "shop" }, aggregate: { select: COUNT } })).toEqual([]);
+
+    for (const [query, code] of SUMMARY_REFUSALS) {
+      expect({ query, ...(await ask("a", "orders", query, key)) }).toMatchObject({ query, status: 403, body: { code } });
+    }
+  });
+});
+
 describe("link grants against live schemas", () => {
   useWorkspace(true);
 
@@ -301,18 +412,41 @@ describe("link grants against live schemas", () => {
     await writeRecordCollectionSchema("probe-a", buildRecordCollectionSchema({
       id: "notes",
       name: "notes",
-      fields: { title: { type: "text" }, page: { type: "document" }, deal: { type: "relation", references: "deals" }, kind: { type: "text" } },
+      fields: { title: { type: "text" }, page: { type: "document" }, deal: { type: "relation", references: "deals" }, kind: { type: "text" }, tally: { type: "relation", references: "tallies" } },
+    }));
+    await writeRecordCollectionSchema("probe-a", buildRecordCollectionSchema({
+      id: "tallies",
+      name: "tallies",
+      titleField: "label",
+      fields: {
+        label: { type: "select" },
+        code: { type: "select", unique: true },
+        region: { type: "multi_select" },
+        paid: { type: "boolean" },
+        note: { type: "text" },
+        due: { type: "date" },
+        kind: { type: "select" },
+        amount: { type: "number" },
+        version: { type: "number" },
+      },
     }));
     // A row condition reads a data field named like the envelope ("kind"),
     // and never the envelope itself ("updatedBy"). Showing "kind" is refused:
     // a link's queries would read the record's own kind instead.
+    // Totals split only by few-valued fields that don't name a row, and no
+    // relation may lead to the rows behind them.
     const grant = LinkGrantSchema.parse({
       version: 1,
       collections: {
         notes: {
           rows: { and: [{ field: "deal.name", op: "eq", value: "x" }, { field: "updatedBy", op: "eq", value: "y" }, { field: "kind", op: "eq", value: "z" }] },
-          fields: ["title", "page", "deal", "gone", "kind"],
+          fields: ["title", "page", "deal", "gone", "kind", "tally"],
           writes: { update: true },
+        },
+        tallies: {
+          fields: [],
+          mode: "summaries",
+          summaries: { groupBy: ["region", "paid", "label", "code", "note", "kind"], measures: ["amount", "paid", "version", "gone"] },
         },
         missing: { fields: [] },
       },
@@ -322,9 +456,17 @@ describe("link grants against live schemas", () => {
       'notes: Field "deal" points at a collection this link doesn\'t open.',
       'notes: Field "gone" doesn\'t exist.',
       'notes: Field "kind" has a name records use for themselves, so links can\'t show it.',
+      'notes: Field "tally" points at a collection this link shows only as totals.',
       'notes: The row condition can\'t follow "deal.name" into another collection.',
       'notes: The row condition uses "updatedBy", which isn\'t a field of this collection.',
       "notes: Links can't change records yet.",
+      'tallies: Summaries can\'t be grouped by "label". Use a select, multi-select or yes/no field.',
+      'tallies: Summaries can\'t be grouped by "code". Use a select, multi-select or yes/no field.',
+      'tallies: Summaries can\'t be grouped by "note". Use a select, multi-select or yes/no field.',
+      'tallies: Field "kind" has a name records use for themselves, so links can\'t show it.',
+      'tallies: Summary measure "paid" must be a number field.',
+      'tallies: Field "version" has a name records use for themselves, so links can\'t show it.',
+      'tallies: Summary measure "gone" isn\'t a field of this collection.',
       "missing: This collection doesn't exist.",
     ]);
   });

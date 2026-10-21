@@ -22,8 +22,13 @@ const BLOCKED_LABELS: Record<ShareLinkBlockedBy, string> = {
   space: "Not allowed in this Space",
   sharer: "Its creator can’t share anymore",
   password: "Needs a password",
-  level: "Not available in this version",
+  level: "Its access isn’t allowed",
   "expiry-cap": "Past the longest expiry",
+}
+
+/** Why a link the owner policy holds back doesn't open. */
+export function shareLinkBlockedLabel(reason: ShareLinkBlockedBy): string {
+  return BLOCKED_LABELS[reason]
 }
 
 /** Why the reader can't make a link to this document. */
@@ -42,17 +47,28 @@ export function createBlockedMessage(
   }
 }
 
-/** Links this version can open under the current policy. */
+/** Links that open now: not revoked, expired, or held back by the owner policy. */
 export function openShareLinkCount(links: readonly ShareLink[]): number {
   return links.filter((link) => link.status === "active").length
 }
 
-function lastOpened(iso: string, now: number): string {
+/** When a link was last opened: "today", "3 days ago", "Oct 3". */
+function openedWhen(iso: string, now: number): string {
   const days = Math.floor((now - Date.parse(iso)) / DAY_MS)
-  if (days < 1) return "Last opened today"
-  if (days === 1) return "Last opened yesterday"
-  if (days < 30) return `Last opened ${days} days ago`
-  return `Last opened ${formatArchiveDate(iso)}`
+  if (days < 1) return "today"
+  if (days === 1) return "yesterday"
+  if (days < 30) return `${days} days ago`
+  return formatArchiveDate(iso)
+}
+
+/** A link's Last opened cell: "Today", "3 days ago", or "Never". */
+export function shareLinkLastOpened(
+  link: Pick<ShareLink, "lastUsedAt">,
+  now = Date.now()
+): string {
+  if (!link.lastUsedAt) return "Never"
+  const when = openedWhen(link.lastUsedAt, now)
+  return when.charAt(0).toUpperCase() + when.slice(1)
 }
 
 export interface ShareLinkDetail {
@@ -72,12 +88,14 @@ export function shareLinkDetails(
   const parts: ShareLinkDetail[] = [
     { text: SHARE_LINK_LEVEL_LABELS[link.level] },
   ]
-  if (link.status === "expired" && link.expiresAt) {
+  if (link.status === "revoked") {
+    parts.push({ text: "Revoked", stopped: true })
+  } else if (link.status === "expired" && link.expiresAt) {
     parts.push({
       text: `Expired ${formatArchiveDate(link.expiresAt)}`,
       stopped: true,
     })
-  } else if (link.expiresAt) {
+  } else if (link.expiresAt && link.blockedBy !== "expiry-cap") {
     parts.push({ text: `Expires ${formatArchiveDate(link.expiresAt)}` })
   }
   if (link.status === "blocked" && link.blockedBy) {
@@ -85,9 +103,27 @@ export function shareLinkDetails(
   }
   if (link.hasPassword) parts.push({ text: "Password" })
   parts.push({
-    text: link.lastUsedAt ? lastOpened(link.lastUsedAt, now) : "Not opened yet",
+    text: link.lastUsedAt
+      ? `Last opened ${openedWhen(link.lastUsedAt, now)}`
+      : "Not opened yet",
   })
   return parts
+}
+
+/**
+ * A link's Expires cell, and whether it is why the link stopped. A link past
+ * the longest expiry shows its date in red; its Access cell says why.
+ */
+export function shareLinkExpiry(link: ShareLink): ShareLinkDetail {
+  if (link.status === "revoked") return { text: "Revoked" }
+  if (!link.expiresAt) return { text: "Never" }
+  const date = formatArchiveDate(link.expiresAt)
+  if (link.status === "expired") {
+    return { text: `Expired ${date}`, stopped: true }
+  }
+  return link.blockedBy === "expiry-cap"
+    ? { text: date, stopped: true }
+    : { text: date }
 }
 
 /**

@@ -1,6 +1,5 @@
 import {
   CreateShareLinkInputSchema,
-  defaultSharingPolicy,
   ShareLinkKindSchema,
   ShareLinkLevelSchema,
   ShareTargetSchema,
@@ -36,6 +35,10 @@ import {
 } from "../share-links-store.ts"
 import {
   authorizeShareAction,
+  currentSharingPolicy,
+  effectiveExpiresAt,
+  expiryAllowed,
+  linkBlockedBy,
   sharerOf,
   type ShareDecision,
 } from "../share-policy.ts"
@@ -82,17 +85,20 @@ function publicLink(
   link: StoredShareLink,
   place: Place,
   canManage: boolean,
+  policy: SharingPolicy,
   now = Date.now()
 ): ShareLink {
   const level = ShareLinkLevelSchema.safeParse(link.level)
+  const blockedBy =
+    link.revokedAt === null ? linkBlockedBy(link, policy, now) : null
   const status: ShareLink["status"] =
     link.revokedAt !== null
       ? "revoked"
       : link.expiresAt !== null && link.expiresAt <= now
         ? "expired"
-        : link.servable
-          ? "active"
-          : "blocked"
+        : blockedBy
+          ? "blocked"
+          : "active"
   return {
     id: link.id,
     spaceId: link.spaceId,
@@ -104,18 +110,11 @@ function publicLink(
     level: level.success ? level.data : "view",
     createdBy: { id: link.createdById, name: link.createdByName },
     createdAt: iso(link.createdAt)!,
-    expiresAt: iso(link.expiresAt),
+    expiresAt: iso(effectiveExpiresAt(link, policy)),
     hasPassword: link.hasPassword,
     lastUsedAt: iso(link.lastUsedAt),
     status,
-    // A link from a later version that this one cannot serve.
-    ...(status === "blocked"
-      ? {
-          blockedBy: link.hasPassword
-            ? ("password" as const)
-            : ("level" as const),
-        }
-      : {}),
+    ...(status === "blocked" && blockedBy ? { blockedBy } : {}),
     tokenHint: link.tokenHint,
     canManage,
     comments: { ...link.comments, autoPaused: false },
@@ -150,29 +149,44 @@ async function placesOf(
   return places
 }
 
-/** Owner policy arrives with its own change; until then, the defaults. */
-function sharerPolicy(): SharerPolicy {
-  const policy: Partial<SharingPolicy> = defaultSharingPolicy()
-  delete policy.paused
-  delete policy.whoMayShare
-  delete policy.spaces
-  delete policy.agentLinks
-  return policy as SharerPolicy
+/** The owner policy as it limits the share dialog. */
+function sharerPolicy(policy: SharingPolicy): SharerPolicy {
+  return {
+    requirePassword: policy.requirePassword,
+    maxExpiryDays: policy.maxExpiryDays,
+    levels: policy.levels,
+    liveLinks: policy.liveLinks,
+    records: policy.records,
+    recordsDefaultExpiryDays: policy.recordsDefaultExpiryDays,
+    allowComments: policy.allowComments,
+    allowVisitorsSeeAll: policy.allowVisitorsSeeAll,
+  }
 }
 
-function denied(
-  c: Context,
-  decision: Exclude<ShareDecision, { allowed: true }>
-) {
+type Denied = Exclude<ShareDecision, { allowed: true }>
+
+const DENIED: Record<Denied["code"], string> = {
+  FORBIDDEN: "Forbidden",
+  LEVEL_NOT_AVAILABLE: "Links can't have that access here",
+  SHARING_PAUSED: "Links are paused for this Worktable",
+  SPACE_NOT_ALLOWED: "Links aren't allowed in this Space",
+}
+
+function denied(c: Context, decision: Denied) {
+  return c.json(
+    { error: DENIED[decision.code], code: decision.code },
+    decision.status
+  )
+}
+
+/** A new expiry past the owner policy's longest one. */
+function expiryTooLong(c: Context, policy: SharingPolicy) {
   return c.json(
     {
-      error:
-        decision.code === "LEVEL_NOT_AVAILABLE"
-          ? "Links can only be view links"
-          : "Forbidden",
-      code: decision.code,
+      error: `Links here expire within ${policy.maxExpiryDays} days`,
+      code: "EXPIRY_TOO_LONG",
     },
-    decision.status
+    400
   )
 }
 
@@ -227,18 +241,32 @@ shareLinksRouter.get("/", async (c) => {
   )
   if (!("documentId" in resolution)) return notFound(c)
   const { data: space } = await readSpace(spaceId)
-  const permitted = authorizeShareAction(identity, "create", spaceId).allowed
+  const policy = currentSharingPolicy()
+  const create = authorizeShareAction(identity, "create", spaceId, { policy })
   const canCreate =
-    permitted &&
+    create.allowed &&
     resolution.shareable &&
     Boolean(space && !getSpaceArchiveInfo(space))
   const links = listDocumentShareLinks(spaceId, resolution.documentId)
-  const canManage = authorizeShareAction(identity, "manage", spaceId).allowed
+  const now = Date.now()
   const body: DocumentShareLinks = {
-    links: links.map((link) => publicLink(link, resolution.place, canManage)),
+    links: links.map((link) =>
+      publicLink(
+        link,
+        resolution.place,
+        authorizeShareAction(identity, "manage", spaceId, {
+          policy,
+          creatorId: link.createdById,
+        }).allowed,
+        policy,
+        now
+      )
+    ),
     canCreate,
-    ...(!permitted ? { createBlockedBy: "sharer" as const } : {}),
-    policy: sharerPolicy(),
+    ...(!create.allowed && create.blockedBy
+      ? { createBlockedBy: create.blockedBy }
+      : {}),
+    policy: sharerPolicy(policy),
   }
   return c.json(body)
 })
@@ -251,12 +279,11 @@ shareLinksRouter.post("/", async (c) => {
   const { target, label, level, comments } = input.data
   if (!safeTarget(target)) return invalid(c, "Invalid document path")
   const identity = identityOf(c)
-  const decision = authorizeShareAction(
-    identity,
-    "create",
-    target.spaceId,
-    level
-  )
+  const policy = currentSharingPolicy()
+  const decision = authorizeShareAction(identity, "create", target.spaceId, {
+    level,
+    policy,
+  })
   if (!decision.allowed) return denied(c, decision)
   if (input.data.password !== undefined) {
     return invalid(
@@ -267,6 +294,7 @@ shareLinksRouter.post("/", async (c) => {
   }
   const expiresAt = expiryOf(input.data.expiresAt)
   if (typeof expiresAt === "string") return invalid(c, expiresAt)
+  if (!expiryAllowed(expiresAt, policy)) return expiryTooLong(c, policy)
   const { data: space } = await readSpace(target.spaceId)
   if (!space || getSpaceArchiveInfo(space)) return notFound(c)
 
@@ -313,7 +341,7 @@ shareLinksRouter.post("/", async (c) => {
   }
   const { config } = created
   const body: CreatedShareLink = {
-    link: publicLink(created.link, created.place, true),
+    link: publicLink(created.link, created.place, true, policy),
     url: `${config.shareOrigin}/s/${encodeURIComponent(config.workspaceId)}/${created.token}`,
   }
   return c.json(body, 201)
@@ -334,12 +362,12 @@ shareLinksRouter.patch("/:linkId", async (c) => {
   const link = linkFor(c)
   if (!link) return notFound(c)
   const identity = identityOf(c)
-  const decision = authorizeShareAction(
-    identity,
-    "manage",
-    link.spaceId,
-    input.data.level ?? "view"
-  )
+  const policy = currentSharingPolicy()
+  const decision = authorizeShareAction(identity, "manage", link.spaceId, {
+    ...(input.data.level ? { level: input.data.level } : {}),
+    creatorId: link.createdById,
+    policy,
+  })
   if (!decision.allowed) return denied(c, decision)
   if (input.data.password !== undefined) {
     return invalid(
@@ -356,6 +384,9 @@ shareLinksRouter.patch("/:linkId", async (c) => {
       ? undefined
       : expiryOf(input.data.expiresAt)
   if (typeof expiresAt === "string") return invalid(c, expiresAt)
+  if (expiresAt !== undefined && !expiryAllowed(expiresAt, policy)) {
+    return expiryTooLong(c, policy)
+  }
   const updated = updateShareLink(link.id, {
     ...(input.data.label !== undefined ? { label: input.data.label } : {}),
     ...(expiresAt !== undefined ? { expiresAt } : {}),
@@ -364,7 +395,7 @@ shareLinksRouter.patch("/:linkId", async (c) => {
   if (!updated) return notFound(c)
   const places = await placesOf([updated])
   return c.json({
-    link: publicLink(updated, places.get(updated.id) ?? null, true),
+    link: publicLink(updated, places.get(updated.id) ?? null, true, policy),
   })
 })
 
@@ -372,12 +403,16 @@ shareLinksRouter.delete("/:linkId", async (c) => {
   const link = linkFor(c)
   if (!link) return notFound(c)
   const identity = identityOf(c)
-  const decision = authorizeShareAction(identity, "manage", link.spaceId)
+  const policy = currentSharingPolicy()
+  const decision = authorizeShareAction(identity, "manage", link.spaceId, {
+    creatorId: link.createdById,
+    policy,
+  })
   if (!decision.allowed) return denied(c, decision)
   const revoked = revokeShareLink(link.id, sharerOf(identity!).id) ?? link
   const places = await placesOf([revoked])
   return c.json({
-    link: publicLink(revoked, places.get(revoked.id) ?? null, true),
+    link: publicLink(revoked, places.get(revoked.id) ?? null, true, policy),
   })
 })
 
@@ -415,12 +450,19 @@ shareLinksRouter.get("/all", async (c) => {
     limit: PAGE_SIZE,
   })
   const places = await placesOf(page.links)
+  const policy = currentSharingPolicy()
+  const now = Date.now()
   const body: ShareLinksPage = {
     links: page.links.map((link) =>
       publicLink(
         link,
         places.get(link.id) ?? null,
-        authorizeShareAction(identity, "manage", link.spaceId).allowed
+        authorizeShareAction(identity, "manage", link.spaceId, {
+          policy,
+          creatorId: link.createdById,
+        }).allowed,
+        policy,
+        now
       )
     ),
     nextCursor: page.nextCursor,

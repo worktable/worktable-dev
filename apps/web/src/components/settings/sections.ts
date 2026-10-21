@@ -6,6 +6,7 @@ import {
   Archive,
   CircleHelp,
   History,
+  Link2,
   MonitorCog,
   PackageOpen,
   Palette,
@@ -17,6 +18,11 @@ import {
 } from "lucide-react"
 const TeamSection = lazy(() => import("./sections/team").then((module) => ({ default: module.TeamSection })));
 const TEAM: SettingsSection = { id: "team", group: "Worktable", label: "Team", description: "People, invitations and Space access.", icon: UsersRound, component: TeamSection };
+const LinksSection = lazy(() =>
+  import("./sections/links").then((module) => ({
+    default: module.LinksSection,
+  }))
+)
 const AccountSection = lazy(() =>
   import("./sections/account").then((module) => ({
     default: module.AccountSection,
@@ -79,6 +85,7 @@ const PortabilitySection = lazy(() =>
 export type SettingsSectionId =
   | "profile"
   | "team"
+  | "links"
   | "general"
   | "account"
   | "cloud"
@@ -129,6 +136,15 @@ const ACCOUNT: SettingsSection = {
   description: "Plan and billing.",
   icon: CreditCard,
   component: AccountSection,
+}
+
+const LINKS: SettingsSection = {
+  id: "links",
+  group: "Worktable",
+  label: "Links",
+  description: "Every share link in this Worktable.",
+  icon: Link2,
+  component: LinksSection,
 }
 
 const PROFILE: SettingsSection = {
@@ -225,6 +241,7 @@ export function getSettingsSections(
       ...(capabilities.workspaceName ? [CLOUD_GENERAL] : []),
       ...(capabilities.cloudAccount ? [ACCOUNT] : []),
       TEAM,
+      ...(capabilities.shareLinks ? [LINKS] : []),
       ...(capabilities.editorSettings ? [EDITOR] : []),
       ...(capabilities.historySettings ? [HISTORY] : []),
       {
@@ -247,6 +264,7 @@ export function getSettingsSections(
     ...(capabilities.workspaceName ? [GENERAL] : []),
     ...(capabilities.workspaceUrl ? [LINK] : []),
     TEAM,
+    ...(capabilities.shareLinks ? [LINKS] : []),
     ...(capabilities.editorSettings ? [EDITOR] : []),
     ...(capabilities.historySettings ? [HISTORY] : []),
     ...(capabilities.workspacePortability ? [PORTABILITY] : []),

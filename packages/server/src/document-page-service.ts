@@ -47,10 +47,11 @@ import { peekDocActivity } from "./activity-log.ts"
 import { peekDocBacklinks } from "./link-graph.ts"
 import { peekDocReferrers } from "./doc-referrers.ts"
 import {
-  countOpenDocumentShareLinks,
   ShareLinksStoreError,
   sharingV2Active,
+  unexpiredDocumentShareLinks,
 } from "./share-links-store.ts"
+import { effectiveSharingPolicy, linkBlockedBy } from "./share-policy.ts"
 import { getDocMetaView, listDocVersions, readSpace } from "./store.ts"
 import type { VersionEntry } from "./version-store.ts"
 import {
@@ -348,7 +349,8 @@ async function pageForHandle(
 /**
  * The page's sharing while links v2 is on, so the page needs no request of
  * its own for it: one statement on the links index, and none for a document
- * that has never had a durable id, which every link needs.
+ * that has never had a durable id, which every link needs. Only links the
+ * owner policy lets open now count as active.
  */
 function sharingSummary(
   spaceId: string,
@@ -357,11 +359,18 @@ function sharingSummary(
 ): DocumentSharingSummary | undefined {
   try {
     if (!sharingV2Active()) return undefined
+    if (handle.identity !== "durable") return { activeLinks: 0, canCreate }
+    const now = Date.now()
+    const { links, policy } = unexpiredDocumentShareLinks(
+      spaceId,
+      handle.documentId,
+      now
+    )
+    const inForce = effectiveSharingPolicy(policy)
     return {
-      activeLinks:
-        handle.identity === "durable"
-          ? countOpenDocumentShareLinks(spaceId, handle.documentId)
-          : 0,
+      activeLinks: links.filter(
+        (link) => linkBlockedBy(link, inForce, now) === null
+      ).length,
       canCreate,
     }
   } catch (error) {
@@ -380,6 +389,10 @@ export async function readDocumentPage(options: {
   /** Whether records that point at the doc may be named. */
   recordsAuthorized?: boolean
   sharingAuthorized: boolean
+  /**
+   * Whether the reader may make a share link now. Only a hint for the share
+   * dialog; making a link checks again.
+   */
   canCreateShareLinks?: boolean
 }): Promise<DocumentPageResult | { kind: "alias-error" } | null> {
   const resolution = await useResolvedDocumentHandle(

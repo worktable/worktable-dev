@@ -77,7 +77,7 @@ import { agentConnectionsRouter } from "./routes/agent-connections.ts"
 import { sharesRouter } from "./routes/shares.ts"
 import { linkGrantsRouter } from "./routes/link-grants.ts"
 import { publicSharesRouter } from "./routes/public-shares.ts"
-import { flushShareLinkUse } from "./share-links-store.ts"
+import { flushShareLinkUse, sweepRevokedShareLinks } from "./share-links-store.ts"
 import { settleShareLinkReconciles } from "./share-links-lifecycle.ts"
 import { startV1ShareLinkDrain } from "./share-links-drain.ts"
 import { publicInvitationsRouter } from "./routes/public-invitations.ts"
@@ -1415,7 +1415,8 @@ export function startServer(
   // Doc version-history retention: one deferred sweep ~30s after boot (so it
   // never delays startup) plus a 24h steady-state sweep. At boot, before any
   // sweep, the install's policy is settled: new installs start at 30 days;
-  // installs whose stored policy is no longer offered move to 180.
+  // installs whose stored policy is no longer offered move to 180. The same
+  // pass forgets share links revoked more than 90 days ago.
   // Replace-not-stack across reboots, and both timers are unref'd so they
   // never keep a test process (or a briefly idle server) alive.
   // WORKTABLE_SKIP_RETENTION_SWEEP=1 disables them for the test runner,
@@ -1430,10 +1431,16 @@ export function startServer(
     }).catch((err) =>
       console.error("[version-retention] could not settle the policy:", logError(err))
     )
-    const sweep = () =>
+    const sweep = () => {
       void settled
         .then(() => runRetentionSweep())
         .catch((err) => console.error("[version-retention] sweep error:", logError(err)));
+      try {
+        sweepRevokedShareLinks();
+      } catch (err) {
+        console.error("[share-links] revoked link sweep error:", logError(err));
+      }
+    };
     retentionBootTimer = setTimeout(sweep, RETENTION_BOOT_DELAY_MS);
     retentionBootTimer.unref?.();
     retentionSweepTimer = setInterval(sweep, RETENTION_SWEEP_INTERVAL_MS);

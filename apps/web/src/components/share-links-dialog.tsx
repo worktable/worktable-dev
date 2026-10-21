@@ -63,6 +63,8 @@ import { HtmlSafetyNote, InlineError } from "@/components/share-document-action"
 import type { PageShareTarget } from "@/hooks/use-page-meta"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { documentQueryKeys } from "@/lib/documents-queries"
+import { useWorkspace } from "@/lib/queries"
+import { openSettings } from "@/lib/settings-open"
 import {
   allowedShareLinkExpiry,
   createBlockedMessage,
@@ -140,6 +142,8 @@ export function ShareLinksDialog({
   const [revoking, setRevoking] = useState<ShareLink | null>(null)
   const [announcement, setAnnouncement] = useState("")
   const scrollRef = useScrollFade<HTMLDivElement>()
+  // Owners can lift a pause or allow the Space from Settings → Links.
+  const owner = useWorkspace().data?.person?.role === "owner"
 
   // Each opening starts afresh; one with no open links starts a new link.
   const [shownOpen, setShownOpen] = useState(false)
@@ -294,7 +298,24 @@ export function ShareLinksDialog({
           >
             {list.data && !list.data.canCreate ? (
               <Callout>
-                {createBlockedMessage(list.data.createBlockedBy)}
+                <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <span>{createBlockedMessage(list.data.createBlockedBy)}</span>
+                  {owner &&
+                  (list.data.createBlockedBy === "paused" ||
+                    list.data.createBlockedBy === "space") ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        handleOpenChange(false)
+                        openSettings("links")
+                      }}
+                    >
+                      Manage Links
+                    </Button>
+                  ) : null}
+                </span>
               </Callout>
             ) : null}
 

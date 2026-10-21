@@ -1,5 +1,11 @@
 import { Database } from "bun:sqlite"
-import type { ShareLinkCommentSettings, ShareLinkKind } from "@worktable/types"
+import {
+  defaultSharingPolicy,
+  SharingPolicySchema,
+  type ShareLinkCommentSettings,
+  type ShareLinkKind,
+  type SharingPolicy,
+} from "@worktable/types"
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
 import { chmodSync, existsSync, mkdirSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -12,7 +18,8 @@ import { workspaceCacheKey } from "./workspace.ts"
 // ============================================================
 //
 // Links live in <appDir>/sharing/<workspace>/sharing.sqlite, outside the
-// workspace and outside backups. A link is keyed by its document's durable
+// workspace and outside backups; only the owner policy beside them is copied
+// into operator backups. A link is keyed by its document's durable
 // id, so renames and moves keep it. Only a SHA-256 of each token is stored:
 // the URL exists once, in the response that created it.
 //
@@ -101,11 +108,37 @@ interface LinkRow {
   migrated_from: string | null
 }
 
-const LINK_COLUMNS = `id, token_hash, token_hint, workspace_epoch, space_id,
-  document_id, kind, label, level, created_by_id, created_by_name, created_at,
-  expires_at, password_hash, grant_json, pinned_version, accept_comments,
-  anonymous_allowed, visitors_see, show_sharer_name, revoked_at,
-  revoked_reason, last_used_at, migrated_from`
+const LINK_COLUMN_NAMES = [
+  "id",
+  "token_hash",
+  "token_hint",
+  "workspace_epoch",
+  "space_id",
+  "document_id",
+  "kind",
+  "label",
+  "level",
+  "created_by_id",
+  "created_by_name",
+  "created_at",
+  "expires_at",
+  "password_hash",
+  "grant_json",
+  "pinned_version",
+  "accept_comments",
+  "anonymous_allowed",
+  "visitors_see",
+  "show_sharer_name",
+  "revoked_at",
+  "revoked_reason",
+  "last_used_at",
+  "migrated_from",
+] as const satisfies readonly (keyof LinkRow)[]
+const LINK_COLUMNS = LINK_COLUMN_NAMES.join(", ")
+/** The same columns, from `share_links l` in a join. */
+const JOINED_LINK_COLUMNS = LINK_COLUMN_NAMES.map((name) => `l.${name}`).join(
+  ", "
+)
 
 const flag = (value: number): boolean | null =>
   value === 0 ? false : value === 1 ? true : null
@@ -256,6 +289,7 @@ export function closeShareLinkStores(): void {
   for (const db of databases.values()) db.close()
   databases.clear()
   drained = null
+  policyCache = null
 }
 
 // ── Whether links v2 is on ───────────────────────────────────
@@ -579,26 +613,38 @@ export function revokeAllShareLinks(reason: ShareLinkRevocationReason): number {
 // ── Reads ────────────────────────────────────────────────────
 
 /**
- * The link a token opens: one indexed SELECT, no lock and no file read. The
- * caller checks revocation, epoch and expiry.
+ * The link a token opens and the owner policy as it stands: one indexed
+ * SELECT, no lock and no file read. The policy is parsed again only when its
+ * revision moved. The caller checks revocation, epoch, expiry and policy.
  */
-export function findShareLinkByToken(token: string): StoredShareLink | null {
+export function findShareLinkForView(
+  token: string
+): { link: StoredShareLink; policy: SharingPolicy } | null {
   if (!TOKEN_PATTERN.test(token)) return null
   const db = openDatabase(false)
   if (!db) return null
   const digest = tokenDigest(token)
   const row = db
-    .query<
-      LinkRow,
-      [Buffer]
-    >(`SELECT ${LINK_COLUMNS} FROM share_links WHERE token_hash = ?`)
+    .query<LinkRow & { policy_revision: number | null }, [Buffer]>(
+      `SELECT ${JOINED_LINK_COLUMNS}, p.revision AS policy_revision
+       FROM share_links l LEFT JOIN share_policy p ON p.id = 1
+       WHERE l.token_hash = ?`
+    )
     .get(digest)
   if (!row) return null
   const stored = Buffer.from(row.token_hash)
   if (stored.length !== digest.length || !timingSafeEqual(stored, digest)) {
     return null
   }
-  return storedLink(row)
+  return {
+    link: storedLink(row),
+    policy: policyAt(db, row.policy_revision ?? 0),
+  }
+}
+
+/** The link a token opens, whatever the policy says. */
+export function findShareLinkByToken(token: string): StoredShareLink | null {
+  return findShareLinkForView(token)?.link ?? null
 }
 
 export function getShareLink(id: string): StoredShareLink | null {
@@ -629,17 +675,34 @@ export function listDocumentShareLinks(
 }
 
 /**
- * How many of a document's links still open: neither revoked nor expired.
- * One statement on the document index, and none before a link exists.
+ * A document's links that are neither revoked nor past their own expiry,
+ * with the owner policy that decides whether they open now. One statement on
+ * the document index, and none before a link exists.
  */
-export function countOpenDocumentShareLinks(
+export function unexpiredDocumentShareLinks(
   spaceId: string,
   documentId: string,
   now = Date.now()
-): number {
-  return listDocumentShareLinks(spaceId, documentId).filter(
-    (link) => link.servable && (link.expiresAt === null || link.expiresAt > now)
-  ).length
+): { links: StoredShareLink[]; policy: SharingPolicy } {
+  const db = openDatabase(false)
+  if (!db) return { links: [], policy: DEFAULT_POLICY }
+  const rows = db
+    .query<
+      LinkRow & { policy_revision: number | null },
+      [string, string, number]
+    >(
+      `SELECT ${JOINED_LINK_COLUMNS}, p.revision AS policy_revision
+       FROM share_links l LEFT JOIN share_policy p ON p.id = 1
+       WHERE l.space_id = ? AND l.document_id = ? AND l.revoked_at IS NULL
+         AND (l.expires_at IS NULL OR l.expires_at > ?)`
+    )
+    .all(spaceId, documentId, now)
+  return {
+    links: rows.map(storedLink),
+    policy: rows[0]
+      ? policyAt(db, rows[0].policy_revision ?? 0)
+      : DEFAULT_POLICY,
+  }
 }
 
 /** Unrevoked links into a Space, by link id and document. */
@@ -725,6 +788,26 @@ export function listShareLinks(options: {
   }
 }
 
+/**
+ * Forget links revoked longer ago than they stay listed. Background work:
+ * the daily retention pass runs it, never a request.
+ */
+export function sweepRevokedShareLinks(now = Date.now()): number {
+  try {
+    return (
+      openDatabase(false)
+        ?.query(
+          "DELETE FROM share_links WHERE revoked_at IS NOT NULL AND revoked_at <= ?"
+        )
+        .run(now - REVOKED_LISTED_MS).changes ?? 0
+    )
+  } catch (error) {
+    // A later version's store keeps its own rows.
+    if (error instanceof ShareLinksStoreError) return 0
+    throw error
+  }
+}
+
 function decodeCursor(
   cursor: string | null | undefined
 ): { createdAt: number; id: string } | null {
@@ -734,6 +817,129 @@ function decodeCursor(
     .split(":", 2)
   const at = Number(createdAt)
   return Number.isSafeInteger(at) && id ? { createdAt: at, id } : null
+}
+
+// ── Owner policy ─────────────────────────────────────────────
+//
+// One row, saved whole, whose revision moves with every save. Each view
+// reads the revision with its link, so a change made by any process applies
+// at the next view; the policy itself is parsed again only when the revision
+// moved. Revision 0 is the defaults, before an owner first saves a policy.
+
+export interface StoredSharingPolicy {
+  policy: SharingPolicy
+  revision: number
+}
+
+const DEFAULT_POLICY: SharingPolicy = defaultSharingPolicy()
+
+let policyCache: (StoredSharingPolicy & { path: string }) | null = null
+
+/**
+ * A saved policy this binary can't read, such as one a later version saved
+ * with settings it doesn't know, stops every link until an owner saves the
+ * policy again here.
+ */
+function parsePolicy(text: string): SharingPolicy {
+  try {
+    return SharingPolicySchema.parse(JSON.parse(text))
+  } catch {
+    return { ...DEFAULT_POLICY, paused: true }
+  }
+}
+
+function policyAt(db: Database, revision: number): SharingPolicy {
+  const path = shareLinksDatabasePath()
+  if (policyCache?.path === path && policyCache.revision === revision) {
+    return policyCache.policy
+  }
+  const row = db
+    .query<
+      { policy: string; revision: number },
+      []
+    >("SELECT policy, revision FROM share_policy WHERE id = 1")
+    .get()
+  const policy = row ? parsePolicy(row.policy) : DEFAULT_POLICY
+  policyCache = { path, revision: row?.revision ?? 0, policy }
+  return policy
+}
+
+/** The owner policy as saved, with its revision. */
+export function readSharingPolicy(): StoredSharingPolicy {
+  const db = openDatabase(false)
+  if (!db) return { policy: DEFAULT_POLICY, revision: 0 }
+  const revision =
+    db
+      .query<
+        { revision: number },
+        []
+      >("SELECT revision FROM share_policy WHERE id = 1")
+      .get()?.revision ?? 0
+  return { policy: policyAt(db, revision), revision }
+}
+
+/** Save a whole owner policy; it applies from every link's next view. */
+export function saveSharingPolicy(
+  policy: SharingPolicy,
+  updatedBy: string
+): StoredSharingPolicy {
+  const db = openDatabase(true)!
+  const { revision } = db
+    .query<{ revision: number }, [string, string, number]>(
+      `INSERT INTO share_policy (id, policy, revision, updated_by, updated_at)
+       VALUES (1, ?, 1, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET policy = excluded.policy,
+         revision = share_policy.revision + 1,
+         updated_by = excluded.updated_by, updated_at = excluded.updated_at
+       RETURNING revision`
+    )
+    .get(JSON.stringify(policy), updatedBy, Date.now())!
+  policyCache = { path: shareLinksDatabasePath(), revision, policy }
+  return { policy, revision }
+}
+
+/**
+ * The saved policy as stored, for operator backups: settings a later
+ * version added travel with it. Null before an owner saves one, and when
+ * the store is one this version can't open, which never fails a backup.
+ */
+export function sharingPolicyForBackup(): Record<string, unknown> | null {
+  try {
+    const row = openDatabase(false)
+      ?.query<
+        { policy: string },
+        []
+      >("SELECT policy FROM share_policy WHERE id = 1")
+      .get()
+    const value: unknown = row ? JSON.parse(row.policy) : null
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null
+  } catch (error) {
+    if (error instanceof ShareLinksStoreError || error instanceof SyntaxError) {
+      return null
+    }
+    throw error
+  }
+}
+
+/**
+ * Restore a backed-up policy onto a machine with no links store yet, as
+ * after a full recovery. Where a store exists its policy stays, so an older,
+ * looser one never replaces it over live links. Returns whether it was
+ * restored.
+ */
+export function restoreSharingPolicy(policy: Record<string, unknown>): boolean {
+  const path = shareLinksDatabasePath()
+  if (databases.has(path) || existsSync(path)) return false
+  const restored = openDatabase(true)!
+    .query(
+      `INSERT INTO share_policy (id, policy, revision, updated_by, updated_at)
+       VALUES (1, ?, 1, 'restore', ?) ON CONFLICT (id) DO NOTHING`
+    )
+    .run(JSON.stringify(policy), Date.now())
+  policyCache = null
+  return restored.changes > 0
 }
 
 // ── Changes ──────────────────────────────────────────────────

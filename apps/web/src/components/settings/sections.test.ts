@@ -37,6 +37,18 @@ describe("settings sections", () => {
     expect(selfManaged).not.toContain("backups")
   })
 
+  it("offers Links only to people who may oversee share links", () => {
+    for (const mode of ["self-managed", "cloud"] as const) {
+      const ids = (shareLinks: boolean) =>
+        getSettingsSections({
+          mode,
+          capabilities: { ...capabilities, documentSharing: true, shareLinks },
+        }).map((section) => section.id)
+      expect(ids(true)).toContain("links")
+      expect(ids(false)).not.toContain("links")
+    }
+  })
+
   it("uses the policies for the active deployment", () => {
     const selfManaged = getHelpResources("self-managed").map(
       (resource) => resource.href

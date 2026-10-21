@@ -156,6 +156,52 @@ export type RecordPredicate =
   | { not: RecordPredicate }
   | { field: string; op: RecordPredicateOp; value?: unknown };
 
+/** The deepest predicate tree the query engine evaluates; the root is depth 0. */
+export const RECORD_PREDICATE_MAX_DEPTH = 20;
+
+// The value rules the query engine's parsePredicate enforces per operator.
+function predicateValueProblem(op: RecordPredicateOp, value: unknown): string | null {
+  if (op === "in" && !Array.isArray(value)) return '"in" requires an array value';
+  if (op === "contains" && typeof value !== "string") return '"contains" requires a string value';
+  if (op === "has" && (value === undefined || value === null || typeof value === "object")) return '"has" requires a scalar value';
+  if ((op === "gt" || op === "gte" || op === "lt" || op === "lte") && (value === undefined || value === null)) return `"${op}" requires a value`;
+  if (op === "isEmpty" && value !== undefined && typeof value !== "boolean") return '"isEmpty" takes an optional boolean value';
+  return null;
+}
+
+function predicateDepth(node: RecordPredicate): number {
+  if ("and" in node) return 1 + Math.max(...node.and.map(predicateDepth));
+  if ("or" in node) return 1 + Math.max(...node.or.map(predicateDepth));
+  if ("not" in node) return 1 + predicateDepth(node.not);
+  return 0;
+}
+
+const RecordPredicateLeafSchema = z
+  .strictObject({ field: z.string().min(1), op: RecordPredicateOpSchema, value: z.unknown().optional() })
+  .superRefine((leaf, ctx) => {
+    const problem = predicateValueProblem(leaf.op, leaf.value);
+    if (problem) ctx.addIssue({ code: "custom", message: problem, path: ["value"] });
+  });
+
+const RecordPredicateNodeSchema: z.ZodType<RecordPredicate> = z.lazy(() =>
+  z.union([
+    z.strictObject({ and: z.array(RecordPredicateNodeSchema).min(1).max(50) }),
+    z.strictObject({ or: z.array(RecordPredicateNodeSchema).min(1).max(50) }),
+    z.strictObject({ not: RecordPredicateNodeSchema }),
+    RecordPredicateLeafSchema,
+  ]),
+);
+
+/**
+ * A predicate tree in the canonical form the query engine's parser returns.
+ * Unlike `RecordQuery.where`, it never accepts a flat filter map, so stored
+ * conditions (link grants, saved reads) have exactly one spelling.
+ */
+export const RecordPredicateSchema: z.ZodType<RecordPredicate> = RecordPredicateNodeSchema.refine(
+  (tree) => predicateDepth(tree) <= RECORD_PREDICATE_MAX_DEPTH,
+  { message: `Predicate tree too deep (max ${RECORD_PREDICATE_MAX_DEPTH} levels)` },
+);
+
 export interface RecordQueryResult {
   records: RecordFile[];
   expanded?: Record<string, Record<string, RecordFile>>;

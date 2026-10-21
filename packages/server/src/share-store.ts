@@ -253,8 +253,7 @@ export async function withResolvedDocumentShare<T>(
     ])
     const share = file.shares.find(
       (candidate) =>
-        candidate.token === token &&
-        candidate.workspaceEpoch === workspaceEpoch
+        candidate.token === token && candidate.workspaceEpoch === workspaceEpoch
     )
     return share ? use(publicShare(share)) : null
   })
@@ -350,13 +349,13 @@ export async function readStoredDocumentShares(): Promise<
  * file. `moved` says true for a share that moved or was dropped, false for
  * one to keep here for now, and null for one it doesn't know, which an older
  * binary made since the file was read. Returns false, changing nothing, when
- * any share is unknown. Otherwise `beforeRemoving` sees the file's shares
- * and those about to leave it, then they leave; both happen under the file's
+ * any share is unknown. Otherwise `afterRemoving` sees the former shares
+ * and those durably removed; both steps happen under the file's
  * locks, so an older binary changes nothing in between.
  */
 export async function removeMovedDocumentShares(
   moved: (share: StoredDocumentShare) => boolean | null,
-  beforeRemoving: (
+  afterRemoving: (
     present: readonly StoredDocumentShare[],
     removing: readonly StoredDocumentShare[]
   ) => void
@@ -370,14 +369,14 @@ export async function removeMovedDocumentShares(
       }))
       const decisions = present.map(moved)
       if (decisions.includes(null)) return false
-      beforeRemoving(
-        present,
-        present.filter((_, index) => decisions[index] === true)
-      )
       const kept = file.shares.filter((_, index) => decisions[index] === false)
       if (kept.length < file.shares.length) {
         await saveFile({ ...emptyFile(), shares: kept })
       }
+      afterRemoving(
+        present,
+        present.filter((_, index) => decisions[index] === true)
+      )
       return true
     })
   )

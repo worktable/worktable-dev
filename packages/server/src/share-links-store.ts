@@ -405,7 +405,7 @@ export function importV1ShareLink(input: {
  * Reconcile links still moving with the earlier version's file as it is now,
  * while the caller holds its lock. A moving link whose share has left the
  * file was stopped there meanwhile, by an older binary, and is revoked here
- * too. Those in `moved`, which the caller is about to remove from the file,
+ * too. Those in `moved`, which the caller has durably removed from the file,
  * have moved for good.
  */
 export function settleV1ShareLinks(

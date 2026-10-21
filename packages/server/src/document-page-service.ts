@@ -47,7 +47,7 @@ import { peekDocActivity } from "./activity-log.ts"
 import { peekDocBacklinks } from "./link-graph.ts"
 import { peekDocReferrers } from "./doc-referrers.ts"
 import {
-  countOpenDocumentShareLinks,
+  listDocumentShareLinks,
   ShareLinksStoreError,
   sharingV2Active,
 } from "./share-links-store.ts"
@@ -357,12 +357,24 @@ function sharingSummary(
 ): DocumentSharingSummary | undefined {
   try {
     if (!sharingV2Active()) return undefined
+    const now = Date.now()
+    const active =
+      handle.identity === "durable"
+        ? listDocumentShareLinks(spaceId, handle.documentId).filter(
+            (link) =>
+              link.servable && (link.expiresAt === null || link.expiresAt > now)
+          )
+        : []
+    const nextExpiry = active.reduce(
+      (earliest, link) => Math.min(earliest, link.expiresAt ?? Infinity),
+      Infinity
+    )
     return {
-      activeLinks:
-        handle.identity === "durable"
-          ? countOpenDocumentShareLinks(spaceId, handle.documentId)
-          : 0,
+      activeLinks: active.length,
       canCreate,
+      ...(Number.isFinite(nextExpiry)
+        ? { nextExpiry: new Date(nextExpiry).toISOString() }
+        : {}),
     }
   } catch (error) {
     // A store this version can't open shares nothing; the page still opens.

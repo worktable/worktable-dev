@@ -176,6 +176,8 @@ export interface ShareLinksPage {
 /** Sharing on a document page, without a request of its own. */
 export const DocumentSharingSummarySchema = z.object({
   activeLinks: z.number().int().min(0),
+  /** Next count change due to expiry, so an open page refreshes once then. */
+  nextExpiry: IsoTimestampSchema.optional(),
   canCreate: z.boolean(),
   /** Present only to readers who may read visitor comments, when the document has a comment link or comments. */
   visitorComments: z.object({ newCount: z.number().int().min(0) }).optional(),

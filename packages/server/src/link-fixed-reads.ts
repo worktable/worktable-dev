@@ -268,7 +268,15 @@ export function fixedReadIssues(collectionId: string, grant: LinkGrant, schemas:
     // own field, and every result must meet it.
     const required = !canonical.where ? [] : "and" in canonical.where ? canonical.where.and : [canonical.where];
     forEachCondition(canonical.where, "/where", (leaf, pointer) => {
-      if (grantShows(grant, schemas, collectionId, collection, leaf.field) || Object.hasOwn(read.params, `${pointer}/value`)) return;
+      if (grantShows(grant, schemas, collectionId, collection, leaf.field)) {
+        // Shown ids are the link's own, so only equality can carry a saved id
+        // across; text and order comparisons would test another value.
+        if (ORDER_OR_TEXT_OPS.has(leaf.op) && holdsIds(schemas, collectionId, leaf.field)) {
+          issues.push(`Saved read "${read.id}" can compare "${leaf.field}" only for equality, since links show their own ids.`);
+        }
+        return;
+      }
+      if (Object.hasOwn(read.params, `${pointer}/value`)) return;
       if (!storedRowField(schema, leaf.field)) issues.push(`Saved read "${read.id}" can't filter on "${leaf.field}", which this link doesn't show.`);
       else if (!required.includes(leaf)) {
         issues.push(`Saved read "${read.id}" can filter on "${leaf.field}", which this link doesn't show, only with a condition every result meets.`);
@@ -295,6 +303,20 @@ export function fixedReadIssues(collectionId: string, grant: LinkGrant, schemas:
     }
   }
   return issues;
+}
+
+const ORDER_OR_TEXT_OPS = new Set(["contains", "gt", "gte", "lt", "lte"]);
+
+/** Whether a field path holds record ids: "id", a relation, or a relation's
+ *  "id" or relation one hop on. */
+function holdsIds(schemas: ReadonlyMap<string, RecordCollectionSchema>, collectionId: string, path: string): boolean {
+  if (path === "id") return true;
+  const dot = path.indexOf(".");
+  const head = dot === -1 ? path : path.slice(0, dot);
+  const fields = schemas.get(collectionId)?.fields;
+  const spec = fields && Object.hasOwn(fields, head) ? fields[head]! : undefined;
+  if (!spec || normalizeRecordFieldType(spec.type) !== "relation" || !spec.references) return false;
+  return dot === -1 || holdsIds(schemas, spec.references, path.slice(dot + 1));
 }
 
 /** Whether a condition on this field can be judged on stored rows, as row

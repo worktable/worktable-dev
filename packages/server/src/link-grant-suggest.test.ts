@@ -14,6 +14,7 @@ const schemas = new Map<string, RecordCollectionSchema>(
       client: { type: "relation", references: "clients" },
       owner: { type: "person" },
       notes: { type: "text" },
+      brief: { type: "document" },
     },
     clients: { name: { type: "text" }, email: { type: "email" } },
     orders: { region: { type: "select", values: ["eu", "us"] }, channel: { type: "select", values: ["web", "shop"] }, amount: { type: "number" }, owner: { type: "person" } },
@@ -49,9 +50,9 @@ pick("secret");
 // What a preview saw on first load, repeats included.
 const OBSERVED = [
   { collectionId: "deals", query: { where: { region: "eu", stage: "won" }, select: ["name", "amount", "client"], orderBy: "amount", expand: { client: ["name"] } } },
-  { collectionId: "deals", query: { where: { and: [{ field: "region", op: "eq", value: "eu" }, { field: "stage", op: "eq", value: "lead" }] }, select: ["name"] } },
+  { collectionId: "deals", query: { where: { and: [{ field: "region", op: "eq", value: "eu" }, { field: "stage", op: "eq", value: "lead" }] }, select: ["name", "brief"] } },
   { collectionId: "deals", query: { select: ["client", "amount", "name"], where: { stage: "won", region: "eu" }, orderBy: [{ field: "amount" }], expand: { client: ["name"] } } },
-  { collectionId: "orders", query: { where: { region: "eu" }, aggregate: { groupBy: "channel", select: { n: { fn: "count" }, total: { fn: "sum", field: "amount" } } } } },
+  { collectionId: "orders", query: { where: { region: "eu" }, includeArchived: true, aggregate: { groupBy: "channel", select: { n: { fn: "count" }, total: { fn: "sum", field: "amount" } } } } },
   { collectionId: "contacts", query: {} },
   // Refused: the tool may not read what these reach.
   { collectionId: "contacts", query: { select: ["name"], expand: { vault: true } } },
@@ -81,7 +82,7 @@ describe("suggestLinkGrant", () => {
       // Only ever asked for totals.
       orders: {
         rows: { field: "region", op: "eq", value: "eu" },
-        fields: [],
+        fields: ["amount", "channel", "region"],
         timestamps: true,
         mode: "summaries",
         summaries: { groupBy: ["channel", "region"], measures: ["amount"], fns: ["count", "sum"], minGroupSize: 5 },
@@ -90,18 +91,22 @@ describe("suggestLinkGrant", () => {
     expect(suggestion.warnings.map((warning) => [warning.code, warning.collectionId])).toEqual([
       ["dynamic_collection", undefined],
       ["whole_records", "contacts"],
+      ["fields_left_out", "deals"],
       ["static_only", "notes"],
+      ["archived_rows", "orders"],
+      ["small_groups_hidden", "orders"],
       ["declared_unseen", "archive"],
     ]);
     expect(validateLinkGrant(suggestion.grant, schemas)).toEqual([]);
 
-    // The reads it saw, once each, can be saved as they are. Refused reads
-    // read nothing, so they aren't among them.
+    // The reads it saw, once each, can be saved as they are, totals included.
+    // Refused reads read nothing, so they aren't among them.
     expect(suggestion.fixedReads.deals!.map((read) => read.id)).toEqual(["read-1", "read-2"]);
     expect(suggestion.fixedReads.contacts!.map((read) => read.query)).toEqual([{}]);
+    const asSaved = (collectionId: string) => ({ ...suggestion.grant.collections[collectionId], mode: "fixed", summaries: undefined, fixed: suggestion.fixedReads[collectionId] });
     const fixed = LinkGrantSchema.parse({
       ...suggestion.grant,
-      collections: { ...suggestion.grant.collections, deals: { ...suggestion.grant.collections.deals, mode: "fixed", fixed: suggestion.fixedReads.deals } },
+      collections: { ...suggestion.grant.collections, deals: asSaved("deals"), orders: asSaved("orders") },
     });
     expect(validateLinkGrant(fixed, schemas)).toEqual([]);
 

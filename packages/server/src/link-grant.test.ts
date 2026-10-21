@@ -490,7 +490,8 @@ describe("a link's read view", () => {
     for (const query of [boardAsk("private"), boardAsk("someone's secret"), {}]) await queryRecords(SPACES.a, "tasks", query, { view: counted }).catch(() => {});
     expect(unrecordedReads("link-counted")).toMatchObject({ total: 3, reads: [{ collectionId: "tasks", count: 2 }, { collectionId: "tasks", count: 1, shapeDigest: shapeDigest("{}") }] });
     expect(unrecordedReads("link-other").total).toBe(0);
-  });
+    // Hundreds of probes, each opening a view: allow for a busy machine.
+  }, 30_000);
 });
 
 describe("a link that shows only totals", () => {
@@ -604,6 +605,7 @@ describe("link grants against live schemas", () => {
             { id: "either-secret", query: { where: { or: [{ field: "secret", op: "eq", value: "x" }, { field: "title", op: "eq", value: "y" }] } } },
             { id: "gone", query: { where: { field: "gone", op: "eq", value: "x" } } },
             { id: "by-secret", query: { orderBy: [{ field: "secret", dir: "asc" }] } },
+            { id: "after-id", query: { where: { field: "id", op: "gt", value: "m" } } },
             { id: "either-title", query: { where: { or: [{ field: "title", op: "eq", value: "a" }, { field: "title", op: "eq", value: "b" }] } }, params: { "/where/or/0/value": { kind: "any" } } },
           ],
         },
@@ -635,6 +637,7 @@ describe("link grants against live schemas", () => {
       'steps: Saved read "either-secret" can filter on "secret", which this link doesn\'t show, only with a condition every result meets.',
       'steps: Saved read "gone" can\'t filter on "gone", which this link doesn\'t show.',
       'steps: Saved read "by-secret" uses "secret", which this link doesn\'t show.',
+      'steps: Saved read "after-id" can compare "id" only for equality, since links show their own ids.',
       'steps: Saved read "either-title" can\'t leave "/where/or/0/value" open beside a condition of the same form.',
       "missing: This collection doesn't exist.",
     ]);

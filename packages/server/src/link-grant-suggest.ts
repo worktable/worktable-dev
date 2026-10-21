@@ -27,7 +27,16 @@ import { parseRecordQuery, RecordQueryError } from "./record-store.ts";
 import { hasDynamicRecordCollection, inferWidgetRecordPermissions } from "./widget-authoring.ts";
 import { canWidgetRecord } from "./widget-runtime-policy.ts";
 
-export type LinkGrantSuggestionWarningCode = "whole_records" | "dynamic_collection" | "static_only" | "declared_unseen" | "too_many_reads" | "too_many_fields";
+export type LinkGrantSuggestionWarningCode =
+  | "whole_records"
+  | "fields_left_out"
+  | "archived_rows"
+  | "small_groups_hidden"
+  | "dynamic_collection"
+  | "static_only"
+  | "declared_unseen"
+  | "too_many_reads"
+  | "too_many_fields";
 
 export interface LinkGrantSuggestionWarning {
   code: LinkGrantSuggestionWarningCode;
@@ -66,7 +75,10 @@ const MAX_FIXED_READS = 50;
  *   first load aren't worth opening another collection for.
  * - Rows: an `eq` or `has` condition every read of the collection shares.
  * - Mode: summaries when every read of the collection is a total that a
- *   summaries link can answer.
+ *   summaries link can answer. The preview can't tell group sizes, so a
+ *   warning says small totals are hidden.
+ * Warnings also name fields the tool reads that a link can't show, and
+ * archived rows it reads, which links never show.
  */
 export function suggestLinkGrant(input: {
   permissions: WidgetFile["permissions"] | undefined;
@@ -88,17 +100,22 @@ export function suggestLinkGrant(input: {
   // reaches a collection the tool may not read, itself or through a
   // relation, was refused, so it read nothing.
   const asked = new Map<string, FixedReadQuery[]>();
+  // Collections the tool read archived rows of, which links never show.
+  const archived = new Set<string>();
   for (const { collectionId, query } of input.observed) {
     if (!mayRead(collectionId)) continue;
     const fields = schemas.get(collectionId)!.fields;
+    let parsed: RecordQuery;
     let canonical: FixedReadQuery;
     try {
-      canonical = canonicalRecordQuery(parseRecordQuery(query), fields);
+      parsed = parseRecordQuery(query);
+      canonical = canonicalRecordQuery(parsed, fields);
     } catch (error) {
       if (error instanceof RecordQueryError || error instanceof RecordQueryShapeError) continue;
       throw error;
     }
     if (!referencedCollections(canonical as RecordQuery, fields).every(mayRead)) continue;
+    if (parsed.includeArchived) archived.add(collectionId);
     const reads = asked.get(collectionId) ?? [];
     if (!reads.some((read) => canonicalJson(read) === canonicalJson(canonical))) reads.push(canonical);
     asked.set(collectionId, reads);
@@ -170,11 +187,11 @@ export function suggestLinkGrant(input: {
         message: `This tool read ${nameOf(collectionId)} in more ways than a link can save. Saving its reads would cover only the first ${MAX_FIXED_READS}.`,
       });
     }
-    if (rules) {
-      grants[collectionId] = { rows, fields: [], mode: "summaries", summaries: rules };
-      continue;
+    if (archived.has(collectionId)) {
+      warnings.push({ code: "archived_rows", collectionId, message: `This tool reads archived ${nameOf(collectionId)} records, which links never show.` });
     }
-    const names = new Set(shown.get(collectionId));
+    const explicit = shown.get(collectionId)!;
+    const names = new Set(explicit);
     if (whole.has(collectionId)) {
       for (const [name, spec] of Object.entries(schema.fields)) {
         if (!NOT_SUGGESTED_FOR_WHOLE_RECORDS.has(normalizeRecordFieldType(spec.type))) names.add(name);
@@ -195,12 +212,31 @@ export function suggestLinkGrant(input: {
       const target = relationTarget(collectionId, name);
       return target !== null && collections.includes(target) && !summaries.has(target);
     }).sort(compareText);
+    const left = [...explicit].filter((name) => Object.hasOwn(schema.fields, name) && !fields.includes(name)).sort(compareText);
+    if (left.length > 0 && !rules) {
+      warnings.push({
+        code: "fields_left_out",
+        collectionId,
+        message: `The suggestion leaves out ${left.map((name) => `"${name}"`).join(", ")} on ${nameOf(collectionId)}: links can't show those, or they point at collections it doesn't open.`,
+      });
+    }
     if (fields.length > MAX_FIELDS) {
       warnings.push({
         code: "too_many_fields",
         collectionId,
         message: `This tool reads more ${nameOf(collectionId)} fields than a link can show. The suggestion shows the first ${MAX_FIELDS}; choose the ones the link needs.`,
       });
+    }
+    if (rules) {
+      // Totals read only their groupings and measures. The fields stay listed
+      // so the saved reads still fit if the sharer switches to them.
+      grants[collectionId] = { rows, fields: fields.slice(0, MAX_FIELDS), mode: "summaries", summaries: rules };
+      warnings.push({
+        code: "small_groups_hidden",
+        collectionId,
+        message: `This link shows ${nameOf(collectionId)} only as totals and hides totals of fewer than ${rules.minGroupSize} records, so some totals the tool shows may be missing.`,
+      });
+      continue;
     }
     grants[collectionId] = { rows, fields: fields.slice(0, MAX_FIELDS) };
     if (named.includes(collectionId) && !asked.has(collectionId) && !reached.has(collectionId)) {

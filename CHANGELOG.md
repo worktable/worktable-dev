@@ -15,6 +15,11 @@ infrastructure and personal context out of release notes.
 - **Records keep what they hold:** Creating a record with an id that already exists no longer replaces it. Agents get the stored record back with `created: false`, and REST and HTML Docs get a conflict, so an agent that derives ids from a URL or other key adds each item once. Over MCP, `upsert_collection` adds or replaces only the fields it is sent and keeps the rest, and record updates merge metadata the way they merge data. Widening a select field no longer rechecks every record.
 - **Large collections stay quick while agents write:** Each record an agent saves now updates just that record, instead of making Worktable rescan the whole collection and every open table and HTML Doc reload it.
 
+### Fixed
+
+- **Edit keeps your place:** Pressing **Edit** on a Markdown Doc keeps the line you were reading where it was and puts the caret in it, instead of opening at the top. A rich Doc that opens while you scroll its preview keeps your place the same way.
+- **Code languages:** A Doc whose code is marked with a language the editor doesn't list, such as `txt`, opens instead of showing an error. Common names for plain text are recognized, other languages show by their own name without highlighting, and code marked with no language stays unmarked, so a Doc converted to rich text and back keeps its code fences as written.
+
 ## [0.1.25] - 2026-10-20
 
 ### Added

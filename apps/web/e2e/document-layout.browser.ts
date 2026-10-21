@@ -100,6 +100,23 @@ const lines = [
   "Closing paragraph.",
 ]
 
+// Long enough to scroll on a phone, with fences written the way people and
+// agents write them: an alias, a language the editor doesn't know, none.
+const longMarkdown = [
+  "# Long",
+  ...Array.from(
+    { length: 30 },
+    (_, index) =>
+      `Paragraph ${index + 1} has enough words in it to wrap onto a second line on a phone.`
+  ),
+  "| Name | Value |\n| --- | --- |\n| A cell that wraps in a narrow column | 1 |",
+  "```txt\ntree/\n  leaf\n```",
+  "```made-up\nsource\n```",
+  "```\nplain\n```",
+  "Reading here.",
+  ...Array.from({ length: 30 }, (_, index) => `Closing ${index + 1}.`),
+].join("\n\n")
+
 function appUrl(path: string): string {
   return new URL(path, harness.webUrl).href
 }
@@ -166,6 +183,12 @@ test.beforeAll(async () => {
     harness.workspacePath("spaces/layout/docs/plain.md"),
     markdown
   )
+  for (const width of [1280, 390]) {
+    await writeFile(
+      harness.workspacePath(`spaces/layout/docs/long-${width}.md`),
+      longMarkdown
+    )
+  }
   const columns = Array.from(
     { length: 10 },
     (_, index) => `Column ${index + 1}`
@@ -298,3 +321,78 @@ test("wide Markdown tables and long links stay inside the page on a phone", asyn
   expect(scroll.document).toBeLessThanOrEqual(0)
   expect(scroll.table).toBeGreaterThan(0)
 })
+
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 390, height: 844 },
+]) {
+  test(`Edit keeps the reader's place and every code fence at ${viewport.width}px`, async ({
+    page,
+  }) => {
+    test.setTimeout(120_000)
+    const errors: string[] = []
+    page.on("pageerror", (error) => errors.push(error.message))
+    await page.setViewportSize(viewport)
+    await page.goto(appUrl(`/spaces/layout/documents/long-${viewport.width}`))
+    const markdownRoot = page.locator("[data-document-scroll-root]")
+    await expect(markdownRoot).toContainText("Closing 30.", { timeout: 30_000 })
+    await page.evaluate(() => document.fonts.ready)
+
+    // Where a line sits from the top of the pane that scrolls the Doc.
+    const lineTop = (root: string, text: string) =>
+      page.locator(root).evaluate((element, text) => {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+        while (walker.nextNode()) {
+          const node = walker.currentNode as Text
+          const start = node.data.indexOf(text)
+          if (start < 0) continue
+          const range = document.createRange()
+          range.setStart(node, start)
+          range.setEnd(node, start + 1)
+          return (
+            range.getBoundingClientRect().top -
+            element.getBoundingClientRect().top
+          )
+        }
+        return Number.NaN
+      }, text)
+    // Start reading at the code, at the top of the pane.
+    await markdownRoot.evaluate((root) => {
+      const pre = root.querySelector("pre")!
+      root.scrollTop +=
+        pre.getBoundingClientRect().top - root.getBoundingClientRect().top - 8
+    })
+    const before = await lineTop("[data-document-scroll-root]", "Reading here.")
+
+    await page.getByRole("button", { name: "Edit" }).click()
+    const editorRoot = ".worktable-editor-scroll-root"
+    await expect(
+      page.locator(`${editorRoot} [contenteditable="true"]`)
+    ).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator(editorRoot)).toContainText("Closing 30.")
+    await expect
+      .poll(async () =>
+        Math.abs((await lineTop(editorRoot, "Reading here.")) - before)
+      )
+      .toBeLessThanOrEqual(1.5)
+    // The caret waits in the first block in view, the code.
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document.activeElement?.classList.contains("ProseMirror") &&
+            getSelection()?.anchorNode?.parentElement?.closest("pre")
+              ?.textContent
+        )
+      )
+      .toContain("tree/")
+    expect(errors).toEqual([])
+
+    const exported = await fetch(
+      `${harness.apiUrl}/api/spaces/layout/docs/long-${viewport.width}?format=markdown`
+    ).then((response) => response.json() as Promise<{ markdown: string }>)
+    expect(exported.markdown).toContain("```txt\ntree/")
+    expect(exported.markdown).toContain("```made-up\nsource")
+    expect(exported.markdown).toContain("```\nplain")
+  })
+}

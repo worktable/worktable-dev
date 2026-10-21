@@ -31,10 +31,11 @@ import { BlockNoteView } from "@blocknote/shadcn"
 import "@blocknote/shadcn/style.css"
 import "@/styles/blocknote.css"
 import "@/styles/document-controls.css"
-import { codeBlockOptions, syntaxHighlighter } from "@blocknote/code-block"
+import { syntaxHighlighter } from "@blocknote/code-block"
 import type { Block } from "@blocknote/core"
 import type * as Y from "yjs"
 import { ySyncPluginKey } from "y-prosemirror"
+import { TextSelection } from "@tiptap/pm/state"
 import type { Awareness } from "y-protocols/awareness"
 import type { Annotation, AnnotationCategory } from "@worktable/types"
 import { MessageSquarePlus, Sparkles } from "lucide-react"
@@ -79,15 +80,6 @@ const sideMenuFloatingOptions: Partial<FloatingUIOptions> = {
   useFloatingOptions: { middleware: [sideMenuFirstLine] },
 }
 
-const worktableCodeBlockOptions = {
-  ...codeBlockOptions,
-  supportedLanguages: Object.fromEntries(
-    Object.entries(codeBlockOptions.supportedLanguages ?? {}).filter(
-      ([language]) => language !== "mermaid" && language !== "mmd"
-    )
-  ),
-}
-
 // Upstream highlighting loads its parser on demand and supports both themes.
 // Ordinary documents no longer start a highlighter during module evaluation.
 let cachedSchema: ReturnType<typeof BlockNoteSchema.create> | null = null
@@ -97,7 +89,7 @@ function getSchema() {
 
   const blockSpecs: Record<string, unknown> = {
     ...BlockNoteSchema.create().blockSpecs,
-    codeBlock: createRichCodeBlockSpec(worktableCodeBlockOptions),
+    codeBlock: createRichCodeBlockSpec(),
   }
 
   blockSpecs.mermaid = WorktableMermaidBlock()
@@ -171,8 +163,14 @@ interface AnnotationCapableEditor {
   getSelection?: () => { blocks: AnnotationBlock[] } | undefined
 }
 
+/** What a Doc's page can ask of its editor once the editor is shown. */
+export interface EditorHandle {
+  /** Put the caret at the start of what this element shows, without scrolling. */
+  placeCaret(element: Element): void
+}
+
 interface EditorProps {
-  onReady?: () => void
+  onReady?: (handle: EditorHandle) => void
   initialContent?: EditorBlock[]
   onChange?: (blocks: EditorBlock[]) => void
   editable?: boolean
@@ -305,8 +303,18 @@ function EditorInner({
   // mounts its DOM in a ref callback, before this passive readiness effect;
   // a separate mount-state skeleton would add another unnecessary commit.
   useEffect(() => {
-    onReady?.()
-  }, [onReady])
+    onReady?.({
+      placeCaret: (element) => {
+        const view = editor.prosemirrorView
+        if (!view || !editor.isEditable || !view.dom.contains(element)) return
+        const pos = view.posAtDOM(element, 0)
+        editor.transact((tr) =>
+          tr.setSelection(TextSelection.near(tr.doc.resolve(pos)))
+        )
+        editor.focus()
+      },
+    })
+  }, [editor, onReady])
 
   // Reactively apply the spellcheck preference to the live ProseMirror node
   // (`editor.domElement`, the same node editorProps.attributes seeds). Setting

@@ -9,6 +9,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -71,6 +72,11 @@ import { DocumentByline } from "@/components/document/document-byline"
 import { useBylineState } from "@/hooks/use-byline-state"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
 import { MarkdownViewer } from "@/components/editor/markdown-viewer"
+import {
+  readingPlace,
+  restoreReadingPlace,
+  type ReadingPlace,
+} from "@/components/editor/reading-place"
 import { AnnotationPanel } from "@/components/annotations/annotation-panel"
 import { DesktopContextPanel } from "@/components/desktop-context-panel"
 import {
@@ -98,6 +104,7 @@ import { IndexeddbPersistence } from "y-indexeddb"
 type LoadedEditorProps = ComponentProps<
   typeof import("@/components/editor/editor").Editor
 >
+type EditorHandle = import("@/components/editor/editor").EditorHandle
 const editor = preloadableComponent<LoadedEditorProps>(() =>
   import("@/components/editor/editor").then((module) => ({
     default: module.Editor,
@@ -521,18 +528,32 @@ function DocEditorPage({
     await router.invalidate()
   }, [docPath, queryClient, router, spaceId])
 
-  const handleConvert = useCallback(async () => {
-    setConverting(true)
-    try {
-      await convertDoc(spaceId, docPath)
-      await recheck()
-    } catch (err) {
-      console.error("Conversion failed:", err)
-      toast.error("Couldn’t edit this doc. Try again.")
-    } finally {
-      setConverting(false)
-    }
-  }, [spaceId, docPath, recheck])
+  // What the Markdown page showed when Edit was pressed, for the rich page
+  // to open on. Taken once, by the page that opens after converting.
+  const opening = useRef<{ docPath: string; value: DocOpening } | null>(null)
+  const takeOpening = useCallback(() => {
+    const value =
+      opening.current?.docPath === docPath ? opening.current.value : null
+    opening.current = null
+    return value
+  }, [docPath])
+
+  const handleConvert = useCallback(
+    async (from: DocOpening) => {
+      setConverting(true)
+      try {
+        await convertDoc(spaceId, docPath)
+        opening.current = { docPath, value: from }
+        await recheck()
+      } catch (err) {
+        console.error("Conversion failed:", err)
+        toast.error("Couldn’t edit this doc. Try again.")
+      } finally {
+        setConverting(false)
+      }
+    },
+    [spaceId, docPath, recheck]
+  )
 
   const handleConvertToMarkdown = useCallback(async () => {
     setConvertingToMarkdown(true)
@@ -613,6 +634,7 @@ function DocEditorPage({
     <BlockNoteDocPage
       spaceId={spaceId}
       docPath={docPath}
+      takeOpening={takeOpening}
       archived={archived}
       readOnly={!page || page.capabilities.edit === false}
       page={page}
@@ -630,6 +652,19 @@ function DocEditorPage({
       onRecoverOfflineEdits={recoverOfflineEditsAction}
     />
   )
+}
+
+/** The scrolling pane of what shows while a rich Doc opens. */
+function standInRoot(standIn: HTMLElement | null) {
+  return standIn?.querySelector(
+    "[data-document-preview], [data-document-scroll-root]"
+  )
+}
+
+/** A Markdown Doc as it was showing when Edit was pressed. */
+interface DocOpening {
+  markdown: string
+  place: ReadingPlace | null
 }
 
 /** Content the server could not serve for a Doc it listed. */
@@ -717,27 +752,36 @@ function MarkdownDocPage({
   revision: string | undefined
   onRestore: () => void
   restoring: boolean
-  onConvert?: () => void
+  onConvert?: (from: DocOpening) => void
   converting: boolean
   onCopyMarkdown?: () => void
   onDownload?: () => void
   onRecoverOfflineEdits?: () => void
 }) {
+  const contentQuery = useDocumentContent(spaceId, docPath, revision, validated)
+  const content = contentQuery.data?.content
+  const readingRef = useRef<HTMLDivElement>(null)
   const secondaryAction = useMemo<PageSecondaryAction | undefined>(
     () =>
-      validated && onConvert
+      validated && onConvert && typeof content === "string"
         ? {
             label: "Edit",
             displayLabel: "Edit",
             icon: Pencil,
             pending: converting,
-            onClick: onConvert,
+            onClick: () => {
+              const root = readingRef.current?.querySelector(
+                "[data-document-scroll-root]"
+              )
+              onConvert({
+                markdown: content,
+                place: root ? readingPlace(root) : null,
+              })
+            },
           }
         : undefined,
-    [converting, onConvert, validated]
+    [content, converting, onConvert, validated]
   )
-  const contentQuery = useDocumentContent(spaceId, docPath, revision, validated)
-  const content = contentQuery.data?.content
   const queryClient = useQueryClient()
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
@@ -823,6 +867,7 @@ function MarkdownDocPage({
       />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
+          ref={readingRef}
           className={`min-w-0 overflow-hidden ${previewVersionId ? "hidden xl:block xl:flex-[1_1_50%] xl:border-r xl:border-border print:block print:flex-1 print:border-r-0" : "flex-1"}`}
         >
           <MarkdownViewer
@@ -1025,6 +1070,7 @@ function sendIntentFrame(provider: WebsocketProvider | null): boolean {
 function BlockNoteDocPage({
   spaceId,
   docPath,
+  takeOpening,
   archived,
   readOnly = false,
   page,
@@ -1039,6 +1085,8 @@ function BlockNoteDocPage({
 }: {
   spaceId: string
   docPath: string
+  /** The Markdown this Doc was just converted from, as it was showing. */
+  takeOpening: () => DocOpening | null
   archived: boolean
   readOnly?: boolean
   /** The route's check; the editor and its room wait for it. */
@@ -1072,13 +1120,28 @@ function BlockNoteDocPage({
   const collaborationCacheEpoch = page?.collaboration?.cacheEpoch
   const [provider, setProvider] = useState<WebsocketProvider | null>(null)
   const editorPaneRef = useRef<HTMLDivElement>(null)
-  const previewScrollTop = useRef(0)
+  // Until the editor shows, the Doc shows as it was: the Markdown it was
+  // just converted from, or else its saved preview. The reader's place in
+  // it carries over to the editor.
+  const [opening] = useState(takeOpening)
+  const standInRef = useRef<HTMLDivElement>(null)
+  const place = useRef(opening?.place ?? null)
+  const placedTop = useRef(0)
+  const editorHandle = useRef<EditorHandle | null>(null)
   const [readyEditor, setReadyEditor] = useState<WebsocketProvider | null>(null)
   const [readyContent, setReadyContent] = useState<WebsocketProvider | null>(
     null
   )
   const handleEditorReady = useCallback(
-    () => setReadyEditor(provider),
+    (handle: EditorHandle) => {
+      editorHandle.current = handle
+      // A reader who scrolled the stand-in is reading somewhere new.
+      const root = standInRoot(standInRef.current)
+      if (root && Math.abs(root.scrollTop - placedTop.current) > 1) {
+        place.current = readingPlace(root)
+      }
+      setReadyEditor(provider)
+    },
     [provider]
   )
   const editorReadable = Boolean(
@@ -1094,18 +1157,32 @@ function BlockNoteDocPage({
     spaceId,
     docPath,
     previewRevision,
-    validated && previewRevision === revision
+    validated && previewRevision === revision && !opening
   )
   const previewContent = Array.isArray(previewQuery.data?.content)
     ? previewQuery.data.content
     : undefined
+  const showsStandIn = Boolean(opening || previewContent)
+  useLayoutEffect(() => {
+    const root = standInRoot(standInRef.current)
+    if (!root || !place.current) return
+    restoreReadingPlace(root, place.current)
+    placedTop.current = root.scrollTop
+  }, [showsStandIn])
   useEffect(() => {
-    if (!editorReadable || previewScrollTop.current === 0) return
     const scrollRoot = editorPaneRef.current?.querySelector(
       ".worktable-editor-scroll-root"
     )
-    if (scrollRoot) scrollRoot.scrollTop = previewScrollTop.current
-  }, [editorReadable])
+    const at = place.current
+    if (!editorReadable || !scrollRoot || !at) return
+    restoreReadingPlace(scrollRoot, at)
+    // Blocks of a long Doc take their real height as they come into view.
+    const frame = requestAnimationFrame(() => {
+      const block = restoreReadingPlace(scrollRoot, at)
+      if (block && opening) editorHandle.current?.placeCaret(block)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [editorReadable, opening])
   const [collabDoc, setCollabDoc] = useState<Y.Doc | null>(null)
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
@@ -1372,16 +1449,20 @@ function BlockNoteDocPage({
           className={`relative min-w-0 overflow-hidden ${previewVersionId ? "hidden xl:block xl:flex-[1_1_50%] xl:border-r xl:border-border print:block print:flex-1 print:border-r-0" : "flex-1"}`}
         >
           {!editorReadable && (
-            <div className="absolute inset-0 z-10">
-              {previewContent ? (
+            <div ref={standInRef} className="absolute inset-0 z-10">
+              {opening ? (
+                <MarkdownViewer
+                  content={opening.markdown}
+                  spaceId={spaceId}
+                  docPath={docPath}
+                  afterTitle={byline}
+                />
+              ) : previewContent ? (
                 <DocumentPreview
                   showStatus={false}
                   content={previewContent}
                   titlePlaceholder={docName}
                   afterTitle={byline}
-                  onScroll={(top) => {
-                    previewScrollTop.current = top
-                  }}
                 />
               ) : (
                 <EditorSkeleton />

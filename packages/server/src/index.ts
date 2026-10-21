@@ -76,6 +76,7 @@ import { pairingRouter } from "./routes/pairing.ts"
 import { agentConnectionsRouter } from "./routes/agent-connections.ts"
 import { sharesRouter } from "./routes/shares.ts"
 import { publicSharesRouter } from "./routes/public-shares.ts"
+import { flushShareLinkUse } from "./share-links-store.ts"
 import { publicInvitationsRouter } from "./routes/public-invitations.ts"
 import { connectRouter } from "./routes/connect.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
@@ -2355,6 +2356,8 @@ export function startServer(
           await drainWorkspaceChanges();
           await drainServerTasks();
         });
+        // Share link views note their last use in memory; keep what is left.
+        await settle(async () => flushShareLinkUse());
         await settle(() => lintStopping);
         await settle(() => lifetimeStopping);
         await settle(() => transfersStopping);

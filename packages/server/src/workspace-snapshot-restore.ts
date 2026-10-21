@@ -14,7 +14,7 @@ import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { ensureAppDir } from "./app-storage.ts"
 import { readBoundedRegularFile } from "./bounded-file.ts"
 import { operatorSnapshotDirectory } from "./operator-snapshot.ts"
-import { restoreSharingPolicy } from "./share-links-store.ts"
+import { restoreSharingPolicy, finalizeRestoredSharingPolicy } from "./share-links-store.ts"
 import { inspectWorkspaceSnapshot } from "./workspace-snapshot.ts"
 import {
   createWorkspaceReplacementPaths,
@@ -81,9 +81,10 @@ export async function recoverMissingWorkspaceSnapshot(
         prepareTeamSpacePolicyResetForMissingRootRecovery(manifest.workspaceId)
       // The owner's share link policy comes back only onto a machine with no
       // links store, so it never replaces a newer one; links never come back.
-      // Before the workspace appears, so a recovery cut short repeats it.
-      if (manifest.sharingPolicy) restoreSharingPolicy(manifest.sharingPolicy)
+      // An unpublished restore stays retryable, including a different snapshot.
+      await restoreSharingPolicy(manifest.sharingPolicy ?? null)
       await rename(join(downloaded, "workspace"), root)
+      finalizeRestoredSharingPolicy()
       missingRootRecoveryHookForTests?.()
       if (manifest.teamState)
         await restoreTeamBackupState(downloaded, manifest.teamState)

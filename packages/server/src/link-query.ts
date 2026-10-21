@@ -55,25 +55,20 @@ export async function queryRecordsForLink(
   const budgets = options.budgets ?? linkBudgets;
   // Limits come from the grant and the policy, never from the tool, so a
   // link over its budget is refused before anything is read.
-  const admission = budgets.admit(target.linkId, target.grant.limits);
-  if (!admission.ok) {
-    return {
-      status: 429,
-      body: { error: "This link has reached its limit for now.", code: "LINK_LIMIT", limit: admission.limit, retryAfter: admission.retryAfter },
-      headers: { "Retry-After": String(admission.retryAfter) },
-    };
-  }
+  const { limits } = target.grant;
+  const admission = budgets.admit(target.linkId, limits);
+  if (!admission.ok) return limitReached(admission);
   return runAsLinkVisitor(() => withLinkGrantRead(target.spaceId, async (): Promise<LinkQueryResponse> => {
     try {
       const permissions = await toolPermissions(target);
       if (!permissions) return LINK_UNAVAILABLE;
       const grant = effectiveLinkGrant(target.grant, permissions, options.policy);
       // A page never holds more rows than the link has left this hour.
-      const limits = { ...grant.limits, rowsPerQuery: Math.min(grant.limits.rowsPerQuery, admission.rowsLeft) };
-      const view = await openLinkReadView(target.spaceId, { ...grant, limits }, target.linkKey);
+      const page = { ...grant.limits, rowsPerQuery: Math.min(grant.limits.rowsPerQuery, admission.rowsLeft) };
+      const view = await openLinkReadView(target.spaceId, { ...grant, limits: page }, target.linkKey);
       const result = await queryRecords(target.spaceId, collectionId, query, { view });
-      budgets.charge(target.linkId, rowsRead(result));
-      return { status: 200, body: result };
+      const taken = budgets.take(target.linkId, rowsRead(result), limits);
+      return taken.ok ? { status: 200, body: result } : limitReached(taken);
     } catch (error) {
       if (error instanceof TeamAccessError) return { status: 403, body: { error: "This link can't read that.", code: "LINK_FORBIDDEN" } };
       const failure = linkQueryFailure(error);
@@ -81,6 +76,14 @@ export async function queryRecordsForLink(
       throw error;
     }
   }));
+}
+
+function limitReached(refusal: { limit: LinkLimitName; retryAfter: number }): LinkQueryResponse {
+  return {
+    status: 429,
+    body: { error: "This link has reached its limit for now.", code: "LINK_LIMIT", limit: refusal.limit, retryAfter: refusal.retryAfter },
+    headers: { "Retry-After": String(refusal.retryAfter) },
+  };
 }
 
 /** The tool's record permissions, read the way its own records calls read them. */

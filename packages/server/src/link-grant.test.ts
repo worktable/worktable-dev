@@ -302,7 +302,7 @@ describe("link grants against live schemas", () => {
     await writeRecordCollectionSchema("probe-a", buildRecordCollectionSchema({
       id: "notes",
       name: "notes",
-      fields: { title: { type: "text" }, page: { type: "document" }, deal: { type: "relation", references: "deals" }, kind: { type: "text" } },
+      fields: { title: { type: "text" }, page: { type: "document" }, deal: { type: "relation", references: "deals" }, kind: { type: "text" }, constructor: { type: "text" } },
     }));
     // A row condition reads a data field named like the envelope ("kind"),
     // and never the envelope itself ("updatedBy"). Showing "kind" is refused:
@@ -311,7 +311,7 @@ describe("link grants against live schemas", () => {
       version: 1,
       collections: {
         notes: {
-          rows: { and: [{ field: "deal.name", op: "eq", value: "x" }, { field: "updatedBy", op: "eq", value: "y" }, { field: "kind", op: "eq", value: "z" }] },
+          rows: { and: [{ field: "deal.name", op: "eq", value: "x" }, { field: "updatedBy", op: "eq", value: "y" }, { field: "kind", op: "eq", value: "z" }, { field: "constructor", op: "contains", value: "native" }] },
           fields: ["title", "page", "deal", "gone", "kind"],
           writes: { update: true },
         },
@@ -325,6 +325,7 @@ describe("link grants against live schemas", () => {
       'notes: Field "kind" has a name records use for themselves, so links can\'t show it.',
       'notes: The row condition can\'t follow "deal.name" into another collection.',
       'notes: The row condition uses "updatedBy", which isn\'t a field of this collection.',
+      'notes: The row condition can\'t use the field "constructor".',
       "notes: Links can't change records yet.",
       "missing: This collection doesn't exist.",
     ]);

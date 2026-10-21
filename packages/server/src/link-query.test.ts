@@ -140,12 +140,14 @@ describe("a link's records reads", () => {
     // A refused query still counts toward the minute.
     expect((await ask({ where: { field: "secret", op: "eq", value: "a" } })).status).toBe(403);
     expect(names(await ask())).toHaveLength(3);
-    // A page holds no more rows than the hour has left, and a cursor for the rest.
-    const last = await ask();
-    expect([names(last).length, typeof (last.body as RecordQueryResult).nextCursor]).toEqual([1, "string"]);
+    // Groups have no page size: an answer that would go past the hour isn't sent.
+    expect(await ask({ aggregate: { groupBy: "name", select: { n: { fn: "count" } } } })).toEqual(limited("rowsPerHour", 3570));
     expect(await ask()).toEqual(limited("queriesPerMinute", 30));
 
     now = Date.parse("2026-10-21T10:01:00.000Z");
+    // A page holds no more rows than the hour has left, and a cursor for the rest.
+    const last = await ask();
+    expect([names(last).length, typeof (last.body as RecordQueryResult).nextCursor]).toEqual([1, "string"]);
     expect(await ask()).toEqual(limited("rowsPerHour", 3540));
     // Another link has its own budget.
     expect((await queryRecordsForLink(link({ linkId: "link-2", grant }), "deals", {}, { policy: POLICY, budgets })).status).toBe(200);

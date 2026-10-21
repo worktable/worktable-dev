@@ -59,13 +59,22 @@ export class LinkBudgets {
     return { ok: true, rowsLeft };
   }
 
-  /** Adds the rows a query returned to the link's hour. */
-  charge(linkId: string, rows: number): void {
-    if (rows <= 0) return;
-    const minute = Math.floor(this.now() / MINUTE_MS);
+  /**
+   * Takes the rows a query returned from the link's hour, or refuses when
+   * they don't fit: groups, expanded rows and backlinks have no page size, so
+   * a response goes out only once its rows are paid for.
+   */
+  take(linkId: string, rows: number, limits: Pick<LinkGrantLimits, "rowsPerHour">): LinkBudgetAdmission {
+    const now = this.now();
+    const minute = Math.floor(now / MINUTE_MS);
     const usage = this.touch(linkId, minute);
+    const rowsLeft = limits.rowsPerHour - usage.rowsTotal;
+    if (rows > rowsLeft) {
+      return { ok: false, limit: "rowsPerHour", retryAfter: secondsUntil(this.oldestRowsExpire(usage, minute), now) };
+    }
     usage.rows[minute % HOUR_MINUTES]! += rows;
     usage.rowsTotal += rows;
+    return { ok: true, rowsLeft: rowsLeft - rows };
   }
 
   private touch(linkId: string, minute: number): LinkUsage {

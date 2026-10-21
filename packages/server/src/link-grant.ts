@@ -98,6 +98,8 @@ export function validateLinkGrant(grant: LinkGrant, schemas: ReadonlyMap<string,
           if (leaf === "id") return;
           if (leaf.includes(".")) add(`The row condition can't follow "${leaf}" into another collection.`);
           else if (leaf === "data" || !field(leaf)) add(`The row condition uses "${leaf}", which isn't a field of this collection.`);
+          // A row without such a field would read an inherited value instead.
+          else if (leaf in Object.prototype) add(`The row condition can't use the field "${leaf}".`);
           else if (typeOf(leaf) === "document") add(`The row condition can't use the document field "${leaf}".`);
         });
       } catch (error) {

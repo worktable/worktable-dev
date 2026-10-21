@@ -391,7 +391,11 @@ export function ShareLinksDialog({
       <ResponsiveDialog open={open} onOpenChange={handleOpenChange}>
         <ResponsiveDialogContent
           ref={setPortalContainer}
-          className={draft.grant ? "sm:max-w-lg" : "sm:max-w-md"}
+          className={
+            draft.grant
+              ? "overflow-clip sm:max-w-lg"
+              : "overflow-clip sm:max-w-md"
+          }
         >
           <ResponsiveDialogHeader>
             <div className="mb-1 flex size-10 items-center justify-center rounded-lg bg-surface-tint text-primary">

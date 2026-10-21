@@ -609,6 +609,10 @@ for (const appearance of [
       dialog.getByRole("button", { name: "Create link", exact: true })
     ).toBeEnabled()
     expect(checks[1]?.observe).toBe(false)
+    if (appearance.width >= 640)
+      await expect(
+        dialog.getByRole("button", { name: "Close", exact: true })
+      ).toBeInViewport()
     await dialog.screenshot({
       path: testInfo.outputPath(`live-access-${appearance.colorScheme}.png`),
     })

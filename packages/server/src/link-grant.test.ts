@@ -303,14 +303,15 @@ describe("link grants against live schemas", () => {
       name: "notes",
       fields: { title: { type: "text" }, page: { type: "document" }, deal: { type: "relation", references: "deals" }, kind: { type: "text" } },
     }));
-    // A data field may share a name with the envelope ("kind"); the envelope
-    // itself ("updatedBy") is never a field.
+    // A row condition reads a data field named like the envelope ("kind"),
+    // and never the envelope itself ("updatedBy"). Showing "kind" is refused:
+    // a link's queries would read the record's own kind instead.
     const grant = LinkGrantSchema.parse({
       version: 1,
       collections: {
         notes: {
           rows: { and: [{ field: "deal.name", op: "eq", value: "x" }, { field: "updatedBy", op: "eq", value: "y" }, { field: "kind", op: "eq", value: "z" }] },
-          fields: ["title", "page", "deal", "gone"],
+          fields: ["title", "page", "deal", "gone", "kind"],
           writes: { update: true },
         },
         missing: { fields: [] },
@@ -320,6 +321,7 @@ describe("link grants against live schemas", () => {
       'notes: Field "page" holds document links, which links can\'t show yet.',
       'notes: Field "deal" points at a collection this link doesn\'t open.',
       'notes: Field "gone" doesn\'t exist.',
+      'notes: Field "kind" has a name records use for themselves, so links can\'t show it.',
       'notes: The row condition can\'t follow "deal.name" into another collection.',
       'notes: The row condition uses "updatedBy", which isn\'t a field of this collection.',
       "notes: Links can't change records yet.",

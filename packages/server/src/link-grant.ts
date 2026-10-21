@@ -1,6 +1,7 @@
 // A link grant names the Records a share link opens. It is checked against
-// the live schemas when it is saved and again every time it is used, so a
-// schema change can only make a granted collection unavailable, never wider.
+// the live schemas when it is saved and again every time it is used: a
+// granted field that disappears, or turns into something a link can't show,
+// closes the collection rather than widening it.
 
 import { normalizeRecordFieldType, recordTitleFieldKey, type LinkGrant, type RecordCollectionSchema, type RecordPredicate } from "@worktable/types";
 import { readRecordCollectionSchema } from "./record-store.ts";
@@ -12,6 +13,11 @@ export interface LinkGrantIssue {
 }
 
 const DIMENSION_TYPES = new Set(["select", "multi_select", "boolean"]);
+
+/** Keys a link's record already has beside `data`. Queries read these from
+ *  the record before its data, so a data field under one of them would be
+ *  filtered, sorted and grouped by the wrong value. */
+const VIEW_RECORD_KEYS = new Set(["id", "version", "kind", "collectionId", "createdAt", "updatedAt", "data"]);
 
 /** The live schemas of every collection a grant names. Missing or unreadable
  *  schemas are left out, which validateLinkGrant reports. */
@@ -45,6 +51,7 @@ export function validateLinkGrant(grant: LinkGrant, schemas: ReadonlyMap<string,
       const spec = field(name);
       const type = typeOf(name);
       if (!spec) add(`Field "${name}" doesn't exist.`);
+      else if (VIEW_RECORD_KEYS.has(name) || name in Object.prototype) add(`Field "${name}" has a name records use for themselves, so links can't show it.`);
       else if (type === "document") add(`Field "${name}" holds document links, which links can't show yet.`);
       else if (type === "relation" && (!spec.references || !Object.hasOwn(grant.collections, spec.references))) {
         add(`Field "${name}" points at a collection this link doesn't open.`);

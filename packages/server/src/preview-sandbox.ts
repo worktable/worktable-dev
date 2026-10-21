@@ -143,7 +143,12 @@ export function describeMissingLibraries(
 ): string {
   if (!missing.length)
     return "The preview browser can't load the system libraries it needs."
-  let message = `The preview browser needs system libraries this host doesn't have: ${missing.join(", ")}.`
+  // A bare server lacks about twenty; the install command covers them all.
+  const named =
+    missing.length > 3
+      ? `${missing.slice(0, 3).join(", ")} and ${missing.length - 3} more`
+      : missing.join(", ")
+  let message = `The preview browser needs system libraries this host doesn't have: ${named}.`
   const packages = [
     ...new Set(
       missing.flatMap((library) => {

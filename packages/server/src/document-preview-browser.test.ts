@@ -4,6 +4,7 @@ import {
   describePreviewLaunchFailure,
   PreviewBrowserPool,
 } from "./document-preview-browser"
+import { describeMissingLibraries } from "./preview-sandbox"
 
 function fakeWorkers() {
   const events: string[] = []
@@ -244,5 +245,14 @@ describe("preview launch failures", () => {
     expect(
       describePreviewLaunchFailure(glib, { ...selfHosted, hosted: true })
     ).toBe("This host is missing system libraries the preview browser needs.")
+    // A bare server names a few libraries; the command installs every one.
+    expect(
+      describeMissingLibraries(
+        ["libglib-2.0.so.0", "libgobject-2.0.so.0", "libnss3.so", "libnspr4.so", "libX11.so.6"],
+        { time64: false }
+      )
+    ).toBe(
+      "The preview browser needs system libraries this host doesn't have: libglib-2.0.so.0, libgobject-2.0.so.0, libnss3.so and 2 more. Install them with `sudo apt-get install libglib2.0-0 libnspr4 libnss3 libx11-6`."
+    )
   })
 })

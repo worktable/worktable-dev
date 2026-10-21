@@ -20,7 +20,7 @@ import {
 } from "@worktable/types";
 import { LINK_SEARCH_MAX_LENGTH } from "./link-query-limits.ts";
 import type { ObservedRecordQuery } from "./html-preview.ts";
-import { canonicalJson, canonicalPredicate, canonicalRecordQuery, compareText } from "./link-fixed-reads.ts";
+import { canonicalJson, canonicalPredicate, canonicalRecordQuery, compareText, opaqueIdOrdering } from "./link-fixed-reads.ts";
 import { forEachLeaf, isRecordKey, validateLinkGrant } from "./link-grant.ts";
 import { admitSummaries, LinkQueryError, projectFields } from "./link-grant-view.ts";
 import { referencedCollections, RecordQueryShapeError } from "./record-query.ts";
@@ -183,10 +183,10 @@ export function suggestLinkGrant(input: {
     const reads = asked.get(collectionId) ?? [];
     const rows = sharedRowCondition(schema, reads);
     const rules = summaries.get(collectionId);
-    const saveableReads = reads.filter((read) => (read.search?.length ?? 0) <= LINK_SEARCH_MAX_LENGTH);
+    const saveableReads = reads.filter((read) => (read.search?.length ?? 0) <= LINK_SEARCH_MAX_LENGTH && opaqueIdOrdering(read, collectionId, schemas).length === 0);
     if (saveableReads.length !== reads.length) warnings.push({
       code: "unsupported_reads", collectionId,
-      message: `Some ${nameOf(collectionId)} searches exceed the link's ${LINK_SEARCH_MAX_LENGTH}-character limit and cannot be saved.`,
+      message: `Some ${nameOf(collectionId)} reads exceed the link's ${LINK_SEARCH_MAX_LENGTH}-character search limit or sort by record IDs. Those reads cannot be saved.`,
     });
     if (reads.some((read) => read.search)) warnings.push({
       code: "search_fields", collectionId,
@@ -229,12 +229,12 @@ export function suggestLinkGrant(input: {
       const target = relationTarget(collectionId, name);
       return target !== null && collections.includes(target) && !summaries.has(target);
     }).sort(compareText);
-    const left = [...explicit].filter((name) => Object.hasOwn(schema.fields, name) && !fields.includes(name)).sort(compareText);
+    const left = [...explicit].filter((name) => !["id", "createdAt", "updatedAt"].includes(name) && !fields.includes(name)).sort(compareText);
     if (left.length > 0 && !rules) {
       warnings.push({
         code: "fields_left_out",
         collectionId,
-        message: `The suggestion leaves out ${left.map((name) => `"${name}"`).join(", ")} on ${nameOf(collectionId)}: links can't show those, or they point at collections it doesn't open.`,
+        message: `The suggestion leaves out ${left.map((name) => `"${name}"`).join(", ")} on ${nameOf(collectionId)}: those fields are missing, links can't show them, or they point at collections it doesn't open.`,
       });
     }
     if (fields.length > MAX_FIELDS) {

@@ -294,6 +294,9 @@ export function fixedReadIssues(collectionId: string, grant: LinkGrant, schemas:
       ...Object.values(canonical.aggregate?.select ?? {}).flatMap((spec) => (spec.field !== undefined ? [spec.field] : [])),
     ];
     for (const name of used) if (!shown(name)) issues.push(`Saved read "${read.id}" uses "${name}", which this link doesn't show.`);
+    for (const name of opaqueIdOrdering(canonical, collectionId, schemas)) {
+      issues.push(`Saved read "${read.id}" can't sort by "${name}", since links show their own ids.`);
+    }
     // An expanded relation must lead to rows the link shows.
     for (const name of Object.keys(canonical.expand ?? {})) {
       if (!grantShows(grant, schemas, collectionId, collection, `${name}.id`)) issues.push(`Saved read "${read.id}" uses "${name}", which this link doesn't show.`);
@@ -321,6 +324,12 @@ function holdsIds(schemas: ReadonlyMap<string, RecordCollectionSchema>, collecti
   const spec = fields && Object.hasOwn(fields, head) ? fields[head]! : undefined;
   if (!spec || normalizeRecordFieldType(spec.type) !== "relation" || !spec.references) return false;
   return dot === -1 || holdsIds(schemas, spec.references, path.slice(dot + 1));
+}
+
+/** Saved ordering cannot carry stored ID order across opaque projection. */
+export function opaqueIdOrdering(query: FixedReadQuery, collectionId: string, schemas: ReadonlyMap<string, RecordCollectionSchema>): string[] {
+  const names = typeof query.orderBy === "string" ? [query.orderBy] : (query.orderBy ?? []).map((entry) => entry.field);
+  return names.filter((name) => holdsIds(schemas, collectionId, name));
 }
 
 /** Whether a condition on this field can be judged on stored rows, as row

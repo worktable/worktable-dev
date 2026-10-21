@@ -308,7 +308,7 @@ class LinkReadView implements RecordReadView {
     if (!fields) throw collectionNotAvailable();
     const { grant } = this.readable.get(collectionId)!;
     if (grant.mode === "summaries") return admitSummaries(fields, grant.summaries!, query);
-    if (grant.mode === "fixed") return this.admitSavedRead(collectionId, fields, query);
+    if (grant.mode === "fixed") return this.admitSavedRead(collectionId, query);
     return this.admitRows(collectionId, query, this.anyQueryReaches);
   }
 
@@ -320,8 +320,8 @@ class LinkReadView implements RecordReadView {
    * the link doesn't show narrow the stored rows, like a row condition; the
    * rest runs in the view.
    */
-  private admitSavedRead(collectionId: string, fields: FieldTypeMap, query: RecordQuery): RecordQuery {
-    const asked = canonicalRecordQuery(query, fields);
+  private admitSavedRead(collectionId: string, query: RecordQuery): RecordQuery {
+    const asked = canonicalRecordQuery(query, this.readable.get(collectionId)!.schema.fields);
     const toView = (position: QueryValue, value: unknown) => this.toViewIds(collectionId, position, value);
     const match = matchFixedRead(this.savedReads, collectionId, asked, toView);
     if (!match) {

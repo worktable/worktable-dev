@@ -60,6 +60,8 @@ const SCHEMAS = {
     deal: { type: "relation", references: "deals" },
     effort: { type: "number" },
     secret: { type: "text" },
+    field: { type: "text" },
+    op: { type: "text" },
     owner: { type: "person" },
   },
 } as const;
@@ -83,6 +85,7 @@ const savedReads = (v: "a" | "b") => [
   { id: "renewal", query: { where: { field: "deal", op: "eq", value: renewalId(v) }, expand: { deal: ["name"] } } },
   { id: "search", query: { search: "brief", orderBy: [{ field: "effort", dir: "desc" }] }, params: { "/search": { kind: "any" } } },
   { id: "mine", query: { where: { and: [{ field: "owner", op: "eq", value: "alice" }, { field: "status", op: "eq", value: "open" }] }, orderBy: [{ field: "title", dir: "asc" }] } },
+  { id: "literal-fields", query: { where: { and: [{ field: "field", op: "eq", value: "x" }, { field: "op", op: "eq", value: "open" }] } } },
   // A deal picker that lists the deals by stored id.
   { id: "by-deal", query: { where: { field: "deal", op: "eq", value: renewalId(v) }, select: ["title"] }, params: { "/where/value": { kind: "oneOf", values: [renewalId(v), pilotId(v)] } } },
 ];
@@ -170,6 +173,7 @@ const boardAsk = (status: unknown) => ({ where: { status, effort: { gte: 1 } }, 
 const SAVED_READ_ASKS: Record<string, unknown>[] = [
   boardAsk("open"),
   boardAsk("done"),
+  { where: { field: "x", op: "open" } },
   { ...boardAsk("open"), includeArchived: true, limit: 50 },
   { where: { status: "open", owner: "alice" }, orderBy: "title" },
   // A listed deal named by the id the link showed for it.
@@ -232,7 +236,7 @@ function variant(v: "a" | "b"): Seed[] {
     { collection: "vault", id: id("crown-jewels", "v-1"), data: { name: a ? "Crown jewels" : "Spoons" }, envelope },
     // "brief" also sits in a hidden field and on a hidden row of "a". Owners
     // are hidden but match: one saved read picks a person's tasks by them.
-    { collection: "tasks", id: id("write-brief", "t-1"), label: "lr-task-1", data: { title: "Write brief", status: "open", deal: d1, effort: 3, secret: a ? "x" : "", owner: "alice" }, times: T1, envelope },
+    { collection: "tasks", id: id("write-brief", "t-1"), label: "lr-task-1", data: { title: "Write brief", status: "open", deal: d1, effort: 3, secret: a ? "x" : "", field: "x", op: "open", owner: "alice" }, times: T1, envelope },
     { collection: "tasks", id: id("send-quote", "t-2"), label: "lr-task-2", data: { title: "Send quote", status: "done", deal: d1, effort: 1, owner: "alice" }, times: T2, envelope },
     { collection: "tasks", id: id("plan-pilot", "t-3"), label: "lr-task-3", data: { title: "Plan pilot", status: "open", deal: d2, effort: 2, secret: a ? "brief" : "", owner: "alice" }, times: T1, envelope },
     { collection: "tasks", id: id("chase", "t-4"), label: "lr-task-4", data: { title: "Chase", status: "open", deal: hiddenDeal, effort: 5, owner: "bob" }, times: T2, envelope },
@@ -479,12 +483,29 @@ describe("a link's read view", () => {
       ["lr-task-3", { title: "Plan pilot", status: "open", deal: "lr-deal-2", effort: 2 }],
       ["lr-task-1", { title: "Write brief", status: "open", deal: "lr-deal-1", effort: 3 }],
     ]);
+    expect((await shown({ where: { field: "x", op: "open" } })).records).toEqual([
+      ["lr-task-1", { title: "Write brief", status: "open", deal: "lr-deal-1", effort: 3 }],
+    ]);
     expect((await shown(SAVED_READ_ASKS.at(-1))).records.map(([id]) => id)).toEqual(["lr-task-1"]);
     expect(await ask("a", "tasks", boardAsk("private"))).toEqual({
       status: 403,
       body: { error: "This link can only run the reads saved with it.", code: "LINK_QUERY_NOT_RECORDED" },
     });
     for (const query of UNSAVED_ASKS) expect({ query, ...(await ask("a", "tasks", query)) }).toMatchObject({ query, status: 403, body: { code: "LINK_QUERY_NOT_RECORDED" } });
+
+    // Stored ID ordering cannot be preserved after opaque projection. Refuse
+    // such saved reads, including relation IDs, before serving any rows.
+    for (const field of ["id", "deal"]) {
+      const sorted = LinkGrantSchema.parse({
+        ...GRANTS.a,
+        collections: { ...GRANTS.a.collections, tasks: { ...GRANTS.a.collections.tasks, fixed: [{ id: "ordered", query: { orderBy: [{ field, dir: "asc" }], limit: 1 } }] } },
+      });
+      expect(validateLinkGrant(sorted, await readLinkGrantSchemas(SPACES.a, sorted))).toEqual([
+        { collectionId: "tasks", message: `Saved read "ordered" can't sort by "${field}", since links show their own ids.` },
+      ]);
+      const view = await openLinkReadView(SPACES.a, sorted, labelledKeys.a);
+      expect(await queryRecords(SPACES.a, "tasks", { orderBy: field, limit: 1 }, { view }).catch(linkQueryFailure)).toMatchObject({ status: 403 });
+    }
 
     // Each link counts the reads it refused, by shape and never by value.
     const counted = await openLinkReadView(SPACES.a, GRANTS.a, labelledKeys.a, { linkId: "link-counted" });

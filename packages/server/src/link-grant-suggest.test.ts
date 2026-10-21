@@ -81,6 +81,24 @@ describe("suggestLinkGrant", () => {
     expect(suggestion.fixedReads.deals).toHaveLength(1);
     expect(suggestion.fixedReads.deals![0]!.query.search).toBe("private note");
   });
+  it("warns about stale explicit fields and omits reads ordered by opaque IDs", () => {
+    const suggestion = suggestLinkGrant({
+      permissions: PERMISSIONS,
+      html: "",
+      observed: [
+        { collectionId: "deals", query: { select: ["name", "id", "createdAt", "updatedAt"], orderBy: "removed" } },
+        { collectionId: "deals", query: { select: ["name"], orderBy: "id", limit: 1 } },
+        { collectionId: "deals", query: { select: ["name"], orderBy: "client", limit: 1 } },
+      ],
+      schemas,
+    });
+    const omitted = suggestion.warnings.find((warning) => warning.code === "fields_left_out")!;
+    expect(omitted.message).toContain('"removed"');
+    for (const name of ["id", "createdAt", "updatedAt"]) expect(omitted.message).not.toContain(`"${name}"`);
+    expect(suggestion.warnings.map((warning) => warning.code)).toContain("unsupported_reads");
+    expect(suggestion.fixedReads.deals).toHaveLength(1);
+    expect(suggestion.fixedReads.deals![0]!.query.orderBy).toEqual([{ field: "removed", dir: "asc" }]);
+  });
   it("suggests the least a tool's first load needs, and says what it may have missed", () => {
     const suggestion = suggestLinkGrant({ permissions: PERMISSIONS, html: HTML, observed: OBSERVED, schemas });
     const scoped = { rows: null, timestamps: true, mode: "scoped" } as const;

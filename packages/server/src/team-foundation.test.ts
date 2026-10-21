@@ -32,6 +32,8 @@ import { profileRouter } from "./routes/profile.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
 import { systemRouter, type DeploymentInfo } from "./routes/system.ts"
 import { setLinkedSharing } from "./linked-sharing.ts"
+import { sharesRouter } from "./routes/shares.ts"
+import { closeShareLinkStores } from "./share-links-store.ts"
 import { tokensRouter } from "./routes/tokens.ts"
 import { TeamAccessError } from "./team-policy.ts"
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test"
@@ -805,6 +807,96 @@ describe("team foundation", () => {
       expect(await shareLinks(member)).toBe(true)
     } finally {
       setLinkedSharing(null)
+    }
+  })
+
+  test("share links are made and revoked by owners and Space managers; editors only see them", async () => {
+    const { owner, member } = await setup()
+    await writeDoc("original", "brief", "# Brief")
+    const request = (
+      identity: TokenIdentity,
+      method: string,
+      path: string,
+      body?: unknown
+    ) => {
+      const app = new Hono()
+      app.onError((error, c) =>
+        error instanceof TeamAccessError
+          ? c.json({ code: error.code }, 403)
+          : c.json({ error: String(error) }, 500)
+      )
+      app.use("*", async (c, next) => {
+        c.set("identity", identity)
+        await next()
+      })
+      app.route("/api/shares", sharesRouter)
+      return app.request(path, {
+        method,
+        ...(body
+          ? {
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            }
+          : {}),
+      })
+    }
+    const target = { kind: "doc", spaceId: "original", path: "brief" }
+    const create = (identity: TokenIdentity) =>
+      request(identity, "POST", "/api/shares/links", { target })
+    const grantBob = (access: "edit" | "manage") =>
+      setSpaceAccessPolicy(
+        {
+          spaceId: "original",
+          visibility: "restricted",
+          grants: [
+            {
+              subjectType: "member",
+              subjectId: member.team!.memberId!,
+              access,
+            },
+          ],
+        },
+        owner
+      )
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    setLinkedSharing({
+      workspaceId: "ws_synthetic",
+      shareOrigin: "https://share.example.test",
+      htmlShareOrigin: "https://html.example.test",
+    })
+    try {
+      const made = await create(owner)
+      expect(made.status).toBe(201)
+      const { link } = (await made.json()) as { link: { id: string } }
+
+      grantBob("edit")
+      expect((await create(member)).status).toBe(403)
+      const seen = await request(
+        member,
+        "GET",
+        "/api/shares/links?kind=doc&spaceId=original&path=brief"
+      )
+      expect(await seen.json()).toMatchObject({
+        canCreate: false,
+        createBlockedBy: "sharer",
+        links: [{ id: link.id, canManage: false }],
+      })
+      expect(
+        (await request(member, "DELETE", `/api/shares/links/${link.id}`)).status
+      ).toBe(403)
+      expect(
+        (await request(member, "GET", "/api/shares/links/all")).status
+      ).toBe(403)
+
+      grantBob("manage")
+      expect((await create(member)).status).toBe(201)
+      expect(
+        (await request(member, "DELETE", `/api/shares/links/${link.id}`)).status
+      ).toBe(200)
+    } finally {
+      setLinkedSharing(null)
+      closeShareLinkStores()
+      delete process.env["WORKTABLE_SHARING_PREVIEW"]
     }
   })
 

@@ -238,19 +238,21 @@ const listedRevisions = new WeakMap<
 
 /**
  * Content revisions of documents the app opens by revision (Markdown, rich
- * text and HTML Docs), by path, from the Space's catalog snapshot. Limited to
- * `paths` when given. A document missing from the result is opened without
- * one. Revisions in rows are hints: opening a document still checks it.
+ * text and HTML Docs), by path, from the Space's catalog snapshot, or from
+ * `snapshot` when the caller already holds it. Limited to `paths` when given.
+ * A document missing from the result is opened without one. Revisions in
+ * rows are hints: opening a document still checks it.
  */
 export async function documentContentRevisions(
   spaceId: string,
-  paths?: Iterable<string>
+  paths?: Iterable<string>,
+  snapshot?: DocumentCatalog
 ): Promise<Map<string, string>> {
   const wanted = paths ? new Set(paths) : undefined
   if (wanted?.size === 0) return new Map()
   let catalog: DocumentCatalog
   try {
-    catalog = await readDocumentCatalogSnapshot(spaceId)
+    catalog = snapshot ?? (await readDocumentCatalogSnapshot(spaceId))
   } catch {
     return new Map()
   }

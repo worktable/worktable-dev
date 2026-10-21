@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto"
 import { SOURCE_URL } from "../release-info.ts"
 import { Hono, type Context } from "hono"
-import { PublicShareProjection } from "@worktable/hosted-contract"
+import {
+  PUBLIC_SHARE_STATUS,
+  PublicShareProjection,
+} from "@worktable/hosted-contract"
 import {
   getHostedDocumentSharingConfig,
   SHARE_CAPABILITY_HEADER,
@@ -12,6 +15,18 @@ import {
   renderPublicHtmlProjection,
 } from "../public-share-renderer.ts"
 import { resolveDocumentShare } from "../share-store.ts"
+import {
+  readShareLinkDocument,
+  resolveShareLinkView,
+  type ShareLinkView,
+} from "../share-link-views.ts"
+import {
+  getShareLink,
+  noteShareLinkUsed,
+  onShareLinksChanged,
+  ShareLinksStoreError,
+  sharingV2Active,
+} from "../share-links-store.ts"
 import {
   readSharedArtifact,
   type ReadableSharedArtifact,
@@ -80,6 +95,22 @@ function unavailable(
   return htmlResponse(request, "", 404, headers)
 }
 
+/** Too many pages are rendering; the gateway shows its waiting page. */
+function busy(
+  request: Request,
+  content: boolean,
+  shareOrigin: string
+): Response {
+  const headers = content ? contentHeaders(shareOrigin) : projectionHeaders()
+  headers.set("Retry-After", "5")
+  return htmlResponse(
+    request,
+    content ? "" : JSON.stringify({ error: "Busy", code: "BUSY" }),
+    PUBLIC_SHARE_STATUS.BUSY,
+    headers
+  )
+}
+
 // ── Rendered pages ───────────────────────────────────────────
 //
 // Rendering (BlockNote and JSDOM) is most of a view's cost, so recent pages
@@ -130,6 +161,156 @@ function rememberPage(
     renderedBytes -= old.bytes
   }
   return page
+}
+
+// Pages of links (v2) are kept by link, surface, path and content revision,
+// so a hit needs neither the content nor a second lookup: the link was live
+// when this request resolved it, and the revision names the content. A
+// revoked or edited link's pages are dropped at once.
+
+function linkPageKey(
+  linkId: string,
+  surface: "projection" | "content",
+  path: string,
+  revision: string,
+  title: string
+): string {
+  // The outer page shows the title, which an HTML Doc keeps apart from its
+  // content.
+  const key = `${linkId}\0${surface}\0${path}\0${revision}`
+  return surface === "projection" ? `${key}\0${title}` : key
+}
+
+function forgetLinkPages(linkId: string): void {
+  const prefix = `${linkId}\0`
+  for (const key of [...renderedPages.keys()]) {
+    if (key.startsWith(prefix)) forgetPage(key)
+  }
+}
+
+onShareLinksChanged((ids) => {
+  for (const id of ids) forgetLinkPages(id)
+})
+
+// Rendering a missed page is the expensive part of a view. A few run at
+// once, a few more wait, and the rest are told to come back.
+const RENDER_CONCURRENCY = 2
+const RENDER_QUEUE = 16
+let rendersRunning = 0
+const renderWaiting: Array<() => void> = []
+const renderingLinkPages = new Map<
+  string,
+  Promise<RenderedPage | null | "busy">
+>()
+
+async function withRenderSlot<T>(
+  render: () => Promise<T>
+): Promise<T | "busy"> {
+  if (rendersRunning < RENDER_CONCURRENCY) rendersRunning++
+  else if (renderWaiting.length >= RENDER_QUEUE) return "busy"
+  else await new Promise<void>((resolve) => renderWaiting.push(resolve))
+  try {
+    return await render()
+  } finally {
+    // The slot passes straight to the next waiter.
+    const next = renderWaiting.shift()
+    if (next) next()
+    else rendersRunning--
+  }
+}
+
+function linkStillOpens(id: string): boolean {
+  const link = getShareLink(id)
+  return Boolean(
+    link &&
+    link.servable &&
+    link.revokedAt === null &&
+    (link.expiresAt === null || link.expiresAt > Date.now())
+  )
+}
+
+async function renderLinkBody(
+  view: ShareLinkView,
+  surface: "projection" | "content"
+): Promise<RenderedPage | null> {
+  const document = await readShareLinkDocument(view, surface)
+  if (!document) return null
+  let body: string
+  let revision: string | null
+  if (document.kind === "html-title") {
+    body = JSON.stringify(
+      PublicShareProjection.parse({
+        kind: "html",
+        sourceUrl: SOURCE_URL,
+        title: document.title,
+      })
+    )
+    revision = view.revision
+  } else if (document.kind === "html") {
+    body = renderPublicHtmlProjection(document.html)
+    revision = document.revision
+  } else {
+    body = JSON.stringify(
+      PublicShareProjection.parse({
+        kind: "doc",
+        sourceUrl: SOURCE_URL,
+        format: document.format,
+        title: document.title,
+        projectionHtml: await renderPublicDocProjection(
+          document.content,
+          document.format
+        ),
+      })
+    )
+    revision = document.revision
+  }
+  // A render can outlast the link: revoked or expired meanwhile, it is
+  // neither kept nor sent. Only renders pay this lookup; a cached page was
+  // checked by the request's own lookup.
+  if (!linkStillOpens(view.link.id)) return null
+  // Kept under the revision that was read, which may be newer than the one
+  // the request looked up.
+  if (revision === null) {
+    return { revision: "", body, bytes: Buffer.byteLength(body) }
+  }
+  return rememberPage(
+    linkPageKey(view.link.id, surface, view.path, revision, view.title),
+    revision,
+    body
+  )
+}
+
+/** The link's page at its current revision, rendering it at most once. */
+async function renderLinkPage(
+  view: ShareLinkView,
+  surface: "projection" | "content"
+): Promise<RenderedPage | null | "busy"> {
+  if (view.revision === null) {
+    return withRenderSlot(() => renderLinkBody(view, surface))
+  }
+  const key = linkPageKey(
+    view.link.id,
+    surface,
+    view.path,
+    view.revision,
+    view.title
+  )
+  const cached = renderedPages.get(key)
+  if (cached) {
+    renderedPages.delete(key)
+    renderedPages.set(key, cached)
+    return cached
+  }
+  // Requests for the same page wait for one render.
+  let rendering = renderingLinkPages.get(key)
+  if (!rendering) {
+    rendering = withRenderSlot(() => renderLinkBody(view, surface))
+    renderingLinkPages.set(key, rendering)
+    void rendering
+      .finally(() => renderingLinkPages.delete(key))
+      .catch(() => undefined)
+  }
+  return rendering
 }
 
 function pageKeys(token: string): string[] {
@@ -225,9 +406,48 @@ export function createPublicSharesRouter(
     )
   })
 
+  /**
+   * Serve a link from the links store, or null when the token is not one of
+   * its links and the older share store answers instead.
+   */
+  async function serveLink(
+    c: Context,
+    surface: "projection" | "content",
+    shareOrigin: string
+  ): Promise<Response | null> {
+    if (!sharingV2Active()) return null
+    const content = surface === "content"
+    let view: Awaited<ReturnType<typeof resolveShareLinkView>>
+    try {
+      view = await resolveShareLinkView(
+        c.req.raw.headers.get(SHARE_CAPABILITY_HEADER) ?? ""
+      )
+    } catch (error) {
+      // A store this binary cannot open serves none of its links; older
+      // links may still answer.
+      if (error instanceof ShareLinksStoreError) return null
+      throw error
+    }
+    if (view === null) return null
+    if (view === "unavailable" || (content && view.link.kind !== "html")) {
+      return unavailable(c.req.raw, content, shareOrigin)
+    }
+    const page = await renderLinkPage(view, surface)
+    if (page === "busy") return busy(c.req.raw, content, shareOrigin)
+    if (!page) return unavailable(c.req.raw, content, shareOrigin)
+    noteShareLinkUsed(view.link)
+    return pageResponse(
+      c.req.raw,
+      page,
+      content ? contentHeaders(shareOrigin) : projectionHeaders()
+    )
+  }
+
   async function renderOuterShare(c: Context): Promise<Response> {
     const shareOrigin = getShareOrigin()
     if (!shareOrigin) return unavailable(c.req.raw)
+    const link = await serveLink(c, "projection", shareOrigin)
+    if (link) return link
     const resolved = await resolveRequest(c.req.raw)
     if (!resolved) return unavailable(c.req.raw)
 
@@ -262,6 +482,8 @@ export function createPublicSharesRouter(
   async function renderHtmlContent(c: Context): Promise<Response> {
     const shareOrigin = getShareOrigin()
     if (!shareOrigin) return unavailable(c.req.raw, true)
+    const link = await serveLink(c, "content", shareOrigin)
+    if (link) return link
     const resolved = await resolveRequest(c.req.raw)
     const artifact = resolved?.artifact
     if (!resolved || artifact?.kind !== "html") {

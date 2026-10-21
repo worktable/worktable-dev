@@ -268,15 +268,28 @@ function describeRows(
   input: DescribeAbilitiesInput
 ): string {
   if (!rows) return ""
-  const words = conjunction(rows)?.map((leaf) =>
-    describeLeaf(collectionId, leaf, input)
-  )
-  if (words?.every((part) => part !== null)) {
-    const text = words.join(" and ")
-    if (text.length <= ABILITY_CONDITION_MAX_LENGTH) return ` where ${text}`
-  }
+  const text = conditionWords(collectionId, rows, input)
+  if (text !== null) return ` where ${text}`
   const count = countLeaves(rows)
   return ` that match ${count} ${count === 1 ? "condition" : "conditions"}`
+}
+
+/** The conditions in words, or null once they can't be said within the length limit. */
+function conditionWords(
+  collectionId: string,
+  rows: RecordPredicate,
+  input: DescribeAbilitiesInput
+): string | null {
+  const leaves = conjunction(rows)
+  if (!leaves) return null
+  let text = ""
+  for (const leaf of leaves) {
+    const words = describeLeaf(collectionId, leaf, input)
+    if (words === null) return null
+    text = text ? `${text} and ${words}` : words
+    if (text.length > ABILITY_CONDITION_MAX_LENGTH) return null
+  }
+  return text
 }
 
 type Leaf = Extract<RecordPredicate, { field: string }>
@@ -327,6 +340,9 @@ function describeLeaf(
   // Comparing with null or "" matches only that exact value, which reads
   // the same as `isEmpty` in words, so such leaves are only counted.
   if (!Array.isArray(raw) || raw.length === 0 || raw.some(isBlank)) return null
+  // Each value takes at least three characters with its separator, so a
+  // longer list can't fit; skip naming thousands of values to find that out.
+  if (raw.length > ABILITY_CONDITION_MAX_LENGTH / 3) return null
   const values = raw.map(
     (value) =>
       input.describeValue?.(collectionId, leaf.field, value) ??

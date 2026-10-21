@@ -388,9 +388,12 @@ export const VisitorCommentInputSchema = z
       .trim()
       .min(1)
       .max(VISITOR_NAME_MAX_LENGTH)
-      .refine((name) => !/[\r\n]/.test(name), {
-        message: "Name must be one line",
-      })
+      // Control characters, line and paragraph separators, and direction
+      // overrides could break a name across lines or disguise it.
+      .refine(
+        (name) => !/[\p{Cc}\p{Zl}\p{Zp}\u202A-\u202E\u2066-\u2069]/u.test(name),
+        { message: "Name must be one line of plain text" }
+      )
       .optional(),
     anonymous: z.boolean().default(false),
     body: CommentBodySchema,

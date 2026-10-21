@@ -97,6 +97,7 @@ import {
   WIDGET_STYLE_TOKENS,
 } from "../widget-authoring.ts"
 import {
+  CanonicalIdSchema,
   DOCUMENT_LIFETIME_REQUIRED_MESSAGE,
   WidgetIdSchema,
   type AnnotationAuthor,
@@ -1627,6 +1628,15 @@ async function _dispatchOperationInner(
       const problems: string[] = []
       for (const [index, row] of rows.entries()) {
         const label = `row ${index + 1}${row.recordId ? ` (${row.recordId})` : ""}`
+        if (
+          row.recordId !== undefined &&
+          !CanonicalIdSchema.safeParse(row.recordId).success
+        ) {
+          problems.push(
+            `${label}: recordId must use lowercase letters, digits and hyphens, starting and ending with a letter or digit`
+          )
+          continue
+        }
         const undeclared = undeclaredFieldsError(
           Object.keys(row.data),
           schema,
@@ -1645,12 +1655,13 @@ async function _dispatchOperationInner(
         )
       }
       const results: Array<{
+        row: number
         recordId: string
         created: boolean
         matchedBy?: string
         error?: string
       }> = []
-      for (const row of rows) {
+      for (const [index, row] of rows.entries()) {
         const result = await createRecord(spaceId, collectionId, {
           id: row.recordId,
           data: row.data,
@@ -1661,11 +1672,13 @@ async function _dispatchOperationInner(
         results.push(
           result.data
             ? {
+                row: index + 1,
                 recordId: result.data.id,
                 created: result.created === true,
                 ...(result.matchedBy ? { matchedBy: result.matchedBy } : {}),
               }
             : {
+                row: index + 1,
                 recordId: row.recordId ?? "",
                 created: false,
                 error: result.error ?? "Write failed",

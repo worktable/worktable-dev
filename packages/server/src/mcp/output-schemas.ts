@@ -516,6 +516,7 @@ const RecordCollectionSummarySchema = z.looseObject({
 const RecordsCreateManyOutputSchema = z.looseObject({
   results: z.array(
     z.looseObject({
+      row: z.number().int().positive(),
       recordId: z.string(),
       created: z.boolean(),
       error: z.string().optional(),
@@ -1612,6 +1613,7 @@ export const PREVIEW_OUTPUT_SCHEMAS: Partial<
     results: forActions(
       z.array(
         z.looseObject({
+          row: z.number().int().positive().optional(),
           recordId: z.string(),
           created: z.boolean().optional(),
           matchedBy: z.string().optional(),

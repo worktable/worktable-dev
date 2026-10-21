@@ -633,13 +633,13 @@ describe("MCP record batches (preview)", () => {
       },
       preview
     )) as {
-      results: Array<{ recordId: string; created: boolean }>
+      results: Array<{ row: number; recordId: string; created: boolean }>
       counts: { created: number; skipped: number }
     }
     expect(result.results).toEqual([
-      { recordId: "p-1", created: false },
-      { recordId: "p-2", created: true },
-      { recordId: "p-3", created: true },
+      { row: 1, recordId: "p-1", created: false },
+      { row: 2, recordId: "p-2", created: true },
+      { row: 3, recordId: "p-3", created: true },
     ])
     expect([result.counts.created, result.counts.skipped]).toEqual([2, 1])
     const kept = (await dispatchOperation("records.read", {
@@ -662,11 +662,12 @@ describe("MCP record batches (preview)", () => {
             { recordId: "ok", data: { title: "Fine" } },
             { recordId: "bad-1", data: { title: "X", reveiw: "Verified" } },
             { recordId: "bad-2", data: { title: "Y", review: "Maybe" } },
+            { recordId: "https://x.test/a", data: { title: "Z" } },
           ],
         },
         preview
       )
-    ).rejects.toThrow(/Nothing was written: 2 of 3 rows.*row 2 \(bad-1\).*reveiw.*row 3 \(bad-2\).*review must be one of/)
+    ).rejects.toThrow(/Nothing was written: 3 of 4 rows.*row 2 \(bad-1\).*reveiw.*row 3 \(bad-2\).*review must be one of.*row 4 .*recordId must use/)
     const all = (await dispatchOperation("records.query", {
       spaceId: "product",
       collectionId: "posts",
@@ -788,12 +789,12 @@ describe("MCP record batches (preview)", () => {
       },
       preview
     )) as {
-      results: Array<{ recordId: string; created: boolean; matchedBy?: string }>
+      results: Array<{ row: number; recordId: string; created: boolean; matchedBy?: string }>
     }
     expect(result.results).toEqual([
-      { recordId: "first-post", created: true },
-      { recordId: "first-post", created: false, matchedBy: "url" },
-      { recordId: "second-post", created: true },
+      { row: 1, recordId: "first-post", created: true },
+      { row: 2, recordId: "first-post", created: false, matchedBy: "url" },
+      { row: 3, recordId: "second-post", created: true },
     ])
   })
 

@@ -209,6 +209,57 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
   } finally {
     catalogReads.mockRestore()
   }
+  const staleSpaces = Array.from({ length: 12 }, (_, index) => ({
+    ...space,
+    id: `stale-${index}`,
+  }))
+  for (const stale of staleSpaces) {
+    await writeSpace(stale)
+    receiveVisitorComment({
+      worktableId: namespace.worktableId,
+      linkId: stale.id,
+      linkLabel: "Old report",
+      linkCreator: "local:owner",
+      documentId: `doc_missing_${stale.id}`,
+      spaceId: stale.id,
+      kind: "doc",
+      visitorName: null,
+      body: sentinel,
+      visitorKey: "a".repeat(64),
+      clientKey: "b".repeat(32),
+      requestId: stale.id,
+    })
+  }
+  const boundedReads = spyOn(documentQuery, "readDocumentIdentities")
+  try {
+    await pendingVisitorComments(
+      owner,
+      [...staleSpaces, space],
+      undefined,
+      () => true
+    )
+    expect(boundedReads.mock.calls.length).toBeLessThanOrEqual(10)
+    boundedReads.mockClear()
+    expect(
+      await pendingVisitorComments(
+        owner,
+        [...staleSpaces, space],
+        "space",
+        () => true
+      )
+    ).toEqual([
+      expect.objectContaining({
+        kind: "visitorComments",
+        documentId,
+        count: 1,
+      }),
+    ])
+    expect(boundedReads.mock.calls.map(([spaceId]) => spaceId)).toEqual([
+      "space",
+    ])
+  } finally {
+    boundedReads.mockRestore()
+  }
   wsManager.subscribe(
     {
       data: {

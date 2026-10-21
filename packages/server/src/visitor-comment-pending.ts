@@ -69,6 +69,10 @@ export async function pendingVisitorComments(
     let snapshot = snapshots.get(hint)
     if (snapshot === null) continue
     if (!snapshot) {
+      // Home is a ten-item preview. Deleted documents must also consume the
+      // lookup budget, so stale receipts cannot open thousands of catalogs.
+      // Space-specific Pending can still resolve that Space independently.
+      if (snapshots.size >= 10) continue
       try {
         snapshot = await readDocumentIdentities(hint)
       } catch (error) {

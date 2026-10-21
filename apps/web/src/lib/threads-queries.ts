@@ -38,17 +38,12 @@ export const threadQueryKeys = {
 }
 
 /** A preview-setting change can change capabilities without changing content. */
-export async function refreshThreadNamingCapabilities(
+export function refreshThreadNamingCapabilities(
   queryClient: QueryClient
 ): Promise<void> {
-  const details = queryClient
-    .getQueryCache()
-    .findAll({ queryKey: [...threadQueryKeys.root, "detail"] })
-  await Promise.all(
-    details.map(({ queryKey }) =>
-      queryClient.invalidateQueries({ queryKey, exact: true })
-    )
-  )
+  return queryClient.invalidateQueries({
+    queryKey: [...threadQueryKeys.root, "detail"],
+  })
 }
 
 export const threadsQueryOptions = (scope: ThreadListScope) =>

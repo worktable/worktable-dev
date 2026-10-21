@@ -11,12 +11,10 @@ import {
   applyThreadAssignment,
   mergeThreadPage,
   refreshThreadWindow,
+  refreshThreadNamingCapabilities,
   threadQueryKeys,
 } from "./threads-queries"
-import {
-  applyThreadRename,
-  refreshThreadNamingCapabilities,
-} from "./thread-naming"
+import { applyThreadRename } from "./thread-naming"
 import { applyThreadPayload } from "./ws"
 
 const createdAt = "2026-08-15T10:00:00.000Z"

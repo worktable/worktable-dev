@@ -25,7 +25,7 @@ function categoryVariant(category: AnnotationCategory): "default" | "secondary" 
   return "outline";
 }
 
-export interface AnnotationCommentsPanelProps {
+export interface AnnotationPanelContentProps {
   header?: ReactNode
   readOnly?: boolean
   annotations: Annotation[]
@@ -44,7 +44,7 @@ export interface AnnotationCommentsPanelProps {
   className?: string;
 }
 
-export function AnnotationCommentsPanel({
+export function AnnotationPanelContent({
   header,
   readOnly = false,
   annotations,
@@ -58,7 +58,7 @@ export function AnnotationCommentsPanel({
   composeLabel,
   emptyHint,
   className,
-}: AnnotationCommentsPanelProps) {
+}: AnnotationPanelContentProps) {
   const [showResolved, setShowResolved] = useState(false);
   const scrollRef = useScrollFade<HTMLDivElement>();
   const visible = useMemo(

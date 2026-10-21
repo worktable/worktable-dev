@@ -490,6 +490,9 @@ async function runBackupSteps(
               "workspace",
               "snapshot.json",
               ...(manifest.teamState ? ["team"] : []),
+              ...(manifest.visitorComments
+                ? ["app/visitor-comments.sqlite"]
+                : []),
             ],
             capture
           )

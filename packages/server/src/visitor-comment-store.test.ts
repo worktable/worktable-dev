@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import {
   chmod,
   mkdtemp,
+  mkdir,
   readFile,
   readdir,
   rm,
@@ -12,7 +13,7 @@ import { Database } from "bun:sqlite"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { setAppDirOverride } from "./app-storage.ts"
-import { setWorkspaceRootOverride } from "./workspace.ts"
+import { setWorkspaceRootOverride, workspaceCacheKey } from "./workspace.ts"
 import {
   appendVisitorReply,
   cleanVisitorText,
@@ -264,6 +265,31 @@ describe("private visitor comments", () => {
     expect(await readdir(root)).toEqual([])
     await symlink(root, join(app, "workspace-link"))
     setAppDirOverride(join(app, "workspace-link", "not-created"))
+    expect(() => receiveVisitorComment(comment())).toThrow(
+      VisitorCommentsUnavailable
+    )
+    expect(await readdir(root)).toEqual([])
+    setAppDirOverride(app)
+    const privateRoot = join(app, "visitor-comments")
+    await symlink(root, privateRoot)
+    expect(() => receiveVisitorComment(comment())).toThrow(
+      VisitorCommentsUnavailable
+    )
+    expect(await readdir(root)).toEqual([])
+    await rm(privateRoot)
+    await mkdir(privateRoot)
+    const privateWorkspace = join(privateRoot, workspaceCacheKey())
+    await symlink(root, privateWorkspace)
+    expect(() => receiveVisitorComment(comment())).toThrow(
+      VisitorCommentsUnavailable
+    )
+    expect(await readdir(root)).toEqual([])
+    await rm(privateWorkspace)
+    await mkdir(privateWorkspace)
+    await symlink(
+      join(root, "leaked.sqlite"),
+      join(privateWorkspace, "comments.sqlite")
+    )
     expect(() => receiveVisitorComment(comment())).toThrow(
       VisitorCommentsUnavailable
     )

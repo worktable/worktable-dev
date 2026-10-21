@@ -3,7 +3,7 @@ import { X } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@worktable/ui/components/tabs"
 import type { AnnotationPanelProps } from "./annotation-panel"
-import { AnnotationCommentsPanel } from "./annotation-comments"
+import { AnnotationPanelContent } from "./annotation-panel-content"
 import { VisitorCommentsPanel } from "./visitor-comments-panel"
 
 export function DocumentCommentsPanel(props: AnnotationPanelProps) {
@@ -18,7 +18,7 @@ export function DocumentCommentsPanel(props: AnnotationPanelProps) {
       </TabsList>
       {props.onClose && <Button variant="ghost" size="icon-sm" aria-label="Close comments" onClick={props.onClose}><X className="size-4" /></Button>}
     </div>
-    <TabsContent value="comments" className="min-h-0"><AnnotationCommentsPanel {...props} header={false} /></TabsContent>
+    <TabsContent value="comments" className="min-h-0"><AnnotationPanelContent {...props} header={false} /></TabsContent>
     <TabsContent value="visitors" className="min-h-0"><VisitorCommentsPanel context={context} onViewComment={annotation => { setTab("comments"); props.onSelectAnnotation(annotation) }} annotations={props.annotations} /></TabsContent>
   </Tabs>
 }

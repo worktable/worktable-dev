@@ -1,7 +1,7 @@
 import type { Annotation, PassVisitorCommentInput, VisitorCommentsResponse } from "@worktable/types"
 import { fetchJSON } from "./http"
 
-export const visitorCommentsQueryKey = (spaceId: string, documentId: string) => ["visitor-comments", spaceId, documentId] as const
+export { visitorCommentsQueryKey } from "./visitor-comment-events"
 const base = (spaceId: string) => `/api/spaces/${encodeURIComponent(spaceId)}/visitor-comments`
 export function getVisitorComments(spaceId: string, documentId: string, before: string | null): Promise<VisitorCommentsResponse> {
   const query = new URLSearchParams({documentId})

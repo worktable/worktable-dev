@@ -531,7 +531,7 @@ export const CreateRecordsInput = z.object({
     .min(1)
     .max(RECORD_BATCH_LIMIT)
     .describe(
-      "Up to 100 records. Every row is checked before any is written. A recordId that already exists is skipped, never overwritten."
+      "Up to 100 records. Every row is checked before any is written. A row whose recordId, or whose value in a unique field, another record already holds (including an earlier row in the same call) is skipped, never overwritten; its result says created: false and, for a unique field, matchedBy."
     ),
 })
 

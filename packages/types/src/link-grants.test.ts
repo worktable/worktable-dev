@@ -75,10 +75,14 @@ describe("LinkGrantSchema", () => {
     ).toBe(false)
   })
 
-  it("stops at the engine's depth limit, however deep the input", () => {
+  it.each([
+    ["not", (node: RecordPredicate): RecordPredicate => ({ not: node })],
+    ["and", (node: RecordPredicate): RecordPredicate => ({ and: [node] })],
+    ["or", (node: RecordPredicate): RecordPredicate => ({ or: [node] })],
+  ])("stops %s chains at the engine's depth limit, however deep", (_, wrap) => {
     const nested = (depth: number) => {
       let node: RecordPredicate = { field: "stage", op: "eq", value: "won" }
-      for (let level = 0; level < depth; level++) node = { not: node }
+      for (let level = 0; level < depth; level++) node = wrap(node)
       return node
     }
     expect(RecordPredicateSchema.safeParse(nested(20)).success).toBe(true)

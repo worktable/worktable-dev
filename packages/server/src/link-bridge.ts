@@ -213,6 +213,8 @@ export function linkBridge(getShareOrigin: () => string | null) {
                 view.link.id,
                 view.link.grantRevision,
                 view.link.passwordRevision,
+                view.policyRevision,
+                journal,
                 generation,
                 tool.generation,
                 tool.schemaGeneration,
@@ -247,7 +249,6 @@ export function linkBridge(getShareOrigin: () => string | null) {
                   )
                 },
                 loadRows: async (collection) => {
-                  if (expired) throw new LinkRecordsBusy()
                   if (!recordIndexEnabled()) throw new LinkRecordsBusy()
                   const rows = recordIndex.listCollection(
                     view.link.spaceId,

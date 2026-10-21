@@ -391,14 +391,16 @@ describe("share links", () => {
   it("updates totals and summaries when an unreturned row leaves the link's scope", async () => {
     process.env["WORKTABLE_RECORDS_INDEX"] = "1"
     saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true }, "local:owner")
-    await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, visibility: { type: "text" } } }))
+    await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "clients", name: "Clients", fields: { name: { type: "text" } } }))
+    await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, visibility: { type: "text" }, client: { type: "relation", references: "clients" } } }))
     const at = new Date().toISOString()
-    const row = (id: string, visibility: string): RecordFile => ({ version: 1, kind: "worktable.record", id, collectionId: "deals", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: id, visibility } })
+    const row = (id: string, visibility: string): RecordFile => ({ version: 1, kind: "worktable.record", id, collectionId: "deals", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: id, visibility, client: "client-id" } })
+    await writeRecord("space", { version: 1, kind: "worktable.record", id: "client-id", collectionId: "clients", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: "Public client" } })
     await writeRecord("space", row("first", "public"))
     await writeRecord("space", row("second", "public"))
-    await createHtmlDocument({ spaceId: "space", name: "Counts", html: "<h1>Counts</h1>", permissions: { network: false, records: { deals: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
+    await createHtmlDocument({ spaceId: "space", name: "Counts", html: "<h1>Counts</h1>", permissions: { network: false, records: { deals: { read: true }, clients: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
     const rows = { field: "visibility", op: "eq", value: "public" }
-    const scoped = await createLink("counts", { grant: LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: ["name"], rows } } }) }, "html")
+    const scoped = await createLink("counts", { grant: LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: ["name", "client"], rows }, clients: { fields: ["name"] } } }) }, "html")
     const summary = await createLink("counts", { grant: LinkGrantSchema.parse({ version: 1, collections: { deals: { mode: "summaries", fields: [], rows, summaries: { groupBy: [], measures: [], fns: ["count"], minGroupSize: 2 } } } }) }, "html")
     const bridge = (token: string, value: unknown) => app().request("/public/share/bridge", { method: "POST", headers: { "Content-Type": "application/json", "x-worktable-share-capability": token }, body: JSON.stringify(value) })
     const call = async (token: string, value: unknown) => {
@@ -416,7 +418,8 @@ describe("share links", () => {
     await recordIndex.whenReady()
     await drainWorkspaceChanges()
     const aggregate = query({ aggregate: { select: { n: { fn: "count" } } } })
-    const requests = [[scoped.token, query({ limit: 1 })], [summary.token, aggregate]] as const
+    const limitedQuery = query({ limit: 1, expand: { client: ["name"] } })
+    const requests = [[scoped.token, limitedQuery], [summary.token, aggregate]] as const
     // Both memoized loads outlive their initiating response. Later callers
     // join the same loads and still need all contributing rows remembered.
     let resume!: () => void
@@ -449,9 +452,22 @@ describe("share links", () => {
       const [limited, counted] = await Promise.all(responses.map(async (response) => (await response.json()).result))
       expect(limited.records).toHaveLength(1)
       expect(limited.total).toBe(2)
+      expect(Object.values(limited.expanded.clients as Record<string, RecordFile>).map((row) => row.data)).toEqual([{ name: "Public client" }])
       expect(counted.groups).toEqual([{ n: 2 }])
       expect(loads).toBe(2)
     } finally { resume(); slow.mockRestore(); memo.mockRestore() }
+    // Even an unchanged policy save advances authorization. Repeating the
+    // same warm queries must record contributors in the new journal.
+    const before = await (await send("GET", "/api/shares/policy")).json()
+    expect((await send("PUT", "/api/shares/policy", before.policy)).status).toBe(200)
+    const after = await (await send("GET", "/api/shares/policy")).json()
+    expect(after.policy).toEqual(before.policy)
+    expect(after.revision).toBeGreaterThan(before.revision)
+    const refreshed = spyOn(recordQueries, "runQueryV2")
+    try {
+      await Promise.all(requests.map(([token, value]) => call(token, value)))
+      expect(refreshed).toHaveBeenCalledTimes(2)
+    } finally { refreshed.mockRestore() }
     const cursors = await Promise.all([scoped, summary].map(async ({ token }) => (await call(token, { v: 1, op: "changes" })).cursor))
     await writeRecord("space", row("second", "private"))
     await notifyWorkspaceChangeAndWaitOrThrow({ type: "record", spaceId: "space", collectionId: "deals", recordId: "second" })

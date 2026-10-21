@@ -11,6 +11,7 @@ infrastructure and personal context out of release notes.
 
 ### Changed
 
+- **Record queries page reliably:** Every record query that stops at its limit returns a cursor for the next page, so paging no longer stops early when a query has no projection. Flat filters such as `{ "status": "open" }` now work with projection, aggregates and expansion. An agent query without a limit returns 100 records and says how to continue, instead of the whole collection. Search matches field values only, select fields sort in the order their options are listed, and agents counting by a multi-select field get a count for each value. Malformed filters are rejected instead of matching nothing.
 - **Records keep what they hold:** Creating a record with an id that already exists no longer replaces it. Agents get the stored record back with `created: false`, and REST and HTML Docs get a conflict, so an agent that derives ids from a URL or other key adds each item once. Over MCP, `upsert_collection` adds or replaces only the fields it is sent and keeps the rest, and record updates merge metadata the way they merge data. Widening a select field no longer rechecks every record.
 - **Large collections stay quick while agents write:** Each record an agent saves now updates just that record, instead of making Worktable rescan the whole collection and every open table and HTML Doc reload it.
 

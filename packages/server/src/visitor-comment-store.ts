@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite"
+import { randomBytes } from "node:crypto"
+import type { VisitorCommentsCheckpoint } from "@worktable/hosted-contract"
 import {
   chmodSync,
   closeSync,
@@ -25,6 +27,7 @@ interface StoreConnections {
   retry: number
 }
 const stores = new Map<string, StoreConnections>()
+let writesHeld = 0
 
 export class VisitorCommentsUnavailable extends Error {}
 export class VisitorCommentRefused extends Error {
@@ -100,6 +103,7 @@ function requireReadOnlyFile(path: string): void {
 }
 
 function database(create = false): Database | null {
+  if (create && writesHeld) throw new VisitorCommentsUnavailable()
   const key = `${getAppDir()}\0${getWorkspaceRoot()}\0${workspaceCacheKey()}`
   const cached = stores.get(key)
   if (create && cached?.writer) return cached.writer
@@ -131,7 +135,7 @@ function database(create = false): Database | null {
     const version = (
       db.query("PRAGMA user_version").get() as { user_version: number }
     ).user_version
-    if (version !== 1 && !(create && version === 0))
+    if (version !== 1 && version !== 2 && !(create && version === 0))
       throw new VisitorCommentsUnavailable()
     if (create) {
       chmodSync(path, 0o600)
@@ -173,6 +177,26 @@ function database(create = false): Database | null {
           PRAGMA user_version=1;`)
         }).immediate()
 
+      if (version < 2)
+        db.transaction(() => {
+          db!.exec(
+            "CREATE TABLE visitor_meta(id INTEGER PRIMARY KEY CHECK(id=1),incarnation TEXT NOT NULL,revision INTEGER NOT NULL)"
+          )
+          db!
+            .query("INSERT INTO visitor_meta VALUES(1,?,0)")
+            .run(randomBytes(16).toString("hex"))
+          for (const table of [
+            "visitor_comments",
+            "visitor_replies",
+            "visitor_link_state",
+            "visitor_cap_hits",
+          ])
+            for (const operation of ["INSERT", "UPDATE", "DELETE"])
+              db!.exec(
+                `CREATE TRIGGER ${table}_${operation.toLowerCase()}_revision AFTER ${operation} ON ${table} BEGIN UPDATE visitor_meta SET revision=revision+1 WHERE id=1; END`
+              )
+          db!.exec("PRAGMA user_version=2")
+        }).immediate()
       // Forget free pages and historical WAL text from the preview's old format.
       if (previous === "wal") db.exec("VACUUM")
     } else
@@ -195,6 +219,59 @@ function database(create = false): Database | null {
 /** Existing private state is recovered at boot; this never creates a store. */
 export function prepareVisitorCommentStore(): void {
   if (existsSync(storePath())) database(true)
+}
+
+export function visitorCommentStoreFile(): string {
+  return storePath()
+}
+
+function checkpoint(db: Database): VisitorCommentsCheckpoint {
+  const value = db
+    .query("SELECT incarnation,revision FROM visitor_meta WHERE id=1")
+    .get() as VisitorCommentsCheckpoint | null
+  if (
+    !value ||
+    !/^[a-f0-9]{32}$/.test(value.incarnation) ||
+    !Number.isSafeInteger(value.revision) ||
+    value.revision < 0
+  )
+    throw new VisitorCommentsUnavailable()
+  return value
+}
+
+/** A logical fence survives restarts and covers replies, pauses and erasure. */
+export function visitorCommentsCheckpoint(): VisitorCommentsCheckpoint | null {
+  const db = database()
+  return db ? checkpoint(db) : null
+}
+
+/** Operator capture only. The native copy and its checkpoint are synchronous. */
+export function captureVisitorCommentDatabase(
+  path: string
+): VisitorCommentsCheckpoint | null {
+  if (!existsSync(storePath())) return null
+  const db = database(true)!
+  const captured = checkpoint(db)
+  db.query("VACUUM INTO ?").run(path)
+  return captured
+}
+
+/** Replacement holds this across its last fence and private-state publication. */
+export function holdVisitorCommentWrites(): () => void {
+  writesHeld += 1
+  try {
+    closeVisitorCommentStores()
+  } catch (error) {
+    writesHeld -= 1
+    throw error
+  }
+  let released = false
+  return () => {
+    if (!released) {
+      released = true
+      writesHeld -= 1
+    }
+  }
 }
 
 // The portable Worktable ID is retained by operator restore.
@@ -557,14 +634,15 @@ export function markVisitorCommentPassed(
 
 /** Called only at boot and daily, never by a view or a comment request. */
 export function sweepVisitorComments(now = Date.now()): void {
+  if (writesHeld) return
   if (!database()) return
   const db = database(true)!
   db.transaction(() => {
     db.query(
-      "UPDATE visitor_comments SET client_key=NULL WHERE received_at<?"
+      "UPDATE visitor_comments SET client_key=NULL WHERE client_key IS NOT NULL AND received_at<?"
     ).run(now - 7 * DAY)
     db.query(
-      "UPDATE visitor_comments SET body=NULL,visitor_name=NULL WHERE status='passed' AND passed_at<?"
+      "UPDATE visitor_comments SET body=NULL,visitor_name=NULL WHERE status='passed' AND (body IS NOT NULL OR visitor_name IS NOT NULL) AND passed_at<?"
     ).run(now - 30 * DAY)
     db.query(
       "DELETE FROM visitor_replies WHERE comment_id IN (SELECT id FROM visitor_comments WHERE status='passed' AND passed_at<?)"

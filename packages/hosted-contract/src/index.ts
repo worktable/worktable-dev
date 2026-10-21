@@ -888,6 +888,7 @@ export {
   CloudBackupStatus,
   type BackupWorkerInput,
   type BackupWorkerResult,
+  type VisitorCommentsCheckpoint,
 } from "./backups.ts"
 
 /** A derived Cloud directory snapshot. It never grants access to runtime content. */

@@ -1,5 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
-import { CanonicalIdSchema, documentReferenceHref } from "@worktable/types"
+import { CanonicalIdSchema, documentReferenceHref, recordTitleFieldKey } from "@worktable/types"
 import { z } from "zod"
 import { docMarkdownProjection } from "../doc-markdown-projection.ts"
 import { readDocumentWithView } from "../document-query.ts"
@@ -426,7 +426,11 @@ export function registerCompanyKnowledgeTools(
         const collectionName = collection.data?.name ?? target.collectionId
         return ok({
           id,
-          title: recordTitle(result.data, collectionName),
+          title: recordTitle(
+            result.data,
+            collectionName,
+            recordTitleFieldKey(collection.data)
+          ),
           text: JSON.stringify(result.data.data, null, 2),
           url: recordUrlToSendInChat(
             options.urlOrigin,

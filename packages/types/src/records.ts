@@ -32,6 +32,28 @@ export function requiresSchemaV2(fields: Record<string, { type: string; many?: b
   );
 }
 
+/** Field types that can name a record. */
+export const TITLE_FIELD_TYPES = ["string", "text", "url", "email", "person", "select"] as const;
+
+/**
+ * The field that names a record: the collection's titleField, else `title` or
+ * `name` (string), else the first required string field. Shared by the server
+ * and the web so a record has one name everywhere.
+ */
+export function recordTitleFieldKey(schema: { titleField?: string; fields: Record<string, { type: string; required?: boolean }> } | null | undefined): string | null {
+  if (!schema) return null;
+  if (schema.titleField && schema.fields[schema.titleField]) return schema.titleField;
+  for (const key of ["title", "name"]) {
+    const field = schema.fields[key];
+    const type = field ? normalizeRecordFieldType(field.type) : null;
+    if (type === "string" || type === "text") return key;
+  }
+  for (const [key, field] of Object.entries(schema.fields)) {
+    if (field.required && normalizeRecordFieldType(field.type) === "string") return key;
+  }
+  return null;
+}
+
 // Reader schemas are deliberately tolerant: `version` accepts any integer >= 1,
 // `type` accepts unknown strings, and unknown keys pass through unchanged. A
 // workspace synced from a newer Worktable must stay readable and writable here —
@@ -54,6 +76,9 @@ export const RecordFieldSchema = z.looseObject({
   onDelete: z.enum(["restrict", "setNull", "none"]).optional(),
   // number metadata
   unit: z.string().optional(),
+  // No two records may hold the same non-empty value. Additive and v1-safe:
+  // older readers pass it through without enforcing it.
+  unique: z.boolean().optional(),
 });
 
 export const RecordCollectionSchemaSchema = z.looseObject({
@@ -65,6 +90,9 @@ export const RecordCollectionSchemaSchema = z.looseObject({
   // Optional well-known type annotation (e.g. "schema:Person") — an ignorable
   // hint for agent priors and future interop, never a validation constraint.
   wellKnownType: z.string().optional(),
+  // The field that names a record in lists, links and generated ids. Unset,
+  // a record is named by title, name, or the first required string field.
+  titleField: z.string().optional(),
   fields: z.record(z.string(), RecordFieldSchema).default({}),
   createdAt: IsoTimestampSchema,
   updatedAt: IsoTimestampSchema,

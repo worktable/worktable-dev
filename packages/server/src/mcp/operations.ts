@@ -102,6 +102,8 @@ export const OPERATION_DEFINITIONS = {
   "records.upsert_collection": tool("records:write", "records"),
   "records.create": tool("records:write", "records"),
   "records.update": tool("records:write", "records"),
+  "records.create_many": tool("records:write", "records"),
+  "records.update_many": tool("records:write", "records"),
   "records.delete": tool("records:write", "records"),
   "annotations.list": tool("annotations:read", "none"),
   "annotations.read": tool("annotations:read", "none"),
@@ -129,6 +131,12 @@ export const OPERATION_DEFINITIONS = {
 } as const
 
 export type OperationId = keyof typeof OPERATION_DEFINITIONS
+
+/** Operations only the preview MCP surface offers (see mcp/surface.ts). */
+export const PREVIEW_OPERATIONS: ReadonlySet<OperationId> = new Set<OperationId>([
+  "records.create_many",
+  "records.update_many",
+])
 
 function tool(
   scope: string | null,
@@ -259,6 +267,8 @@ export const WORKTABLE_TOOL_ROUTES: Record<
     upsert_collection: "records.upsert_collection",
     create: "records.create",
     update: "records.update",
+    create_many: "records.create_many",
+    update_many: "records.update_many",
   },
   worktable_annotations_read: {
     list: "annotations.list",

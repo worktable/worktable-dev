@@ -27,7 +27,10 @@ import { markUpdateVersionSeen } from "@/lib/update-notification"
 import { RelativeTime } from "@/lib/time"
 import { useWorkspace } from "@/lib/queries"
 import { useServerSettings } from "@/hooks/use-server-settings"
-import { useDeploymentInfo } from "@/hooks/use-deployment-info"
+import {
+  DEPLOYMENT_QUERY_KEY,
+  useDeploymentInfo,
+} from "@/hooks/use-deployment-info"
 import {
   DESKTOP_UPDATE_QUERY_KEY,
   noteDesktopCheckRequested,
@@ -77,6 +80,7 @@ export function SystemSection() {
   const deployment = deploymentQuery.data
   const cloud = deployment?.mode === "cloud"
   const desktopUpdate = useDesktopUpdate()
+  const owner = useWorkspace().data?.person?.role === "owner"
 
   if (cloud) {
     return <AboutGroup cloud />
@@ -90,6 +94,7 @@ export function SystemSection() {
     <div className="flex flex-col gap-6">
       <AboutGroup />
       {deployment?.capabilities.previewStatus ? <PreviewsGroup /> : null}
+      {owner ? <SharingPreviewGroup /> : null}
       {inDesktop && desktopUpdate.isError ? (
         <DesktopUpdateFrame>
           <StatusRow
@@ -289,6 +294,48 @@ function PreviewsGroup() {
             {withInlineCode(status.reason)}
           </p>
         ) : null}
+      </div>
+    </section>
+  )
+}
+
+// Owners only, and never on Cloud, which ignores the setting. The capability
+// follows the switch, so features that read it update with it.
+function SharingPreviewGroup() {
+  const queryClient = useQueryClient()
+  const settingsQuery = useServerSettings()
+  const patch = useSettingsPatch()
+  const settings = settingsQuery.data
+  if (settingsQuery.isError) return null
+  const override = settings?.sharing.previewOverride ?? null
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="rounded-xl card-surface p-4">
+        <SettingRow
+          label="Preview sharing features"
+          description={
+            override === null
+              ? "Try sharing features that aren’t released yet."
+              : "Set by WORKTABLE_SHARING_PREVIEW on this server."
+          }
+        >
+          <Switch
+            checked={override ?? settings?.sharing.preview ?? false}
+            disabled={!settings || patch.isPending || override !== null}
+            onCheckedChange={(preview) =>
+              patch.mutate(
+                { sharing: { preview } },
+                {
+                  onSuccess: () =>
+                    void queryClient.invalidateQueries({
+                      queryKey: DEPLOYMENT_QUERY_KEY,
+                      exact: true,
+                    }),
+                }
+              )
+            }
+          />
+        </SettingRow>
       </div>
     </section>
   )

@@ -30,6 +30,8 @@ import { updateTeamAgent } from "./team-policy.ts"
 import { spacesRouter } from "./routes/spaces.ts"
 import { profileRouter } from "./routes/profile.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
+import { systemRouter, type DeploymentInfo } from "./routes/system.ts"
+import { setLinkedSharing } from "./linked-sharing.ts"
 import { tokensRouter } from "./routes/tokens.ts"
 import { TeamAccessError } from "./team-policy.ts"
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test"
@@ -759,6 +761,51 @@ describe("team foundation", () => {
     )
     expect(policy.grants).toEqual([])
     expect(() => setSpaceAccessPolicy(policy, member)).not.toThrow()
+  })
+
+  test("share links are overseen by owners and by members who manage a Space", async () => {
+    const { owner, member } = await setup()
+    const shareLinks = async (identity: TokenIdentity) => {
+      const app = new Hono()
+      app.use("*", async (c, next) => {
+        c.set("identity", identity)
+        await next()
+      })
+      app.route("/api/system", systemRouter)
+      const response = await app.request("/api/system/deployment")
+      return ((await response.json()) as DeploymentInfo).capabilities.shareLinks
+    }
+    const grantBob = (access: "edit" | "manage") =>
+      setSpaceAccessPolicy(
+        {
+          spaceId: "original",
+          visibility: "restricted",
+          grants: [
+            {
+              subjectType: "member",
+              subjectId: member.team!.memberId!,
+              access,
+            },
+          ],
+        },
+        owner
+      )
+    expect(await shareLinks(owner)).toBe(false)
+    setLinkedSharing({
+      workspaceId: "ws_synthetic",
+      shareOrigin: "https://share.example.test",
+      htmlShareOrigin: "https://html.example.test",
+    })
+    try {
+      expect(await shareLinks(owner)).toBe(true)
+      expect(await shareLinks(member)).toBe(false)
+      grantBob("edit")
+      expect(await shareLinks(member)).toBe(false)
+      grantBob("manage")
+      expect(await shareLinks(member)).toBe(true)
+    } finally {
+      setLinkedSharing(null)
+    }
   })
 
   test("each member arranges their own Spaces, and an arrangement never names a Space they cannot read", async () => {

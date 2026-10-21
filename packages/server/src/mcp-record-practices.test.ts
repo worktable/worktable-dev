@@ -15,6 +15,9 @@ import {
 } from "./record-store.ts"
 import { dispatchOperation } from "./mcp/dispatcher.ts"
 import { registerTools } from "./mcp/tools.ts"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
+import { createWorktableMcpServer } from "./mcp/server.ts"
 import {
   logRecordPracticeWarnings,
   type RecordPracticeWarning,
@@ -592,3 +595,218 @@ describe("MCP record queries", () => {
     ).toEqual({ team: 10, sharing: 5 })
   })
 })
+
+describe("MCP record batches (preview)", () => {
+  const preview = { surface: "preview" as const }
+
+  async function seedTeam(): Promise<void> {
+    await createSpace()
+    await dispatchOperation("records.upsert_collection", {
+      spaceId: "product",
+      collectionId: "posts",
+      name: "Posts",
+      fields: {
+        title: { type: "string", required: true },
+        review: { type: "select", values: ["Verified", "Excluded"] },
+      },
+    })
+  }
+
+  it("adds new records and skips existing ids in one call", async () => {
+    await seedTeam()
+    await dispatchOperation("records.create", {
+      spaceId: "product",
+      collectionId: "posts",
+      recordId: "p-1",
+      data: { title: "Kept as is" },
+    })
+    const result = (await dispatchOperation(
+      "records.create_many",
+      {
+        spaceId: "product",
+        collectionId: "posts",
+        records: [
+          { recordId: "p-1", data: { title: "Would overwrite" } },
+          { recordId: "p-2", data: { title: "Two" } },
+          { recordId: "p-3", data: { title: "Three" } },
+        ],
+      },
+      preview
+    )) as {
+      results: Array<{ row: number; recordId: string; created: boolean }>
+      counts: { created: number; skipped: number }
+    }
+    expect(result.results).toEqual([
+      { row: 1, recordId: "p-1", created: false },
+      { row: 2, recordId: "p-2", created: true },
+      { row: 3, recordId: "p-3", created: true },
+    ])
+    expect([result.counts.created, result.counts.skipped]).toEqual([2, 1])
+    const kept = (await dispatchOperation("records.read", {
+      spaceId: "product",
+      collectionId: "posts",
+      recordId: "p-1",
+    })) as { record: { data: { title: string } } }
+    expect(kept.record.data.title).toBe("Kept as is")
+  })
+
+  it("writes nothing when any row is invalid, and lists every bad row", async () => {
+    await seedTeam()
+    await expect(
+      dispatchOperation(
+        "records.create_many",
+        {
+          spaceId: "product",
+          collectionId: "posts",
+          records: [
+            { recordId: "ok", data: { title: "Fine" } },
+            { recordId: "bad-1", data: { title: "X", reveiw: "Verified" } },
+            { recordId: "bad-2", data: { title: "Y", review: "Maybe" } },
+            { recordId: "https://x.test/a", data: { title: "Z" } },
+          ],
+        },
+        preview
+      )
+    ).rejects.toThrow(/Nothing was written: 3 of 4 rows.*row 2 \(bad-1\).*reveiw.*row 3 \(bad-2\).*review must be one of.*row 4 .*recordId must use/)
+    const all = (await dispatchOperation("records.query", {
+      spaceId: "product",
+      collectionId: "posts",
+    })) as { records: unknown[] }
+    expect(all.records).toHaveLength(0)
+  })
+
+  it("sets the same values on records chosen by ids or by a filter", async () => {
+    await seedTeam()
+    await dispatchOperation(
+      "records.create_many",
+      {
+        spaceId: "product",
+        collectionId: "posts",
+        records: ["a", "b", "c", "d"].map((id) => ({
+          recordId: id,
+          data: { title: `Post ${id}` },
+        })),
+      },
+      preview
+    )
+    const byIds = (await dispatchOperation(
+      "records.update_many",
+      {
+        spaceId: "product",
+        collectionId: "posts",
+        recordIds: ["a", "b", "missing"],
+        data: { review: "Excluded" },
+      },
+      preview
+    )) as { counts: { updated: number; failed: number }; results: Array<{ error?: string }> }
+    expect([byIds.counts.updated, byIds.counts.failed]).toEqual([2, 1])
+    expect(byIds.results[2]!.error).toContain("Record not found")
+
+    const byFilter = (await dispatchOperation(
+      "records.update_many",
+      {
+        spaceId: "product",
+        collectionId: "posts",
+        where: { review: { in: ["Excluded"] } },
+        data: { review: "Verified" },
+      },
+      preview
+    )) as { counts: { updated: number } }
+    expect(byFilter.counts.updated).toBe(2)
+
+    await expect(
+      dispatchOperation(
+        "records.update_many",
+        {
+          spaceId: "product",
+          collectionId: "posts",
+          recordIds: ["a"],
+          data: { review: "Maybe" },
+        },
+        preview
+      )
+    ).rejects.toThrow("Nothing was written")
+  })
+
+  it("returns results that match the listed output schema for every write", async () => {
+    await seedTeam()
+    const server = createWorktableMcpServer({ version: "test", surface: "preview" })
+    const client = new Client({ name: "batch-test", version: "1" })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
+    try {
+      const write = async (request: Record<string, unknown>) => {
+        // The client validates structuredContent against the advertised
+        // outputSchema, as agents' clients do; a mismatch throws here.
+        const result = await client.callTool({
+          name: "worktable_records_write",
+          arguments: { request: { spaceId: "product", collectionId: "posts", ...request } },
+        })
+        expect(result.isError).toBeFalsy()
+        return result.structuredContent as Record<string, unknown>
+      }
+      expect((await write({ action: "create", recordId: "one", data: { title: "One" } })).created).toBe(true)
+      expect((await write({ action: "create", recordId: "one", data: { title: "Again" } })).created).toBe(false)
+      expect((await write({ action: "create_many", records: [{ recordId: "two", data: { title: "Two" } }] })).counts).toEqual({ created: 1, skipped: 0, failed: 0 })
+      expect((await write({ action: "update", recordId: "two", data: { review: "Verified" } })).record).toBeDefined()
+      expect((await write({ action: "update_many", recordIds: ["one", "two"], data: { review: "Excluded" } })).counts).toEqual({ updated: 2, failed: 0 })
+      expect((await write({ action: "upsert_collection", titleField: "title", fields: { note: { type: "text", unique: true } } })).fieldChanges).toBeDefined()
+      await write({ action: "update", recordId: "one", data: { note: "same" } })
+      const matched = await write({ action: "create", recordId: "three", data: { title: "Three", note: "same" } })
+      expect([matched.created, matched.matchedBy]).toEqual([false, "note"])
+    } finally {
+      await client.close()
+      await server.close()
+    }
+  })
+
+  it("skips rows whose unique value another record holds, and names the field", async () => {
+    await createSpace()
+    await dispatchOperation(
+      "records.upsert_collection",
+      {
+        spaceId: "product",
+        collectionId: "links",
+        name: "Links",
+        titleField: "summary",
+        fields: {
+          summary: { type: "text" },
+          url: { type: "url", unique: true },
+        },
+      },
+      preview
+    )
+    const result = (await dispatchOperation(
+      "records.create_many",
+      {
+        spaceId: "product",
+        collectionId: "links",
+        records: [
+          { data: { summary: "First post", url: "https://example.com/1" } },
+          { data: { summary: "Same post again", url: "https://example.com/1" } },
+          { data: { summary: "Second post", url: "https://example.com/2" } },
+        ],
+      },
+      preview
+    )) as {
+      results: Array<{ row: number; recordId: string; created: boolean; matchedBy?: string }>
+    }
+    expect(result.results).toEqual([
+      { row: 1, recordId: "first-post", created: true },
+      { row: 2, recordId: "first-post", created: false, matchedBy: "url" },
+      { row: 3, recordId: "second-post", created: true },
+    ])
+  })
+
+  it("is refused to a caller offered the released tools", async () => {
+    await seedTeam()
+    await expect(
+      dispatchOperation("records.create_many", {
+        spaceId: "product",
+        collectionId: "posts",
+        records: [{ data: { title: "x" } }],
+      })
+    ).rejects.toThrow("preview action")
+  })
+})
+

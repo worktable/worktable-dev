@@ -23,6 +23,9 @@ import {
   type ServerSettingsPatch,
 } from "../settings-store.ts";
 import { mcpPreviewEnvOverride } from "../mcp/surface.ts";
+import { sharingPreviewEnabled, sharingPreviewEnvOverride } from "../sharing-preview.ts";
+import { teamMemberForIdentity } from "../team-policy.ts";
+import { memberAccess } from "../team-access.ts";
 import { normalizePublicUrl } from "../public-origin.ts";
 import { hasOwnerPassword } from "../session-store.ts";
 import { hostedAgentBase, isHosted } from "../hosted.ts";
@@ -160,11 +163,16 @@ export interface DeploymentInfo {
     updateChecks: boolean;
     previewStatus?: boolean;
     documentSharing: boolean;
+    /** May see and manage this Worktable's share links (Settings → Links). */
+    shareLinks: boolean;
+    /** Sharing features that aren't released yet are on (sharingPreviewEnabled). */
+    sharingPreview: boolean;
   };
 }
 
 export function getDeploymentInfo(): DeploymentInfo {
   const cloud = isHosted();
+  const documentSharing = getDocumentSharingConfig() !== null;
   return {
     mode: cloud ? "cloud" : "self-managed",
     capabilities: {
@@ -179,9 +187,20 @@ export function getDeploymentInfo(): DeploymentInfo {
       workspaceClear: !cloud,
       updateChecks: !cloud,
       previewStatus: !cloud,
-      documentSharing: getDocumentSharingConfig() !== null,
+      documentSharing,
+      // Without Teams the only person here is the owner.
+      shareLinks: documentSharing,
+      sharingPreview: sharingPreviewEnabled(),
     },
   };
+}
+
+/** Whether the request's member manages at least one Space. */
+function managesSomeSpace(c: Context): boolean {
+  const identity = c.get("identity");
+  const member = identity ? teamMemberForIdentity(identity) : null;
+  const levels = member ? memberAccess(member.id)?.levels : undefined;
+  return levels ? [...levels.values()].includes("manage") : false;
 }
 
 // GET /api/system/deployment — authoritative product capabilities for this
@@ -198,6 +217,7 @@ systemRouter.get("/deployment", (c) => {
       softwareUpdates: deployment.mode !== "cloud" && operator, updateChecks: deployment.mode !== "cloud" && operator,
       workspaceClear: deployment.mode !== "cloud" && owner,
       previewStatus: deployment.mode !== "cloud" && operator,
+      shareLinks: deployment.capabilities.documentSharing && (owner || managesSomeSpace(c)),
     });
   }
   return c.json(deployment);
@@ -352,13 +372,17 @@ systemRouter.post("/update", async (c) => {
 // Same open gate as /version: these are non-sensitive user preferences, and the
 // dialog must render them before any owner-gated mutation.
 systemRouter.get("/settings", (c) => {
-  return c.json(withEffectiveAgentSettings(getServerSettings()));
+  return c.json(withEnvironmentOverrides(getServerSettings()));
 });
 
-/** The stored settings plus what the process environment overrides, so the
- *  Settings switch shows what agents actually get. */
-function withEffectiveAgentSettings(settings: ServerSettings) {
-  return { ...settings, agents: { ...settings.agents, previewToolsOverride: mcpPreviewEnvOverride() } };
+/** The stored settings plus what the process environment overrides, so each
+ *  preview switch shows what this server actually runs. */
+function withEnvironmentOverrides(settings: ServerSettings) {
+  return {
+    ...settings,
+    agents: { ...settings.agents, previewToolsOverride: mcpPreviewEnvOverride() },
+    sharing: { ...settings.sharing, previewOverride: sharingPreviewEnvOverride() },
+  };
 }
 
 // PUT /api/system/settings — patch server preferences. Owner-only (same gate as
@@ -417,7 +441,7 @@ systemRouter.put("/settings", async (c) => {
         );
       }
     }
-    return c.json(withEffectiveAgentSettings(merged));
+    return c.json(withEnvironmentOverrides(merged));
   } catch (err) {
     if (err instanceof SettingsValidationError) {
       return c.json({ error: err.message }, 400);

@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
-import { mkdtemp, readdir, rm, stat, symlink } from "node:fs/promises"
+import {
+  chmod,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+} from "node:fs/promises"
+import { Database } from "bun:sqlite"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { setAppDirOverride } from "./app-storage.ts"
@@ -11,6 +20,7 @@ import {
   commentPause,
   finishVisitorComment,
   pauseVisitorComments,
+  prepareVisitorCommentStore,
   readVisitorComment,
   receiveVisitorComment,
   sweepVisitorComments,
@@ -142,6 +152,49 @@ describe("private visitor comments", () => {
     expect(
       visitorCommentRows({ worktableId: "worktableId", linkId: "link" })
     ).toEqual([])
+    const file = join(dir, workspace!, "comments.sqlite")
+    expect(
+      (await readFile(file)).includes(Buffer.from("OUTSIDE_SENTINEL"))
+    ).toBe(false)
+    const cold = receiveVisitorComment(
+      comment({ requestId: "coldread", body: "COLD_READ_CONTROL" })
+    )
+    closeVisitorCommentStores()
+    const before = await readFile(file)
+    await chmod(file, 0o400)
+    await chmod(join(dir, workspace!), 0o500)
+    try {
+      expect(readVisitorComment("worktableId", cold.id)?.body).toBe(
+        "COLD_READ_CONTROL"
+      )
+      expect(await readdir(join(dir, workspace!))).toEqual(["comments.sqlite"])
+      expect(await readFile(file)).toEqual(before)
+    } finally {
+      closeVisitorCommentStores()
+      await chmod(join(dir, workspace!), 0o700)
+      await chmod(file, 0o600)
+    }
+    const legacy = new Database(file)
+    try {
+      legacy.exec("PRAGMA journal_mode=WAL")
+      legacy
+        .query("UPDATE visitor_comments SET body=? WHERE id=?")
+        .run("RECOVERED_CONTROL", cold.id)
+      const wal = await readFile(`${file}-wal`)
+      const shm = await readFile(`${file}-shm`)
+      expect(() => readVisitorComment("worktableId", cold.id)).toThrow(
+        VisitorCommentsUnavailable
+      )
+      expect(await readFile(`${file}-wal`)).toEqual(wal)
+      expect(await readFile(`${file}-shm`)).toEqual(shm)
+    } finally {
+      legacy.close()
+    }
+    prepareVisitorCommentStore()
+    expect(readVisitorComment("worktableId", cold.id)?.body).toBe(
+      "RECOVERED_CONTROL"
+    )
+    expect(await readdir(join(dir, workspace!))).toEqual(["comments.sqlite"])
   })
   it("keeps cap-triggered pauses, deduplicates accepted sends and resumes only by a person", () => {
     let first: ReturnType<typeof receiveVisitorComment> | undefined

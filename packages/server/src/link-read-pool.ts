@@ -20,7 +20,15 @@ export class LinkReadPool {
 
   acquire(linkId: string): Promise<(() => void) | null> {
     if (this.available(linkId)) return Promise.resolve(this.start(linkId))
-    if (this.waiting.length >= this.limits.queued) return Promise.resolve(null)
+    const queuedForLink = this.waiting.reduce(
+      (count, entry) => count + Number(entry.linkId === linkId),
+      0
+    )
+    if (
+      this.waiting.length >= this.limits.queued ||
+      queuedForLink >= Math.max(1, Math.floor(this.limits.queued / 4))
+    )
+      return Promise.resolve(null)
     return new Promise((take) => {
       const entry = {
         linkId,

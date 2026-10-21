@@ -118,6 +118,14 @@ export const advanceGenerationOnWrite: MiddlewareHandler = async (c, next) => {
   if (method === "GET" || method === "HEAD" || method === "OPTIONS") {
     return next()
   }
+  // These capability calls read workspace data; POST carries a bounded body
+  // or password rather than a mutation. Concurrent visitors share one generation.
+  if (
+    method === "POST" &&
+    (c.req.path === "/public/share/bridge" ||
+      c.req.path === "/public/share/unlock")
+  )
+    return next()
   noteWorkspaceActivity()
   try {
     await next()

@@ -144,24 +144,23 @@ function collectionsAllowing(
       .filter((id) => !records[id]?.[action])
       .map((id) => collectionName(collections, id))
     return except.length > 0
-      ? `every collection except ${joinWords(except, "and")}`
+      ? `every collection except ${listNames(except)}`
       : "every collection"
   }
   const allowed = ids
     .filter((id) => records[id]?.[action])
     .map((id) => collectionName(collections, id))
-  return allowed.length > 0 ? joinWords(allowed, "and") : null
+  return allowed.length > 0 ? listNames(allowed) : null
 }
 
 // ---- Links ---------------------------------------------------------------
 
 function linkSentences(input: DescribeAbilitiesInput): string[] {
   const granted = Object.entries(input.grant?.collections ?? {})
-  if (granted.length === 0)
-    return ["Anyone with this link can't see any Records."]
-  const sentences = granted.flatMap(([id, grant]) =>
-    collectionSentences(id, grant, input)
-  )
+  const sentences =
+    granted.length > 0
+      ? granted.flatMap(([id, grant]) => collectionSentences(id, grant, input))
+      : ["Anyone with this link can't see any Records."]
   if (input.grant?.state === "team-read")
     sentences.push(`${LINK_SUBJECT} see what your team saved in this HTML Doc.`)
   return sentences
@@ -252,7 +251,7 @@ function writeSentences(
     )
     sentences.push(
       fields.length > 0
-        ? `${LINK_SUBJECT} change ${joinWords(fields, "and")} on ${name}.`
+        ? `${LINK_SUBJECT} change ${listNames(fields)} on ${name}.`
         : `${LINK_SUBJECT} change ${name}.`
     )
   }
@@ -319,39 +318,46 @@ function describeLeaf(
   input: DescribeAbilitiesInput
 ): string | null {
   const field = fieldName(input.collections, collectionId, leaf.field)
-  const value = (raw: unknown): string =>
-    input.describeValue?.(collectionId, leaf.field, raw) ?? plainValue(raw)
   const op: RecordPredicateOp = leaf.op
+  if (op === "isEmpty")
+    return leaf.value === false ? `${field} is not empty` : `${field} is empty`
+  const raw = op === "in" ? leaf.value : [leaf.value]
+  // Comparing with null or "" matches only that exact value, which reads
+  // the same as `isEmpty` in words, so such leaves are only counted.
+  if (!Array.isArray(raw) || raw.length === 0 || raw.some(isBlank)) return null
+  const values = raw.map(
+    (value) =>
+      input.describeValue?.(collectionId, leaf.field, value) ??
+      plainValue(value)
+  )
+  const value = values[0]
   switch (op) {
     case "eq":
-      return `${field} is ${value(leaf.value)}`
+      return `${field} is ${value}`
     case "neq":
-      return `${field} is not ${value(leaf.value)}`
+      return `${field} is not ${value}`
     case "in":
-      return Array.isArray(leaf.value) && leaf.value.length > 0
-        ? `${field} is ${joinWords(leaf.value.map(value), "or")}`
-        : null
+      return `${field} is ${joinWords(values, "or")}`
     case "has":
-      return `${field} includes ${value(leaf.value)}`
+      return `${field} includes ${value}`
     case "contains":
-      return `${field} contains ${value(leaf.value)}`
-    case "isEmpty":
-      return leaf.value === false
-        ? `${field} is not empty`
-        : `${field} is empty`
+      return `${field} contains ${value}`
     case "gt":
     case "gte":
     case "lt":
     case "lte": {
       const type = fieldSpec(input.collections, collectionId, leaf.field)?.type
       const words = RANGE_WORDS[op]
-      return `${field} ${type === "date" || type === "datetime" ? words.time : words.value} ${value(leaf.value)}`
+      return `${field} ${type === "date" || type === "datetime" ? words.time : words.value} ${value}`
     }
   }
 }
 
+function isBlank(value: unknown): boolean {
+  return value === null || value === undefined || value === ""
+}
+
 function plainValue(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "empty"
   if (typeof value === "string") return value
   if (typeof value === "number" || typeof value === "boolean")
     return String(value)
@@ -398,7 +404,18 @@ function joinWords(items: string[], conjunctionWord: "and" | "or"): string {
   return `${items.slice(0, -1).join(", ")} ${conjunctionWord} ${items[items.length - 1]}`
 }
 
+// Lists in sentences stop after LIST_MAX_ITEMS names, then say "and 3 more".
+function listNames(items: string[]): string {
+  return items.length <= LIST_MAX_ITEMS
+    ? joinWords(items, "and")
+    : listOverflow(items)
+}
+
+/** Fields after a colon: "Name, Stage, Amount". */
 function listFields(items: string[]): string {
-  if (items.length <= LIST_MAX_ITEMS) return items.join(", ")
+  return items.length <= LIST_MAX_ITEMS ? items.join(", ") : listOverflow(items)
+}
+
+function listOverflow(items: string[]): string {
   return `${items.slice(0, LIST_MAX_ITEMS).join(", ")} and ${items.length - LIST_MAX_ITEMS} more`
 }

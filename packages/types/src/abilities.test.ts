@@ -112,16 +112,20 @@ describe("describeAbilities for links", () => {
       ],
     }
     const long = { field: "notes", op: "contains", value: "x".repeat(200) }
+    // eq null matches only a stored null, not every empty owner.
+    const literalNull = { field: "owner", op: "eq", value: null }
     expect(
       linkText({ opportunities: { rows: either, fields: ["name"] } })
     ).toStartWith(
       "Anyone with this link can see Opportunities that match 2 conditions: Name."
     )
-    expect(
-      linkText({ opportunities: { rows: long, fields: ["name"] } })
-    ).toStartWith(
-      "Anyone with this link can see Opportunities that match 1 condition: Name."
-    )
+    for (const rows of [long, literalNull]) {
+      expect(
+        linkText({ opportunities: { rows, fields: ["name"] } })
+      ).toStartWith(
+        "Anyone with this link can see Opportunities that match 1 condition: Name."
+      )
+    }
   })
 })
 

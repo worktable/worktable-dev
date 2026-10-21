@@ -15,6 +15,7 @@ import {
 } from "@worktable/types"
 import { Hono, type Context } from "hono"
 import { z } from "zod"
+import { mapWithConcurrency } from "../bounded-concurrency.ts"
 import { getWorkspaceCollaborationEpoch } from "../collaboration-epoch.ts"
 import { publicShareKind } from "../document-page-service.ts"
 import {
@@ -51,6 +52,7 @@ import type { TokenIdentity } from "../token-store.ts"
 export const shareLinksRouter = new Hono()
 
 const PAGE_SIZE = 100
+const SPACE_READS_AT_ONCE = 4
 
 shareLinksRouter.use("*", async (c, next) => {
   if (!sharingV2Active()) {
@@ -125,19 +127,26 @@ async function placesOf(
   links: readonly StoredShareLink[]
 ): Promise<Map<string, Place>> {
   const places = new Map<string, Place>()
-  for (const spaceId of new Set(links.map((link) => link.spaceId))) {
-    let current: ReadonlyMap<string, { path: string; title: string }>
-    try {
-      current = (await readDocumentIdentities(spaceId)).identities.current
-    } catch {
-      current = new Map()
-    }
-    for (const link of links) {
-      if (link.spaceId === spaceId) {
-        places.set(link.id, current.get(link.documentId) ?? null)
+  // Through each Space's read-model snapshot, as Recent and search rows are:
+  // a current snapshot costs no file reads, and a Space read cold publishes
+  // its snapshot for the next reader. A few Spaces at a time.
+  await mapWithConcurrency(
+    [...new Set(links.map((link) => link.spaceId))],
+    SPACE_READS_AT_ONCE,
+    async (spaceId) => {
+      let current: ReadonlyMap<string, { path: string; title: string }>
+      try {
+        current = (await readDocumentIdentities(spaceId)).identities.current
+      } catch {
+        current = new Map()
+      }
+      for (const link of links) {
+        if (link.spaceId === spaceId) {
+          places.set(link.id, current.get(link.documentId) ?? null)
+        }
       }
     }
-  }
+  )
   return places
 }
 

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import { Database } from "bun:sqlite"
 import type { CreatedShareLink, DocumentShareLinks } from "@worktable/types"
 import { Hono } from "hono"
@@ -21,10 +21,12 @@ import { moveHtmlDocument } from "./html-document-move.ts"
 import { setLinkedSharing } from "./linked-sharing.ts"
 import { createPublicSharesRouter } from "./routes/public-shares.ts"
 import { sharesRouter } from "./routes/shares.ts"
+import * as views from "./share-link-views.ts"
 import { settleShareLinkReconciles } from "./share-links-lifecycle.ts"
 import {
   closeShareLinkStores,
   flushShareLinkUse,
+  revokeShareLink,
   shareLinksDatabasePath,
   updateShareLink,
 } from "./share-links-store.ts"
@@ -221,6 +223,20 @@ describe("share links", () => {
     updateShareLink(board.link.id, { expiresAt: Date.now() - 1 })
     expect((await view(board.token)).status).toBe(404)
     expect((await documentLinks("plan")).links[0]?.status).toBe("expired")
+
+    // A view whose render outlasts a revoke is not sent.
+    const late = await createLink("plan", { label: "Late" })
+    const read = views.readShareLinkDocument
+    const revokedWhileReading = spyOn(
+      views,
+      "readShareLinkDocument"
+    ).mockImplementationOnce(async (...args) => {
+      revokeShareLink(late.link.id, "local:owner")
+      return read(...args)
+    })
+    expect((await view(late.token)).status).toBe(404)
+    expect(revokedWhileReading).toHaveBeenCalledTimes(1)
+    revokedWhileReading.mockRestore()
   })
 
   it("keeps only token digests, so the store's files hold no working link", async () => {

@@ -1,10 +1,10 @@
-import { randomBytes } from "node:crypto"
-import { LinkGrantSchema } from "@worktable/types"
+import { createHmac, randomBytes } from "node:crypto"
+import { LinkGrantSchema, type LinkGrant } from "@worktable/types"
 import { Hono } from "hono"
 import { z } from "zod"
 import { requireHumanWorkspaceOwner } from "../auth.ts"
 import { readLinkGrantSchemas, validateLinkGrant } from "../link-grant.ts"
-import { createLinkKey, linkQueryFailure, openLinkReadView, type LinkKey } from "../link-grant-view.ts"
+import { canonicalJson, createLinkKey, linkQueryFailure, openLinkReadView, type LinkKey } from "../link-grant-view.ts"
 import { queryRecords } from "../record-store.ts"
 import { sharingPreviewEnabled } from "../sharing-preview.ts"
 import { readSpace } from "../store.ts"
@@ -30,9 +30,25 @@ const RunAsLinkSchema = z.object({
   query: z.unknown().optional(),
 })
 
-// One key for the life of the process and never stored: ids and cursors stay
-// stable while an owner pages through results, and no real link shares it.
-let runAsLinkKey: LinkKey | null = null
+// A secret for the life of the process, never stored. Each Space and grant
+// gets its own key from it, as each link has its own: ids and cursors stay
+// stable while an owner pages through one grant, and a cursor or id from one
+// grant or Space means nothing under another.
+const runAsLinkSecret = randomBytes(32)
+const runAsLinkKeys = new Map<string, LinkKey>()
+const RUN_AS_LINK_KEYS_KEPT = 32
+
+function runAsLinkKey(spaceId: string, grant: LinkGrant): LinkKey {
+  const secret = createHmac("sha256", runAsLinkSecret).update(`${spaceId}\0${canonicalJson(grant)}`).digest()
+  const id = secret.toString("base64url")
+  let key = runAsLinkKeys.get(id)
+  if (!key) {
+    if (runAsLinkKeys.size >= RUN_AS_LINK_KEYS_KEPT) runAsLinkKeys.clear()
+    key = createLinkKey(secret)
+    runAsLinkKeys.set(id, key)
+  }
+  return key
+}
 
 linkGrantsRouter.post("/query", async (c) => {
   const parsed = RunAsLinkSchema.safeParse(await c.req.json().catch(() => null))
@@ -44,9 +60,8 @@ linkGrantsRouter.post("/query", async (c) => {
   if (issues.length > 0) {
     return c.json({ error: "This grant doesn't fit the collections it names.", code: "LINK_GRANT_INVALID", issues }, 400)
   }
-  runAsLinkKey ??= createLinkKey(randomBytes(32))
   try {
-    const view = await openLinkReadView(spaceId, grant, runAsLinkKey)
+    const view = await openLinkReadView(spaceId, grant, runAsLinkKey(spaceId, grant))
     return c.json(await queryRecords(spaceId, collectionId, query ?? {}, { view }))
   } catch (error) {
     const failure = linkQueryFailure(error)

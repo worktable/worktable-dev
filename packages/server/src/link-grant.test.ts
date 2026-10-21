@@ -18,8 +18,8 @@ import { setWorkspaceRootOverride } from "./workspace.ts";
 //
 // "a" and "b" hold the same visible rows: same granted values, same shown
 // times, relations to the same visible rows. Everything else differs: hidden
-// fields, hidden and archived rows, the envelope (createdBy, metadata, unknown
-// top-level keys), unshown times, and every stored id, which in "a" is a slug
+// fields, hidden and archived rows, the envelope (format version, createdBy,
+// metadata, unknown top-level keys), unshown times, and every stored id, which in "a" is a slug
 // of the title. A link query that answers differently in the two leaks.
 
 const SCHEMAS = {
@@ -69,7 +69,7 @@ function variant(v: "a" | "b"): Seed[] {
   const [d1, d2, d3] = [id("renewal", "d-1"), id("pilot", "d-2"), id("expansion", "d-3")];
   const hiddenDeal = id("megadeal", "d-9");
   const envelope = a
-    ? { createdBy: "member:alice", updatedBy: "member:alice", metadata: { source: "crm" }, extraTop: "leak" }
+    ? { version: 2, createdBy: "member:alice", updatedBy: "member:alice", metadata: { source: "crm" }, extraTop: "leak" }
     : { createdBy: "agent:bot", metadata: {} };
   return [
     { collection: "clients", id: client, label: "lr-client-1", data: { name: "Acme", tier: "public", secret: a ? "launch codes" : "" }, times: a ? T1 : T2, envelope },
@@ -379,6 +379,10 @@ describe("run as link", () => {
     expect(shown.body.records[0].id).toMatch(/^lr-[a-z2-7]{24}$/);
     const next = await run({ ...body, query: { ...body.query, cursor: shown.body.nextCursor } });
     expect(next.body.records.map((record: RecordFile) => record.data)).toEqual([{ name: "Renewal" }]);
+    // Each grant is checked as its own link: its cursors mean nothing under another.
+    const other = { ...GRANT, limits: { ...GRANT.limits, rowsPerQuery: 3 } };
+    const carried = await run({ ...body, grant: other, query: { ...body.query, cursor: shown.body.nextCursor } });
+    expect(carried).toMatchObject({ status: 400, body: { code: "LINK_CURSOR_INVALID" } });
 
     const invalid = await run({ ...body, grant: { version: 1, collections: { deals: { fields: ["gone"] } } } });
     expect(invalid).toMatchObject({ status: 400, body: { code: "LINK_GRANT_INVALID", issues: [{ collectionId: "deals" }] } });

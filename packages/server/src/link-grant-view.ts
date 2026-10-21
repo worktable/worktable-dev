@@ -221,10 +221,12 @@ class LinkReadView implements RecordReadView {
         data[name] = target ? this.relationValue(stored.data[name], target.collectionId, target.visible) : stored.data[name];
       }
       // A fresh object: stored records may carry keys this version doesn't
-      // know, and spreading one would pass them through.
+      // know, and spreading one would pass them through. Every envelope value
+      // is the view's own: the stored format version may follow what a
+      // record holds, so a link always says version 1.
       return {
-        version: stored.version,
-        kind: stored.kind,
+        version: 1,
+        kind: "worktable.record",
         id: this.key.recordId(collectionId, stored.id),
         collectionId,
         ...(showTimes ? { createdAt: stored.createdAt, updatedAt: stored.updatedAt } : {}),
@@ -343,7 +345,8 @@ function cursorMessage(collectionId: string, query: RecordQuery, cursor: string)
   return `cur\0${collectionId}\0${shape}\0${cursor}`;
 }
 
-function canonicalJson(value: unknown): string {
+/** JSON with object keys sorted, so equal values always serialize alike. */
+export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value && typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>)

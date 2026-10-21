@@ -154,11 +154,9 @@ export function ShareLinkAccessEditor({
                       value={collection.mode}
                       onValueChange={(mode) => {
                         if (!mode) return
-                        const {
-                          summaries: _summary,
-                          fixed: _fixed,
-                          ...base
-                        } = collection
+                        const base = { ...collection }
+                        delete base.summaries
+                        delete base.fixed
                         if (mode === "summaries")
                           changeCollection(id, {
                             ...base,

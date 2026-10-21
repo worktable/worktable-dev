@@ -266,3 +266,119 @@ describe("MCP record-practice advisories", () => {
     expect(warningCodes(payload)).not.toContain("duplicate_title")
   })
 })
+
+describe("MCP record writes keep stored data", () => {
+  async function seedCollection(): Promise<void> {
+    await createSpace()
+    await dispatchOperation("records.upsert_collection", {
+      spaceId: "product",
+      collectionId: "signals",
+      name: "Signals",
+      fields: {
+        title: { type: "string", required: true },
+        url: { type: "url" },
+        platform: { type: "select", values: ["Reddit", "X"] },
+      },
+    })
+  }
+
+  it("adds a field without dropping the fields it was not sent", async () => {
+    await seedCollection()
+    const result = (await dispatchOperation("records.upsert_collection", {
+      spaceId: "product",
+      collectionId: "signals",
+      fields: { review: { type: "select", values: ["Verified", "Excluded"] } },
+    })) as {
+      collection: { fields: Record<string, unknown> }
+      fieldChanges: { added: string[]; changed: string[]; kept: string[] }
+    }
+    expect(Object.keys(result.collection.fields).sort()).toEqual([
+      "platform",
+      "review",
+      "title",
+      "url",
+    ])
+    expect(result.fieldChanges).toEqual({
+      added: ["review"],
+      changed: [],
+      kept: ["title", "url", "platform"],
+    })
+
+    const widened = (await dispatchOperation("records.upsert_collection", {
+      spaceId: "product",
+      collectionId: "signals",
+      fields: {
+        title: { type: "string", required: true },
+        platform: { type: "select", values: ["Reddit", "X", "LinkedIn"] },
+      },
+    })) as { fieldChanges: { changed: string[]; kept: string[] } }
+    // A field sent again unchanged is reported as kept, like one left out.
+    expect(widened.fieldChanges.changed).toEqual(["platform"])
+    expect(widened.fieldChanges.kept).toEqual(["title", "url", "review"])
+  })
+
+  it("returns an existing record unchanged instead of overwriting it", async () => {
+    await seedCollection()
+    const first = (await dispatchOperation("records.create", {
+      spaceId: "product",
+      collectionId: "signals",
+      recordId: "ds-1",
+      data: { title: "Original", platform: "Reddit" },
+      metadata: { source: "round-1" },
+    })) as { record: { createdAt: string }; created: boolean }
+    expect(first.created).toBe(true)
+
+    const again = (await dispatchOperation("records.create", {
+      spaceId: "product",
+      collectionId: "signals",
+      recordId: "ds-1",
+      data: { title: "Replacement" },
+    })) as {
+      record: {
+        data: Record<string, unknown>
+        metadata: Record<string, unknown>
+        createdAt: string
+      }
+      created: boolean
+      warnings?: unknown
+    }
+    expect(again.created).toBe(false)
+    expect(again.warnings).toBeUndefined()
+    expect(again.record.data).toEqual({ title: "Original", platform: "Reddit" })
+    expect(again.record.metadata).toEqual({ source: "round-1" })
+    expect(again.record.createdAt).toBe(first.record.createdAt)
+  })
+
+  it("says which ids are valid when a record id is not", async () => {
+    await seedCollection()
+    await expect(
+      dispatchOperation("records.create", {
+        spaceId: "product",
+        collectionId: "signals",
+        recordId: "https://example.com/post/1",
+        data: { title: "By url" },
+      })
+    ).rejects.toThrow("Ids use lowercase letters, digits and hyphens")
+  })
+
+  it("merges metadata on update like data", async () => {
+    await seedCollection()
+    await dispatchOperation("records.create", {
+      spaceId: "product",
+      collectionId: "signals",
+      recordId: "ds-2",
+      data: { title: "Two" },
+      metadata: { source: "round-1" },
+    })
+    const updated = (await dispatchOperation("records.update", {
+      spaceId: "product",
+      collectionId: "signals",
+      recordId: "ds-2",
+      metadata: { checkedBy: "verifier" },
+    })) as { record: { metadata: Record<string, unknown> } }
+    expect(updated.record.metadata).toEqual({
+      source: "round-1",
+      checkedBy: "verifier",
+    })
+  })
+})

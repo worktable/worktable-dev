@@ -102,7 +102,7 @@ Documents can define default/light values and html[data-theme="dark"] overrides,
 Available APIs:
 - worktable.records.query(collectionId, query?)
 - worktable.records.queryDetailed(collectionId, query?)
-- worktable.records.create(collectionId, data, options?)
+- worktable.records.create(collectionId, data, options?) (options.id never overwrites: an id that already exists rejects with CONFLICT; use update)
 - worktable.records.update(collectionId, recordId, patch)
 - worktable.records.delete(collectionId, recordId)
 - worktable.records.subscribe(collectionId, query?, callback)

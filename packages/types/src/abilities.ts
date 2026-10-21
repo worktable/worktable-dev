@@ -220,18 +220,20 @@ function countedName(
     : `all ${formatted} ${name}`
 }
 
+/** Data fields in schema order, then the record's times, named as record pages name them. */
 function fieldLists(
   id: string,
   grant: CollectionGrant,
   collections: Record<string, AbilityCollection>
 ): { shown: string[]; hidden: string[] } {
   const schema = own(collections, id)?.fields
-  if (!schema) return { shown: grant.fields, hidden: [] }
-  const granted = new Set(grant.fields)
-  const shown: string[] = []
+  const shown: string[] = schema ? [] : [...grant.fields]
   const hidden: string[] = []
-  for (const [key, field] of Object.entries(schema))
+  const granted = new Set(grant.fields)
+  for (const [key, field] of Object.entries(schema ?? {}))
     (granted.has(key) ? shown : hidden).push(field.name ?? key)
+  const times = grant.timestamps ? shown : hidden
+  times.push("Created", "Updated")
   return { shown, hidden }
 }
 

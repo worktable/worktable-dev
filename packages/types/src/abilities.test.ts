@@ -52,7 +52,7 @@ describe("describeAbilities for links", () => {
         { opportunities: 42 }
       )
     ).toBe(
-      "Anyone with this link can see 42 Opportunities where Client is Acme: Name, Client, Stage, Amount. Hidden: Close date, Owner, Email, Notes."
+      "Anyone with this link can see 42 Opportunities where Client is Acme: Name, Client, Stage, Amount, Created, Updated. Hidden: Close date, Owner, Email, Notes."
     )
   })
 
@@ -76,12 +76,13 @@ describe("describeAbilities for links", () => {
       linkText({
         opportunities: {
           fields: ["name", "client", "stage", "amount", "closes"],
+          timestamps: false,
           mode: "fixed",
           fixed: [read("open"), read("won"), read("lost")],
         },
       })
     ).toBe(
-      "Anyone with this link can see Opportunities only through the 3 reads saved with this link: Name, Client, Stage, Amount, Close date. Hidden: Owner, Email, Notes."
+      "Anyone with this link can see Opportunities only through the 3 reads saved with this link: Name, Client, Stage, Amount, Close date. Hidden: Owner, Email, Notes, Created, Updated."
     )
   })
 
@@ -100,7 +101,7 @@ describe("describeAbilities for links", () => {
         },
       })
     ).toStartWith(
-      "Anyone with this link can see Opportunities where Stage is won or open and Owner is not empty and Close date is on or after 2026-01-01: Name."
+      "Anyone with this link can see Opportunities where Stage is won or open and Owner is not empty and Close date is on or after 2026-01-01: Name,"
     )
   })
 
@@ -117,13 +118,13 @@ describe("describeAbilities for links", () => {
     expect(
       linkText({ opportunities: { rows: either, fields: ["name"] } })
     ).toStartWith(
-      "Anyone with this link can see Opportunities that match 2 conditions: Name."
+      "Anyone with this link can see Opportunities that match 2 conditions: Name,"
     )
     for (const rows of [long, literalNull]) {
       expect(
         linkText({ opportunities: { rows, fields: ["name"] } })
       ).toStartWith(
-        "Anyone with this link can see Opportunities that match 1 condition: Name."
+        "Anyone with this link can see Opportunities that match 1 condition: Name,"
       )
     }
   })

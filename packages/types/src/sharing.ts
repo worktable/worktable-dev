@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { AnnotationCategorySchema } from "./annotations"
-import { IsoTimestampSchema } from "./widgets"
+import { CanonicalIdSchema, IsoTimestampSchema } from "./widgets"
 
 // Share links: several per document, each with its own label, level, expiry
 // and password, revocable on its own. Owner policy applies every time a link
@@ -96,8 +96,9 @@ export interface ShareLinkComments extends ShareLinkCommentSettings {
 
 export const ShareTargetSchema = z.strictObject({
   kind: ShareLinkKindSchema,
-  spaceId: z.string().min(1).max(256),
-  path: z.string().min(1).max(2048),
+  spaceId: CanonicalIdSchema,
+  /** The server checks it is a safe path for its kind. */
+  path: z.string().min(1).max(4096),
 })
 export type ShareTarget = z.infer<typeof ShareTargetSchema>
 
@@ -208,7 +209,7 @@ export const SharingPolicyInputSchema = z.strictObject({
     z.strictObject({ mode: z.literal("all") }),
     z.strictObject({
       mode: z.literal("selected"),
-      spaceIds: z.array(z.string().min(1).max(256)).max(1000),
+      spaceIds: z.array(CanonicalIdSchema).max(1000),
     }),
   ]),
   requirePassword: z.boolean(),

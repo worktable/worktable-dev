@@ -297,7 +297,7 @@ function Rail({ children, last }: { children: ReactNode; last: boolean }) {
 
 function ActivityTime({ at }: { at?: string }) {
   return (
-    <span className="w-16 shrink-0 text-left text-xs leading-5 text-muted-foreground/70 tabular-nums">
+    <span className="w-14 shrink-0 text-left text-xs leading-5 text-muted-foreground/70 tabular-nums">
       {at ? <time dateTime={at}>{clockTime(at)}</time> : "Now"}
     </span>
   )
@@ -465,7 +465,7 @@ export function ActivityPanel({
           <div className="space-y-4 pt-1">
             {Array.from({ length: 5 }).map((_, index) => (
               <div key={index} className="flex gap-3">
-                <div className="h-3 w-16 shrink-0 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-14 shrink-0 animate-pulse rounded bg-muted" />
                 <div className="size-6 shrink-0 animate-pulse rounded-full bg-muted" />
                 <div className="h-9 flex-1 animate-pulse rounded-md bg-muted" />
               </div>

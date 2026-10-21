@@ -21,6 +21,7 @@ import {
   type ShareLinkView,
 } from "../share-link-views.ts"
 import {
+  getShareLink,
   noteShareLinkUsed,
   onShareLinksChanged,
   ShareLinksStoreError,
@@ -218,6 +219,16 @@ async function withRenderSlot<T>(
   }
 }
 
+function linkStillOpens(id: string): boolean {
+  const link = getShareLink(id)
+  return Boolean(
+    link &&
+    link.servable &&
+    link.revokedAt === null &&
+    (link.expiresAt === null || link.expiresAt > Date.now())
+  )
+}
+
 async function renderLinkBody(
   view: ShareLinkView,
   surface: "projection" | "content"
@@ -253,6 +264,10 @@ async function renderLinkBody(
     )
     revision = document.revision
   }
+  // A render can outlast the link: revoked or expired meanwhile, it is
+  // neither kept nor sent. Only renders pay this lookup; a cached page was
+  // checked by the request's own lookup.
+  if (!linkStillOpens(view.link.id)) return null
   // Kept under the revision that was read, which may be newer than the one
   // the request looked up.
   if (revision === null) {

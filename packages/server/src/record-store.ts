@@ -730,6 +730,57 @@ export async function reconcileDiscardedRecordCollection(
   await recordIndex.reconcileCollection(preparedSpaceId, collectionId);
 }
 
+/**
+ * What a reader from outside the Space may see of its Records, such as a
+ * visitor holding a share link. queryRecords runs the whole query on the
+ * view's rows and schema, so nothing outside them can reach a result.
+ */
+export interface RecordReadView {
+  readonly spaceId: string;
+  /** The collection's fields as the reader sees them, or null when the
+   *  reader can't read it. Hidden and missing collections look the same. */
+  fields(collectionId: string): FieldTypeMap | null;
+  /** The rows the reader may see, as fresh records. Throws when the reader
+   *  can't read the collection. */
+  rows(collectionId: string): Promise<RecordFile[]>;
+  /** The query to run in place of the reader's, or a throw when it names
+   *  something the reader can't see. Opens a sealed cursor. */
+  admit(collectionId: string, query: RecordQuery): RecordQuery;
+  /** Binds a next-page cursor to this reader and the admitted query. */
+  sealCursor(collectionId: string, query: RecordQuery, cursor: string): string;
+}
+
+// A reader with a view runs only on the view's rows and fields: no archived
+// rows, no projection warnings (they count files the view hides), and no
+// document aliases (a view shows no document fields).
+async function queryRecordsInView(
+  collectionId: string,
+  input: unknown,
+  view: RecordReadView,
+  options: { authorizeCollection?: (collectionId: string) => void | Promise<void>; groupEachValue?: boolean },
+): Promise<RecordQueryResult> {
+  await options.authorizeCollection?.(collectionId);
+  try {
+    const query = view.admit(collectionId, parseRecordQuery(input));
+    const result = await runQueryV2(
+      await view.rows(collectionId),
+      query,
+      view.fields(collectionId) ?? undefined,
+      async (targetCollectionId) => {
+        await options.authorizeCollection?.(targetCollectionId);
+        return new Map((await view.rows(targetCollectionId)).map((record) => [record.id, record]));
+      },
+      async (targetCollectionId) => view.fields(targetCollectionId) ?? undefined,
+      { groupEachValue: options.groupEachValue },
+    );
+    if (result.nextCursor) result.nextCursor = view.sealCursor(collectionId, query, result.nextCursor);
+    return result;
+  } catch (error) {
+    if (error instanceof RecordQueryShapeError) throw new RecordQueryError([error.message]);
+    throw error;
+  }
+}
+
 // The full query surface. Every query runs the one documented evaluator: a
 // flat where-map is compiled into its predicate tree, so any query that
 // stops at a limit returns a nextCursor. Cross-collection lookups resolve
@@ -743,9 +794,15 @@ export async function queryRecords(
     authorizeCollection?: (collectionId: string) => void | Promise<void>;
     /** Group list fields (multi_select, many relations) by each value. */
     groupEachValue?: boolean;
+    /** Limit the query to what a reader from outside the Space may see. */
+    view?: RecordReadView;
   } = {},
 ): Promise<RecordQueryResult> {
   assertSpaceAccess(spaceId, "read");
+  if (options.view) {
+    if (options.view.spaceId !== spaceId) throw new Error("A record view belongs to one Space");
+    return queryRecordsInView(collectionId, input, options.view, options);
+  }
   await options.authorizeCollection?.(collectionId);
   const query = parseRecordQuery(input);
   const withProjectionWarnings = async (result: RecordQueryResult, collectionIds: string[]): Promise<RecordQueryResult> => {

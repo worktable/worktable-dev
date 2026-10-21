@@ -285,7 +285,8 @@ async function pageForHandle(
   rawSourceAuthorized: boolean,
   annotationsAuthorized: boolean,
   sharingAuthorized: boolean,
-  recordsAuthorized = false
+  recordsAuthorized = false,
+  canCreateShareLinks = true
 ): Promise<DocumentPage> {
   const integration = await pageIntegration(handle)
   const storageV2 = await usesDocumentStorageV2()
@@ -304,7 +305,9 @@ async function pageForHandle(
     !handle.document.archived
   )
   const renderer = rendererForHandle(handle, integration, storageV2)
-  const links = sharing ? sharingSummary(spaceId, handle) : undefined
+  const links = sharing
+    ? sharingSummary(spaceId, handle, canCreateShareLinks)
+    : undefined
   return {
     kind: "document",
     document: handle.document,
@@ -349,7 +352,8 @@ async function pageForHandle(
  */
 function sharingSummary(
   spaceId: string,
-  handle: ResolvedDocumentHandle
+  handle: ResolvedDocumentHandle,
+  canCreate: boolean
 ): DocumentSharingSummary | undefined {
   try {
     if (!sharingV2Active()) return undefined
@@ -358,7 +362,7 @@ function sharingSummary(
         handle.identity === "durable"
           ? countOpenDocumentShareLinks(spaceId, handle.documentId)
           : 0,
-      canCreate: true,
+      canCreate,
     }
   } catch (error) {
     // A store this version can't open shares nothing; the page still opens.
@@ -376,18 +380,20 @@ export async function readDocumentPage(options: {
   /** Whether records that point at the doc may be named. */
   recordsAuthorized?: boolean
   sharingAuthorized: boolean
+  canCreateShareLinks?: boolean
 }): Promise<DocumentPageResult | { kind: "alias-error" } | null> {
   const resolution = await useResolvedDocumentHandle(
     { ...options, snapshot: true },
     (handle) =>
-    pageForHandle(
-      options.spaceId,
-      handle,
-      options.rawSourceAuthorized,
-      options.annotationsAuthorized,
-      options.sharingAuthorized,
-      options.recordsAuthorized ?? false
-    )
+      pageForHandle(
+        options.spaceId,
+        handle,
+        options.rawSourceAuthorized,
+        options.annotationsAuthorized,
+        options.sharingAuthorized,
+        options.recordsAuthorized ?? false,
+        options.canCreateShareLinks ?? true
+      )
   )
   if (resolution.kind === "not-found") return null
   if (resolution.kind === "alias-error") return resolution

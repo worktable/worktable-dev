@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import { Database } from "bun:sqlite"
 import type { CreatedShareLink, DocumentShareLinks } from "@worktable/types"
 import { Hono } from "hono"
@@ -21,6 +21,7 @@ import { useResolvedDocumentHandle } from "./document-query.ts"
 import { deleteHtmlDocument } from "./html-document-delete.ts"
 import { createHtmlDocument } from "./html-document-create.ts"
 import { moveHtmlDocument } from "./html-document-move.ts"
+import * as views from "./share-link-views.ts"
 import { setLinkedSharing } from "./linked-sharing.ts"
 import { createPublicSharesRouter } from "./routes/public-shares.ts"
 import { sharesRouter } from "./routes/shares.ts"
@@ -38,6 +39,7 @@ import {
   closeShareLinkStores,
   flushShareLinkUse,
   importV1ShareLink,
+  revokeShareLink,
   shareLinksDatabasePath,
   updateShareLink,
 } from "./share-links-store.ts"
@@ -234,6 +236,20 @@ describe("share links", () => {
     updateShareLink(board.link.id, { expiresAt: Date.now() - 1 })
     expect((await view(board.token)).status).toBe(404)
     expect((await documentLinks("plan")).links[0]?.status).toBe("expired")
+
+    // A view whose render outlasts a revoke is not sent.
+    const late = await createLink("plan", { label: "Late" })
+    const read = views.readShareLinkDocument
+    const revokedWhileReading = spyOn(
+      views,
+      "readShareLinkDocument"
+    ).mockImplementationOnce(async (...args) => {
+      revokeShareLink(late.link.id, "local:owner")
+      return read(...args)
+    })
+    expect((await view(late.token)).status).toBe(404)
+    expect(revokedWhileReading).toHaveBeenCalledTimes(1)
+    revokedWhileReading.mockRestore()
   })
 
   it("tells the document page how many links still open, so it needs no request of its own", async () => {
@@ -258,6 +274,15 @@ describe("share links", () => {
     updateShareLink(expired.link.id, { expiresAt: Date.now() - 1 })
     expect(await page()).toEqual({ activeLinks: 1, canCreate: true })
     expect((await view(open.token)).status).toBe(200)
+
+    closeShareLinkStores()
+    const db = new Database(shareLinksDatabasePath())
+    db.run(
+      "UPDATE share_links SET password_hash = 'later-version' WHERE id = ?",
+      [open.link.id]
+    )
+    db.close()
+    expect(await page()).toEqual({ activeLinks: 0, canCreate: true })
 
     // Today's sharing keeps its own request until links v2 is on.
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
@@ -704,6 +729,42 @@ describe("moving today's links into links v2", () => {
     expect((await documentLinks("later")).links).toHaveLength(1)
     expect(await v1FileAsOlderBinaryReadsIt(later.token)).toBeNull()
     expect((await view(later.token)).status).toBe(200)
+  })
+
+  it("makes a legacy link manageable after its path conflict is resolved", async () => {
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    await writeDoc("space", "plan", "# Plan")
+    const plan = await legacyLink("plan")
+    const collision = join(workspaceDir, "spaces", "space", "docs", "plan.html")
+    await writeFile(collision, "<h1>Collision</h1>")
+    await notifyWorkspaceChangeAndWaitOrThrow({
+      type: "docAliases",
+      spaceId: "space",
+    })
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    await drainV1ShareLinks()
+    expect(JSON.parse(await readFile(v1File(), "utf8")).shares).toHaveLength(1)
+
+    await rm(collision)
+    await notifyWorkspaceChangeAndWaitOrThrow({
+      type: "docAliases",
+      spaceId: "space",
+    })
+    const deadline = Date.now() + 2000
+    while (
+      JSON.parse(await readFile(v1File(), "utf8")).shares.length &&
+      Date.now() < deadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    await v1FileAsOlderBinaryReadsIt(plan.token)
+    const [moved] = (await documentLinks("plan")).links
+    expect(moved).toBeDefined()
+    expect((await view(plan.token)).status).toBe(200)
+    expect(
+      (await send("DELETE", `/api/shares/links/${moved!.id}`)).status
+    ).toBe(200)
+    expect((await view(plan.token)).status).toBe(404)
   })
 
   it("moves them when the owner turns the sharing preview on", async () => {

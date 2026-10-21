@@ -831,9 +831,10 @@ describe("team foundation", () => {
       )
       app.use("*", async (c, next) => {
         c.set("identity", identity)
-        await next()
+        await runWithTeamIdentity(identity, next)
       })
       app.route("/api/shares", sharesRouter)
+      app.route("/api/spaces/:spaceId/documents", documentsRouter)
       return app.request(path, {
         method,
         ...(body
@@ -847,7 +848,7 @@ describe("team foundation", () => {
     const target = { kind: "doc", spaceId: "original", path: "brief" }
     const create = (identity: TokenIdentity) =>
       request(identity, "POST", "/api/shares/links", { target })
-    const grantBob = (access: "edit" | "manage") =>
+    const grantBob = (access: "read" | "edit" | "manage") =>
       setSpaceAccessPolicy(
         {
           spaceId: "original",
@@ -873,6 +874,12 @@ describe("team foundation", () => {
       expect(made.status).toBe(201)
       const { link } = (await made.json()) as { link: { id: string } }
 
+      for (const access of ["read", "edit"] as const) {
+        grantBob(access)
+        const page = await request(member, "GET", "/api/spaces/original/documents/page?path=brief")
+        expect(page.status).toBe(200)
+        expect(await page.json()).toMatchObject({ page: { sharing: { activeLinks: 1, canCreate: false } } })
+      }
       grantBob("edit")
       expect((await create(member)).status).toBe(403)
       const seen = await request(
@@ -903,6 +910,7 @@ describe("team foundation", () => {
       delete process.env["WORKTABLE_SHARING_PREVIEW"]
     }
   })
+
 
   test("each member arranges their own Spaces, and an arrangement never names a Space they cannot read", async () => {
     const { owner, member } = await setup()

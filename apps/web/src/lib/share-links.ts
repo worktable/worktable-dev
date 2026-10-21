@@ -42,11 +42,9 @@ export function createBlockedMessage(
   }
 }
 
-/** Links that still open: neither revoked nor expired. */
+/** Links this version can open under the current policy. */
 export function openShareLinkCount(links: readonly ShareLink[]): number {
-  return links.filter(
-    (link) => link.status !== "revoked" && link.status !== "expired"
-  ).length
+  return links.filter((link) => link.status === "active").length
 }
 
 function lastOpened(iso: string, now: number): string {

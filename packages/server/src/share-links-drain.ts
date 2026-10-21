@@ -1,3 +1,5 @@
+import { workspaceCacheKey } from "./workspace.ts"
+import { onWorkspaceChange } from "./workspace-events.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { publicShareKind } from "./document-page-service.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
@@ -40,6 +42,43 @@ import { runWithoutTeamIdentity } from "./team-policy.ts"
 const ROUNDS = 3
 
 let running: Promise<void> | null = null
+let pending: { workspace: string; spaces: Set<string> } | null = null
+let retryTimer: ReturnType<typeof setTimeout> | null = null
+
+// A conflicted path can become resolvable without another boot. Retry only
+// after a relevant change, off the writer's lifecycle and request path.
+onWorkspaceChange((event) => {
+  if (event.type === "workspaceReset") {
+    pending = null
+    if (retryTimer) clearTimeout(retryTimer)
+    retryTimer = null
+    return
+  }
+  if (
+    !["space", "doc", "widget", "documentCorpus", "docAliases"].includes(
+      event.type
+    )
+  )
+    return
+  if (
+    !pending ||
+    pending.workspace !== workspaceCacheKey() ||
+    !("spaceId" in event) ||
+    !event.spaceId ||
+    !pending.spaces.has(event.spaceId) ||
+    retryTimer
+  )
+    return
+  const workspace = pending.workspace
+  retryTimer = setTimeout(async () => {
+    retryTimer = null
+    if (running) await running.catch(() => {})
+    if (pending?.workspace === workspace && workspaceCacheKey() === workspace) {
+      await startV1ShareLinkDrain()
+    }
+  }, 0)
+  retryTimer.unref?.()
+})
 
 /**
  * Move today's links into the links store, unless links v2 is off. Calls
@@ -58,7 +97,12 @@ async function drain(): Promise<void> {
   for (let round = 0; round < ROUNDS; round++) {
     const epoch = await getWorkspaceCollaborationEpoch()
     const outcomes = new Map<string, boolean>()
-    for (const share of await readStoredDocumentShares()) {
+    const shares = await readStoredDocumentShares()
+    pending = {
+      workspace: workspaceCacheKey(),
+      spaces: new Set(shares.map((share) => share.spaceId)),
+    }
+    for (const share of shares) {
       outcomes.set(
         share.token,
         share.workspaceEpoch !== epoch || (await moveShare(share, epoch))
@@ -79,6 +123,16 @@ async function drain(): Promise<void> {
           )
       )
     ) {
+      const unresolved = shares.filter(
+        (share) => outcomes.get(share.token) === false
+      )
+      pending =
+        unresolved.length > 0
+          ? {
+              workspace: workspaceCacheKey(),
+              spaces: new Set(unresolved.map((share) => share.spaceId)),
+            }
+          : null
       return
     }
   }

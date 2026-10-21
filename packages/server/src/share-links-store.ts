@@ -274,7 +274,7 @@ export function sharingV2Active(): boolean {
 }
 
 function v1AlreadyDrained(): boolean {
-  const key = shareLinksDatabasePath()
+  const key = workspaceCacheKey()
   const now = Date.now()
   if (
     drained?.key === key &&
@@ -452,7 +452,7 @@ export function markV1SharesDrained(now = Date.now()): void {
       "INSERT OR IGNORE INTO share_meta (key, value) VALUES ('v1_drained_at', ?)"
     )
     .run(String(now))
-  drained = { key: shareLinksDatabasePath(), value: true, checkedAt: now }
+  drained = { key: workspaceCacheKey(), value: true, checkedAt: now }
 }
 
 export interface ShareLinkChange {
@@ -637,15 +637,9 @@ export function countOpenDocumentShareLinks(
   documentId: string,
   now = Date.now()
 ): number {
-  return (
-    openDatabase(false)
-      ?.query<{ count: number }, [string, string, number]>(
-        `SELECT COUNT(*) AS count FROM share_links
-         WHERE space_id = ? AND document_id = ? AND revoked_at IS NULL
-           AND (expires_at IS NULL OR expires_at > ?)`
-      )
-      .get(spaceId, documentId, now)?.count ?? 0
-  )
+  return listDocumentShareLinks(spaceId, documentId).filter(
+    (link) => link.servable && (link.expiresAt === null || link.expiresAt > now)
+  ).length
 }
 
 /** Unrevoked links into a Space, by link id and document. */

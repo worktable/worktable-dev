@@ -8,6 +8,13 @@ import type {
 } from "@worktable/types"
 import { fetchJSON } from "./http.ts"
 
+// ── Links (v2): several per document ───────────────────────────
+
+/** One document's links, read when its share dialog opens. */
+export function shareLinksQueryKey(spaceId: string, path: string) {
+  return ["share-links", "document", spaceId, path] as const
+}
+
 // Loaded with link management. The page trigger only needs status and keys.
 export function getDocumentShareLinks(
   target: ShareTarget

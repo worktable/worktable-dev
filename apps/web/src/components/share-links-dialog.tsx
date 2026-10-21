@@ -79,8 +79,8 @@ import {
   getDocumentShareLinks,
   revokeShareLink,
   updateShareLink,
+  shareLinksQueryKey,
 } from "@/lib/share-link-management-api"
-import { shareLinksQueryKey } from "@/lib/share-api"
 import { checkShareLinkAccess } from "@/lib/share-link-access-api"
 
 interface LinkDraft {

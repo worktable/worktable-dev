@@ -305,7 +305,10 @@ describe("public share projection contract", () => {
       { ...doc, live },
       // A live frame without a ticket would carry the link token.
       { ...html, live },
-      { ...html, contentTicket: "too-short" },
+      { ...html, contentTicket: "v1.too-short" },
+      // A ticket never looks like a link token.
+      { ...html, contentTicket: "T".repeat(43) },
+      { ...html, contentTicket: "v1..lnk_frame.signature" },
       { ...html, contentTicket: "v1/../../../public/share/x" },
       { ...html, contentTicket, live: { ...live, token: "T".repeat(43) } },
       { ...html, contentTicket, live: { ...live, poll: 0 } },

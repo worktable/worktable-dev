@@ -96,10 +96,15 @@ export const ShareLinkToken = z.string().regex(/^[A-Za-z0-9_-]{43}$/)
 /**
  * A short-lived ticket a Worktable mints for one of its links and alone
  * verifies: a password link's unlock ticket, or the frame ticket that stands
- * in for the link token in an HTML link's frame URL. Opaque to Cloud, and
- * safe in a header, a cookie and a URL path segment.
+ * in for the link token in an HTML link's frame URL. Otherwise opaque, it is
+ * dot-separated base64url parts, so it is never mistaken for a link token and
+ * is safe in a header, a cookie and a URL path segment.
  */
-export const ShareTicket = z.string().regex(/^[A-Za-z0-9._-]{16,256}$/)
+export const ShareTicket = z
+  .string()
+  .min(16)
+  .max(256)
+  .regex(/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$/)
 
 const visitorDigest = z.string().regex(/^[a-f0-9]{32,64}$/)
 

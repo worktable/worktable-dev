@@ -43,6 +43,7 @@ const SCHEMAS = {
     title: { type: "text" },
     region: { type: "select", values: ["eu", "us"] },
     channel: { type: "select", values: ["web", "shop"] },
+    tags: { type: "multi_select", values: ["new", "vip"] },
     amount: { type: "number" },
     cost: { type: "number" },
     status: { type: "select", values: ["open", "paid", "void"] },
@@ -61,7 +62,7 @@ const GRANT: LinkGrant = LinkGrantSchema.parse({
       rows: { field: "status", op: "neq", value: "void" },
       fields: [],
       mode: "summaries",
-      summaries: { groupBy: ["region", "channel"], measures: ["amount"] },
+      summaries: { groupBy: ["region", "channel", "tags"], measures: ["amount"] },
     },
   },
   limits: { rowsPerQuery: 2 },
@@ -87,6 +88,8 @@ const SUMMARY_QUERIES = [
   { where: { field: "channel", op: "eq", value: "shop" }, aggregate: { select: COUNT } },
   { where: { and: [{ field: "region", op: "in", value: ["eu", "us"] }, { channel: "web" }] }, aggregate: { select: TOTALS } },
   { includeArchived: true, aggregate: { groupBy: "channel", select: TOTALS } },
+  { where: { field: "tags", op: "has", value: "new" }, aggregate: { select: TOTALS } },
+  { aggregate: { groupBy: "tags", select: COUNT } },
 ];
 
 // Everything else a summaries link refuses: a name it doesn't read gets the
@@ -104,7 +107,8 @@ const SUMMARY_REFUSALS: [Record<string, unknown>, string][] = [
   [{ aggregate: { select: { x: { fn: "sum", field: "region" } } } }, ONLY],
   [{ aggregate: { select: { x: { fn: "sum" } } } }, ONLY],
   [{ aggregate: { select: { __wt_n: { fn: "count" } } } }, ONLY],
-  ...([["neq", "us"], ["contains", "u"], ["isEmpty", true], ["gt", "a"], ["has", "eu"]] as const)
+  [{ aggregate: { groupBy: "region", select: { key: { fn: "count" } } } }, ONLY],
+  ...([["neq", "us"], ["contains", "u"], ["isEmpty", true], ["gt", "a"]] as const)
     .map(([op, value]): [Record<string, unknown>, string] => [{ ...ANY_TOTAL, where: { field: "region", op, value } }, ONLY]),
   [{ ...ANY_TOTAL, where: { or: [{ region: "eu" }, { channel: "web" }] } }, ONLY],
   [{ ...ANY_TOTAL, where: { not: { region: "eu" } } }, ONLY],
@@ -158,7 +162,7 @@ function variant(v: "a" | "b"): Seed[] {
     ...ORDERS.map(([region, channel, amount], i): Seed => ({
       collection: "orders",
       id: a ? `order-${"kjihgfedcba"[i]}` : `o-${i + 1}`,
-      data: { title: a ? `Order ${i}` : `#${i}`, region, channel, amount, cost: a ? amount * 3 : 0, status: a ? "open" : "paid", owner: a ? "alice" : "bob", deal: a ? d1 : d3 },
+      data: { title: a ? `Order ${i}` : `#${i}`, region, channel, tags: region === "eu" ? ["vip"] : ["new", "vip"], amount, cost: a ? amount * 3 : 0, status: a ? "open" : "paid", owner: a ? "alice" : "bob", deal: a ? d1 : d3 },
       times: a ? T1 : T2,
       envelope,
     })),
@@ -378,6 +382,8 @@ describe("a link that shows only totals", () => {
     // Dropped groups aren't pooled anywhere, and a small total is dropped whole.
     expect(await groups({ where: { region: "eu" }, aggregate: { groupBy: "channel", select: COUNT } })).toEqual([]);
     expect(await groups({ where: { channel: "shop" }, aggregate: { select: COUNT } })).toEqual([]);
+    // A multi-select grouping narrows to one of its values with "has".
+    expect(await groups({ where: { field: "tags", op: "has", value: "new" }, aggregate: { select: COUNT } })).toEqual([{ n: 5 }]);
 
     for (const [query, code] of SUMMARY_REFUSALS) {
       expect({ query, ...(await ask("a", "orders", query, key)) }).toMatchObject({ query, status: 403, body: { code } });

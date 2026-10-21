@@ -377,7 +377,9 @@ class LinkReadView implements RecordReadView {
 /** The only keys a summaries query may carry. Archived rows stay out
  *  whatever it asks, as on every link read. */
 const SUMMARY_QUERY_KEYS = new Set(["aggregate", "where", "includeArchived"]);
-const SUMMARY_FILTER_OPS = new Set(["eq", "in"]);
+/** Each picks out cells of a grouping: `has` is how a multi-select grouping
+ *  is narrowed to one of its values, and on a single value it is `eq`. */
+const SUMMARY_FILTER_OPS = new Set(["eq", "in", "has"]);
 /** The hidden count each group carries until shownGroups judges it. */
 const GROUP_SIZE = "__wt_n";
 
@@ -403,7 +405,10 @@ function admitSummaries(fields: FieldTypeMap, rules: SummaryRules, query: Record
     if (!dimension(groupBy)) throw summariesOnly(`This link can't group totals by "${groupBy}".`);
   }
   for (const [alias, spec] of Object.entries(select)) {
-    if (alias.startsWith("__wt")) throw summariesOnly('Aggregate names starting with "__wt" are reserved.');
+    // A grouped answer names each group by its "key".
+    if (alias.startsWith("__wt") || (groupBy !== undefined && alias === "key")) {
+      throw summariesOnly(`The aggregate name "${alias}" is reserved.`);
+    }
     if (spec.field !== undefined && !readable(spec.field)) throw fieldNotAvailable(spec.field);
     if (!rules.fns.includes(spec.fn)) throw summariesOnly(`This link can't compute "${spec.fn}".`);
     if (spec.field !== undefined && !measure(spec.field)) throw summariesOnly(`This link can't summarize "${spec.field}".`);
@@ -423,12 +428,12 @@ function admitSummaries(fields: FieldTypeMap, rules: SummaryRules, query: Record
   };
 }
 
-/** Totals filter only to cells: equality on groupings, joined by "and". */
+/** Totals filter only to cells: value matches on groupings, joined by "and". */
 function requireCellFilter(node: RecordPredicate, dimension: (name: string) => boolean): void {
   if ("and" in node) return node.and.forEach((child) => requireCellFilter(child, dimension));
   if ("or" in node || "not" in node) throw summariesOnly('This link filters totals only with conditions joined by "and".');
   if (!dimension(node.field)) throw summariesOnly(`This link can't filter totals by "${node.field}".`);
-  if (!SUMMARY_FILTER_OPS.has(node.op)) throw summariesOnly('This link filters totals only with "eq" and "in".');
+  if (!SUMMARY_FILTER_OPS.has(node.op)) throw summariesOnly('This link filters totals only with "eq", "in" and "has".');
 }
 
 /** What a cursor is bound to: the collection, everything that decides which

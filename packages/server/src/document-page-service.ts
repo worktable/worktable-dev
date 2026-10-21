@@ -47,15 +47,11 @@ import { peekDocActivity } from "./activity-log.ts"
 import { peekDocBacklinks } from "./link-graph.ts"
 import { peekDocReferrers } from "./doc-referrers.ts"
 import {
+  documentShareLinkSummary,
   ShareLinksStoreError,
   sharingV2Active,
-  unexpiredDocumentShareLinks,
 } from "./share-links-store.ts"
-import {
-  effectiveExpiresAt,
-  effectiveSharingPolicy,
-  linkBlockedBy,
-} from "./share-policy.ts"
+import { creatorMayShare, currentSharingPolicy } from "./share-policy.ts"
 import { getDocMetaView, listDocVersions, readSpace } from "./store.ts"
 import type { VersionEntry } from "./version-store.ts"
 import {
@@ -352,7 +348,7 @@ async function pageForHandle(
 
 /**
  * The page's sharing while links v2 is on, so the page needs no request of
- * its own for it: one statement on the links index, and none for a document
+ * its own for it: a policy revision read and an indexed aggregate, and none for a document
  * that has never had a durable id, which every link needs. Only links the
  * owner policy lets open now count as active.
  */
@@ -364,26 +360,26 @@ function sharingSummary(
   try {
     if (!sharingV2Active()) return undefined
     if (handle.identity !== "durable") return { activeLinks: 0, canCreate }
-    const now = Date.now()
-    const { links, policy } = unexpiredDocumentShareLinks(
-      spaceId,
-      handle.documentId,
-      now
-    )
-    const inForce = effectiveSharingPolicy(policy)
-    const active = links.filter(
-      (link) => linkBlockedBy(link, inForce, now) === null
-    )
-    const nextExpiry = active.reduce(
-      (earliest, link) =>
-        Math.min(earliest, effectiveExpiresAt(link, inForce) ?? Infinity),
-      Infinity
-    )
+    const policy = currentSharingPolicy()
+    const allowed =
+      !policy.paused &&
+      policy.levels.includes("view") &&
+      !policy.requirePassword &&
+      (policy.spaces.mode === "all" || policy.spaces.spaceIds.includes(spaceId))
+    const summary = allowed
+      ? documentShareLinkSummary(
+          spaceId,
+          handle.documentId,
+          Date.now(),
+          policy.maxExpiryDays,
+          (creator) => creatorMayShare(creator, spaceId, policy)
+        )
+      : { activeLinks: 0, nextExpiry: null }
     return {
-      activeLinks: active.length,
+      activeLinks: summary.activeLinks,
       canCreate,
-      ...(Number.isFinite(nextExpiry)
-        ? { nextExpiry: new Date(nextExpiry).toISOString() }
+      ...(summary.nextExpiry !== null
+        ? { nextExpiry: new Date(summary.nextExpiry).toISOString() }
         : {}),
     }
   } catch (error) {

@@ -497,13 +497,15 @@ export function importV1ShareLink(input: {
  */
 export function settleV1ShareLinks(
   present: readonly string[],
-  moved: readonly string[]
+  moved: readonly string[],
+  recoveredDigests: readonly string[] = []
 ): void {
   const db = openDatabase(false)
   if (!db) return
-  const inFile = new Set(
-    present.map((token) => tokenDigest(token).toString("hex"))
-  )
+  const inFile = new Set([
+    ...present.map((token) => tokenDigest(token).toString("hex")),
+    ...recoveredDigests,
+  ])
   const stopped = db
     .query<{ id: string; token_hash: Uint8Array }, [string]>(
       "SELECT id, token_hash FROM share_links WHERE migrated_from = ?"
@@ -525,6 +527,8 @@ export function settleV1ShareLinks(
       "UPDATE share_links SET migrated_from = 'v1' WHERE token_hash = ? AND migrated_from = ?"
     )
     for (const token of moved) settle.run(tokenDigest(token), V1_MOVING)
+    for (const digest of recoveredDigests)
+      settle.run(Buffer.from(digest, "hex"), V1_MOVING)
   })()
   if (stopped.length > 0) notifyChanged(stopped)
 }
@@ -784,35 +788,49 @@ export function listDocumentShareLinks(
   )
 }
 
-/**
- * A document's links that are neither revoked nor past their own expiry,
- * with the owner policy that decides whether they open now. One statement on
- * the document index, and none before a link exists.
- */
-export function unexpiredDocumentShareLinks(
+/** Count and next expiry only; never materialize a document's link history. */
+export function documentShareLinkSummary(
   spaceId: string,
   documentId: string,
-  now = Date.now()
-): { links: StoredShareLink[]; policy: SharingPolicy } {
-  const db = openDatabase(false)
-  if (!db) return { links: [], policy: DEFAULT_POLICY }
-  const rows = db
-    .query<
-      LinkRow & { policy_revision: number | null },
-      [string, string, number]
+  now = Date.now(),
+  maxExpiryDays: number | null = null,
+  creatorAllowed: (id: string) => boolean = () => true
+): { activeLinks: number; nextExpiry: number | null } {
+  const cap = maxExpiryDays === null ? null : maxExpiryDays * 86_400_000
+  const groups = openDatabase(false)
+    ?.query<
+      { createdById: string; activeLinks: number; nextExpiry: number | null },
+      [number | null, number | null, number | null, string, string, number]
     >(
-      `SELECT ${JOINED_LINK_COLUMNS}, p.revision AS policy_revision
-       FROM share_links l LEFT JOIN share_policy p ON p.id = 1
-       WHERE l.space_id = ? AND l.document_id = ? AND l.revoked_at IS NULL
-         AND (l.expires_at IS NULL OR l.expires_at > ?)`
+      `
+    WITH eligible AS (
+      SELECT created_by_id, CASE WHEN ? IS NULL THEN expires_at
+        WHEN expires_at IS NULL THEN created_at + ?
+        ELSE min(expires_at, created_at + ?) END AS expiry
+      FROM share_links
+      WHERE space_id = ? AND document_id = ? AND revoked_at IS NULL
+        AND kind IN ('doc', 'html') AND level = 'view'
+        AND password_hash IS NULL AND grant_json IS NULL AND pinned_version IS NULL
+        AND accept_comments IN (0, 1) AND anonymous_allowed IN (0, 1)
+        AND show_sharer_name IN (0, 1) AND visitors_see IN ('own', 'all')
+    ) SELECT created_by_id AS createdById, COUNT(*) AS activeLinks, MIN(expiry) AS nextExpiry
+      FROM eligible WHERE expiry IS NULL OR expiry > ? GROUP BY created_by_id
+  `
     )
-    .all(spaceId, documentId, now)
-  return {
-    links: rows.map(storedLink),
-    policy: rows[0]
-      ? policyAt(db, rows[0].policy_revision ?? 0)
-      : DEFAULT_POLICY,
-  }
+    .all(cap, cap, cap, spaceId, documentId, now) ?? []
+  return groups.reduce<{ activeLinks: number; nextExpiry: number | null }>(
+    (summary, group) => {
+      if (!creatorAllowed(group.createdById)) return summary
+      summary.activeLinks += group.activeLinks
+      if (group.nextExpiry !== null)
+        summary.nextExpiry =
+          summary.nextExpiry === null
+            ? group.nextExpiry
+            : Math.min(summary.nextExpiry, group.nextExpiry)
+      return summary
+    },
+    { activeLinks: 0, nextExpiry: null }
+  )
 }
 
 /** Unrevoked links into a Space, by link id and document. */

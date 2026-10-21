@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import { mkdtemp, readdir, rm, stat, symlink } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
@@ -56,6 +56,37 @@ function comment(
   }
 }
 describe("private visitor comments", () => {
+  it("pages every comment once when receipt times tie", () => {
+    const clock = spyOn(Date, "now").mockReturnValue(Date.now())
+    try {
+      const expected = new Set(
+        Array.from(
+          { length: 4 },
+          (_, index) =>
+            receiveVisitorComment(comment({ requestId: `paging0${index}` })).id
+        )
+      )
+      const first = visitorCommentRows({
+        worktableId: "worktableId",
+        linkId: "link",
+        limit: 2,
+      })
+      expect(first).toHaveLength(2)
+      const last = first.at(-1)!
+      const second = visitorCommentRows({
+        worktableId: "worktableId",
+        linkId: "link",
+        limit: 2,
+        before: { receivedAt: last.received_at, id: last.id },
+      })
+      expect(second).toHaveLength(2)
+      expect(new Set([...first, ...second].map((row) => row.id))).toEqual(
+        expected
+      )
+    } finally {
+      clock.mockRestore()
+    }
+  })
   it("opens nothing on a read, stores outside input privately, and isolates links, visitors and workspaces", async () => {
     expect(
       visitorCommentRows({ worktableId: "worktableId", linkId: "link" })

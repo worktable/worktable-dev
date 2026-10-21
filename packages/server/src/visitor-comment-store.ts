@@ -341,12 +341,35 @@ export function readVisitorComment(
       .get(worktableId, id) as StoredVisitorComment | null) ?? null
   )
 }
+
+/** One grouped private read for a person's Pending, never ordinary activity. */
+export function pendingVisitorCommentGroups(worktableId: string): Array<{
+  document_id: string
+  link_id: string
+  link_label: string
+  link_creator: string
+  at: number
+  count: number
+  paused: "sharer" | "spike" | null
+}> {
+  return (database()
+    ?.query(
+      `SELECT c.document_id,c.link_id,max(c.link_label) AS link_label,c.link_creator,
+    max(c.received_at) AS at,sum(c.status='new') AS count,s.paused
+    FROM visitor_comments c LEFT JOIN visitor_link_state s ON s.worktableId=c.worktableId AND s.link_id=c.link_id
+    WHERE c.worktableId=? AND c.status!='deleted'
+    GROUP BY c.document_id,c.link_id,c.link_creator HAVING count>0 OR s.paused IS NOT NULL
+    ORDER BY at DESC LIMIT 2000`
+    )
+    .all(worktableId) ?? []) as ReturnType<typeof pendingVisitorCommentGroups>
+}
 export function visitorCommentRows(input: {
   worktableId: string
   linkId?: string
   documentId?: string
   visitorKey?: string
-  before?: number
+  before?: { receivedAt: number; id: string }
+  limit?: number
 }): StoredVisitorComment[] {
   const db = database()
   if (!db || (!input.linkId && !input.documentId)) return []
@@ -362,12 +385,13 @@ export function visitorCommentRows(input: {
       args.push(value)
     }
   if (input.before !== undefined) {
-    where.push("received_at<?")
-    args.push(input.before)
+    where.push("(received_at,id)<(?,?)")
+    args.push(input.before.receivedAt, input.before.id)
   }
+  args.push(Math.min(101, Math.max(1, input.limit ?? 100)))
   return db
     .query(
-      `SELECT * FROM visitor_comments WHERE ${where.join(" AND ")} ORDER BY received_at DESC,id DESC LIMIT 100`
+      `SELECT * FROM visitor_comments WHERE ${where.join(" AND ")} ORDER BY received_at DESC,id DESC LIMIT ?`
     )
     .all(...args) as StoredVisitorComment[]
 }

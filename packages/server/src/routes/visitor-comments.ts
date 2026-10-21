@@ -1,4 +1,5 @@
 import { Hono } from "hono"
+import { z } from "zod"
 import { sharingPreviewEnabled } from "../sharing-preview.ts"
 import {
   DocumentIdSchema,
@@ -7,6 +8,7 @@ import {
 import {
   canDeleteVisitorComment,
   memberVisitorComments,
+  notifyVisitorComments,
   visitorCommentNamespace,
   visitorCommentReader,
   visitorDocumentInSpace,
@@ -23,6 +25,10 @@ import {
 } from "../visitor-comment-store.ts"
 
 export const visitorCommentsRouter = new Hono()
+const Cursor = z.strictObject({
+  receivedAt: z.number().int().nonnegative(),
+  id: z.string().regex(/^vc_[A-Za-z0-9_-]{22}$/),
+})
 visitorCommentsRouter.use("*", async (c, next) => {
   c.header("Cache-Control", "no-store")
   if (!sharingPreviewEnabled()) return c.json({ error: "Not found" }, 404)
@@ -49,6 +55,19 @@ visitorCommentsRouter.get("/", async (c) => {
   const parsed = DocumentIdSchema.safeParse(c.req.query("documentId"))
   if (!parsed.success)
     return c.json({ error: "Choose a document", code: "INVALID_REQUEST" }, 400)
+  const rawCursor = c.req.query("before")
+  let before: z.infer<typeof Cursor> | undefined
+  if (rawCursor !== undefined) {
+    try {
+      if (rawCursor.length > 256 || !/^[A-Za-z0-9_-]+$/.test(rawCursor))
+        throw new Error()
+      before = Cursor.parse(
+        JSON.parse(Buffer.from(rawCursor, "base64url").toString())
+      )
+    } catch {
+      return c.json({ error: "Invalid cursor", code: "INVALID_REQUEST" }, 400)
+    }
+  }
   const spaceId = c.req.param("spaceId")!
   const context = await visitorCommentNamespace()
   if (!(await visitorDocumentInSpace(spaceId, parsed.data)))
@@ -61,8 +80,20 @@ visitorCommentsRouter.get("/", async (c) => {
   const rows = visitorCommentRows({
     worktableId: context.worktableId,
     documentId: parsed.data,
+    before,
+    limit: 101,
   })
-  return c.json({ comments: memberVisitorComments(c, spaceId, rows) })
+  const page = rows.slice(0, 100)
+  const last = page.at(-1)
+  return c.json({
+    comments: memberVisitorComments(c, spaceId, page),
+    nextCursor:
+      rows.length > 100 && last
+        ? Buffer.from(
+            JSON.stringify({ receivedAt: last.received_at, id: last.id })
+          ).toString("base64url")
+        : null,
+  })
 })
 visitorCommentsRouter.post("/:id/replies", async (c) => {
   const input = VisitorCommentReplyInputSchema.safeParse(
@@ -94,6 +125,7 @@ visitorCommentsRouter.post("/:id/replies", async (c) => {
     { id: actor.id, name: actor.displayName },
     body
   )
+  notifyVisitorComments(spaceId, row.document_id, row.link_id)
   return c.json({ ok: true }, 201)
 })
 visitorCommentsRouter.post("/:id/done", async (c) => {
@@ -112,6 +144,7 @@ visitorCommentsRouter.post("/:id/done", async (c) => {
   )
     return c.json({ error: "Forbidden" }, 403)
   finishVisitorComment(context.worktableId, row.id)
+  notifyVisitorComments(spaceId, row.document_id, row.link_id)
   return c.json({ ok: true })
 })
 visitorCommentsRouter.delete("/:id", async (c) => {
@@ -130,5 +163,6 @@ visitorCommentsRouter.delete("/:id", async (c) => {
     row.id,
     c.get("identity").principal.id
   )
+  notifyVisitorComments(spaceId, row.document_id, row.link_id)
   return c.json({ ok: true })
 })

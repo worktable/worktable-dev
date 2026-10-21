@@ -80,6 +80,8 @@ import { sharesRouter } from "./routes/shares.ts"
 import { linkGrantsRouter } from "./routes/link-grants.ts"
 import { publicSharesRouter } from "./routes/public-shares.ts"
 import { flushShareLinkUse, sweepRevokedShareLinks } from "./share-links-store.ts"
+import { sweepVisitorComments, closeVisitorCommentStores } from "./visitor-comment-store.ts"
+import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import { settleShareLinkReconciles } from "./share-links-lifecycle.ts"
 import { startV1ShareLinkDrain } from "./share-links-drain.ts"
 import { publicInvitationsRouter } from "./routes/public-invitations.ts"
@@ -1445,6 +1447,10 @@ export function startServer(
       } catch (err) {
         console.error("[share-links] revoked link sweep error:", logError(err));
       }
+      if (sharingPreviewEnabled()) {
+        try { sweepVisitorComments(); }
+        catch { console.error("[visitor-comments] retention unavailable"); }
+      }
     };
     retentionBootTimer = setTimeout(sweep, RETENTION_BOOT_DELAY_MS);
     retentionBootTimer.unref?.();
@@ -2388,6 +2394,7 @@ export function startServer(
         // that views noted in memory.
         await settle(() => settleShareLinkReconciles());
         await settle(async () => flushShareLinkUse());
+        await settle(async () => closeVisitorCommentStores());
         await settle(() => lintStopping);
         await settle(() => lifetimeStopping);
         await settle(() => transfersStopping);

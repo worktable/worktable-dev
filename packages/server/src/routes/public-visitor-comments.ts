@@ -13,6 +13,7 @@ import {
 import { sharingPreviewEnabled } from "../sharing-preview.ts"
 import {
   visitorCommentNamespace,
+  notifyVisitorComments,
   visitorNamespaceStillCurrent,
 } from "../visitor-comment-access.ts"
 import {
@@ -214,21 +215,39 @@ export function createPublicVisitorCommentsRouter(
       )
     // Nothing asynchronous follows the last authority/epoch check and insert.
     if (!(await current())) return c.json(UNAVAILABLE, 404)
-    const result = receiveVisitorComment({
-      worktableId: context.worktableId,
-      linkId: view.link.id,
-      linkLabel: view.link.label,
-      linkCreator: view.link.createdById,
-      documentId: view.link.documentId,
-      spaceId: view.link.spaceId,
-      kind: view.link.kind,
-      visitorName: parsed.data.anonymous ? null : parsed.data.name!,
-      visitorKey,
-      clientKey,
-      body: parsed.data.body,
-      requestId: parsed.data.requestId,
-    })
-    return c.json(result, 201)
+    try {
+      const result = receiveVisitorComment({
+        worktableId: context.worktableId,
+        linkId: view.link.id,
+        linkLabel: view.link.label,
+        linkCreator: view.link.createdById,
+        documentId: view.link.documentId,
+        spaceId: view.link.spaceId,
+        kind: view.link.kind,
+        visitorName: parsed.data.anonymous ? null : parsed.data.name!,
+        visitorKey,
+        clientKey,
+        body: parsed.data.body,
+        requestId: parsed.data.requestId,
+      })
+      notifyVisitorComments(
+        view.link.spaceId,
+        view.link.documentId,
+        view.link.id
+      )
+      return c.json(result, 201)
+    } catch (error) {
+      if (
+        error instanceof VisitorCommentRefused &&
+        commentPause(context.worktableId, view.link.id)
+      )
+        notifyVisitorComments(
+          view.link.spaceId,
+          view.link.documentId,
+          view.link.id
+        )
+      throw error
+    }
   })
   return router
 }

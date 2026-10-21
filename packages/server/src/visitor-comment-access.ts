@@ -14,6 +14,21 @@ import {
   VisitorCommentsUnavailable,
   type StoredVisitorComment,
 } from "./visitor-comment-store.ts"
+import { wsManager } from "./ws.ts"
+
+/** Only opaque identifiers cross this person-only socket boundary. */
+export function notifyVisitorComments(
+  spaceId: string,
+  documentId: string,
+  linkId: string
+): void {
+  if (!sharingPreviewEnabled()) return
+  wsManager.sendToPeopleWithAccess(spaceId, {
+    type: "visitor_comments_changed",
+    spaceId,
+    data: { documentId, linkId },
+  })
+}
 
 /** This is a person boundary, never a scope that an agent can acquire. */
 export function visitorCommentReader(c: Context, spaceId: string): boolean {

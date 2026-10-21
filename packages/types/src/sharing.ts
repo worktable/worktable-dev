@@ -363,6 +363,7 @@ export interface VisitorCommentReply {
 /** A document's visitor comments, for members. */
 export interface VisitorCommentsResponse {
   comments: VisitorComment[]
+  nextCursor?: string | null
 }
 
 export const VisitorCommentReplyInputSchema = z.strictObject({

@@ -364,7 +364,7 @@ for (const viewport of [
     })
     const before = await lineTop("[data-document-scroll-root]", "Reading here.")
 
-    await page.getByRole("button", { name: "Edit" }).click()
+    await page.getByRole("button", { name: "Edit", exact: true }).click()
     const editorRoot = ".worktable-editor-scroll-root"
     await expect(
       page.locator(`${editorRoot} [contenteditable="true"]`)

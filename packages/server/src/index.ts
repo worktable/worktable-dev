@@ -75,6 +75,7 @@ import { mcpRouter } from "./routes/mcp.ts"
 import { pairingRouter } from "./routes/pairing.ts"
 import { agentConnectionsRouter } from "./routes/agent-connections.ts"
 import { sharesRouter } from "./routes/shares.ts"
+import { linkGrantsRouter } from "./routes/link-grants.ts"
 import { publicSharesRouter } from "./routes/public-shares.ts"
 import { publicInvitationsRouter } from "./routes/public-invitations.ts"
 import { connectRouter } from "./routes/connect.ts"
@@ -540,6 +541,7 @@ app.route("/api/team", teamRouter);
 app.route("/api/diagnostics", diagnosticsRouter);
 app.route("/api/system", systemRouter);
 app.route("/api/shares", sharesRouter);
+app.route("/api/link-grants", linkGrantsRouter);
 app.route("/api/linked", linkedRouter);
 app.route("/api/spaces", spacesRouter);
 app.route("/api/spaces/:spaceId/documents", documentsRouter);

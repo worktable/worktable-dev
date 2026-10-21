@@ -261,7 +261,6 @@ shareLinksRouter.post("/", async (c) => {
   const { data: space } = await readSpace(target.spaceId)
   if (!space || getSpaceArchiveInfo(space)) return notFound(c)
 
-  const config = getDocumentSharingConfig()!
   const workspaceEpoch = await getWorkspaceCollaborationEpoch()
   // The id is made durable first, as comments do, so the link follows the
   // document through renames and moves. Creating under the document's path
@@ -270,7 +269,12 @@ shareLinksRouter.post("/", async (c) => {
     { spaceId: target.spaceId, path: target.path, materializeIdentity: true },
     async (handle) => {
       if ((await publicShareKind(handle)) !== target.kind) return null
+      // Sharing can stop while this request waits, as when Link disconnects;
+      // a link nobody can be given is never made.
+      const config = getDocumentSharingConfig()
+      if (!config) return null
       return {
+        config,
         ...createShareLink({
           workspaceEpoch,
           spaceId: target.spaceId,
@@ -298,6 +302,7 @@ shareLinksRouter.post("/", async (c) => {
     )
     return notFound(c)
   }
+  const { config } = created
   const body: CreatedShareLink = {
     link: publicLink(created.link, created.place, true),
     url: `${config.shareOrigin}/s/${encodeURIComponent(config.workspaceId)}/${created.token}`,
@@ -327,7 +332,7 @@ shareLinksRouter.patch("/:linkId", async (c) => {
     input.data.level ?? "view"
   )
   if (!decision.allowed) return denied(c, decision)
-  if (input.data.password) {
+  if (input.data.password !== undefined) {
     return invalid(
       c,
       "Passwords aren't available yet",

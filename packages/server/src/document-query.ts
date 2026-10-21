@@ -439,6 +439,8 @@ export interface DocumentIdentities {
    * documents and those whose path another claim also holds are left out.
    */
   current: ReadonlyMap<string, { path: string; title: string }>
+  /** Documents that are archived. */
+  archived: ReadonlySet<string>
 }
 
 const identitiesByContext = new WeakMap<
@@ -450,19 +452,23 @@ function documentIdentities(context: DocumentQueryContext): DocumentIdentities {
   const known = identitiesByContext.get(context)
   if (known) return known
   const current = new Map<string, { path: string; title: string }>()
+  const archived = new Set<string>()
   for (const entry of context.catalog.entries) {
     if (entry.kind !== "document") continue
     for (const claim of claimsFor(entry)) {
-      if (
-        claim.kind === "document" &&
-        claim.identity === "durable" &&
-        !isArchived(claim, context.docArchives)
-      ) {
+      if (claim.kind !== "document" || claim.identity !== "durable") continue
+      if (isArchived(claim, context.docArchives)) {
+        archived.add(claim.documentId)
+      } else {
         current.set(claim.documentId, { path: claim.path, title: claim.title })
       }
     }
   }
-  const identities = { spaceArchived: context.spaceArchived, current }
+  const identities = {
+    spaceArchived: context.spaceArchived,
+    current,
+    archived,
+  }
   identitiesByContext.set(context, identities)
   return identities
 }
@@ -473,9 +479,10 @@ function documentIdentities(context: DocumentQueryContext): DocumentIdentities {
  * once per snapshot.
  */
 export async function readDocumentIdentities(
-  spaceId: string
+  spaceId: string,
+  options: { lockHeld?: boolean } = {}
 ): Promise<{ catalog: DocumentCatalog; identities: DocumentIdentities }> {
-  const context = await snapshotDocumentQueryContext(spaceId)
+  const context = await snapshotDocumentQueryContext(spaceId, options)
   return { catalog: context.catalog, identities: documentIdentities(context) }
 }
 

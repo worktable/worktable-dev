@@ -141,59 +141,78 @@ const reconcileTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const reconciling = new Set<Promise<void>>()
 
 /**
- * Revoke links whose Space or document is gone, after a change this process
- * may not have made: as before, a document removed on disk does not come
- * back by writing a file at its path. A linked document always has a durable
- * id, so the Space's inventory says where its source is. Files that cannot be
- * read decide nothing; their links serve nothing meanwhile.
+ * Revoke links whose Space or document is gone or archived, after a change
+ * this process may not have made: as with archives made here, restoring
+ * brings back the document, not its links, and a document removed on disk
+ * does not come back by writing a file at its path. A linked document always
+ * has a durable id, so the Space's inventory says where its source is. Files
+ * that cannot be read decide nothing; their links serve nothing meanwhile.
  */
 export async function reconcileSpaceShareLinks(spaceId: string): Promise<void> {
   if (activeSpaceShareLinks(spaceId).length === 0) return
   const [
-    { readSpace, getSpaceArchiveInfo },
+    { readDocumentIdentities },
     { inspectDocumentSource, readDocumentInventory },
+    { runWithoutTeamIdentity },
   ] = await Promise.all([
-    import("./store.ts"),
+    import("./document-query.ts"),
     import("./document-inventory.ts"),
+    import("./team-policy.ts"),
   ])
-  // Moves inside this process hold the Space's path lock while a source and
-  // its inventory entry disagree.
-  await withDocPathLock(spaceId, async () => {
-    const active = activeSpaceShareLinks(spaceId)
-    if (active.length === 0) return
-    const spaceRoot = join(getSpacesDir(), spaceId)
-    if (!existsSync(join(spaceRoot, "space.json"))) {
-      revokeSpaceShareLinks(spaceId, "space-removed")
-      return
-    }
-    const { data: space } = await readSpace(spaceId)
-    if (!space) return
-    if (getSpaceArchiveInfo(space)) {
-      revokeSpaceShareLinks(spaceId, "space-archived")
-      return
-    }
-    const inventory = await readDocumentInventory(spaceId)
-    const unreadable = new Set(
-      inventory.diagnostics.map((diagnostic) => diagnostic.documentId)
-    )
-    // Without an inventory, or with one that cannot be read whole, nothing
-    // says which documents are gone.
-    if (!inventory.exists || unreadable.has(undefined)) return
-    const removed: string[] = []
-    for (const documentId of new Set(active.map((link) => link.documentId))) {
-      if (unreadable.has(documentId)) continue
-      const entry = inventory.entries.get(documentId as DocumentId)
-      if (
-        !entry ||
-        !(await inspectDocumentSource(spaceRoot, entry.source)).safe
-      ) {
-        removed.push(documentId)
+  // Upkeep for the whole Space, whoever's change set it off. Moves inside
+  // this process hold the Space's path lock while a source and its inventory
+  // entry disagree.
+  await runWithoutTeamIdentity(() =>
+    withDocPathLock(spaceId, async () => {
+      const active = activeSpaceShareLinks(spaceId)
+      if (active.length === 0) return
+      const spaceRoot = join(getSpacesDir(), spaceId)
+      if (!existsSync(join(spaceRoot, "space.json"))) {
+        revokeSpaceShareLinks(spaceId, "space-removed")
+        return
       }
-    }
-    if (removed.length > 0) {
-      revokeDocumentShareLinks(spaceId, removed, "document-removed")
-    }
-  })
+      let identities
+      try {
+        ;({ identities } = await readDocumentIdentities(spaceId, {
+          lockHeld: true,
+        }))
+      } catch {
+        return
+      }
+      if (identities.spaceArchived) {
+        revokeSpaceShareLinks(spaceId, "space-archived")
+        return
+      }
+      const linked = new Set(active.map((link) => link.documentId))
+      const archived = [...linked].filter((id) => identities.archived.has(id))
+      if (archived.length > 0) {
+        revokeDocumentShareLinks(spaceId, archived, "document-archived")
+      }
+      const inventory = await readDocumentInventory(spaceId)
+      const unreadable = new Set(
+        inventory.diagnostics.map((diagnostic) => diagnostic.documentId)
+      )
+      // Without an inventory, or with one that cannot be read whole, nothing
+      // says which documents are gone.
+      if (!inventory.exists || unreadable.has(undefined)) return
+      const removed: string[] = []
+      for (const documentId of linked) {
+        if (unreadable.has(documentId) || identities.archived.has(documentId)) {
+          continue
+        }
+        const entry = inventory.entries.get(documentId as DocumentId)
+        if (
+          !entry ||
+          !(await inspectDocumentSource(spaceRoot, entry.source)).safe
+        ) {
+          removed.push(documentId)
+        }
+      }
+      if (removed.length > 0) {
+        revokeDocumentShareLinks(spaceId, removed, "document-removed")
+      }
+    })
+  )
 }
 
 function logFailure(what: string, error: unknown): void {

@@ -352,10 +352,12 @@ describe("share links", () => {
     expect((await view(token, "/public/share/content")).status).toBe(404)
   })
 
-  it("ends links when their document is removed on disk or the workspace is replaced", async () => {
+  it("ends links when their document is removed or archived on disk, or the workspace is replaced", async () => {
     await writeDoc("space", "external", "# Original")
+    await writeDoc("space", "shelved", "# Shelved")
     await writeDoc("space", "kept", "# Kept")
     const removed = await createLink("external")
+    const shelved = await createLink("shelved")
     const kept = await createLink("kept")
 
     await rm(join(workspaceDir, "spaces", "space", "docs", "external.md"))
@@ -367,6 +369,31 @@ describe("share links", () => {
     await settleShareLinkReconciles()
     await writeDoc("space", "external", "# Replacement")
     expect((await view(removed.token)).status).toBe(404)
+
+    // Archived by editing the metadata, then restored the same way.
+    const metaPath = join(workspaceDir, "spaces", "space", "docs.meta.json")
+    const before = existsSync(metaPath)
+      ? await readFile(metaPath, "utf8")
+      : JSON.stringify({ version: 1, docs: {} })
+    const meta = JSON.parse(before) as {
+      docs: Record<string, Record<string, unknown>>
+    }
+    meta.docs["shelved"] = {
+      ...meta.docs["shelved"],
+      archived: { archivedAt: new Date().toISOString(), archivedBy: "user" },
+    }
+    await writeFile(metaPath, JSON.stringify(meta))
+    await notifyWorkspaceChangeAndWaitOrThrow({
+      type: "documentCorpus",
+      spaceId: "space",
+    })
+    await settleShareLinkReconciles()
+    await writeFile(metaPath, before)
+    await notifyWorkspaceChangeAndWaitOrThrow({
+      type: "documentCorpus",
+      spaceId: "space",
+    })
+    expect((await view(shelved.token)).status).toBe(404)
     expect((await view(kept.token)).status).toBe(200)
 
     await notifyWorkspaceChangeAndWaitOrThrow({ type: "workspaceReset" })
@@ -375,7 +402,7 @@ describe("share links", () => {
       await send("GET", "/api/shares/links/all?status=revoked")
     ).json()) as { links: Array<{ id: string }> }
     expect(all.links.map((link) => link.id).sort()).toEqual(
-      [removed.link.id, kept.link.id].sort()
+      [removed.link.id, shelved.link.id, kept.link.id].sort()
     )
   })
 

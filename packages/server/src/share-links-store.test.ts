@@ -265,6 +265,10 @@ describe("share links", () => {
     const unavailable = await bridge("X".repeat(43))
     expect(unavailable.status).toBe(404)
     expect(await (await bridge(plain.token)).text()).toBe(await unavailable.text())
+    const stalled = await app().fetch(new Request("https://runtime.example.test/public/share/bridge", { method: "POST", headers: { "Content-Type": "application/json", "x-worktable-share-capability": created.token }, body: new ReadableStream<Uint8Array>() }))
+    expect(stalled.status).toBe(429)
+    expect(stalled.headers.get("Retry-After")).toBe("1")
+    expect((await bridge(created.token)).status).toBe(200)
     const original = linkQueries.queryRecordsForLink
     const paused = spyOn(linkQueries, "queryRecordsForLink").mockImplementation(async (...args) => {
       const read = await original(...args)

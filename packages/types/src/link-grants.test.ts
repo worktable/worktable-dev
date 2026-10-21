@@ -75,6 +75,13 @@ describe("LinkGrantSchema", () => {
     ).toBe(false)
   })
 
+  it("bounds the collections a visitor read can reach", () => {
+    const collections = Object.fromEntries(Array.from({ length: 33 }, (_, index) => [`collection-${index}`, { fields: [] }]))
+    expect(LinkGrantSchema.safeParse({ version: 1, collections }).success).toBe(false)
+    delete collections["collection-32"]
+    expect(LinkGrantSchema.safeParse({ version: 1, collections }).success).toBe(true)
+  })
+
   it.each([
     ["not", (node: RecordPredicate): RecordPredicate => ({ not: node })],
     ["and", (node: RecordPredicate): RecordPredicate => ({ and: [node] })],

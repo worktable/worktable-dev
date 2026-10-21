@@ -1031,13 +1031,18 @@ export function listShareLinks(options: {
  */
 export function sweepRevokedShareLinks(now = Date.now()): number {
   try {
-    return (
-      openDatabase(false)
-        ?.query(
-          "DELETE FROM share_links WHERE revoked_at IS NOT NULL AND revoked_at <= ?"
-        )
-        .run(now - REVOKED_LISTED_MS).changes ?? 0
-    )
+    const db = openDatabase(false)
+    if (!db) return 0
+    return db.transaction(() => {
+      const removed = db.query("DELETE FROM share_links WHERE revoked_at IS NOT NULL AND revoked_at <= ?").run(now - REVOKED_LISTED_MS).changes
+      if (removed) {
+        try { db.exec("DELETE FROM share_link_grants WHERE link_id NOT IN (SELECT id FROM share_links)") }
+        catch (error) {
+          if (!(error instanceof Error) || error.message !== "no such table: share_link_grants") throw error
+        }
+      }
+      return removed
+    })()
   } catch (error) {
     // A later version's store keeps its own rows.
     if (error instanceof ShareLinksStoreError) return 0

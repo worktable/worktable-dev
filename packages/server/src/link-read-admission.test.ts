@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test"
+import { expect, test, spyOn } from "bun:test"
 import { LinkReadPool } from "./link-read-pool.ts"
 import { LinkReadMemo } from "./link-read-memo.ts"
 
@@ -44,6 +44,10 @@ test("visitor memo coalesces reads but never retains failed or unencodable resul
   expect(calls).toBe(1)
   expect(await memo.read("allowed", load)).toEqual({ records: [1] })
   expect(calls).toBe(1)
+  const now = spyOn(Date, "now").mockReturnValue(Date.now() + 2001)
+  try {
+    expect(await memo.read("allowed", async () => ({ records: [2] }))).toEqual({ records: [2] })
+  } finally { now.mockRestore() }
   await expect(
     memo.read("failure", async () => {
       throw new Error("busy")

@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { ShareTicket } from "./linked-access.ts"
 
 // ============================================================
 // Worktable Cloud billing contract
@@ -224,8 +225,45 @@ export const ENV = {
  */
 export const GATEWAY_HEADER = "x-worktable-gateway"
 
-/** Capability forwarded privately after the gateway strips it from the URL. */
+/**
+ * Capability forwarded privately after the gateway strips it from the URL:
+ * the link token, or on a frame request the frame ticket.
+ */
 export const SHARE_CAPABILITY_HEADER = "x-worktable-share-capability"
+
+/**
+ * A password link's unlock ticket, a ShareTicket the gateway forwards from
+ * the link's cookie without reading it.
+ */
+export const SHARE_UNLOCK_HEADER = "x-worktable-share-unlock"
+
+/**
+ * A commenting visitor, as ShareVisitor describes. Set only by the gateway;
+ * a Worktable reads them only on requests the gateway admitted.
+ */
+export const VISITOR_HEADERS = {
+  /** `1` when the gateway checked the visitor is a person. */
+  VERIFIED: "x-worktable-visitor-verified",
+  KEY: "x-worktable-visitor-key",
+  CLIENT: "x-worktable-visitor-client",
+} as const
+
+/**
+ * The statuses a Worktable answers share requests with, which the gateway
+ * turns into its own pages. Every unknown, revoked or unavailable link gets
+ * the same bodiless 404, so no answer says whether a link existed.
+ */
+export const PUBLIC_SHARE_STATUS = {
+  UNAVAILABLE: 404,
+  /** A password link without a valid unlock ticket. */
+  PASSWORD_REQUIRED: 401,
+  /** A link that worked until it expired. */
+  EXPIRED: 410,
+  /** Over a limit for the link or the visitor; `Retry-After` says when to retry. */
+  RATE_LIMITED: 429,
+  /** Too busy to answer now; `Retry-After` says when to retry. */
+  BUSY: 503,
+} as const
 
 /** An invitation id the gateway asks a Worktable about before sign-in. */
 export const INVITATION_HEADER = "x-worktable-invitation"
@@ -252,11 +290,38 @@ const publicSourceUrl = z
     }
   }, "Expected an HTTPS source URL without credentials")
 
+/** How the share page offers comments, on links that take them. */
+export const PublicShareComments = z
+  .object({
+    /** False while the link, or the whole Worktable, has comments paused. */
+    accepting: z.boolean(),
+    /** Visitors may comment without a name; otherwise a name is required. */
+    anonymousAllowed: z.boolean(),
+    /** Visitors see only their own comments, or every comment on the link. */
+    visitorsSee: z.enum(["own", "all"]),
+  })
+  .strict()
+export type PublicShareComments = z.infer<typeof PublicShareComments>
+
+/** A live HTML link: the tool runs on the link's data through the bridge. */
+export const PublicShareLive = z
+  .object({
+    /** The tool's revision, which the frame URL and its caches carry. */
+    rev: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+    /** Seconds between checks for changes while a visitor uses the tool. */
+    poll: z.number().int().min(5).max(3600),
+  })
+  .strict()
+export type PublicShareLive = z.infer<typeof PublicShareLive>
+
 /**
  * Scriptless document projection returned by a tenant to the Cloud gateway.
  * The gateway owns the public viewer chrome and constructs the HTML-content
  * origin, so neither presentation assets nor the capability URL cross into
  * the tenant contract.
+ *
+ * The gateway parses this strictly, so it must accept any new field before a
+ * Worktable sends it.
  */
 export const PublicShareProjection = z.discriminatedUnion("kind", [
   z
@@ -266,6 +331,7 @@ export const PublicShareProjection = z.discriminatedUnion("kind", [
       format: z.enum(["blocknote", "markdown"]),
       title: z.string(),
       projectionHtml: z.string(),
+      comments: PublicShareComments.optional(),
     })
     .strict(),
   z
@@ -273,8 +339,20 @@ export const PublicShareProjection = z.discriminatedUnion("kind", [
       kind: z.literal("html"),
       sourceUrl: publicSourceUrl.optional(),
       title: z.string(),
+      /**
+       * The frame ticket for this view. The frame URL carries it in place of
+       * the link token, so a tool never sees its own link.
+       */
+      contentTicket: ShareTicket.optional(),
+      live: PublicShareLive.optional(),
+      comments: PublicShareComments.optional(),
     })
-    .strict(),
+    .strict()
+    .refine(
+      (projection) =>
+        !projection.live || projection.contentTicket !== undefined,
+      "A live frame takes a ticket, never the link token"
+    ),
 ])
 export type PublicShareProjection = z.infer<typeof PublicShareProjection>
 

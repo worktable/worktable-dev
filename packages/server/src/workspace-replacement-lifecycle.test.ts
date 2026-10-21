@@ -200,6 +200,7 @@ describe("live workspace replacement", () => {
     expect(classifyWorkspaceRequest("GET", "/assets/app.js", true)).toBeNull()
     expect(classifyWorkspaceRequest("GET", "/spaces/notes", true)).toBeNull()
     expect(classifyWorkspaceRequest("POST", "/mcp")).toBe("write")
+    for (const [method, path] of [["GET", "/public/share"], ["HEAD", "/public/share/content"], ["POST", "/public/share/bridge"], ["POST", "/public/share/unlock"]]) expect(classifyWorkspaceRequest(method!, path!)).toBe("read")
 
     const heldWrite = admitWorkspaceRequest("write")!
     const poll = waitForThreadSignal("thread-held", 25_000)

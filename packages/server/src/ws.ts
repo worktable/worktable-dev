@@ -8,7 +8,7 @@ import {
 } from "./store.ts"
 import { docSnapshotRevision } from "./document-content-revision.ts"
 import { readWidget } from "./widget-store.ts"
-import { readRecord } from "./record-store.ts"
+import { readChangedRecord } from "./workspace-record-change.ts"
 import { readThread } from "./thread-store.ts"
 import { getThreadActivity } from "./thread-delivery-store.ts"
 import { logError } from "./debug-log.ts"
@@ -159,11 +159,7 @@ export class WsManager {
         }
         this.broadcast(event.spaceId, msg)
       } else if (event.type === "record") {
-        const { data, error } = await readRecord(
-          event.spaceId,
-          event.collectionId,
-          event.recordId
-        )
+        const { data, error } = await readChangedRecord(event)
         const msg: OutgoingMessage =
           error || !data
             ? {

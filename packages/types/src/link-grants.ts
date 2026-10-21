@@ -148,7 +148,9 @@ export const LinkGrantStateSchema = z.enum(["none", "visitor", "team-read"])
 export const LinkGrantSchema = z.strictObject({
   version: z.literal(1),
   /** Keyed by collection id; there is no wildcard. */
-  collections: z.record(CanonicalIdSchema, CollectionGrantSchema).default({}),
+  collections: z.record(CanonicalIdSchema, CollectionGrantSchema)
+    .refine((collections) => Object.keys(collections).length <= 32, "A link can open at most 32 collections")
+    .default({}),
   limits: LinkGrantLimitsSchema.default(LINK_GRANT_DEFAULT_LIMITS),
   state: LinkGrantStateSchema.default("visitor"),
 })

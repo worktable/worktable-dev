@@ -228,6 +228,7 @@ export function linkBlockedBy(
   if (!spaceAllowed(policy, link.spaceId)) return "space"
   // A link from a later version that this one can't serve.
   if (!link.servable) return link.hasPassword ? "password" : "level"
+  if (link.grant && !policy.liveLinks) return "level"
   if (!policy.levels.some((level) => level === link.level)) return "level"
   if (policy.requirePassword && !link.hasPassword) return "password"
   if (!creatorMayShare(link.createdById, link.spaceId, policy)) return "sharer"

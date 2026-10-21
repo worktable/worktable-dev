@@ -1,3 +1,7 @@
+import { LinkGrantSchema } from "@worktable/types"
+import { createHash } from "node:crypto"
+import { buildRecordCollectionSchema, writeRecordCollectionSchema, writeRecord } from "./record-store.ts"
+import * as linkQueries from "./link-query.ts"
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import { Database } from "bun:sqlite"
 import {
@@ -209,6 +213,70 @@ async function useHtmlStorageV2(): Promise<void> {
 }
 
 describe("share links", () => {
+  it("opens live tools through ticketed frames and grant-only reads, including policy changes during a read", async () => {
+    process.env["WORKTABLE_RECORDS_INDEX"] = "0"
+    const policy = (await (await send("GET", "/api/shares/policy")).json()).policy as SharingPolicy
+    expect((await send("PUT", "/api/shares/policy", { ...policy, liveLinks: true })).status).toBe(200)
+    await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, secret: { type: "text" } } }))
+    const at = new Date().toISOString()
+    await writeRecord("space", { version: 1, kind: "worktable.record", id: "private-id", collectionId: "deals", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: "Public name", secret: "Hidden data" } })
+    await createHtmlDocument({ spaceId: "space", name: "Board", html: "<!doctype html><html><head></head><body><h1>Board</h1></body></html>", permissions: { network: true, records: { deals: { read: true } }, state: { read: true, write: true } }, versionSource: "test", versionUpdatedBy: "test" })
+    const beforeLive = await readDocumentPage({ spaceId: "space", path: "board", rawSourceAuthorized: false, annotationsAuthorized: false, sharingAuthorized: true })
+    expect(beforeLive?.kind === "document" ? beforeLive.sharing?.activeLinks : null).toBe(0)
+    const grant = LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: ["name"], timestamps: false } } })
+    await writeDoc("space", "plan", "# Plan")
+    expect((await send("POST", "/api/shares/links", { target: { kind: "doc", spaceId: "space", path: "plan" }, grant })).status).toBe(400)
+    expect((await send("POST", "/api/shares/links", { target: { kind: "html", spaceId: "space", path: "board" }, grant: { ...grant, collections: { deals: { ...grant.collections.deals, fields: ["missing"] } } } })).status).toBe(400)
+    const created = await createLink("board", { grant }, "html")
+    expect(Date.parse(created.link.expiresAt!) - Date.now()).toBeGreaterThan(29 * 86_400_000)
+    const neverExpires = await createLink("board", { grant, expiresAt: null }, "html")
+    expect(neverExpires.link.expiresAt).toBeNull()
+    const page = await readDocumentPage({ spaceId: "space", path: "board", rawSourceAuthorized: false, annotationsAuthorized: false, sharingAuthorized: true })
+    expect(page?.kind === "document" ? page.sharing?.activeLinks : null).toBe(2)
+    const projection = await (await view(created.token)).json()
+    expect(projection.live.poll).toBe(30)
+    const frame = await view(projection.contentTicket, "/public/share/content")
+    expect(frame.status).toBe(200)
+    expect(frame.headers.get("Content-Security-Policy")).toContain("script-src 'unsafe-inline'")
+    expect(frame.headers.get("Content-Security-Policy")).toContain("connect-src 'none'")
+    const html = await frame.text()
+    expect(createHash("sha256").update(html).digest("base64url")).toBe(projection.live.rev)
+    expect(html).toContain("mode:'share'")
+    expect(html).not.toContain(created.token)
+    expect((await view(created.token, "/public/share/content")).status).toBe(404)
+    expect((await send("PATCH", `/api/shares/links/${created.link.id}`, { grant })).status).toBe(200)
+    expect((await view(projection.contentTicket, "/public/share/content")).status).toBe(404)
+    const bridge = (token: string, call: unknown = { v: 1, op: "records.query", collection: "deals", query: {} }) => app().request("/public/share/bridge", { method: "POST", headers: { "Content-Type": "application/json", "x-worktable-share-capability": token, Origin: sharing.shareOrigin, Cookie: "member=ignored", Authorization: "Bearer ignored" }, body: JSON.stringify(call) })
+    const response = await bridge(created.token)
+    expect(response.status).toBe(200)
+    const result = await response.json()
+    expect(result.result.records[0].data).toEqual({ name: "Public name" })
+    expect(JSON.stringify(result)).not.toContain("private-id")
+    expect(JSON.stringify(result)).not.toContain("Hidden data")
+    const otherLink = await (await bridge(neverExpires.token)).json()
+    expect(otherLink.result.records[0].id).not.toBe(result.result.records[0].id)
+    expect((await bridge(created.token, { v: 1, op: "records.create", collection: "deals", data: {} })).status).toBe(400)
+    process.env["WORKTABLE_RECORDS_INDEX"] = "1"
+    const building = await bridge(created.token, { v: 1, op: "records.query", collection: "deals", query: { fields: ["name"] } })
+    expect(building.status).toBe(503)
+    expect(building.headers.get("Retry-After")).toBe("1")
+    process.env["WORKTABLE_RECORDS_INDEX"] = "0"
+    const plain = await createLink("board", {}, "html")
+    const unavailable = await bridge("X".repeat(43))
+    expect(unavailable.status).toBe(404)
+    expect(await (await bridge(plain.token)).text()).toBe(await unavailable.text())
+    const original = linkQueries.queryRecordsForLink
+    const paused = spyOn(linkQueries, "queryRecordsForLink").mockImplementation(async (...args) => {
+      const read = await original(...args)
+      expect((await send("PUT", "/api/shares/policy", { ...policy, liveLinks: true, records: "none" })).status).toBe(200)
+      return read
+    })
+    try { expect((await bridge(created.token)).status).toBe(404) } finally { paused.mockRestore() }
+    expect((await bridge(created.token)).status).toBe(403)
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    expect((await bridge(created.token)).status).toBe(404)
+  })
+
   it("requires passwords, binds unlocks to current credentials, and expires links", async () => {
     await writeDoc("space", "plan", "# Plan")
     const password = "test-only visitor password"

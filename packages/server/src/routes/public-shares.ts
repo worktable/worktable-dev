@@ -1,3 +1,5 @@
+import { linkBridge } from "../link-bridge.ts"
+import { readLinkTool } from "../link-tool.ts"
 import {
   SHARE_UNLOCK_HEADER,
   ShareUnlockRequest,
@@ -67,18 +69,19 @@ function projectionHeaders(): Headers {
   })
 }
 
-function contentHeaders(shareOrigin: string): Headers {
+function contentHeaders(shareOrigin: string, live = false): Headers {
   return new Headers({
     ...COMMON_HEADERS,
     "Content-Type": "text/html; charset=utf-8",
     "Cross-Origin-Resource-Policy": "cross-origin",
+    "Origin-Agent-Cluster": "?1",
     "Content-Security-Policy": [
-      "sandbox allow-popups allow-popups-to-escape-sandbox",
+      live ? "sandbox allow-scripts" : "sandbox allow-popups allow-popups-to-escape-sandbox",
       "default-src 'none'",
-      "script-src 'none'",
+      live ? "script-src 'unsafe-inline'" : "script-src 'none'",
       "style-src 'unsafe-inline'",
-      "img-src data:",
-      "font-src data:",
+      live ? "img-src data: blob:" : "img-src data:",
+      live ? "font-src data: 'self'" : "font-src data:",
       "connect-src 'none'",
       "media-src 'none'",
       "object-src 'none'",
@@ -292,6 +295,15 @@ async function renderLinkPage(
   view: ShareLinkView,
   surface: "projection" | "content"
 ): Promise<RenderedPage | null | "busy"> {
+  if (view.link.grant) return withRenderSlot(async () => {
+    const tool = await readLinkTool(view)
+    if (!tool) return null
+    const key = linkPageKey(view.link.id, surface, view.path, `${view.link.grantRevision}:${tool.revision}`, view.title)
+    const cached = renderedPages.get(key)
+    if (cached) return cached
+    const body = surface === "content" ? tool.html : JSON.stringify({ kind: "html", sourceUrl: SOURCE_URL, title: view.title })
+    return rememberPage(key, tool.revision, body)
+  })
   if (view.revision === null) {
     return withRenderSlot(() => renderLinkBody(view, surface))
   }
@@ -408,6 +420,7 @@ export function createPublicSharesRouter(
     getHostedDocumentSharingConfig()?.shareOrigin ?? null
 ): Hono {
   const router = new Hono()
+  router.post("/bridge", linkBridge(getShareOrigin))
   router.onError((error, c) => {
     if (error instanceof SharePasswordBusy)
       return busy(c.req.raw, false, getShareOrigin() ?? "")
@@ -484,6 +497,7 @@ export function createPublicSharesRouter(
           : JSON.stringify({
               ...JSON.parse(page.body),
               contentTicket: ticket.ticket,
+              ...(view.link.grant ? { live: { rev: page.revision, poll: 30 } } : {}),
             }),
         { headers: projectionHeaders() }
       )
@@ -491,11 +505,11 @@ export function createPublicSharesRouter(
       response = await pageResponse(
         c.req.raw,
         page,
-        content ? contentHeaders(shareOrigin) : projectionHeaders()
+        content ? contentHeaders(shareOrigin, Boolean(view.link.grant)) : projectionHeaders()
       )
     }
     // Covers cached pages, compression and password changes during rendering.
-    if (!shareLinkStillOpens(view.link))
+    if (!shareLinkStillOpens(view.link, view.policyRevision))
       return unavailable(c.req.raw, content, shareOrigin)
     noteShareLinkUsed(view.link)
     return response

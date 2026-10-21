@@ -32,6 +32,15 @@ test("tickets are bound to purpose, link, password revision, workspace and expir
       false
     )
   }
+  // Static tickets retain their old MAC; adding or editing access cuts off
+  // an existing unlock and frame ticket without changing the password.
+  const live = { ...link, grantRevision: "first-grant" }
+  const liveTicket = mintShareTicket(secret, live, "frame", null, now)!
+  expect(validShareTicket(liveTicket.ticket, secret, live, "frame", now)).toBe(true)
+  expect(validShareTicket(liveTicket.ticket, secret, { ...live, grantRevision: "changed-grant" }, "frame", now)).toBe(false)
+  expect(validShareTicket(liveTicket.ticket, secret, link, "frame", now)).toBe(false)
+  expect(validShareTicket(made.ticket, secret, { ...link, grantRevision: "static" }, "unlock", now)).toBe(true)
+  expect(validShareTicket(made.ticket, secret, live, "unlock", now)).toBe(false)
   expect(validShareTicket(made.ticket, secret, link, "frame", now)).toBe(false)
   expect(
     validShareTicket(

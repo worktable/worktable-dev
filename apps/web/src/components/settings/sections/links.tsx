@@ -53,6 +53,7 @@ import {
 } from "@worktable/ui/components/table"
 import { cn } from "@worktable/ui/lib/utils"
 import { SpaceIcon } from "@/components/identity-icons"
+import { invalidateSharingQueries } from "@/lib/sharing-cache"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { HttpError } from "@/lib/http"
 import { useSpaces, useWorkspace } from "@/lib/queries"
@@ -181,19 +182,13 @@ function useSharingPolicy(enabled: boolean) {
       // Whether each link opens follows the policy: the lists, and each
       // document page's count of links that open and whether Share makes
       // one. Only the page on screen reads again now.
-      void queryClient.invalidateQueries({ queryKey: ["share-links"] })
-      void queryClient.invalidateQueries({ predicate: isDocumentPageQuery })
+      invalidateSharingQueries(queryClient)
     },
   })
   const update = (change: Partial<SharingPolicy>) => {
     if (confirmed.current) save.mutate(change)
   }
   return { query, update }
-}
-
-/** A document's page check in any Space (`documentQueryKeys.page`). */
-function isDocumentPageQuery(query: { queryKey: readonly unknown[] }) {
-  return query.queryKey[0] === "spaces" && query.queryKey[2] === "document-page"
 }
 
 function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {

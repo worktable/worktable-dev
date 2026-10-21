@@ -1,6 +1,12 @@
+import { useEffect } from "react"
 import { spaceAccessKey } from "./team-access"
 import { browserTeamMemberId } from "./team-context"
-import { queryOptions, useQuery, type QueryClient } from "@tanstack/react-query"
+import {
+  queryOptions,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query"
 import type { DocumentContent } from "@worktable/types"
 import {
   changedRevision,
@@ -78,13 +84,37 @@ export function documentPageValidatedLive(
 }
 
 export function useDocumentPage(spaceId: string, path: string) {
-  return useQuery({
+  const client = useQueryClient()
+  const query = useQuery({
     ...documentPageQueryOptions(spaceId, path),
     // A check the live socket still proves is not read again on a revisit.
     staleTime: () =>
       documentPageValidatedLive(spaceId, path) ? Infinity : 10_000,
     enabled: path.length > 0,
   })
+  // A live socket cannot report the passage of time. Refresh this page once
+  // at its next expiry, and cancel the timer when the reader leaves.
+  const nextExpiry =
+    query.data?.kind === "document" ? query.data.sharing?.nextExpiry : undefined
+  useEffect(() => {
+    if (!nextExpiry) return
+    const deadline = Date.parse(nextExpiry)
+    let timer: ReturnType<typeof setTimeout>
+    const schedule = () => {
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) {
+        void client.invalidateQueries({
+          queryKey: documentQueryKeys.page(spaceId, path),
+          exact: true,
+        })
+      } else {
+        timer = setTimeout(schedule, Math.min(remaining, 2_147_483_647))
+      }
+    }
+    schedule()
+    return () => clearTimeout(timer)
+  }, [client, spaceId, path, nextExpiry])
+  return query
 }
 
 // ── Opening ──────────────────────────────────────────────────

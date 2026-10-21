@@ -713,6 +713,7 @@ interface WsData {
   sessionStillValid?: () => Promise<boolean>;
   /** The member's access fingerprint last reported on this socket. */
   teamAccess?: string;
+  teamPolicyRevision?: number;
   type: "space" | "yjs";
   spaceId: string;
   threadScope?: boolean;
@@ -1877,17 +1878,18 @@ export function startServer(
           revokeSocket(socket);
           continue;
         }
-        // A member whose own access changed is told in place, so their tab
-        // updates without waiting for its next request.
+        // Tell members about access and policy changes in place. Another
+        // creator losing access can also change their cached link summaries.
         const memberId = socket.data.identity?.team?.memberId;
         if (socket.data.type === "space" && memberId && socket.data.identity?.principal.type === "human") {
           try {
             const access = memberAccess(memberId)?.fingerprint;
-            if (access && socket.data.teamAccess && access !== socket.data.teamAccess) {
-              const worktable = currentTeamWorktable();
+            const worktable = currentTeamWorktable();
+            if (access && socket.data.teamAccess && (access !== socket.data.teamAccess || worktable?.policyRevision !== socket.data.teamPolicyRevision)) {
               socket.send(JSON.stringify({ type: "team_access", worktableId: worktable?.id, memberId, policyRevision: worktable?.policyRevision, access }));
             }
             if (access) socket.data.teamAccess = access;
+            socket.data.teamPolicyRevision = worktable?.policyRevision;
           } catch {
             // Team state is unavailable; the next request reports it.
           }
@@ -2127,6 +2129,7 @@ export function startServer(
           if (ws.data.type === "space" && memberId && ws.data.identity?.principal.type === "human") {
             try {
               ws.data.teamAccess = memberAccess(memberId)?.fingerprint
+              ws.data.teamPolicyRevision = currentTeamWorktable()?.policyRevision
             } catch {
               // Team state is unavailable; the sweep reports it.
             }

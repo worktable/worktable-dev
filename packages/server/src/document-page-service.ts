@@ -51,7 +51,11 @@ import {
   sharingV2Active,
   unexpiredDocumentShareLinks,
 } from "./share-links-store.ts"
-import { effectiveSharingPolicy, linkBlockedBy } from "./share-policy.ts"
+import {
+  effectiveExpiresAt,
+  effectiveSharingPolicy,
+  linkBlockedBy,
+} from "./share-policy.ts"
 import { getDocMetaView, listDocVersions, readSpace } from "./store.ts"
 import type { VersionEntry } from "./version-store.ts"
 import {
@@ -367,11 +371,20 @@ function sharingSummary(
       now
     )
     const inForce = effectiveSharingPolicy(policy)
+    const active = links.filter(
+      (link) => linkBlockedBy(link, inForce, now) === null
+    )
+    const nextExpiry = active.reduce(
+      (earliest, link) =>
+        Math.min(earliest, effectiveExpiresAt(link, inForce) ?? Infinity),
+      Infinity
+    )
     return {
-      activeLinks: links.filter(
-        (link) => linkBlockedBy(link, inForce, now) === null
-      ).length,
+      activeLinks: active.length,
       canCreate,
+      ...(Number.isFinite(nextExpiry)
+        ? { nextExpiry: new Date(nextExpiry).toISOString() }
+        : {}),
     }
   } catch (error) {
     // A store this version can't open shares nothing; the page still opens.

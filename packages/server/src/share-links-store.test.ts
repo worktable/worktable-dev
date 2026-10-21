@@ -23,6 +23,7 @@ import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
 import { renameDocAndSync } from "./doc-rename.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
+import * as documentPages from "./document-page-service.ts"
 import { readDocumentPage } from "./document-page-service.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { deleteHtmlDocument } from "./html-document-delete.ts"
@@ -285,6 +286,9 @@ describe("share links", () => {
     updateShareLink(expired.link.id, { expiresAt: Date.now() - 1 })
     expect(await page()).toEqual({ activeLinks: 1, canCreate: true })
     expect((await view(open.token)).status).toBe(200)
+    const nextExpiry = Date.now() + 60_000
+    updateShareLink(open.link.id, { expiresAt: nextExpiry })
+    expect(await page()).toEqual({ activeLinks: 1, canCreate: true, nextExpiry: new Date(nextExpiry).toISOString() })
 
     closeShareLinkStores()
     const db = new Database(shareLinksDatabasePath())
@@ -783,6 +787,7 @@ describe("moving today's links into links v2", () => {
       JSON.parse(await readFile(v1File(), "utf8")).shares.length &&
       Date.now() < deadline
     ) {
+      // test-policy: external-readiness-backoff — wait for the event-triggered drain to persist its result.
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
     await v1FileAsOlderBinaryReadsIt(plan.token)
@@ -855,6 +860,26 @@ describe("owner policy", () => {
     })
     return page?.kind === "document" ? page.sharing?.activeLinks : undefined
   }
+
+  it("checks policy again after document resolution before creating a link", async () => {
+    await writeDoc("space", "plan", "# Plan")
+    const original = documentPages.publicShareKind
+    for (const [change, status] of [[{ paused: true }, 403], [{ maxExpiryDays: 7 }, 400]] as const) {
+      await savePolicy({})
+      const resolution = spyOn(documentPages, "publicShareKind").mockImplementation(async (handle) => {
+        const kind = await original(handle)
+        expect((await savePolicy(change)).status).toBe(200)
+        return kind
+      })
+      try {
+        const response = await send("POST", "/api/shares/links", { target })
+        expect(response.status).toBe(status)
+      } finally {
+        resolution.mockRestore()
+      }
+      expect((await documentLinks("plan")).links).toHaveLength(0)
+    }
+  })
 
   it("cuts existing links at their next view when tightened, and lets them open again when loosened", async () => {
     await writeDoc("space", "plan", "# Plan")

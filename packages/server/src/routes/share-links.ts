@@ -310,6 +310,21 @@ shareLinksRouter.post("/", async (c) => {
       // a link nobody can be given is never made.
       const config = getDocumentSharingConfig()
       if (!config) return null
+      // Policy and membership may change during document resolution. Nothing
+      // asynchronous separates this final authorization from the insert.
+      const latestPolicy = currentSharingPolicy()
+      const latestDecision = authorizeShareAction(
+        identity,
+        "create",
+        target.spaceId,
+        {
+          level,
+          policy: latestPolicy,
+        }
+      )
+      if (!latestDecision.allowed) return { denied: latestDecision }
+      if (!expiryAllowed(expiresAt, latestPolicy))
+        return { expiryPolicy: latestPolicy }
       return {
         config,
         ...createShareLink({
@@ -327,6 +342,10 @@ shareLinksRouter.post("/", async (c) => {
       }
     }
   )
+  if (created && "denied" in created && created.denied)
+    return denied(c, created.denied)
+  if (created && "expiryPolicy" in created && created.expiryPolicy)
+    return expiryTooLong(c, created.expiryPolicy)
   if (!created || !("token" in created)) return notFound(c)
   // Archiving or removing a Space changes it before revoking its links, so a
   // link made while that ran is caught here.
@@ -341,7 +360,7 @@ shareLinksRouter.post("/", async (c) => {
   }
   const { config } = created
   const body: CreatedShareLink = {
-    link: publicLink(created.link, created.place, true, policy),
+    link: publicLink(created.link, created.place, true, currentSharingPolicy()),
     url: `${config.shareOrigin}/s/${encodeURIComponent(config.workspaceId)}/${created.token}`,
   }
   return c.json(body, 201)

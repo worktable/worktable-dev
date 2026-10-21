@@ -23,7 +23,6 @@ import {
   type ShareLinkView,
 } from "../share-link-views.ts"
 import {
-  getShareLink,
   noteShareLinkUsed,
   onShareLinksChanged,
   ShareLinksStoreError,
@@ -219,16 +218,6 @@ async function withRenderSlot<T>(
     if (next) next()
     else rendersRunning--
   }
-}
-
-function linkStillOpens(id: string): boolean {
-  const link = getShareLink(id)
-  return Boolean(
-    link &&
-    link.servable &&
-    link.revokedAt === null &&
-    (link.expiresAt === null || link.expiresAt > Date.now())
-  )
 }
 
 async function renderLinkBody(

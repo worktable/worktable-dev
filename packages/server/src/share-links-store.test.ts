@@ -15,7 +15,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
 import { renameDocAndSync } from "./doc-rename.ts"
+import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { readDocumentPage } from "./document-page-service.ts"
+import { useResolvedDocumentHandle } from "./document-query.ts"
 import { deleteHtmlDocument } from "./html-document-delete.ts"
 import { createHtmlDocument } from "./html-document-create.ts"
 import { moveHtmlDocument } from "./html-document-move.ts"
@@ -27,10 +29,15 @@ import { systemRouter } from "./routes/system.ts"
 import { invalidateServerSettingsCache } from "./settings-store.ts"
 import { drainV1ShareLinks } from "./share-links-drain.ts"
 import { settleShareLinkReconciles } from "./share-links-lifecycle.ts"
-import { createDocumentShare, resolveDocumentShare } from "./share-store.ts"
+import {
+  createDocumentShare,
+  resolveDocumentShare,
+  stopDocumentShare,
+} from "./share-store.ts"
 import {
   closeShareLinkStores,
   flushShareLinkUse,
+  importV1ShareLink,
   shareLinksDatabasePath,
   updateShareLink,
 } from "./share-links-store.ts"
@@ -639,29 +646,51 @@ describe("moving today's links into links v2", () => {
     ).toBe(404)
   })
 
-  it("finishes a move cut short without copying or reviving links, and moves links an older binary makes later", async () => {
+  it("finishes a move cut short without copying or reviving links, and follows what an older binary does meanwhile", async () => {
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
-    await writeDoc("space", "kept", "# Kept")
-    await writeDoc("space", "revoked", "# Revoked")
-    const kept = await legacyLink("kept")
-    const revoked = await legacyLink("revoked")
-    const beforeMove = await readFile(v1File())
-
+    const links: Record<string, { token: string; createdAt: string }> = {}
+    for (const path of ["kept", "revoked", "stopped"]) {
+      await writeDoc("space", path, `# ${path}`)
+      links[path] = await legacyLink(path)
+    }
     process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
-    await drainV1ShareLinks()
-    const [link] = (await documentLinks("revoked")).links
-    expect((await send("DELETE", `/api/shares/links/${link!.id}`)).status).toBe(
-      200
-    )
-    // Stopped after moving the links, before emptying the file.
-    await writeFile(v1File(), beforeMove)
+
+    // A move cut short: every link copied, the old file not yet emptied.
+    const epoch = await getWorkspaceCollaborationEpoch()
+    for (const [path, link] of Object.entries(links)) {
+      const documentId = (await useResolvedDocumentHandle(
+        { spaceId: "space", path, materializeIdentity: true },
+        (handle) => handle.documentId
+      )) as string
+      importV1ShareLink({
+        token: link.token,
+        workspaceEpoch: epoch,
+        spaceId: "space",
+        documentId,
+        kind: "doc",
+        createdAt: Date.parse(link.createdAt),
+      })
+    }
+    // Meanwhile someone revokes a copied link, and an older binary stops
+    // another in the old file.
+    const [copied] = (await documentLinks("revoked")).links
+    expect(
+      (await send("DELETE", `/api/shares/links/${copied!.id}`)).status
+    ).toBe(200)
+    await stopDocumentShare({
+      kind: "doc",
+      spaceId: "space",
+      artifactKey: "stopped",
+    })
     await drainV1ShareLinks()
 
     expect((await documentLinks("kept")).links).toHaveLength(1)
-    expect((await documentLinks("revoked")).links).toHaveLength(0)
-    expect((await view(kept.token)).status).toBe(200)
-    expect((await view(revoked.token)).status).toBe(404)
-    expect(await v1FileAsOlderBinaryReadsIt(revoked.token)).toBeNull()
+    expect((await view(links["kept"]!.token)).status).toBe(200)
+    for (const path of ["revoked", "stopped"]) {
+      expect((await documentLinks(path)).links).toHaveLength(0)
+      expect((await view(links[path]!.token)).status).toBe(404)
+    }
+    expect(await v1FileAsOlderBinaryReadsIt(links["kept"]!.token)).toBeNull()
 
     // An older binary run in between makes a link in the old file; the next
     // boot moves it.

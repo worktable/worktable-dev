@@ -360,10 +360,14 @@ export function createShareLink(input: NewShareLink): {
   return { link: getShareLink(id)!, token }
 }
 
+/** A link copied from the earlier version's file, which still holds it. */
+const V1_MOVING = "v1-moving"
+
 /**
  * Store a link made by an earlier version, under its existing token, so its
- * URL keeps working. A token already here is left alone, revoked or not.
- * Returns whether a link was added.
+ * URL keeps working. It counts as moving until `settleV1ShareLinks` sees
+ * the old file without it. A token already here is left alone, revoked or
+ * not. Returns whether a link was added.
  */
 export function importV1ShareLink(input: {
   token: string
@@ -379,7 +383,7 @@ export function importV1ShareLink(input: {
       `INSERT INTO share_links (id, token_hash, token_hint, link_key,
         workspace_epoch, space_id, document_id, kind, label, level,
         created_by_id, created_by_name, created_at, migrated_from)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', 'view', '', '', ?, 'v1')
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', 'view', '', '', ?, ?)
        ON CONFLICT (token_hash) DO NOTHING`
     )
     .run(
@@ -391,9 +395,51 @@ export function importV1ShareLink(input: {
       input.spaceId,
       input.documentId,
       input.kind,
-      input.createdAt
+      input.createdAt,
+      V1_MOVING
     )
   return inserted.changes > 0
+}
+
+/**
+ * Reconcile links still moving with the earlier version's file as it is now,
+ * while the caller holds its lock. A moving link whose share has left the
+ * file was stopped there meanwhile, by an older binary, and is revoked here
+ * too. Those in `moved`, which the caller is about to remove from the file,
+ * have moved for good.
+ */
+export function settleV1ShareLinks(
+  present: readonly string[],
+  moved: readonly string[]
+): void {
+  const db = openDatabase(false)
+  if (!db) return
+  const inFile = new Set(
+    present.map((token) => tokenDigest(token).toString("hex"))
+  )
+  const stopped = db
+    .query<{ id: string; token_hash: Uint8Array }, [string]>(
+      "SELECT id, token_hash FROM share_links WHERE migrated_from = ?"
+    )
+    .all(V1_MOVING)
+    .filter((row) => !inFile.has(Buffer.from(row.token_hash).toString("hex")))
+    .map((row) => row.id)
+  const now = Date.now()
+  db.transaction(() => {
+    const revoke = db.query(
+      `UPDATE share_links SET migrated_from = 'v1',
+        revoked_at = COALESCE(revoked_at, ?),
+        revoked_by = COALESCE(revoked_by, 'system'),
+        revoked_reason = COALESCE(revoked_reason, 'revoked')
+       WHERE id = ?`
+    )
+    for (const id of stopped) revoke.run(now, id)
+    const settle = db.query(
+      "UPDATE share_links SET migrated_from = 'v1' WHERE token_hash = ? AND migrated_from = ?"
+    )
+    for (const token of moved) settle.run(tokenDigest(token), V1_MOVING)
+  })()
+  if (stopped.length > 0) notifyChanged(stopped)
 }
 
 /**

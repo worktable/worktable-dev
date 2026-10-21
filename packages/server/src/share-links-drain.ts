@@ -5,6 +5,7 @@ import {
   findShareLinkByToken,
   importV1ShareLink,
   markV1SharesDrained,
+  settleV1ShareLinks,
   sharingV2Active,
 } from "./share-links-store.ts"
 import {
@@ -29,9 +30,11 @@ import { runWithoutTeamIdentity } from "./team-policy.ts"
 //
 // Every step can be repeated. A token already in the store is left alone, so
 // a move cut short finishes on the next run without duplicating a link or
-// bringing back one revoked since. The move runs at boot whenever links v2 is
-// on, so a share an older binary made since is moved then; and when the
-// owner turns the sharing preview on.
+// bringing back one revoked since. A copied link counts as moving until the
+// old file, read under its lock, is seen without it; if an older binary
+// stopped it there meanwhile, it is revoked here too. The move runs at boot
+// whenever links v2 is on, so a share an older binary made since is moved
+// then; and when the owner turns the sharing preview on.
 
 /** A share another binary may still add while the file is read. */
 const ROUNDS = 3
@@ -66,7 +69,14 @@ async function drain(): Promise<void> {
     markV1SharesDrained()
     if (
       await removeMovedDocumentShares(
-        (share) => outcomes.get(share.token) ?? null
+        (share) => outcomes.get(share.token) ?? null,
+        // Under the file's lock: a link an older binary stopped since it was
+        // copied, in this run or one cut short, is revoked here as well.
+        (present, removing) =>
+          settleV1ShareLinks(
+            present.map((share) => share.token),
+            removing.map((share) => share.token)
+          )
       )
     ) {
       return

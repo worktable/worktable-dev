@@ -349,19 +349,31 @@ export async function readStoredDocumentShares(): Promise<
  * valid file and serves none of them: once all have moved, a valid empty
  * file. `moved` says true for a share that moved or was dropped, false for
  * one to keep here for now, and null for one it doesn't know, which an older
- * binary made since the file was read. Holds the file's locks. Returns false,
- * changing nothing, when any share is unknown.
+ * binary made since the file was read. Returns false, changing nothing, when
+ * any share is unknown. Otherwise `beforeRemoving` sees the file's shares
+ * and those about to leave it, then they leave; both happen under the file's
+ * locks, so an older binary changes nothing in between.
  */
 export async function removeMovedDocumentShares(
-  moved: (share: StoredDocumentShare) => boolean | null
+  moved: (share: StoredDocumentShare) => boolean | null,
+  beforeRemoving: (
+    present: readonly StoredDocumentShare[],
+    removing: readonly StoredDocumentShare[]
+  ) => void
 ): Promise<boolean> {
   return serializedLifecycle(() =>
     serialized(async () => {
       const file = await loadFile()
-      const decisions = file.shares.map((share) =>
-        moved({ ...publicShare(share), workspaceEpoch: share.workspaceEpoch })
-      )
+      const present = file.shares.map((share) => ({
+        ...publicShare(share),
+        workspaceEpoch: share.workspaceEpoch,
+      }))
+      const decisions = present.map(moved)
       if (decisions.includes(null)) return false
+      beforeRemoving(
+        present,
+        present.filter((_, index) => decisions[index] === true)
+      )
       const kept = file.shares.filter((_, index) => decisions[index] === false)
       if (kept.length < file.shares.length) {
         await saveFile({ ...emptyFile(), shares: kept })

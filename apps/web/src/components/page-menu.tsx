@@ -32,8 +32,10 @@ import { DocumentNodeIcon } from "@/components/document-node-icon"
 import { DocumentLifetimeControls } from "@/components/document-organize"
 import { ShareDocumentAction } from "@/components/share-document-action"
 import { useBreadcrumbs } from "@/hooks/use-breadcrumbs"
-import { useDocumentSharingAvailable } from "@/hooks/use-deployment-info"
-import { useDocumentShareStatus } from "@/hooks/use-document-share"
+import {
+  useDocumentShareStatus,
+  useShareMode,
+} from "@/hooks/use-document-share"
 import {
   useDocumentOrganizeActions,
   useTemporaryArchiveLabel,
@@ -82,7 +84,7 @@ export function PageMenu() {
   const documentKey = document ? `${document.spaceId}:${document.path}` : null
   const lifetimePending =
     documentKey !== null && pendingDocument === documentKey
-  const sharingAvailable = useDocumentSharingAvailable()
+  const shareMode = useShareMode(pageMeta?.shareTarget)
   const shared = useDocumentShareStatus(pageMeta?.shareTarget).data?.share
   const scrollRef = useScrollFade<HTMLDivElement>()
   if (crumbs.length === 0) return null
@@ -123,11 +125,21 @@ export function PageMenu() {
     })
   }
   const shareTarget = pageMeta?.shareTarget
-  if (shareTarget && sharingAvailable) {
+  if (shareTarget && shareMode) {
+    const activeLinks = shareTarget.links?.activeLinks
     pageActions.push({
       id: "share",
       label: "Share",
-      detail: shared ? "Link active" : undefined,
+      detail:
+        activeLinks === undefined
+          ? shared
+            ? "Link active"
+            : undefined
+          : activeLinks === 0
+            ? undefined
+            : activeLinks === 1
+              ? "Link active"
+              : `${activeLinks} links active`,
       icon: Share2,
       onSelect: () => setShareOpen(true),
     })

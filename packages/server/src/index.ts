@@ -79,6 +79,7 @@ import { linkGrantsRouter } from "./routes/link-grants.ts"
 import { publicSharesRouter } from "./routes/public-shares.ts"
 import { flushShareLinkUse } from "./share-links-store.ts"
 import { settleShareLinkReconciles } from "./share-links-lifecycle.ts"
+import { startV1ShareLinkDrain } from "./share-links-drain.ts"
 import { publicInvitationsRouter } from "./routes/public-invitations.ts"
 import { connectRouter } from "./routes/connect.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
@@ -1744,6 +1745,16 @@ export function startServer(
         console.error("[Worktable] initial space sweep failed:", logError(err))
       ));
     }
+
+    // With links v2 on, today's links move into it once, after recovery has
+    // settled the documents they point at. Later boots move any an older
+    // binary made since. Views keep serving the old links meanwhile.
+    const recovery = recoveredDocumentTask;
+    trackServerTask(
+      Promise.resolve(recovery).then(() =>
+        startupDiscarded ? undefined : startV1ShareLinkDrain()
+      )
+    );
   }
 
   const stopWorkspaceSafetyHandler = onWorkspaceRecoveryRequired(() => {

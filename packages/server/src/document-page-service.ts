@@ -13,6 +13,7 @@ import type {
   DocumentPageResult,
   DocumentProvenance,
   DocumentRenderDisposition,
+  DocumentSharingSummary,
   DocumentVersionSummary,
 } from "@worktable/types"
 import { listAnnotations } from "./annotation-store.ts"
@@ -45,6 +46,11 @@ import {
 import { peekDocActivity } from "./activity-log.ts"
 import { peekDocBacklinks } from "./link-graph.ts"
 import { peekDocReferrers } from "./doc-referrers.ts"
+import {
+  documentShareLinkSummary,
+  ShareLinksStoreError,
+  sharingV2Active,
+} from "./share-links-store.ts"
 import { getDocMetaView, listDocVersions, readSpace } from "./store.ts"
 import type { VersionEntry } from "./version-store.ts"
 import {
@@ -279,7 +285,8 @@ async function pageForHandle(
   rawSourceAuthorized: boolean,
   annotationsAuthorized: boolean,
   sharingAuthorized: boolean,
-  recordsAuthorized = false
+  recordsAuthorized = false,
+  canCreateShareLinks = true
 ): Promise<DocumentPage> {
   const integration = await pageIntegration(handle)
   const storageV2 = await usesDocumentStorageV2()
@@ -298,6 +305,9 @@ async function pageForHandle(
     !handle.document.archived
   )
   const renderer = rendererForHandle(handle, integration, storageV2)
+  const links = sharing
+    ? sharingSummary(spaceId, handle, canCreateShareLinks)
+    : undefined
   return {
     kind: "document",
     document: handle.document,
@@ -331,6 +341,37 @@ async function pageForHandle(
         }
       : {}),
     ...(metadata?.contributors ? { contributors: metadata.contributors } : {}),
+    ...(links ? { sharing: links } : {}),
+  }
+}
+
+/**
+ * The page's sharing while links v2 is on, so the page needs no request of
+ * its own for it: one statement on the links index, and none for a document
+ * that has never had a durable id, which every link needs.
+ */
+function sharingSummary(
+  spaceId: string,
+  handle: ResolvedDocumentHandle,
+  canCreate: boolean
+): DocumentSharingSummary | undefined {
+  try {
+    if (!sharingV2Active()) return undefined
+    const summary =
+      handle.identity === "durable"
+        ? documentShareLinkSummary(spaceId, handle.documentId)
+        : { activeLinks: 0, nextExpiry: null }
+    return {
+      activeLinks: summary.activeLinks,
+      canCreate,
+      ...(summary.nextExpiry !== null
+        ? { nextExpiry: new Date(summary.nextExpiry).toISOString() }
+        : {}),
+    }
+  } catch (error) {
+    // A store this version can't open shares nothing; the page still opens.
+    if (error instanceof ShareLinksStoreError) return undefined
+    throw error
   }
 }
 
@@ -343,18 +384,20 @@ export async function readDocumentPage(options: {
   /** Whether records that point at the doc may be named. */
   recordsAuthorized?: boolean
   sharingAuthorized: boolean
+  canCreateShareLinks?: boolean
 }): Promise<DocumentPageResult | { kind: "alias-error" } | null> {
   const resolution = await useResolvedDocumentHandle(
     { ...options, snapshot: true },
     (handle) =>
-    pageForHandle(
-      options.spaceId,
-      handle,
-      options.rawSourceAuthorized,
-      options.annotationsAuthorized,
-      options.sharingAuthorized,
-      options.recordsAuthorized ?? false
-    )
+      pageForHandle(
+        options.spaceId,
+        handle,
+        options.rawSourceAuthorized,
+        options.annotationsAuthorized,
+        options.sharingAuthorized,
+        options.recordsAuthorized ?? false,
+        options.canCreateShareLinks ?? true
+      )
   )
   if (resolution.kind === "not-found") return null
   if (resolution.kind === "alias-error") return resolution

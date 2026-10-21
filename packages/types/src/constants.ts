@@ -6,6 +6,9 @@ import type { ThreadLocation } from "./threads"
 /** A Space shows at most this many pinned starting points. */
 export const START_HERE_LIMIT = 7
 
+/** The longest label a share link takes. */
+export const SHARE_LINK_LABEL_MAX_LENGTH = 80
+
 export function threadLocationKey(location: ThreadLocation): string {
   return location.kind === "worktable"
     ? "worktable"

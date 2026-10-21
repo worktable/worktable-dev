@@ -363,6 +363,13 @@ function predicateMatches(record: RecordFile, node: RecordPredicate, ctx: EvalCo
   return leafMatches(record, node, ctx);
 }
 
+/** The rows a parsed predicate matches, judged on their own fields only: a
+ *  relation path finds no targets here, so it matches as an empty relation. */
+export function filterRows(rows: RecordFile[], predicate: RecordPredicate, fields: FieldTypeMap | undefined): RecordFile[] {
+  const ctx: EvalContext = { fields, targets: new Map(), targetFields: new Map() };
+  return rows.filter((record) => predicateMatches(record, predicate, ctx));
+}
+
 // ---- Sort + cursor ----------------------------------------------------
 
 interface SortKey {

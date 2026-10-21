@@ -1,12 +1,11 @@
 import { expect, test } from "@playwright/test"
-import { injectWidgetRuntime } from "../../../packages/server/src/widget-authoring"
+import { buildWidgetShareRuntimeScript } from "../../../packages/server/src/widget-share-runtime"
 
 test("a live share SDK starts first in an opaque frame and uses only the visitor broker", async ({
   page,
 }) => {
   await page.emulateMedia({ colorScheme: "dark" })
-  const html = injectWidgetRuntime(
-    `<!doctype html><html data-theme="light"><head><script>
+  const html = `<!doctype html><html data-theme="light"><head>${buildWidgetShareRuntimeScript()}<script>
     window.authoredTheme = document.documentElement.getAttribute('data-theme');
     window.addEventListener('DOMContentLoaded', async () => {
       document.querySelector('#theme').textContent = window.authoredTheme;
@@ -17,11 +16,7 @@ test("a live share SDK starts first in an opaque frame and uses only the visitor
         catch(error) { document.querySelector('#write').textContent = error.code; }
       });
     });
-  </script></head><body><p id="theme"></p><p id="records"></p><p id="write"></p><button>Attempt write</button><a href="https://outside.example.test/report">External page</a></body></html>`,
-    "private-space",
-    "private-path",
-    { mode: "share" }
-  )
+  </script></head><body><p id="theme"></p><p id="records"></p><p id="write"></p><button>Attempt write</button><a href="https://outside.example.test/report">External page</a></body></html>`
   await page.route("https://html.example.test/frame", (route) =>
     route.fulfill({
       contentType: "text/html",

@@ -146,6 +146,7 @@ test("keeps confirmed policy saves cached and recovers a newer owner update duri
   }
   let policyReads = 0
   let linkReads = 0
+  let holdRefresh = false
   const revisions: Array<string | undefined> = []
   const saveGate = deferred()
   const refreshGate = deferred()
@@ -165,14 +166,14 @@ test("keeps confirmed policy saves cached and recovers a newer owner update duri
       },
     })
   )
-  await page.route("**/api/shares/links?**", (route) => {
+  await page.route("**/api/shares/links/all**", (route) => {
     linkReads++
     return route.fulfill({ json: { links: [], spaces: [], nextCursor: null } })
   })
   await page.route("**/api/shares/policy", async (route) => {
     if (route.request().method() === "GET") {
       policyReads++
-      if (policyReads > 1) await refreshGate.promise
+      if (holdRefresh) await refreshGate.promise
       await route.fulfill({ json: current })
       return
     }
@@ -207,13 +208,20 @@ test("keeps confirmed policy saves cached and recovers a newer owner update duri
       name: "Require a password",
     })
     await expect(paused).not.toBeChecked()
+    await expect(
+      settings.getByText("No links yet", { exact: true })
+    ).toBeVisible()
+    const initialPolicyReads = policyReads
+    const initialLinkReads = linkReads
     await paused.click()
-    await expect.poll(() => linkReads).toBeGreaterThan(1)
-    expect(policyReads).toBe(1)
+    await expect.poll(() => linkReads).toBeGreaterThan(initialLinkReads)
+    expect(policyReads).toBe(initialPolicyReads)
     await expect(paused).toBeChecked()
 
     await paused.click()
     await expect.poll(() => revisions.length).toBe(2)
+    holdRefresh = true
+    const linksBeforeExternalChange = linkReads
     current = {
       ...current,
       revision: 4,
@@ -221,8 +229,10 @@ test("keeps confirmed policy saves cached and recovers a newer owner update duri
     }
     for (const socket of sockets)
       socket.send(JSON.stringify({ type: "share_policy_changed", revision: 4 }))
-    await expect.poll(() => policyReads).toBe(2)
-    await expect.poll(() => linkReads).toBeGreaterThan(2)
+    await expect.poll(() => policyReads).toBe(initialPolicyReads + 1)
+    await expect
+      .poll(() => linkReads)
+      .toBeGreaterThan(linksBeforeExternalChange)
     const linksBeforeSettlement = linkReads
     saveGate.resolve()
     await expect.poll(() => linkReads).toBeGreaterThan(linksBeforeSettlement)

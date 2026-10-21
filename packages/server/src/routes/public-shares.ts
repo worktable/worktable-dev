@@ -447,17 +447,18 @@ export function createPublicSharesRouter(
     }
     if (view === null) return null
     if (view === "expired")
-      return Response.json(
-        { code: "EXPIRED" },
-        { status: PUBLIC_SHARE_STATUS.EXPIRED, headers: projectionHeaders() }
+      return htmlResponse(
+        c.req.raw,
+        JSON.stringify({ code: "EXPIRED" }),
+        PUBLIC_SHARE_STATUS.EXPIRED,
+        projectionHeaders()
       )
     if (view === "password-required")
-      return Response.json(
-        { code: "PASSWORD_REQUIRED" },
-        {
-          status: PUBLIC_SHARE_STATUS.PASSWORD_REQUIRED,
-          headers: projectionHeaders(),
-        }
+      return htmlResponse(
+        c.req.raw,
+        JSON.stringify({ code: "PASSWORD_REQUIRED" }),
+        PUBLIC_SHARE_STATUS.PASSWORD_REQUIRED,
+        projectionHeaders()
       )
     if (view === "unavailable" || (content && view.link.kind !== "html")) {
       return unavailable(c.req.raw, content, shareOrigin)

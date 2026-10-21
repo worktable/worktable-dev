@@ -17,8 +17,15 @@ const PASSWORD_OPTIONS = {
   timeCost: 2,
 } as const
 
+// Bun's Argon2id encoding uses a 32-byte salt and a 32-byte result.
+// Keep the SQLite summary predicate identical to the verifier's format gate.
+export const SHARE_PASSWORD_HASH_GLOB =
+  "$argon2id$v=19$m=19456,t=2,p=1$" +
+  "[A-Za-z0-9+/]".repeat(43) +
+  "$" +
+  "[A-Za-z0-9+/]".repeat(43)
 export function supportedSharePasswordHash(hash: string): boolean {
-  return /^\$argon2id\$v=19\$m=19456,t=2,p=1\$[A-Za-z0-9+/]{16,64}\$[A-Za-z0-9+/]{32,64}$/.test(
+  return /^\$argon2id\$v=19\$m=19456,t=2,p=1\$[A-Za-z0-9+/]{43}\$[A-Za-z0-9+/]{43}$/.test(
     hash
   )
 }

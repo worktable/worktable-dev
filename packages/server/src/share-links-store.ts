@@ -1,4 +1,7 @@
-import { supportedSharePasswordHash } from "./share-link-credentials.ts"
+import {
+  SHARE_PASSWORD_HASH_GLOB,
+  supportedSharePasswordHash,
+} from "./share-link-credentials.ts"
 import { Database } from "bun:sqlite"
 import {
   defaultSharingPolicy,
@@ -149,8 +152,8 @@ const flag = (value: number): boolean | null =>
   value === 0 ? false : value === 1 ? true : null
 
 /**
- * Passwords, grants, pinned versions and levels above view come with later
- * binaries; a link that sets any of them is never served here. Comment
+ * Passwords are supported only in preview, with the known hash encoding.
+ * Grants, pinned versions and levels above view come with later binaries. Comment
  * settings apply only from the comment level, but must still be ones this
  * binary knows.
  */
@@ -686,9 +689,7 @@ export function revokeAllShareLinks(reason: ShareLinkRevocationReason): number {
  * SELECT, no lock and no file read. The policy is parsed again only when its
  * revision moved. The caller checks revocation, epoch, expiry and policy.
  */
-export function findShareLinkForView(
-  token: string
-): {
+export function findShareLinkForView(token: string): {
   link: StoredShareLink
   policy: SharingPolicy
   unlockSecret: Uint8Array | null
@@ -724,9 +725,7 @@ export function findShareLinkForView(
 }
 
 /** A link by id and the owner policy as it stands, to check a view again. */
-export function findShareLinkWithPolicy(
-  id: string
-): {
+export function findShareLinkWithPolicy(id: string): {
   link: StoredShareLink
   policy: SharingPolicy
   unlockSecret: Uint8Array | null
@@ -794,15 +793,27 @@ export function documentShareLinkSummary(
   documentId: string,
   now = Date.now(),
   maxExpiryDays: number | null = null,
-  creatorAllowed: (id: string) => boolean = () => true
+  creatorAllowed: (id: string) => boolean = () => true,
+  requirePassword = false
 ): { activeLinks: number; nextExpiry: number | null } {
   const cap = maxExpiryDays === null ? null : maxExpiryDays * 86_400_000
-  const groups = openDatabase(false)
-    ?.query<
-      { createdById: string; activeLinks: number; nextExpiry: number | null },
-      [number | null, number | null, number | null, string, string, number]
-    >(
-      `
+  const groups =
+    openDatabase(false)
+      ?.query<
+        { createdById: string; activeLinks: number; nextExpiry: number | null },
+        [
+          number | null,
+          number | null,
+          number | null,
+          string,
+          string,
+          number,
+          string,
+          number,
+          number,
+        ]
+      >(
+        `
     WITH eligible AS (
       SELECT created_by_id, CASE WHEN ? IS NULL THEN expires_at
         WHEN expires_at IS NULL THEN created_at + ?
@@ -810,14 +821,27 @@ export function documentShareLinkSummary(
       FROM share_links
       WHERE space_id = ? AND document_id = ? AND revoked_at IS NULL
         AND kind IN ('doc', 'html') AND level = 'view'
-        AND password_hash IS NULL AND grant_json IS NULL AND pinned_version IS NULL
+        AND (password_hash IS NULL OR (? = 1 AND password_hash GLOB ?))
+        AND (? = 0 OR password_hash IS NOT NULL)
+        AND typeof(password_rev) = 'integer' AND password_rev BETWEEN 0 AND 9007199254740991
+        AND grant_json IS NULL AND pinned_version IS NULL
         AND accept_comments IN (0, 1) AND anonymous_allowed IN (0, 1)
         AND show_sharer_name IN (0, 1) AND visitors_see IN ('own', 'all')
     ) SELECT created_by_id AS createdById, COUNT(*) AS activeLinks, MIN(expiry) AS nextExpiry
       FROM eligible WHERE expiry IS NULL OR expiry > ? GROUP BY created_by_id
   `
-    )
-    .all(cap, cap, cap, spaceId, documentId, now) ?? []
+      )
+      .all(
+        cap,
+        cap,
+        cap,
+        spaceId,
+        documentId,
+        sharingPreviewEnabled() ? 1 : 0,
+        SHARE_PASSWORD_HASH_GLOB,
+        requirePassword ? 1 : 0,
+        now
+      ) ?? []
   return groups.reduce<{ activeLinks: number; nextExpiry: number | null }>(
     (summary, group) => {
       if (!creatorAllowed(group.createdById)) return summary

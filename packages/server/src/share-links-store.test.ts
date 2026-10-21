@@ -212,8 +212,30 @@ describe("share links", () => {
   it("requires passwords, binds unlocks to current credentials, and expires links", async () => {
     await writeDoc("space", "plan", "# Plan")
     const password = "test-only visitor password"
+    const plain = await createLink("plan")
     const created = await createLink("plan", { password })
     expect(JSON.stringify(created)).not.toContain("argon2")
+    const policy = (await (await send("GET", "/api/shares/policy")).json()) as {
+      policy: SharingPolicy
+      revision: number
+    }
+    expect(
+      (
+        await send("PUT", "/api/shares/policy", {
+          ...policy.policy,
+          requirePassword: true,
+        })
+      ).status
+    ).toBe(200)
+    expect((await view(plain.token)).status).toBe(404)
+    const page = await readDocumentPage({
+      spaceId: "space",
+      path: "plan",
+      rawSourceAuthorized: false,
+      annotationsAuthorized: false,
+      sharingAuthorized: true,
+    })
+    expect(page?.kind === "document" ? page.sharing?.activeLinks : null).toBe(1)
     expect((await view(created.token)).status).toBe(401)
     const unlock = (value: string) =>
       app().request("/public/share/unlock", {
@@ -375,6 +397,9 @@ describe("share links", () => {
     }
     expect(await page()).toEqual({ activeLinks: 0, canCreate: true })
     expect(await page(false)).toBeUndefined()
+    const locked = await createLink("plan", { password: "test-only password" })
+    expect(await page()).toEqual({ activeLinks: 1, canCreate: true })
+    await send("DELETE", `/api/shares/links/${locked.link.id}`)
 
     const open = await createLink("plan")
     const revoked = await createLink("plan")

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
+import { defaultSharingPolicy, type ShareLink } from "@worktable/types"
 import { writeFile } from "node:fs/promises"
 import { startWebHarness, type WebHarness } from "./harness"
 
@@ -259,4 +260,165 @@ test("explains the inert shared-HTML boundary before creating a link", async ({
         artifactKey: "status-card",
       },
     })
+})
+
+test("creates and edits password links without retaining a password in the form", async ({
+  page,
+}, testInfo) => {
+  const mutations: Array<{ method: string; body: Record<string, unknown> }> = []
+  let links: ShareLink[] = []
+  let requirePassword = false
+  await page.route("**/api/system/deployment", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...cloudDeployment,
+        capabilities: {
+          ...cloudDeployment.capabilities,
+          shareLinks: true,
+          sharingPreview: true,
+        },
+      }),
+    })
+  )
+  await page.route(
+    "**/api/spaces/share-browser/documents/page?*",
+    async (route) => {
+      const response = await route.fetch()
+      const body = await response.json()
+      body.page.sharing = { activeLinks: links.length, canCreate: true }
+      body.page.capabilities.sharing = true
+      await route.fulfill({ response, json: body })
+    }
+  )
+  await page.route(
+    /\/api\/shares\/links(?:\/[^/?]+)?(?:\?.*)?$/,
+    async (route) => {
+      const method = route.request().method()
+      if (method === "GET") {
+        await route.fulfill({
+          json: {
+            links,
+            canCreate: true,
+            policy: { ...defaultSharingPolicy(), requirePassword },
+          },
+        })
+        return
+      }
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      mutations.push({ method, body })
+      if (method === "POST") {
+        const link: ShareLink = {
+          id: "lnk_aaaaaaaaaaaaaaaaaaaaaa",
+          spaceId: "share-browser",
+          documentId: "doc_plan",
+          kind: "doc",
+          path: "launch-plan",
+          title: "Launch plan",
+          label: String(body.label),
+          level: "view",
+          createdBy: { id: "local:owner", name: "Owner" },
+          createdAt: new Date().toISOString(),
+          expiresAt: null,
+          hasPassword: typeof body.password === "string",
+          lastUsedAt: null,
+          status: "active",
+          tokenHint: "abcd",
+          canManage: true,
+          comments: {
+            acceptComments: true,
+            anonymousAllowed: false,
+            showSharerName: false,
+            visitorsSee: "own",
+            autoPaused: false,
+          },
+        }
+        links = [link]
+        await route.fulfill({
+          status: 201,
+          json: {
+            link,
+            url: "https://share.example.test/s/workspace/" + "a".repeat(43),
+          },
+        })
+      } else {
+        const link = {
+          ...links[0]!,
+          label: String(body.label),
+          ...(body.password !== undefined
+            ? { hasPassword: body.password !== null }
+            : {}),
+        }
+        links = [link]
+        await route.fulfill({ json: { link } })
+      }
+    }
+  )
+  await page.goto(appUrl("/spaces/share-browser/documents/launch-plan"), {
+    waitUntil: "domcontentloaded",
+  })
+  const share = page.getByRole("button", { name: "Share document" })
+  await expect(share).toBeVisible({ timeout: 30_000 })
+  await share.click()
+  const dialog = page.getByRole("dialog", { name: "Share document" })
+  await dialog.getByLabel("Label", { exact: true }).fill("Board")
+  await dialog.getByRole("switch", { name: "Password", exact: true }).click()
+  await dialog
+    .getByLabel("Link password", { exact: true })
+    .fill("test-only board password")
+  await dialog.screenshot({
+    path: testInfo.outputPath("password-link-form.png"),
+  })
+  await dialog.getByRole("button", { name: "Create link", exact: true }).click()
+  await expect(
+    dialog.getByText("Copy it now. It won’t be shown again.")
+  ).toBeVisible()
+  expect(mutations[0]?.body.password).toBe("test-only board password")
+  const edit = async () => {
+    await dialog.getByRole("button", { name: "Actions for Board" }).click()
+    await page.getByRole("menuitem", { name: "Edit Link" }).click()
+  }
+  await edit()
+  await expect(dialog.getByLabel("New password", { exact: true })).toHaveValue(
+    ""
+  )
+  await dialog.getByRole("button", { name: "Save", exact: true }).click()
+  await expect(
+    dialog.getByRole("button", { name: "Save", exact: true })
+  ).toBeHidden()
+  expect(mutations[1]?.body).not.toHaveProperty("password")
+  await edit()
+  await dialog
+    .getByLabel("New password", { exact: true })
+    .fill("replacement test password")
+  await dialog.getByRole("button", { name: "Save", exact: true }).click()
+  await expect(
+    dialog.getByRole("button", { name: "Save", exact: true })
+  ).toBeHidden()
+  expect(mutations[2]?.body.password).toBe("replacement test password")
+  await edit()
+  await dialog.getByRole("switch", { name: "Password", exact: true }).click()
+  await dialog.getByRole("button", { name: "Save", exact: true }).click()
+  await expect(
+    dialog.getByRole("button", { name: "Save", exact: true })
+  ).toBeHidden()
+  expect(mutations[3]?.body.password).toBeNull()
+  await dialog.getByRole("button", { name: "Done", exact: true }).click()
+  requirePassword = true
+  await share.click()
+  await dialog.getByRole("button", { name: "New link", exact: true }).click()
+  await expect(
+    dialog.getByRole("switch", { name: "Password", exact: true })
+  ).toBeChecked()
+  await expect(
+    dialog.getByRole("switch", { name: "Password", exact: true })
+  ).toBeDisabled()
+  await expect(
+    dialog.getByLabel("Link password", { exact: true })
+  ).toHaveAttribute("required", "")
+  await expect(dialog.getByLabel("Link password", { exact: true })).toHaveValue(
+    ""
+  )
+  await dialog.getByRole("button", { name: "Create link", exact: true }).click()
+  expect(mutations).toHaveLength(4)
 })

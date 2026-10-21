@@ -364,7 +364,6 @@ function sharingSummary(
     const allowed =
       !policy.paused &&
       policy.levels.includes("view") &&
-      !policy.requirePassword &&
       (policy.spaces.mode === "all" || policy.spaces.spaceIds.includes(spaceId))
     const summary = allowed
       ? documentShareLinkSummary(
@@ -372,7 +371,8 @@ function sharingSummary(
           handle.documentId,
           Date.now(),
           policy.maxExpiryDays,
-          (creator) => creatorMayShare(creator, spaceId, policy)
+          (creator) => creatorMayShare(creator, spaceId, policy),
+          policy.requirePassword
         )
       : { activeLinks: 0, nextExpiry: null }
     return {

@@ -1,6 +1,7 @@
-import { expect, test } from "bun:test"
+import { expect, test, spyOn } from "bun:test"
 import {
   hashSharePassword,
+  SharePasswordBusy,
   mintLegacyFrameTicket,
   legacyFrameToken,
   mintShareTicket,
@@ -86,4 +87,28 @@ test("pending legacy frames seal bearer tokens and expire independently of them"
       now
     )
   ).toBeNull()
+})
+
+test("password work rejects overload and releases its slots", async () => {
+  const hash = await hashSharePassword("test-only password")
+  const finish: Array<(value: boolean) => void> = []
+  const held = spyOn(Bun.password, "verify").mockImplementation(
+    () => new Promise<boolean>((resolve) => finish.push(resolve))
+  )
+  try {
+    const first = verifySharePassword("one", hash)
+    const second = verifySharePassword("two", hash)
+    await expect(verifySharePassword("three", hash)).rejects.toBeInstanceOf(
+      SharePasswordBusy
+    )
+    await expect(hashSharePassword("four")).rejects.toBeInstanceOf(
+      SharePasswordBusy
+    )
+    for (const resolve of finish) resolve(true)
+    expect(await Promise.all([first, second])).toEqual([true, true])
+  } finally {
+    for (const resolve of finish) resolve(false)
+    held.mockRestore()
+  }
+  expect(await verifySharePassword("test-only password", hash)).toBe(true)
 })

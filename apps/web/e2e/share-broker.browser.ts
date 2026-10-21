@@ -86,6 +86,11 @@ for (const colorScheme of ["light", "dark"] as const) {
         ),
       })
     )
+    const baseline = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/bridge") &&
+        response.request().postDataJSON()?.op === "changes"
+    )
     await page.goto(pageUrl)
     const frame = page.frameLocator("iframe")
     await expect(frame.locator("#records")).toHaveText("Granted data")
@@ -166,6 +171,22 @@ for (const colorScheme of ["light", "dark"] as const) {
     await expect
       .poll(() => calls.filter((call) => call.op === "changes").length)
       .toBeGreaterThan(0)
+    // Receiving the request is earlier than applying its initial cursor.
+    // Finish that network body, then let the parent's response task settle
+    // before advancing the controlled poll clock (especially in Firefox).
+    await (await baseline).finished()
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const channel = new MessageChannel()
+          channel.port1.onmessage = () => {
+            channel.port1.close()
+            channel.port2.close()
+            resolve()
+          }
+          channel.port2.postMessage(null)
+        })
+    )
     recordName = "Related change"
     changes = ["teams"]
     await page.clock.fastForward(30_001)

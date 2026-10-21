@@ -11,8 +11,13 @@ import {
   buildTenantEnv,
   ENV,
   GATEWAY_HEADER,
+  LINKED_CAPABILITIES,
+  LinkedHeartbeat,
+  LinkedRequestClaims,
   PublicShareProjection,
   SHARE_CAPABILITY_HEADER,
+  SHARE_UNLOCK_HEADER,
+  VISITOR_HEADERS,
   HOSTED_OAUTH_PERMISSION_GROUPS,
   HOSTED_OAUTH_SCOPES,
   MCP_RESOURCE_PATH,
@@ -265,6 +270,166 @@ describe("public share projection contract", () => {
         projectionHtml: "<p>Invalid</p>",
       }).success
     ).toBe(false)
+  })
+
+  it("accepts the optional link fields and still rejects anything else", () => {
+    const doc = {
+      kind: "doc",
+      format: "markdown",
+      title: "Launch plan",
+      projectionHtml: "<p>Launch plan</p>",
+    }
+    const html = { kind: "html", title: "Status board" }
+    const contentTicket = "v1.lnk_frame.1.1767225600.signature"
+    const live = { rev: "rev_1", poll: 30 }
+    const comments = {
+      accepting: true,
+      anonymousAllowed: false,
+      visitorsSee: "own",
+    }
+    for (const projection of [
+      { ...doc, comments },
+      { ...html, contentTicket },
+      {
+        ...html,
+        contentTicket,
+        live,
+        comments: { ...comments, visitorsSee: "all" },
+      },
+    ])
+      expect<unknown>(PublicShareProjection.parse(projection)).toEqual(
+        projection
+      )
+    for (const projection of [
+      { ...doc, contentTicket },
+      { ...doc, live },
+      // A live frame without a ticket would carry the link token.
+      { ...html, live },
+      { ...html, contentTicket: "too-short" },
+      { ...html, contentTicket: "v1/../../../public/share/x" },
+      { ...html, contentTicket, live: { ...live, token: "T".repeat(43) } },
+      { ...html, contentTicket, live: { ...live, poll: 0 } },
+      { ...html, comments: { ...comments, nameRequired: true } },
+      { ...html, comments: { ...comments, visitorsSee: "everyone" } },
+      { ...html, password: "secret" },
+    ])
+      expect(PublicShareProjection.safeParse(projection).success).toBe(false)
+    expect(SHARE_UNLOCK_HEADER).toBe("x-worktable-share-unlock")
+    expect(VISITOR_HEADERS).toEqual({
+      VERIFIED: "x-worktable-visitor-verified",
+      KEY: "x-worktable-visitor-key",
+      CLIENT: "x-worktable-visitor-client",
+    })
+  })
+})
+
+describe("linked request contract", () => {
+  const binding = {
+    installationId: "installation",
+    destinationId: "a".repeat(32),
+    ownerSubject: "user_owner",
+    workspaceEpoch: "epoch",
+    generation: 1,
+    bootNonce: "boot",
+  }
+  const capability = "T".repeat(43)
+  const ticket = "v1.lnk_frame.1.1767225600.signature"
+  const visitor = {
+    verified: true,
+    key: "a".repeat(64),
+    client: "b".repeat(32),
+  }
+  const parses = (grant: object, method: string, path: string) =>
+    LinkedRequestClaims.safeParse({
+      binding,
+      grant,
+      method,
+      path,
+      bodyDigest: "0".repeat(64),
+    }).success
+
+  it("carries today's share requests and the later ones, and nothing looser", () => {
+    for (const [grant, method, path] of [
+      [{ kind: "share", capability }, "GET", "/public/share"],
+      [{ kind: "share", capability }, "HEAD", "/public/share/content"],
+      [{ kind: "share", capability, unlock: ticket }, "GET", "/public/share"],
+      // A frame's capability is its ticket, never the link token.
+      [{ kind: "share", capability: ticket }, "GET", "/public/share/content"],
+      [{ kind: "share", capability }, "POST", "/public/share/unlock"],
+      [
+        { kind: "share", capability, unlock: ticket },
+        "POST",
+        "/public/share/bridge",
+      ],
+      [
+        {
+          kind: "share",
+          capability,
+          visitor: { verified: false, key: visitor.key },
+        },
+        "GET",
+        "/public/share/comments",
+      ],
+      [
+        { kind: "share", capability, visitor },
+        "POST",
+        "/public/share/comments",
+      ],
+    ] as const)
+      expect(parses(grant, method, path)).toBe(true)
+    for (const [grant, path] of [
+      [{ kind: "share" }, "/public/share"],
+      [{ kind: "share", unlock: ticket }, "/public/share/content"],
+      [{ kind: "share", capability: "T".repeat(15) }, "/public/share"],
+      [
+        { kind: "share", capability, unlock: "v1/ticket/0123456789" },
+        "/public/share",
+      ],
+      [{ kind: "share", capability, label: "Acme" }, "/public/share"],
+      [{ kind: "share", capability }, "/public/share/feed"],
+      [
+        {
+          kind: "share",
+          capability,
+          visitor: { ...visitor, key: "visitor-key" },
+        },
+        "/public/share/comments",
+      ],
+      [
+        {
+          kind: "share",
+          capability,
+          visitor: { ...visitor, ip: "203.0.113.7" },
+        },
+        "/public/share/comments",
+      ],
+    ] as const)
+      expect(parses(grant, "POST", path)).toBe(false)
+  })
+
+  it("takes capability names Cloud doesn't know yet, and no other new heartbeat field", () => {
+    const heartbeat = {
+      workspaceEpoch: "epoch",
+      bootSequence: 1,
+      bootNonce: "boot",
+      port: 49001,
+      connected: true,
+    }
+    expect(LinkedHeartbeat.parse(heartbeat)).toEqual(heartbeat)
+    const capabilities = [...Object.values(LINKED_CAPABILITIES), "share-later"]
+    expect(LinkedHeartbeat.parse({ ...heartbeat, capabilities })).toEqual({
+      ...heartbeat,
+      capabilities,
+    })
+    for (const invalid of [
+      { ...heartbeat, capabilities: ["Share Unlock"] },
+      {
+        ...heartbeat,
+        capabilities: Array.from({ length: 33 }, (_, i) => `c${i}`),
+      },
+      { ...heartbeat, version: "0.1.25" },
+    ])
+      expect(LinkedHeartbeat.safeParse(invalid).success).toBe(false)
   })
 })
 

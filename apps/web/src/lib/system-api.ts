@@ -215,7 +215,11 @@ export interface ServerSettings {
     retentionNotice: RetentionNotice | null
   }
   /** Machine-local: serve agents the MCP tool changes not yet released. */
-  agents: { previewTools: boolean }
+  agents: {
+    previewTools: boolean
+    /** Set when WORKTABLE_MCP_PREVIEW overrides the setting on this server. */
+    previewToolsOverride?: boolean | null
+  }
 }
 
 /**

@@ -224,7 +224,8 @@ update client configurations if it changed.
 On a self-hosted Worktable, **Settings → Agents → Preview agent tools** serves
 agents tool changes that aren't released yet. Agents get them the next time
 they connect. `WORKTABLE_MCP_PREVIEW=1` or `0` overrides the
-setting for one server process. Worktable Cloud serves the released tools.
+setting for one server process, and the switch then shows that it's set by
+the environment. Worktable Cloud serves the released tools.
 `mcp-tools.preview.json` lists the preview tools next to the released
 `mcp-tools.json`.
 

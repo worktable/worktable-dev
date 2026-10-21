@@ -190,15 +190,20 @@ function PreviewToolsRow() {
   const patch = useSettingsPatch()
   const settings = settingsQuery.data
   if (settingsQuery.isError) return null
+  const override = settings?.agents.previewToolsOverride ?? null
   return (
     <div className="rounded-xl card-surface p-4">
       <SettingRow
         label="Preview agent tools"
-        description="Agents connected to this Worktable use tool changes that aren't released yet."
+        description={
+          override === null
+            ? "Agents use tool changes that aren't released yet, from the next time they connect."
+            : "Set by WORKTABLE_MCP_PREVIEW on this server."
+        }
       >
         <Switch
-          checked={settings?.agents.previewTools ?? false}
-          disabled={!settings || patch.isPending}
+          checked={override ?? settings?.agents.previewTools ?? false}
+          disabled={!settings || patch.isPending || override !== null}
           onCheckedChange={(v) => patch.mutate({ agents: { previewTools: v } })}
         />
       </SettingRow>

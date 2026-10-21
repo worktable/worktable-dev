@@ -15,9 +15,16 @@ export type McpSurface = "released" | "preview"
  * surface unless its environment says otherwise.
  */
 export function configuredMcpSurface(): McpSurface {
-  const env = process.env["WORKTABLE_MCP_PREVIEW"]?.trim().toLowerCase()
-  if (env === "1" || env === "true") return "preview"
-  if (env === "0" || env === "false") return "released"
+  const override = mcpPreviewEnvOverride()
+  if (override !== null) return override ? "preview" : "released"
   if (isHosted()) return "released"
   return getServerSettings().agents.previewTools ? "preview" : "released"
+}
+
+/** WORKTABLE_MCP_PREVIEW when it is set to on or off, else null. */
+export function mcpPreviewEnvOverride(): boolean | null {
+  const env = process.env["WORKTABLE_MCP_PREVIEW"]?.trim().toLowerCase()
+  if (env === "1" || env === "true") return true
+  if (env === "0" || env === "false") return false
+  return null
 }

@@ -147,13 +147,23 @@ describe("preview agent tools", () => {
     process.env["WORKTABLE_MCP_PREVIEW"] = "1";
     expect(configuredMcpSurface()).toBe("preview");
   });
+
+  it("tell the Settings switch when the environment overrides it", async () => {
+    const read = async () => (await (await app().request("/api/system/settings")).json()) as { agents: { previewTools: boolean; previewToolsOverride: boolean | null } };
+    expect((await read()).agents.previewToolsOverride).toBeNull();
+    process.env["WORKTABLE_MCP_PREVIEW"] = "0";
+    expect((await read()).agents).toEqual({ previewTools: false, previewToolsOverride: false });
+  });
 });
 
 describe("GET /api/system/settings", () => {
   it("returns full settings without an owner gate", async () => {
     const res = await app().fetch(new Request("http://localhost/api/system/settings"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual(SETTINGS_DEFAULTS);
+    expect(await res.json()).toEqual({
+      ...SETTINGS_DEFAULTS,
+      agents: { ...SETTINGS_DEFAULTS.agents, previewToolsOverride: null },
+    });
   });
 });
 

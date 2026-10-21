@@ -189,7 +189,9 @@ for (const colorScheme of ["light", "dark"] as const) {
     )
     recordName = "Related change"
     changes = ["teams"]
-    await page.clock.fastForward(30_001)
+    // Production spreads a 30-second poll by +/-20%. Advance through its
+    // maximum delay so this assertion does not depend on the random jitter.
+    await page.clock.fastForward(36_001)
     await expect(frame.locator("#records")).toHaveText("Related change")
     expect(calls.filter((call) => call.op === "records.query")).toHaveLength(2)
     await page.screenshot({

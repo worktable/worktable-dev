@@ -3,6 +3,8 @@ import type {
   CreateShareLinkInput,
   DocumentShareLinks,
   ShareLink,
+  LinkGrant,
+  ShareLinkAccess,
   ShareTarget,
   UpdateShareLinkInput,
 } from "@worktable/types"
@@ -73,7 +75,7 @@ export function getDocumentShareLinks(
 
 /** The response is the only time the link's URL is shown. */
 export function createShareLink(
-  input: Pick<CreateShareLinkInput, "target" | "label" | "expiresAt">
+  input: CreateShareLinkInput
 ): Promise<CreatedShareLink> {
   return fetchJSON<CreatedShareLink>("/api/shares/links", {
     method: "POST",
@@ -83,7 +85,7 @@ export function createShareLink(
 
 export function updateShareLink(
   id: string,
-  change: Pick<UpdateShareLinkInput, "label" | "expiresAt">
+  change: UpdateShareLinkInput
 ): Promise<{ link: ShareLink }> {
   return fetchJSON<{ link: ShareLink }>(
     `/api/shares/links/${encodeURIComponent(id)}`,
@@ -96,4 +98,15 @@ export function revokeShareLink(id: string): Promise<{ link: ShareLink }> {
     `/api/shares/links/${encodeURIComponent(id)}`,
     { method: "DELETE" }
   )
+}
+
+/** An explicit human check; this endpoint creates no link. */
+export function checkShareLinkAccess(
+  target: ShareTarget,
+  options: { grant?: LinkGrant; observe: boolean }
+): Promise<ShareLinkAccess> {
+  return fetchJSON<ShareLinkAccess>("/api/shares/links/access", {
+    method: "POST",
+    body: JSON.stringify({ target, ...options }),
+  })
 }

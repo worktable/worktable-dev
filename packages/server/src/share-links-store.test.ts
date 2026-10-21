@@ -5,6 +5,7 @@ import { saveSharingPolicy } from "./share-links-store.ts"
 import { createHash } from "node:crypto"
 import { buildRecordCollectionSchema, writeRecordCollectionSchema, writeRecord, writeWidgetState } from "./record-store.ts"
 import * as linkQueries from "./link-query.ts"
+import * as linkAccess from "./link-sharing-access.ts"
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import { Database } from "bun:sqlite"
 import {
@@ -219,6 +220,45 @@ async function useHtmlStorageV2(): Promise<void> {
 }
 
 describe("share links", () => {
+  it("prepares a person's live access under current policy without making a link", async () => {
+    process.env["WORKTABLE_RECORDS_INDEX"] = "0"
+    saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true }, "local:owner")
+    await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, visibility: { type: "text" } } }))
+    const at = new Date().toISOString()
+    for (const visibility of ["public", "private"]) await writeRecord("space", { version: 1, kind: "worktable.record", id: visibility, collectionId: "deals", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: visibility === "public" ? "Visible" : "HIDDEN_SENTINEL", visibility } })
+    await createHtmlDocument({ spaceId: "space", name: "Access", html: "<script>worktable.records.query('deals')</script>", permissions: { network: false, records: { deals: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
+    await drainWorkspaceChanges()
+    const grant = LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: ["name"], rows: { field: "visibility", op: "eq", value: "public" } } } })
+    const input = { target: { kind: "html", spaceId: "space", path: "access" }, grant, observe: false }
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    expect((await send("POST", "/api/shares/links/access", input)).status).toBe(404)
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    expect((await send("POST", "/api/shares/links/access", input, agent)).status).toBe(403)
+    const prepared = await send("POST", "/api/shares/links/access", input)
+    expect(prepared.status).toBe(200)
+    const access = await prepared.json()
+    expect(access.counts).toEqual({ deals: 1 })
+    expect(access.effectiveGrant.collections.deals.fields).toEqual(["name"])
+    expect(access.issues).toEqual([])
+    expect(JSON.stringify(access)).not.toContain("HIDDEN_SENTINEL")
+    expect((await documentLinks("access", "html")).links).toEqual([])
+    const original = linkAccess.prepareShareLinkAccess
+    const changed = spyOn(linkAccess, "prepareShareLinkAccess").mockImplementation(async (...args) => {
+      const result = await original(...args)
+      saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true, records: "none" }, "local:owner")
+      return result
+    })
+    try {
+      const stale = await send("POST", "/api/shares/links/access", input)
+      expect(stale.status).toBe(503)
+      expect((await stale.json()).code).toBe("LINK_PREVIEW_CHANGED")
+    } finally { changed.mockRestore() }
+    const narrowed = await (await send("POST", "/api/shares/links/access", input)).json()
+    expect(narrowed.effectiveGrant.collections).toEqual({})
+    expect(narrowed.counts).toEqual({})
+    expect(narrowed.issues).toHaveLength(1)
+  })
+
   it("opens live tools through ticketed frames and grant-only reads, including policy changes during a read", async () => {
     process.env["WORKTABLE_RECORDS_INDEX"] = "0"
     const policy = (await (await send("GET", "/api/shares/policy")).json()).policy as SharingPolicy

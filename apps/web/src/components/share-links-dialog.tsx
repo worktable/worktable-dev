@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
+  ExternalLink,
   Link2,
   Loader2,
   MoreVertical,
@@ -13,6 +14,8 @@ import type {
   DocumentShareLinks,
   DocumentSharingSummary,
   ShareLink,
+  LinkGrant,
+  ShareLinkAccess,
 } from "@worktable/types"
 import { SHARE_LINK_LABEL_MAX_LENGTH } from "@worktable/types/constants"
 import { Button } from "@worktable/ui/components/button"
@@ -55,6 +58,7 @@ import { Switch } from "@worktable/ui/components/switch"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { Skeleton } from "@worktable/ui/components/skeleton"
 import { cn } from "@worktable/ui/lib/utils"
+import { ShareLinkAccessEditor } from "@/components/share-link-access"
 import { HtmlSafetyNote, InlineError } from "@/components/share-document-action"
 import type { PageShareTarget } from "@/hooks/use-page-meta"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
@@ -71,6 +75,7 @@ import {
   type ShareLinkExpiry,
 } from "@/lib/share-links"
 import {
+  checkShareLinkAccess,
   createShareLink,
   getDocumentShareLinks,
   revokeShareLink,
@@ -83,6 +88,10 @@ interface LinkDraft {
   expiry: ShareLinkExpiry
   passwordEnabled: boolean
   password: string
+  live: boolean
+  grant: LinkGrant | null
+  accessChanged: boolean
+  expiryChosen: boolean
 }
 
 const NEW_LINK: LinkDraft = {
@@ -90,6 +99,10 @@ const NEW_LINK: LinkDraft = {
   expiry: "never",
   passwordEnabled: false,
   password: "",
+  live: false,
+  grant: null,
+  accessChanged: false,
+  expiryChosen: false,
 }
 
 type Editing = { kind: "new" } | { kind: "edit"; link: ShareLink } | null
@@ -122,6 +135,9 @@ export function ShareLinksDialog({
   })
   const [editing, setEditing] = useState<Editing>(null)
   const [draft, setDraft] = useState<LinkDraft>(NEW_LINK)
+  const [access, setAccess] = useState<ShareLinkAccess | null>(null)
+  const [checkedGrant, setCheckedGrant] = useState<string | null>(null)
+  const accessVersion = useRef(0)
   const [created, setCreated] = useState<CreatedShareLink | null>(null)
   const [revoking, setRevoking] = useState<ShareLink | null>(null)
   const [announcement, setAnnouncement] = useState("")
@@ -138,6 +154,8 @@ export function ShareLinksDialog({
         summary.activeLinks === 0 && summary.canCreate ? { kind: "new" } : null
       )
       setDraft(NEW_LINK)
+      setAccess(null)
+      setCheckedGrant(null)
       setCreated(null)
       setAnnouncement("")
     }
@@ -162,7 +180,12 @@ export function ShareLinksDialog({
       createShareLink({
         target: { kind: target.kind, spaceId, path },
         label: input.label.trim(),
-        expiresAt: shareLinkExpiresAt(input.expiry) ?? null,
+        ...(input.grant &&
+        Object.keys(input.grant.collections).length > 0 &&
+        !input.expiryChosen
+          ? {}
+          : { expiresAt: shareLinkExpiresAt(input.expiry) ?? null }),
+        ...(preview && input.grant ? { grant: input.grant } : {}),
         ...(preview &&
         (input.passwordEnabled || list.data?.policy.requirePassword)
           ? { password: input.password }
@@ -184,6 +207,7 @@ export function ShareLinksDialog({
       const expiresAt = shareLinkExpiresAt(input.expiry)
       return updateShareLink(link.id, {
         label: input.label.trim(),
+        ...(preview && input.accessChanged ? { grant: input.grant } : {}),
         ...(expiresAt !== undefined ? { expiresAt } : {}),
         ...(preview
           ? !input.passwordEnabled && !list.data?.policy.requirePassword
@@ -222,13 +246,73 @@ export function ShareLinksDialog({
     },
   })
 
+  const probe = useMutation({
+    mutationFn: ({
+      grant,
+      observe,
+    }: {
+      grant?: LinkGrant
+      observe: boolean
+      version: number
+    }) =>
+      checkShareLinkAccess(
+        { kind: target.kind, spaceId, path },
+        { grant, observe }
+      ),
+    onSuccess: (result, input) => {
+      if (input.version !== accessVersion.current) return
+      setAccess(result)
+      setCheckedGrant(JSON.stringify(result.grant))
+      setDraft((current) => ({ ...current, grant: result.grant }))
+    },
+  })
+  function checkAccess(grant?: LinkGrant, observe = false) {
+    const version = ++accessVersion.current
+    probe.mutate({ grant, observe, version })
+  }
+  function changeGrant(grant: LinkGrant | null) {
+    accessVersion.current++
+    setDraft((current) => ({
+      ...current,
+      live: grant !== null,
+      grant,
+      accessChanged: true,
+    }))
+    setCheckedGrant(null)
+  }
   const saving = create.isPending || update.isPending
   // A new link waits for the list, which shows its URL once made.
-  const ready = editing?.kind !== "new" || list.data !== undefined
+  const accessChecked =
+    draft.grant !== null && checkedGrant === JSON.stringify(draft.grant)
+  const ready =
+    !probe.isPending &&
+    (editing?.kind !== "new" || list.data !== undefined) &&
+    (!draft.live ||
+      (editing?.kind === "edit" && !draft.accessChanged) ||
+      (accessChecked && access?.issues.length === 0))
   const canCreate = list.data?.canCreate ?? summary.canCreate
   const editingLink = editing?.kind === "edit" ? editing.link : null
   const choices = shareLinkExpiryChoices(list.data?.policy, editingLink)
-  const expiry = allowedShareLinkExpiry(draft.expiry, choices)
+  const hasRecordAccess =
+    draft.grant !== null && Object.keys(draft.grant.collections).length > 0
+  const defaultDays = list.data?.policy.recordsDefaultExpiryDays
+  const cap = list.data?.policy.maxExpiryDays
+  const liveDays =
+    defaultDays === null ? cap : Math.min(defaultDays ?? 30, cap ?? Infinity)
+  const liveDefault =
+    liveDays === null || liveDays === undefined ? "never" : String(liveDays)
+  if (
+    hasRecordAccess &&
+    editing?.kind === "new" &&
+    !choices.some((choice) => choice.value === liveDefault)
+  )
+    choices.push({ value: liveDefault, label: `${liveDays} days` })
+  const expiry = allowedShareLinkExpiry(
+    hasRecordAccess && editing?.kind === "new" && !draft.expiryChosen
+      ? liveDefault
+      : draft.expiry,
+    choices
+  )
   const formShown =
     editing !== null && !list.isError && (editing.kind === "edit" || canCreate)
   const active = summary.activeLinks
@@ -237,6 +321,8 @@ export function ShareLinksDialog({
     if (!nextOpen && (saving || revoke.isPending)) return
     setOpen(nextOpen)
     if (nextOpen) return
+    accessVersion.current++
+    probe.reset()
     setEditing(null)
     setDraft(NEW_LINK)
     setCreated(null)
@@ -247,6 +333,10 @@ export function ShareLinksDialog({
   }
 
   function startEditing(next: Editing) {
+    accessVersion.current++
+    probe.reset()
+    setAccess(null)
+    setCheckedGrant(null)
     setEditing(next)
     create.reset()
     update.reset()
@@ -257,9 +347,15 @@ export function ShareLinksDialog({
             expiry: next.link.expiresAt ? "keep" : "never",
             passwordEnabled: next.link.hasPassword,
             password: "",
+            live: Boolean(next.link.grant),
+            grant: next.link.grant ?? null,
+            accessChanged: false,
+            expiryChosen: true,
           }
         : NEW_LINK
     )
+    if (preview && next?.kind === "edit" && next.link.grant)
+      checkAccess(next.link.grant)
   }
 
   function cancelEditing() {
@@ -281,7 +377,9 @@ export function ShareLinksDialog({
   return (
     <>
       <ResponsiveDialog open={open} onOpenChange={handleOpenChange}>
-        <ResponsiveDialogContent className="sm:max-w-md">
+        <ResponsiveDialogContent
+          className={draft.grant ? "sm:max-w-lg" : "sm:max-w-md"}
+        >
           <ResponsiveDialogHeader>
             <div className="mb-1 flex size-10 items-center justify-center rounded-lg bg-surface-tint text-primary">
               <Link2 className="size-5" />
@@ -350,7 +448,60 @@ export function ShareLinksDialog({
                 passwords={preview}
                 passwordRequired={list.data?.policy.requirePassword ?? false}
                 hasPassword={editingLink?.hasPassword ?? false}
-              />
+              >
+                {preview && target.kind === "html" ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <label
+                        htmlFor="share-link-live"
+                        className="text-sm font-medium"
+                      >
+                        Live tool
+                      </label>
+                      <Switch
+                        id="share-link-live"
+                        checked={draft.live}
+                        disabled={
+                          saving ||
+                          probe.isPending ||
+                          (!list.data?.policy.liveLinks && !draft.grant)
+                        }
+                        onCheckedChange={(enabled) => {
+                          if (enabled) {
+                            setDraft((current) => ({
+                              ...current,
+                              live: true,
+                              accessChanged: true,
+                            }))
+                            checkAccess(undefined, true)
+                          } else changeGrant(null)
+                        }}
+                      />
+                    </div>
+                    {!list.data?.policy.liveLinks ? (
+                      <p className="text-xs text-muted-foreground">
+                        Live links are turned off in this Worktable’s Links
+                        settings.
+                      </p>
+                    ) : null}
+                    {draft.live ? (
+                      <ShareLinkAccessEditor
+                        spaceId={spaceId}
+                        access={access}
+                        grant={draft.grant}
+                        checked={accessChecked}
+                        busy={probe.isPending}
+                        disabled={saving}
+                        error={probe.isError}
+                        onChange={changeGrant}
+                        onCheck={() =>
+                          checkAccess(draft.grant ?? undefined, !access)
+                        }
+                      />
+                    ) : null}
+                  </div>
+                ) : null}
+              </ShareLinkForm>
             ) : canCreate && !list.isError && list.data ? (
               <Button
                 type="button"
@@ -370,7 +521,7 @@ export function ShareLinksDialog({
               <InlineError>Couldn’t save the link. Try again.</InlineError>
             ) : null}
 
-            {target.kind === "html" ? <HtmlSafetyNote /> : null}
+            {target.kind === "html" && !draft.grant ? <HtmlSafetyNote /> : null}
 
             <p className="sr-only" aria-live="polite" aria-atomic="true">
               {announcement}
@@ -552,6 +703,19 @@ export function ShareLinkList({
             {url ? (
               <div className="min-w-0 basis-full space-y-1.5 pt-1 pb-1">
                 <CopyField value={url} onCopied={onCopied} />
+                {link.grant ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      window.open(url, "_blank", "noopener,noreferrer")
+                    }
+                  >
+                    <ExternalLink className="size-4" />
+                    View as visitor
+                  </Button>
+                ) : null}
                 <p className="px-1 text-xs text-muted-foreground">
                   Copy it now. It won’t be shown again.
                 </p>
@@ -590,10 +754,12 @@ function ShareLinkForm({
   passwords,
   passwordRequired,
   hasPassword,
+  children,
 }: {
   passwords: boolean
   passwordRequired: boolean
   hasPassword: boolean
+  children?: React.ReactNode
   draft: LinkDraft
   onChange: (draft: LinkDraft) => void
   choices: Array<{ value: ShareLinkExpiry; label: string }>
@@ -653,7 +819,7 @@ function ShareLinkForm({
             value={draft.expiry}
             disabled={disabled}
             onValueChange={(expiry) => {
-              if (expiry) onChange({ ...draft, expiry })
+              if (expiry) onChange({ ...draft, expiry, expiryChosen: true })
             }}
           >
             <SelectTrigger
@@ -672,6 +838,7 @@ function ShareLinkForm({
           </Select>
         </div>
       </div>
+      {children}
       {passwords ? (
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-3">

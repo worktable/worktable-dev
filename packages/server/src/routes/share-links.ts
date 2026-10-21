@@ -1,5 +1,6 @@
 import {
   CreateShareLinkInputSchema,
+  LinkGrantSchema,
   ShareLinkKindSchema,
   ShareLinkLevelSchema,
   ShareTargetSchema,
@@ -20,6 +21,10 @@ import {
   SharePasswordBusy,
 } from "../share-link-credentials.ts"
 import { sharingPreviewEnabled } from "../sharing-preview.ts"
+import { prepareShareLinkAccess } from "../link-sharing-access.ts"
+import { spaceGeneration } from "../workspace-read-model.ts"
+import { linkSchemaGeneration } from "../link-schema-generation.ts"
+import { readSharingPolicy } from "../share-links-store.ts"
 import { readLinkGrantSchemas, validateLinkGrant } from "../link-grant.ts"
 import { mapWithConcurrency } from "../bounded-concurrency.ts"
 import { getWorkspaceCollaborationEpoch } from "../collaboration-epoch.ts"
@@ -283,12 +288,89 @@ shareLinksRouter.get("/", async (c) => {
   return c.json(body)
 })
 
-async function checkGrant(c: Context, grant: LinkGrant, spaceId: string, kind: string, policy: SharingPolicy): Promise<Response | null> {
-  if (!sharingPreviewEnabled() || !policy.liveLinks || kind !== "html") return invalid(c, "Live links aren't allowed here", "LIVE_NOT_AVAILABLE")
-  if (Buffer.byteLength(JSON.stringify(grant)) > 256 * 1024) return invalid(c, "The link's access is too large", "LINK_GRANT_INVALID")
-  const issues = validateLinkGrant(grant, await readLinkGrantSchemas(spaceId, grant))
-  return issues.length ? c.json({ error: "This access doesn't fit the collections it names", code: "LINK_GRANT_INVALID", issues }, 400) : null
+async function checkGrant(
+  c: Context,
+  grant: LinkGrant,
+  spaceId: string,
+  kind: string,
+  policy: SharingPolicy
+): Promise<Response | null> {
+  if (!sharingPreviewEnabled() || !policy.liveLinks || kind !== "html")
+    return invalid(c, "Live links aren't allowed here", "LIVE_NOT_AVAILABLE")
+  if (Buffer.byteLength(JSON.stringify(grant)) > 256 * 1024)
+    return invalid(c, "The link's access is too large", "LINK_GRANT_INVALID")
+  const issues = validateLinkGrant(
+    grant,
+    await readLinkGrantSchemas(spaceId, grant)
+  )
+  return issues.length
+    ? c.json(
+        {
+          error: "This access doesn't fit the collections it names",
+          code: "LINK_GRANT_INVALID",
+          issues,
+        },
+        400
+      )
+    : null
 }
+
+const AccessInput = z.strictObject({
+  target: ShareTargetSchema,
+  grant: LinkGrantSchema.optional(),
+  observe: z.boolean().default(false),
+})
+
+shareLinksRouter.post("/access", async (c) => {
+  if (!sharingPreviewEnabled()) return notFound(c)
+  const body: unknown = await c.req.json().catch(() => null)
+  if (Buffer.byteLength(JSON.stringify(body)) > 256 * 1024)
+    return invalid(c, "This access is too large")
+  const parsed = AccessInput.safeParse(body)
+  if (!parsed.success) return invalid(c, parsed.error.message)
+  const { target, grant, observe } = parsed.data
+  if (target.kind !== "html" || !safeTarget(target)) return notFound(c)
+  const identity = identityOf(c)
+  const revision = readSharingPolicy().revision
+  const policy = currentSharingPolicy()
+  const decision = authorizeShareAction(identity, "create", target.spaceId, {
+    policy,
+  })
+  if (!decision.allowed) return denied(c, decision)
+  if (!policy.liveLinks)
+    return invalid(c, "Live links aren't allowed here", "LIVE_NOT_AVAILABLE")
+  const source = spaceGeneration(target.spaceId)
+  const schema = linkSchemaGeneration(target.spaceId)
+  const access = await prepareShareLinkAccess({
+    ...target,
+    grant,
+    observe,
+    policy,
+    scopes: identity?.scopes ?? [],
+    signal: c.req.raw.signal,
+  })
+  if (!access) return notFound(c)
+  const latest = currentSharingPolicy()
+  const allowed = authorizeShareAction(identity, "create", target.spaceId, {
+    policy: latest,
+  })
+  if (!allowed.allowed) return denied(c, allowed)
+  if (!sharingPreviewEnabled() || !latest.liveLinks) return notFound(c)
+  if (
+    readSharingPolicy().revision !== revision ||
+    spaceGeneration(target.spaceId) !== source ||
+    linkSchemaGeneration(target.spaceId) !== schema
+  )
+    return c.json(
+      {
+        error: "The tool or sharing settings changed. Check its access again.",
+        code: "LINK_PREVIEW_CHANGED",
+      },
+      503
+    )
+  c.header("Cache-Control", "no-store")
+  return c.json(access)
+})
 
 shareLinksRouter.post("/", async (c) => {
   const input = CreateShareLinkInputSchema.safeParse(
@@ -313,13 +395,29 @@ shareLinksRouter.post("/", async (c) => {
     )
   }
   if (grant) {
-    const problem = await checkGrant(c, grant, target.spaceId, target.kind, policy)
+    const problem = await checkGrant(
+      c,
+      grant,
+      target.spaceId,
+      target.kind,
+      policy
+    )
     if (problem) return problem
   }
-  const expiryDays = policy.recordsDefaultExpiryDays === null ? policy.maxExpiryDays : Math.min(policy.recordsDefaultExpiryDays, policy.maxExpiryDays ?? Infinity)
-  const defaultExpiry = grant && Object.keys(grant.collections).length && input.data.expiresAt === undefined && expiryDays !== null
-    ? new Date(Date.now() + expiryDays * 86_400_000).toISOString()
-    : input.data.expiresAt
+  const expiryDays =
+    policy.recordsDefaultExpiryDays === null
+      ? policy.maxExpiryDays
+      : Math.min(
+          policy.recordsDefaultExpiryDays,
+          policy.maxExpiryDays ?? Infinity
+        )
+  const defaultExpiry =
+    grant &&
+    Object.keys(grant.collections).length &&
+    input.data.expiresAt === undefined &&
+    expiryDays !== null
+      ? new Date(Date.now() + expiryDays * 86_400_000).toISOString()
+      : input.data.expiresAt
   const expiresAt = expiryOf(defaultExpiry)
   if (typeof expiresAt === "string") return invalid(c, expiresAt)
   if (!expiryAllowed(expiresAt, policy)) return expiryTooLong(c, policy)
@@ -347,7 +445,8 @@ shareLinksRouter.post("/", async (c) => {
       // Policy and membership may change during document resolution. Nothing
       // asynchronous separates this final authorization from the insert.
       const latestPolicy = currentSharingPolicy()
-      if (grant && (!sharingPreviewEnabled() || !latestPolicy.liveLinks)) return { grantDenied: true }
+      if (grant && (!sharingPreviewEnabled() || !latestPolicy.liveLinks))
+        return { grantDenied: true }
       if (
         (passwordHash && !sharingPreviewEnabled()) ||
         (latestPolicy.requirePassword && !passwordHash)
@@ -384,7 +483,8 @@ shareLinksRouter.post("/", async (c) => {
       }
     }
   )
-  if (created && "grantDenied" in created) return invalid(c, "Live links aren't allowed here", "LIVE_NOT_AVAILABLE")
+  if (created && "grantDenied" in created)
+    return invalid(c, "Live links aren't allowed here", "LIVE_NOT_AVAILABLE")
   if (created && "passwordDenied" in created)
     return invalid(
       c,
@@ -455,9 +555,16 @@ shareLinksRouter.patch("/:linkId", async (c) => {
   if (expiresAt !== undefined && !expiryAllowed(expiresAt, policy)) {
     return expiryTooLong(c, policy)
   }
-  if (input.data.grant !== undefined && !sharingPreviewEnabled()) return invalid(c, "Live links aren't available", "LIVE_NOT_AVAILABLE")
+  if (input.data.grant !== undefined && !sharingPreviewEnabled())
+    return invalid(c, "Live links aren't available", "LIVE_NOT_AVAILABLE")
   if (input.data.grant) {
-    const problem = await checkGrant(c, input.data.grant, link.spaceId, link.kind, policy)
+    const problem = await checkGrant(
+      c,
+      input.data.grant,
+      link.spaceId,
+      link.kind,
+      policy
+    )
     if (problem) return problem
   }
   const passwordHash =
@@ -471,7 +578,11 @@ shareLinksRouter.patch("/:linkId", async (c) => {
   if (latest.revokedAt !== null)
     return c.json({ error: "This link was revoked", code: "LINK_REVOKED" }, 409)
   const latestPolicy = currentSharingPolicy()
-  if (input.data.grant !== undefined && (!sharingPreviewEnabled() || (input.data.grant && !latestPolicy.liveLinks))) return invalid(c, "Live links aren't allowed here", "LIVE_NOT_AVAILABLE")
+  if (
+    input.data.grant !== undefined &&
+    (!sharingPreviewEnabled() || (input.data.grant && !latestPolicy.liveLinks))
+  )
+    return invalid(c, "Live links aren't allowed here", "LIVE_NOT_AVAILABLE")
   const latestDecision = authorizeShareAction(
     identity,
     "manage",

@@ -422,3 +422,191 @@ test("creates and edits password links without retaining a password in the form"
   await dialog.getByRole("button", { name: "Create link", exact: true }).click()
   expect(mutations).toHaveLength(4)
 })
+
+for (const appearance of [
+  { colorScheme: "light" as const, width: 1280, height: 900 },
+  { colorScheme: "dark" as const, width: 390, height: 844 },
+]) {
+  test(`checks live link access before sharing in ${appearance.colorScheme} mode`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({
+      width: appearance.width,
+      height: appearance.height,
+    })
+    await page.emulateMedia({ colorScheme: appearance.colorScheme })
+    const at = new Date().toISOString()
+    const initialGrant = {
+      version: 1 as const,
+      collections: {
+        deals: {
+          rows: null,
+          fields: ["name"],
+          timestamps: false,
+          mode: "scoped" as const,
+        },
+      },
+      limits: { rowsPerQuery: 200, queriesPerMinute: 120, rowsPerHour: 10_000 },
+      state: "visitor" as const,
+    }
+    let links: ShareLink[] = []
+    const mutations: Array<Record<string, unknown>> = []
+    const checks: Array<Record<string, unknown>> = []
+    await page.route("**/api/system/deployment", (route) =>
+      route.fulfill({
+        json: {
+          ...cloudDeployment,
+          capabilities: {
+            ...cloudDeployment.capabilities,
+            shareLinks: true,
+            sharingPreview: true,
+          },
+        },
+      })
+    )
+    await page.route(
+      "**/api/spaces/share-browser/documents/page?*",
+      async (route) => {
+        const response = await route.fetch()
+        const body = await response.json()
+        body.page.sharing = { activeLinks: links.length, canCreate: true }
+        body.page.capabilities.sharing = true
+        await route.fulfill({ response, json: body })
+      }
+    )
+    await page.route(
+      /\/api\/shares\/links(?:\/[^/?]+)?(?:\?.*)?$/,
+      async (route) => {
+        const request = route.request()
+        if (new URL(request.url()).pathname.endsWith("/access")) {
+          const body = request.postDataJSON()
+          checks.push(body)
+          const grant = body.grant ?? initialGrant
+          await route.fulfill({
+            json: {
+              grant,
+              effectiveGrant: grant,
+              collections: {
+                deals: {
+                  version: 1,
+                  kind: "worktable.recordSchema",
+                  id: "deals",
+                  name: "Deals",
+                  fields: {
+                    name: { type: "text", name: "Name" },
+                    amount: { type: "number", name: "Amount" },
+                    secret: { type: "text", name: "Secret" },
+                  },
+                  createdAt: at,
+                  updatedAt: at,
+                  createdBy: "test",
+                  metadata: {},
+                },
+              },
+              counts: { deals: 2 },
+              sentences: ["Anyone with this link can read 2 Deals records."],
+              fixedReads: {},
+              warnings: [],
+              issues: [],
+              stateReadable: true,
+            },
+          })
+          return
+        }
+        if (request.method() === "GET") {
+          await route.fulfill({
+            json: {
+              links,
+              canCreate: true,
+              policy: { ...defaultSharingPolicy(), liveLinks: true },
+            },
+          })
+          return
+        }
+        const body = request.postDataJSON()
+        mutations.push(body)
+        const link: ShareLink = {
+          id: "lnk_aaaaaaaaaaaaaaaaaaaaaa",
+          spaceId: "share-browser",
+          documentId: "doc_status",
+          kind: "html",
+          path: "status-card",
+          title: "Status card",
+          label: String(body.label),
+          level: "view",
+          grant: body.grant ?? links[0]?.grant,
+          createdBy: { id: "local:owner", name: "Owner" },
+          createdAt: at,
+          expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+          hasPassword: false,
+          lastUsedAt: null,
+          status: "active",
+          tokenHint: "abcd",
+          canManage: true,
+          comments: {
+            acceptComments: true,
+            anonymousAllowed: false,
+            showSharerName: false,
+            visitorsSee: "own",
+            autoPaused: false,
+          },
+        }
+        links = [link]
+        await route.fulfill({
+          status: 201,
+          json: {
+            link,
+            url: "https://share.example.test/s/workspace/" + "a".repeat(43),
+          },
+        })
+      }
+    )
+    await page.goto(appUrl("/spaces/share-browser/documents/status-card"), {
+      waitUntil: "domcontentloaded",
+    })
+    await page.getByRole("button", { name: "Share document" }).click()
+    const dialog = page.getByRole("dialog", { name: "Share document" })
+    await dialog.getByRole("switch", { name: "Live tool", exact: true }).click()
+    await expect(
+      dialog.getByRole("heading", { name: "What this link opens" })
+    ).toBeVisible()
+    await expect(
+      dialog.getByText("Anyone with this link can read 2 Deals records.")
+    ).toBeVisible()
+    expect(checks[0]?.observe).toBe(true)
+    await dialog.getByRole("checkbox", { name: "Amount", exact: true }).click()
+    await expect(
+      dialog.getByRole("button", { name: "Create link", exact: true })
+    ).toBeDisabled()
+    await dialog
+      .getByRole("button", { name: "Check access", exact: true })
+      .click()
+    await expect(
+      dialog.getByRole("button", { name: "Create link", exact: true })
+    ).toBeEnabled()
+    expect(checks[1]?.observe).toBe(false)
+    await dialog.screenshot({
+      path: testInfo.outputPath(`live-access-${appearance.colorScheme}.png`),
+    })
+    await dialog
+      .getByRole("button", { name: "Create link", exact: true })
+      .click()
+    await expect(
+      dialog.getByRole("button", { name: "View as visitor", exact: true })
+    ).toBeVisible()
+    expect(mutations[0]).not.toHaveProperty("expiresAt")
+    expect(
+      (mutations[0]?.grant as typeof initialGrant).collections.deals.fields
+    ).toEqual(["name", "amount"])
+    await dialog
+      .getByRole("button", { name: "Actions for Untitled link" })
+      .click()
+    await page.getByRole("menuitem", { name: "Edit Link" }).click()
+    await dialog.getByLabel("Label", { exact: true }).fill("Board")
+    await dialog.getByRole("button", { name: "Save", exact: true }).click()
+    await expect(
+      dialog.getByRole("button", { name: "Save", exact: true })
+    ).toBeHidden()
+    expect(mutations[1]).not.toHaveProperty("grant")
+  })
+}

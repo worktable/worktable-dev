@@ -541,11 +541,14 @@ function DocEditorPage({
   const handleConvert = useCallback(
     async (from: DocOpening) => {
       setConverting(true)
+      // Set first: the change's event can bring the rich page before the
+      // response does.
+      opening.current = { docPath, value: from }
       try {
         await convertDoc(spaceId, docPath)
-        opening.current = { docPath, value: from }
         await recheck()
       } catch (err) {
+        opening.current = null
         console.error("Conversion failed:", err)
         toast.error("Couldn’t edit this doc. Try again.")
       } finally {
@@ -1123,10 +1126,11 @@ function BlockNoteDocPage({
   // Until the editor shows, the Doc shows as it was: the Markdown it was
   // just converted from, or else its saved preview. The reader's place in
   // it carries over to the editor.
-  const [opening] = useState(takeOpening)
+  const [opening, setOpening] = useState(takeOpening)
   const standInRef = useRef<HTMLDivElement>(null)
   const place = useRef(opening?.place ?? null)
   const placedTop = useRef(0)
+  const caretPending = useRef(opening !== null)
   const editorHandle = useRef<EditorHandle | null>(null)
   const [readyEditor, setReadyEditor] = useState<WebsocketProvider | null>(null)
   const [readyContent, setReadyContent] = useState<WebsocketProvider | null>(
@@ -1140,7 +1144,19 @@ function BlockNoteDocPage({
       if (root && Math.abs(root.scrollTop - placedTop.current) > 1) {
         place.current = readingPlace(root)
       }
-      setReadyEditor(provider)
+      const at = place.current
+      const editorRoot = editorPaneRef.current?.querySelector(
+        ".worktable-editor-scroll-root"
+      )
+      if (!at || !editorRoot) return setReadyEditor(provider)
+      // Put the place back while the editor is still hidden, and again a
+      // frame later: blocks of a long Doc take their real height only once
+      // they near the view.
+      restoreReadingPlace(editorRoot, at)
+      requestAnimationFrame(() => {
+        restoreReadingPlace(editorRoot, at)
+        setReadyEditor(provider)
+      })
     },
     [provider]
   )
@@ -1170,19 +1186,29 @@ function BlockNoteDocPage({
     placedTop.current = root.scrollTop
   }, [showsStandIn])
   useEffect(() => {
+    if (!editorReadable) return
     const scrollRoot = editorPaneRef.current?.querySelector(
       ".worktable-editor-scroll-root"
     )
     const at = place.current
-    if (!editorReadable || !scrollRoot || !at) return
-    restoreReadingPlace(scrollRoot, at)
-    // Blocks of a long Doc take their real height as they come into view.
-    const frame = requestAnimationFrame(() => {
-      const block = restoreReadingPlace(scrollRoot, at)
-      if (block && opening) editorHandle.current?.placeCaret(block)
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [editorReadable, opening])
+    const caret = caretPending.current
+    // Used once. If the room reconnects, the saved preview stands in and the
+    // editor stays where it is unless the reader scrolls that preview.
+    place.current = null
+    placedTop.current = 0
+    caretPending.current = false
+    setOpening(null)
+    if (!scrollRoot || !at) return
+    const block = restoreReadingPlace(scrollRoot, at)
+    const active = document.activeElement
+    // Leave focus with a field or dialog the reader turned to meanwhile.
+    const elsewhere =
+      active instanceof HTMLElement &&
+      !editorPaneRef.current?.contains(active) &&
+      (active.matches("input, textarea, select, [contenteditable='true']") ||
+        active.closest("[role='dialog']") !== null)
+    if (block && caret && !elsewhere) editorHandle.current?.placeCaret(block)
+  }, [editorReadable])
   const [collabDoc, setCollabDoc] = useState<Y.Doc | null>(null)
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)

@@ -492,6 +492,8 @@ previewTest(
       versionUpdatedBy: "test",
     })
     expect(created.error).toBeUndefined()
+    recordIndex.start()
+    await recordIndex.whenReady()
     const access = await prepareShareLinkAccess({
       spaceId,
       path: "access-check",

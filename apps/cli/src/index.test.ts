@@ -1699,18 +1699,14 @@ describe("workspace and service handoff command integration", () => {
     }
   })
 
-  it("a failed foreground bind restores the previous config and workspace reservation", () => {
+  it("a failed foreground bind restores the previous config and workspace reservation", async () => {
     const { ws, app, cleanup } = tempWsAppPair()
     // Block the port so the foreground startServer throws EADDRINUSE immediately.
     // The launch reserves its resolved endpoint before binding, but a failed bind
     // must roll that provisional ownership back so durable state still describes
     // the server that can actually be started.
-    const port = 39521
-    const blocker = Bun.serve({
-      port,
-      hostname: "0.0.0.0",
-      fetch: () => new Response("busy"),
-    })
+    const blocker = occupyEphemeralPort("0.0.0.0")
+    const { port } = blocker
     try {
       const setup = runCli(
         ["setup", "--yes", "--skip-mcp", "--no-launch", "--port", String(port)],
@@ -1744,7 +1740,7 @@ describe("workspace and service handoff command integration", () => {
       expect(readFileSync(configPath, "utf8")).toBe(beforeConfig)
       expect(readFileSync(registryPath, "utf8")).toBe(beforeRegistry)
     } finally {
-      blocker.stop(true)
+      await blocker.stop()
       cleanup()
     }
   })
@@ -1834,18 +1830,14 @@ describe("workspace and service handoff command integration", () => {
     }
   })
 
-  it("setup --yes auto-picks a free port when the chosen one is held by a foreign process", () => {
+  it("setup --yes auto-picks a free port when the chosen one is held by a foreign process", async () => {
     const { ws, app, cleanup } = tempWsAppPair()
-    const port = 39540
     // A foreign HTTP server (does NOT answer /health with service:"worktable")
     // occupies the port. classifyPort sees it as
     // "occupied" (not a Worktable reuse), so --yes must auto-pick another port and
     // never write MCP configs pointing at the foreign server.
-    const blocker = Bun.serve({
-      port,
-      hostname: "127.0.0.1",
-      fetch: () => new Response("not worktable"),
-    })
+    const blocker = occupyEphemeralPort()
+    const { port } = blocker
     try {
       const { stdout, exitCode } = runCli(
         ["setup", "--yes", "--skip-mcp", "--no-launch", "--port", String(port)],
@@ -1861,7 +1853,7 @@ describe("workspace and service handoff command integration", () => {
       expect(config.service.port).toBeGreaterThan(port)
       expect(config.mcp.endpoint).toContain(`:${config.service.port}/mcp`)
     } finally {
-      blocker.stop(true)
+      await blocker.stop()
       cleanup()
     }
   })

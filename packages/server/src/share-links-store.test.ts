@@ -5,6 +5,7 @@ import { saveSharingPolicy } from "./share-links-store.ts"
 import { createHash } from "node:crypto"
 import { buildRecordCollectionSchema, writeRecordCollectionSchema, writeRecord, writeWidgetState } from "./record-store.ts"
 import * as linkQueries from "./link-query.ts"
+import { recordIndex } from "./record-index.ts"
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import { Database } from "bun:sqlite"
 import {
@@ -198,6 +199,8 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  await recordIndex.whenIdle()
+  recordIndex.stop()
   setLinkedSharing(null)
   closeShareLinkStores()
   setAppDirOverride(null)
@@ -220,7 +223,7 @@ async function useHtmlStorageV2(): Promise<void> {
 
 describe("share links", () => {
   it("opens live tools through ticketed frames and grant-only reads, including policy changes during a read", async () => {
-    process.env["WORKTABLE_RECORDS_INDEX"] = "0"
+    process.env["WORKTABLE_RECORDS_INDEX"] = "1"
     const policy = (await (await send("GET", "/api/shares/policy")).json()).policy as SharingPolicy
     expect((await send("PUT", "/api/shares/policy", { ...policy, liveLinks: true })).status).toBe(200)
     await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, secret: { type: "text" } } }))
@@ -265,6 +268,8 @@ describe("share links", () => {
       }
       return response
     }
+    recordIndex.start()
+    await recordIndex.whenReady()
     const response = await readRecords(created.token)
     expect(response.status).toBe(200)
     const result = await response.json()
@@ -275,11 +280,15 @@ describe("share links", () => {
     const otherLink = await (await readRecords(neverExpires.token)).json()
     expect(otherLink.result.records[0].id).not.toBe(result.result.records[0].id)
     expect((await bridge(created.token, { v: 1, op: "records.create", collection: "deals", data: {} })).status).toBe(400)
-    process.env["WORKTABLE_RECORDS_INDEX"] = "1"
+    recordIndex.stop()
     const building = await bridge(created.token, { v: 1, op: "records.query", collection: "deals", query: { fields: ["name"] } })
     expect(building.status).toBe(503)
     expect(building.headers.get("Retry-After")).toBe("1")
     process.env["WORKTABLE_RECORDS_INDEX"] = "0"
+    expect((await bridge(created.token, { v: 1, op: "records.query", collection: "deals", query: { fields: ["name"] } })).status).toBe(503)
+    process.env["WORKTABLE_RECORDS_INDEX"] = "1"
+    recordIndex.start()
+    await recordIndex.whenReady()
     const plain = await createLink("board", {}, "html")
     const unavailable = await bridge("X".repeat(43))
     expect(unavailable.status).toBe(404)
@@ -304,6 +313,20 @@ describe("share links", () => {
       expect(entered).toBe(2)
       expect(reads.map((read) => read.status)).toEqual([200, 200])
     } finally { releaseReads(); clearTimeout(safety); overlap.mockRestore() }
+    let resume!: () => void
+    const stalledWork = new Promise<void>((resolve) => { resume = resolve })
+    let settled!: () => void
+    const workSettled = new Promise<void>((resolve) => { settled = resolve })
+    const slow = spyOn(linkQueries, "queryRecordsForLink").mockImplementation(async (...args) => {
+      try { await stalledWork; return await originalRead(...args) }
+      finally { settled() }
+    })
+    try {
+      const timed = await bridge(created.token)
+      expect(timed.status).toBe(429)
+      expect(timed.headers.get("Retry-After")).toBe("1")
+    } finally { resume(); await workSettled; slow.mockRestore() }
+    expect((await readRecords(created.token)).status).toBe(200)
     const duringOtherSpaceWrite = spyOn(linkQueries, "queryRecordsForLink").mockImplementation(async (...args) => {
       const read = await originalRead(...args)
       await writeSpace({ type: "worktable.space", version: 1, id: "other", name: "Other", createdAt: at, updatedAt: at, createdBy: "test", settings: {} })
@@ -331,10 +354,11 @@ describe("share links", () => {
     expect((await bridge(created.token)).status).toBe(403)
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     expect((await bridge(created.token)).status).toBe(404)
-  })
+    // Two real 1.5s timeout paths plus filesystem fixture setup and recovery.
+  }, 10_000)
 
   it("updates totals and summaries when an unreturned row leaves the link's scope", async () => {
-    process.env["WORKTABLE_RECORDS_INDEX"] = "0"
+    process.env["WORKTABLE_RECORDS_INDEX"] = "1"
     saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true }, "local:owner")
     await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, visibility: { type: "text" } } }))
     const at = new Date().toISOString()
@@ -356,6 +380,8 @@ describe("share links", () => {
       return (await response.json()).result
     }
     const query = (query: unknown) => ({ v: 1, op: "records.query", collection: "deals", query })
+    recordIndex.start()
+    await recordIndex.whenReady()
     const limited = await call(scoped.token, query({ limit: 1 }))
     expect(limited.records).toHaveLength(1)
     expect(limited.total).toBe(2)

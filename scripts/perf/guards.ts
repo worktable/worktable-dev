@@ -361,6 +361,11 @@ export const BACKGROUND_FUNCTIONS = [
   "packages/server/src/document-preflight.ts#preflightDocumentWorkspace",
   // Starter content check run by local supervisors at start.
   "packages/server/src/seed.ts#starterWorkspaceReady",
+  // Moves today's share links into links v2 once: at boot, or when the owner
+  // turns the sharing preview on (scheduled after responding), and after a path change settles a conflict.
+  // Event-triggered retries stay off the writer's request path.
+  "packages/server/src/share-links-drain.ts#drain",
+  "packages/server/src/share-links-drain.ts#moveShare",
 ]
 
 const inBackground = (site: string) =>

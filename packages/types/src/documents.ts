@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { ActivityActorSchema } from "./activity"
+import { DocumentSharingSummarySchema } from "./sharing"
 
 export const DOCUMENT_ARCHIVE_REASON_MAX_LENGTH = 500
 
@@ -303,6 +304,11 @@ export const DocumentPageSchema = z.object({
   referrers: z.array(DocumentReferrerSchema).optional(),
   /** Absent until the Space's activity has been summarized once. */
   contributors: DocumentContributorsSchema.optional(),
+  /**
+   * The document's share links, for people who may share it, while links v2
+   * is on. Absent otherwise; the page then shares through today's single link.
+   */
+  sharing: DocumentSharingSummarySchema.optional(),
 })
 
 export const DocumentPageResultSchema = z.discriminatedUnion("kind", [

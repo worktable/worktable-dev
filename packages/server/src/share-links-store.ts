@@ -360,6 +360,105 @@ export function createShareLink(input: NewShareLink): {
   return { link: getShareLink(id)!, token }
 }
 
+/** A link copied from the earlier version's file, which still holds it. */
+const V1_MOVING = "v1-moving"
+
+/**
+ * Store a link made by an earlier version, under its existing token, so its
+ * URL keeps working. It counts as moving until `settleV1ShareLinks` sees
+ * the old file without it. A token already here is left alone, revoked or
+ * not. Returns whether a link was added.
+ */
+export function importV1ShareLink(input: {
+  token: string
+  workspaceEpoch: string
+  spaceId: string
+  documentId: string
+  kind: ShareLinkKind
+  createdAt: number
+}): boolean {
+  const db = openDatabase(true)!
+  const inserted = db
+    .query(
+      `INSERT INTO share_links (id, token_hash, token_hint, link_key,
+        workspace_epoch, space_id, document_id, kind, label, level,
+        created_by_id, created_by_name, created_at, migrated_from)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', 'view', '', '', ?, ?)
+       ON CONFLICT (token_hash) DO NOTHING`
+    )
+    .run(
+      newLinkId(),
+      tokenDigest(input.token),
+      input.token.slice(-4),
+      randomBytes(32),
+      input.workspaceEpoch,
+      input.spaceId,
+      input.documentId,
+      input.kind,
+      input.createdAt,
+      V1_MOVING
+    )
+  return inserted.changes > 0
+}
+
+/**
+ * Reconcile links still moving with the earlier version's file as it is now,
+ * while the caller holds its lock. A moving link whose share has left the
+ * file was stopped there meanwhile, by an older binary, and is revoked here
+ * too. Those in `moved`, which the caller has durably removed from the file,
+ * have moved for good.
+ */
+export function settleV1ShareLinks(
+  present: readonly string[],
+  moved: readonly string[],
+  recoveredDigests: readonly string[] = []
+): void {
+  const db = openDatabase(false)
+  if (!db) return
+  const inFile = new Set([
+    ...present.map((token) => tokenDigest(token).toString("hex")),
+    ...recoveredDigests,
+  ])
+  const stopped = db
+    .query<{ id: string; token_hash: Uint8Array }, [string]>(
+      "SELECT id, token_hash FROM share_links WHERE migrated_from = ?"
+    )
+    .all(V1_MOVING)
+    .filter((row) => !inFile.has(Buffer.from(row.token_hash).toString("hex")))
+    .map((row) => row.id)
+  const now = Date.now()
+  db.transaction(() => {
+    const revoke = db.query(
+      `UPDATE share_links SET migrated_from = 'v1',
+        revoked_at = COALESCE(revoked_at, ?),
+        revoked_by = COALESCE(revoked_by, 'system'),
+        revoked_reason = COALESCE(revoked_reason, 'revoked')
+       WHERE id = ?`
+    )
+    for (const id of stopped) revoke.run(now, id)
+    const settle = db.query(
+      "UPDATE share_links SET migrated_from = 'v1' WHERE token_hash = ? AND migrated_from = ?"
+    )
+    for (const token of moved) settle.run(tokenDigest(token), V1_MOVING)
+    for (const digest of recoveredDigests)
+      settle.run(Buffer.from(digest, "hex"), V1_MOVING)
+  })()
+  if (stopped.length > 0) notifyChanged(stopped)
+}
+
+/**
+ * Note that links of the earlier version were moved here. From then on this
+ * store serves links whatever the sharing preview says.
+ */
+export function markV1SharesDrained(now = Date.now()): void {
+  openDatabase(true)!
+    .query(
+      "INSERT OR IGNORE INTO share_meta (key, value) VALUES ('v1_drained_at', ?)"
+    )
+    .run(String(now))
+  drained = { key: workspaceCacheKey(), value: true, checkedAt: now }
+}
+
 export interface ShareLinkChange {
   label?: string
   expiresAt?: number | null
@@ -530,6 +629,46 @@ export function listDocumentShareLinks(
       )
       .all(spaceId, documentId)
       .map(storedLink) ?? []
+  )
+}
+
+/**
+ * How many of a document's links still open: neither revoked nor expired.
+ * One statement on the document index, and none before a link exists.
+ */
+export function countOpenDocumentShareLinks(
+  spaceId: string,
+  documentId: string,
+  now = Date.now()
+): number {
+  return listDocumentShareLinks(spaceId, documentId).filter(
+    (link) => link.servable && (link.expiresAt === null || link.expiresAt > now)
+  ).length
+}
+
+/** Count and next expiry only; never materialize a document's link history. */
+export function documentShareLinkSummary(
+  spaceId: string,
+  documentId: string,
+  now = Date.now()
+): { activeLinks: number; nextExpiry: number | null } {
+  return (
+    openDatabase(false)
+      ?.query<
+        { activeLinks: number; nextExpiry: number | null },
+        [string, string, number]
+      >(
+        `
+    SELECT COUNT(*) AS activeLinks, MIN(expires_at) AS nextExpiry FROM share_links
+    WHERE space_id = ? AND document_id = ? AND revoked_at IS NULL
+      AND (expires_at IS NULL OR expires_at > ?)
+      AND kind IN ('doc', 'html') AND level = 'view'
+      AND password_hash IS NULL AND grant_json IS NULL AND pinned_version IS NULL
+      AND accept_comments IN (0, 1) AND anonymous_allowed IN (0, 1)
+      AND show_sharer_name IN (0, 1) AND visitors_see IN ('own', 'all')
+  `
+      )
+      .get(spaceId, documentId, now) ?? { activeLinks: 0, nextExpiry: null }
   )
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { lazy, useEffect, useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   AlertCircle,
@@ -11,7 +11,9 @@ import {
   Share2,
   Unlink,
 } from "lucide-react"
+import type { DocumentSharingSummary } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
+import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import { Input } from "@worktable/ui/components/input"
 import {
   ResponsiveDialog,
@@ -24,7 +26,10 @@ import {
 } from "@worktable/ui/components/responsive-dialog"
 import { cn } from "@worktable/ui/lib/utils"
 import { useDocumentSharingAvailable } from "@/hooks/use-deployment-info"
-import { useDocumentShareStatus } from "@/hooks/use-document-share"
+import {
+  useDocumentShareStatus,
+  useShareMode,
+} from "@/hooks/use-document-share"
 import type { PageShareTarget } from "@/hooks/use-page-meta"
 import { copyText } from "@/lib/clipboard"
 import {
@@ -34,9 +39,110 @@ import {
   type ShareStatus,
 } from "@/lib/share-api"
 
+// Loaded when first opened, like New Space.
+const ShareLinksDialog = lazy(() =>
+  import("@/components/share-links-dialog").then((module) => ({
+    default: module.ShareLinksDialog,
+  }))
+)
+
+interface ShareDocumentActionProps {
+  target: PageShareTarget
+  /** Lets another control, such as the narrow-screen page menu, open it. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  showTrigger?: boolean
+}
+
+/**
+ * The page's Share button and dialog: several labelled links per document
+ * while links v2 is on, today's single link otherwise.
+ */
+export function ShareDocumentAction(props: ShareDocumentActionProps) {
+  const mode = useShareMode(props.target)
+  if (mode === "links") {
+    return (
+      <ShareLinksAction
+        {...props}
+        summary={props.target.links ?? UNREAD_SUMMARY}
+      />
+    )
+  }
+  if (mode === "legacy") return <LegacyShareDocumentAction {...props} />
+  return null
+}
+
+// ── Links (v2) ───────────────────────────────────────────────
+
+/**
+ * For a page read before links v2 was on: the dialog's list says how many
+ * links there are once it opens.
+ */
+const UNREAD_SUMMARY: DocumentSharingSummary = {
+  activeLinks: 0,
+  canCreate: true,
+}
+
+/** The page's Share button, which says whether links are open. */
+function ShareLinksAction({
+  target,
+  summary,
+  open: controlledOpen,
+  onOpenChange,
+  showTrigger = true,
+}: ShareDocumentActionProps & { summary: DocumentSharingSummary }) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const open = controlledOpen ?? uncontrolledOpen
+  const setOpen = (next: boolean) => {
+    setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
+  const active = summary.activeLinks
+
+  return (
+    <>
+      {showTrigger && (
+        <Button
+          type="button"
+          size="xs"
+          variant={active > 0 ? "secondary" : "outline"}
+          className="shrink-0"
+          aria-label="Share document"
+          title={
+            active === 0
+              ? "Share document"
+              : active === 1
+                ? "Share link active"
+                : `${active} share links active`
+          }
+          onClick={() => setOpen(true)}
+        >
+          {active > 0 ? (
+            <Check className="size-3.5" />
+          ) : (
+            <Share2 className="size-3.5" />
+          )}
+          <span className="hidden sm:inline">Share</span>
+        </Button>
+      )}
+
+      <DeferredMount active={open}>
+        <ShareLinksDialog
+          target={target}
+          summary={summary}
+          open={open}
+          onOpenChange={setOpen}
+        />
+      </DeferredMount>
+    </>
+  )
+}
+
+// ── Today's single link ──────────────────────────────────────
+
 type CopyState = "idle" | "copied" | "error"
 
-export function ShareDocumentAction({
+function LegacyShareDocumentAction({
   target,
   open: controlledOpen,
   onOpenChange,
@@ -463,7 +569,7 @@ function ShareAccessCard({
   )
 }
 
-function InlineError({ children }: { children: React.ReactNode }) {
+export function InlineError({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="flex items-start gap-2 rounded-xl bg-destructive/10 px-3 py-2.5 text-sm text-destructive"
@@ -475,7 +581,7 @@ function InlineError({ children }: { children: React.ReactNode }) {
   )
 }
 
-function HtmlSafetyNote() {
+export function HtmlSafetyNote() {
   return (
     <p className="px-1 text-xs leading-5 text-muted-foreground">
       Records and links to other Worktable content aren’t available in shared

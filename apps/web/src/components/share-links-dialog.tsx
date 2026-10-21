@@ -59,7 +59,7 @@ import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { Skeleton } from "@worktable/ui/components/skeleton"
 import { cn } from "@worktable/ui/lib/utils"
 import { ShareLinkAccessEditor } from "@/components/share-link-access"
-import { HtmlSafetyNote, InlineError } from "@/components/share-document-notes"
+import { HtmlSafetyNote, InlineError } from "@/components/share-document-action"
 import type { PageShareTarget } from "@/hooks/use-page-meta"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { notePageLinks } from "@/lib/sharing-cache"
@@ -78,9 +78,9 @@ import {
   createShareLink,
   getDocumentShareLinks,
   revokeShareLink,
-  shareLinksQueryKey,
   updateShareLink,
-} from "@/lib/share-api"
+} from "@/lib/share-link-management-api"
+import { shareLinksQueryKey } from "@/lib/share-api"
 import { checkShareLinkAccess } from "@/lib/share-link-access-api"
 
 interface LinkDraft {

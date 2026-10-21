@@ -57,7 +57,8 @@ import { invalidateSharingQueries, notePageLinks } from "@/lib/sharing-cache"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { HttpError } from "@/lib/http"
 import { useSpaces, useWorkspace } from "@/lib/queries"
-import { revokeShareLink, shareLinksQueryKey } from "@/lib/share-api"
+import { shareLinksQueryKey } from "@/lib/share-api"
+import { revokeShareLink } from "@/lib/share-link-management-api"
 import {
   allShareLinksQueryKey,
   getShareLinksPage,

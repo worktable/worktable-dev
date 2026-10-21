@@ -463,14 +463,18 @@ describe("share links", () => {
     const after = await (await send("GET", "/api/shares/policy")).json()
     expect(after.policy).toEqual(before.policy)
     expect(after.revision).toBeGreaterThan(before.revision)
+    let unreturnedId = "second"
     const refreshed = spyOn(recordQueries, "runQueryV2")
     try {
-      await Promise.all(requests.map(([token, value]) => call(token, value)))
+      const [limited] = await Promise.all(requests.map(([token, value]) => call(token, value)))
+      const shown = limited.records[0].data.name
+      expect(["first", "second"]).toContain(shown)
+      unreturnedId = shown === "first" ? "second" : "first"
       expect(refreshed).toHaveBeenCalledTimes(2)
     } finally { refreshed.mockRestore() }
     const cursors = await Promise.all([scoped, summary].map(async ({ token }) => (await call(token, { v: 1, op: "changes" })).cursor))
-    await writeRecord("space", row("second", "private"))
-    await notifyWorkspaceChangeAndWaitOrThrow({ type: "record", spaceId: "space", collectionId: "deals", recordId: "second" })
+    await writeRecord("space", row(unreturnedId, "private"))
+    await notifyWorkspaceChangeAndWaitOrThrow({ type: "record", spaceId: "space", collectionId: "deals", recordId: unreturnedId })
     for (const [index, { token }] of [scoped, summary].entries()) {
       let changed: string[] = []
       for (let attempt = 0; attempt < 20; attempt++) {

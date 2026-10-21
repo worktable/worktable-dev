@@ -188,6 +188,7 @@
   let handshake = false
   /** @type {string | null} */
   let navigationToken = null
+  let frameInteraction = 0
   let stopped = false
   let linkGone = false
   let askingPassword = false
@@ -456,8 +457,11 @@
           : Array.isArray(changes.collections)
             ? changes.collections
             : []
-      for (const collection of new Set(changed)) {
-        if (typeof collection === "string" && subscriptions.has(collection)) {
+      // A related collection can change a predicate, expansion or backlink.
+      // Hints name only granted collections, so refresh each bounded active
+      // subscription when any of those dependencies changes.
+      if (changed.some((collection) => typeof collection === "string")) {
+        for (const collection of subscriptions.keys()) {
           post({ type: "worktable.records.changed", collection })
         }
       }
@@ -669,10 +673,18 @@
         }
         break
       case "worktable.interaction":
-        interacted()
+        if (data.navigationToken === navigationToken) {
+          frameInteraction = Date.now()
+          interacted()
+        }
         break
       case "worktable.share.open-link":
-        offerLink(data.url)
+        if (
+          data.navigationToken === navigationToken &&
+          Date.now() - frameInteraction <= 1500
+        ) {
+          offerLink(data.url)
+        }
         break
       case "worktable.navigation.frame-leaving":
         if (data.navigationToken === navigationToken) stop()

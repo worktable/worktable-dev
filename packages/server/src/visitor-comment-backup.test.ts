@@ -3,12 +3,18 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
-import { setWorkspaceRootOverride } from "./workspace.ts"
+import {
+  ensureWorkspaceManifest,
+  getWorkspaceRoot,
+  setWorkspaceRootOverride,
+} from "./workspace.ts"
+import { WorkspaceBackupNotifier } from "./workspace-backup-notifier.ts"
 import {
   appendVisitorReply,
   closeVisitorCommentStores,
   commentPause,
   pauseVisitorComments,
+  onVisitorCommentStoreChange,
   readVisitorComment,
   receiveVisitorComment,
   visitorCommentsCheckpoint,
@@ -157,4 +163,69 @@ it("rejects corrupt or foreign backups without changing current private data or 
     "Still writable"
   )
   expect(visitorReplies([row.id])).toHaveLength(1)
+})
+
+it("reports private edits to automatic backups and recovers an unreported edit after restart without publishing content", async () => {
+  ensureWorkspaceManifest()
+  const ledger = join(root, "outbox.json")
+  const reports: { epoch: string; generation: number }[] = []
+  const source = {
+    checkpoint: visitorCommentsCheckpoint,
+    subscribe: onVisitorCommentStoreChange,
+  }
+  const make = () =>
+    new WorkspaceBackupNotifier(
+      ledger,
+      getWorkspaceRoot(),
+      async (value) => {
+        reports.push(value)
+      },
+      source
+    )
+  const until = async (generation: number) => {
+    const deadline = performance.now() + 3000
+    while (!reports.some((value) => value.generation > generation)) {
+      if (performance.now() > deadline)
+        throw new Error("private backup notification did not settle")
+      // test-policy: external-readiness-backoff (durable backup outbox and delivery)
+      await Bun.sleep(10)
+    }
+  }
+  const first = make()
+  let generation = 0
+  try {
+    await first.initialize()
+    await first.audit()
+    await until(0)
+    generation = reports.at(-1)!.generation
+    const row = receiveVisitorComment(input())
+    await until(generation)
+    generation = reports.at(-1)!.generation
+    await first.audit()
+    await until(generation)
+    generation = reports.at(-1)!.generation
+    // Reads and a retried POST do not mark this captured state dirty again.
+    readVisitorComment("worktable", row.id)
+    visitorReplies([row.id])
+    receiveVisitorComment(input())
+    await first.audit()
+  } finally {
+    await first.stop()
+  }
+  expect(JSON.parse(await readFile(ledger, "utf8")).generation).toBe(generation)
+  receiveVisitorComment({ ...input(), requestId: "after-stop" })
+  const restarted = make()
+  try {
+    await restarted.initialize()
+    await restarted.audit()
+    await until(generation)
+    expect(
+      reports.every(
+        (value) => Object.keys(value).sort().join(",") === "epoch,generation"
+      )
+    ).toBe(true)
+    expect(JSON.stringify(reports)).not.toContain("PRIVATE_BACKUP_CONTROL")
+  } finally {
+    await restarted.stop()
+  }
 })

@@ -759,6 +759,31 @@ describe("read-only commands never rewrite config", () => {
   })
 })
 
+describe("doctor --check", () => {
+  it("warns about unavailable previews but fails only on a required check", () => {
+    const { env, cleanup } = withTempEnv()
+    // An installed release whose preview browser can't run on this host.
+    const releaseDir = mkdtempSync(join(tmpdir(), "wt-release-"))
+    try {
+      mkdirSync(join(releaseDir, "web"))
+      writeFileSync(join(releaseDir, "web", "index.html"), "<!doctype html>")
+      const installed = { ...env, WORKTABLE_RELEASE_DIR: releaseDir }
+
+      const healthy = runCli(["doctor", "--check"], installed)
+      expect(healthy.stdout).toContain("Previews:             unavailable.")
+      expect(healthy.exitCode).toBe(0)
+
+      writeFileSync(join(env.WORKTABLE_APP_DIR, "local-activation.json"), "{}")
+      const degraded = runCli(["doctor", "--check"], installed)
+      expect(degraded.stdout).toContain("Activation warning:")
+      expect(degraded.exitCode).toBe(1)
+    } finally {
+      rmSync(releaseDir, { recursive: true, force: true })
+      cleanup()
+    }
+  })
+})
+
 describe("stdio MCP forwarding", () => {
   const workspace = mkdtempSync(join(tmpdir(), "wt-stdio-forward-"))
   const other = mkdtempSync(join(tmpdir(), "wt-stdio-other-"))

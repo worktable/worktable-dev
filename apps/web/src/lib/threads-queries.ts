@@ -37,15 +37,6 @@ export const threadQueryKeys = {
   participants: ["threads", "participants"] as const,
 }
 
-/** A preview-setting change can change capabilities without changing content. */
-export function refreshThreadNamingCapabilities(
-  queryClient: QueryClient
-): Promise<void> {
-  return queryClient.invalidateQueries({
-    queryKey: [...threadQueryKeys.root, "detail"],
-  })
-}
-
 export const threadsQueryOptions = (scope: ThreadListScope) =>
   queryOptions({
     queryKey: threadQueryKeys.list(scope),

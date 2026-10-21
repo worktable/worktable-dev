@@ -30,6 +30,8 @@ import { useResolvedDocumentHandle } from "./document-query.ts"
 import { deleteHtmlDocument } from "./html-document-delete.ts"
 import { createHtmlDocument } from "./html-document-create.ts"
 import { moveHtmlDocument } from "./html-document-move.ts"
+import * as publicRenderer from "./public-share-renderer.ts"
+import { wsManager } from "./ws.ts"
 import * as views from "./share-link-views.ts"
 import { setLinkedSharing } from "./linked-sharing.ts"
 import { createPublicSharesRouter } from "./routes/public-shares.ts"
@@ -916,12 +918,59 @@ describe("owner policy", () => {
     return page?.kind === "document" ? page.sharing?.activeLinks : undefined
   }
 
+  it("applies policy tightened during a legacy render and tells other human sessions", async () => {
+    await writeDoc("space", "plan", "# Plan")
+    const legacy = await createDocumentShare({
+      kind: "doc",
+      spaceId: "space",
+      artifactKey: "plan",
+    })
+    const messages: unknown[] = []
+    const agentMessages: unknown[] = []
+    const humanSocket = {
+      data: { spaceId: "space", identity: person() },
+      send: (value: string) => messages.push(JSON.parse(value)),
+      close() {},
+    }
+    const agentSocket = {
+      data: { spaceId: "space", identity: agent },
+      send: (value: string) => agentMessages.push(JSON.parse(value)),
+      close() {},
+    }
+    wsManager.subscribe(humanSocket, "space")
+    wsManager.subscribe(agentSocket, "space")
+    const original = publicRenderer.renderPublicDocProjection
+    const rendering = spyOn(
+      publicRenderer,
+      "renderPublicDocProjection"
+    ).mockImplementationOnce(async (...args) => {
+      const body = await original(...args)
+      expect((await savePolicy({ paused: true })).status).toBe(200)
+      return body
+    })
+    try {
+      expect((await view(legacy.token)).status).toBe(404)
+      expect(messages).toEqual([{ type: "share_policy_changed", revision: 1 }])
+      expect(agentMessages).toEqual([])
+    } finally {
+      rendering.mockRestore()
+      wsManager.unsubscribe(humanSocket)
+      wsManager.unsubscribe(agentSocket)
+    }
+  })
+
   it("checks policy again after document resolution before creating a link", async () => {
     await writeDoc("space", "plan", "# Plan")
     const original = documentPages.publicShareKind
-    for (const [change, status] of [[{ paused: true }, 403], [{ maxExpiryDays: 7 }, 400]] as const) {
+    for (const [change, status] of [
+      [{ paused: true }, 403],
+      [{ maxExpiryDays: 7 }, 400],
+    ] as const) {
       await savePolicy({})
-      const resolution = spyOn(documentPages, "publicShareKind").mockImplementation(async (handle) => {
+      const resolution = spyOn(
+        documentPages,
+        "publicShareKind"
+      ).mockImplementation(async (handle) => {
         const kind = await original(handle)
         expect((await savePolicy(change)).status).toBe(200)
         return kind

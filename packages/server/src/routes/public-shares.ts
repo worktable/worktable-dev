@@ -325,6 +325,11 @@ async function resolveRequest(request: Request): Promise<ResolvedShare | null> {
   return artifact ? { token, artifact } : null
 }
 
+async function legacyShareStillOpens(token: string): Promise<boolean> {
+  const share = await resolveDocumentShare(token)
+  return Boolean(share && (!sharingV2Active() || !legacyShareHeldBack(share)))
+}
+
 /** The page for this share and artifact revision, rendering it at most once. */
 async function renderedPage(
   key: string,
@@ -336,6 +341,7 @@ async function renderedPage(
     .digest("base64url")
   const cached = renderedPages.get(key)
   if (cached?.revision === revision) {
+    if (!(await legacyShareStillOpens(resolved.token))) return null
     renderedPages.delete(key)
     renderedPages.set(key, cached)
     return cached
@@ -349,7 +355,7 @@ async function renderedPage(
       // The artifact was read after the lookup released the lifecycle lock.
       // Shares are revoked before their path changes owner, so a share that
       // is still current proves the read was this share's artifact.
-      if (!(await resolveDocumentShare(resolved.token))) return null
+      if (!(await legacyShareStillOpens(resolved.token))) return null
       return rememberPage(key, revision, body)
     })()
     renderingPages.set(renderKey, rendering)

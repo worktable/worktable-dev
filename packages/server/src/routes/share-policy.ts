@@ -5,6 +5,7 @@ import {
   type SharingPolicyResponse,
 } from "@worktable/types"
 import { Hono, type Context } from "hono"
+import { wsManager } from "../ws.ts"
 import { canManageUserSettings } from "../auth.ts"
 import {
   readSharingPolicy,
@@ -114,5 +115,9 @@ sharePolicyRouter.put("/", async (c) => {
       409
     )
   }
+  wsManager.broadcastAll({
+    type: "share_policy_changed",
+    revision: saved.revision,
+  })
   return c.json(body(saved))
 })

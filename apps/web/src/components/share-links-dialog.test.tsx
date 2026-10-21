@@ -1,3 +1,6 @@
+import { QueryClient } from "@tanstack/react-query"
+import { documentQueryKeys } from "@/lib/documents-queries"
+import { notePageLinks } from "@/lib/sharing-cache"
 import { expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
 import type { ShareLink } from "@worktable/types"
@@ -79,4 +82,28 @@ test("a document's links say what each allows, and only the one just made shows 
   // Only links the reader may manage have actions.
   expect(html).toContain('aria-label="Actions for Untitled link"')
   expect(html).not.toContain('aria-label="Actions for Board"')
+})
+
+test("link changes preserve the next expiry even when the active count stays the same", () => {
+  const client = new QueryClient()
+  const key = documentQueryKeys.page("space", "plan")
+  client.setQueryData(key, {
+    kind: "document",
+    sharing: { activeLinks: 0, canCreate: true },
+  })
+  const read = () =>
+    client.getQueryData<{
+      sharing: { activeLinks: number; nextExpiry?: string }
+    }>(key)!.sharing
+  const later = new Date(Date.now() + 7 * DAY).toISOString()
+  const sooner = new Date(Date.now() + DAY).toISOString()
+  notePageLinks(client, "space", "plan", [link({ expiresAt: later })])
+  expect(read()).toMatchObject({ activeLinks: 1, nextExpiry: later })
+  notePageLinks(client, "space", "plan", [link({ expiresAt: sooner })])
+  expect(read()).toMatchObject({ activeLinks: 1, nextExpiry: sooner })
+  notePageLinks(client, "space", "plan", [
+    link({ expiresAt: sooner, status: "revoked" }),
+  ])
+  expect(read().activeLinks).toBe(0)
+  expect(read().nextExpiry).toBeUndefined()
 })

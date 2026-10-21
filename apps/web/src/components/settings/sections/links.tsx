@@ -9,7 +9,6 @@ import {
 } from "@tanstack/react-query"
 import { Link2, Loader2, MoreVertical, Unlink } from "lucide-react"
 import type {
-  DocumentPageResult,
   DocumentShareLinks,
   ShareLink,
   ShareLinksPage,
@@ -53,7 +52,7 @@ import {
 } from "@worktable/ui/components/table"
 import { cn } from "@worktable/ui/lib/utils"
 import { SpaceIcon } from "@/components/identity-icons"
-import { invalidateSharingQueries } from "@/lib/sharing-cache"
+import { invalidateSharingQueries, notePageLinks } from "@/lib/sharing-cache"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { HttpError } from "@/lib/http"
 import { useSpaces, useWorkspace } from "@/lib/queries"
@@ -182,7 +181,7 @@ function useSharingPolicy(enabled: boolean) {
       // Whether each link opens follows the policy: the lists, and each
       // document page's count of links that open and whether Share makes
       // one. Only the page on screen reads again now.
-      invalidateSharingQueries(queryClient)
+      invalidateSharingQueries(queryClient, confirmed.current?.revision)
     },
   })
   const update = (change: Partial<SharingPolicy>) => {
@@ -452,20 +451,9 @@ function noteRevoked(
         links: current.links.filter((link) => link.id !== revoked.id),
       }
   )
-  if (before.status !== "active") return
-  queryClient.setQueryData<DocumentPageResult>(
-    documentQueryKeys.page(before.spaceId, before.path),
-    (page) =>
-      page?.kind === "document" && page.sharing
-        ? {
-            ...page,
-            sharing: {
-              ...page.sharing,
-              activeLinks: Math.max(0, page.sharing.activeLinks - 1),
-            },
-          }
-        : undefined
-  )
+  const remaining = queryClient.getQueryData<DocumentShareLinks>(shareLinksQueryKey(before.spaceId, before.path))
+  if (remaining) notePageLinks(queryClient, before.spaceId, before.path, remaining.links)
+  else void queryClient.invalidateQueries({ queryKey: documentQueryKeys.page(before.spaceId, before.path), exact: true })
 }
 
 function LinkList({ enabled, titled }: { enabled: boolean; titled: boolean }) {

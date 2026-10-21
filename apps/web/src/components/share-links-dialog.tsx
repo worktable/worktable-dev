@@ -1,10 +1,5 @@
 import { useEffect, useState } from "react"
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type QueryClient,
-} from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Link2,
   Loader2,
@@ -15,7 +10,6 @@ import {
 } from "lucide-react"
 import type {
   CreatedShareLink,
-  DocumentPageResult,
   DocumentShareLinks,
   DocumentSharingSummary,
   ShareLink,
@@ -62,13 +56,12 @@ import { cn } from "@worktable/ui/lib/utils"
 import { HtmlSafetyNote, InlineError } from "@/components/share-document-action"
 import type { PageShareTarget } from "@/hooks/use-page-meta"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
-import { documentQueryKeys } from "@/lib/documents-queries"
+import { notePageLinks } from "@/lib/sharing-cache"
 import { useWorkspace } from "@/lib/queries"
 import { openSettings } from "@/lib/settings-open"
 import {
   allowedShareLinkExpiry,
   createBlockedMessage,
-  openShareLinkCount,
   SHARE_LINK_LEVEL_LABELS,
   shareLinkDetails,
   shareLinkExpiresAt,
@@ -91,25 +84,6 @@ interface LinkDraft {
 const NEW_LINK: LinkDraft = { label: "", expiry: "never" }
 
 type Editing = { kind: "new" } | { kind: "edit"; link: ShareLink } | null
-
-/** Keep the page's count of open links in step with the dialog's list. */
-function notePageLinks(
-  queryClient: QueryClient,
-  spaceId: string,
-  path: string,
-  links: readonly ShareLink[]
-): void {
-  const activeLinks = openShareLinkCount(links)
-  queryClient.setQueryData<DocumentPageResult>(
-    documentQueryKeys.page(spaceId, path),
-    (page) =>
-      page?.kind === "document" &&
-      page.sharing &&
-      page.sharing.activeLinks !== activeLinks
-        ? { ...page, sharing: { ...page.sharing, activeLinks } }
-        : undefined
-  )
-}
 
 /**
  * The share dialog while links v2 is on: a document's links, a form for a

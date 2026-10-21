@@ -60,6 +60,7 @@ const WS_BASE =
 
 export interface WsMessage {
   type: string
+  revision?: number
   spaceId?: string
   docPath?: string
   /** What produced a change, such as "yjs" for a collaborative save. */
@@ -830,6 +831,13 @@ function connectShared(
       message = JSON.parse(event.data as string) as WsMessage
     } catch {
       // Ignore malformed messages without disrupting the live connection.
+      return
+    }
+    if (message.type === "share_policy_changed") {
+      const client = connection.queryClient
+      if (client) void import("./sharing-cache").then(({ invalidateSharingQueries }) => {
+        invalidateSharingQueries(client, message.revision)
+      })
       return
     }
     if (message.type === "team_access") {

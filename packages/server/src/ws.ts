@@ -58,10 +58,12 @@ interface OutgoingMessage {
     | "thread_activity"
     | "participants_update"
     | "spaces_changed"
+    | "share_policy_changed"
     | "navigation_changed"
     | "setup_changed"
     | "error"
     | "subscribed"
+  revision?: number
   spaceId?: string
   location?: ThreadLocation
   docPath?: string
@@ -446,6 +448,8 @@ function canReceive(ws: WsClient, msg: OutgoingMessage): boolean {
   )
     return false
   switch (msg.type) {
+    case "share_policy_changed":
+      return ws.data.identity?.principal.type === "human" && ws.data.identity.agent === null
     case "doc_update":
     case "doc_deleted":
     case "doc_links_update":

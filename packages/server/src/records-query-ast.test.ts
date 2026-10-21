@@ -377,6 +377,24 @@ describe("record query AST", () => {
     expect(seen.size).toBe(5);
   });
 
+  it("reads flat filters on fields named like predicate keys as flat filters", async () => {
+    await req(app, "POST", "/api/spaces/meta/records", {
+      id: "events",
+      name: "Events",
+      fields: { field: { type: "string" }, op: { type: "string" }, not: { type: "boolean" }, status: { type: "string" }, payload: { type: "json" } },
+    });
+    await req(app, "POST", "/api/spaces/meta/records/events", { id: "e1", data: { field: "source", op: "write", not: false, status: "open", payload: { a: { b: { c: { d: { e: { f: { g: { h: { i: "deep-needle" } } } } } } } } } } });
+    await req(app, "POST", "/api/spaces/meta/records/events", { id: "e2", data: { field: "source", op: "read", not: true, status: "open" } });
+    const events = (body: unknown) => req(app, "POST", "/api/spaces/meta/records/events/query", body);
+
+    const byFieldOp = await events({ where: { field: "source", op: "write" } });
+    expect(byFieldOp.json.records.map((r: { id: string }) => r.id)).toEqual(["e1"]);
+    const nestedNot = await events({ where: { and: [{ not: false }, { status: "open" }] } });
+    expect(nestedNot.json.records.map((r: { id: string }) => r.id)).toEqual(["e1"]);
+    const deep = await events({ search: "deep-needle" });
+    expect(deep.json.records.map((r: { id: string }) => r.id)).toEqual(["e1"]);
+  });
+
   it("searches field values, never field names", async () => {
     const byValue = await query({ search: "t3" });
     expect(byValue.json.records.map((r: { data: { title: string } }) => r.data.title)).toEqual(["T3"]);

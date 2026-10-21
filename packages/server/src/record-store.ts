@@ -630,9 +630,13 @@ export async function queryRecords(
   const schema = (await readRecordCollectionSchema(spaceId, collectionId)).data;
   const rows = await listRecords(spaceId, collectionId, { includeArchived: query.includeArchived ?? false });
   try {
-    // A one-hop predicate can target a document field in another collection,
-    // so every v2 query gets the same alias-aware identity comparator.
-    const aliases = (await readDocAliases(spaceId)).aliases;
+    // Document references compare through aliases. Load them only when this
+    // collection has a document field, or the query reaches another
+    // collection (a one-hop path may land on one there).
+    const needsAliases =
+      Object.values(schema?.fields ?? {}).some((field) => normalizeRecordFieldType(field.type) === "document") ||
+      referencedCollections(query, schema?.fields).length > 0;
+    const aliases = needsAliases ? (await readDocAliases(spaceId)).aliases : null;
     // The caller's includeArchived flag governs every row the query touches:
     // expand targets, relation-path lookups, and backlink sources follow the
     // same visibility rule as the primary collection.

@@ -521,6 +521,7 @@ const RecordQueryOutputSchema = z.looseObject({
   backlinks: z.record(z.string(), z.array(z.string())).optional(),
   groups: z.array(z.record(z.string(), z.unknown())).optional(),
   nextCursor: z.string().optional(),
+  total: z.number().int().nonnegative().optional(),
   warnings: z.array(z.string()).optional(),
 })
 

@@ -89,15 +89,22 @@ export function compareFieldValues(a: unknown, b: unknown, spec: FieldSpec | und
  *  entries of lists, never field names or the record envelope. */
 export function recordMatchesSearch(record: RecordFile, needle: string): boolean {
   const lowered = needle.toLowerCase();
-  const visit = (value: unknown, depth: number): boolean => {
-    if (value === null || value === undefined || depth > 8) return false;
-    if (typeof value === "string") return value.toLowerCase().includes(lowered);
-    if (typeof value === "number" || typeof value === "boolean") return String(value).toLowerCase().includes(lowered);
-    if (Array.isArray(value)) return value.some((entry) => visit(entry, depth + 1));
-    if (typeof value === "object") return Object.values(value as Record<string, unknown>).some((entry) => visit(entry, depth + 1));
-    return false;
-  };
-  return Object.values(record.data).some((value) => visit(value, 0));
+  // Iterative, so values nested at any depth (json fields) are searched.
+  const pending: unknown[] = Object.values(record.data);
+  while (pending.length > 0) {
+    const value = pending.pop();
+    if (value === null || value === undefined) continue;
+    if (typeof value === "string") {
+      if (value.toLowerCase().includes(lowered)) return true;
+    } else if (typeof value === "number" || typeof value === "boolean") {
+      if (String(value).toLowerCase().includes(lowered)) return true;
+    } else if (Array.isArray(value)) {
+      pending.push(...value);
+    } else if (typeof value === "object") {
+      pending.push(...Object.values(value as Record<string, unknown>));
+    }
+  }
+  return false;
 }
 
 export function isMissing(value: unknown): boolean {
@@ -119,13 +126,17 @@ export class RecordQueryShapeError extends Error {
 
 const PREDICATE_OPS: RecordPredicateOp[] = ["eq", "neq", "in", "contains", "has", "gt", "gte", "lt", "lte", "isEmpty"];
 
-export function isPredicateTree(where: Record<string, unknown>): boolean {
-  // Shape-aware: a legacy flat filter on a data field literally named "and"/
-  // "or"/"not" with a scalar value stays legacy; only tree-shaped values are
-  // treated as AST (array children for and/or, an object child for not).
+export function isPredicateTree(where: Record<string, unknown>, fields?: FieldTypeMap): boolean {
+  // Shape-aware: a flat filter on a data field literally named "and"/"or"/
+  // "not" with a scalar value stays flat; only tree-shaped values are treated
+  // as AST (array children for and/or, an object child for not).
   if (Array.isArray(where["and"]) || Array.isArray(where["or"])) return true;
   if (typeof where["not"] === "object" && where["not"] !== null) return true;
-  return typeof where["field"] === "string" && typeof where["op"] === "string";
+  if (typeof where["field"] !== "string" || typeof where["op"] !== "string") return false;
+  // A collection with data fields named "field" and "op" can mean a flat
+  // filter on them; it is a leaf only when op names a real operator.
+  if (fields?.["field"] && fields?.["op"]) return PREDICATE_OPS.includes(where["op"] as RecordPredicateOp);
+  return true;
 }
 
 const FLAT_OPS = ["in", "contains", "gt", "gte", "lt", "lte"] as const;
@@ -152,10 +163,18 @@ export function flatWhereToPredicate(where: Record<string, unknown>): Record<str
 
 // Validate an untrusted predicate tree, rejecting malformed shapes loudly
 // (the AST is a new surface — no legacy quirk to preserve).
-export function parsePredicate(input: unknown, depth = 0): RecordPredicate {
+export function parsePredicate(input: unknown, depth = 0, fields?: FieldTypeMap): RecordPredicate {
   if (depth > 20) throw new RecordQueryShapeError("Predicate tree too deep (max 20 levels)");
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new RecordQueryShapeError("Predicate must be an object");
   const node = input as Record<string, unknown>;
+  // A flat filter inside a tree ({and: [{status: "open"}, {not: false}]})
+  // means the same as at the top level, including on fields named and/or/not.
+  // Classify the shape before reading any key as a connective.
+  if (!isPredicateTree(node, fields)) {
+    const compiled = flatWhereToPredicate(node);
+    if (!compiled) throw new RecordQueryShapeError("Predicate must not be empty");
+    return parsePredicate(compiled, depth + 1, fields);
+  }
   // Strict key sets: a tree node carrying extra keys (e.g. an "and" array
   // plus a leftover flat filter) is rejected, not silently narrowed to the
   // tree — dropped constraints would broaden results without warning.
@@ -172,16 +191,10 @@ export function parsePredicate(input: unknown, depth = 0): RecordPredicate {
     // identically shaped input). A builder with zero clauses should omit the
     // connective.
     if ((node[key] as unknown[]).length === 0) throw new RecordQueryShapeError(`"${key}" requires at least one predicate`);
-    const children = (node[key] as unknown[]).map((child) => parsePredicate(child, depth + 1));
+    const children = (node[key] as unknown[]).map((child) => parsePredicate(child, depth + 1, fields));
     return key === "and" ? { and: children } : { or: children };
   }
-  if ("not" in node) return { not: parsePredicate(node["not"], depth + 1) };
-  // A flat filter inside a tree ({and: [{status: "open"}, ...]}) means the
-  // same as at the top level. A node is a leaf when it names a string field
-  // and op; anything else without connectives is read as a flat filter.
-  if (!(typeof node["field"] === "string" && typeof node["op"] === "string") && Object.keys(node).length > 0) {
-    return parsePredicate(flatWhereToPredicate(node), depth + 1);
-  }
+  if ("not" in node) return { not: parsePredicate(node["not"], depth + 1, fields) };
   const field = node["field"];
   const op = node["op"];
   if (typeof field !== "string" || !field) throw new RecordQueryShapeError("Predicate leaf needs a string \"field\"");
@@ -218,7 +231,7 @@ export function referencedCollections(query: RecordQuery, fields: FieldTypeMap |
     if (target) out.add(target);
   }
   if (query.backlinks) out.add(query.backlinks.collection);
-  const where = query.where && (isPredicateTree(query.where) ? query.where : flatWhereToPredicate(query.where));
+  const where = query.where && (isPredicateTree(query.where, fields) ? query.where : flatWhereToPredicate(query.where));
   if (where) {
     const walk = (node: RecordPredicate): void => {
       if ("and" in node) node.and.forEach(walk);
@@ -229,7 +242,7 @@ export function referencedCollections(query: RecordQuery, fields: FieldTypeMap |
         if (target) out.add(target);
       }
     };
-    walk(parsePredicate(where));
+    walk(parsePredicate(where, 0, fields));
   }
   return [...out];
 }
@@ -313,8 +326,12 @@ function leafMatches(record: RecordFile, leaf: { field: string; op: RecordPredic
         return (leaf.value as unknown[]).some((expected) => equivalent(value, expected));
       case "contains": {
         const needle = (leaf.value as string).toLowerCase();
-        if (Array.isArray(value)) return value.some((entry) => String(entry ?? "").toLowerCase().includes(needle));
-        return String(value ?? "").toLowerCase().includes(needle);
+        // A document reference compares by its current path, so a value
+        // stored before a rename still matches the renamed path.
+        const text = (entry: unknown): string =>
+          document && ctx.resolveDocumentPath && typeof entry === "string" ? ctx.resolveDocumentPath(entry) : String(entry ?? "");
+        if (Array.isArray(value)) return value.some((entry) => text(entry).toLowerCase().includes(needle));
+        return text(value).toLowerCase().includes(needle);
       }
       case "has":
         // Exact membership for array fields (multi_select values, many-relation
@@ -477,9 +494,9 @@ export async function runQueryV2(
 
   let rows = records;
   const hasWhere = query.where !== undefined && Object.keys(query.where).length > 0;
-  const where = hasWhere ? (isPredicateTree(query.where!) ? query.where! : flatWhereToPredicate(query.where!)) : null;
+  const where = hasWhere ? (isPredicateTree(query.where!, fields) ? query.where! : flatWhereToPredicate(query.where!)) : null;
   if (where) {
-    const predicate = parsePredicate(where);
+    const predicate = parsePredicate(where, 0, fields);
     rows = rows.filter((record) => predicateMatches(record, predicate, ctx));
   }
   if (query.search) {

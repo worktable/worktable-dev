@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { AnnotationCategorySchema } from "./annotations"
+import { SHARE_LINK_LABEL_MAX_LENGTH } from "./constants"
 import { CanonicalIdSchema, IsoTimestampSchema } from "./widgets"
 
 // Share links: several per document, each with its own label, level, expiry
@@ -35,7 +36,6 @@ export const ShareLinkBlockedBySchema = z.enum([
 ])
 export type ShareLinkBlockedBy = z.infer<typeof ShareLinkBlockedBySchema>
 
-export const SHARE_LINK_LABEL_MAX_LENGTH = 80
 const ShareLinkLabelSchema = z.string().trim().max(SHARE_LINK_LABEL_MAX_LENGTH)
 const ShareLinkPasswordSchema = z.string().min(8).max(128)
 
@@ -176,6 +176,8 @@ export interface ShareLinksPage {
 /** Sharing on a document page, without a request of its own. */
 export const DocumentSharingSummarySchema = z.object({
   activeLinks: z.number().int().min(0),
+  /** Next count change due to expiry, so an open page refreshes once then. */
+  nextExpiry: IsoTimestampSchema.optional(),
   canCreate: z.boolean(),
   /** Present only to readers who may read visitor comments, when the document has a comment link or comments. */
   visitorComments: z.object({ newCount: z.number().int().min(0) }).optional(),

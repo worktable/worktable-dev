@@ -5,6 +5,7 @@ import {
   authRequired,
   canOperateHost,
   canManageUserSettings,
+  isHumanWorkspaceOwner,
   mcpBearerRequired,
   publicSurfaceAuthRequired,
 } from "../auth.ts";
@@ -24,6 +25,7 @@ import {
 } from "../settings-store.ts";
 import { mcpPreviewEnvOverride } from "../mcp/surface.ts";
 import { sharingPreviewEnabled, sharingPreviewEnvOverride } from "../sharing-preview.ts";
+import { sharingV2Active } from "../share-links-store.ts";
 import { teamMemberForIdentity } from "../team-policy.ts";
 import { memberAccess } from "../team-access.ts";
 import { normalizePublicUrl } from "../public-origin.ts";
@@ -163,7 +165,11 @@ export interface DeploymentInfo {
     updateChecks: boolean;
     previewStatus?: boolean;
     documentSharing: boolean;
-    /** May see and manage this Worktable's share links (Settings → Links). */
+    /**
+     * Links v2 is on and this person may see and manage share links: several
+     * per document in the share dialog, and Settings → Links. Off, the share
+     * dialog keeps today's single link.
+     */
     shareLinks: boolean;
     /** Sharing features that aren't released yet are on (sharingPreviewEnabled). */
     sharingPreview: boolean;
@@ -189,7 +195,7 @@ export function getDeploymentInfo(): DeploymentInfo {
       previewStatus: !cloud,
       documentSharing,
       // Without Teams the only person here is the owner.
-      shareLinks: documentSharing,
+      shareLinks: documentSharing && sharingV2Active(),
       sharingPreview: sharingPreviewEnabled(),
     },
   };
@@ -201,6 +207,25 @@ function managesSomeSpace(c: Context): boolean {
   const member = identity ? teamMemberForIdentity(identity) : null;
   const levels = member ? memberAccess(member.id)?.levels : undefined;
   return levels ? [...levels.values()].includes("manage") : false;
+}
+
+/**
+ * Whether the caller may see and manage share links. Like the sharing routes,
+ * only people: in Teams an owner or a member who manages a Space, otherwise
+ * the Worktable's human owner. Never an agent, whatever its token allows.
+ */
+function managesShareLinks(c: Context): boolean {
+  const identity = c.get("identity");
+  if (
+    !identity ||
+    identity.agent !== null ||
+    identity.principal.type !== "human" ||
+    identity.operatorVerification
+  ) {
+    return false;
+  }
+  if (!teamsEnabled()) return isHumanWorkspaceOwner(c);
+  return canManageUserSettings(c) || managesSomeSpace(c);
 }
 
 // GET /api/system/deployment — authoritative product capabilities for this
@@ -217,9 +242,10 @@ systemRouter.get("/deployment", (c) => {
       softwareUpdates: deployment.mode !== "cloud" && operator, updateChecks: deployment.mode !== "cloud" && operator,
       workspaceClear: deployment.mode !== "cloud" && owner,
       previewStatus: deployment.mode !== "cloud" && operator,
-      shareLinks: deployment.capabilities.documentSharing && (owner || managesSomeSpace(c)),
     });
   }
+  deployment.capabilities.shareLinks =
+    deployment.capabilities.shareLinks && managesShareLinks(c);
   return c.json(deployment);
 });
 
@@ -417,6 +443,7 @@ systemRouter.put("/settings", async (c) => {
         409,
       );
     }
+    const sharingPreviewWasOn = sharingPreviewEnabled();
     const result = await updateServerSettingsWithResult(body);
     const merged = result.settings;
     // A retention-policy change triggers an immediate full sweep so the new
@@ -440,6 +467,12 @@ systemRouter.put("/settings", async (c) => {
           500,
         );
       }
+    }
+    if (!sharingPreviewWasOn && sharingPreviewEnabled()) {
+      const { startV1ShareLinkDrain } = await import("../share-links-drain.ts");
+      // The response does not wait for catalog discovery or migration I/O.
+      const timer = setTimeout(() => { void startV1ShareLinkDrain(); }, 0);
+      timer.unref?.();
     }
     return c.json(withEnvironmentOverrides(merged));
   } catch (err) {

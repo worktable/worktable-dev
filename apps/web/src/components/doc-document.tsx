@@ -46,6 +46,7 @@ import type {
   Annotation,
   DocumentPage,
   DocumentPageResult,
+  DocumentSharingSummary,
 } from "@worktable/types"
 import {
   convertDoc,
@@ -60,6 +61,7 @@ import { HttpError } from "@/lib/http"
 import { copyText } from "@/lib/clipboard"
 import { useSpaceEvents } from "@/hooks/use-space-events"
 import {
+  pageShareTarget,
   useSetPageMeta,
   type PageAnnotationsAction,
   type PageOverflowAction,
@@ -230,6 +232,7 @@ function DocPageMeta({
   onRecoverOfflineEdits,
   secondaryAction,
   annotations,
+  sharing,
 }: {
   spaceId: string
   docPath: string
@@ -242,9 +245,13 @@ function DocPageMeta({
   onRecoverOfflineEdits?: () => void
   secondaryAction?: PageSecondaryAction
   annotations?: PageAnnotationsAction
+  /** The page's links while links v2 is on. */
+  sharing?: DocumentSharingSummary
 }) {
   const setPageMeta = useSetPageMeta()
   const { data: spaceDetail } = useSpace(spaceId)
+  const activeLinks = sharing?.activeLinks
+  const canCreateLinks = sharing?.canCreate
   const shareable = Boolean(
     validated &&
     spaceDetail &&
@@ -323,9 +330,12 @@ function DocPageMeta({
       overflowActions,
       secondaryAction,
       annotations,
-      shareTarget: shareable
-        ? { kind: "doc", spaceId, artifactKey: docPath }
-        : undefined,
+      shareTarget: pageShareTarget(
+        { kind: "doc", spaceId, artifactKey: docPath },
+        shareable,
+        activeLinks,
+        canCreateLinks
+      ),
     })
 
     return () => setPageMeta(null)
@@ -335,6 +345,8 @@ function DocPageMeta({
     secondaryAction,
     annotations,
     shareable,
+    activeLinks,
+    canCreateLinks,
     spaceId,
     setPageMeta,
   ])
@@ -860,6 +872,7 @@ function MarkdownDocPage({
         secondaryAction={secondaryAction}
         onVersionHistory={openVersions}
         annotations={validated ? annotationsAction : undefined}
+        sharing={page?.sharing}
       />
       <ArchivedDocBanner
         readOnly={readOnly}
@@ -1462,6 +1475,7 @@ function BlockNoteDocPage({
         onDownload={onDownload}
         onRecoverOfflineEdits={validated ? onRecoverOfflineEdits : undefined}
         annotations={validated ? annotationsAction : undefined}
+        sharing={page?.sharing}
       />
       <ArchivedDocBanner
         readOnly={readOnly}

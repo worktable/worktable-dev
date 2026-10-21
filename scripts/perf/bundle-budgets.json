@@ -18,8 +18,8 @@
       "why": "The welcome a new member sees in the Space they were invited to, and the Getting Started row at the top of the sidebar while the person keeps it pinned. Getting Started's own page loads only in that Space."
     },
     "rich document": {
-      "gzip": 801900,
-      "why": "The sidebar footer shows who is signed in, with a menu for Profile, Preferences, the theme and Sign Out, and Settings groups into You, the Worktable and Support."
+      "gzip": 802200,
+      "why": "The sidebar footer shows who is signed in, with a menu for Profile, Preferences, the theme and Sign Out, and Settings groups into You, the Worktable and Support. Share-link counts now refresh at their next expiry without polling: c3416a55 measured 802.0 KB gzip on Namespace CI (run 39589556673), about 0.1 KB over the prior budget. Allow 0.3 KB for that deadline hook; the Share dialog remains lazy and document contents are not refetched."
     },
     "html document": {
       "gzip": 353000,

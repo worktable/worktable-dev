@@ -190,7 +190,7 @@ function memberMayShare(
  * `workos:<subject>`), which never names a member. Reads only the access
  * snapshot, which is rebuilt only when team access changes.
  */
-function creatorMayShare(
+export function creatorMayShare(
   createdById: string,
   spaceId: string,
   policy: SharingPolicy
@@ -371,6 +371,10 @@ export function pageShareAccess(
     if (error instanceof ShareLinksStoreError) return null
     throw error
   }
-  if (!authorizeShareAction(identity, "read", spaceId, { policy }).allowed) return null
-  return { canCreate: authorizeShareAction(identity, "create", spaceId, { policy }).allowed }
+  if (!authorizeShareAction(identity, "read", spaceId, { policy }).allowed)
+    return null
+  return {
+    canCreate: authorizeShareAction(identity, "create", spaceId, { policy })
+      .allowed,
+  }
 }

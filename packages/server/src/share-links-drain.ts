@@ -118,10 +118,11 @@ async function drain(): Promise<void> {
         (share) => outcomes.get(share.token) ?? null,
         // Under the file's lock: a link an older binary stopped since it was
         // copied, in this run or one cut short, is revoked here as well.
-        (present, removing) =>
+        (present, removing, recoveredDigests) =>
           settleV1ShareLinks(
             present.map((share) => share.token),
-            removing.map((share) => share.token)
+            removing.map((share) => share.token),
+            recoveredDigests
           )
       )
     ) {

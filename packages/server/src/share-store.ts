@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import { chmod, open, readFile, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { z } from "zod"
@@ -88,12 +88,15 @@ async function loadFile(): Promise<ShareFile> {
 }
 
 async function saveFile(file: ShareFile): Promise<void> {
-  const path = shareFilePath()
+  await saveShareState(shareFilePath(), `${JSON.stringify(file, null, 2)}\n`)
+}
+
+async function saveShareState(path: string, content: string): Promise<void> {
   const temporary = `${path}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`
   try {
     const handle = await open(temporary, "wx", 0o600)
     try {
-      await handle.writeFile(`${JSON.stringify(file, null, 2)}\n`, "utf8")
+      await handle.writeFile(content, "utf8")
       await handle.sync()
     } finally {
       await handle.close()
@@ -357,7 +360,8 @@ export async function removeMovedDocumentShares(
   moved: (share: StoredDocumentShare) => boolean | null,
   afterRemoving: (
     present: readonly StoredDocumentShare[],
-    removing: readonly StoredDocumentShare[]
+    removing: readonly StoredDocumentShare[],
+    recoveredDigests: readonly string[]
   ) => void
 ): Promise<boolean> {
   return serializedLifecycle(() =>
@@ -367,16 +371,58 @@ export async function removeMovedDocumentShares(
         ...publicShare(share),
         workspaceEpoch: share.workspaceEpoch,
       }))
+      const journalPath = `${shareFilePath()}.moving`
+      // The journal contains only digests. Its image identifies the exact atomic
+      // replacement, distinguishing our completed removal from an old binary's
+      // revocation after a failed write. Old binaries accept the JSON whitespace.
+      const digest = (value: string) =>
+        createHash("sha256").update(value).digest("hex")
+      try {
+        const journal = z
+          .object({
+            image: z.string().regex(/^[a-f0-9]{64}$/),
+            removed: z.array(z.string().regex(/^[a-f0-9]{64}$/)),
+          })
+          .strict()
+          .parse(JSON.parse(await readFile(journalPath, "utf8")))
+        if (digest(await readFile(shareFilePath(), "utf8")) === journal.image) {
+          afterRemoving(present, [], journal.removed)
+        }
+        await rm(journalPath, { force: true })
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+      }
       const decisions = present.map(moved)
       if (decisions.includes(null)) return false
       const kept = file.shares.filter((_, index) => decisions[index] === false)
       if (kept.length < file.shares.length) {
-        await saveFile({ ...emptyFile(), shares: kept })
+        const nonce = [...randomBytes(32)]
+          .map((byte) =>
+            byte
+              .toString(2)
+              .padStart(8, "0")
+              .replaceAll("0", " ")
+              .replaceAll("1", "\t")
+          )
+          .join("")
+        const content = `${JSON.stringify({ ...emptyFile(), shares: kept }, null, 2)}\n${nonce}\n`
+        await saveShareState(
+          journalPath,
+          JSON.stringify({
+            image: digest(content),
+            removed: present
+              .filter((_, index) => decisions[index] === true)
+              .map((share) => digest(share.token)),
+          })
+        )
+        await saveShareState(shareFilePath(), content)
       }
       afterRemoving(
         present,
-        present.filter((_, index) => decisions[index] === true)
+        present.filter((_, index) => decisions[index] === true),
+        []
       )
+      await rm(journalPath, { force: true })
       return true
     })
   )

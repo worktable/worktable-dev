@@ -13,7 +13,8 @@ import {
   mintLegacyFrameTicket,
   legacyFrameToken,
   SharePasswordBusy,
-  verifySharePassword,
+  verifyShareLinkPassword,
+  SharePasswordLimited,
 } from "../share-link-credentials.ts"
 import { createHash } from "node:crypto"
 import { SOURCE_URL } from "../release-info.ts"
@@ -446,6 +447,14 @@ export function createPublicSharesRouter(
   )
   router.post("/bridge", linkBridge(getShareOrigin))
   router.onError((error, c) => {
+    if (error instanceof SharePasswordLimited) {
+      const headers = projectionHeaders()
+      headers.set("Retry-After", String(error.retryAfter))
+      return Response.json(
+        { code: "RATE_LIMITED" },
+        { status: PUBLIC_SHARE_STATUS.RATE_LIMITED, headers }
+      )
+    }
     if (error instanceof SharePasswordBusy || error instanceof LinkToolChanged)
       return busy(
         c.req.raw,
@@ -687,7 +696,11 @@ export function createPublicSharesRouter(
     )
       return unavailable(c.req.raw)
     if (
-      !(await verifySharePassword(input.data.password, view.link.passwordHash))
+      !(await verifyShareLinkPassword(
+        view.link,
+        input.data.password,
+        view.link.passwordHash
+      ))
     ) {
       return Response.json(
         { code: "PASSWORD_REQUIRED" },

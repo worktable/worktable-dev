@@ -755,6 +755,7 @@ describe("moving today's links into links v2", () => {
       JSON.parse(await readFile(v1File(), "utf8")).shares.length &&
       Date.now() < deadline
     ) {
+      // test-policy: external-readiness-backoff — wait for the event-triggered drain to persist its result.
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
     await v1FileAsOlderBinaryReadsIt(plan.token)

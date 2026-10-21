@@ -455,6 +455,52 @@ describe("record index", () => {
     expect(byPrefix?.map((h) => h.recordId)).toEqual(["beta"])
   })
 
+  it("titles search results by the collection's title field, and retitles when it changes", async () => {
+    await writeRecordCollectionSchema(
+      "meta",
+      buildRecordCollectionSchema({
+        id: "notes",
+        name: "Notes",
+        fields: { summary: { type: "string" }, name: { type: "string" } },
+        titleField: "summary",
+      })
+    )
+    await createRecord("meta", "notes", {
+      id: "n1",
+      data: { summary: "Bridge inspection", name: "Inspector Lee" },
+    })
+    await recordIndex.refreshCollection("meta", "notes")
+    expect(recordIndex.searchRecords("bridge", 10)?.map((h) => h.title)).toEqual(["Bridge inspection"])
+
+    await writeRecordCollectionSchema(
+      "meta",
+      buildRecordCollectionSchema({
+        id: "notes",
+        name: "Notes",
+        fields: { summary: { type: "string" }, name: { type: "string" } },
+        titleField: null,
+      })
+    )
+    await recordIndex.refreshCollection("meta", "notes")
+    expect(recordIndex.searchRecords("bridge", 10)?.map((h) => h.title)).toEqual(["Inspector Lee"])
+  })
+
+  it("finds unique values under field keys with quotes and backslashes", async () => {
+    await writeRecordCollectionSchema(
+      "meta",
+      buildRecordCollectionSchema({
+        id: "refs",
+        name: "Refs",
+        fields: { 'ref"id': { type: "string" }, "ref\\id": { type: "string" }, refid: { type: "string" } },
+      })
+    )
+    await createRecord("meta", "refs", { id: "a", data: { 'ref"id': "one" } })
+    await createRecord("meta", "refs", { id: "b", data: { "ref\\id": "one", refid: "one" } })
+    expect(recordIndex.findIdsByFieldValue("meta", "refs", 'ref"id', "one")).toEqual(["a"])
+    expect(recordIndex.findIdsByFieldValue("meta", "refs", "ref\\id", "one")).toEqual(["b"])
+    expect(recordIndex.findIdsByFieldValue("meta", "refs", "refid", "one")).toEqual(["b"])
+  })
+
   it("keeps archived records out of search after a collection rename", async () => {
     await writeRecordCollectionSchema(
       "meta",

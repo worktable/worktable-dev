@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@worktable/ui/component
 import { cn } from "@worktable/ui/lib/utils"
 import { useQuery } from "@tanstack/react-query"
 import { documentReferenceFallbackTitle, type RecordFile } from "@worktable/types"
-import { queryKeys } from "@/lib/queries"
+import { queryKeys, useRecordCollectionSchema } from "@/lib/queries"
 import { queryRecords } from "@/lib/records-api"
 import { documentPathIsSelected, fieldEditorSeed, normalizeDocumentPickerSearch, optionColorClass, recordTitle, relationIds, toggleDocumentPath, type RecordFieldColumn } from "@/lib/records"
 import { documentReferencesQueryOptions, useSpaceDocs } from "@/lib/docs-queries"
@@ -516,6 +516,7 @@ export function RelationPicker({
     staleTime: 15_000,
   })
   const candidates = useMemo(() => data?.records ?? [], [data])
+  const targetSchema = useRecordCollectionSchema(spaceId, target)
 
   const pick = async (record: RecordFile) => {
     if (many) {
@@ -574,7 +575,7 @@ export function RelationPicker({
                     onClick={() => pick(record)}
                   >
                     <span className={`size-1.5 shrink-0 rounded-full ${active ? "bronze-knob" : "bg-muted-foreground/30"}`} />
-                    <span className="min-w-0 flex-1 truncate">{recordTitle(record)}</span>
+                    <span className="min-w-0 flex-1 truncate">{recordTitle(record, targetSchema)}</span>
                     {active && <Check className="size-3.5 shrink-0 text-primary" />}
                   </button>
                 )

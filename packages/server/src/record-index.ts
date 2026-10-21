@@ -35,7 +35,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { CanonicalIdSchema, normalizeRecordFieldType, RecordCollectionSchemaSchema, RecordFileSchema, SpaceFileSchema, type RecordCollectionProjectionHealth, type RecordCollectionReconcileResult, type RecordField, type RecordFile, type RecordProjectionState } from "@worktable/types";
+import { CanonicalIdSchema, normalizeRecordFieldType, recordTitleFieldKey, RecordCollectionSchemaSchema, RecordFileSchema, SpaceFileSchema, type RecordCollectionProjectionHealth, type RecordCollectionReconcileResult, type RecordField, type RecordFile, type RecordProjectionState } from "@worktable/types";
 import { getAppDir } from "./app-storage.ts";
 import { onRecordChanged, type RecordChangeEvent } from "./record-events.ts";
 import { timing } from "./request-timing.ts";
@@ -110,11 +110,14 @@ async function currentFingerprint(path: string): Promise<{ value: string; stable
 }
 
 // Mirrors search-index.ts recordTitle so record search results keep their
-// titles when the search read path moves onto this index.
-function recordTitle(record: RecordFile, collectionName: string): string {
+// titles when the search read path moves onto this index. `titleKey` is the
+// collection's title field (recordTitleFieldKey).
+function recordTitle(record: RecordFile, collectionName: string, titleKey: string | null): string {
   const data = record.data;
-  const title = data["title"] ?? data["name"];
-  if (typeof title === "string" && title.trim()) return title;
+  for (const key of [titleKey, "title", "name"]) {
+    const title = key ? data[key] : undefined;
+    if (typeof title === "string" && title.trim()) return title;
+  }
   return `${collectionName}: ${record.id}`;
 }
 
@@ -279,7 +282,13 @@ class RecordIndex {
     if (!recordColumns.some((column) => column.name === "file_fingerprint")) {
       db.run("ALTER TABLE records ADD COLUMN file_fingerprint TEXT");
     }
-    db.run("CREATE TABLE IF NOT EXISTS collections (space_id TEXT NOT NULL, collection_id TEXT NOT NULL, name TEXT NOT NULL, fields_json TEXT, schema_hash TEXT, PRIMARY KEY (space_id, collection_id))");
+    db.run("CREATE TABLE IF NOT EXISTS collections (space_id TEXT NOT NULL, collection_id TEXT NOT NULL, name TEXT NOT NULL, fields_json TEXT, schema_hash TEXT, title_key TEXT, PRIMARY KEY (space_id, collection_id))");
+    // The title field search titles come from: "" when the schema names none,
+    // NULL in rows written before the column, whose titles used title or name.
+    const collectionColumns = db.query("PRAGMA table_info(collections)").all() as { name: string }[];
+    if (!collectionColumns.some((column) => column.name === "title_key")) {
+      db.run("ALTER TABLE collections ADD COLUMN title_key TEXT");
+    }
     // Relation edges, stored once per (record, field, target). Backlinks,
     // delete-policy checks, and dangling-reference warnings all read this.
     db.run(
@@ -362,9 +371,14 @@ class RecordIndex {
   }
 
   private collectionName(spaceId: string, collectionId: string): string {
-    if (!this.db) return collectionId;
-    const row = this.db.query("SELECT name FROM collections WHERE space_id = ? AND collection_id = ?").get(spaceId, collectionId) as { name: string } | null;
-    return row?.name ?? collectionId;
+    return this.collectionLabel(spaceId, collectionId).name;
+  }
+
+  /** The collection's name and the title field its records are named by. */
+  private collectionLabel(spaceId: string, collectionId: string): { name: string; titleKey: string | null } {
+    if (!this.db) return { name: collectionId, titleKey: null };
+    const row = this.db.query("SELECT name, title_key FROM collections WHERE space_id = ? AND collection_id = ?").get(spaceId, collectionId) as { name: string; title_key: string | null } | null;
+    return { name: row?.name ?? collectionId, titleKey: row?.title_key || null };
   }
 
   private collectionFields(spaceId: string, collectionId: string): Record<string, RecordField> | null {
@@ -457,9 +471,9 @@ class RecordIndex {
         // Archived records are not searchable (parity with the MiniSearch index,
         // which indexes with includeArchived: false).
         if (!record.archive) {
-          const name = this.collectionName(spaceId, record.collectionId);
+          const { name, titleKey } = this.collectionLabel(spaceId, record.collectionId);
           this.db!.run("INSERT INTO records_fts (title, body, space_id, collection_id, record_id) VALUES (?, ?, ?, ?, ?)", [
-            recordTitle(record, name),
+            recordTitle(record, name, titleKey),
             `${name} ${JSON.stringify(record.data)}`,
             spaceId,
             record.collectionId,
@@ -575,8 +589,8 @@ class RecordIndex {
   async refreshCollection(spaceId: string, collectionId: string): Promise<void> {
     if (!this.db || !isCanonicalId(spaceId) || !isCanonicalId(collectionId)) return;
     this.buildCollectionsSeen?.add(`${spaceId}/${collectionId}`);
-    const previous = this.db.query("SELECT name, fields_json, schema_hash FROM collections WHERE space_id = ? AND collection_id = ?").get(spaceId, collectionId) as { name: string; fields_json: string | null; schema_hash: string | null } | null;
-    const { status, name, fields, schemaHash } = await this.readCollectionSchemaFromDisk(spaceId, collectionId);
+    const previous = this.db.query("SELECT name, fields_json, schema_hash, title_key FROM collections WHERE space_id = ? AND collection_id = ?").get(spaceId, collectionId) as { name: string; fields_json: string | null; schema_hash: string | null; title_key: string | null } | null;
+    const { status, name, fields, schemaHash, titleKey } = await this.readCollectionSchemaFromDisk(spaceId, collectionId);
     if (status === "error") {
       // An unparseable schema must not erase what we knew: dropping fields
       // would delete every relation edge derived under the last good schema,
@@ -593,7 +607,7 @@ class RecordIndex {
       return;
     }
     const fieldsJson = fields ? JSON.stringify(fields) : null;
-    this.db.run("INSERT OR REPLACE INTO collections (space_id, collection_id, name, fields_json, schema_hash) VALUES (?, ?, ?, ?, ?)", [spaceId, collectionId, name, fieldsJson, schemaHash]);
+    this.db.run("INSERT OR REPLACE INTO collections (space_id, collection_id, name, fields_json, schema_hash, title_key) VALUES (?, ?, ?, ?, ?, ?)", [spaceId, collectionId, name, fieldsJson, schemaHash, titleKey ?? ""]);
     if (!previous || previous.name !== name || previous.fields_json !== fieldsJson || previous.schema_hash !== schemaHash) {
       this.noteCollectionChanged(spaceId, collectionId);
     }
@@ -603,7 +617,11 @@ class RecordIndex {
       const rows = this.db.query("SELECT record_id, json FROM records WHERE space_id = ? AND collection_id = ? AND valid = 1").all(spaceId, collectionId) as { record_id: string; json: string }[];
       for (const row of rows) this.replaceRefs(spaceId, collectionId, row.record_id, JSON.parse(row.json) as RecordFile);
     }
-    if (this.ftsAvailable && previous?.name !== name) {
+    // Search titles change with the name or the title field. A row from before
+    // title_key titled records by title or name, which a title field of
+    // "title" (or none) still gives.
+    const titleChanged = previous !== null && (previous.title_key === null ? !(titleKey === null || titleKey === "title") : previous.title_key !== (titleKey ?? ""));
+    if (this.ftsAvailable && (previous?.name !== name || titleChanged)) {
       const rows = this.db.query("SELECT json, archived FROM records WHERE space_id = ? AND collection_id = ? AND valid = 1").all(spaceId, collectionId) as { json: string; archived: number }[];
       for (const row of rows) {
         const record = JSON.parse(row.json) as RecordFile;
@@ -611,7 +629,7 @@ class RecordIndex {
         // Same rule as upsertValid: archived records are not searchable.
         if (row.archived) continue;
         this.db.run("INSERT INTO records_fts (title, body, space_id, collection_id, record_id) VALUES (?, ?, ?, ?, ?)", [
-          recordTitle(record, name),
+          recordTitle(record, name, titleKey),
           `${name} ${JSON.stringify(record.data)}`,
           spaceId,
           collectionId,
@@ -625,21 +643,21 @@ class RecordIndex {
     if (this.isReady() && this.pendingDuringBuild === null) await this.collectionHealth(spaceId, collectionId);
   }
 
-  private async readCollectionSchemaFromDisk(spaceId: string, collectionId: string): Promise<{ status: "ok" | "missing" | "error"; name: string; fields: Record<string, RecordField> | null; schemaHash: string | null }> {
+  private async readCollectionSchemaFromDisk(spaceId: string, collectionId: string): Promise<{ status: "ok" | "missing" | "error"; name: string; fields: Record<string, RecordField> | null; schemaHash: string | null; titleKey: string | null }> {
     const path = join(getSpacesBaseDir(), spaceId, "records", collectionId, "schema.yaml");
-    if (!existsSync(path)) return { status: "missing", name: collectionId, fields: null, schemaHash: null };
+    if (!existsSync(path)) return { status: "missing", name: collectionId, fields: null, schemaHash: null, titleKey: null };
     let text: string;
     try {
       text = await Bun.file(path).text();
     } catch {
-      return { status: "error", name: collectionId, fields: null, schemaHash: null };
+      return { status: "error", name: collectionId, fields: null, schemaHash: null, titleKey: null };
     }
     const schemaHash = hashText(text);
     try {
       const schema = RecordCollectionSchemaSchema.parse(parseCanonicalYaml(text));
-      return { status: "ok", name: schema.name, fields: schema.fields, schemaHash };
+      return { status: "ok", name: schema.name, fields: schema.fields, schemaHash, titleKey: recordTitleFieldKey(schema) };
     } catch {
-      return { status: "error", name: collectionId, fields: null, schemaHash };
+      return { status: "error", name: collectionId, fields: null, schemaHash, titleKey: null };
     }
   }
 
@@ -999,6 +1017,21 @@ class RecordIndex {
     return rows.map((row) => JSON.parse(row.json) as RecordFile);
   }
 
+  /** Ids of records (archived included) whose data field holds exactly this
+   *  string or number. null until the index is ready. */
+  findIdsByFieldValue(spaceId: string, collectionId: string, field: string, value: string | number): string[] | null {
+    if (!this.isReady()) return null;
+    // json_each matches the key exactly, where a JSON path would need quotes
+    // and backslashes in the key escaped.
+    const rows = timing.span("db", () =>
+      this.db!.query(
+        "SELECT record_id FROM records WHERE space_id = ? AND collection_id = ? AND valid = 1 " +
+          "AND EXISTS (SELECT 1 FROM json_each(records.json, '$.data') WHERE key = ? AND value = ?)",
+      ).all(spaceId, collectionId, field, value),
+    ) as { record_id: string }[];
+    return rows.map((row) => row.record_id);
+  }
+
   listDiagnostics(spaceId: string, collectionId: string): { file: string; error: string }[] | null {
     if (!this.isReady()) return null;
     const rows = this.db!.query("SELECT record_id, error FROM records WHERE space_id = ? AND collection_id = ? AND valid = 0").all(spaceId, collectionId) as { record_id: string; error: string }[];
@@ -1105,9 +1138,9 @@ class RecordIndex {
     const hits: RecordSearchHit[] = [];
     for (const row of rows) {
       const record = JSON.parse(row.json) as RecordFile;
-      const name = this.collectionName(row.space_id, row.collection_id);
+      const { name, titleKey } = this.collectionLabel(row.space_id, row.collection_id);
       if (`${name} ${JSON.stringify(record.data)}`.toLowerCase().includes(needle)) {
-        hits.push({ spaceId: row.space_id, collectionId: row.collection_id, recordId: row.record_id, title: recordTitle(record, name), collectionName: name, data: record.data });
+        hits.push({ spaceId: row.space_id, collectionId: row.collection_id, recordId: row.record_id, title: recordTitle(record, name, titleKey), collectionName: name, data: record.data });
         if (hits.length >= limit) break;
       }
     }

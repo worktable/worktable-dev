@@ -1,4 +1,11 @@
-import type { CreatedShareLink, CreateShareLinkInput, DocumentShareLinks, ShareLink, ShareTarget, UpdateShareLinkInput } from "@worktable/types"
+import type {
+  CreatedShareLink,
+  CreateShareLinkInput,
+  DocumentShareLinks,
+  ShareLink,
+  ShareTarget,
+  UpdateShareLinkInput,
+} from "@worktable/types"
 import { fetchJSON } from "./http.ts"
 
 // Loaded with link management. The page trigger only needs status and keys.

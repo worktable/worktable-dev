@@ -944,6 +944,8 @@ async function printDoctor(check = false): Promise<void> {
   for (const status of mcp) {
     console.log(`MCP ${status.label}:`.padEnd(22) + status.state)
   }
+  // Previews are optional: a host without the browser's system libraries or
+  // sandbox support still runs Worktable, so this warns without failing --check.
   const previews = await checkInstalledPreviews()
   if (previews) {
     console.log(
@@ -951,7 +953,6 @@ async function printDoctor(check = false): Promise<void> {
         ? "Previews:             working"
         : style.yellow(`Previews:             unavailable. ${previews.reason}`)
     )
-    if (!previews.ok && check) process.exitCode = 1
   }
   if (!paths.staticDir) {
     console.log()

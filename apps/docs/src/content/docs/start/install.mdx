@@ -79,6 +79,10 @@ The rule matches the browser's path under your account, so anything your
 account puts at that path can also create user namespaces. `worktable doctor`
 and Settings → System show whether previews work.
 
+A minimal server may also lack the system libraries the preview browser needs.
+`worktable doctor` names any that are missing and, on Debian or Ubuntu, the
+command that installs them. Everything else works without previews.
+
 ## Verify the install
 
 ```sh

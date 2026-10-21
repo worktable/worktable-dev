@@ -222,7 +222,7 @@ export const SharingPolicyInputSchema = z.strictObject({
     }),
   liveLinks: z.boolean(),
   records: z.enum(SHARING_RECORD_ACCESS),
-  /** The expiry a new link that reaches Records starts with. */
+  /** The expiry a new link that reaches Records starts with, never past `maxExpiryDays`. */
   recordsDefaultExpiryDays: DAYS.nullable(),
   /** Comment links take comments. Off stops new comments without stopping the links. */
   allowComments: z.boolean(),

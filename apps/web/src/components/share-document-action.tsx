@@ -17,7 +17,6 @@ import {
   useShareMode,
 } from "@/hooks/use-document-share"
 import type { PageShareTarget } from "@/hooks/use-page-meta"
-import { copyText } from "@/lib/clipboard"
 import {
   createDocumentShare,
   shareQueryKey,
@@ -208,24 +207,6 @@ function LegacyShareDocumentAction({
     stop.reset()
   }
 
-  async function handleCopy() {
-    if (!share) return
-    try {
-      await copyText(share.url)
-      setCopyState("copied")
-      setAnnouncement("Link copied")
-      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current)
-      copyResetTimerRef.current = setTimeout(() => {
-        setCopyState("idle")
-        setAnnouncement("")
-      }, 1_800)
-    } catch (error) {
-      console.error("Share link copy failed:", error)
-      setCopyState("error")
-      setAnnouncement("Couldn’t copy the link")
-    }
-  }
-
   return (
     <>
       {showTrigger && (
@@ -271,7 +252,9 @@ function LegacyShareDocumentAction({
               setConfirmingStop={setConfirmingStop}
               announcement={announcement}
               onOpenChange={handleOpenChange}
-              onCopy={handleCopy}
+              setCopyState={setCopyState}
+              setAnnouncement={setAnnouncement}
+              copyResetTimerRef={copyResetTimerRef}
             />
           </DeferredMount>
         </ResponsiveDialogContent>

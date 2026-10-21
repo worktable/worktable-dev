@@ -1,3 +1,5 @@
+import type { RefObject } from "react"
+import { copyText } from "@/lib/clipboard"
 import {
   AlertCircle,
   Check,
@@ -42,7 +44,9 @@ export function LegacyShareDocumentDialogContents({
   setConfirmingStop,
   announcement,
   onOpenChange,
-  onCopy,
+  setCopyState,
+  setAnnouncement,
+  copyResetTimerRef,
 }: {
   target: PageShareTarget
   status: ReturnType<typeof useDocumentShareStatus>
@@ -54,11 +58,31 @@ export function LegacyShareDocumentDialogContents({
   setConfirmingStop: (value: boolean) => void
   announcement: string
   onOpenChange: (open: boolean) => void
-  onCopy: () => Promise<void>
+  setCopyState: (value: "idle" | "copied" | "error") => void
+  setAnnouncement: (value: string) => void
+  copyResetTimerRef: RefObject<ReturnType<typeof setTimeout> | null>
 }) {
   const shared = share !== null
   const creating = create.isPending
   const stopping = stop.isPending
+  async function handleCopy() {
+    if (!share) return
+    try {
+      await copyText(share.url)
+      setCopyState("copied")
+      setAnnouncement("Link copied")
+      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current)
+      copyResetTimerRef.current = setTimeout(() => {
+        setCopyState("idle")
+        setAnnouncement("")
+      }, 1_800)
+    } catch (error) {
+      console.error("Share link copy failed:", error)
+      setCopyState("error")
+      setAnnouncement("Couldn’t copy the link")
+    }
+  }
+
   return (
     <>
       <ResponsiveDialogBody className="scroll-fade min-h-28 space-y-3">
@@ -111,7 +135,7 @@ export function LegacyShareDocumentDialogContents({
                     className="h-11 sm:h-10"
                     variant={copyState === "copied" ? "secondary" : "default"}
                     aria-label={copyState === "copied" ? "Copied" : "Copy link"}
-                    onClick={() => void onCopy()}
+                    onClick={() => void handleCopy()}
                   >
                     {copyState === "copied" ? (
                       <Check className="size-4" />

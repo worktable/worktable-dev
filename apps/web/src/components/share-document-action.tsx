@@ -17,7 +17,7 @@ const ShareLinksDialog = lazy(() =>
 )
 
 const LegacyShareDocumentDialog = lazy(() =>
-  import("./legacy-share-document-dialog").then((module) => ({
+  import("@/components/share-links-dialog").then((module) => ({
     default: module.LegacyShareDocumentDialog,
   }))
 )

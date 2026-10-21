@@ -17,6 +17,7 @@ import { systemRouter } from "./routes/system.ts";
 import { mcpBearerRequired, publicSurfaceAuthRequired, trustedLocalIdentity } from "./auth.ts";
 import { createToken } from "./token-store.ts";
 import { setOwnerPassword } from "./session-store.ts";
+import { configuredMcpSurface } from "./mcp/surface.ts";
 
 let appDir: string;
 let workspaceDir: string;
@@ -116,11 +117,53 @@ describe("settings-store", () => {
   });
 });
 
+describe("preview agent tools", () => {
+  afterEach(() => {
+    delete process.env["WORKTABLE_MCP_PREVIEW"];
+    delete process.env["WORKTABLE_HOSTED"];
+  });
+
+  it("are off until the owner turns them on, and decide the MCP surface", async () => {
+    expect(getServerSettings().agents.previewTools).toBe(false);
+    expect(configuredMcpSurface()).toBe("released");
+
+    await updateServerSettings({ agents: { previewTools: true } });
+    invalidateServerSettingsCache();
+    expect(getServerSettings().agents.previewTools).toBe(true);
+    expect(configuredMcpSurface()).toBe("preview");
+
+    await expect(updateServerSettings({ agents: { previewTools: "yes" } })).rejects.toThrow("agents.previewTools must be a boolean");
+    await expect(updateServerSettings({ agents: { other: true } } as never)).rejects.toThrow("Unknown agents field: other");
+  });
+
+  it("follow the environment over the setting, and stay released on Cloud", async () => {
+    await updateServerSettings({ agents: { previewTools: true } });
+    process.env["WORKTABLE_MCP_PREVIEW"] = "0";
+    expect(configuredMcpSurface()).toBe("released");
+    delete process.env["WORKTABLE_MCP_PREVIEW"];
+
+    process.env["WORKTABLE_HOSTED"] = "1";
+    expect(configuredMcpSurface()).toBe("released");
+    process.env["WORKTABLE_MCP_PREVIEW"] = "1";
+    expect(configuredMcpSurface()).toBe("preview");
+  });
+
+  it("tell the Settings switch when the environment overrides it", async () => {
+    const read = async () => (await (await app().request("/api/system/settings")).json()) as { agents: { previewTools: boolean; previewToolsOverride: boolean | null } };
+    expect((await read()).agents.previewToolsOverride).toBeNull();
+    process.env["WORKTABLE_MCP_PREVIEW"] = "0";
+    expect((await read()).agents).toEqual({ previewTools: false, previewToolsOverride: false });
+  });
+});
+
 describe("GET /api/system/settings", () => {
   it("returns full settings without an owner gate", async () => {
     const res = await app().fetch(new Request("http://localhost/api/system/settings"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual(SETTINGS_DEFAULTS);
+    expect(await res.json()).toEqual({
+      ...SETTINGS_DEFAULTS,
+      agents: { ...SETTINGS_DEFAULTS.agents, previewToolsOverride: null },
+    });
   });
 });
 

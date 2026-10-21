@@ -29,6 +29,7 @@ export function useSettingsPatch() {
           editor: { ...previous.editor, ...patch.editor },
           network: { ...previous.network, ...patch.network },
           history: { ...previous.history, ...patch.history },
+          agents: { ...previous.agents, ...patch.agents },
         })
       }
     },

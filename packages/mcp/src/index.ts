@@ -1,8 +1,14 @@
 #!/usr/bin/env bun
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
-import { createWorktableMcpServer } from "@worktable/server/mcp"
+import {
+  configuredMcpSurface,
+  createWorktableMcpServer,
+} from "@worktable/server/mcp"
 
-const server = createWorktableMcpServer({ version: "0.0.1" })
+const server = createWorktableMcpServer({
+  version: "0.0.1",
+  surface: configuredMcpSurface(),
+})
 
 async function main() {
   const transport = new StdioServerTransport()

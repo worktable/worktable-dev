@@ -19,8 +19,10 @@ import {
   getServerSettings,
   SettingsValidationError,
   updateServerSettingsWithResult,
+  type ServerSettings,
   type ServerSettingsPatch,
 } from "../settings-store.ts";
+import { mcpPreviewEnvOverride } from "../mcp/surface.ts";
 import { normalizePublicUrl } from "../public-origin.ts";
 import { hasOwnerPassword } from "../session-store.ts";
 import { hostedAgentBase, isHosted } from "../hosted.ts";
@@ -350,8 +352,14 @@ systemRouter.post("/update", async (c) => {
 // Same open gate as /version: these are non-sensitive user preferences, and the
 // dialog must render them before any owner-gated mutation.
 systemRouter.get("/settings", (c) => {
-  return c.json(getServerSettings());
+  return c.json(withEffectiveAgentSettings(getServerSettings()));
 });
+
+/** The stored settings plus what the process environment overrides, so the
+ *  Settings switch shows what agents actually get. */
+function withEffectiveAgentSettings(settings: ServerSettings) {
+  return { ...settings, agents: { ...settings.agents, previewToolsOverride: mcpPreviewEnvOverride() } };
+}
 
 // PUT /api/system/settings — patch server preferences. Owner-only (same gate as
 // POST /update). Strict: unknown keys or wrong-typed fields → 400. Returns the
@@ -409,7 +417,7 @@ systemRouter.put("/settings", async (c) => {
         );
       }
     }
-    return c.json(merged);
+    return c.json(withEffectiveAgentSettings(merged));
   } catch (err) {
     if (err instanceof SettingsValidationError) {
       return c.json({ error: err.message }, 400);

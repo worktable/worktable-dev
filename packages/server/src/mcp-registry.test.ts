@@ -13,6 +13,10 @@ import {
   PUBLIC_OPERATION_OUTPUT_VARIANTS,
 } from "./mcp/output-schemas.ts"
 import {
+  PREVIEW_INPUT_SCHEMAS,
+  PREVIEW_TOOL_DESCRIPTIONS,
+} from "./mcp/tools.ts"
+import {
   AnnotationsWriteInput,
   DocsWriteInput,
   GuidanceInput,
@@ -26,8 +30,8 @@ afterEach(async () => {
   await Promise.all(openClients.splice(0).map((client) => client.close()))
 })
 
-async function listTools() {
-  const server = createWorktableMcpServer({ version: "test" })
+async function listTools(surface?: "released" | "preview") {
+  const server = createWorktableMcpServer({ version: "test", surface })
   const client = new Client({ name: "registry-test", version: "1" })
   openClients.push(client)
   const [clientTransport, serverTransport] =
@@ -375,3 +379,34 @@ describe("consolidated MCP registry", () => {
     ).toBe(false)
   })
 })
+
+describe("preview tool surface", () => {
+  it("changes only the tools with held changes and keeps the released surface as it is", async () => {
+    const released = (await listTools()).tools
+    const preview = (await listTools("preview")).tools
+    expect(preview.map((tool) => tool.name)).toEqual(
+      released.map((tool) => tool.name)
+    )
+    const changed = preview
+      .filter(
+        (tool, index) =>
+          JSON.stringify(tool) !== JSON.stringify(released[index])
+      )
+      .map((tool) => tool.name)
+    expect(changed.sort()).toEqual(
+      Object.keys(PREVIEW_TOOL_DESCRIPTIONS)
+        .concat(Object.keys(PREVIEW_INPUT_SCHEMAS))
+        .filter((name, index, all) => all.indexOf(name) === index)
+        .sort()
+    )
+    const recordsWrite = preview.find(
+      (tool) => tool.name === "worktable_records_write"
+    )
+    expect(recordsWrite?.description).toContain("create never overwrites")
+    expect(
+      released.find((tool) => tool.name === "worktable_records_write")
+        ?.description
+    ).toBe("Create or update Record collection schemas and Records.")
+  })
+})
+

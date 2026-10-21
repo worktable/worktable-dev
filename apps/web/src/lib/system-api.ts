@@ -214,6 +214,12 @@ export interface ServerSettings {
     retention: RetentionPolicy
     retentionNotice: RetentionNotice | null
   }
+  /** Machine-local: serve agents the MCP tool changes not yet released. */
+  agents: {
+    previewTools: boolean
+    /** Set when WORKTABLE_MCP_PREVIEW overrides the setting on this server. */
+    previewToolsOverride?: boolean | null
+  }
 }
 
 /**
@@ -225,6 +231,7 @@ export interface ServerSettingsPatch {
   editor?: Partial<ServerSettings["editor"]>
   network?: Partial<ServerSettings["network"]>
   history?: Partial<ServerSettings["history"]>
+  agents?: Partial<ServerSettings["agents"]>
 }
 
 export async function getSystemVersion() {

@@ -15,6 +15,9 @@ export interface ReadingPlace {
 }
 
 const BLOCKS = "h1, h2, h3, h4, h5, h6, p, li, pre, th, td, summary"
+// A line pressed against the top edge isn't the one being read, and on a
+// phone the editor scrolls a caret there down by this much.
+const EDGE = 16
 
 /** A block's own text: without nested blocks, lists and editor controls. */
 function ownText(element: Element): string {
@@ -61,11 +64,11 @@ function blocks(root: Element): { element: Element; text: string }[] {
     .filter((block) => block.text !== "")
 }
 
-/** The first block that starts in view, or the one the pane starts inside. */
+/** The first block that starts clear of the top, or the one the pane starts inside. */
 export function readingPlace(root: Element): ReadingPlace | null {
   const top = root.getBoundingClientRect().top
   const all = blocks(root)
-  const starts = all.findIndex(({ element }) => lineTop(element) >= top)
+  const starts = all.findIndex(({ element }) => lineTop(element) >= top + EDGE)
   const at =
     starts >= 0
       ? starts

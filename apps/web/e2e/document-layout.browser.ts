@@ -360,7 +360,7 @@ for (const viewport of [
     await markdownRoot.evaluate((root) => {
       const pre = root.querySelector("pre")!
       root.scrollTop +=
-        pre.getBoundingClientRect().top - root.getBoundingClientRect().top - 8
+        pre.getBoundingClientRect().top - root.getBoundingClientRect().top - 24
     })
     const before = await lineTop("[data-document-scroll-root]", "Reading here.")
 

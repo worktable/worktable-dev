@@ -77,7 +77,7 @@ window.worktable={version:cfg.runtimeVersion,records,state,ui,navigation:{openDo
 window.agentdash=window.worktable;
 // Gestures inside an opaque frame never bubble to the outer page.
 let lastInteraction=0;
-function interacted(event){if(!event.isTrusted||Date.now()-lastInteraction<1000)return;lastInteraction=Date.now();post({type:'worktable.interaction'},'*')}
+function interacted(event){if(!event.isTrusted||Date.now()-lastInteraction<1000)return;lastInteraction=Date.now();post({type:'worktable.interaction',navigationToken},'*')}
 window.addEventListener('pointerdown',interacted,{passive:true});
 window.addEventListener('keydown',interacted);
 window.addEventListener('click',event=>{
@@ -85,7 +85,9 @@ window.addEventListener('click',event=>{
   if(!anchor||!anchor.getAttribute('href')||anchor.getAttribute('href').startsWith('#'))return;
   let url;try{url=new URL(anchor.href)}catch{return}
   if(!['http:','https:'].includes(url.protocol)||url.username||url.password)return;
-  event.preventDefault();post({type:'worktable.share.open-link',url:url.href},'*');
+  event.preventDefault();
+  if(!event.isTrusted||Date.now()-lastInteraction>1500)return;
+  post({type:'worktable.share.open-link',url:url.href,navigationToken},'*');
 },true);
 window.addEventListener('submit',event=>event.preventDefault());
 window.addEventListener('pagehide',()=>post({type:'worktable.navigation.frame-leaving',navigationToken},'*'));

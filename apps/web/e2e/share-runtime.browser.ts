@@ -45,6 +45,34 @@ test("a live share SDK starts first in an opaque frame and uses only the visitor
   const frame = page.frameLocator('iframe[title="Live tool"]')
   await expect(frame.locator("#theme")).toHaveText("dark")
   await expect(frame.locator("#records")).toHaveText("Granted data")
+  const authored = page
+    .frames()
+    .find((candidate) => candidate !== page.mainFrame())!
+  await authored.evaluate(() =>
+    (document.querySelector("a") as HTMLAnchorElement).click()
+  )
+  // One round trip through the real parent message queue, not a timing sleep.
+  await authored.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const channel = new MessageChannel()
+        channel.port1.onmessage = () => {
+          channel.port1.close()
+          channel.port2.close()
+          resolve()
+        }
+        channel.port2.postMessage(null)
+      })
+  )
+  expect(
+    await page.evaluate(() =>
+      (
+        window as unknown as { messages: Array<{ value: { type: string } }> }
+      ).messages.some(
+        (message) => message.value.type === "worktable.share.open-link"
+      )
+    )
+  ).toBe(false)
   await frame.getByRole("button", { name: "Attempt write" }).click()
   await expect(frame.locator("#write")).toHaveText("LINK_READ_ONLY")
   await frame.getByRole("link", { name: "External page" }).click()

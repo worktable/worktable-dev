@@ -14,6 +14,7 @@ import {
   ShareLinkToken,
   ShareTicket,
   SHARE_UNLOCK_HEADER,
+  AGENT_ROUTE_HEADERS,
 } from "@worktable/hosted-contract"
 import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
@@ -35,6 +36,18 @@ function validShareRequest(claims: LinkedRequestClaims): boolean {
     return false
   const preview = sharingPreviewEnabled()
   if (claims.grant.unlock !== undefined && !preview) return false
+  if (
+    claims.grant.clientAddress !== undefined &&
+    (!preview || claims.path !== "/public/share/bridge")
+  )
+    return false
+  if (
+    claims.grant.contentRevision !== undefined &&
+    (!preview ||
+      claims.path !== "/public/share/content" ||
+      !["GET", "HEAD"].includes(claims.method))
+  )
+    return false
   if (
     claims.path === "/public/share/unlock" ||
     claims.path === "/public/share/bridge"
@@ -262,6 +275,13 @@ export async function createLinkedIngress(options: {
         headers.set(SHARE_CAPABILITY_HEADER, claims.grant.capability)
         if (claims.grant.unlock)
           headers.set(SHARE_UNLOCK_HEADER, claims.grant.unlock)
+        if (claims.grant.clientAddress)
+          headers.set(
+            AGENT_ROUTE_HEADERS.CLIENT_ADDRESS,
+            claims.grant.clientAddress
+          )
+        if (claims.grant.contentRevision)
+          headers.set("If-None-Match", `"${claims.grant.contentRevision}"`)
         return await shares.fetch(
           new Request(request.url, {
             method: request.method,

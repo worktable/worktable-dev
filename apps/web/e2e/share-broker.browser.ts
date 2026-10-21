@@ -15,9 +15,12 @@ for (const colorScheme of ["light", "dark"] as const) {
   test(`the live broker keeps visitor state separate and confirms external links in ${colorScheme} mode`, async ({
     page,
   }, testInfo) => {
+    await page.clock.install()
     await page.emulateMedia({ colorScheme })
     let teamValue = "first"
     let teamAllowed = true
+    let recordName = "Granted data"
+    let changes: string[] = []
     const calls: Array<{ op: string; capability: string | undefined }> = []
     await page.route(
       "https://share.example.test/gateway/assets/public-share-live.js",
@@ -50,10 +53,10 @@ for (const colorScheme of ["light", "dark"] as const) {
         }
         const result =
           body.op === "records.query"
-            ? { records: [{ id: "opaque", data: { name: "Granted data" } }] }
+            ? { records: [{ id: "opaque", data: { name: recordName } }] }
             : body.op === "state.read"
               ? { state: { teamValue } }
-              : {}
+              : { cursor: "baseline", collections: changes }
         await route.fulfill({ json: { ok: true, result } })
       }
     )
@@ -68,7 +71,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       async function showState(){document.querySelector('#state').textContent=JSON.stringify(await worktable.state.get())}
       document.querySelector('#save').onclick=async()=>{await worktable.state.set('preference','own');await worktable.state.update(current=>({...current,otherPreference:'local'}));await showState()};
       document.querySelector('#read').onclick=showState;
-      worktable.records.query('deals').then(rows=>document.querySelector('#records').textContent=rows[0].data.name);
+      worktable.records.subscribe('deals',{},rows=>document.querySelector('#records').textContent=rows[0].data.name);
       showState();
     </script></body></html>`,
       })
@@ -111,6 +114,44 @@ for (const colorScheme of ["light", "dark"] as const) {
     await expect(frame.locator("#state")).toHaveText(
       JSON.stringify({ preference: "own", otherPreference: "local" })
     )
+    const authored = page
+      .frames()
+      .find((candidate) => candidate !== page.mainFrame())!
+    await authored.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const done = (event: MessageEvent) => {
+            if (event.source !== parent || event.data?.id !== "forgery-fence")
+              return
+            window.removeEventListener("message", done)
+            resolve()
+          }
+          window.addEventListener("message", done)
+          ;(document.querySelector("a") as HTMLAnchorElement).click()
+          parent.postMessage(
+            { type: "worktable.interaction", navigationToken: "forged" },
+            "*"
+          )
+          parent.postMessage(
+            {
+              type: "worktable.share.open-link",
+              url: "https://forged.example.test",
+              navigationToken: "forged",
+            },
+            "*"
+          )
+          parent.postMessage(
+            {
+              type: "worktable.api.request",
+              id: "forgery-fence",
+              method: "GET",
+              path: "/unsupported",
+            },
+            "*"
+          )
+        })
+    )
+    await expect(page.getByRole("dialog")).toHaveCount(0)
     await frame.getByRole("link", { name: "External page" }).click()
     await expect(page.getByRole("dialog")).toBeVisible()
     await expect(page.getByRole("dialog")).toContainText("outside.example.test")
@@ -122,6 +163,14 @@ for (const colorScheme of ["light", "dark"] as const) {
     ).toBe(frameUrl)
     expect(calls.every((call) => call.capability === token)).toBe(true)
     expect(calls.filter((call) => call.op === "records.query")).toHaveLength(1)
+    await expect
+      .poll(() => calls.filter((call) => call.op === "changes").length)
+      .toBeGreaterThan(0)
+    recordName = "Related change"
+    changes = ["teams"]
+    await page.clock.fastForward(30_001)
+    await expect(frame.locator("#records")).toHaveText("Related change")
+    expect(calls.filter((call) => call.op === "records.query")).toHaveLength(2)
     await page.screenshot({
       path: testInfo.outputPath(`live-prompt-${colorScheme}.png`),
     })

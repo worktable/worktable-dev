@@ -66,7 +66,8 @@ function identityField(schema: RecordCollectionSchema | null): string | null {
   if (!schema) return null
   for (const key of ["title", "name"]) {
     const field = schema.fields[key]
-    if (field && normalizeRecordFieldType(field.type) === "string") return key
+    const type = field ? normalizeRecordFieldType(field.type) : null
+    if (type === "string" || type === "text") return key
   }
   for (const [key, field] of Object.entries(schema.fields)) {
     if (field.required && normalizeRecordFieldType(field.type) === "string")
@@ -209,10 +210,13 @@ export function reviewRecordSchema(input: {
 
   // Reported when a collection is created without a title field, or when an
   // edit removes its last one, not again on every later schema change.
+  // An empty schema counts as new: its first fields are its first schema.
   const lostTitle =
     fields.length > 0 &&
     identityField(input.schema) === null &&
-    (isInitialSchema || identityField(input.existingSchema) !== null)
+    (isInitialSchema ||
+      existingFields.length === 0 ||
+      identityField(input.existingSchema) !== null)
   if (lostTitle) {
     warnings.push({
       code: "missing_recognizable_title",

@@ -98,7 +98,12 @@ describe("record schema v2: new field types, read-lift, version stamping", () =>
       [{ due: "2026-02-30" }, 400],
       [{ at: "2026-10-19T08:45:13.365Z" }, 201],
       [{ at: "2026-10-19T08:45" }, 201],
+      [{ at: "2026-9-1T08:45" }, 201],
       [{ at: "yesterday" }, 400],
+      // A date has no time, and a date-time needs one.
+      [{ due: "2026-10-19T08:45:00Z" }, 400],
+      [{ at: "2026-10-19" }, 400],
+      [{ at: "2026-10-19T25:00" }, 400],
       [{ status: "open" }, 201],
       [{ status: "nope" }, 400],
       [{ tags: ["red", "blue"] }, 201],

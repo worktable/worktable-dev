@@ -737,25 +737,6 @@ const LIST_PAGE_SIZE = 200
 /** Records an MCP query returns when the agent sets no limit. */
 const MCP_DEFAULT_RECORD_PAGE = 100
 
-/** Agents write fields by name, so a misspelled or never-declared field would
- *  otherwise be stored where no column, filter or validation sees it. */
-function assertDeclaredFields(
-  data: Record<string, unknown>,
-  schema: RecordCollectionSchema | null,
-  collectionId: string
-): void {
-  // A collection that declares no fields yet is schemaless in practice.
-  if (!schema || Object.keys(schema.fields).length === 0) return
-  const undeclared = Object.keys(data).filter(
-    (key) => !Object.hasOwn(schema.fields, key)
-  )
-  if (undeclared.length === 0) return
-  const names = undeclared.map((key) => `"${key}"`).join(", ")
-  throw new Error(
-    `${undeclared.length === 1 ? "Field" : "Fields"} ${names} ${undeclared.length === 1 ? "is" : "are"} not in the schema of collection "${collectionId}". Check the spelling, or add ${undeclared.length === 1 ? "it" : "them"} with upsert_collection first. Declared fields: ${Object.keys(schema.fields).join(", ")}.`
-  )
-}
-
 function normalizePathPrefix(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined
   const trimmed = value.trim().replace(/^\/+|\/+$/g, "")
@@ -1531,13 +1512,14 @@ async function _dispatchOperationInner(
       const spaceId = args["spaceId"] as string
       const collectionId = args["collectionId"] as string
       const data = args["data"] as Record<string, unknown>
-      const schema = await readRecordCollectionSchema(spaceId, collectionId)
-      assertDeclaredFields(data, schema.data, collectionId)
+      // Agents write fields by name, so a misspelled or never-declared field
+      // is refused rather than stored where no column or filter sees it.
       const result = await createRecord(spaceId, collectionId, {
         id: args["recordId"] as string | undefined,
         data,
         metadata: args["metadata"] as Record<string, unknown> | undefined,
         createdBy: actorId,
+        strictFields: true,
       })
       if (result.error || !result.data)
         throw new Error(result.error ?? "Write failed")
@@ -1545,6 +1527,7 @@ async function _dispatchOperationInner(
       // agent can skip it, or call update if it meant to change it.
       if (!result.created) return { record: result.data, created: false }
       const createdId = result.data.id
+      const schema = await readRecordCollectionSchema(spaceId, collectionId)
       const identity = recordPracticeIdentity(data, schema.data)
       const duplicate =
         context.canReadRecords !== false && identity
@@ -1591,12 +1574,8 @@ async function _dispatchOperationInner(
       const spaceId = args["spaceId"] as string
       const collectionId = args["collectionId"] as string
       const recordId = args["recordId"] as string
-      const patch = args["data"] as Record<string, unknown> | undefined
-      if (patch) {
-        const schema = await readRecordCollectionSchema(spaceId, collectionId)
-        assertDeclaredFields(patch, schema.data, collectionId)
-      }
       const result = await updateRecord(spaceId, collectionId, recordId, {
+        strictFields: true,
         data: args["data"] as Record<string, unknown> | undefined,
         metadata: args["metadata"] as Record<string, unknown> | undefined,
         updatedBy: actorId,

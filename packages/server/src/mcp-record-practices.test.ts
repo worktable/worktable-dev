@@ -341,6 +341,49 @@ describe("MCP record fields", () => {
     expect(unbroken.record.id).toBe("a".repeat(40))
   })
 
+  it("still skips an existing id after a field it carries was removed", async () => {
+    await seedTasks()
+    await dispatchOperation("records.create", {
+      spaceId: "product",
+      collectionId: "tasks",
+      recordId: "old",
+      data: { title: "Old", status: "open" },
+    })
+    // Remove status the way the schema editor does (full replace).
+    const { buildRecordCollectionSchema, readRecordCollectionSchema, writeRecordCollectionSchema } = await import("./record-store.ts")
+    const current = (await readRecordCollectionSchema("product", "tasks")).data!
+    await writeRecordCollectionSchema(
+      "product",
+      buildRecordCollectionSchema({ id: "tasks", fields: { title: { type: "string", required: true } }, existing: current })
+    )
+    // A replayed import row naming the removed field is skipped, not refused.
+    const replay = (await dispatchOperation("records.create", {
+      spaceId: "product",
+      collectionId: "tasks",
+      recordId: "old",
+      data: { title: "Old", status: "open" },
+    })) as { created: boolean }
+    expect(replay.created).toBe(false)
+  })
+
+  it("warns about a missing title when an empty collection gets its first fields, and accepts a text title", async () => {
+    await createSpace()
+    await dispatchOperation("records.upsert_collection", { spaceId: "product", collectionId: "empty", name: "Empty" })
+    const first = (await dispatchOperation("records.upsert_collection", {
+      spaceId: "product",
+      collectionId: "empty",
+      fields: { body: { type: "text" } },
+    })) as { warnings?: RecordPracticeWarning[] }
+    expect(warningCodes(first)).toContain("missing_recognizable_title")
+    const titled = (await dispatchOperation("records.upsert_collection", {
+      spaceId: "product",
+      collectionId: "notes",
+      name: "Notes",
+      fields: { title: { type: "text" } },
+    })) as { warnings?: RecordPracticeWarning[] }
+    expect(warningCodes(titled)).not.toContain("missing_recognizable_title")
+  })
+
   it("reports a schema with no title field once, when it is saved", async () => {
     await createSpace()
     const saved = (await dispatchOperation("records.upsert_collection", {

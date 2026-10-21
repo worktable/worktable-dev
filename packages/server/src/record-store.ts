@@ -333,16 +333,37 @@ export async function writeRecordCollectionSchema(
   return { data: parsed.data, error: null };
 }
 
-// A year-month-day calendar date (ISO 8601, month and day may be unpadded),
-// optionally followed by a time and offset.
-const ISO_DATE = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+// ISO 8601 shapes; month and day may be unpadded. A date has no time; a
+// date-time needs one (seconds, fraction and offset optional).
+const ISO_DATE = /^(\d{4})-(\d{1,2})-(\d{1,2})$/;
+const ISO_DATETIME = /^(\d{4})-(\d{1,2})-(\d{1,2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-](\d{2}):?(\d{2}))?$/;
 
-function isIsoDate(value: string): boolean {
-  const match = ISO_DATE.exec(value);
-  if (!match || Number.isNaN(Date.parse(value))) return false;
-  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+function isCalendarDate(year: number, month: number, day: number): boolean {
   const calendar = new Date(Date.UTC(year, month - 1, day));
-  return calendar.getUTCMonth() === month - 1 && calendar.getUTCDate() === day;
+  return calendar.getUTCFullYear() === year && calendar.getUTCMonth() === month - 1 && calendar.getUTCDate() === day;
+}
+
+function isIsoDate(value: string, type: "date" | "datetime"): boolean {
+  if (type === "date") {
+    const match = ISO_DATE.exec(value);
+    return !!match && isCalendarDate(Number(match[1]), Number(match[2]), Number(match[3]));
+  }
+  const match = ISO_DATETIME.exec(value);
+  if (!match) return false;
+  const [hour, minute, second] = [Number(match[4]), Number(match[5]), Number(match[6] ?? 0)];
+  const [offsetHour, offsetMinute] = [Number(match[7] ?? 0), Number(match[8] ?? 0)];
+  return isCalendarDate(Number(match[1]), Number(match[2]), Number(match[3])) &&
+    hour <= 23 && minute <= 59 && second <= 60 && offsetHour <= 23 && offsetMinute <= 59;
+}
+
+/** The error for fields a schema doesn't declare, or null. A collection that
+ *  declares no fields yet is schemaless in practice. */
+export function undeclaredFieldsError(keys: Iterable<string>, schema: RecordCollectionSchema | null, collectionId: string): string | null {
+  if (!schema || Object.keys(schema.fields).length === 0) return null;
+  const undeclared = [...keys].filter((key) => !Object.hasOwn(schema.fields, key));
+  if (undeclared.length === 0) return null;
+  const one = undeclared.length === 1;
+  return `${one ? "Field" : "Fields"} ${undeclared.map((key) => `"${key}"`).join(", ")} ${one ? "is" : "are"} not in the schema of collection "${collectionId}". Check the spelling, or add ${one ? "it" : "them"} with upsert_collection first. Declared fields: ${Object.keys(schema.fields).join(", ")}.`;
 }
 
 /** Check record data against the schema. `onlyKeys` limits the check to the
@@ -375,7 +396,7 @@ function validateAgainstSchema(data: Record<string, unknown>, schema: RecordColl
         if (invalid !== undefined) return `Field ${field} values must be one of: ${spec.values.join(", ")}`;
       }
     }
-    if ((type === "date" || type === "datetime") && (typeof value !== "string" || !isIsoDate(value))) {
+    if ((type === "date" || type === "datetime") && (typeof value !== "string" || !isIsoDate(value, type))) {
       return `Field ${field} must be an ISO 8601 ${type === "date" ? "date (YYYY-MM-DD)" : "date-time (YYYY-MM-DDTHH:MM:SSZ)"}`;
     }
     if (type === "url") {
@@ -420,10 +441,11 @@ function validateAgainstSchema(data: Record<string, unknown>, schema: RecordColl
   return null;
 }
 
-function normalizeDocumentFields(data: Record<string, unknown>, schema: RecordCollectionSchema | null): { data?: Record<string, unknown>; error?: string } {
+function normalizeDocumentFields(data: Record<string, unknown>, schema: RecordCollectionSchema | null, onlyKeys?: ReadonlySet<string>): { data?: Record<string, unknown>; error?: string } {
   if (!schema) return { data };
   const normalized = { ...data };
   for (const [field, spec] of Object.entries(schema.fields)) {
+    if (onlyKeys && !onlyKeys.has(field)) continue;
     if (normalizeRecordFieldType(spec.type) !== "document") continue;
     const value = normalized[field];
     if (value === undefined || value === null || value === "") continue;
@@ -781,17 +803,26 @@ export async function readRecord(spaceId: string, collectionId: string, recordId
 async function writeRecordInner(
   spaceId: string,
   record: RecordFile,
-  opts?: { skipDataValidation?: boolean; onlyKeys?: ReadonlySet<string> }
+  opts?: WriteValidationOptions
 ): Promise<{ data: RecordFile | null; error: string | null }> {
   const parsed = RecordFileSchema.safeParse(record);
   if (!parsed.success) return { data: null, error: parsed.error.message };
   return withStoreWriteLock(schemaGateKey(spaceId, parsed.data.collectionId), () => writeRecordValidated(spaceId, parsed.data, opts));
 }
 
+interface WriteValidationOptions {
+  skipDataValidation?: boolean;
+  /** Validate only these data keys (an update's patch). */
+  onlyKeys?: ReadonlySet<string>;
+  /** Refuse data keys the schema doesn't declare (MCP writes). Checked under
+   *  the schema gate, so a concurrent schema change can't slip one past. */
+  strictFields?: boolean;
+}
+
 async function writeRecordValidated(
   spaceId: string,
   record: RecordFile,
-  opts?: { skipDataValidation?: boolean; onlyKeys?: ReadonlySet<string> }
+  opts?: WriteValidationOptions
 ): Promise<{ data: RecordFile | null; error: string | null }> {
   const parsed = { data: record };
   // Lifecycle-only writes (archive/restore) leave `data` untouched, so they
@@ -800,7 +831,11 @@ async function writeRecordValidated(
   if (!opts?.skipDataValidation) {
     const { data: schema, error: schemaError } = await readRecordCollectionSchema(spaceId, parsed.data.collectionId);
     if (schemaError) return { data: null, error: schemaError };
-    const normalized = normalizeDocumentFields(parsed.data.data, schema);
+    if (opts?.strictFields) {
+      const undeclared = undeclaredFieldsError(opts.onlyKeys ?? Object.keys(parsed.data.data), schema, parsed.data.collectionId);
+      if (undeclared) return { data: null, error: undeclared };
+    }
+    const normalized = normalizeDocumentFields(parsed.data.data, schema, opts?.onlyKeys);
     if (normalized.error || !normalized.data) return { data: null, error: normalized.error ?? "Invalid document field" };
     parsed.data.data = normalized.data;
     const validationError = validateAgainstSchema(parsed.data.data, schema, opts?.onlyKeys);
@@ -814,17 +849,17 @@ async function writeRecordValidated(
   return { data: parsed.data, error: null };
 }
 
-export async function writeRecord(spaceId: string, record: RecordFile): Promise<{ data: RecordFile | null; error: string | null }> {
+export async function writeRecord(spaceId: string, record: RecordFile, opts?: WriteValidationOptions): Promise<{ data: RecordFile | null; error: string | null }> {
   assertSpaceAccess(spaceId, "edit");
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
-  return withStoreWriteLock(recordPath(spaceId, record.collectionId, record.id), () => writeRecordInner(spaceId, record));
+  return withStoreWriteLock(recordPath(spaceId, record.collectionId, record.id), () => writeRecordInner(spaceId, record, opts));
 }
 
 /** Create a record. An explicit id that already exists is never overwritten:
  *  the stored record comes back unchanged with `created: false`, so callers
  *  that derive ids from a natural key get add-or-skip for free. Changing an
  *  existing record goes through updateRecord. */
-export async function createRecord(spaceId: string, collectionId: string, input: { id?: string; data: Record<string, unknown>; metadata?: Record<string, unknown>; createdBy?: string }): Promise<{ data: RecordFile | null; error: string | null; created?: boolean }> {
+export async function createRecord(spaceId: string, collectionId: string, input: { id?: string; data: Record<string, unknown>; metadata?: Record<string, unknown>; createdBy?: string; strictFields?: boolean }): Promise<{ data: RecordFile | null; error: string | null; created?: boolean }> {
   assertSpaceAccess(spaceId, "edit");
   const result = await createRecordInner(spaceId, collectionId, input);
   if (result.data && result.created) noteRecordActivity(spaceId, collectionId, "records.added");
@@ -845,7 +880,7 @@ function noteRecordActivity(
   });
 }
 
-async function createRecordInner(spaceId: string, collectionId: string, input: { id?: string; data: Record<string, unknown>; metadata?: Record<string, unknown>; createdBy?: string }): Promise<{ data: RecordFile | null; error: string | null; created?: boolean }> {
+async function createRecordInner(spaceId: string, collectionId: string, input: { id?: string; data: Record<string, unknown>; metadata?: Record<string, unknown>; createdBy?: string; strictFields?: boolean }): Promise<{ data: RecordFile | null; error: string | null; created?: boolean }> {
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
   await ensureRecordDirs(spaceId, collectionId);
@@ -862,7 +897,7 @@ async function createRecordInner(spaceId: string, collectionId: string, input: {
         return { data: existing, error: null, created: false };
       }
       const record = buildRecordFile({ id, collectionId, data: input.data, metadata: input.metadata, createdBy: input.createdBy });
-      const written = await writeRecordInner(spaceId, record);
+      const written = await writeRecordInner(spaceId, record, { strictFields: input.strictFields });
       return written.data ? { ...written, created: true } : written;
     });
   }
@@ -875,7 +910,7 @@ async function createRecordInner(spaceId: string, collectionId: string, input: {
     const baseId = recordIdFromTitle(recordTitleValue(input.data, schema)) || randomRecordId();
     const id = await deduplicateSlug(baseId, existing.map((record) => record.id));
     const record = buildRecordFile({ id, collectionId, data: input.data, metadata: input.metadata, createdBy: input.createdBy });
-    const written = await writeRecord(spaceId, record);
+    const written = await writeRecord(spaceId, record, { strictFields: input.strictFields });
     return written.data ? { ...written, created: true } : written;
   });
 }
@@ -910,14 +945,14 @@ function randomRecordId(): string {
   return `rec-${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}`;
 }
 
-export async function updateRecord(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string }): Promise<{ data: RecordFile | null; error: string | null }> {
+export async function updateRecord(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string; strictFields?: boolean }): Promise<{ data: RecordFile | null; error: string | null }> {
   assertSpaceAccess(spaceId, "edit");
   const result = await updateRecordInner(spaceId, collectionId, recordId, patch);
   if (result.data) noteRecordActivity(spaceId, collectionId, "records.updated");
   return result;
 }
 
-async function updateRecordInner(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string }): Promise<{ data: RecordFile | null; error: string | null }> {
+async function updateRecordInner(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string; strictFields?: boolean }): Promise<{ data: RecordFile | null; error: string | null }> {
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
   if (!isCanonicalId(recordId)) return { data: null, error: invalidIdError("record", recordId) };
@@ -930,7 +965,7 @@ async function updateRecordInner(spaceId: string, collectionId: string, recordId
     // and keys it leaves out keep their stored values.
     const metadata = patch.metadata ? { ...existing.metadata, ...patch.metadata } : existing.metadata;
     const record = buildRecordFile({ id: recordId, collectionId, data: { ...existing.data, ...(patch.data ?? {}) }, metadata, createdBy: patch.updatedBy, existing });
-    return writeRecordInner(spaceId, record, { onlyKeys: new Set(Object.keys(patch.data ?? {})) });
+    return writeRecordInner(spaceId, record, { onlyKeys: new Set(Object.keys(patch.data ?? {})), strictFields: patch.strictFields });
   });
 }
 

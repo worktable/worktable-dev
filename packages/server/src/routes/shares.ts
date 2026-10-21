@@ -15,6 +15,7 @@ import {
   ShareArtifactInput,
   sharedArtifactIdentityIsCurrent,
 } from "../shared-artifact.ts"
+import { sharingV2Active } from "../share-links-store.ts"
 import { shareLinksRouter } from "./share-links.ts"
 
 export const sharesRouter = new Hono()
@@ -34,6 +35,14 @@ sharesRouter.use("*", async (c, next) => {
 
 sharesRouter.route("/links", shareLinksRouter)
 
+// Today's single link per document, until links v2 takes over. Once it has,
+// these answer as if they were gone, so no new link is made in the old file.
+function legacyRetired(c: Context) {
+  return sharingV2Active()
+    ? c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
+    : null
+}
+
 function publicShare(
   share: DocumentShare,
   config: NonNullable<ReturnType<typeof getDocumentSharingConfig>>
@@ -49,6 +58,8 @@ async function parseBody(c: Context) {
 }
 
 sharesRouter.get("/", async (c) => {
+  const retired = legacyRetired(c)
+  if (retired) return retired
   const parsed = ShareArtifactInput.safeParse({
     kind: c.req.query("kind"),
     spaceId: c.req.query("spaceId"),
@@ -74,6 +85,8 @@ sharesRouter.get("/", async (c) => {
 })
 
 sharesRouter.post("/", async (c) => {
+  const retired = legacyRetired(c)
+  if (retired) return retired
   const parsed = await parseBody(c)
   if (!parsed.success) {
     return c.json(
@@ -96,6 +109,8 @@ sharesRouter.post("/", async (c) => {
 })
 
 sharesRouter.delete("/", async (c) => {
+  const retired = legacyRetired(c)
+  if (retired) return retired
   const parsed = await parseBody(c)
   if (!parsed.success) {
     return c.json(

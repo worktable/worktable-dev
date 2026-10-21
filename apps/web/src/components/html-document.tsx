@@ -37,6 +37,7 @@ import {
 import { useSpaceEvents } from "@/hooks/use-space-events"
 import { copyText } from "@/lib/clipboard"
 import {
+  pageShareTarget,
   useSetPageMeta,
   type PageAnnotationsAction,
   type PageOverflowAction,
@@ -92,6 +93,7 @@ import type {
   Annotation,
   AnnotationCategory,
   DocumentPage,
+  DocumentSharingSummary,
   WidgetFile,
 } from "@worktable/types"
 
@@ -800,6 +802,7 @@ function WidgetDetailPage({
         archived={archived}
         annotations={validated ? annotationsAction : undefined}
         overflowActions={overflowActions}
+        sharing={page?.sharing}
       />
       {archived && !readOnly ? (
         <ArchivedWidgetBanner
@@ -1118,6 +1121,7 @@ function WidgetPageMeta({
   archived,
   annotations,
   overflowActions,
+  sharing,
 }: {
   spaceId: string
   widgetId: string
@@ -1126,8 +1130,12 @@ function WidgetPageMeta({
   archived: boolean
   annotations?: PageAnnotationsAction
   overflowActions?: PageOverflowAction[]
+  /** The page's links while links v2 is on. */
+  sharing?: DocumentSharingSummary
 }) {
   const setPageMeta = useSetPageMeta()
+  const activeLinks = sharing?.activeLinks
+  const canCreateLinks = sharing?.canCreate
 
   useEffect(() => {
     setPageMeta({
@@ -1135,10 +1143,12 @@ function WidgetPageMeta({
       titleOverride: title,
       annotations,
       overflowActions,
-      shareTarget:
-        spaceShareable && !archived
-          ? { kind: "html", spaceId, artifactKey: widgetId }
-          : undefined,
+      shareTarget: pageShareTarget(
+        { kind: "html", spaceId, artifactKey: widgetId },
+        spaceShareable && !archived,
+        activeLinks,
+        canCreateLinks
+      ),
     })
     return () => setPageMeta(null)
   }, [
@@ -1147,6 +1157,8 @@ function WidgetPageMeta({
     annotations,
     overflowActions,
     spaceShareable,
+    activeLinks,
+    canCreateLinks,
     spaceId,
     widgetId,
     setPageMeta,

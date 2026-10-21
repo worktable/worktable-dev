@@ -8,7 +8,7 @@ import {
 import { AlertTriangle, Download, FileQuestion } from "lucide-react"
 import type { DocumentPage, DocumentPageResult } from "@worktable/types"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
-import { useSetPageMeta } from "@/hooks/use-page-meta"
+import { pageShareTarget, useSetPageMeta } from "@/hooks/use-page-meta"
 import {
   documentPageQueryOptions,
   documentPageValidated,
@@ -379,14 +379,18 @@ function UnavailableDocumentPage({
             onClick: () => void download(),
           }
         : undefined,
-      shareTarget:
-        page.capabilities.sharing && page.capabilities.legacyShareKind
-          ? {
+      shareTarget: page.capabilities.legacyShareKind
+        ? pageShareTarget(
+            {
               kind: page.capabilities.legacyShareKind,
               spaceId,
               artifactKey: page.document.path,
-            }
-          : undefined,
+            },
+            page.capabilities.sharing,
+            page.sharing?.activeLinks,
+            page.sharing?.canCreate
+          )
+        : undefined,
     })
     return () => setPageMeta(null)
   }, [download, downloading, page, setPageMeta, spaceId])

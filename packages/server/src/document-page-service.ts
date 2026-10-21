@@ -13,6 +13,7 @@ import type {
   DocumentPageResult,
   DocumentProvenance,
   DocumentRenderDisposition,
+  DocumentSharingSummary,
   DocumentVersionSummary,
 } from "@worktable/types"
 import { listAnnotations } from "./annotation-store.ts"
@@ -45,6 +46,11 @@ import {
 import { peekDocActivity } from "./activity-log.ts"
 import { peekDocBacklinks } from "./link-graph.ts"
 import { peekDocReferrers } from "./doc-referrers.ts"
+import {
+  countOpenDocumentShareLinks,
+  ShareLinksStoreError,
+  sharingV2Active,
+} from "./share-links-store.ts"
 import { getDocMetaView, listDocVersions, readSpace } from "./store.ts"
 import type { VersionEntry } from "./version-store.ts"
 import {
@@ -298,6 +304,7 @@ async function pageForHandle(
     !handle.document.archived
   )
   const renderer = rendererForHandle(handle, integration, storageV2)
+  const links = sharing ? sharingSummary(spaceId, handle) : undefined
   return {
     kind: "document",
     document: handle.document,
@@ -331,6 +338,32 @@ async function pageForHandle(
         }
       : {}),
     ...(metadata?.contributors ? { contributors: metadata.contributors } : {}),
+    ...(links ? { sharing: links } : {}),
+  }
+}
+
+/**
+ * The page's sharing while links v2 is on, so the page needs no request of
+ * its own for it: one statement on the links index, and none for a document
+ * that has never had a durable id, which every link needs.
+ */
+function sharingSummary(
+  spaceId: string,
+  handle: ResolvedDocumentHandle
+): DocumentSharingSummary | undefined {
+  try {
+    if (!sharingV2Active()) return undefined
+    return {
+      activeLinks:
+        handle.identity === "durable"
+          ? countOpenDocumentShareLinks(spaceId, handle.documentId)
+          : 0,
+      canCreate: true,
+    }
+  } catch (error) {
+    // A store this version can't open shares nothing; the page still opens.
+    if (error instanceof ShareLinksStoreError) return undefined
+    throw error
   }
 }
 

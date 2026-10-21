@@ -274,7 +274,7 @@ export function sharingV2Active(): boolean {
 }
 
 function v1AlreadyDrained(): boolean {
-  const key = workspaceCacheKey()
+  const key = shareLinksDatabasePath()
   const now = Date.now()
   if (
     drained?.key === key &&
@@ -358,6 +358,55 @@ export function createShareLink(input: NewShareLink): {
     input.comments.visitorsSee
   )
   return { link: getShareLink(id)!, token }
+}
+
+/**
+ * Store a link made by an earlier version, under its existing token, so its
+ * URL keeps working. A token already here is left alone, revoked or not.
+ * Returns whether a link was added.
+ */
+export function importV1ShareLink(input: {
+  token: string
+  workspaceEpoch: string
+  spaceId: string
+  documentId: string
+  kind: ShareLinkKind
+  createdAt: number
+}): boolean {
+  const db = openDatabase(true)!
+  const inserted = db
+    .query(
+      `INSERT INTO share_links (id, token_hash, token_hint, link_key,
+        workspace_epoch, space_id, document_id, kind, label, level,
+        created_by_id, created_by_name, created_at, migrated_from)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', 'view', '', '', ?, 'v1')
+       ON CONFLICT (token_hash) DO NOTHING`
+    )
+    .run(
+      newLinkId(),
+      tokenDigest(input.token),
+      input.token.slice(-4),
+      randomBytes(32),
+      input.workspaceEpoch,
+      input.spaceId,
+      input.documentId,
+      input.kind,
+      input.createdAt
+    )
+  return inserted.changes > 0
+}
+
+/**
+ * Note that links of the earlier version were moved here. From then on this
+ * store serves links whatever the sharing preview says.
+ */
+export function markV1SharesDrained(now = Date.now()): void {
+  openDatabase(true)!
+    .query(
+      "INSERT OR IGNORE INTO share_meta (key, value) VALUES ('v1_drained_at', ?)"
+    )
+    .run(String(now))
+  drained = { key: shareLinksDatabasePath(), value: true, checkedAt: now }
 }
 
 export interface ShareLinkChange {
@@ -530,6 +579,26 @@ export function listDocumentShareLinks(
       )
       .all(spaceId, documentId)
       .map(storedLink) ?? []
+  )
+}
+
+/**
+ * How many of a document's links still open: neither revoked nor expired.
+ * One statement on the document index, and none before a link exists.
+ */
+export function countOpenDocumentShareLinks(
+  spaceId: string,
+  documentId: string,
+  now = Date.now()
+): number {
+  return (
+    openDatabase(false)
+      ?.query<{ count: number }, [string, string, number]>(
+        `SELECT COUNT(*) AS count FROM share_links
+         WHERE space_id = ? AND document_id = ? AND revoked_at IS NULL
+           AND (expires_at IS NULL OR expires_at > ?)`
+      )
+      .get(spaceId, documentId, now)?.count ?? 0
   )
 }
 

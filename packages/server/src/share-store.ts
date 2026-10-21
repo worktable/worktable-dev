@@ -329,6 +329,48 @@ export function invalidateDocumentShare(
   return stopDocumentShare(artifact)
 }
 
+/** A share as this file stores it, for the one-time move into links (v2). */
+export interface StoredDocumentShare extends DocumentShare {
+  workspaceEpoch: string
+}
+
+/** Every share in the file, without taking its locks. */
+export async function readStoredDocumentShares(): Promise<
+  StoredDocumentShare[]
+> {
+  return (await loadFile()).shares.map((share) => ({
+    ...publicShare(share),
+    workspaceEpoch: share.workspaceEpoch,
+  }))
+}
+
+/**
+ * Remove the shares that moved to links (v2), so an older binary reads a
+ * valid file and serves none of them: once all have moved, a valid empty
+ * file. `moved` says true for a share that moved or was dropped, false for
+ * one to keep here for now, and null for one it doesn't know, which an older
+ * binary made since the file was read. Holds the file's locks. Returns false,
+ * changing nothing, when any share is unknown.
+ */
+export async function removeMovedDocumentShares(
+  moved: (share: StoredDocumentShare) => boolean | null
+): Promise<boolean> {
+  return serializedLifecycle(() =>
+    serialized(async () => {
+      const file = await loadFile()
+      const decisions = file.shares.map((share) =>
+        moved({ ...publicShare(share), workspaceEpoch: share.workspaceEpoch })
+      )
+      if (decisions.includes(null)) return false
+      const kept = file.shares.filter((_, index) => decisions[index] === false)
+      if (kept.length < file.shares.length) {
+        await saveFile({ ...emptyFile(), shares: kept })
+      }
+      return true
+    })
+  )
+}
+
 /** Workspace replacement invalidates every capability from the old content. */
 export async function invalidateAllDocumentShares(): Promise<void> {
   await serializedLifecycle(() =>

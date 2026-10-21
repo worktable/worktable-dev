@@ -580,6 +580,9 @@ describe("GET /api/system/deployment", () => {
     process.env["WORKTABLE_HTML_SHARE_BASE_URL"] =
       "https://html.worktable-usercontent.com";
 
+    // Several links per document come with links v2, off on Cloud for now.
+    expect(getDeploymentInfo().capabilities).toMatchObject({ documentSharing: true, shareLinks: false });
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1";
     expect(getDeploymentInfo().capabilities).toMatchObject({ documentSharing: true, shareLinks: true });
     delete process.env["WORKTABLE_HTML_SHARE_BASE_URL"];
     expect(getDeploymentInfo().capabilities).toMatchObject({ documentSharing: false, shareLinks: false });

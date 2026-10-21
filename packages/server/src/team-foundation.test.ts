@@ -799,6 +799,9 @@ describe("team foundation", () => {
       htmlShareOrigin: "https://html.example.test",
     })
     try {
+      // Only links v2 has several links per document to oversee.
+      expect(await shareLinks(owner)).toBe(false)
+      process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
       expect(await shareLinks(owner)).toBe(true)
       expect(await shareLinks(member)).toBe(false)
       grantBob("edit")
@@ -807,6 +810,7 @@ describe("team foundation", () => {
       expect(await shareLinks(member)).toBe(true)
     } finally {
       setLinkedSharing(null)
+      delete process.env["WORKTABLE_SHARING_PREVIEW"]
     }
   })
 

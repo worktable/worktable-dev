@@ -24,6 +24,7 @@ import {
 } from "../settings-store.ts";
 import { mcpPreviewEnvOverride } from "../mcp/surface.ts";
 import { sharingPreviewEnabled, sharingPreviewEnvOverride } from "../sharing-preview.ts";
+import { sharingV2Active } from "../share-links-store.ts";
 import { teamMemberForIdentity } from "../team-policy.ts";
 import { memberAccess } from "../team-access.ts";
 import { normalizePublicUrl } from "../public-origin.ts";
@@ -163,7 +164,11 @@ export interface DeploymentInfo {
     updateChecks: boolean;
     previewStatus?: boolean;
     documentSharing: boolean;
-    /** May see and manage this Worktable's share links (Settings → Links). */
+    /**
+     * Links v2 is on and this person may see and manage share links: several
+     * per document in the share dialog, and Settings → Links. Off, the share
+     * dialog keeps today's single link.
+     */
     shareLinks: boolean;
     /** Sharing features that aren't released yet are on (sharingPreviewEnabled). */
     sharingPreview: boolean;
@@ -189,7 +194,7 @@ export function getDeploymentInfo(): DeploymentInfo {
       previewStatus: !cloud,
       documentSharing,
       // Without Teams the only person here is the owner.
-      shareLinks: documentSharing,
+      shareLinks: documentSharing && sharingV2Active(),
       sharingPreview: sharingPreviewEnabled(),
     },
   };
@@ -217,7 +222,7 @@ systemRouter.get("/deployment", (c) => {
       softwareUpdates: deployment.mode !== "cloud" && operator, updateChecks: deployment.mode !== "cloud" && operator,
       workspaceClear: deployment.mode !== "cloud" && owner,
       previewStatus: deployment.mode !== "cloud" && operator,
-      shareLinks: deployment.capabilities.documentSharing && (owner || managesSomeSpace(c)),
+      shareLinks: deployment.capabilities.shareLinks && (owner || managesSomeSpace(c)),
     });
   }
   return c.json(deployment);
@@ -417,8 +422,16 @@ systemRouter.put("/settings", async (c) => {
         409,
       );
     }
+    const sharingPreviewWasOn = sharingPreviewEnabled();
     const result = await updateServerSettingsWithResult(body);
     const merged = result.settings;
+    // Turning the sharing preview on moves today's links into links (v2)
+    // once. Awaited so the next request sees them there; a move that fails
+    // leaves them where they were and runs again at the next boot.
+    if (!sharingPreviewWasOn && sharingPreviewEnabled()) {
+      const { startV1ShareLinkDrain } = await import("../share-links-drain.ts");
+      await startV1ShareLinkDrain();
+    }
     // A retention-policy change triggers an immediate full sweep so the new
     // limit takes effect now, not at the next 24h tick. Awaited so the caller
     // (and tests) observe a consistent post-sweep state; the new policy is

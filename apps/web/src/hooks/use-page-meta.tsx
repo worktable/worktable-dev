@@ -1,10 +1,37 @@
 import { createContext, useContext } from "react"
 import type { LucideIcon } from "lucide-react"
+import type { DocumentSharingSummary } from "@worktable/types"
 
 export interface PageShareTarget {
   kind: "doc" | "html"
   spaceId: string
   artifactKey: string
+  /**
+   * The document's links from its page, while links v2 is on: the share
+   * dialog then makes several links per document. Absent, it keeps today's
+   * single link.
+   */
+  links?: DocumentSharingSummary
+}
+
+/**
+ * The page's share target. When the page carries its links (links v2), it
+ * shows to people who may make links or who see links already made; without
+ * them, `legacyShareable` decides as it always has. Takes the summary's
+ * fields so callers can depend on primitives.
+ */
+export function pageShareTarget(
+  target: Omit<PageShareTarget, "links">,
+  legacyShareable: boolean,
+  activeLinks: number | undefined,
+  canCreate: boolean | undefined
+): PageShareTarget | undefined {
+  if (activeLinks === undefined || canCreate === undefined) {
+    return legacyShareable ? target : undefined
+  }
+  return canCreate || activeLinks > 0
+    ? { ...target, links: { activeLinks, canCreate } }
+    : undefined
 }
 
 export interface PagePrimaryAction {

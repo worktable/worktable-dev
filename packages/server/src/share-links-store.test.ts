@@ -15,13 +15,19 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
 import { renameDocAndSync } from "./doc-rename.ts"
+import { readDocumentPage } from "./document-page-service.ts"
 import { deleteHtmlDocument } from "./html-document-delete.ts"
 import { createHtmlDocument } from "./html-document-create.ts"
 import { moveHtmlDocument } from "./html-document-move.ts"
 import { setLinkedSharing } from "./linked-sharing.ts"
 import { createPublicSharesRouter } from "./routes/public-shares.ts"
 import { sharesRouter } from "./routes/shares.ts"
+import { trustedLocalIdentity } from "./auth.ts"
+import { systemRouter } from "./routes/system.ts"
+import { invalidateServerSettingsCache } from "./settings-store.ts"
+import { drainV1ShareLinks } from "./share-links-drain.ts"
 import { settleShareLinkReconciles } from "./share-links-lifecycle.ts"
+import { createDocumentShare, resolveDocumentShare } from "./share-store.ts"
 import {
   closeShareLinkStores,
   flushShareLinkUse,
@@ -223,6 +229,35 @@ describe("share links", () => {
     expect((await documentLinks("plan")).links[0]?.status).toBe("expired")
   })
 
+  it("tells the document page how many links still open, so it needs no request of its own", async () => {
+    await writeDoc("space", "plan", "# Plan")
+    const page = async (sharingAuthorized = true) => {
+      const result = await readDocumentPage({
+        spaceId: "space",
+        path: "plan",
+        rawSourceAuthorized: false,
+        annotationsAuthorized: false,
+        sharingAuthorized,
+      })
+      return result?.kind === "document" ? result.sharing : null
+    }
+    expect(await page()).toEqual({ activeLinks: 0, canCreate: true })
+    expect(await page(false)).toBeUndefined()
+
+    const open = await createLink("plan")
+    const revoked = await createLink("plan")
+    const expired = await createLink("plan")
+    await send("DELETE", `/api/shares/links/${revoked.link.id}`)
+    updateShareLink(expired.link.id, { expiresAt: Date.now() - 1 })
+    expect(await page()).toEqual({ activeLinks: 1, canCreate: true })
+    expect((await view(open.token)).status).toBe(200)
+
+    // Today's sharing keeps its own request until links v2 is on.
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    closeShareLinkStores()
+    expect(await page()).toBeUndefined()
+  })
+
   it("keeps only token digests, so the store's files hold no working link", async () => {
     await writeDoc("space", "plan", "# Plan")
     const { token } = await createLink("plan")
@@ -251,8 +286,8 @@ describe("share links", () => {
 
   it("serves nothing it does not understand, and older links still open", async () => {
     await writeDoc("space", "plan", "# Plan")
-    const locked = await createLink("plan")
-    const open = await createLink("plan")
+    // Today's links are made only while links v2 is off.
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     const legacy = await send("POST", "/api/shares", {
       kind: "doc",
       spaceId: "space",
@@ -263,6 +298,9 @@ describe("share links", () => {
     ).share.url
       .split("/")
       .at(-1)!
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    const locked = await createLink("plan")
+    const open = await createLink("plan")
 
     // A later version's password on one link.
     closeShareLinkStores()
@@ -486,5 +524,181 @@ describe("share links", () => {
     })
     expect(escaping.status).toBe(400)
     expect(existsSync(shareLinksDatabasePath())).toBe(false)
+  })
+})
+
+describe("moving today's links into links v2", () => {
+  const v1File = () => join(appDir, "document-shares.json")
+
+  /** A link as today's sharing makes it, while links v2 is off. */
+  async function legacyLink(
+    artifactKey: string,
+    kind: "doc" | "html" = "doc"
+  ): Promise<{ token: string; createdAt: string }> {
+    const response = await send("POST", "/api/shares", {
+      kind,
+      spaceId: "space",
+      artifactKey,
+    })
+    expect(response.status).toBe(201)
+    const { share } = (await response.json()) as {
+      share: { url: string; createdAt: string }
+    }
+    return { token: share.url.split("/").at(-1)!, createdAt: share.createdAt }
+  }
+
+  /** What an older binary reads from the file: strictly parsed, or it throws. */
+  async function v1FileAsOlderBinaryReadsIt(token: string) {
+    expect(JSON.parse(await readFile(v1File(), "utf8"))).toEqual({
+      type: "worktable.document-shares",
+      version: 1,
+      shares: [],
+    })
+    return await resolveDocumentShare(token)
+  }
+
+  it("keeps their URLs working, drops links that open nothing, and leaves an empty file older binaries read", async () => {
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    await useHtmlStorageV2()
+    await writeDoc("space", "plan", "# Plan\n\nMoved over.")
+    await writeDoc("space", "retired", "# Retired")
+    await writeDoc("space", "removed", "# Removed")
+    expect(
+      (
+        await createHtmlDocument({
+          spaceId: "space",
+          explicitId: "status",
+          name: "Status board",
+          html: "<main><h1>Operational</h1></main>",
+          createdBy: "test",
+          permissions: { network: false, records: {}, state: {} },
+          versionSource: "test",
+          versionUpdatedBy: "test",
+        })
+      ).error
+    ).toBeUndefined()
+    const plan = await legacyLink("plan")
+    const status = await legacyLink("status", "html")
+    const retired = await legacyLink("retired")
+    const removed = await legacyLink("removed")
+    // Today's links outside Cloud end only when the watcher sees the change.
+    expect((await setDocArchived("space", "retired", true)).error).toBeNull()
+    await rm(join(workspaceDir, "spaces", "space", "docs", "removed.md"))
+    // A link from before the workspace was last replaced opens nothing.
+    const file = JSON.parse(await readFile(v1File(), "utf8"))
+    file.shares.push({
+      ...file.shares[0],
+      token: "E".repeat(43),
+      workspaceEpoch: "E".repeat(43),
+    })
+    await writeFile(v1File(), JSON.stringify(file))
+
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    await drainV1ShareLinks()
+
+    expect(await v1FileAsOlderBinaryReadsIt(plan.token)).toBeNull()
+    const moved = await documentLinks("plan")
+    expect(moved.links).toHaveLength(1)
+    expect(moved.links[0]).toMatchObject({
+      label: "",
+      status: "active",
+      createdAt: plan.createdAt,
+      tokenHint: plan.token.slice(-4),
+    })
+    expect(
+      ((await (await view(plan.token)).json()) as { projectionHtml: string })
+        .projectionHtml
+    ).toContain("Moved over.")
+    expect(
+      await (await view(status.token, "/public/share/content")).text()
+    ).toContain("Operational")
+    for (const token of [retired.token, removed.token, "E".repeat(43)]) {
+      expect((await view(token)).status).toBe(404)
+    }
+    const all = (await (await send("GET", "/api/shares/links/all")).json()) as {
+      links: unknown[]
+    }
+    expect(all.links).toHaveLength(2)
+
+    // Moved links follow their document, and links v2 stays on without the
+    // preview. Today's routes no longer make links in the old file.
+    expect(
+      (await renameDocAndSync("space", "plan", "notes/plan")).error
+    ).toBeNull()
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    expect((await view(plan.token)).status).toBe(200)
+    expect((await documentLinks("notes/plan")).links).toHaveLength(1)
+    expect(
+      (
+        await send("POST", "/api/shares", {
+          kind: "doc",
+          spaceId: "space",
+          artifactKey: "notes/plan",
+        })
+      ).status
+    ).toBe(404)
+  })
+
+  it("finishes a move cut short without copying or reviving links, and moves links an older binary makes later", async () => {
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    await writeDoc("space", "kept", "# Kept")
+    await writeDoc("space", "revoked", "# Revoked")
+    const kept = await legacyLink("kept")
+    const revoked = await legacyLink("revoked")
+    const beforeMove = await readFile(v1File())
+
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    await drainV1ShareLinks()
+    const [link] = (await documentLinks("revoked")).links
+    expect((await send("DELETE", `/api/shares/links/${link!.id}`)).status).toBe(
+      200
+    )
+    // Stopped after moving the links, before emptying the file.
+    await writeFile(v1File(), beforeMove)
+    await drainV1ShareLinks()
+
+    expect((await documentLinks("kept")).links).toHaveLength(1)
+    expect((await documentLinks("revoked")).links).toHaveLength(0)
+    expect((await view(kept.token)).status).toBe(200)
+    expect((await view(revoked.token)).status).toBe(404)
+    expect(await v1FileAsOlderBinaryReadsIt(revoked.token)).toBeNull()
+
+    // An older binary run in between makes a link in the old file; the next
+    // boot moves it.
+    await writeDoc("space", "later", "# Later")
+    const later = await createDocumentShare({
+      kind: "doc",
+      spaceId: "space",
+      artifactKey: "later",
+    })
+    await drainV1ShareLinks()
+    expect((await documentLinks("later")).links).toHaveLength(1)
+    expect(await v1FileAsOlderBinaryReadsIt(later.token)).toBeNull()
+    expect((await view(later.token)).status).toBe(200)
+  })
+
+  it("moves them when the owner turns the sharing preview on", async () => {
+    delete process.env["WORKTABLE_SHARING_PREVIEW"]
+    invalidateServerSettingsCache()
+    try {
+      await writeDoc("space", "plan", "# Plan")
+      const plan = await legacyLink("plan")
+
+      const system = new Hono()
+      system.use("/api/*", trustedLocalIdentity())
+      system.route("/api/system", systemRouter)
+      const turnedOn = await system.request("/api/system/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sharing: { preview: true } }),
+      })
+      expect(turnedOn.status).toBe(200)
+
+      expect(await v1FileAsOlderBinaryReadsIt(plan.token)).toBeNull()
+      expect((await documentLinks("plan")).links).toHaveLength(1)
+      expect((await view(plan.token)).status).toBe(200)
+    } finally {
+      invalidateServerSettingsCache()
+    }
   })
 })

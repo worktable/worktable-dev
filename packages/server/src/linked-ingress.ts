@@ -15,6 +15,7 @@ import {
   ShareTicket,
   SHARE_UNLOCK_HEADER,
   AGENT_ROUTE_HEADERS,
+  VISITOR_HEADERS,
 } from "@worktable/hosted-contract"
 import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
@@ -32,9 +33,21 @@ import { resolveCloudTeamAgentCredential } from "./team-cloud.ts"
 import type { TokenIdentity } from "./token-store.ts"
 
 function validShareRequest(claims: LinkedRequestClaims): boolean {
-  if (claims.grant.kind !== "share" || claims.grant.visitor !== undefined)
-    return false
+  if (claims.grant.kind !== "share") return false
   const preview = sharingPreviewEnabled()
+  if (claims.path === "/public/share/comments") {
+    const visitor = claims.grant.visitor
+    return Boolean(
+      preview &&
+      visitor &&
+      ShareLinkToken.safeParse(claims.grant.capability).success &&
+      claims.grant.clientAddress === undefined &&
+      claims.grant.contentRevision === undefined &&
+      (["GET", "HEAD"].includes(claims.method) ||
+        (claims.method === "POST" && visitor.verified && visitor.client))
+    )
+  }
+  if (claims.grant.visitor !== undefined) return false
   if (claims.grant.unlock !== undefined && !preview) return false
   if (
     claims.grant.clientAddress !== undefined &&
@@ -148,7 +161,9 @@ export async function createLinkedIngress(options: {
   })
   const shares = new Hono().route(
     "/public/share",
-    createPublicSharesRouter(() => shareOrigin ?? null)
+    createPublicSharesRouter(() => shareOrigin ?? null, {
+      trustedLinkIngress: true,
+    })
   )
   const consumed = new Map<string, number>()
   let active = true
@@ -237,9 +252,11 @@ export async function createLinkedIngress(options: {
         body = await readBody(
           request,
           payload.exp * 1000,
-          claims.path === "/public/share/bridge"
-            ? 16 * 1024
-            : LINKED_REQUEST_MAX_BYTES
+          claims.path === "/public/share/comments"
+            ? 8192
+            : claims.path === "/public/share/bridge"
+              ? 16 * 1024
+              : LINKED_REQUEST_MAX_BYTES
         )
         if (
           createHash("sha256").update(body).digest("hex") !== claims.bodyDigest
@@ -275,6 +292,15 @@ export async function createLinkedIngress(options: {
         headers.set(SHARE_CAPABILITY_HEADER, claims.grant.capability)
         if (claims.grant.unlock)
           headers.set(SHARE_UNLOCK_HEADER, claims.grant.unlock)
+        if (claims.grant.visitor) {
+          headers.set(VISITOR_HEADERS.KEY, claims.grant.visitor.key)
+          headers.set(
+            VISITOR_HEADERS.VERIFIED,
+            claims.grant.visitor.verified ? "1" : "0"
+          )
+          if (claims.grant.visitor.client)
+            headers.set(VISITOR_HEADERS.CLIENT, claims.grant.visitor.client)
+        }
         if (claims.grant.clientAddress)
           headers.set(
             AGENT_ROUTE_HEADERS.CLIENT_ADDRESS,

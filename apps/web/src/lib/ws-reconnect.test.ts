@@ -9,6 +9,8 @@ import * as Y from "yjs"
 import type { ThreadReadResult, ThreadListItem } from "@worktable/types"
 import { threadQueryKeys } from "./threads-queries"
 import { docQueryKeys } from "./docs-queries"
+import { activityQueryKeys } from "./activity"
+import { visitorCommentsQueryKey } from "./visitor-comment-events"
 import { documentQueryKeys } from "./documents-queries"
 import { queryKeys } from "./queries"
 import { recentQueryKeys } from "./lifetime"
@@ -685,4 +687,60 @@ describe("Space events in the query cache", () => {
     expect([detail.reads, other.reads]).toEqual([1, 1])
     for (const query of [detail, other, list]) query.unsubscribe()
   })
+})
+
+
+it("refreshes only the visitor's document and affected Pending inboxes", async () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  const all = watched(queryClient, activityQueryKeys.pendingIn(), {})
+  const here = watched(queryClient, activityQueryKeys.pendingIn("space-a"), {})
+  const elsewhere = watched(
+    queryClient,
+    activityQueryKeys.pendingIn("space-b"),
+    {}
+  )
+  const visitors = watched(
+    queryClient,
+    visitorCommentsQueryKey("space-a", "doc_report"),
+    {}
+  )
+  const otherVisitors = watched(
+    queryClient,
+    visitorCommentsQueryKey("space-a", "doc_other"),
+    {}
+  )
+  const content = watched(
+    queryClient,
+    documentQueryKeys.content("space-a", "report", "rev-1"),
+    {}
+  )
+  try {
+    applySpaceEvent(queryClient, "another-stream", {
+      type: "visitor_comments_changed",
+      spaceId: "space-a",
+      data: { documentId: "doc_report", linkId: "link" },
+    })
+    await settle(queryClient)
+    expect([
+      all.reads,
+      here.reads,
+      elsewhere.reads,
+      visitors.reads,
+      otherVisitors.reads,
+      content.reads,
+    ]).toEqual([1, 1, 0, 1, 0, 0])
+  } finally {
+    for (const query of [
+      all,
+      here,
+      elsewhere,
+      visitors,
+      otherVisitors,
+      content,
+    ])
+      query.unsubscribe()
+    queryClient.clear()
+  }
 })

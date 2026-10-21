@@ -5,6 +5,7 @@ import {
   chmodSync,
   closeSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readSync,
@@ -28,6 +29,10 @@ interface StoreConnections {
 }
 const stores = new Map<string, StoreConnections>()
 let writesHeld = 0
+let visitorGeneration = 0
+export function visitorCommentGeneration(): number {
+  return visitorGeneration
+}
 const changeListeners = new Set<() => void>()
 
 /** Private backup notifications carry no visitor content or document events. */
@@ -38,6 +43,7 @@ export function onVisitorCommentStoreChange(listener: () => void): () => void {
   }
 }
 function notifyStoreChange(): void {
+  visitorGeneration += 1
   for (const listener of changeListeners) {
     try {
       listener()
@@ -65,19 +71,34 @@ export class VisitorCommentRefused extends Error {
 function physicalPath(path: string): string {
   let parent = resolve(path)
   const tail: string[] = []
-  while (!existsSync(parent)) {
+  while (true) {
+    try {
+      // lstat sees a dangling symlink too: never mistake it for a safe new file.
+      lstatSync(parent)
+      break
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+        throw new VisitorCommentsUnavailable()
+    }
     const next = dirname(parent)
     if (next === parent) throw new VisitorCommentsUnavailable()
     tail.unshift(relative(next, parent))
     parent = next
   }
-  return join(realpathSync(parent), ...tail)
+  try {
+    return join(realpathSync(parent), ...tail)
+  } catch {
+    throw new VisitorCommentsUnavailable()
+  }
 }
 
 function storePath(): string {
   const app = physicalPath(getAppDir())
   const root = physicalPath(getWorkspaceRoot())
-  const within = relative(root, app)
+  const path = physicalPath(
+    join(app, "visitor-comments", workspaceCacheKey(), "comments.sqlite")
+  )
+  const within = relative(root, path)
   if (
     !within ||
     (!isAbsolute(within) &&
@@ -87,7 +108,7 @@ function storePath(): string {
     throw new VisitorCommentsUnavailable(
       "Visitor comments need storage outside the workspace"
     )
-  return join(app, "visitor-comments", workspaceCacheKey(), "comments.sqlite")
+  return path
 }
 
 function rememberStore(key: string, entry: StoreConnections): void {

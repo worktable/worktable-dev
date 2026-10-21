@@ -98,13 +98,24 @@ function notePageLinks(
   links: readonly ShareLink[]
 ): void {
   const activeLinks = openShareLinkCount(links)
+  const expiry = links.reduce(
+    (soonest, link) =>
+      link.status === "active" && link.expiresAt
+        ? Math.min(soonest, Date.parse(link.expiresAt))
+        : soonest,
+    Infinity
+  )
+  const nextExpiry = Number.isFinite(expiry)
+    ? new Date(expiry).toISOString()
+    : undefined
   queryClient.setQueryData<DocumentPageResult>(
     documentQueryKeys.page(spaceId, path),
     (page) =>
       page?.kind === "document" &&
       page.sharing &&
-      page.sharing.activeLinks !== activeLinks
-        ? { ...page, sharing: { ...page.sharing, activeLinks } }
+      (page.sharing.activeLinks !== activeLinks ||
+        page.sharing.nextExpiry !== nextExpiry)
+        ? { ...page, sharing: { ...page.sharing, activeLinks, nextExpiry } }
         : undefined
   )
 }

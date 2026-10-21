@@ -146,6 +146,10 @@ export interface DeploymentInfo {
     updateChecks: boolean
     previewStatus?: boolean
     documentSharing: boolean
+    /** May see and manage this Worktable's share links. */
+    shareLinks: boolean
+    /** Sharing features that aren't released yet are on. */
+    sharingPreview: boolean
   }
 }
 
@@ -220,6 +224,12 @@ export interface ServerSettings {
     /** Set when WORKTABLE_MCP_PREVIEW overrides the setting on this server. */
     previewToolsOverride?: boolean | null
   }
+  /** Machine-local: run the sharing features not yet released. */
+  sharing: {
+    preview: boolean
+    /** Set when WORKTABLE_SHARING_PREVIEW overrides the setting on this server. */
+    previewOverride?: boolean | null
+  }
 }
 
 /**
@@ -232,6 +242,7 @@ export interface ServerSettingsPatch {
   network?: Partial<ServerSettings["network"]>
   history?: Partial<ServerSettings["history"]>
   agents?: Partial<ServerSettings["agents"]>
+  sharing?: Partial<ServerSettings["sharing"]>
 }
 
 export async function getSystemVersion() {

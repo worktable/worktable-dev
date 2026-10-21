@@ -75,7 +75,7 @@ export function readRecord(spaceId: string, collectionId: string, recordId: stri
  *  existing records, with per-record diagnostics in the error message. */
 export function updateRecordCollection(
   spaceId: string,
-  data: { id: string; name?: string; description?: string; wellKnownType?: string; fields?: RecordCollectionSchema["fields"] }
+  data: { id: string; name?: string; description?: string; wellKnownType?: string; fields?: RecordCollectionSchema["fields"]; titleField?: string | null }
 ) {
   return fetchJSON<{ collection: RecordCollectionSchema }>(`/api/spaces/${spaceId}/records`, {
     method: "POST",

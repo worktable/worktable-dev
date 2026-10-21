@@ -445,7 +445,7 @@ async function handleRecordCreate(c: Context, spaceId: string, widgetId: string,
   if (!parsed.success) return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
   const result = await createRecord(spaceId, collectionId, { ...parsed.data, createdBy: `widget:${widgetId}` });
   if (result.error || !result.data) return c.json({ error: result.error ?? "Write failed", code: "VALIDATION_ERROR" }, 400);
-  if (!result.created) return c.json({ error: `Record ${result.data.id} already exists; update it instead`, code: "CONFLICT", record: result.data }, 409);
+  if (!result.created) return c.json({ error: result.matchedBy ? `Record ${result.data.id} already has this ${result.matchedBy}` : `Record ${result.data.id} already exists; update it instead`, code: "CONFLICT", record: result.data }, 409);
   noteRecordMutated();
   wsManager.broadcast(spaceId, { type: "record_update", spaceId, collectionId, recordId: result.data.id, data: result.data });
   return c.json({ record: result.data, recordId: result.data.id }, 201);

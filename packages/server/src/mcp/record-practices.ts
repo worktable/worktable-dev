@@ -1,5 +1,6 @@
 import {
   normalizeRecordFieldType,
+  recordTitleFieldKey,
   type RecordCollectionSchema,
   type RecordFile,
 } from "@worktable/types"
@@ -63,24 +64,14 @@ function normalizedFieldKey(key: string): string {
 }
 
 function identityField(schema: RecordCollectionSchema | null): string | null {
-  if (!schema) return null
-  for (const key of ["title", "name"]) {
-    const field = schema.fields[key]
-    const type = field ? normalizeRecordFieldType(field.type) : null
-    if (type === "string" || type === "text") return key
-  }
-  for (const [key, field] of Object.entries(schema.fields)) {
-    if (field.required && normalizeRecordFieldType(field.type) === "string")
-      return key
-  }
-  return null
+  return recordTitleFieldKey(schema)
 }
 
 export function recordPracticeIdentity(
   data: Record<string, unknown>,
   schema: RecordCollectionSchema | null
 ): { field: string; value: string } | null {
-  for (const key of ["title", "name", identityField(schema)]) {
+  for (const key of [identityField(schema), "title", "name"]) {
     if (!key) continue
     const value = data[key]
     if (typeof value === "string" && value.trim())
@@ -221,9 +212,9 @@ export function reviewRecordSchema(input: {
     warnings.push({
       code: "missing_recognizable_title",
       message:
-        "No field can name these records: there is no title or name field and no required string field.",
+        "No field can name these records: there is no titleField, no title or name field and no required string field.",
       suggestion:
-        "Add a short required string field such as title, so records are recognizable in lists.",
+        "Make the field that names a record the collection's title field (titleField), or add a short required string field such as title, so records are recognizable in lists.",
     })
   }
 

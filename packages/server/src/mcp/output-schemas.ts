@@ -513,6 +513,36 @@ const RecordCollectionSummarySchema = z.looseObject({
   schema: PortableRecordCollectionSchema.optional(),
 })
 
+const RecordsCreateManyOutputSchema = z.looseObject({
+  results: z.array(
+    z.looseObject({
+      row: z.number().int().positive(),
+      recordId: z.string(),
+      created: z.boolean(),
+      error: z.string().optional(),
+    })
+  ),
+  counts: z.looseObject({
+    created: z.number().int().nonnegative(),
+    skipped: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+  }),
+})
+
+const RecordsUpdateManyOutputSchema = z.looseObject({
+  results: z.array(
+    z.looseObject({
+      recordId: z.string(),
+      updated: z.boolean(),
+      error: z.string().optional(),
+    })
+  ),
+  counts: z.looseObject({
+    updated: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+  }),
+})
+
 const RecordQueryOutputSchema = z.looseObject({
   records: z.array(PortableRecordSchema),
   expanded: z
@@ -867,6 +897,8 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
     }),
   ],
   "records.update": [z.looseObject({ record: PortableRecordSchema })],
+  "records.create_many": [RecordsCreateManyOutputSchema],
+  "records.update_many": [RecordsUpdateManyOutputSchema],
   "records.delete": [z.looseObject({ ok: z.literal(true) })],
   "annotations.list": [
     z.looseObject({
@@ -1562,4 +1594,71 @@ export function assertPublicOperationOutput(
       })
     : ["<root>:invalid_type"]
   throw new PublicOperationOutputError(operationId, issuePaths)
+}
+
+/**
+ * Output schemas on the preview surface, replacing the released schema for
+ * that tool (see PREVIEW_INPUT_SCHEMAS in tools.ts).
+ */
+export const PREVIEW_OUTPUT_SCHEMAS: Partial<
+  Record<keyof typeof WORKTABLE_OUTPUT_SCHEMAS, z.ZodType>
+> = {
+  worktable_records_read: resultSchema("worktable_records_read", {
+    collections: forActions(
+      z.array(CompactCollectionSchema),
+      '"list_collections"'
+    ),
+    records: forActions(z.array(CompactRecordSchema), '"query"'),
+    total: forActions(
+      z.number().int().nonnegative(),
+      '"query" (every matching record, across pages)'
+    ),
+    expanded: forActions(
+      z.record(z.string(), z.record(z.string(), CompactRecordSchema)),
+      '"query"'
+    ),
+    backlinks: forActions(z.record(z.string(), z.array(z.string())), '"query"'),
+    groups: forActions(z.array(z.record(z.string(), z.unknown())), '"query"'),
+    nextCursor: forActions(z.string(), '"query"'),
+    warnings: forActions(z.array(z.string()), '"query"'),
+    record: forActions(CompactRecordSchema, '"read"'),
+  }),
+  worktable_records_write: resultSchema("worktable_records_write", {
+    collection: forActions(CompactCollectionSchema, '"upsert_collection"'),
+    record: forActions(CompactRecordSchema, '"create" or "update"'),
+    warnings: forActions(
+      z.array(RecordPracticeWarningSchema),
+      '"upsert_collection" or "create"'
+    ),
+    results: forActions(
+      z.array(
+        z.looseObject({
+          row: z.number().int().positive().optional(),
+          recordId: z.string(),
+          created: z.boolean().optional(),
+          matchedBy: z.string().optional(),
+          updated: z.boolean().optional(),
+          error: z.string().optional(),
+        })
+      ),
+      '"create_many" or "update_many"'
+    ),
+    created: forActions(
+      z.boolean(),
+      '"create" (false when the recordId, or a unique field\'s value, already existed)'
+    ),
+    matchedBy: forActions(
+      z.string(),
+      '"create" when a unique field matched an existing record'
+    ),
+    counts: forActions(
+      z.looseObject({
+        created: z.number().int().nonnegative().optional(),
+        skipped: z.number().int().nonnegative().optional(),
+        updated: z.number().int().nonnegative().optional(),
+        failed: z.number().int().nonnegative(),
+      }),
+      '"create_many" or "update_many"'
+    ),
+  }),
 }

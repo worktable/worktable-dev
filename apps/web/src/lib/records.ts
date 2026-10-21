@@ -1,6 +1,6 @@
 import { toast } from "@worktable/ui/components/sonner"
 import type { DocumentListItem, RecordCollectionSchema, RecordField, RecordFile, RecordPredicateOp, RecordQueryResult } from "@worktable/types"
-import { normalizeRecordFieldType, parseDocumentReference } from "@worktable/types"
+import { normalizeRecordFieldType, parseDocumentReference, recordTitleFieldKey } from "@worktable/types"
 import type { RecordFilter } from "./record-filters"
 
 /** A grid/peek column: schema fields in declared order, then any keys present
@@ -151,29 +151,17 @@ export function recordActorName(
 
 /** The field recordTitle reads: title/name, else the first required string field. */
 export function recordTitleKey(schema: RecordCollectionSchema | undefined): string | null {
-  if (!schema) return null
-  for (const key of ["title", "name"]) {
-    const field = schema.fields[key]
-    const type = field ? normalizeRecordFieldType(field.type) : null
-    if (type === "string" || type === "text") return key
-  }
-  for (const [key, field] of Object.entries(schema.fields)) {
-    if (field.required && normalizeRecordFieldType(field.type) === "string") return key
-  }
-  return null
+  return recordTitleFieldKey(schema)
 }
 
-/** Display title for a record: an explicit title/name field, else the first
- *  required string field with a value, else the record id. */
+/** Display title for a record: its collection's title field (see
+ *  recordTitleFieldKey), else a title or name value, else the record id. */
 export function recordTitle(record: RecordFile, schema?: RecordCollectionSchema): string {
-  const direct = record.data["title"] ?? record.data["name"]
-  if (typeof direct === "string" && direct.trim()) return direct
-  if (schema) {
-    const key = recordTitleKey(schema)
-    if (key) {
-      const value = record.data[key]
-      if (typeof value === "string" && value.trim()) return value
-    }
+  const key = recordTitleKey(schema)
+  for (const candidate of [key, "title", "name"]) {
+    if (!candidate) continue
+    const value = record.data[candidate]
+    if (typeof value === "string" && value.trim()) return value
   }
   return record.id
 }

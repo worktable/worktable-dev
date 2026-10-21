@@ -32,6 +32,7 @@ import {
   getMermaidSource,
   isCustomMermaidBlock,
   markdownPlainText,
+  recordTitleFieldKey,
   type DocumentFormatClaim,
   type DocumentHealth,
   type RecordFile,
@@ -69,10 +70,13 @@ interface RecordEntry {
 
 type IndexEntry = DocEntry | RecordEntry;
 
-export function recordTitle(record: RecordFile, collectionName: string): string {
+/** `titleKey` is the collection's title field (recordTitleFieldKey). */
+export function recordTitle(record: RecordFile, collectionName: string, titleKey: string | null = null): string {
   const data = record.data as Record<string, unknown>;
-  const candidate = data.title ?? data.name;
-  if (typeof candidate === "string" && candidate.trim()) return candidate;
+  for (const key of [titleKey, "title", "name"]) {
+    const candidate = key ? data[key] : undefined;
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+  }
   return `${collectionName}: ${record.id}`;
 }
 
@@ -523,7 +527,7 @@ async function addRecordsToIndex(
         type: "record",
         collectionId: collection.id,
         recordId: record.id,
-        title: recordTitle(record, collection.name),
+        title: recordTitle(record, collection.name, recordTitleFieldKey(collection.schema)),
         body: `${collection.name} ${JSON.stringify(record.data)}`,
       });
       displayBodies.set(id, recordDisplayText(collection.name, record.data));

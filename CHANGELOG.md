@@ -9,19 +9,23 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.26] - 2026-10-21
+
 ### Added
 
+- **Record titles and unique fields:** In a collection's schema, **Use as record title** picks the field that names its records, such as a summary, and **Unique** keeps a field's values, such as a URL, from appearing twice. Adding a record with a value that's already there returns the existing record instead of a duplicate. Agents using preview tools can set both.
 - **Preview agent tools:** On a self-hosted Worktable, **Settings → Agents** can give connected agents tool changes before they are released. The first ones describe how record writes and queries behave: creates never overwrite, schema edits merge fields, and queries page with a total.
 
 ### Changed
 
-- **Record validation:** Date and date-time fields accept ISO dates such as `2026-10-19`, so values like "Sep 1" no longer slip in and sort wrongly. An update checks only the fields it changes. Agents writing a field the schema doesn't declare get an error naming the declared fields instead of a hidden value. A collection without a title field is reported once when its schema is saved rather than on every record, and records with nothing to name them get a short random id instead of `record-2`.
-- **Record queries page reliably:** Every record query that stops at its limit returns a cursor for the next page, so paging no longer stops early when a query has no projection. Flat filters such as `{ "status": "open" }` now work with projection, aggregates and expansion. An agent query without a limit returns 100 records and says how to continue, instead of the whole collection. Search matches field values only, select fields sort in the order their options are listed, and agents counting by a multi-select field get a count for each value. Malformed filters are rejected instead of matching nothing.
 - **Records keep what they hold:** Creating a record with an id that already exists no longer replaces it. Agents get the stored record back with `created: false`, and REST and HTML Docs get a conflict, so an agent that derives ids from a URL or other key adds each item once. Over MCP, `upsert_collection` adds or replaces only the fields it is sent and keeps the rest, and record updates merge metadata the way they merge data. Widening a select field no longer rechecks every record.
 - **Large collections stay quick while agents write:** Each record an agent saves now updates just that record, instead of making Worktable rescan the whole collection and every open table and HTML Doc reload it.
+- **Record validation:** Date and date-time fields accept ISO dates such as `2026-10-19`, so values like "Sep 1" no longer slip in and sort wrongly. An update checks only the fields it changes. Agents writing a field the schema doesn't declare get an error naming the declared fields instead of a hidden value. A collection without a title field is reported once when its schema is saved rather than on every record, and records with nothing to name them get a short random id instead of `record-2`.
+- **Record queries page reliably:** Every record query that stops at its limit returns a cursor for the next page, so paging no longer stops early when a query has no projection. Flat filters such as `{ "status": "open" }` now work with projection, aggregates and expansion. An agent query without a limit returns 100 records and says how to continue, instead of the whole collection. Search matches field values only, select fields sort in the order their options are listed, and agents counting by a multi-select field get a count for each value. Malformed filters are rejected instead of matching nothing.
 
 ### Fixed
 
+- **`worktable doctor` on servers without previews:** Previews that can't start are a warning, so `worktable doctor --check` passes on a server that runs everything else. When the preview browser is missing system libraries, `doctor` names them and, on Debian or Ubuntu, the command that installs them.
 - **Edit keeps your place:** Pressing **Edit** on a Markdown Doc keeps the line you were reading where it was and puts the caret in it, instead of opening at the top. A rich Doc that opens while you scroll its preview keeps your place the same way.
 - **Code languages:** A Doc whose code is marked with a language the editor doesn't list, such as `txt`, opens instead of showing an error. Common names for plain text are recognized, other languages show by their own name without highlighting, and code marked with no language stays unmarked, so a Doc converted to rich text and back keeps its code fences as written.
 

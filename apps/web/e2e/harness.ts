@@ -240,10 +240,13 @@ export async function startWebHarness(
                   startServer(Number(process.env.PORT), process.env.HOST);
                   const {linkedStatus} = await import("./src/linked-runtime.ts");
                   const deadline = Date.now() + 5000;
-                  while (linkedStatus().state !== "unlinked" && Date.now() < deadline)
+                  while (linkedStatus().state !== "unlinked" && Date.now() < deadline) {
+                    // test-policy: external-readiness-backoff
                     await new Promise(resolve => setTimeout(resolve, 10));
+                  }
                   if (linkedStatus().state !== "unlinked") throw new Error("Synthetic Link state was not isolated");
-                  await new Promise(resolve => setTimeout(resolve, 0));
+                  // Let the unlinked runtime's final cleanup finish before installing the fixture.
+                  await new Promise(resolve => setImmediate(resolve));
                   const {setLinkedSharing} = await import("./src/linked-sharing.ts");
                   setLinkedSharing(${JSON.stringify(options.sharing)});
                   console.log("[Browser fixture] sharing ready");

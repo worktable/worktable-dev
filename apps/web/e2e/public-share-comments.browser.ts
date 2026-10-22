@@ -392,6 +392,18 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
   await older.click()
   await expect(page.locator(".comment-read-error")).toBeVisible()
   await expect(page.locator(".comment-item")).toHaveCount(1)
+  await expect(send).toBeEnabled()
+  f.backend.onPost = async () => "error"
+  const historyPosts = f.posts.length
+  await send.click()
+  await expect.poll(() => f.posts.length).toBe(historyPosts + 1)
+  await expect(page.locator(".comment-form .comment-status")).toContainText(
+    "Couldn't send"
+  )
+  await expect(send).toBeEnabled()
+  await expect(text).toHaveValue("Next draft")
+  await expect(page.locator(".comment-read-error")).toBeVisible()
+  f.backend.onPost = async () => "ok"
   f.backend.onGet = async () => "ok"
   await page.getByRole("button", { name: "Retry", exact: true }).click()
   await expect(page.locator(".comment-item")).toHaveCount(2)
@@ -476,13 +488,14 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
       releaseSlow = () => resolve("ok")
     })
   await text.fill("Slow successful comment")
+  const slowPosts = f.posts.length + 1
   await send.click()
-  await expect.poll(() => f.posts.length).toBe(5)
+  await expect.poll(() => f.posts.length).toBe(slowPosts)
   await page.clock.runFor(75_000)
   await expect(
     page.getByRole("button", { name: "Sending…", exact: true })
   ).toBeDisabled()
-  expect(f.posts).toHaveLength(5)
+  expect(f.posts).toHaveLength(slowPosts)
   await page.getByLabel("Your name").fill("Dana")
   let releaseRead = () => {}
   f.backend.onGet = () =>

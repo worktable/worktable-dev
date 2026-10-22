@@ -401,7 +401,7 @@
   send.type = "submit"
   let sending = false
   function updateSend() {
-    send.disabled = sending || !readError.hidden
+    send.disabled = sending || (!readError.hidden && !retryOlder)
     send.textContent = sending ? "Sending…" : "Send"
   }
   form.append(challenge, status, send)

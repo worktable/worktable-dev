@@ -23,6 +23,8 @@ interface Post {
   name?: string
   anonymous?: boolean
   visitor: string
+  pass?: string
+  turnstileToken?: string
 }
 
 interface Stored extends Post {
@@ -48,12 +50,16 @@ async function fixture(page: Page, live = false) {
     frames: number
     containment: boolean
     readAborts: number
+    checks: number
     onGet: () => Promise<"ok" | "error" | "busy">
-    onPost: (post: Post) => Promise<"ok" | "error" | "uncertain">
+    onPost: (
+      post: Post
+    ) => Promise<"ok" | "error" | "uncertain" | "lost" | "verify">
   } = {
     frames: 0,
     containment: true,
     readAborts: 0,
+    checks: 0,
     onGet: async () => "ok",
     onPost: async () => "ok",
   }
@@ -178,7 +184,7 @@ async function fixture(page: Page, live = false) {
         window.turnstile = { render(node, options) {
           const challenge = document.createElement("iframe");
           challenge.src = "https://challenges.cloudflare.com/test-widget-frame";
-          challenge.addEventListener("load", () => options.callback("test-human-token"));
+          challenge.addEventListener("load", () => options.callback("test-human-token-${++backend.checks}"));
           node.append(challenge); return "widget";
         } };
       `,
@@ -229,6 +235,11 @@ async function fixture(page: Page, live = false) {
           status: 400,
           json: { error: { code: "INVALID_REQUEST" } },
         })
+      if (outcome === "verify")
+        return route.fulfill({
+          status: 403,
+          json: { error: { code: "VERIFICATION_REQUIRED" } },
+        })
       let row = stored.find(
         (item) => item.visitor === visitor && item.requestId === post.requestId
       )
@@ -236,6 +247,7 @@ async function fixture(page: Page, live = false) {
         row = { ...post, id: `vc_${stored.length}` }
         stored.push(row)
       }
+      if (outcome === "lost") return route.abort()
       return outcome === "uncertain"
         ? route.fulfill({ status: 502, json: { error: { code: "ERROR" } } })
         : route.fulfill({
@@ -450,6 +462,31 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
   await expect(page.locator(".comment-list")).toContainText(
     "Keep this draft after the request stalls"
   )
+  await page.evaluate(() => sessionStorage.clear())
+  const firstAttempt = f.posts.length
+  let attempts = 0
+  f.backend.onPost = async () => {
+    attempts++
+    return attempts === 1 ? "lost" : attempts === 2 ? "verify" : "ok"
+  }
+  const lost = page.waitForEvent("requestfailed", {
+    predicate: (request) => request.method() === "POST",
+  })
+  await text.fill("Recover the spent first token")
+  await send.click()
+  await lost
+  await page.clock.runFor(3_001)
+  await expect(page.locator(".comment-list")).toContainText(
+    "Recover the spent first token"
+  )
+  const retried = f.posts.slice(firstAttempt)
+  expect(retried).toHaveLength(3)
+  expect(new Set(retried.map((post) => post.requestId)).size).toBe(1)
+  expect(retried[0]!.turnstileToken).toBe(retried[1]!.turnstileToken)
+  expect(retried[2]!.turnstileToken).not.toBe(retried[0]!.turnstileToken)
+  expect(
+    f.stored.filter((row) => row.body === "Recover the spent first token")
+  ).toHaveLength(1)
   expect(f.errors).toEqual([])
 })
 

@@ -612,10 +612,9 @@
       })
       if (
         result.status === 403 &&
-        result.answer?.error?.code === "VERIFICATION_REQUIRED" &&
-        pass
+        result.answer?.error?.code === "VERIFICATION_REQUIRED"
       ) {
-        // The pass ran out or isn't for this link: check once more.
+        // A pass or one-use token was refused: check once more.
         forgetPass()
         turnstileToken = await humanToken(challenge)
         if (!turnstileToken) {

@@ -381,6 +381,12 @@ it("isolates visitors on a comment link and rechecks link settings after a held 
       .accepting
   ).toBe(true)
   expect((await send("Resumed", "request_resumed_body")).status).toBe(201)
+  // JSON escaping expands control characters before the existing text cleanup.
+  const expanded = "\u0001".repeat(1500) + "Visible after cleanup"
+  expect(Buffer.byteLength(JSON.stringify({ body: expanded }))).toBeGreaterThan(
+    8192
+  )
+  expect((await send(expanded, "request_encoded_body")).status).toBe(201)
   // A spike remains durable across unrelated edits, but only current comment
   // links offer an actionable pause in Pending. Retained comments still belong
   // to the document after their link is downgraded or revoked.

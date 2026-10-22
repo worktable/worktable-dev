@@ -47,7 +47,7 @@ async function readCommentBody(request: Request): Promise<unknown> {
       if (expired) return null
       if (done) break
       bytes += value.byteLength
-      if (bytes > 8192) {
+      if (bytes > 16 * 1024) {
         void reader.cancel().catch(() => {})
         return null
       }

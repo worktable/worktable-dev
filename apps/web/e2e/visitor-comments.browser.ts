@@ -97,10 +97,9 @@ for (const appearance of [
       page.on("pageerror", (error) => errors.push(error.message))
       page.on("request", (request) => requests.push(request.url()))
       try {
-        await page.addInitScript(
-          (theme) => localStorage.setItem("theme", theme),
-          appearance.theme
-        )
+        await page.addInitScript((theme) => {
+          if (window === window.top) localStorage.setItem("theme", theme)
+        }, appearance.theme)
         expect(
           (
             await page.request.post(`${harness.apiUrl}/api/spaces`, {

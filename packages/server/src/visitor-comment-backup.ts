@@ -304,6 +304,8 @@ export async function restoreVisitorCommentBackup(
     await rm(`${target}-journal`, { force: true })
     if (state) await rename(staged, target)
     else await rm(target, { force: true })
+    // Read-only audits can reopen the old inode during the awaited removals.
+    closeVisitorCommentStores()
     if (existsSync(dirname(target))) {
       const directory = await open(dirname(target), "r")
       try {

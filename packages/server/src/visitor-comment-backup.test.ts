@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, expect, it } from "bun:test"
+import { afterEach, beforeEach, expect, it, spyOn } from "bun:test"
+import * as filesystem from "node:fs/promises"
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { Database } from "bun:sqlite"
@@ -21,6 +22,7 @@ import {
   receiveVisitorComment,
   visitorCommentsCheckpoint,
   visitorReplies,
+  visitorCommentStoreFile,
   VisitorCommentsUnavailable,
 } from "./visitor-comment-store.ts"
 import {
@@ -127,6 +129,21 @@ it("captures private state and rejects stale safety fences before restoring a co
   )
   expect(visitorReplies([row.id])).toHaveLength(2)
   const current = visitorCommentsCheckpoint()
+  const restoreWithConcurrentReader = async (value: typeof state | null) => {
+    const remove = filesystem.rm
+    const duringPublication = spyOn(filesystem, "rm").mockImplementation(
+      async (path, options) => {
+        if (String(path) === `${visitorCommentStoreFile()}-wal`)
+          expect(visitorCommentsCheckpoint()).not.toBeNull()
+        return remove(path, options)
+      }
+    )
+    try {
+      await restoreVisitorCommentBackup(backup, value, "worktable")
+    } finally {
+      duringPublication.mockRestore()
+    }
+  }
   const release = holdVisitorCommentsAtCheckpoint(current)
   try {
     expect(() =>
@@ -137,7 +154,7 @@ it("captures private state and rejects stale safety fences before restoring a co
         "Fenced"
       )
     ).toThrow(VisitorCommentsUnavailable)
-    await restoreVisitorCommentBackup(backup, state, "worktable")
+    await restoreWithConcurrentReader(state)
     // Nested publication must not release the caller's replacement fence.
     expect(() => pauseVisitorComments("worktable", "link", false)).toThrow(
       VisitorCommentsUnavailable
@@ -160,11 +177,11 @@ it("captures private state and rejects stale safety fences before restoring a co
   )
   pauseVisitorComments("worktable", "link", false)
   // A retry can publish again, but can never revalidate the old safety fence.
-  await restoreVisitorCommentBackup(backup, state, "worktable")
+  await restoreWithConcurrentReader(state)
   expect(() => holdVisitorCommentsAtCheckpoint(current)).toThrow(
     "changed after"
   )
-  await restoreVisitorCommentBackup(backup, null, "worktable")
+  await restoreWithConcurrentReader(null)
   expect(visitorCommentsCheckpoint()).toBeNull()
   expect(visitorReplies([row.id])).toEqual([])
 })

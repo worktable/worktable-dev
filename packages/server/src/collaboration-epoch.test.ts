@@ -26,6 +26,7 @@ describe("workspace collaboration epoch", () => {
   })
 
   it("persists across ordinary starts and rotates through workspace reset", async () => {
+    await rm(appDir, { recursive: true })
     const first = await getWorkspaceCollaborationEpoch()
     expect(await getWorkspaceCollaborationEpoch()).toBe(first)
 

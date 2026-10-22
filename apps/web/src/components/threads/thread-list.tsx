@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, type RefObject } from "react"
+import { memo, useCallback, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import {
   defaultRangeExtractor,
@@ -100,10 +100,14 @@ export function ThreadList({
   onRetry,
 }: ThreadListProps) {
   const fadeRef = useScrollFade<HTMLDivElement>()
-  const scrollElement = useRef<HTMLDivElement | null>(null)
+  // The child's layout effect runs before this parent's ref is attached.
+  // Pass the node through state so scroll tracking starts without a row resize.
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(
+    null
+  )
   const scrollRef = useCallback(
     (node: HTMLDivElement | null) => {
-      scrollElement.current = node
+      setScrollElement(node)
       fadeRef(node)
       if (!node) return
       // On narrow screens an open thread hides the list, and a hidden
@@ -123,7 +127,7 @@ export function ThreadList({
       return () => {
         node.removeEventListener("scroll", keep)
         observer.disconnect()
-        scrollElement.current = null
+        setScrollElement(null)
         fadeRef(null)
       }
     },
@@ -233,7 +237,7 @@ function ThreadRows({
   locationLabel,
   threadLink,
 }: {
-  scrollElement: RefObject<HTMLDivElement | null>
+  scrollElement: HTMLDivElement | null
   threads: ThreadListItem[]
   activeThreadId: string
   activeLocation: ThreadLocation
@@ -248,7 +252,7 @@ function ThreadRows({
   )
   const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: threads.length,
-    getScrollElement: () => scrollElement.current,
+    getScrollElement: () => scrollElement,
     estimateSize: () => ROW_HEIGHT,
     gap: ROW_GAP,
     overscan: 6,
@@ -377,7 +381,7 @@ const ThreadListRow = memo(function ThreadListRow({
           <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
             {thread.title}
           </span>
-          <span className="w-14 shrink-0 text-end text-[11px] text-muted-foreground tabular-nums">
+          <span className="w-14 shrink-0 text-end text-[11px] whitespace-nowrap text-muted-foreground tabular-nums">
             <RelativeTime iso={thread.updatedAt} />
           </span>
         </div>

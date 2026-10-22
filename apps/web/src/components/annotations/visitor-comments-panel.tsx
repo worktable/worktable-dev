@@ -233,7 +233,10 @@ function VisitorRow({
             >
               <MoreVertical className="size-4" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" container={portalContainer}>
+            <DropdownMenuContent
+              align="end"
+              container={portalContainer ?? undefined}
+            >
               {comment.body && (
                 <DropdownMenuItem onClick={() => setForm("reply")}>
                   Reply

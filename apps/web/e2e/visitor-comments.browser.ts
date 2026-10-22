@@ -85,7 +85,13 @@ for (const appearance of [
       test.setTimeout(120_000)
       const previousPreview = process.env["WORKTABLE_SHARING_PREVIEW"]
       process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
-      const harness = await startWebHarness("visitor-review")
+      const harness = await startWebHarness("visitor-review", {
+        sharing: {
+          workspaceId: "ws_browser",
+          shareOrigin: "https://share.example.test",
+          htmlShareOrigin: "https://html.example.test",
+        },
+      })
       const errors: string[] = []
       const requests: string[] = []
       page.on("pageerror", (error) => errors.push(error.message))

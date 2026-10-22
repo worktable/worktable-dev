@@ -194,7 +194,16 @@ async function stopChild(child: ChildProcess): Promise<void> {
 
 export async function startWebHarness(
   name: string,
-  options: { onboarding?: "pending" | "complete"; storageVersion?: 2 } = {}
+  options: {
+    onboarding?: "pending" | "complete"
+    storageVersion?: 2
+    /** Stand in for Link's external sharing configuration, using real routes. */
+    sharing?: {
+      workspaceId: string
+      shareOrigin: string
+      htmlShareOrigin: string
+    }
+  } = {}
 ): Promise<WebHarness> {
   const tempRoot = await mkdtemp(join(tmpdir(), `worktable-${name}-`))
   const workspace = join(tempRoot, "workspace")
@@ -223,7 +232,24 @@ export async function startWebHarness(
       (port) =>
         startProcess(
           "bun",
-          ["run", "src/index.ts"],
+          options.sharing
+            ? [
+                "-e",
+                `
+                  const {startServer} = await import("./src/index.ts");
+                  startServer(Number(process.env.PORT), process.env.HOST);
+                  const {linkedStatus} = await import("./src/linked-runtime.ts");
+                  const deadline = Date.now() + 5000;
+                  while (linkedStatus().state !== "unlinked" && Date.now() < deadline)
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                  if (linkedStatus().state !== "unlinked") throw new Error("Synthetic Link state was not isolated");
+                  await new Promise(resolve => setTimeout(resolve, 0));
+                  const {setLinkedSharing} = await import("./src/linked-sharing.ts");
+                  setLinkedSharing(${JSON.stringify(options.sharing)});
+                  console.log("[Browser fixture] sharing ready");
+                `,
+              ]
+            : ["run", "src/index.ts"],
           join(repoRoot, "packages/server"),
           {
             HOST: "127.0.0.1",
@@ -237,7 +263,9 @@ export async function startWebHarness(
       (port) => `http://127.0.0.1:${port}/api/workspace`,
       processOutput,
       {
-        readyOutput: /\[Worktable server\] running on /,
+        readyOutput: options.sharing
+          ? /\[Browser fixture\] sharing ready/
+          : /\[Worktable server\] running on /,
         // The workspace root is deliberately owner + same-origin only. Bun's
         // fetch identifies itself as a CORS request, so make this readiness
         // probe's same-origin provenance explicit before validating the root.

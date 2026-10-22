@@ -274,7 +274,7 @@ export function ActivityList({ children }: { children: ReactNode }) {
 
 function ActivityRow({ children }: { children: ReactNode }) {
   return (
-    <li className="relative isolate flex min-h-11 gap-3 rounded-lg px-2 py-2.5 transition-colors has-[a:focus-visible]:bg-surface-hover has-[a:hover]:bg-surface-hover">
+    <li className="relative isolate flex min-h-11 items-baseline gap-3 rounded-lg px-2 py-2.5 transition-colors has-[a:focus-visible]:bg-surface-hover has-[a:hover]:bg-surface-hover">
       {children}
     </li>
   )
@@ -283,7 +283,7 @@ function ActivityRow({ children }: { children: ReactNode }) {
 /** The badge on the timeline, joined to the next entry by a line. */
 function Rail({ children, last }: { children: ReactNode; last: boolean }) {
   return (
-    <div className="relative flex shrink-0 flex-col items-center">
+    <div className="relative flex shrink-0 flex-col items-center self-stretch">
       {children}
       {!last && (
         <span
@@ -297,7 +297,7 @@ function Rail({ children, last }: { children: ReactNode; last: boolean }) {
 
 function ActivityTime({ at }: { at?: string }) {
   return (
-    <span className="w-16 shrink-0 text-left text-xs leading-5 text-muted-foreground/70 tabular-nums">
+    <span className="w-15 shrink-0 text-left text-xs leading-5 text-muted-foreground/70 tabular-nums">
       {at ? <time dateTime={at}>{clockTime(at)}</time> : "Now"}
     </span>
   )
@@ -319,7 +319,7 @@ export function ActivityItem({
       <Rail last={last}>
         <ActorBadge actor={entry.actor} />
       </Rail>
-      <div className="min-w-0 flex-1 text-sm leading-5 text-muted-foreground">
+      <div className="min-w-0 flex-1 pt-0.5 text-sm leading-5 text-muted-foreground">
         <p className="break-words">
           <Sentence entry={entry} />
         </p>
@@ -393,7 +393,7 @@ function LiveReply({
           live
         />
       </Rail>
-      <p className="min-w-0 flex-1 text-sm leading-5 text-muted-foreground">
+      <p className="min-w-0 flex-1 pt-0.5 text-sm leading-5 text-muted-foreground">
         <span className="font-medium text-foreground">{name}</span> is replying
         in{" "}
         <ThreadLink
@@ -465,7 +465,7 @@ export function ActivityPanel({
           <div className="space-y-4 pt-1">
             {Array.from({ length: 5 }).map((_, index) => (
               <div key={index} className="flex gap-3">
-                <div className="h-3 w-16 shrink-0 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-15 shrink-0 animate-pulse rounded bg-muted" />
                 <div className="size-6 shrink-0 animate-pulse rounded-full bg-muted" />
                 <div className="h-9 flex-1 animate-pulse rounded-md bg-muted" />
               </div>
@@ -492,7 +492,7 @@ export function ActivityPanel({
                   <LiveReply
                     key={thread.id}
                     thread={thread}
-                    last={index === live.length - 1 && entries.length === 0}
+                    last={index === live.length - 1}
                   />
                 ))}
               </ActivityList>

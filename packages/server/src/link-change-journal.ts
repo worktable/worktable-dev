@@ -38,7 +38,7 @@ interface Journal {
 export class LinkChangeJournal {
   private readonly links = new Map<string, Journal>()
 
-  touch(target: Target): void {
+  touch(target: Target): string {
     const now = Date.now()
     this.prune(now)
     let entry = this.links.get(target.id)
@@ -59,6 +59,7 @@ export class LinkChangeJournal {
     this.links.set(target.id, entry)
     while (this.links.size > 256)
       this.links.delete(this.links.keys().next().value!)
+    return entry.nonce
   }
 
   hasReaders(spaceId: string, collection: string): boolean {
@@ -86,10 +87,11 @@ export class LinkChangeJournal {
   queried(
     linkId: string,
     collection: string,
-    rows: readonly RecordFile[]
+    rows: readonly RecordFile[],
+    nonce: string
   ): void {
     const entry = this.links.get(linkId)
-    if (!entry || entry.overflow) return
+    if (!entry || entry.overflow || entry.nonce !== nonce) return
     for (const row of rows) {
       this.remember(entry, collection, row.id)
       if (entry.overflow) break

@@ -4,10 +4,7 @@ import { useState } from "react"
 import type { DocumentSummary, PendingItem } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
 import { cn } from "@worktable/ui/lib/utils"
-import {
-  DocLocation,
-  DocumentFormatIcon,
-} from "@/components/document-format-icon"
+import { DocLocation, DocumentFormatIcon } from "@/components/document-format-icon"
 import { ThreadLink } from "@/components/home/activity-feed"
 import { useLifetimeActions } from "@/hooks/use-document-organize"
 import { usePending } from "@/lib/activity"
@@ -52,8 +49,6 @@ function PendingRow({
         </ThreadLink>
       )
     case "commentReply":
-    case "visitorComments":
-    case "visitorCommentsPaused":
       return (
         <Link
           to="/spaces/$spaceId/documents/$"
@@ -62,11 +57,7 @@ function PendingRow({
         >
           <Reply className="size-4 shrink-0 text-muted-foreground" />
           <span className={label}>
-            {item.kind === "commentReply"
-              ? `Reply to your comment on ${item.docTitle ?? item.docPath}`
-              : item.kind === "visitorCommentsPaused"
-                ? `Comments paused on ${item.linkLabel || "Untitled link"}`
-                : `${item.count} visitor comment${item.count === 1 ? "" : "s"} on ${item.docTitle ?? item.docPath}`}
+            Reply to your comment on {item.docTitle ?? item.docPath}
           </span>
           {where}
           <span className="shrink-0 text-xs text-muted-foreground">
@@ -94,8 +85,7 @@ function PendingRow({
   }
 }
 
-const lowerFirst = (text: string) =>
-  text.charAt(0).toLowerCase() + text.slice(1)
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1)
 
 /** Shown when something is waiting on the reader, or when that is unknown. */
 export function PendingSection({ spaceId }: { spaceId?: string }) {

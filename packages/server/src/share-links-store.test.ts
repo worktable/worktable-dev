@@ -230,6 +230,7 @@ async function useHtmlStorageV2(): Promise<void> {
 describe("share links", () => {
   it("prepares a person's live access under current policy without making a link", async () => {
     process.env["WORKTABLE_RECORDS_INDEX"] = "0"
+    await useHtmlStorageV2()
     saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true }, "local:owner")
     await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, visibility: { type: "text" } } }))
     const at = new Date().toISOString()
@@ -251,6 +252,46 @@ describe("share links", () => {
     expect(JSON.stringify(access)).not.toContain("HIDDEN_SENTINEL")
     expect((await documentLinks("access", "html")).links).toEqual([])
     const original = linkAccess.prepareShareLinkAccess
+    const document = (await widgetStore.readWidgetDocument("space", "access")).data!
+    const originalRename = fsPromises.rename
+    let releaseSource!: () => void
+    const sourceGate = new Promise<void>((resolve) => { releaseSource = resolve })
+    let sourceReady!: () => void
+    const atSource = new Promise<void>((resolve) => { sourceReady = resolve })
+    // Hold the real V2 publish after its properties commit, before the source
+    // replacement. A read of that pair denies permissions until it matches.
+    const publication = spyOn(fsPromises, "rename").mockImplementation(async (from, to) => {
+      if (String(to) === join(workspaceDir, "spaces", "space", "docs", "access.html")) {
+        sourceReady()
+        await sourceGate
+      }
+      return originalRename(from, to)
+    })
+    const published = widgetStore.writeWidget("space", document.widget, `${document.html}\n<!-- Published -->`).then((result) => {
+      try { expect(result.error).toBeNull() } finally { result.release?.() }
+    })
+    const duringPublish = spyOn(linkAccess, "prepareShareLinkAccess").mockImplementation(async (...args) => {
+      const result = await original(...args)
+      expect(result?.effectiveGrant.collections).toEqual({})
+      releaseSource()
+      await published
+      return result
+    })
+    try {
+      await Promise.race([atSource, published.then(() => { throw new Error("HTML publish did not reach its source") })])
+      const stale = await send("POST", "/api/shares/links/access", input)
+      expect(stale.status).toBe(503)
+      expect((await stale.json()).code).toBe("LINK_PREVIEW_CHANGED")
+    } finally {
+      releaseSource()
+      try { await published } finally {
+        publication.mockRestore()
+        duringPublish.mockRestore()
+      }
+    }
+    const retried = await send("POST", "/api/shares/links/access", input)
+    expect(retried.status).toBe(200)
+    expect((await retried.json()).counts).toEqual({ deals: 1 })
     let invalidate: "schema" | "policy" = "schema"
     const changed = spyOn(linkAccess, "prepareShareLinkAccess").mockImplementation(async (...args) => {
       const result = await original(...args)

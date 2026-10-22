@@ -38,12 +38,12 @@ export async function commentPausesForLinks(links: readonly StoredShareLink[]): 
   return visitorCommentPauses(context.worktableId, comments.map(link => link.id))
 }
 
-/** The page carries the badge; opening Visitors is the only list request. */
+/** Called while the page holds its document namespace lock. Reads no text. */
 export async function visitorCommentPageSummary(c: Context, spaceId: string, documentId: string): Promise<DocumentSharingSummary["visitorComments"]> {
   if (!visitorCommentReader(c, spaceId)) return undefined
   try {
     const context = await visitorCommentNamespace()
-    if (!(await visitorDocumentInSpace(spaceId, documentId)) || !(await visitorNamespaceStillCurrent(context)) || !visitorCommentReader(c, spaceId)) return undefined
+    if (!(await visitorDocumentInSpace(spaceId, documentId, { lockHeld: true })) || !(await visitorNamespaceStillCurrent(context)) || !visitorCommentReader(c, spaceId)) return undefined
     const counts = visitorCommentCounts(context.worktableId, documentId)
     return {documentId, newCount: counts.newCount, available: counts.total > 0 || documentHasCommentLink(spaceId, documentId)}
   } catch {
@@ -164,9 +164,10 @@ export async function visitorNamespaceStillCurrent(value: {
 /** The receipt's Space is history. Resolve access against the document now. */
 export async function visitorDocumentInSpace(
   spaceId: string,
-  documentId: string
+  documentId: string,
+  options: { lockHeld?: boolean } = {}
 ): Promise<boolean> {
-  const { identities } = await readDocumentIdentities(spaceId)
+  const { identities } = await readDocumentIdentities(spaceId, options)
   return (
     !identities.spaceArchived &&
     identities.current.has(documentId as DocumentId)

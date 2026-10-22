@@ -193,13 +193,11 @@ test("an opaque tool reads data and handles controls without browser capabilitie
     )
     .toBe("North")
   const categories = frame.getByLabel("Categories", { exact: true })
-  await categories.getByRole("option", { name: "north", exact: true }).click()
+  await categories.press("Home")
   await expect(
     frame.getByText("Selected: north", { exact: true })
   ).toBeVisible()
-  await categories
-    .getByRole("option", { name: "東京", exact: true })
-    .click({ modifiers: ["Control"] })
+  await categories.press("Shift+End")
   await expect(
     frame.getByText("Selected: north, 東京", { exact: true })
   ).toBeVisible()

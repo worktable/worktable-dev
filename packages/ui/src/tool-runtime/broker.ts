@@ -300,14 +300,16 @@ export function createToolBroker(
         if (stopped) return
         stopped = true
         subscriptions.delete(subscription)
-        send({ type: "worktable.unsubscribe", collection })
+        if (![...subscriptions].some((item) => item.collection === collection))
+          send({ type: "worktable.unsubscribe", collection })
       },
     }
     if (closed) return () => {}
+    const first = ![...subscriptions].some((item) => item.collection === collection)
     subscriptions.add(subscription)
     // Subscribe before the first query. The parent's existing change cursor
     // priming then closes the initial query/subscription race.
-    send({ type: "worktable.subscribe", collection })
+    if (first) send({ type: "worktable.subscribe", collection })
     subscription.load()
     return subscription.close
   }

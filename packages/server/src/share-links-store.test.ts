@@ -6,6 +6,7 @@ import { createHash } from "node:crypto"
 import { buildRecordCollectionSchema, writeRecordCollectionSchema, writeRecord, writeWidgetState } from "./record-store.ts"
 import * as linkQueries from "./link-query.ts"
 import * as linkAccess from "./link-sharing-access.ts"
+import * as grantSchemas from "./link-grant.ts"
 import * as recordQueries from "./record-query.ts"
 import * as widgetStore from "./widget-store.ts"
 import { linkReadMemo } from "./link-read-memo.ts"
@@ -323,6 +324,43 @@ describe("share links", () => {
     expect(narrowed.effectiveGrant.collections).toEqual({})
     expect(narrowed.counts).toEqual({})
     expect(narrowed.issues).toHaveLength(1)
+  })
+
+  it("refuses live link mutations after source edits and accepts a fresh retry", async () => {
+    await useHtmlStorageV2()
+    saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true }, "local:owner")
+    const html = '<script type="application/worktable">await worktable.ui.render({tag:"h1",children:["Report"]});</script>'
+    await createHtmlDocument({ spaceId: "space", explicitId: "race", name: "Race", html, permissions: {network: false, records: {}, state: {}}, versionSource: "test", versionUpdatedBy: "test" })
+    const target = { kind: "html", spaceId: "space", path: "race" }
+    const initial = await (await send("POST", "/api/shares/links", { target, label: "Original" })).json() as CreatedShareLink
+    const document = (await widgetStore.readWidgetDocument("space", "race")).data!
+    const grant = {version: 1, collections: {}, state: "visitor"}
+    const originalSchemas = grantSchemas.readLinkGrantSchemas
+    const publish = async (source: string) => {
+      const result = await widgetStore.writeWidget("space", document.widget, source)
+      result.release?.()
+      expect(result.error).toBeNull()
+      await drainWorkspaceChanges()
+    }
+    for (const method of ["POST", "PATCH"] as const) {
+      const url = method === "POST" ? "/api/shares/links" : `/api/shares/links/${initial.link.id}`
+      const input = { ...(method === "POST" ? { target } : {}), label: "Updated", grant }
+      const changed = spyOn(grantSchemas, "readLinkGrantSchemas").mockImplementation(async (...args) => {
+        const result = await originalSchemas(...args)
+        await publish('<script>window.legacy = true</script>')
+        return result
+      })
+      try {
+        const refused = await send(method, url, input)
+        expect(refused.status).toBe(503)
+        expect((await refused.json()).code).toBe("LINK_PREVIEW_CHANGED")
+      } finally { changed.mockRestore() }
+      const links = (await documentLinks("race", "html")).links
+      expect(links.find(link => link.id === initial.link.id)?.label).toBe("Original")
+      expect(links).toHaveLength(method === "POST" ? 1 : 2)
+      await publish(html)
+      expect((await send(method, url, input)).status).toBe(method === "POST" ? 201 : 200)
+    }
   })
 
   it("opens live tools through ticketed frames and grant-only reads, including policy changes during a read", async () => {

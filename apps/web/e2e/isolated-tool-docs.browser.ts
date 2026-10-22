@@ -60,8 +60,14 @@ for (const mode of ["member", "share"] as const) {
       let state = { region: 'west', published: 'current' };
       let visitorState = {};
       let queries = 0;
+      let recordChanged = false;
+      const subscriptions = new Set();
+      window.changeRecords = () => { recordChanged = true; if(subscriptions.has('sales')) frame.contentWindow.postMessage({type:'worktable.records.changed',collection:'sales'}, '*'); };
       window.addEventListener('message', async event => {
-        if(event.source !== frame.contentWindow || event.data.type !== 'worktable.api.request')return;
+        if(event.source !== frame.contentWindow)return;
+        if(event.data.type === 'worktable.subscribe') { subscriptions.add(event.data.collection); return; }
+        if(event.data.type === 'worktable.unsubscribe') { subscriptions.delete(event.data.collection); return; }
+        if(event.data.type !== 'worktable.api.request')return;
         const d = event.data;
         let answer = await window.toolRequest({ path:d.path, method:d.method, body:d.body ? JSON.parse(d.body) : null, widgetId:d.widgetId, spaceId:d.spaceId });
         if(answer.ok) {
@@ -73,7 +79,7 @@ for (const mode of ["member", "share"] as const) {
             answer.body = { state: { ...state, ...visitorState }, ...('${mode}' === 'share' ? { visitorState } : {}) };
           } else if(d.path.endsWith('/query')) {
             const current = ++queries;
-            answer.body = { records: [{ data: { name: current === 1 ? 'Initial data' : 'Live data' } }] };
+            answer.body = { records: [{ data: { name: recordChanged ? 'Changed data' : current === 1 ? 'Initial data' : 'Live data' } }] };
           } else answer.body = { record: { id: 'created', data: { name: 'New record' } } };
         }
         frame.contentWindow.postMessage({ type:'worktable.api.response', id:d.id, ...answer }, '*');
@@ -110,19 +116,19 @@ for (const mode of ["member", "share"] as const) {
     await frame.getByRole("button", { name: "Choose region" }).click()
     await expect(frame.getByText("Region: east", { exact: true })).toBeVisible()
     const writes = calls.filter((call) => call.method === "PUT")
-    expect(writes).toHaveLength(2)
-    expect(writes[1]!.body).toEqual({
+    expect(writes).toHaveLength(3)
+    expect(writes[2]!.body).toEqual({
       state:
         mode === "share"
-          ? { region: "east", count: 1 }
-          : { region: "east", published: "current", count: 1 },
+          ? { region: "east", count: 2 }
+          : { region: "east", published: "current", count: 2 },
     })
     await frame.getByRole("button", { name: "Try invalid state" }).click()
     await expect(
       frame.getByText("Invalid state refused", { exact: true })
     ).toBeVisible()
     await expect(frame.getByText("Region: east", { exact: true })).toBeVisible()
-    expect(calls.filter((call) => call.method === "PUT")).toHaveLength(2)
+    expect(calls.filter((call) => call.method === "PUT")).toHaveLength(3)
     await frame.getByRole("button", { name: "Create record" }).click()
     await expect(
       frame.getByText(
@@ -137,6 +143,8 @@ for (const mode of ["member", "share"] as const) {
     ).toHaveLength(mode === "member" ? 1 : 0)
     await frame.getByRole("button", { name: "Watch records" }).click()
     await expect(frame.getByText("Live data", { exact: true })).toBeVisible()
+    await page.evaluate(() => (window as unknown as {changeRecords(): void}).changeRecords())
+    await expect(frame.getByText("Changed data", { exact: true })).toBeVisible()
     await frame.getByRole("button", { name: "Read denied data" }).click()
     await expect(
       frame.getByText("Access refused", { exact: true })

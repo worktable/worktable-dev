@@ -357,6 +357,20 @@ async function checkLiveTool(
   )
 }
 
+function grantGeneration(spaceId: string, path: string) {
+  const document = linkDocumentGeneration(spaceId, path)
+  const schema = linkSpaceSchemaGeneration(spaceId)
+  return () => document === linkDocumentGeneration(spaceId, path) &&
+    schema === linkSpaceSchemaGeneration(spaceId)
+}
+
+function accessChanged(c: Context): Response {
+  return c.json({
+    error: "The tool or sharing settings changed. Check its access again.",
+    code: "LINK_PREVIEW_CHANGED",
+  }, 503)
+}
+
 const LinkIdSchema = z.string().regex(/^lnk_[A-Za-z0-9_-]{22}$/)
 
 const AccessInput = z.strictObject({
@@ -440,13 +454,7 @@ shareLinksRouter.post("/access", async (c) => {
     linkDocumentGeneration(target.spaceId, target.path) !== source ||
     linkSpaceSchemaGeneration(target.spaceId) !== schema
   )
-    return c.json(
-      {
-        error: "The tool or sharing settings changed. Check its access again.",
-        code: "LINK_PREVIEW_CHANGED",
-      },
-      503
-    )
+    return accessChanged(c)
   c.header("Cache-Control", "no-store")
   return c.json(access)
 })
@@ -458,6 +466,7 @@ shareLinksRouter.post("/", async (c) => {
   if (!input.success) return invalid(c, input.error.message)
   const { target, label, level, comments } = input.data
   const grant = input.data.grant ?? null
+  const grantCurrent = grant ? grantGeneration(target.spaceId, target.path) : null
   if (!safeTarget(target)) return invalid(c, "Invalid document path")
   const identity = identityOf(c)
   const policy = currentSharingPolicy()
@@ -544,6 +553,7 @@ shareLinksRouter.post("/", async (c) => {
       if (!latestDecision.allowed) return { denied: latestDecision }
       if (!expiryAllowed(expiresAt, latestPolicy))
         return { expiryPolicy: latestPolicy }
+      if (grantCurrent && !grantCurrent()) return { grantChanged: true }
       return {
         config,
         ...createShareLink({
@@ -563,6 +573,7 @@ shareLinksRouter.post("/", async (c) => {
       }
     }
   )
+  if (created && "grantChanged" in created) return accessChanged(c)
   if (created && "grantDenied" in created)
     return invalid(c, "Live links aren't allowed here", "LIVE_NOT_AVAILABLE")
   if (created && "passwordDenied" in created)
@@ -641,16 +652,18 @@ shareLinksRouter.patch("/:linkId", async (c) => {
   }
   if (input.data.grant !== undefined && !sharingPreviewEnabled())
     return invalid(c, "Live links aren't available", "LIVE_NOT_AVAILABLE")
+  let grantCurrent: (() => boolean) | undefined
   if (input.data.grant) {
+    const path = (await readDocumentIdentities(link.spaceId)).identities.current.get(link.documentId)?.path
+    if (path === undefined) return notFound(c)
+    grantCurrent = grantGeneration(link.spaceId, path)
     const problem = await checkGrant(
       c,
       input.data.grant,
       link.spaceId,
       link.kind,
       policy,
-      (await readDocumentIdentities(link.spaceId)).identities.current.get(
-        link.documentId
-      )?.path
+      path
     )
     if (problem) return problem
   }
@@ -700,6 +713,7 @@ shareLinksRouter.patch("/:linkId", async (c) => {
     return invalid(c, "A password is required", "PASSWORD_REQUIRED")
   if (expiresAt !== undefined && !expiryAllowed(expiresAt, latestPolicy))
     return expiryTooLong(c, latestPolicy)
+  if (grantCurrent && !grantCurrent()) return accessChanged(c)
   const updated = updateShareLink(link.id, {
     ...(input.data.level
       ? { level: input.data.level as "view" | "comment" }

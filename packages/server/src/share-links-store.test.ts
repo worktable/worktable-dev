@@ -285,7 +285,9 @@ describe("share links", () => {
     expect(await (await bridge(created.token, { v: 1, op: "state.read" })).json()).toEqual({ ok: true, result: { state: { team: "default" } } })
     await writeWidgetState("space", "board", { large: "x".repeat(1024 * 1024) })
     await drainWorkspaceChanges()
-    const oversized = await bridge(created.token, { v: 1, op: "state.read" })
+    // Use the other link's cold state read, rather than the warm two-second
+    // memo for the small state just read above.
+    const oversized = await bridge(neverExpires.token, { v: 1, op: "state.read" })
     expect(oversized.status).toBe(400)
     expect(oversized.headers.get("Retry-After")).toBeNull()
     expect(await oversized.json()).toEqual({ ok: false, error: { code: "INVALID_QUERY", message: "This result is too large." } })

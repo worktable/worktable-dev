@@ -89,7 +89,9 @@ async function fixture(page: Page, source: string) {
       request.failure()?.errorText
     )
   )
-  await page.route("**/*", async (route) => {
+  // WebKit also intercepts blob: workers with a catch-all route. Browser-owned
+  // Blob loads must reach its loader; this fixture owns only HTTP endpoints.
+  await page.route(/^https?:\/\//, async (route) => {
     const url = new URL(route.request().url())
     if (url.href === "https://member.example.test/")
       return route.fulfill({

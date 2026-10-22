@@ -196,7 +196,9 @@ async function fixture(page: Page, live = false) {
             body: row.body,
             receivedAt: at,
             mine: row.visitor === visitor,
-            replies: [{ body: "Thanks for the feedback.", from: null, at }],
+            replies: [
+              { body: "Thanks for the feedback.", from: "The team", at },
+            ],
           }))
         return route.fulfill({ json: { ...state, comments } })
       }
@@ -324,6 +326,37 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
     path: testInfo.outputPath("visitor-comments-mobile.png"),
     fullPage: true,
   })
+  // Drive the platform timeout from Playwright's clock; the request itself
+  // stays pending until the production code aborts it.
+  await page.clock.install()
+  await page.evaluate(() => {
+    AbortSignal.timeout = (ms) => {
+      const controller = new AbortController()
+      setTimeout(
+        () => controller.abort(new DOMException("Timed out", "TimeoutError")),
+        ms
+      )
+      return controller.signal
+    }
+  })
+  const blocked: Array<() => void> = []
+  f.backend.onPost = () =>
+    new Promise((resolve) => {
+      blocked.push(() => resolve("error"))
+    })
+  await text.fill("Keep this draft after the request stalls")
+  await send.click()
+  await expect.poll(() => blocked.length).toBe(1)
+  await page.clock.runFor(30_000)
+  await expect(send).toBeEnabled()
+  await expect(text).toHaveValue("Keep this draft after the request stalls")
+  await expect(page.locator(".comment-status")).toContainText("Couldn't reach")
+  for (const release of blocked) release()
+  f.backend.onPost = async () => "ok"
+  await send.click()
+  await expect(page.locator(".comment-list")).toContainText(
+    "Keep this draft after the request stalls"
+  )
 })
 
 test("a live tool keeps its state and a visitor can recover an uncertain submission", async ({

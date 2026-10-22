@@ -147,8 +147,15 @@
    * `status` is 0 when the share host couldn't be reached.
    */
 
-  /** @param {object} [body] @returns {Promise<CallResult>} */
-  async function call(body) {
+  /**
+   * @param {object} [body]
+   * @param {number} [remainingMs]
+   * @returns {Promise<CallResult>}
+   */
+  async function call(body, remainingMs = 30_000) {
+    const signal = AbortSignal.timeout(
+      Math.max(1, Math.min(10_000, remainingMs))
+    )
     /** @type {Record<string, string>} */
     const headers = {
       "x-worktable-share-capability": token,
@@ -158,15 +165,18 @@
     try {
       const response = await fetch(endpoint, {
         method: body ? "POST" : "GET",
+        signal,
         headers,
         ...(body ? { body: JSON.stringify(body) } : {}),
         cache: "no-store",
         referrerPolicy: "no-referrer",
       })
       const retryAfter = Number(response.headers.get("Retry-After"))
+      const answer = await response.json().catch(() => null)
+      signal.throwIfAborted()
       return {
         status: response.status,
-        answer: await response.json().catch(() => null),
+        answer,
         retryAfter:
           Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 0,
       }
@@ -183,7 +193,9 @@
   async function patiently(body) {
     const started = Date.now()
     for (;;) {
-      const result = await call(body())
+      const remaining = 30_000 - (Date.now() - started)
+      if (remaining <= 0) return { status: 0, answer: null, retryAfter: 0 }
+      const result = await call(body(), remaining)
       keepPass(result.answer)
       const wait = (result.retryAfter || 3) * 1000
       if (
@@ -426,7 +438,7 @@
         element(
           "div",
           "comment-reply-from",
-          typeof reply.from === "string"
+          typeof reply.from === "string" && reply.from !== "The team"
             ? `Reply from ${reply.from}`
             : "Reply from the team"
         ),

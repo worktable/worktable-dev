@@ -82,7 +82,9 @@ visitorCommentsRouter.get("/", async (c) => {
   }
   const spaceId = c.req.param("spaceId")!
   const context = await visitorCommentNamespace()
-  const links = listDocumentShareLinks(spaceId, parsed.data).filter(link => link.level === "comment")
+  const links = listDocumentShareLinks(spaceId, parsed.data).filter(
+    (link) => link.level === "comment"
+  )
   const pauses = await commentPausesForLinks(links)
   if (!(await visitorDocumentInSpace(spaceId, parsed.data)))
     return c.json({ error: "Not found" }, 404)
@@ -94,6 +96,7 @@ visitorCommentsRouter.get("/", async (c) => {
   const rows = visitorCommentRows({
     worktableId: context.worktableId,
     documentId: parsed.data,
+    includeErased: true,
     before,
     limit: 101,
   })
@@ -102,11 +105,16 @@ visitorCommentsRouter.get("/", async (c) => {
   const policy = currentSharingPolicy()
   return c.json({
     comments: memberVisitorComments(c, spaceId, page, policy),
-    pausedLinks: links.filter(link => pauses.get(link.id) === "spike").map(link => ({
-      id: link.id,
-      label: link.label,
-      canResume: authorizeShareAction(c.get("identity"), "manage", spaceId, {creatorId: link.createdById, policy}).allowed,
-    })),
+    pausedLinks: links
+      .filter((link) => pauses.get(link.id) === "spike")
+      .map((link) => ({
+        id: link.id,
+        label: link.label,
+        canResume: authorizeShareAction(c.get("identity"), "manage", spaceId, {
+          creatorId: link.createdById,
+          policy,
+        }).allowed,
+      })),
     nextCursor:
       rows.length > 100 && last
         ? Buffer.from(

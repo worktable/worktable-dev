@@ -782,4 +782,47 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
     data: { documentId, linkId: "synthetic-link" },
   })
   expect(messages.join()).not.toContain(sentinel)
+  const retained = await app.request(privatePath, { headers: memberHeaders })
+  expect(retained.status).toBe(200)
+  expect(await retained.json()).toMatchObject({
+    comments: [
+      {
+        id: comment.id,
+        body: null,
+        visitorName: null,
+        status: "passed",
+        replies: [],
+        passed: { annotationId: passed.annotation.id },
+        canDelete: false,
+      },
+    ],
+  })
+  expect(
+    visitorStore.visitorCommentCounts(namespace.worktableId, documentId)
+  ).toEqual({ total: 1, newCount: 0 })
+  // Guest reads still omit erased receipts; only the member route opts in.
+  expect(
+    visitorStore.visitorCommentRows({
+      worktableId: namespace.worktableId,
+      documentId,
+    })
+  ).toEqual([])
+  grantMember("manage")
+  const removed = await app.request(
+    `/api/spaces/space/visitor-comments/${comment.id}`,
+    {
+      method: "DELETE",
+      headers: memberHeaders,
+    }
+  )
+  expect(removed.status).toBe(200)
+  expect(
+    await (await app.request(privatePath, { headers: memberHeaders })).json()
+  ).toMatchObject({ comments: [] })
+  const teamCopy = await app.request(
+    `/api/spaces/space/annotations/${passed.annotation.id}?includeTargetContext=true`,
+    { headers: memberHeaders }
+  )
+  expect(teamCopy.status).toBe(200)
+  expect(await teamCopy.text()).toContain(sentinel)
 }, 20_000)

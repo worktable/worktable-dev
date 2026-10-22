@@ -370,12 +370,19 @@ export function commentPause(
 }
 
 /** One indexed private read for a visible page of links, never one per row. */
-export function visitorCommentPauses(worktableId: string, linkIds: readonly string[]): Map<string, string> {
+export function visitorCommentPauses(
+  worktableId: string,
+  linkIds: readonly string[]
+): Map<string, string> {
   if (!linkIds.length) return new Map()
-  const rows = database()?.query<{link_id: string; paused: string}, [string, string]>(
-    "SELECT link_id,paused FROM visitor_link_state WHERE worktableId=? AND paused IS NOT NULL AND link_id IN (SELECT value FROM json_each(?))"
-  ).all(worktableId, JSON.stringify(linkIds)) ?? []
-  return new Map(rows.map(row => [row.link_id, row.paused]))
+  const rows =
+    database()
+      ?.query<
+        { link_id: string; paused: string },
+        [string, string]
+      >("SELECT link_id,paused FROM visitor_link_state WHERE worktableId=? AND paused IS NOT NULL AND link_id IN (SELECT value FROM json_each(?))")
+      .all(worktableId, JSON.stringify(linkIds)) ?? []
+  return new Map(rows.map((row) => [row.link_id, row.paused]))
 }
 export function pauseVisitorComments(
   worktableId: string,
@@ -545,8 +552,20 @@ export function readVisitorComment(
 }
 
 /** A private count for the existing document-page response, never visitor text. */
-export function visitorCommentCounts(worktableId: string, documentId: string): { total: number; newCount: number } {
-  return (database()?.query("SELECT count(*) AS total,coalesce(sum(status='new'),0) AS newCount FROM visitor_comments WHERE worktableId=? AND document_id=? AND status!='deleted'").get(worktableId, documentId) as { total: number; newCount: number } | null) ?? {total: 0, newCount: 0}
+export function visitorCommentCounts(
+  worktableId: string,
+  documentId: string
+): { total: number; newCount: number } {
+  return (
+    (database()
+      ?.query(
+        "SELECT count(*) AS total,coalesce(sum(status='new'),0) AS newCount FROM visitor_comments WHERE worktableId=? AND document_id=? AND status!='deleted'"
+      )
+      .get(worktableId, documentId) as {
+      total: number
+      newCount: number
+    } | null) ?? { total: 0, newCount: 0 }
+  )
 }
 
 /** One grouped private read for a person's Pending, never ordinary activity. */
@@ -581,12 +600,15 @@ export function visitorCommentRows(input: {
   linkId?: string
   documentId?: string
   visitorKey?: string
+  /** Member review keeps passed receipts after retention erases visitor text. */
+  includeErased?: boolean
   before?: { receivedAt: number; id: string }
   limit?: number
 }): StoredVisitorComment[] {
   const db = database()
   if (!db || (!input.linkId && !input.documentId)) return []
-  const where = ["worktableId=?", "status!='deleted'", "body IS NOT NULL"]
+  const where = ["worktableId=?", "status!='deleted'"]
+  if (!input.includeErased) where.push("body IS NOT NULL")
   const args: (string | number)[] = [input.worktableId]
   for (const [column, value] of [
     ["link_id", input.linkId],

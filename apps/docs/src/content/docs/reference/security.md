@@ -92,6 +92,30 @@ access where applicable. An agent authorized to write HTML can set the doc's
 permissions; these are not necessarily grants made by a human. See
 [HTML runtime](/reference/html-doc-runtime/) for the sandbox and bridge contract.
 
+## Sharing preview
+
+The controlled sharing preview supports live tools with explicit, human-chosen
+data access. A link grants only the selected Records rows and fields, further
+restricted by the document's current permissions and owner policy. It does not
+give the reader a member account or the maker's credentials. Visitor Records
+access is read only, and interface preferences stay local to the tab.
+
+Record rules constrain Records API reads. The complete tool program, including
+any text or data embedded in it, is shared with every reader of the link.
+Review that content before sharing; a Record rule does not hide it.
+
+Preview tool programs run in an isolated JavaScript engine with bounded memory
+and execution. They have no browser objects, network access, DOM or persistent
+browser storage. Worktable renders a validated view through its own UI API;
+authored outer HTML, styles and resource URLs are not executed. Existing HTML
+programs that rely on browser APIs must be rebuilt for this runtime before
+being shared live.
+
+Visitor comments are stored outside the portable workspace. Agents cannot read
+them until a member passes them to the team as quoted outside input. See
+[Sharing](/guides/sharing/#sharing-preview) for link access, owner controls and
+recovery behavior. The preview is limited to selected Worktables.
+
 ## Cloud access
 
 Cloud uses hosted sign-in for people and OAuth approval for MCP clients.

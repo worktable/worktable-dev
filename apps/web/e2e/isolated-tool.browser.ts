@@ -47,6 +47,27 @@ test.afterAll(() => {
   if (temporary) rmSync(temporary, { recursive: true, force: true })
 })
 
+test.afterEach(async ({ page }, info) => {
+  if (info.status === info.expectedStatus) return
+  const frame = page
+    .frames()
+    .find((frame) => frame.url() === "https://tool.example.test/frame")
+  if (!frame) return
+  console.error(
+    "Tool startup state:",
+    await frame.evaluate(() => ({
+      ready: document.readyState,
+      root: document.querySelector("#tool")?.textContent,
+      scripts: [...document.scripts].map((script) => ({
+        type: script.type,
+        src: script.src,
+        characters: script.textContent?.length,
+      })),
+      host: typeof (window as unknown as { toolTest?: unknown }).toolTest,
+    }))
+  )
+})
+
 /** Real VM, worker and renderer. Only the existing data broker is a fixture.
  * This is not a deployed gateway or a DNS-channel acceptance test. */
 async function fixture(page: Page, source: string) {

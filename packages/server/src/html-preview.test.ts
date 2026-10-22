@@ -35,6 +35,7 @@ import {
 
 let root: string
 let app: string
+let previousPreview: string | undefined
 const spaceId = "preview"
 const path = "dashboards/current"
 const api = `/api/spaces/${spaceId}/widgets/__document/${Buffer.from(path).toString("base64url")}`
@@ -45,6 +46,8 @@ const permissions = {
 }
 
 beforeEach(async () => {
+  previousPreview = process.env.WORKTABLE_SHARING_PREVIEW
+  process.env.WORKTABLE_SHARING_PREVIEW = "1"
   root = await mkdtemp(join(tmpdir(), "html-preview-ws-"))
   app = await mkdtemp(join(tmpdir(), "html-preview-app-"))
   setWorkspaceRootOverride(root)
@@ -110,6 +113,8 @@ beforeEach(async () => {
   ).toBeNull()
 })
 afterEach(async () => {
+  if (previousPreview === undefined) delete process.env.WORKTABLE_SHARING_PREVIEW
+  else process.env.WORKTABLE_SHARING_PREVIEW = previousPreview
   recordIndex.stop()
   invalidateSearchIndex()
   setWorkspaceRootOverride(null)
@@ -338,12 +343,12 @@ previewTest(
         options: { width: 600, height: 300 },
         observeRecordReads: true,
       })
+      await Bun.write("test-results/isolated-tool-preview.png", isolated.bytes)
       expect(isolated.status).toBe("partial")
-      expect(isolated.diagnostics.some(item => item.code === "PREVIEW_READ_ONLY")).toBe(true)
+      expect(isolated.diagnostics.map(item => item.code)).toContain("PREVIEW_READ_ONLY")
       expect(isolated.diagnostics.some(item => item.code === "tool_stopped" || item.code === "preview_timeout")).toBe(false)
       expect(isolated.observed).toEqual([{ collectionId: "tasks", query: {} }])
       expect((await readWidgetState(spaceId, path)).label).toBe("Initial state")
-      await Bun.write("test-results/isolated-tool-preview.png", isolated.bytes)
     } finally {
       if (priorPreview === undefined) delete process.env.WORKTABLE_SHARING_PREVIEW
       else process.env.WORKTABLE_SHARING_PREVIEW = priorPreview
@@ -513,7 +518,7 @@ previewTest(
       spaceId,
       explicitId: "access-check",
       name: "Access check",
-      html: "<h1>Loading</h1><script>worktable.records.query('tasks',{fields:['title']}).then(rows=>document.querySelector('h1').textContent=rows[0].data.title)</script>",
+      html: "<script type=\"application/worktable\">const rows=await worktable.records.query('tasks',{fields:['title']});await worktable.ui.render({tag:'h1',children:[rows[0].data.title]});</script>",
       permissions,
       versionSource: "test",
       versionUpdatedBy: "test",

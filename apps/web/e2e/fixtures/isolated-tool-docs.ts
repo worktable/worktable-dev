@@ -3,9 +3,8 @@ import { join } from "node:path"
 import {
   isolatedToolFrame,
   isolatedToolCsp,
-} from "../../../../packages/server/src/isolated-tool-frame.ts"
+} from "@worktable/ui/tool-runtime/document"
 import { isolatedToolSource } from "../../../../packages/server/src/isolated-tool-source.ts"
-import { buildWidgetHostStyles } from "../../../../packages/server/src/widget-authoring.ts"
 import { isolatedToolManifest } from "../../../../packages/server/src/isolated-tool-assets.ts"
 
 const destination = process.argv[2]!
@@ -47,7 +46,7 @@ for (const mode of ["member", "share"] as const) {
             }
           : {}),
       },
-      { theme: "dark", hostStyles: buildWidgetHostStyles("") }
+      { theme: "dark", fontStyles: "" }
     )
   )
 }

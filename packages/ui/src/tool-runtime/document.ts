@@ -1,6 +1,6 @@
-import { themeConfig } from "@worktable/ui/theme"
-import type { ToolHostConfig } from "../../ui/src/tool-runtime/broker.ts"
-import manifest from "../../ui/src/tool-runtime/generated/manifest.json"
+import { themeConfig } from "../theme/theme-config.ts"
+import type { ToolHostConfig } from "./broker.ts"
+import manifest from "./generated/manifest.json"
 
 function palette(mode: "light" | "dark"): string {
   const colors = themeConfig.modes[mode]
@@ -25,7 +25,7 @@ function palette(mode: "light" | "dark"): string {
 }
 
 const styles = `${palette("light")}${palette("dark")}
-html,body{margin:0;min-height:100%;background:var(--ad-bg);color:var(--ad-text)}
+html{font-family:var(--font-sans)}\n*,*::before,*::after{box-sizing:border-box}\nbutton,input,select,textarea{font:inherit}\n:focus-visible{outline:2px solid var(--ad-accent);outline-offset:2px}\nhtml,body{margin:0;min-height:100%;background:var(--ad-bg);color:var(--ad-text)}
 :root{--font-sans:"General Sans",system-ui,sans-serif;--font-display:Fraunces,Georgia,serif;--font-mono:ui-monospace,monospace}
 #worktable-tool-notice{margin:0;padding:12px;color:var(--ad-muted)}
 #worktable-tool-notice:empty{display:none}`
@@ -35,13 +35,13 @@ html,body{margin:0;min-height:100%;background:var(--ad-bg);color:var(--ad-text)}
 export function isolatedToolFrame(
   source: string,
   config: ToolHostConfig,
-  options: { theme: "light" | "dark"; hostStyles: string }
+  options: { theme: "light" | "dark"; fontStyles: string }
 ): string {
   const serialized = JSON.stringify({ ...config, source }).replaceAll(
     "<",
     "\\u003c"
   )
-  return `<!doctype html><html data-theme="${options.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${options.hostStyles}<style>${styles}</style></head><body><main id="worktable-tool"></main><p id="worktable-tool-notice" role="status" aria-live="polite"></p><script type="application/json" id="worktable-tool-config">${serialized}</script><script src="${manifest.path}" defer></script></body></html>`
+  return `<!doctype html><html data-theme="${options.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${options.fontStyles}\n${styles}</style></head><body><main id="worktable-tool"></main><p id="worktable-tool-notice" role="status" aria-live="polite"></p><script type="application/json" id="worktable-tool-config">${serialized}</script><script src="${manifest.path}" defer></script></body></html>`
 }
 
 export function isolatedToolCsp(options: {

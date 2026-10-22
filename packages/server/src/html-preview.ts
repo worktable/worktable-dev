@@ -25,10 +25,9 @@ import {
   applyWidgetTheme,
   injectWidgetHostStyles,
   injectWidgetRuntime,
-  buildWidgetHostStyles,
 } from "./widget-authoring.ts"
 import { isolatedToolSource } from "./isolated-tool-source.ts"
-import { isolatedToolFrame, isolatedToolCsp } from "./isolated-tool-frame.ts"
+import { isolatedToolFrame, isolatedToolCsp } from "@worktable/ui/tool-runtime/document"
 import { isolatedToolAsset, isolatedToolManifest } from "./isolated-tool-assets.ts"
 import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import {
@@ -37,7 +36,7 @@ import {
   widgetRecordReadGuard,
   WidgetRecordAccessError,
 } from "./widget-runtime-policy.ts"
-import { previewFontVersion, fulfillPreviewFont } from "./preview-fonts.ts"
+import { previewFontVersion, fulfillPreviewFont, previewFontCss } from "./preview-fonts.ts"
 import { withPreviewPage } from "./document-preview-browser.ts"
 import { productFontIssue } from "./product-fonts.ts"
 
@@ -580,7 +579,7 @@ window.addEventListener('message',async event=>{
         spaceId: snapshot.spaceId,
         widgetId: snapshot.path,
         apiBase: `/api/spaces/${encodeURIComponent(snapshot.spaceId)}/widgets/__document/${Buffer.from(snapshot.path, "utf8").toString("base64url")}`,
-      }, { theme: options.theme === "light" ? "light" : "dark", hostStyles: buildWidgetHostStyles() })
+      }, { theme: options.theme === "light" ? "light" : "dark", fontStyles: previewFontCss("/worktable-preview") })
     : snapshot.historical
       ? injectWidgetHostStyles(applyWidgetTheme(program === null ? snapshot.html : "<p>This version contains a tool. Open the latest version to use it.</p>", options.theme))
       : injectWidgetRuntime(
@@ -893,7 +892,7 @@ window.addEventListener('message',async event=>{
     observedAt,
     completedAt: new Date().toISOString(),
     capturedAt: new Date().toISOString(),
-    rendererVersion: "worktable-html-1/playwright-1.61.1",
+    rendererVersion: isolated ? "worktable-isolated-v1/playwright-1.61.1" : "worktable-html-1/playwright-1.61.1",
     fontVersion: previewFontVersion(),
     ...(input.observeRecordReads ? { observed } : {}),
   }
@@ -912,6 +911,10 @@ export async function captureHtmlPreview(input: {
   observeRecordReads?: boolean
 }): Promise<HtmlPreviewCapture> {
   dimensions(input.options ?? {})
+  // Pin the source used to select the browser profile before asynchronous
+  // admission. The renderer receives the same snapshot, never a later edit.
+  const snapshot = structuredClone(input.snapshot)
+  const isolatedTool = sharingPreviewEnabled() && !snapshot.historical && isolatedToolSource(snapshot.html) !== null
   const timeout = new AbortController()
   const signal = input.signal
     ? AbortSignal.any([input.signal, timeout.signal])
@@ -929,11 +932,11 @@ export async function captureHtmlPreview(input: {
         captureTimeout(input.options)
       )
       try {
-        return await captureHtmlPreviewOnPage(page, { ...input, signal })
+        return await captureHtmlPreviewOnPage(page, { ...input, snapshot, signal })
       } finally {
         clearTimeout(timer)
       }
     },
-    { signal }
+    { signal, isolatedTool }
   )
 }

@@ -1,6 +1,7 @@
+import { previewFontCss } from "../preview-fonts.ts";
 import { buildWidgetCsp, canWidgetRecord, deniedWidgetQueryCollection, widgetRecordReadGuard, WidgetRecordAccessError } from "../widget-runtime-policy.ts";
 import { isolatedToolSource, IsolatedToolSourceError } from "../isolated-tool-source.ts";
-import { isolatedToolCsp, isolatedToolFrame } from "../isolated-tool-frame.ts";
+import { isolatedToolCsp, isolatedToolFrame } from "@worktable/ui/tool-runtime/document";
 import { sharingPreviewEnabled } from "../sharing-preview.ts";
 import { requireScope, requireHumanWorkspaceOwner, restWriteActor } from "../auth.ts";
 import { documentSourceDisposition } from "../content-disposition.ts";
@@ -15,7 +16,7 @@ import { readSpace, slugifyDocPath } from "../store.ts";
 import { readDocumentCatalogSnapshot } from "../document-query.ts";
 import { getWidgetPath, listWidgets, readWidget, readWidgetDocument, setWidgetArchived, updateWidgetMetadata, withWidgetWriteLock, writeWidget } from "../widget-store.ts";
 import { createRecord, deleteRecord, queryRecords, readWidgetState, RecordQueryError, updateRecord, writeWidgetState } from "../record-store.ts";
-import { applyWidgetTheme, buildWidgetFile, buildWidgetHostStyles, getBlockingWidgetIssue, injectWidgetHostStyles, injectWidgetRuntime, validateWidgetHtml } from "../widget-authoring.ts";
+import { applyWidgetTheme, buildWidgetFile, getBlockingWidgetIssue, injectWidgetHostStyles, injectWidgetRuntime, validateWidgetHtml } from "../widget-authoring.ts";
 import { captureWidgetContentForOverwrite, captureWidgetVersionContent, getWidgetProvenance, getWidgetVersion, listWidgetVersions, recordWidgetVersion } from "../widget-version-store.ts";
 import { invalidateSearchIndex, noteRecordMutated } from "../search-index.ts";
 import { wsManager } from "../ws.ts";
@@ -383,7 +384,7 @@ async function handleGetContent(c: Context, spaceId: string, widgetId: string) {
     : isolatedToolFrame(program, {
         mode: "member", spaceId, widgetId,
         apiBase: `/api/spaces/${encodeURIComponent(spaceId)}/widgets/__document/${Buffer.from(widgetId, "utf8").toString("base64url")}`,
-      }, { theme, hostStyles: buildWidgetHostStyles() });
+      }, { theme, fontStyles: previewFontCss("/worktable-preview") });
   // A frame asked for by its current revision never changes: the browser
   // keeps it. Any other request revalidates, so it never holds old content.
   const current = c.req.query("rev") === htmlContentRevisionOf(document);

@@ -321,6 +321,33 @@ previewTest(
     expect(capture.width).toBe(600)
     expect(capture.bytes.byteLength).toBeGreaterThan(1000)
     expect(capture.observed).toEqual([{ collectionId: "tasks", query: {} }])
+    const priorPreview = process.env.WORKTABLE_SHARING_PREVIEW
+    try {
+      process.env.WORKTABLE_SHARING_PREVIEW = "1"
+      const isolated = await captureHtmlPreview({
+        snapshot: {
+          ...snapshot,
+          html: `<body onload="fetch('https://outside.invalid')"><script type="application/worktable">
+            const state = await worktable.state.get();
+            const rows = await worktable.records.query('tasks');
+            try { await worktable.state.set('label', 'Corrupt'); } catch {}
+            await worktable.ui.render({tag:'h1',children:[state.label + ' ' + rows[0].data.title + ' Équipe 東京']});
+          </script><img src="https://outside.invalid">`,
+        },
+        scopes: ["documents:read", "records:read"],
+        options: { width: 600, height: 300 },
+        observeRecordReads: true,
+      })
+      expect(isolated.status).toBe("partial")
+      expect(isolated.diagnostics.some(item => item.code === "PREVIEW_READ_ONLY")).toBe(true)
+      expect(isolated.diagnostics.some(item => item.code === "tool_stopped" || item.code === "preview_timeout")).toBe(false)
+      expect(isolated.observed).toEqual([{ collectionId: "tasks", query: {} }])
+      expect((await readWidgetState(spaceId, path)).label).toBe("Initial state")
+      await Bun.write("test-results/isolated-tool-preview.png", isolated.bytes)
+    } finally {
+      if (priorPreview === undefined) delete process.env.WORKTABLE_SHARING_PREVIEW
+      else process.env.WORKTABLE_SHARING_PREVIEW = priorPreview
+    }
     const emoji = await captureHtmlPreview({
       snapshot: {
         ...snapshot,

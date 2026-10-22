@@ -162,7 +162,10 @@ export function createToolBroker(
   function writeState(method: string, args: unknown[]): Promise<unknown> {
     const write = stateQueue.then(async () => {
       if (config.mode === "preview")
-        throw new Error("Persistent writes are disabled during preview.")
+        throw unavailable(
+          "PREVIEW_READ_ONLY",
+          "Persistent writes are disabled during preview."
+        )
       const snapshot = await api(`${base}/state`)
       const state = object(snapshot.state)
       const own = object(snapshot.visitorState ?? snapshot.state)
@@ -204,7 +207,12 @@ export function createToolBroker(
       ["records.create", "records.update", "records.delete"].includes(method)
     ) {
       if (config.mode !== "member")
-        throw new Error("Persistent writes are not available here.")
+        throw unavailable(
+          config.mode === "share" ? "LINK_READ_ONLY" : "PREVIEW_READ_ONLY",
+          config.mode === "share"
+            ? "This link is view only."
+            : "Persistent writes are disabled during preview."
+        )
       const path = `${base}/records/${identifier(args[0])}`
       if (method === "records.create") {
         const options = args[2] == null ? {} : object(args[2])
@@ -246,6 +254,11 @@ export function createToolBroker(
       ).target
     }
     throw new Error("This operation is not available.")
+  }
+
+  function unavailable(code: string, message: string): Error {
+    diagnostic(code, message)
+    return new Error(message)
   }
 
   function subscribe(

@@ -27,7 +27,7 @@ test.afterAll(() => rmSync(directory, { recursive: true, force: true }))
 for (const mode of ["member", "share"] as const) {
   test(`${mode} tools use the trusted document and native broker for data, actions and recovery`, async ({
     page,
-  }) => {
+  }, info) => {
     const calls: {
       path: string
       method: string

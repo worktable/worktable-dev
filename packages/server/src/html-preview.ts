@@ -25,7 +25,12 @@ import {
   applyWidgetTheme,
   injectWidgetHostStyles,
   injectWidgetRuntime,
+  buildWidgetHostStyles,
 } from "./widget-authoring.ts"
+import { isolatedToolSource } from "./isolated-tool-source.ts"
+import { isolatedToolFrame, isolatedToolCsp } from "./isolated-tool-frame.ts"
+import { isolatedToolAsset, isolatedToolManifest } from "./isolated-tool-assets.ts"
+import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import {
   buildWidgetCsp,
   deniedWidgetQueryCollection,
@@ -554,7 +559,7 @@ export async function captureHtmlPreviewOnPage(
       }
     })
   )
-  const host = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;border:0;width:100%;height:100%}</style></head><body><iframe id="artifact" sandbox="${snapshot.historical ? "" : "allow-scripts"}" referrerpolicy="no-referrer" src="/document"></iframe><script>
+  const host = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;border:0;width:100%;height:100%}</style></head><body><iframe id="artifact" sandbox="${snapshot.historical ? "" : "allow-scripts"}" referrerpolicy="no-referrer" src="/document"></iframe><script>
 const frame=document.getElementById('artifact');
 window.addEventListener('message',async event=>{
  if(event.source!==frame.contentWindow||!event.data||typeof event.data!=='object')return;
@@ -565,15 +570,26 @@ window.addEventListener('message',async event=>{
  const result=await window.${binding}({type:'request',path:d.path,method:d.method,body:d.body});
  if(result)frame.contentWindow.postMessage({type:'worktable.api.response',id:d.id,...result},'*');
 });</script></body></html>`
-  const html = snapshot.historical
-    ? injectWidgetHostStyles(applyWidgetTheme(snapshot.html, options.theme))
-    : injectWidgetRuntime(
+  const program = isolatedToolSource(snapshot.html)
+  const isolated = program !== null && !snapshot.historical
+  if (isolated && !sharingPreviewEnabled())
+    throw new Error("This tool format is not available.")
+  const html = isolated
+    ? isolatedToolFrame(program!, {
+        mode: "preview",
+        spaceId: snapshot.spaceId,
+        widgetId: snapshot.path,
+        apiBase: `/api/spaces/${encodeURIComponent(snapshot.spaceId)}/widgets/__document/${Buffer.from(snapshot.path, "utf8").toString("base64url")}`,
+      }, { theme: options.theme === "light" ? "light" : "dark", hostStyles: buildWidgetHostStyles() })
+    : snapshot.historical
+      ? injectWidgetHostStyles(applyWidgetTheme(program === null ? snapshot.html : "<p>This version contains a tool. Open the latest version to use it.</p>", options.theme))
+      : injectWidgetRuntime(
         applyWidgetTheme(snapshot.html, options.theme),
         snapshot.spaceId,
         snapshot.path
       )
   await bounded(() =>
-    page.route("**/*", async (route) => {
+    page.route(/^https?:\/\//, async (route) => {
       const request = route.request()
       const url = request.url()
       if (
@@ -602,11 +618,16 @@ window.addEventListener('message',async event=>{
         )
         if (snapshot.historical)
           csp = csp.replace("script-src 'unsafe-inline'", "script-src 'none'")
+        if (isolated)
+          csp = isolatedToolCsp({ assetOrigin: ORIGIN, parentOrigin: ORIGIN, fontSources: [`${ORIGIN}/worktable-preview/fonts/`] })
         await route.fulfill({
           contentType: "text/html; charset=utf-8",
           body: html,
           headers: { "Content-Security-Policy": csp },
         })
+      } else if (request.method() === "GET" && url === `${ORIGIN}${isolatedToolManifest.path}` && isolated) {
+        const asset = isolatedToolAsset(new Request(url))!
+        await route.fulfill({ body: Buffer.from(await asset.arrayBuffer()), headers: Object.fromEntries(asset.headers) })
       } else if (
         request.method() === "GET" &&
         url.startsWith(`${ORIGIN}/worktable-preview/fonts/`) &&
@@ -664,6 +685,19 @@ window.addEventListener('message',async event=>{
           await frame.waitForLoadState("domcontentloaded", {
             timeout: Math.max(1, readinessDeadline - Date.now()),
           })
+          if (isolated) {
+            await frame.waitForFunction(() => {
+              const status = (window as unknown as { __worktableToolStatus?: () => { rendered: boolean; idle: boolean; failed: boolean } }).__worktableToolStatus?.()
+              return status && (status.failed || (status.rendered && status.idle))
+            }, undefined, { timeout: remaining(readinessDeadline) })
+            const failed = await frame.evaluate(() =>
+              (window as unknown as { __worktableToolStatus: () => { failed: boolean } }).__worktableToolStatus().failed
+            )
+            if (failed) {
+              complete = false
+              diagnostic("tool_stopped", "The tool stopped during preview", "error")
+            }
+          }
           // Data responses can insert new text/images after the initial DOM event.
           // Recheck fonts/assets after the broker is quiet, not just before reads.
           for (;;) {

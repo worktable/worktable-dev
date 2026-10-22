@@ -13,9 +13,18 @@ const configuration = JSON.parse(
 if (!["member", "share", "preview"].includes(configuration.mode))
   throw new Error("The tool configuration is invalid.")
 
-const diagnostics: { level: string; code: string; message: string }[] = []
+const diagnostics: {
+  id: string
+  level: string
+  code: string
+  message: string
+  timestamp: string
+}[] = []
+let diagnosticSequence = 0
 function diagnostic(code: string, message: string): void {
   const value = {
+    id: `tool-${++diagnosticSequence}`,
+    timestamp: new Date().toISOString(),
     level: code === "widget_notice" ? "info" : "warning",
     code: code.slice(0, 128),
     message: message.slice(0, 1000),

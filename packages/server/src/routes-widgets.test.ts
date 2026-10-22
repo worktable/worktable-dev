@@ -93,6 +93,34 @@ describe("widget REST routes", () => {
     expect(contentRes.text).toContain("__worktableDiagnostics");
   });
 
+  it("serves isolated tools only in preview and retains the document record permission gate", async () => {
+    const previous = process.env.WORKTABLE_SHARING_PREVIEW;
+    const source = "await worktable.ui.render({tag:'p',children:['Équipe 東京']});";
+    const html = `<body onload="fetch('https://outside.invalid')"><script type="application/worktable">${source}</script><img src="https://outside.invalid">`;
+    try {
+      process.env.WORKTABLE_SHARING_PREVIEW = "0";
+      const held = await req(app, "POST", "/api/spaces/meta/widgets", { id: "isolated", name: "Isolated", html });
+      expect(held.status).toBe(400);
+      process.env.WORKTABLE_SHARING_PREVIEW = "1";
+      expect((await req(app, "POST", "/api/spaces/meta/widgets", { id: "isolated", name: "Isolated", html, permissions: { network: true, records: {}, state: { read: true, write: true } } })).status).toBe(201);
+      const content = await req(app, "GET", "/api/spaces/meta/widgets/isolated/content?theme=light");
+      expect(content.status).toBe(200);
+      const dom = new JSDOM(content.text);
+      const config = JSON.parse(dom.window.document.querySelector("#worktable-tool-config")!.textContent!);
+      expect(config.source).toBe(source);
+      expect(config.mode).toBe("member");
+      expect(dom.window.document.querySelector("img,[onload]")).toBeNull();
+      expect(content.headers.get("content-security-policy")).toContain("connect-src 'none'");
+      expect(content.headers.get("content-security-policy")).not.toContain("'unsafe-inline'; style-src");
+      expect((await req(app, "POST", `${config.apiBase}/records/tasks/query`, {})).status).toBe(403);
+      process.env.WORKTABLE_SHARING_PREVIEW = "0";
+      expect((await req(app, "GET", "/api/spaces/meta/widgets/isolated/content")).status).toBe(404);
+    } finally {
+      if (previous === undefined) delete process.env.WORKTABLE_SHARING_PREVIEW;
+      else process.env.WORKTABLE_SHARING_PREVIEW = previous;
+    }
+  });
+
   it("surfaces smoothness warnings for brittle widget patterns without blocking creation", async () => {
     const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>:root{--ad-bg:#fff;--ad-surface:#fff;--ad-text:#111;--ad-muted:#666;--ad-border:#ddd;--ad-accent:#2563eb}html[data-theme="dark"]{--ad-bg:#111;--ad-surface:#222;--ad-text:#fff;--ad-muted:#aaa;--ad-border:#333;--ad-accent:#8ab4ff}</style></head><body><form><input name="title"><button>Save</button></form><script>localStorage.setItem('x','y'); fetch('/api/spaces/meta/records/tasks')</script></body></html>`;
     const createRes = await req(app, "POST", "/api/spaces/meta/widgets", {

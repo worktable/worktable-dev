@@ -44,8 +44,8 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
-          # Current OpenClaw rejects 24.15.0 because of its SQLite TEXT bug.
-          node-version: "24.16.0"
+          # The stable OpenClaw host requires at least Node 24.22.1.
+          node-version: "24.22.1"
 
       - name: Select plugin distribution inputs
         id: scope

@@ -288,11 +288,15 @@ ${DOCUMENT_CONTENT_CSS}
 .unavailable .large-mark svg { display: block; width: 100%; height: 100%; }
 .unavailable h1 { margin: 0; font-family: var(--font-display); font-size: 1.75rem; font-weight: 400; line-height: 1.2; letter-spacing: -.02em; }
 .unavailable p { max-width: 28rem; margin: .875rem auto 0; color: var(--muted-foreground); }
-.comment-toggle { min-height: 2rem; display: inline-flex; flex: none; align-items: center; margin-left: auto; padding: 0 .75rem; border: 1px solid var(--border-input); border-radius: .625rem; color: var(--foreground); background: var(--field); font: inherit; font-size: .8125rem; font-weight: 550; cursor: pointer; }
+.comment-toggle, .comment-retry { min-height: 2rem; display: inline-flex; flex: none; align-items: center; margin-left: auto; padding: 0 .75rem; border: 1px solid var(--border-input); border-radius: .625rem; color: var(--foreground); background: var(--field); font: inherit; font-size: .8125rem; font-weight: 550; cursor: pointer; }
+.comment-retry { margin-left: 0; }
+.comment-read-error { margin-top: 1rem; }
+.comment-read-error[hidden] { display: none; }
+.comment-read-error .comment-status { margin-bottom: .5rem; }
 .comment-toggle[hidden] { display: none; }
-.comment-toggle:hover { border-color: var(--border-input-hover); background: var(--muted); }
+.comment-toggle:hover, .comment-retry:hover { border-color: var(--border-input-hover); background: var(--muted); }
 .comment-toggle[aria-expanded="true"] { background: var(--muted); }
-.comment-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.comment-toggle:focus-visible, .comment-retry:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .comments-panel { position: fixed; z-index: 20; top: 3.75rem; right: .75rem; bottom: .75rem; width: min(23rem, calc(100vw - 1.5rem)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--overlay-border); border-radius: var(--radius); color: var(--foreground); background: var(--overlay); box-shadow: var(--floating-shadow); }
 .comments-panel[hidden] { display: none; }
 .comments-head { display: flex; flex: none; align-items: center; justify-content: space-between; gap: .5rem; padding: .625rem .625rem .375rem 1rem; }
@@ -345,6 +349,8 @@ ${DOCUMENT_CONTENT_CSS}
 }
 @media print {
   .comments-panel, .comment-toggle { display: none; }
+  .comments-open .document-shell { padding-right: 0; }
+  .comments-open .html-shell { margin-right: 0; }
 }
 .unavailable button { padding: 0; border: 0; color: var(--primary-text); background: none; font: inherit; font-weight: 500; text-decoration: underline; text-decoration-color: color-mix(in oklch, var(--primary) 40%, transparent); text-underline-offset: 2px; cursor: pointer; }
 .unavailable button:hover { text-decoration-color: var(--primary); }

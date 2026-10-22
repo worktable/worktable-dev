@@ -142,8 +142,18 @@
     }
   }
 
-  /** @param {number} ms */
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  /** @param {number} ms @param {AbortSignal} [signal] */
+  const sleep = (ms, signal) =>
+    new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timer)
+        signal?.removeEventListener("abort", finish)
+        resolve(undefined)
+      }
+      const timer = setTimeout(finish, ms)
+      if (signal?.aborted) finish()
+      else signal?.addEventListener("abort", finish, { once: true })
+    })
 
   /**
    * @typedef {{ status: number; answer: any; retryAfter: number }} CallResult
@@ -153,10 +163,12 @@
   /**
    * @param {object} [body]
    * @param {number} [remainingMs]
+   * @param {AbortSignal} [cancel]
    * @returns {Promise<CallResult>}
    */
-  async function call(body, remainingMs = REQUEST_BUDGET_MS) {
-    const signal = AbortSignal.timeout(Math.max(1, remainingMs))
+  async function call(body, remainingMs = REQUEST_BUDGET_MS, cancel) {
+    const deadline = AbortSignal.timeout(Math.max(1, remainingMs))
+    const signal = cancel ? AbortSignal.any([deadline, cancel]) : deadline
     /** @type {Record<string, string>} */
     const headers = {
       "x-worktable-share-capability": token,
@@ -190,22 +202,25 @@
    * A call, tried again while the Worktable wakes, within one request budget.
    * A comment keeps its request id, so it is stored once.
    * @param {() => object | undefined} body
+   * @param {AbortSignal} [signal]
    */
-  async function patiently(body) {
+  async function patiently(body, signal) {
     const started = Date.now()
     for (;;) {
       const remaining = REQUEST_BUDGET_MS - (Date.now() - started)
-      if (remaining <= 0) return { status: 0, answer: null, retryAfter: 0 }
-      const result = await call(body(), remaining)
+      if (signal?.aborted || remaining <= 0)
+        return { status: 0, answer: null, retryAfter: 0 }
+      const result = await call(body(), remaining, signal)
       keepPass(result.answer)
       const wait = (result.retryAfter || 3) * 1000
       if (
+        signal?.aborted ||
         (result.status !== 503 && result.status !== 0) ||
         Date.now() - started + wait > REQUEST_BUDGET_MS
       ) {
         return result
       }
-      await sleep(wait)
+      await sleep(wait, signal)
     }
   }
 
@@ -295,14 +310,23 @@
     return node
   }
 
+  /** Authored projection IDs never become the targets of panel labels. */
+  /** @param {string} base */
+  function availableId(base) {
+    let id = base
+    while (document.getElementById(id)) id = `${base}-${randomId(8)}`
+    return id
+  }
+
   const panel = element("aside", "comments-panel")
-  panel.id = "worktable-comments"
+  panel.id = availableId("worktable-comments")
+  toggle.setAttribute("aria-controls", panel.id)
   panel.hidden = true
-  panel.setAttribute("aria-labelledby", "worktable-comments-title")
 
   const head = element("div", "comments-head")
   const title = element("h2", "", "Comments")
-  title.id = "worktable-comments-title"
+  title.id = availableId("worktable-comments-title")
+  panel.setAttribute("aria-labelledby", title.id)
   const close = element("button", "comments-close")
   close.type = "button"
   close.setAttribute("aria-label", "Close")
@@ -330,9 +354,9 @@
 
   const nameField = element("div", "comment-field")
   const nameLabel = element("label", "", "Your name")
-  nameLabel.htmlFor = "worktable-comment-name"
   const nameInput = element("input")
-  nameInput.id = "worktable-comment-name"
+  nameInput.id = availableId("worktable-comment-name")
+  nameLabel.htmlFor = nameInput.id
   nameInput.type = "text"
   nameInput.maxLength = 60
   nameInput.autocomplete = "name"
@@ -343,11 +367,11 @@
   const textField = element("div", "comment-field")
   const textRow = element("div", "comment-label-row")
   const textLabel = element("label", "", "Comment")
-  textLabel.htmlFor = "worktable-comment-text"
   const counter = element("span", "comment-count")
   textRow.append(textLabel, counter)
   const textInput = element("textarea")
-  textInput.id = "worktable-comment-text"
+  textInput.id = availableId("worktable-comment-text")
+  textLabel.htmlFor = textInput.id
   textInput.maxLength = MAX_LENGTH
   textInput.rows = 5
   textField.append(textRow, textInput)
@@ -365,19 +389,37 @@
   status.setAttribute("role", "status")
   const send = element("button", "comment-send", "Send")
   send.type = "submit"
+  let sending = false
+  function updateSend() {
+    send.disabled = sending || !readError.hidden
+    send.textContent = sending ? "Sending…" : "Send"
+  }
   form.append(challenge, status, send)
+
+  const readError = element("div", "comment-read-error")
+  readError.hidden = true
+  const readMessage = element(
+    "p",
+    "comment-status comment-error",
+    "Couldn't load comments."
+  )
+  readMessage.setAttribute("role", "status")
+  const retryRead = element("button", "comment-retry", "Retry")
+  retryRead.type = "button"
+  retryRead.addEventListener("click", () => void load())
+  readError.append(readMessage, retryRead)
 
   const listSection = element("section", "comment-list-section")
   listSection.hidden = true
   const listHeading = element(
     "h3",
     "",
-    config.visitorsSee === "all" ? "Comments on this page" : "Your comments"
+    config.visitorsSee === "all" ? "Recent comments" : "Your recent comments"
   )
   const list = element("ul", "comment-list")
   listSection.append(listHeading, list)
 
-  body.append(config.accepting ? form : closedNote, listSection)
+  body.append(config.accepting ? form : closedNote, readError, listSection)
   document.body.append(panel)
 
   function updateCount() {
@@ -450,14 +492,30 @@
     return item
   }
 
-  let loadVersion = 0
+  /** @type {AbortController | null} */
+  let refresh = null
 
-  /** Refresh the visible comments and current settings when the panel opens. */
+  /** Refresh the visible comments and current settings while the panel is open. */
   async function load() {
-    const version = ++loadVersion
-    const { status: code, answer } = await patiently(() => undefined)
-    if (version !== loadVersion) return
-    if (code !== 200 || !answer || !Array.isArray(answer.comments)) return
+    refresh?.abort()
+    if (panel.hidden) return
+    const current = new AbortController()
+    refresh = current
+    retryRead.disabled = true
+    const { status: code, answer } = await patiently(
+      () => undefined,
+      current.signal
+    )
+    if (current.signal.aborted) return
+    refresh = null
+    retryRead.disabled = false
+    if (code !== 200 || !answer || !Array.isArray(answer.comments)) {
+      readError.hidden = false
+      updateSend()
+      return
+    }
+    readError.hidden = true
+    updateSend()
     config.visitorsSee = answer.visitorsSee
     config.anonymousAllowed = answer.anonymousAllowed
     config.accepting = answer.accepting
@@ -466,7 +524,7 @@
     updateName()
     visibilityNote.hidden = config.visitorsSee !== "all"
     listHeading.textContent =
-      config.visitorsSee === "all" ? "Comments on this page" : "Your comments"
+      config.visitorsSee === "all" ? "Recent comments" : "Your recent comments"
     if (config.accepting && closedNote.isConnected) {
       closedNote.replaceWith(form)
     } else if (!config.accepting && form.isConnected) {
@@ -474,6 +532,16 @@
     }
     list.replaceChildren(...answer.comments.map(commentItem))
     listSection.hidden = answer.comments.length === 0
+  }
+
+  /** @returns {{ name?: string; anonymous?: boolean; body: string }} */
+  function commentFields() {
+    return {
+      ...(anonymous.checked
+        ? { anonymous: true }
+        : { name: nameInput.value.replace(/\s+/g, " ").trim() }),
+      body: textInput.value.trim(),
+    }
   }
 
   /** @type {string | null} */
@@ -503,26 +571,20 @@
   form.addEventListener("submit", async (event) => {
     event.preventDefault()
     if (send.disabled) return
-    const anonymously = Boolean(anonymous?.checked)
-    const name = nameInput.value.replace(/\s+/g, " ").trim()
-    const text = textInput.value.trim()
-    if (!anonymously && !name) {
+    const fields = commentFields()
+    if (!fields.anonymous && !fields.name) {
       say("Enter your name.", true)
       nameInput.focus()
       return
     }
-    if (!text) {
+    if (!fields.body) {
       say("Write a comment first.", true)
       textInput.focus()
       return
     }
-    send.disabled = true
-    send.textContent = "Sending…"
+    sending = true
+    updateSend()
     say("")
-    const fields = {
-      ...(anonymously ? { anonymous: true } : { name }),
-      body: text,
-    }
     const draft = JSON.stringify(fields)
     if (draft !== submittedDraft) requestId = null
     submittedDraft = draft
@@ -540,7 +602,7 @@
         }
       }
       // Keep access to an accepted comment even if its response is lost.
-      rememberVisitor(anonymously ? undefined : name)
+      rememberVisitor(fields.name)
       let result = await patiently(() => {
         // A pass earned on an earlier try spares the spent token.
         pass = savedPass()
@@ -570,17 +632,17 @@
       }
       if (result.status === 201) {
         requestId = null
-        const unchanged = textInput.value.trim() === text
+        const unchanged = JSON.stringify(commentFields()) === draft
         if (unchanged) textInput.value = ""
         updateCount()
         say(unchanged ? "Sent." : "")
-        await load()
+        void load()
         return
       }
       say(failure(result.answer?.error?.code, result.status), true)
     } finally {
-      send.disabled = false
-      send.textContent = "Send"
+      sending = false
+      updateSend()
     }
   })
 
@@ -589,7 +651,11 @@
   /** @param {boolean} open */
   const show = (open) => {
     panel.hidden = !open
-    if (!open) cancelHumanCheck?.()
+    if (!open) {
+      cancelHumanCheck?.()
+      refresh?.abort()
+      refresh = null
+    }
     toggle.setAttribute("aria-expanded", String(open))
     document.body.classList.toggle("comments-open", open)
     if (open) {

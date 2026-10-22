@@ -47,12 +47,23 @@ async function fixture(page: Page, live = false) {
   const backend: {
     frames: number
     containment: boolean
+    readAborts: number
+    onGet: () => Promise<"ok" | "error" | "busy">
     onPost: (post: Post) => Promise<"ok" | "error" | "uncertain">
   } = {
     frames: 0,
     containment: true,
+    readAborts: 0,
+    onGet: async () => "ok",
     onPost: async () => "ok",
   }
+  page.on("requestfailed", (request) => {
+    if (
+      request.method() === "GET" &&
+      new URL(request.url()).pathname.endsWith("/comments")
+    )
+      backend.readAborts++
+  })
   page.on("pageerror", (error) => errors.push(error.message))
   page.on("console", (message) => {
     if (message.text().startsWith("check-parent-readable:"))
@@ -82,7 +93,8 @@ async function fixture(page: Page, live = false) {
               kind: "doc",
               title: "",
               format: "markdown",
-              projectionHtml: "<h1>Review</h1>",
+              projectionHtml:
+                '<h1 id="worktable-comments">Review</h1><span id="worktable-comments-title"></span><input type="checkbox" id="worktable-comment-name"><input type="checkbox" id="worktable-comment-text">',
             },
             icon,
             comments
@@ -186,6 +198,13 @@ async function fixture(page: Page, live = false) {
       const visitor = request.headers()["x-share-visitor"] ?? ""
       if (request.method() === "GET") {
         views.push(visitor)
+        const outcome = await backend.onGet()
+        if (outcome !== "ok")
+          return route.fulfill({
+            status: outcome === "busy" ? 503 : 502,
+            headers: { "Retry-After": "3" },
+            json: { error: { code: "ERROR" } },
+          })
         const comments = stored
           .filter(
             (row) => state.visitorsSee === "all" || row.visitor === visitor
@@ -265,7 +284,9 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
   for (let attempt = 0; attempt < 2; attempt++) {
     await send.click()
     await expect(send).toBeEnabled()
-    await expect(page.locator(".comment-status")).toContainText("Couldn't send")
+    await expect(page.locator(".comment-form .comment-status")).toContainText(
+      "Couldn't send"
+    )
   }
   expect(f.posts[0]!.requestId).toBe(f.posts[1]!.requestId)
   f.backend.onPost = async () => "ok"
@@ -285,7 +306,7 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
   release()
   await expect(page.locator(".comment-list")).toContainText("Submitted draft")
   await expect(text).toHaveValue("Next draft")
-  await expect(page.locator(".comment-status")).toBeEmpty()
+  await expect(page.locator(".comment-form .comment-status")).toBeEmpty()
   f.state.accepting = false
   f.state.anonymousAllowed = true
   f.state.visitorsSee = "all"
@@ -326,6 +347,14 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
     path: testInfo.outputPath("visitor-comments-mobile.png"),
     fullPage: true,
   })
+  await page.setViewportSize({ width: 1280, height: 844 })
+  await page.emulateMedia({ media: "print" })
+  await expect(page.locator(".document-shell")).toHaveCSS(
+    "padding-right",
+    "0px"
+  )
+  await page.emulateMedia({ media: "screen", colorScheme: "light" })
+  await page.setViewportSize({ width: 390, height: 844 })
   // Drive the platform timeout from Playwright's clock; the request itself
   // stays pending until the production code aborts it.
   await page.clock.install()
@@ -355,11 +384,52 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
     page.getByRole("button", { name: "Sending…", exact: true })
   ).toBeDisabled()
   expect(f.posts).toHaveLength(5)
+  await page.getByLabel("Your name").fill("Dana")
+  let releaseRead = () => {}
+  f.backend.onGet = () =>
+    new Promise((resolve) => {
+      releaseRead = () => resolve("ok")
+    })
+  const reads = f.views.length
   releaseSlow()
+  await expect.poll(() => f.views.length).toBe(reads + 1)
+  await expect(send).toBeEnabled()
+  await expect(text).toHaveValue("Slow successful comment")
+  await expect(page.locator(".comment-form .comment-status")).toBeEmpty()
+  releaseRead()
   await expect(page.locator(".comment-list")).toContainText(
     "Slow successful comment"
   )
+  f.backend.onGet = async () => "error"
+  await page.getByRole("button", { name: "Close", exact: true }).click()
+  await toggle.click()
+  await expect(page.locator(".comment-read-error")).toBeVisible()
+  await expect(send).toBeDisabled()
+  await expect(page.locator(".comment-list")).toContainText(
+    "Slow successful comment"
+  )
+  f.backend.onGet = async () => "ok"
+  await page.getByRole("button", { name: "Retry", exact: true }).click()
+  await expect(page.locator(".comment-read-error")).toBeHidden()
   await expect(send).toBeEnabled()
+  // Closing cancels the in-flight read and its remaining retry budget.
+  f.backend.onGet = () =>
+    new Promise((resolve) => {
+      releaseRead = () => resolve("ok")
+    })
+  await page.getByRole("button", { name: "Close", exact: true }).click()
+  const beforeClose = f.views.length
+  const aborts = f.backend.readAborts
+  await toggle.click()
+  await expect.poll(() => f.views.length).toBe(beforeClose + 1)
+  await page.getByRole("button", { name: "Close", exact: true }).click()
+  await expect.poll(() => f.backend.readAborts).toBe(aborts + 1)
+  releaseRead()
+  await page.clock.runFor(90_000)
+  expect(f.views).toHaveLength(beforeClose + 1)
+  f.backend.onGet = async () => "ok"
+  await toggle.click()
+  await expect(text).toBeVisible()
   const blocked: Array<() => void> = []
   f.backend.onPost = () =>
     new Promise((resolve) => {
@@ -371,13 +441,16 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
   await page.clock.runFor(90_000)
   await expect(send).toBeEnabled()
   await expect(text).toHaveValue("Keep this draft after the request stalls")
-  await expect(page.locator(".comment-status")).toContainText("Couldn't reach")
+  await expect(page.locator(".comment-form .comment-status")).toContainText(
+    "Couldn't reach"
+  )
   for (const release of blocked) release()
   f.backend.onPost = async () => "ok"
   await send.click()
   await expect(page.locator(".comment-list")).toContainText(
     "Keep this draft after the request stalls"
   )
+  expect(f.errors).toEqual([])
 })
 
 test("a live tool keeps its state and a visitor can recover an uncertain submission", async ({
@@ -395,7 +468,9 @@ test("a live tool keeps its state and a visitor can recover an uncertain submiss
     .fill("Accepted but acknowledgement was lost")
   f.backend.onPost = async () => "uncertain"
   await page.getByRole("button", { name: "Send", exact: true }).click()
-  await expect(page.locator(".comment-status")).toContainText("Couldn't send")
+  await expect(page.locator(".comment-form .comment-status")).toContainText(
+    "Couldn't send"
+  )
   await expect(tool.getByRole("button", { name: "Used tool" })).toBeVisible()
   expect(f.backend.frames).toBe(1)
   const visitor = f.posts[0]!.visitor
@@ -414,6 +489,9 @@ test("a live tool keeps its state and a visitor can recover an uncertain submiss
     path: testInfo.outputPath("visitor-comments-live.png"),
     fullPage: true,
   })
+  await page.emulateMedia({ media: "print" })
+  await expect(page.locator(".html-shell")).toHaveCSS("margin-right", "0px")
+  await page.emulateMedia({ media: "screen", colorScheme: "dark" })
   // The trusted check endpoint does not admit authored navigation elsewhere.
   await page.evaluate(() => {
     document.addEventListener("securitypolicyviolation", (event) => {

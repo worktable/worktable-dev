@@ -2,8 +2,8 @@
   "$comment": "Every refetchInterval and setInterval in apps/web/src, plus all timers in the public visitor scripts, one entry per site. A site is <file>#<enclosing function or variable>; list a site twice if it occurs twice. Polling is the last resort: prefer a socket event, or a refetch when the user acts. Checked by bun run perf:guards; see docs/performance.md.",
   "sites": [
     {
-      "site": "packages/ui/src/public-share-comments.js#sleep",
-      "why": "Retry backoff only after an explicit comment-panel read or submission; stops within 90 seconds to allow gateway verification, routing and device response deadlines, with no background refresh."
+      "site": "packages/ui/src/public-share-comments.js#sleep.timer",
+      "why": "Retry backoff only after an explicit comment-panel read or submission; stops within 90 seconds to allow gateway verification, routing and device response deadlines; panel reads cancel their request and backoff on close or replacement, with no background refresh."
     },
     {
       "site": "packages/ui/src/public-share-comments.js#humanToken.timer",

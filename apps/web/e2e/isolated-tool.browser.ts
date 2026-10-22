@@ -161,15 +161,13 @@ test("an opaque tool reads data and handles controls without browser capabilitie
     frame.getByRole("heading", { name: "Isolated", exact: true })
   ).toBeVisible()
   expect(
-    await page
-      .frames()[1]!
-      .evaluate(() =>
-        (
-          window as unknown as {
-            toolTest: { rejectsOversizedSource: () => boolean }
-          }
-        ).toolTest.rejectsOversizedSource()
-      )
+    await page.frames()[1]!.evaluate(() =>
+      (
+        window as unknown as {
+          toolTest: { rejectsOversizedSource: () => boolean }
+        }
+      ).toolTest.rejectsOversizedSource()
+    )
   ).toBe(true)
   await expect(
     frame.getByText("Équipe 東京 <img src=//outside.invalid>", { exact: true })
@@ -207,6 +205,17 @@ test("an opaque tool reads data and handles controls without browser capabilitie
   ).toBeVisible()
   await frame.getByRole("button", { name: "Subscribe", exact: true }).click()
   await expect(frame.getByText("Live data", { exact: true })).toBeVisible()
+  await page.locator('iframe[title="Tool"]').evaluate((element) => {
+    element.style.marginTop = "200vh"
+  })
+  await page.frames()[1]!.evaluate(() => {
+    ;(
+      window as unknown as { toolTest: { updateLive: (name: string) => void } }
+    ).toolTest.updateLive("Off-screen data")
+  })
+  await expect(frame.getByText("Off-screen data", { exact: true })).toHaveText(
+    "Off-screen data"
+  )
   await page
     .frames()[1]!
     .evaluate(() =>
@@ -233,6 +242,37 @@ test("an opaque tool reads data and handles controls without browser capabilitie
       frameBytes: Buffer.byteLength(runtime),
     }),
   })
+})
+
+test("stopping an over-budget tool releases subscriptions and rejects the rest of its batch", async ({
+  page,
+}) => {
+  const { frame, errors } = await fixture(
+    page,
+    `
+    for (let i = 0; i < 40; i++) worktable.records.subscribe('large', () => {});
+  `
+  )
+  await expect(
+    frame.getByRole("heading", { name: "This tool stopped" })
+  ).toBeVisible()
+  expect(
+    await page
+      .frames()[1]!
+      .evaluate(
+        () =>
+          (
+            window as unknown as {
+              toolTest: { state: { subscribers: number } }
+            }
+          ).toolTest.state.subscribers
+      )
+  ).toBe(0)
+  await page.getByRole("button", { name: "Check page" }).click()
+  await expect(
+    page.getByRole("button", { name: "Still responsive" })
+  ).toBeVisible()
+  expect(errors).toEqual([])
 })
 
 test("a runaway native operation leaves the page responsive and the worker is stopped", async ({

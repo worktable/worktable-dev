@@ -14,6 +14,7 @@ const testState = {
   closed: false,
   fault: "",
 }
+const listeners = new Set<(data: unknown) => void>()
 const options = {
   root,
   source,
@@ -43,10 +44,21 @@ const options = {
       }
       throw new Error("This operation is not granted.")
     },
-    subscribe: (_collection, _query, changed) => {
+    subscribe: (collection, _query, changed) => {
       testState.subscribers++
-      changed({ records: [{ data: { name: "Live data" } }] })
+      listeners.add(changed)
+      changed({
+        records: [
+          {
+            data: {
+              name:
+                collection === "large" ? "x".repeat(128 * 1024) : "Live data",
+            },
+          },
+        ],
+      })
       return () => {
+        listeners.delete(changed)
         testState.subscribers--
       }
     },
@@ -66,6 +78,10 @@ Object.assign(window, {
   toolTest: {
     state: testState,
     close: host.close,
+    updateLive: (name: string) => {
+      for (const changed of listeners)
+        changed({ records: [{ data: { name } }] })
+    },
     rejectsOversizedSource: () => {
       try {
         const unexpected = startIsolatedTool({

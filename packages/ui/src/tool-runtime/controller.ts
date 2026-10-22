@@ -77,6 +77,7 @@ export function startIsolatedTool(options: {
   let queuedCharacters = 0
   let watchdog: ReturnType<typeof setTimeout> | undefined
   let frame: number | undefined
+  let finishRender: (() => void) | undefined
   const queue: Turn[] = []
   const subscriptions = new Map<number, () => void>()
   const pending = new Set<number>()
@@ -100,6 +101,7 @@ export function startIsolatedTool(options: {
     for (const unsubscribe of subscriptions.values()) unsubscribe()
     subscriptions.clear()
     renderer.clear()
+    finishRender?.()
   }
   function fault(detail?: string): void {
     if (!closed) {
@@ -165,8 +167,15 @@ export function startIsolatedTool(options: {
         // One committed view per animation frame keeps the trusted thread free
         // for input. The request settles only after its view is committed.
         await new Promise<void>((resolve, reject) => {
+          let completed = false
+          let fallback: ReturnType<typeof setTimeout> | undefined
           const draw = () => {
+            if (completed) return
+            completed = true
+            clearTimeout(fallback)
+            if (frame !== undefined) cancelAnimationFrame(frame)
             frame = undefined
+            finishRender = undefined
             try {
               if (!closed) renderer.render(args[0])
               resolve()
@@ -175,7 +184,10 @@ export function startIsolatedTool(options: {
             }
           }
           // Rendering requests are serialized below, so only one frame exists.
+          finishRender = draw
           frame = requestAnimationFrame(draw)
+          // Off-screen cross-origin frames and hidden tabs can suspend RAF.
+          fallback = setTimeout(draw, 250)
         })
         response(id, true, null)
       } else if (METHODS.has(value.method)) {
@@ -190,6 +202,7 @@ export function startIsolatedTool(options: {
   let rendering = Promise.resolve()
   let renderQueue = 0
   function accept(encoded: unknown): void {
+    if (closed) return
     if (typeof encoded !== "string" || encoded.length > MESSAGE_CHARACTERS)
       throw new Error("Invalid tool message.")
     const value = JSON.parse(encoded) as Record<string, unknown>
@@ -218,12 +231,15 @@ export function startIsolatedTool(options: {
       )
         throw new Error("Invalid subscription.")
       const id = value.id as number
-      subscriptions.set(
-        id,
-        options.broker.subscribe(value.collection, value.query, (data) =>
-          enqueue({ type: "subscription", id, value: data })
-        )
+      const unsubscribe = options.broker.subscribe(
+        value.collection,
+        value.query,
+        (data) => enqueue({ type: "subscription", id, value: data })
       )
+      // An initial snapshot can synchronously exhaust the message budget and
+      // close the tool before subscribe returns its cleanup function.
+      if (closed) unsubscribe()
+      else subscriptions.set(id, unsubscribe)
     } else if (value.type === "unsubscribe") {
       subscriptions.get(value.id as number)?.()
       subscriptions.delete(value.id as number)
@@ -258,7 +274,10 @@ export function startIsolatedTool(options: {
         throw new Error("The tool is sending too many messages.")
       // Keep active set while accepting a batch so synchronous subscriptions
       // cannot start another turn midway through this result.
-      for (const message of value.messages) accept(message)
+      for (const message of value.messages) {
+        if (closed) return
+        accept(message)
+      }
       active = undefined
       advance()
     } catch {

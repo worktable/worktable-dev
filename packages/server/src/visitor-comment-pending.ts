@@ -1,5 +1,8 @@
 import type { PendingItem, SpaceFile } from "@worktable/types"
-import { readDocumentIdentities } from "./document-query.ts"
+import {
+  DocumentSpaceNotFoundError,
+  readDocumentIdentities,
+} from "./document-query.ts"
 import { getSpaceArchiveInfo } from "./store.ts"
 import { accessSnapshot, levelAtLeast, memberLevel } from "./team-access.ts"
 import { canAccessSpace } from "./team-policy.ts"
@@ -33,68 +36,97 @@ export async function pendingVisitorComments(
       !getSpaceArchiveInfo(space) &&
       mayRead(space.id)
   )
-  const wanted = new Set(groups.map((group) => group.document_id))
-  const documents = new Map<
+  // Supported document moves stay within a Space. The receipt is only a
+  // location hint: the current catalog must still contain this durable id.
+  // Never open unrelated Spaces merely because this person has one comment.
+  const eligibleIds = new Set(eligible.map((space) => space.id))
+  const snapshots = new Map<
     string,
-    { spaceId: string; path: string; title: string }
+    Awaited<ReturnType<typeof readDocumentIdentities>> | null
   >()
-  for (const space of eligible) {
-    const { identities } = await readDocumentIdentities(space.id)
-    if (identities.spaceArchived) continue
-    for (const id of wanted) {
-      const document = identities.current.get(id)
-      if (document) documents.set(id, { spaceId: space.id, ...document })
-    }
-  }
-  if (!(await visitorNamespaceStillCurrent(namespace))) return []
-  const snapshot = accessSnapshot()
-  const reader = sharerOf(identity).id
-  return groups.flatMap((group): PendingItem[] => {
-    const document = documents.get(group.document_id)
-    if (!document || !mayRead(document.spaceId)) return []
+  const candidates: Array<{
+    group: (typeof groups)[number]
+    document: { spaceId: string; path: string; title: string }
+  }> = []
+  const belongs = (group: (typeof groups)[number], currentSpace: string) => {
+    if (group.link_creator === sharerOf(identity).id) return true
+    const snapshot = accessSnapshot()
     const creator = snapshot?.members.get(group.link_creator)
     const creatorStillReads = snapshot
       ? Boolean(
           creator &&
-          levelAtLeast(memberLevel(snapshot, creator, document.spaceId), "edit")
+          levelAtLeast(memberLevel(snapshot, creator, currentSpace), "edit")
         )
       : true
-    if (
-      group.link_creator !== reader &&
-      (creatorStillReads ||
-        !canAccessSpace(document.spaceId, "manage", identity))
+    return (
+      !creatorStillReads && canAccessSpace(currentSpace, "manage", identity)
     )
-      return []
-    const base = {
-      at: new Date(group.at).toISOString(),
-      spaceId: document.spaceId,
-      documentId: group.document_id,
-      docPath: document.path,
-      docTitle: document.title,
-      linkId: group.link_id,
-      linkLabel: group.link_label,
-      count: group.count,
+  }
+  let items = 0
+  for (const group of groups) {
+    const hint = group.space_at_receipt
+    if (!eligibleIds.has(hint) || !belongs(group, hint)) continue
+    let snapshot = snapshots.get(hint)
+    if (snapshot === null) continue
+    if (!snapshot) {
+      // Home is a ten-item preview. Deleted documents must also consume the
+      // lookup budget, so stale receipts cannot open thousands of catalogs.
+      // Space-specific Pending can still resolve that Space independently.
+      if (snapshots.size >= 10) continue
+      try {
+        snapshot = await readDocumentIdentities(hint)
+      } catch (error) {
+        if (error instanceof DocumentSpaceNotFoundError) {
+          snapshots.set(hint, null)
+          continue
+        }
+        throw error
+      }
+      snapshots.set(hint, snapshot)
     }
-    return [
-      ...(group.count
-        ? [
-            {
-              ...base,
-              kind: "visitorComments" as const,
-              id: `visitors:${group.link_id}`,
-            },
-          ]
-        : []),
-      ...(group.paused
-        ? [
-            {
-              ...base,
-              kind: "visitorCommentsPaused" as const,
-              id: `visitors-paused:${group.link_id}`,
-              reason: group.paused,
-            },
-          ]
-        : []),
-    ]
-  })
+    if (snapshot.identities.spaceArchived) continue
+    const document = snapshot.identities.current.get(group.document_id)
+    if (!document) continue
+    candidates.push({ group, document: { spaceId: hint, ...document } })
+    items += Number(group.count > 0) + Number(group.paused !== null)
+    if (items >= 10) break
+  }
+  if (!(await visitorNamespaceStillCurrent(namespace))) return []
+  return candidates
+    .flatMap(({ group, document }): PendingItem[] => {
+      if (!mayRead(document.spaceId) || !belongs(group, document.spaceId))
+        return []
+      const base = {
+        at: new Date(group.at).toISOString(),
+        spaceId: document.spaceId,
+        documentId: group.document_id,
+        docPath: document.path,
+        docTitle: document.title,
+        linkId: group.link_id,
+        linkLabel: group.link_label,
+        count: group.count,
+      }
+      return [
+        ...(group.count
+          ? [
+              {
+                ...base,
+                kind: "visitorComments" as const,
+                id: `visitors:${group.link_id}`,
+              },
+            ]
+          : []),
+        ...(group.paused
+          ? [
+              {
+                ...base,
+                kind: "visitorCommentsPaused" as const,
+                id: `visitors-paused:${group.link_id}`,
+                reason: group.paused,
+              },
+            ]
+          : []),
+      ]
+    })
+    .slice(0, 10)
 }

@@ -7,7 +7,10 @@ import type {
 } from "@worktable/types"
 import { isHumanWorkspaceOwner } from "./auth.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
-import { readDocumentIdentities } from "./document-query.ts"
+import {
+  DocumentSpaceNotFoundError,
+  readDocumentIdentities,
+} from "./document-query.ts"
 import { authorizeShareAction, currentSharingPolicy } from "./share-policy.ts"
 import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import { teamsEnabled } from "./team-database.ts"
@@ -20,6 +23,7 @@ import {
   visitorCommentPauses,
   VisitorCommentsUnavailable,
   type StoredVisitorComment,
+  type VisitorCommentRetentionChange,
 } from "./visitor-comment-store.ts"
 import { wsManager } from "./ws.ts"
 import { documentHasCommentLink, type StoredShareLink } from "./share-links-store.ts"
@@ -60,6 +64,36 @@ export function notifyVisitorComments(
     spaceId,
     data: { documentId, linkId },
   })
+}
+
+/** Background retention publishes only committed identifiers for current docs. */
+export async function notifyRetainedVisitorComments(
+  changes: readonly VisitorCommentRetentionChange[]
+): Promise<void> {
+  if (!sharingPreviewEnabled() || !changes.length) return
+  const context = await visitorCommentNamespace()
+  const spaces = new Map<string, VisitorCommentRetentionChange[]>()
+  for (const change of changes) {
+    if (change.worktableId !== context.worktableId) continue
+    const rows = spaces.get(change.spaceId) ?? []
+    rows.push(change)
+    spaces.set(change.spaceId, rows)
+  }
+  for (const [spaceId, rows] of spaces) {
+    let snapshot: Awaited<ReturnType<typeof readDocumentIdentities>>
+    try {
+      snapshot = await readDocumentIdentities(spaceId)
+    } catch (error) {
+      if (error instanceof DocumentSpaceNotFoundError) continue
+      throw error
+    }
+    const { identities } = snapshot
+    if (!(await visitorNamespaceStillCurrent(context))) return
+    if (identities.spaceArchived) continue
+    for (const row of rows)
+      if (identities.current.has(row.documentId as DocumentId))
+        notifyVisitorComments(spaceId, row.documentId, row.linkId)
+  }
 }
 
 /** This is a person boundary, never a scope that an agent can acquire. */

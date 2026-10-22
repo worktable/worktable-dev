@@ -29,8 +29,10 @@ import {
 } from "../visitor-comment-access.ts"
 import { commentPause, pauseVisitorComments } from "../visitor-comment-store.ts"
 import { prepareShareLinkAccess } from "../link-sharing-access.ts"
-import { spaceGeneration } from "../workspace-read-model.ts"
-import { linkSchemaGeneration } from "../link-schema-generation.ts"
+import {
+  linkDocumentGeneration,
+  linkSpaceSchemaGeneration,
+} from "../link-schema-generation.ts"
 import { readSharingPolicy } from "../share-links-store.ts"
 import { readLinkGrantSchemas, validateLinkGrant } from "../link-grant.ts"
 import { mapWithConcurrency } from "../bounded-concurrency.ts"
@@ -363,8 +365,8 @@ shareLinksRouter.post("/access", async (c) => {
     ...(link ? { creatorId: link.createdById } : {}),
   })
   if (!decision.allowed) return denied(c, decision)
-  const source = spaceGeneration(target.spaceId)
-  const schema = linkSchemaGeneration(target.spaceId)
+  const source = linkDocumentGeneration(target.spaceId, target.path)
+  const schema = linkSpaceSchemaGeneration(target.spaceId)
   if (
     link &&
     (await useResolvedDocumentHandle(
@@ -405,8 +407,8 @@ shareLinksRouter.post("/access", async (c) => {
   if (!sharingPreviewEnabled() || !latest.liveLinks) return notFound(c)
   if (
     readSharingPolicy().revision !== revision ||
-    spaceGeneration(target.spaceId) !== source ||
-    linkSchemaGeneration(target.spaceId) !== schema
+    linkDocumentGeneration(target.spaceId, target.path) !== source ||
+    linkSpaceSchemaGeneration(target.spaceId) !== schema
   )
     return c.json(
       {

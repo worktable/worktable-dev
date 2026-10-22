@@ -392,8 +392,7 @@ export function ShareLinkAccessEditor({
                       ) : (
                         <div className="space-y-3">
                           <p className="text-xs text-muted-foreground">
-                            Only totals are returned. Individual records stay
-                            hidden.
+                            Only totals are returned.
                           </p>
                           <p className="text-xs font-medium">Group totals by</p>
                           <FieldSelection
@@ -466,6 +465,10 @@ export function ShareLinkAccessEditor({
                               }
                             />
                           </label>
+                          <p className="text-xs text-muted-foreground">
+                            Comparing totals can reveal values for small groups,
+                            even with this minimum.
+                          </p>
                           {!validGroupSize(
                             collection.summaries!.minGroupSize
                           ) ? (

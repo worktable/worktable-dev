@@ -36,8 +36,10 @@ export function getShareLinksPage(
 /** The owner policy; only owners read it. */
 export const SHARE_POLICY_QUERY_KEY = ["share-policy"] as const
 
-export function getSharingPolicy(): Promise<SharingPolicyResponse> {
-  return fetchJSON<SharingPolicyResponse>("/api/shares/policy")
+export function getSharingPolicy(
+  signal?: AbortSignal
+): Promise<SharingPolicyResponse> {
+  return fetchJSON<SharingPolicyResponse>("/api/shares/policy", { signal })
 }
 
 /**

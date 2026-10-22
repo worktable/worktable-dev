@@ -9,7 +9,8 @@ const revisions = new WeakMap<QueryClient, number>()
  * Refresh only cached sharing views, leaving document contents and lists alone. */
 export function invalidateSharingQueries(
   client: QueryClient,
-  revision?: number
+  revision?: number,
+  options: { keepPolicy?: boolean } = {}
 ): void {
   // A tab can receive the same revision on several Space streams.
   if (revision !== undefined) {
@@ -21,7 +22,7 @@ export function invalidateSharingQueries(
     const page = query.state.data as DocumentPageResult | undefined
     if (
       key[0] === "share-links" ||
-      key[0] === "share-policy" ||
+      (key[0] === "share-policy" && !options.keepPolicy) ||
       (key[0] === "spaces" &&
         key[2] === "document-page" &&
         page?.kind === "document" &&

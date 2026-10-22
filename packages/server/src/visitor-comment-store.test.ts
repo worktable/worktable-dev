@@ -21,6 +21,8 @@ import {
   commentPause,
   finishVisitorComment,
   pauseVisitorComments,
+  pendingVisitorCommentGroups,
+  visitorCommentGeneration,
   prepareVisitorCommentStore,
   readVisitorComment,
   receiveVisitorComment,
@@ -67,8 +69,9 @@ function comment(
   }
 }
 describe("private visitor comments", () => {
-  it("pages every comment once when receipt times tie", () => {
-    const clock = spyOn(Date, "now").mockReturnValue(Date.now())
+  it("pages tied receipts once and uses the latest receipt label for Pending", () => {
+    const now = Date.now()
+    const clock = spyOn(Date, "now").mockReturnValue(now)
     try {
       const expected = new Set(
         Array.from(
@@ -94,6 +97,30 @@ describe("private visitor comments", () => {
       expect(new Set([...first, ...second].map((row) => row.id))).toEqual(
         expected
       )
+      clock.mockReturnValue(now + 1)
+      receiveVisitorComment(
+        comment({
+          requestId: "newlabel1",
+          clientKey: "label-client",
+          linkLabel: "Zebra",
+        })
+      )
+      clock.mockReturnValue(now + 2)
+      receiveVisitorComment(
+        comment({
+          requestId: "newlabel2",
+          clientKey: "label-client",
+          linkLabel: "Alpha",
+        })
+      )
+      expect(pendingVisitorCommentGroups("worktableId")).toEqual([
+        expect.objectContaining({
+          link_label: "Alpha",
+          space_at_receipt: "space",
+          count: 6,
+          at: now + 2,
+        }),
+      ])
     } finally {
       clock.mockRestore()
     }
@@ -149,6 +176,21 @@ describe("private visitor comments", () => {
     expect(readVisitorComment("worktableId", made.id)?.status).toBe("done")
     finishVisitorComment("worktableId", made.id, "person")
     expect(readVisitorComment("worktableId", made.id)?.body).toBeNull()
+    const deletion = readVisitorComment("worktableId", made.id)
+    const generation = visitorCommentGeneration()
+    const clock = spyOn(Date, "now").mockReturnValue(Date.now() + 1000)
+    try {
+      finishVisitorComment("worktableId", made.id, "another-person")
+      expect(readVisitorComment("worktableId", made.id)?.deleted_at).toBe(
+        deletion?.deleted_at
+      )
+      expect(readVisitorComment("worktableId", made.id)?.deleted_by).toBe(
+        "person"
+      )
+      expect(visitorCommentGeneration()).toBe(generation)
+    } finally {
+      clock.mockRestore()
+    }
     expect(visitorReplies([made.id])).toEqual([])
     expect(
       visitorCommentRows({ worktableId: "worktableId", linkId: "link" })
@@ -249,12 +291,19 @@ describe("private visitor comments", () => {
   it("strips control and direction characters and erases old client keys and expired text off the request path", () => {
     expect(cleanVisitorText(" A\u202ee\u0301\u0000\nB ")).toBe("Aé\nB")
     const made = receiveVisitorComment(comment())
-    sweepVisitorComments(Date.now() + 8 * 24 * 3_600_000)
+    expect(sweepVisitorComments(Date.now() + 8 * 24 * 3_600_000)).toEqual([])
     expect(readVisitorComment("worktableId", made.id)?.client_key).toBeNull()
     expect(readVisitorComment("worktableId", made.id)?.body).toBe(
       "OUTSIDE_SENTINEL"
     )
-    sweepVisitorComments(Date.now() + 181 * 24 * 3_600_000)
+    expect(sweepVisitorComments(Date.now() + 181 * 24 * 3_600_000)).toEqual([
+      {
+        worktableId: "worktableId",
+        spaceId: "space",
+        documentId: "doc_report",
+        linkId: "link",
+      },
+    ])
     expect(readVisitorComment("worktableId", made.id)).toBeNull()
   })
   it("refuses private storage inside the workspace before creating anything", async () => {

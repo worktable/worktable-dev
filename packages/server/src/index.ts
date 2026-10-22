@@ -81,6 +81,7 @@ import { linkGrantsRouter } from "./routes/link-grants.ts"
 import { publicSharesRouter } from "./routes/public-shares.ts"
 import { flushShareLinkUse, sweepRevokedShareLinks } from "./share-links-store.ts"
 import { sweepVisitorComments, closeVisitorCommentStores, prepareVisitorCommentStore } from "./visitor-comment-store.ts"
+import { notifyRetainedVisitorComments } from "./visitor-comment-access.ts"
 import { settleShareLinkReconciles } from "./share-links-lifecycle.ts"
 import { startV1ShareLinkDrain } from "./share-links-drain.ts"
 import { publicInvitationsRouter } from "./routes/public-invitations.ts"
@@ -1453,8 +1454,13 @@ export function startServer(
         console.error("[share-links] revoked link sweep error:", logError(err));
       }
       // Retention still erases prior data after the preview is disabled.
-      try { sweepVisitorComments(); }
-      catch { console.error("[visitor-comments] retention unavailable"); }
+      try {
+        void notifyRetainedVisitorComments(sweepVisitorComments()).catch(() =>
+          console.error("[visitor-comments] retention notice unavailable")
+        );
+      } catch {
+        console.error("[visitor-comments] retention unavailable");
+      }
     };
     retentionBootTimer = setTimeout(sweep, RETENTION_BOOT_DELAY_MS);
     retentionBootTimer.unref?.();

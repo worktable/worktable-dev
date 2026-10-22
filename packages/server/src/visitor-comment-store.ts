@@ -552,6 +552,7 @@ export function visitorCommentCounts(worktableId: string, documentId: string): {
 /** One grouped private read for a person's Pending, never ordinary activity. */
 export function pendingVisitorCommentGroups(worktableId: string): Array<{
   document_id: string
+  space_at_receipt: string
   link_id: string
   link_label: string
   link_creator: string
@@ -561,10 +562,15 @@ export function pendingVisitorCommentGroups(worktableId: string): Array<{
 }> {
   return (database()
     ?.query(
-      `SELECT c.document_id,c.link_id,max(c.link_label) AS link_label,c.link_creator,
+      `WITH receipts AS (
+      SELECT worktableId,document_id,link_id,link_label,link_creator,space_at_receipt,received_at,status,
+        row_number() OVER (PARTITION BY document_id,link_id,link_creator ORDER BY received_at DESC,id DESC) AS position
+      FROM visitor_comments WHERE worktableId=? AND status!='deleted'
+    ) SELECT c.document_id,c.link_id,c.link_creator,
+    max(CASE WHEN c.position=1 THEN c.link_label END) AS link_label,
+    max(CASE WHEN c.position=1 THEN c.space_at_receipt END) AS space_at_receipt,
     max(c.received_at) AS at,sum(c.status='new') AS count,s.paused
-    FROM visitor_comments c LEFT JOIN visitor_link_state s ON s.worktableId=c.worktableId AND s.link_id=c.link_id
-    WHERE c.worktableId=? AND c.status!='deleted'
+    FROM receipts c LEFT JOIN visitor_link_state s ON s.worktableId=c.worktableId AND s.link_id=c.link_id
     GROUP BY c.document_id,c.link_id,c.link_creator HAVING count>0 OR s.paused IS NOT NULL
     ORDER BY at DESC LIMIT 2000`
     )
@@ -663,7 +669,7 @@ export function finishVisitorComment(
         .run(worktableId, id).changes
       writes += db
         .query(
-          "UPDATE visitor_comments SET status='deleted',body=NULL,visitor_name=NULL,deleted_by=?,deleted_at=? WHERE worktableId=? AND id=?"
+          "UPDATE visitor_comments SET status='deleted',body=NULL,visitor_name=NULL,deleted_by=?,deleted_at=? WHERE worktableId=? AND id=? AND status!='deleted'"
         )
         .run(deletedBy, Date.now(), worktableId, id).changes
     }).immediate()
@@ -702,13 +708,30 @@ export function markVisitorCommentPassed(
   notifyStoreChange()
 }
 
+export interface VisitorCommentRetentionChange {
+  worktableId: string
+  spaceId: string
+  documentId: string
+  linkId: string
+}
+
 /** Called only at boot and daily, never by a view or a comment request. */
-export function sweepVisitorComments(now = Date.now()): void {
-  if (writesHeld) return
-  if (!database()) return
+export function sweepVisitorComments(
+  now = Date.now()
+): VisitorCommentRetentionChange[] {
+  if (writesHeld || !database()) return []
   const db = database(true)!
   let writes = 0
+  let changed: VisitorCommentRetentionChange[] = []
   db.transaction(() => {
+    changed = db
+      .query<VisitorCommentRetentionChange, [number, number]>(
+        `SELECT DISTINCT worktableId,space_at_receipt AS spaceId,document_id AS documentId,link_id AS linkId
+       FROM visitor_comments WHERE
+       (status IN ('new','done') AND received_at<?) OR
+       (status='passed' AND (body IS NOT NULL OR visitor_name IS NOT NULL) AND passed_at<?)`
+      )
+      .all(now - 180 * DAY, now - 30 * DAY)
     writes += db
       .query(
         "UPDATE visitor_comments SET client_key=NULL WHERE client_key IS NOT NULL AND received_at<?"
@@ -734,6 +757,7 @@ export function sweepVisitorComments(now = Date.now()): void {
       .run(now - 600_000).changes
   }).immediate()
   if (writes) notifyStoreChange()
+  return changed
 }
 export function closeVisitorCommentStores(): void {
   for (const entry of stores.values()) {

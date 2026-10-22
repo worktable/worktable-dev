@@ -5,6 +5,7 @@ import { saveSharingPolicy } from "./share-links-store.ts"
 import { createHash } from "node:crypto"
 import { buildRecordCollectionSchema, writeRecordCollectionSchema, writeRecord, writeWidgetState } from "./record-store.ts"
 import * as linkQueries from "./link-query.ts"
+import * as linkAccess from "./link-sharing-access.ts"
 import * as recordQueries from "./record-query.ts"
 import * as widgetStore from "./widget-store.ts"
 import { linkReadMemo } from "./link-read-memo.ts"
@@ -227,6 +228,103 @@ async function useHtmlStorageV2(): Promise<void> {
 }
 
 describe("share links", () => {
+  it("prepares a person's live access under current policy without making a link", async () => {
+    process.env["WORKTABLE_RECORDS_INDEX"] = "0"
+    await useHtmlStorageV2()
+    saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true }, "local:owner")
+    await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, visibility: { type: "text" } } }))
+    const at = new Date().toISOString()
+    for (const visibility of ["public", "private"]) await writeRecord("space", { version: 1, kind: "worktable.record", id: visibility, collectionId: "deals", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: visibility === "public" ? "Visible" : "HIDDEN_SENTINEL", visibility } })
+    await createHtmlDocument({ spaceId: "space", name: "Access", html: "<script>worktable.records.query('deals')</script>", permissions: { network: false, records: { deals: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
+    await drainWorkspaceChanges()
+    const grant = LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: ["name"], rows: { field: "visibility", op: "eq", value: "public" } } } })
+    const input = { target: { kind: "html", spaceId: "space", path: "access" }, grant, observe: false }
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    expect((await send("POST", "/api/shares/links/access", input)).status).toBe(404)
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    expect((await send("POST", "/api/shares/links/access", input, agent)).status).toBe(403)
+    const prepared = await send("POST", "/api/shares/links/access", input)
+    expect(prepared.status).toBe(200)
+    const access = await prepared.json()
+    expect(access.counts).toEqual({ deals: 1 })
+    expect(access.effectiveGrant.collections.deals.fields).toEqual(["name"])
+    expect(access.issues).toEqual([])
+    expect(JSON.stringify(access)).not.toContain("HIDDEN_SENTINEL")
+    expect((await documentLinks("access", "html")).links).toEqual([])
+    const original = linkAccess.prepareShareLinkAccess
+    const document = (await widgetStore.readWidgetDocument("space", "access")).data!
+    const originalRename = fsPromises.rename
+    let releaseSource!: () => void
+    const sourceGate = new Promise<void>((resolve) => { releaseSource = resolve })
+    let sourceReady!: () => void
+    const atSource = new Promise<void>((resolve) => { sourceReady = resolve })
+    // Hold the real V2 publish after its properties commit, before the source
+    // replacement. A read of that pair denies permissions until it matches.
+    const publication = spyOn(fsPromises, "rename").mockImplementation(async (from, to) => {
+      if (String(to) === join(workspaceDir, "spaces", "space", "docs", "access.html")) {
+        sourceReady()
+        await sourceGate
+      }
+      return originalRename(from, to)
+    })
+    let releasePublication: (() => void) | undefined
+    const published = widgetStore.writeWidget("space", document.widget, `${document.html}\n<!-- Published -->`).then((result) => {
+      releasePublication = result.release
+      expect(result.error).toBeNull()
+    })
+    const duringPublish = spyOn(linkAccess, "prepareShareLinkAccess").mockImplementation(async (...args) => {
+      const result = await original(...args)
+      expect(result?.effectiveGrant.collections).toEqual({})
+      releaseSource()
+      await published
+      return result
+    })
+    try {
+      await Promise.race([atSource, published.then(() => { throw new Error("HTML publish did not reach its source") })])
+      const stale = await send("POST", "/api/shares/links/access", input)
+      expect(stale.status).toBe(503)
+      expect((await stale.json()).code).toBe("LINK_PREVIEW_CHANGED")
+    } finally {
+      releaseSource()
+      try { await published } finally {
+        releasePublication?.()
+        publication.mockRestore()
+        duringPublish.mockRestore()
+      }
+    }
+    const retried = await send("POST", "/api/shares/links/access", input)
+    expect(retried.status).toBe(200)
+    expect((await retried.json()).counts).toEqual({ deals: 1 })
+    let invalidate: "schema" | "policy" = "schema"
+    const changed = spyOn(linkAccess, "prepareShareLinkAccess").mockImplementation(async (...args) => {
+      const result = await original(...args)
+      if (invalidate === "schema") {
+        await writeRecordCollectionSchema("space", buildRecordCollectionSchema({
+          id: "deals",
+          name: "Deals",
+          fields: { name: { type: "text" }, visibility: { type: "text" }, stage: { type: "text" } },
+        }))
+      } else {
+        saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true, records: "none" }, "local:owner")
+      }
+      return result
+    })
+    try {
+      for (const change of ["schema", "policy"] as const) {
+        invalidate = change
+        const stale = await send("POST", "/api/shares/links/access", input)
+        expect(stale.status).toBe(503)
+        expect((await stale.json()).code).toBe("LINK_PREVIEW_CHANGED")
+      }
+    } finally { changed.mockRestore() }
+    const narrowedResponse = await send("POST", "/api/shares/links/access", input)
+    expect(narrowedResponse.status).toBe(200)
+    const narrowed = await narrowedResponse.json()
+    expect(narrowed.effectiveGrant.collections).toEqual({})
+    expect(narrowed.counts).toEqual({})
+    expect(narrowed.issues).toHaveLength(1)
+  })
+
   it("opens live tools through ticketed frames and grant-only reads, including policy changes during a read", async () => {
     process.env["WORKTABLE_RECORDS_INDEX"] = "1"
     const policy = (await (await send("GET", "/api/shares/policy")).json()).policy as SharingPolicy

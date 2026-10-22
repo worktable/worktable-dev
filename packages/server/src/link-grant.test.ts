@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
-import { CanonicalIdSchema, LinkGrantSchema, type LinkGrant, type RecordFile } from "@worktable/types";
+import { CanonicalIdSchema, LinkGrantSchema, defaultSharingPolicy, type LinkGrant, type RecordFile } from "@worktable/types";
+import { closeShareLinkStores, saveSharingPolicy } from "./share-links-store.ts";
 import { ownerIdentity } from "./auth.ts";
 import { setAppDirOverride } from "./app-storage.ts";
 import { shapeDigest, unrecordedReads } from "./link-fixed-reads.ts";
@@ -695,6 +696,7 @@ describe("run as link", () => {
   };
   const previous = process.env["WORKTABLE_SHARING_PREVIEW"];
   afterAll(() => {
+    closeShareLinkStores();
     if (previous === undefined) delete process.env["WORKTABLE_SHARING_PREVIEW"];
     else process.env["WORKTABLE_SHARING_PREVIEW"] = previous;
   });
@@ -726,6 +728,8 @@ describe("run as link", () => {
     expect((await run(body)).status).toBe(403);
 
     identity = ownerIdentity();
+    const policy = { ...defaultSharingPolicy(), liveLinks: true };
+    saveSharingPolicy(policy, "local:owner");
     const shown = await run(body);
     expect(shown.status).toBe(200);
     expect(shown.body.records.map((record: RecordFile) => record.data)).toEqual([{ name: "Expansion" }, { name: "Pilot" }]);
@@ -739,5 +743,13 @@ describe("run as link", () => {
 
     const invalid = await run({ ...body, grant: { version: 1, collections: { deals: { fields: ["gone"] } } } });
     expect(invalid).toMatchObject({ status: 400, body: { code: "LINK_GRANT_INVALID", issues: [{ collectionId: "deals" }] } });
+    saveSharingPolicy({ ...policy, records: "none" }, "local:owner");
+    expect((await run(body)).status).toBe(403);
+    saveSharingPolicy({ ...policy, paused: true }, "local:owner");
+    expect(await run(body)).toMatchObject({ status: 403, body: { code: "SHARING_PAUSED" } });
+    saveSharingPolicy({ ...policy, liveLinks: false }, "local:owner");
+    expect(await run(body)).toMatchObject({ status: 403, body: { code: "LIVE_NOT_AVAILABLE" } });
+    saveSharingPolicy(policy, "local:owner");
+    expect((await run(body)).status).toBe(200);
   });
 });

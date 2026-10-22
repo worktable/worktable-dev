@@ -1,5 +1,11 @@
 import { z } from "zod"
 import {
+  LINK_GRANT_MAX_COLLECTIONS,
+  LINK_GRANT_MAX_FIELDS,
+  LINK_SUMMARY_MAX_GROUP_FIELDS,
+  LINK_SUMMARY_MAX_MEASURES,
+} from "./constants"
+import {
   RECORD_QUERY_MAX_LIMIT,
   RecordAggregateFnSchema,
   RecordPredicateSchema,
@@ -24,9 +30,9 @@ export type LinkRecordMode = z.infer<typeof LinkRecordModeSchema>
 /** Summaries mode: totals only, never individual records. */
 export const SummaryRulesSchema = z.strictObject({
   /** The only fields visitors may group by, and filter on. */
-  groupBy: z.array(FieldKeySchema).max(6),
+  groupBy: z.array(FieldKeySchema).max(LINK_SUMMARY_MAX_GROUP_FIELDS),
   /** Number fields that sum, avg, min and max may read. */
-  measures: z.array(FieldKeySchema).max(12),
+  measures: z.array(FieldKeySchema).max(LINK_SUMMARY_MAX_MEASURES),
   fns: z.array(RecordAggregateFnSchema).default(["count", "sum", "avg"]),
   /** Smaller groups are dropped from every answer. */
   minGroupSize: z.number().int().min(2).max(1000).default(5),
@@ -67,7 +73,7 @@ export const FixedReadSchema = z.strictObject({
 export const RecordWriteBoundarySchema = z.strictObject({
   create: z.boolean().default(false),
   update: z.boolean().default(false),
-  fields: z.array(FieldKeySchema).max(200).default([]),
+  fields: z.array(FieldKeySchema).max(LINK_GRANT_MAX_FIELDS).default([]),
   forced: z.record(FieldKeySchema, z.unknown()).default({}),
   /** Checked inside the record lock: the row must match before and after. */
   rows: z.literal("before-and-after").default("before-and-after"),
@@ -78,7 +84,7 @@ export const CollectionGrantSchema = z
     /** Which rows the link shows; null shows every live row. Uses the collection's own fields and `id` only. */
     rows: RecordPredicateSchema.nullable().default(null),
     /** Data fields the link shows. Fields added later stay hidden; the record envelope is never listed. */
-    fields: z.array(FieldKeySchema).max(200),
+    fields: z.array(FieldKeySchema).max(LINK_GRANT_MAX_FIELDS),
     /** Whether created and updated times are shown. */
     timestamps: z.boolean().default(true),
     mode: LinkRecordModeSchema.default("scoped"),
@@ -148,8 +154,13 @@ export const LinkGrantStateSchema = z.enum(["none", "visitor", "team-read"])
 export const LinkGrantSchema = z.strictObject({
   version: z.literal(1),
   /** Keyed by collection id; there is no wildcard. */
-  collections: z.record(CanonicalIdSchema, CollectionGrantSchema)
-    .refine((collections) => Object.keys(collections).length <= 32, "A link can open at most 32 collections")
+  collections: z
+    .record(CanonicalIdSchema, CollectionGrantSchema)
+    .refine(
+      (collections) =>
+        Object.keys(collections).length <= LINK_GRANT_MAX_COLLECTIONS,
+      "A link can open at most 32 collections"
+    )
     .default({}),
   limits: LinkGrantLimitsSchema.default(LINK_GRANT_DEFAULT_LIMITS),
   state: LinkGrantStateSchema.default("visitor"),

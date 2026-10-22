@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { AnnotationCategorySchema } from "./annotations"
-import { LinkGrantSchema, type LinkGrant } from "./link-grants"
+import { LinkGrantSchema, type FixedRead, type LinkGrant } from "./link-grants"
+import type { RecordCollectionSchema } from "./records"
 import { SHARE_LINK_LABEL_MAX_LENGTH } from "./constants"
 import { CanonicalIdSchema, IsoTimestampSchema } from "./widgets"
 
@@ -162,6 +163,19 @@ export interface DocumentShareLinks {
   createBlockedBy?: Extract<ShareLinkBlockedBy, "paused" | "space" | "sharer">
   /** The owner policy as it limits the share dialog. */
   policy: SharerPolicy
+}
+
+/** Private, human-only preparation of the access a live link would open. */
+export interface ShareLinkAccess {
+  grant: LinkGrant
+  effectiveGrant: LinkGrant
+  collections: Record<string, RecordCollectionSchema>
+  counts: Record<string, number>
+  sentences: string[]
+  fixedReads: Record<string, FixedRead[]>
+  warnings: Array<{ code: string; collectionId?: string; message: string }>
+  issues: Array<{ collectionId: string; message: string }>
+  stateReadable: boolean
 }
 
 /** A link just made: the only time its URL is returned. */

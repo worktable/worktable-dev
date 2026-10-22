@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto"
-import { defaultSharingPolicy, LinkGrantSchema, type LinkGrant } from "@worktable/types"
+import { LinkGrantSchema, type LinkGrant } from "@worktable/types"
 import { Hono } from "hono"
 import { z } from "zod"
 import { requireHumanWorkspaceOwner } from "../auth.ts"
@@ -8,6 +8,8 @@ import { canonicalJson, createLinkKey, type LinkKey } from "../link-grant-view.t
 import { queryRecordsForLink } from "../link-query.ts"
 import { sharingPreviewEnabled } from "../sharing-preview.ts"
 import { readSpace } from "../store.ts"
+import { authorizeShareAction, effectiveSharingPolicy } from "../share-policy.ts"
+import { readSharingPolicy, ShareLinksStoreError } from "../share-links-store.ts"
 
 /**
  * Run as link: an owner checks what a grant would show a visitor of an HTML
@@ -15,6 +17,12 @@ import { readSpace } from "../store.ts"
  * take, budget included. Behind the sharing preview, for people only.
  */
 export const linkGrantsRouter = new Hono()
+
+linkGrantsRouter.onError((error, c) => {
+  if (error instanceof ShareLinksStoreError)
+    return c.json({ error: "Share links are unavailable", code: error.code }, 503)
+  throw error
+})
 
 linkGrantsRouter.use("*", async (c, next) => {
   if (!sharingPreviewEnabled()) return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
@@ -57,6 +65,11 @@ linkGrantsRouter.post("/query", async (c) => {
   const parsed = RunAsLinkSchema.safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400)
   const { spaceId, path, collectionId, grant, query } = parsed.data
+  const saved = readSharingPolicy()
+  const policy = effectiveSharingPolicy(saved.policy)
+  const allowed = authorizeShareAction(c.get("identity"), "create", spaceId, { policy })
+  if (!allowed.allowed) return c.json({ error: "This link isn't allowed here", code: allowed.code }, allowed.status)
+  if (!policy.liveLinks) return c.json({ error: "Live links aren't allowed here", code: "LIVE_NOT_AVAILABLE" }, 403)
   const space = await readSpace(spaceId)
   if (space.error || !space.data) return c.json({ error: space.error ?? "Space not found", code: "NOT_FOUND" }, 404)
   const issues = validateLinkGrant(grant, await readLinkGrantSchemas(spaceId, grant))
@@ -67,8 +80,12 @@ linkGrantsRouter.post("/query", async (c) => {
     { ...runAsLink(spaceId, grant), spaceId, path, grant },
     collectionId,
     query ?? {},
-    // The owner policy as it stands by default, until its own store lands.
-    { policy: defaultSharingPolicy() },
+    { policy },
   )
+  if (!sharingPreviewEnabled()) return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
+  if (readSharingPolicy().revision !== saved.revision)
+    return c.json({ error: "Sharing settings changed. Try again.", code: "LINK_PREVIEW_CHANGED" }, 503)
+  const stillAllowed = authorizeShareAction(c.get("identity"), "create", spaceId, { policy })
+  if (!stillAllowed.allowed) return c.json({ error: "This link isn't allowed here", code: stillAllowed.code }, stillAllowed.status)
   return c.json(response.body, response.status, response.headers)
 })

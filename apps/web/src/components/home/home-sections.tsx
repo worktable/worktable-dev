@@ -20,11 +20,7 @@ import { useGettingStartedShortcut } from "@/lib/setup"
 const rowClass =
   "group flex h-10 min-w-0 items-center gap-3 rounded-lg px-2.5 text-sm transition-colors hover:bg-accent"
 
-const VisitorPendingRow = lazy(() =>
-  import("./visitor-pending-row").then((module) => ({
-    default: module.VisitorPendingRow,
-  }))
-)
+const VisitorPendingLabel = lazy(() => import("./visitor-pending-label"))
 
 // ── Pending ────────────────────────────────────────────────
 
@@ -59,16 +55,6 @@ function PendingRow({
       )
     case "visitorComments":
     case "visitorCommentsPaused":
-      return (
-        <Suspense fallback={<div className="h-10" />}>
-          <VisitorPendingRow
-            item={item}
-            className={rowClass}
-            where={where}
-            when={shortWhen(item.at)}
-          />
-        </Suspense>
-      )
     case "commentReply":
       return (
         <Link
@@ -78,7 +64,13 @@ function PendingRow({
         >
           <Reply className="size-4 shrink-0 text-muted-foreground" />
           <span className={label}>
-            {`Reply to your comment on ${item.docTitle ?? item.docPath}`}
+            {item.kind === "commentReply" ? (
+              `Reply to your comment on ${item.docTitle ?? item.docPath}`
+            ) : (
+              <Suspense fallback={item.docTitle ?? item.docPath}>
+                <VisitorPendingLabel item={item} />
+              </Suspense>
+            )}
           </span>
           {where}
           <span className="shrink-0 text-xs text-muted-foreground">

@@ -326,7 +326,7 @@ for (const appearance of [
           sharing.getByRole("button", { name: "Save", exact: true })
         ).toBeHidden()
         await sharing
-          .getByRole("button", { name: "Close", exact: true })
+          .getByRole("button", { name: "Done", exact: true })
           .click()
         await page.reload({ waitUntil: "networkidle" })
         await expect(

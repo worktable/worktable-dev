@@ -11,6 +11,8 @@ import {
   LINKED_ASSERTION_ISSUER,
   LINKED_ASSERTION_TYPE,
   LINKED_ASSERTION_TTL_SECONDS,
+  VISITOR_HEADERS,
+  type ShareVisitor,
   type LinkedRequestGrant,
   type LinkedDestinationBinding,
 } from "@worktable/hosted-contract"
@@ -33,7 +35,8 @@ import {
   createDocumentShareIfEligible,
   stopDocumentShare,
 } from "./share-store.ts"
-import { readDoc, readSpace, writeSpace } from "./store.ts"
+import { readDoc, readSpace, writeSpace, writeDoc } from "./store.ts"
+import { closeVisitorCommentStores } from "./visitor-comment-store.ts"
 import {
   setWorkspaceRootOverride,
   ensureWorkspaceManifest,
@@ -137,6 +140,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await server?.stop(true)
   await drainWorkspaceChanges()
+  closeVisitorCommentStores()
   resetWorkspaceRequestLifecycleForTests()
   setWorkspaceRootOverride(null)
   setAppDirOverride(null)
@@ -556,6 +560,114 @@ it("carries password unlocks and frame tickets over authenticated Link requests"
     expect((await request("/public/share/content", contentTicket)).status).toBe(
       404
     )
+  } finally {
+    if (previous === undefined) delete process.env["WORKTABLE_SHARING_PREVIEW"]
+    else process.env["WORKTABLE_SHARING_PREVIEW"] = previous
+    closeShareLinkStores()
+  }
+}, 20_000)
+
+it("carries only signed visitor authority to comments and isolates each visitor", async () => {
+  const previous = process.env["WORKTABLE_SHARING_PREVIEW"]
+  process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+  try {
+    ingress.setSharingOrigin("https://share.example.test")
+    saveSharingPolicy(
+      { ...defaultSharingPolicy(), levels: ["view", "comment"] },
+      "local:owner"
+    )
+    await writeDoc("space", "feedback", "# Feedback")
+    const documentId = await useResolvedDocumentHandle(
+      { spaceId: "space", path: "feedback", materializeIdentity: true },
+      (handle) => handle.documentId
+    )
+    if (typeof documentId !== "string")
+      throw new Error("Expected a durable document")
+    const { token, link } = createShareLink({
+      workspaceEpoch: ingress.binding.workspaceEpoch,
+      spaceId: "space",
+      documentId,
+      kind: "doc",
+      level: "comment",
+      label: "Feedback",
+      createdBy: { id: "local:owner", name: "Owner" },
+      expiresAt: null,
+      comments: {
+        acceptComments: true,
+        anonymousAllowed: false,
+        showSharerName: false,
+        visitorsSee: "own",
+      },
+    })
+    const visitor: ShareVisitor = {
+      verified: true,
+      key: "a".repeat(64),
+      client: "b".repeat(32),
+    }
+    const payload = new TextEncoder().encode(
+      JSON.stringify({
+        name: "Visitor",
+        body: "SIGNED_VISITOR_FEEDBACK",
+        requestId: "request01",
+      })
+    )
+    const signed = (
+      method: string,
+      authority: ShareVisitor | undefined,
+      path = "/public/share/comments",
+      body = payload
+    ) =>
+      createLinkedRequest({
+        origin: server.url.origin,
+        key,
+        binding: ingress.binding,
+        grant: {
+          kind: "share",
+          capability: token,
+          ...(authority ? { visitor: authority } : {}),
+        },
+        method,
+        path,
+        body: method === "POST" ? body : undefined,
+      })
+    // Incoming headers never augment the signed authority, even for a valid envelope.
+    const forged = await signed("POST", { verified: false, key: visitor.key })
+    forged.headers.set(VISITOR_HEADERS.VERIFIED, "1")
+    forged.headers.set(VISITOR_HEADERS.CLIENT, visitor.client!)
+    expect((await fetch(forged)).status).toBe(403)
+    expect(
+      (await fetch(await signed("POST", { verified: true, key: visitor.key })))
+        .status
+    ).toBe(403)
+    expect((await fetch(await signed("GET", undefined))).status).toBe(403)
+    expect(
+      (await fetch(await signed("GET", visitor, "/public/share"))).status
+    ).toBe(403)
+    expect(
+      (
+        await fetch(
+          await signed("POST", visitor, undefined, new Uint8Array(8193))
+        )
+      ).status
+    ).toBe(403)
+    const posted = await fetch(await signed("POST", visitor))
+    expect(posted.status).toBe(201)
+    const own = await fetch(
+      await signed("GET", { verified: false, key: visitor.key })
+    )
+    expect(own.status).toBe(200)
+    expect((await own.json()).comments).toMatchObject([
+      { body: "SIGNED_VISITOR_FEEDBACK", mine: true },
+    ])
+    const other = await fetch(
+      await signed("GET", { verified: false, key: "c".repeat(64) })
+    )
+    expect((await other.json()).comments).toEqual([])
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    expect((await fetch(await signed("GET", visitor))).status).toBe(403)
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    revokeShareLink(link.id, "local:owner")
+    expect((await fetch(await signed("GET", visitor))).status).toBe(404)
   } finally {
     if (previous === undefined) delete process.env["WORKTABLE_SHARING_PREVIEW"]
     else process.env["WORKTABLE_SHARING_PREVIEW"] = previous

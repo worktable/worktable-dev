@@ -93,6 +93,19 @@ export interface ActivityPage {
 
 export type PendingItem =
   | {
+      kind: "visitorComments" | "visitorCommentsPaused"
+      id: string
+      at: string
+      spaceId: string
+      documentId: string
+      docPath: string
+      docTitle?: string
+      linkId: string
+      linkLabel: string
+      count: number
+      reason?: "sharer" | "spike"
+    }
+  | {
       kind: "threadRequest"
       id: string
       at: string

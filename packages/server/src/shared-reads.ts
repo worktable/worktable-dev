@@ -12,6 +12,7 @@ import type { MiddlewareHandler } from "hono"
 import type { TokenIdentity } from "./token-store.ts"
 import { currentTeamWorktable } from "./team-database.ts"
 import { memberAccess } from "./team-access.ts"
+import { visitorCommentGeneration } from "./visitor-comment-store.ts"
 import {
   noteWorkspaceActivity,
   workspaceGeneration,
@@ -45,6 +46,14 @@ function sharedReadKey(url: URL, identity: TokenIdentity | undefined): string {
   const team = currentTeamWorktable()
   return JSON.stringify([
     workspaceGeneration(),
+    // Private edits do not invalidate ordinary workspace reads. Pending for a
+    // person must still fence a response computed before the private commit.
+    /^\/api\/pending\/?$/.test(url.pathname) &&
+    identity?.agent === null &&
+    identity.principal.type === "human" &&
+    !identity.operatorVerification
+      ? visitorCommentGeneration()
+      : null,
     team
       ? memberId && identity?.principal.type === "human"
         ? (memberAccess(memberId)?.fingerprint ?? team.policyRevision)
@@ -124,6 +133,16 @@ export const advanceGenerationOnWrite: MiddlewareHandler = async (c, next) => {
     method === "POST" &&
     (c.req.path === "/public/share/bridge" ||
       c.req.path === "/public/share/unlock")
+  )
+    return next()
+  if (
+    c.req.path === "/public/share/comments" ||
+    (method === "POST" &&
+      /^\/api\/spaces\/[^/]+\/visitor-comments\/[^/]+\/(?:replies|done)$/.test(
+        c.req.path
+      )) ||
+    (method === "DELETE" &&
+      /^\/api\/spaces\/[^/]+\/visitor-comments\/[^/]+$/.test(c.req.path))
   )
     return next()
   noteWorkspaceActivity()

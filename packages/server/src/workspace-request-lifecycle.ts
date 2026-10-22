@@ -44,6 +44,8 @@ export function classifyWorkspaceRequest(
   const verb = method.toUpperCase()
   if ((pathname === "/public/share" || pathname === "/public/share/content") && (verb === "GET" || verb === "HEAD")) return "read"
   if ((pathname === "/public/share/bridge" || pathname === "/public/share/unlock") && verb === "POST") return "read"
+  if (pathname === "/public/share/comments") return verb === "GET" || verb === "HEAD" ? "read" : verb === "POST" ? "write" : null
+  if ((verb === "GET" || verb === "HEAD") && /^\/api\/spaces\/[^/]+\/visitor-comments(?:\/|$)/.test(pathname)) return "read"
   if (SAFE_METHODS.has(verb)) {
     // Downloads expose workspace content; a link callback records state.
     if (

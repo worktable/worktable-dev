@@ -10,6 +10,7 @@ import {
   type LinkGrant,
   type ShareLinkCommentSettings,
   type ShareLinkKind,
+  type ShareLinkLevel,
   type SharingPolicy,
 } from "@worktable/types"
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
@@ -195,7 +196,7 @@ function storedGrant(json: string | null): { grant: LinkGrant | null; revision: 
 function servable(row: LinkRow): boolean {
   return (
     (row.kind === "doc" || row.kind === "html") &&
-    row.level === "view" &&
+    (row.level === "view" || (sharingPreviewEnabled() && row.level === "comment")) &&
     (row.password_hash === null ||
       (sharingPreviewEnabled() &&
         supportedSharePasswordHash(row.password_hash))) &&
@@ -455,7 +456,7 @@ export interface NewShareLink {
   documentId: string
   kind: ShareLinkKind
   label: string
-  level: "view"
+  level: "view" | "comment"
   createdBy: { id: string; name: string }
   expiresAt: number | null
   comments: ShareLinkCommentSettings
@@ -615,6 +616,7 @@ export function markV1SharesDrained(now = Date.now()): void {
 }
 
 export interface ShareLinkChange {
+  level?: "view" | "comment"
   /** undefined leaves the password unchanged; null removes it. */
   passwordHash?: string | null
   grant?: LinkGrant | null
@@ -638,6 +640,7 @@ export function updateShareLink(
   }
   const bit = (value: boolean) => (value ? 1 : 0)
   const comments = change.comments ?? {}
+  if (change.level !== undefined) set("level",change.level)
   if (change.passwordHash !== undefined) {
     set("password_hash", change.passwordHash)
     sets.push("password_rev = password_rev + 1")
@@ -868,7 +871,8 @@ export function documentShareLinkSummary(
   maxExpiryDays: number | null = null,
   creatorAllowed: (id: string) => boolean = () => true,
   requirePassword = false,
-  allowLive = false
+  allowLive = false,
+  levels: readonly ShareLinkLevel[] = ["view"]
 ): { activeLinks: number; nextExpiry: number | null } {
   const cap = maxExpiryDays === null ? null : maxExpiryDays * 86_400_000
   const readGroups = (live: boolean) =>
@@ -882,6 +886,8 @@ export function documentShareLinkSummary(
           string,
           string,
           number,
+          number,
+          number,
           string,
           number,
           number,
@@ -894,7 +900,7 @@ export function documentShareLinkSummary(
         ELSE min(expires_at, created_at + ?) END AS expiry
       FROM share_links
       WHERE space_id = ? AND document_id = ? AND revoked_at IS NULL
-        AND kind IN ('doc', 'html') AND level = 'view'
+        AND kind IN ('doc', 'html') AND ((level = 'view' AND ?=1) OR (level = 'comment' AND ?=1))
         AND (password_hash IS NULL OR (? = 1 AND password_hash GLOB ?))
         AND (? = 0 OR password_hash IS NOT NULL)
         AND typeof(password_rev) = 'integer' AND password_rev BETWEEN 0 AND 9007199254740991
@@ -915,6 +921,8 @@ export function documentShareLinkSummary(
         cap,
         spaceId,
         documentId,
+        levels.includes("view") ? 1 : 0,
+        sharingPreviewEnabled() && levels.includes("comment") ? 1 : 0,
         sharingPreviewEnabled() ? 1 : 0,
         SHARE_PASSWORD_HASH_GLOB,
         requirePassword ? 1 : 0,

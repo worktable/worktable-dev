@@ -24,7 +24,10 @@ interface WsClient {
   send(message: string): void
   close(): void
   data: {
-    identity?: Pick<TokenIdentity, "agent" | "principal">
+    identity?: Pick<
+      TokenIdentity,
+      "agent" | "principal" | "operatorVerification"
+    >
     spaceId: string
     canAccess?: (spaceId?: string, edit?: boolean) => boolean
     /** Threads outside every Space; agents need an explicit grant. */
@@ -61,6 +64,7 @@ interface OutgoingMessage {
     | "share_policy_changed"
     | "navigation_changed"
     | "setup_changed"
+    | "visitor_comments_changed"
     | "error"
     | "subscribed"
   revision?: number
@@ -384,7 +388,8 @@ export class WsManager {
   /** The sockets of every person `matches`, never an agent's. */
   sendToPeople(
     matches: (identity: Pick<TokenIdentity, "agent" | "principal">) => boolean,
-    msg: OutgoingMessage
+    msg: OutgoingMessage,
+    editSpace?: string
   ): void {
     const json = JSON.stringify(msg)
     const sent = new Set<WsClient>()
@@ -394,6 +399,13 @@ export class WsManager {
         const identity = ws.data.identity
         if (sent.has(ws) || ws.data.credentialRevoked || !identity) continue
         if (identity.agent || identity.principal.type !== "human") continue
+        if (
+          editSpace &&
+          (identity.agent !== null ||
+            identity.operatorVerification ||
+            !ws.data.canAccess?.(editSpace, true))
+        )
+          continue
         if (!matches(identity)) continue
         sent.add(ws)
         try {
@@ -406,6 +418,11 @@ export class WsManager {
     for (const ws of dead) {
       this.unsubscribe(ws)
     }
+  }
+
+  /** Private visitor notices require a person with current Edit access. */
+  sendToPeopleWithAccess(spaceId: string, msg: OutgoingMessage): void {
+    this.sendToPeople(() => true, msg, spaceId)
   }
 
   closeAll(): void {
@@ -435,7 +452,9 @@ export class WsManager {
 
 function canReceive(ws: WsClient, msg: OutgoingMessage): boolean {
   if (ws.data.credentialRevoked) return false
-  const spaceId = msg.spaceId ?? (msg.location?.kind === "space" ? msg.location.spaceId : undefined);
+  const spaceId =
+    msg.spaceId ??
+    (msg.location?.kind === "space" ? msg.location.spaceId : undefined)
   if (ws.data.canAccess && !ws.data.canAccess(spaceId)) return false
   if (
     msg.location?.kind === "worktable" &&
@@ -444,8 +463,14 @@ function canReceive(ws: WsClient, msg: OutgoingMessage): boolean {
   )
     return false
   switch (msg.type) {
+    case "visitor_comments_changed":
+      // This private event must use sendToPeopleWithAccess exclusively.
+      return false
     case "share_policy_changed":
-      return ws.data.identity?.principal.type === "human" && ws.data.identity.agent === null
+      return (
+        ws.data.identity?.principal.type === "human" &&
+        ws.data.identity.agent === null
+      )
     case "doc_update":
     case "doc_deleted":
     case "doc_links_update":

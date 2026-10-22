@@ -65,6 +65,7 @@ import { docsRouter } from "./routes/docs.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { widgetsRouter } from "./routes/widgets.ts"
 import { recordsRouter } from "./routes/records.ts"
+import { visitorCommentsRouter } from "./routes/visitor-comments.ts"
 import { annotationsRouter } from "./routes/annotations.ts"
 import { threadsRouter } from "./routes/threads.ts"
 import { searchRouter } from "./routes/search.ts"
@@ -79,6 +80,8 @@ import { sharesRouter } from "./routes/shares.ts"
 import { linkGrantsRouter } from "./routes/link-grants.ts"
 import { publicSharesRouter } from "./routes/public-shares.ts"
 import { flushShareLinkUse, sweepRevokedShareLinks } from "./share-links-store.ts"
+import { sweepVisitorComments, closeVisitorCommentStores, prepareVisitorCommentStore } from "./visitor-comment-store.ts"
+import { notifyRetainedVisitorComments } from "./visitor-comment-access.ts"
 import { settleShareLinkReconciles } from "./share-links-lifecycle.ts"
 import { startV1ShareLinkDrain } from "./share-links-drain.ts"
 import { publicInvitationsRouter } from "./routes/public-invitations.ts"
@@ -554,6 +557,7 @@ app.route("/api/spaces/:spaceId/doc-aliases", docAliasesRouter);
 app.route("/api/spaces/:spaceId/widgets", widgetsRouter);
 app.route("/api/spaces/:spaceId/records", recordsRouter);
 app.route("/api/spaces/:spaceId/annotations", annotationsRouter);
+app.route("/api/spaces/:spaceId/visitor-comments", visitorCommentsRouter);
 app.route("/api/spaces/:spaceId/threads", threadsRouter);
 app.route("/api/threads", threadsRouter);
 app.route("/api/search", searchRouter);
@@ -1384,6 +1388,12 @@ export function startServer(
     }
   }
 
+  // Recover existing private SQLite state before any request can read it.
+  if (!workspaceRejected) {
+    try { prepareVisitorCommentStore(); }
+    catch { console.error("[visitor-comments] storage unavailable"); }
+  }
+
   // Resolve findings left open by the retired wiki lint, ~30s after boot so it
   // never delays startup. WORKTABLE_SKIP_LINT_RETIREMENT=1 exists for the test
   // runner (same rationale as the starter-seed guard above).
@@ -1442,6 +1452,14 @@ export function startServer(
         sweepRevokedShareLinks();
       } catch (err) {
         console.error("[share-links] revoked link sweep error:", logError(err));
+      }
+      // Retention still erases prior data after the preview is disabled.
+      try {
+        void notifyRetainedVisitorComments(sweepVisitorComments()).catch(() =>
+          console.error("[visitor-comments] retention notice unavailable")
+        );
+      } catch {
+        console.error("[visitor-comments] retention unavailable");
       }
     };
     retentionBootTimer = setTimeout(sweep, RETENTION_BOOT_DELAY_MS);
@@ -2386,6 +2404,7 @@ export function startServer(
         // that views noted in memory.
         await settle(() => settleShareLinkReconciles());
         await settle(async () => flushShareLinkUse());
+        await settle(async () => closeVisitorCommentStores());
         await settle(() => lintStopping);
         await settle(() => lifetimeStopping);
         await settle(() => transfersStopping);

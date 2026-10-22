@@ -21,6 +21,7 @@ import {
   type ViewerThreadRequest,
 } from "./thread-service.ts"
 import { hasScope, type TokenIdentity } from "./token-store.ts"
+import { pendingVisitorComments } from "./visitor-comment-pending.ts"
 
 const PENDING_LIMIT = 10
 
@@ -32,7 +33,8 @@ function excerpt(text: string): string {
 /** Everything waiting on the reader, or only what belongs to one Space. */
 export async function listPending(
   identity: TokenIdentity,
-  spaceId?: string
+  spaceId?: string,
+  visitorAccess?: (spaceId: string) => boolean
 ): Promise<PendingResult> {
   const canReadThreads = hasScope(identity.scopes, "threads:read")
   // People write comments as the "user" author; agents never do, so replies
@@ -40,7 +42,7 @@ export async function listPending(
   const canReadAnnotations =
     identity.principal.type === "human" &&
     hasScope(identity.scopes, "annotations:read")
-  if (!canReadThreads && !canReadAnnotations) return { items: [] }
+  if (!canReadThreads && !canReadAnnotations && !visitorAccess) return { items: [] }
   const spaces = await listSpaces()
   const [threadWork, replies] = await Promise.all([
     canReadThreads
@@ -52,6 +54,7 @@ export async function listPending(
     ...threadRequests(threadWork.requests),
     ...failedDeliveries(threadWork.failures),
     ...replies,
+    ...(visitorAccess ? await pendingVisitorComments(identity, spaces, spaceId, visitorAccess) : []),
   ]
     .filter((item) => !spaceId || item.spaceId === spaceId)
     .sort((a, b) => b.at.localeCompare(a.at))

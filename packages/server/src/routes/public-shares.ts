@@ -1,3 +1,6 @@
+import { createPublicVisitorCommentsRouter } from "./public-visitor-comments.ts"
+import { visitorCommentNamespace } from "../visitor-comment-access.ts"
+import { commentPause } from "../visitor-comment-store.ts"
 import { linkBridge } from "../link-bridge.ts"
 import { LinkToolChanged, readLinkTool } from "../link-tool.ts"
 import {
@@ -77,7 +80,9 @@ function contentHeaders(shareOrigin: string, live = false): Headers {
     "Cross-Origin-Resource-Policy": "cross-origin",
     "Origin-Agent-Cluster": "?1",
     "Content-Security-Policy": [
-      live ? "sandbox allow-scripts" : "sandbox allow-popups allow-popups-to-escape-sandbox",
+      live
+        ? "sandbox allow-scripts"
+        : "sandbox allow-popups allow-popups-to-escape-sandbox",
       "default-src 'none'",
       live ? "script-src 'unsafe-inline'" : "script-src 'none'",
       "style-src 'unsafe-inline'",
@@ -296,15 +301,29 @@ async function renderLinkPage(
   view: ShareLinkView,
   surface: "projection" | "content"
 ): Promise<RenderedPage | null | "busy"> {
-  if (view.link.grant) return withRenderSlot(async () => {
-    const tool = await readLinkTool(view)
-    if (!tool) return null
-    const key = linkPageKey(view.link.id, surface, view.path, `${view.link.grantRevision}:${tool.revision}`, view.title)
-    const cached = renderedPages.get(key)
-    if (cached) return cached
-    const body = surface === "content" ? tool.html : JSON.stringify({ kind: "html", sourceUrl: SOURCE_URL, title: view.title })
-    return rememberPage(key, tool.revision, body)
-  })
+  if (view.link.grant)
+    return withRenderSlot(async () => {
+      const tool = await readLinkTool(view)
+      if (!tool) return null
+      const key = linkPageKey(
+        view.link.id,
+        surface,
+        view.path,
+        `${view.link.grantRevision}:${tool.revision}`,
+        view.title
+      )
+      const cached = renderedPages.get(key)
+      if (cached) return cached
+      const body =
+        surface === "content"
+          ? tool.html
+          : JSON.stringify({
+              kind: "html",
+              sourceUrl: SOURCE_URL,
+              title: view.title,
+            })
+      return rememberPage(key, tool.revision, body)
+    })
   if (view.revision === null) {
     return withRenderSlot(() => renderLinkBody(view, surface))
   }
@@ -418,9 +437,14 @@ async function pageResponse(
 /** The caller must admit requests before mounting this capability-only router. */
 export function createPublicSharesRouter(
   getShareOrigin: () => string | null = () =>
-    getHostedDocumentSharingConfig()?.shareOrigin ?? null
+    getHostedDocumentSharingConfig()?.shareOrigin ?? null,
+  options: { trustedLinkIngress?: boolean } = {}
 ): Hono {
   const router = new Hono()
+  router.route(
+    "/comments",
+    createPublicVisitorCommentsRouter(options.trustedLinkIngress)
+  )
   router.post("/bridge", linkBridge(getShareOrigin))
   router.onError((error, c) => {
     if (error instanceof SharePasswordLimited) {
@@ -432,7 +456,11 @@ export function createPublicSharesRouter(
       )
     }
     if (error instanceof SharePasswordBusy || error instanceof LinkToolChanged)
-      return busy(c.req.raw, c.req.path.endsWith("/content"), getShareOrigin() ?? "")
+      return busy(
+        c.req.raw,
+        c.req.path.endsWith("/content"),
+        getShareOrigin() ?? ""
+      )
     console.error(
       "[public-share] unavailable:",
       error instanceof Error ? error.name : "error"
@@ -489,43 +517,68 @@ export function createPublicSharesRouter(
     if (page === "busy") return busy(c.req.raw, content, shareOrigin)
     if (!page) return unavailable(c.req.raw, content, shareOrigin)
     let response: Response
-    if (!content && view.link.kind === "html" && sharingPreviewEnabled()) {
-      if (!view.ticketSecret) return busy(c.req.raw, false, shareOrigin)
-      const ticket = mintShareTicket(
-        view.ticketSecret,
-        view.link,
-        "frame",
-        view.expiresAt
-      )
-      if (!ticket) return unavailable(c.req.raw)
+    if (
+      !content &&
+      sharingPreviewEnabled() &&
+      (view.link.kind === "html" || view.link.level === "comment")
+    ) {
+      const projection = JSON.parse(page.body)
+      if (view.link.level === "comment") {
+        const context = await visitorCommentNamespace()
+        if (context.epoch !== view.link.workspaceEpoch)
+          return unavailable(c.req.raw)
+        projection.comments = {
+          accepting:
+            view.policy.allowComments &&
+            view.link.comments.acceptComments &&
+            !commentPause(context.worktableId, view.link.id),
+          anonymousAllowed: view.link.comments.anonymousAllowed,
+          visitorsSee: view.policy.allowVisitorsSeeAll
+            ? view.link.comments.visitorsSee
+            : "own",
+        }
+      }
+      if (view.link.kind === "html") {
+        if (!view.ticketSecret) return busy(c.req.raw, false, shareOrigin)
+        const ticket = mintShareTicket(
+          view.ticketSecret,
+          view.link,
+          "frame",
+          view.expiresAt
+        )
+        if (!ticket) return unavailable(c.req.raw)
+        projection.contentTicket = ticket.ticket
+        if (view.link.grant) projection.live = { rev: page.revision, poll: 30 }
+      }
       // Tickets are minted per response; cached projections contain no ticket
       // that could expire while the document's content revision stays current.
       response = new Response(
-        c.req.method === "HEAD"
-          ? null
-          : JSON.stringify({
-              ...JSON.parse(page.body),
-              contentTicket: ticket.ticket,
-              ...(view.link.grant ? { live: { rev: page.revision, poll: 30 } } : {}),
-            }),
+        c.req.method === "HEAD" ? null : JSON.stringify(projection),
         { headers: projectionHeaders() }
       )
     } else if (content && view.link.grant) {
       const headers = contentHeaders(shareOrigin, true)
       const etag = `"${page.revision}"`
       headers.set("ETag", etag)
-      response = c.req.header("If-None-Match") === etag
-        ? new Response(null, { status: 304, headers })
-        : await pageResponse(c.req.raw, page, headers)
+      response =
+        c.req.header("If-None-Match") === etag
+          ? new Response(null, { status: 304, headers })
+          : await pageResponse(c.req.raw, page, headers)
     } else {
       response = await pageResponse(
         c.req.raw,
         page,
-        content ? contentHeaders(shareOrigin, Boolean(view.link.grant)) : projectionHeaders()
+        content
+          ? contentHeaders(shareOrigin, Boolean(view.link.grant))
+          : projectionHeaders()
       )
     }
     // Covers cached pages, compression and password changes during rendering.
-    if (!shareLinkStillOpens(view.link, view.policyRevision))
+    if (
+      !shareLinkStillOpens(view.link, view.policyRevision, {
+        comments: !content && view.link.level === "comment",
+      })
+    )
       return unavailable(c.req.raw, content, shareOrigin)
     noteShareLinkUsed(view.link)
     return response

@@ -546,6 +546,15 @@ export function applySpaceEvent(
   message: WsMessage
 ): void {
   const type = message.type
+  if (type === "visitor_comments_changed") {
+    const changedSpace = message.spaceId
+    if (typeof changedSpace === "string" && changedSpace) {
+      void import("./visitor-comment-events").then((module) =>
+        module.applyVisitorCommentChange(queryClient, changedSpace, message.data)
+      )
+    }
+    return
+  }
   const space = { queryKey: queryKeys.space(spaceId), exact: true }
   const spaces = { queryKey: queryKeys.spaces, exact: true }
   const docs = { queryKey: docQueryKeys.docs(spaceId), exact: true }
@@ -738,6 +747,11 @@ function applyMessage(
 ): void {
   const queryClient = connection.queryClient
   if (!queryClient) return
+  // Private person notices reach every one of their streams, including Home.
+  if (message.type === "visitor_comments_changed") {
+    applySpaceEvent(queryClient, connection.stream, message)
+    return
+  }
   // Only the person's own sockets hear this, on whichever stream they follow.
   if (message.type === "setup_changed") {
     noteSetupChanged(queryClient)

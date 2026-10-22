@@ -1,13 +1,22 @@
 import { expect, it } from "bun:test"
 import { ToolVm, TOOL_VM_LIMITS } from "./vm.ts"
 
+const initialEnvironment = {
+  theme: "dark" as const,
+  viewport: { width: 800, height: 600 },
+}
+const start = (vm: ToolVm, source: string) =>
+  vm.start(source, initialEnvironment)
+
 const messages = (values: string[]) => values.map((value) => JSON.parse(value))
 
 it("exposes only guest JavaScript and explicit JSON capabilities", async () => {
   const vm = await ToolVm.create()
   try {
     const [render] = messages(
-      vm.start(`
+      start(
+        vm,
+        `
       const names = ['window','document','self','parent','location','navigator','fetch',
         'XMLHttpRequest','WebSocket','WebTransport','RTCPeerConnection','Worker',
         'importScripts','indexedDB','localStorage','process','Bun','require','__worktableSend'];
@@ -15,7 +24,8 @@ it("exposes only guest JavaScript and explicit JSON capabilities", async () => {
       globals.constructor = worktable.ui.render.constructor('return typeof fetch')();
       Object.prototype.__worktableGuestPollution = true;
       worktable.ui.render(globals);
-    `)
+    `
+      )
     )
     expect(render.method).toBe("ui.render")
     expect(
@@ -31,13 +41,16 @@ it("resumes asynchronous reads and actions without sharing host objects", async 
   const vm = await ToolVm.create()
   try {
     const [query] = messages(
-      vm.start(`
+      start(
+        vm,
+        `
       const rows = await worktable.records.query('sales', { limit: 5 });
       worktable.ui.on('select', async event => {
         await worktable.state.set('selection', event.value);
       });
       await worktable.ui.render({ tag: 'p', children: [rows[0].name] });
-    `)
+    `
+      )
     )
     expect(query).toMatchObject({
       type: "request",
@@ -100,14 +113,14 @@ it("stops runaway turns, discards their effects, and permits a fresh instance", 
     "const retained=[]; while(true) retained.push(new Uint8Array(1024*1024));",
   ]) {
     const vm = await ToolVm.create()
-    expect(() => vm.start(source)).toThrow()
+    expect(() => start(vm, source)).toThrow()
     expect(() => vm.receive("{}")).toThrow()
     vm.dispose()
   }
   const fresh = await ToolVm.create()
   try {
     expect(
-      messages(fresh.start("worktable.ui.render('Ready')"))[0].args
+      messages(start(fresh, "worktable.ui.render('Ready')"))[0].args
     ).toEqual(["Ready"])
   } finally {
     fresh.dispose()
@@ -118,14 +131,17 @@ it("bounds aggregate binary allocations even when individual allocations fit", a
   const vm = await ToolVm.create()
   try {
     const [render] = messages(
-      vm.start(`
+      start(
+        vm,
+        `
       const retained = [];
       try { for (let i = 0; i < 128; i++) retained.push(new Uint8Array(1024 * 1024)); }
       catch { /* Recover enough space to report the admitted live allocation count. */ }
       const count = retained.length;
       retained.pop();
       worktable.ui.render(count);
-    `)
+    `
+      )
     )
     expect(render.args[0]).toBeGreaterThan(0)
     expect(render.args[0]).toBeLessThan(64)
@@ -137,12 +153,12 @@ it("bounds aggregate binary allocations even when individual allocations fit", a
 it("rejects oversized source and messages and does not load imported modules", async () => {
   const oversized = await ToolVm.create()
   expect(() =>
-    oversized.start(" ".repeat(TOOL_VM_LIMITS.sourceCharacters + 1))
+    start(oversized, " ".repeat(TOOL_VM_LIMITS.sourceCharacters + 1))
   ).toThrow("too large")
   const vm = await ToolVm.create()
   try {
     expect(() =>
-      vm.start("import 'https://synthetic.invalid/escape.js'")
+      start(vm, "import 'https://synthetic.invalid/escape.js'")
     ).toThrow()
   } finally {
     vm.dispose()
@@ -150,7 +166,8 @@ it("rejects oversized source and messages and does not load imported modules", a
   const outbound = await ToolVm.create()
   try {
     expect(() =>
-      outbound.start(
+      start(
+        outbound,
         `await worktable.ui.render('x'.repeat(${TOOL_VM_LIMITS.messageCharacters}))`
       )
     ).toThrow()

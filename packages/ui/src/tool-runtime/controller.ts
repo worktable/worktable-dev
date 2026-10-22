@@ -1,4 +1,9 @@
 import { createToolRenderer } from "./renderer.ts"
+import {
+  toolEnvironment,
+  TOOL_SOURCE_CHARACTERS,
+  type ToolEnvironment,
+} from "./protocol.ts"
 
 // These bounds also protect the trusted page from excessive work requested by
 // the VM. Keep them independent of the VM implementation and its own checks.
@@ -30,6 +35,7 @@ interface Turn {
   id: number
   type: "start" | "receive"
   payload: string
+  environment?: ToolEnvironment
 }
 
 /** The worker source is a build-owned bundle, never document data. The only
@@ -38,16 +44,21 @@ export function startIsolatedTool(options: {
   root: HTMLElement
   workerSource: string
   source: string
+  initialEnvironment: ToolEnvironment
   broker: ToolBroker
   /** Bounded engine diagnostics for the trusted host; never render as HTML. */
   fault: (detail?: string) => void
 }): {
   close: () => void
-  environment: (value: {
-    theme: "light" | "dark"
-    viewport: { width: number; height: number }
-  }) => void
+  environment: (value: ToolEnvironment) => void
 } {
+  // Reject before allocating a worker or cloning authored input onto it.
+  if (
+    typeof options.source !== "string" ||
+    options.source.length > TOOL_SOURCE_CHARACTERS
+  )
+    throw new Error("The tool source exceeds 512 KiB.")
+  const initialEnvironment = toolEnvironment(options.initialEnvironment)
   const url = URL.createObjectURL(
     new Blob([options.workerSource], { type: "text/javascript" })
   )
@@ -257,11 +268,17 @@ export function startIsolatedTool(options: {
   worker.onerror = (event) =>
     fault(event.message || "The tool worker could not load.")
   worker.onmessageerror = () => fault("The worker returned an invalid message.")
-  queue.push({ type: "start", id: ++sequence, payload: options.source })
+  queue.push({
+    type: "start",
+    id: ++sequence,
+    payload: options.source,
+    environment: initialEnvironment,
+  })
   queuedCharacters = options.source.length
   advance()
   return {
     close,
-    environment: (value) => enqueue({ type: "environment", value }),
+    environment: (value) =>
+      enqueue({ type: "environment", value: toolEnvironment(value) }),
   }
 }

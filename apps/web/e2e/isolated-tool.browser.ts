@@ -127,8 +127,10 @@ test("an opaque tool reads data and handles controls without browser capabilitie
       'WebTransport','RTCPeerConnection','Worker','importScripts','indexedDB','localStorage','process','Bun'];
     if (names.some(name => typeof globalThis[name] !== 'undefined')) throw new Error('Ambient capability');
     if (worktable.ui.render.constructor('return typeof globalThis.document')() !== 'undefined') throw new Error('Host constructor');
+    if (worktable.ui.getTheme() !== 'dark' || worktable.ui.getViewport().width <= 0 || worktable.ui.getViewport().height <= 0) throw new Error('Incorrect initial environment');
     const rows = await worktable.records.query('sales');
     let filter = '';
+    let categories = [];
     let live = '';
     let status = 'Isolated';
     function render() { return worktable.ui.render({ tag: 'section', children: [
@@ -136,6 +138,8 @@ test("an opaque tool reads data and handles controls without browser capabilitie
       { tag: 'p', children: [rows[0].data.name] },
       { tag: 'p', children: [live] },
       { tag: 'label', children: ['Region', { tag: 'input', key: 'region', props: { value: filter }, on: { input: 'filter' } }] },
+      { tag: 'label', children: ['Categories', { tag: 'select', key: 'categories', props: { multiple: true }, on: { change: 'categories' }, children: ['north', '東京'].map(value => ({ tag: 'option', props: { value, selected: categories.includes(value) }, children: [value] })) }] },
+      { tag: 'p', children: ['Selected: ' + categories.join(', ')] },
       { tag: 'button', children: ['Test unsafe view'], on: { click: 'unsafe' } },
       { tag: 'button', children: ['Subscribe'], on: { click: 'subscribe' } },
       { tag: 'svg', props: { viewBox: '0 0 100 40', 'aria-label': 'Revenue' }, children: [
@@ -143,6 +147,7 @@ test("an opaque tool reads data and handles controls without browser capabilitie
       ] },
     ] }); }
     worktable.ui.on('filter', async event => { filter = event.value; await worktable.state.set('region', filter); await render(); });
+    worktable.ui.on('categories', async event => { categories = event.values; await worktable.state.set('categories', categories); await render(); });
     worktable.ui.on('unsafe', async () => {
       try { await worktable.ui.render({ tag: 'link', props: { rel: 'preconnect', href: 'https://outside.invalid' } }); }
       catch { status = 'Unsafe view rejected'; }
@@ -155,6 +160,17 @@ test("an opaque tool reads data and handles controls without browser capabilitie
   await expect(
     frame.getByRole("heading", { name: "Isolated", exact: true })
   ).toBeVisible()
+  expect(
+    await page
+      .frames()[1]!
+      .evaluate(() =>
+        (
+          window as unknown as {
+            toolTest: { rejectsOversizedSource: () => boolean }
+          }
+        ).toolTest.rejectsOversizedSource()
+      )
+  ).toBe(true)
   await expect(
     frame.getByText("Équipe 東京 <img src=//outside.invalid>", { exact: true })
   ).toBeVisible()
@@ -176,6 +192,17 @@ test("an opaque tool reads data and handles controls without browser capabilitie
       )
     )
     .toBe("North")
+  const categories = frame.getByLabel("Categories", { exact: true })
+  await categories.getByRole("option", { name: "north", exact: true }).click()
+  await expect(
+    frame.getByText("Selected: north", { exact: true })
+  ).toBeVisible()
+  await categories
+    .getByRole("option", { name: "東京", exact: true })
+    .click({ modifiers: ["Control"] })
+  await expect(
+    frame.getByText("Selected: north, 東京", { exact: true })
+  ).toBeVisible()
   await frame.getByRole("button", { name: "Test unsafe view" }).click()
   await expect(
     frame.getByRole("heading", { name: "Unsafe view rejected" })

@@ -14,10 +14,14 @@ const testState = {
   closed: false,
   fault: "",
 }
-const host = startIsolatedTool({
+const options = {
   root,
   source,
   workerSource,
+  initialEnvironment: {
+    theme: "dark",
+    viewport: { width: innerWidth, height: innerHeight },
+  },
   broker: {
     request: async (method, args) => {
       if (method === "records.query") {
@@ -55,10 +59,25 @@ const host = startIsolatedTool({
     heading.textContent = "This tool stopped"
     root.replaceChildren(heading)
   },
-})
-host.environment({
-  theme: "dark",
-  viewport: { width: innerWidth, height: innerHeight },
-})
+} satisfies Parameters<typeof startIsolatedTool>[0]
+const host = startIsolatedTool(options)
 window.addEventListener("pagehide", () => host.close(), { once: true })
-Object.assign(window, { toolTest: { state: testState, close: host.close } })
+Object.assign(window, {
+  toolTest: {
+    state: testState,
+    close: host.close,
+    rejectsOversizedSource: () => {
+      try {
+        const unexpected = startIsolatedTool({
+          ...options,
+          root: document.createElement("main"),
+          source: " ".repeat(512 * 1024 + 1),
+        })
+        unexpected.close()
+        return false
+      } catch {
+        return true
+      }
+    },
+  },
+})

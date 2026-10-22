@@ -1,4 +1,5 @@
 import { ToolVm, TOOL_VM_LIMITS } from "./vm.ts"
+import { toolEnvironment, type ToolEnvironment } from "./protocol.ts"
 
 // The worker is trusted code. Authored source is passed exclusively to the VM;
 // never to eval, Function, import(), importScripts, or a browser script element.
@@ -28,8 +29,9 @@ async function run(input: unknown): Promise<void> {
       !vm &&
       value.payload.length <= TOOL_VM_LIMITS.sourceCharacters
     ) {
+      const environment = toolEnvironment(value.environment as ToolEnvironment)
       vm = await ToolVm.create()
-      messages = vm.start(value.payload)
+      messages = vm.start(value.payload, environment)
     } else if (
       value.type === "receive" &&
       vm &&

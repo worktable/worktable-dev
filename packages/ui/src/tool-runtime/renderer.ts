@@ -4,7 +4,7 @@ const UNITLESS = new Set(["opacity", "lineHeight", "flexGrow", "flexShrink"])
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 export interface ToolInteraction {
   action: string
-  value: { value?: string; checked?: boolean }
+  value: { value?: string; values?: string[]; checked?: boolean }
 }
 
 /** Owns only a dedicated content root. Authored keys never become DOM IDs.
@@ -72,6 +72,10 @@ export function createToolRenderer(
             element instanceof HTMLTextAreaElement
           )
             value.value = element.value.slice(0, 16_384)
+          if (element instanceof HTMLSelectElement && element.multiple)
+            value.values = [...element.selectedOptions].map((option) =>
+              option.value.slice(0, 16_384)
+            )
           if (
             element instanceof HTMLInputElement &&
             ["checkbox", "radio"].includes(element.type)

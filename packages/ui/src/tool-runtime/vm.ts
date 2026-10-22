@@ -7,9 +7,14 @@ import {
   type QuickJSRuntime,
 } from "quickjs-emscripten-core"
 import { TOOL_GUEST_SDK } from "./guest-sdk.ts"
+import {
+  toolEnvironment,
+  TOOL_SOURCE_CHARACTERS,
+  type ToolEnvironment,
+} from "./protocol.ts"
 
 export const TOOL_VM_LIMITS = Object.freeze({
-  sourceCharacters: 512 * 1024,
+  sourceCharacters: TOOL_SOURCE_CHARACTERS,
   messageCharacters: 512 * 1024,
   turnCharacters: 2 * 1024 * 1024,
   messagesPerTurn: 64,
@@ -56,7 +61,7 @@ export class ToolVm {
     )
   }
 
-  start(source: string): string[] {
+  start(source: string, environment: ToolEnvironment): string[] {
     if (this.dispatcher) throw new Error("The tool has already started.")
     if (source.length > TOOL_VM_LIMITS.sourceCharacters) {
       this.dispose()
@@ -96,6 +101,24 @@ export class ToolVm {
         throw new Error("The tool runtime could not start.")
       }
       this.dispatcher = sdk.value
+      // Initialize the SDK before any authored statement can observe it.
+      const initial = this.context.newString(
+        JSON.stringify({
+          type: "environment",
+          value: toolEnvironment(environment),
+        })
+      )
+      try {
+        this.track(
+          this.context.callFunction(
+            this.dispatcher,
+            this.context.undefined,
+            initial
+          )
+        )
+      } finally {
+        initial.dispose()
+      }
       this.track(this.context.evalCode(source, "tool.mjs", { type: "module" }))
     })
   }

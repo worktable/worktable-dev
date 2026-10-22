@@ -267,8 +267,10 @@ describe("share links", () => {
       }
       return originalRename(from, to)
     })
+    let releasePublication: (() => void) | undefined
     const published = widgetStore.writeWidget("space", document.widget, `${document.html}\n<!-- Published -->`).then((result) => {
-      try { expect(result.error).toBeNull() } finally { result.release?.() }
+      releasePublication = result.release
+      expect(result.error).toBeNull()
     })
     const duringPublish = spyOn(linkAccess, "prepareShareLinkAccess").mockImplementation(async (...args) => {
       const result = await original(...args)
@@ -285,6 +287,7 @@ describe("share links", () => {
     } finally {
       releaseSource()
       try { await published } finally {
+        releasePublication?.()
         publication.mockRestore()
         duringPublish.mockRestore()
       }

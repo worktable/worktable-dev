@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Agent compatibility:** Older agent connections can read and update pinned documents using their existing tool definitions.
+
 ## [0.1.26] - 2026-10-21
 
 ### Added

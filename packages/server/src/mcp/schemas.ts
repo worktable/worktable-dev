@@ -6,6 +6,7 @@ export { DrawingsReadInput, DrawingsWriteInput }
 // ============================================================
 
 import { z } from "zod"
+import { isDeepStrictEqual } from "node:util"
 import {
   AnnotationTargetSchema,
   ConversationIdentityIdSchema,
@@ -798,7 +799,23 @@ export const SpacesInput = z.strictObject({
         .describe(
           `Replace the Space's pinned docs (at most ${START_HERE_LIMIT}), in reading order. Pin the few active documents to read first, each with an optional one-line note on its role. Requires documents:write.`
         ),
-    }),
+      startHere: z
+        .array(StartHerePinSchema)
+        .max(START_HERE_LIMIT)
+        .optional()
+        .describe(
+          "Compatibility alias for pins. Requires documents:write. If both fields are provided, they must match."
+        ),
+    }).refine(
+      ({ pins, startHere }) =>
+        pins === undefined ||
+        startHere === undefined ||
+        isDeepStrictEqual(pins, startHere),
+      {
+        message: "pins and startHere must match when both are provided",
+        path: ["startHere"],
+      }
+    ),
     actionSchema("archive", {
       spaceId: z.string().describe("ID of the space to archive"),
       reason: z.string().max(DOCUMENT_ARCHIVE_REASON_MAX_LENGTH).optional(),

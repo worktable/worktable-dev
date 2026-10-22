@@ -20,6 +20,7 @@ import {
   recoverMissingWorkspaceSnapshot,
   readWorkspaceSnapshotRestoreStatus,
 } from "./workspace-snapshot-restore.ts"
+import { runVisitorCommentCaptureCommand } from "./visitor-comment-backup.ts"
 
 export type WorkspaceExportMaintenanceResult = LiveOperatorWorkspaceExportResult
 
@@ -49,6 +50,7 @@ export async function runServerMaintenance(
     destination: string
   ) => Promise<WorkspaceExportMaintenanceResult> = requestLiveOperatorWorkspaceExport
 ): Promise<boolean> {
+  if (await runVisitorCommentCaptureCommand(argv, writeResult)) return true
   const auditIndex = argv.lastIndexOf("workspace-backup-audit")
   if (auditIndex !== -1) {
     if (auditIndex !== argv.length - 1)
@@ -75,9 +77,9 @@ export async function runServerMaintenance(
   }
   const statusIndex = argv.lastIndexOf("workspace-snapshot-restore-status")
   if (statusIndex !== -1) {
-    if (statusIndex !== argv.length - 5)
+    if (statusIndex !== argv.length - 5 && statusIndex !== argv.length - 6)
       throw new Error(
-        "usage: worktable-server workspace-snapshot-restore-status <operation-id> <workspace-id> <source-checkpoint> <safety-checkpoint>"
+        "usage: worktable-server workspace-snapshot-restore-status <operation-id> <workspace-id> <source-checkpoint> <safety-checkpoint> [private-checkpoint-json]"
       )
     await writeResult(
       JSON.stringify(
@@ -86,6 +88,13 @@ export async function runServerMaintenance(
           workspaceId: argv[statusIndex + 2]!,
           sourceCheckpoint: argv[statusIndex + 3]!,
           safetyCheckpoint: argv[statusIndex + 4]!,
+          ...(argv[statusIndex + 5] === undefined
+            ? {}
+            : {
+                safetyVisitorCommentsCheckpoint: JSON.parse(
+                  argv[statusIndex + 5]!
+                ),
+              }),
         })
       )
     )
@@ -93,9 +102,9 @@ export async function runServerMaintenance(
   }
   const restoreIndex = argv.lastIndexOf("workspace-snapshot-restore")
   if (restoreIndex !== -1) {
-    if (restoreIndex !== argv.length - 5)
+    if (restoreIndex !== argv.length - 5 && restoreIndex !== argv.length - 6)
       throw new Error(
-        "usage: worktable-server workspace-snapshot-restore <operation-id> <workspace-id> <source-checkpoint> <safety-checkpoint>"
+        "usage: worktable-server workspace-snapshot-restore <operation-id> <workspace-id> <source-checkpoint> <safety-checkpoint> [private-checkpoint-json]"
       )
     const port = Number(process.env["PORT"] ?? "7480")
     if (!Number.isSafeInteger(port) || port < 1 || port > 65535)
@@ -116,6 +125,13 @@ export async function runServerMaintenance(
           workspaceId: argv[restoreIndex + 2],
           sourceCheckpoint: argv[restoreIndex + 3],
           safetyCheckpoint: argv[restoreIndex + 4],
+          ...(argv[restoreIndex + 5] === undefined
+            ? {}
+            : {
+                safetyVisitorCommentsCheckpoint: JSON.parse(
+                  argv[restoreIndex + 5]!
+                ),
+              }),
         }),
       }
     )

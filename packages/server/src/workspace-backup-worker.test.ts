@@ -48,7 +48,7 @@ async function fakeRestic(backupExit: number) {
 shift 4
 case "$1" in
   cat) printf '{"id":"${"b".repeat(64)}"}\\n' ;;
-  backup) exit ${backupExit} ;;
+  backup) printf '%s\\n' "$@" > ../restic-args.txt; exit ${backupExit} ;;
   *) exit 1 ;;
 esac`
   )
@@ -101,10 +101,16 @@ async function runJob(tools: { restic: string; server: string }) {
     expect(text).not.toContain("r2.example.invalid")
   }
   expect(existsSync(join(directory, "input.json"))).toBe(false)
+  const uploadArguments = existsSync(join(directory, "restic-args.txt"))
+    ? (await readFile(join(directory, "restic-args.txt"), "utf8"))
+        .trimEnd()
+        .split("\n")
+    : undefined
   return {
     succeeded,
     failure: JSON.parse(failure),
     progress: JSON.parse(progress),
+    uploadPaths: uploadArguments?.slice(uploadArguments.indexOf("--") + 1),
   }
 }
 
@@ -136,6 +142,10 @@ describe("backup worker failures", () => {
       type: "worktable.workspace-snapshot",
       workspaceId: "ws_backup_test",
       files: [],
+      visitorComments: {
+        size: 3,
+        checkpoint: { incarnation: "a".repeat(32), revision: 1 },
+      },
     })
     const job = await runJob({
       restic: await fakeRestic(3),
@@ -148,6 +158,11 @@ describe("backup worker failures", () => {
       message: "backup upload failed (exit 3)",
     })
     expect(job.progress).toMatchObject({ phase: "uploading", step: "upload" })
+    expect(job.uploadPaths).toEqual([
+      "workspace",
+      "snapshot.json",
+      "app/visitor-comments.sqlite",
+    ])
   })
 
   it("reads the manifest from among other lines the server printed", async () => {
@@ -164,6 +179,7 @@ describe("backup worker failures", () => {
     })
     // The manifest parsed: the job reached the upload.
     expect(job.failure.detail.step).toBe("upload")
+    expect(job.uploadPaths).toEqual(["workspace", "snapshot.json"])
   })
 
   it("says how much of a cut-off result arrived, without quoting it", async () => {
@@ -173,7 +189,8 @@ describe("backup worker failures", () => {
     })
     expect(job.failure.detail).toMatchObject({
       step: "parse-manifest",
-      message: "server command printed no snapshot manifest (35 bytes, cut off mid-line)",
+      message:
+        "server command printed no snapshot manifest (35 bytes, cut off mid-line)",
     })
   })
 })

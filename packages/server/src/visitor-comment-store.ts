@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite"
+import { randomBytes } from "node:crypto"
+import type { VisitorCommentsCheckpoint } from "@worktable/hosted-contract"
 import {
   chmodSync,
   closeSync,
@@ -26,7 +28,7 @@ interface StoreConnections {
   retry: number
 }
 const stores = new Map<string, StoreConnections>()
-
+let writesHeld = 0
 let visitorGeneration = 0
 export function visitorCommentGeneration(): number {
   return visitorGeneration
@@ -140,6 +142,7 @@ function requireReadOnlyFile(path: string): void {
 }
 
 function database(create = false): Database | null {
+  if (create && writesHeld) throw new VisitorCommentsUnavailable()
   const key = `${getAppDir()}\0${getWorkspaceRoot()}\0${workspaceCacheKey()}`
   const cached = stores.get(key)
   if (create && cached?.writer) return cached.writer
@@ -171,7 +174,7 @@ function database(create = false): Database | null {
     const version = (
       db.query("PRAGMA user_version").get() as { user_version: number }
     ).user_version
-    if (version !== 1 && !(create && version === 0))
+    if (version !== 1 && version !== 2 && !(create && version === 0))
       throw new VisitorCommentsUnavailable()
     if (create) {
       chmodSync(path, 0o600)
@@ -189,30 +192,7 @@ function database(create = false): Database | null {
         ).journal_mode !== "delete"
       )
         throw new VisitorCommentsUnavailable()
-      if (version === 0)
-        db.transaction(() => {
-          db!.exec(`CREATE TABLE visitor_comments (
-          id TEXT PRIMARY KEY, worktableId TEXT NOT NULL, link_id TEXT NOT NULL,
-          link_label TEXT NOT NULL, link_creator TEXT NOT NULL, document_id TEXT NOT NULL,
-          space_at_receipt TEXT NOT NULL, kind TEXT NOT NULL, visitor_name TEXT,
-          visitor_key TEXT NOT NULL, client_key TEXT, body TEXT, received_at INTEGER NOT NULL,
-          status TEXT NOT NULL CHECK(status IN ('new','done','passed','deleted')),
-          passed_by TEXT, passed_name TEXT, passed_at INTEGER, annotation_id TEXT,
-          deleted_by TEXT, deleted_at INTEGER, request_id TEXT NOT NULL,
-          UNIQUE(worktableId, link_id, visitor_key, request_id));
-          CREATE INDEX comments_document ON visitor_comments(worktableId, document_id, received_at DESC, id);
-          CREATE INDEX comments_link ON visitor_comments(worktableId, link_id, received_at DESC, id);
-          CREATE INDEX comments_day ON visitor_comments(worktableId, received_at);
-          CREATE INDEX comments_pending ON visitor_comments(worktableId, link_id, status);
-          CREATE TABLE visitor_replies(id TEXT PRIMARY KEY, comment_id TEXT NOT NULL REFERENCES visitor_comments(id) ON DELETE CASCADE,
-            author_id TEXT NOT NULL, author_name TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL);
-          CREATE INDEX replies_comment ON visitor_replies(comment_id, created_at);
-          CREATE TABLE visitor_link_state(worktableId TEXT NOT NULL, link_id TEXT NOT NULL, paused TEXT, PRIMARY KEY(worktableId,link_id));
-          CREATE TABLE visitor_cap_hits(worktableId TEXT NOT NULL, link_id TEXT NOT NULL, client_key TEXT NOT NULL, at INTEGER NOT NULL,
-            PRIMARY KEY(worktableId,link_id,client_key));
-          PRAGMA user_version=1;`)
-        }).immediate()
-
+      initializeVisitorCommentDatabase(db, version)
       // Forget free pages and historical WAL text from the preview's old format.
       if (previous === "wal") db.exec("VACUUM")
     } else
@@ -232,9 +212,102 @@ function database(create = false): Database | null {
   }
 }
 
+/** One schema owner for live stores and scoped operator snapshots. */
+export function initializeVisitorCommentDatabase(
+  db: Database,
+  version: number
+): void {
+  if (version === 0)
+    db.transaction(() => {
+      db!.exec(`CREATE TABLE visitor_comments (
+      id TEXT PRIMARY KEY, worktableId TEXT NOT NULL, link_id TEXT NOT NULL,
+      link_label TEXT NOT NULL, link_creator TEXT NOT NULL, document_id TEXT NOT NULL,
+      space_at_receipt TEXT NOT NULL, kind TEXT NOT NULL, visitor_name TEXT,
+      visitor_key TEXT NOT NULL, client_key TEXT, body TEXT, received_at INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('new','done','passed','deleted')),
+      passed_by TEXT, passed_name TEXT, passed_at INTEGER, annotation_id TEXT,
+      deleted_by TEXT, deleted_at INTEGER, request_id TEXT NOT NULL,
+      UNIQUE(worktableId, link_id, visitor_key, request_id));
+      CREATE INDEX comments_document ON visitor_comments(worktableId, document_id, received_at DESC, id);
+      CREATE INDEX comments_link ON visitor_comments(worktableId, link_id, received_at DESC, id);
+      CREATE INDEX comments_day ON visitor_comments(worktableId, received_at);
+      CREATE INDEX comments_pending ON visitor_comments(worktableId, link_id, status);
+      CREATE TABLE visitor_replies(id TEXT PRIMARY KEY, comment_id TEXT NOT NULL REFERENCES visitor_comments(id) ON DELETE CASCADE,
+        author_id TEXT NOT NULL, author_name TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL);
+      CREATE INDEX replies_comment ON visitor_replies(comment_id, created_at);
+      CREATE TABLE visitor_link_state(worktableId TEXT NOT NULL, link_id TEXT NOT NULL, paused TEXT, PRIMARY KEY(worktableId,link_id));
+      CREATE TABLE visitor_cap_hits(worktableId TEXT NOT NULL, link_id TEXT NOT NULL, client_key TEXT NOT NULL, at INTEGER NOT NULL,
+        PRIMARY KEY(worktableId,link_id,client_key));
+      PRAGMA user_version=1;`)
+    }).immediate()
+
+  if (version < 2)
+    db.transaction(() => {
+      db!.exec(
+        "CREATE TABLE visitor_meta(id INTEGER PRIMARY KEY CHECK(id=1),incarnation TEXT NOT NULL,revision INTEGER NOT NULL)"
+      )
+      db!
+        .query("INSERT INTO visitor_meta VALUES(1,?,0)")
+        .run(randomBytes(16).toString("hex"))
+      for (const table of [
+        "visitor_comments",
+        "visitor_replies",
+        "visitor_link_state",
+        "visitor_cap_hits",
+      ])
+        for (const operation of ["INSERT", "UPDATE", "DELETE"])
+          db!.exec(
+            `CREATE TRIGGER ${table}_${operation.toLowerCase()}_revision AFTER ${operation} ON ${table} BEGIN UPDATE visitor_meta SET revision=revision+1 WHERE id=1; END`
+          )
+      db!.exec("PRAGMA user_version=2")
+    }).immediate()
+}
+
 /** Existing private state is recovered at boot; this never creates a store. */
 export function prepareVisitorCommentStore(): void {
   if (existsSync(storePath())) database(true)
+}
+
+export function visitorCommentStoreFile(): string {
+  return storePath()
+}
+
+function checkpoint(db: Database): VisitorCommentsCheckpoint {
+  const value = db
+    .query("SELECT incarnation,revision FROM visitor_meta WHERE id=1")
+    .get() as VisitorCommentsCheckpoint | null
+  if (
+    !value ||
+    !/^[a-f0-9]{32}$/.test(value.incarnation) ||
+    !Number.isSafeInteger(value.revision) ||
+    value.revision < 0
+  )
+    throw new VisitorCommentsUnavailable()
+  return value
+}
+
+/** A logical fence survives restarts and covers replies, pauses and erasure. */
+export function visitorCommentsCheckpoint(): VisitorCommentsCheckpoint | null {
+  const db = database()
+  return db ? checkpoint(db) : null
+}
+
+/** Replacement holds this across its last fence and private-state publication. */
+export function holdVisitorCommentWrites(): () => void {
+  writesHeld += 1
+  try {
+    closeVisitorCommentStores()
+  } catch (error) {
+    writesHeld -= 1
+    throw error
+  }
+  let released = false
+  return () => {
+    if (!released) {
+      released = true
+      writesHeld -= 1
+    }
+  }
 }
 
 // The portable Worktable ID is retained by operator restore.
@@ -592,6 +665,32 @@ export function finishVisitorComment(
   if (writes) notifyStoreChange()
 }
 
+/** The ordinary annotation is durable before this private receipt changes. */
+export function markVisitorCommentPassed(
+  worktableId: string,
+  id: string,
+  passed: {
+    annotationId: string
+    by: { id: string; name: string }
+    at: string
+  }
+): void {
+  const changed = database(true)!
+    .query(
+      "UPDATE visitor_comments SET status='passed',annotation_id=?,passed_by=?,passed_name=?,passed_at=? WHERE worktableId=? AND id=? AND status!='deleted'"
+    )
+    .run(
+      passed.annotationId,
+      passed.by.id,
+      passed.by.name,
+      Date.parse(passed.at),
+      worktableId,
+      id
+    )
+  if (!changed.changes) throw new VisitorCommentsUnavailable()
+  notifyStoreChange()
+}
+
 export interface VisitorCommentRetentionChange {
   worktableId: string
   spaceId: string
@@ -603,7 +702,7 @@ export interface VisitorCommentRetentionChange {
 export function sweepVisitorComments(
   now = Date.now()
 ): VisitorCommentRetentionChange[] {
-  if (!database()) return []
+  if (writesHeld || !database()) return []
   const db = database(true)!
   let writes = 0
   let changed: VisitorCommentRetentionChange[] = []

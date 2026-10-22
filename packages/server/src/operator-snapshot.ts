@@ -99,11 +99,15 @@ export async function writeLiveOperatorWorkspaceSnapshot(
           workspaceStorageVersion: manifest.workspaceStorageVersion,
           sourceCheckpoint: manifest.sourceCheckpoint,
           contentCheckpoint: manifest.contentCheckpoint,
+          visitorCommentsCheckpoint:
+            manifest.visitorComments?.checkpoint ?? null,
           capturedAt: manifest.capturedAt,
           captureBarrierMs,
           publicationMs: performance.now() - startedAt,
           files: manifest.files.length,
-          bytes: manifest.files.reduce((sum, file) => sum + file.size, 0),
+          bytes:
+            manifest.files.reduce((sum, file) => sum + file.size, 0) +
+            (manifest.visitorComments?.size ?? 0),
         }
       })
   )

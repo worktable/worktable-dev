@@ -48,6 +48,7 @@ import {
   receiveVisitorComment,
   sweepVisitorComments,
 } from "./visitor-comment-store.ts"
+import * as visitorStore from "./visitor-comment-store.ts"
 import { pendingVisitorComments } from "./visitor-comment-pending.ts"
 import {
   ensureWorkspaceManifest,
@@ -323,6 +324,67 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
       (await app.request("/api/workspace/export", { headers })).status
     ).toBe(403)
     await runWithTeamIdentity(identity, async () => {
+      const forged = {
+        target: { type: "doc", docPath: "report" },
+        category: "comment",
+        body: "Not published",
+        metadata: { "worktable.origin": {} },
+      }
+      for (const [method, path, body] of [
+        ["POST", "/api/spaces/space/annotations", forged],
+        [
+          "POST",
+          "/api/spaces/space/annotations",
+          {
+            ...forged,
+            metadata: {},
+            idempotencyKey: `visitor-comment:${comment.id}`,
+          },
+        ],
+        [
+          "PATCH",
+          `/api/spaces/space/annotations/${ordinary.annotation.id}`,
+          { metadata: { "worktable.origin": null } },
+        ],
+        [
+          "POST",
+          "/api/spaces/space/documents/annotations",
+          { ...forged, path: "report" },
+        ],
+        [
+          "PATCH",
+          `/api/spaces/space/documents/annotations/${ordinary.annotation.id}`,
+          { metadata: { "worktable.origin": null } },
+        ],
+      ] as const) {
+        expect(
+          (
+            await app.request(path, {
+              method,
+              headers: { ...headers, "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            })
+          ).status
+        ).toBe(400)
+      }
+      await expect(
+        dispatchOperation(
+          "annotations.create",
+          { spaceId: "space", ...forged },
+          { identity, principal: identity.principal, scopes: identity.scopes }
+        )
+      ).rejects.toThrow("Source metadata is set by Worktable")
+      await expect(
+        dispatchOperation(
+          "annotations.update",
+          {
+            spaceId: "space",
+            annotationId: ordinary.annotation.id,
+            patch: { metadata: { "worktable.origin": null } },
+          },
+          { identity, principal: identity.principal, scopes: identity.scopes }
+        )
+      ).rejects.toThrow("Source metadata is set by Worktable")
       for (const [operation, args] of [
         ["annotations.list", { spaceId: "space" }],
         [
@@ -513,6 +575,12 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
     },
     owner
   )
+  const issuedAgentTokens: string[] = []
+  const teamAgentGrants: Array<{
+    subjectType: "agent"
+    subjectId: string
+    access: "edit"
+  }> = []
   for (const ownership of ["personal", "team"] as const) {
     const agent = createTeamAgent(
       { name: ownership, platform: "codex", ownership },
@@ -524,17 +592,22 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
       credential.metadata.principal.id,
       activated.identity
     )
-    if (ownership === "team")
+    if (ownership === "team") {
+      teamAgentGrants.push({
+        subjectType: "agent",
+        subjectId: agent.id,
+        access: "edit",
+      })
       setSpaceAccessPolicy(
         {
           spaceId: "space",
           visibility: "restricted",
-          grants: [
-            { subjectType: "agent", subjectId: agent.id, access: "edit" },
-          ],
+          grants: teamAgentGrants,
         },
         activated.identity
       )
+    }
+    issuedAgentTokens.push(credential.token)
     await probe(credential.token)
   }
   const cookies = (headers: Headers) =>
@@ -572,7 +645,10 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
       {
         spaceId: "space",
         visibility: "restricted",
-        grants: [{ subjectType: "member", subjectId: member.id, access }],
+        grants: [
+          ...teamAgentGrants,
+          { subjectType: "member", subjectId: member.id, access },
+        ],
       },
       activated.identity
     )
@@ -605,6 +681,95 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
   expect(
     (await app.request(privatePath, { headers: memberHeaders })).status
   ).toBe(403)
+  grantMember("edit")
+  const passPath = `/api/spaces/space/visitor-comments/${comment.id}/pass`
+  const passHeaders = new Headers(memberHeaders)
+  passHeaders.set("Content-Type", "application/json")
+  const input = {
+    category: "instruction",
+    note: "Please check this request.",
+    quote: sentinel,
+    includeName: false,
+  }
+  const interrupted = spyOn(
+    visitorStore,
+    "markVisitorCommentPassed"
+  ).mockImplementationOnce(() => {
+    throw new visitorStore.VisitorCommentsUnavailable()
+  })
+  try {
+    expect(
+      (
+        await app.request(passPath, {
+          method: "POST",
+          headers: passHeaders,
+          body: JSON.stringify(input),
+        })
+      ).status
+    ).toBe(503)
+  } finally {
+    interrupted.mockRestore()
+  }
+  // The ordinary annotation committed before the interruption. Retrying as
+  // another member recovers it, with the first member's credit and words.
+  const ownerPassHeaders = cookies(activated.headers)
+  ownerPassHeaders.set("Content-Type", "application/json")
+  const recovered = await app.request(passPath, {
+    method: "POST",
+    headers: ownerPassHeaders,
+    body: JSON.stringify({ ...input, note: "A different retry note" }),
+  })
+  expect(recovered.status).toBe(200)
+  const passed = await recovered.json()
+  expect(passed.created).toBe(false)
+  expect(passed.annotation.author).toMatchObject({
+    type: "user",
+    id: member.actorId,
+    name: "Reviewer",
+  })
+  expect(passed.annotation.body).toStartWith(
+    "Please check this request.\n\n> Outside input, unverified."
+  )
+  expect(passed.annotation.body).toContain(`\n> ${sentinel}`)
+  expect(passed.annotation.metadata["worktable.origin"]).toMatchObject({
+    kind: "visitorComment",
+    v: 1,
+    visitorCommentId: comment.id,
+    visitorName: null,
+    passedBy: { id: member.actorId },
+    quote: sentinel,
+    quoteEdited: false,
+  })
+  expect(
+    visitorStore.readVisitorComment(namespace.worktableId, comment.id)
+  ).toMatchObject({
+    status: "passed",
+    annotation_id: passed.annotation.id,
+    passed_by: member.actorId,
+  })
+  for (const token of issuedAgentTokens) {
+    const headers = { Authorization: `Bearer ${token}` }
+    const visible = await app.request(
+      `/api/spaces/space/annotations/${passed.annotation.id}?includeTargetContext=true`,
+      { headers }
+    )
+    expect(visible.status).toBe(200)
+    expect(await visible.text()).toContain(sentinel)
+    expect((await app.request(privatePath, { headers })).status).toBe(403)
+    const identity = (await verifyBearer(token))!
+    await runWithTeamIdentity(identity, async () => {
+      const visible = await dispatchOperation(
+        "annotations.read",
+        {
+          spaceId: "space",
+          annotationId: passed.annotation.id,
+          includeTargetContext: true,
+        },
+        { identity, principal: identity.principal, scopes: identity.scopes }
+      )
+      expect(JSON.stringify(visible)).toContain(sentinel)
+    })
+  }
   mayEdit = true
   const noticesBeforeRetention = visitorNotices().length
   await notifyRetainedVisitorComments(

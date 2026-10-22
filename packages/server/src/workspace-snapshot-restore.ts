@@ -14,7 +14,10 @@ import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { ensureAppDir } from "./app-storage.ts"
 import { readBoundedRegularFile } from "./bounded-file.ts"
 import { operatorSnapshotDirectory } from "./operator-snapshot.ts"
-import { restoreSharingPolicy, finalizeRestoredSharingPolicy } from "./share-links-store.ts"
+import {
+  restoreSharingPolicy,
+  finalizeRestoredSharingPolicy,
+} from "./share-links-store.ts"
 import { inspectWorkspaceSnapshot } from "./workspace-snapshot.ts"
 import {
   createWorkspaceReplacementPaths,
@@ -32,6 +35,14 @@ import {
 } from "./workspace-transfer-v2.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { convertStagedWorkspaceStorageV2 } from "./document-storage-migration-v2.ts"
+import type { VisitorCommentsCheckpoint } from "@worktable/hosted-contract"
+import {
+  holdVisitorCommentsAtCheckpoint,
+  restoreVisitorCommentBackup,
+  VisitorCommentsCheckpointSchema,
+  VisitorCommentBackupStateSchema,
+  type VisitorCommentBackupState,
+} from "./visitor-comment-backup.ts"
 
 export const LOCAL_OPERATOR_SNAPSHOT_RESTORE_PATH =
   "/internal/operator/workspace-snapshot-restore"
@@ -40,6 +51,14 @@ export interface SnapshotRestoreRequest {
   workspaceId: string
   sourceCheckpoint: string
   safetyCheckpoint: string
+  /** Missing means an older caller, safe only when no private store exists. */
+  safetyVisitorCommentsCheckpoint?: VisitorCommentsCheckpoint | null
+}
+
+function privateCheckpointIdentity(value: unknown): string | undefined {
+  return value === undefined
+    ? undefined
+    : JSON.stringify(VisitorCommentsCheckpointSchema.nullable().parse(value))
 }
 
 /** Offline recovery runs before the replacement runtime's first server boot. */
@@ -83,6 +102,13 @@ export async function recoverMissingWorkspaceSnapshot(
       // links store, so it never replaces a newer one; links never come back.
       // An unpublished restore stays retryable, including a different snapshot.
       await restoreSharingPolicy(manifest.sharingPolicy ?? null)
+      // Publish private state first while there is no live workspace. A crash
+      // before the rename leaves recovery retryable; after it, both are present.
+      await restoreVisitorCommentBackup(
+        downloaded,
+        manifest.visitorComments ?? null,
+        manifest.workspaceId
+      )
       await rename(join(downloaded, "workspace"), root)
       finalizeRestoredSharingPolicy()
       missingRootRecoveryHookForTests?.()
@@ -107,6 +133,9 @@ export async function recoverMissingWorkspaceSnapshot(
 interface RestoreJob extends SnapshotRestoreRequest {
   teamState?: TeamBackupState
   teamRestored?: boolean
+  /** Missing is a legacy job; null explicitly restores no private state. */
+  visitorComments?: VisitorCommentBackupState | null
+  visitorCommentsRestored?: boolean
   id: string
   kind: "snapshot"
   state: "replacing" | "complete" | "failed"
@@ -150,6 +179,8 @@ export async function readWorkspaceSnapshotRestoreStatus(
     job.workspaceId !== request.workspaceId ||
     job.sourceCheckpoint !== request.sourceCheckpoint ||
     job.safetyCheckpoint !== request.safetyCheckpoint ||
+    privateCheckpointIdentity(job.safetyVisitorCommentsCheckpoint) !==
+      privateCheckpointIdentity(request.safetyVisitorCommentsCheckpoint) ||
     !["replacing", "complete", "failed"].includes(job.state)
   )
     throw new Error("restore status identity mismatch")
@@ -183,6 +214,7 @@ async function saveJob(directory: string, job: RestoreJob): Promise<void> {
 export async function restoreLiveWorkspaceSnapshot(
   request: SnapshotRestoreRequest
 ) {
+  privateCheckpointIdentity(request.safetyVisitorCommentsCheckpoint)
   if (
     !/^[a-f0-9]{64}$/.test(request.sourceCheckpoint) ||
     !/^[a-f0-9]{64}$/.test(request.safetyCheckpoint) ||
@@ -210,6 +242,12 @@ export async function restoreLiveWorkspaceSnapshot(
         if (
           existing.sourceCheckpoint !== request.sourceCheckpoint ||
           existing.safetyCheckpoint !== request.safetyCheckpoint ||
+          privateCheckpointIdentity(
+            existing.safetyVisitorCommentsCheckpoint
+          ) !==
+            privateCheckpointIdentity(
+              request.safetyVisitorCommentsCheckpoint
+            ) ||
           existing.workspaceId !== request.workspaceId
         )
           throw new Error("restore operation id is already in use")
@@ -232,6 +270,7 @@ export async function restoreLiveWorkspaceSnapshot(
           id,
           kind: "snapshot",
           ...(snapshot.teamState ? { teamState: snapshot.teamState } : {}),
+          visitorComments: snapshot.visitorComments ?? null,
           state: "replacing",
           updatedAt: new Date().toISOString(),
           expiresAt: new Date(Date.now() + 30 * 86400000).toISOString(),
@@ -239,6 +278,7 @@ export async function restoreLiveWorkspaceSnapshot(
         }
         // Recovery knows both sibling paths before any move or live-root mutation.
         await saveJob(jobDirectory, job)
+        let releasePrivateWrites: (() => void) | undefined
         try {
           await rename(join(downloaded, "workspace"), job.prepared.stagingPath)
           await convertStagedWorkspaceStorageV2(job.prepared.stagingPath)
@@ -261,6 +301,9 @@ export async function restoreLiveWorkspaceSnapshot(
                   throw new Error(
                     "workspace changed after its safety backup; retry the restore"
                   )
+                releasePrivateWrites = holdVisitorCommentsAtCheckpoint(
+                  request.safetyVisitorCommentsCheckpoint
+                )
               },
             },
             onCommitted: async () => {
@@ -269,6 +312,14 @@ export async function restoreLiveWorkspaceSnapshot(
                 job.teamRestored = true
                 await saveJob(jobDirectory, job)
               } else resetTeamSpacePoliciesAfterContentReplacement()
+              await restoreVisitorCommentBackup(
+                downloaded,
+                job.visitorComments ?? null,
+                job.workspaceId
+              )
+              job.visitorCommentsRestored = true
+              await saveJob(jobDirectory, job)
+              releasePrivateWrites?.()
             },
             onSucceeded: async () => {
               job.state = "complete"
@@ -281,6 +332,7 @@ export async function restoreLiveWorkspaceSnapshot(
             onFailed: async (_error, options) => {
               // An ambiguous swap remains recoverable and fenced until startup.
               if (options?.recoveryIncomplete) return
+              releasePrivateWrites?.()
               job.state = "failed"
               job.error =
                 "Checkpoint restore failed; the current workspace was retained."
@@ -292,6 +344,7 @@ export async function restoreLiveWorkspaceSnapshot(
             },
           })
         } catch (error) {
+          releasePrivateWrites?.()
           job.state = "failed"
           job.error =
             "Checkpoint preparation failed; the current workspace was retained."
@@ -317,16 +370,28 @@ export async function finalizeCommittedTeamSnapshotRestore(
   const job = JSON.parse(
     await readBoundedRegularFile(join(directory, "job.json"), 128 * 1024)
   ) as RestoreJob
-  if (job.kind !== "snapshot" || job.id !== jobId || job.teamRestored) return
-  if (!job.teamState) {
-    resetTeamSpacePoliciesAfterContentReplacement()
+  if (job.kind !== "snapshot" || job.id !== jobId) return
+  const operationDirectory = await operatorSnapshotDirectory(job.operationId)
+  if (!job.teamRestored) {
+    if (job.teamState)
+      await restoreTeamBackupState(
+        join(operationDirectory, "download"),
+        TeamBackupStateSchema.parse(job.teamState)
+      )
+    else resetTeamSpacePoliciesAfterContentReplacement()
     job.teamRestored = true
     await saveJob(directory, job)
-    return
   }
-  const state = TeamBackupStateSchema.parse(job.teamState)
-  const operationDirectory = await operatorSnapshotDirectory(job.operationId)
-  await restoreTeamBackupState(join(operationDirectory, "download"), state)
-  job.teamRestored = true
-  await saveJob(directory, job)
+  if (!job.visitorCommentsRestored && job.visitorComments !== undefined) {
+    const state = job.visitorComments
+      ? VisitorCommentBackupStateSchema.parse(job.visitorComments)
+      : null
+    await restoreVisitorCommentBackup(
+      join(operationDirectory, "download"),
+      state,
+      job.workspaceId
+    )
+    job.visitorCommentsRestored = true
+    await saveJob(directory, job)
+  }
 }

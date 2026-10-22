@@ -1,6 +1,7 @@
 import type {
   BackupWorkerInput,
   BackupWorkerResult,
+  VisitorCommentsCheckpoint,
 } from "@worktable/hosted-contract"
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
@@ -20,6 +21,7 @@ interface WorkspaceSnapshotManifest {
     authentication: { size: number }
     participants?: { size: number }
   }
+  visitorComments?: { size: number; checkpoint: VisitorCommentsCheckpoint }
   files: Array<{ size: number }>
 }
 
@@ -470,7 +472,9 @@ async function runBackupSteps(
             input.workspaceId,
           ])
           await advance("parse-manifest")
-          manifest = snapshotManifestResult(inspected) as WorkspaceSnapshotManifest
+          manifest = snapshotManifestResult(
+            inspected
+          ) as WorkspaceSnapshotManifest
           await advance("upload", "uploading")
           const backup = await restic(
             [
@@ -486,6 +490,9 @@ async function runBackupSteps(
               "workspace",
               "snapshot.json",
               ...(manifest.teamState ? ["team"] : []),
+              ...(manifest.visitorComments
+                ? ["app/visitor-comments.sqlite"]
+                : []),
             ],
             capture
           )
@@ -570,7 +577,9 @@ async function runBackupSteps(
             input.workspaceId,
           ])
           await advance("parse-manifest")
-          manifest = snapshotManifestResult(inspected) as WorkspaceSnapshotManifest
+          manifest = snapshotManifestResult(
+            inspected
+          ) as WorkspaceSnapshotManifest
           await advance("verify")
           if (manifest.sourceCheckpoint !== input.sourceCheckpoint)
             throw new Error("downloaded checkpoint does not match the catalog")
@@ -593,12 +602,14 @@ async function runBackupSteps(
         captureId: manifest.snapshotId,
         sourceCheckpoint: manifest.sourceCheckpoint,
         contentCheckpoint: manifest.contentCheckpoint,
+        visitorCommentsCheckpoint: manifest.visitorComments?.checkpoint ?? null,
         workspaceStorageVersion: manifest.workspaceStorageVersion,
         capturedAt: manifest.capturedAt,
         bytes:
           manifest.files.reduce((total, file) => total + file.size, 0) +
           (manifest.teamState?.authentication.size ?? 0) +
-          (manifest.teamState?.participants?.size ?? 0),
+          (manifest.teamState?.participants?.size ?? 0) +
+          (manifest.visitorComments?.size ?? 0),
         completedAt: new Date().toISOString(),
       }
       await publishWorkerJson(directory, "result.json", result)

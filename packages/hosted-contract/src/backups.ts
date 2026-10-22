@@ -50,6 +50,11 @@ export interface BackupWorkerInput {
   sourceCheckpoint?: string
   captureBudgetMs?: number
 }
+export interface VisitorCommentsCheckpoint {
+  incarnation: string
+  revision: number
+}
+
 export interface BackupWorkerResult {
   version: 1
   jobId: string
@@ -61,6 +66,8 @@ export interface BackupWorkerResult {
   captureId: string
   sourceCheckpoint: string
   contentCheckpoint: string
+  /** Null records that the safety capture had no private comment store. */
+  visitorCommentsCheckpoint?: VisitorCommentsCheckpoint | null
   workspaceStorageVersion: 1 | 2
   capturedAt: string
   bytes: number

@@ -1,4 +1,5 @@
 import { teamsEnabled } from "../team-database.ts";
+import { reservedAnnotationInput } from "../annotation-origin.ts"
 import { canAccessSpace } from "../team-policy.ts";
 import { documentSourceDisposition } from "../content-disposition.ts"
 import { Hono, type Context } from "hono"
@@ -911,9 +912,9 @@ documentsRouter.post(
   "/annotations",
   requireScope("annotations:write"),
   async (c) => {
-    const parsed = CreateDocumentAnnotationSchema.safeParse(
-      await c.req.json().catch(() => null)
-    )
+    const body: unknown = await c.req.json().catch(() => null)
+    if (reservedAnnotationInput(body)) return c.json({ error: "Source metadata is set by Worktable", code: "RESERVED_METADATA" }, 400)
+    const parsed = CreateDocumentAnnotationSchema.safeParse(body)
     if (!parsed.success) {
       return c.json(
         { error: parsed.error.message, code: "VALIDATION_ERROR" },
@@ -965,9 +966,9 @@ documentsRouter.patch(
   "/annotations/:annotationId",
   requireScope("annotations:write"),
   async (c) => {
-    const parsed = UpdateDocumentAnnotationSchema.safeParse(
-      await c.req.json().catch(() => null)
-    )
+    const body: unknown = await c.req.json().catch(() => null)
+    if (reservedAnnotationInput(body)) return c.json({ error: "Source metadata is set by Worktable", code: "RESERVED_METADATA" }, 400)
+    const parsed = UpdateDocumentAnnotationSchema.safeParse(body)
     if (!parsed.success) {
       return c.json(
         { error: parsed.error.message, code: "VALIDATION_ERROR" },

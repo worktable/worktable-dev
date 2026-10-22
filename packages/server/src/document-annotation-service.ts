@@ -1,4 +1,5 @@
 import { noteCommentActivity } from "./activity-log.ts"
+import type { AnnotationWriteGuard } from "./annotation-origin.ts"
 import { nanoid } from "nanoid"
 import { NON_ENGAGING_ACTORS, noteDocumentActivity } from "./document-activity.ts"
 import { analyzeDocumentPath } from "./document-path.ts"
@@ -175,9 +176,11 @@ async function ownerForPath(
 
 async function writeOwner(
   spaceId: string,
-  owner: AnnotationOwner
+  owner: AnnotationOwner,
+  beforeWrite?: AnnotationWriteGuard
 ): Promise<void> {
   try {
+    if (beforeWrite) await beforeWrite(owner.document.documentId)
     const written = await writeDocumentAnnotationsV2({
       workspaceRoot: getWorkspaceRoot(),
       spaceId,
@@ -669,7 +672,8 @@ export async function createLegacyCompatibleAnnotationV2(
     labels?: string[]
     idempotencyKey?: string
     metadata?: Record<string, unknown>
-  }
+  },
+  beforeWrite?: AnnotationWriteGuard
 ): Promise<{ annotation: Annotation; created: boolean }> {
   const requestedPath =
     input.target.type === "widget"
@@ -685,6 +689,7 @@ export async function createLegacyCompatibleAnnotationV2(
         (annotation) => annotation.idempotencyKey === input.idempotencyKey
       )
       if (existing) {
+        if (beforeWrite) await beforeWrite(owner.document.documentId)
         const projected = legacyAnnotation(owner, existing)
         if (!projected) {
           throw new Error("Annotation selector requires the common API")
@@ -705,7 +710,7 @@ export async function createLegacyCompatibleAnnotationV2(
     const annotation = newAnnotation(spaceId, owner, input)
     annotation.target = target
     owner.annotations.push(annotation)
-    await writeOwner(spaceId, owner)
+    await writeOwner(spaceId, owner, beforeWrite)
     const projected = legacyAnnotation(owner, annotation)
     if (!projected) {
       throw new Error("Annotation selector requires the common API")

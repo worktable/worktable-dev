@@ -763,11 +763,13 @@ async function runStdioMcp(): Promise<void> {
     return
   }
 
-  const [{ configuredMcpSurface, createWorktableMcpServer }, { StdioServerTransport }] =
-    await Promise.all([
-      import("@worktable/server/mcp"),
-      import("@modelcontextprotocol/sdk/server/stdio.js"),
-    ])
+  const [
+    { configuredMcpSurface, createWorktableMcpServer },
+    { StdioServerTransport },
+  ] = await Promise.all([
+    import("@worktable/server/mcp"),
+    import("@modelcontextprotocol/sdk/server/stdio.js"),
+  ])
   const server = createWorktableMcpServer({
     version: VERSION,
     surface: configuredMcpSurface(),
@@ -5406,7 +5408,9 @@ export function buildProgram(): Command {
     .description("Recover access to a team Worktable from its machine")
   team
     .command("reset-password")
-    .description("Print a single-use link that sets a new password for an account")
+    .description(
+      "Print a single-use link that sets a new password for an account"
+    )
     .argument("<email>", "the account's email")
     .action((email) => commandTeamResetPassword(email))
   const teamOperator = team
@@ -5644,7 +5648,23 @@ export function preprocessArgv(argv: string[]): string[] {
 }
 
 export async function main(): Promise<void> {
-  const argv = preprocessArgv(process.argv.slice(2))
+  const args = process.argv.slice(2)
+  // Internal snapshot worker, including when this binary owns the server.
+  if (args[0] === "visitor-comments-capture") {
+    const { runVisitorCommentCaptureCommand } =
+      await import("@worktable/server/runtime")
+    await runVisitorCommentCaptureCommand(
+      args,
+      (value) =>
+        new Promise<void>((resolve, reject) =>
+          process.stdout.write(`${value}\n`, (error) =>
+            error ? reject(error) : resolve()
+          )
+        )
+    )
+    return
+  }
+  const argv = preprocessArgv(args)
   const program = buildProgram()
   await program.parseAsync(argv, { from: "user" })
 }

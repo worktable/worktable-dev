@@ -5,6 +5,12 @@ import {
 } from "./team-backup.ts"
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
 import { sharingPolicyForBackup } from "./share-links-store.ts"
+import {
+  captureVisitorCommentBackup,
+  inspectVisitorCommentBackup,
+  VisitorCommentBackupStateSchema,
+  type VisitorCommentBackupState,
+} from "./visitor-comment-backup.ts"
 import { createHash, randomBytes } from "node:crypto"
 import { lstat, mkdir, open, realpath, rename } from "node:fs/promises"
 import {
@@ -19,7 +25,11 @@ import {
 import { z } from "zod"
 import { readBoundedRegularFile } from "./bounded-file.ts"
 import { removeWorkspaceTree } from "./workspace-tree-cleanup.ts"
-import { getWorkspaceRoot, isWorkspaceManifest } from "./workspace.ts"
+import {
+  getWorkspaceRoot,
+  isWorkspaceManifest,
+  prepareWorkspaceTarget,
+} from "./workspace.ts"
 import {
   inspectPortableWorkspaceTree,
   portableWorkspaceCheckpoint,
@@ -70,6 +80,7 @@ export const WorkspaceSnapshotManifestSchema = z.object({
    * Older runtimes ignore it.
    */
   sharingPolicy: z.record(z.string(), z.unknown()).optional(),
+  visitorComments: VisitorCommentBackupStateSchema.optional(),
   directories: z
     .array(z.object(metadata))
     .max(WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES),
@@ -127,6 +138,7 @@ export async function writeWorkspaceSnapshot(
   try {
     let teamState: Awaited<ReturnType<typeof captureTeamBackupState>>
     let sharingPolicy: Record<string, unknown> | null = null
+    let visitorComments: VisitorCommentBackupState | undefined
     const manifest = await withPortableWorkspaceCapture(
       async (capture) => {
         const inventory: PortableWorkspaceInventory = {
@@ -136,6 +148,7 @@ export async function writeWorkspaceSnapshot(
         const result: WorkspaceSnapshotManifest = {
           ...(teamState ? { teamState } : {}),
           ...(sharingPolicy ? { sharingPolicy } : {}),
+          ...(visitorComments ? { visitorComments } : {}),
           type: "worktable.workspace-snapshot",
           backupFormatVersion: 1,
           snapshotId: `snap_${randomBytes(16).toString("base64url")}`,
@@ -178,6 +191,13 @@ export async function writeWorkspaceSnapshot(
               teamState = await captureTeamBackupState(temporary)
               // Operator backups also keep the owner's share link policy.
               sharingPolicy = sharingPolicyForBackup()
+              if (sourceRoot !== (await realpath(getWorkspaceRoot())))
+                throw new Error("Private state belongs to the active Worktable")
+              visitorComments = await captureVisitorCommentBackup(
+                temporary,
+                prepareWorkspaceTarget(sourceRoot, "open").manifest.id,
+                options.signal
+              )
             }
             return result
           }
@@ -190,6 +210,10 @@ export async function writeWorkspaceSnapshot(
     await mapWithConcurrency(manifest.files, 8, (file) =>
       sync(join(temporary, "workspace", file.path))
     )
+    if (manifest.visitorComments) {
+      await sync(join(temporary, "app", "visitor-comments.sqlite"))
+      await sync(join(temporary, "app"))
+    }
     for (const directory of [...manifest.directories].sort(
       (a, b) => b.path.split("/").length - a.path.split("/").length
     )) {
@@ -233,6 +257,11 @@ export async function inspectWorkspaceSnapshot(
     if (manifest.teamState.worktableId !== manifest.workspaceId)
       throw new Error("Team state belongs to another snapshot")
     await inspectTeamBackupState(root, manifest.teamState)
+  }
+  if (manifest.visitorComments) {
+    if (manifest.visitorComments.worktableId !== manifest.workspaceId)
+      throw new Error("Visitor comments belong to another snapshot")
+    await inspectVisitorCommentBackup(root, manifest.visitorComments)
   }
   if (
     expected &&

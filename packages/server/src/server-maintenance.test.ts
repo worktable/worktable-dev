@@ -27,8 +27,18 @@ import {
   inspectWorkspaceSnapshot,
   writeWorkspaceSnapshot,
 } from "./workspace-snapshot.ts"
-import { restoreLiveWorkspaceSnapshot } from "./workspace-snapshot-restore.ts"
+import {
+  restoreLiveWorkspaceSnapshot,
+  finalizeCommittedTeamSnapshotRestore,
+} from "./workspace-snapshot-restore.ts"
 import { operatorSnapshotDirectory } from "./operator-snapshot.ts"
+import {
+  appendVisitorReply,
+  receiveVisitorComment,
+  visitorCommentsCheckpoint,
+  visitorReplies,
+  readVisitorComment,
+} from "./visitor-comment-store.ts"
 
 let root: string
 let workspace: string
@@ -67,6 +77,20 @@ describe("server maintenance entrypoint", () => {
   it("captures through the live capability and rejects restoring over edits made after the safety capture", async () => {
     const server = startServer(0, "127.0.0.1")
     process.env["PORT"] = String(server.port)
+    const outside = receiveVisitorComment({
+      worktableId: ensureWorkspaceManifest().id,
+      linkId: "link",
+      linkLabel: "Review",
+      linkCreator: "owner",
+      documentId: "doc_report",
+      spaceId: "notes",
+      kind: "html",
+      visitorName: "Reviewer",
+      visitorKey: "a".repeat(64),
+      clientKey: "c".repeat(32),
+      body: "PRIVATE_RESTORE_CONTROL",
+      requestId: "request01",
+    })
     const output: string[] = []
     await runServerMaintenance(
       ["workspace-snapshot", "live-capture-test"],
@@ -92,6 +116,31 @@ describe("server maintenance entrypoint", () => {
         "job.json"
       )
     }
+    const waitJob = async (path: string) => {
+      for (let i = 0; i < 200; i++) {
+        const job = JSON.parse(await readFile(path, "utf8"))
+        if (job.state !== "replacing") return job
+        // test-policy: external-readiness-backoff (durable restore/admission state)
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      throw new Error("restore did not finish")
+    }
+    appendVisitorReply(
+      saved.workspaceId,
+      outside.id,
+      { id: "member", name: "The team" },
+      "Arrived after safety capture"
+    )
+    const privateFailedJob = await prepare("restore-private-stale-test")
+    await restoreLiveWorkspaceSnapshot({
+      operationId: "restore-private-stale-test",
+      workspaceId: saved.workspaceId,
+      sourceCheckpoint: saved.sourceCheckpoint,
+      safetyCheckpoint: saved.sourceCheckpoint,
+      safetyVisitorCommentsCheckpoint: saved.visitorCommentsCheckpoint,
+    })
+    expect((await waitJob(privateFailedJob)).state).toBe("failed")
+    expect(visitorReplies([outside.id])).toHaveLength(1)
     const changed = await writeDoc("notes", "hello", "# New edit\n", {
       updatedBy: "test",
       source: "test",
@@ -103,16 +152,8 @@ describe("server maintenance entrypoint", () => {
       workspaceId: saved.workspaceId,
       sourceCheckpoint: saved.sourceCheckpoint,
       safetyCheckpoint: saved.sourceCheckpoint,
+      safetyVisitorCommentsCheckpoint: saved.visitorCommentsCheckpoint,
     })
-    const waitJob = async (path: string) => {
-      for (let i = 0; i < 200; i++) {
-        const job = JSON.parse(await readFile(path, "utf8"))
-        if (job.state !== "replacing") return job
-        // test-policy: external-readiness-backoff (durable restore/admission state)
-        await new Promise((resolve) => setTimeout(resolve, 10))
-      }
-      throw new Error("restore did not finish")
-    }
     expect((await waitJob(failedJob)).state).toBe("failed")
     expect(
       await readFile(
@@ -140,8 +181,14 @@ describe("server maintenance entrypoint", () => {
       workspaceId: saved.workspaceId,
       sourceCheckpoint: saved.sourceCheckpoint,
       safetyCheckpoint: JSON.parse(latest[0]!).sourceCheckpoint,
+      safetyVisitorCommentsCheckpoint: JSON.parse(latest[0]!)
+        .visitorCommentsCheckpoint,
     })
     expect((await waitJob(completedJob)).state).toBe("complete")
+    expect(visitorReplies([outside.id])).toEqual([])
+    expect(visitorCommentsCheckpoint()?.incarnation).not.toBe(
+      saved.visitorCommentsCheckpoint.incarnation
+    )
     const status: string[] = []
     const statusArgs = [
       "workspace-snapshot-restore-status",
@@ -149,15 +196,18 @@ describe("server maintenance entrypoint", () => {
       saved.workspaceId,
       saved.sourceCheckpoint,
       JSON.parse(latest[0]!).sourceCheckpoint,
+      JSON.stringify(JSON.parse(latest[0]!).visitorCommentsCheckpoint),
     ]
     await runServerMaintenance(statusArgs, (value) => status.push(value))
     expect(JSON.parse(status[0]!)).toMatchObject({
       operationId: "restore-current-test",
       state: "complete",
     })
-    await expect(
-      runServerMaintenance([...statusArgs.slice(0, -1), "a".repeat(64)])
-    ).rejects.toThrow("identity mismatch")
+    const wrongStatus = [...statusArgs]
+    wrongStatus[4] = "a".repeat(64)
+    await expect(runServerMaintenance(wrongStatus)).rejects.toThrow(
+      "identity mismatch"
+    )
 
     expect(
       await readFile(
@@ -165,6 +215,23 @@ describe("server maintenance entrypoint", () => {
         "utf8"
       )
     ).toContain("Hello")
+    const legacyJob = JSON.parse(await readFile(completedJob, "utf8"))
+    delete legacyJob.visitorComments
+    delete legacyJob.visitorCommentsRestored
+    const beforeLegacyRecovery = visitorCommentsCheckpoint()
+    await writeFile(completedJob, JSON.stringify(legacyJob))
+    await finalizeCommittedTeamSnapshotRestore(legacyJob.id)
+    expect(visitorCommentsCheckpoint()).toEqual(beforeLegacyRecovery)
+    expect(readVisitorComment(saved.workspaceId, outside.id)?.body).toBe(
+      "PRIVATE_RESTORE_CONTROL"
+    )
+    // A new restore explicitly records that its snapshot has no private state.
+    await writeFile(
+      completedJob,
+      JSON.stringify({ ...legacyJob, visitorComments: null })
+    )
+    await finalizeCommittedTeamSnapshotRestore(legacyJob.id)
+    expect(visitorCommentsCheckpoint()).toBeNull()
   })
   it("routes the canonical export through the live server flush barrier", async () => {
     const destination = join(

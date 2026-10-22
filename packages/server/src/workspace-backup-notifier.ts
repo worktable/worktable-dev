@@ -10,6 +10,10 @@ import { getWorkspaceRoot } from "./workspace.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 import { onDocContentChanged } from "./content-events.ts"
 import {
+  onVisitorCommentStoreChange,
+  visitorCommentsCheckpoint,
+} from "./visitor-comment-store.ts"
+import {
   inspectPortableWorkspaceTree,
   type PortableContentHashCache,
 } from "./workspace-transfer-v2.ts"
@@ -51,6 +55,11 @@ export class WorkspaceBackupNotifier {
   private readonly cancellation = new AbortController()
   private readonly file: string
   private readonly workspace: string
+  private readonly privateState?: {
+    checkpoint(): unknown
+    subscribe(notify: () => void): () => void
+  }
+  private readonly stopPrivate?: () => void
   private readonly report: (
     value: { epoch: string; generation: number },
     signal: AbortSignal
@@ -61,11 +70,17 @@ export class WorkspaceBackupNotifier {
     report: (
       value: { epoch: string; generation: number },
       signal: AbortSignal
-    ) => Promise<void>
+    ) => Promise<void>,
+    privateState?: {
+      checkpoint(): unknown
+      subscribe(notify: () => void): () => void
+    }
   ) {
     this.file = file
     this.workspace = workspace
     this.report = report
+    this.privateState = privateState
+    this.stopPrivate = privateState?.subscribe(() => this.changed())
   }
 
   async initialize() {
@@ -138,6 +153,7 @@ export class WorkspaceBackupNotifier {
       const fingerprint = createHash("sha256")
         .update(
           JSON.stringify({
+            privateCheckpoint: this.privateState?.checkpoint(),
             directories: inventory.directories.map(({ path, mode }) => ({
               path,
               mode,
@@ -163,6 +179,7 @@ export class WorkspaceBackupNotifier {
   }
   async stop() {
     this.stopped = true
+    this.stopPrivate?.()
     clearTimeout(this.timer)
     this.timer = undefined
     this.cancellation.abort()
@@ -209,6 +226,10 @@ export function startWorkspaceBackupNotifier(): () => Promise<void> {
       })
       if (!response.ok)
         throw new Error("backup change notification was not accepted")
+    },
+    {
+      checkpoint: visitorCommentsCheckpoint,
+      subscribe: onVisitorCommentStoreChange,
     }
   )
   activeNotifier = notifier

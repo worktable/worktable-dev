@@ -1,0 +1,305 @@
+import { afterEach, beforeEach, expect, it, spyOn } from "bun:test"
+import * as filesystem from "node:fs/promises"
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { Database } from "bun:sqlite"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { setAppDirOverride } from "./app-storage.ts"
+import {
+  ensureWorkspaceManifest,
+  getWorkspaceRoot,
+  setWorkspaceRootOverride,
+} from "./workspace.ts"
+import { WorkspaceBackupNotifier } from "./workspace-backup-notifier.ts"
+import {
+  appendVisitorReply,
+  closeVisitorCommentStores,
+  commentPause,
+  pauseVisitorComments,
+  onVisitorCommentStoreChange,
+  readVisitorComment,
+  receiveVisitorComment,
+  visitorCommentsCheckpoint,
+  visitorReplies,
+  visitorCommentStoreFile,
+  VisitorCommentsUnavailable,
+} from "./visitor-comment-store.ts"
+import {
+  captureVisitorCommentBackup,
+  holdVisitorCommentsAtCheckpoint,
+  inspectVisitorCommentBackup,
+  restoreVisitorCommentBackup,
+} from "./visitor-comment-backup.ts"
+
+let root: string
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), "visitor-backup-"))
+  setAppDirOverride(join(root, "app"))
+  setWorkspaceRootOverride(join(root, "workspace"))
+})
+afterEach(async () => {
+  closeVisitorCommentStores()
+  setAppDirOverride(null)
+  setWorkspaceRootOverride(null)
+  await rm(root, { recursive: true, force: true })
+})
+const input = () => ({
+  worktableId: "worktable",
+  linkId: "link",
+  linkLabel: "Review",
+  linkCreator: "owner",
+  documentId: "doc_report",
+  spaceId: "notes",
+  kind: "html",
+  visitorName: "Reviewer",
+  visitorKey: "a".repeat(64),
+  clientKey: "c".repeat(32),
+  body: "PRIVATE_BACKUP_CONTROL",
+  requestId: "request01",
+})
+
+it("captures private state and rejects stale safety fences before restoring a complete checkpoint", async () => {
+  expect(
+    await captureVisitorCommentBackup(join(root, "empty"), "worktable")
+  ).toBeUndefined()
+  const releaseEmpty = holdVisitorCommentsAtCheckpoint(undefined)
+  releaseEmpty()
+  const row = receiveVisitorComment(input())
+  const foreign = receiveVisitorComment({
+    ...input(),
+    worktableId: "previous-worktable",
+    body: "FOREIGN_PRIVATE_BACKUP_CONTROL",
+    visitorName: "Foreign fixture visitor",
+  })
+  appendVisitorReply(
+    "previous-worktable",
+    foreign.id,
+    { id: "other-member", name: "Other team" },
+    "FOREIGN_REPLY_CONTROL"
+  )
+  pauseVisitorComments("previous-worktable", "link", true)
+  const beforeDuplicate = visitorCommentsCheckpoint()
+  expect(receiveVisitorComment(input())).toEqual(row)
+  expect(visitorCommentsCheckpoint()).toEqual(beforeDuplicate)
+  appendVisitorReply(
+    "worktable",
+    row.id,
+    { id: "member", name: "The team" },
+    "Saved reply"
+  )
+  pauseVisitorComments("worktable", "link", true)
+  const backup = join(root, "backup")
+  const beforeCancelled = visitorCommentsCheckpoint()
+  await expect(
+    captureVisitorCommentBackup(backup, "worktable", AbortSignal.timeout(1))
+  ).rejects.toThrow()
+  expect(visitorCommentsCheckpoint()).toEqual(beforeCancelled)
+  await expect(
+    stat(join(backup, "app", "visitor-comments.sqlite"))
+  ).rejects.toMatchObject({ code: "ENOENT" })
+  const state = (await captureVisitorCommentBackup(backup, "worktable"))!
+  expect(state.checkpoint).toEqual(visitorCommentsCheckpoint()!)
+  expect(
+    (await stat(join(backup, "app", "visitor-comments.sqlite"))).mode & 0o777
+  ).toBe(0o600)
+  await inspectVisitorCommentBackup(backup, state)
+  const capturedBytes = await readFile(
+    join(backup, "app", "visitor-comments.sqlite")
+  )
+  for (const foreignText of [
+    "FOREIGN_PRIVATE_BACKUP_CONTROL",
+    "FOREIGN_REPLY_CONTROL",
+    "Foreign fixture visitor",
+  ])
+    expect(capturedBytes.includes(Buffer.from(foreignText))).toBe(false)
+  expect(() => holdVisitorCommentsAtCheckpoint(undefined)).toThrow(
+    "changed after"
+  )
+  expect(() => holdVisitorCommentsAtCheckpoint(null)).toThrow("changed after")
+  appendVisitorReply(
+    "worktable",
+    row.id,
+    { id: "member", name: "The team" },
+    "Later reply"
+  )
+  pauseVisitorComments("worktable", "link", false)
+  expect(() => holdVisitorCommentsAtCheckpoint(state.checkpoint)).toThrow(
+    "changed after"
+  )
+  expect(visitorReplies([row.id])).toHaveLength(2)
+  const current = visitorCommentsCheckpoint()
+  const restoreWithConcurrentReader = async (value: typeof state | null) => {
+    const remove = filesystem.rm
+    const duringPublication = spyOn(filesystem, "rm").mockImplementation(
+      async (path, options) => {
+        if (String(path) === `${visitorCommentStoreFile()}-wal`)
+          expect(visitorCommentsCheckpoint()).not.toBeNull()
+        return remove(path, options)
+      }
+    )
+    try {
+      await restoreVisitorCommentBackup(backup, value, "worktable")
+    } finally {
+      duringPublication.mockRestore()
+    }
+  }
+  const release = holdVisitorCommentsAtCheckpoint(current)
+  try {
+    expect(() =>
+      appendVisitorReply(
+        "worktable",
+        row.id,
+        { id: "member", name: "The team" },
+        "Fenced"
+      )
+    ).toThrow(VisitorCommentsUnavailable)
+    await restoreWithConcurrentReader(state)
+    // Nested publication must not release the caller's replacement fence.
+    expect(() => pauseVisitorComments("worktable", "link", false)).toThrow(
+      VisitorCommentsUnavailable
+    )
+  } finally {
+    release()
+  }
+  expect(readVisitorComment("worktable", row.id)?.body).toBe(
+    "PRIVATE_BACKUP_CONTROL"
+  )
+  expect(visitorReplies([row.id]).map((reply) => reply.body)).toEqual([
+    "Saved reply",
+  ])
+  expect(commentPause("worktable", "link")).toBe("sharer")
+  expect(readVisitorComment("previous-worktable", foreign.id)).toBeNull()
+  expect(visitorReplies([foreign.id])).toEqual([])
+  expect(commentPause("previous-worktable", "link")).toBeNull()
+  expect(visitorCommentsCheckpoint()?.incarnation).not.toBe(
+    state.checkpoint.incarnation
+  )
+  pauseVisitorComments("worktable", "link", false)
+  // A retry can publish again, but can never revalidate the old safety fence.
+  await restoreWithConcurrentReader(state)
+  expect(() => holdVisitorCommentsAtCheckpoint(current)).toThrow(
+    "changed after"
+  )
+  await restoreWithConcurrentReader(null)
+  expect(visitorCommentsCheckpoint()).toBeNull()
+  expect(visitorReplies([row.id])).toEqual([])
+})
+
+it("rejects corrupt or foreign backups without changing current private data or leaving writers fenced", async () => {
+  const row = receiveVisitorComment(input())
+  const backup = join(root, "backup")
+  const state = (await captureVisitorCommentBackup(backup, "worktable"))!
+  const checkpoint = visitorCommentsCheckpoint()
+  await expect(
+    restoreVisitorCommentBackup(backup, state, "another-worktable")
+  ).rejects.toThrow("another Worktable")
+  const path = join(backup, "app", "visitor-comments.sqlite")
+  const bytes = await readFile(path)
+  const foreign = new Database(path)
+  foreign
+    .query("UPDATE visitor_comments SET worktableId=?")
+    .run("foreign-worktable")
+  const foreignCheckpoint = foreign
+    .query("SELECT incarnation,revision FROM visitor_meta WHERE id=1")
+    .get()
+  foreign.close()
+  const foreignBytes = await readFile(path)
+  const foreignState = {
+    ...state,
+    checkpoint: foreignCheckpoint as typeof state.checkpoint,
+    size: foreignBytes.byteLength,
+    sha256: createHash("sha256").update(foreignBytes).digest("hex"),
+  }
+  await expect(
+    inspectVisitorCommentBackup(backup, foreignState)
+  ).rejects.toThrow("another Worktable")
+  await expect(
+    restoreVisitorCommentBackup(backup, foreignState, "worktable")
+  ).rejects.toThrow("another Worktable")
+  expect(visitorCommentsCheckpoint()).toEqual(checkpoint)
+  bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 1
+  await writeFile(path, bytes)
+  await expect(inspectVisitorCommentBackup(backup, state)).rejects.toThrow(
+    "changed"
+  )
+  await expect(
+    restoreVisitorCommentBackup(backup, state, "worktable")
+  ).rejects.toThrow("changed")
+  expect(visitorCommentsCheckpoint()).toEqual(checkpoint)
+  expect(readVisitorComment("worktable", row.id)?.body).toBe(
+    "PRIVATE_BACKUP_CONTROL"
+  )
+  appendVisitorReply(
+    "worktable",
+    row.id,
+    { id: "member", name: "The team" },
+    "Still writable"
+  )
+  expect(visitorReplies([row.id])).toHaveLength(1)
+})
+
+it("reports private edits to automatic backups and recovers an unreported edit after restart without publishing content", async () => {
+  ensureWorkspaceManifest()
+  const ledger = join(root, "outbox.json")
+  const reports: { epoch: string; generation: number }[] = []
+  const source = {
+    checkpoint: visitorCommentsCheckpoint,
+    subscribe: onVisitorCommentStoreChange,
+  }
+  const make = () =>
+    new WorkspaceBackupNotifier(
+      ledger,
+      getWorkspaceRoot(),
+      async (value) => {
+        reports.push(value)
+      },
+      source
+    )
+  const until = async (generation: number) => {
+    const deadline = performance.now() + 3000
+    while (!reports.some((value) => value.generation > generation)) {
+      if (performance.now() > deadline)
+        throw new Error("private backup notification did not settle")
+      // test-policy: external-readiness-backoff (durable backup outbox and delivery)
+      await Bun.sleep(10)
+    }
+  }
+  const first = make()
+  let generation = 0
+  try {
+    await first.initialize()
+    await first.audit()
+    await until(0)
+    generation = reports.at(-1)!.generation
+    const row = receiveVisitorComment(input())
+    await until(generation)
+    generation = reports.at(-1)!.generation
+    await first.audit()
+    await until(generation)
+    generation = reports.at(-1)!.generation
+    // Reads and a retried POST do not mark this captured state dirty again.
+    readVisitorComment("worktable", row.id)
+    visitorReplies([row.id])
+    receiveVisitorComment(input())
+    await first.audit()
+  } finally {
+    await first.stop()
+  }
+  expect(JSON.parse(await readFile(ledger, "utf8")).generation).toBe(generation)
+  receiveVisitorComment({ ...input(), requestId: "after-stop" })
+  const restarted = make()
+  try {
+    await restarted.initialize()
+    await restarted.audit()
+    await until(generation)
+    expect(
+      reports.every(
+        (value) => Object.keys(value).sort().join(",") === "epoch,generation"
+      )
+    ).toBe(true)
+    expect(JSON.stringify(reports)).not.toContain("PRIVATE_BACKUP_CONTROL")
+  } finally {
+    await restarted.stop()
+  }
+})

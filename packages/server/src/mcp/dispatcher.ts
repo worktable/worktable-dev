@@ -1,4 +1,5 @@
 import { runAsActivityActor } from "../activity-log.ts"
+import { reservedAnnotationInput } from "../annotation-origin.ts"
 import { assertCurrentTeamIdentity, assertSpaceAccess, currentRequestIdentity } from "../team-policy.ts"
 import {
   renderDocumentPreview,
@@ -2220,6 +2221,7 @@ async function _dispatchOperationInner(
     }
     case "annotations.create": {
       const parsed = CreateAnnotationInput.parse(args)
+      if (reservedAnnotationInput(parsed)) throw new Error("Source metadata is set by Worktable")
       const result = await createAnnotation(parsed.spaceId, {
         target: parsed.target as never,
         category: parsed.category,
@@ -2271,6 +2273,7 @@ async function _dispatchOperationInner(
     }
     case "annotations.update": {
       const parsed = UpdateAnnotationInput.parse(args)
+      if (reservedAnnotationInput(parsed.patch)) throw new Error("Source metadata is set by Worktable")
       const annotation = await updateAnnotation(
         parsed.spaceId,
         parsed.annotationId,

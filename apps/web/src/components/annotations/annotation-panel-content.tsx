@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import {
   ArrowUp,
   CheckCircle2,
@@ -25,7 +25,8 @@ function categoryVariant(category: AnnotationCategory): "default" | "secondary" 
   return "outline";
 }
 
-export interface AnnotationPanelProps {
+export interface AnnotationPanelContentProps {
+  header?: ReactNode
   readOnly?: boolean
   annotations: Annotation[]
   activeAnnotationId?: string | null
@@ -43,7 +44,8 @@ export interface AnnotationPanelProps {
   className?: string;
 }
 
-export function AnnotationPanel({
+export function AnnotationPanelContent({
+  header,
   readOnly = false,
   annotations,
   activeAnnotationId,
@@ -56,7 +58,7 @@ export function AnnotationPanel({
   composeLabel,
   emptyHint,
   className,
-}: AnnotationPanelProps) {
+}: AnnotationPanelContentProps) {
   const [showResolved, setShowResolved] = useState(false);
   const scrollRef = useScrollFade<HTMLDivElement>();
   const visible = useMemo(
@@ -67,7 +69,7 @@ export function AnnotationPanel({
 
   return (
     <aside className={cn("flex h-full min-h-0 w-full flex-col bg-transparent", className)}>
-      <ContextPanelHeader
+      {header !== undefined ? header : <ContextPanelHeader
         title="Annotations"
         icon={<MessageSquareText className="size-4 shrink-0 text-primary" />}
         meta={<Badge variant="secondary">{openCount} open</Badge>}
@@ -83,7 +85,7 @@ export function AnnotationPanel({
             </Button>
           )
         }
-      />
+      />}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 pb-2">
         <Button
           size="xs"

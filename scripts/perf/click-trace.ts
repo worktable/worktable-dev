@@ -869,11 +869,14 @@ function buildRequests(
 
 /**
  * The request chain that content waited for: from the latest request matching
- * `gate` (or the latest request) that finished before content, walk back to
- * the request that finished last before it started, within `maxGap` ms.
+ * `gate` (or the latest request when no gate is specified) that finished before
+ * content, walk back to the request that finished last before it started,
+ * within `maxGap` ms.
+ * With cached content, no matching request may finish before it appears.
+ * An unrelated background read does not become the gate in that case.
  * A heuristic: the waterfalls show the evidence.
  */
-function criticalChain(
+export function criticalChain(
   requests: Req[],
   contentMs: number,
   gate: RegExp | null,
@@ -890,7 +893,7 @@ function criticalChain(
   const gated = gate
     ? eligible.filter((request) => gate.test(request.label))
     : eligible
-  let current = (gated.length > 0 ? gated : eligible).reduce<Req | null>(
+  let current = gated.reduce<Req | null>(
     (latest, request) =>
       !latest || request.end > latest.end ? request : latest,
     null

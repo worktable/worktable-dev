@@ -74,6 +74,7 @@ afterEach(async () => {
 })
 
 describe("server maintenance entrypoint", () => {
+  // Two real child-process captures and three restore attempts run in this case.
   it("captures through the live capability and rejects restoring over edits made after the safety capture", async () => {
     const server = startServer(0, "127.0.0.1")
     process.env["PORT"] = String(server.port)
@@ -232,7 +233,7 @@ describe("server maintenance entrypoint", () => {
     )
     await finalizeCommittedTeamSnapshotRestore(legacyJob.id)
     expect(visitorCommentsCheckpoint()).toBeNull()
-  })
+  }, 15_000)
   it("routes the canonical export through the live server flush barrier", async () => {
     const destination = join(
       root,

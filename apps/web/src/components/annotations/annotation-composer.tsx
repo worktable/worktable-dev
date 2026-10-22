@@ -11,7 +11,7 @@ import {
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog";
 import { Textarea } from "@worktable/ui/components/textarea";
-import { Toggle } from "@worktable/ui/components/toggle";
+import { AnnotationCategoryChoice } from "./annotation-category-choice";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 export interface AnnotationDraft {
@@ -20,11 +20,6 @@ export interface AnnotationDraft {
   quote?: string;
   category: AnnotationCategory;
 }
-
-const categoryLabel: Record<AnnotationCategory, string> = {
-  comment: "Comment",
-  instruction: "Instruction",
-};
 
 export function AnnotationComposer({
   draft,
@@ -66,22 +61,7 @@ export function AnnotationComposer({
               {draft.quote}
             </blockquote>
           )}
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-medium text-foreground">Type</legend>
-            <div className="flex gap-2">
-              {(["comment", "instruction"] as const).map((value) => (
-                <Toggle
-                  key={value}
-                  variant="outline"
-                  className="h-11 flex-1"
-                  pressed={category === value}
-                  onPressedChange={() => setCategory(value)}
-                >
-                  {categoryLabel[value]}
-                </Toggle>
-              ))}
-            </div>
-          </fieldset>
+          <AnnotationCategoryChoice value={category} onChange={setCategory} />
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">Note</label>
             <Textarea

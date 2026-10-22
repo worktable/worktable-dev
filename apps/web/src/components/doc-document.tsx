@@ -1,3 +1,4 @@
+import { useVisitorCommentsPanel } from "@/hooks/use-visitor-comments-panel"
 import { useVersionSnapshot } from "@/lib/version-history"
 import {
   VersionHistoryPanel,
@@ -800,6 +801,7 @@ function MarkdownDocPage({
   const queryClient = useQueryClient()
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
+  useVisitorCommentsPanel(page?.sharing?.visitorComments, setAnnotationsOpen, setVersionsOpen, annotationsOpen)
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
   const versionQuery = useVersionSnapshot(
     "doc",
@@ -958,6 +960,7 @@ function MarkdownDocPage({
           width={384}
         >
           <AnnotationPanel
+            visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
             readOnly={readOnly}
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
@@ -1032,6 +1035,7 @@ function MarkdownDocPage({
                 Annotations for this doc.
               </DrawerDescription>
               <AnnotationPanel
+            visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
                 readOnly={readOnly}
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}
@@ -1225,6 +1229,7 @@ function BlockNoteDocPage({
   const [collabDoc, setCollabDoc] = useState<Y.Doc | null>(null)
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
+  useVisitorCommentsPanel(page?.sharing?.visitorComments, setAnnotationsOpen, setVersionsOpen, annotationsOpen)
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
   const versionQuery = useVersionSnapshot(
     "doc",
@@ -1596,6 +1601,7 @@ function BlockNoteDocPage({
           width={384}
         >
           <AnnotationPanel
+            visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
             readOnly={readOnly}
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
@@ -1670,6 +1676,7 @@ function BlockNoteDocPage({
                 Annotations for this doc.
               </DrawerDescription>
               <AnnotationPanel
+            visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
                 readOnly={readOnly}
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}

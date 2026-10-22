@@ -1,3 +1,4 @@
+import { useVisitorCommentsPanel } from "@/hooks/use-visitor-comments-panel"
 import { useVersionSnapshot } from "@/lib/version-history"
 import {
   VersionHistoryPanel,
@@ -332,6 +333,9 @@ function WidgetDetailPage({
     setActiveAnnotationId(null)
     setComposerOpen(false)
   }, [spaceId, widgetId])
+
+  // Apply the requested panel after the new document's panel reset.
+  useVisitorCommentsPanel(page?.sharing?.visitorComments, setAnnotationsOpen, setVersionsOpen, annotationsOpen)
 
   // Load the selected snapshot for the compare pane header label.
 
@@ -893,6 +897,7 @@ function WidgetDetailPage({
           width={384}
         >
           <AnnotationPanel
+            visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
             readOnly={readOnly}
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
@@ -970,6 +975,7 @@ function WidgetDetailPage({
                 Annotations for this HTML doc.
               </DrawerDescription>
               <AnnotationPanel
+            visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
                 readOnly={readOnly}
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}

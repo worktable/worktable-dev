@@ -2,10 +2,14 @@ import { afterEach, beforeEach, expect, it } from "bun:test"
 import { Hono } from "hono"
 import { defaultSharingPolicy } from "@worktable/types"
 import { createHash } from "node:crypto"
-import { readdir, readFile } from "node:fs/promises"
+import { Database } from "bun:sqlite"
+import { readdir, readFile, writeFile } from "node:fs/promises"
 import { setLinkedSharing } from "./linked-sharing.ts"
 import { closeShareLinkStores } from "./share-links-store.ts"
 import { sharesRouter } from "./routes/shares.ts"
+import { pendingRouter } from "./routes/activity.ts"
+import { documentsRouter } from "./routes/documents.ts"
+import { wsManager } from "./ws.ts"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -22,6 +26,8 @@ import {
   commentPause,
   pauseVisitorComments,
   receiveVisitorComment,
+  visitorCommentStoreFile,
+  VisitorCommentRefused,
 } from "./visitor-comment-store.ts"
 import {
   ensureWorkspaceManifest,
@@ -51,6 +57,8 @@ function app(identity = owner, trustedVisitor = false) {
   })
   server.route("/api/spaces/:spaceId/visitor-comments", visitorCommentsRouter)
   server.route("/api/shares", sharesRouter)
+  server.route("/api/pending", pendingRouter)
+  server.route("/api/spaces/:spaceId/documents", documentsRouter)
   server.route(
     "/public/share/comments",
     createPublicVisitorCommentsRouter(trustedVisitor)
@@ -373,4 +381,168 @@ it("isolates visitors on a comment link and rechecks link settings after a held 
       .accepting
   ).toBe(true)
   expect((await send("Resumed", "request_resumed_body")).status).toBe(201)
+  // A spike remains durable across unrelated edits, but only current comment
+  // links offer an actionable pause in Pending. Retained comments still belong
+  // to the document after their link is downgraded or revoked.
+  for (let index = 0; index < 31; index++) {
+    try {
+      receiveVisitorComment({
+        worktableId: context.worktableId,
+        linkId: made.link.id,
+        linkLabel: "Original label",
+        linkCreator: owner.principal.id,
+        documentId,
+        spaceId: "space",
+        kind: "doc",
+        visitorName: "Visitor",
+        visitorKey: index.toString(16).padStart(64, "0"),
+        clientKey: index.toString(16).padStart(32, "0"),
+        body: "Synthetic review",
+        requestId: `spike-request-${index}`,
+      })
+    } catch (error) {
+      expect(error).toBeInstanceOf(VisitorCommentRefused)
+      break
+    }
+  }
+  expect(commentPause(context.worktableId, made.link.id)).toBe("spike")
+  const inbox = async () => {
+    const response = await server.request("/api/pending")
+    expect(response.status).toBe(200)
+    return (await response.json()).items as Array<{
+      kind: string
+      linkId?: string
+      linkLabel?: string
+    }>
+  }
+  expect(await inbox()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: "visitorCommentsPaused",
+        linkId: made.link.id,
+      }),
+    ])
+  )
+  const change = (body: unknown) =>
+    server.request(`/api/shares/links/${made.link.id}`, {
+      method: "PATCH",
+      headers: json,
+      body: JSON.stringify(body),
+    })
+  closeVisitorCommentStores()
+  const privatePath = visitorCommentStoreFile()
+  const privateBytes = await readFile(privatePath)
+  for (const unavailable of ["future", "corrupt"]) {
+    try {
+      if (unavailable === "future") {
+        const future = new Database(privatePath)
+        future.exec("PRAGMA user_version=99")
+        future.close()
+      } else await writeFile(privatePath, "Not a SQLite database")
+      for (const path of [
+        "/api/shares/links?kind=doc&spaceId=space&path=report",
+        "/api/shares/links/all",
+      ])
+        expect((await server.request(path)).status).toBe(200)
+      const saved = await change({ label: "Current label" })
+      expect(saved.status).toBe(200)
+      expect((await saved.json()).link.label).toBe("Current label")
+      expect(await inbox()).toEqual([])
+      expect(
+        (
+          await server.request(
+            `/api/spaces/space/visitor-comments?documentId=${documentId}`
+          )
+        ).status
+      ).toBe(503)
+    } finally {
+      closeVisitorCommentStores()
+      await writeFile(privatePath, privateBytes)
+    }
+  }
+  expect(commentPause(context.worktableId, made.link.id)).toBe("spike")
+  expect(await inbox()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: "visitorCommentsPaused",
+        linkLabel: "Current label",
+      }),
+    ])
+  )
+  expect((await change({ level: "view" })).status).toBe(200)
+  expect(
+    (await inbox()).some((item) => item.kind === "visitorCommentsPaused")
+  ).toBe(false)
+  expect((await inbox()).some((item) => item.kind === "visitorComments")).toBe(
+    true
+  )
+  expect((await change({ level: "comment" })).status).toBe(200)
+  expect(
+    (await inbox()).some((item) => item.kind === "visitorCommentsPaused")
+  ).toBe(true)
+  expect(
+    (
+      await server.request(`/api/shares/links/${made.link.id}`, {
+        method: "DELETE",
+      })
+    ).status
+  ).toBe(200)
+  expect(
+    (await inbox()).some((item) => item.kind === "visitorCommentsPaused")
+  ).toBe(false)
+  expect((await inbox()).some((item) => item.kind === "visitorComments")).toBe(
+    true
+  )
+
+  await writeDoc("space", "empty", "# Empty")
+  const fresh = await server.request("/api/shares/links", {
+    method: "POST",
+    headers: json,
+    body: JSON.stringify({
+      target: { kind: "doc", spaceId: "space", path: "empty" },
+      level: "comment",
+    }),
+  })
+  expect(fresh.status).toBe(201)
+  const freshLink = (await fresh.json()).link
+  const pageSummary = async () =>
+    (
+      await (
+        await server.request("/api/spaces/space/documents/page?path=empty")
+      ).json()
+    ).page.sharing.visitorComments
+  expect(await pageSummary()).toMatchObject({
+    documentId: freshLink.documentId,
+    available: true,
+  })
+  const notices: string[] = []
+  const socket = {
+    data: { identity: owner, spaceId: "space", canAccess: () => true },
+    send: (message: string) => notices.push(message),
+    close() {},
+  }
+  wsManager.subscribe(socket, "space")
+  try {
+    expect(
+      (
+        await server.request(`/api/shares/links/${freshLink.id}`, {
+          method: "DELETE",
+        })
+      ).status
+    ).toBe(200)
+    expect(
+      notices
+        .map((message) => JSON.parse(message))
+        .filter((message) => message.type === "visitor_comments_changed")
+    ).toEqual([
+      {
+        type: "visitor_comments_changed",
+        spaceId: "space",
+        data: { documentId: freshLink.documentId, linkId: freshLink.id },
+      },
+    ])
+    expect(await pageSummary()).toMatchObject({ available: false })
+  } finally {
+    wsManager.unsubscribe(socket)
+  }
 })

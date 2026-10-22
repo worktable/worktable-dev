@@ -563,6 +563,23 @@ test("creates and edits password links without retaining a password in the form"
   )
   await dialog.getByRole("button", { name: "Create link", exact: true }).click()
   expect(mutations).toHaveLength(4)
+  // Existing reserved access is preserved by an ordinary metadata edit.
+  // Creating new links still offers only the supported levels.
+  requirePassword = false
+  links = [{ ...links[0]!, level: "use" }]
+  await page.reload({ waitUntil: "networkidle" })
+  await share.click()
+  await edit()
+  await expect(
+    dialog.getByRole("combobox", { name: "Access", exact: true })
+  ).toContainText("Can use")
+  await dialog.getByLabel("Label", { exact: true }).fill("Board renamed")
+  await dialog.getByRole("button", { name: "Save", exact: true }).click()
+  await expect(
+    dialog.getByRole("button", { name: "Save", exact: true })
+  ).toBeHidden()
+  expect(mutations[4]?.body.label).toBe("Board renamed")
+  expect(mutations[4]?.body).not.toHaveProperty("level")
 })
 
 for (const appearance of [

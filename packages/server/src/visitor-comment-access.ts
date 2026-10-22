@@ -3,6 +3,7 @@ import type {
   DocumentId,
   VisitorComment,
   SharingPolicy,
+  DocumentSharingSummary,
 } from "@worktable/types"
 import { isHumanWorkspaceOwner } from "./auth.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
@@ -18,11 +19,48 @@ import type { TokenIdentity } from "./token-store.ts"
 import { getWorkspaceRoot, prepareWorkspaceTarget } from "./workspace.ts"
 import {
   visitorReplies,
+  visitorCommentCounts,
+  visitorCommentPauses,
   VisitorCommentsUnavailable,
   type StoredVisitorComment,
   type VisitorCommentRetentionChange,
 } from "./visitor-comment-store.ts"
 import { wsManager } from "./ws.ts"
+import { documentHasCommentLink, type StoredShareLink } from "./share-links-store.ts"
+
+/** Caller has admitted a person to these links. Reads no private text. */
+export async function commentPausesForLinks(
+  links: readonly StoredShareLink[]
+): Promise<Map<string, string>> {
+  if (!sharingPreviewEnabled()) return new Map()
+  const comments = links.filter((link) => link.level === "comment")
+  if (!comments.length) return new Map()
+  try {
+    const context = await visitorCommentNamespace()
+    if (!(await visitorNamespaceStillCurrent(context))) return new Map()
+    return visitorCommentPauses(
+      context.worktableId,
+      comments.map((link) => link.id)
+    )
+  } catch {
+    // Private metadata must not prevent ordinary share-link management.
+    return new Map()
+  }
+}
+
+/** Called while the page holds its document namespace lock. Reads no text. */
+export async function visitorCommentPageSummary(c: Context, spaceId: string, documentId: string): Promise<DocumentSharingSummary["visitorComments"]> {
+  if (!visitorCommentReader(c, spaceId)) return undefined
+  try {
+    const context = await visitorCommentNamespace()
+    if (!(await visitorDocumentInSpace(spaceId, documentId, { lockHeld: true })) || !(await visitorNamespaceStillCurrent(context)) || !visitorCommentReader(c, spaceId)) return undefined
+    const counts = visitorCommentCounts(context.worktableId, documentId)
+    return {documentId, newCount: counts.newCount, available: counts.total > 0 || documentHasCommentLink(spaceId, documentId)}
+  } catch {
+    // An unavailable private store must not stop the ordinary document opening.
+    return undefined
+  }
+}
 
 /** Only opaque identifiers cross this person-only socket boundary. */
 export function notifyVisitorComments(
@@ -136,9 +174,10 @@ export async function visitorNamespaceStillCurrent(value: {
 /** The receipt's Space is history. Resolve access against the document now. */
 export async function visitorDocumentInSpace(
   spaceId: string,
-  documentId: string
+  documentId: string,
+  options: { lockHeld?: boolean } = {}
 ): Promise<boolean> {
-  const { identities } = await readDocumentIdentities(spaceId)
+  const { identities } = await readDocumentIdentities(spaceId, options)
   return (
     !identities.spaceArchived &&
     identities.current.has(documentId as DocumentId)
@@ -161,10 +200,10 @@ export function canDeleteVisitorComment(
 export function memberVisitorComments(
   c: Context,
   spaceId: string,
-  rows: StoredVisitorComment[]
+  rows: StoredVisitorComment[],
+  policy = currentSharingPolicy()
 ): VisitorComment[] {
   if (!rows.length) return []
-  const policy = currentSharingPolicy()
   const deletions = new Map<string, boolean>()
   for (const row of rows)
     if (!deletions.has(row.link_creator))

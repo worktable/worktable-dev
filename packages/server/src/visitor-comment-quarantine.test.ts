@@ -162,6 +162,26 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
   )
   expect(person.status).toBe(200)
   expect(await person.text()).toContain(sentinel)
+  const documentPage = "/api/spaces/space/documents/page?path=report"
+  const page = await app.request(documentPage)
+  const pageBody = await page.text()
+  expect(page.status).toBe(200)
+  expect(pageBody).not.toContain(sentinel)
+  expect(JSON.parse(pageBody)).toMatchObject({
+    page: {
+      sharing: {
+        visitorComments: { documentId, newCount: 1, available: true },
+      },
+    },
+  })
+  process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+  try {
+    expect(await (await app.request(documentPage)).text()).not.toContain(
+      '"visitorComments'
+    )
+  } finally {
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+  }
   const pending = await app.request("/api/pending")
   expect(pending.status).toBe(200)
   expect(await pending.json()).toMatchObject({
@@ -315,7 +335,7 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
       expect(response.status, `${identity.agent}: ${path}`).toBe(expected)
       const body = await response.text()
       expect(body).not.toContain(sentinel)
-      if (path === "/api/pending")
+      if (path === "/api/pending" || path.includes("/documents/page?"))
         expect(body).not.toContain('"visitorComments')
       if (path.includes("/source?") && response.ok)
         expect(body).toContain("PUBLIC_CONTROL")
@@ -782,4 +802,47 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
     data: { documentId, linkId: "synthetic-link" },
   })
   expect(messages.join()).not.toContain(sentinel)
+  const retained = await app.request(privatePath, { headers: memberHeaders })
+  expect(retained.status).toBe(200)
+  expect(await retained.json()).toMatchObject({
+    comments: [
+      {
+        id: comment.id,
+        body: null,
+        visitorName: null,
+        status: "passed",
+        replies: [],
+        passed: { annotationId: passed.annotation.id },
+        canDelete: false,
+      },
+    ],
+  })
+  expect(
+    visitorStore.visitorCommentCounts(namespace.worktableId, documentId)
+  ).toEqual({ total: 1, newCount: 0 })
+  // Guest reads still omit erased receipts; only the member route opts in.
+  expect(
+    visitorStore.visitorCommentRows({
+      worktableId: namespace.worktableId,
+      documentId,
+    })
+  ).toEqual([])
+  grantMember("manage")
+  const removed = await app.request(
+    `/api/spaces/space/visitor-comments/${comment.id}`,
+    {
+      method: "DELETE",
+      headers: memberHeaders,
+    }
+  )
+  expect(removed.status).toBe(200)
+  expect(
+    await (await app.request(privatePath, { headers: memberHeaders })).json()
+  ).toMatchObject({ comments: [] })
+  const teamCopy = await app.request(
+    `/api/spaces/space/annotations/${passed.annotation.id}?includeTargetContext=true`,
+    { headers: memberHeaders }
+  )
+  expect(teamCopy.status).toBe(200)
+  expect(await teamCopy.text()).toContain(sentinel)
 }, 20_000)

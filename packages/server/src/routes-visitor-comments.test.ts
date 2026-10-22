@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, expect, it } from "bun:test"
 import { Hono } from "hono"
-import { defaultSharingPolicy } from "@worktable/types"
+import {
+  defaultSharingPolicy,
+  type VisitorCommentsForVisitor,
+} from "@worktable/types"
 import { createHash } from "node:crypto"
 import { Database } from "bun:sqlite"
 import { readdir, readFile, writeFile } from "node:fs/promises"
@@ -36,6 +39,7 @@ import {
 import {
   VISITOR_HEADERS,
   SHARE_CAPABILITY_HEADER,
+  SHARE_COMMENT_CURSOR_HEADER,
 } from "@worktable/hosted-contract"
 const originalEnv = { ...process.env }
 let appDir: string
@@ -551,4 +555,215 @@ it("isolates visitors on a comment link and rechecks link settings after a held 
   } finally {
     wsManager.unsubscribe(socket)
   }
+})
+
+it("pages complete visitor history within row and byte limits using current access", async () => {
+  const server = app(owner, true)
+  const json = { "Content-Type": "application/json" }
+  const policy = { ...defaultSharingPolicy(), levels: ["view", "comment"] }
+  expect(
+    (
+      await server.request("/api/shares/policy", {
+        method: "PUT",
+        headers: json,
+        body: JSON.stringify(policy),
+      })
+    ).status
+  ).toBe(200)
+  const makeLink = async () => {
+    const response = await server.request("/api/shares/links", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({
+        target: { kind: "doc", spaceId: "space", path: "report" },
+        level: "comment",
+      }),
+    })
+    expect(response.status).toBe(201)
+    return response.json()
+  }
+  const made = await makeLink()
+  const change = (comments: { visitorsSee: "own" | "all" }) =>
+    server.request(`/api/shares/links/${made.link.id}`, {
+      method: "PATCH",
+      headers: json,
+      body: JSON.stringify({ comments }),
+    })
+  expect((await change({ visitorsSee: "all" })).status).toBe(200)
+  const visitorKey = "a".repeat(64)
+  const headers = {
+    [SHARE_CAPABILITY_HEADER]: made.url.split("/").at(-1),
+    [VISITOR_HEADERS.KEY]: visitorKey,
+  }
+  const namespace = await visitorCommentNamespace()
+  receiveVisitorComment({
+    worktableId: namespace.worktableId,
+    linkId: made.link.id,
+    linkLabel: "History",
+    linkCreator: owner.principal.id,
+    documentId,
+    spaceId: "space",
+    kind: "doc",
+    visitorName: "Visitor",
+    visitorKey,
+    clientKey: "b".repeat(32),
+    body: "Seed",
+    requestId: "history_seed",
+  })
+  closeVisitorCommentStores()
+  const fixture = new Database(visitorCommentStoreFile())
+  const seed = fixture
+    .query("SELECT * FROM visitor_comments LIMIT 1")
+    .get() as Record<string, string | number | null>
+  fixture.close()
+  const columns = Object.keys(seed)
+  // Seed persisted history directly so the fixture does not bypass admission
+  // limits in product code or spend hundreds of requests creating old receipts.
+  const seedHistory = (count: number, withReplies = false) => {
+    closeVisitorCommentStores()
+    const db = new Database(visitorCommentStoreFile())
+    try {
+      db.transaction(() => {
+        db.exec("DELETE FROM visitor_replies")
+        db.exec("DELETE FROM visitor_comments")
+        const insert = db.query(
+          `INSERT INTO visitor_comments(${columns.join(",")}) VALUES(${columns.map(() => "?").join(",")})`
+        )
+        const reply = db.query(
+          "INSERT INTO visitor_replies(id,comment_id,author_id,author_name,body,created_at) VALUES(?,?,?,?,?,?)"
+        )
+        for (let i = 0; i < count; i++) {
+          const row = {
+            ...seed,
+            id: `vc_${i.toString(16).padStart(22, "0")}`,
+            request_id: `history_${i}`,
+            visitor_key: i % 2 === 0 ? visitorKey : "c".repeat(64),
+            body: withReplies ? "界".repeat(2000) : `Comment ${i}`,
+          }
+          insert.run(
+            ...columns.map((column) => row[column as keyof typeof row])
+          )
+          if (withReplies)
+            for (let j = 0; j < 20; j++)
+              reply.run(
+                `vr_${(i * 20 + j).toString(16).padStart(22, "0")}`,
+                row.id,
+                owner.principal.id,
+                "Owner",
+                "界".repeat(2000),
+                seed.received_at as number
+              )
+        }
+      })()
+    } finally {
+      db.close()
+    }
+  }
+  const read = async (cursor?: string, extra: Record<string, string> = {}) => {
+    const response = await server.request("/public/share/comments", {
+      headers: {
+        ...headers,
+        ...extra,
+        ...(cursor ? { [SHARE_COMMENT_CURSOR_HEADER]: cursor } : {}),
+      },
+    })
+    expect(response.status).toBe(200)
+    const body = await response.text()
+    expect(Buffer.byteLength(body)).toBeLessThanOrEqual(1024 * 1024)
+    return JSON.parse(body) as VisitorCommentsForVisitor
+  }
+  const history = async () => {
+    const ids: string[] = []
+    const sizes: number[] = []
+    let cursor: string | undefined
+    do {
+      const page = await read(cursor)
+      sizes.push(page.comments.length)
+      ids.push(...page.comments.map((row) => row.id))
+      expect(page.nextCursor).not.toBe(cursor)
+      cursor = page.nextCursor ?? undefined
+      expect(sizes.length).toBeLessThan(30)
+    } while (cursor)
+    expect(new Set(ids).size).toBe(ids.length)
+    return { ids, sizes }
+  }
+  const expectedIds = (count: number) =>
+    Array.from(
+      { length: count },
+      (_, i) => `vc_${(count - i - 1).toString(16).padStart(22, "0")}`
+    )
+  seedHistory(206)
+  expect(await history()).toEqual({
+    ids: expectedIds(206),
+    sizes: [100, 100, 6],
+  })
+  const first = await read()
+  expect(first.nextCursor).not.toBeNull()
+  const oldCursor = first.nextCursor!
+  expect(
+    (
+      await server.request("/public/share/comments", {
+        headers: {
+          ...headers,
+          [SHARE_COMMENT_CURSOR_HEADER]: "invalid!",
+        },
+      })
+    ).status
+  ).toBe(400)
+  expect(
+    (await read(oldCursor, { [VISITOR_HEADERS.KEY]: "c".repeat(64) })).reset
+  ).toBe(true)
+  expect((await change({ visitorsSee: "own" })).status).toBe(200)
+  const restricted = await read(oldCursor)
+  expect(restricted.reset).toBe(true)
+  expect(restricted.visitorsSee).toBe("own")
+  expect(restricted.comments.every((row) => row.mine)).toBe(true)
+  expect((await history()).ids).toEqual(
+    expectedIds(206).filter((id) => parseInt(id.slice(3), 16) % 2 === 0)
+  )
+  const otherLink = await makeLink()
+  expect(
+    await read(oldCursor, {
+      [SHARE_CAPABILITY_HEADER]: otherLink.url.split("/").at(-1),
+    })
+  ).toMatchObject({ reset: true, comments: [], nextCursor: null })
+  expect((await change({ visitorsSee: "all" })).status).toBe(200)
+  // Replies make the byte limit take effect before the row limit. The next
+  // boundary must follow the last returned receipt, not the last loaded row.
+  seedHistory(20, true)
+  const large = await read()
+  expect(large.comments.length).toBeGreaterThan(0)
+  expect(large.comments.length).toBeLessThan(20)
+  expect(large.comments.every((row) => row.replies.length === 20)).toBe(true)
+  expect((await history()).ids).toEqual(expectedIds(20))
+  expect(
+    (
+      await server.request("/api/shares/policy", {
+        method: "PUT",
+        headers: json,
+        body: JSON.stringify({ ...policy, allowVisitorsSeeAll: false }),
+      })
+    ).status
+  ).toBe(200)
+  expect(await read(large.nextCursor!)).toMatchObject({
+    reset: true,
+    visitorsSee: "own",
+  })
+  expect(
+    (
+      await server.request(`/api/shares/links/${made.link.id}`, {
+        method: "DELETE",
+      })
+    ).status
+  ).toBe(200)
+  expect(
+    (
+      await server.request("/public/share/comments", {
+        headers: {
+          ...headers,
+          [SHARE_COMMENT_CURSOR_HEADER]: large.nextCursor!,
+        },
+      })
+    ).status
+  ).toBe(404)
 })

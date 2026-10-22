@@ -164,9 +164,10 @@
    * @param {object} [body]
    * @param {number} [remainingMs]
    * @param {AbortSignal} [cancel]
+   * @param {string} [cursor]
    * @returns {Promise<CallResult>}
    */
-  async function call(body, remainingMs = REQUEST_BUDGET_MS, cancel) {
+  async function call(body, remainingMs = REQUEST_BUDGET_MS, cancel, cursor) {
     const controller = new AbortController()
     const signal = controller.signal
     const abort = () => controller.abort()
@@ -178,6 +179,7 @@
       "x-worktable-share-capability": token,
       "x-share-visitor": visitor.key,
     }
+    if (cursor !== undefined) headers["x-worktable-comment-cursor"] = cursor
     if (body) headers["Content-Type"] = "application/json"
     try {
       const response = await fetch(endpoint, {
@@ -210,14 +212,15 @@
    * A comment keeps its request id, so it is stored once.
    * @param {() => object | undefined} body
    * @param {AbortSignal} [signal]
+   * @param {string} [cursor]
    */
-  async function patiently(body, signal) {
+  async function patiently(body, signal, cursor) {
     const started = Date.now()
     for (;;) {
       const remaining = REQUEST_BUDGET_MS - (Date.now() - started)
       if (signal?.aborted || remaining <= 0)
         return { status: 0, answer: null, retryAfter: 0 }
-      const result = await call(body(), remaining, signal)
+      const result = await call(body(), remaining, signal, cursor)
       keepPass(result.answer)
       const wait = (result.retryAfter || 3) * 1000
       if (
@@ -398,7 +401,7 @@
   send.type = "submit"
   let sending = false
   function updateSend() {
-    send.disabled = sending || !readError.hidden
+    send.disabled = sending || (!readError.hidden && !retryOlder)
     send.textContent = sending ? "Sending…" : "Send"
   }
   form.append(challenge, status, send)
@@ -413,7 +416,8 @@
   readMessage.setAttribute("role", "status")
   const retryRead = element("button", "comment-retry", "Retry")
   retryRead.type = "button"
-  retryRead.addEventListener("click", () => void load())
+  let retryOlder = false
+  retryRead.addEventListener("click", () => void load(retryOlder))
   readError.append(readMessage, retryRead)
 
   const listSection = element("section", "comment-list-section")
@@ -424,7 +428,15 @@
     config.visitorsSee === "all" ? "Recent comments" : "Your recent comments"
   )
   const list = element("ul", "comment-list")
-  listSection.append(listHeading, list)
+  const olderButton = element(
+    "button",
+    "comment-retry comment-more",
+    "Older comments"
+  )
+  olderButton.type = "button"
+  olderButton.hidden = true
+  olderButton.addEventListener("click", () => void load(true))
+  listSection.append(listHeading, list, olderButton)
 
   body.append(config.accepting ? form : closedNote, readError, listSection)
   document.body.append(panel)
@@ -501,28 +513,44 @@
 
   /** @type {AbortController | null} */
   let refresh = null
+  /** @type {string | null} */
+  let nextCursor = null
+  const shownCommentIds = new Set()
 
   /** Refresh the visible comments and current settings while the panel is open. */
-  async function load() {
+  async function load(older = false) {
+    const cursor = older ? nextCursor : null
+    if (older && !cursor) return
     refresh?.abort()
     if (panel.hidden) return
     const current = new AbortController()
     refresh = current
     retryRead.disabled = true
+    olderButton.disabled = true
+    olderButton.textContent = older ? "Loading…" : "Older comments"
     const { status: code, answer } = await patiently(
       () => undefined,
-      current.signal
+      current.signal,
+      cursor ?? undefined
     )
     if (current.signal.aborted) return
     refresh = null
     retryRead.disabled = false
+    olderButton.textContent = "Older comments"
     if (code !== 200 || !answer || !Array.isArray(answer.comments)) {
+      retryOlder = older
       readError.hidden = false
       updateSend()
       return
     }
     readError.hidden = true
+    olderButton.disabled = false
     updateSend()
+    const append =
+      older &&
+      answer.reset !== true &&
+      answer.visitorsSee === config.visitorsSee &&
+      answer.nextCursor !== undefined
     config.visitorsSee = answer.visitorsSee
     config.anonymousAllowed = answer.anonymousAllowed
     config.accepting = answer.accepting
@@ -531,14 +559,31 @@
     updateName()
     visibilityNote.hidden = config.visitorsSee !== "all"
     listHeading.textContent =
-      config.visitorsSee === "all" ? "Recent comments" : "Your recent comments"
+      answer.nextCursor === undefined
+        ? config.visitorsSee === "all"
+          ? "Recent comments"
+          : "Your recent comments"
+        : config.visitorsSee === "all"
+          ? "Comments on this page"
+          : "Your comments"
     if (config.accepting && closedNote.isConnected) {
       closedNote.replaceWith(form)
     } else if (!config.accepting && form.isConnected) {
       form.replaceWith(closedNote)
     }
-    list.replaceChildren(...answer.comments.map(commentItem))
-    listSection.hidden = answer.comments.length === 0
+    if (!append) {
+      shownCommentIds.clear()
+      list.replaceChildren()
+    }
+    for (const comment of answer.comments) {
+      if (shownCommentIds.has(comment.id)) continue
+      shownCommentIds.add(comment.id)
+      list.append(commentItem(comment))
+    }
+    nextCursor =
+      typeof answer.nextCursor === "string" ? answer.nextCursor : null
+    olderButton.hidden = nextCursor === null
+    listSection.hidden = shownCommentIds.size === 0
   }
 
   /** @returns {{ name?: string; anonymous?: boolean; body: string }} */

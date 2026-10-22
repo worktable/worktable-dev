@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router"
 import { AtSign, CircleAlert, Clock3, Reply } from "lucide-react"
-import { useState } from "react"
+import { lazy, Suspense, useState } from "react"
 import type { DocumentSummary, PendingItem } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
 import { cn } from "@worktable/ui/lib/utils"
@@ -19,6 +19,12 @@ import { useGettingStartedShortcut } from "@/lib/setup"
 
 const rowClass =
   "group flex h-10 min-w-0 items-center gap-3 rounded-lg px-2.5 text-sm transition-colors hover:bg-accent"
+
+const VisitorPendingRow = lazy(() =>
+  import("./visitor-pending-row").then((module) => ({
+    default: module.VisitorPendingRow,
+  }))
+)
 
 // ── Pending ────────────────────────────────────────────────
 
@@ -51,9 +57,19 @@ function PendingRow({
           </span>
         </ThreadLink>
       )
-    case "commentReply":
     case "visitorComments":
     case "visitorCommentsPaused":
+      return (
+        <Suspense fallback={<div className="h-10" />}>
+          <VisitorPendingRow
+            item={item}
+            className={rowClass}
+            where={where}
+            when={shortWhen(item.at)}
+          />
+        </Suspense>
+      )
+    case "commentReply":
       return (
         <Link
           to="/spaces/$spaceId/documents/$"
@@ -62,11 +78,7 @@ function PendingRow({
         >
           <Reply className="size-4 shrink-0 text-muted-foreground" />
           <span className={label}>
-            {item.kind === "commentReply"
-              ? `Reply to your comment on ${item.docTitle ?? item.docPath}`
-              : item.kind === "visitorCommentsPaused"
-                ? `Comments paused on ${item.linkLabel || "Untitled link"}`
-                : `${item.count} visitor comment${item.count === 1 ? "" : "s"} on ${item.docTitle ?? item.docPath}`}
+            {`Reply to your comment on ${item.docTitle ?? item.docPath}`}
           </span>
           {where}
           <span className="shrink-0 text-xs text-muted-foreground">

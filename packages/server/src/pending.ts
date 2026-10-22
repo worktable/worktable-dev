@@ -54,7 +54,10 @@ export async function listPending(
     ...threadRequests(threadWork.requests),
     ...failedDeliveries(threadWork.failures),
     ...replies,
-    ...(visitorAccess ? await pendingVisitorComments(identity, spaces, spaceId, visitorAccess) : []),
+    // The private inbox is auxiliary to ordinary team work on Home.
+    ...(visitorAccess
+      ? await pendingVisitorComments(identity, spaces, spaceId, visitorAccess).catch(() => [])
+      : []),
   ]
     .filter((item) => !spaceId || item.spaceId === spaceId)
     .sort((a, b) => b.at.localeCompare(a.at))

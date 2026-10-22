@@ -29,13 +29,23 @@ import { wsManager } from "./ws.ts"
 import { documentHasCommentLink, type StoredShareLink } from "./share-links-store.ts"
 
 /** Caller has admitted a person to these links. Reads no private text. */
-export async function commentPausesForLinks(links: readonly StoredShareLink[]): Promise<Map<string, string>> {
+export async function commentPausesForLinks(
+  links: readonly StoredShareLink[]
+): Promise<Map<string, string>> {
   if (!sharingPreviewEnabled()) return new Map()
-  const comments = links.filter(link => link.level === "comment")
+  const comments = links.filter((link) => link.level === "comment")
   if (!comments.length) return new Map()
-  const context = await visitorCommentNamespace()
-  if (!(await visitorNamespaceStillCurrent(context))) throw new VisitorCommentsUnavailable()
-  return visitorCommentPauses(context.worktableId, comments.map(link => link.id))
+  try {
+    const context = await visitorCommentNamespace()
+    if (!(await visitorNamespaceStillCurrent(context))) return new Map()
+    return visitorCommentPauses(
+      context.worktableId,
+      comments.map((link) => link.id)
+    )
+  } catch {
+    // Private metadata must not prevent ordinary share-link management.
+    return new Map()
+  }
 }
 
 /** Called while the page holds its document namespace lock. Reads no text. */

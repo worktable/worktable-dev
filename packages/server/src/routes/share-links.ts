@@ -27,7 +27,7 @@ import {
   notifyVisitorComments,
   commentPausesForLinks,
 } from "../visitor-comment-access.ts"
-import { commentPause, pauseVisitorComments } from "../visitor-comment-store.ts"
+import { pauseVisitorComments } from "../visitor-comment-store.ts"
 import { prepareShareLinkAccess } from "../link-sharing-access.ts"
 import {
   linkDocumentGeneration,
@@ -677,6 +677,7 @@ shareLinksRouter.patch("/:linkId", async (c) => {
     notifyVisitorComments(updated.spaceId, updated.documentId, updated.id)
   }
   const places = await placesOf([updated])
+  const pauses = await commentPausesForLinks([updated])
   return c.json({
     link: publicLink(
       updated,
@@ -684,7 +685,7 @@ shareLinksRouter.patch("/:linkId", async (c) => {
       true,
       currentSharingPolicy(),
       Date.now(),
-      Boolean(commentContext && commentPause(commentContext.worktableId, updated.id) === "spike")
+      pauses.get(updated.id) === "spike"
     ),
   })
 })
@@ -700,6 +701,8 @@ shareLinksRouter.delete("/:linkId", async (c) => {
   })
   if (!decision.allowed) return denied(c, decision)
   const revoked = revokeShareLink(link.id, sharerOf(identity!).id) ?? link
+  if (revoked.level === "comment")
+    notifyVisitorComments(revoked.spaceId, revoked.documentId, revoked.id)
   const places = await placesOf([revoked])
   return c.json({
     link: publicLink(revoked, places.get(revoked.id) ?? null, true, policy),

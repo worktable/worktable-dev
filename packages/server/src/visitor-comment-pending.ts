@@ -7,6 +7,7 @@ import { getSpaceArchiveInfo } from "./store.ts"
 import { accessSnapshot, levelAtLeast, memberLevel } from "./team-access.ts"
 import { canAccessSpace } from "./team-policy.ts"
 import { sharerOf } from "./share-policy.ts"
+import { commentLinkTargets } from "./share-links-store.ts"
 import type { TokenIdentity } from "./token-store.ts"
 import {
   visitorCommentNamespace,
@@ -30,6 +31,19 @@ export async function pendingVisitorComments(
   const namespace = await visitorCommentNamespace()
   const groups = pendingVisitorCommentGroups(namespace.worktableId)
   if (!groups.length) return []
+  const commentLinks = commentLinkTargets(
+    groups
+      .filter((group) => group.paused === "spike")
+      .map((group) => group.link_id)
+  )
+  const resumable = (group: (typeof groups)[number]) => {
+    const link = commentLinks.get(group.link_id)
+    return (
+      group.paused === "spike" &&
+      link?.spaceId === group.space_at_receipt &&
+      link.documentId === group.document_id
+    )
+  }
   const eligible = spaces.filter(
     (space) =>
       (!spaceId || space.id === spaceId) &&
@@ -64,6 +78,7 @@ export async function pendingVisitorComments(
   }
   let items = 0
   for (const group of groups) {
+    if (!group.count && !resumable(group)) continue
     const hint = group.space_at_receipt
     if (!eligibleIds.has(hint) || !belongs(group, hint)) continue
     let snapshot = snapshots.get(hint)
@@ -88,7 +103,7 @@ export async function pendingVisitorComments(
     const document = snapshot.identities.current.get(group.document_id)
     if (!document) continue
     candidates.push({ group, document: { spaceId: hint, ...document } })
-    items += Number(group.count > 0) + Number(group.paused !== null)
+    items += Number(group.count > 0) + Number(resumable(group))
     if (items >= 10) break
   }
   if (!(await visitorNamespaceStillCurrent(namespace))) return []
@@ -116,13 +131,14 @@ export async function pendingVisitorComments(
               },
             ]
           : []),
-        ...(group.paused
+        ...(resumable(group)
           ? [
               {
                 ...base,
                 kind: "visitorCommentsPaused" as const,
+                linkLabel: commentLinks.get(group.link_id)!.label,
                 id: `visitors-paused:${group.link_id}`,
-                reason: group.paused,
+                reason: "spike" as const,
               },
             ]
           : []),

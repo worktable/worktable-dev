@@ -801,7 +801,7 @@ function MarkdownDocPage({
   const queryClient = useQueryClient()
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
-  useVisitorCommentsPanel(page?.sharing?.visitorComments, setAnnotationsOpen, setVersionsOpen)
+  useVisitorCommentsPanel(page?.sharing?.visitorComments, setAnnotationsOpen, setVersionsOpen, annotationsOpen)
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
   const versionQuery = useVersionSnapshot(
     "doc",
@@ -1229,7 +1229,7 @@ function BlockNoteDocPage({
   const [collabDoc, setCollabDoc] = useState<Y.Doc | null>(null)
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
-  useVisitorCommentsPanel(page?.sharing?.visitorComments, setAnnotationsOpen, setVersionsOpen)
+  useVisitorCommentsPanel(page?.sharing?.visitorComments, setAnnotationsOpen, setVersionsOpen, annotationsOpen)
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
   const versionQuery = useVersionSnapshot(
     "doc",

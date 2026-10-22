@@ -160,6 +160,10 @@ for (const appearance of [
           path: info.outputPath("visitors.png"),
           fullPage: true,
         })
+        await page.getByRole("button", { name: "Close comments" }).click()
+        await expect(page).toHaveURL(url)
+        await page.goto(`${url}#visitors`, { waitUntil: "networkidle" })
+        await expect(row).toBeVisible()
 
         await row
           .getByRole("button", { name: "Visitor comment actions" })
@@ -325,10 +329,9 @@ for (const appearance of [
         await expect(
           sharing.getByRole("button", { name: "Save", exact: true })
         ).toBeHidden()
-        await sharing
-          .getByRole("button", { name: "Done", exact: true })
-          .click()
+        await sharing.getByRole("button", { name: "Done", exact: true }).click()
         await page.reload({ waitUntil: "networkidle" })
+        await page.goto(`${url}#visitors`, { waitUntil: "networkidle" })
         await expect(
           page.getByText("Comments paused after a burst on Audit follow-up.", {
             exact: true,

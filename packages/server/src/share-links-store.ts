@@ -863,6 +863,26 @@ export function listDocumentShareLinks(
   )
 }
 
+/** Current targets for paused links, in one indexed read without link history. */
+export function commentLinkTargets(
+  linkIds: readonly string[]
+): Map<string, { spaceId: string; documentId: string; label: string }> {
+  if (!linkIds.length) return new Map()
+  const rows =
+    openDatabase(false)
+      ?.query<
+        { id: string; space_id: string; document_id: string; label: string },
+        [string]
+      >("SELECT id,space_id,document_id,label FROM share_links WHERE id IN (SELECT value FROM json_each(?)) AND revoked_at IS NULL AND level='comment'")
+      .all(JSON.stringify(linkIds)) ?? []
+  return new Map(
+    rows.map((row) => [
+      row.id,
+      { spaceId: row.space_id, documentId: row.document_id, label: row.label },
+    ])
+  )
+}
+
 /** An indexed existence check for the private Visitors tab, with no link history. */
 export function documentHasCommentLink(spaceId: string, documentId: string): boolean {
   return Boolean(openDatabase(false)?.query("SELECT 1 FROM share_links WHERE space_id=? AND document_id=? AND revoked_at IS NULL AND level='comment' LIMIT 1").get(spaceId, documentId))

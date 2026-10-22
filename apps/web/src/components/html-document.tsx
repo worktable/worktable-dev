@@ -335,7 +335,7 @@ function WidgetDetailPage({
   }, [spaceId, widgetId])
 
   // Apply the requested panel after the new document's panel reset.
-  useVisitorCommentsPanel(page?.sharing?.visitorComments, setAnnotationsOpen, setVersionsOpen)
+  useVisitorCommentsPanel(page?.sharing?.visitorComments, setAnnotationsOpen, setVersionsOpen, annotationsOpen)
 
   // Load the selected snapshot for the compare pane header label.
 

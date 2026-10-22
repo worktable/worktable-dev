@@ -19,15 +19,19 @@ To select one client, run `worktable mcp setup <client>`. Supported IDs are
 `claude-code`, `codex`, `cursor`, `vscode`, and `opencode`. Goose uses a manual
 configuration from `worktable mcp print-config goose`.
 
-For an agent on another computer, generate its command under **Connect an
-agent**, or run `worktable agent invite` on the Worktable host. The command
+For an agent on another computer, generate its command under **Coding
+agents**, or run `worktable agent invite` on the Worktable host. The command
 redeems a single-use pairing code and configures the client. The host must be
 reachable from that computer; see [Remote access](/guides/remote-access/).
 
-For **Worktable Cloud**, use the command under **Connect an agent**. It configures
+For **Worktable Cloud**, use the command under **Coding agents**. It configures
 the hosted MCP endpoint without downloading a Worktable token. Open or restart
-the client and complete its browser-based OAuth approval. **Manual install**
-provides configuration for clients you manage yourself.
+the client and complete its browser-based OAuth approval.
+
+For any other MCP agent, choose **Connect any MCP agent**. Add the MCP endpoint
+to your agent and sign in on Cloud. On local or self-hosted Worktable, choose
+its access and create an access token. Copy the token while it is shown and
+paste it into your agent alongside the endpoint.
 
 ## Plugins
 

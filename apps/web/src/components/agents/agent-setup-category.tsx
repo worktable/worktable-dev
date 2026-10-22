@@ -13,17 +13,17 @@ import { AgentAvatar } from "./agent-avatar"
 export const AGENT_SETUP_CATEGORIES = {
   code: {
     title: "Coding agents",
-    description: "Claude Code, Codex, Cursor and more",
-    platforms: ["claude-code", "codex"],
+    description: "Use Worktable from your terminal or editor",
+    platforms: ["claude-code", "codex", "cursor"],
   },
   chat: {
     title: "Chat apps",
-    description: "Claude and ChatGPT",
+    description: "Use your Worktable in a conversation",
     platforms: ["claude", "chatgpt"],
   },
   always: {
     title: "Always-on agents",
-    description: "OpenClaw, Hermes and Grok Bot",
+    description: "Assign work and get replies in Threads",
     platforms: ["openclaw", "hermes", "grok-bot"],
   },
 } satisfies Record<

@@ -112,6 +112,13 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
     dialog.getByRole("heading", { name: "Connected agents" })
   ).toBeVisible()
   await expect(dialog.getByRole("button", { name: "New token" })).toHaveCount(0)
+  await dialog.getByRole("button", { name: /Connect any MCP agent/ }).click()
+  await expect(dialog.getByRole("combobox")).toHaveCount(0)
+  await expect(
+    dialog
+      .getByText(connection.remoteMcpUrl, { exact: true })
+      .filter({ visible: true })
+  ).toBeVisible()
   expect(forbiddenRequests).toEqual([])
   expect(page.url()).toBe(originalUrl)
   expect(topLevelNavigations).toBe(navigationsAfterOpen)
@@ -371,6 +378,11 @@ test("switching settings sections and setup disclosures preserves a one-time man
   )
   await page.route("**/api/tokens", (route) => {
     if (route.request().method() !== "POST") return route.continue()
+    const grant = route.request().postDataJSON()
+    expect(grant.agent).toBe("My agent")
+    expect(grant.scopes).toContain("docs:read")
+    expect(grant.scopes).not.toContain("docs:write")
+    expect(grant.scopes).not.toContain("docs:*")
     return route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -378,8 +390,8 @@ test("switching settings sections and setup disclosures preserves a one-time man
         metadata: {
           id: "123456789abc",
           user: "owner",
-          agent: "claude-code",
-          scopes: ["docs:*"],
+          agent: "My agent",
+          scopes: grant.scopes,
           workspace: "/tmp/worktable",
           createdAt: new Date().toISOString(),
           revokedAt: null,
@@ -399,11 +411,19 @@ test("switching settings sections and setup disclosures preserves a one-time man
   })
 
   await manualInstall.click()
-  await dialog
-    .getByRole("button", { name: "Generate connection token" })
-    .click()
+  await expect(dialog.getByRole("combobox")).toHaveCount(0)
+  await expect(
+    dialog
+      .getByText(connection.remoteMcpUrl, { exact: true })
+      .filter({ visible: true })
+  ).toBeVisible()
+  await dialog.getByRole("checkbox", { name: /^Edit workspace/ }).uncheck()
+  await dialog.getByRole("button", { name: "Create access token" }).click()
   const oneTimeNotice = dialog.getByRole("note")
   await expect(oneTimeNotice).toBeVisible()
+  await expect(
+    dialog.getByText("wt_123456789abc_manual-secret", { exact: true })
+  ).toBeVisible()
 
   await desktopApps.click()
   await expect(oneTimeNotice).toBeHidden()
@@ -414,6 +434,74 @@ test("switching settings sections and setup disclosures preserves a one-time man
   await expect(oneTimeNotice).toBeHidden()
   await dialog.getByRole("button", { name: "Agents", exact: true }).click()
   await expect(oneTimeNotice).toBeVisible()
+})
+
+test("coding-agent selections keep their platform logos after connecting", async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await openAgents(page)
+  const dialog = page.getByRole("dialog")
+  await dialog.getByRole("button", { name: /^Coding agents/ }).click()
+  const inventory = dialog.getByRole("region", {
+    name: "Connected agents",
+    exact: true,
+  })
+  for (const [client, label, logo] of [
+    ["claude-code", "Claude Code", "claude.svg"],
+    ["codex", "ChatGPT / Codex", "openai.svg"],
+    ["cursor", "Cursor", "cursor.svg"],
+    ["opencode", "opencode", "opencode.svg"],
+    ["vscode", "VS Code", "vscode.svg"],
+  ]) {
+    await dialog
+      .getByRole("combobox", { name: "Coding agent", exact: true })
+      .click()
+    await page.getByRole("option", { name: label, exact: true }).click()
+    const response = page.waitForResponse(
+      (item) =>
+        item.request().method() === "POST" &&
+        new URL(item.url()).pathname === "/api/pairing"
+    )
+    await dialog.getByRole("button", { name: "Connect", exact: true }).click()
+    const createdResponse = await response
+    expect(createdResponse.status()).toBe(201)
+    const created = await createdResponse.json()
+    expect(created.client).toBe(client)
+    const redeemed = await fetch(`${harness.apiUrl}/api/pairing/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code: created.code,
+        client,
+        hostname: "avatar-review",
+      }),
+    })
+    expect(redeemed.ok).toBe(true)
+    const { token } = await redeemed.json()
+    const progress = await fetch(`${harness.apiUrl}/api/pairing/progress`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: created.code, event: "config_written" }),
+    })
+    expect(progress.ok).toBe(true)
+    const completed = await fetch(`${harness.apiUrl}/api/pairing/complete`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ code: created.code }),
+    })
+    expect(completed.ok).toBe(true)
+    const image = inventory.locator(`img[src="/agent-logos/${logo}"]`)
+    await expect(image).toBeVisible()
+    await expect
+      .poll(() =>
+        image.evaluate((element) => (element as HTMLImageElement).naturalWidth)
+      )
+      .toBeGreaterThan(0)
+  }
 })
 
 test("a failed connection refetch preserves a newly minted one-time token", async ({

@@ -19,12 +19,10 @@ import {
   DEFAULT_AGENT_ACCESS,
   CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS,
   MCP_CLIENTS,
-  MCP_SNIPPET_CLIENT_IDS,
-  mcpClientSnippet,
+  scopesForAccess,
   type AgentAccess,
   type AgentConnection,
   type ConnectorInstallableMcpClientId,
-  type McpSnippetClientId,
 } from "@worktable/types"
 import { Button, buttonVariants } from "@worktable/ui/components/button"
 import { Badge } from "@worktable/ui/components/badge"
@@ -108,29 +106,6 @@ import {
   AgentSetupTabs,
 } from "@/components/agents/agent-setup-category"
 import { useSettingsSectionActive } from "../settings-dialog"
-
-const CLIENT_KEY = "worktable-connect-client"
-const DEFAULT_CLIENT: McpSnippetClientId = "claude-code"
-
-// The scopes a "Connect an agent" token grants — everything an interactive agent
-// needs, minus token management (the shared agent-token scope set).
-
-const CLIENT_OPTIONS = MCP_SNIPPET_CLIENT_IDS.map((id) => MCP_CLIENTS[id])
-
-function readStoredClient(): McpSnippetClientId {
-  try {
-    const stored = localStorage.getItem(CLIENT_KEY)
-    if (
-      stored &&
-      MCP_SNIPPET_CLIENT_IDS.includes(stored as McpSnippetClientId)
-    ) {
-      return stored as McpSnippetClientId
-    }
-  } catch {
-    // localStorage unavailable — fall through to the default.
-  }
-  return DEFAULT_CLIENT
-}
 
 // The nav rail / tab strip already names the section, so no repeated heading —
 // group headers carry the hierarchy (mirrors SystemSection).
@@ -318,53 +293,15 @@ function CloudManualInstallPanel({
 }: {
   connection: ConnectionInfo
 }) {
-  const [clientId, setClientId] = useState<McpSnippetClientId>(readStoredClient)
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(CLIENT_KEY, clientId)
-    } catch {
-      // Best-effort persistence.
-    }
-  }, [clientId])
-
-  const meta = MCP_CLIENTS[clientId]
-  const snippet = mcpClientSnippet(clientId, {
-    endpoint: connection.remoteMcpUrl,
-  })
-  const pasteCaption = meta.configPathHint
-    ? `Paste into ${meta.configPathHint}`
-    : ""
-  const copied = () => toast.success("Copied")
-
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-foreground">Client</span>
-        <Select
-          value={clientId}
-          onValueChange={(value) => setClientId(value as McpSnippetClientId)}
-        >
-          <SelectTrigger aria-label="Cloud agent" className="w-full sm:w-64">
-            <SelectValue>{meta.label}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {CLIENT_OPTIONS.map((client) => (
-              <SelectItem key={client.id} value={client.id}>
-                {client.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <Snippet code={snippet.body} onCopied={copied} />
-      <p className="text-sm text-muted-foreground">{pasteCaption}</p>
-
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted-foreground">
+        Add this address as a custom connector or MCP server, then sign in.
+      </p>
       <CopyField
         label="MCP endpoint"
         value={connection.remoteMcpUrl}
-        onCopied={copied}
+        onCopied={() => toast.success("Copied")}
       />
     </div>
   )
@@ -587,7 +524,7 @@ function QuickConnectPanel({
           }}
           disabled={create.isPending}
         >
-          <SelectTrigger className="w-full sm:w-64">
+          <SelectTrigger aria-label="Coding agent" className="w-full sm:w-64">
             <SelectValue>
               {clientChoice === "auto"
                 ? "Detect automatically"
@@ -1182,200 +1119,58 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
 
 function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
   const queryClient = useQueryClient()
-
-  const [clientId, setClientId] = useState<McpSnippetClientId>(readStoredClient)
-  useEffect(() => {
-    try {
-      localStorage.setItem(CLIENT_KEY, clientId)
-    } catch {
-      // Best-effort persistence.
-    }
-  }, [clientId])
-
-  // The minted connection secret lives ONLY in this component's state — never
-  // persisted or logged. The shell keeps sections mounted while the dialog is
-  // open (so switching sections can't destroy a one-time token) but unmounts
-  // everything on close, so the token can't survive a close. Switching client
-  // also drops it (it was minted for the prior agent).
+  const [access, setAccess] = useState<AgentAccess>(DEFAULT_AGENT_ACCESS)
+  // Keep the one-time secret in this mounted panel, never in persisted state.
   const [token, setToken] = useState<string | null>(null)
-  const [chosenAccess, setAccess] = useState<AgentAccess | null>(null)
-  // Connecting a client again is the same agent: start from its access.
-  const existing = useQuery({
-    queryKey: ["agent-connections", "app", clientId],
-    queryFn: () => getAppAgent(clientId),
-  })
-  const existingAgent = existing.data?.connection ?? null
-  // Until it is known whether the app is already an agent, its access is not:
-  // generating then could widen an agent its owner had limited.
-  const appKnown = existing.isSuccess
-  const access = chosenAccess ?? existingAgent?.access ?? DEFAULT_AGENT_ACCESS
-
   const mint = useMutation({
-    mutationFn: () => connectAgentApp({ client: clientId, access }),
-    onSuccess: (res) => {
-      setToken(res.token)
-      // The new bearer must show up (and be revocable) in the table below.
-      // Minting does not change literal-loopback MCP's implicit-owner posture.
+    mutationFn: () =>
+      mintToken({ scopes: scopesForAccess(access), agent: "My agent" }),
+    onSuccess: (result) => {
+      setToken(result.token)
       void queryClient.invalidateQueries({ queryKey: ["tokens"] })
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
     },
-    onError: (err) =>
+    onError: (error) =>
       toast.error(
-        err instanceof Error ? err.message : "Couldn't generate a token."
+        error instanceof Error
+          ? error.message
+          : "Couldn’t create an access token."
       ),
   })
-
-  function selectClient(next: McpSnippetClientId) {
-    setClientId(next)
-    setToken(null)
-    setAccess(null)
-    mint.reset()
-  }
-
-  const meta = MCP_CLIENTS[clientId]
-  const pasteCaption = meta.configPathHint
-    ? `Paste into ${meta.configPathHint}`
-    : "Run in a terminal"
-
-  // A remote agent must reach the install at the user-facing origin, not the
-  // loopback endpoint the server advertises for same-machine clients. A
-  // configured origin counts too: a loopback install fronted by a tunnel saves
-  // a Worktable URL precisely so generated configs point through the tunnel.
-  const publicUrlUsed = Boolean(
-    connection && (connection.reachable || connection.originConfigured)
-  )
-  const mcpUrl = connection
-    ? publicUrlUsed
-      ? connection.remoteMcpUrl
-      : connection.endpoint
-    : null
-  // /mcp needs a bearer when the install is exposed or whenever the snippet
-  // points at a PUBLIC URL: a tunnel in front of a
-  // tokenless loopback install would otherwise expose the Worktable to anyone
-  // who finds the URL. Until one is minted here, render the config in its real
-  // shape with a visible placeholder — not the shared module's CLI-facing
-  // guidance; the Generate button is right here.
-  const needsToken = Boolean(
-    connection &&
-    (connection.reachable || connection.mcpTokenRequired || publicUrlUsed)
-  )
-  const placeholderShown = needsToken && !token
-  const snippet =
-    connection && mcpUrl
-      ? mcpClientSnippet(clientId, {
-          endpoint: mcpUrl,
-          token: token ?? (needsToken ? "<generated-token>" : undefined),
-          reachable: connection.reachable,
-        })
-      : null
-
-  const copied = () => toast.success("Copied")
-
+  const endpoint = desktopAgentConnectionDetails(connection).endpoint
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-foreground">Client</span>
-        <Select
-          value={clientId}
-          onValueChange={(value) => selectClient(value as McpSnippetClientId)}
-        >
-          <SelectTrigger
-            aria-label="Manual setup agent"
-            className="w-full sm:w-64"
-          >
-            <SelectValue>{meta.label}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {CLIENT_OPTIONS.map((client) => (
-              <SelectItem key={client.id} value={client.id}>
-                {client.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {!snippet ? (
-        <p className="text-sm text-muted-foreground">
-          Couldn’t read connection info for this install.
-        </p>
+      <p className="text-sm text-muted-foreground">
+        Add Worktable to your agent as an MCP server with this address and an
+        access token.
+      </p>
+      <CopyField label="MCP endpoint" value={endpoint} />
+      {token ? (
+        <>
+          <Callout variant="info">
+            Copy the token now. It isn’t shown again.
+          </Callout>
+          <CopyField label="Access token" value={token} />
+        </>
       ) : (
         <>
-          {needsToken && !token ? (
-            <div className="flex flex-col gap-4">
-              <AgentAccessFields
-                value={access}
-                onChange={setAccess}
-                disabled={mint.isPending || !appKnown}
-              />
-              {existing.isError ? (
-                <Callout variant="danger">
-                  Couldn’t check whether this client is already connected.{" "}
-                  <button
-                    type="button"
-                    className="font-medium underline underline-offset-2"
-                    onClick={() => void existing.refetch()}
-                  >
-                    Try again
-                  </button>
-                </Callout>
-              ) : null}
-              {existingAgent ? (
-                <p className="text-xs text-muted-foreground">
-                  Already connected as {existingAgent.displayName}. A new token
-                  joins it.
-                </p>
-              ) : null}
-              <div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => mint.mutate()}
-                  disabled={
-                    mint.isPending ||
-                    !appKnown ||
-                    !(access.threads || access.read || access.edit)
-                  }
-                >
-                  {mint.isPending ? "Generating…" : "Generate connection token"}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {token ? (
-            <Callout variant="info">
-              Copy now. This token is shown once.
-            </Callout>
-          ) : null}
-
-          <Snippet code={snippet.body} onCopied={copied} />
-
-          <p className="text-sm text-muted-foreground">
-            {pasteCaption}
-            {placeholderShown &&
-              ". Generate a token above to complete this config."}
-          </p>
-
-          {!needsToken ? (
-            <p className="text-sm text-muted-foreground">
-              No token needed on this computer.
-            </p>
-          ) : !connection.reachable && publicUrlUsed ? (
-            <p className="text-sm text-muted-foreground">
-              Public URLs require a token.
-            </p>
-          ) : !connection.reachable && connection.mcpTokenRequired ? (
-            <p className="text-sm text-muted-foreground">
-              This Worktable requires a token.
-            </p>
-          ) : null}
-
-          <CopyField
-            label="MCP endpoint"
-            value={mcpUrl ?? connection.endpoint}
-            onCopied={copied}
+          <AgentAccessFields
+            value={access}
+            onChange={setAccess}
+            disabled={mint.isPending}
           />
+          <div>
+            <Button
+              variant="outline"
+              disabled={
+                mint.isPending ||
+                !(access.threads || access.read || access.edit)
+              }
+              onClick={() => mint.mutate()}
+            >
+              {mint.isPending ? "Creating…" : "Create access token"}
+            </Button>
+          </div>
         </>
       )}
     </div>

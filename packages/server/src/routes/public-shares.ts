@@ -510,6 +510,13 @@ export function createPublicSharesRouter(
             }),
         { headers: projectionHeaders() }
       )
+    } else if (content && view.link.grant) {
+      const headers = contentHeaders(shareOrigin, true)
+      const etag = `"${page.revision}"`
+      headers.set("ETag", etag)
+      response = c.req.header("If-None-Match") === etag
+        ? new Response(null, { status: 304, headers })
+        : await pageResponse(c.req.raw, page, headers)
     } else {
       response = await pageResponse(
         c.req.raw,

@@ -29,6 +29,8 @@ export const LINKED_CAPABILITIES = {
   SHARE_TICKETS: "share-tickets",
   /** `POST /public/share/bridge`. */
   SHARE_BRIDGE: "share-bridge",
+  /** Signed client digests and conditional revisions on share reads. */
+  SHARE_READ_HINTS: "share-read-hints",
   /** `GET` and `POST /public/share/comments`, and `visitor` on share grants. */
   SHARE_COMMENTS: "share-comments",
 } as const
@@ -155,6 +157,14 @@ export const LinkedRequestGrant = z.discriminatedUnion("kind", [
       capability: z.union([ShareLinkToken, ShareTicket]),
       /** A password link's unlock ticket. */
       unlock: ShareTicket.optional(),
+      clientAddress: z
+        .string()
+        .regex(/^[a-f0-9]{32}$/)
+        .optional(),
+      contentRevision: z
+        .string()
+        .regex(/^[A-Za-z0-9_-]{43}$/)
+        .optional(),
       visitor: ShareVisitor.optional(),
     })
     .strict(),

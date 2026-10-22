@@ -33,6 +33,10 @@ Selected Worktables have a sharing preview with live tools, separate links and
 visitor comments. These controls appear only where the preview is enabled.
 Live tools also need a compatible share host.
 
+Owners first enable **Live tools** and **Comment links** in
+**Settings → Links**. Both are off by default. The workflows below are
+available when the owner permits them.
+
 Each link has its own label, access, expiry and optional password. Copy a new
 link when it is created; its full URL is not shown again. Renaming or moving a
 document keeps its preview links attached to the same document.
@@ -48,6 +52,9 @@ The tool reads current data within that link's scope. Readers cannot change
 Records. Interface choices such as filters stay in their tab and do not change
 the team's saved state. Tightening the document's permissions or the owner's
 sharing policy can reduce what an existing link can read.
+
+Record rules filter Records API reads. They do not hide text or data written
+directly into the tool itself, which is shared with every reader of the link.
 
 Preview tools use an isolated program and Worktable's view API. Existing HTML
 that depends on browser scripts, DOM libraries or external resources needs to
@@ -79,8 +86,13 @@ does not replace the current policy with an older copy.
 
 ## Stop sharing
 
-Choose **Stop sharing** to revoke the link. Moving, renaming, archiving, or
-deleting the document also disables it. Sharing again creates a new link.
+In the link list, open a link's menu and choose **Revoke Link**. Revoke each
+link you want to stop. Renaming or moving a document does not revoke these
+links; archiving or deleting it makes them unavailable.
+
+In the earlier sharing dialog, choose **Stop sharing**. Its links also stop
+when the document is moved, renamed, archived or deleted. Sharing again
+creates a new link.
 
 Pausing Worktable Link stops access to that device's shared documents. Resuming
 it restores the existing links; unlinking the device ends its access. See

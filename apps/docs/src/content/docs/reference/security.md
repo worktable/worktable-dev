@@ -100,6 +100,10 @@ restricted by the document's current permissions and owner policy. It does not
 give the reader a member account or the maker's credentials. Visitor Records
 access is read only, and interface preferences stay local to the tab.
 
+Record rules constrain Records API reads. The complete tool program, including
+any text or data embedded in it, is shared with every reader of the link.
+Review that content before sharing; a Record rule does not hide it.
+
 Preview tool programs run in an isolated JavaScript engine with bounded memory
 and execution. They have no browser objects, network access, DOM or persistent
 browser storage. Worktable renders a validated view through its own UI API;

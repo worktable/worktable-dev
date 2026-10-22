@@ -138,7 +138,7 @@ test("an opaque tool reads data and handles controls without browser capabilitie
       { tag: 'p', children: [rows[0].data.name] },
       { tag: 'p', children: [live] },
       { tag: 'label', children: ['Region', { tag: 'input', key: 'region', props: { value: filter }, on: { input: 'filter' } }] },
-      { tag: 'label', children: ['Categories', { tag: 'select', key: 'categories', props: { multiple: true }, on: { change: 'categories' }, children: ['north', '東京'].map(value => ({ tag: 'option', props: { value, selected: categories.includes(value) }, children: [value] })) }] },
+      { tag: 'label', children: ['Categories', { tag: 'select', key: 'categories', props: { multiple: true, 'aria-label': 'Categories' }, on: { change: 'categories' }, children: ['north', '東京'].map(value => ({ tag: 'option', props: { value, selected: categories.includes(value) }, children: [value] })) }] },
       { tag: 'p', children: ['Selected: ' + categories.join(', ')] },
       { tag: 'button', children: ['Test unsafe view'], on: { click: 'unsafe' } },
       { tag: 'button', children: ['Subscribe'], on: { click: 'subscribe' } },

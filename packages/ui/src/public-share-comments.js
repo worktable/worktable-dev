@@ -31,6 +31,9 @@
   const endpoint = `/s/${encodeURIComponent(workspaceId)}/comments`
 
   const MAX_LENGTH = 2000
+  // Verification (5s), routing (10s), device headers (30s) and body (30s),
+  // with room for the browser to receive the gateway response.
+  const REQUEST_BUDGET_MS = 90_000
   const KEY_LIFETIME = 90 * 24 * 60 * 60 * 1000
   const keyStorage = `worktable-visitor:${config.link}`
   const passStorage = `worktable-comment-pass:${config.link}`
@@ -152,10 +155,8 @@
    * @param {number} [remainingMs]
    * @returns {Promise<CallResult>}
    */
-  async function call(body, remainingMs = 30_000) {
-    const signal = AbortSignal.timeout(
-      Math.max(1, Math.min(10_000, remainingMs))
-    )
+  async function call(body, remainingMs = REQUEST_BUDGET_MS) {
+    const signal = AbortSignal.timeout(Math.max(1, remainingMs))
     /** @type {Record<string, string>} */
     const headers = {
       "x-worktable-share-capability": token,
@@ -186,21 +187,21 @@
   }
 
   /**
-   * A call, tried again while the Worktable wakes, for up to half a minute.
+   * A call, tried again while the Worktable wakes, within one request budget.
    * A comment keeps its request id, so it is stored once.
    * @param {() => object | undefined} body
    */
   async function patiently(body) {
     const started = Date.now()
     for (;;) {
-      const remaining = 30_000 - (Date.now() - started)
+      const remaining = REQUEST_BUDGET_MS - (Date.now() - started)
       if (remaining <= 0) return { status: 0, answer: null, retryAfter: 0 }
       const result = await call(body(), remaining)
       keepPass(result.answer)
       const wait = (result.retryAfter || 3) * 1000
       if (
         (result.status !== 503 && result.status !== 0) ||
-        Date.now() - started + wait > 30_000
+        Date.now() - started + wait > REQUEST_BUDGET_MS
       ) {
         return result
       }
@@ -483,7 +484,7 @@
   function failure(code, httpStatus) {
     switch (code) {
       case "TOO_MANY_REQUESTS":
-        return "Too many comments. Try again in a few minutes."
+        return "Too many comments. Try again later."
       case "PAUSED":
         return "This page isn't taking comments right now."
       case "UNAVAILABLE":

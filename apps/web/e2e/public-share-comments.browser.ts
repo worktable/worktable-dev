@@ -80,7 +80,7 @@ async function fixture(page: Page, live = false) {
         : renderPublicDocumentPage(
             {
               kind: "doc",
-              title: "Review",
+              title: "",
               format: "markdown",
               projectionHtml: "<h1>Review</h1>",
             },
@@ -339,6 +339,25 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
       return controller.signal
     }
   })
+  // A valid gateway submission can include verification, routing and the
+  // device headers/body budgets. Keep the original request alive.
+  await page.evaluate(() => sessionStorage.clear())
+  let releaseSlow = () => {}
+  f.backend.onPost = () =>
+    new Promise((resolve) => {
+      releaseSlow = () => resolve("ok")
+    })
+  await text.fill("Slow successful comment")
+  await send.click()
+  await expect.poll(() => f.posts.length).toBe(5)
+  await page.clock.runFor(75_000)
+  await expect(send).toBeDisabled()
+  expect(f.posts).toHaveLength(5)
+  releaseSlow()
+  await expect(page.locator(".comment-list")).toContainText(
+    "Slow successful comment"
+  )
+  await expect(send).toBeEnabled()
   const blocked: Array<() => void> = []
   f.backend.onPost = () =>
     new Promise((resolve) => {
@@ -347,7 +366,7 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
   await text.fill("Keep this draft after the request stalls")
   await send.click()
   await expect.poll(() => blocked.length).toBe(1)
-  await page.clock.runFor(30_000)
+  await page.clock.runFor(90_000)
   await expect(send).toBeEnabled()
   await expect(text).toHaveValue("Keep this draft after the request stalls")
   await expect(page.locator(".comment-status")).toContainText("Couldn't reach")

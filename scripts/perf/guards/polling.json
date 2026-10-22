@@ -3,7 +3,7 @@
   "sites": [
     {
       "site": "packages/ui/src/public-share-comments.js#sleep",
-      "why": "Retry backoff only after an explicit comment-panel read or submission; stops within 30 seconds, with no background refresh."
+      "why": "Retry backoff only after an explicit comment-panel read or submission; stops within 90 seconds to allow gateway verification, routing and device response deadlines, with no background refresh."
     },
     {
       "site": "packages/ui/src/public-share-comments.js#humanToken.timer",

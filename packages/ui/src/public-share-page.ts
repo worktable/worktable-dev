@@ -397,7 +397,7 @@ function header(
       // Omit invalid links from callers outside the validated share contract.
     }
   }
-  return `<header class="app-header"><div class="header-inner"><span class="brand-mark" aria-hidden="true">${iconSvg}</span><span class="brand-name">Worktable</span>${title ? `<span class="header-separator" aria-hidden="true"></span><span class="document-name">${escapeHtml(title)}</span>${comments ? commentToggle : '<span class="view-only">View only</span>'}` : ""}${sourceLink}</div></header>`
+  return `<header class="app-header"><div class="header-inner"><span class="brand-mark" aria-hidden="true">${iconSvg}</span><span class="brand-name">Worktable</span>${title ? `<span class="header-separator" aria-hidden="true"></span><span class="document-name">${escapeHtml(title)}</span>` : ""}${comments ? commentToggle : title ? '<span class="view-only">View only</span>' : ""}${sourceLink}</div></header>`
 }
 
 function pageDocument(title: string, body: string): string {

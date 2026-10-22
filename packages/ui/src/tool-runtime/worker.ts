@@ -39,7 +39,11 @@ async function run(input: unknown): Promise<void> {
     } else throw new Error("Invalid tool turn.")
     scope.postMessage({ type: "result", id: value.id, messages })
     busy = false
-  } catch {
+  } catch (error) {
+    console.error(
+      "Worktable tool runtime failed:",
+      error instanceof Error ? error.message : "Unknown runtime failure"
+    )
     vm?.dispose()
     scope.postMessage({ type: "fault" })
     scope.close()

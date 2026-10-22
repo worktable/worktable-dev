@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router"
 import { AtSign, CircleAlert, Clock3, Reply } from "lucide-react"
-import { lazy, Suspense, useState } from "react"
+import { useState } from "react"
 import type { DocumentSummary, PendingItem } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
 import { cn } from "@worktable/ui/lib/utils"
@@ -20,8 +20,6 @@ import { useGettingStartedShortcut } from "@/lib/setup"
 const rowClass =
   "group flex h-10 min-w-0 items-center gap-3 rounded-lg px-2.5 text-sm transition-colors hover:bg-accent"
 
-const VisitorPendingLabel = lazy(() => import("./visitor-pending-label"))
-
 // ── Pending ────────────────────────────────────────────────
 
 function PendingRow({
@@ -35,22 +33,32 @@ function PendingRow({
     <span className="shrink-0 text-muted-foreground/70">{spaceName}</span>
   ) : null
   const label = "min-w-0 flex-1 truncate font-medium text-foreground"
+  const when = (
+    <span className="shrink-0 text-xs text-muted-foreground">
+      {shortWhen(item.at)}
+    </span>
+  )
   switch (item.kind) {
     case "threadRequest":
+    case "deliveryFailed":
       return (
         <ThreadLink
           spaceId={item.spaceId}
           threadId={item.threadId}
           className={rowClass}
         >
-          <AtSign className="size-4 shrink-0 text-muted-foreground" />
+          {item.kind === "threadRequest" ? (
+            <AtSign className="size-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <CircleAlert className="size-4 shrink-0 text-destructive" />
+          )}
           <span className={label}>
-            {item.from.name ?? "Someone"} asked you in {item.threadTitle}
+            {item.kind === "threadRequest"
+              ? `${item.from.name ?? "Someone"} asked you in ${item.threadTitle}`
+              : `Message to ${item.agentName} wasn’t delivered`}
           </span>
           {where}
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {shortWhen(item.at)}
-          </span>
+          {when}
         </ThreadLink>
       )
     case "visitorComments":
@@ -64,36 +72,15 @@ function PendingRow({
         >
           <Reply className="size-4 shrink-0 text-muted-foreground" />
           <span className={label}>
-            {item.kind === "commentReply" ? (
-              `Reply to your comment on ${item.docTitle ?? item.docPath}`
-            ) : (
-              <Suspense fallback={item.docTitle ?? item.docPath}>
-                <VisitorPendingLabel item={item} />
-              </Suspense>
-            )}
+            {item.kind === "commentReply"
+              ? `Reply to your comment on ${item.docTitle ?? item.docPath}`
+              : item.kind === "visitorCommentsPaused"
+                ? `Comments paused on ${item.linkLabel || "Untitled link"}`
+                : `${item.count} visitor comment${item.count === 1 ? "" : "s"} on ${item.docTitle ?? item.docPath}`}
           </span>
           {where}
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {shortWhen(item.at)}
-          </span>
+          {when}
         </Link>
-      )
-    case "deliveryFailed":
-      return (
-        <ThreadLink
-          spaceId={item.spaceId}
-          threadId={item.threadId}
-          className={rowClass}
-        >
-          <CircleAlert className="size-4 shrink-0 text-destructive" />
-          <span className={label}>
-            Message to {item.agentName} wasn’t delivered
-          </span>
-          {where}
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {shortWhen(item.at)}
-          </span>
-        </ThreadLink>
       )
   }
 }

@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto"
+import { LINK_GRANT_MAX_COLLECTIONS } from "@worktable/types/constants"
 import {
   CanonicalIdSchema,
   describeAbilities,
@@ -80,13 +81,13 @@ export async function prepareShareLinkAccess(input: {
         canWidgetRecord({ permissions }, id, "read")
     )
   )
-  if (names.size > 32)
+  if (names.size > LINK_GRANT_MAX_COLLECTIONS)
     warnings.push({
       code: "collections_limit",
       message: "This tool names more collections than one link can open.",
     })
   const schemas = new Map<string, RecordCollectionSchema>()
-  const queue = [...names].slice(0, 32)
+  const queue = [...names].slice(0, LINK_GRANT_MAX_COLLECTIONS)
   const queued = new Set(queue)
   for (const id of queue) {
     const { data: schema } = await readRecordCollectionSchema(input.spaceId, id)
@@ -97,7 +98,7 @@ export async function prepareShareLinkAccess(input: {
       if (
         !target ||
         queued.has(target) ||
-        queued.size >= 32 ||
+        queued.size >= LINK_GRANT_MAX_COLLECTIONS ||
         !CanonicalIdSchema.safeParse(target).success ||
         !canWidgetRecord({ permissions }, target, "read")
       )

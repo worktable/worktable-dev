@@ -63,6 +63,10 @@ links.
 
 `worktable_spaces` creates, updates, archives, and restores Spaces with
 `docs:write`. Setting a Space's pins also requires `documents:write`.
+Older clients can send `startHere` instead of `pins`; both names use the same
+permissions and saved pins. If both are provided, their lists must match.
+Space discovery and update results include `startHere` alongside `pins`
+whenever pins are returned.
 
 With `documents:read`, the `search` action in `worktable_discover` searches
 Docs, HTML Docs, and other registered document formats, returning safe text

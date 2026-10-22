@@ -332,5 +332,15 @@ export function resolvePublicOperation(
   if (id.startsWith("html.")) return { id, args: htmlArgs(request) }
   if (id.startsWith("annotations."))
     return { id, args: annotationArgs(request) }
+  if (id === "spaces.update") {
+    const args = withoutAction(request)
+    // Older directory clients still send the approved startHere field.
+    // Normalize it before authorization and dispatch share these arguments.
+    if (args.startHere !== undefined) {
+      args.pins ??= args.startHere
+      delete args.startHere
+    }
+    return { id, args }
+  }
   return { id, args: withoutAction(request) }
 }

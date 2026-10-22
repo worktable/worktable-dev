@@ -387,6 +387,7 @@ describe("agent document lifetimes over MCP", () => {
       { path: "guide", note: "Read first", status: "active" },
       { path: "plan", status: "active" },
     ])
+    expect(pinned.data["startHere"]).toEqual(pinned.data["pins"])
 
     const unknown = await tool("worktable_spaces", {
       action: "update",
@@ -418,6 +419,7 @@ describe("agent document lifetimes over MCP", () => {
       { path: "handbook", status: "active" },
       { path: "plan", status: "archived" },
     ])
+    expect(state.data["startHere"]).toEqual(state.data["pins"])
 
     // Reordering keeps an archived pin; only new pins must be active.
     const reordered = await tool("worktable_spaces", {
@@ -462,20 +464,82 @@ describe("agent document lifetimes over MCP", () => {
       "reconnecting this agent with broader access"
     )
 
+    await connect(["search:read", "docs:read"])
+    const restricted = await tool("worktable_discover", {
+      action: "state",
+      spaceId,
+    })
+    expect(restricted.ok).toBe(true)
+    expect(restricted.data["pins"]).toBeUndefined()
+    expect(restricted.data["startHere"]).toBeUndefined()
+
     // Pins point at documents, so changing them also needs documents:write.
     await connect(["docs:write"])
-    const pins = await tool("worktable_spaces", {
-      action: "update",
-      spaceId,
-      pins: [],
-    })
-    expect(pins.ok).toBe(false)
-    expect(pins.text).toContain('requires "documents:write"')
+    for (const field of ["pins", "startHere"]) {
+      const denied = await tool("worktable_spaces", {
+        action: "update",
+        spaceId,
+        [field]: [],
+      })
+      expect(denied.ok).toBe(false)
+      expect(denied.text).toContain('requires "documents:write"')
+    }
     const renamed = await tool("worktable_spaces", {
       action: "update",
       spaceId,
       name: "Renamed",
     })
     expect(renamed.ok).toBe(true)
+  })
+
+  it("accepts both pin names and rejects conflicting updates before saving", async () => {
+    await writeDoc("guide", { lifetime: "durable" })
+    await writeDoc("plan", { lifetime: "durable" })
+
+    for (const field of ["startHere", "pins"]) {
+      const saved = await tool("worktable_spaces", {
+        action: "update",
+        spaceId,
+        [field]: [{ path: "guide", note: "Read first" }],
+      })
+      expect(saved.ok).toBe(true)
+      const state = await tool("worktable_discover", { action: "state", spaceId })
+      expect(state.data["pins"]).toMatchObject([
+        { path: "guide", note: "Read first" },
+      ])
+      expect(state.data["startHere"]).toEqual(state.data["pins"])
+      expect(saved.data["startHere"]).toEqual(state.data["pins"])
+      expect(saved.data["pins"]).toEqual(state.data["pins"])
+
+      const cleared = await tool("worktable_spaces", {
+        action: "update",
+        spaceId,
+        [field]: [],
+      })
+      expect(cleared.ok).toBe(true)
+      expect(cleared.data["pins"]).toEqual([])
+      expect(cleared.data["startHere"]).toEqual([])
+      expect((await readSpace(spaceId)).data?.settings?.startHere).toEqual([])
+    }
+
+    const matching = await tool("worktable_spaces", {
+      action: "update",
+      spaceId,
+      pins: [{ path: "guide", note: "Read first" }],
+      startHere: [{ note: "Read first", path: "guide" }],
+    })
+    expect(matching.ok).toBe(true)
+
+    const before = (await readSpace(spaceId)).data
+    const conflict = await tool("worktable_spaces", {
+      action: "update",
+      spaceId,
+      name: "Should Not Save",
+      pins: [{ path: "guide" }],
+      startHere: [{ path: "plan" }],
+    })
+    expect(conflict.ok).toBe(false)
+    expect(conflict.text).toContain("pins and startHere must match")
+    expect((await readSpace(spaceId)).data).toEqual(before)
   })
 })

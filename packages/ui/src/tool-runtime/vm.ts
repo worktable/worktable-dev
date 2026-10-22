@@ -1,6 +1,7 @@
 import variant from "@jitl/quickjs-singlefile-browser-release-sync"
 import {
   newQuickJSWASMModuleFromVariant,
+  newVariant,
   type QuickJSContext,
   type QuickJSHandle,
   type QuickJSRuntime,
@@ -14,14 +15,11 @@ export const TOOL_VM_LIMITS = Object.freeze({
   messagesPerTurn: 64,
   pendingTurns: 40,
   memoryBytes: 32 * 1024 * 1024,
+  wasmMemoryBytes: 64 * 1024 * 1024,
   stackBytes: 512 * 1024,
   turnMilliseconds: 1000,
   jobsPerTurn: 1024,
 })
-
-let modulePromise:
-  | ReturnType<typeof newQuickJSWASMModuleFromVariant>
-  | undefined
 
 /** One heap per tool. Callers must also enforce a hard worker watchdog: a VM
  * interrupt cannot preempt every long native operation inside the WASM engine. */
@@ -44,8 +42,18 @@ export class ToolVm {
   }
 
   static async create(): Promise<ToolVm> {
-    modulePromise ??= newQuickJSWASMModuleFromVariant(variant)
-    return new ToolVm((await modulePromise).newRuntime())
+    // Bound the entire linear memory too: the interpreter allocation limit
+    // alone is not a ceiling for every allocation in the prebuilt engine.
+    // Each tool also gets its own module, including its backing memory.
+    const isolated = newVariant(variant, {
+      wasmMemory: new WebAssembly.Memory({
+        initial: 256,
+        maximum: TOOL_VM_LIMITS.wasmMemoryBytes / 65536,
+      }),
+    })
+    return new ToolVm(
+      (await newQuickJSWASMModuleFromVariant(isolated)).newRuntime()
+    )
   }
 
   start(source: string): string[] {
@@ -150,7 +158,9 @@ export class ToolVm {
           state.error.dispose()
           throw new Error("The tool stopped because an action failed.")
         }
-        state.value.dispose()
+        // Non-promises return the original borrowed handle. Promise result
+        // handles are separately owned and must be released as well.
+        if (!state.notAPromise) state.value.dispose()
         handle.dispose()
         this.pending.delete(handle)
       }

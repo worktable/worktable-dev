@@ -114,6 +114,26 @@ it("stops runaway turns, discards their effects, and permits a fresh instance", 
   }
 }, 10_000)
 
+it("bounds aggregate binary allocations even when individual allocations fit", async () => {
+  const vm = await ToolVm.create()
+  try {
+    const [render] = messages(
+      vm.start(`
+      const retained = [];
+      try { for (let i = 0; i < 128; i++) retained.push(new Uint8Array(1024 * 1024)); }
+      catch { /* Recover enough space to report the admitted live allocation count. */ }
+      const count = retained.length;
+      retained.pop();
+      worktable.ui.render(count);
+    `)
+    )
+    expect(render.args[0]).toBeGreaterThan(0)
+    expect(render.args[0]).toBeLessThan(64)
+  } finally {
+    vm.dispose()
+  }
+})
+
 it("rejects oversized source and messages and does not load imported modules", async () => {
   const oversized = await ToolVm.create()
   expect(() =>

@@ -46,7 +46,7 @@ export const TOOL_GUEST_SDK = String.raw`((send) => {
     update: async updater => {
       const current = await state.get();
       const next = await updater(current);
-      return state.set(next);
+      return request('state.update', [next]);
     },
   };
   const ui = {

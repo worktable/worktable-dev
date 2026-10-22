@@ -35,6 +35,7 @@ import {
 
 let root: string
 let app: string
+let previousPreview: string | undefined
 const spaceId = "preview"
 const path = "dashboards/current"
 const api = `/api/spaces/${spaceId}/widgets/__document/${Buffer.from(path).toString("base64url")}`
@@ -45,6 +46,8 @@ const permissions = {
 }
 
 beforeEach(async () => {
+  previousPreview = process.env.WORKTABLE_SHARING_PREVIEW
+  process.env.WORKTABLE_SHARING_PREVIEW = "1"
   root = await mkdtemp(join(tmpdir(), "html-preview-ws-"))
   app = await mkdtemp(join(tmpdir(), "html-preview-app-"))
   setWorkspaceRootOverride(root)
@@ -110,6 +113,8 @@ beforeEach(async () => {
   ).toBeNull()
 })
 afterEach(async () => {
+  if (previousPreview === undefined) delete process.env.WORKTABLE_SHARING_PREVIEW
+  else process.env.WORKTABLE_SHARING_PREVIEW = previousPreview
   recordIndex.stop()
   invalidateSearchIndex()
   setWorkspaceRootOverride(null)
@@ -321,6 +326,33 @@ previewTest(
     expect(capture.width).toBe(600)
     expect(capture.bytes.byteLength).toBeGreaterThan(1000)
     expect(capture.observed).toEqual([{ collectionId: "tasks", query: {} }])
+    const priorPreview = process.env.WORKTABLE_SHARING_PREVIEW
+    try {
+      process.env.WORKTABLE_SHARING_PREVIEW = "1"
+      const isolated = await captureHtmlPreview({
+        snapshot: {
+          ...snapshot,
+          html: `<body onload="fetch('https://outside.invalid')"><script type="application/worktable">
+            const state = await worktable.state.get();
+            const rows = await worktable.records.query('tasks');
+            try { await worktable.state.set('label', 'Corrupt'); } catch {}
+            await worktable.ui.render({tag:'h1',children:[state.label + ' ' + rows[0].data.title + ' Équipe 東京']});
+          </script><img src="https://outside.invalid">`,
+        },
+        scopes: ["documents:read", "records:read"],
+        options: { width: 600, height: 300 },
+        observeRecordReads: true,
+      })
+      await Bun.write("test-results/isolated-tool-preview.png", isolated.bytes)
+      expect(isolated.status).toBe("partial")
+      expect(isolated.diagnostics.map(item => item.code)).toContain("PREVIEW_READ_ONLY")
+      expect(isolated.diagnostics.some(item => item.code === "tool_stopped" || item.code === "preview_timeout")).toBe(false)
+      expect(isolated.observed).toEqual([{ collectionId: "tasks", query: {} }])
+      expect((await readWidgetState(spaceId, path)).label).toBe("Initial state")
+    } finally {
+      if (priorPreview === undefined) delete process.env.WORKTABLE_SHARING_PREVIEW
+      else process.env.WORKTABLE_SHARING_PREVIEW = priorPreview
+    }
     const emoji = await captureHtmlPreview({
       snapshot: {
         ...snapshot,
@@ -486,7 +518,7 @@ previewTest(
       spaceId,
       explicitId: "access-check",
       name: "Access check",
-      html: "<h1>Loading</h1><script>worktable.records.query('tasks',{fields:['title']}).then(rows=>document.querySelector('h1').textContent=rows[0].data.title)</script>",
+      html: "<script type=\"application/worktable\">const rows=await worktable.records.query('tasks',{fields:['title']});await worktable.ui.render({tag:'h1',children:[rows[0].data.title]});</script>",
       permissions,
       versionSource: "test",
       versionUpdatedBy: "test",

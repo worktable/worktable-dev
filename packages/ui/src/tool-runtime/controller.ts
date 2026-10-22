@@ -51,6 +51,7 @@ export function startIsolatedTool(options: {
 }): {
   close: () => void
   environment: (value: ToolEnvironment) => void
+  idle: () => boolean
 } {
   // Reject before allocating a worker or cloning authored input onto it.
   if (
@@ -296,6 +297,7 @@ export function startIsolatedTool(options: {
   advance()
   return {
     close,
+    idle: () => !active && !queue.length && !pending.size && renderQueue === 0,
     environment: (value) =>
       enqueue({ type: "environment", value: toolEnvironment(value) }),
   }

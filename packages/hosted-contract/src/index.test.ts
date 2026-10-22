@@ -15,6 +15,7 @@ import {
   LinkedHeartbeat,
   LinkedRequestClaims,
   PublicShareProjection,
+  PublicShareTool,
   SHARE_CAPABILITY_HEADER,
   SHARE_UNLOCK_HEADER,
   VISITOR_HEADERS,
@@ -120,10 +121,14 @@ describe("buildTenantEnv", () => {
     )
     // The GATEWAY origin, never the sprite: it is the URL clients call, so it
     // is what the token audience names and what the 401 challenge points at.
-    expect(env[ENV.RESOURCE_URL]).toBe(`https://app.worktable.cloud/api/mcp/w/${base.cloudWorkspaceId}`)
+    expect(env[ENV.RESOURCE_URL]).toBe(
+      `https://app.worktable.cloud/api/mcp/w/${base.cloudWorkspaceId}`
+    )
     // Existing directory connectors keep the shared audience. The gateway
     // forwards it only to the account's default or single Worktable.
-    expect(env[ENV.LEGACY_RESOURCE_URL]).toBe("https://app.worktable.cloud/api/mcp")
+    expect(env[ENV.LEGACY_RESOURCE_URL]).toBe(
+      "https://app.worktable.cloud/api/mcp"
+    )
     expect(env[ENV.VERSION]).toBe("0.0.25")
     expect(env[ENV.PORT]).toBe("8080")
     expect(env[ENV.WORKSPACE]).toBe("/data/workspace")
@@ -281,7 +286,12 @@ describe("public share projection contract", () => {
     }
     const html = { kind: "html", title: "Status board" }
     const contentTicket = "v1.lnk_frame.1.1767225600.signature"
-    const live = { rev: "rev_1", poll: 30 }
+    const live = {
+      rev: "rev_1",
+      poll: 30,
+      runtime: "isolated-v1",
+      asset: "a".repeat(64),
+    }
     const comments = {
       accepting: true,
       anonymousAllowed: false,
@@ -312,6 +322,7 @@ describe("public share projection contract", () => {
       { ...html, contentTicket: "v1/../../../public/share/x" },
       { ...html, contentTicket, live: { ...live, token: "T".repeat(43) } },
       { ...html, contentTicket, live: { ...live, poll: 0 } },
+      { ...html, contentTicket, live: { rev: "rev_1", poll: 30 } },
       { ...html, comments: { ...comments, nameRequired: true } },
       { ...html, comments: { ...comments, visitorsSee: "everyone" } },
       { ...html, password: "secret" },
@@ -499,16 +510,25 @@ describe("TenantProvisionInput", () => {
   })
 })
 
-
 it("reads fragmented UTF-8 directories and cancels oversized tenant responses before consuming them", async () => {
-  const snapshot = { workspaceId: "team", name: "Équipe", portableWorkspaceId: "portable", epoch: "a".repeat(64), revision: 1, capturedAt: 1, members: [] }
+  const snapshot = {
+    workspaceId: "team",
+    name: "Équipe",
+    portableWorkspaceId: "portable",
+    epoch: "a".repeat(64),
+    revision: 1,
+    capturedAt: 1,
+    members: [],
+  }
   const bytes = new TextEncoder().encode(JSON.stringify(snapshot))
   const split = bytes.indexOf(0xc3) + 1
-  const body = new ReadableStream<Uint8Array>({ start(controller) {
-    controller.enqueue(bytes.slice(0, split))
-    controller.enqueue(bytes.slice(split))
-    controller.close()
-  } })
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes.slice(0, split))
+      controller.enqueue(bytes.slice(split))
+      controller.close()
+    },
+  })
   expect(await readTeamDirectorySnapshot(new Response(body))).toEqual(snapshot)
   let cancelled = false
   let remaining = 50
@@ -517,9 +537,13 @@ it("reads fragmented UTF-8 directories and cancels oversized tenant responses be
       if (remaining-- > 0) controller.enqueue(new Uint8Array(1024 * 1024))
       else controller.close()
     },
-    cancel() { cancelled = true },
+    cancel() {
+      cancelled = true
+    },
   })
-  await expect(readTeamDirectorySnapshot(new Response(oversized))).rejects.toThrow("Team directory too large")
+  await expect(
+    readTeamDirectorySnapshot(new Response(oversized))
+  ).rejects.toThrow("Team directory too large")
   expect(cancelled).toBe(true)
   expect(remaining).toBeGreaterThan(0)
 })
@@ -530,7 +554,9 @@ describe("tenant billing header", () => {
       fc.property(
         fc.record({
           plan: fc.constantFrom(...CLOUD_PLAN_IDS),
-          peopleLimit: fc.option(fc.integer({ min: 1, max: 1000 }), { nil: null }),
+          peopleLimit: fc.option(fc.integer({ min: 1, max: 1000 }), {
+            nil: null,
+          }),
           access: fc.constantFrom(...BillingAccess.options),
           payer: fc.record({
             subject: fc.string({ minLength: 1, maxLength: 40 }),
@@ -561,7 +587,26 @@ describe("cloud plans", () => {
       const plan = CLOUD_PLANS[id]
       expect(PublicPlanDetails.parse(plan)).toEqual(plan)
       const next = nextCloudPlan(id)
-      if (next) expect(CLOUD_PLANS[next].peopleLimit).toBeGreaterThan(plan.peopleLimit)
+      if (next)
+        expect(CLOUD_PLANS[next].peopleLimit).toBeGreaterThan(plan.peopleLimit)
     }
   })
+})
+
+it("accepts only bounded isolated programs as live tool payloads", () => {
+  const tool = {
+    v: 1,
+    runtime: "isolated-v1",
+    asset: "a".repeat(64),
+    source: "const title = 'Équipe 東京';",
+  } as const
+  expect(PublicShareTool.parse(tool)).toEqual(tool)
+  for (const invalid of [
+    "<script>window.exfiltrate()</script>",
+    { ...tool, runtime: "html" },
+    { ...tool, html: "<img src=https://outside.invalid>" },
+    { ...tool, source: " " },
+    { ...tool, source: "東京".repeat(100_000) },
+  ])
+    expect(PublicShareTool.safeParse(invalid).success).toBe(false)
 })

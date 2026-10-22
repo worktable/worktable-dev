@@ -1,4 +1,8 @@
+import { previewFontCss } from "../preview-fonts.ts";
 import { buildWidgetCsp, canWidgetRecord, deniedWidgetQueryCollection, widgetRecordReadGuard, WidgetRecordAccessError } from "../widget-runtime-policy.ts";
+import { isolatedToolSource, IsolatedToolSourceError } from "../isolated-tool-source.ts";
+import { isolatedToolCsp, isolatedToolFrame } from "@worktable/ui/tool-runtime/document";
+import { sharingPreviewEnabled } from "../sharing-preview.ts";
 import { requireScope, requireHumanWorkspaceOwner, restWriteActor } from "../auth.ts";
 import { documentSourceDisposition } from "../content-disposition.ts";
 import { existsSync } from "node:fs";
@@ -365,14 +369,31 @@ async function handleGetContent(c: Context, spaceId: string, widgetId: string) {
       },
     });
   }
-  const themedHtml = injectWidgetRuntime(applyWidgetTheme(data, c.req.query("theme")), spaceId, widgetId);
+  let program: string | null;
+  try { program = isolatedToolSource(data); }
+  catch (error) {
+    if (!(error instanceof IsolatedToolSourceError)) throw error;
+    return c.json({ error: error.message, code: error.code }, 422);
+  }
+  if (program !== null && !sharingPreviewEnabled())
+    return c.json({ error: "This tool is not available.", code: "NOT_FOUND" }, 404);
+  const origin = new URL(c.req.url).origin;
+  const theme = c.req.query("theme") === "light" ? "light" : "dark";
+  const themedHtml = program === null
+    ? injectWidgetRuntime(applyWidgetTheme(data, theme), spaceId, widgetId)
+    : isolatedToolFrame(program, {
+        mode: "member", spaceId, widgetId,
+        apiBase: `/api/spaces/${encodeURIComponent(spaceId)}/widgets/__document/${Buffer.from(widgetId, "utf8").toString("base64url")}`,
+      }, { theme, fontStyles: previewFontCss("/worktable-preview") });
   // A frame asked for by its current revision never changes: the browser
   // keeps it. Any other request revalidates, so it never holds old content.
   const current = c.req.query("rev") === htmlContentRevisionOf(document);
   return new Response(themedHtml, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy": buildWidgetCsp(widget.permissions?.network ?? false, new URL(c.req.url).origin),
+      "Content-Security-Policy": program === null
+        ? buildWidgetCsp(widget.permissions?.network ?? false, origin)
+        : isolatedToolCsp({ assetOrigin: origin, parentOrigin: origin, fontSources: [`${origin}/worktable-preview/fonts/`] }),
       "X-Content-Type-Options": "nosniff",
       "Cache-Control": current
         ? "private, max-age=31536000, immutable"

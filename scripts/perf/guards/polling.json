@@ -1,6 +1,18 @@
 {
-  "$comment": "Every refetchInterval and setInterval in apps/web/src, plus all timers in the public visitor broker, one entry per site. A site is <file>#<enclosing function or variable>; list a site twice if it occurs twice. Polling is the last resort: prefer a socket event, or a refetch when the user acts. Checked by bun run perf:guards; see docs/performance.md.",
+  "$comment": "Every refetchInterval and setInterval in apps/web/src, plus all timers in the public visitor scripts, one entry per site. A site is <file>#<enclosing function or variable>; list a site twice if it occurs twice. Polling is the last resort: prefer a socket event, or a refetch when the user acts. Checked by bun run perf:guards; see docs/performance.md.",
   "sites": [
+    {
+      "site": "packages/ui/src/public-share-comments.js#call.timer",
+      "why": "One abort deadline per explicit comment request, bounded by the remaining 90-second budget; cleared when the call settles or the panel read is cancelled."
+    },
+    {
+      "site": "packages/ui/src/public-share-comments.js#sleep.timer",
+      "why": "Retry backoff only after an explicit comment-panel read or submission; stops within 90 seconds to allow gateway verification, routing and device response deadlines; panel reads cancel their request and backoff on close or replacement, with no background refresh."
+    },
+    {
+      "site": "packages/ui/src/public-share-comments.js#humanToken.timer",
+      "why": "Cancels one isolated human check after two minutes; completion or closing the panel clears it and removes the frame."
+    },
     {
       "site": "apps/web/src/components/editor/editor.tsx#AnnotationBadges.timer",
       "why": "Re-measures comment marker positions each second while annotations are shown; no request."

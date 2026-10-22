@@ -80,6 +80,8 @@
     "./public-share-page": "./src/public-share-page.ts",
     "./markdown-document": "./src/markdown-document.ts",
     "./public-share-diagrams.js": "./src/public-share-diagrams.js",
+    "./public-share-comments.js": "./src/public-share-comments.js",
+    "./public-share-comment-check.js": "./src/public-share-comment-check.js",
     "./lib/*": "./src/lib/*.ts",
     "./components/*": "./src/components/*.tsx",
     "./hooks/*": "./src/hooks/*.ts",

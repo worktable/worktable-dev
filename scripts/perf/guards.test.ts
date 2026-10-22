@@ -73,11 +73,15 @@ describe("perf guards", () => {
     ).toContain("Remove 1 entry")
   })
 
-  test("the visitor broker registers recursive timers as well as intervals", () => {
+  test("visitor scripts register recursive timers as well as intervals", () => {
     const sites = findPolling([
       {
         file: "packages/ui/src/public-share-live.js",
         text: "function schedulePoll() { setTimeout(poll, 30000) } function start() { setInterval(ping, 1000) }",
+      },
+      {
+        file: "packages/ui/src/public-share-comments.js",
+        text: "function humanToken() { setTimeout(cancel, 120000) }",
       },
     ])
     expect(sites.map(({ site, kind }) => ({ site, kind }))).toEqual([
@@ -88,6 +92,10 @@ describe("perf guards", () => {
       {
         site: "packages/ui/src/public-share-live.js#start",
         kind: "setInterval",
+      },
+      {
+        site: "packages/ui/src/public-share-comments.js#humanToken",
+        kind: "setTimeout",
       },
     ])
   })

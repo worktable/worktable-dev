@@ -155,7 +155,12 @@ function property(
 
 // ── Polling ─────────────────────────────────────────────────
 
-/** Web polling, plus every timer in the public visitor broker. */
+const VISITOR_SCRIPTS = [
+  "packages/ui/src/public-share-live.js",
+  "packages/ui/src/public-share-comments.js",
+]
+
+/** Web polling, plus every timer in the public visitor scripts. */
 export function findPolling(sources: Source[]): Site[] {
   const sites: Site[] = []
   for (const source of sources) {
@@ -163,7 +168,7 @@ export function findPolling(sources: Source[]): Site[] {
       !source.text.includes("refetchInterval") &&
       !source.text.includes("setInterval") &&
       !(
-        source.file === "packages/ui/src/public-share-live.js" &&
+        VISITOR_SCRIPTS.includes(source.file) &&
         source.text.includes("setTimeout")
       )
     )
@@ -178,7 +183,7 @@ export function findPolling(sources: Source[]): Site[] {
       if (
         ts.isCallExpression(node) &&
         (/(?:^|\.)setInterval$/.test(node.expression.getText()) ||
-          (source.file === "packages/ui/src/public-share-live.js" &&
+          (VISITOR_SCRIPTS.includes(source.file) &&
             /(?:^|\.)setTimeout$/.test(node.expression.getText())))
       )
         sites.push(
@@ -645,13 +650,10 @@ export function runGuards(base: string | null): {
 } {
   const web = trackedSources("apps/web/src")
   const server = trackedSources("packages/server/src")
-  const visitor = {
-    file: "packages/ui/src/public-share-live.js",
-    text: readFileSync(
-      join(REPO_ROOT, "packages/ui/src/public-share-live.js"),
-      "utf8"
-    ),
-  }
+  const visitors = VISITOR_SCRIPTS.map((file) => ({
+    file,
+    text: readFileSync(join(REPO_ROOT, file), "utf8"),
+  }))
   const polling = readJson<Allowlist>(POLLING_FILE)
   const invalidation = readJson<Allowlist>(INVALIDATION_FILE)
   const catalog = readJson<Allowlist>(CATALOG_FILE)
@@ -661,7 +663,7 @@ export function runGuards(base: string | null): {
     ...compareAllowlist(
       "Polling",
       POLLING_FILE,
-      findPolling([...web, visitor]),
+      findPolling([...web, ...visitors]),
       polling,
       {
         withKind: false,

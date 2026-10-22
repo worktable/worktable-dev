@@ -217,6 +217,9 @@ test("a runaway native operation leaves the page responsive and the worker is st
     await worktable.ui.render({ tag: 'button', children: ['Run'], on: { click: 'run' } });
   `
   )
+  await expect(
+    frame.getByRole("button", { name: "Run", exact: true })
+  ).toBeVisible()
   await frame.getByRole("button", { name: "Run", exact: true }).click()
   await page
     .getByRole("button", { name: "Check page" })

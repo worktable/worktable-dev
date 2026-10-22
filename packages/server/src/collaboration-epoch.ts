@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto"
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import { ensureAppDir } from "./app-storage.ts"
+import { getAppDir } from "./app-storage.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 
@@ -9,7 +9,7 @@ const EPOCH_PATTERN = /^[A-Za-z0-9_-]{43}$/
 const epochOperations = new Map<string, Promise<string>>()
 
 function epochPath(): string {
-  return join(ensureAppDir(), "yjs", workspaceCacheKey(), "epoch")
+  return join(getAppDir(), "yjs", workspaceCacheKey(), "epoch")
 }
 
 function newEpoch(): string {

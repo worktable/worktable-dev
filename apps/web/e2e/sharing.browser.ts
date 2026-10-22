@@ -790,11 +790,15 @@ for (const appearance of [
     const mode = dialog.getByRole("combobox", { name: "Read mode for Deals" })
     await mode.click()
     await page.getByRole("option", { name: "Totals", exact: true }).click()
-    await expect(
-      dialog.getByText(
-        "Only totals are returned. Individual records stay hidden."
-      )
-    ).toBeVisible()
+    await expect(dialog.getByText("Only totals are returned.")).toBeVisible()
+    const totalsNotice = dialog.getByText(
+      "Comparing totals can reveal values for small groups, even with this minimum."
+    )
+    await totalsNotice.scrollIntoViewIfNeeded()
+    await expect(totalsNotice).toBeVisible()
+    await dialog.screenshot({
+      path: testInfo.outputPath(`live-totals-${appearance.colorScheme}.png`),
+    })
     await mode.click()
     await page.getByRole("option", { name: "Records", exact: true }).click()
     await dialog.getByRole("checkbox", { name: "Name", exact: true }).click()

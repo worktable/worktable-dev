@@ -127,7 +127,9 @@ describe("cross-process lock", () => {
       let events: string[] = []
       while (events.length < expectedEvents && Date.now() < deadline) {
         events = existsSync(evidencePath)
-          ? readFileSync(evidencePath, "utf8").trim().split("\n")
+          // The file can exist before the first append has written its line.
+          // Only complete records establish that a process entered the lock.
+          ? readFileSync(evidencePath, "utf8").split("\n").slice(0, -1)
           : []
         if (events.length >= expectedEvents) break
         // test-policy: external-readiness-backoff

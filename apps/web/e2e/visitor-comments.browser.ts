@@ -275,7 +275,7 @@ for (const appearance of [
             .click()
           await page
             .getByRole("dialog", { name: "Page", exact: true })
-            .getByRole("button", { name: "Share", exact: true })
+            .getByRole("button", { name: /^Share(?: |$)/ })
             .click()
         } else
           await page.getByRole("button", { name: "Share document" }).click()
@@ -302,6 +302,9 @@ for (const appearance of [
             exact: true,
           })
           .click()
+        await sharing.screenshot({
+          path: info.outputPath("comment-settings.png"),
+        })
         const saved = page.waitForResponse(
           (response) =>
             response.url().endsWith(`/api/shares/links/${spike.linkId}`) &&

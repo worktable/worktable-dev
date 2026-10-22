@@ -20,6 +20,7 @@ import {
   recoverMissingWorkspaceSnapshot,
   readWorkspaceSnapshotRestoreStatus,
 } from "./workspace-snapshot-restore.ts"
+import { runVisitorCommentCaptureCommand } from "./visitor-comment-backup.ts"
 
 export type WorkspaceExportMaintenanceResult = LiveOperatorWorkspaceExportResult
 
@@ -49,6 +50,7 @@ export async function runServerMaintenance(
     destination: string
   ) => Promise<WorkspaceExportMaintenanceResult> = requestLiveOperatorWorkspaceExport
 ): Promise<boolean> {
+  if (await runVisitorCommentCaptureCommand(argv, writeResult)) return true
   const auditIndex = argv.lastIndexOf("workspace-backup-audit")
   if (auditIndex !== -1) {
     if (auditIndex !== argv.length - 1)

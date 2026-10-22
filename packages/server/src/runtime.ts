@@ -161,8 +161,6 @@ export {
 } from "./workspace-transfer-v2.ts"
 
 export { teamsEnabled } from "./team-database.ts"
-export {
-  issueTeamPasswordReset,
-  setTeamOperator,
-} from "./team-recovery.ts"
+export { issueTeamPasswordReset, setTeamOperator } from "./team-recovery.ts"
 export type { PreviewSandboxFailure } from "./preview-sandbox.ts"
+export { runVisitorCommentCaptureCommand } from "./visitor-comment-backup.ts"

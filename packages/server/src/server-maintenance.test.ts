@@ -27,13 +27,17 @@ import {
   inspectWorkspaceSnapshot,
   writeWorkspaceSnapshot,
 } from "./workspace-snapshot.ts"
-import { restoreLiveWorkspaceSnapshot } from "./workspace-snapshot-restore.ts"
+import {
+  restoreLiveWorkspaceSnapshot,
+  finalizeCommittedTeamSnapshotRestore,
+} from "./workspace-snapshot-restore.ts"
 import { operatorSnapshotDirectory } from "./operator-snapshot.ts"
 import {
   appendVisitorReply,
   receiveVisitorComment,
   visitorCommentsCheckpoint,
   visitorReplies,
+  readVisitorComment,
 } from "./visitor-comment-store.ts"
 
 let root: string
@@ -211,6 +215,23 @@ describe("server maintenance entrypoint", () => {
         "utf8"
       )
     ).toContain("Hello")
+    const legacyJob = JSON.parse(await readFile(completedJob, "utf8"))
+    delete legacyJob.visitorComments
+    delete legacyJob.visitorCommentsRestored
+    const beforeLegacyRecovery = visitorCommentsCheckpoint()
+    await writeFile(completedJob, JSON.stringify(legacyJob))
+    await finalizeCommittedTeamSnapshotRestore(legacyJob.id)
+    expect(visitorCommentsCheckpoint()).toEqual(beforeLegacyRecovery)
+    expect(readVisitorComment(saved.workspaceId, outside.id)?.body).toBe(
+      "PRIVATE_RESTORE_CONTROL"
+    )
+    // A new restore explicitly records that its snapshot has no private state.
+    await writeFile(
+      completedJob,
+      JSON.stringify({ ...legacyJob, visitorComments: null })
+    )
+    await finalizeCommittedTeamSnapshotRestore(legacyJob.id)
+    expect(visitorCommentsCheckpoint()).toBeNull()
   })
   it("routes the canonical export through the live server flush barrier", async () => {
     const destination = join(

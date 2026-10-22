@@ -192,50 +192,7 @@ function database(create = false): Database | null {
         ).journal_mode !== "delete"
       )
         throw new VisitorCommentsUnavailable()
-      if (version === 0)
-        db.transaction(() => {
-          db!.exec(`CREATE TABLE visitor_comments (
-          id TEXT PRIMARY KEY, worktableId TEXT NOT NULL, link_id TEXT NOT NULL,
-          link_label TEXT NOT NULL, link_creator TEXT NOT NULL, document_id TEXT NOT NULL,
-          space_at_receipt TEXT NOT NULL, kind TEXT NOT NULL, visitor_name TEXT,
-          visitor_key TEXT NOT NULL, client_key TEXT, body TEXT, received_at INTEGER NOT NULL,
-          status TEXT NOT NULL CHECK(status IN ('new','done','passed','deleted')),
-          passed_by TEXT, passed_name TEXT, passed_at INTEGER, annotation_id TEXT,
-          deleted_by TEXT, deleted_at INTEGER, request_id TEXT NOT NULL,
-          UNIQUE(worktableId, link_id, visitor_key, request_id));
-          CREATE INDEX comments_document ON visitor_comments(worktableId, document_id, received_at DESC, id);
-          CREATE INDEX comments_link ON visitor_comments(worktableId, link_id, received_at DESC, id);
-          CREATE INDEX comments_day ON visitor_comments(worktableId, received_at);
-          CREATE INDEX comments_pending ON visitor_comments(worktableId, link_id, status);
-          CREATE TABLE visitor_replies(id TEXT PRIMARY KEY, comment_id TEXT NOT NULL REFERENCES visitor_comments(id) ON DELETE CASCADE,
-            author_id TEXT NOT NULL, author_name TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL);
-          CREATE INDEX replies_comment ON visitor_replies(comment_id, created_at);
-          CREATE TABLE visitor_link_state(worktableId TEXT NOT NULL, link_id TEXT NOT NULL, paused TEXT, PRIMARY KEY(worktableId,link_id));
-          CREATE TABLE visitor_cap_hits(worktableId TEXT NOT NULL, link_id TEXT NOT NULL, client_key TEXT NOT NULL, at INTEGER NOT NULL,
-            PRIMARY KEY(worktableId,link_id,client_key));
-          PRAGMA user_version=1;`)
-        }).immediate()
-
-      if (version < 2)
-        db.transaction(() => {
-          db!.exec(
-            "CREATE TABLE visitor_meta(id INTEGER PRIMARY KEY CHECK(id=1),incarnation TEXT NOT NULL,revision INTEGER NOT NULL)"
-          )
-          db!
-            .query("INSERT INTO visitor_meta VALUES(1,?,0)")
-            .run(randomBytes(16).toString("hex"))
-          for (const table of [
-            "visitor_comments",
-            "visitor_replies",
-            "visitor_link_state",
-            "visitor_cap_hits",
-          ])
-            for (const operation of ["INSERT", "UPDATE", "DELETE"])
-              db!.exec(
-                `CREATE TRIGGER ${table}_${operation.toLowerCase()}_revision AFTER ${operation} ON ${table} BEGIN UPDATE visitor_meta SET revision=revision+1 WHERE id=1; END`
-              )
-          db!.exec("PRAGMA user_version=2")
-        }).immediate()
+      initializeVisitorCommentDatabase(db, version)
       // Forget free pages and historical WAL text from the preview's old format.
       if (previous === "wal") db.exec("VACUUM")
     } else
@@ -253,6 +210,57 @@ function database(create = false): Database | null {
     if (error instanceof VisitorCommentsUnavailable) throw error
     throw new VisitorCommentsUnavailable("Visitor comments are unavailable")
   }
+}
+
+/** One schema owner for live stores and scoped operator snapshots. */
+export function initializeVisitorCommentDatabase(
+  db: Database,
+  version: number
+): void {
+  if (version === 0)
+    db.transaction(() => {
+      db!.exec(`CREATE TABLE visitor_comments (
+      id TEXT PRIMARY KEY, worktableId TEXT NOT NULL, link_id TEXT NOT NULL,
+      link_label TEXT NOT NULL, link_creator TEXT NOT NULL, document_id TEXT NOT NULL,
+      space_at_receipt TEXT NOT NULL, kind TEXT NOT NULL, visitor_name TEXT,
+      visitor_key TEXT NOT NULL, client_key TEXT, body TEXT, received_at INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('new','done','passed','deleted')),
+      passed_by TEXT, passed_name TEXT, passed_at INTEGER, annotation_id TEXT,
+      deleted_by TEXT, deleted_at INTEGER, request_id TEXT NOT NULL,
+      UNIQUE(worktableId, link_id, visitor_key, request_id));
+      CREATE INDEX comments_document ON visitor_comments(worktableId, document_id, received_at DESC, id);
+      CREATE INDEX comments_link ON visitor_comments(worktableId, link_id, received_at DESC, id);
+      CREATE INDEX comments_day ON visitor_comments(worktableId, received_at);
+      CREATE INDEX comments_pending ON visitor_comments(worktableId, link_id, status);
+      CREATE TABLE visitor_replies(id TEXT PRIMARY KEY, comment_id TEXT NOT NULL REFERENCES visitor_comments(id) ON DELETE CASCADE,
+        author_id TEXT NOT NULL, author_name TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL);
+      CREATE INDEX replies_comment ON visitor_replies(comment_id, created_at);
+      CREATE TABLE visitor_link_state(worktableId TEXT NOT NULL, link_id TEXT NOT NULL, paused TEXT, PRIMARY KEY(worktableId,link_id));
+      CREATE TABLE visitor_cap_hits(worktableId TEXT NOT NULL, link_id TEXT NOT NULL, client_key TEXT NOT NULL, at INTEGER NOT NULL,
+        PRIMARY KEY(worktableId,link_id,client_key));
+      PRAGMA user_version=1;`)
+    }).immediate()
+
+  if (version < 2)
+    db.transaction(() => {
+      db!.exec(
+        "CREATE TABLE visitor_meta(id INTEGER PRIMARY KEY CHECK(id=1),incarnation TEXT NOT NULL,revision INTEGER NOT NULL)"
+      )
+      db!
+        .query("INSERT INTO visitor_meta VALUES(1,?,0)")
+        .run(randomBytes(16).toString("hex"))
+      for (const table of [
+        "visitor_comments",
+        "visitor_replies",
+        "visitor_link_state",
+        "visitor_cap_hits",
+      ])
+        for (const operation of ["INSERT", "UPDATE", "DELETE"])
+          db!.exec(
+            `CREATE TRIGGER ${table}_${operation.toLowerCase()}_revision AFTER ${operation} ON ${table} BEGIN UPDATE visitor_meta SET revision=revision+1 WHERE id=1; END`
+          )
+      db!.exec("PRAGMA user_version=2")
+    }).immediate()
 }
 
 /** Existing private state is recovered at boot; this never creates a store. */
@@ -282,17 +290,6 @@ function checkpoint(db: Database): VisitorCommentsCheckpoint {
 export function visitorCommentsCheckpoint(): VisitorCommentsCheckpoint | null {
   const db = database()
   return db ? checkpoint(db) : null
-}
-
-/** Operator capture only. The native copy and its checkpoint are synchronous. */
-export function captureVisitorCommentDatabase(
-  path: string
-): VisitorCommentsCheckpoint | null {
-  if (!existsSync(storePath())) return null
-  const db = database(true)!
-  const captured = checkpoint(db)
-  db.query("VACUUM INTO ?").run(path)
-  return captured
 }
 
 /** Replacement holds this across its last fence and private-state publication. */

@@ -29,60 +29,66 @@ function PendingRow({
   item: PendingItem
   spaceName?: string
 }) {
-  const where = spaceName ? (
-    <span className="shrink-0 text-muted-foreground/70">{spaceName}</span>
-  ) : null
-  const label = "min-w-0 flex-1 truncate font-medium text-foreground"
-  const when = (
-    <span className="shrink-0 text-xs text-muted-foreground">
-      {shortWhen(item.at)}
-    </span>
-  )
+  let Icon = Reply
+  let text: string
   switch (item.kind) {
     case "threadRequest":
+      Icon = AtSign
+      text = `${item.from.name ?? "Someone"} asked you in ${item.threadTitle}`
+      break
     case "deliveryFailed":
-      return (
-        <ThreadLink
-          spaceId={item.spaceId}
-          threadId={item.threadId}
-          className={rowClass}
-        >
-          {item.kind === "threadRequest" ? (
-            <AtSign className="size-4 shrink-0 text-muted-foreground" />
-          ) : (
-            <CircleAlert className="size-4 shrink-0 text-destructive" />
-          )}
-          <span className={label}>
-            {item.kind === "threadRequest"
-              ? `${item.from.name ?? "Someone"} asked you in ${item.threadTitle}`
-              : `Message to ${item.agentName} wasn’t delivered`}
-          </span>
-          {where}
-          {when}
-        </ThreadLink>
-      )
-    case "visitorComments":
-    case "visitorCommentsPaused":
+      Icon = CircleAlert
+      text = `Message to ${item.agentName} wasn’t delivered`
+      break
     case "commentReply":
-      return (
-        <Link
-          to="/spaces/$spaceId/documents/$"
-          params={{ spaceId: item.spaceId, _splat: item.docPath }}
-          className={rowClass}
-        >
-          <Reply className="size-4 shrink-0 text-muted-foreground" />
-          <span className={label}>
-            {item.kind === "commentReply"
-              ? `Reply to your comment on ${item.docTitle ?? item.docPath}`
-              : item.kind === "visitorCommentsPaused"
-                ? `Comments paused on ${item.linkLabel || "Untitled link"}`
-                : `${item.count} visitor comment${item.count === 1 ? "" : "s"} on ${item.docTitle ?? item.docPath}`}
-          </span>
-          {where}
-          {when}
-        </Link>
-      )
+      text = `Reply to your comment on ${item.docTitle ?? item.docPath}`
+      break
+    case "visitorCommentsPaused":
+      text = `Comments paused on ${item.linkLabel || "Untitled link"}`
+      break
+    case "visitorComments":
+      text = `${item.count} visitor comment${item.count === 1 ? "" : "s"} on ${item.docTitle ?? item.docPath}`
+      break
+    default:
+      return null
   }
+  const content = (
+    <>
+      <Icon
+        className={
+          item.kind === "deliveryFailed"
+            ? "size-4 shrink-0 text-destructive"
+            : "size-4 shrink-0 text-muted-foreground"
+        }
+      />
+      <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+        {text}
+      </span>
+      {spaceName && (
+        <span className="shrink-0 text-muted-foreground/70">{spaceName}</span>
+      )}
+      <span className="shrink-0 text-xs text-muted-foreground">
+        {shortWhen(item.at)}
+      </span>
+    </>
+  )
+  return item.kind === "threadRequest" || item.kind === "deliveryFailed" ? (
+    <ThreadLink
+      spaceId={item.spaceId}
+      threadId={item.threadId}
+      className={rowClass}
+    >
+      {content}
+    </ThreadLink>
+  ) : (
+    <Link
+      to="/spaces/$spaceId/documents/$"
+      params={{ spaceId: item.spaceId, _splat: item.docPath }}
+      className={rowClass}
+    >
+      {content}
+    </Link>
+  )
 }
 
 const lowerFirst = (text: string) =>

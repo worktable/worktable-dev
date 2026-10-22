@@ -20,11 +20,15 @@ for (const mode of ["member", "share"] as const) {
     { tag: 'p', children: ['Region: ' + state.region] },
     { tag: 'p', children: [status] },
     { tag: 'button', children: ['Choose region'], on: { click: 'state' } },
+    { tag: 'button', children: ['Try invalid state'], on: { click: 'invalid' } },
+    { tag: 'button', children: ['Reset choices'], on: { click: 'reset' } },
     { tag: 'button', children: ['Create record'], on: { click: 'create' } },
     { tag: 'button', children: ['Watch records'], on: { click: 'watch' } },
     { tag: 'button', children: ['Read denied data'], on: { click: 'denied' } },
   ] });
   worktable.ui.on('state', async () => { await worktable.state.set('region', 'east'); state = await worktable.state.update(value => ({ ...value, count: (value.count || 0) + 1 })); await render(); });
+  worktable.ui.on('invalid', async () => { try { await worktable.state.set(null); status = 'Unexpected state change'; } catch { status = 'Invalid state refused'; } state = await worktable.state.get(); await render(); });
+  worktable.ui.on('reset', async () => { state = await worktable.state.update(() => ({})); status = JSON.stringify(state) === '{}' ? 'Choices reset' : 'Stale choices'; await render(); });
   worktable.ui.on('create', async () => { try { await worktable.records.create('sales', { name: 'New record' }); status = 'Record created'; } catch { status = 'Write unavailable'; } await render(); });
   worktable.ui.on('watch', () => worktable.records.subscribe('sales', async rows => { data = rows; await render(); }));
   worktable.ui.on('denied', async () => { try { await worktable.records.query('private'); } catch { status = 'Access refused'; } await render(); });

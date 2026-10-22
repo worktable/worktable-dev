@@ -117,6 +117,12 @@ for (const mode of ["member", "share"] as const) {
           ? { region: "east", count: 1 }
           : { region: "east", published: "current", count: 1 },
     })
+    await frame.getByRole("button", { name: "Try invalid state" }).click()
+    await expect(
+      frame.getByText("Invalid state refused", { exact: true })
+    ).toBeVisible()
+    await expect(frame.getByText("Region: east", { exact: true })).toBeVisible()
+    expect(calls.filter((call) => call.method === "PUT")).toHaveLength(2)
     await frame.getByRole("button", { name: "Create record" }).click()
     await expect(
       frame.getByText(
@@ -138,6 +144,13 @@ for (const mode of ["member", "share"] as const) {
     await expect(frame.getByRole("status")).toHaveText(
       "This collection is not granted."
     )
+    await frame.getByRole("button", { name: "Reset choices" }).click()
+    await expect(
+      frame.getByText("Choices reset", { exact: true })
+    ).toBeVisible()
+    expect(calls.filter((call) => call.method === "PUT").at(-1)!.body).toEqual({
+      state: {},
+    })
     expect(
       calls.every((call) =>
         mode === "share"

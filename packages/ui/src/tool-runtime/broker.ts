@@ -160,6 +160,10 @@ export function createToolBroker(
 
   let stateQueue: Promise<unknown> = Promise.resolve()
   function writeState(method: string, args: unknown[]): Promise<unknown> {
+    if (method === "state.set" && typeof args[0] !== "string") {
+      // Invalid input must never turn into a replacement of persisted state.
+      object(args[0])
+    }
     const write = stateQueue.then(async () => {
       if (config.mode === "preview")
         throw unavailable(
@@ -193,6 +197,7 @@ export function createToolBroker(
               : {}
       }
       await api(`${base}/state`, "PUT", { state: next })
+      if (method === "state.update") return args[0]
       if (method === "state.set" && typeof key === "string") return value
       return config.mode === "share" ? { ...state, ...next } : next
     })

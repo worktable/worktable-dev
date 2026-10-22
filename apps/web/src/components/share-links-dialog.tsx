@@ -87,7 +87,7 @@ import { checkShareLinkAccess } from "@/lib/share-link-access-api"
 import { ShareLinkCommentSettingsFields } from "./share-link-comment-settings"
 
 interface LinkDraft {
-  level: "view" | "comment"
+  level: ShareLink["level"]
   comments: ShareLinkCommentSettings
   label: string
   expiry: ShareLinkExpiry
@@ -380,7 +380,7 @@ export function ShareLinksDialog({
     setDraft(
       next?.kind === "edit"
         ? {
-            level: next.link.level === "comment" ? "comment" : "view",
+            level: next.link.level,
             comments: {...next.link.comments},
             label: next.link.label,
             expiry: next.link.expiresAt ? "keep" : "never",
@@ -892,6 +892,7 @@ function ShareLinkForm({
                 {SHARE_LINK_LEVEL_LABELS.view}
               </SelectItem>
               {commentLevel || draft.level === "comment" ? <SelectItem value="comment" disabled={!commentLevel}>{SHARE_LINK_LEVEL_LABELS.comment}</SelectItem> : null}
+              {draft.level === "use" ? <SelectItem value="use" disabled>{SHARE_LINK_LEVEL_LABELS.use}</SelectItem> : null}
             </SelectContent>
           </Select>
         </div>

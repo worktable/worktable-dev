@@ -716,6 +716,9 @@ it("refreshes only the visitor's document and affected Pending inboxes", async (
     documentQueryKeys.content("space-a", "report", "rev-1"),
     {}
   )
+  const links = watched(queryClient, ["share-links", "document", "space-a", "report"], {links: [{id: "link"}]})
+  const otherLinks = watched(queryClient, ["share-links", "document", "space-a", "other"], {links: [{id: "other-link"}]})
+  const control = watched(queryClient, ["share-links", "control"], 1)
   try {
     applySpaceEvent(queryClient, "another-stream", {
       type: "visitor_comments_changed",
@@ -730,7 +733,10 @@ it("refreshes only the visitor's document and affected Pending inboxes", async (
       visitors.reads,
       otherVisitors.reads,
       content.reads,
-    ]).toEqual([1, 1, 0, 1, 0, 0])
+      links.reads,
+      otherLinks.reads,
+      control.reads,
+    ]).toEqual([1, 1, 0, 1, 0, 0, 1, 0, 0])
   } finally {
     for (const query of [
       all,
@@ -739,6 +745,9 @@ it("refreshes only the visitor's document and affected Pending inboxes", async (
       visitors,
       otherVisitors,
       content,
+      links,
+      otherLinks,
+      control,
     ])
       query.unsubscribe()
     queryClient.clear()

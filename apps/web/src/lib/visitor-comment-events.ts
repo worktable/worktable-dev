@@ -41,8 +41,10 @@ export function applyVisitorCommentChange(
       refresh.push({queryKey: query.queryKey, exact: true})
   }
   for (const query of queryClient.getQueryCache().findAll({queryKey: ["share-links"]})) {
-    const data = query.state.data as DocumentShareLinks | {pages: ShareLinksPage[]} | undefined
-    const links = data && ("links" in data ? data.links : data.pages?.flatMap(page => page.links))
+    const data = query.state.data
+    if (!data || typeof data !== "object") continue
+    const shaped = data as DocumentShareLinks | {pages?: ShareLinksPage[]}
+    const links = "links" in shaped ? shaped.links : shaped.pages?.flatMap(page => page.links)
     if (links?.some(link => link.id === value.linkId))
       refresh.push({queryKey: query.queryKey, exact: true})
   }

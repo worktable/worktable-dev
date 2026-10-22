@@ -91,7 +91,7 @@ export function missingMcpScope(
   request: Record<string, unknown>,
   scopes: string[]
 ): string | null {
-  const { id } = resolvePublicOperation(toolName, request)
+  const { id, args } = resolvePublicOperation(toolName, request)
   const definition = OPERATION_DEFINITIONS[id]
   const required: string[] = definition.scope ? [definition.scope] : []
   if (
@@ -101,7 +101,7 @@ export function missingMcpScope(
     required.push("widgets:read")
   if (id.startsWith("drawings.") && definition.mutation !== "none")
     required.push("documents:read")
-  if (id === "spaces.update" && request.pins !== undefined)
+  if (id === "spaces.update" && args.pins !== undefined)
     required.push("documents:write")
   // A where filter reads record contents to choose the records it updates.
   if (id === "records.update_many" && request.where !== undefined)
@@ -302,6 +302,15 @@ function publicizeResult(
 ): unknown {
   if (operationId.startsWith("annotations.")) {
     return publicizeAnnotationResult(result)
+  }
+  if (
+    (operationId === "spaces.update" || operationId === "workspace.state") &&
+    result &&
+    typeof result === "object" &&
+    Array.isArray((result as Record<string, unknown>).pins)
+  ) {
+    const record = result as Record<string, unknown>
+    return { ...record, startHere: record.pins }
   }
   if (
     !operationId.startsWith("html.") ||

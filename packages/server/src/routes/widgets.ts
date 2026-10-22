@@ -3,6 +3,8 @@ import { buildWidgetCsp, canWidgetRecord, deniedWidgetQueryCollection, widgetRec
 import { isolatedToolSource, IsolatedToolSourceError } from "../isolated-tool-source.ts";
 import { isolatedToolCsp, isolatedToolFrame } from "@worktable/ui/tool-runtime/document";
 import { sharingPreviewEnabled } from "../sharing-preview.ts";
+import { isHosted } from "../hosted.ts";
+import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts";
 import { requireScope, requireHumanWorkspaceOwner, restWriteActor } from "../auth.ts";
 import { documentSourceDisposition } from "../content-disposition.ts";
 import { existsSync } from "node:fs";
@@ -377,14 +379,21 @@ async function handleGetContent(c: Context, spaceId: string, widgetId: string) {
   }
   if (program !== null && !sharingPreviewEnabled())
     return c.json({ error: "This tool is not available.", code: "NOT_FOUND" }, 404);
-  const origin = new URL(c.req.url).origin;
+  const origin = program === null
+    ? new URL(c.req.url).origin
+    : resolveWorkspaceOriginForRequest(c.req.raw).origin;
+  const cloudWorkspace = program !== null && isHosted()
+    ? process.env["WORKTABLE_CLOUD_WORKSPACE_ID"]?.trim()
+    : undefined;
+  const assetPrefix = cloudWorkspace ? `/t/${encodeURIComponent(cloudWorkspace)}` : "";
+  const fontRoot = `${assetPrefix}/worktable-preview`;
   const theme = c.req.query("theme") === "light" ? "light" : "dark";
   const themedHtml = program === null
     ? injectWidgetRuntime(applyWidgetTheme(data, theme), spaceId, widgetId)
     : isolatedToolFrame(program, {
         mode: "member", spaceId, widgetId,
         apiBase: `/api/spaces/${encodeURIComponent(spaceId)}/widgets/__document/${Buffer.from(widgetId, "utf8").toString("base64url")}`,
-      }, { theme, fontStyles: previewFontCss("/worktable-preview") });
+      }, { theme, fontStyles: previewFontCss(fontRoot), assetPrefix });
   // A frame asked for by its current revision never changes: the browser
   // keeps it. Any other request revalidates, so it never holds old content.
   const current = c.req.query("rev") === htmlContentRevisionOf(document);
@@ -393,7 +402,7 @@ async function handleGetContent(c: Context, spaceId: string, widgetId: string) {
       "Content-Type": "text/html; charset=utf-8",
       "Content-Security-Policy": program === null
         ? buildWidgetCsp(widget.permissions?.network ?? false, origin)
-        : isolatedToolCsp({ assetOrigin: origin, parentOrigin: origin, fontSources: [`${origin}/worktable-preview/fonts/`] }),
+        : isolatedToolCsp({ assetOrigin: origin, assetPrefix, parentOrigin: origin, fontSources: [`${origin}${fontRoot}/fonts/`] }),
       "X-Content-Type-Options": "nosniff",
       "Cache-Control": current
         ? "private, max-age=31536000, immutable"

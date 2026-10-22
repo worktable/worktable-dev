@@ -318,6 +318,7 @@ const WorkspaceOverviewSchema = z.looseObject({
 
 const SpaceDetailSchema = z.looseObject({
   space: PortableSpaceFileSchema,
+  startHere: z.array(ResolvedStartHerePinSchema).optional(),
   pins: z
     .array(ResolvedStartHerePinSchema)
     .optional()
@@ -718,6 +719,7 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
     z.looseObject({
       space: PortableSpaceFileSchema,
       pins: z.array(ResolvedStartHerePinSchema),
+      startHere: z.array(ResolvedStartHerePinSchema).optional(),
     }),
   ],
   "spaces.archive": [
@@ -1188,6 +1190,10 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
       z.array(ResolvedStartHerePinSchema),
       '"state" with a Space; pinned docs to read first'
     ),
+    startHere: forActions(
+      z.array(ResolvedStartHerePinSchema),
+      '"state" with a Space; compatibility alias for pins'
+    ),
     docs: forActions(z.array(DocListEntrySchema), '"state" with a Space'),
     documents: forActions(
       z.array(PortableDocumentListItemSchema),
@@ -1206,6 +1212,10 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     ok: forActions(z.literal(true), '"archive" or "restore"'),
     space: forActions(PortableSpaceFileSchema, '"update", "archive", or "restore"'),
     pins: forActions(z.array(ResolvedStartHerePinSchema), '"update"'),
+    startHere: forActions(
+      z.array(ResolvedStartHerePinSchema),
+      '"update"; compatibility alias for pins'
+    ),
   }),
   worktable_documents_read: resultSchema("worktable_documents_read", {
     preview: forActions(DocumentPreviewResultSchema, '"render"'),

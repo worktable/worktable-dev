@@ -4,7 +4,7 @@
 // budget, and runs the query as a link visitor: every identity check refuses
 // there, except reading the link's own Space while this engine does it.
 
-import type { LinkGrant, RecordQueryResult, SharingPolicy, WidgetFile } from "@worktable/types";
+import type { LinkGrant, RecordFile, RecordQueryResult, RecordCollectionSchema, SharingPolicy, WidgetFile } from "@worktable/types";
 import { linkBudgets, type LinkBudgets, type LinkLimitName } from "./link-budget.ts";
 import { effectiveLinkGrant } from "./link-grant.ts";
 import { linkQueryFailure, openLinkReadView, type LinkKey } from "./link-grant-view.ts";
@@ -50,7 +50,7 @@ export async function queryRecordsForLink(
   target: LinkReadTarget,
   collectionId: string,
   query: unknown,
-  options: { policy: SharingPolicy; budgets?: LinkBudgets },
+  options: { policy: SharingPolicy; budgets?: LinkBudgets; permissions?: WidgetFile["permissions"]; schemas?: ReadonlyMap<string, RecordCollectionSchema>; loadRows?: (collectionId: string) => Promise<RecordFile[]>; memo?: (load: () => Promise<RecordQueryResult>, rowsPerQuery: number) => Promise<RecordQueryResult>; onQueryRows?: (collectionId: string, rows: readonly RecordFile[]) => void },
 ): Promise<LinkQueryResponse> {
   const budgets = options.budgets ?? linkBudgets;
   // Limits come from the grant and the policy, never from the tool, so a
@@ -60,13 +60,16 @@ export async function queryRecordsForLink(
   if (!admission.ok) return limitReached(admission);
   return runAsLinkVisitor(() => withLinkGrantRead(target.spaceId, async (): Promise<LinkQueryResponse> => {
     try {
-      const permissions = await toolPermissions(target);
+      const permissions = options.permissions ?? await toolPermissions(target);
       if (!permissions) return LINK_UNAVAILABLE;
       const grant = effectiveLinkGrant(target.grant, permissions, options.policy);
       // A page never holds more rows than the link has left this hour.
       const page = { ...grant.limits, rowsPerQuery: Math.min(grant.limits.rowsPerQuery, admission.rowsLeft) };
-      const view = await openLinkReadView(target.spaceId, { ...grant, limits: page }, target.linkKey, { linkId: target.linkId });
-      const result = await queryRecords(target.spaceId, collectionId, query, { view });
+      const load = async () => {
+        const view = await openLinkReadView(target.spaceId, { ...grant, limits: page }, target.linkKey, { linkId: target.linkId, schemas: options.schemas, loadRows: options.loadRows, onQueryRows: options.onQueryRows });
+        return queryRecords(target.spaceId, collectionId, query, { view });
+      };
+      const result = options.memo ? await options.memo(load, page.rowsPerQuery) : await load();
       const taken = budgets.take(target.linkId, rowsRead(result), limits);
       return taken.ok ? { status: 200, body: result } : limitReached(taken);
     } catch (error) {

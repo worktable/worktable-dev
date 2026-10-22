@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { AnnotationCategorySchema } from "./annotations"
+import { LinkGrantSchema, type LinkGrant } from "./link-grants"
 import { SHARE_LINK_LABEL_MAX_LENGTH } from "./constants"
 import { CanonicalIdSchema, IsoTimestampSchema } from "./widgets"
 
@@ -106,7 +107,8 @@ export const CreateShareLinkInputSchema = z.strictObject({
   target: ShareTargetSchema,
   label: ShareLinkLabelSchema.default(""),
   level: ShareLinkLevelSchema.default("view"),
-  expiresAt: IsoTimestampSchema.nullable().default(null),
+  expiresAt: IsoTimestampSchema.nullable().optional(),
+  grant: LinkGrantSchema.nullable().optional(),
   password: ShareLinkPasswordSchema.optional(),
   comments: ShareLinkCommentSettingsSchema.default(
     DEFAULT_SHARE_LINK_COMMENT_SETTINGS
@@ -120,6 +122,7 @@ export const UpdateShareLinkInputSchema = z.strictObject({
   level: ShareLinkLevelSchema.optional(),
   expiresAt: IsoTimestampSchema.nullable().optional(),
   password: ShareLinkPasswordSchema.nullable().optional(),
+  grant: LinkGrantSchema.nullable().optional(),
   comments: CommentSettingsFieldsSchema.partial().optional(),
 })
 export type UpdateShareLinkInput = z.input<typeof UpdateShareLinkInputSchema>
@@ -139,6 +142,8 @@ export interface ShareLink {
   /** The earlier of the link's own expiry and the owner policy's longest expiry. */
   expiresAt: string | null
   hasPassword: boolean
+  /** The human-approved live access, absent for static links. */
+  grant?: LinkGrant
   lastUsedAt: string | null
   status: ShareLinkStatus
   /** Present when `status` is `blocked`. */

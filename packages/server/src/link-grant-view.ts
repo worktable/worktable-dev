@@ -118,8 +118,8 @@ interface ReadableCollection {
  * schema can't be read at all. With `linkId`, reads the link refuses for
  * want of a saved read are counted for that link.
  */
-export async function openLinkReadView(spaceId: string, grant: LinkGrant, key: LinkKey, options: { linkId?: string } = {}): Promise<RecordReadView> {
-  const schemas = await readLinkGrantSchemas(spaceId, grant);
+export async function openLinkReadView(spaceId: string, grant: LinkGrant, key: LinkKey, options: { linkId?: string; schemas?: ReadonlyMap<string, RecordCollectionSchema>; loadRows?: (collectionId: string) => Promise<RecordFile[]>; onQueryRows?: (collectionId: string, rows: readonly RecordFile[]) => void } = {}): Promise<RecordReadView> {
+  const schemas = options.schemas ?? await readLinkGrantSchemas(spaceId, grant);
   const blocked = new Set(validateLinkGrant(grant, schemas).map((issue) => issue.collectionId));
   const readable = new Map<string, ReadableCollection>();
   const saved: [string, FixedRead[]][] = [];
@@ -129,9 +129,9 @@ export async function openLinkReadView(spaceId: string, grant: LinkGrant, key: L
     readable.set(collectionId, { grant: collectionGrant, schema, fields: projectFields(schema, collectionGrant) });
     if (collectionGrant.fixed) saved.push([collectionId, collectionGrant.fixed]);
   }
-  const loadRows = (collectionId: string) => listRecords(spaceId, collectionId, { includeArchived: false });
+  const loadRows = options.loadRows ?? ((collectionId: string) => listRecords(spaceId, collectionId, { includeArchived: false }));
   const onUnrecorded = options.linkId === undefined ? undefined : noteUnrecordedRead.bind(null, options.linkId);
-  return new LinkReadView(spaceId, readable, grant.limits.rowsPerQuery, key, loadRows, indexFixedReads(saved), onUnrecorded);
+  return new LinkReadView(spaceId, readable, grant.limits.rowsPerQuery, key, loadRows, indexFixedReads(saved), onUnrecorded, options.onQueryRows);
 }
 
 /** A stored row as row conditions see it: only the stored id and data. On a
@@ -176,6 +176,7 @@ class LinkReadView implements RecordReadView {
   private readonly loadRows: (collectionId: string) => Promise<RecordFile[]>;
   private readonly savedReads: FixedReadIndex;
   private readonly onUnrecorded: ((collectionId: string, shape: string) => void) | undefined;
+  readonly onQueryRows?: (collectionId: string, rows: readonly RecordFile[]) => void;
 
   constructor(
     spaceId: string,
@@ -185,6 +186,7 @@ class LinkReadView implements RecordReadView {
     loadRows: (collectionId: string) => Promise<RecordFile[]>,
     savedReads: FixedReadIndex,
     onUnrecorded?: (collectionId: string, shape: string) => void,
+    onQueryRows?: (collectionId: string, rows: readonly RecordFile[]) => void,
   ) {
     this.spaceId = spaceId;
     this.readable = readable;
@@ -193,6 +195,7 @@ class LinkReadView implements RecordReadView {
     this.loadRows = loadRows;
     this.savedReads = savedReads;
     this.onUnrecorded = onUnrecorded;
+    this.onQueryRows = onQueryRows;
   }
 
   fields(collectionId: string): FieldTypeMap | null {

@@ -372,7 +372,8 @@ function sharingSummary(
           Date.now(),
           policy.maxExpiryDays,
           (creator) => creatorMayShare(creator, spaceId, policy),
-          policy.requirePassword
+          policy.requirePassword,
+          policy.liveLinks
         )
       : { activeLinks: 0, nextExpiry: null }
     return {

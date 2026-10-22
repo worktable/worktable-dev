@@ -1,3 +1,4 @@
+import type { SharingPolicy } from "@worktable/types"
 import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import {
   shareTicketLinkId,
@@ -61,6 +62,8 @@ export interface ShareLinkView {
   revision: string | null
   expiresAt: number | null
   ticketSecret: Uint8Array | null
+  policy: SharingPolicy
+  policyRevision: number
 }
 
 /**
@@ -70,7 +73,7 @@ export interface ShareLinkView {
  */
 export async function resolveShareLinkView(
   capability: string,
-  options: { content?: boolean; unlock?: string; allowLocked?: boolean } = {}
+  options: { content?: boolean; unlock?: string; allowLocked?: boolean; revision?: boolean } = {}
 ): Promise<
   ShareLinkView | "unavailable" | "expired" | "password-required" | null
 > {
@@ -120,7 +123,7 @@ export async function resolveShareLinkView(
   const { catalog, identities } = snapshot
   const target = identities.current.get(link.documentId)
   if (identities.spaceArchived || !target) return "unavailable"
-  const revisions = await documentContentRevisions(
+  const revisions = options.revision === false || link.grant ? null : await documentContentRevisions(
     link.spaceId,
     [target.path],
     catalog
@@ -129,9 +132,11 @@ export async function resolveShareLinkView(
     link,
     expiresAt,
     ticketSecret: found.unlockSecret,
+    policy,
+    policyRevision: found.policyRevision,
     path: target.path,
     title: target.title,
-    revision: revisions.get(target.path) ?? null,
+    revision: revisions?.get(target.path) ?? null,
   }
 }
 
@@ -140,7 +145,7 @@ export async function resolveShareLinkView(
  * a page, which can take a while, so a link revoked or held back meanwhile
  * isn't served. A store that can't be read says no.
  */
-export function shareLinkStillOpens(link: StoredShareLink): boolean {
+export function shareLinkStillOpens(link: StoredShareLink, policyRevision?: number): boolean {
   let found: ReturnType<typeof findShareLinkWithPolicy>
   try {
     found = findShareLinkWithPolicy(link.id)
@@ -153,6 +158,8 @@ export function shareLinkStillOpens(link: StoredShareLink): boolean {
     found &&
     found.link.revokedAt === null &&
     found.link.passwordRevision === link.passwordRevision &&
+    found.link.grantRevision === link.grantRevision &&
+    (policyRevision === undefined || found.policyRevision === policyRevision) &&
     !(found.link.expiresAt !== null && found.link.expiresAt <= now) &&
     linkBlockedBy(found.link, effectiveSharingPolicy(found.policy), now) ===
       null

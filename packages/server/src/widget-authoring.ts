@@ -1,4 +1,5 @@
 import { DRAWING_FONTS, previewFontCss } from "./preview-fonts.ts"
+import { buildWidgetShareRuntimeScript, SHARE_FONT_CSS } from "./widget-share-runtime.ts"
 import type { WidgetFile } from "@worktable/types"
 import { parseDocument, Parser } from "htmlparser2"
 
@@ -383,9 +384,9 @@ function escapeClosingScript(value: string): string {
   return value.replace(/<\/script/gi, "<\\/script")
 }
 
-export function buildWidgetHostStyles(): string {
+export function buildWidgetHostStyles(fontStyles = previewFontCss("/worktable-preview")): string {
   return `<style data-worktable-runtime="host-smoothness">
-${previewFontCss("/worktable-preview")}
+${fontStyles}
 :where(html) { font-family: ${DRAWING_FONTS.sans}; }
 :root { color-scheme: light dark; }
 html { min-height: 100%; }
@@ -404,8 +405,10 @@ input[type="range"] { cursor: pointer; }
 
 export function buildWidgetRuntimeScript(
   spaceId: string,
-  widgetId: string
+  widgetId: string,
+  options?: { mode: "share" }
 ): string {
+  if (options?.mode === "share") return buildWidgetShareRuntimeScript()
   const apiBase = `/api/spaces/${encodeURIComponent(spaceId)}/widgets/__document/${Buffer.from(widgetId, "utf8").toString("base64url")}`
   const config = JSON.stringify({
     spaceId,
@@ -605,16 +608,17 @@ window.agentdash=window.worktable;window.__agentdashDiagnostics=diagnostics;
 export function injectWidgetRuntime(
   html: string,
   spaceId: string,
-  widgetId: string
+  widgetId: string,
+  options?: { mode: "share" }
 ): string {
-  const runtime = buildWidgetRuntimeScript(spaceId, widgetId)
+  const runtime = buildWidgetRuntimeScript(spaceId, widgetId, options)
   const runtimeInsertionIndex = trustedRuntimeInsertionIndex(html)
   let output = `${html.slice(0, runtimeInsertionIndex)}${runtime}${html.slice(runtimeInsertionIndex)}`
-  return injectWidgetHostStyles(output)
+  return injectWidgetHostStyles(output, options?.mode === "share" ? { fontStyles: SHARE_FONT_CSS } : undefined)
 }
 
 /** The same typography and host styles are used for live and static previews. */
-export function injectWidgetHostStyles(html: string): string {
+export function injectWidgetHostStyles(html: string, options?: { fontStyles: string }): string {
   let output = html
   let shell = inspectWidgetHtmlShell(output)
   if (!shell.hasViewport) {
@@ -626,7 +630,7 @@ export function injectWidgetHostStyles(html: string): string {
     output = `${output.slice(0, insertionIndex)}${viewport}${output.slice(insertionIndex)}`
     shell = inspectWidgetHtmlShell(output)
   }
-  const hostStyles = buildWidgetHostStyles()
+  const hostStyles = buildWidgetHostStyles(options?.fontStyles)
   if (shell.headOpenEnd !== null) {
     // Host styles remain last so their safety rails keep the existing cascade.
     if (shell.headCloseStart !== null) {

@@ -122,6 +122,7 @@ export interface ShareTicketLink {
   id: string
   workspaceEpoch: string
   passwordRevision: number
+  grantRevision?: string
 }
 export type ShareTicketPurpose = "unlock" | "frame"
 const PREFIX = { unlock: "u1", frame: "f1" } as const
@@ -143,12 +144,16 @@ function mac(
   link: ShareTicketLink,
   payload: string
 ): string {
-  return createHmac("sha256", secret)
+  const tag = createHmac("sha256", secret)
     .update("worktable-share-ticket\0")
     .update(link.workspaceEpoch)
     .update("\0")
-    .update(payload)
-    .digest("base64url")
+  // Preserve existing static tickets; executable frames also bind the exact
+  // human-approved grant. Editing or removing it invalidates that ticket.
+  if (link.grantRevision && link.grantRevision !== "static") {
+    tag.update("grant\0").update(link.grantRevision).update("\0")
+  }
+  return tag.update(payload).digest("base64url")
 }
 
 export function mintShareTicket(

@@ -4,7 +4,6 @@ import { buildWidgetShareRuntimeScript } from "../../../packages/server/src/widg
 test("a live share SDK starts first in an opaque frame and uses only the visitor broker", async ({
   page,
 }) => {
-  await page.clock.install()
   await page.emulateMedia({ colorScheme: "dark" })
   const html = `<!doctype html><html data-theme="light"><head>${buildWidgetShareRuntimeScript()}<script>
     window.authoredTheme = document.documentElement.getAttribute('data-theme');
@@ -86,17 +85,7 @@ test("a live share SDK starts first in an opaque frame and uses only the visitor
   await expect(frame.locator("#write")).toHaveText("LINK_READ_ONLY")
   // A trusted click still works after a long press, without a recent
   // pointerdown or keydown. Synthetic authored clicks above stay rejected.
-  const anchor = await frame
-    .getByRole("link", { name: "External page" })
-    .boundingBox()
-  expect(anchor).not.toBeNull()
-  await page.mouse.move(
-    anchor!.x + anchor!.width / 2,
-    anchor!.y + anchor!.height / 2
-  )
-  await page.mouse.down()
-  await page.clock.fastForward(2000)
-  await page.mouse.up()
+  await frame.getByRole("link", { name: "External page" }).click({ delay: 2000 })
   await expect
     .poll(() =>
       page.evaluate(() =>

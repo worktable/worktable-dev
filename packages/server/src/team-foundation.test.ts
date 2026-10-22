@@ -820,6 +820,7 @@ describe("team foundation", () => {
     }
   })
 
+  // This full policy lifecycle uses real disk transactions across many requests.
   test("the owner policy decides who makes and keeps share links, and agents reach neither links nor policy", async () => {
     const { owner, member, auth, ownerHeaders } = await setup()
     await writeDoc("original", "brief", "# Brief")
@@ -923,7 +924,7 @@ describe("team foundation", () => {
       // without gaining permission to prepare a new one or another tool.
       await setPolicy({ whoMayShare: "owners", liveLinks: true })
       for (const name of ["Board", "Other board"])
-        await createHtmlDocument({ spaceId: "original", name, html: "<h1>Board</h1>", permissions: { network: false, records: {}, state: { read: true, write: true } }, versionSource: "test", versionUpdatedBy: "test" })
+        await createHtmlDocument({ spaceId: "original", name, html: '<script type="application/worktable">await worktable.ui.render({tag:"h1",children:["Board"]});</script>', permissions: { network: false, records: {}, state: { read: true, write: true } }, versionSource: "test", versionUpdatedBy: "test" })
       const liveTarget = { kind: "html", spaceId: "original", path: "board" }
       const grant = { version: 1, collections: {}, limits: { rowsPerQuery: 200, queriesPerMinute: 120, rowsPerHour: 10_000 }, state: "visitor" }
       const liveResponse = await request(owner, "POST", "/api/shares/links", { target: liveTarget, grant })
@@ -1032,7 +1033,7 @@ describe("team foundation", () => {
       closeShareLinkStores()
       delete process.env["WORKTABLE_SHARING_PREVIEW"]
     }
-  })
+  }, 15_000)
 
 
   test("each member arranges their own Spaces, and an arrangement never names a Space they cannot read", async () => {

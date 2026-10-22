@@ -40,14 +40,20 @@ export const TOOL_GUEST_SDK = String.raw`((send) => {
     subscribe: (collection, query, callback) => subscribe(collection, query, callback, false),
     subscribeDetailed: (collection, query, callback) => subscribe(collection, query, callback, true),
   };
+  let stateWrites = Promise.resolve();
+  function mutateState(action) {
+    const result = stateWrites.then(action);
+    stateWrites = result.catch(() => {});
+    return result;
+  }
   const state = {
     get: key => request('state.get', [key]),
-    set: (key, value) => request('state.set', [key, value]),
-    update: async updater => {
+    set: (key, value) => mutateState(() => request('state.set', [key, value])),
+    update: updater => mutateState(async () => {
       const current = await state.get();
       const next = await updater(current);
       return request('state.update', [next]);
-    },
+    }),
   };
   const ui = {
     render: view => request('ui.render', [view]),

@@ -6,6 +6,7 @@ import { createHash } from "node:crypto"
 import { buildRecordCollectionSchema, writeRecordCollectionSchema, writeRecord, writeWidgetState } from "./record-store.ts"
 import * as linkQueries from "./link-query.ts"
 import * as linkAccess from "./link-sharing-access.ts"
+import * as grantSchemas from "./link-grant.ts"
 import * as recordQueries from "./record-query.ts"
 import * as widgetStore from "./widget-store.ts"
 import { linkReadMemo } from "./link-read-memo.ts"
@@ -235,7 +236,7 @@ describe("share links", () => {
     await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, visibility: { type: "text" } } }))
     const at = new Date().toISOString()
     for (const visibility of ["public", "private"]) await writeRecord("space", { version: 1, kind: "worktable.record", id: visibility, collectionId: "deals", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: visibility === "public" ? "Visible" : "HIDDEN_SENTINEL", visibility } })
-    await createHtmlDocument({ spaceId: "space", name: "Access", html: "<script>worktable.records.query('deals')</script>", permissions: { network: false, records: { deals: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
+    await createHtmlDocument({ spaceId: "space", name: "Access", html: "<script type=\"application/worktable\">await worktable.records.query('deals');await worktable.ui.render({tag:'h1',children:['Access']});</script>", permissions: { network: false, records: { deals: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
     await drainWorkspaceChanges()
     const grant = LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: ["name"], rows: { field: "visibility", op: "eq", value: "public" } } } })
     const input = { target: { kind: "html", spaceId: "space", path: "access" }, grant, observe: false }
@@ -325,6 +326,43 @@ describe("share links", () => {
     expect(narrowed.issues).toHaveLength(1)
   })
 
+  it("refuses live link mutations after source edits and accepts a fresh retry", async () => {
+    await useHtmlStorageV2()
+    saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true }, "local:owner")
+    const html = '<script type="application/worktable">await worktable.ui.render({tag:"h1",children:["Report"]});</script>'
+    await createHtmlDocument({ spaceId: "space", explicitId: "race", name: "Race", html, permissions: {network: false, records: {}, state: {}}, versionSource: "test", versionUpdatedBy: "test" })
+    const target = { kind: "html", spaceId: "space", path: "race" }
+    const initial = await (await send("POST", "/api/shares/links", { target, label: "Original" })).json() as CreatedShareLink
+    const document = (await widgetStore.readWidgetDocument("space", "race")).data!
+    const grant = {version: 1, collections: {}, state: "visitor"}
+    const originalSchemas = grantSchemas.readLinkGrantSchemas
+    const publish = async (source: string) => {
+      const result = await widgetStore.writeWidget("space", document.widget, source)
+      result.release?.()
+      expect(result.error).toBeNull()
+      await drainWorkspaceChanges()
+    }
+    for (const method of ["POST", "PATCH"] as const) {
+      const url = method === "POST" ? "/api/shares/links" : `/api/shares/links/${initial.link.id}`
+      const input = { ...(method === "POST" ? { target } : {}), label: "Updated", grant }
+      const changed = spyOn(grantSchemas, "readLinkGrantSchemas").mockImplementation(async (...args) => {
+        const result = await originalSchemas(...args)
+        await publish('<script>window.legacy = true</script>')
+        return result
+      })
+      try {
+        const refused = await send(method, url, input)
+        expect(refused.status).toBe(503)
+        expect((await refused.json()).code).toBe("LINK_PREVIEW_CHANGED")
+      } finally { changed.mockRestore() }
+      const links = (await documentLinks("race", "html")).links
+      expect(links.find(link => link.id === initial.link.id)?.label).toBe("Original")
+      expect(links).toHaveLength(method === "POST" ? 1 : 2)
+      await publish(html)
+      expect((await send(method, url, input)).status).toBe(method === "POST" ? 201 : 200)
+    }
+  })
+
   it("opens live tools through ticketed frames and grant-only reads, including policy changes during a read", async () => {
     process.env["WORKTABLE_RECORDS_INDEX"] = "1"
     const policy = (await (await send("GET", "/api/shares/policy")).json()).policy as SharingPolicy
@@ -332,7 +370,7 @@ describe("share links", () => {
     await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, secret: { type: "text" } } }))
     const at = new Date().toISOString()
     await writeRecord("space", { version: 1, kind: "worktable.record", id: "private-id", collectionId: "deals", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: "Public name", secret: "Hidden data" } })
-    await createHtmlDocument({ spaceId: "space", name: "Board", html: "<!doctype html><html><head></head><body><h1>Board</h1></body></html>", permissions: { network: true, records: { deals: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
+    await createHtmlDocument({ spaceId: "space", name: "Board", html: "<script type=\"application/worktable\">await worktable.ui.render({tag:'h1',children:['Board']});</script>", permissions: { network: true, records: { deals: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
     await createHtmlDocument({ spaceId: "space", name: "Other board", html: "<h1>Other</h1>", versionSource: "test", versionUpdatedBy: "test" })
     await writeWidgetState("space", "board", { team: "default" })
     const beforeLive = await readDocumentPage({ spaceId: "space", path: "board", rawSourceAuthorized: false, annotationsAuthorized: false, sharingAuthorized: true })
@@ -351,11 +389,13 @@ describe("share links", () => {
     expect(projection.live.poll).toBe(30)
     const frame = await view(projection.contentTicket, "/public/share/content")
     expect(frame.status).toBe(200)
-    expect(frame.headers.get("Content-Security-Policy")).toContain("script-src 'unsafe-inline'")
+    expect(frame.headers.get("Content-Type")).toContain("application/json")
     expect(frame.headers.get("Content-Security-Policy")).toContain("connect-src 'none'")
     const html = await frame.text()
     expect(createHash("sha256").update(html).digest("base64url")).toBe(projection.live.rev)
-    expect(html).toContain("mode:'share'")
+    expect(JSON.parse(html)).toMatchObject({ v: 1, runtime: "isolated-v1", asset: projection.live.asset })
+    expect(JSON.parse(html).source).toContain("worktable.ui.render")
+    expect(html).not.toContain("<html")
     expect(html).not.toContain(created.token)
     expect((await view(created.token, "/public/share/content")).status).toBe(404)
     expect((await send("PATCH", `/api/shares/links/${created.link.id}`, { grant })).status).toBe(200)
@@ -506,7 +546,7 @@ describe("share links", () => {
     await writeRecord("space", { version: 1, kind: "worktable.record", id: "client-id", collectionId: "clients", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: "Public client" } })
     await writeRecord("space", row("first", "public"))
     await writeRecord("space", row("second", "public"))
-    await createHtmlDocument({ spaceId: "space", name: "Counts", html: "<h1>Counts</h1>", permissions: { network: false, records: { deals: { read: true }, clients: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
+    await createHtmlDocument({ spaceId: "space", name: "Counts", html: "<script type=\"application/worktable\">await worktable.ui.render({tag:'h1',children:['Counts']});</script>", permissions: { network: false, records: { deals: { read: true }, clients: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
     const rows = { field: "visibility", op: "eq", value: "public" }
     const scoped = await createLink("counts", { grant: LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: ["name", "client"], rows }, clients: { fields: ["name"] } } }) }, "html")
     const summary = await createLink("counts", { grant: LinkGrantSchema.parse({ version: 1, collections: { deals: { mode: "summaries", fields: [], rows, summaries: { groupBy: [], measures: [], fns: ["count"], minGroupSize: 2 } } } }) }, "html")

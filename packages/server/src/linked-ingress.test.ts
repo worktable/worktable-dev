@@ -736,7 +736,7 @@ it("carries bounded live bridge calls and reserves MCP capacity while share bodi
       spaceId: "space",
       explicitId: "live",
       name: "Live",
-      html: "<h1>Live report</h1>",
+      html: "<script type=\"application/worktable\">await worktable.ui.render({tag:'h1',children:['Live report']});</script>",
       createdBy: "test",
       versionSource: "test",
       versionUpdatedBy: "test",

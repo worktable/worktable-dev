@@ -4,7 +4,15 @@ import {
 } from "./link-schema-generation.ts"
 import { createHash } from "node:crypto"
 import { createLinkKey, type LinkKey } from "./link-grant-view.ts"
-import { injectWidgetRuntime } from "./widget-authoring.ts"
+import {
+  isolatedToolSource,
+  IsolatedToolSourceError,
+} from "./isolated-tool-source.ts"
+import {
+  PublicShareTool,
+  PUBLIC_TOOL_RUNTIME_PROFILE,
+} from "@worktable/hosted-contract"
+import manifest from "../../ui/src/tool-runtime/generated/manifest.json"
 import type { WidgetFile, RecordCollectionSchema } from "@worktable/types"
 import { readWidgetDocument } from "./widget-store.ts"
 import { readLinkGrantSchemas } from "./link-grant.ts"
@@ -19,7 +27,7 @@ export class LinkToolChanged extends Error {
 }
 
 export interface LinkTool {
-  html: string
+  payload: string
   revision: string
   key: LinkKey
   permissions: WidgetFile["permissions"]
@@ -81,14 +89,29 @@ export function readLinkTool(view: ShareLinkView): Promise<LinkTool | null> {
           )
             throw new LinkToolChanged()
           if (!data || data.widget.archive) return { tool: null }
-          const html = injectWidgetRuntime(data.html, "", "", { mode: "share" })
+          let source: string | null
+          try {
+            source = isolatedToolSource(data.html)
+          } catch (error) {
+            if (error instanceof IsolatedToolSourceError) return { tool: null }
+            throw error
+          }
+          if (source === null) return { tool: null }
+          const payload = JSON.stringify(
+            PublicShareTool.parse({
+              v: 1,
+              runtime: PUBLIC_TOOL_RUNTIME_PROFILE,
+              asset: manifest.hash,
+              source,
+            })
+          )
           entry.bytes =
-            Buffer.byteLength(html) +
+            Buffer.byteLength(payload) +
             Buffer.byteLength(JSON.stringify([...schemas]))
           if (tools.get(key) === entry) bytes += entry.bytes
           const tool = {
-            html,
-            revision: createHash("sha256").update(html).digest("base64url"),
+            payload,
+            revision: createHash("sha256").update(payload).digest("base64url"),
             key: createLinkKey(view.link.linkKey),
             permissions: data.widget.permissions,
             generation,

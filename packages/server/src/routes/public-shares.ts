@@ -3,6 +3,7 @@ import { visitorCommentNamespace } from "../visitor-comment-access.ts"
 import { commentPause } from "../visitor-comment-store.ts"
 import { linkBridge } from "../link-bridge.ts"
 import { LinkToolChanged, readLinkTool } from "../link-tool.ts"
+import manifest from "../../../ui/src/tool-runtime/generated/manifest.json"
 import {
   SHARE_UNLOCK_HEADER,
   ShareUnlockRequest,
@@ -316,7 +317,7 @@ async function renderLinkPage(
       if (cached) return cached
       const body =
         surface === "content"
-          ? tool.html
+          ? tool.payload
           : JSON.stringify({
               kind: "html",
               sourceUrl: SOURCE_URL,
@@ -548,7 +549,7 @@ export function createPublicSharesRouter(
         )
         if (!ticket) return unavailable(c.req.raw)
         projection.contentTicket = ticket.ticket
-        if (view.link.grant) projection.live = { rev: page.revision, poll: 30 }
+        if (view.link.grant) projection.live = { rev: page.revision, poll: 30, runtime: manifest.profile, asset: manifest.hash }
       }
       // Tickets are minted per response; cached projections contain no ticket
       // that could expire while the document's content revision stays current.
@@ -558,6 +559,7 @@ export function createPublicSharesRouter(
       )
     } else if (content && view.link.grant) {
       const headers = contentHeaders(shareOrigin, true)
+      headers.set("Content-Type", "application/json; charset=utf-8")
       const etag = `"${page.revision}"`
       headers.set("ETag", etag)
       response =

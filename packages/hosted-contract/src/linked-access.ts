@@ -29,6 +29,8 @@ export const LINKED_CAPABILITIES = {
   SHARE_TICKETS: "share-tickets",
   /** `POST /public/share/bridge`. */
   SHARE_BRIDGE: "share-bridge",
+  /** Live tool programs use the isolated VM profile, never authored HTML. */
+  SHARE_ISOLATED_TOOLS: "share-isolated-tools",
   /** Signed client digests and conditional revisions on share reads. */
   SHARE_READ_HINTS: "share-read-hints",
   /** `GET` and `POST /public/share/comments`, and `visitor` on share grants. */

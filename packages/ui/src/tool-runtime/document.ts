@@ -35,21 +35,25 @@ html{font-family:var(--font-sans)}\n*,*::before,*::after{box-sizing:border-box}\
 export function isolatedToolFrame(
   source: string,
   config: ToolHostConfig,
-  options: { theme: "light" | "dark"; fontStyles: string }
+  options: { theme: "light" | "dark"; fontStyles: string; assetPrefix?: string }
 ): string {
   const serialized = JSON.stringify({ ...config, source }).replaceAll(
     "<",
     "\\u003c"
   )
-  return `<!doctype html><html data-theme="${options.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${options.fontStyles}\n${styles}</style></head><body><main id="worktable-tool"></main><p id="worktable-tool-notice" role="status" aria-live="polite"></p><script type="application/json" id="worktable-tool-config">${serialized}</script><script src="${manifest.path}" defer></script></body></html>`
+  return `<!doctype html><html data-theme="${options.theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${options.fontStyles}\n${styles}</style></head><body><main id="worktable-tool"></main><p id="worktable-tool-notice" role="status" aria-live="polite"></p><script type="application/json" id="worktable-tool-config">${serialized}</script><script src="${options.assetPrefix ?? ""}${manifest.path}" defer></script></body></html>`
 }
 
 export function isolatedToolCsp(options: {
   assetOrigin: string
+  assetPrefix?: string
   parentOrigin: string | null
   fontSources?: string[]
 }): string {
-  const asset = new URL(manifest.path, options.assetOrigin).href
+  const asset = new URL(
+    `${options.assetPrefix ?? ""}${manifest.path}`,
+    options.assetOrigin
+  ).href
   const parent = options.parentOrigin
     ? new URL(options.parentOrigin).origin
     : "'none'"

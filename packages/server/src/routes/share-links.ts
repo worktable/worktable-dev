@@ -23,7 +23,7 @@ import {
 import { sharingPreviewEnabled } from "../sharing-preview.ts"
 import { prepareShareLinkAccess } from "../link-sharing-access.ts"
 import { spaceGeneration } from "../workspace-read-model.ts"
-import { linkSchemaGeneration } from "../link-schema-generation.ts"
+import { linkSpaceSchemaGeneration } from "../link-schema-generation.ts"
 import { readSharingPolicy } from "../share-links-store.ts"
 import { readLinkGrantSchemas, validateLinkGrant } from "../link-grant.ts"
 import { mapWithConcurrency } from "../bounded-concurrency.ts"
@@ -352,7 +352,7 @@ shareLinksRouter.post("/access", async (c) => {
   })
   if (!decision.allowed) return denied(c, decision)
   const source = spaceGeneration(target.spaceId)
-  const schema = linkSchemaGeneration(target.spaceId)
+  const schema = linkSpaceSchemaGeneration(target.spaceId)
   if (
     link &&
     (await useResolvedDocumentHandle(
@@ -394,7 +394,7 @@ shareLinksRouter.post("/access", async (c) => {
   if (
     readSharingPolicy().revision !== revision ||
     spaceGeneration(target.spaceId) !== source ||
-    linkSchemaGeneration(target.spaceId) !== schema
+    linkSpaceSchemaGeneration(target.spaceId) !== schema
   )
     return c.json(
       {

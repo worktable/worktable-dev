@@ -251,17 +251,31 @@ describe("share links", () => {
     expect(JSON.stringify(access)).not.toContain("HIDDEN_SENTINEL")
     expect((await documentLinks("access", "html")).links).toEqual([])
     const original = linkAccess.prepareShareLinkAccess
+    let invalidate: "schema" | "policy" = "schema"
     const changed = spyOn(linkAccess, "prepareShareLinkAccess").mockImplementation(async (...args) => {
       const result = await original(...args)
-      saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true, records: "none" }, "local:owner")
+      if (invalidate === "schema") {
+        await writeRecordCollectionSchema("space", buildRecordCollectionSchema({
+          id: "deals",
+          name: "Deals",
+          fields: { name: { type: "text" }, visibility: { type: "text" }, stage: { type: "text" } },
+        }))
+      } else {
+        saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true, records: "none" }, "local:owner")
+      }
       return result
     })
     try {
-      const stale = await send("POST", "/api/shares/links/access", input)
-      expect(stale.status).toBe(503)
-      expect((await stale.json()).code).toBe("LINK_PREVIEW_CHANGED")
+      for (const change of ["schema", "policy"] as const) {
+        invalidate = change
+        const stale = await send("POST", "/api/shares/links/access", input)
+        expect(stale.status).toBe(503)
+        expect((await stale.json()).code).toBe("LINK_PREVIEW_CHANGED")
+      }
     } finally { changed.mockRestore() }
-    const narrowed = await (await send("POST", "/api/shares/links/access", input)).json()
+    const narrowedResponse = await send("POST", "/api/shares/links/access", input)
+    expect(narrowedResponse.status).toBe(200)
+    const narrowed = await narrowedResponse.json()
     expect(narrowed.effectiveGrant.collections).toEqual({})
     expect(narrowed.counts).toEqual({})
     expect(narrowed.issues).toHaveLength(1)

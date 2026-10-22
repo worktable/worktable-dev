@@ -29,7 +29,7 @@ interface Stored extends Post {
   id: string
 }
 
-/** Real renderer and browser scripts; routing, storage and Turnstile are fixtures. */
+/** Real renderer and scripts; policy, routing, storage and Turnstile are fixtures. */
 async function fixture(page: Page, live = false) {
   const workspaceId = live ? "workspace /é".repeat(9) : "ws_cloud"
   const url = `${shareOrigin}/s/${encodeURIComponent(workspaceId)}/${token}`
@@ -43,6 +43,7 @@ async function fixture(page: Page, live = false) {
   const views: string[] = []
   const errors: string[] = []
   const parentReadable: boolean[] = []
+  const outsideRequests: string[] = []
   const backend: {
     frames: number
     onPost: (post: Post) => Promise<"ok" | "error" | "uncertain">
@@ -84,7 +85,23 @@ async function fixture(page: Page, live = false) {
             icon,
             comments
           )
-      return route.fulfill({ contentType: "text/html", body: html })
+      return route.fulfill({
+        contentType: "text/html",
+        body: html,
+        headers: {
+          "Referrer-Policy": "no-referrer",
+          "Content-Security-Policy": [
+            "default-src 'none'",
+            `script-src ${shareOrigin + PUBLIC_SHARE_ASSET_PATHS.comments} ${shareOrigin + PUBLIC_SHARE_ASSET_PATHS.live}`,
+            "style-src 'unsafe-inline'",
+            "font-src 'self'",
+            "connect-src 'self'",
+            `frame-src https://tool.example.test ${checkOrigin + PUBLIC_SHARE_COMMENT_CHECK_PATH}`,
+            "base-uri 'none'",
+            "form-action 'none'",
+          ].join("; "),
+        },
+      })
     }
     if (
       target.origin === checkOrigin &&
@@ -93,6 +110,18 @@ async function fixture(page: Page, live = false) {
       return route.fulfill({
         contentType: "text/html",
         body: renderPublicCommentCheckPage("test-widget", shareOrigin),
+        headers: {
+          "Content-Security-Policy": [
+            "default-src 'none'",
+            `script-src ${checkOrigin + PUBLIC_SHARE_ASSET_PATHS.commentCheck} https://challenges.cloudflare.com`,
+            "frame-src https://challenges.cloudflare.com",
+            "style-src 'unsafe-inline'",
+            "connect-src 'none'",
+            "base-uri 'none'",
+            "form-action 'none'",
+            `frame-ancestors ${shareOrigin}`,
+          ].join("; "),
+        },
       })
     const scripts: Record<string, string> = {
       [PUBLIC_SHARE_ASSET_PATHS.comments]: "public-share-comments.js",
@@ -114,14 +143,22 @@ async function fixture(page: Page, live = false) {
       })
     }
     if (target.origin === "https://challenges.cloudflare.com") {
+      if (target.pathname === "/test-widget-frame")
+        return route.fulfill({
+          contentType: "text/html",
+          body: "<p>Human check</p>",
+        })
       return route.fulfill({
         contentType: "text/javascript",
         body: `
         let readable = false;
         try { void window.parent.document.body; readable = true; } catch {}
         console.log("check-parent-readable:" + readable);
-        window.turnstile = { render(_node, options) {
-          queueMicrotask(() => options.callback("test-human-token")); return "widget";
+        window.turnstile = { render(node, options) {
+          const challenge = document.createElement("iframe");
+          challenge.src = "https://challenges.cloudflare.com/test-widget-frame";
+          challenge.addEventListener("load", () => options.callback("test-human-token"));
+          node.append(challenge); return "widget";
         } };
       `,
       })
@@ -181,10 +218,21 @@ async function fixture(page: Page, live = false) {
             },
           })
     }
+    if (target.origin === "https://attacker.example")
+      outsideRequests.push(target.href)
     return route.fulfill({ status: 404, body: "" })
   })
   await page.goto(url)
-  return { state, posts, stored, views, errors, parentReadable, backend }
+  return {
+    state,
+    posts,
+    stored,
+    views,
+    errors,
+    parentReadable,
+    outsideRequests,
+    backend,
+  }
 }
 
 test("mobile visitors recover, keep edited drafts and follow refreshed comment settings", async ({
@@ -303,4 +351,12 @@ test("a live tool keeps its state and a visitor can recover an uncertain submiss
     path: testInfo.outputPath("visitor-comments-live.png"),
     fullPage: true,
   })
+  // The trusted check endpoint does not admit authored navigation elsewhere.
+  await tool.locator("body").evaluate(() => {
+    location.href = "https://attacker.example/record-data"
+  })
+  await expect(page.locator("main")).toContainText(
+    "This tool tried to open another page"
+  )
+  expect(f.outsideRequests).toEqual([])
 })

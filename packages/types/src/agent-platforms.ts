@@ -30,7 +30,7 @@ export interface AgentPlatform {
 }
 
 export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
-  "grok-bot": { id: "grok-bot", name: "Grok Bot", mode: "always-on", logo: null },
+  "grok-bot": { id: "grok-bot", name: "Grok Bot", mode: "always-on", logo: "grok.svg" },
   openclaw: {
     id: "openclaw",
     name: "OpenClaw",

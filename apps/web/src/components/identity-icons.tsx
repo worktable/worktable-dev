@@ -34,7 +34,7 @@ export function AgentAvatar({
 }) {
   const logo = icon ? null : agentLogoUrl(platform)
   // Hermes fills its circle; OpenAI's artwork includes its own padding.
-  const fullBleed = platform === "hermes"
+  const fullBleed = platform === "hermes" || platform === "grok-bot"
   const prePadded = platform === "chatgpt" || platform === "codex"
   const initials = participantInitials(name)
   const fallback = icon ? (

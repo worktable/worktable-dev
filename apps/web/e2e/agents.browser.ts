@@ -102,7 +102,11 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
   await expect(
     dialog.getByRole("combobox", { name: "Cloud quick connect agent" })
   ).toBeVisible()
-  await expect(dialog.getByText("Claude", { exact: true })).toBeVisible()
+  await expect(
+    dialog
+      .getByRole("region", { name: "Connected agents" })
+      .getByText("Claude", { exact: true })
+  ).toBeVisible()
   await expect(dialog.getByText("Not used yet", { exact: true })).toBeVisible()
   await expect(
     dialog.getByRole("heading", { name: "Connected agents" })
@@ -149,10 +153,10 @@ test("local setup uses one disclosure at a time and separates connection managem
     name: /^Coding agents/,
   })
   const alwaysOn = dialog.getByRole("button", {
-    name: /^OpenClaw/,
+    name: /^Always-on agents/,
   })
   const desktopApps = dialog.getByRole("button", {
-    name: /^Claude and ChatGPT/,
+    name: /^Chat apps/,
   })
   const accessTokens = dialog.getByRole("button", {
     name: /^Access tokens/,
@@ -169,7 +173,9 @@ test("local setup uses one disclosure at a time and separates connection managem
     .all()) {
     await expect(disclosure).toHaveAttribute("aria-expanded", "false")
   }
-  await expect(dialog.getByRole("button", { name: "Connect" })).toBeHidden()
+  await expect(
+    dialog.getByRole("button", { name: "Connect", exact: true })
+  ).toBeHidden()
   await expect(tokenRow).toBeHidden()
   await expect(
     dialog.getByRole("link", { name: "Download extension" })
@@ -177,21 +183,24 @@ test("local setup uses one disclosure at a time and separates connection managem
 
   await quickConnect.click()
   await expect(quickConnect).toHaveAttribute("aria-expanded", "true")
-  await expect(dialog.getByRole("button", { name: "Connect" })).toBeVisible()
+  await expect(
+    dialog.getByRole("button", { name: "Connect", exact: true })
+  ).toBeVisible()
 
   await desktopApps.click()
   await expect(quickConnect).toHaveAttribute("aria-expanded", "false")
   await expect(desktopApps).toHaveAttribute("aria-expanded", "true")
-  await expect(dialog.getByRole("button", { name: "Connect" })).toBeHidden()
+  await expect(
+    dialog.getByRole("button", { name: "Connect", exact: true })
+  ).toBeHidden()
   await expect(
     dialog.getByRole("link", { name: "Download extension" })
   ).toBeVisible()
 
-  await dialog.getByRole("combobox", { name: "Desktop app" }).click()
-  await page.getByRole("option", { name: "ChatGPT desktop" }).click()
+  await dialog.getByRole("tab", { name: "ChatGPT", exact: true }).click()
   await expect(
-    dialog.getByRole("combobox", { name: "Desktop app" })
-  ).toHaveText("ChatGPT desktop")
+    dialog.getByRole("tab", { name: "ChatGPT", exact: true })
+  ).toHaveAttribute("aria-selected", "true")
   await expect(
     dialog.getByRole("link", { name: "Download extension" })
   ).toBeHidden()
@@ -201,7 +210,9 @@ test("local setup uses one disclosure at a time and separates connection managem
   await expect(alwaysOn).toHaveAttribute("aria-expanded", "true")
   await expect(dialog.getByRole("button", { name: "Install" })).toBeVisible()
   await expect(dialog.getByText("Home Space", { exact: true })).toHaveCount(0)
-  await expect(dialog.getByRole("button", { name: "Connect" })).toBeVisible()
+  await expect(
+    dialog.getByRole("button", { name: "Connect", exact: true })
+  ).toBeVisible()
 
   await expect(accessTokens).toHaveAttribute("aria-expanded", "false")
   await expect(accessTokens).toContainText("1 active token")
@@ -381,10 +392,10 @@ test("switching settings sections and setup disclosures preserves a one-time man
   await openAgents(page)
   const dialog = page.getByRole("dialog")
   const manualInstall = dialog.getByRole("button", {
-    name: /^Manual setup/,
+    name: /Connect any MCP agent/,
   })
   const desktopApps = dialog.getByRole("button", {
-    name: /^Claude and ChatGPT/,
+    name: /^Chat apps/,
   })
 
   await manualInstall.click()

@@ -184,6 +184,23 @@ describe("thread presentation", () => {
       visible: true,
       failed: true,
     })
+    expect(
+      deliveryPresentation(
+        {
+          ...activity("failed", 1),
+          error: {
+            code: "REMOTE_EXECUTION_UNCONFIRMED",
+            message: "A persisted explanation from an earlier version.",
+            retryable: false,
+          },
+        },
+        "Grok Bot"
+      )
+    ).toMatchObject({
+      label: "No reply received. Check Grok before retrying.",
+      failed: true,
+      live: false,
+    })
     expect(deliveryPresentation(activity("replied", 1), "Atlas").visible).toBe(
       false
     )
@@ -277,11 +294,13 @@ describe("thread presentation", () => {
       name: identities[0]!.name,
     }
     const descriptions = [identities[0]!, duplicate].map((identity) =>
-      conversationIdentityDescription(identity, members, [...identities, duplicate])
+      conversationIdentityDescription(identity, members, [
+        ...identities,
+        duplicate,
+      ])
     )
     expect(descriptions.every((description) => Boolean(description))).toBe(true)
     expect(descriptions[0]).not.toBe(descriptions[1])
-
   })
 
   test("presents collision-safe names for prospective default identities", () => {

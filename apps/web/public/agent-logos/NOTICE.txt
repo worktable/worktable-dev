@@ -19,3 +19,7 @@ openai.svg    OpenAI Blossom (black) from OpenAI's brand page
               (https://openai.com/brand/), unmodified, used under OpenAI's
               marks usage terms for ChatGPT and Codex. OpenAI, ChatGPT, and
               the Blossom are trademarks of OpenAI.
+
+grok.svg      Official Grok app icon from https://grok.com/images/favicon.svg,
+              unmodified. Grok and its mark belong to SpaceXAI LLC.
+              https://x.ai/legal/brand-guidelines

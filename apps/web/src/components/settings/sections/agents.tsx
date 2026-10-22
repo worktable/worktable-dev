@@ -101,7 +101,12 @@ import { AgentAccessFields } from "@/components/agents/agent-access-fields"
 import { AgentAvatar } from "@/components/agents/agent-avatar"
 import { AgentEditDialog } from "@/components/agents/agent-edit-dialog"
 import { DesktopAgentSkillsGroup } from "./desktop-agent-skills"
-import { GrokBotSetupPanel } from "./grok-bot"
+import { GrokBotSetupPanel } from "@/components/agents/grok-bot-setup"
+import {
+  AGENT_SETUP_CATEGORIES,
+  AgentSetupCategory,
+  AgentSetupTabs,
+} from "@/components/agents/agent-setup-category"
 import { useSettingsSectionActive } from "../settings-dialog"
 
 const CLIENT_KEY = "worktable-connect-client"
@@ -166,7 +171,7 @@ export function AgentsSection() {
   if (connectionQuery.data.mcpAuthMode === "oauth") {
     return (
       <div className="flex flex-col gap-6">
-        <CloudAgentSetupGroup connection={connectionQuery.data} />
+        <AgentSetupGroup connection={connectionQuery.data} />
         <ConnectedAgentsGroup />
         <DesktopAgentSkillsGroup enabled={sectionActive} />
       </div>
@@ -209,65 +214,6 @@ function PreviewToolsRow() {
         />
       </SettingRow>
     </div>
-  )
-}
-
-type CloudAgentSetupPanel =
-  | "quick"
-  | "grok-bot"
-  | AlwaysOnAgent["adapter"]
-  | "desktop"
-  | "manual"
-
-function CloudAgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
-  const [openPanel, setOpenPanel] = useState<CloudAgentSetupPanel | null>(null)
-
-  function panelProps(panel: CloudAgentSetupPanel) {
-    return {
-      open: openPanel === panel,
-      onOpenChange: (open: boolean) => setOpenPanel(open ? panel : null),
-    }
-  }
-
-  return (
-    <section aria-label="Agent connections">
-      <Card className="gap-0 py-0">
-        <AgentSetupDisclosure title="Coding agents" {...panelProps("quick")}>
-          <CloudQuickConnectPanel connection={connection} />
-        </AgentSetupDisclosure>
-        {ALWAYS_ON_AGENTS.map((agent) => (
-          <AgentSetupDisclosure
-            key={agent.adapter}
-            title={agent.name}
-            className="border-t border-border/60"
-            {...panelProps(agent.adapter)}
-          >
-            {connection.agentPairing ? (
-              <AlwaysOnSetupPanel connection={connection} agent={agent} />
-            ) : (
-              <CloudAlwaysOnPanel connection={connection} agent={agent} />
-            )}
-          </AgentSetupDisclosure>
-        ))}
-        <AgentSetupDisclosure
-          title="Claude and ChatGPT"
-          className="border-t border-border/60"
-          {...panelProps("desktop")}
-        >
-          <CloudNativeAppsPanel connection={connection} />
-        </AgentSetupDisclosure>
-        <AgentSetupDisclosure title="Grok Bot" className="border-t border-border/60" {...panelProps("grok-bot")}>
-          <GrokBotSetupPanel connection={connection} open={openPanel === "grok-bot"} />
-        </AgentSetupDisclosure>
-        <AgentSetupDisclosure
-          title="Manual setup"
-          className="border-t border-border/60"
-          {...panelProps("manual")}
-        >
-          <CloudManualInstallPanel connection={connection} />
-        </AgentSetupDisclosure>
-      </Card>
-    </section>
   )
 }
 
@@ -342,8 +288,22 @@ function CloudAlwaysOnPanel({
 }
 
 function CloudNativeAppsPanel({ connection }: { connection: ConnectionInfo }) {
+  const [app, setApp] = useState<"claude" | "chatgpt">("claude")
   return (
-    <div>
+    <div className="flex flex-col gap-3">
+      <AgentSetupTabs
+        value={app}
+        onValueChange={setApp}
+        options={[
+          { value: "claude", label: "Claude", platform: "claude" },
+          { value: "chatgpt", label: "ChatGPT", platform: "chatgpt" },
+        ]}
+      />
+      <p className="text-sm text-muted-foreground">
+        {app === "claude"
+          ? "In Claude, add a custom connector in Settings → Connectors. Paste this address and sign in."
+          : "In ChatGPT on the web, create an app in Settings → Apps. Paste this address and sign in."}
+      </p>
       <CopyField
         label="MCP endpoint"
         value={connection.remoteMcpUrl}
@@ -412,92 +372,97 @@ function CloudManualInstallPanel({
 
 // ── Local/self-hosted setup disclosures ─────────────────────────────────────
 
-type AgentSetupPanel = "quick" | AlwaysOnAgent["adapter"] | "desktop" | "manual" | "grok-bot"
+type AgentSetupCategoryId = keyof typeof AGENT_SETUP_CATEGORIES | "manual"
+type AlwaysOnChoice = AlwaysOnAgent["adapter"] | "grok-bot"
 
 function AgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
-  const [openPanel, setOpenPanel] = useState<AgentSetupPanel | null>(null)
-
-  function panelProps(panel: AgentSetupPanel) {
-    return {
-      open: openPanel === panel,
-      onOpenChange: (open: boolean) => setOpenPanel(open ? panel : null),
-    }
-  }
-
+  const active = useSettingsSectionActive()
+  const cloud = connection.mcpAuthMode === "oauth"
+  const [open, setOpen] = useState<AgentSetupCategoryId | null>(null)
+  const [provider, setProvider] = useState<AlwaysOnChoice>("openclaw")
+  const [visited, setVisited] = useState<AlwaysOnChoice[]>(["openclaw"])
+  const categoryProps = (id: keyof typeof AGENT_SETUP_CATEGORIES) => ({
+    ...AGENT_SETUP_CATEGORIES[id],
+    open: open === id,
+    onOpenChange: (next: boolean) => setOpen(next ? id : null),
+    keepMounted: true,
+  })
   return (
     <section aria-label="Agent connections">
-      <Card className="gap-0 py-0">
-        <AgentSetupDisclosure title="Coding agents" {...panelProps("quick")}>
-          <QuickConnectPanel connection={connection} />
-        </AgentSetupDisclosure>
-
-        {ALWAYS_ON_AGENTS.map((agent) => (
-          <AgentSetupDisclosure
-            key={agent.adapter}
-            title={agent.name}
-            className="border-t border-border/60"
-            {...panelProps(agent.adapter)}
-          >
-            <AlwaysOnSetupPanel connection={connection} agent={agent} />
-          </AgentSetupDisclosure>
-        ))}
-
-        <AgentSetupDisclosure
-          title="Claude and ChatGPT"
-          className="border-t border-border/60"
-          {...panelProps("desktop")}
-        >
-          <DesktopAppsPanel connection={connection} />
-        </AgentSetupDisclosure>
-        <AgentSetupDisclosure title="Grok Bot" className="border-t border-border/60" {...panelProps("grok-bot")}>
-          <GrokBotSetupPanel connection={connection} open={openPanel === "grok-bot"} />
-        </AgentSetupDisclosure>
-
-        <AgentSetupDisclosure
-          title="Manual setup"
-          className="border-t border-border/60"
-          {...panelProps("manual")}
-        >
-          <ManualInstallPanel connection={connection} />
-        </AgentSetupDisclosure>
-      </Card>
-    </section>
-  )
-}
-
-function AgentSetupDisclosure({
-  title,
-  open,
-  onOpenChange,
-  className,
-  children,
-}: {
-  title: string
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  className?: string
-  children: ReactNode
-}) {
-  return (
-    <Collapsible open={open} onOpenChange={onOpenChange} className={className}>
-      <CollapsibleTrigger className="flex min-h-12 w-full items-center gap-3 rounded-xl px-4 py-2.5 text-left transition-colors outline-none hover:bg-surface-hover focus-visible:ring-3 focus-visible:ring-ring/50">
-        <span className="min-w-0 flex-1 text-sm font-medium text-foreground">
-          {title}
-        </span>
-        <ChevronDown
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform",
-            open && "rotate-180"
+      <div className="overflow-hidden rounded-xl card-surface">
+        <AgentSetupCategory {...categoryProps("code")}>
+          {cloud ? (
+            <CloudQuickConnectPanel connection={connection} />
+          ) : (
+            <QuickConnectPanel connection={connection} />
           )}
-          aria-hidden
-        />
-      </CollapsibleTrigger>
-      {/* Setup can hold a live pairing or a one-time token. Switching panels
-          must hide, not destroy, that in-progress state. */}
-      <CollapsibleContent keepMounted>
-        <div className="border-t border-border/60 px-4 py-4">{children}</div>
-      </CollapsibleContent>
-    </Collapsible>
+        </AgentSetupCategory>
+        <AgentSetupCategory {...categoryProps("chat")}>
+          {cloud ? (
+            <CloudNativeAppsPanel connection={connection} />
+          ) : (
+            <DesktopAppsPanel connection={connection} />
+          )}
+        </AgentSetupCategory>
+        <AgentSetupCategory {...categoryProps("always")}>
+          <AgentSetupTabs
+            value={provider}
+            onValueChange={(value) => {
+              setProvider(value)
+              setVisited((previous) =>
+                previous.includes(value) ? previous : [...previous, value]
+              )
+            }}
+            options={AGENT_SETUP_CATEGORIES.always.platforms.map(
+              (platform) => ({
+                value: platform as AlwaysOnChoice,
+                label: AGENT_PLATFORMS[platform].name,
+                platform,
+              })
+            )}
+          />
+          {visited.map((value) => (
+            <div key={value} hidden={provider !== value}>
+              {value === "grok-bot" ? (
+                <GrokBotSetupPanel
+                  connection={connection}
+                  open={active && open === "always" && provider === value}
+                />
+              ) : (
+                (() => {
+                  const agent = ALWAYS_ON_AGENTS.find(
+                    (agent) => agent.adapter === value
+                  )!
+                  return cloud && !connection.agentPairing ? (
+                    <CloudAlwaysOnPanel connection={connection} agent={agent} />
+                  ) : (
+                    <AlwaysOnSetupPanel connection={connection} agent={agent} />
+                  )
+                })()
+              )}
+            </div>
+          ))}
+        </AgentSetupCategory>
+      </div>
+      <Collapsible
+        open={open === "manual"}
+        onOpenChange={(next) => setOpen(next ? "manual" : null)}
+      >
+        <CollapsibleTrigger className="mt-5 text-sm text-muted-foreground hover:text-foreground">
+          Using something else?{" "}
+          <span className="text-primary-text">Connect any MCP agent</span>
+        </CollapsibleTrigger>
+        <CollapsibleContent keepMounted>
+          <div className="pt-4">
+            {cloud ? (
+              <CloudManualInstallPanel connection={connection} />
+            ) : (
+              <ManualInstallPanel connection={connection} />
+            )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </section>
   )
 }
 
@@ -1043,26 +1008,17 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-foreground">Desktop app</span>
-        <Select
-          value={app}
-          onValueChange={(value) => {
-            setApp(value as DesktopAppChoice)
-            setAccess(null)
-          }}
-        >
-          <SelectTrigger aria-label="Desktop app" className="w-full sm:w-64">
-            <SelectValue>
-              {app === "claude-desktop" ? "Claude Desktop" : "ChatGPT desktop"}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="claude-desktop">Claude Desktop</SelectItem>
-            <SelectItem value="chatgpt-desktop">ChatGPT desktop</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <AgentSetupTabs
+        value={app}
+        onValueChange={(value) => {
+          setApp(value)
+          setAccess(null)
+        }}
+        options={[
+          { value: "claude-desktop", label: "Claude", platform: "claude" },
+          { value: "chatgpt-desktop", label: "ChatGPT", platform: "chatgpt" },
+        ]}
+      />
 
       {app === "claude-desktop" ? (
         <article className="flex flex-col gap-4">
@@ -1459,11 +1415,22 @@ export function ConnectedAgentsGroup() {
     mutationFn: async (id: string) => {
       const inventory = connectionsQuery.data
       const connection = inventory?.connections.find((entry) => entry.id === id)
-      const clientId = connection?.authKind === "oauth" && connection.target.kind === "mcp-client" ? connection.target.clientId : null
-      const grok = inventory?.grokBots?.find((entry) =>
-        (connection?.participant && entry.participantId === connection.participant.id) ||
-        (clientId && entry.connectionId.startsWith(`oauth:${clientId}:`)))
-      if (grok) await fetchJSON(`/api/grok-bot/${encodeURIComponent(grok.connectionId)}/configuration?scope=workspace`, { method: "DELETE" })
+      const clientId =
+        connection?.authKind === "oauth" &&
+        connection.target.kind === "mcp-client"
+          ? connection.target.clientId
+          : null
+      const grok = inventory?.grokBots?.find(
+        (entry) =>
+          (connection?.participant &&
+            entry.participantId === connection.participant.id) ||
+          (clientId && entry.connectionId.startsWith(`oauth:${clientId}:`))
+      )
+      if (grok)
+        await fetchJSON(
+          `/api/grok-bot/${encodeURIComponent(grok.connectionId)}/configuration?scope=workspace`,
+          { method: "DELETE" }
+        )
       return disconnectAgentConnection(id)
     },
     onSuccess: () => {
@@ -1479,9 +1446,20 @@ export function ConnectedAgentsGroup() {
   })
 
   const reconnect = useMutation({
-    mutationFn: (id: string) => fetchJSON(`/api/team/agents/${encodeURIComponent(id)}/reconnect`, {method: "POST"}),
-    onSuccess: () => { toast.success("Sign in again from your agent to finish reconnecting."); void queryClient.invalidateQueries({queryKey: ["agent-connections"]}) },
-    onError: error => toast.error(error instanceof Error ? error.message : "Could not reconnect the agent."),
+    mutationFn: (id: string) =>
+      fetchJSON(`/api/team/agents/${encodeURIComponent(id)}/reconnect`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      toast.success("Sign in again from your agent to finish reconnecting.")
+      void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
+    },
+    onError: (error) =>
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not reconnect the agent."
+      ),
   })
   const [editing, setEditing] = useState<AgentConnection | null>(null)
   const connections = connectionsQuery.data?.connections ?? []
@@ -1549,8 +1527,10 @@ export function ConnectedAgentsGroup() {
                           : "Not used yet"}
                       </p>
                     </div>
-                    {connection.canManage !== false && (connection.authKind === "local-token" ||
-                    (connection.authKind === "oauth" && connection.access)) ? (
+                    {connection.canManage !== false &&
+                    (connection.authKind === "local-token" ||
+                      (connection.authKind === "oauth" &&
+                        connection.access)) ? (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1559,11 +1539,22 @@ export function ConnectedAgentsGroup() {
                         Edit
                       </Button>
                     ) : null}
-                    {connection.canReconnect && <Button variant="outline" size="sm" disabled={reconnect.isPending} onClick={() => reconnect.mutate(connection.id)}>Reconnect</Button>}
+                    {connection.canReconnect && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={reconnect.isPending}
+                        onClick={() => reconnect.mutate(connection.id)}
+                      >
+                        Reconnect
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
-                      disabled={disconnect.isPending || connection.canManage === false}
+                      disabled={
+                        disconnect.isPending || connection.canManage === false
+                      }
                       onClick={() => disconnect.mutate(connection.id)}
                     >
                       Disconnect

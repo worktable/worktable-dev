@@ -71,6 +71,152 @@ test.afterAll(async () => {
   await harness?.stop()
 })
 
+test("Grok setup waits for a reply and recovers when a check fails after saving", async ({
+  page,
+}, testInfo) => {
+  const candidate = {
+    id: "oauth:grok:onboarding",
+    displayName: "Grok Bot",
+    participantId: "ptc_grokonboarding",
+  }
+  let signedIn = false
+  let configured = false
+  let checking = false
+  let verified = false
+  let saves = 0
+  let checks = 0
+  await page.route("**/api/workspace", async (route) => {
+    if (route.request().method() !== "GET") return route.continue()
+    const response = await route.fetch()
+    await route.fulfill({
+      response,
+      json: { ...(await response.json()), onboarding: { status: "pending" } },
+    })
+  })
+  await page.route("**/api/agent-connections", (route) =>
+    route.fulfill({
+      json: {
+        connections: [],
+        grokBotMcpUrl: "https://example.test/mcp",
+        grokBotCandidates: signedIn ? [candidate] : [],
+        grokBots: configured
+          ? [
+              {
+                connectionId: candidate.id,
+                participantId: candidate.participantId,
+                enabled: true,
+                executionMinutes: 30,
+                status: verified
+                  ? "ready"
+                  : checking
+                    ? "checking"
+                    : "configured",
+                ...(verified ? { verifiedAt: "2026-10-22T00:00:00Z" } : {}),
+                ...(checking && !verified
+                  ? {
+                      probe: {
+                        location: { kind: "worktable" },
+                        threadId: "thr_grokcheck",
+                        messageId: "msg_grokcheck",
+                        identityId: "idt_grokcheck",
+                      },
+                    }
+                  : {}),
+              },
+            ]
+          : [],
+      },
+    })
+  )
+  await page.route("**/api/grok-bot/**", (route) => {
+    if (route.request().method() === "PUT") {
+      expect(route.request().postDataJSON()).toMatchObject({
+        webhookKey: "grok-onboarding-secret",
+        enabled: true,
+      })
+      configured = true
+      saves += 1
+      return route.fulfill({ json: { ok: true } })
+    }
+    checks += 1
+    if (checks === 1)
+      return route.fulfill({
+        status: 503,
+        json: { error: "Could not start the check" },
+      })
+    checking = true
+    return route.fulfill({ json: { ok: true } })
+  })
+  await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
+  await page.getByLabel("Your name").fill("Grok owner")
+  await page.getByLabel("Worktable name").fill("Grok workspace")
+  await page
+    .getByRole("button", { name: "Create Worktable", exact: true })
+    .click()
+  await page.getByRole("button", { name: /^Always-on agents/ }).click()
+  await page.getByRole("tab", { name: "Grok Bot", exact: true }).click()
+  const options = page
+    .getByRole("list")
+    .filter({ hasText: "Connect Worktable" })
+  await options.getByRole("button", { name: "Continue", exact: true }).click()
+  signedIn = true
+  await page
+    .getByRole("button", { name: "Refresh connections", exact: true })
+    .click()
+  await page
+    .getByLabel("Webhook URL", { exact: true })
+    .fill("https://api2.cursor.sh/automations/webhook/onboarding_fixture")
+  await page
+    .getByLabel("Webhook key", { exact: true })
+    .fill("grok-onboarding-secret")
+  await page.screenshot({ path: testInfo.outputPath("grok-setup.png") })
+  await options.getByRole("button", { name: "Continue", exact: true }).click()
+  await page
+    .getByRole("button", { name: "Save and check", exact: true })
+    .click()
+  await expect(
+    page.getByRole("button", { name: "Check connection", exact: true })
+  ).toBeVisible()
+  // Saving alone does not finish onboarding. The failed check keeps its saved credentials.
+  await expect(
+    page.getByRole("button", { name: "Continue", exact: true })
+  ).toBeDisabled()
+  await page
+    .getByRole("button", { name: "Check connection", exact: true })
+    .click()
+  await expect(
+    page.getByText("Waiting for Grok Bot to reply…", { exact: true })
+  ).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "Continue", exact: true })
+  ).toBeDisabled()
+  verified = true
+  await page
+    .getByRole("button", { name: "Refresh status", exact: true })
+    .click()
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "Continue", exact: true })
+  ).toBeEnabled()
+  expect(saves).toBe(1)
+  expect(checks).toBe(2)
+  await page.screenshot({ path: testInfo.outputPath("grok-connected.png") })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(
+    page.getByRole("button", { name: "Continue", exact: true })
+  ).toBeVisible()
+  const tabs = await page.getByRole("tablist").boundingBox()
+  const status = await page
+    .getByText("Connected", { exact: true })
+    .boundingBox()
+  expect(tabs).not.toBeNull()
+  expect(status).not.toBeNull()
+  expect(status!.y).toBeGreaterThanOrEqual(tabs!.y + tabs!.height)
+  await page.screenshot({
+    path: testInfo.outputPath("grok-connected-mobile.png"),
+  })
+})
+
 test("a new owner creates their Worktable, connects agents and finishes their first steps in Getting Started", async ({
   page,
 }) => {
@@ -249,9 +395,7 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
   })
   await page.getByRole("button", { name: "Settings", exact: true }).click()
   const settings = page.getByRole("dialog")
-  await settings
-    .getByRole("button", { name: "Profile", exact: true })
-    .click()
+  await settings.getByRole("button", { name: "Profile", exact: true }).click()
   await profileStarted
   const displayName = settings.getByLabel("Display name")
   await displayName.fill("Name still being edited")

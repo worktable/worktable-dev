@@ -60,9 +60,12 @@ for (const mode of ["member", "share"] as const) {
       let state = { region: 'west', published: 'current' };
       let visitorState = {};
       let queries = 0;
-      let recordChanged = false;
+      let recordName = '';
+      let heldQueries = null;
       const subscriptions = new Set();
-      window.changeRecords = () => { recordChanged = true; if(subscriptions.has('sales')) frame.contentWindow.postMessage({type:'worktable.records.changed',collection:'sales'}, '*'); };
+      window.changeRecords = (name = 'Changed data', count = 1) => { recordName = name; if(subscriptions.has('sales')) for(let i = 0; i < count; i++) frame.contentWindow.postMessage({type:'worktable.records.changed',collection:'sales'}, '*'); };
+      window.holdRecordQueries = () => { heldQueries = []; };
+      window.failHeldQueries = () => { const held = heldQueries; heldQueries = null; for(const resolve of held) resolve(); };
       window.addEventListener('message', async event => {
         if(event.source !== frame.contentWindow)return;
         if(event.data.type === 'worktable.subscribe') { subscriptions.add(event.data.collection); return; }
@@ -79,7 +82,11 @@ for (const mode of ["member", "share"] as const) {
             answer.body = { state: { ...state, ...visitorState }, ...('${mode}' === 'share' ? { visitorState } : {}) };
           } else if(d.path.endsWith('/query')) {
             const current = ++queries;
-            answer.body = { records: [{ data: { name: recordChanged ? 'Changed data' : current === 1 ? 'Initial data' : 'Live data' } }] };
+            answer.body = { records: [{ data: { name: recordName || (current === 1 ? 'Initial data' : 'Live data') } }] };
+            if(heldQueries) {
+              await new Promise(resolve => heldQueries.push(resolve));
+              answer = { ok:false, status:503, body:{code:'REFRESH_FAILED',error:'Temporarily unavailable.'} };
+            }
           } else answer.body = { record: { id: 'created', data: { name: 'New record' } } };
         }
         frame.contentWindow.postMessage({ type:'worktable.api.response', id:d.id, ...answer }, '*');
@@ -143,8 +150,31 @@ for (const mode of ["member", "share"] as const) {
     ).toHaveLength(mode === "member" ? 1 : 0)
     await frame.getByRole("button", { name: "Watch records" }).click()
     await expect(frame.getByText("Live data", { exact: true })).toBeVisible()
-    await page.evaluate(() => (window as unknown as {changeRecords(): void}).changeRecords())
+    await page.evaluate(() =>
+      (window as unknown as { changeRecords(): void }).changeRecords()
+    )
     await expect(frame.getByText("Changed data", { exact: true })).toBeVisible()
+    const queryCount = () =>
+      calls.filter((call) => call.path.endsWith("/sales/query")).length
+    const beforeBurst = queryCount()
+    await page.evaluate(() => {
+      const host = window as unknown as {
+        holdRecordQueries(): void
+        changeRecords(name: string, count?: number): void
+      }
+      host.holdRecordQueries()
+      host.changeRecords("Before burst")
+    })
+    await expect.poll(queryCount).toBe(beforeBurst + 1)
+    await page.evaluate(() =>
+      (
+        window as unknown as {
+          changeRecords(name: string, count: number): void
+        }
+      ).changeRecords("Latest burst data", 100)
+    )
+    // This reply also follows the parent's entire event burst, so it proves
+    // ordinary actions remain usable while the subscription read is blocked.
     await frame.getByRole("button", { name: "Read denied data" }).click()
     await expect(
       frame.getByText("Access refused", { exact: true })
@@ -152,6 +182,14 @@ for (const mode of ["member", "share"] as const) {
     await expect(frame.getByRole("status")).toHaveText(
       "This collection is not granted."
     )
+    expect(queryCount()).toBe(beforeBurst + 1)
+    await page.evaluate(() =>
+      (window as unknown as { failHeldQueries(): void }).failHeldQueries()
+    )
+    await expect(
+      frame.getByText("Latest burst data", { exact: true })
+    ).toBeVisible()
+    expect(queryCount()).toBe(beforeBurst + 2)
     await frame.getByRole("button", { name: "Reset choices" }).click()
     await expect(
       frame.getByText("Choices reset", { exact: true })

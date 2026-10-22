@@ -351,7 +351,9 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
   await send.click()
   await expect.poll(() => f.posts.length).toBe(5)
   await page.clock.runFor(75_000)
-  await expect(send).toBeDisabled()
+  await expect(
+    page.getByRole("button", { name: "Sending…", exact: true })
+  ).toBeDisabled()
   expect(f.posts).toHaveLength(5)
   releaseSlow()
   await expect(page.locator(".comment-list")).toContainText(

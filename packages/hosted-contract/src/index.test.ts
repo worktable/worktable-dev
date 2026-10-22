@@ -599,7 +599,7 @@ it("accepts only bounded isolated programs as live tool payloads", () => {
     runtime: "isolated-v1",
     asset: "a".repeat(64),
     source: "const title = 'Équipe 東京';",
-  }
+  } as const
   expect(PublicShareTool.parse(tool)).toEqual(tool)
   for (const invalid of [
     "<script>window.exfiltrate()</script>",

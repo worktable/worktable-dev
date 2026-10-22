@@ -25,8 +25,9 @@ import {
   visitorCommentNamespace,
   visitorNamespaceStillCurrent,
   notifyVisitorComments,
+  commentPausesForLinks,
 } from "../visitor-comment-access.ts"
-import { pauseVisitorComments } from "../visitor-comment-store.ts"
+import { commentPause, pauseVisitorComments } from "../visitor-comment-store.ts"
 import { prepareShareLinkAccess } from "../link-sharing-access.ts"
 import { spaceGeneration } from "../workspace-read-model.ts"
 import { linkSchemaGeneration } from "../link-schema-generation.ts"
@@ -108,7 +109,8 @@ function publicLink(
   place: Place,
   canManage: boolean,
   policy: SharingPolicy,
-  now = Date.now()
+  now = Date.now(),
+  autoPaused = false
 ): ShareLink {
   const level = ShareLinkLevelSchema.safeParse(link.level)
   const blockedBy =
@@ -140,7 +142,7 @@ function publicLink(
     ...(status === "blocked" && blockedBy ? { blockedBy } : {}),
     tokenHint: link.tokenHint,
     canManage,
-    comments: { ...link.comments, autoPaused: false },
+    comments: { ...link.comments, autoPaused },
   }
 }
 
@@ -264,13 +266,16 @@ shareLinksRouter.get("/", async (c) => {
   )
   if (!("documentId" in resolution)) return notFound(c)
   const { data: space } = await readSpace(spaceId)
+  const links = listDocumentShareLinks(spaceId, resolution.documentId)
+  const pauses = await commentPausesForLinks(links)
+  const stillRead = authorizeShareAction(identity, "read", spaceId)
+  if (!stillRead.allowed) return denied(c, stillRead)
   const policy = currentSharingPolicy()
   const create = authorizeShareAction(identity, "create", spaceId, { policy })
   const canCreate =
     create.allowed &&
     resolution.shareable &&
     Boolean(space && !getSpaceArchiveInfo(space))
-  const links = listDocumentShareLinks(spaceId, resolution.documentId)
   const now = Date.now()
   const body: DocumentShareLinks = {
     links: links.map((link) =>
@@ -282,7 +287,8 @@ shareLinksRouter.get("/", async (c) => {
           creatorId: link.createdById,
         }).allowed,
         policy,
-        now
+        now,
+        pauses.get(link.id) === "spike"
       )
     ),
     canCreate,
@@ -553,6 +559,8 @@ shareLinksRouter.post("/", async (c) => {
     link: publicLink(created.link, created.place, true, currentSharingPolicy()),
     url: `${config.shareOrigin}/s/${encodeURIComponent(config.workspaceId)}/${created.token}`,
   }
+  if (created.link.level === "comment")
+    notifyVisitorComments(created.link.spaceId, created.link.documentId, created.link.id)
   return c.json(body, 201)
 })
 
@@ -612,11 +620,11 @@ shareLinksRouter.patch("/:linkId", async (c) => {
       : input.data.password === null
         ? null
         : await hashSharePassword(input.data.password)
-  const resume =
-    sharingPreviewEnabled() && input.data.comments?.acceptComments === true
+  const commentContext =
+    sharingPreviewEnabled() && (link.level === "comment" || input.data.level === "comment" || input.data.comments?.acceptComments === true)
       ? await visitorCommentNamespace()
       : null
-  if (resume && !(await visitorNamespaceStillCurrent(resume)))
+  if (commentContext && !(await visitorNamespaceStillCurrent(commentContext)))
     return notFound(c)
   const latest = getShareLink(link.id)
   if (!latest) return notFound(c)
@@ -660,8 +668,10 @@ shareLinksRouter.patch("/:linkId", async (c) => {
     ...(input.data.comments ? { comments: input.data.comments } : {}),
   })
   if (!updated) return notFound(c)
-  if (resume) {
-    pauseVisitorComments(resume.worktableId, updated.id, false)
+  if (commentContext && input.data.comments?.acceptComments === true) {
+    pauseVisitorComments(commentContext.worktableId, updated.id, false)
+  }
+  if (commentContext && ((input.data.comments && Object.keys(input.data.comments).length > 0) || input.data.level !== undefined)) {
     notifyVisitorComments(updated.spaceId, updated.documentId, updated.id)
   }
   const places = await placesOf([updated])
@@ -670,7 +680,9 @@ shareLinksRouter.patch("/:linkId", async (c) => {
       updated,
       places.get(updated.id) ?? null,
       true,
-      currentSharingPolicy()
+      currentSharingPolicy(),
+      Date.now(),
+      Boolean(commentContext && commentPause(commentContext.worktableId, updated.id) === "spike")
     ),
   })
 })
@@ -726,10 +738,16 @@ shareLinksRouter.get("/all", async (c) => {
     limit: PAGE_SIZE,
   })
   const places = await placesOf(page.links)
+  const pauses = await commentPausesForLinks(page.links)
+  const stillEverything = authorizeShareAction(identity, "oversee", null).allowed
+  const stillVisible = visible.filter(space => authorizeShareAction(identity, "oversee", space.id).allowed)
+  if ((spaceId && !authorizeShareAction(identity, "oversee", spaceId).allowed) || (!spaceId && !stillEverything && stillVisible.length === 0))
+    return denied(c, {allowed: false, status: 403, code: "FORBIDDEN"})
+  const visibleIds = new Set(stillVisible.map(space => space.id))
   const policy = currentSharingPolicy()
   const now = Date.now()
   const body: ShareLinksPage = {
-    links: page.links.map((link) =>
+    links: page.links.filter(link => stillEverything || visibleIds.has(link.spaceId)).map((link) =>
       publicLink(
         link,
         places.get(link.id) ?? null,
@@ -738,11 +756,12 @@ shareLinksRouter.get("/all", async (c) => {
           creatorId: link.createdById,
         }).allowed,
         policy,
-        now
+        now,
+        pauses.get(link.id) === "spike"
       )
     ),
     nextCursor: page.nextCursor,
-    spaces: visible.map((space) => ({ id: space.id, name: space.name })),
+    spaces: stillVisible.map((space) => ({ id: space.id, name: space.name })),
   }
   return c.json(body)
 })

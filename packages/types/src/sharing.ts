@@ -198,8 +198,8 @@ export const DocumentSharingSummarySchema = z.object({
   /** Next count change due to expiry, so an open page refreshes once then. */
   nextExpiry: IsoTimestampSchema.optional(),
   canCreate: z.boolean(),
-  /** Present only to readers who may read visitor comments, when the document has a comment link or comments. */
-  visitorComments: z.object({ documentId: z.string(), newCount: z.number().int().min(0) }).optional(),
+  /** Only for people who may read visitor comments. `available` controls whether its tab appears. */
+  visitorComments: z.object({ documentId: z.string(), newCount: z.number().int().min(0), available: z.boolean().optional() }).optional(),
 })
 export type DocumentSharingSummary = z.infer<
   typeof DocumentSharingSummarySchema
@@ -363,6 +363,7 @@ export interface VisitorCommentReply {
 /** A document's visitor comments, for members. */
 export interface VisitorCommentsResponse {
   comments: VisitorComment[]
+  pausedLinks?: {id: string; label: string; canResume: boolean}[]
   nextCursor?: string | null
 }
 

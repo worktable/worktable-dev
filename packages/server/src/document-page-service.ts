@@ -311,7 +311,7 @@ async function pageForHandle(
   const links = sharing
     ? sharingSummary(spaceId, handle, canCreateShareLinks)
     : undefined
-  const visitorSummary = links && visitorComments && handle.identity === "durable" && !handle.document.archived
+  const visitorSummary = visitorComments && handle.identity === "durable" && !handle.document.archived
     ? await visitorComments(handle.documentId)
     : undefined
   return {
@@ -347,7 +347,7 @@ async function pageForHandle(
         }
       : {}),
     ...(metadata?.contributors ? { contributors: metadata.contributors } : {}),
-    ...(links ? { sharing: {...links, ...(visitorSummary ? {visitorComments: visitorSummary} : {})} } : {}),
+    ...(links || visitorSummary ? { sharing: {...(links ?? {activeLinks: 0, canCreate: false}), ...(visitorSummary ? {visitorComments: visitorSummary} : {})} } : {}),
   }
 }
 

@@ -13,6 +13,7 @@ import {
 } from "@worktable/types"
 import {
   canDeleteVisitorComment,
+  commentPausesForLinks,
   memberVisitorComments,
   notifyVisitorComments,
   visitorCommentNamespace,
@@ -30,6 +31,8 @@ import {
   VisitorCommentsUnavailable,
   type StoredVisitorComment,
 } from "../visitor-comment-store.ts"
+import { listDocumentShareLinks } from "../share-links-store.ts"
+import { authorizeShareAction, currentSharingPolicy } from "../share-policy.ts"
 
 export const visitorCommentsRouter = new Hono()
 const Cursor = z.strictObject({
@@ -79,6 +82,8 @@ visitorCommentsRouter.get("/", async (c) => {
   }
   const spaceId = c.req.param("spaceId")!
   const context = await visitorCommentNamespace()
+  const links = listDocumentShareLinks(spaceId, parsed.data).filter(link => link.level === "comment")
+  const pauses = await commentPausesForLinks(links)
   if (!(await visitorDocumentInSpace(spaceId, parsed.data)))
     return c.json({ error: "Not found" }, 404)
   if (
@@ -94,8 +99,14 @@ visitorCommentsRouter.get("/", async (c) => {
   })
   const page = rows.slice(0, 100)
   const last = page.at(-1)
+  const policy = currentSharingPolicy()
   return c.json({
-    comments: memberVisitorComments(c, spaceId, page),
+    comments: memberVisitorComments(c, spaceId, page, policy),
+    pausedLinks: links.filter(link => pauses.get(link.id) === "spike").map(link => ({
+      id: link.id,
+      label: link.label,
+      canResume: authorizeShareAction(c.get("identity"), "manage", spaceId, {creatorId: link.createdById, policy}).allowed,
+    })),
     nextCursor:
       rows.length > 100 && last
         ? Buffer.from(

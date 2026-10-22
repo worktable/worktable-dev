@@ -1,3 +1,4 @@
+import { useVisitorCommentsPanel } from "@/hooks/use-visitor-comments-panel"
 import { useVersionSnapshot } from "@/lib/version-history"
 import {
   VersionHistoryPanel,
@@ -277,6 +278,7 @@ function WidgetDetailPage({
   // live updates arrive via the space subscription above, which invalidates
   // the ["annotations", spaceId] prefix on annotation_update events.
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
+  useVisitorCommentsPanel(page?.sharing?.visitorComments, setAnnotationsOpen, setVersionsOpen)
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(
     null
   )
@@ -893,7 +895,7 @@ function WidgetDetailPage({
           width={384}
         >
           <AnnotationPanel
-            visitorComments={page?.sharing?.visitorComments ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
+            visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
             readOnly={readOnly}
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
@@ -971,7 +973,7 @@ function WidgetDetailPage({
                 Annotations for this HTML doc.
               </DrawerDescription>
               <AnnotationPanel
-            visitorComments={page?.sharing?.visitorComments ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
+            visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
                 readOnly={readOnly}
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}

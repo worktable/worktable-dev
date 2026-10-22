@@ -16,7 +16,9 @@ import type {
   ShareLink,
   LinkGrant,
   ShareLinkAccess,
+  ShareLinkCommentSettings,
 } from "@worktable/types"
+import { DEFAULT_SHARE_LINK_COMMENT_SETTINGS } from "@worktable/types"
 import { SHARE_LINK_LABEL_MAX_LENGTH } from "@worktable/types/constants"
 import { Button } from "@worktable/ui/components/button"
 import { Callout } from "@worktable/ui/components/callout"
@@ -82,8 +84,11 @@ import {
   shareLinksQueryKey,
 } from "@/lib/share-link-management-api"
 import { checkShareLinkAccess } from "@/lib/share-link-access-api"
+import { ShareLinkCommentSettingsFields } from "./share-link-comment-settings"
 
 interface LinkDraft {
+  level: "view" | "comment"
+  comments: ShareLinkCommentSettings
   label: string
   expiry: ShareLinkExpiry
   passwordEnabled: boolean
@@ -95,6 +100,8 @@ interface LinkDraft {
 }
 
 const NEW_LINK: LinkDraft = {
+  level: "view",
+  comments: DEFAULT_SHARE_LINK_COMMENT_SETTINGS,
   label: "",
   expiry: "never",
   passwordEnabled: false,
@@ -183,6 +190,7 @@ export function ShareLinksDialog({
       createShareLink({
         target: { kind: target.kind, spaceId, path },
         label: input.label.trim(),
+        ...(preview ? {level: input.level, comments: input.comments} : {}),
         ...(input.live &&
         input.grant &&
         Object.keys(input.grant.collections).length > 0 &&
@@ -209,8 +217,11 @@ export function ShareLinksDialog({
   const update = useMutation({
     mutationFn: ({ link, input }: { link: ShareLink; input: LinkDraft }) => {
       const expiresAt = shareLinkExpiresAt(input.expiry)
+      const comments = Object.fromEntries((Object.keys(DEFAULT_SHARE_LINK_COMMENT_SETTINGS) as Array<keyof ShareLinkCommentSettings>).filter(key => input.comments[key] !== link.comments[key]).map(key => [key, input.comments[key]]))
       return updateShareLink(link.id, {
         label: input.label.trim(),
+        ...(preview && input.level !== link.level ? {level: input.level} : {}),
+        ...(preview && Object.keys(comments).length > 0 ? {comments} : {}),
         ...(preview && input.accessChanged ? { grant: input.grant } : {}),
         ...(expiresAt !== undefined ? { expiresAt } : {}),
         ...(preview
@@ -247,6 +258,14 @@ export function ShareLinksDialog({
       }
       setRevoking(null)
       setAnnouncement("Link revoked")
+    },
+  })
+
+  const changeComments = useMutation({
+    mutationFn: ({link, comments}: {link: ShareLink; comments: Partial<ShareLinkCommentSettings>}) => updateShareLink(link.id, {comments}),
+    onSuccess: ({link}) => {
+      writeLinks(current => current.map(candidate => candidate.id === link.id ? link : candidate))
+      setAnnouncement("Comment settings saved")
     },
   })
 
@@ -298,7 +317,7 @@ export function ShareLinksDialog({
     }))
     setCheckedGrant(null)
   }
-  const saving = create.isPending || update.isPending
+  const saving = create.isPending || update.isPending || changeComments.isPending
   // A new link waits for the list, which shows its URL once made.
   const accessChecked =
     draft.grant !== null && checkedGrant === JSON.stringify(draft.grant)
@@ -361,6 +380,8 @@ export function ShareLinksDialog({
     setDraft(
       next?.kind === "edit"
         ? {
+            level: next.link.level === "comment" ? "comment" : "view",
+            comments: {...next.link.comments},
             label: next.link.label,
             expiry: next.link.expiresAt ? "keep" : "never",
             passwordEnabled: next.link.hasPassword,
@@ -466,6 +487,8 @@ export function ShareLinksDialog({
                     setRevoking(link)
                   }}
                   onCopied={() => setAnnouncement("Link copied")}
+                  comments={preview}
+                  onCommentsChange={(link, comments) => changeComments.mutate({link, comments})}
                 />
               ) : null
             ) : active > 0 ? (
@@ -482,8 +505,10 @@ export function ShareLinksDialog({
                 passwords={preview}
                 passwordRequired={list.data?.policy.requirePassword ?? false}
                 hasPassword={editingLink?.hasPassword ?? false}
+                commentLevel={preview && (list.data?.policy.levels.includes("comment") ?? false)}
                 container={portalContainer}
               >
+                {preview && draft.level === "comment" ? <ShareLinkCommentSettingsFields value={draft.comments} onChange={comments => setDraft(current => ({...current, comments}))} disabled={saving} allowAll={list.data?.policy.allowVisitorsSeeAll ?? false} container={portalContainer} /> : null}
                 {preview && target.kind === "html" ? (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between gap-3">
@@ -556,6 +581,7 @@ export function ShareLinksDialog({
             {update.isError ? (
               <InlineError>Couldn’t save the link. Try again.</InlineError>
             ) : null}
+            {changeComments.isError ? <InlineError>Couldn’t save comment settings. Try again.</InlineError> : null}
 
             {target.kind === "html" && !draft.grant ? <HtmlSafetyNote /> : null}
 
@@ -658,6 +684,8 @@ export function ShareLinkList({
   onEdit,
   onRevoke,
   onCopied,
+  comments = false,
+  onCommentsChange,
 }: {
   container?: HTMLElement | null
   links: readonly ShareLink[]
@@ -668,6 +696,8 @@ export function ShareLinkList({
   onEdit: (link: ShareLink) => void
   onRevoke: (link: ShareLink) => void
   onCopied: () => void
+  comments?: boolean
+  onCommentsChange?: (link: ShareLink, comments: Partial<ShareLinkCommentSettings>) => void
 }) {
   return (
     <ItemGroup aria-label="Links" className="gap-0 rounded-xl card-surface p-1">
@@ -704,6 +734,13 @@ export function ShareLinkList({
                   </span>
                 ))}
               </ItemDescription>
+              {comments && link.level === "comment" ? <div className="space-y-2 pt-2">
+                {link.comments.autoPaused ? <p className="text-xs text-warning">Paused after a burst of comments</p> : null}
+                {link.canManage && onCommentsChange ? <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-2 text-xs"><Switch checked={link.comments.acceptComments} disabled={disabled} onCheckedChange={acceptComments => onCommentsChange(link, {acceptComments})} />Accept comments</label>
+                  {link.comments.autoPaused ? <Button type="button" size="xs" variant="outline" disabled={disabled} onClick={() => onCommentsChange(link, {acceptComments: true})}>Resume comments</Button> : null}
+                </div> : null}
+              </div> : null}
             </ItemContent>
             {link.canManage ? (
               <ItemActions>
@@ -796,6 +833,7 @@ function ShareLinkForm({
   passwords,
   passwordRequired,
   hasPassword,
+  commentLevel,
   container,
   children,
 }: {
@@ -803,6 +841,7 @@ function ShareLinkForm({
   passwordRequired: boolean
   container?: HTMLElement | null
   hasPassword: boolean
+  commentLevel: boolean
   children?: React.ReactNode
   draft: LinkDraft
   onChange: (draft: LinkDraft) => void
@@ -841,17 +880,18 @@ function ShareLinkForm({
           <span id="share-link-access" className="block text-sm font-medium">
             Access
           </span>
-          <Select value="view" disabled={disabled}>
+          <Select value={draft.level} disabled={disabled} onValueChange={level => {if (level) onChange({...draft, level})}}>
             <SelectTrigger
               aria-labelledby="share-link-access"
               className="h-10 w-full"
             >
-              <SelectValue>{SHARE_LINK_LEVEL_LABELS.view}</SelectValue>
+              <SelectValue>{SHARE_LINK_LEVEL_LABELS[draft.level]}</SelectValue>
             </SelectTrigger>
             <SelectContent container={container}>
               <SelectItem value="view">
                 {SHARE_LINK_LEVEL_LABELS.view}
               </SelectItem>
+              {commentLevel || draft.level === "comment" ? <SelectItem value="comment" disabled={!commentLevel}>{SHARE_LINK_LEVEL_LABELS.comment}</SelectItem> : null}
             </SelectContent>
           </Select>
         </div>

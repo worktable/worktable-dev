@@ -21,12 +21,12 @@ import { linkChangeJournal } from "./link-change-journal.ts"
 import {
   linkRecordGeneration,
   linkSchemaGeneration,
+  linkDocumentGeneration,
 } from "./link-schema-generation.ts"
 import { LinkToolChanged, readLinkTool } from "./link-tool.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 import { recordIndex, recordIndexEnabled } from "./record-index.ts"
 import { readWidgetState } from "./record-store.ts"
-import { spaceGeneration } from "./workspace-read-model.ts"
 import { runAsLinkVisitor, withLinkGrantRead } from "./team-policy.ts"
 
 class LinkRecordsBusy extends Error {
@@ -198,7 +198,7 @@ export function linkBridge(getShareOrigin: () => string | null) {
               ])
             )
             .digest("hex")
-          linkChangeJournal.touch({
+          const journal = linkChangeJournal.touch({
             id: view.link.id,
             spaceId: view.link.spaceId,
             authorization,
@@ -213,6 +213,8 @@ export function linkBridge(getShareOrigin: () => string | null) {
                 view.link.id,
                 view.link.grantRevision,
                 view.link.passwordRevision,
+                view.policyRevision,
+                journal,
                 generation,
                 tool.generation,
                 tool.schemaGeneration,
@@ -237,11 +239,16 @@ export function linkBridge(getShareOrigin: () => string | null) {
                 permissions: tool.permissions,
                 schemas: tool.schemas,
                 onQueryRows: (collection, rows) => {
-                  if (!expired)
-                    linkChangeJournal.queried(view.link.id, collection, rows)
+                  // This observation belongs to the shared load, not the
+                  // initiating response's deadline. Keep it for other callers.
+                  linkChangeJournal.queried(
+                    view.link.id,
+                    collection,
+                    rows,
+                    journal
+                  )
                 },
                 loadRows: async (collection) => {
-                  if (expired) throw new LinkRecordsBusy()
                   if (!recordIndexEnabled()) throw new LinkRecordsBusy()
                   const rows = recordIndex.listCollection(
                     view.link.spaceId,
@@ -297,8 +304,10 @@ export function linkBridge(getShareOrigin: () => string | null) {
           changed =
             linkRecordGeneration(view.link.spaceId, collections) !==
               generation ||
-            spaceGeneration(view.link.spaceId) !== tool.generation ||
-            linkSchemaGeneration(view.link.spaceId) !== tool.schemaGeneration
+            linkDocumentGeneration(view.link.spaceId, view.path) !==
+              tool.generation ||
+            linkSchemaGeneration(view.link.spaceId, collections) !==
+              tool.schemaGeneration
         }
         if (
           !sharingPreviewEnabled() ||

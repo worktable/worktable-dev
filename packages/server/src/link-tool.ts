@@ -1,4 +1,7 @@
-import { linkSchemaGeneration } from "./link-schema-generation.ts"
+import {
+  linkDocumentGeneration,
+  linkSchemaGeneration,
+} from "./link-schema-generation.ts"
 import { createHash } from "node:crypto"
 import { createLinkKey, type LinkKey } from "./link-grant-view.ts"
 import { injectWidgetRuntime } from "./widget-authoring.ts"
@@ -7,7 +10,6 @@ import { readWidgetDocument } from "./widget-store.ts"
 import { readLinkGrantSchemas } from "./link-grant.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { publicShareKind } from "./document-page-service.ts"
-import { spaceGeneration } from "./workspace-read-model.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 import { runAsLinkVisitor, withLinkGrantRead } from "./team-policy.ts"
 import type { ShareLinkView } from "./share-link-views.ts"
@@ -35,9 +37,18 @@ const tools = new Map<
 let bytes = 0
 const MAX_BYTES = 16 * 1024 * 1024
 
+function trimTools(): void {
+  for (const [oldKey, old] of tools) {
+    if (tools.size <= 32 && bytes <= MAX_BYTES) break
+    tools.delete(oldKey)
+    bytes -= old.bytes
+  }
+}
+
 export function readLinkTool(view: ShareLinkView): Promise<LinkTool | null> {
-  const generation = spaceGeneration(view.link.spaceId)
-  const schemaGeneration = linkSchemaGeneration(view.link.spaceId)
+  const collections = Object.keys(view.link.grant?.collections ?? {})
+  const generation = linkDocumentGeneration(view.link.spaceId, view.path)
+  const schemaGeneration = linkSchemaGeneration(view.link.spaceId, collections)
   const key = `${workspaceCacheKey()}\0${view.link.id}\0${view.link.spaceId}\0${view.link.documentId}\0${view.path}\0${view.link.grantRevision}\0${generation}\0${schemaGeneration}`
   const cached = tools.get(key)
   if (cached) return cached.value
@@ -63,8 +74,10 @@ export function readLinkTool(view: ShareLinkView): Promise<LinkTool | null> {
             readLinkGrantSchemas(view.link.spaceId, grant),
           ])
           if (
-            spaceGeneration(view.link.spaceId) !== generation ||
-            linkSchemaGeneration(view.link.spaceId) !== schemaGeneration
+            linkDocumentGeneration(view.link.spaceId, view.path) !==
+              generation ||
+            linkSchemaGeneration(view.link.spaceId, collections) !==
+              schemaGeneration
           )
             throw new LinkToolChanged()
           if (!data || data.widget.archive) return { tool: null }
@@ -82,20 +95,20 @@ export function readLinkTool(view: ShareLinkView): Promise<LinkTool | null> {
             schemaGeneration,
             schemas,
           }
-          for (const [oldKey, old] of tools) {
-            if (tools.size <= 32 && bytes <= MAX_BYTES) break
-            tools.delete(oldKey)
-            bytes -= old.bytes
-          }
+          trimTools()
           return { tool }
         }
       )
       return "tool" in resolved ? resolved.tool : null
     })
   ).catch((error) => {
-    if (tools.get(key) === entry) tools.delete(key)
+    if (tools.get(key) === entry) {
+      tools.delete(key)
+      bytes -= entry.bytes
+    }
     throw error
   })
   tools.set(key, entry)
+  trimTools()
   return entry.value
 }

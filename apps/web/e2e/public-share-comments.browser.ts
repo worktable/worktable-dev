@@ -367,18 +367,17 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
   )
   await page.emulateMedia({ media: "screen", colorScheme: "light" })
   await page.setViewportSize({ width: 390, height: 844 })
-  // Drive the platform timeout from Playwright's clock; the request itself
-  // stays pending until the production code aborts it.
+  // Exercise the real deadline and cancellation without optional signal helpers.
   await page.clock.install()
   await page.evaluate(() => {
-    AbortSignal.timeout = (ms) => {
-      const controller = new AbortController()
-      setTimeout(
-        () => controller.abort(new DOMException("Timed out", "TimeoutError")),
-        ms
-      )
-      return controller.signal
-    }
+    Object.defineProperty(AbortSignal, "any", {
+      value: undefined,
+      configurable: true,
+    })
+    Object.defineProperty(AbortSignal, "timeout", {
+      value: undefined,
+      configurable: true,
+    })
   })
   // A valid gateway submission can include verification, routing and the
   // device headers/body budgets. Keep the original request alive.

@@ -167,8 +167,12 @@
    * @returns {Promise<CallResult>}
    */
   async function call(body, remainingMs = REQUEST_BUDGET_MS, cancel) {
-    const deadline = AbortSignal.timeout(Math.max(1, remainingMs))
-    const signal = cancel ? AbortSignal.any([deadline, cancel]) : deadline
+    const controller = new AbortController()
+    const signal = controller.signal
+    const abort = () => controller.abort()
+    if (cancel?.aborted) abort()
+    else cancel?.addEventListener("abort", abort, { once: true })
+    const timer = setTimeout(abort, Math.max(1, remainingMs))
     /** @type {Record<string, string>} */
     const headers = {
       "x-worktable-share-capability": token,
@@ -186,7 +190,7 @@
       })
       const retryAfter = Number(response.headers.get("Retry-After"))
       const answer = await response.json().catch(() => null)
-      signal.throwIfAborted()
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError")
       return {
         status: response.status,
         answer,
@@ -195,6 +199,9 @@
       }
     } catch {
       return { status: 0, answer: null, retryAfter: 0 }
+    } finally {
+      clearTimeout(timer)
+      cancel?.removeEventListener("abort", abort)
     }
   }
 

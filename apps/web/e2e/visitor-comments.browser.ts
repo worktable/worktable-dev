@@ -215,6 +215,7 @@ for (const appearance of [
         ).toMatchObject({ visitorName: null, quoteEdited: true })
 
         privateFixture(harness, path, appearance.kind, "retain")
+        await expect(page).toHaveURL(`${url}#visitors`)
         await page.reload({ waitUntil: "networkidle" })
         const receipt = page
           .locator("article")

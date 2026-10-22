@@ -8,12 +8,19 @@ export function useVisitorCommentsPanel(
   openComments: (open: boolean) => void,
   openHistory: (open: boolean) => void
 ): void {
-  const hash = useLocation({select: location => location.hash})
+  const location = useLocation()
   const documentId = summary?.documentId
   const available = Boolean(summary && summary.available !== false)
   useEffect(() => {
-    if (hash !== "visitors" || !available) return
+    if (location.hash !== "visitors" || !available) return
     openHistory(false)
     openComments(true)
-  }, [hash, documentId, available, openComments, openHistory])
+  }, [
+    location.hash,
+    location.pathname,
+    documentId,
+    available,
+    openComments,
+    openHistory,
+  ])
 }

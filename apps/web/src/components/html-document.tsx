@@ -278,7 +278,6 @@ function WidgetDetailPage({
   // live updates arrive via the space subscription above, which invalidates
   // the ["annotations", spaceId] prefix on annotation_update events.
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
-  useVisitorCommentsPanel(page?.sharing?.visitorComments, setAnnotationsOpen, setVersionsOpen)
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(
     null
   )
@@ -334,6 +333,9 @@ function WidgetDetailPage({
     setActiveAnnotationId(null)
     setComposerOpen(false)
   }, [spaceId, widgetId])
+
+  // Apply the requested panel after the new document's panel reset.
+  useVisitorCommentsPanel(page?.sharing?.visitorComments, setAnnotationsOpen, setVersionsOpen)
 
   // Load the selected snapshot for the compare pane header label.
 

@@ -1,4 +1,4 @@
-import { useId, useState } from "react"
+import { useCallback, useId, useState } from "react"
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query"
 import { MoreVertical } from "lucide-react"
 import type {
@@ -50,6 +50,16 @@ export function VisitorCommentsPanel({
   onViewComment: (annotation: Annotation) => void
 }) {
   const scrollRef = useScrollFade<HTMLDivElement>()
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(
+    null
+  )
+  const panelRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      scrollRef(node)
+      setPortalContainer(node?.closest<HTMLElement>("[role='dialog']") ?? null)
+    },
+    [scrollRef]
+  )
   const queryClient = useQueryClient()
   const [resuming, setResuming] = useState<string | null>(null)
   const list = useInfiniteQuery({
@@ -78,7 +88,7 @@ export function VisitorCommentsPanel({
   const comments = list.data.pages.flatMap((page) => page.comments)
   return (
     <div
-      ref={scrollRef}
+      ref={panelRef}
       className="scroll-fade h-full min-h-0 overflow-auto px-4 pb-4"
     >
       {list.data.pages[0]?.pausedLinks?.map((link) => (
@@ -124,6 +134,7 @@ export function VisitorCommentsPanel({
               comment={comment}
               annotations={annotations}
               onViewComment={onViewComment}
+              portalContainer={portalContainer}
             />
           ))}
         </div>
@@ -156,11 +167,13 @@ function VisitorRow({
   comment,
   annotations,
   onViewComment,
+  portalContainer,
 }: {
   context: Context
   comment: VisitorComment
   annotations: Annotation[]
   onViewComment: (annotation: Annotation) => void
+  portalContainer: HTMLElement | null
 }) {
   const queryClient = useQueryClient()
   const [form, setForm] = useState<"pass" | "reply" | null>(null)
@@ -220,7 +233,7 @@ function VisitorRow({
             >
               <MoreVertical className="size-4" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" container={portalContainer}>
               {comment.body && (
                 <DropdownMenuItem onClick={() => setForm("reply")}>
                   Reply

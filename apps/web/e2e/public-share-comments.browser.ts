@@ -46,9 +46,11 @@ async function fixture(page: Page, live = false) {
   const outsideRequests: string[] = []
   const backend: {
     frames: number
+    containment: boolean
     onPost: (post: Post) => Promise<"ok" | "error" | "uncertain">
   } = {
     frames: 0,
+    containment: true,
     onPost: async () => "ok",
   }
   page.on("pageerror", (error) => errors.push(error.message))
@@ -90,16 +92,21 @@ async function fixture(page: Page, live = false) {
         body: html,
         headers: {
           "Referrer-Policy": "no-referrer",
-          "Content-Security-Policy": [
-            "default-src 'none'",
-            `script-src ${shareOrigin + PUBLIC_SHARE_ASSET_PATHS.comments} ${shareOrigin + PUBLIC_SHARE_ASSET_PATHS.live}`,
-            "style-src 'unsafe-inline'",
-            "font-src 'self'",
-            "connect-src 'self'",
-            `frame-src https://tool.example.test ${checkOrigin + PUBLIC_SHARE_COMMENT_CHECK_PATH}`,
-            "base-uri 'none'",
-            "form-action 'none'",
-          ].join("; "),
+          ...(backend.containment
+            ? {
+                "Content-Security-Policy": [
+                  "default-src 'none'",
+                  `script-src ${shareOrigin + PUBLIC_SHARE_ASSET_PATHS.comments} ${shareOrigin + PUBLIC_SHARE_ASSET_PATHS.live}`,
+                  "style-src 'unsafe-inline'",
+                  "img-src 'self'",
+                  "font-src 'self'",
+                  "connect-src 'self'",
+                  `frame-src https://tool.example.test ${checkOrigin + PUBLIC_SHARE_COMMENT_CHECK_PATH}`,
+                  "base-uri 'none'",
+                  "form-action 'none'",
+                ].join("; "),
+              }
+            : {}),
         },
       })
     }
@@ -133,6 +140,8 @@ async function fixture(page: Page, live = false) {
         contentType: "text/javascript",
         body: source(`packages/ui/src/${scripts[target.pathname]}`),
       })
+    if (target.pathname === PUBLIC_SHARE_ASSET_PATHS.icon)
+      return route.fulfill({ contentType: "image/svg+xml", body: icon })
     if (target.pathname.endsWith(".woff2")) {
       const name = target.pathname.endsWith("fraunces-variable-latin.woff2")
         ? "fraunces-variable-latin.woff2"
@@ -352,11 +361,30 @@ test("a live tool keeps its state and a visitor can recover an uncertain submiss
     fullPage: true,
   })
   // The trusted check endpoint does not admit authored navigation elsewhere.
+  await page.evaluate(() => {
+    document.addEventListener("securitypolicyviolation", (event) => {
+      if (
+        event.effectiveDirective === "frame-src" &&
+        event.blockedURI.startsWith("https://attacker.example")
+      )
+        document.body.dataset.blockedNavigation = "true"
+    })
+  })
   await tool.locator("body").evaluate(() => {
     location.href = "https://attacker.example/record-data"
   })
-  await expect(page.locator("main")).toContainText(
-    "This tool tried to open another page"
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-blocked-navigation",
+    "true"
   )
   expect(f.outsideRequests).toEqual([])
+  // Positive control: observing no request must depend on the parent policy.
+  f.backend.containment = false
+  await page.reload()
+  await tool.locator("body").evaluate(() => {
+    location.href = "https://attacker.example/record-data"
+  })
+  await expect
+    .poll(() => f.outsideRequests)
+    .toEqual(["https://attacker.example/record-data"])
 })

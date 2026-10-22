@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, expect, it } from "bun:test"
 import { Hono } from "hono"
-import { defaultSharingPolicy } from "@worktable/types"
+import {
+  defaultSharingPolicy,
+  type VisitorCommentsForVisitor,
+} from "@worktable/types"
 import { createHash } from "node:crypto"
 import { Database } from "bun:sqlite"
 import { readdir, readFile, writeFile } from "node:fs/promises"
@@ -656,12 +659,6 @@ it("pages complete visitor history within row and byte limits using current acce
       db.close()
     }
   }
-  interface Page {
-    visitorsSee: "own" | "all"
-    comments: Array<{ id: string; mine: boolean; replies: unknown[] }>
-    nextCursor: string | null
-    reset?: true
-  }
   const read = async (cursor?: string, extra: Record<string, string> = {}) => {
     const response = await server.request("/public/share/comments", {
       headers: {
@@ -673,7 +670,7 @@ it("pages complete visitor history within row and byte limits using current acce
     expect(response.status).toBe(200)
     const body = await response.text()
     expect(Buffer.byteLength(body)).toBeLessThanOrEqual(1024 * 1024)
-    return JSON.parse(body) as Page
+    return JSON.parse(body) as VisitorCommentsForVisitor
   }
   const history = async () => {
     const ids: string[] = []

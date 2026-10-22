@@ -1,5 +1,8 @@
 import { Hono } from "hono"
-import { VisitorCommentInputSchema } from "@worktable/types"
+import {
+  VisitorCommentInputSchema,
+  type VisitorCommentsForVisitor,
+} from "@worktable/types"
 import {
   SHARE_CAPABILITY_HEADER,
   SHARE_COMMENT_CURSOR_HEADER,
@@ -200,7 +203,7 @@ export function createPublicVisitorCommentsRouter(
             ? nextVisitorCommentCursor(last, scope)
             : null,
         ...(page.reset ? { reset: true } : {}),
-      })
+      } satisfies VisitorCommentsForVisitor)
     }
     const clientKey = c.req.header(VISITOR_HEADERS.CLIENT) ?? ""
     if (

@@ -406,6 +406,10 @@ export interface VisitorCommentsForVisitor {
   anonymousAllowed: boolean
   visitorsSee: VisitorsSee
   comments: VisitorCommentForVisitor[]
+  /** Older runtimes omit pagination metadata. Null ends the retained history. */
+  nextCursor?: string | null
+  /** Replace the visible history after its access or visibility scope changes. */
+  reset?: true
 }
 
 /** A visitor's new comment. A name is required unless the visitor comments anonymously. */

@@ -1,0 +1,140 @@
+import { expect, it } from "bun:test"
+import { ToolVm, TOOL_VM_LIMITS } from "./vm.ts"
+
+const messages = (values: string[]) => values.map((value) => JSON.parse(value))
+
+it("exposes only guest JavaScript and explicit JSON capabilities", async () => {
+  const vm = await ToolVm.create()
+  try {
+    const [render] = messages(
+      vm.start(`
+      const names = ['window','document','self','parent','location','navigator','fetch',
+        'XMLHttpRequest','WebSocket','WebTransport','RTCPeerConnection','Worker',
+        'importScripts','indexedDB','localStorage','process','Bun','require','__worktableSend'];
+      const globals = Object.fromEntries(names.map(name => [name, typeof globalThis[name]]));
+      globals.constructor = worktable.ui.render.constructor('return typeof fetch')();
+      Object.prototype.__worktableGuestPollution = true;
+      worktable.ui.render(globals);
+    `)
+    )
+    expect(render.method).toBe("ui.render")
+    expect(
+      Object.values(render.args[0]).every((value) => value === "undefined")
+    ).toBe(true)
+    expect(Object.prototype).not.toHaveProperty("__worktableGuestPollution")
+  } finally {
+    vm.dispose()
+  }
+})
+
+it("resumes asynchronous reads and actions without sharing host objects", async () => {
+  const vm = await ToolVm.create()
+  try {
+    const [query] = messages(
+      vm.start(`
+      const rows = await worktable.records.query('sales', { limit: 5 });
+      worktable.ui.on('select', async event => {
+        await worktable.state.set('selection', event.value);
+      });
+      await worktable.ui.render({ tag: 'p', children: [rows[0].name] });
+    `)
+    )
+    expect(query).toMatchObject({
+      type: "request",
+      method: "records.query",
+      args: ["sales", { limit: 5 }],
+    })
+    const [render] = messages(
+      vm.receive(
+        JSON.stringify({
+          type: "response",
+          id: query.id,
+          ok: true,
+          value: { records: [{ name: "October" }] },
+        })
+      )
+    )
+    expect(render.args[0]).toEqual({ tag: "p", children: ["October"] })
+    expect(
+      vm.receive(
+        JSON.stringify({
+          type: "response",
+          id: render.id,
+          ok: true,
+          value: null,
+        })
+      )
+    ).toEqual([])
+    const [state] = messages(
+      vm.receive(
+        JSON.stringify({
+          type: "event",
+          action: "select",
+          value: { value: "north" },
+        })
+      )
+    )
+    expect(state).toMatchObject({
+      method: "state.set",
+      args: ["selection", "north"],
+    })
+    expect(
+      vm.receive(
+        JSON.stringify({
+          type: "response",
+          id: state.id,
+          ok: true,
+          value: "north",
+        })
+      )
+    ).toEqual([])
+  } finally {
+    vm.dispose()
+  }
+})
+
+it("stops runaway turns, discards their effects, and permits a fresh instance", async () => {
+  for (const source of [
+    "worktable.ui.render('never committed'); while (true) {}",
+    "function again() { Promise.resolve().then(again) }; again()",
+    "const retained=[]; while(true) retained.push(new Uint8Array(1024*1024));",
+  ]) {
+    const vm = await ToolVm.create()
+    expect(() => vm.start(source)).toThrow()
+    expect(() => vm.receive("{}")).toThrow()
+    vm.dispose()
+  }
+  const fresh = await ToolVm.create()
+  try {
+    expect(
+      messages(fresh.start("worktable.ui.render('Ready')"))[0].args
+    ).toEqual(["Ready"])
+  } finally {
+    fresh.dispose()
+  }
+}, 10_000)
+
+it("rejects oversized source and messages and does not load imported modules", async () => {
+  const oversized = await ToolVm.create()
+  expect(() =>
+    oversized.start(" ".repeat(TOOL_VM_LIMITS.sourceCharacters + 1))
+  ).toThrow("too large")
+  const vm = await ToolVm.create()
+  try {
+    expect(() =>
+      vm.start("import 'https://synthetic.invalid/escape.js'")
+    ).toThrow()
+  } finally {
+    vm.dispose()
+  }
+  const outbound = await ToolVm.create()
+  try {
+    expect(() =>
+      outbound.start(
+        `await worktable.ui.render('x'.repeat(${TOOL_VM_LIMITS.messageCharacters}))`
+      )
+    ).toThrow()
+  } finally {
+    outbound.dispose()
+  }
+})

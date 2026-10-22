@@ -370,7 +370,7 @@
     respond(id, true, 200, { state })
   }
 
-  const RECORD_QUERY = /^\/link\/records\/([^/?#\\]{1,128})\/query$/
+  const RECORD_QUERY = /^\/link\/records\/([^/?#\\]+)\/query$/
 
   /** @param {Record<string, unknown>} data */
   function request(data) {
@@ -665,7 +665,7 @@
       case "worktable.subscribe":
         if (
           typeof data.collection === "string" &&
-          data.collection.length <= 128 &&
+          data.collection.length > 0 &&
           (subscriptions.has(data.collection) || subscriptions.size < 64)
         ) {
           const first = subscriptions.size === 0

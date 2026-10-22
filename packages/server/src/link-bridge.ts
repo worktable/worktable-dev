@@ -318,7 +318,7 @@ export function linkBridge(getShareOrigin: () => string | null) {
         if (refused) return refused
         const body = JSON.stringify({ ok: true, result })
         return Buffer.byteLength(body) > 1024 * 1024
-          ? failure("LINK_BUSY", 503, "This result is too large.", "1")
+          ? failure("INVALID_QUERY", 400, "This result is too large.")
           : new Response(body, { headers: HEADERS })
       }
       // Native reads cannot always be interrupted. Return on time, stop later

@@ -20,6 +20,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       colorScheme === "light" ? "ws_cloud" : "workspace /é".repeat(9)
     const sharePath = `/s/${encodeURIComponent(workspaceId)}`
     const pageUrl = `https://share.example.test${sharePath}/${token}`
+    const collection = "collection-" + "a".repeat(130)
     await page.clock.install()
     await page.emulateMedia({ colorScheme })
     let teamValue = "first"
@@ -27,6 +28,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     let recordName = "Granted data"
     let changes: string[] = []
     let changesBusy = false
+    let resultTooLarge = false
     let firstQuery = true
     let releaseInitial!: () => void
     let initialStarted!: () => void
@@ -54,6 +56,22 @@ for (const colorScheme of ["light", "dark"] as const) {
           capability: route.request().headers()["x-worktable-share-capability"],
         })
         const snapshot = recordName
+        if (body.op === "records.query") {
+          expect(body.collection).toBe(collection)
+          if (resultTooLarge) {
+            await route.fulfill({
+              status: 400,
+              json: {
+                ok: false,
+                error: {
+                  code: "INVALID_QUERY",
+                  message: "This result is too large.",
+                },
+              },
+            })
+            return
+          }
+        }
         if (body.op === "records.query" && firstQuery) {
           firstQuery = false
           initialStarted()
@@ -102,11 +120,12 @@ for (const colorScheme of ["light", "dark"] as const) {
           "Content-Security-Policy":
             "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; frame-ancestors https://share.example.test",
         },
-        body: `<!doctype html><html><head>${buildWidgetShareRuntimeScript()}<style>:root{color-scheme:light dark}body{padding:1rem;font-family:system-ui}button,a{margin-right:1rem}</style></head><body><h1>Report</h1><p id="records"></p><p id="state"></p><button id="save">Save preference</button><button id="read">Read state</button><a href="https://outside.example.test/report">External page</a><script>
+        body: `<!doctype html><html><head>${buildWidgetShareRuntimeScript()}<style>:root{color-scheme:light dark}body{padding:1rem;font-family:system-ui}button,a{margin-right:1rem}</style></head><body><h1>Report</h1><p id="records"></p><p id="state"></p><p id="query-error"></p><button id="save">Save preference</button><button id="read">Read state</button><button id="oversized">Read oversized result</button><a href="https://outside.example.test/report">External page</a><script>
       async function showState(){document.querySelector('#state').textContent=JSON.stringify(await worktable.state.get())}
       document.querySelector('#save').onclick=async()=>{await worktable.state.set('preference','own');await worktable.state.update(current=>({...current,otherPreference:'local'}));await showState()};
       document.querySelector('#read').onclick=showState;
-      worktable.records.subscribe('deals',{},rows=>document.querySelector('#records').textContent=rows[0].data.name);
+      worktable.records.subscribe(${JSON.stringify(collection)},{},rows=>document.querySelector('#records').textContent=rows[0].data.name);
+      document.querySelector('#oversized').onclick=()=>worktable.records.query(${JSON.stringify(collection)}).catch(error=>document.querySelector('#query-error').textContent=error.code);
       showState();
     </script></body></html>`,
       })
@@ -285,6 +304,38 @@ for (const colorScheme of ["light", "dark"] as const) {
       document.dispatchEvent(new Event("visibilitychange"))
     })
     await expect(frame.locator("#records")).toHaveText("Resumed change")
+    await page.clock.fastForward(600_001)
+    const beforeIdle = calls.filter((call) => call.op === "changes").length
+    await authored.evaluate(() => {
+      // Emulate an accessibility activation: the native trusted click is
+      // delivered, while the SDK does not observe a precursor key event.
+      document.addEventListener(
+        "keydown",
+        (event) => event.stopPropagation(),
+        true
+      )
+      ;(document.querySelector("#read") as HTMLButtonElement).click()
+    })
+    await page.clock.fastForward(36_001)
+    expect(calls.filter((call) => call.op === "changes")).toHaveLength(
+      beforeIdle
+    )
+    recordName = "Accessible change"
+    await frame.getByRole("button", { name: "Read state", exact: true }).focus()
+    await page.keyboard.press("Enter")
+    await expect(frame.locator("#records")).toHaveText("Accessible change")
+
+    changes = []
+    resultTooLarge = true
+    const beforeOversized = calls.filter(
+      (call) => call.op === "records.query"
+    ).length
+    await frame.getByRole("button", { name: "Read oversized result" }).click()
+    await expect(frame.locator("#query-error")).toHaveText("INVALID_QUERY")
+    await page.clock.fastForward(25_001)
+    expect(calls.filter((call) => call.op === "records.query")).toHaveLength(
+      beforeOversized + 1
+    )
     await page.screenshot({
       path: testInfo.outputPath(`live-prompt-${colorScheme}.png`),
     })

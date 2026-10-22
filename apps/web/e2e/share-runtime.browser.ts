@@ -16,8 +16,12 @@ test("a live share SDK starts first in an opaque frame and uses only the visitor
         try { await worktable.records.create('deals', {name:'attempt'}); }
         catch(error) { document.querySelector('#write').textContent = error.code; }
       });
+      document.querySelector('#subscribe').onclick=()=>{
+        worktable.records.subscribe('deals',{limit:1},rows=>document.querySelector('#subscription').textContent=rows[0].data.name);
+        for(let n=0;n<39;n++)void worktable.records.query('deals',{limit:2}).catch(()=>{});
+      };
     });
-  </script></head><body><p id="theme"></p><p id="records"></p><p id="write"></p><button>Attempt write</button><a href="https://outside.example.test/report">External page</a></body></html>`
+  </script></head><body><p id="theme"></p><p id="records"></p><p id="write"></p><p id="subscription"></p><button>Attempt write</button><button id="subscribe">Subscribe while full</button><a href="https://outside.example.test/report">External page</a></body></html>`
   await page.route("https://html.example.test/frame", (route) =>
     route.fulfill({
       contentType: "text/html",
@@ -33,11 +37,15 @@ test("a live share SDK starts first in an opaque frame and uses only the visitor
       contentType: "text/html",
       body: `<!doctype html><script>
     window.messages = [];
+    window.held = [];
     window.addEventListener('message', event => {
       if (event.source !== document.querySelector('iframe').contentWindow) return;
       window.messages.push({ origin:event.origin, value:event.data });
       const request = event.data;
-      if (request.type === 'worktable.api.request') event.source.postMessage({ type:'worktable.api.response', id:request.id, ok:true, status:200, body:{records:[{id:'opaque',data:{name:'Granted data'}}]} }, '*');
+      if (request.type === 'worktable.api.request') {
+        if(JSON.parse(request.body||'{}').limit){window.held.push(request);return}
+        event.source.postMessage({ type:'worktable.api.response', id:request.id, ok:true, status:200, body:{records:[{id:'opaque',data:{name:'Granted data'}}]} }, '*');
+      }
     });
   </script><iframe title="Live tool" sandbox="allow-scripts" src="https://html.example.test/frame"></iframe>`,
     })
@@ -131,4 +139,48 @@ test("a live share SDK starts first in an opaque frame and uses only the visitor
       .find((candidate) => candidate !== page.mainFrame())
       ?.url()
   ).toBe("https://html.example.test/frame")
+  await frame.getByRole("button", { name: "Subscribe while full" }).click()
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { held: unknown[] }).held.length
+      )
+    )
+    .toBe(40)
+  const rejectedRefresh = page.waitForEvent(
+    "console",
+    (message) => message.type() === "error"
+  )
+  await page.evaluate(() =>
+    document
+      .querySelector("iframe")!
+      .contentWindow!.postMessage(
+        { type: "worktable.records.changed", collection: "deals" },
+        "*"
+      )
+  )
+  await rejectedRefresh
+  await page.evaluate(() => {
+    const frame = document.querySelector("iframe")!.contentWindow!
+    for (const request of (window as unknown as { held: Array<{ id: string }> })
+      .held) {
+      frame.postMessage(
+        {
+          type: "worktable.api.response",
+          id: request.id,
+          ok: true,
+          status: 200,
+          body: {
+            records: [
+              { id: "opaque", data: { name: "Retained initial data" } },
+            ],
+          },
+        },
+        "*"
+      )
+    }
+  })
+  await expect(frame.locator("#subscription")).toHaveText(
+    "Retained initial data"
+  )
 })

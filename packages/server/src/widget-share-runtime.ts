@@ -36,11 +36,12 @@ const readonly=()=>Promise.reject(fail('LINK_READ_ONLY','This link is view only.
 const recordPath=collection=>'/link/records/'+encodeURIComponent(collection)+'/query';
 function subscribe(collection,query,callback,detailed){
   let closed=false;
-  let generation=0;
+  let requested=0;
+  let delivered=0;
   const load=async()=>{
-    const current=++generation;
+    const current=++requested;
     const result=await request(recordPath(collection),'POST',query||{});
-    if(!closed&&current===generation)callback(detailed?result:result.records);
+    if(!closed&&current>delivered){delivered=current;callback(detailed?result:result.records)}
   };
   const changed=event=>{if(event.source===window.parent&&event.data?.type==='worktable.records.changed'&&event.data.collection===collection&&!closed)void load().catch(console.error)};
   window.addEventListener('message',changed);
@@ -83,14 +84,13 @@ function interacted(event){if(!event.isTrusted||Date.now()-lastInteraction<1000)
 window.addEventListener('pointerdown',interacted,{passive:true});
 window.addEventListener('keydown',interacted);
 window.addEventListener('click',event=>{
+  if(event.isTrusted){lastInteraction=Date.now();post({type:'worktable.interaction',navigationToken},'*')}
   const anchor=event.composedPath().find(node=>node instanceof HTMLAnchorElement);
   if(!anchor||!anchor.getAttribute('href')||anchor.getAttribute('href').startsWith('#'))return;
   let url;try{url=new URL(anchor.href)}catch{return}
   if(!['http:','https:'].includes(url.protocol)||url.username||url.password)return;
   event.preventDefault();
   if(!event.isTrusted)return;
-  lastInteraction=Date.now();
-  post({type:'worktable.interaction',navigationToken},'*');
   post({type:'worktable.share.open-link',url:url.href,navigationToken},'*');
 },true);
 window.addEventListener('submit',event=>event.preventDefault());

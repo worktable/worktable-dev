@@ -6,6 +6,9 @@ import { createHash } from "node:crypto"
 import { buildRecordCollectionSchema, writeRecordCollectionSchema, writeRecord, writeWidgetState } from "./record-store.ts"
 import * as linkQueries from "./link-query.ts"
 import * as linkAccess from "./link-sharing-access.ts"
+import * as recordQueries from "./record-query.ts"
+import * as widgetStore from "./widget-store.ts"
+import { linkReadMemo } from "./link-read-memo.ts"
 import { recordIndex } from "./record-index.ts"
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import { Database } from "bun:sqlite"
@@ -272,6 +275,7 @@ describe("share links", () => {
     const at = new Date().toISOString()
     await writeRecord("space", { version: 1, kind: "worktable.record", id: "private-id", collectionId: "deals", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: "Public name", secret: "Hidden data" } })
     await createHtmlDocument({ spaceId: "space", name: "Board", html: "<!doctype html><html><head></head><body><h1>Board</h1></body></html>", permissions: { network: true, records: { deals: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
+    await createHtmlDocument({ spaceId: "space", name: "Other board", html: "<h1>Other</h1>", versionSource: "test", versionUpdatedBy: "test" })
     await writeWidgetState("space", "board", { team: "default" })
     const beforeLive = await readDocumentPage({ spaceId: "space", path: "board", rawSourceAuthorized: false, annotationsAuthorized: false, sharingAuthorized: true })
     expect(beforeLive?.kind === "document" ? beforeLive.sharing?.activeLinks : null).toBe(0)
@@ -319,6 +323,16 @@ describe("share links", () => {
     expect(JSON.stringify(result)).not.toContain("private-id")
     expect(JSON.stringify(result)).not.toContain("Hidden data")
     expect(await (await bridge(created.token, { v: 1, op: "state.read" })).json()).toEqual({ ok: true, result: { state: { team: "default" } } })
+    await writeWidgetState("space", "board", { large: "x".repeat(1024 * 1024) })
+    await drainWorkspaceChanges()
+    // Use the other link's cold state read, rather than the warm two-second
+    // memo for the small state just read above.
+    const oversized = await bridge(neverExpires.token, { v: 1, op: "state.read" })
+    expect(oversized.status).toBe(400)
+    expect(oversized.headers.get("Retry-After")).toBeNull()
+    expect(await oversized.json()).toEqual({ ok: false, error: { code: "INVALID_QUERY", message: "This result is too large." } })
+    await writeWidgetState("space", "board", { team: "default" })
+    await drainWorkspaceChanges()
     const otherLink = await (await readRecords(neverExpires.token)).json()
     expect(otherLink.result.records[0].id).not.toBe(result.result.records[0].id)
     expect((await bridge(created.token, { v: 1, op: "records.create", collection: "deals", data: {} })).status).toBe(400)
@@ -376,6 +390,31 @@ describe("share links", () => {
       return read
     })
     try { expect((await bridge(created.token)).status).toBe(200) } finally { duringOtherSpaceWrite.mockRestore() }
+    const toolReads = spyOn(widgetStore, "readWidgetDocument")
+    const duringSameSpaceWrite = spyOn(linkQueries, "queryRecordsForLink").mockImplementation(async (...args) => {
+      const read = await originalRead(...args)
+      await writeDoc("space", "unrelated-notes", "# Unrelated activity")
+      const edited = await updateWidgetMetadata("space", "other-board", { name: "Other board edited" })
+      try { expect(edited.error).toBeNull() } finally { edited.release?.() }
+      await notifyWorkspaceChangeAndWaitOrThrow({ type: "widget", spaceId: "space", widgetId: "other-board" })
+      await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "unrelated", name: "Unrelated", fields: { label: { type: "text" } } }))
+      return read
+    })
+    try {
+      expect((await bridge(created.token)).status).toBe(200)
+      duringSameSpaceWrite.mockRestore()
+      expect((await bridge(created.token)).status).toBe(200)
+      expect(toolReads).not.toHaveBeenCalled()
+    } finally { duringSameSpaceWrite.mockRestore(); toolReads.mockRestore() }
+    const duringOwnToolWrite = spyOn(linkQueries, "queryRecordsForLink").mockImplementation(async (...args) => {
+      const read = await originalRead(...args)
+      const edited = await updateWidgetMetadata("space", "board", { name: "Board edited" })
+      try { expect(edited.error).toBeNull() } finally { edited.release?.() }
+      await notifyWorkspaceChangeAndWaitOrThrow({ type: "widget", spaceId: "space", widgetId: "board" })
+      return read
+    })
+    try { expect((await bridge(created.token)).status).toBe(429) } finally { duringOwnToolWrite.mockRestore() }
+    expect((await readRecords(created.token)).status).toBe(200)
     const duringOwnRecordWrite = spyOn(linkQueries, "queryRecordsForLink").mockImplementation(async (...args) => {
       const read = await originalRead(...args)
       await writeRecord("space", { version: 1, kind: "worktable.record", id: "private-id", collectionId: "deals", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: "Changed name", secret: "Hidden data" } })
@@ -402,19 +441,22 @@ describe("share links", () => {
   it("updates totals and summaries when an unreturned row leaves the link's scope", async () => {
     process.env["WORKTABLE_RECORDS_INDEX"] = "1"
     saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true }, "local:owner")
-    await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, visibility: { type: "text" } } }))
+    await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "clients", name: "Clients", fields: { name: { type: "text" } } }))
+    await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, visibility: { type: "text" }, client: { type: "relation", references: "clients" } } }))
     const at = new Date().toISOString()
-    const row = (id: string, visibility: string): RecordFile => ({ version: 1, kind: "worktable.record", id, collectionId: "deals", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: id, visibility } })
+    const row = (id: string, visibility: string): RecordFile => ({ version: 1, kind: "worktable.record", id, collectionId: "deals", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: id, visibility, client: "client-id" } })
+    await writeRecord("space", { version: 1, kind: "worktable.record", id: "client-id", collectionId: "clients", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: "Public client" } })
     await writeRecord("space", row("first", "public"))
     await writeRecord("space", row("second", "public"))
-    await createHtmlDocument({ spaceId: "space", name: "Counts", html: "<h1>Counts</h1>", permissions: { network: false, records: { deals: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
+    await createHtmlDocument({ spaceId: "space", name: "Counts", html: "<h1>Counts</h1>", permissions: { network: false, records: { deals: { read: true }, clients: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
     const rows = { field: "visibility", op: "eq", value: "public" }
-    const scoped = await createLink("counts", { grant: LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: ["name"], rows } } }) }, "html")
+    const scoped = await createLink("counts", { grant: LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: ["name", "client"], rows }, clients: { fields: ["name"] } } }) }, "html")
     const summary = await createLink("counts", { grant: LinkGrantSchema.parse({ version: 1, collections: { deals: { mode: "summaries", fields: [], rows, summaries: { groupBy: [], measures: [], fns: ["count"], minGroupSize: 2 } } } }) }, "html")
+    const bridge = (token: string, value: unknown) => app().request("/public/share/bridge", { method: "POST", headers: { "Content-Type": "application/json", "x-worktable-share-capability": token }, body: JSON.stringify(value) })
     const call = async (token: string, value: unknown) => {
       let response: Response
       for (let attempt = 0;; attempt++) {
-        response = await app().request("/public/share/bridge", { method: "POST", headers: { "Content-Type": "application/json", "x-worktable-share-capability": token }, body: JSON.stringify(value) })
+        response = await bridge(token, value)
         if (response.status !== 429 || attempt === 10) break
         await drainWorkspaceChanges()
       }
@@ -424,14 +466,65 @@ describe("share links", () => {
     const query = (query: unknown) => ({ v: 1, op: "records.query", collection: "deals", query })
     recordIndex.start()
     await recordIndex.whenReady()
-    const limited = await call(scoped.token, query({ limit: 1 }))
-    expect(limited.records).toHaveLength(1)
-    expect(limited.total).toBe(2)
+    await drainWorkspaceChanges()
     const aggregate = query({ aggregate: { select: { n: { fn: "count" } } } })
-    expect((await call(summary.token, aggregate)).groups).toEqual([{ n: 2 }])
+    const limitedQuery = query({ limit: 1, expand: { client: ["name"] } })
+    const requests = [[scoped.token, limitedQuery], [summary.token, aggregate]] as const
+    // Both memoized loads outlive their initiating response. Later callers
+    // join the same loads and still need all contributing rows remembered.
+    let resume!: () => void
+    const gate = new Promise<void>((resolve) => { resume = resolve })
+    const run = recordQueries.runQueryV2
+    let loads = 0
+    const slow = spyOn(recordQueries, "runQueryV2").mockImplementation(async (...args) => {
+      loads++
+      await gate
+      return run(...args)
+    })
+    const readMemo = linkReadMemo.read.bind(linkReadMemo)
+    let joined!: () => void
+    const secondCallers = new Promise<void>((resolve) => { joined = resolve })
+    let memoCalls = 0
+    const memo = spyOn(linkReadMemo, "read").mockImplementation(<T>(key: string, load: () => Promise<T>): Promise<T> => {
+      const value = readMemo(key, load)
+      if (++memoCalls === 4) joined()
+      return value
+    })
+    try {
+      const expired = await Promise.all(requests.map(([token, value]) => bridge(token, value)))
+      expect(expired.map((response) => response.status)).toEqual([429, 429])
+      expect(loads).toBe(2)
+      const successful = Promise.all(requests.map(([token, value]) => bridge(token, value)))
+      await secondCallers
+      resume()
+      const responses = await successful
+      expect(responses.map((response) => response.status)).toEqual([200, 200])
+      const [limited, counted] = await Promise.all(responses.map(async (response) => (await response.json()).result))
+      expect(limited.records).toHaveLength(1)
+      expect(limited.total).toBe(2)
+      expect(Object.values(limited.expanded.clients as Record<string, RecordFile>).map((row) => row.data)).toEqual([{ name: "Public client" }])
+      expect(counted.groups).toEqual([{ n: 2 }])
+      expect(loads).toBe(2)
+    } finally { resume(); slow.mockRestore(); memo.mockRestore() }
+    // Even an unchanged policy save advances authorization. Repeating the
+    // same warm queries must record contributors in the new journal.
+    const before = await (await send("GET", "/api/shares/policy")).json()
+    expect((await send("PUT", "/api/shares/policy", before.policy)).status).toBe(200)
+    const after = await (await send("GET", "/api/shares/policy")).json()
+    expect(after.policy).toEqual(before.policy)
+    expect(after.revision).toBeGreaterThan(before.revision)
+    let unreturnedId = "second"
+    const refreshed = spyOn(recordQueries, "runQueryV2")
+    try {
+      const [limited] = await Promise.all(requests.map(([token, value]) => call(token, value)))
+      const shown = limited.records[0].data.name
+      expect(["first", "second"]).toContain(shown)
+      unreturnedId = shown === "first" ? "second" : "first"
+      expect(refreshed).toHaveBeenCalledTimes(2)
+    } finally { refreshed.mockRestore() }
     const cursors = await Promise.all([scoped, summary].map(async ({ token }) => (await call(token, { v: 1, op: "changes" })).cursor))
-    await writeRecord("space", row("second", "private"))
-    await notifyWorkspaceChangeAndWaitOrThrow({ type: "record", spaceId: "space", collectionId: "deals", recordId: "second" })
+    await writeRecord("space", row(unreturnedId, "private"))
+    await notifyWorkspaceChangeAndWaitOrThrow({ type: "record", spaceId: "space", collectionId: "deals", recordId: unreturnedId })
     for (const [index, { token }] of [scoped, summary].entries()) {
       let changed: string[] = []
       for (let attempt = 0; attempt < 20; attempt++) {
@@ -444,7 +537,7 @@ describe("share links", () => {
     }
     expect((await call(scoped.token, query({ limit: 1 }))).total).toBe(1)
     expect((await call(summary.token, aggregate)).groups).toEqual([])
-  })
+  }, 10_000)
 
   it("requires passwords, binds unlocks to current credentials, and expires links", async () => {
     await writeDoc("space", "plan", "# Plan")

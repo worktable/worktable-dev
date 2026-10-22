@@ -33,7 +33,7 @@ test("change hints respect row access, retain removals of served rows, and reset
     schemas: new Map([["deals", schema]]),
     key,
   }
-  journal.touch(target)
+  const originalJournal = journal.touch(target)
   const event = {
     type: "record" as const,
     spaceId: "space",
@@ -73,6 +73,15 @@ test("change hints respect row access, retain removals of served rows, and reset
   )
   journal.touch({ ...target, authorization: "tightened" })
   expect(journal.changes("link", baseline).reset).toBe(true)
+  const replaced = journal.changes("link").cursor
+  journal.queried(
+    "link",
+    "deals",
+    [{ ...row("public"), id: key.recordId("deals", "first") }],
+    originalJournal
+  )
+  journal.record(event, row("private"))
+  expect(journal.changes("link", replaced).collections).toEqual([])
   const beforeOverflow = journal.changes("link").cursor
   for (let index = 0; index < 257; index++) journal.collection("space", "deals")
   expect(journal.changes("link", beforeOverflow).reset).toBe(true)

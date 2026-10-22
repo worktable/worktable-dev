@@ -267,17 +267,64 @@ for (const appearance of [
           exact: true,
         })
         await expect(resume).toBeVisible()
-        const edit = await page.request.patch(
-          `${harness.apiUrl}/api/shares/links/${spike.linkId}`,
-          {
-            data: {
-              label: "Audit follow-up",
-              comments: { visitorsSee: "all" },
-            },
-          }
+        await page.getByRole("button", { name: "Close comments" }).click()
+        if (appearance.mobile) {
+          await page
+            .locator("[data-worktable-app-header]")
+            .getByRole("button", { name: "Review report", exact: true })
+            .click()
+          await page
+            .getByRole("dialog", { name: "Page", exact: true })
+            .getByRole("button", { name: "Share", exact: true })
+            .click()
+        } else
+          await page.getByRole("button", { name: "Share document" }).click()
+        const sharing = page.getByRole("dialog", { name: "Share document" })
+        await sharing
+          .getByRole("listitem")
+          .filter({ hasText: "Paused after a burst of comments" })
+          .getByRole("button", { name: "Actions for Audit comments" })
+          .click()
+        await page.getByRole("menuitem", { name: "Edit Link" }).click()
+        await sharing
+          .getByLabel("Label", { exact: true })
+          .fill("Audit follow-up")
+        await sharing
+          .getByRole("switch", { name: "Allow anonymous comments" })
+          .click()
+        await sharing
+          .getByRole("switch", { name: "Show sharer’s name in replies" })
+          .click()
+        await sharing.getByRole("combobox", { name: "Visitors see" }).click()
+        await page
+          .getByRole("option", {
+            name: "All comments on this link",
+            exact: true,
+          })
+          .click()
+        const saved = page.waitForResponse(
+          (response) =>
+            response.url().endsWith(`/api/shares/links/${spike.linkId}`) &&
+            response.request().method() === "PATCH"
         )
+        await sharing.getByRole("button", { name: "Save", exact: true }).click()
+        const edit = await saved
         expect(edit.status()).toBe(200)
-        expect((await edit.json()).link.comments.autoPaused).toBe(true)
+        expect((await edit.json()).link).toMatchObject({
+          label: "Audit follow-up",
+          comments: {
+            anonymousAllowed: true,
+            showSharerName: true,
+            visitorsSee: "all",
+            autoPaused: true,
+          },
+        })
+        await expect(
+          sharing.getByRole("button", { name: "Save", exact: true })
+        ).toBeHidden()
+        await sharing
+          .getByRole("button", { name: "Close", exact: true })
+          .click()
         await page.reload({ waitUntil: "networkidle" })
         await expect(
           page.getByText("Comments paused after a burst on Audit follow-up.", {

@@ -162,6 +162,26 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
   )
   expect(person.status).toBe(200)
   expect(await person.text()).toContain(sentinel)
+  const documentPage = "/api/spaces/space/documents/page?path=report"
+  const page = await app.request(documentPage)
+  const pageBody = await page.text()
+  expect(page.status).toBe(200)
+  expect(pageBody).not.toContain(sentinel)
+  expect(JSON.parse(pageBody)).toMatchObject({
+    page: {
+      sharing: {
+        visitorComments: { documentId, newCount: 1, available: true },
+      },
+    },
+  })
+  process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+  try {
+    expect(await (await app.request(documentPage)).text()).not.toContain(
+      '"visitorComments'
+    )
+  } finally {
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+  }
   const pending = await app.request("/api/pending")
   expect(pending.status).toBe(200)
   expect(await pending.json()).toMatchObject({
@@ -315,7 +335,7 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
       expect(response.status, `${identity.agent}: ${path}`).toBe(expected)
       const body = await response.text()
       expect(body).not.toContain(sentinel)
-      if (path === "/api/pending")
+      if (path === "/api/pending" || path.includes("/documents/page?"))
         expect(body).not.toContain('"visitorComments')
       if (path.includes("/source?") && response.ok)
         expect(body).toContain("PUBLIC_CONTROL")

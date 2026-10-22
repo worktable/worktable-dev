@@ -11,6 +11,7 @@ import {
   LinkedDestinationBinding,
   LinkedRequestClaims,
   SHARE_CAPABILITY_HEADER,
+  SHARE_COMMENT_CURSOR_HEADER,
   ShareLinkToken,
   ShareTicket,
   SHARE_UNLOCK_HEADER,
@@ -44,10 +45,17 @@ function validShareRequest(claims: LinkedRequestClaims): boolean {
       claims.grant.clientAddress === undefined &&
       claims.grant.contentRevision === undefined &&
       (["GET", "HEAD"].includes(claims.method) ||
-        (claims.method === "POST" && visitor.verified && visitor.client))
+        (claims.method === "POST" &&
+          claims.grant.commentCursor === undefined &&
+          visitor.verified &&
+          visitor.client))
     )
   }
-  if (claims.grant.visitor !== undefined) return false
+  if (
+    claims.grant.visitor !== undefined ||
+    claims.grant.commentCursor !== undefined
+  )
+    return false
   if (claims.grant.unlock !== undefined && !preview) return false
   if (
     claims.grant.clientAddress !== undefined &&
@@ -253,7 +261,7 @@ export async function createLinkedIngress(options: {
           request,
           payload.exp * 1000,
           claims.path === "/public/share/comments"
-            ? 8192
+            ? 16 * 1024
             : claims.path === "/public/share/bridge"
               ? 16 * 1024
               : LINKED_REQUEST_MAX_BYTES
@@ -301,6 +309,8 @@ export async function createLinkedIngress(options: {
           if (claims.grant.visitor.client)
             headers.set(VISITOR_HEADERS.CLIENT, claims.grant.visitor.client)
         }
+        if (claims.grant.commentCursor !== undefined)
+          headers.set(SHARE_COMMENT_CURSOR_HEADER, claims.grant.commentCursor)
         if (claims.grant.clientAddress)
           headers.set(
             AGENT_ROUTE_HEADERS.CLIENT_ADDRESS,

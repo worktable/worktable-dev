@@ -12,6 +12,7 @@ import {
   LINKED_ASSERTION_TYPE,
   LINKED_ASSERTION_TTL_SECONDS,
   VISITOR_HEADERS,
+  SHARE_COMMENT_CURSOR_HEADER,
   type ShareVisitor,
   type LinkedRequestGrant,
   type LinkedDestinationBinding,
@@ -615,7 +616,8 @@ it("carries only signed visitor authority to comments and isolates each visitor"
       method: string,
       authority: ShareVisitor | undefined,
       path = "/public/share/comments",
-      body = payload
+      body = payload,
+      commentCursor?: string
     ) =>
       createLinkedRequest({
         origin: server.url.origin,
@@ -625,6 +627,7 @@ it("carries only signed visitor authority to comments and isolates each visitor"
           kind: "share",
           capability: token,
           ...(authority ? { visitor: authority } : {}),
+          ...(commentCursor === undefined ? {} : { commentCursor }),
         },
         method,
         path,
@@ -646,12 +649,18 @@ it("carries only signed visitor authority to comments and isolates each visitor"
     expect(
       (
         await fetch(
-          await signed("POST", visitor, undefined, new Uint8Array(8193))
+          await signed(
+            "POST",
+            visitor,
+            undefined,
+            new Uint8Array(16 * 1024 + 1)
+          )
         )
       ).status
     ).toBe(403)
     const posted = await fetch(await signed("POST", visitor))
     expect(posted.status).toBe(201)
+    const receipt = await posted.json()
     const own = await fetch(
       await signed("GET", { verified: false, key: visitor.key })
     )
@@ -663,6 +672,43 @@ it("carries only signed visitor authority to comments and isolates each visitor"
       await signed("GET", { verified: false, key: "c".repeat(64) })
     )
     expect((await other.json()).comments).toEqual([])
+    const cursor = Buffer.from(
+      JSON.stringify({
+        receivedAt: Date.parse(receipt.receivedAt),
+        id: receipt.id,
+        scope: "s".repeat(43),
+      })
+    ).toString("base64url")
+    const unsigned = await signed("GET", { verified: false, key: visitor.key })
+    unsigned.headers.set(SHARE_COMMENT_CURSOR_HEADER, cursor)
+    expect((await (await fetch(unsigned)).json()).reset).toBeUndefined()
+    const continued = await fetch(
+      await signed(
+        "GET",
+        { verified: false, key: visitor.key },
+        undefined,
+        undefined,
+        cursor
+      )
+    )
+    expect(continued.status).toBe(200)
+    expect((await continued.json()).reset).toBe(true)
+    for (const request of [
+      await signed("POST", visitor, undefined, undefined, cursor),
+      await signed("GET", undefined, "/public/share", undefined, cursor),
+    ])
+      expect((await fetch(request)).status).toBe(403)
+    const expanded = new TextEncoder().encode(
+      JSON.stringify({
+        name: "Visitor",
+        body: "\u0001".repeat(1500) + "SIGNED_ESCAPED_COMMENT",
+        requestId: "request_expanded",
+      })
+    )
+    expect(expanded.byteLength).toBeGreaterThan(8192)
+    expect(
+      (await fetch(await signed("POST", visitor, undefined, expanded))).status
+    ).toBe(201)
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     expect((await fetch(await signed("GET", visitor))).status).toBe(403)
     process.env["WORKTABLE_SHARING_PREVIEW"] = "1"

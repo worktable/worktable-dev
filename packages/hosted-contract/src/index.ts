@@ -240,6 +240,9 @@ export const SHARE_CAPABILITY_HEADER = "x-worktable-share-capability"
  */
 export const SHARE_UNLOCK_HEADER = "x-worktable-share-unlock"
 
+/** A bounded continuation marker on a visitor-comment GET, never a grant. */
+export const SHARE_COMMENT_CURSOR_HEADER = "x-worktable-comment-cursor"
+
 /**
  * A commenting visitor, as ShareVisitor describes. Set only by the gateway;
  * a Worktable reads them only on requests the gateway admitted.

@@ -33,6 +33,8 @@ export const LINKED_CAPABILITIES = {
   SHARE_READ_HINTS: "share-read-hints",
   /** `GET` and `POST /public/share/comments`, and `visitor` on share grants. */
   SHARE_COMMENTS: "share-comments",
+  /** Signed continuation markers on visitor-comment reads. */
+  SHARE_COMMENT_PAGES: "share-comment-pages",
 } as const
 
 export const LinkedHeartbeat = z
@@ -110,6 +112,13 @@ export const ShareTicket = z
 
 const visitorDigest = z.string().regex(/^[a-f0-9]{32,64}$/)
 
+/** Opaque to the gateway; only the Worktable interprets its comment cursor. */
+export const ShareCommentCursor = z
+  .string()
+  .min(1)
+  .max(512)
+  .regex(/^[A-Za-z0-9_-]+$/)
+
 /**
  * What the gateway learned about a visitor commenting through a link. It is
  * the only party that sees the visitor's address or raw key; a Worktable
@@ -166,6 +175,8 @@ export const LinkedRequestGrant = z.discriminatedUnion("kind", [
         .regex(/^[A-Za-z0-9_-]{43}$/)
         .optional(),
       visitor: ShareVisitor.optional(),
+      /** Only on a comment GET/HEAD, with a pagination-capable current boot. */
+      commentCursor: ShareCommentCursor.optional(),
     })
     .strict(),
 ])

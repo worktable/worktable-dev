@@ -2,6 +2,7 @@ import { Hono } from "hono"
 import { VisitorCommentInputSchema } from "@worktable/types"
 import {
   SHARE_CAPABILITY_HEADER,
+  SHARE_COMMENT_CURSOR_HEADER,
   SHARE_UNLOCK_HEADER,
   VISITOR_HEADERS,
 } from "@worktable/hosted-contract"
@@ -24,6 +25,11 @@ import {
   visitorReplies,
   VisitorCommentRefused,
 } from "../visitor-comment-store.ts"
+import {
+  nextVisitorCommentCursor,
+  readVisitorCommentCursor,
+  visitorCommentPageScope,
+} from "../visitor-comment-pages.ts"
 
 const DIGEST = /^[a-f0-9]{32,64}$/
 const UNAVAILABLE = {
@@ -129,16 +135,35 @@ export function createPublicVisitorCommentsRouter(
       view.policy.allowComments &&
       view.link.comments.acceptComments &&
       !commentPause(context.worktableId, view.link.id)
+    const rawCursor = c.req.header(SHARE_COMMENT_CURSOR_HEADER)
+    if (c.req.method === "POST" && rawCursor !== undefined)
+      return c.json({ error: "Invalid cursor", code: "INVALID_REQUEST" }, 400)
     if (c.req.method === "GET" || c.req.method === "HEAD") {
+      const scope = visitorCommentPageScope([
+        context.worktableId,
+        context.epoch,
+        view.link.id,
+        visitorKey,
+        view.policyRevision,
+        view.link.comments,
+        visitorsSee,
+      ])
+      const page = readVisitorCommentCursor(rawCursor, scope)
+      if (!page)
+        return c.json({ error: "Invalid cursor", code: "INVALID_REQUEST" }, 400)
       const rows = visitorCommentRows({
         worktableId: context.worktableId,
         linkId: view.link.id,
         ...(visitorsSee === "own" ? { visitorKey } : {}),
+        before: page.before,
+        limit: 101,
       })
-      const replies = visitorReplies(rows.map((row) => row.id))
+      const candidates = rows.slice(0, 100)
+      const replies = visitorReplies(candidates.map((row) => row.id))
       const comments = []
-      let bytes = 512
-      for (const row of rows) {
+      // Reserve the envelope and maximum cursor before accounting for rows.
+      let bytes = 1024
+      for (const row of candidates) {
         const item = {
           id: row.id,
           name: row.visitor_name,
@@ -159,11 +184,22 @@ export function createPublicVisitorCommentsRouter(
         if (bytes > 1024 * 1024) break
         comments.push(item)
       }
+      if (rows.length && !comments.length)
+        return c.json(
+          { error: "Comments are unavailable", code: "COMMENTS_UNAVAILABLE" },
+          503
+        )
+      const last = candidates[comments.length - 1]
       return c.json({
         accepting,
         anonymousAllowed: view.link.comments.anonymousAllowed,
         visitorsSee,
         comments,
+        nextCursor:
+          last && rows.length > comments.length
+            ? nextVisitorCommentCursor(last, scope)
+            : null,
+        ...(page.reset ? { reset: true } : {}),
       })
     }
     const clientKey = c.req.header(VISITOR_HEADERS.CLIENT) ?? ""

@@ -290,10 +290,11 @@ ${DOCUMENT_CONTENT_CSS}
 .unavailable p { max-width: 28rem; margin: .875rem auto 0; color: var(--muted-foreground); }
 .comment-toggle, .comment-retry { min-height: 2rem; display: inline-flex; flex: none; align-items: center; margin-left: auto; padding: 0 .75rem; border: 1px solid var(--border-input); border-radius: .625rem; color: var(--foreground); background: var(--field); font: inherit; font-size: .8125rem; font-weight: 550; cursor: pointer; }
 .comment-retry { margin-left: 0; }
+.comment-more { min-height: 2.75rem; margin-top: .75rem; }
 .comment-read-error { margin-top: 1rem; }
 .comment-read-error[hidden] { display: none; }
 .comment-read-error .comment-status { margin-bottom: .5rem; }
-.comment-toggle[hidden] { display: none; }
+.comment-toggle[hidden], .comment-retry[hidden] { display: none; }
 .comment-toggle:hover, .comment-retry:hover { border-color: var(--border-input-hover); background: var(--muted); }
 .comment-toggle[aria-expanded="true"] { background: var(--muted); }
 .comment-toggle:focus-visible, .comment-retry:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }

@@ -52,7 +52,21 @@ test.afterAll(() => {
 async function fixture(page: Page, source: string) {
   const outside: string[] = []
   const errors: string[] = []
-  page.on("pageerror", (error) => errors.push(error.message))
+  page.on("pageerror", (error) => {
+    errors.push(error.message)
+    console.error("Tool frame error:", error.message)
+  })
+  page.on("console", (message) => {
+    if (message.type() === "error")
+      console.error("Tool console:", message.text().slice(0, 1000))
+  })
+  page.on("requestfailed", (request) =>
+    console.error(
+      "Tool request failed:",
+      request.url(),
+      request.failure()?.errorText
+    )
+  )
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url())
     if (url.href === "https://member.example.test/")
@@ -128,16 +142,14 @@ test("an opaque tool reads data and handles controls without browser capabilitie
   await expect(input).toBeFocused()
   await expect
     .poll(() =>
-      page
-        .frames()[1]!
-        .evaluate(
-          () =>
-            (
-              window as unknown as {
-                toolTest: { state: { state: { region: string } } }
-              }
-            ).toolTest.state.state.region
-        )
+      page.frames()[1]!.evaluate(
+        () =>
+          (
+            window as unknown as {
+              toolTest: { state: { state: { region: string } } }
+            }
+          ).toolTest.state.state.region
+      )
     )
     .toBe("North")
   await frame.getByRole("button", { name: "Test unsafe view" }).click()
@@ -154,16 +166,14 @@ test("an opaque tool reads data and handles controls without browser capabilitie
       ).toolTest.close()
     )
   expect(
-    await page
-      .frames()[1]!
-      .evaluate(
-        () =>
-          (
-            window as unknown as {
-              toolTest: { state: { subscribers: number } }
-            }
-          ).toolTest.state.subscribers
-      )
+    await page.frames()[1]!.evaluate(
+      () =>
+        (
+          window as unknown as {
+            toolTest: { state: { subscribers: number } }
+          }
+        ).toolTest.state.subscribers
+    )
   ).toBe(0)
   expect(outside).toEqual([])
   expect(errors).toEqual([])

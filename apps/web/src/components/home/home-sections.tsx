@@ -1,10 +1,13 @@
 import { Link } from "@tanstack/react-router"
 import { AtSign, CircleAlert, Clock3, Reply } from "lucide-react"
-import { lazy, Suspense, useState } from "react"
+import { useState } from "react"
 import type { DocumentSummary, PendingItem } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
 import { cn } from "@worktable/ui/lib/utils"
-import { DocLocation, DocumentFormatIcon } from "@/components/document-format-icon"
+import {
+  DocLocation,
+  DocumentFormatIcon,
+} from "@/components/document-format-icon"
 import { ThreadLink } from "@/components/home/activity-feed"
 import { useLifetimeActions } from "@/hooks/use-document-organize"
 import { usePending } from "@/lib/activity"
@@ -16,8 +19,6 @@ import { useGettingStartedShortcut } from "@/lib/setup"
 
 const rowClass =
   "group flex h-10 min-w-0 items-center gap-3 rounded-lg px-2.5 text-sm transition-colors hover:bg-accent"
-
-const VisitorPendingRow = lazy(() => import("./visitor-pending-row").then(module => ({default: module.VisitorPendingRow})))
 
 // ── Pending ────────────────────────────────────────────────
 
@@ -31,66 +32,70 @@ function PendingRow({
   const where = spaceName ? (
     <span className="shrink-0 text-muted-foreground/70">{spaceName}</span>
   ) : null
-  const label = "min-w-0 flex-1 truncate font-medium text-foreground"
-  switch (item.kind) {
-    case "threadRequest":
-      return (
-        <ThreadLink
-          spaceId={item.spaceId}
-          threadId={item.threadId}
-          className={rowClass}
-        >
-          <AtSign className="size-4 shrink-0 text-muted-foreground" />
-          <span className={label}>
-            {item.from.name ?? "Someone"} asked you in {item.threadTitle}
+  const Icon =
+    item.kind === "threadRequest"
+      ? AtSign
+      : item.kind === "deliveryFailed"
+        ? CircleAlert
+        : Reply
+  const text =
+    item.kind === "threadRequest"
+      ? `${item.from.name ?? "Someone"} asked you in ${item.threadTitle}`
+      : item.kind === "deliveryFailed"
+        ? `Message to ${item.agentName} wasn’t delivered`
+        : item.kind === "visitorCommentsPaused"
+          ? `Comments paused on ${item.linkLabel || "Untitled link"}`
+          : item.kind === "visitorComments"
+            ? `${item.count} visitor comment${item.count === 1 ? "" : "s"} on ${item.docTitle ?? item.docPath}`
+            : `Reply to your comment on ${item.docTitle ?? item.docPath}`
+  const children = (
+    <>
+      <Icon
+        className={cn(
+          "size-4 shrink-0",
+          item.kind === "deliveryFailed"
+            ? "text-destructive"
+            : "text-muted-foreground"
+        )}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium text-foreground">
+          {text}
+        </span>
+        {item.kind === "visitorComments" && (
+          <span className="block truncate text-xs text-muted-foreground">
+            {item.linkLabel || "Untitled link"}
           </span>
-          {where}
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {shortWhen(item.at)}
-          </span>
-        </ThreadLink>
-      )
-    case "visitorComments":
-    case "visitorCommentsPaused":
-      return <Suspense fallback={<div className="h-10" />}><VisitorPendingRow item={item} className={rowClass} where={where} when={shortWhen(item.at)} /></Suspense>
-    case "commentReply":
-      return (
-        <Link
-          to="/spaces/$spaceId/documents/$"
-          params={{ spaceId: item.spaceId, _splat: item.docPath }}
-          className={rowClass}
-        >
-          <Reply className="size-4 shrink-0 text-muted-foreground" />
-          <span className={label}>
-            Reply to your comment on {item.docTitle ?? item.docPath}
-          </span>
-          {where}
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {shortWhen(item.at)}
-          </span>
-        </Link>
-      )
-    case "deliveryFailed":
-      return (
-        <ThreadLink
-          spaceId={item.spaceId}
-          threadId={item.threadId}
-          className={rowClass}
-        >
-          <CircleAlert className="size-4 shrink-0 text-destructive" />
-          <span className={label}>
-            Message to {item.agentName} wasn’t delivered
-          </span>
-          {where}
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {shortWhen(item.at)}
-          </span>
-        </ThreadLink>
-      )
-  }
+        )}
+      </span>
+      {where}
+      <span className="shrink-0 text-xs text-muted-foreground">
+        {shortWhen(item.at)}
+      </span>
+    </>
+  )
+  return item.kind === "threadRequest" || item.kind === "deliveryFailed" ? (
+    <ThreadLink
+      spaceId={item.spaceId}
+      threadId={item.threadId}
+      className={rowClass}
+    >
+      {children}
+    </ThreadLink>
+  ) : (
+    <Link
+      to="/spaces/$spaceId/documents/$"
+      params={{ spaceId: item.spaceId, _splat: item.docPath }}
+      hash={item.kind === "commentReply" ? undefined : "visitors"}
+      className={rowClass}
+    >
+      {children}
+    </Link>
+  )
 }
 
-const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1)
+const lowerFirst = (text: string) =>
+  text.charAt(0).toLowerCase() + text.slice(1)
 
 /** Shown when something is waiting on the reader, or when that is unknown. */
 export function PendingSection({ spaceId }: { spaceId?: string }) {

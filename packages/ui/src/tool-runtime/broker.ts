@@ -273,28 +273,37 @@ export function createToolBroker(
   ): () => void {
     identifier(collection)
     let stopped = closed
-    let requested = 0
-    let delivered = 0
+    let inFlight = false
+    let dirty = false
     const subscription = {
       collection,
       load: () => {
         if (stopped) return
-        const current = ++requested
-        void query(collection, value).then(
-          (result) => {
-            if (!stopped && current > delivered) {
-              delivered = current
-              changed(result)
+        if (inFlight) {
+          dirty = true
+          return
+        }
+        inFlight = true
+        void query(collection, value)
+          .then(
+            (result) => {
+              if (!stopped) changed(result)
+            },
+            () => {
+              if (!stopped)
+                diagnostic(
+                  "record_subscribe_load_failed",
+                  "Could not refresh records."
+                )
             }
-          },
-          () => {
-            if (!stopped)
-              diagnostic(
-                "record_subscribe_load_failed",
-                "Could not refresh records."
-              )
-          }
-        )
+          )
+          .finally(() => {
+            inFlight = false
+            if (dirty && !stopped) {
+              dirty = false
+              subscription.load()
+            }
+          })
       },
       close: () => {
         if (stopped) return
@@ -305,7 +314,9 @@ export function createToolBroker(
       },
     }
     if (closed) return () => {}
-    const first = ![...subscriptions].some((item) => item.collection === collection)
+    const first = ![...subscriptions].some(
+      (item) => item.collection === collection
+    )
     subscriptions.add(subscription)
     // Subscribe before the first query. The parent's existing change cursor
     // priming then closes the initial query/subscription race.

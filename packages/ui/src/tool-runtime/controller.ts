@@ -168,7 +168,6 @@ export function startIsolatedTool(options: {
         // for input. The request settles only after its view is committed.
         await new Promise<void>((resolve, reject) => {
           let completed = false
-          let fallback: ReturnType<typeof setTimeout> | undefined
           const draw = () => {
             if (completed) return
             completed = true
@@ -187,7 +186,7 @@ export function startIsolatedTool(options: {
           finishRender = draw
           frame = requestAnimationFrame(draw)
           // Off-screen cross-origin frames and hidden tabs can suspend RAF.
-          fallback = setTimeout(draw, 250)
+          const fallback = setTimeout(draw, 250)
         })
         response(id, true, null)
       } else if (METHODS.has(value.method)) {

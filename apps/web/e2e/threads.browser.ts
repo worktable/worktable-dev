@@ -690,6 +690,59 @@ test("a long thread list keeps its order and place when a thread opens", async (
     await expect(oldest).toBeInViewport({ timeout: 500 })
   }).toPass({ timeout: 20_000 })
 
+  // Recreated rows keep their height while scrolling back through the list.
+  // In particular, timestamps must not briefly grow from one line to two.
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 915 })
+    const changedRows = await list.evaluate(async (nav) => {
+      const scroller = nav.parentElement!
+      const firstRow = nav.querySelector<HTMLElement>("[data-index]")!
+      const rowHeight = firstRow.getBoundingClientRect().height
+      const changes: number[] = []
+      const observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (!nav.contains(entry.target)) continue
+          if (
+            Math.abs(entry.target.getBoundingClientRect().height - rowHeight) >
+            1
+          ) {
+            changes.push(Number((entry.target as HTMLElement).dataset.index))
+          }
+        }
+      })
+      const observeRows = () => {
+        for (const row of nav.querySelectorAll("[data-index]")) {
+          observer.observe(row)
+        }
+      }
+      const mutations = new MutationObserver(observeRows)
+      mutations.observe(nav, { childList: true, subtree: true })
+      observeRows()
+      try {
+        scroller.scrollTop = scroller.scrollHeight
+        while (scroller.scrollTop > 0) {
+          scroller.scrollTop = Math.max(0, scroller.scrollTop - 350)
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => resolve())
+          )
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => resolve())
+          )
+        }
+        return changes
+      } finally {
+        observer.disconnect()
+        mutations.disconnect()
+      }
+    })
+    expect(changedRows).toEqual([])
+  }
+  await page.setViewportSize({ width: 1280, height: 915 })
+  await expect(async () => {
+    await page.mouse.wheel(0, 4_000)
+    await expect(oldest).toBeInViewport({ timeout: 500 })
+  }).toPass({ timeout: 20_000 })
+
   // Newer threads stay above older ones.
   const shown = (await list.getByRole("listitem").allTextContents())
     .map((text) => text.match(/List thread (\d{3})/)?.[1])

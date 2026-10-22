@@ -18,13 +18,18 @@
   } catch {
     return
   }
-  const envelope = /^\/s\/([A-Za-z0-9_-]{10,80})\/([A-Za-z0-9_-]{43})$/.exec(
-    location.pathname
-  )
+  const envelope = /^\/s\/([^/]+)\/([A-Za-z0-9_-]{43})$/.exec(location.pathname)
   const shell = document.querySelector("main")
   if (!envelope || !shell) return
+  let workspaceId
+  try {
+    workspaceId = decodeURIComponent(envelope[1])
+  } catch {
+    return
+  }
+  if (!workspaceId) return
   const token = envelope[2]
-  const bridgeUrl = `/s/${envelope[1]}/bridge`
+  const bridgeUrl = `/s/${encodeURIComponent(workspaceId)}/bridge`
 
   /** @param {number} ms */
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -234,10 +239,12 @@
    * A read, retried while the Worktable wakes or is busy, honouring
    * Retry-After, and given up in time for the tool's own 30 s timeout.
    * @param {object} body
+   * @param {() => boolean} [active]
    */
-  async function read(body) {
+  async function read(body, active = () => !stopped) {
     const started = Date.now()
     for (let attempt = 0; ; attempt += 1) {
+      if (!active()) return { status: 0, answer: null, retryAfter: 0 }
       const result = await call(body, RETRY_WITHIN_MS - (Date.now() - started))
       const code = result.answer?.error?.code
       const retryable =
@@ -247,7 +254,7 @@
       const wait = (result.retryAfter || 2) * 1000
       if (
         !retryable ||
-        stopped ||
+        !active() ||
         attempt >= MAX_RETRIES ||
         Date.now() - started + wait > RETRY_WITHIN_MS
       ) {
@@ -363,7 +370,7 @@
     respond(id, true, 200, { state })
   }
 
-  const RECORD_QUERY = /^\/link\/records\/([^/?#\\]{1,128})\/query$/
+  const RECORD_QUERY = /^\/link\/records\/([^/?#\\]+)\/query$/
 
   /** @param {Record<string, unknown>} data */
   function request(data) {
@@ -439,9 +446,12 @@
     polling = true
     try {
       const result = await limited(() =>
-        read({ v: 1, op: "changes", ...(cursor ? { since: cursor } : {}) })
+        read(
+          { v: 1, op: "changes", ...(cursor ? { since: cursor } : {}) },
+          watching
+        )
       )
-      if (result === BUSY) return
+      if (result === BUSY || !watching()) return
       if (result.status === 401 || result.status === 404) linkGone = true
       const changes =
         result.status === 200 && plainObject(result.answer?.result)
@@ -450,13 +460,14 @@
       if (typeof changes.cursor === "string" && changes.cursor.length <= 256) {
         cursor = changes.cursor
       }
-      if (baseline) return
       const changed =
-        changes.reset === true
+        baseline || changes.reset === true
           ? [...subscriptions.keys()]
           : Array.isArray(changes.collections)
             ? changes.collections
             : []
+      // The baseline can include a change after the first record read. Refresh
+      // once after installing it so that change cannot fall between cursors.
       // A related collection can change a predicate, expansion or backlink.
       // Hints name only granted collections, so refresh each bounded active
       // subscription when any of those dependencies changes.
@@ -654,7 +665,7 @@
       case "worktable.subscribe":
         if (
           typeof data.collection === "string" &&
-          data.collection.length <= 128 &&
+          data.collection.length > 0 &&
           (subscriptions.has(data.collection) || subscriptions.size < 64)
         ) {
           const first = subscriptions.size === 0

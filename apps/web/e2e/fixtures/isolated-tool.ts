@@ -23,7 +23,9 @@ const host = startIsolatedTool({
       if (method === "records.query") {
         testState.queries++
         return {
-          records: [{ data: { name: "Granted <img src=//outside.invalid>" } }],
+          records: [
+            { data: { name: "Équipe 東京 <img src=//outside.invalid>" } },
+          ],
         }
       }
       if (method === "state.get")

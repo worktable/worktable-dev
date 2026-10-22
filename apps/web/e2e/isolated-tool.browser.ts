@@ -94,7 +94,7 @@ async function fixture(page: Page, source: string) {
     if (url.href === "https://member.example.test/")
       return route.fulfill({
         contentType: "text/html",
-        body: `<!doctype html><button onclick="this.textContent='Still responsive'">Check page</button><iframe title="Tool" sandbox="allow-scripts" src="https://tool.example.test/frame"></iframe>`,
+        body: `<!doctype html><meta charset="utf-8"><button onclick="this.textContent='Still responsive'">Check page</button><iframe title="Tool" sandbox="allow-scripts" src="https://tool.example.test/frame"></iframe>`,
       })
     if (url.href === "https://tool.example.test/frame")
       return route.fulfill({
@@ -104,7 +104,7 @@ async function fixture(page: Page, source: string) {
             "sandbox allow-scripts; default-src 'none'; script-src https://tool.example.test/runtime.js 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors https://member.example.test",
           "Referrer-Policy": "no-referrer",
         },
-        body: `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><main id="tool"></main><script type="application/json" id="tool-source">${JSON.stringify(source).replaceAll("<", "\\u003c")}</script><script type="application/json" id="tool-worker">${JSON.stringify(workerSource).replaceAll("<", "\\u003c")}</script><script src="https://tool.example.test/runtime.js" defer></script></body></html>`,
+        body: `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><main id="tool"></main><script type="application/json" id="tool-source">${JSON.stringify(source).replaceAll("<", "\\u003c")}</script><script type="application/json" id="tool-worker">${JSON.stringify(workerSource).replaceAll("<", "\\u003c")}</script><script src="https://tool.example.test/runtime.js" defer></script></body></html>`,
       })
     if (url.href === "https://tool.example.test/runtime.js")
       return route.fulfill({ contentType: "text/javascript", body: runtime })
@@ -154,7 +154,7 @@ test("an opaque tool reads data and handles controls without browser capabilitie
     frame.getByRole("heading", { name: "Isolated", exact: true })
   ).toBeVisible()
   await expect(
-    frame.getByText("Granted <img src=//outside.invalid>", { exact: true })
+    frame.getByText("Équipe 東京 <img src=//outside.invalid>", { exact: true })
   ).toBeVisible()
   await expect(frame.locator("img,link,style,iframe,object")).toHaveCount(0)
   await expect(frame.locator("svg path")).toHaveCount(1)

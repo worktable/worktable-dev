@@ -53,7 +53,7 @@ export function startIsolatedTool(options: {
   )
   let worker: Worker
   try {
-    worker = new Worker(url, { type: "module" })
+    worker = new Worker(url)
   } catch (error) {
     URL.revokeObjectURL(url)
     throw error
@@ -115,7 +115,10 @@ export function startIsolatedTool(options: {
     if (closed || active || !queue.length) return
     active = queue.shift()!
     queuedCharacters -= active.payload.length
-    watchdog = setTimeout(fault, active.type === "start" ? 10_000 : 3_000)
+    watchdog = setTimeout(
+      () => fault("The tool worker timed out."),
+      active.type === "start" ? 10_000 : 3_000
+    )
     worker.postMessage(active)
   }
   function response(id: number, ok: boolean, value: unknown): void {
@@ -248,10 +251,11 @@ export function startIsolatedTool(options: {
       active = undefined
       advance()
     } catch {
-      fault()
+      fault("The tool worker returned an invalid result.")
     }
   }
-  worker.onerror = (event) => fault(event.message)
+  worker.onerror = (event) =>
+    fault(event.message || "The tool worker could not load.")
   worker.onmessageerror = () => fault("The worker returned an invalid message.")
   queue.push({ type: "start", id: ++sequence, payload: options.source })
   queuedCharacters = options.source.length

@@ -52,7 +52,7 @@ export function startIsolatedTool(options: {
   )
   let worker: Worker
   try {
-    worker = new Worker(url)
+    worker = new Worker(url, { type: "module" })
   } catch (error) {
     URL.revokeObjectURL(url)
     throw error
@@ -246,10 +246,7 @@ export function startIsolatedTool(options: {
       fault()
     }
   }
-  worker.onerror = (event) => {
-    console.error("Worktable tool worker failed:", event.message)
-    fault()
-  }
+  worker.onerror = fault
   worker.onmessageerror = fault
   queue.push({ type: "start", id: ++sequence, payload: options.source })
   queuedCharacters = options.source.length

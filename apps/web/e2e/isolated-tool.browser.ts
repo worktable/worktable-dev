@@ -21,7 +21,7 @@ test.beforeAll(() => {
       "build",
       "packages/ui/src/tool-runtime/worker.ts",
       "--target=browser",
-      "--format=iife",
+      "--format=esm",
       "--minify",
       `--outfile=${worker}`,
     ],

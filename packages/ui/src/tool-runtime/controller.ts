@@ -57,7 +57,8 @@ export function startIsolatedTool(options: {
     URL.revokeObjectURL(url)
     throw error
   }
-  URL.revokeObjectURL(url)
+  // Keep the source alive until the worker has actually fetched and executed
+  // it. Creating a Worker starts that load asynchronously.
   let closed = false
   let sequence = 0
   let active: Turn | undefined
@@ -80,6 +81,7 @@ export function startIsolatedTool(options: {
     clearTimeout(watchdog)
     if (frame !== undefined) cancelAnimationFrame(frame)
     worker.terminate()
+    URL.revokeObjectURL(url)
     queue.length = 0
     queuedCharacters = 0
     pending.clear()
@@ -214,6 +216,7 @@ export function startIsolatedTool(options: {
   }
   worker.onmessage = (event) => {
     if (closed) return
+    URL.revokeObjectURL(url)
     try {
       const value = event.data as Record<string, unknown>
       if (
@@ -243,7 +246,10 @@ export function startIsolatedTool(options: {
       fault()
     }
   }
-  worker.onerror = fault
+  worker.onerror = (event) => {
+    console.error("Worktable tool worker failed:", event.message)
+    fault()
+  }
   worker.onmessageerror = fault
   queue.push({ type: "start", id: ++sequence, payload: options.source })
   queuedCharacters = options.source.length

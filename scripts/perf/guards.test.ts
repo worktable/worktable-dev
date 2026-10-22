@@ -73,6 +73,25 @@ describe("perf guards", () => {
     ).toContain("Remove 1 entry")
   })
 
+  test("the visitor broker registers recursive timers as well as intervals", () => {
+    const sites = findPolling([
+      {
+        file: "packages/ui/src/public-share-live.js",
+        text: "function schedulePoll() { setTimeout(poll, 30000) } function start() { setInterval(ping, 1000) }",
+      },
+    ])
+    expect(sites.map(({ site, kind }) => ({ site, kind }))).toEqual([
+      {
+        site: "packages/ui/src/public-share-live.js#schedulePoll",
+        kind: "setTimeout",
+      },
+      {
+        site: "packages/ui/src/public-share-live.js#start",
+        kind: "setInterval",
+      },
+    ])
+  })
+
   test("invalidation must be keyed and narrower than a Space", () => {
     const sites = findInvalidation([
       {

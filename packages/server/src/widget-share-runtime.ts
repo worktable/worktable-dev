@@ -21,6 +21,7 @@ function fail(code,message){const error=new Error(message);error.code=code;retur
 function request(path,method,body){
   if(pending.size>=40)return Promise.reject(fail('LINK_BUSY','Too many requests. Try again in a moment.'));
   return new Promise((resolve,reject)=>{
+    const serialized=body===undefined?null:JSON.stringify(body);
     const id='share-'+(++sequence);
     const timer=setTimeout(()=>{pending.delete(id);reject(fail('NETWORK_ERROR','The request timed out. Try again.'))},30000);
     pending.set(id,result=>{
@@ -28,16 +29,19 @@ function request(path,method,body){
       if(result.ok)resolve(result.body);
       else {const error=fail(result.body?.code||'BRIDGE_ERROR',result.body?.error||'Something went wrong. Try again.');error.status=result.status;reject(error)}
     });
-    post({type:'worktable.api.request',id,method:method||'GET',path,body:body===undefined?null:JSON.stringify(body)},'*');
+    post({type:'worktable.api.request',id,method:method||'GET',path,body:serialized},'*');
   });
 }
 const readonly=()=>Promise.reject(fail('LINK_READ_ONLY','This link is view only.'));
 const recordPath=collection=>'/link/records/'+encodeURIComponent(collection)+'/query';
 function subscribe(collection,query,callback,detailed){
   let closed=false;
+  let requested=0;
+  let delivered=0;
   const load=async()=>{
+    const current=++requested;
     const result=await request(recordPath(collection),'POST',query||{});
-    if(!closed)callback(detailed?result:result.records);
+    if(!closed&&current>delivered){delivered=current;callback(detailed?result:result.records)}
   };
   const changed=event=>{if(event.source===window.parent&&event.data?.type==='worktable.records.changed'&&event.data.collection===collection&&!closed)void load().catch(console.error)};
   window.addEventListener('message',changed);
@@ -55,12 +59,21 @@ const records={
 const state={
   get:async key=>{const result=await request('/link/state');return typeof key==='string'?result.state[key]:result.state},
   set:async(key,value)=>{
-    const current=await state.get();
+    const snapshot=await request('/link/state');
+    const current=snapshot.visitorState||snapshot.state;
     const next=typeof key==='string'?{...current,[key]:value}:key&&typeof key==='object'?{...current,...key}:{};
     await request('/link/state','PUT',{state:next});
-    return typeof key==='string'?value:next;
+    return typeof key==='string'?value:key&&typeof key==='object'?{...snapshot.state,...next}:{};
   },
-  update:async updater=>{const next=await updater(await state.get());await request('/link/state','PUT',{state:next||{}});return next||{}}
+  update:async updater=>{
+    const snapshot=await request('/link/state');
+    const next=await updater(snapshot.state)||{};
+    if(typeof next!=='object'||Array.isArray(next))throw fail('INVALID_QUERY',"The state isn't valid.");
+    const own=snapshot.visitorState||snapshot.state;
+    const overlay=Object.create(null);
+    for(const [key,value] of Object.entries(next))if(Object.hasOwn(own,key)||JSON.stringify(value)!==JSON.stringify(snapshot.state[key]))overlay[key]=value;
+    await request('/link/state','PUT',{state:overlay});return next;
+  }
 };
 const ui={getTheme:()=>document.documentElement.getAttribute('data-theme'),getViewport:()=>({width:innerWidth,height:innerHeight}),notify:message=>window.dispatchEvent(new CustomEvent('worktable:notice',{detail:{message:String(message)}})),getDiagnostics:()=>[],reportDiagnostic:()=>{}};
 window.worktable={version:cfg.runtimeVersion,records,state,ui,navigation:{openDocument:()=>Promise.reject(fail('NOT_AVAILABLE','This link cannot open other documents.'))},diagnostics:{list:ui.getDiagnostics,report:ui.reportDiagnostic},toast:ui.notify};
@@ -71,12 +84,13 @@ function interacted(event){if(!event.isTrusted||Date.now()-lastInteraction<1000)
 window.addEventListener('pointerdown',interacted,{passive:true});
 window.addEventListener('keydown',interacted);
 window.addEventListener('click',event=>{
+  if(event.isTrusted){lastInteraction=Date.now();post({type:'worktable.interaction',navigationToken},'*')}
   const anchor=event.composedPath().find(node=>node instanceof HTMLAnchorElement);
   if(!anchor||!anchor.getAttribute('href')||anchor.getAttribute('href').startsWith('#'))return;
   let url;try{url=new URL(anchor.href)}catch{return}
   if(!['http:','https:'].includes(url.protocol)||url.username||url.password)return;
   event.preventDefault();
-  if(!event.isTrusted||Date.now()-lastInteraction>1500)return;
+  if(!event.isTrusted)return;
   post({type:'worktable.share.open-link',url:url.href,navigationToken},'*');
 },true);
 window.addEventListener('submit',event=>event.preventDefault());

@@ -1,5 +1,5 @@
 {
-  "$comment": "Every refetchInterval and setInterval in apps/web/src, one entry per site. A site is <file>#<enclosing function or variable>; list a site twice if it occurs twice. Polling is the last resort: prefer a socket event, or a refetch when the user acts. Checked by bun run perf:guards; see docs/performance.md.",
+  "$comment": "Every refetchInterval and setInterval in apps/web/src, plus all timers in the public visitor broker, one entry per site. A site is <file>#<enclosing function or variable>; list a site twice if it occurs twice. Polling is the last resort: prefer a socket event, or a refetch when the user acts. Checked by bun run perf:guards; see docs/performance.md.",
   "sites": [
     {
       "site": "apps/web/src/components/editor/editor.tsx#AnnotationBadges.timer",
@@ -116,6 +116,18 @@
     {
       "site": "apps/web/src/routes/index.tsx#useToday.timer",
       "why": "Updates Home's date heading each minute; no request."
+    },
+    {
+      "site": "packages/ui/src/public-share-live.js#sleep",
+      "why": "Bounded retry backoff: data calls stop within 25 seconds and waking checks stop within one minute; there is no unbounded retry loop."
+    },
+    {
+      "site": "packages/ui/src/public-share-live.js#schedulePoll",
+      "why": "Checks collection hints every 30 seconds with jitter only while a visible tool has subscriptions and interaction within ten minutes; visibility resumes one immediate check and navigation stops the broker."
+    },
+    {
+      "site": "packages/ui/src/public-share-live.js#(module)",
+      "why": "One check a second after the initial frame load detects a failed SDK handshake; it does not repeat after the tool starts."
     }
   ]
 }

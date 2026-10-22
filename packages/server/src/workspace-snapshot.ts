@@ -195,7 +195,8 @@ export async function writeWorkspaceSnapshot(
                 throw new Error("Private state belongs to the active Worktable")
               visitorComments = await captureVisitorCommentBackup(
                 temporary,
-                prepareWorkspaceTarget(sourceRoot, "open").manifest.id
+                prepareWorkspaceTarget(sourceRoot, "open").manifest.id,
+                options.signal
               )
             }
             return result

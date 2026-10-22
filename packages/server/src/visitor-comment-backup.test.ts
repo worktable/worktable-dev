@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect, it } from "bun:test"
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { Database } from "bun:sqlite"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
@@ -62,6 +64,19 @@ it("captures private state and rejects stale safety fences before restoring a co
   const releaseEmpty = holdVisitorCommentsAtCheckpoint(undefined)
   releaseEmpty()
   const row = receiveVisitorComment(input())
+  const foreign = receiveVisitorComment({
+    ...input(),
+    worktableId: "previous-worktable",
+    body: "FOREIGN_PRIVATE_BACKUP_CONTROL",
+    visitorName: "Foreign fixture visitor",
+  })
+  appendVisitorReply(
+    "previous-worktable",
+    foreign.id,
+    { id: "other-member", name: "Other team" },
+    "FOREIGN_REPLY_CONTROL"
+  )
+  pauseVisitorComments("previous-worktable", "link", true)
   const beforeDuplicate = visitorCommentsCheckpoint()
   expect(receiveVisitorComment(input())).toEqual(row)
   expect(visitorCommentsCheckpoint()).toEqual(beforeDuplicate)
@@ -73,12 +88,29 @@ it("captures private state and rejects stale safety fences before restoring a co
   )
   pauseVisitorComments("worktable", "link", true)
   const backup = join(root, "backup")
+  const beforeCancelled = visitorCommentsCheckpoint()
+  await expect(
+    captureVisitorCommentBackup(backup, "worktable", AbortSignal.timeout(1))
+  ).rejects.toThrow()
+  expect(visitorCommentsCheckpoint()).toEqual(beforeCancelled)
+  await expect(
+    stat(join(backup, "app", "visitor-comments.sqlite"))
+  ).rejects.toMatchObject({ code: "ENOENT" })
   const state = (await captureVisitorCommentBackup(backup, "worktable"))!
   expect(state.checkpoint).toEqual(visitorCommentsCheckpoint()!)
   expect(
     (await stat(join(backup, "app", "visitor-comments.sqlite"))).mode & 0o777
   ).toBe(0o600)
   await inspectVisitorCommentBackup(backup, state)
+  const capturedBytes = await readFile(
+    join(backup, "app", "visitor-comments.sqlite")
+  )
+  for (const foreignText of [
+    "FOREIGN_PRIVATE_BACKUP_CONTROL",
+    "FOREIGN_REPLY_CONTROL",
+    "Foreign fixture visitor",
+  ])
+    expect(capturedBytes.includes(Buffer.from(foreignText))).toBe(false)
   expect(() => holdVisitorCommentsAtCheckpoint(undefined)).toThrow(
     "changed after"
   )
@@ -120,6 +152,9 @@ it("captures private state and rejects stale safety fences before restoring a co
     "Saved reply",
   ])
   expect(commentPause("worktable", "link")).toBe("sharer")
+  expect(readVisitorComment("previous-worktable", foreign.id)).toBeNull()
+  expect(visitorReplies([foreign.id])).toEqual([])
+  expect(commentPause("previous-worktable", "link")).toBeNull()
   expect(visitorCommentsCheckpoint()?.incarnation).not.toBe(
     state.checkpoint.incarnation
   )
@@ -144,6 +179,28 @@ it("rejects corrupt or foreign backups without changing current private data or 
   ).rejects.toThrow("another Worktable")
   const path = join(backup, "app", "visitor-comments.sqlite")
   const bytes = await readFile(path)
+  const foreign = new Database(path)
+  foreign
+    .query("UPDATE visitor_comments SET worktableId=?")
+    .run("foreign-worktable")
+  const foreignCheckpoint = foreign
+    .query("SELECT incarnation,revision FROM visitor_meta WHERE id=1")
+    .get()
+  foreign.close()
+  const foreignBytes = await readFile(path)
+  const foreignState = {
+    ...state,
+    checkpoint: foreignCheckpoint as typeof state.checkpoint,
+    size: foreignBytes.byteLength,
+    sha256: createHash("sha256").update(foreignBytes).digest("hex"),
+  }
+  await expect(
+    inspectVisitorCommentBackup(backup, foreignState)
+  ).rejects.toThrow("another Worktable")
+  await expect(
+    restoreVisitorCommentBackup(backup, foreignState, "worktable")
+  ).rejects.toThrow("another Worktable")
+  expect(visitorCommentsCheckpoint()).toEqual(checkpoint)
   bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 1
   await writeFile(path, bytes)
   await expect(inspectVisitorCommentBackup(backup, state)).rejects.toThrow(

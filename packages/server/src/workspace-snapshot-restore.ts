@@ -133,7 +133,8 @@ export async function recoverMissingWorkspaceSnapshot(
 interface RestoreJob extends SnapshotRestoreRequest {
   teamState?: TeamBackupState
   teamRestored?: boolean
-  visitorComments?: VisitorCommentBackupState
+  /** Missing is a legacy job; null explicitly restores no private state. */
+  visitorComments?: VisitorCommentBackupState | null
   visitorCommentsRestored?: boolean
   id: string
   kind: "snapshot"
@@ -269,9 +270,7 @@ export async function restoreLiveWorkspaceSnapshot(
           id,
           kind: "snapshot",
           ...(snapshot.teamState ? { teamState: snapshot.teamState } : {}),
-          ...(snapshot.visitorComments
-            ? { visitorComments: snapshot.visitorComments }
-            : {}),
+          visitorComments: snapshot.visitorComments ?? null,
           state: "replacing",
           updatedAt: new Date().toISOString(),
           expiresAt: new Date(Date.now() + 30 * 86400000).toISOString(),
@@ -383,7 +382,7 @@ export async function finalizeCommittedTeamSnapshotRestore(
     job.teamRestored = true
     await saveJob(directory, job)
   }
-  if (!job.visitorCommentsRestored) {
+  if (!job.visitorCommentsRestored && job.visitorComments !== undefined) {
     const state = job.visitorComments
       ? VisitorCommentBackupStateSchema.parse(job.visitorComments)
       : null

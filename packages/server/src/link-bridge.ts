@@ -169,6 +169,11 @@ export function linkBridge(getShareOrigin: () => string | null) {
       const deadline = Date.now() + 1500
       let expired = false
       const admitted = async (): Promise<Response> => {
+        // Keep the visitor lease while yielding to request I/O. Ready in-memory
+        // reads otherwise drain a whole burst in microtasks before a member's
+        // request can run, without ever filling the admission queue.
+        await new Promise<void>((resolve) => setImmediate(resolve))
+        if (expired || Date.now() >= deadline) return busy()
         const call = await readCall(c.req.raw, deadline)
         if (!call) return Date.now() >= deadline ? busy() : invalid()
         if (expired) return busy()

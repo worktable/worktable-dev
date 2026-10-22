@@ -255,6 +255,6 @@ describe("agent connection routes", () => {
     const after = await app.fetch(
       request("GET", "/api/agent-connections", cookie)
     )
-    expect(await after.json()).toEqual({ connections: [] })
+    expect(await after.json()).toMatchObject({ connections: [] })
   })
 })

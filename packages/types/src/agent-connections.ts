@@ -1,5 +1,6 @@
 import type { AgentPlatformId } from "./agent-platforms"
 import type { ParticipantRef } from "./threads"
+import type { GrokBotCandidate, GrokBotConnection } from "./grok-bot"
 
 export type AgentConnectionTarget =
   | { kind: "mcp-client"; clientId: string | null }
@@ -143,6 +144,10 @@ export interface AgentConnection {
 
 export interface AgentConnectionInventory {
   connections: AgentConnection[]
+  grokBots?: GrokBotConnection[]
+  grokBotCandidates?: GrokBotCandidate[]
+  /** OAuth resource for the Grok connector, including a Worktable Link resource. */
+  grokBotMcpUrl?: string | null
   /**
    * Provider inventories that could not be loaded. Connections from other
    * auth kinds remain complete and actionable.

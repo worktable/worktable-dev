@@ -1,4 +1,5 @@
 import { isWorkspaceDraining } from "./workspace-request-lifecycle.ts"
+import { grokBotPolicy, observeGrokBotCandidate, readGrokBots } from "./grok-bot-store.ts"
 import { currentTeamWorktable, requireTeamDatabase } from "./team-database.ts"
 import { findTeamMemberById, listTeamMembers } from "./team-members.ts"
 import { identityForTeamMember } from "./team-identity.ts"
@@ -33,6 +34,7 @@ import { hasWorkspaceOwnerAuthority } from "./owner-authority.ts"
 import {
   acceptThreadDelivery,
   claimThreadDelivery,
+  commitThreadDeliveryReply,
   failThreadDelivery,
   getThreadActivities,
   getThreadActivity,
@@ -44,6 +46,8 @@ import {
   readThreadActivities,
   reconcileThreadDeliveries,
   requireThreadDeliveryLease,
+  requiresManagedDeliveryLease,
+  ThreadDeliveryError,
   type ReconcileThreadDeliveryInput,
   type ClaimedDelivery,
   type ThreadActivityLookup,
@@ -503,7 +507,43 @@ export async function postThreadMessageWithStored(
       }
       const selectedAuthorIdentityId =
         selectedAuthorIdentity?.id ?? defaultConversationIdentityId(actor.id)
-      if (input.deliveryLeaseId && responseTo) {
+      if (
+        !responseTo &&
+        input.inReplyTo &&
+        (await requiresManagedDeliveryLease({
+          participantId: actor.id,
+          messageId: input.inReplyTo,
+          threadId: existing.id,
+          location,
+        }))
+      ) {
+        throw new ThreadDeliveryError(
+          "LEASE_LOST",
+          "Grok Bot replies must name the assignment in responseTo and include its current lease"
+        )
+      }
+      const grok = responseTo ? await grokBotPolicy(actor.id) : undefined
+      if (grok && grok.principalId !== identity.principal.id) {
+        throw new ThreadError(
+          "FORBIDDEN",
+          "This Grok Bot connection belongs to a different authenticated principal"
+        )
+      }
+      const managedReply =
+        responseTo &&
+        (await requiresManagedDeliveryLease({
+          participantId: actor.id,
+          messageId: responseTo,
+          threadId: existing.id,
+          location,
+        }))
+      if (managedReply && !input.deliveryLeaseId) {
+        throw new ThreadDeliveryError(
+          "LEASE_LOST",
+          "Grok Bot replies require the current delivery lease"
+        )
+      }
+      if (input.deliveryLeaseId && responseTo && !managedReply) {
         await requireThreadDeliveryLease({
           location,
           threadId: existing.id,
@@ -519,21 +559,49 @@ export async function postThreadMessageWithStored(
             input.responseIdentityId === undefined
           ? otherParticipant(existing.members, actor.id)
           : undefined
-      await assertCurrentThreadRecipients(location, actor.id, recipient, input, existing)
-      result = await appendThreadMessage(location, existing.id, {
-        author: actor,
-        authorIdentityId: input.authorIdentityId,
-        recipient,
-        notifyIdentityIds: input.notifyIdentityIds,
-        responseIdentityId: input.responseIdentityId,
-        body: input.body,
-        idempotencyKey: input.idempotencyKey,
-        inReplyTo: input.inReplyTo,
-        responseTo,
-        expectsReply: input.expectsReply,
-        participants: attentionContext.participants,
-        availableParticipants: attentionContext.availableParticipants,
-      })
+      const replyLocation = location
+      const append = async () => {
+        await assertCurrentThreadRecipients(
+          replyLocation,
+          actor.id,
+          recipient,
+          input,
+          existing
+        )
+        return appendThreadMessage(replyLocation, existing.id, {
+          author: actor,
+          authorIdentityId: input.authorIdentityId,
+          recipient,
+          notifyIdentityIds: input.notifyIdentityIds,
+          responseIdentityId: input.responseIdentityId,
+          body: input.body,
+          idempotencyKey: input.idempotencyKey,
+          inReplyTo: input.inReplyTo,
+          responseTo,
+          expectsReply: input.expectsReply,
+          participants: attentionContext.participants,
+          availableParticipants: attentionContext.availableParticipants,
+        })
+      }
+      result =
+        managedReply && responseTo && input.deliveryLeaseId
+          ? await commitThreadDeliveryReply(
+              {
+                location,
+                threadId: existing.id,
+                messageId: responseTo,
+                identityId: selectedAuthorIdentityId,
+                participantId: actor.id,
+                leaseId: input.deliveryLeaseId,
+              },
+              append,
+              async () =>
+                findThreadAppendRetry(
+                  await findThread(existing.id, replyLocation),
+                  { ...input, responseTo, author: actor }
+                )
+            )
+          : await append()
     }
   } else {
     location =
@@ -717,6 +785,7 @@ export async function listThreadParticipants(
   const actorId = identity
     ? (await participantForIdentity(identity)).participant.id
     : undefined
+  const grokIds = new Set((await readGrokBots()).filter((c) => c.enabled && c.verifiedAt).map((c) => c.participantId))
   const team = currentTeamWorktable()
   if (team) {
     const humans = await Promise.all(
@@ -873,7 +942,7 @@ export async function listThreadParticipants(
       .map((participant) => ({
         ...participant,
         defaultIdentityId: defaultConversationIdentityId(participant.id),
-        alwaysOn: alwaysOnIds.has(participant.id),
+        alwaysOn: alwaysOnIds.has(participant.id) || grokIds.has(participant.id),
       }))
   }
   const [bindings, connections, tokens, participants, signIns] =
@@ -929,7 +998,7 @@ export async function listThreadParticipants(
     .map((participant) => ({
       ...participant,
       defaultIdentityId: defaultConversationIdentityId(participant.id),
-      alwaysOn: alwaysOnParticipantIds.has(participant.id),
+      alwaysOn: alwaysOnParticipantIds.has(participant.id) || grokIds.has(participant.id),
     }))
 }
 
@@ -1029,6 +1098,9 @@ async function buildParticipantPresentations(): Promise<Record<string, Participa
       ...(signIn.platform ? { platform: signIn.platform } : {}),
       icon: signIn.icon ?? null,
     }
+  }
+  for (const grok of await readGrokBots()) {
+    presentations[grok.participantId] = { ...presentations[grok.participantId], platform: "grok-bot" }
   }
   for (const [key, participant] of bindings) {
     if (participant.kind === "human") {
@@ -1545,7 +1617,7 @@ export async function waitForThreadReply(
  * neither a thread file nor the delivery state changed since the last time,
  * this takes no lock and writes nothing.
  */
-async function reconcileParticipantDeliveries(
+export async function reconcileParticipantDeliveries(
   participantId: string,
   knownScan?: ThreadDigestScan
 ): Promise<ThreadActivityLookup> {
@@ -1602,6 +1674,9 @@ export async function claimNextThreadDelivery(
       threadLocationVersion: supportedThreadLocationVersion,
     }
   )
+  await observeGrokBotCandidate(identity, participant)
+  const grok = await grokBotPolicy(participant.id)
+  if (grok && grok.principalId !== identity.principal.id) return null
   // Read the signal revision before reconciling: a portable edit that lands
   // while reconciliation scans the old file must still wake this wait.
   let signalRevision = inboxSignalRevision(participant.id)
@@ -1618,6 +1693,7 @@ export async function claimNextThreadDelivery(
     const claim = await claimThreadDelivery(participant.id, {
       allowWorktable,
       isDeliverable,
+      authenticatedPrincipalId: identity.principal.id,
     })
     if (claim) {
       let thread: Awaited<ReturnType<typeof readThread>>

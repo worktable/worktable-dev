@@ -49,8 +49,18 @@ import type {
   ThreadLocation,
   ThreadReadResult,
   ThreadListItem,
+  AgentConnectionInventory,
 } from "@worktable/types"
 import { threadLocationKey } from "@worktable/types"
+
+function refreshGrokConnections(queryClient: QueryClient): void {
+  for (const cloud of [true, false]) {
+    const queryKey = ["agent-connections", cloud] as const
+    if (queryClient.getQueryData<AgentConnectionInventory>(queryKey)?.grokBots?.length) {
+      refreshLive(queryClient, [{ queryKey, exact: true }])
+    }
+  }
+}
 
 const WS_BASE =
   import.meta.env.VITE_WS_URL ??
@@ -677,6 +687,7 @@ export function applySpaceEvent(
     applyThreadEvent(queryClient, message, { kind: "space", spaceId })
   }
   if (type === "participants_update") {
+    refreshGrokConnections(queryClient)
     refresh.push({ queryKey: threadQueryKeys.participants, exact: true })
     refresh.push({ queryKey: queryKeys.workspace, exact: true })
   }
@@ -768,6 +779,7 @@ function applyMessage(
     if (THREAD_EVENTS.has(message.type)) {
       applyThreadEvent(queryClient, message, null)
     } else if (message.type === "participants_update") {
+      refreshGrokConnections(queryClient)
       refreshLive(queryClient, [
         { queryKey: threadQueryKeys.participants, exact: true },
         { queryKey: queryKeys.workspace, exact: true },

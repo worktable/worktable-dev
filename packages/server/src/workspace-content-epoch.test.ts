@@ -42,6 +42,7 @@ it.each([false, true])("rejects stale browser edits, including gateway bearer in
     "/api/spaces",
     "/api/spaces/notes/docs/note",
     "/api/threads/t/messages",
+    "/api/grok-bot/oauth%3Agrok%3Aowner/check",
     "/api/shares/link",
   ]) {
     for (const epoch of [undefined, "old-epoch"]) {

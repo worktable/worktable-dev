@@ -30,6 +30,9 @@ export async function listAgentConnections(
     ).catch(() => null),
   ])
   return {
+    grokBots: paired?.grokBots,
+    grokBotCandidates: paired?.grokBotCandidates,
+    grokBotMcpUrl: paired?.grokBotMcpUrl,
     connections: [...(paired?.connections ?? []), ...signIns.connections],
     unavailableAuthKinds: [
       ...(signIns.unavailableAuthKinds ?? []),

@@ -29,6 +29,8 @@ import { finalizeWorkspaceClearJob } from "./workspace-clear-jobs.ts"
 import { Hono } from "hono"
 import { cloudCallbackRouter, linkedRouter } from "./routes/linked.ts"
 import { startLinkedRuntime } from "./linked-runtime.ts"
+import { startGrokBotRuntime } from "./grok-bot-runtime.ts"
+import { grokBotRouter } from "./routes/grok-bot.ts"
 import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts"
 import {
   markBootMilestone,
@@ -547,6 +549,7 @@ app.route("/internal/operator", operatorRouter);
 app.route("/public/share", publicSharesRouter);
 app.route("/public/invitation", publicInvitationsRouter);
 app.route("/api/workspace", workspaceRouter);
+app.route("/api/grok-bot", grokBotRouter);
 app.route("/api/profile", profileRouter);
 app.route("/api/team", teamRouter);
 app.route("/api/diagnostics", diagnosticsRouter);
@@ -2266,6 +2269,7 @@ export function startServer(
   }
   const endServicesPhase = startBootPhase("background services start");
   const stopLinked = startLinkedRuntime();
+  const stopGrokBot = workspaceRejected ? () => Promise.resolve() : startGrokBotRuntime();
   const stopBackupNotifier = startWorkspaceBackupNotifier();
   if (options.resumeWorkspaceRequests !== false) {
     resumeWorkspaceRequestAdmission();
@@ -2340,6 +2344,7 @@ export function startServer(
     if (credentialTimer) clearInterval(credentialTimer);
     credentialTimer = null;
     const searchWarmupStopping = stopSearchWarmup();
+    const grokBotStopping = stopGrokBot();
     watcher.stop({ flushPending: true });
     const documentFilesystemStopping = documentFilesystemCoordinator
       .stop()
@@ -2388,6 +2393,7 @@ export function startServer(
         await settle(() => stopSocket(true));
         await settle(() => closePreviewBrowsers());
         await settle(stopLinked);
+        await settle(() => grokBotStopping);
         await settle(stopBackupNotifier);
         await settle(() => credentialCheck ?? Promise.resolve());
         credentialSockets.clear();

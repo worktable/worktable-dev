@@ -6,6 +6,7 @@ import { MCP_SNIPPET_CLIENT_IDS } from "./mcp-clients"
 export const AGENT_PLATFORM_IDS = [
   "openclaw",
   "hermes",
+  "grok-bot",
   "chatgpt",
   "claude",
   "claude-code",
@@ -29,6 +30,7 @@ export interface AgentPlatform {
 }
 
 export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
+  "grok-bot": { id: "grok-bot", name: "Grok Bot", mode: "always-on", logo: null },
   openclaw: {
     id: "openclaw",
     name: "OpenClaw",

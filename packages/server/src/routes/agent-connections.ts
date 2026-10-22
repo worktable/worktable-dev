@@ -19,17 +19,26 @@ import {
 } from "../agent-connection-store.ts"
 import { isHosted } from "../hosted.ts"
 import { getOwnerSubject } from "../oauth-jwt.ts"
+import { grokBotInventory } from "../grok-bot-connections.ts"
+import { readGrokBots, removeGrokBot } from "../grok-bot-store.ts"
 
 export const agentConnectionsRouter = new Hono()
 
 agentConnectionsRouter.use("*", requireAgentManager())
 
-agentConnectionsRouter.get("/", async (c) =>
-  c.json({ connections: await listAgentConnections() })
-)
+agentConnectionsRouter.get("/", async (c) => {
+  const connections = await listAgentConnections()
+  return c.json({ connections, ...await grokBotInventory(connections) })
+})
 
 agentConnectionsRouter.delete("/:id", async (c) => {
+  const connection = (await listAgentConnections()).find((entry) => entry.id === c.req.param("id"))
   await disconnectAgentConnection(c.req.param("id"))
+  if (connection?.participant) {
+    for (const grok of await readGrokBots()) {
+      if (grok.participantId === connection.participant.id) await removeGrokBot(grok.connectionId)
+    }
+  }
   return c.json({ ok: true })
 })
 

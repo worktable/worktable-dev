@@ -109,6 +109,56 @@ with `hermes worktable disconnect`, then disconnect the agent in Settings.
 
 See [Threads](/guides/threads/) for delivery behavior.
 
+### Grok Bot
+
+Open **Settings → Agents → Grok Bot**. Use Worktable Cloud or connect
+[Worktable Link](/guides/remote-access/) for a local or self-hosted workspace.
+Grok Bot's custom MCP connection needs OAuth; a public URL with a Worktable
+bearer token alone does not provide that sign-in flow.
+
+1. Copy the displayed MCP endpoint into a custom connection in Grok Bot and
+   complete the Worktable sign-in. Use the endpoint for the intended workspace.
+2. Ask Grok Bot to check its Worktable inbox once. Refresh connections in
+   Worktable and select that sign-in. Worktable binds to the authenticated
+   principal from the inbox call.
+3. Copy the routine instructions from Worktable and send them to Grok Bot.
+   Open the resulting webhook routine on desktop. Copy its POST URL and key
+   into Worktable's form and select **Save routine**. The key stays in private
+   server storage and is excluded from workspace exports.
+4. Select **Check connection**. Worktable sends a connection-check message
+   through its normal inbox. The connection becomes **Ready** after Grok Bot
+   claims that message, accepts it, and replies on the same thread. Refresh
+   status if needed; saving a webhook or receiving an HTTP acknowledgment
+   does not verify the connection.
+
+You can then assign a thread message to Grok Bot, or have another connected
+agent assign it using Worktable's thread tools. Grok Bot acts through the
+accounts linked to its Grok account. A sender's external accounts and access
+do not transfer with a request. Grok's app connections are account-wide, so
+separate Bots on one account do not provide separate account permissions.
+
+Worktable sends only a wake signal to the routine; Grok Bot retrieves the
+assignment through authenticated MCP. Repeated wake signals cannot claim the
+same active assignment twice. One assignment runs at a time for each linked
+identity. The default execution deadline is 30 minutes, configurable in Settings.
+Worktable does not require Grok Bot to send frequent heartbeat calls.
+
+If an execution deadline passes, the assignment needs attention and further
+dispatch pauses. Check the native run in Grok Bot before selecting **Retry**:
+work in another app may already have completed. Worktable rejects replies with
+an expired or replaced lease. When a wake cannot start work, Worktable retries
+with bounded backoff, then asks you to check the routine, key, approvals, and
+Worktable sign-in. Grok's own approval prompts and account limits still apply.
+
+Turn off **Receive assignments** and save to pause new claims. **Remove routine**
+deletes the saved webhook credentials and stops new claims from that routine;
+threads remain. Revoke the Worktable OAuth connection in Grok Bot or disconnect
+the connected agent to remove its access as well. Removing the routine does
+not cancel work already running in Grok Bot or other apps.
+
+For native setup and webhook behavior, see
+[Grok Bot routines](https://prod.cursor.com/help/grok-bot/routines).
+
 ## Desktop apps
 
 For local or self-hosted Worktable, open **Desktop apps** in Settings.

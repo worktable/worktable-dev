@@ -101,6 +101,7 @@ import { AgentAccessFields } from "@/components/agents/agent-access-fields"
 import { AgentAvatar } from "@/components/agents/agent-avatar"
 import { AgentEditDialog } from "@/components/agents/agent-edit-dialog"
 import { DesktopAgentSkillsGroup } from "./desktop-agent-skills"
+import { GrokBotSetupPanel } from "./grok-bot"
 import { useSettingsSectionActive } from "../settings-dialog"
 
 const CLIENT_KEY = "worktable-connect-client"
@@ -213,6 +214,7 @@ function PreviewToolsRow() {
 
 type CloudAgentSetupPanel =
   | "quick"
+  | "grok-bot"
   | AlwaysOnAgent["adapter"]
   | "desktop"
   | "manual"
@@ -253,6 +255,9 @@ function CloudAgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
           {...panelProps("desktop")}
         >
           <CloudNativeAppsPanel connection={connection} />
+        </AgentSetupDisclosure>
+        <AgentSetupDisclosure title="Grok Bot" className="border-t border-border/60" {...panelProps("grok-bot")}>
+          <GrokBotSetupPanel connection={connection} open={openPanel === "grok-bot"} />
         </AgentSetupDisclosure>
         <AgentSetupDisclosure
           title="Manual setup"
@@ -407,7 +412,7 @@ function CloudManualInstallPanel({
 
 // ── Local/self-hosted setup disclosures ─────────────────────────────────────
 
-type AgentSetupPanel = "quick" | AlwaysOnAgent["adapter"] | "desktop" | "manual"
+type AgentSetupPanel = "quick" | AlwaysOnAgent["adapter"] | "desktop" | "manual" | "grok-bot"
 
 function AgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
   const [openPanel, setOpenPanel] = useState<AgentSetupPanel | null>(null)
@@ -443,6 +448,9 @@ function AgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
           {...panelProps("desktop")}
         >
           <DesktopAppsPanel connection={connection} />
+        </AgentSetupDisclosure>
+        <AgentSetupDisclosure title="Grok Bot" className="border-t border-border/60" {...panelProps("grok-bot")}>
+          <GrokBotSetupPanel connection={connection} open={openPanel === "grok-bot"} />
         </AgentSetupDisclosure>
 
         <AgentSetupDisclosure
@@ -1441,16 +1449,23 @@ export function ConnectedAgentsGroup() {
     queryFn: getConnection,
     enabled: sectionActive,
   })
-  const workspaceAgentsOnCloud =
-    systemConnection.data?.mcpAuthMode === "oauth" &&
-    systemConnection.data.agentPairing === true
+  const workspaceAgentsOnCloud = systemConnection.data?.mcpAuthMode === "oauth"
   const connectionsQuery = useQuery({
     queryKey: ["agent-connections", workspaceAgentsOnCloud],
     queryFn: () => listAgentConnections({ workspaceAgentsOnCloud }),
     enabled: sectionActive && systemConnection.isFetched,
   })
   const disconnect = useMutation({
-    mutationFn: disconnectAgentConnection,
+    mutationFn: async (id: string) => {
+      const inventory = connectionsQuery.data
+      const connection = inventory?.connections.find((entry) => entry.id === id)
+      const clientId = connection?.authKind === "oauth" && connection.target.kind === "mcp-client" ? connection.target.clientId : null
+      const grok = inventory?.grokBots?.find((entry) =>
+        (connection?.participant && entry.participantId === connection.participant.id) ||
+        (clientId && entry.connectionId.startsWith(`oauth:${clientId}:`)))
+      if (grok) await fetchJSON(`/api/grok-bot/${encodeURIComponent(grok.connectionId)}/configuration?scope=workspace`, { method: "DELETE" })
+      return disconnectAgentConnection(id)
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
       void queryClient.invalidateQueries({ queryKey: ["tokens"] })

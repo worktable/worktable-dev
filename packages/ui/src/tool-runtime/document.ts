@@ -46,11 +46,13 @@ export function isolatedToolFrame(
 
 export function isolatedToolCsp(options: {
   assetOrigin: string
-  parentOrigin: string
+  parentOrigin: string | null
   fontSources?: string[]
 }): string {
   const asset = new URL(manifest.path, options.assetOrigin).href
-  const parent = new URL(options.parentOrigin).origin
+  const parent = options.parentOrigin
+    ? new URL(options.parentOrigin).origin
+    : "'none'"
   return [
     "sandbox allow-scripts",
     "default-src 'none'",

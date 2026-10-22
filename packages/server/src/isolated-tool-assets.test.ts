@@ -5,6 +5,20 @@ import {
   isolatedToolAsset,
   isolatedToolManifest,
 } from "./isolated-tool-assets.ts"
+import { isolatedToolCsp } from "@worktable/ui/tool-runtime/document"
+
+test("the tool policy names its trusted runtime and denies embedding without a parent", () => {
+  const policy = isolatedToolCsp({
+    assetOrigin: "https://tools.example.test",
+    parentOrigin: null,
+  })
+  expect(policy).toContain(
+    `script-src https://tools.example.test${isolatedToolManifest.path} 'wasm-unsafe-eval'`
+  )
+  expect(policy).toContain("frame-ancestors 'none'")
+  expect(policy).toContain("connect-src 'none'")
+  expect(policy).not.toContain("script-src 'unsafe-inline'")
+})
 
 test("immutable tool assets have one content address across identity, gzip, HEAD and conditional reads", async () => {
   const url = `https://workspace.invalid${isolatedToolManifest.path}`

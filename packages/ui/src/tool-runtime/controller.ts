@@ -39,7 +39,8 @@ export function startIsolatedTool(options: {
   workerSource: string
   source: string
   broker: ToolBroker
-  fault: () => void
+  /** Bounded engine diagnostics for the trusted host; never render as HTML. */
+  fault: (detail?: string) => void
 }): {
   close: () => void
   environment: (value: {
@@ -89,10 +90,10 @@ export function startIsolatedTool(options: {
     subscriptions.clear()
     renderer.clear()
   }
-  function fault(): void {
+  function fault(detail?: string): void {
     if (!closed) {
       close()
-      options.fault()
+      options.fault(detail?.slice(0, 256))
     }
   }
   function enqueue(value: unknown): void {
@@ -193,8 +194,8 @@ export function startIsolatedTool(options: {
           .finally(() => {
             renderQueue--
           })
-        void rendering.catch(fault)
-      } else void request(value).catch(fault)
+        void rendering.catch(() => fault())
+      } else void request(value).catch(() => fault())
     } else if (value.type === "subscribe") {
       if (
         typeof value.collection !== "string" ||
@@ -219,6 +220,10 @@ export function startIsolatedTool(options: {
     URL.revokeObjectURL(url)
     try {
       const value = event.data as Record<string, unknown>
+      if (value?.type === "fault") {
+        fault(typeof value.message === "string" ? value.message : undefined)
+        return
+      }
       if (
         !value ||
         value.type !== "result" ||
@@ -246,8 +251,8 @@ export function startIsolatedTool(options: {
       fault()
     }
   }
-  worker.onerror = fault
-  worker.onmessageerror = fault
+  worker.onerror = (event) => fault(event.message)
+  worker.onmessageerror = () => fault("The worker returned an invalid message.")
   queue.push({ type: "start", id: ++sequence, payload: options.source })
   queuedCharacters = options.source.length
   advance()

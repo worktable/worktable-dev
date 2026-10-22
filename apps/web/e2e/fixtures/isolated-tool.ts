@@ -12,6 +12,7 @@ const testState = {
   queries: 0,
   subscribers: 0,
   closed: false,
+  fault: "",
 }
 const host = startIsolatedTool({
   root,
@@ -44,7 +45,9 @@ const host = startIsolatedTool({
       }
     },
   },
-  fault: () => {
+  fault: (detail) => {
+    testState.fault = detail ?? "Unknown runtime failure"
+    console.error("Isolated tool stopped:", testState.fault)
     testState.closed = true
     const heading = document.createElement("h1")
     heading.textContent = "This tool stopped"

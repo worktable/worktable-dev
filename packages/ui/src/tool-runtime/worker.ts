@@ -39,9 +39,15 @@ async function run(input: unknown): Promise<void> {
     } else throw new Error("Invalid tool turn.")
     scope.postMessage({ type: "result", id: value.id, messages })
     busy = false
-  } catch {
+  } catch (error) {
     vm?.dispose()
-    scope.postMessage({ type: "fault" })
+    scope.postMessage({
+      type: "fault",
+      message:
+        error instanceof Error
+          ? error.message.slice(0, 256)
+          : "The tool runtime failed.",
+    })
     scope.close()
   }
 }

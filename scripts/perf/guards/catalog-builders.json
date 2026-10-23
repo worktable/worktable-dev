@@ -152,12 +152,12 @@
       "why": "Writer: checks the current files under the write lock; writers never read snapshots."
     },
     {
-      "site": "packages/server/src/document-write-service.ts#moveRegisteredDocument.catalog",
+      "site": "packages/server/src/document-write-service.ts#moveRegisteredDocumentLocked.catalog",
       "kind": "buildDocumentCatalog",
       "why": "Writer: checks the current files under the write lock; writers never read snapshots."
     },
     {
-      "site": "packages/server/src/document-write-service.ts#moveRegisteredDocument.refreshed",
+      "site": "packages/server/src/document-write-service.ts#moveRegisteredDocumentLocked.refreshed",
       "kind": "buildDocumentCatalog",
       "why": "Writer: re-reads the catalog after a move commits."
     },

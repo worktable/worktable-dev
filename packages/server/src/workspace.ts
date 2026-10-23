@@ -186,12 +186,14 @@ export function workspaceCacheKey(): string {
   // Called on hot paths (every team access check names files by this key).
   const root = getWorkspaceRoot();
   if (cacheKeyMemo?.root !== root) {
-    cacheKeyMemo = {
-      root,
-      key: createHash("sha256").update(root).digest("hex").slice(0, 16),
-    };
+    cacheKeyMemo = { root, key: workspaceCacheKeyForRoot(root) };
   }
   return cacheKeyMemo.key;
+}
+
+/** The cache key of the Worktable at a resolved root, for code serving another one. */
+export function workspaceCacheKeyForRoot(root: string): string {
+  return createHash("sha256").update(root).digest("hex").slice(0, 16);
 }
 
 export function getSpacesDir(): string {

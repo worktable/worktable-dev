@@ -18,6 +18,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs"
+import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -249,14 +250,38 @@ describe("local-authority state model and command integration", () => {
     // Another Worktable gets its own endpoint; the configured one stays.
     expect(readFileSync(configPath, "utf8")).toBe(configuredFirst)
 
+    // Worktable Link is on for the second Worktable: Desktop keeps its host
+    // running while the window shows another one.
+    const controlSecret = "c".repeat(64)
+    mkdirSync(join(appDir, "linked"), { recursive: true })
+    writeFileSync(
+      join(
+        appDir,
+        "linked",
+        `${createHash("sha256").update(second).digest("hex").slice(0, 16)}.json`
+      ),
+      JSON.stringify({ disabled: false, controlSecret })
+    )
+
     const inspection = await runCli(["local-host", "inspect", "--json"])
     expect(inspection.exitCode).toBe(0)
     expect(inspection.stdout.trim().split("\n")).toHaveLength(1)
     const inspected = JSON.parse(inspection.stdout)
     expect(inspected.workspaces).toHaveLength(2)
+    expect(
+      Object.fromEntries(
+        inspected.workspaces.map(
+          (entry: { path: string; linked: boolean }) => [
+            entry.path,
+            entry.linked,
+          ]
+        )
+      )
+    ).toEqual({ [first]: false, [second]: true })
     expect(inspected.activeWorkspace.path).toBe(first)
     expect(inspected.runtime).toBeNull()
     expect(inspected.runtimes).toEqual([])
+    expect(inspection.stdout).not.toContain(controlSecret)
     expect(inspection.stdout).not.toContain("proofToken")
     expect(inspection.stdout).not.toContain("WORKTABLE_LOCAL_PROOF_TOKEN")
   })

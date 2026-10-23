@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use std::net::TcpListener;
 use std::{
+    collections::{HashMap, HashSet},
     env,
     fs::OpenOptions,
     io::{Read, Write},
@@ -96,6 +97,10 @@ const HTTP_READ_TIMEOUT: Duration = Duration::from_millis(700);
 const SEED_HTTP_READ_TIMEOUT: Duration = Duration::from_secs(5);
 const ATTACHED_HOST_MONITOR_INTERVAL: Duration = Duration::from_secs(2);
 const ATTACHED_HOST_FAILURE_LIMIT: u8 = 3;
+// A background host that exits restarts after 1, 2, 4… seconds, at most a
+// minute apart. One that ran this long before exiting starts over at a second.
+const BACKGROUND_HOST_RESTART_MAX: Duration = Duration::from_secs(60);
+const BACKGROUND_HOST_HEALTHY_AFTER: Duration = Duration::from_secs(300);
 const MAX_HTTP_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const REMOTE_MONITOR_INTERVAL: Duration = Duration::from_secs(15);
 const REMOTE_FAILURE_LIMIT: u8 = 3;
@@ -483,6 +488,9 @@ impl LocalHostConfig {
             "launch".into(),
             "--foreground".into(),
             "--no-browser".into(),
+            // Hosts for Worktables other than the configured one run beside
+            // it without changing the shared config or background service.
+            "--keep-configured-workspace".into(),
             "--workspace".into(),
             workspace.into(),
             "--host".into(),
@@ -555,7 +563,17 @@ struct LocalAuthorityRuntime {
     workspace_path: String,
     host: String,
     port: u16,
+    #[serde(default)]
+    process_alive: bool,
     endpoint_verified: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalAuthorityWorkspace {
+    workspace_id: String,
+    #[serde(default)]
+    linked: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -591,6 +609,11 @@ struct LocalAuthorityInspection {
     registry_error: Option<String>,
     registry_error_code: Option<String>,
     runtime: Option<LocalAuthorityRuntime>,
+    /// Every running host, one per Worktable; `runtime` is the configured one's.
+    #[serde(default)]
+    runtimes: Vec<LocalAuthorityRuntime>,
+    #[serde(default)]
+    workspaces: Vec<LocalAuthorityWorkspace>,
     runtime_error: Option<String>,
     runtime_error_code: Option<String>,
     service: Option<LocalAuthorityService>,
@@ -616,9 +639,31 @@ struct PendingRemoteConnection {
     allow_insecure_http: bool,
 }
 
+/// A host Desktop started for one local Worktable. The window shows at most
+/// one of them; a host whose Worktable has Worktable Link on keeps running in
+/// the background so Link stays online.
+struct OwnedLocalHost {
+    token: String,
+    child: CommandChild,
+    endpoint: LocalHostEndpoint,
+    started_at: Instant,
+    restarts: u32,
+}
+
+/// Where one Worktable's Desktop-owned host serves, kept to restart it.
+#[derive(Clone)]
+struct LocalHostEndpoint {
+    workspace: DesktopWorkspaceSummary,
+    host: String,
+    port: u16,
+    origin: String,
+    logs_path: String,
+}
+
 struct DesktopHostState {
     runtime: Mutex<Option<DesktopRuntime>>,
-    child: Mutex<Option<CommandChild>>,
+    /// Desktop-owned hosts by Worktable id. Lock before `active_instance_token`.
+    local_hosts: Mutex<HashMap<String, OwnedLocalHost>>,
     status: Mutex<DesktopBootstrapStatus>,
     connections: Mutex<DesktopConnections>,
     pending_local: Mutex<Option<WorkspacePrepared>>,
@@ -649,7 +694,7 @@ impl Default for DesktopHostState {
     fn default() -> Self {
         Self {
             runtime: Mutex::new(None),
-            child: Mutex::new(None),
+            local_hosts: Mutex::new(HashMap::new()),
             status: Mutex::new(DesktopBootstrapStatus::base(
                 "initializing",
                 "Preparing Worktable…",
@@ -2691,6 +2736,20 @@ fn cloud_retry_requires_interactive(
         || (!has_profile && !has_continuation)
 }
 
+/// The folder a local retry would open: the pending Worktable, else the saved one.
+fn local_retry_workspace_path(app: &AppHandle) -> Option<String> {
+    let pending = app
+        .state::<DesktopHostState>()
+        .pending_local
+        .lock()
+        .ok()
+        .and_then(|pending| pending.as_ref().map(|pending| pending.path.clone()));
+    pending.or_else(|| match active_local_profile(app) {
+        Ok(DesktopConnectionProfile::Local { workspace_path, .. }) => Some(workspace_path),
+        _ => None,
+    })
+}
+
 async fn retry_local_connection(app: &AppHandle) -> Result<(), String> {
     let pending = app
         .state::<DesktopHostState>()
@@ -2733,14 +2792,17 @@ async fn desktop_restart_local_host(webview: Webview, app: AppHandle) -> Result<
     require_trusted_surface(&webview)?;
     run_guarded_operation(&app, async {
         let runtime = runtime_for(&app)?;
-        let output = configured_sidecar(
-            &app,
-            &runtime,
-            vec!["local-host".into(), "restart".into(), "--json".into()],
-        )?
-        .output()
-        .await
-        .map_err(|error| format!("failed to restart the local Worktable host: {error}"))?;
+        let mut args: Vec<String> = vec!["local-host".into(), "restart".into(), "--json".into()];
+        // Restart the shown Worktable's host. The background service serves
+        // only the configured Worktable, so another one's host is Desktop's.
+        if let Some(path) = local_retry_workspace_path(&app) {
+            args.push("--workspace".into());
+            args.push(path);
+        }
+        let output = configured_sidecar(&app, &runtime, args)?
+            .output()
+            .await
+            .map_err(|error| format!("failed to restart the local Worktable host: {error}"))?;
         let envelope: LocalRestartEnvelope =
             serde_json::from_slice(&output.stdout).map_err(|error| {
                 format!(
@@ -3086,7 +3148,7 @@ async fn change_connection(app: &AppHandle) -> Result<(), String> {
             None
         };
         next_connection_generation(app);
-        stop_local_host(app);
+        detach_local_host(app);
         if changing_from_cloud {
             if let Err(message) = clear_cloud_webview_cookie(app) {
                 return Err(record_cloud_recovery_failure(
@@ -3231,6 +3293,10 @@ async fn desktop_remove_connection(
             if let Ok(mut pending) = app.state::<DesktopHostState>().pending_remote.lock() {
                 pending.take();
             }
+        }
+        // A removed local Worktable's background host stops with it.
+        if let Some(DesktopConnectionProfile::Local { workspace_id, .. }) = &target_profile {
+            stop_owned_local_host(&app, workspace_id);
         }
         let runtime = runtime_for(&app)?;
         let path = connections_path(&runtime.shell_data_root);
@@ -3873,21 +3939,46 @@ fn authority_matches_workspace_endpoint(
     host: &str,
     port: u16,
 ) -> bool {
-    let config_matches = authority.config.as_ref().is_some_and(|config| {
-        workspace
+    // Other Worktables run their own hosts, so only the configured Worktable
+    // must also keep its configured endpoint.
+    let config_matches = authority.config.as_ref().is_none_or(|config| {
+        let configured = workspace
             .path
             .as_deref()
-            .is_some_and(|path| Path::new(&config.workspace) == Path::new(path))
-            && config.host == host
-            && config.port == port
+            .is_some_and(|path| Path::new(&config.workspace) == Path::new(path));
+        !configured || (config.host == host && config.port == port)
     });
-    let runtime_matches = authority.runtime.as_ref().is_some_and(|runtime| {
-        runtime.endpoint_verified
-            && runtime_matches_workspace(runtime, workspace)
-            && runtime.host == host
-            && runtime.port == port
-    });
+    let runtime_matches = authority
+        .runtimes
+        .iter()
+        .chain(authority.runtime.iter())
+        .any(|runtime| {
+            runtime.endpoint_verified
+                && runtime_matches_workspace(runtime, workspace)
+                && runtime.host == host
+                && runtime.port == port
+        });
     config_matches && runtime_matches
+}
+
+/// Whether Worktable Link is on for this Worktable on this device.
+fn authority_workspace_linked(authority: &LocalAuthorityInspection, workspace_id: &str) -> bool {
+    authority
+        .workspaces
+        .iter()
+        .any(|workspace| workspace.workspace_id == workspace_id && workspace.linked)
+}
+
+/// Whether a process other than Desktop's own currently holds this Worktable.
+fn authority_workspace_has_live_host(
+    authority: &LocalAuthorityInspection,
+    workspace_id: &str,
+) -> bool {
+    authority
+        .runtimes
+        .iter()
+        .chain(authority.runtime.iter())
+        .any(|runtime| runtime.workspace_id == workspace_id && runtime.process_alive)
 }
 
 fn adoptable_existing_workspace(
@@ -4018,10 +4109,18 @@ async fn start_prepared_local(
             .replace(prepared.clone());
     }
     let preferred = profile_preferred_port(app, &prepared.workspace.id)?;
-    // A retry may still own its saved endpoint. Stop that child before asking
-    // the shared authority to attach or activate the selected workspace.
-    stop_local_host(app);
+    // A retry may still own its saved endpoint. Stop that host before asking
+    // the shared authority to attach or activate the selected workspace. A
+    // host for another Worktable stays running while its Link is on.
+    if displayed_owned_workspace_id(app).as_deref() == Some(prepared.workspace.id.as_str()) {
+        stop_local_host(app);
+    } else {
+        detach_local_host(app);
+    }
     close_workspace_webview(app);
+    if show_background_local_host(app, &prepared, persist)? {
+        return Ok(());
+    }
     let activation = activate_local_workspace(app, &prepared, preferred).await?;
     let port = activation
         .port
@@ -4536,7 +4635,7 @@ fn begin_remote_connection(
     app: &AppHandle,
     pending: PendingRemoteConnection,
 ) -> Result<(), String> {
-    stop_local_host(app);
+    detach_local_host(app);
     close_workspace_webview(app);
     clear_pending_workspace(app);
     let generation = next_connection_generation(app);
@@ -5011,16 +5110,10 @@ fn start_local_host(
     {
         return Err("Worktable Desktop is shutting down; the local host was not started".into());
     }
-    stop_local_host(app);
+    // The authority found no live host for this Worktable, so any entry left
+    // for it is a process that is already on its way out.
+    stop_owned_local_host(app, &prepared.workspace.id);
     close_workspace_webview(app);
-    let runtime = runtime_for(app)?;
-    let instance_token = desktop_instance_token()?;
-    let verification_token = desktop_verification_token()?;
-    let config = LocalHostConfig {
-        instance_token: instance_token.clone(),
-        verification_token: verification_token.clone(),
-        runtime,
-    };
     let summary = DesktopWorkspaceSummary {
         id: prepared.workspace.id.clone(),
         name: prepared.workspace.name.clone(),
@@ -5038,96 +5131,22 @@ fn start_local_host(
     // shared config after activation returns but before this child acquires the
     // authority lock, these explicit values make the final lock holder's intent
     // authoritative instead of silently starting whichever config won the race.
-    let command = configured_sidecar(
+    let spawned = spawn_owned_local_host(
         app,
-        &config.runtime,
-        config.sidecar_args(&prepared.path, &host, port),
-    )?
-    .env("WORKTABLE_LOCAL_OWNER", "desktop")
-    .env("WORKTABLE_HOST_INSTANCE_TOKEN", &config.instance_token)
-    .env(
-        "WORKTABLE_HOST_VERIFICATION_TOKEN",
-        &config.verification_token,
-    );
-    let (mut events, child) = command
-        .spawn()
-        .map_err(|error| format!("failed to start packaged Worktable sidecar: {error}"))?;
-    app.state::<DesktopHostState>()
-        .child
-        .lock()
-        .map_err(|_| "local host child lock is poisoned".to_string())?
-        .replace(child);
-    // ExitRequested can race an awaited workspace preparation: it may run before
-    // the child exists. Re-check after storing the child so a host that appeared
-    // during shutdown is still killed before Desktop exits.
-    if app
-        .state::<DesktopHostState>()
-        .shutdown_started
-        .load(Ordering::SeqCst)
-    {
-        stop_local_host(app);
-        return Err("Worktable Desktop shut down while the local host was starting".into());
-    }
-    *app.state::<DesktopHostState>()
-        .active_instance_token
-        .lock()
-        .map_err(|_| "desktop instance lock is poisoned".to_string())? =
-        Some(instance_token.clone());
-
-    let event_app = app.clone();
-    let event_origin = origin.clone();
-    let event_summary = summary.clone();
-    let event_token = instance_token.clone();
-    let event_logs_path = logs_path.clone();
-    let (ready_sender, ready_receiver) = mpsc::channel();
+        &LocalHostEndpoint {
+            workspace: summary.clone(),
+            host: host.clone(),
+            port,
+            origin: origin.clone(),
+            logs_path: logs_path.clone(),
+        },
+        0,
+        true,
+    )?;
     append_desktop_host_log(&logs_path, "Desktop started its owned Worktable host.");
-    tauri::async_runtime::spawn(async move {
-        while let Some(event) = events.recv().await {
-            match event {
-                CommandEvent::Stdout(bytes) => {
-                    let message = String::from_utf8_lossy(&bytes);
-                    if local_host_ready_line(&message, &event_token, port) {
-                        let _ = ready_sender.send(());
-                    }
-                    println!("[worktable-sidecar] {message}");
-                    append_desktop_host_log(&event_logs_path, message.trim_end());
-                }
-                CommandEvent::Stderr(bytes) => {
-                    let message = String::from_utf8_lossy(&bytes);
-                    eprintln!("[worktable-sidecar] {message}");
-                    append_desktop_host_log(&event_logs_path, message.trim_end());
-                }
-                CommandEvent::Error(error) => {
-                    eprintln!("[worktable-sidecar] {error}");
-                    append_desktop_host_log(&event_logs_path, &error);
-                }
-                CommandEvent::Terminated(payload)
-                    if local_instance_is_active(&event_app, &event_token) =>
-                {
-                    let recovery_app = event_app.clone();
-                    let recovery_origin = event_origin.clone();
-                    let recovery_summary = event_summary.clone();
-                    let recovery_token = event_token.clone();
-                    let message = format!("Local host exited ({:?})", payload.code);
-                    append_desktop_host_log(&event_logs_path, &message);
-                    let _ = event_app.run_on_main_thread(move || {
-                        if !clear_local_instance_if_active(&recovery_app, &recovery_token) {
-                            return;
-                        }
-                        close_workspace_webview(&recovery_app);
-                        set_connection_error(
-                            &recovery_app,
-                            message,
-                            Some(recovery_origin),
-                            Some(recovery_summary),
-                        );
-                        size_current_window(&recovery_app);
-                    });
-                }
-                _ => {}
-            }
-        }
-    });
+    let instance_token = spawned.token;
+    let verification_token = spawned.verification_token;
+    let ready_receiver = spawned.ready;
 
     let health_app = app.clone();
     let health_host = host.clone();
@@ -5267,6 +5286,401 @@ fn start_local_host(
         );
     });
     Ok(())
+}
+
+struct SpawnedLocalHost {
+    token: String,
+    verification_token: String,
+    ready: mpsc::Receiver<()>,
+}
+
+/// Start a Desktop-owned host for one Worktable and keep it in the host map.
+/// A shown host becomes the active instance before it can report its exit.
+fn spawn_owned_local_host(
+    app: &AppHandle,
+    endpoint: &LocalHostEndpoint,
+    restarts: u32,
+    show: bool,
+) -> Result<SpawnedLocalHost, String> {
+    let workspace = &endpoint.workspace;
+    let port = endpoint.port;
+    let path = workspace
+        .path
+        .clone()
+        .ok_or_else(|| "local workspace path is unavailable".to_string())?;
+    let config = LocalHostConfig {
+        instance_token: desktop_instance_token()?,
+        verification_token: desktop_verification_token()?,
+        runtime: runtime_for(app)?,
+    };
+    let token = config.instance_token.clone();
+    let command = configured_sidecar(
+        app,
+        &config.runtime,
+        config.sidecar_args(&path, &endpoint.host, port),
+    )?
+    .env("WORKTABLE_LOCAL_OWNER", "desktop")
+    .env("WORKTABLE_HOST_INSTANCE_TOKEN", &config.instance_token)
+    .env(
+        "WORKTABLE_HOST_VERIFICATION_TOKEN",
+        &config.verification_token,
+    );
+    let state = app.state::<DesktopHostState>();
+    let (mut events, previous) = {
+        let mut hosts = state
+            .local_hosts
+            .lock()
+            .map_err(|_| "local host map lock is poisoned".to_string())?;
+        let (events, child) = command
+            .spawn()
+            .map_err(|error| format!("failed to start packaged Worktable sidecar: {error}"))?;
+        let previous = hosts.insert(
+            workspace.id.clone(),
+            OwnedLocalHost {
+                token: token.clone(),
+                child,
+                endpoint: endpoint.clone(),
+                started_at: Instant::now(),
+                restarts,
+            },
+        );
+        if show {
+            *state
+                .active_instance_token
+                .lock()
+                .map_err(|_| "desktop instance lock is poisoned".to_string())? =
+                Some(token.clone());
+        }
+        (events, previous)
+    };
+    if let Some(previous) = previous {
+        terminate_local_children(vec![previous.child]);
+    }
+    // ExitRequested can race an awaited workspace preparation: it may run before
+    // the child exists. Re-check after storing the child so a host that appeared
+    // during shutdown is still killed before Desktop exits.
+    if state.shutdown_started.load(Ordering::SeqCst) {
+        stop_all_local_hosts(app);
+        return Err("Worktable Desktop shut down while the local host was starting".into());
+    }
+
+    let event_app = app.clone();
+    let event_workspace_id = workspace.id.clone();
+    let event_token = token.clone();
+    let event_logs_path = endpoint.logs_path.clone();
+    let (ready_sender, ready_receiver) = mpsc::channel();
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = events.recv().await {
+            match event {
+                CommandEvent::Stdout(bytes) => {
+                    let message = String::from_utf8_lossy(&bytes);
+                    if local_host_ready_line(&message, &event_token, port) {
+                        let _ = ready_sender.send(());
+                    }
+                    println!("[worktable-sidecar] {message}");
+                    append_desktop_host_log(&event_logs_path, message.trim_end());
+                }
+                CommandEvent::Stderr(bytes) => {
+                    let message = String::from_utf8_lossy(&bytes);
+                    eprintln!("[worktable-sidecar] {message}");
+                    append_desktop_host_log(&event_logs_path, message.trim_end());
+                }
+                CommandEvent::Error(error) => {
+                    eprintln!("[worktable-sidecar] {error}");
+                    append_desktop_host_log(&event_logs_path, &error);
+                }
+                CommandEvent::Terminated(payload) => {
+                    owned_local_host_exited(
+                        &event_app,
+                        &event_workspace_id,
+                        &event_token,
+                        payload.code,
+                    );
+                }
+                _ => {}
+            }
+        }
+    });
+    Ok(SpawnedLocalHost {
+        token,
+        verification_token: config.verification_token,
+        ready: ready_receiver,
+    })
+}
+
+/// A Desktop-owned host exited. The shown one turns into a connection error
+/// as before; a background one restarts with backoff while its Link is on.
+/// Hosts Desktop stopped itself have already left the map.
+fn owned_local_host_exited(app: &AppHandle, workspace_id: &str, token: &str, code: Option<i32>) {
+    let exited = app
+        .state::<DesktopHostState>()
+        .local_hosts
+        .lock()
+        .ok()
+        .and_then(|mut hosts| {
+            if hosts.get(workspace_id).map(|host| host.token.as_str()) == Some(token) {
+                hosts.remove(workspace_id)
+            } else {
+                None
+            }
+        });
+    let message = format!("Local host exited ({code:?})");
+    if local_instance_is_active(app, token) {
+        let (origin, summary) = exited
+            .as_ref()
+            .map(|host| {
+                (
+                    Some(host.endpoint.origin.clone()),
+                    Some(host.endpoint.workspace.clone()),
+                )
+            })
+            .unwrap_or((None, None));
+        if let Some(host) = &exited {
+            append_desktop_host_log(&host.endpoint.logs_path, &message);
+        }
+        let recovery_app = app.clone();
+        let recovery_token = token.to_string();
+        let _ = app.run_on_main_thread(move || {
+            if !clear_local_instance_if_active(&recovery_app, &recovery_token) {
+                return;
+            }
+            close_workspace_webview(&recovery_app);
+            set_connection_error(&recovery_app, message, origin, summary);
+            size_current_window(&recovery_app);
+        });
+        return;
+    }
+    let Some(exited) = exited else {
+        return;
+    };
+    if app
+        .state::<DesktopHostState>()
+        .shutdown_started
+        .load(Ordering::SeqCst)
+    {
+        return;
+    }
+    let restarts = if exited.started_at.elapsed() >= BACKGROUND_HOST_HEALTHY_AFTER {
+        0
+    } else {
+        exited.restarts.saturating_add(1)
+    };
+    append_desktop_host_log(
+        &exited.endpoint.logs_path,
+        &format!("{message} in the background; restarting it while Worktable Link is on."),
+    );
+    restart_background_local_host(app.clone(), exited.endpoint, restarts);
+}
+
+fn background_host_restart_delay(restarts: u32) -> Duration {
+    Duration::from_secs(1_u64 << restarts.saturating_sub(1).min(6)).min(BACKGROUND_HOST_RESTART_MAX)
+}
+
+fn restart_background_local_host(app: AppHandle, endpoint: LocalHostEndpoint, restarts: u32) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(background_host_restart_delay(restarts)).await;
+        let workspace_id = endpoint.workspace.id.clone();
+        let already_running = || {
+            let state = app.state::<DesktopHostState>();
+            state.shutdown_started.load(Ordering::SeqCst)
+                || state
+                    .local_hosts
+                    .lock()
+                    .map(|hosts| hosts.contains_key(&workspace_id))
+                    .unwrap_or(true)
+        };
+        if already_running() {
+            return;
+        }
+        let authority = match inspect_local_authority(&app).await {
+            Ok(authority) => authority,
+            Err(error) => {
+                append_desktop_host_log(
+                    &endpoint.logs_path,
+                    &format!("Could not check the background host before restarting it: {error}"),
+                );
+                restart_background_local_host(app.clone(), endpoint, restarts.saturating_add(1));
+                return;
+            }
+        };
+        // Another surface may have started this Worktable, or Link was turned off.
+        if !authority_workspace_linked(&authority, &workspace_id)
+            || authority_workspace_has_live_host(&authority, &workspace_id)
+            || already_running()
+        {
+            return;
+        }
+        if let Err(error) = spawn_owned_local_host(&app, &endpoint, restarts, false) {
+            append_desktop_host_log(&endpoint.logs_path, &error);
+            restart_background_local_host(app.clone(), endpoint, restarts.saturating_add(1));
+        }
+    });
+}
+
+/// Show a Worktable whose host already runs in the background, without
+/// restarting it or any other host.
+fn show_background_local_host(
+    app: &AppHandle,
+    prepared: &WorkspacePrepared,
+    persist: bool,
+) -> Result<bool, String> {
+    let (token, origin, port, summary) = {
+        let state = app.state::<DesktopHostState>();
+        let hosts = state
+            .local_hosts
+            .lock()
+            .map_err(|_| "local host map lock is poisoned".to_string())?;
+        let Some(host) = hosts.get(&prepared.workspace.id) else {
+            return Ok(false);
+        };
+        if host.endpoint.workspace.path.as_deref() != Some(prepared.path.as_str()) {
+            return Ok(false);
+        }
+        *state
+            .active_instance_token
+            .lock()
+            .map_err(|_| "desktop instance lock is poisoned".to_string())? =
+            Some(host.token.clone());
+        (
+            host.token.clone(),
+            host.endpoint.origin.clone(),
+            host.endpoint.port,
+            host.endpoint.workspace.clone(),
+        )
+    };
+    let shown =
+        write_active_port(&runtime_for(app)?.shell_data_root, port)
+            .and_then(|()| {
+                create_workspace_webview(
+                    app,
+                    origin.clone(),
+                    initial_workspace_path(prepared.created),
+                    None,
+                )
+            })
+            .and_then(|()| {
+                if persist {
+                    persist_local_profile(app, prepared, port).map(|_| ()).map_err(|error| {
+                    format!("The workspace is ready, but Desktop could not remember it: {error}")
+                })
+                } else {
+                    Ok(())
+                }
+            });
+    if let Err(error) = shown {
+        clear_local_instance_if_active(app, &token);
+        close_workspace_webview(app);
+        return Err(error);
+    }
+    clear_pending_workspace(app);
+    set_status(app, DesktopBootstrapStatus::ready(origin, summary));
+    Ok(true)
+}
+
+/// The Worktable id of the Desktop-owned host the window shows, if any.
+fn displayed_owned_workspace_id<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+    let state = app.state::<DesktopHostState>();
+    let hosts = state.local_hosts.lock().ok()?;
+    let active = state.active_instance_token.lock().ok()?.clone()?;
+    hosts
+        .iter()
+        .find(|(_, host)| host.token == active)
+        .map(|(id, _)| id.clone())
+}
+
+/// Stop showing the local host. Desktop-owned hosts keep running in the
+/// background while their Worktable has Link on; the rest stop.
+fn detach_local_host<R: Runtime>(app: &AppHandle<R>) {
+    let was_showing = app
+        .state::<DesktopHostState>()
+        .active_instance_token
+        .lock()
+        .ok()
+        .and_then(|mut token| token.take())
+        .is_some();
+    if was_showing {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move { stop_unlinked_background_hosts(&app).await });
+    }
+}
+
+async fn stop_unlinked_background_hosts<R: Runtime>(app: &AppHandle<R>) {
+    let linked: HashSet<String> = {
+        let runtime = match runtime_for(app) {
+            Ok(runtime) => runtime,
+            Err(_) => return,
+        };
+        let inspection = match configured_sidecar(
+            app,
+            &runtime,
+            vec!["local-host".into(), "inspect".into(), "--json".into()],
+        ) {
+            Ok(command) => command.output().await.ok(),
+            Err(_) => None,
+        };
+        // Without an answer, keep every host: stopping one could take a
+        // linked Worktable offline.
+        let Some(authority) = inspection
+            .and_then(|output| {
+                serde_json::from_slice::<LocalAuthorityInspection>(&output.stdout).ok()
+            })
+            .filter(|authority| authority.ok)
+        else {
+            return;
+        };
+        authority
+            .workspaces
+            .iter()
+            .filter(|workspace| workspace.linked)
+            .map(|workspace| workspace.workspace_id.clone())
+            .collect()
+    };
+    let stopped: Vec<CommandChild> = {
+        let state = app.state::<DesktopHostState>();
+        let Ok(mut hosts) = state.local_hosts.lock() else {
+            return;
+        };
+        let active = state
+            .active_instance_token
+            .lock()
+            .ok()
+            .and_then(|token| token.clone());
+        let unlinked: Vec<String> = hosts
+            .iter()
+            .filter(|(id, host)| {
+                active.as_deref() != Some(host.token.as_str()) && !linked.contains(*id)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        unlinked
+            .iter()
+            .filter_map(|id| hosts.remove(id))
+            .map(|host| {
+                append_desktop_host_log(
+                    &host.endpoint.logs_path,
+                    "Desktop stopped a background host whose Worktable has Link off.",
+                );
+                host.child
+            })
+            .collect()
+    };
+    if !stopped.is_empty() {
+        thread::spawn(move || terminate_local_children(stopped));
+    }
+}
+
+/// Stop the Desktop-owned host of one Worktable, shown or not.
+fn stop_owned_local_host<R: Runtime>(app: &AppHandle<R>, workspace_id: &str) {
+    let state = app.state::<DesktopHostState>();
+    let removed = state
+        .local_hosts
+        .lock()
+        .ok()
+        .and_then(|mut hosts| hosts.remove(workspace_id));
+    if let Some(host) = removed {
+        let _ = clear_local_instance_if_active(app, &host.token);
+        terminate_local_children(vec![host.child]);
+    }
 }
 
 fn local_instance_is_active<R: Runtime>(app: &AppHandle<R>, token: &str) -> bool {
@@ -6006,41 +6420,79 @@ fn corrupt_local_config_status(
     status
 }
 
+/// Stop the host the window shows, when Desktop owns it. Background hosts for
+/// other Worktables keep running.
 fn stop_local_host<R: Runtime>(app: &AppHandle<R>) {
-    if let Ok(mut token) = app.state::<DesktopHostState>().active_instance_token.lock() {
+    let state = app.state::<DesktopHostState>();
+    let removed = state.local_hosts.lock().ok().and_then(|mut hosts| {
+        let active = state
+            .active_instance_token
+            .lock()
+            .ok()
+            .and_then(|mut token| token.take())?;
+        let id = hosts
+            .iter()
+            .find(|(_, host)| host.token == active)
+            .map(|(id, _)| id.clone())?;
+        hosts.remove(&id)
+    });
+    if let Ok(mut token) = state.active_instance_token.lock() {
         *token = None;
     }
-    let child = app
-        .state::<DesktopHostState>()
-        .child
-        .lock()
-        .ok()
-        .and_then(|mut child| child.take());
-    if let Some(child) = child {
-        terminate_local_child(child);
+    if let Some(host) = removed {
+        terminate_local_children(vec![host.child]);
     }
+}
+
+/// Stop every Desktop-owned host, as when Desktop quits.
+fn stop_all_local_hosts<R: Runtime>(app: &AppHandle<R>) {
+    let state = app.state::<DesktopHostState>();
+    let children: Vec<CommandChild> = state
+        .local_hosts
+        .lock()
+        .map(|mut hosts| hosts.drain().map(|(_, host)| host.child).collect())
+        .unwrap_or_default();
+    if let Ok(mut token) = state.active_instance_token.lock() {
+        *token = None;
+    }
+    terminate_local_children(children);
 }
 
 #[cfg(unix)]
-fn terminate_local_child(child: CommandChild) {
-    let pid = child.pid() as i32;
+fn terminate_local_children(children: Vec<CommandChild>) {
     // The CLI handles SIGTERM by removing only its own nonce-bound runtime
     // lease before exiting. CommandChild::kill is an abrupt fallback and does
-    // not give that handler a chance to run.
-    if unsafe { libc::kill(pid, libc::SIGTERM) } == 0 {
-        for _ in 0..40 {
-            if unsafe { libc::kill(pid, 0) } != 0 {
-                return;
+    // not give that handler a chance to run. Signal every host first so they
+    // all shut down within the same two seconds.
+    let mut pending: Vec<(i32, CommandChild)> = children
+        .into_iter()
+        .filter_map(|child| {
+            let pid = child.pid() as i32;
+            if unsafe { libc::kill(pid, libc::SIGTERM) } == 0 {
+                Some((pid, child))
+            } else {
+                let _ = child.kill();
+                None
             }
-            thread::sleep(Duration::from_millis(50));
+        })
+        .collect();
+    for _ in 0..40 {
+        pending.retain(|(pid, _)| unsafe { libc::kill(*pid, 0) } == 0);
+        if pending.is_empty() {
+            return;
         }
+        thread::sleep(Duration::from_millis(50));
     }
-    let _ = child.kill();
+    for (_, child) in pending {
+        let _ = child.kill();
+    }
 }
 
 #[cfg(not(unix))]
-fn terminate_local_child(child: CommandChild) {
-    let _ = child.kill();
+fn terminate_local_children(children: Vec<CommandChild>) {
+    for child in children {
+        let _ = child.kill();
+    }
 }
 
 fn stop_local_host_once<R: Runtime>(app: &AppHandle<R>) {
@@ -6048,9 +6500,9 @@ fn stop_local_host_once<R: Runtime>(app: &AppHandle<R>) {
         .shutdown_started
         .store(true, Ordering::SeqCst);
     next_connection_generation(app);
-    // Keep every exit pass effective. child.take() is idempotent, while an async
-    // start may have installed a child after an earlier ExitRequested callback.
-    stop_local_host(app);
+    // Keep every exit pass effective. Draining the map is idempotent, while an
+    // async start may have installed a host after an earlier ExitRequested.
+    stop_all_local_hosts(app);
 }
 
 fn same_workspace_origin(url: &tauri::Url, expected_origin: &tauri::Url) -> bool {
@@ -7514,8 +7966,11 @@ mod tests {
                 workspace_path: "/tmp/Logs".into(),
                 host: "127.0.0.1".into(),
                 port: 43110,
+                process_alive: true,
                 endpoint_verified: false,
             }),
+            runtimes: Vec::new(),
+            workspaces: Vec::new(),
             runtime_error: None,
             runtime_error_code: None,
             service: Some(LocalAuthorityService {
@@ -7559,6 +8014,7 @@ mod tests {
             workspace_path: "/tmp/original".into(),
             host: "127.0.0.1".into(),
             port: 43110,
+            process_alive: true,
             endpoint_verified: true,
         };
         assert!(runtime_matches_workspace(&runtime, &workspace));
@@ -7592,8 +8048,11 @@ mod tests {
                 workspace_path: workspace.path.clone().unwrap(),
                 host: "127.0.0.1".into(),
                 port: 43110,
+                process_alive: true,
                 endpoint_verified: true,
             }),
+            runtimes: Vec::new(),
+            workspaces: Vec::new(),
             runtime_error: None,
             runtime_error_code: None,
             service: None,
@@ -7623,6 +8082,63 @@ mod tests {
             "127.0.0.1",
             43110
         ));
+
+        // Another Worktable is configured: the attached host is one of the
+        // hosts running beside it, found in `runtimes`.
+        let mut verified = authority.runtime.take().unwrap();
+        verified.endpoint_verified = true;
+        authority.config.as_mut().unwrap().workspace = "/tmp/Configured".into();
+        authority.config.as_mut().unwrap().port = 43120;
+        authority.runtimes = vec![verified];
+        assert!(authority_matches_workspace_endpoint(
+            &authority,
+            &workspace,
+            "127.0.0.1",
+            43110
+        ));
+        assert!(!authority_matches_workspace_endpoint(
+            &authority,
+            &workspace,
+            "127.0.0.1",
+            43111
+        ));
+    }
+
+    #[test]
+    fn background_hosts_follow_link_and_restart_with_backoff() {
+        let inspection: LocalAuthorityInspection = serde_json::from_str(
+            r#"{
+                "schemaVersion": 1,
+                "ok": true,
+                "workspaces": [
+                    { "workspaceId": "ws_linked", "path": "/tmp/Linked", "linked": true },
+                    { "workspaceId": "ws_local", "path": "/tmp/Local", "linked": false }
+                ],
+                "runtime": null,
+                "runtimes": [
+                    {
+                        "owner": "cli",
+                        "workspaceId": "ws_local",
+                        "workspacePath": "/tmp/Local",
+                        "host": "127.0.0.1",
+                        "port": 43110,
+                        "processAlive": true,
+                        "endpointVerified": true
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+        assert!(authority_workspace_linked(&inspection, "ws_linked"));
+        assert!(!authority_workspace_linked(&inspection, "ws_local"));
+        assert!(!authority_workspace_linked(&inspection, "ws_unknown"));
+        assert!(authority_workspace_has_live_host(&inspection, "ws_local"));
+        assert!(!authority_workspace_has_live_host(&inspection, "ws_linked"));
+
+        let delays: Vec<u64> = (0..9)
+            .map(|restarts| background_host_restart_delay(restarts).as_secs())
+            .collect();
+        assert_eq!(delays, vec![1, 1, 2, 4, 8, 16, 32, 60, 60]);
     }
 
     #[test]
@@ -7784,6 +8300,7 @@ mod tests {
                 "launch",
                 "--foreground",
                 "--no-browser",
+                "--keep-configured-workspace",
                 "--workspace",
                 "/tmp/Workspace",
                 "--host",

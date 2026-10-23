@@ -123,6 +123,7 @@ import {
   localHttpOrigin,
   localProcessAlive,
   localProcessIdentity,
+  localWorkspaceLinked,
   PAIRING_TTL_MS,
   readLocalRuntimeFiles,
   readLocalWorkspaceRegistry,
@@ -1190,7 +1191,11 @@ async function commandLocalHostInspect(): Promise<void> {
             publicOriginConfiguredFromEnv(),
         },
         activeWorkspace: active,
-        workspaces: registry.workspaces,
+        // Desktop keeps a host running for a Worktable whose Link is on.
+        workspaces: registry.workspaces.map((entry) => ({
+          ...entry,
+          linked: localWorkspaceLinked(entry.path),
+        })),
         registryError,
         registryErrorCode,
         runtime,

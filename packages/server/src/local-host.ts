@@ -15,6 +15,7 @@ import {
 } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { ensureAppDir } from "./app-storage.ts"
+import { workspaceCacheKeyForRoot } from "./workspace.ts"
 
 export const LOCAL_HOST_SCHEMA_VERSION = 1
 export const LOCAL_WORKSPACES_FILE = "local-workspaces.json"
@@ -146,6 +147,29 @@ function emptyRegistry(): LocalWorkspaceRegistry {
     schemaVersion: LOCAL_HOST_SCHEMA_VERSION,
     activeWorkspaceId: null,
     workspaces: [],
+  }
+}
+
+/**
+ * Whether Worktable Link is on for the Worktable at this path on this device:
+ * its link record exists and is not disabled. Pausing happens in Cloud, so a
+ * paused link still counts as on here.
+ */
+export function localWorkspaceLinked(workspacePath: string): boolean {
+  try {
+    const link = JSON.parse(
+      readFileSync(
+        join(
+          ensureAppDir(),
+          "linked",
+          `${workspaceCacheKeyForRoot(resolve(workspacePath))}.json`
+        ),
+        "utf8"
+      )
+    ) as unknown
+    return isRecord(link) && link["disabled"] === false
+  } catch {
+    return false
   }
 }
 

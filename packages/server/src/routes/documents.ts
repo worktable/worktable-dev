@@ -3,10 +3,12 @@ import { reservedAnnotationInput } from "../annotation-origin.ts"
 import { visitorCommentPageSummary, visitorCommentReader } from "../visitor-comment-access.ts"
 import { canAccessSpace } from "../team-policy.ts";
 import { documentSourceDisposition } from "../content-disposition.ts"
+import { createHash } from "node:crypto"
 import { Hono, type Context } from "hono"
 import { z } from "zod"
 import {
   DOCUMENT_ARCHIVE_REASON_MAX_LENGTH,
+  DOCUMENT_GENERATION_MAX_ENTRY_BYTES,
   DocumentAnnotationSelectorSchema,
   DocumentContentRevisionSchema,
   DocumentFormatClaimSchema,
@@ -65,6 +67,12 @@ import {
   updateDocumentAnnotation,
 } from "../document-annotation-service.ts"
 import { wsManager } from "../ws.ts"
+import {
+  BUILTIN_DOCUMENT_FORMATS,
+  createBuiltinDocumentFormatRegistry,
+} from "../document-format-registry.ts"
+import { filesPreviewEnabled } from "../files-preview.ts"
+import { fileMediaType, fileShownInline } from "../file-media.ts"
 
 /** Format-neutral document collection for common browser surfaces. */
 export const documentsRouter = new Hono()
@@ -476,6 +484,211 @@ documentsRouter.get(
     )
   }
 )
+
+// ── Files ────────────────────────────────────────────────────────────────────
+// A file's bytes, for anyone who can read its Space, and uploads for anyone
+// who can edit it. Both exist only with the files preview on, and only for
+// files: Docs keep their own routes.
+
+const FILE_UPLOAD_MAX_BYTES = DOCUMENT_GENERATION_MAX_ENTRY_BYTES
+const FILE_KEEP_BOTH_TRIES = 100
+const fileRegistry = createBuiltinDocumentFormatRegistry()
+
+function fileContentHash(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("base64url")
+}
+
+/** Whether a new file at this path would be a file rather than a Doc. */
+function namesAFile(path: string): boolean {
+  const leaf = path.split("/").at(-1) ?? ""
+  return (
+    fileRegistry.fileSourceForFilename(leaf, { anyFile: true })?.registration
+      .id === BUILTIN_DOCUMENT_FORMATS.file
+  )
+}
+
+/** `name-2.ext`, `name-3.ext`… for keeping both when a name is taken. */
+function numberedFilePath(path: string, n: number): string {
+  const slash = path.lastIndexOf("/")
+  const folder = path.slice(0, slash + 1)
+  const leaf = path.slice(slash + 1)
+  const dot = leaf.lastIndexOf(".")
+  return dot > 0
+    ? `${folder}${leaf.slice(0, dot)}-${n}${leaf.slice(dot)}`
+    : `${folder}${leaf}-${n}`
+}
+
+documentsRouter.get("/file", requireScope("documents:read"), async (c) => {
+  if (!filesPreviewEnabled()) {
+    return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
+  }
+  const path = exactDocumentPath(c.req.query("path"))
+  if (!path) {
+    return c.json(
+      { error: "Enter a valid file path.", code: "VALIDATION_ERROR" },
+      400
+    )
+  }
+  try {
+    const result = await readRawDocumentSource({
+      spaceId: c.req.param("spaceId") ?? "",
+      path,
+      includeArchived: true,
+    })
+    if (
+      result.kind === "not-found" ||
+      (result.kind === "source" &&
+        result.source.formatId !== BUILTIN_DOCUMENT_FORMATS.file)
+    ) {
+      return c.json({ error: "File not found.", code: "NOT_FOUND" }, 404)
+    }
+    if (result.kind !== "source") {
+      return c.json(
+        { error: "This file can't be read safely.", code: "CONFLICT" },
+        409
+      )
+    }
+    const { bytes, fileName } = result.source
+    const hash = fileContentHash(bytes)
+    const etag = `"${hash}"`
+    // A request naming the current content may keep it for good: a file's
+    // bytes at a hash never change. Otherwise check again each time.
+    const cacheControl =
+      c.req.query("v") === hash
+        ? "private, max-age=31536000, immutable"
+        : "private, no-cache"
+    const headers: Record<string, string> = {
+      "Cache-Control": cacheControl,
+      ETag: etag,
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+      "Cross-Origin-Resource-Policy": "same-origin",
+      "X-Content-Type-Options": "nosniff",
+    }
+    if (c.req.header("if-none-match") === etag) {
+      return new Response(null, { status: 304, headers })
+    }
+    const inline = fileShownInline(fileName) && c.req.query("download") !== "1"
+    return new Response(new Uint8Array(bytes).buffer, {
+      headers: {
+        ...headers,
+        "Content-Type": fileMediaType(fileName),
+        "Content-Disposition": documentSourceDisposition(
+          fileName,
+          inline ? "inline" : "attachment"
+        ),
+      },
+    })
+  } catch (error) {
+    if (error instanceof DocumentSourceReadError) {
+      return c.json(
+        {
+          error:
+            error.reason === "too-large"
+              ? "This file is too large to read here."
+              : "This file can't be read safely.",
+          code:
+            error.reason === "too-large"
+              ? "PAYLOAD_TOO_LARGE"
+              : "SOURCE_UNAVAILABLE",
+        },
+        error.reason === "too-large" ? 413 : 409
+      )
+    }
+    throw error
+  }
+})
+
+// The body is the file's bytes. Without If-Match it creates the file; a name
+// that is taken is refused, or numbered with keepBoth=1. With If-Match, the
+// file's current sourceRevision, it replaces the file and keeps the old
+// version in its history.
+documentsRouter.put("/file", requireScope("documents:write"), async (c) => {
+  if (!filesPreviewEnabled()) {
+    return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
+  }
+  const spaceId = c.req.param("spaceId") ?? ""
+  const path = exactDocumentPath(c.req.query("path"))
+  if (!path) {
+    return c.json(
+      { error: "Enter a valid file path.", code: "VALIDATION_ERROR" },
+      400
+    )
+  }
+  if (!namesAFile(path)) {
+    return c.json(
+      {
+        error: "This name is for a Doc. Create Docs with the Doc tools.",
+        code: "UNSUPPORTED_MEDIA_TYPE",
+      },
+      415
+    )
+  }
+  const declared = Number(c.req.header("content-length") ?? "0")
+  if (declared > FILE_UPLOAD_MAX_BYTES) {
+    return c.json(
+      { error: "Files can be up to 64 MiB.", code: "PAYLOAD_TOO_LARGE" },
+      413
+    )
+  }
+  const bytes = new Uint8Array(await c.req.arrayBuffer())
+  if (bytes.byteLength > FILE_UPLOAD_MAX_BYTES) {
+    return c.json(
+      { error: "Files can be up to 64 MiB.", code: "PAYLOAD_TOO_LARGE" },
+      413
+    )
+  }
+  const attribution = documentWriteAttribution(c.get("identity").principal)
+  const expectedRevision = c.req.header("if-match")?.replace(/^"|"$/g, "")
+  try {
+    if (expectedRevision) {
+      const result = await replaceRegisteredDocument({
+        spaceId,
+        path,
+        bytes,
+        expectedRevision,
+        updatedBy: attribution.actor,
+        source: attribution.source,
+        reason: "Uploaded a new version",
+      })
+      return c.json({ ok: true, ...result, contentHash: fileContentHash(bytes) })
+    }
+    const keepBoth = c.req.query("keepBoth") === "1"
+    for (let n = 1; ; n++) {
+      const candidate = n === 1 ? path : numberedFilePath(path, n)
+      try {
+        const result = await createRegisteredDocument({
+          spaceId,
+          path: candidate,
+          format: { id: BUILTIN_DOCUMENT_FORMATS.file, sourceVersion: 1 },
+          bytes,
+          createdBy: attribution.actor,
+          source: attribution.source,
+          reason: "Uploaded",
+        })
+        return c.json(
+          { ok: true, ...result, contentHash: fileContentHash(bytes) },
+          201
+        )
+      } catch (error) {
+        if (
+          !keepBoth ||
+          n >= FILE_KEEP_BOTH_TRIES ||
+          !(error instanceof DocumentWriteError) ||
+          error.reason !== "conflict"
+        )
+          throw error
+      }
+    }
+  } catch (error) {
+    if (error instanceof DocumentWriteError) {
+      return c.json(
+        { error: error.message, code: error.reason.toUpperCase() },
+        documentWriteStatus(error)
+      )
+    }
+    throw error
+  }
+})
 
 documentsRouter.get("/source", requireScope("documents:read"), async (c) => {
   if (!canManageUserSettings(c)) {

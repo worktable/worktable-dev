@@ -247,7 +247,7 @@ export class DocumentFormatRegistry {
       adapter.rendererKey !== null ||
       adapter.renderDisposition !==
         DOCUMENT_RENDER_DISPOSITIONS.attachmentOnly ||
-      adapter.prepareWrite
+      (adapter.capabilities.authoring === "replace") !== !!adapter.prepareWrite
     ) {
       throw new Error(`invalid any-file document format: ${id}`)
     }
@@ -481,7 +481,8 @@ export function createBuiltinDocumentFormatRegistry(): DocumentFormatRegistry {
       portableState: "none",
     },
     {
-      // Any other file. Its path keeps its whole name, extension included.
+      // Any other file. Its path keeps its whole name, extension included,
+      // and its bytes are stored exactly as given.
       id: BUILTIN_DOCUMENT_FORMATS.file,
       extensions: [],
       sourceVersions: [1],
@@ -489,12 +490,15 @@ export function createBuiltinDocumentFormatRegistry(): DocumentFormatRegistry {
       rendererKey: null,
       renderDisposition: DOCUMENT_RENDER_DISPOSITIONS.attachmentOnly,
       capabilities: {
-        authoring: "none",
+        authoring: "replace",
         publicProjection: "none",
         execution: "none",
       },
       versionedCompanionKeys: [],
       portableState: "none",
+      async prepareWrite({ bytes }) {
+        return { bytes: bytes.slice() }
+      },
     },
   ])
 }

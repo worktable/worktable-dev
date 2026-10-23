@@ -35,7 +35,10 @@ import {
   useResolvedDocumentHandle,
 } from "./document-query.ts"
 import { pathMovesFor } from "./doc-aliases.ts"
-import { createBuiltinDocumentFormatRegistry } from "./document-format-registry.ts"
+import {
+  BUILTIN_DOCUMENT_FORMATS,
+  createBuiltinDocumentFormatRegistry,
+} from "./document-format-registry.ts"
 import {
   DOCUMENT_STORAGE_PROFILE_IDS,
   type DocumentStorageProfileId,
@@ -543,6 +546,7 @@ export async function readDocumentAnnotations(options: {
 export interface RawDocumentSource {
   bytes: Uint8Array
   fileName: string
+  formatId: string
 }
 
 export type RawDocumentSourceResolution =
@@ -552,6 +556,8 @@ export type RawDocumentSourceResolution =
 
 function sourceFileName(handle: ResolvedDocumentHandle): string {
   const leaf = handle.document.path.split("/").at(-1) || "document"
+  // A file's path already ends with its whole name.
+  if (handle.document.format.id === BUILTIN_DOCUMENT_FORMATS.file) return leaf
   const sourceExtension =
     handle.source.kind === "file" ? extname(handle.source.relativePath) : ""
   const registry = createBuiltinDocumentFormatRegistry()
@@ -581,7 +587,11 @@ export async function readRawDocumentSource(options: {
       })
       return {
         kind: "source" as const,
-        source: { bytes, fileName: sourceFileName(handle) },
+        source: {
+          bytes,
+          fileName: sourceFileName(handle),
+          formatId: handle.document.format.id,
+        },
       }
     }
   )

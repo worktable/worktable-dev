@@ -948,6 +948,16 @@ describe("format-neutral document route", () => {
           (entry) => entry.kind === "document" && entry.descriptor.path === path
         )
 
+      // Nothing under a hidden name is a file, so a file can't move there.
+      const hiddenMove = await post("move", {
+        path: "notes/readme/error.png",
+        to: ".private/error.png",
+      })
+      expect(hiddenMove.status).toBe(409)
+      expect(
+        await readFile(join(docs, "notes", "readme", "error.png"), "utf8")
+      ).toBe("png bytes")
+
       const moved = await post("move", {
         path: "notes/readme/error.png",
         to: "design/error.png",

@@ -131,7 +131,8 @@ async function scanLegacyDocDirectory(
   budget: LegacyCatalogBudget,
   registry: DocumentFormatRegistry,
   limit: ReturnType<typeof createConcurrencyLimit>,
-  anyFile: boolean
+  anyFile: boolean,
+  insideHidden = false
 ): Promise<DocumentSourceClaim[]> {
   const directory = join(root, ...relativeSegments)
   const entries = await limit(() => readLegacyDirectory(directory, budget))
@@ -140,8 +141,8 @@ async function scanLegacyDocDirectory(
     entries.map(async (entry): Promise<DocumentSourceClaim[]> => {
       const segments = [...relativeSegments, entry.name]
       if (entry.isSymbolicLink()) return []
-      // With files on, hidden folders are not part of the Space either.
-      if (anyFile && isHiddenName(entry.name)) return []
+      // Nothing under a hidden name is a file. Docs there are found as ever.
+      const hidden = insideHidden || isHiddenName(entry.name)
       if (entry.isDirectory()) {
         return scanLegacyDocDirectory(
           root,
@@ -150,12 +151,13 @@ async function scanLegacyDocDirectory(
           budget,
           registry,
           limit,
-          anyFile
+          anyFile,
+          hidden
         )
       }
       if (!entry.isFile()) return []
       const registration = registry.fileSourceForFilename(entry.name, {
-        anyFile,
+        anyFile: anyFile && !hidden,
       })
       if (!registration) return []
       const { registration: format, source } = registration

@@ -88,9 +88,9 @@ import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
   isHiddenName,
+  pathIsHidden,
   withoutSuffix,
 } from "./document-format-registry.ts"
-import { filesPreviewEnabled } from "./files-preview.ts"
 import {
   DOCUMENT_STORAGE_PROFILE_IDS,
   documentStorageProfiles,
@@ -2784,6 +2784,14 @@ async function prepareExactRename(
     )
   }
   if (
+    source.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file &&
+    pathIsHidden(to)
+  ) {
+    throw new DocumentLifecyclePreconditionError(
+      "Files can't go in hidden folders"
+    )
+  }
+  if (
     expectedStorageProfileId ===
       DOCUMENT_STORAGE_PROFILE_IDS.legacyHtmlBundle &&
     !WidgetIdSchema.safeParse(to).success
@@ -3093,6 +3101,14 @@ async function preparePrefixRename(
     ) {
       throw new DocumentLifecyclePreconditionError(
         `Target document path is not portable: ${to}`
+      )
+    }
+    if (
+      source.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file &&
+      pathIsHidden(to)
+    ) {
+      throw new DocumentLifecyclePreconditionError(
+        "Files can't go in hidden folders"
       )
     }
     const storageProfileId = source.handle.storageProfile
@@ -7653,17 +7669,30 @@ function verifyRecoveryCatalogCheckpoint(
       claims.push({ path, source })
     }
   }
-  const anyFile = filesPreviewEnabled()
-  const scanDocs = (directory: string, segments: string[]): void => {
+  // Whether files took part is a fact of the journal, not of the preview
+  // switch now: recovery must settle what the operation planned either way.
+  const plannedEntries: readonly LifecycleEndpoint[] =
+    expectedPrefixEntries ??
+    ("source" in endpoint ? [endpoint as LifecycleEndpoint] : [])
+  const anyFile = plannedEntries.some(
+    (entry) =>
+      entry.source.kind === "file" &&
+      entry.source.relativePath === `docs/${entry.logicalPath}`
+  )
+  const scanDocs = (
+    directory: string,
+    segments: string[],
+    insideHidden = false
+  ): void => {
     for (const entry of readRecoveryDirectory(directory)) {
       account()
       if (entry.isSymbolicLink()) continue
-      // Discovery's rule: with files on, hidden names are not in the Space.
-      if (anyFile && isHiddenName(entry.name)) continue
+      // Discovery's rule: nothing under a hidden name is a file.
+      const hidden = insideHidden || isHiddenName(entry.name)
       const nextSegments = [...segments, entry.name]
       const absolute = join(directory, entry.name)
       if (entry.isDirectory()) {
-        scanDocs(absolute, nextSegments)
+        scanDocs(absolute, nextSegments, hidden)
         continue
       }
       if (!entry.isFile()) continue
@@ -7674,8 +7703,9 @@ function verifyRecoveryCatalogCheckpoint(
             : entry.name.endsWith(".json")
               ? ".json"
               : null
-          : (registry.fileSourceForFilename(entry.name, { anyFile })?.source
-              .extension ?? null)
+          : (registry.fileSourceForFilename(entry.name, {
+              anyFile: anyFile && !hidden,
+            })?.source.extension ?? null)
       if (extension === null) continue
       maybeClaim(
         [...segments, withoutSuffix(entry.name, extension)].join("/"),

@@ -972,7 +972,7 @@ async function buildDocumentCatalogFromFiles(
     registry
   )
   options.signal?.throwIfAborted()
-  const merged = await inventoryClaims(
+  const inventoried = await inventoryClaims(
     spaceRoot,
     spaceId,
     legacyClaims,
@@ -981,6 +981,16 @@ async function buildDocumentCatalogFromFiles(
     lstatPath,
     options.signal
   )
+  // With files off, files that gained an identity while they were on take no
+  // part in the Space: not listed, and in no conflict with a Doc's path.
+  const merged = filesPreviewEnabled()
+    ? inventoried
+    : {
+        ...inventoried,
+        claims: inventoried.claims.filter(
+          (claim) => claim.format.id !== BUILTIN_DOCUMENT_FORMATS.file
+        ),
+      }
   const htmlProperties = new Map<DocumentId, HtmlDocumentPropertiesRead | null>()
   const htmlClaims = merged.claims.filter(
     (claim) =>
@@ -1135,22 +1145,13 @@ async function buildDocumentCatalogFromFiles(
       ],
     }
   }
-  // With files off, files that gained an identity while they were on stay
-  // out of lists rather than showing as missing.
-  const listed = filesPreviewEnabled()
-    ? entries
-    : entries.filter(
-        (entry) =>
-          entry.kind === "conflict" ||
-          entry.descriptor.format.id !== BUILTIN_DOCUMENT_FORMATS.file
-      )
-  listed.sort((a, b) => {
+  entries.sort((a, b) => {
     const aKey = a.kind === "conflict" ? a.pathKey : a.descriptor.path
     const bKey = b.kind === "conflict" ? b.pathKey : b.descriptor.path
     return compareStrings(aKey, bKey)
   })
   return {
-    entries: listed,
+    entries,
     aliases: aliasResult.aliases,
     inventoryDiagnostics: merged.diagnostics,
     provenCoreBundleIdentities: merged.provenCoreBundleIdentities,

@@ -601,6 +601,59 @@ describe("recoverable document lifecycle", () => {
     }
   }, 30_000)
 
+  it("recovers an interrupted file move after the files preview is turned off", async () => {
+    const workspace = join(root, "file-move", "workspace")
+    mkdirSync(workspace, { recursive: true })
+    setWorkspaceRootOverride(workspace)
+    setAppDirOverride(join(root, "file-move", "app"))
+    ensureWorkspaceManifest()
+    await writeSpace(makeSpace("space"))
+    const docs = join(workspace, "spaces", "space", "docs")
+    mkdirSync(docs, { recursive: true })
+    writeFileSync(join(docs, "error.png"), "png bytes")
+    await updateDocumentInventory("space", {
+      upsert: [
+        {
+          documentId: mintDocumentId(),
+          path: "error.png",
+          format: { id: "worktable.file", sourceVersion: 1 },
+          source: { kind: "file", relativePath: "docs/error.png" },
+        },
+      ],
+    })
+
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    setDocumentLifecycleStepHookForTests((step) => {
+      if (step === "committed") {
+        throw new SimulatedDocumentLifecycleCrash(step)
+      }
+    })
+    try {
+      await expect(
+        renameDocAndSync("space", "error.png", "design/error.png")
+      ).rejects.toThrow("committed")
+    } finally {
+      setDocumentLifecycleStepHookForTests(null)
+    }
+
+    // Restarting without the preview must still settle what was planned.
+    process.env["WORKTABLE_FILES_PREVIEW"] = "0"
+    try {
+      const recovered = recoverInterruptedDocumentLifecycles()
+      expect(recovered).toHaveLength(1)
+      await reconcileRecoveredDocumentLifecycles(recovered)
+      expect(recoverInterruptedDocumentLifecycles()).toEqual([])
+      expect(readFileSync(join(docs, "design", "error.png"), "utf8")).toBe(
+        "png bytes"
+      )
+      expect(existsSync(join(docs, "error.png"))).toBe(false)
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
+
   it("finishes stable-ID document data after a committed move crash", async () => {
     const workspace = join(root, "v2-data-move", "workspace")
     const app = join(root, "v2-data-move", "app")

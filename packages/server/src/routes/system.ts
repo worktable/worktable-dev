@@ -27,6 +27,8 @@ import { mcpPreviewEnvOverride } from "../mcp/surface.ts";
 import { sharingPreviewEnabled, sharingPreviewEnvOverride } from "../sharing-preview.ts";
 import { filesPreviewEnabled, filesPreviewEnvOverride } from "../files-preview.ts";
 import { noteAllSpacesChanged } from "../workspace-read-model.ts";
+import { notifyWorkspaceChange } from "../workspace-events.ts";
+import { listSpaces } from "../store.ts";
 import { sharingV2Active } from "../share-links-store.ts";
 import { teamMemberForIdentity } from "../team-policy.ts";
 import { memberAccess } from "../team-access.ts";
@@ -417,6 +419,13 @@ function withEnvironmentOverrides(settings: ServerSettings) {
   };
 }
 
+async function refreshEverySpaceList(): Promise<void> {
+  noteAllSpacesChanged();
+  for (const space of await listSpaces()) {
+    notifyWorkspaceChange({ type: "documentCorpus", spaceId: space.id });
+  }
+}
+
 // PUT /api/system/settings — patch server preferences. Owner-only (same gate as
 // POST /update). Strict: unknown keys or wrong-typed fields → 400. Returns the
 // merged settings.
@@ -450,9 +459,11 @@ systemRouter.put("/settings", async (c) => {
       );
     }
     const sharingPreviewWasOn = sharingPreviewEnabled();
-    const filesPreviewWasOn = filesPreviewEnabled();
     const result = await updateServerSettingsWithResult(body);
     const merged = result.settings;
+    // Files on or off changes what every Space lists. Refresh as soon as the
+    // change is saved, whatever follows, and tell open tabs to list again.
+    if ("files" in body) await refreshEverySpaceList();
     // A retention-policy change triggers an immediate full sweep so the new
     // limit takes effect now, not at the next 24h tick. Awaited so the caller
     // (and tests) observe a consistent post-sweep state; the new policy is
@@ -475,8 +486,6 @@ systemRouter.put("/settings", async (c) => {
         );
       }
     }
-    // Files on or off changes what every Space lists.
-    if (filesPreviewWasOn !== filesPreviewEnabled()) noteAllSpacesChanged();
     if (!sharingPreviewWasOn && sharingPreviewEnabled()) {
       const { startV1ShareLinkDrain } = await import("../share-links-drain.ts");
       // The response does not wait for catalog discovery or migration I/O.

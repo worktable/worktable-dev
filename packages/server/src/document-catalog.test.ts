@@ -221,20 +221,32 @@ describe("shadow document catalog", () => {
         ],
       ])
 
-      // A file that gained an identity stays out of lists once files are off.
+      // A file that gained an identity takes no part in the Space once files
+      // are off: it is not listed, and a Doc at its path is not in conflict.
+      await writeFile(join(docs, "report.png"), "png")
+      await writeFile(join(docs, "report.png.md"), "# Report")
       await updateDocumentInventory(spaceId, {
         upsert: [
           {
             documentId: mintDocumentId(),
-            path: "feedback.csv",
+            path: "report.png",
             format: { id: "worktable.file", sourceVersion: 1 },
-            source: { kind: "file", relativePath: "docs/feedback.csv" },
+            source: { kind: "file", relativePath: "docs/report.png" },
           },
         ],
       })
+      expect((await listed()).find(([path]) => path === "report.png")).toEqual(
+        ["report.png", "conflict"]
+      )
       process.env["WORKTABLE_FILES_PREVIEW"] = "0"
-      expect((await listed()).map(([path]) => path)).toEqual([
-        "onboarding/signup-flow",
+      expect(await listed()).toEqual([
+        [
+          "onboarding/signup-flow",
+          "worktable.markdown",
+          "Signup flow",
+          "legacy-doc-file",
+        ],
+        ["report.png", "worktable.markdown", "Report", "legacy-doc-file"],
       ])
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]

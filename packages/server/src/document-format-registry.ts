@@ -343,9 +343,14 @@ export function withoutSuffix(name: string, extension: string): string {
   return extension ? name.slice(0, -extension.length) : name
 }
 
-/** Hidden names (a leading dot) are never part of a Space. */
+/** Hidden names (a leading dot) never hold files. */
 export function isHiddenName(name: string): boolean {
   return name.startsWith(".")
+}
+
+/** Whether a path names or passes through something hidden. */
+export function pathIsHidden(path: string): boolean {
+  return path.split("/").some(isHiddenName)
 }
 
 export const BUILTIN_DOCUMENT_FORMATS = {

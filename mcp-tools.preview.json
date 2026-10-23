@@ -10033,7 +10033,7 @@
   {
     "name": "worktable_records_write",
     "title": "Write Worktable Records",
-    "description": "Create or update Record collection schemas and Records. upsert_collection merges fields by key: fields you send are added or replaced, and the rest stay. create never overwrites: an existing recordId returns the stored record unchanged with created: false, so a recordId derived from a natural key such as a URL adds each item once. update merges data and metadata keys. create_many adds up to 100 records in one call and update_many sets the same values on up to 100 records chosen by recordIds or where; both check every row before writing and report each row's result.",
+    "description": "Create or update Record collection schemas and Records. upsert_collection merges fields by key: fields you send are added or replaced, and the rest stay. create never overwrites: an existing recordId returns the stored record unchanged with created: false, so a recordId derived from a natural key such as a URL adds each item once. update merges data and metadata keys. create_many adds up to 100 records in one call and update_many sets the same values on up to 100 records chosen by recordIds or where; both check every row before writing and report each row's result. import reads a .csv, .tsv or .jsonl file in the Space: with dryRun it proposes fields from the columns (a column such as 007 stays text) and an id column, writing nothing; with columns it imports those, by the create_many rules, and reports the columns left out. Keep only the columns the team will use.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -10340,6 +10340,77 @@
                 "collectionId"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "import"
+                },
+                "spaceId": {
+                  "type": "string"
+                },
+                "collectionId": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "description": "A .csv, .tsv or .jsonl file in the Space, e.g. research/feedback.csv"
+                },
+                "dryRun": {
+                  "description": "Return the file's columns and proposed fields, writing nothing",
+                  "type": "boolean"
+                },
+                "columns": {
+                  "description": "The columns to import; the rest are left out and reported",
+                  "maxItems": 200,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "column": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The column's name in the file"
+                      },
+                      "field": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The Record field it fills"
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "text",
+                          "number",
+                          "date",
+                          "boolean"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "column",
+                      "field",
+                      "type"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "idColumn": {
+                  "description": "A column whose values become record ids, so a row already imported is skipped",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "action",
+                "spaceId",
+                "collectionId",
+                "path"
+              ],
+              "additionalProperties": false
             }
           ]
         }
@@ -10464,9 +10535,14 @@
           "type": "string"
         },
         "counts": {
-          "description": "Returned by action \"create_many\" or \"update_many\".",
+          "description": "Returned by action \"create_many\", \"update_many\" or \"import\".",
           "type": "object",
           "properties": {
+            "rows": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
             "created": {
               "type": "integer",
               "minimum": 0,
@@ -10492,6 +10568,115 @@
             "failed"
           ],
           "additionalProperties": {}
+        },
+        "proposal": {
+          "description": "Returned by action \"import\" with dryRun: the file's columns and proposed fields.",
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "rowCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "columns": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "column": {
+                    "type": "string"
+                  },
+                  "field": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "text",
+                      "number",
+                      "date",
+                      "boolean"
+                    ]
+                  }
+                },
+                "required": [
+                  "column",
+                  "field",
+                  "type"
+                ],
+                "additionalProperties": {}
+              }
+            },
+            "idColumn": {
+              "type": "string"
+            },
+            "sample": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "existingFields": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "path",
+            "rowCount",
+            "columns",
+            "sample"
+          ],
+          "additionalProperties": {}
+        },
+        "collectionId": {
+          "description": "Returned by action \"import\".",
+          "type": "string"
+        },
+        "rows": {
+          "description": "Returned by action \"import\": rows not created, and why.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "row": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "recordId": {
+                "type": "string"
+              },
+              "skipped": {
+                "type": "string"
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "row"
+            ],
+            "additionalProperties": {}
+          }
+        },
+        "columnsLeftOut": {
+          "description": "Returned by action \"import\": columns of the file that went into no field.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",

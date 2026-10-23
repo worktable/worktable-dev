@@ -392,7 +392,7 @@ export const BACKGROUND_FUNCTIONS = [
   "packages/server/src/share-links-store.ts#sweepRevokedShareLinks",
   // Keeps a version of a file changed on disk, from the watcher after the
   // change settles (file-change-recorder.ts). No request waits on it.
-  "packages/server/src/document-write-service.ts#recordExternalFileChange",
+  "packages/server/src/document-write-service.ts#recordExternalFileChanges",
 ]
 
 const inBackground = (site: string) =>

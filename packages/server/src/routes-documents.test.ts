@@ -23,7 +23,7 @@ import { HOSTED_BROWSER_RUNTIME_SCOPES } from "./hosted-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import {
   readRegisteredDocumentSource,
-  recordExternalFileChange,
+  recordExternalFileChanges,
 } from "./document-write-service.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import {
@@ -1135,29 +1135,33 @@ describe("format-neutral document route", () => {
       await writeFile(join(docs, "data", "feedback.csv"), "id\n1\n2\n")
       noteSpaceChanged(spaceId)
       expect(
-        await recordExternalFileChange({ spaceId, path: "data/feedback.csv" })
-      ).toEqual({ recorded: true })
+        await recordExternalFileChanges({ spaceId, paths: ["data/feedback.csv"] })
+      ).toEqual({ recorded: ["data/feedback.csv"] })
       const after = await versions("data/feedback.csv")
       expect(after.length).toBe(before + 1)
       expect(after[0]?.source).toBe("filesystem")
       // The same bytes again keep nothing new.
       expect(
-        await recordExternalFileChange({ spaceId, path: "data/feedback.csv" })
-      ).toEqual({ recorded: false })
-      // A quick further change continues that version rather than adding one.
+        await recordExternalFileChanges({ spaceId, paths: ["data/feedback.csv"] })
+      ).toEqual({ recorded: [] })
+      // A quick further change, saved atomically and reported only by its
+      // temporary name, continues that version rather than adding one.
       await writeFile(join(docs, "data", "feedback.csv"), "id\n1\n2\n3\n")
       noteSpaceChanged(spaceId)
       expect(
-        await recordExternalFileChange({ spaceId, path: "data/feedback.csv" })
-      ).toEqual({ recorded: true })
+        await recordExternalFileChanges({
+          spaceId,
+          paths: ["data/feedback.csv.tmp"],
+        })
+      ).toEqual({ recorded: ["data/feedback.csv"] })
       expect((await versions("data/feedback.csv")).length).toBe(before + 1)
 
       // A file nobody has kept yet has no history to add to.
       await writeFile(join(docs, "data", "dropped.csv"), "id\n")
       noteSpaceChanged(spaceId)
       expect(
-        await recordExternalFileChange({ spaceId, path: "data/dropped.csv" })
-      ).toEqual({ recorded: false })
+        await recordExternalFileChanges({ spaceId, paths: ["data/dropped.csv"] })
+      ).toEqual({ recorded: [] })
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
       else process.env["WORKTABLE_FILES_PREVIEW"] = previous

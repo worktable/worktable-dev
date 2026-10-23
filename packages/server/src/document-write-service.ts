@@ -1143,16 +1143,20 @@ export async function readRegisteredDocumentSourceLocked(options: {
 }
 
 /**
- * Keep the version a file has after something outside Worktable changed it,
- * such as an agent writing straight to disk. A file's history starts once it
- * has an identity: uploaded, moved or otherwise kept by Worktable. Bytes the
- * newest version already holds record nothing, and quick successive changes
- * merge into one version as people's saves do.
+ * Keep the versions files have after something outside Worktable changed
+ * them, such as an agent writing straight to disk. A file's history starts
+ * once it has an identity: uploaded, moved or otherwise kept by Worktable.
+ * Bytes the newest version already holds record nothing, and quick
+ * successive changes merge into one version as people's saves do.
+ *
+ * One catalog serves every path in the batch. A path that names no file with
+ * history, such as the temporary name of an atomic save, stands for its
+ * folder: the files with history directly in it are checked instead.
  */
-export async function recordExternalFileChange(options: {
+export async function recordExternalFileChanges(options: {
   spaceId: string
-  path: string
-}): Promise<{ recorded: boolean }> {
+  paths: readonly string[]
+}): Promise<{ recorded: string[] }> {
   const workspaceRoot = getWorkspaceRoot()
   const registry = createBuiltinDocumentFormatRegistry()
   return withDocPathLock(options.spaceId, async () => {
@@ -1162,73 +1166,98 @@ export async function recordExternalFileChange(options: {
       spaceId: options.spaceId,
       registry,
     })
-    const entry = entryAt(catalog, options.path)
-    if (
-      entry?.kind !== "document" ||
-      entry.descriptor.path !== options.path ||
-      entry.descriptor.format.id !== BUILTIN_DOCUMENT_FORMATS.file ||
-      entry.handle.identity !== "durable"
-    ) {
-      return { recorded: false }
+    const keptFiles = new Map(
+      catalog.entries.flatMap((entry) =>
+        entry.kind === "document" &&
+        entry.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file &&
+        entry.handle.identity === "durable"
+          ? [[entry.descriptor.path, entry] as const]
+          : []
+      )
+    )
+    const folderOf = (path: string) =>
+      path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ""
+    const candidates = new Set<string>()
+    const folders = new Set<string>()
+    for (const path of options.paths) {
+      if (keptFiles.has(path)) candidates.add(path)
+      else folders.add(folderOf(path))
     }
-    const document = resolveWritableDocument(catalog, options.path, registry)
-    let bytes: Uint8Array
-    try {
-      bytes = await readSource(workspaceRoot, options.spaceId, document)
-    } catch {
-      // Gone again, or past what one version can hold.
-      return { recorded: false }
+    for (const path of keptFiles.keys()) {
+      if (folders.has(folderOf(path))) candidates.add(path)
     }
-    const newest = await newestVersionHolding({
-      workspaceRoot,
-      spaceId: options.spaceId,
-      document,
-      documentId: document.documentId,
-      bytes,
-    })
-    if (newest.holds) return { recorded: false }
-    const now = new Date().toISOString()
-    const written = await writeDocumentGenerationV2({
-      workspaceRoot,
-      spaceId: options.spaceId,
-      documentId: document.documentId,
-      generationId: mintVersionId(now),
-      ...(newest.newestId ? { coalesceWith: newest.newestId } : {}),
-      logicalPath: document.path,
-      format: document.format,
-      operation: newest.count === 0 ? "create" : "update",
-      createdAt: now,
-      createdBy: "external",
-      source: "filesystem",
-      reason: "Changed on disk",
-      authoredSource: {
-        kind: "file",
-        entries: [{ path: generationEntryName(document), bytes }],
-      },
-      registry,
-    })
-    if (newest.newestId) {
-      // A change that continued the newest version replaces it, once this
-      // one has committed; one that didn't keeps it.
-      await retireReplacedGenerationV2({
-        workspaceRoot,
-        spaceId: options.spaceId,
-        documentId: document.documentId,
-        replacement: written,
-        replaced: newest.newestId,
-      }).catch((error) => {
-        console.warn(
-          "[document-write] replaced version cleanup failed:",
-          logError(error)
-        )
-      })
+    const recorded: string[] = []
+    for (const path of candidates) {
+      if (await recordFileVersionLocked(workspaceRoot, options.spaceId, catalog, path, registry)) {
+        recorded.push(path)
+      }
     }
-    await pruneCommittedHistory({
-      spaceId: options.spaceId,
-      documentId: document.documentId,
-    })
-    return { recorded: true }
+    return { recorded }
   })
+}
+
+/** Keep one file's bytes as a version unless its newest one holds them. */
+async function recordFileVersionLocked(
+  workspaceRoot: string,
+  spaceId: string,
+  catalog: DocumentCatalog,
+  path: string,
+  registry: DocumentFormatRegistry
+): Promise<boolean> {
+  const document = resolveWritableDocument(catalog, path, registry)
+  let bytes: Uint8Array
+  try {
+    bytes = await readSource(workspaceRoot, spaceId, document)
+  } catch {
+    // Gone again, or past what one version can hold.
+    return false
+  }
+  const newest = await newestVersionHolding({
+    workspaceRoot,
+    spaceId,
+    document,
+    documentId: document.documentId,
+    bytes,
+  })
+  if (newest.holds) return false
+  const now = new Date().toISOString()
+  const written = await writeDocumentGenerationV2({
+    workspaceRoot,
+    spaceId,
+    documentId: document.documentId,
+    generationId: mintVersionId(now),
+    ...(newest.newestId ? { coalesceWith: newest.newestId } : {}),
+    logicalPath: document.path,
+    format: document.format,
+    operation: newest.count === 0 ? "create" : "update",
+    createdAt: now,
+    createdBy: "external",
+    source: "filesystem",
+    reason: "Changed on disk",
+    authoredSource: {
+      kind: "file",
+      entries: [{ path: generationEntryName(document), bytes }],
+    },
+    registry,
+  })
+  if (newest.newestId) {
+    // A change that continued the newest version replaces it, once this one
+    // has committed; one that didn't keeps it.
+    await retireReplacedGenerationV2({
+      workspaceRoot,
+      spaceId,
+      documentId: document.documentId,
+      replacement: written,
+      replaced: newest.newestId,
+    }).catch((error) => {
+      console.warn(
+        "[document-write] replaced version cleanup failed:",
+        logError(error)
+      )
+    })
+  }
+  await pruneCommittedHistory({ spaceId, documentId: document.documentId })
+  return true
 }
 
 export async function replaceRegisteredDocument(options: {

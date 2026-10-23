@@ -236,7 +236,18 @@ describe("Grok Bot", () => {
         })
       ).status
     ).toBe(400)
-    await configure()
+    expect(
+      (
+        await app.request(`${base}/configuration`, {
+          method: "PUT",
+          body: JSON.stringify({
+            wakeMethod: "webhook",
+            webhookUrl: url,
+            webhookKey: secret,
+          }),
+        })
+      ).status
+    ).toBe(200)
     expect((await readGrokBots())[0]).toMatchObject({
       wakeMethod: "webhook",
       webhookUrl: url,

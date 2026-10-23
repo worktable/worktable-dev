@@ -1347,6 +1347,76 @@ describe("format-neutral document route", () => {
     }
   })
 
+  it("archives and deletes a Doc with its folder, keeping files used elsewhere", async () => {
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    try {
+      const instance = app()
+      const docs = join(root, "spaces", spaceId, "docs")
+      const options = { updatedBy: "test", source: "rest-api" as const }
+      await writeDoc(spaceId, "notes/readme/details", "# Details", options)
+      await mkdir(join(docs, "notes", "readme"), { recursive: true })
+      await writeFile(join(docs, "notes", "readme", "shared.png"), "shared")
+      await writeFile(join(docs, "notes", "readme", "own.png"), "own")
+      await writeDoc(spaceId, "elsewhere", "# Elsewhere\n\n![Shot](/notes/readme/shared.png)", options)
+      noteSpaceChanged(spaceId)
+      await getSpaceLinkGraph(spaceId)
+      const post = (action: string, body: unknown) =>
+        instance.request(`/api/spaces/${spaceId}/documents/${action}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        })
+      const listed = async () => {
+        const paths = (
+          await buildDocumentCatalog({ workspaceRoot: root, spaceId })
+        ).entries.flatMap((entry) =>
+          entry.kind === "document" && entry.descriptor.path.startsWith("notes/readme")
+            ? [entry.descriptor.path]
+            : []
+        )
+        return Promise.all(
+          paths.map(async (path) => [
+            path,
+            Boolean(await getDocArchiveInfo(spaceId, path)),
+          ] as const)
+        )
+      }
+
+      const uses = await instance.request(
+        `/api/spaces/${spaceId}/documents/uses?path=notes/readme`
+      )
+      expect(
+        ((await uses.json()) as { items: Array<{ path: string; usedBy: string[] }> }).items
+          .map((item) => [item.path, item.usedBy])
+          .sort()
+      ).toEqual([
+        ["notes/readme", []],
+        ["notes/readme/details", []],
+        ["notes/readme/own.png", []],
+        ["notes/readme/shared.png", ["elsewhere"]],
+      ])
+
+      // Archiving and restoring the Doc takes its folder along.
+      expect((await post("archive", { path: "notes/readme" })).status).toBe(200)
+      expect((await listed()).every(([, archived]) => archived)).toBe(true)
+      expect((await post("restore", { path: "notes/readme" })).status).toBe(200)
+      expect((await listed()).every(([, archived]) => !archived)).toBe(true)
+
+      // Deleting it takes its folder too, except what another Doc uses.
+      expect((await post("delete", { path: "notes/readme" })).status).toBe(200)
+      expect((await listed()).map(([path]) => path)).toEqual([
+        "notes/readme/shared.png",
+      ])
+      expect(
+        await readFile(join(docs, "notes", "readme", "shared.png"), "utf8")
+      ).toBe("shared")
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
+
   it("deletes mixed folders with common write authority while preserving unclaimed files", async () => {
     const instance = app()
     const forbiddenDelete = await instance.request(

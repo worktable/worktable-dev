@@ -26,8 +26,10 @@ const connectionSchema = z.object({
   participantKey: z.string(),
   principalId: z.string(),
   generation: z.string(),
-  webhookUrl: z.string(),
-  webhookKey: z.string(),
+  webhookUrl: z.string().default(""),
+  webhookKey: z.string().default(""),
+  wakeMethod: z.enum(["webhook", "email"]).default("webhook"),
+  emailAddress: z.string().optional(),
   enabled: z.boolean(),
   /** A secret-free tombstone keeps an old native routine from claiming as an ordinary adapter. */
   removed: z.boolean().optional(),
@@ -164,7 +166,9 @@ export function signalGrokBotChange(): void {
 }
 
 export async function saveGrokBot(
-  input: Omit<StoredGrokBot, "generation">
+  input: Omit<StoredGrokBot, "generation" | "wakeMethod"> & {
+    wakeMethod?: StoredGrokBot["wakeMethod"]
+  }
 ): Promise<void> {
   await mutate((file) => {
     if (
@@ -184,7 +188,11 @@ export async function saveGrokBot(
         c.connectionId !== input.connectionId &&
         !(c.removed && c.participantId === input.participantId)
     )
-    file.connections.push({ ...input, generation: randomUUID() })
+    file.connections.push({
+      wakeMethod: "webhook",
+      ...input,
+      generation: randomUUID(),
+    })
   })
   signalGrokBotChange()
 }
@@ -243,6 +251,7 @@ export async function removeGrokBot(connectionId: string): Promise<void> {
       removed: true,
       webhookUrl: "",
       webhookKey: "",
+      emailAddress: undefined,
       generation: randomUUID(),
       probe: undefined,
       verifiedAt: undefined,

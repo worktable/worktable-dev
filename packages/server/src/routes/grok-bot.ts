@@ -1,6 +1,7 @@
 import { Hono } from "hono"
 import { requireAgentManager } from "../auth.ts"
 import { z } from "zod"
+import { GrokBotEmailAddress } from "@worktable/hosted-contract"
 import { GROK_BOT_SHORTCUT_MESSAGE, isGrokBotShortcut } from "@worktable/types"
 import { listAgentConnections } from "../agent-connection-store.ts"
 import { visibleGrokBotCandidates } from "../grok-bot-connections.ts"
@@ -30,6 +31,8 @@ const saveSchema = z
   .object({
     webhookUrl: z.string().max(2048).optional(),
     webhookKey: z.string().min(1).max(4096).regex(/^\S+$/).optional(),
+    wakeMethod: z.enum(["webhook", "email"]).optional(),
+    emailAddress: GrokBotEmailAddress.optional(),
     enabled: z.boolean().default(true),
     executionMinutes: z.number().int().min(1).max(120).default(30),
   })
@@ -52,8 +55,7 @@ grokBotRouter.put("/:id/configuration", async (c) => {
   if (!parsed.success)
     return c.json(
       {
-        error:
-          "Enter a routine URL, key, and a deadline between 1 and 120 minutes",
+        error: "Check the notification settings and run timeout",
         code: "BAD_REQUEST",
       },
       400
@@ -72,22 +74,33 @@ grokBotRouter.put("/:id/configuration", async (c) => {
   const previous = (await readGrokBots()).find(
     (entry) => entry.connectionId === candidate.id
   )
-  let webhookUrl: string
+  const wakeMethod = parsed.data.wakeMethod ?? previous?.wakeMethod ?? "webhook"
+  let webhookUrl = ""
+  let webhookKey = ""
+  let emailAddress: string | undefined
   try {
-    webhookUrl = validateGrokWebhook(
-      parsed.data.webhookUrl ?? previous?.webhookUrl ?? ""
-    )
+    if (wakeMethod === "email") {
+      const email = GrokBotEmailAddress.safeParse(
+        parsed.data.emailAddress ?? previous?.emailAddress
+      )
+      if (!email.success)
+        throw new Error("Enter your Bot's mail.grokbot.com address")
+      emailAddress = email.data
+    } else {
+      webhookUrl = validateGrokWebhook(
+        parsed.data.webhookUrl ?? previous?.webhookUrl ?? ""
+      )
+      webhookKey = parsed.data.webhookKey ?? previous?.webhookKey ?? ""
+      if (!webhookKey) throw new Error("Enter the routine's webhook key")
+    }
   } catch (error) {
     return c.json({ error: (error as Error).message, code: "BAD_REQUEST" }, 400)
   }
-  const webhookKey = parsed.data.webhookKey ?? previous?.webhookKey
-  if (!webhookKey)
-    return c.json(
-      { error: "Enter the routine's webhook key", code: "BAD_REQUEST" },
-      400
-    )
   const changed =
-    previous?.webhookUrl !== webhookUrl || previous?.webhookKey !== webhookKey
+    previous?.wakeMethod !== wakeMethod ||
+    previous?.webhookUrl !== webhookUrl ||
+    previous?.webhookKey !== webhookKey ||
+    previous?.emailAddress !== emailAddress
   try {
     await saveGrokBot({
       connectionId: candidate.id,
@@ -96,6 +109,8 @@ grokBotRouter.put("/:id/configuration", async (c) => {
       participantKey: candidate.participantKey,
       webhookUrl,
       webhookKey,
+      wakeMethod,
+      ...(emailAddress ? { emailAddress } : {}),
       executionMinutes: parsed.data.executionMinutes,
       enabled: parsed.data.enabled,
       ...(!changed && previous?.verifiedAt

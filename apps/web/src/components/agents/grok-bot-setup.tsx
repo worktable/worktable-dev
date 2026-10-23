@@ -9,6 +9,7 @@ import {
 } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
+import { GrokBotEmailAddress } from "@worktable/hosted-contract"
 import { Check, ChevronRight } from "lucide-react"
 import {
   GROK_BOT_SHORTCUT_MESSAGE,
@@ -42,6 +43,7 @@ import { cn } from "@worktable/ui/lib/utils"
 import { listAgentConnections } from "@/lib/agent-connections-api"
 import { fetchJSON } from "@/lib/http"
 import type { ConnectionInfo } from "@/lib/system-api"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 const WorktableLinkSetup = lazy(() =>
   import("../settings/sections/cloud").then((module) => ({
@@ -345,15 +347,26 @@ function GrokBotRoutine({
 }) {
   const id = useId()
   const navigate = useNavigate()
+  const mobile = useIsMobile()
+  const [method, setMethod] = useState<"webhook" | "email">(
+    () => saved?.wakeMethod ?? (mobile ? "email" : "webhook")
+  )
+  const [email, setEmail] = useState(saved?.emailAddress ?? "")
   const [url, setUrl] = useState("")
   const [key, setKey] = useState("")
   const urlIsShortcut = isGrokBotShortcut(url)
   const keyIsShortcut = isGrokBotShortcut(key)
-  const hasShortcut = urlIsShortcut || keyIsShortcut
+  const hasShortcut = method === "webhook" && (urlIsShortcut || keyIsShortcut)
   const [minutes, setMinutes] = useState(String(saved?.executionMinutes ?? 30))
   const [confirmRetry, setConfirmRetry] = useState(false)
   const copy = useCopy(() => toast.success("Copied"))
   const base = `/api/grok-bot/${encodeURIComponent(candidate.id)}`
+  const needsCheck =
+    !saved ||
+    method !== (saved.wakeMethod ?? "webhook") ||
+    (method === "email"
+      ? email.trim().toLowerCase() !== saved.emailAddress
+      : Boolean(url || key))
   const save = async (
     enabled = saved?.enabled ?? true,
     includeDraft = true
@@ -362,8 +375,16 @@ function GrokBotRoutine({
     await fetchJSON(`${base}/configuration?scope=workspace`, {
       method: "PUT",
       body: JSON.stringify({
-        ...(includeDraft && url.trim() ? { webhookUrl: url.trim() } : {}),
-        ...(includeDraft && key.trim() ? { webhookKey: key.trim() } : {}),
+        ...(includeDraft ? { wakeMethod: method } : {}),
+        ...(includeDraft && method === "email"
+          ? { emailAddress: email.trim() }
+          : {}),
+        ...(includeDraft && method === "webhook" && url.trim()
+          ? { webhookUrl: url.trim() }
+          : {}),
+        ...(includeDraft && method === "webhook" && key.trim()
+          ? { webhookKey: key.trim() }
+          : {}),
         enabled,
         executionMinutes: includeDraft
           ? Number(minutes)
@@ -386,8 +407,7 @@ function GrokBotRoutine({
           // Saving may succeed even when the check fails; always reload durable state.
           if (
             !saved ||
-            url ||
-            key ||
+            needsCheck ||
             Number(minutes) !== saved.executionMinutes ||
             !saved.enabled
           )
@@ -401,6 +421,7 @@ function GrokBotRoutine({
         if (kind === "remove") {
           setUrl("")
           setKey("")
+          setEmail("")
         }
         setConfirmRetry(false)
       } finally {
@@ -412,46 +433,124 @@ function GrokBotRoutine({
         error instanceof Error ? error.message : "Could not update Grok Bot"
       ),
   })
-  const fields = (
+  const methodSelector = (
+    <div className="space-y-2">
+      <label id={`${id}-method-label`} className="text-sm font-medium">
+        Notify Grok using
+      </label>
+      <Select
+        value={method}
+        onValueChange={(value) => {
+          if (value === "email" || value === "webhook") setMethod(value)
+        }}
+        disabled={action.isPending}
+      >
+        <SelectTrigger aria-labelledby={`${id}-method-label`}>
+          <SelectValue>{method === "email" ? "Email" : "Webhook"}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="email">
+            Email{mobile ? " · Recommended" : ""}
+          </SelectItem>
+          <SelectItem value="webhook">
+            Webhook{!mobile ? " · Recommended" : ""}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  )
+  const instructions = (
     <>
-      <div className="space-y-2">
-        <label className="text-sm font-medium" htmlFor={`${id}-url`}>
-          Webhook URL
-        </label>
-        <Input
-          id={`${id}-url`}
-          type="url"
-          value={url}
-          aria-invalid={urlIsShortcut || undefined}
-          aria-describedby={urlIsShortcut ? `${id}-shortcut-error` : undefined}
-          onChange={(event) => setUrl(event.target.value)}
-          autoComplete="off"
-          placeholder={saved ? "Saved · paste a URL to replace" : "https://…"}
-          required={!saved}
-          disabled={action.isPending}
-        />
-      </div>
-      <div className="space-y-2">
-        <label className="text-sm font-medium" htmlFor={`${id}-key`}>
-          Webhook key
-        </label>
-        <Input
-          id={`${id}-key`}
-          type="password"
-          value={key}
-          aria-invalid={keyIsShortcut || undefined}
-          aria-describedby={keyIsShortcut ? `${id}-shortcut-error` : undefined}
-          onChange={(event) => setKey(event.target.value)}
-          autoComplete="new-password"
-          placeholder={
-            saved ? "Saved · paste a key to replace" : "Paste the key"
+      <p className="text-sm text-muted-foreground">
+        {method === "email"
+          ? "Send these instructions to Grok, then paste its Bot email address below."
+          : "Send these instructions to Grok, then copy the POST URL and key from its desktop app."}
+      </p>
+      <div>
+        <Button
+          variant="outline"
+          disabled={method === "email" && !candidate.emailSender}
+          onClick={() =>
+            void copy.copy(
+              grokBotRoutineInstructions(
+                mcpUrl,
+                method === "email" ? candidate.emailSender : undefined
+              )
+            )
           }
-          required={!saved}
-          disabled={action.isPending}
-        />
+        >
+          {copy.copied ? "Copied" : "Copy instructions"}
+        </Button>
       </div>
     </>
   )
+  const fields =
+    method === "email" ? (
+      <div className="space-y-2">
+        <label className="text-sm font-medium" htmlFor={`${id}-email`}>
+          Bot email address
+        </label>
+        <Input
+          id={`${id}-email`}
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          placeholder="you@mail.grokbot.com"
+          autoComplete="off"
+          required
+          disabled={action.isPending}
+        />
+      </div>
+    ) : (
+      <>
+        <div className="space-y-2">
+          <label className="text-sm font-medium" htmlFor={`${id}-url`}>
+            Webhook URL
+          </label>
+          <Input
+            id={`${id}-url`}
+            type="url"
+            value={url}
+            aria-invalid={urlIsShortcut || undefined}
+            aria-describedby={
+              urlIsShortcut ? `${id}-shortcut-error` : undefined
+            }
+            onChange={(event) => setUrl(event.target.value)}
+            autoComplete="off"
+            placeholder={
+              saved?.wakeMethod !== "email" && saved
+                ? "Saved · paste a URL to replace"
+                : "https://…"
+            }
+            required={!saved || saved.wakeMethod === "email"}
+            disabled={action.isPending}
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium" htmlFor={`${id}-key`}>
+            Webhook key
+          </label>
+          <Input
+            id={`${id}-key`}
+            type="password"
+            value={key}
+            aria-invalid={keyIsShortcut || undefined}
+            aria-describedby={
+              keyIsShortcut ? `${id}-shortcut-error` : undefined
+            }
+            onChange={(event) => setKey(event.target.value)}
+            autoComplete="new-password"
+            placeholder={
+              saved?.wakeMethod !== "email" && saved
+                ? "Saved · paste a key to replace"
+                : "Paste the key"
+            }
+            required={!saved || saved.wakeMethod === "email"}
+            disabled={action.isPending}
+          />
+        </div>
+      </>
+    )
   const shortcutError = hasShortcut ? (
     <p
       id={`${id}-shortcut-error`}
@@ -513,6 +612,16 @@ function GrokBotRoutine({
       onConfirm={() => action.mutateAsync("retry")}
     />
   )
+  const valid = Boolean(
+    !hasShortcut &&
+    (method === "email"
+      ? candidate.emailSender && GrokBotEmailAddress.safeParse(email).success
+      : (saved && saved.wakeMethod !== "email") ||
+        (url.trim() && key.trim())) &&
+    Number.isInteger(Number(minutes)) &&
+    Number(minutes) >= 1 &&
+    Number(minutes) <= 120
+  )
   if (saved?.verifiedAt)
     return (
       <div className="flex flex-col gap-4">
@@ -555,9 +664,11 @@ function GrokBotRoutine({
             className="mt-4 flex flex-col gap-4"
             onSubmit={(event) => {
               event.preventDefault()
-              action.mutate("save")
+              action.mutate(needsCheck ? "check" : "save")
             }}
           >
+            {methodSelector}
+            {needsCheck && instructions}
             {fields}
             {shortcutError}
             {timeout}
@@ -565,9 +676,9 @@ function GrokBotRoutine({
               <Button
                 type="submit"
                 variant="outline"
-                disabled={action.isPending || hasShortcut}
+                disabled={action.isPending || !valid}
               >
-                Save changes
+                {needsCheck ? "Save and check" : "Save changes"}
               </Button>
               <Button
                 type="button"
@@ -583,13 +694,6 @@ function GrokBotRoutine({
         {confirmation}
       </div>
     )
-  const valid = Boolean(
-    !hasShortcut &&
-    (saved || (url.trim() && key.trim())) &&
-    Number.isInteger(Number(minutes)) &&
-    Number(minutes) >= 1 &&
-    Number(minutes) <= 120
-  )
   return (
     <>
       <SetupStep
@@ -599,18 +703,8 @@ function GrokBotRoutine({
         open={current === 3}
         onOpenChange={() => onStep(current === 3 ? 0 : 3)}
       >
-        <p className="text-sm text-muted-foreground">
-          Create the routine in chat, then copy its POST URL and key from Grok
-          on desktop. Mobile can't copy these fields yet.
-        </p>
-        <div>
-          <Button
-            variant="outline"
-            onClick={() => void copy.copy(grokBotRoutineInstructions(mcpUrl))}
-          >
-            {copy.copied ? "Copied" : "Copy instructions"}
-          </Button>
-        </div>
+        {methodSelector}
+        {instructions}
         {fields}
         {shortcutError}
         <details className="text-sm">

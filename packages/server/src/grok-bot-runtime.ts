@@ -13,6 +13,7 @@ import { notifyWorkspaceChange, onWorkspaceChange } from "./workspace-events.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 import { reconcileParticipantDeliveries } from "./thread-service.ts"
 import { runWithoutTeamIdentity } from "./team-policy.ts"
+import { sendGrokEmailWake } from "./grok-bot-email.ts"
 
 const RETRIES = [15_000, 30_000, 60_000, 120_000, 300_000, 600_000]
 const isActive = (state: string) =>
@@ -131,26 +132,33 @@ export function startGrokBotRuntime(
       }
       schedule(next.nextAt)
       try {
-        const response = await (options.fetch ?? fetch)(
-          validateGrokWebhook(connection.webhookUrl),
-          {
-            method: "POST",
-            redirect: "error",
-            headers: {
-              "content-type": "application/json",
-              authorization: `Bearer ${connection.webhookKey}`,
-            },
-            body: JSON.stringify({
-              version: 1,
-              event: "worktable.inbox.ready",
-              wakeId: next.id,
-            }),
-            signal: AbortSignal.any([
-              abort.signal,
-              AbortSignal.timeout(10_000),
-            ]),
-          }
-        )
+        const signal = AbortSignal.any([
+          abort.signal,
+          AbortSignal.timeout(10_000),
+        ])
+        const response =
+          connection.wakeMethod === "email"
+            ? await sendGrokEmailWake(connection, next, {
+                fetch: options.fetch ?? fetch,
+                signal,
+              })
+            : await (options.fetch ?? fetch)(
+                validateGrokWebhook(connection.webhookUrl),
+                {
+                  method: "POST",
+                  redirect: "error",
+                  headers: {
+                    "content-type": "application/json",
+                    authorization: `Bearer ${connection.webhookKey}`,
+                  },
+                  body: JSON.stringify({
+                    version: 1,
+                    event: "worktable.inbox.ready",
+                    wakeId: next.id,
+                  }),
+                  signal,
+                }
+              )
         await response.body?.cancel()
         if (!live()) return
         if (
@@ -158,7 +166,10 @@ export function startGrokBotRuntime(
           (response.status >= 300 && response.status < 400)
         ) {
           await updateGrokBot(connection, {
-            error: `Grok Bot rejected the wake (HTTP ${response.status}). Check the routine URL and key.`,
+            error:
+              connection.wakeMethod === "email"
+                ? `Email notification failed (HTTP ${response.status}). Check the Bot address and Worktable connection.`
+                : `Grok Bot rejected the wake (HTTP ${response.status}). Check the routine URL and key.`,
           })
           notifyWorkspaceChange({ type: "participants" })
         }

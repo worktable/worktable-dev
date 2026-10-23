@@ -133,6 +133,119 @@ function fakeFetch(
 }
 
 describe("Grok Bot", () => {
+  it("switches between webhook and email without retaining the previous wake or verification", async () => {
+    const previous = await verified()
+    for (const emailAddress of [
+      "owner@example.test",
+      "bot@mail.grokbot.com.evil.test",
+      "a\r\nBcc:x@mail.grokbot.com",
+    ]) {
+      expect(
+        (
+          await app.request(`${base}/configuration`, {
+            method: "PUT",
+            body: JSON.stringify({ wakeMethod: "email", emailAddress }),
+          })
+        ).status
+      ).toBe(400)
+    }
+    expect((await readGrokBots())[0]?.generation).toBe(previous.generation)
+    expect(
+      (
+        await app.request(`${base}/configuration`, {
+          method: "PUT",
+          body: JSON.stringify({
+            wakeMethod: "email",
+            emailAddress: "My.Bot@mail.grokbot.com",
+          }),
+        })
+      ).status
+    ).toBe(200)
+    expect((await readGrokBots())[0]).toMatchObject({
+      wakeMethod: "email",
+      emailAddress: "my.bot@mail.grokbot.com",
+      webhookUrl: "",
+      webhookKey: "",
+    })
+    expect((await readGrokBots())[0]?.verifiedAt).toBeUndefined()
+    const check = await app.request(`${base}/check`, { method: "POST" })
+    expect(check.status).toBe(200)
+    const woken = Promise.withResolvers<void>()
+    const env = {
+      WORKTABLE_HOSTED: "1",
+      WORKTABLE_INVITATION_MAIL_URL:
+        "https://cloud.example.test/runtime/invitation-email",
+      WORKTABLE_INVITATION_MAIL_RUNTIME_ID: "fixture-runtime",
+      WORKTABLE_GATEWAY_SECRET: "fixture-runtime-secret",
+    }
+    const before = Object.fromEntries(
+      Object.keys(env).map((key) => [key, process.env[key]])
+    )
+    try {
+      Object.assign(process.env, env)
+      stop = startGrokBotRuntime({
+        fetch: fakeFetch((input, init) => {
+          expect(input).toBe(
+            "https://cloud.example.test/runtime/grok-email-wake"
+          )
+          expect(new Headers(init.headers).get("authorization")).toBe(
+            "Bearer fixture-runtime-secret"
+          )
+          expect(JSON.parse(String(init.body))).toMatchObject({
+            emailAddress: "my.bot@mail.grokbot.com",
+            attempt: 1,
+          })
+          expect(Object.keys(JSON.parse(String(init.body))).sort()).toEqual([
+            "attempt",
+            "connectionKey",
+            "emailAddress",
+            "wakeId",
+          ])
+          woken.resolve()
+        }, 202),
+      })
+      await woken.promise
+      const claim = (await claimNextThreadDelivery(grok, 0, 2))!
+      await acceptDelivery(grok, claim.messageId, claim.leaseId)
+      await postThreadMessage(grok, {
+        location: claim.location,
+        threadId: claim.threadId,
+        authorIdentityId: claim.identityId,
+        deliveryLeaseId: claim.leaseId,
+        inReplyTo: claim.messageId,
+        responseTo: claim.messageId,
+        responseIdentityId: null,
+        body: "Grok Bot is connected.",
+        idempotencyKey: "email-check-reply",
+      })
+      await stop()
+      stop = undefined
+    } finally {
+      await stop?.()
+      stop = undefined
+      for (const key of Object.keys(env)) {
+        if (before[key] === undefined) delete process.env[key]
+        else process.env[key] = before[key]
+      }
+    }
+    expect(
+      (
+        await app.request(`${base}/configuration`, {
+          method: "PUT",
+          body: JSON.stringify({ wakeMethod: "webhook" }),
+        })
+      ).status
+    ).toBe(400)
+    await configure()
+    expect((await readGrokBots())[0]).toMatchObject({
+      wakeMethod: "webhook",
+      webhookUrl: url,
+      webhookKey: secret,
+    })
+    expect((await readGrokBots())[0]?.emailAddress).toBeUndefined()
+    expect((await readGrokBots())[0]?.verifiedAt).toBeUndefined()
+  })
+
   it("verifies an authenticated reply round trip, then drains two threads sequentially", async () => {
     await configure()
     const request = await app.request(`${base}/check`, { method: "POST" })

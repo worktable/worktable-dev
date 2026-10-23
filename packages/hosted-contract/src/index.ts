@@ -868,6 +868,7 @@ export function buildTenantEnv(
   }
 }
 export * from "./linked-access.ts"
+export * from "./grok-email.ts"
 
 /** The control-plane route a tenant calls to email one team invitation. */
 export const INVITATION_EMAIL_PATH = "/runtime/invitations/email"

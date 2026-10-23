@@ -3,6 +3,7 @@ import { currentTeamWorktable } from "./team-database.ts"
 import { linkedStatus } from "./linked-runtime.ts"
 import { grokBotDeliveries } from "./thread-delivery-store.ts"
 import { readGrokBotCandidates, readGrokBots } from "./grok-bot-store.ts"
+import { grokBotEmailSender } from "./grok-bot-email.ts"
 
 export async function visibleGrokBotCandidates(connections: AgentConnection[]) {
   const allowed = new Set(
@@ -38,6 +39,10 @@ export async function grokBotInventory(connections: AgentConnection[]) {
       participantId: connection.participantId,
       enabled: connection.enabled,
       executionMinutes: connection.executionMinutes,
+      wakeMethod: connection.wakeMethod,
+      ...(connection.emailAddress
+        ? { emailAddress: connection.emailAddress }
+        : {}),
       status: !connection.enabled
         ? "paused"
         : failed || connection.error
@@ -79,11 +84,16 @@ export async function grokBotInventory(connections: AgentConnection[]) {
   const link = linkedStatus()
   return {
     grokBots,
-    grokBotCandidates: candidates.map(({ id, displayName, participantId }) => ({
-      id,
-      displayName,
-      participantId,
-    })),
+    grokBotCandidates: await Promise.all(
+      candidates.map(
+        async ({ id, displayName, participantId, principalId }) => ({
+          id,
+          displayName,
+          participantId,
+          emailSender: await grokBotEmailSender(principalId),
+        })
+      )
+    ),
     grokBotMcpUrl: link.state === "online" ? (link.mcpUrl ?? null) : null,
   }
 }

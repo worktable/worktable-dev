@@ -13,6 +13,8 @@ import {
   HOSTED_OAUTH_SCOPES,
   LINKED_CAPABILITIES,
   LinkedHostReply,
+  GROK_LINKED_EMAIL_WAKE_PATH,
+  type GrokEmailWake,
 } from "@worktable/hosted-contract"
 import { ensureAppDir } from "./app-storage.ts"
 import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
@@ -101,6 +103,33 @@ async function saveLink(file: string, link: StoredLink) {
 const cloudOrigin = linkedCloudOrigin
 export function linkedStatus(): LinkedStatus {
   return { ...status }
+}
+
+/** Uses this device's existing host credential; Cloud binds it to its live link. */
+export async function sendLinkedGrokEmailWake(
+  wake: GrokEmailWake,
+  options: { fetch: typeof fetch; signal: AbortSignal }
+): Promise<Response> {
+  if (status.state !== "online") return new Response(null, { status: 503 })
+  const link = await readLink(path())
+  if (!link || link.disabled) return new Response(null, { status: 503 })
+  return options.fetch(
+    new URL(GROK_LINKED_EMAIL_WAKE_PATH, link.cloudOrigin).href,
+    {
+      method: "POST",
+      redirect: "error",
+      signal: options.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${link.controlSecret}`,
+      },
+      body: JSON.stringify({
+        ...wake,
+        workspaceEpoch: link.workspaceEpoch,
+        bootSequence: link.bootSequence,
+      }),
+    }
+  )
 }
 
 async function change<T>(operation: () => Promise<T>): Promise<T> {

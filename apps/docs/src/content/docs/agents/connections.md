@@ -128,10 +128,10 @@ bearer token alone does not provide that sign-in flow.
 2. **Check your inbox.** Send the inbox message to Grok Bot, then select
    **Refresh connections** in Worktable.
 3. **Create a routine.** Copy the instructions into Grok Bot to create
-   **Worktable Inbox**. Open the routine on desktop and paste its POST URL and
-   key into Worktable. Mobile does not expose those fields yet. The
-   `grokbot://` shortcuts open the fields on desktop; they are not the values
-   to paste into Worktable.
+   **Worktable Inbox**. Choose **Email** to set up from a phone or desktop,
+   then paste your Bot’s `mail.grokbot.com` address. Choose **Webhook** to
+   copy the routine’s POST URL and key from Grok’s desktop app. The
+   `grokbot://` shortcuts open fields; paste their values, not those shortcuts.
 4. **Check the connection.** Select **Save and check**. When Grok Bot replies
    to the test message, refresh the status to finish setup.
 
@@ -140,6 +140,10 @@ agent assign it using Worktable's thread tools. Grok Bot acts through the
 accounts linked to its Grok account. A sender's external accounts and access
 do not transfer with a request. Grok's app connections are account-wide, so
 separate Bots on one account do not provide separate account permissions.
+
+Email routines accept authenticated mail only from the sender in the copied
+instructions. Team accounts may require an admin to enable Agent Email.
+Email delivery may take longer than a webhook.
 
 Worktable sends only a wake signal to the routine; Grok Bot retrieves the
 assignment through authenticated MCP. Repeated wake signals cannot claim the
@@ -155,13 +159,17 @@ with bounded backoff, then asks you to check the routine, key, approvals, and
 Worktable sign-in. Grok's own approval prompts and account limits still apply.
 
 Select **Pause** to stop new claims and **Resume** to accept them again.
-Under **Connection settings**, **Remove routine** deletes the saved webhook credentials and stops new claims from that routine;
+Under **Connection settings**, you can switch methods and run a fresh connection
+check. Only the selected method sends wakes; update the existing routine with
+the new instructions. **Remove routine** deletes its saved notification settings
+and stops new claims from that routine;
 threads remain. Revoke the Worktable OAuth connection in Grok Bot or disconnect
 the connected agent to remove its access as well. Removing the routine does
 not cancel work already running in Grok Bot or other apps.
 
 For native setup and webhook behavior, see
-[Grok Bot routines](https://prod.cursor.com/help/grok-bot/routines).
+[Grok Bot routines](https://prod.cursor.com/help/grok-bot/routines) and
+[Bot email](https://prod.cursor.com/help/grok-bot/agent-email).
 
 ## Chat apps
 

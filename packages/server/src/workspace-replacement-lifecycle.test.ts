@@ -72,6 +72,12 @@ import { seedStarterWorkspace } from "./seed.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { onWorkspaceChange, notifyWorkspaceChangeAndWaitOrThrow } from "./workspace-events.ts"
 import { createDocumentShare, resolveDocumentShare } from "./share-store.ts"
+import { operatorSnapshotDirectory } from "./operator-snapshot.ts"
+import { writeWorkspaceSnapshot } from "./workspace-snapshot.ts"
+import { restoreLiveWorkspaceSnapshot, readWorkspaceSnapshotRestoreStatus } from "./workspace-snapshot-restore.ts"
+import { calculateWorkspaceContentCheckpoint } from "./workspace-transfer-v2.ts"
+import { closeShareLinkStores, createShareLink, getShareLink } from "./share-links-store.ts"
+import { useResolvedDocumentHandle } from "./document-query.ts"
 
 const originalEnv = { ...process.env }
 let root: string
@@ -176,6 +182,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await stopActiveServer()
+  closeShareLinkStores()
   setWorkspaceReplacementCommitHookForTests(null)
   setWorkspaceReplacementRenameHookForTests(null)
   setStarterSeedScheduleHookForTests(null)
@@ -195,6 +202,55 @@ afterEach(async () => {
 })
 
 describe("live workspace replacement", () => {
+  it("keeps links published after a completed restore valid across a later restart", async () => {
+    const server = startServer(0, "127.0.0.1")
+    const origin = `http://127.0.0.1:${server.port}`
+    await withDeadline((async () => {
+      while ((await fetch(`${origin}/api/spaces`)).status !== 200) {
+        // test-policy: external-readiness-backoff
+        await Bun.sleep(20)
+      }
+    })(), 10_000, "workspace did not become ready")
+    const operationId = "restore_restart_links"
+    const download = join(await operatorSnapshotDirectory(operationId), "download")
+    const snapshot = await writeWorkspaceSnapshot(download)
+    const before = await createDocumentShare({ kind: "doc", spaceId: "notes", artifactKey: "note" })
+    const request = {
+      operationId,
+      workspaceId: snapshot.workspaceId,
+      sourceCheckpoint: snapshot.sourceCheckpoint,
+      safetyCheckpoint: await calculateWorkspaceContentCheckpoint(active),
+    }
+    expect((await restoreLiveWorkspaceSnapshot(request)).state).toBe("replacing")
+    await withDeadline((async () => {
+      while ((await readWorkspaceSnapshotRestoreStatus(request)).state !== "complete") {
+        // test-policy: external-readiness-backoff
+        await Bun.sleep(20)
+      }
+    })(), 10_000, "snapshot restore did not complete")
+    expect(await resolveDocumentShare(before.token)).toBeNull()
+    const epoch = await getWorkspaceCollaborationEpoch()
+    const after = await createDocumentShare({ kind: "doc", spaceId: "notes", artifactKey: "note" })
+    const document = await useResolvedDocumentHandle(
+      { spaceId: "notes", path: "note" },
+      async (handle) => ({ documentId: handle.documentId })
+    )
+    if (!("documentId" in document)) throw new Error("restored document is missing")
+    const current = createShareLink({
+      workspaceEpoch: epoch, spaceId: "notes", documentId: document.documentId, kind: "doc",
+      label: "After restore", level: "view", createdBy: { id: "owner", name: "Owner" },
+      expiresAt: null,
+      comments: { acceptComments: true, anonymousAllowed: false, visitorsSee: "own", showSharerName: false },
+    })
+    await stopActiveServer()
+    const restarted = startServer(0, "127.0.0.1")
+    expect((await fetch(`http://127.0.0.1:${restarted.port}/api/spaces`)).status).toBe(200)
+    expect(await getWorkspaceCollaborationEpoch()).toBe(epoch)
+    expect(await resolveDocumentShare(after.token)).toEqual(after)
+    expect(getShareLink(current.link.id)?.revokedAt).toBeNull()
+    expect(await resolveDocumentShare(before.token)).toBeNull()
+  }, 20_000)
+
   it("lets reads continue during a capture, holds writes briefly, and releases long polls", async () => {
     expect(classifyWorkspaceRequest("GET", "/api/spaces", true)).toBe("read")
     expect(classifyWorkspaceRequest("GET", "/assets/app.js", true)).toBeNull()

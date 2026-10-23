@@ -187,6 +187,7 @@ it("requires current Threads access and skips inaccessible work without exhausti
     attempt < 100 && (await readGrokBots())[0]?.wake;
     attempt++
   )
+    // test-policy: external-readiness-backoff — wait for the runtime's durable write.
     await new Promise((resolve) => setTimeout(resolve, 10))
   expect((await readGrokBots())[0]?.wake).toBeUndefined()
   expect(wakes).toBe(0)

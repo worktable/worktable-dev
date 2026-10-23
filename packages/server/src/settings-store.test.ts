@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, setSystemTime } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
@@ -364,6 +364,39 @@ describe("concurrent patches", () => {
       maxPerDoc: 1,
     });
     expect(tightened.retentionChanged).toBe(true);
+  });
+});
+
+describe("settings written by another Worktable host", () => {
+  // Another host on this machine replaces the shared file the same way.
+  function writeFromAnotherHost(
+    change: (settings: Record<string, Record<string, unknown>>) => void,
+  ): void {
+    const settings = JSON.parse(readFileSync(settingsPath(), "utf8"));
+    change(settings);
+    const temporary = `${settingsPath()}.other-host`;
+    writeFileSync(temporary, JSON.stringify(settings), { mode: 0o600 });
+    renameSync(temporary, settingsPath());
+  }
+
+  afterEach(() => setSystemTime());
+
+  it("are kept by this host's next write and seen within a second", async () => {
+    await updateServerSettings({ editor: { spellcheck: false } });
+    writeFromAnotherHost((settings) => {
+      settings.updates.autoCheck = false;
+    });
+
+    await updateServerSettings({ editor: { spellcheck: true } });
+    const written = JSON.parse(readFileSync(settingsPath(), "utf8"));
+    expect(written.updates.autoCheck).toBe(false);
+    expect(written.editor.spellcheck).toBe(true);
+
+    writeFromAnotherHost((settings) => {
+      settings.editor.spellcheck = false;
+    });
+    setSystemTime(new Date(Date.now() + 1_100));
+    expect(getServerSettings().editor.spellcheck).toBe(false);
   });
 });
 

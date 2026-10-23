@@ -206,7 +206,11 @@ describe("installed update subprocess journey", () => {
         "managed service launch"
       )
 
-      const runtimePath = join(appDir, "local-runtime.json")
+      const runtimePath = join(
+        appDir,
+        "local-runtime",
+        `${JSON.parse(readFileSync(join(workspace, "worktable.workspace.json"), "utf8")).id}.json`
+      )
       const interactive = runCli(["update", "9.9.9"], home, serviceEnvironment)
       expectSuccess(interactive, "interactive managed update")
       expect(readFileSync(installerRecord, "utf8").trim()).toBe(

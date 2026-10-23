@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { Hono } from "hono"
 import { setAppDirOverride } from "./app-storage.ts"
 import {
@@ -16,6 +16,7 @@ import {
   assertLocalWorkspaceReservationAvailable,
   clearLocalRuntime,
   createLocalRuntimeRecord,
+  getLegacyLocalRuntimePath,
   getLocalRuntimePath,
   getLocalWorkspaceRegistryPath,
   inspectLocalRuntime,
@@ -23,6 +24,7 @@ import {
   localHostsSharePortSpace,
   localHttpOrigin,
   readLocalRuntime,
+  readLocalRuntimes,
   readLocalWorkspaceRegistry,
   rememberLocalWorkspace,
   setLocalRuntimeLockWaitHookForTests,
@@ -53,12 +55,21 @@ afterEach(() => {
 
 describe("local workspace authority", () => {
   it("distinguishes a newer runtime schema from corrupt state", async () => {
+    mkdirSync(dirname(getLocalRuntimePath("ws_newer")), { recursive: true })
     writeFileSync(
-      getLocalRuntimePath(),
+      getLocalRuntimePath("ws_newer"),
       JSON.stringify({ schemaVersion: 2, owner: "desktop" }) + "\n"
     )
-    expect(() => readLocalRuntime()).toThrow(UnsupportedLocalRuntimeSchemaError)
-    await expect(inspectLocalRuntime()).rejects.toBeInstanceOf(
+    expect(() => readLocalRuntime("ws_newer")).toThrow(
+      UnsupportedLocalRuntimeSchemaError
+    )
+    expect(readLocalRuntimes().errors).toMatchObject([
+      {
+        workspaceId: "ws_newer",
+        error: expect.any(UnsupportedLocalRuntimeSchemaError),
+      },
+    ])
+    await expect(inspectLocalRuntime("ws_newer")).rejects.toBeInstanceOf(
       UnsupportedLocalRuntimeSchemaError
     )
   })
@@ -184,7 +195,7 @@ describe("local workspace authority", () => {
           proofToken,
         })
       )
-      expect(await inspectLocalRuntime()).toMatchObject({
+      expect(await inspectLocalRuntime("ws_ipv6")).toMatchObject({
         host: "::1",
         processAlive: true,
         endpointVerified: true,
@@ -214,9 +225,9 @@ describe("local workspace authority", () => {
         proofToken,
       })
       writeLocalRuntime(runtime)
-      expect(statSync(getLocalRuntimePath()).mode & 0o777).toBe(0o600)
+      expect(statSync(getLocalRuntimePath("ws_alpha")).mode & 0o777).toBe(0o600)
 
-      const inspected = await inspectLocalRuntime()
+      const inspected = await inspectLocalRuntime("ws_alpha")
       expect(inspected).toMatchObject({
         owner: "desktop",
         pid: process.pid,
@@ -229,10 +240,12 @@ describe("local workspace authority", () => {
       expect(inspected).not.toHaveProperty("endpointState")
       expect(JSON.stringify(inspected)).not.toContain(proofToken)
 
-      expect(clearLocalRuntime("not-the-runtime-nonce")).toBe(false)
-      expect(existsSync(getLocalRuntimePath())).toBe(true)
-      expect(clearLocalRuntime(runtime.nonce)).toBe(true)
-      expect(readLocalRuntime()).toBeNull()
+      expect(
+        clearLocalRuntime({ ...runtime, nonce: "not-the-runtime-nonce" })
+      ).toBe(false)
+      expect(existsSync(getLocalRuntimePath("ws_alpha"))).toBe(true)
+      expect(clearLocalRuntime(runtime)).toBe(true)
+      expect(readLocalRuntime("ws_alpha")).toBeNull()
     } finally {
       server.stop(true)
     }
@@ -275,29 +288,69 @@ describe("local workspace authority", () => {
         })
       )
 
-      expect(await inspectLocalRuntimeDetailed(10)).toMatchObject({
+      expect(
+        await inspectLocalRuntimeDetailed("ws_readiness", 10)
+      ).toMatchObject({
         endpointState: "unreachable",
         endpointVerified: false,
       })
       releaseDelayedResponse()
       mode = "verify"
-      expect(await inspectLocalRuntimeDetailed(250)).toMatchObject({
+      expect(
+        await inspectLocalRuntimeDetailed("ws_readiness", 250)
+      ).toMatchObject({
         endpointState: "verified",
         endpointVerified: true,
       })
       mode = "reject"
-      expect(await inspectLocalRuntimeDetailed(250)).toMatchObject({
+      expect(
+        await inspectLocalRuntimeDetailed("ws_readiness", 250)
+      ).toMatchObject({
         endpointState: "rejected",
         endpointVerified: false,
       })
       mode = "null"
-      expect(await inspectLocalRuntimeDetailed(250)).toMatchObject({
+      expect(
+        await inspectLocalRuntimeDetailed("ws_readiness", 250)
+      ).toMatchObject({
         endpointState: "rejected",
         endpointVerified: false,
       })
     } finally {
       server.stop(true)
     }
+  })
+
+  it("keeps one lease per Worktable and still reads an older release's lease", () => {
+    const lease = (workspaceId: string, port: number) =>
+      createLocalRuntimeRecord({
+        owner: "desktop",
+        installId: "ins_hosts",
+        workspaceId,
+        workspacePath: join(appDir, workspaceId),
+        host: "127.0.0.1",
+        port,
+      })
+    const alpha = lease("ws_alpha", 17481)
+    const beta = lease("ws_beta", 17482)
+    writeLocalRuntime(alpha)
+    writeLocalRuntime(beta)
+    expect(
+      readLocalRuntimes().runtimes.map((runtime) => runtime.workspaceId)
+    ).toEqual(["ws_alpha", "ws_beta"])
+    expect(clearLocalRuntime(alpha)).toBe(true)
+    expect(readLocalRuntime("ws_alpha")).toBeNull()
+    expect(readLocalRuntime("ws_beta")).toMatchObject({ nonce: beta.nonce })
+
+    // A release that ran one host at a time wrote a single lease. It still
+    // counts for its own Worktable, and only for it.
+    const older = lease("ws_gamma", 17483)
+    writeFileSync(getLegacyLocalRuntimePath(), JSON.stringify(older))
+    expect(readLocalRuntime("ws_gamma")).toMatchObject({ nonce: older.nonce })
+    expect(readLocalRuntime("ws_alpha")).toBeNull()
+    expect(
+      readLocalRuntimes().runtimes.map((runtime) => runtime.workspaceId)
+    ).toEqual(["ws_beta", "ws_gamma"])
   })
 
   it("treats a live recycled PID as a stale runtime lease", async () => {
@@ -312,7 +365,7 @@ describe("local workspace authority", () => {
     })
     writeLocalRuntime(runtime)
 
-    expect(await inspectLocalRuntime()).toMatchObject({
+    expect(await inspectLocalRuntime("ws_recycled")).toMatchObject({
       pid: process.pid,
       processAlive: false,
       endpointVerified: false,
@@ -333,7 +386,7 @@ describe("local workspace authority", () => {
     // Hold the same filesystem lock a replacement publisher uses, replace the
     // lease in a child process, then release it. clearLocalRuntime must wait and
     // re-check under the lock rather than unlinking the replacement it never read.
-    const lockPath = join(appDir, "local-runtime.lock")
+    const lockPath = join(appDir, "local-runtime", "ws_old.lock")
     const waiterPath = join(appDir, "local-runtime-waiter-ready")
     mkdirSync(lockPath, { mode: 0o700 })
     setLocalRuntimeLockWaitHookForTests(() => {
@@ -362,7 +415,7 @@ describe("local workspace authority", () => {
         env: {
           ...process.env,
           REPLACEMENT_RUNTIME: JSON.stringify(replacement),
-          RUNTIME_PATH: getLocalRuntimePath(),
+          RUNTIME_PATH: getLocalRuntimePath("ws_old"),
           RUNTIME_LOCK_PATH: lockPath,
           WAITER_PATH: waiterPath,
         },
@@ -371,13 +424,13 @@ describe("local workspace authority", () => {
       }
     )
 
-    expect(clearLocalRuntime(runtime.nonce)).toBe(false)
+    expect(clearLocalRuntime(runtime)).toBe(false)
     const [exitCode, stderr] = await Promise.all([
       publisher.exited,
       new Response(publisher.stderr).text(),
     ])
     expect(exitCode, stderr).toBe(0)
-    expect(readLocalRuntime()).toMatchObject({
+    expect(readLocalRuntime("ws_old")).toMatchObject({
       nonce: "replacement-runtime-nonce",
       workspaceId: "ws_old",
     })

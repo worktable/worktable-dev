@@ -329,31 +329,38 @@ export async function censusDocumentIdentityDependencies(
       diagnostics,
       budget,
     })
-    const sharesPath = resolve(appDir, "document-shares.json")
-    try {
-      const info = await lstat(sharesPath)
-      if (!info.isFile() || info.isSymbolicLink()) {
-        diagnostics.push({
-          severity: "error",
-          path: "document-shares.json",
-          message: "document share state must be a regular file",
-        })
-      } else {
-        dependencies.push({
-          kind: "shares",
-          location: "app",
-          path: "document-shares.json",
-          entry: "file",
-          bytes: info.size,
-        })
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        diagnostics.push({
-          severity: "error",
-          path: "document-shares.json",
-          message: error instanceof Error ? error.message : String(error),
-        })
+    // Links live in one file per Worktable; older releases shared one file
+    // that may still hold links this Worktable has not claimed yet.
+    for (const sharesFile of [
+      `document-shares/${runtimeCacheKey}.json`,
+      "document-shares.json",
+    ]) {
+      const sharesPath = resolve(appDir, sharesFile)
+      try {
+        const info = await lstat(sharesPath)
+        if (!info.isFile() || info.isSymbolicLink()) {
+          diagnostics.push({
+            severity: "error",
+            path: sharesFile,
+            message: "document share state must be a regular file",
+          })
+        } else {
+          dependencies.push({
+            kind: "shares",
+            location: "app",
+            path: sharesFile,
+            entry: "file",
+            bytes: info.size,
+          })
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          diagnostics.push({
+            severity: "error",
+            path: sharesFile,
+            message: error instanceof Error ? error.message : String(error),
+          })
+        }
       }
     }
   }

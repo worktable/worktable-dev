@@ -10,11 +10,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import {
   getAppDir,
+  localHostsSharePortSpace,
   localRuntimeProcessAlive,
-  readLocalRuntime,
+  readLocalRuntimes,
 } from "@worktable/server/runtime";
 import { isLoopbackHost, readConfig, type WorktableConfig } from "./config.ts";
 import { getExecutablePath, getReleaseDir, VERSION } from "./paths.ts";
@@ -1005,8 +1006,28 @@ export function serviceManagerOwnsRuntimePid(pid: number): boolean {
 }
 
 export function prepareServiceStart(): void {
-  const runtime = readLocalRuntime();
-  if (!runtime || !localRuntimeProcessAlive(runtime)) return;
+  // The service serves the configured Worktable. Hosts for other Worktables
+  // run beside it; only a host for the same Worktable or on its port blocks it.
+  let target: { workspace: string; host: string; port: number } | null = null;
+  try {
+    const config = readConfig();
+    target = {
+      workspace: resolve(config.workspace),
+      host: config.service.host,
+      port: config.service.port,
+    };
+  } catch {
+    // Without readable config, any live host blocks the service as before.
+  }
+  const runtime = readLocalRuntimes().runtimes.find(
+    (candidate) =>
+      localRuntimeProcessAlive(candidate) &&
+      (!target ||
+        resolve(candidate.workspacePath) === target.workspace ||
+        (candidate.port === target.port &&
+          localHostsSharePortSpace(candidate.host, target.host)))
+  );
+  if (!runtime) return;
 
   // The service manager's exact PID proof is authoritative. Older releases can
   // leave a stale descriptive owner in an otherwise live lease, and rejecting

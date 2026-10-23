@@ -83,6 +83,7 @@ import { updateWidgetMetadata } from "./widget-store.ts"
 import {
   ensureWorkspaceManifest,
   setWorkspaceRootOverride,
+  workspaceCacheKey,
 } from "./workspace.ts"
 import { drainWorkspaceChanges, notifyWorkspaceChangeAndWaitOrThrow } from "./workspace-events.ts"
 import { writeWorkspaceSnapshot } from "./workspace-snapshot.ts"
@@ -1251,7 +1252,11 @@ describe("share links", () => {
 })
 
 describe("moving today's links into links v2", () => {
-  const v1File = () => join(appDir, "document-shares.json")
+  // This Worktable's file of today's links. Older releases kept every
+  // Worktable's links in one shared file, which each Worktable empties of its
+  // own links before reading them here.
+  const v1File = () =>
+    join(appDir, "document-shares", `${workspaceCacheKey()}.json`)
 
   /** A link as today's sharing makes it, while links v2 is off. */
   async function legacyLink(

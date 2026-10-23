@@ -124,10 +124,24 @@ it("retains a recoverable activation journal when the previous managed service c
       runCli(["launch", "--background", "--no-browser"], environment),
       "managed activation launch"
     )
-    await waitForFile(join(appDir, "local-runtime.json"))
+    const { id: firstId } = JSON.parse(
+      readFileSync(join(first, "worktable.workspace.json"), "utf8")
+    ) as { id: string }
+    await waitForFile(join(appDir, "local-runtime", `${firstId}.json`))
 
+    // Activating another Worktable leaves the service alone. The service moves
+    // only to the configured Worktable, so model config that already names the
+    // second one while the service still serves the first.
     const configPath = join(appDir, "config.json")
     const registryPath = join(appDir, "local-workspaces.json")
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        { ...JSON.parse(readFileSync(configPath, "utf8")), workspace: second },
+        null,
+        2
+      ) + "\n"
+    )
     const beforeConfig = readFileSync(configPath, "utf8")
     const beforeRegistry = readFileSync(registryPath, "utf8")
 

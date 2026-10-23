@@ -25,8 +25,9 @@ import { runWithoutTeamIdentity } from "./team-policy.ts"
 // Moving today's links into links (v2), once
 // ============================================================
 //
-// Each share in document-shares.json becomes a link under the same token, so
-// its URL keeps working, keyed by its document's durable id. Shares whose
+// Each share in this Worktable's file of today's links (share-store.ts)
+// becomes a link under the same token, so its URL keeps working, keyed by its
+// document's durable id. Shares whose
 // document is gone or archived, or from an earlier workspace, are dropped:
 // they open nothing today either. The store then notes the move, and the
 // file is rewritten as a valid empty file, which an older binary reads and

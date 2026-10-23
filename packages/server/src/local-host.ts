@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import { spawnSync } from "node:child_process"
 import {
   closeSync,
@@ -7,6 +7,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readdirSync,
   renameSync,
   rmSync,
   statSync,
@@ -17,7 +18,10 @@ import { ensureAppDir } from "./app-storage.ts"
 
 export const LOCAL_HOST_SCHEMA_VERSION = 1
 export const LOCAL_WORKSPACES_FILE = "local-workspaces.json"
-export const LOCAL_RUNTIME_FILE = "local-runtime.json"
+/** Each running local host publishes its lease in this directory, one file per Worktable. */
+export const LOCAL_RUNTIME_DIRECTORY = "local-runtime"
+/** The single lease of releases that ran one local host at a time. */
+export const LEGACY_LOCAL_RUNTIME_FILE = "local-runtime.json"
 export const LOCAL_PROOF_HEADER = "X-Worktable-Local-Proof"
 const LOCAL_RUNTIME_LOCK_DIRECTORY = "local-runtime.lock"
 const LOCAL_RUNTIME_LOCK_OWNER_FILE = "owner.json"
@@ -149,12 +153,36 @@ export function getLocalWorkspaceRegistryPath(): string {
   return join(ensureAppDir(), LOCAL_WORKSPACES_FILE)
 }
 
-export function getLocalRuntimePath(): string {
-  return join(ensureAppDir(), LOCAL_RUNTIME_FILE)
+function localRuntimeFileStem(workspaceId: string): string {
+  // Manifest ids are base64url. Anything else still gets a safe file name.
+  return /^[A-Za-z0-9_-]{1,128}$/.test(workspaceId)
+    ? workspaceId
+    : `id-${createHash("sha256").update(workspaceId).digest("hex").slice(0, 32)}`
 }
 
-function getLocalRuntimeLockPath(): string {
-  return join(ensureAppDir(), LOCAL_RUNTIME_LOCK_DIRECTORY)
+export function getLocalRuntimeDirectory(): string {
+  return join(ensureAppDir(), LOCAL_RUNTIME_DIRECTORY)
+}
+
+/** The lease of the host serving one Worktable. */
+export function getLocalRuntimePath(workspaceId: string): string {
+  return join(
+    getLocalRuntimeDirectory(),
+    `${localRuntimeFileStem(workspaceId)}.json`
+  )
+}
+
+export function getLegacyLocalRuntimePath(): string {
+  return join(ensureAppDir(), LEGACY_LOCAL_RUNTIME_FILE)
+}
+
+function getLocalRuntimeLockPath(workspaceId?: string): string {
+  return workspaceId === undefined
+    ? join(ensureAppDir(), LOCAL_RUNTIME_LOCK_DIRECTORY)
+    : join(
+        getLocalRuntimeDirectory(),
+        `${localRuntimeFileStem(workspaceId)}.lock`
+      )
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -226,8 +254,8 @@ export function setLocalRuntimeLockWaitHookForTests(
   localRuntimeLockWaitHookForTests = hook
 }
 
-function acquireLocalRuntimeFileLock(): () => void {
-  const lockPath = getLocalRuntimeLockPath()
+function acquireLocalRuntimeFileLock(workspaceId?: string): () => void {
+  const lockPath = getLocalRuntimeLockPath(workspaceId)
   const ownerIdentity = localProcessIdentity(process.pid)
   const nonce = randomBytes(18).toString("base64url")
   const startedAt = Date.now()
@@ -295,8 +323,11 @@ function acquireLocalRuntimeFileLock(): () => void {
   }
 }
 
-function withLocalRuntimeFileLock<T>(operation: () => T): T {
-  const release = acquireLocalRuntimeFileLock()
+function withLocalRuntimeFileLock<T>(
+  workspaceId: string | undefined,
+  operation: () => T
+): T {
+  const release = acquireLocalRuntimeFileLock(workspaceId)
   try {
     return operation()
   } finally {
@@ -590,10 +621,99 @@ function parseRuntime(value: unknown): LocalRuntimeRecord {
   }
 }
 
-export function readLocalRuntime(): LocalRuntimeRecord | null {
-  const path = getLocalRuntimePath()
+function readLocalRuntimeFile(path: string): LocalRuntimeRecord | null {
   if (!existsSync(path)) return null
   return parseRuntime(JSON.parse(readFileSync(path, "utf8")) as unknown)
+}
+
+/**
+ * The lease of the host serving one Worktable, or null. A lease written by a
+ * release that ran one host at a time still counts for its Worktable.
+ */
+export function readLocalRuntime(
+  workspaceId: string
+): LocalRuntimeRecord | null {
+  const current = readLocalRuntimeFile(getLocalRuntimePath(workspaceId))
+  if (current) return current
+  const legacy = readLocalRuntimeFile(getLegacyLocalRuntimePath())
+  return legacy?.workspaceId === workspaceId ? legacy : null
+}
+
+export interface LocalRuntimeFileError {
+  path: string
+  /** The Worktable the lease is named for, when its file name says so. */
+  workspaceId: string | null
+  error: unknown
+}
+
+export interface LocalRuntimeFile {
+  path: string
+  runtime: LocalRuntimeRecord | null
+  error: LocalRuntimeFileError | null
+}
+
+export interface LocalRuntimeListing {
+  runtimes: LocalRuntimeRecord[]
+  errors: LocalRuntimeFileError[]
+}
+
+/**
+ * Every lease file, including a legacy lease that a newer one supersedes, so
+ * repair can clear stale files individually.
+ */
+export function readLocalRuntimeFiles(): LocalRuntimeFile[] {
+  const files: LocalRuntimeFile[] = []
+  const directory = getLocalRuntimeDirectory()
+  let names: string[] = []
+  try {
+    names = readdirSync(directory)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+  }
+  const read = (path: string, workspaceId: string | null) => {
+    try {
+      const runtime = readLocalRuntimeFile(path)
+      if (runtime) files.push({ path, runtime, error: null })
+    } catch (error) {
+      files.push({ path, runtime: null, error: { path, workspaceId, error } })
+    }
+  }
+  for (const name of names.sort()) {
+    // Temporary writes end in .tmp and locks in .lock; quarantined files keep
+    // a .corrupt- infix.
+    if (!name.endsWith(".json") || name.includes(".corrupt-")) continue
+    const stem = name.slice(0, -".json".length)
+    read(join(directory, name), stem.startsWith("id-") ? null : stem)
+  }
+  read(getLegacyLocalRuntimePath(), null)
+  return files
+}
+
+/** Every published lease, one per Worktable, and the files that could not be read. */
+export function readLocalRuntimes(): LocalRuntimeListing {
+  const runtimes: LocalRuntimeRecord[] = []
+  const errors: LocalRuntimeFileError[] = []
+  const legacyPath = getLegacyLocalRuntimePath()
+  const files = readLocalRuntimeFiles()
+  for (const file of files) {
+    if (file.error) errors.push(file.error)
+    if (!file.runtime) continue
+    const runtime = file.runtime
+    // An older release's lease counts only until this release publishes one
+    // for the same Worktable.
+    if (
+      file.path === legacyPath &&
+      files.some(
+        (other) =>
+          other.path !== legacyPath &&
+          other.runtime?.workspaceId === runtime.workspaceId
+      )
+    ) {
+      continue
+    }
+    runtimes.push(runtime)
+  }
+  return { runtimes, errors }
 }
 
 export function createLocalRuntimeRecord(input: {
@@ -630,18 +750,42 @@ export function createLocalRuntimeRecord(input: {
 }
 
 export function writeLocalRuntime(record: LocalRuntimeRecord): void {
-  withLocalRuntimeFileLock(() => {
-    writePrivateJson(getLocalRuntimePath(), parseRuntime(record))
+  const parsed = parseRuntime(record)
+  withLocalRuntimeFileLock(parsed.workspaceId, () => {
+    writePrivateJson(getLocalRuntimePath(parsed.workspaceId), parsed)
   })
+  // A lease an older release left for this Worktable is superseded. Remove it
+  // once its process is gone so it never reappears after this host exits.
+  try {
+    withLocalRuntimeFileLock(undefined, () => {
+      const legacy = readLocalRuntimeFile(getLegacyLocalRuntimePath())
+      if (
+        legacy?.workspaceId === parsed.workspaceId &&
+        !localRuntimeProcessAlive(legacy)
+      ) {
+        rmSync(getLegacyLocalRuntimePath(), { force: true })
+      }
+    })
+  } catch {
+    // An unreadable legacy lease is left for `local-host recover`.
+  }
 }
 
-export function clearLocalRuntime(nonce: string): boolean {
-  return withLocalRuntimeFileLock(() => {
-    const current = readLocalRuntime()
-    if (!current || current.nonce !== nonce || current.pid !== process.pid) {
+/** Remove this process's own lease for a Worktable; a newer owner's is kept. */
+export function clearLocalRuntime(
+  runtime: Pick<LocalRuntimeRecord, "workspaceId" | "nonce">
+): boolean {
+  return withLocalRuntimeFileLock(runtime.workspaceId, () => {
+    const path = getLocalRuntimePath(runtime.workspaceId)
+    const current = readLocalRuntimeFile(path)
+    if (
+      !current ||
+      current.nonce !== runtime.nonce ||
+      current.pid !== process.pid
+    ) {
       return false
     }
-    rmSync(getLocalRuntimePath(), { force: true })
+    rmSync(path, { force: true })
     return true
   })
 }
@@ -731,11 +875,40 @@ export function localRuntimeProcessAlive(
   return currentIdentity === null || currentIdentity === runtime.ownerIdentity
 }
 
+/** Inspect the host serving one Worktable. */
 export async function inspectLocalRuntimeDetailed(
+  workspaceId: string,
   timeoutMs = 750
 ): Promise<LocalRuntimeInspection | null> {
-  const runtime = readLocalRuntime()
-  if (!runtime) return null
+  const runtime = readLocalRuntime(workspaceId)
+  return runtime ? inspectLocalRuntimeLease(runtime, timeoutMs) : null
+}
+
+export interface LocalRuntimeInspections {
+  runtimes: LocalRuntimeInspection[]
+  errors: LocalRuntimeFileError[]
+}
+
+/** Inspect every published lease at once. */
+export async function inspectLocalRuntimes(
+  timeoutMs = 750
+): Promise<LocalRuntimeInspections> {
+  const listing = readLocalRuntimes()
+  return {
+    runtimes: await Promise.all(
+      listing.runtimes.map((runtime) =>
+        inspectLocalRuntimeLease(runtime, timeoutMs)
+      )
+    ),
+    errors: listing.errors,
+  }
+}
+
+/** Check one lease's process and endpoint proof. */
+export async function inspectLocalRuntimeLease(
+  runtime: LocalRuntimeRecord,
+  timeoutMs = 750
+): Promise<LocalRuntimeInspection> {
   const processAlive = localRuntimeProcessAlive(runtime)
   let endpointState: LocalRuntimeEndpointState = "unreachable"
   if (processAlive) {
@@ -796,9 +969,10 @@ export async function inspectLocalRuntimeDetailed(
 }
 
 export async function inspectLocalRuntime(
+  workspaceId: string,
   timeoutMs = 750
 ): Promise<LocalRuntimePublic | null> {
-  const inspection = await inspectLocalRuntimeDetailed(timeoutMs)
+  const inspection = await inspectLocalRuntimeDetailed(workspaceId, timeoutMs)
   if (!inspection) return null
   const { endpointState: _, ...runtime } = inspection
   return runtime

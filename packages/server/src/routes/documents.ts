@@ -649,6 +649,8 @@ documentsRouter.put("/file", requireScope("documents:write"), async (c) => {
         updatedBy: attribution.actor,
         source: attribution.source,
         reason: "Uploaded a new version",
+        expectedFormatId: BUILTIN_DOCUMENT_FORMATS.file,
+        separateVersion: true,
       })
       return c.json({ ok: true, ...result, contentHash: fileContentHash(bytes) })
     }

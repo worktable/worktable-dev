@@ -21,6 +21,7 @@ import { ownerIdentity } from "./auth.ts"
 import { createAnnotation } from "./annotation-store.ts"
 import { HOSTED_BROWSER_RUNTIME_SCOPES } from "./hosted-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
+import { readRegisteredDocumentSource } from "./document-write-service.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import {
   mintDocumentId,
@@ -1075,12 +1076,31 @@ describe("format-neutral document route", () => {
       expect(await (await instance.request(fileUrl("design/error.png"))).text()).toBe(
         "second"
       )
+      // Each upload is a version of its own, however quickly they follow.
+      const second = (await replaced.json()) as { sourceRevision: string }
+      expect(
+        (
+          await upload("design/error.png", "third", {
+            "if-match": second.sourceRevision,
+          })
+        ).status
+      ).toBe(200)
       const versions = await instance.request(
         `/api/spaces/${spaceId}/documents/versions?path=design/error.png&all=true`
       )
       expect(
         ((await versions.json()) as { versions: unknown[] }).versions.length
-      ).toBeGreaterThanOrEqual(2)
+      ).toBe(3)
+
+      // A Doc's path is not a file's, whatever revision is offered.
+      const docRevision = (
+        await readRegisteredDocumentSource({ spaceId, path: "notes/readme" })
+      ).sourceRevision
+      expect(
+        (await upload("notes/readme", "replaced", { "if-match": docRevision }))
+          .status
+      ).toBe(409)
+      expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
       else process.env["WORKTABLE_FILES_PREVIEW"] = previous

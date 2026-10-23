@@ -202,7 +202,7 @@ const SCOPE_EXPORTS = {
   // Decides from an identity; probed inside and outside the scope.
   checks: [
     "canAccessSpace", "assertSpaceAccess", "canAccessWorktableThreads", "assertWorktableThreadAccess", "readableSpaceIds",
-    "canCreateTeamSpace", "teamMemberForIdentity", "teamAgentForIdentity", "assertCurrentTeamIdentity", "requireTeamHuman",
+    "canCreateTeamSpace", "teamMemberForIdentity", "teamAgentForIdentity", "teamAgentForParticipantKey", "assertCurrentTeamIdentity", "requireTeamHuman",
     "requireTeamOwner", "teamAgentHasSpaceAccess", "agentWorktableThreadAccess", "resolveTeamAgentCredential", "currentRequestIdentity",
   ],
   // Acts for an identity, or takes one on; must refuse inside the scope.
@@ -255,6 +255,7 @@ function checkProbes(identities: Record<string, TokenIdentity | undefined>, agen
     probes.push(
       [`teamMemberForIdentity ${as}`, () => p.teamMemberForIdentity(who)],
       [`teamAgentForIdentity ${as}`, () => p.teamAgentForIdentity(who)],
+      [`teamAgentForParticipantKey ${as}`, () => p.teamAgentForParticipantKey(who.principal.participantKey ?? `principal:${who.principal.id}`)],
       [`assertCurrentTeamIdentity ${as}`, () => (p.assertCurrentTeamIdentity(who), true)],
       [`requireTeamHuman ${as}`, () => p.requireTeamHuman(who)],
       [`requireTeamOwner ${as}`, () => p.requireTeamOwner(who)],

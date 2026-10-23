@@ -32,7 +32,9 @@ import { drainWorkspaceChanges } from "./workspace-events.ts"
 
 let root: string
 let owner: TokenIdentity
+let ownerHeaders: Headers
 let stop: (() => Promise<void>) | undefined
+const origin = "http://localhost:7481"
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "worktable-grok-team-"))
@@ -54,7 +56,7 @@ beforeEach(async () => {
     })
   }
   const activated = await activateLocalTeams(
-    "http://grok-team.test",
+    origin,
     {
       name: "Owner",
       email: "owner@example.test",
@@ -70,6 +72,13 @@ beforeEach(async () => {
     }
   )
   owner = activated.identity
+  ownerHeaders = new Headers({
+    Cookie: activated.headers
+      .getSetCookie()
+      .map((cookie) => cookie.split(";", 1)[0])
+      .join("; "),
+    "Content-Type": "application/json",
+  })
 })
 
 afterEach(async () => {
@@ -124,21 +133,19 @@ it("requires current Threads access and skips inaccessible work without exhausti
   }
   await runWithTeamIdentity(bot, () => claimNextThreadDelivery(bot, 0, 2))
   const app = new Hono()
-  app.use("*", async (c, next) =>
-    runWithTeamIdentity(owner, async () => {
-      c.set("identity", owner)
-      await next()
-    })
-  )
   app.route("/grok", grokBotRouter)
   const configure = () =>
-    app.request(`/grok/${encodeURIComponent(bot.principal.id)}/configuration`, {
-      method: "PUT",
-      body: JSON.stringify({
-        webhookUrl: "https://api2.cursor.sh/automations/webhook/team-test",
-        webhookKey: "test-only",
-      }),
-    })
+    app.request(
+      `${origin}/grok/${encodeURIComponent(bot.principal.id)}/configuration`,
+      {
+        method: "PUT",
+        headers: ownerHeaders,
+        body: JSON.stringify({
+          webhookUrl: "https://api2.cursor.sh/automations/webhook/team-test",
+          webhookKey: "test-only",
+        }),
+      }
+    )
   updateTeamAgent(agent.id, { scopeCeiling: ["docs:read"] }, owner)
   expect((await configure()).status).toBe(400)
   expect(await readGrokBots()).toHaveLength(0)

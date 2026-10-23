@@ -80,7 +80,7 @@ test("a selected Cloud Worktable survives hydration, navigation and direct reloa
   await home.click()
   await expect(page).toHaveURL(`${harness.webUrl}${mount}/`)
 
-  await page.goto(`${harness.webUrl}${mount}/spaces/mounted-tools/documents/report`)
+  await page.goto(`${harness.webUrl}${mount}/spaces/mounted-tools/documents/report`, { waitUntil: "domcontentloaded" })
   const tool = page.frameLocator('iframe[title="Mounted report"]')
   await expect(tool.locator("#summary")).toHaveText("1 tasks")
   await tool.getByRole("button", { name: "Add task", exact: true }).click()

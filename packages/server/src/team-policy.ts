@@ -77,7 +77,12 @@ export function withLinkGrantRead<T>(spaceId: string, action: () => T): T {
 }
 
 function isSpaceIdShape(spaceId: string): boolean {
-  return Boolean(spaceId) && spaceId !== "." && spaceId !== ".." && !/[\\/\0]/.test(spaceId)
+  return (
+    Boolean(spaceId) &&
+    spaceId !== "." &&
+    spaceId !== ".." &&
+    !/[\\/\0]/.test(spaceId)
+  )
 }
 
 export function runWithTeamIdentity<T>(
@@ -137,9 +142,10 @@ export function teamMemberForIdentity(
     // session is read directly: once per request, or per turn on sockets.
     const session = teamRequestMemo(sessionMemoKey(sessionId), () =>
       requireTeamDatabase()
-        .query<SessionRow, [string]>(
-          "SELECT userId, expiresAt FROM session WHERE id = ?"
-        )
+        .query<
+          SessionRow,
+          [string]
+        >("SELECT userId, expiresAt FROM session WHERE id = ?")
         .get(sessionId)
     )
     const expiresAt = session
@@ -241,6 +247,33 @@ export function teamAgentForIdentity(
   if (
     agent.ownership === "personal" &&
     (!agent.memberId || !findTeamMemberById(agent.memberId))
+  )
+    return null
+  return agent
+}
+
+/** Background delivery eligibility; callers still check the agent's location grants. */
+export function teamAgentForParticipantKey(key: string): TeamAgent | null {
+  if (linkVisitor.getStore() || !currentTeamWorktable()) return null
+  const snapshot = accessSnapshot()!
+  const row = [...snapshot.agents.values()].find(
+    (agent) => agent.participant_key === key
+  )
+  if (!row || row.active !== 1) return null
+  const agent = parseAgent(row)
+  if (
+    agent.ownership === "personal" &&
+    (!agent.memberId || !findTeamMemberById(agent.memberId))
+  )
+    return null
+  if (
+    ![...snapshot.credentials.values()].some(
+      (credential) =>
+        credential.active &&
+        credential.agentId === agent.id &&
+        (!credential.sponsorMemberId ||
+          snapshot.members.has(credential.sponsorMemberId))
+    )
   )
     return null
   return agent
@@ -765,7 +798,9 @@ export function updateTeamAgent(
   if (patch.spaceIds !== undefined && agent.ownership !== "personal")
     throw new TeamAccessError("Team agents use explicit Space grants")
   if (patch.worktableThreads !== undefined && agent.ownership !== "team")
-    throw new TeamAccessError("Personal agents follow their member's thread access")
+    throw new TeamAccessError(
+      "Personal agents follow their member's thread access"
+    )
   if (patch.spaceIds)
     for (const spaceId of patch.spaceIds)
       assertSpaceAccess(spaceId, "read", identity)

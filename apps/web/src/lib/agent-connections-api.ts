@@ -122,7 +122,7 @@ export function getAppAgent(
  * owner chose. The token is returned once.
  */
 export function connectAgentApp(input: {
-  client: DirectAgentLabel
+  client: DirectAgentLabel | null
   displayName?: string
   icon?: string | null
   access: AgentAccess
@@ -158,7 +158,9 @@ export async function saveAgentChanges(
   const iconChanged = changes.icon !== (connection.icon ?? null)
   const shownPlatform = agentConnectionPlatform(connection)
   const signInClient =
-    connection.ownership === undefined && connection.authKind === "oauth" && connection.target.kind === "mcp-client"
+    connection.ownership === undefined &&
+    connection.authKind === "oauth" &&
+    connection.target.kind === "mcp-client"
       ? connection.target.clientId
       : null
   if (signInClient) {

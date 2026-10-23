@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
 import {
   disconnectAgentConnection,
+  createAgentCredential,
   listAgentConnections,
   rotateAgentCredential,
   updateAgentConnection,
@@ -46,9 +47,40 @@ afterEach(async () => {
 })
 
 describe("semantic agent connections", () => {
+  it("keeps unnamed manual clients separate when their access is edited", async () => {
+    const first = await createAgentCredential({
+      label: null,
+      access: { threads: true, read: false, edit: false },
+    })
+    const second = await createAgentCredential({
+      label: null,
+      access: { threads: true, read: true, edit: true },
+    })
+    expect(first.connection.id).not.toBe(second.connection.id)
+    expect(first.connection.participant?.id).not.toBe(
+      second.connection.participant?.id
+    )
+    expect(
+      (await listAgentConnections()).filter(
+        (entry) => entry.displayName === "My agent"
+      )
+    ).toHaveLength(2)
+    await updateAgentConnection(second.connection.id, {
+      displayName: "Research",
+      access: { threads: true, read: true, edit: false },
+    })
+    expect((await verifyToken(first.token))?.scopes).not.toContain("docs:read")
+    await disconnectAgentConnection(second.connection.id)
+    expect(await verifyToken(first.token)).not.toBeNull()
+    expect(await verifyToken(second.token)).toBeNull()
+  })
+
   it("keeps Threads access while a Grok routine is configured", async () => {
     const credential = await createToken({ agent: "cursor", scopes: ["*"] })
-    const identity = { agent: credential.metadata.agent, principal: credential.metadata.principal }
+    const identity = {
+      agent: credential.metadata.agent,
+      principal: credential.metadata.principal,
+    }
     const participant = (await resolveParticipant(identity)).participant
     await upsertAgentConnection({
       target: { kind: "mcp-client", clientId: "cursor" },
@@ -68,12 +100,19 @@ describe("semantic agent connections", () => {
       enabled: true,
       executionMinutes: 30,
     })
-    expect((await listAgentConnections())[0]).toMatchObject({ platform: "grok-bot", mode: "always-on" })
+    expect((await listAgentConnections())[0]).toMatchObject({
+      platform: "grok-bot",
+      mode: "always-on",
+    })
     const access = { threads: false, read: true, edit: true }
-    await expect(updateAgentConnection(id, { access })).rejects.toThrow("An always-on agent needs threads")
+    await expect(updateAgentConnection(id, { access })).rejects.toThrow(
+      "An always-on agent needs threads"
+    )
     expect((await verifyToken(credential.token))?.scopes).toEqual(["*"])
     await removeGrokBot("fixture-grok")
-    expect((await updateAgentConnection(id, { access }))?.access?.threads).toBe(false)
+    expect((await updateAgentConnection(id, { access }))?.access?.threads).toBe(
+      false
+    )
   })
 
   it("invalidates thread participants after always-on metadata changes", async () => {

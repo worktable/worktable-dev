@@ -277,17 +277,36 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
     })
   )
   await openAgents(page)
-  await page.route("**/api/grok-bot/**", (route) =>
-    route.fulfill({ status: 503, json: { error: "Cleanup unavailable" } })
-  )
+  let cleanupRequests = 0
+  let disconnectAttempts = 0
+  await page.route("**/api/grok-bot/**", (route) => {
+    cleanupRequests++
+    return route.fulfill({
+      status: 503,
+      json: { error: "Cleanup unavailable" },
+    })
+  })
   await page.route(
     "**/api/agent-connections/oauth%3Aconn_app_claude",
     (route) => {
       expect(route.request().method()).toBe("DELETE")
+      if (++disconnectAttempts === 1)
+        return route.fulfill({
+          status: 503,
+          json: { error: "Disconnect unavailable" },
+        })
       disconnected = true
       return route.fulfill({ json: { ok: true } })
     }
   )
+  await dialog.getByRole("button", { name: "Disconnect", exact: true }).click()
+  await expect(
+    page.getByText("Disconnect unavailable", { exact: true })
+  ).toBeVisible()
+  expect(cleanupRequests).toBe(0)
+  await expect(
+    dialog.getByRole("button", { name: "Disconnect", exact: true })
+  ).toBeEnabled()
   await dialog.getByRole("button", { name: "Disconnect", exact: true }).click()
   await expect(
     dialog.getByRole("button", { name: "Disconnect", exact: true })
@@ -552,27 +571,16 @@ test("switching settings sections and setup disclosures preserves a one-time man
       body: JSON.stringify({ ...connection, mcpAuthMode: "local-token" }),
     })
   )
-  await page.route("**/api/tokens", (route) => {
+  await page.route("**/api/agent-connections", (route) => {
     if (route.request().method() !== "POST") return route.continue()
     const grant = route.request().postDataJSON()
-    expect(grant.agent).toBe("My agent")
-    expect(grant.scopes).toContain("docs:read")
-    expect(grant.scopes).not.toContain("docs:write")
-    expect(grant.scopes).not.toContain("docs:*")
+    expect(grant.client).toBeNull()
+    expect(grant.access).toEqual({ threads: true, read: true, edit: false })
     return route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
         token: "wt_123456789abc_manual-secret",
-        metadata: {
-          id: "123456789abc",
-          user: "owner",
-          agent: "My agent",
-          scopes: grant.scopes,
-          workspace: "/tmp/worktable",
-          createdAt: new Date().toISOString(),
-          revokedAt: null,
-          lastUsedAt: null,
-        },
+        connection: { id: "manual-fixture", displayName: "My agent" },
       }),
     })
   })

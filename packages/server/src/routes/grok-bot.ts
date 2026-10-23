@@ -42,9 +42,8 @@ const saveSchema = z
   .strict()
 
 grokBotRouter.use("/:id/*", async (c, next) => {
-  const candidates = await visibleGrokBotCandidates(
-    await listAgentConnections()
-  )
+  const connections = await listAgentConnections()
+  const candidates = await visibleGrokBotCandidates(connections)
   if (!candidates.some((candidate) => candidate.id === c.req.param("id"))) {
     return c.json(
       { error: "Authenticated connection not found", code: "NOT_FOUND" },
@@ -63,9 +62,8 @@ grokBotRouter.put("/:id/configuration", async (c) => {
       },
       400
     )
-  const candidates = await visibleGrokBotCandidates(
-    await listAgentConnections()
-  )
+  const connections = await listAgentConnections()
+  const candidates = await visibleGrokBotCandidates(connections)
   if (isGrokBotShortcut(parsed.data.webhookKey ?? ""))
     return c.json(
       { error: GROK_BOT_SHORTCUT_MESSAGE, code: "BAD_REQUEST" },
@@ -74,6 +72,19 @@ grokBotRouter.put("/:id/configuration", async (c) => {
   const candidate = candidates.find(
     (candidate) => candidate.id === c.req.param("id")
   )!
+  if (
+    connections.find(
+      (connection) => connection.participant?.id === candidate.participantId
+    )?.access?.threads === false
+  )
+    return c.json(
+      {
+        error:
+          "Enable Threads access for this agent before connecting Grok Bot",
+        code: "BAD_REQUEST",
+      },
+      400
+    )
   const previous = (await readGrokBots()).find(
     (entry) => entry.connectionId === candidate.id
   )

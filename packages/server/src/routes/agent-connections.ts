@@ -92,7 +92,7 @@ agentConnectionsRouter.post("/", async (c) => {
     access?: unknown
   } | null
   if (!body) return c.json(badRequest("Expected a JSON object"), 400)
-  if (!isDirectAgentLabel(body.client)) {
+  if (body.client !== null && !isDirectAgentLabel(body.client)) {
     return c.json(badRequest("client must be an app Worktable connects"), 400)
   }
   const displayName =

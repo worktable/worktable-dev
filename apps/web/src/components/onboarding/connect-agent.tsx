@@ -4,7 +4,6 @@ import { Check, Loader2 } from "lucide-react"
 import {
   AGENT_PLATFORMS,
   DEFAULT_AGENT_ACCESS,
-  DEFAULT_AGENT_TOKEN_SCOPES,
   type AgentConnection,
   type AgentPlatformId,
   type ConnectorInstallableMcpClientId,
@@ -49,7 +48,7 @@ import {
   type PairingCreated,
 } from "@/lib/pairing-api"
 import { getConnection, type ConnectionInfo } from "@/lib/system-api"
-import { listTokens, mintToken } from "@/lib/tokens-api"
+import { listTokens } from "@/lib/tokens-api"
 import { StepHeading } from "./onboarding-shared"
 
 type RowId = "code" | "chat" | "always" | "mcp"
@@ -427,9 +426,10 @@ function TokenPanel({
         return result.token
       }
       return (
-        await mintToken({
-          scopes: [...DEFAULT_AGENT_TOKEN_SCOPES],
-          agent: name,
+        await connectAgentApp({
+          client: null,
+          displayName: name,
+          access: DEFAULT_AGENT_ACCESS,
         })
       ).token
     },

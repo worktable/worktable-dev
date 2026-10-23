@@ -13,7 +13,14 @@ import {
 import { notifyWorkspaceChange, onWorkspaceChange } from "./workspace-events.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 import { reconcileParticipantDeliveries } from "./thread-service.ts"
-import { runWithoutTeamIdentity } from "./team-policy.ts"
+import {
+  agentWorktableThreadAccess,
+  runWithoutTeamIdentity,
+  teamAgentForParticipantKey,
+  teamAgentHasSpaceAccess,
+} from "./team-policy.ts"
+import { currentTeamWorktable } from "./team-database.ts"
+import { hasScope } from "./token-store.ts"
 import { sendGrokEmailWake } from "./grok-bot-email.ts"
 import { scanAllThreadDigests } from "./thread-store.ts"
 
@@ -88,10 +95,26 @@ export function startGrokBotRuntime(
         deliveries.some((d) => d.error?.code === "REMOTE_EXECUTION_UNCONFIRMED")
       )
         continue
+      const team = currentTeamWorktable()
+      const agent = team
+        ? teamAgentForParticipantKey(connection.participantKey)
+        : null
+      const hasThreads =
+        agent &&
+        (agent.scopeCeiling === null ||
+          ["threads:read", "threads:write", "threads:participate"].every(
+            (scope) => hasScope(agent.scopeCeiling!, scope)
+          ))
       const queued = deliveries.filter(
         (d) =>
           d.state === "queued" &&
-          (connection.verifiedAt || connection.probe?.messageId === d.messageId)
+          (connection.verifiedAt ||
+            connection.probe?.messageId === d.messageId) &&
+          (!team ||
+            (hasThreads &&
+              (d.location.kind === "space"
+                ? teamAgentHasSpaceAccess(agent!, d.location.spaceId, "edit")
+                : agentWorktableThreadAccess(agent!) === "edit")))
       )
       if (!queued.length) {
         if (connection.wake)

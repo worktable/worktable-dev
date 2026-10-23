@@ -19,7 +19,6 @@ import {
   DEFAULT_AGENT_ACCESS,
   CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS,
   MCP_CLIENTS,
-  scopesForAccess,
   type AgentAccess,
   type AgentConnection,
   type ConnectorInstallableMcpClientId,
@@ -1125,7 +1124,7 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
   const [token, setToken] = useState<string | null>(null)
   const mint = useMutation({
     mutationFn: () =>
-      mintToken({ scopes: scopesForAccess(access), agent: "My agent" }),
+      connectAgentApp({ client: null, displayName: "My agent", access }),
     onSuccess: (result) => {
       setToken(result.token)
       void queryClient.invalidateQueries({ queryKey: ["tokens"] })
@@ -1222,6 +1221,7 @@ export function ConnectedAgentsGroup() {
             entry.participantId === connection.participant.id) ||
           (clientId && entry.connectionId.startsWith(`oauth:${clientId}:`))
       )
+      const result = await disconnectAgentConnection(id)
       const cleaned = grok
         ? await fetchJSON(
             `/api/grok-bot/${encodeURIComponent(grok.connectionId)}/configuration?scope=workspace`,
@@ -1231,7 +1231,6 @@ export function ConnectedAgentsGroup() {
             () => false
           )
         : true
-      const result = await disconnectAgentConnection(id)
       if (!cleaned)
         toast.warning("Agent disconnected. Could not remove its Grok routine.")
       return result
@@ -1609,6 +1608,7 @@ function connectionIdentity(token: TokenMetadata): {
 } {
   const label = token.agent
   if (!label) return { name: "Unnamed token", machine: null }
+  if (label.startsWith("manual@")) return { name: "MCP agent", machine: null }
   if (label === MANAGED_LABEL) {
     return { name: "Local agents", machine: "this machine" }
   }

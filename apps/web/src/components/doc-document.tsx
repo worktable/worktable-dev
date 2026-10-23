@@ -769,7 +769,6 @@ function MarkdownDocPage({
   onDownload?: () => void
   onRecoverOfflineEdits?: () => void
 }) {
-  const readingFiles = useEditorFiles(spaceId, docPath, { upload: false })
   const contentQuery = useDocumentContent(spaceId, docPath, revision, validated)
   const content = contentQuery.data?.content
   const readingRef = useRef<HTMLDivElement>(null)
@@ -806,6 +805,11 @@ function MarkdownDocPage({
     previewVersionId
   )
   const previewVersion = versionQuery.data
+  // An old version shows its files as they were when it was saved.
+  const readingFiles = useEditorFiles(spaceId, docPath, {
+    upload: false,
+    ...(previewVersion ? { at: previewVersion.createdAt } : {}),
+  })
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(
     null
   )
@@ -930,6 +934,7 @@ function MarkdownDocPage({
                 {previewVersion &&
                 Array.isArray(previewVersion.after.content) ? (
                   <Editor
+                    key={previewVersion.id}
                     initialContent={previewVersion.after.content as never[]}
                     editable={false}
                     afterTitle={byline}
@@ -938,6 +943,7 @@ function MarkdownDocPage({
                 ) : previewVersion &&
                   typeof previewVersion.after.content === "string" ? (
                   <MarkdownViewer
+                    filesAt={previewVersion.createdAt}
                     content={previewVersion.after.content}
                     afterTitle={byline}
                     spaceId={spaceId}
@@ -1125,7 +1131,6 @@ function BlockNoteDocPage({
     upload: !readOnly && !archived,
     versions: fileVersions,
   })
-  const readingFiles = useEditorFiles(spaceId, docPath, { upload: false })
   const validated = page !== null
   const ydocRef = useRef<Y.Doc | null>(null)
   const idbRef = useRef<IndexeddbPersistence | null>(null)
@@ -1244,6 +1249,11 @@ function BlockNoteDocPage({
     previewVersionId
   )
   const previewVersion = versionQuery.data
+  // An old version shows its files as they were when it was saved.
+  const readingFiles = useEditorFiles(spaceId, docPath, {
+    upload: false,
+    ...(previewVersion ? { at: previewVersion.createdAt } : {}),
+  })
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(
     null
   )
@@ -1586,6 +1596,7 @@ function BlockNoteDocPage({
                 {previewVersion &&
                 Array.isArray(previewVersion.after.content) ? (
                   <Editor
+                    key={previewVersion.id}
                     initialContent={previewVersion.after.content as never[]}
                     editable={false}
                     afterTitle={byline}
@@ -1594,6 +1605,7 @@ function BlockNoteDocPage({
                 ) : previewVersion &&
                   typeof previewVersion.after.content === "string" ? (
                   <MarkdownViewer
+                    filesAt={previewVersion.createdAt}
                     content={previewVersion.after.content}
                     afterTitle={byline}
                     spaceId={spaceId}

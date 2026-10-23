@@ -1,3 +1,4 @@
+import { keepEarlierImagesAfterRestore } from "../file-history.ts";
 import { requireScope, requireHumanWorkspaceOwner, restWriteActor } from "../auth.ts";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -538,6 +539,8 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
         restored.errorCode === "NOT_FOUND" ? 404 : 409
       );
     }
+    // An image changed since keeps its earlier copy with the restored Doc.
+    await keepEarlierImagesAfterRestore(spaceId, docPath, versionId, restWriteActor(c));
     wsManager.broadcast(spaceId, {
       type: "doc_update",
       spaceId,

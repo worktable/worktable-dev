@@ -312,25 +312,28 @@ export function rewriteBlockLinks(
 
 // ── After a move ────────────────────────────────────────────
 
-const writeOptions = {
-  updatedBy: "system",
-  source: "system",
-  reason: "Updated links after a move",
-  managedIdentity: true,
-}
-
-async function rewriteDoc(
+/**
+ * Rewrite targets in one Doc as it is now, open or not: a Markdown Doc by its
+ * text, a rich Doc block by block, so people typing in it are not
+ * interrupted. Saved as a version with `reason`.
+ */
+export async function rewriteDocTargets(
   spaceId: string,
   docPath: string,
-  oldPath: string,
-  moved: ReadonlyMap<string, string>
+  rewrite: Rewrite,
+  options: { reason: string; imagesOnly?: boolean }
 ): Promise<boolean> {
+  const writeOptions = {
+    updatedBy: "system",
+    source: "system",
+    reason: options.reason,
+    managedIdentity: true,
+  }
+  const scan = { imagesOnly: options.imagesOnly ?? false }
   const current = await agentChangeBase(spaceId, docPath, undefined, false)
-  const rewrite: Rewrite = (target) =>
-    rewrittenTarget(target, oldPath, docPath, moved)
   const base = current.base
   if (typeof base === "string") {
-    const next = rewriteMarkdownLinks(base, rewrite)
+    const next = rewriteMarkdownLinks(base, rewrite, scan)
     if (next === base) return false
     const written = await writeDoc(spaceId, docPath, next, {
       ...writeOptions,
@@ -338,7 +341,7 @@ async function rewriteDoc(
     })
     if (!written.ok) throw new Error(written.error ?? "Links were not updated")
   } else if (Array.isArray(base)) {
-    const { blocks, changed } = rewriteBlockLinks(base, rewrite)
+    const { blocks, changed } = rewriteBlockLinks(base, rewrite, scan)
     if (changed.length === 0) return false
     const written = await commitAgentBlocks({
       spaceId,
@@ -359,6 +362,21 @@ async function rewriteDoc(
   }
   await syncDocAfterToolWrite(spaceId, docPath)
   return true
+}
+
+/** Rewrite one Doc's links to what moved; `oldPath` is where it was. */
+function rewriteDoc(
+  spaceId: string,
+  docPath: string,
+  oldPath: string,
+  moved: ReadonlyMap<string, string>
+): Promise<boolean> {
+  return rewriteDocTargets(
+    spaceId,
+    docPath,
+    (target) => rewrittenTarget(target, oldPath, docPath, moved),
+    { reason: "Updated links after a move" }
+  )
 }
 
 /** Docs elsewhere one move rewrites; aliases cover links in any more. */

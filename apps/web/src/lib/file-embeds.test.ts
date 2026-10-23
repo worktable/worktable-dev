@@ -21,7 +21,7 @@ describe("a Doc's embedded files", () => {
     // With the version the Doc's page gave, the browser keeps the file.
     expect(
       embedSourceUrl("product", "onboarding/signup-flow", "signup-flow/error.png", {
-        "onboarding/signup-flow/error.png": "2026-10-23T14:02:00.000Z",
+        versions: { "onboarding/signup-flow/error.png": "2026-10-23T14:02:00.000Z" },
       })
     ).toEndWith("error.png&v=2026-10-23T14%3A02%3A00.000Z")
   })

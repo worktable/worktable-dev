@@ -14,6 +14,8 @@ export function useEditorFiles(
     upload: boolean
     /** The versions of the Doc's files, from its page. */
     versions?: Readonly<Record<string, string>>
+    /** For an old version: its files as they were at this time. */
+    at?: string
   }
 ): EditorFiles | undefined {
   const filesOn = useDeploymentInfo().data?.capabilities.filesPreview ?? false
@@ -22,7 +24,10 @@ export function useEditorFiles(
       filesOn
         ? {
             resolve: (url: string) =>
-              embedSourceUrl(spaceId, docPath, url, options.versions),
+              embedSourceUrl(spaceId, docPath, url, {
+                versions: options.versions,
+                at: options.at,
+              }),
             ...(options.upload
               ? {
                   upload: (file: File) =>
@@ -31,6 +36,6 @@ export function useEditorFiles(
               : {}),
           }
         : undefined,
-    [filesOn, spaceId, docPath, options.upload, options.versions]
+    [filesOn, spaceId, docPath, options.upload, options.versions, options.at]
   )
 }

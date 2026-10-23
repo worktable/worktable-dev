@@ -602,15 +602,18 @@ async function pruneCommittedHistory(input: {
   })
 }
 
-async function ensurePreEditBaseline(input: {
+/** The newest version, and whether it already holds exactly these bytes. */
+async function newestVersionHolding(input: {
   workspaceRoot: string
   spaceId: string
   document: WritableDocument
   documentId: DocumentId
   bytes: Uint8Array
-  beforeCreatedAt: string
-  registry: DocumentFormatRegistry
-}): Promise<{ generationId: string; created: boolean }> {
+}): Promise<{
+  count: number
+  newestId: string | undefined
+  holds: boolean
+}> {
   const legacyKind = input.document.registration.legacyVersionKind
   const existing = await listCompatibleDocumentVersionsV2({
     workspaceRoot: input.workspaceRoot,
@@ -644,11 +647,25 @@ async function ensurePreEditBaseline(input: {
       previousBytes &&
       Buffer.from(previousBytes).equals(Buffer.from(input.bytes))
     ) {
-      return { generationId: latest.id, created: false }
+      return { count: existing.length, newestId: latest.id, holds: true }
     }
   }
+  return { count: existing.length, newestId: latest?.id, holds: false }
+}
+
+async function ensurePreEditBaseline(input: {
+  workspaceRoot: string
+  spaceId: string
+  document: WritableDocument
+  documentId: DocumentId
+  bytes: Uint8Array
+  beforeCreatedAt: string
+  registry: DocumentFormatRegistry
+}): Promise<{ generationId: string; created: boolean }> {
+  const newest = await newestVersionHolding(input)
+  if (newest.holds) return { generationId: newest.newestId!, created: false }
   const baselineLabel =
-    existing.length === 0 ? "Pre-tracking baseline" : "Pre-edit recovery point"
+    newest.count === 0 ? "Pre-tracking baseline" : "Pre-edit recovery point"
   const createdAt = new Date(
     Math.max(0, Date.parse(input.beforeCreatedAt) - 1)
   ).toISOString()
@@ -1123,6 +1140,132 @@ export async function readRegisteredDocumentSourceLocked(options: {
     }),
     ...(updatedAt ? { updatedAt } : {}),
   }
+}
+
+/**
+ * Keep the versions files have after something outside Worktable changed
+ * them, such as an agent writing straight to disk. A file's history starts
+ * once it has an identity: uploaded, moved or otherwise kept by Worktable.
+ * Bytes the newest version already holds record nothing, and quick
+ * successive changes merge into one version as people's saves do.
+ *
+ * One catalog serves every path in the batch. A path that names no file with
+ * history, such as the temporary name of an atomic save, stands for its
+ * folder: the files with history directly in it are checked instead.
+ */
+export async function recordExternalFileChanges(options: {
+  spaceId: string
+  paths: readonly string[]
+}): Promise<{ recorded: string[] }> {
+  const workspaceRoot = getWorkspaceRoot()
+  const registry = createBuiltinDocumentFormatRegistry()
+  return withDocPathLock(options.spaceId, async () => {
+    await requireV2Workspace(workspaceRoot)
+    const catalog = await buildDocumentCatalog({
+      workspaceRoot,
+      spaceId: options.spaceId,
+      registry,
+    })
+    const keptFiles = new Map(
+      catalog.entries.flatMap((entry) =>
+        entry.kind === "document" &&
+        entry.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file &&
+        entry.handle.identity === "durable"
+          ? [[entry.descriptor.path, entry] as const]
+          : []
+      )
+    )
+    const folderOf = (path: string) =>
+      path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ""
+    const candidates = new Set<string>()
+    const folders = new Set<string>()
+    for (const path of options.paths) {
+      if (keptFiles.has(path)) candidates.add(path)
+      else folders.add(folderOf(path))
+    }
+    for (const path of keptFiles.keys()) {
+      if (folders.has(folderOf(path))) candidates.add(path)
+    }
+    const recorded: string[] = []
+    for (const path of candidates) {
+      // One file that can't be kept leaves the rest of the batch kept.
+      try {
+        if (await recordFileVersionLocked(workspaceRoot, options.spaceId, catalog, path, registry)) {
+          recorded.push(path)
+        }
+      } catch (error) {
+        console.warn(
+          "[files] a version for a change on disk was not kept:",
+          logError(error)
+        )
+      }
+    }
+    return { recorded }
+  })
+}
+
+/** Keep one file's bytes as a version unless its newest one holds them. */
+async function recordFileVersionLocked(
+  workspaceRoot: string,
+  spaceId: string,
+  catalog: DocumentCatalog,
+  path: string,
+  registry: DocumentFormatRegistry
+): Promise<boolean> {
+  const document = resolveWritableDocument(catalog, path, registry)
+  let bytes: Uint8Array
+  try {
+    bytes = await readSource(workspaceRoot, spaceId, document)
+  } catch {
+    // Gone again, or past what one version can hold.
+    return false
+  }
+  const newest = await newestVersionHolding({
+    workspaceRoot,
+    spaceId,
+    document,
+    documentId: document.documentId,
+    bytes,
+  })
+  if (newest.holds) return false
+  const now = new Date().toISOString()
+  const written = await writeDocumentGenerationV2({
+    workspaceRoot,
+    spaceId,
+    documentId: document.documentId,
+    generationId: mintVersionId(now),
+    ...(newest.newestId ? { coalesceWith: newest.newestId } : {}),
+    logicalPath: document.path,
+    format: document.format,
+    operation: newest.count === 0 ? "create" : "update",
+    createdAt: now,
+    createdBy: "external",
+    source: "filesystem",
+    reason: "Changed on disk",
+    authoredSource: {
+      kind: "file",
+      entries: [{ path: generationEntryName(document), bytes }],
+    },
+    registry,
+  })
+  if (newest.newestId) {
+    // A change that continued the newest version replaces it, once this one
+    // has committed; one that didn't keeps it.
+    await retireReplacedGenerationV2({
+      workspaceRoot,
+      spaceId,
+      documentId: document.documentId,
+      replacement: written,
+      replaced: newest.newestId,
+    }).catch((error) => {
+      console.warn(
+        "[document-write] replaced version cleanup failed:",
+        logError(error)
+      )
+    })
+  }
+  await pruneCommittedHistory({ spaceId, documentId: document.documentId })
+  return true
 }
 
 export async function replaceRegisteredDocument(options: {

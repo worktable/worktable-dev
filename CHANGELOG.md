@@ -13,6 +13,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Links after restore:** Links created after restoring a backup keep working when Worktable restarts.
 - **Cloud HTML tools:** HTML Docs read and save data in the selected Worktable when your account can access more than one.
 
 ## [0.1.26] - 2026-10-22

@@ -25,6 +25,7 @@ import * as fsPromises from "node:fs/promises"
 import { existsSync } from "node:fs"
 import {
   cp,
+  mkdir,
   mkdtemp,
   readdir,
   readFile,
@@ -1093,6 +1094,58 @@ describe("share links", () => {
     ).toBeNull()
     expect((await view(token)).status).toBe(404)
     expect((await documentLinks("notes/final")).links).toEqual([])
+  })
+
+  it("shows the images a shared Doc embeds from its Space, and a changed image at once", async () => {
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    try {
+      const docs = join(workspaceDir, "spaces", "space", "docs")
+      await mkdir(join(docs, "spec"), { recursive: true })
+      await writeFile(join(docs, "spec", "shot.png"), "first image")
+      await writeFile(join(docs, "secret.png"), "not embedded")
+      await writeDoc(
+        "space",
+        "spec",
+        "# Spec\n\n![Signup error](spec/shot.png)\n\n[Other](secret.png)"
+      )
+      const { token } = await createLink("spec")
+      const projection = async () =>
+        ((await (await view(token)).json()) as { projectionHtml: string })
+          .projectionHtml
+
+      const first = await projection()
+      expect(first).toContain(
+        `data:image/png;base64,${Buffer.from("first image").toString("base64")}`
+      )
+      // Only what the Doc embeds: a linked file is not placed in the page.
+      expect(first).not.toContain(Buffer.from("not embedded").toString("base64"))
+
+      // A new version of the image shows without the Doc changing.
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      await writeFile(join(docs, "spec", "shot.png"), "second image, longer")
+      expect(await projection()).toContain(
+        Buffer.from("second image, longer").toString("base64")
+      )
+
+      // A rich Doc's image blocks show the same way.
+      await writeDoc("space", "board", [
+        {
+          id: "image-1",
+          type: "image",
+          props: { url: "spec/shot.png", caption: "Shot", name: "shot.png" },
+          children: [],
+        },
+      ])
+      const rich = await createLink("board")
+      expect(
+        ((await (await view(rich.token)).json()) as { projectionHtml: string })
+          .projectionHtml
+      ).toContain(Buffer.from("second image, longer").toString("base64"))
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
   })
 
   it("follows an HTML Doc through moves and title edits until it is deleted", async () => {

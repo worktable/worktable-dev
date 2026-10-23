@@ -532,6 +532,14 @@ if (!existsSync(executable)) {
   fail(`Desktop bundle executable is missing: ${executable}`)
 }
 
+// Signing and notarization can outlast the runner's display-idle timer. Wake
+// the display and keep this GUI session awake while exercising native windows.
+// Watching this process also releases the assertions if the smoke test is killed.
+const keepAwake = Bun.spawn(
+  ["/usr/bin/caffeinate", "-d", "-i", "-u", "-w", String(process.pid)],
+  { stdin: "ignore", stdout: "ignore", stderr: "ignore" }
+)
+
 let running: RunningDesktop | null = null
 let cliOwner: RunningCliHost | null = null
 let remoteOwner: RunningCliHost | null = null
@@ -848,5 +856,7 @@ try {
   console.error(`Desktop smoke root: ${root}`)
   throw error
 } finally {
+  keepAwake.kill()
+  await keepAwake.exited
   if (!keep && succeeded) rmSync(root, { recursive: true, force: true })
 }

@@ -1188,7 +1188,7 @@ export async function recordExternalFileChange(options: {
     })
     if (newest.holds) return { recorded: false }
     const now = new Date().toISOString()
-    await writeDocumentGenerationV2({
+    const written = await writeDocumentGenerationV2({
       workspaceRoot,
       spaceId: options.spaceId,
       documentId: document.documentId,
@@ -1207,6 +1207,22 @@ export async function recordExternalFileChange(options: {
       },
       registry,
     })
+    if (newest.newestId) {
+      // A change that continued the newest version replaces it, once this
+      // one has committed; one that didn't keeps it.
+      await retireReplacedGenerationV2({
+        workspaceRoot,
+        spaceId: options.spaceId,
+        documentId: document.documentId,
+        replacement: written,
+        replaced: newest.newestId,
+      }).catch((error) => {
+        console.warn(
+          "[document-write] replaced version cleanup failed:",
+          logError(error)
+        )
+      })
+    }
     await pruneCommittedHistory({
       spaceId: options.spaceId,
       documentId: document.documentId,

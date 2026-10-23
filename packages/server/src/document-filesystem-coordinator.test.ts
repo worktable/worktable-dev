@@ -12,9 +12,14 @@ it("coalesces duplicate filesystem identities before forwarding them", async () 
   })
   coordinator.note({ type: "doc", spaceId: "alpha", docPath: "notes/brief" })
   coordinator.note({ type: "doc", spaceId: "alpha", docPath: "notes/brief" })
+  // A Space's corpus events become one, still naming every file changed.
+  coordinator.note({ type: "documentCorpus", spaceId: "alpha", paths: ["a.csv"] })
+  coordinator.note({ type: "documentCorpus", spaceId: "alpha", paths: ["b.csv"] })
+  coordinator.note({ type: "documentCorpus", spaceId: "alpha" })
   await coordinator.flush()
   expect(forwarded).toEqual([
     { type: "doc", spaceId: "alpha", docPath: "notes/brief" },
+    { type: "documentCorpus", spaceId: "alpha", paths: ["a.csv", "b.csv"] },
   ])
   await coordinator.stop()
 })

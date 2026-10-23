@@ -102,7 +102,7 @@ describe("WorkspaceWatcher", () => {
         "space/docs/design/canvas.bin",
         "/workspace/spaces"
       )
-    ).toEqual({ type: "documentCorpus", spaceId: "space", path: "design/canvas.bin" })
+    ).toEqual({ type: "documentCorpus", spaceId: "space", paths: ["design/canvas.bin"] })
     expect(
       parseChangedPath(
         "/workspace/spaces",

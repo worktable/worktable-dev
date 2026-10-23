@@ -1144,6 +1144,13 @@ describe("format-neutral document route", () => {
       expect(
         await recordExternalFileChange({ spaceId, path: "data/feedback.csv" })
       ).toEqual({ recorded: false })
+      // A quick further change continues that version rather than adding one.
+      await writeFile(join(docs, "data", "feedback.csv"), "id\n1\n2\n3\n")
+      noteSpaceChanged(spaceId)
+      expect(
+        await recordExternalFileChange({ spaceId, path: "data/feedback.csv" })
+      ).toEqual({ recorded: true })
+      expect((await versions("data/feedback.csv")).length).toBe(before + 1)
 
       // A file nobody has kept yet has no history to add to.
       await writeFile(join(docs, "data", "dropped.csv"), "id\n")

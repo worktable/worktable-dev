@@ -31,10 +31,34 @@ function eventKey(event: DocumentFilesystemChangeEvent): string {
       : `corpus\0${event.spaceId}`
 }
 
+/**
+ * One event for a key: the latest, except that a Space's corpus events keep
+ * every file path they named, so each changed file still reaches its handler.
+ */
+function mergeEvent(
+  previous: DocumentFilesystemChangeEvent | undefined,
+  next: DocumentFilesystemChangeEvent
+): DocumentFilesystemChangeEvent {
+  if (
+    previous?.type !== "documentCorpus" ||
+    next.type !== "documentCorpus" ||
+    !previous.paths?.length
+  ) {
+    return next
+  }
+  const paths = new Set([...previous.paths, ...(next.paths ?? [])])
+  return { ...next, paths: [...paths] }
+}
+
 function deduplicateEvents(
   events: readonly DocumentFilesystemChangeEvent[]
 ): DocumentFilesystemChangeEvent[] {
-  return [...new Map(events.map((event) => [eventKey(event), event])).values()]
+  const merged = new Map<string, DocumentFilesystemChangeEvent>()
+  for (const event of events) {
+    const key = eventKey(event)
+    merged.set(key, mergeEvent(merged.get(key), event))
+  }
+  return [...merged.values()]
 }
 
 export class DocumentFilesystemCoordinator {
@@ -92,7 +116,7 @@ export class DocumentFilesystemCoordinator {
     } else {
       const key = eventKey(event)
       if (this.pendingEvents.has(key)) {
-        this.pendingEvents.set(key, event)
+        this.pendingEvents.set(key, mergeEvent(this.pendingEvents.get(key), event))
       } else if (this.pendingEvents.size < this.maxPendingEvents) {
         this.pendingEvents.set(key, event)
       } else {

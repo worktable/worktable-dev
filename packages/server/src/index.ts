@@ -184,7 +184,12 @@ import {
 } from "./workspace-events.ts";
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts";
 import { runServerMaintenance } from "./server-maintenance.ts";
-import { noteExternalFileChange } from "./file-change-recorder.ts";
+import {
+  discardExternalFileChanges,
+  flushExternalFileChanges,
+  noteExternalFileChange,
+  setExternalFileChangeTracker,
+} from "./file-change-recorder.ts";
 import { beginPreparedWorkspaceReplacement } from "./workspace-replacement.ts";
 import {
   calculateLocalWorkspaceContentCheckpoints,
@@ -1582,7 +1587,11 @@ export function startServer(
     const pending = [...widgetChangeCoalescer.values()];
     for (const { timer } of pending) clearTimeout(timer);
     for (const { flush } of pending) flush();
+    // Files changed on disk settle the same way; their versions are server
+    // tasks, so the drains that follow wait for them.
+    flushExternalFileChanges();
   };
+  setExternalFileChangeTracker(trackServerTask);
   const discardFailedStart = (): void => {
     startupDiscarded = true;
     watcher.stop();
@@ -1598,6 +1607,7 @@ export function startServer(
       );
     for (const { timer } of widgetChangeCoalescer.values()) clearTimeout(timer);
     widgetChangeCoalescer.clear();
+    discardExternalFileChanges();
     if (retentionBootTimer) clearTimeout(retentionBootTimer);
     retentionBootTimer = null;
     if (retentionSweepTimer) clearInterval(retentionSweepTimer);
@@ -1715,9 +1725,11 @@ export function startServer(
         return;
       }
 
-      // Keep a version of a file an agent changed on disk.
-      if (event.type === "documentCorpus" && event.path) {
-        noteExternalFileChange(event.spaceId, event.path);
+      // Keep a version of each file an agent changed on disk.
+      if (event.type === "documentCorpus") {
+        for (const path of event.paths ?? []) {
+          noteExternalFileChange(event.spaceId, path);
+        }
       }
 
       // Sync external doc changes into Yjs in-memory state

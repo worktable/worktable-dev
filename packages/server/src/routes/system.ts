@@ -27,6 +27,7 @@ import { mcpPreviewEnvOverride } from "../mcp/surface.ts";
 import { sharingPreviewEnabled, sharingPreviewEnvOverride } from "../sharing-preview.ts";
 import { filesPreviewEnabled, filesPreviewEnvOverride } from "../files-preview.ts";
 import { noteAllSpacesChanged } from "../workspace-read-model.ts";
+import { invalidateLinkGraph } from "../link-graph.ts";
 import { notifyWorkspaceChange } from "../workspace-events.ts";
 import { listSpaces } from "../store.ts";
 import { sharingV2Active } from "../share-links-store.ts";
@@ -463,7 +464,11 @@ systemRouter.put("/settings", async (c) => {
     const merged = result.settings;
     // Files on or off changes what every Space lists. Refresh as soon as the
     // change is saved, whatever follows, and tell open tabs to list again.
-    if ("files" in body) await refreshEverySpaceList();
+    if ("files" in body) {
+      // Embeds count as uses of files only with the preview on.
+      invalidateLinkGraph();
+      await refreshEverySpaceList();
+    }
     // A retention-policy change triggers an immediate full sweep so the new
     // limit takes effect now, not at the next 24h tick. Awaited so the caller
     // (and tests) observe a consistent post-sweep state; the new policy is

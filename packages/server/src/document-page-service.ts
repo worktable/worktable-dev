@@ -284,6 +284,19 @@ async function usesDocumentStorageV2(): Promise<boolean> {
   return (await readWorkspaceStorageLayoutAt(getWorkspaceRoot())).kind === "v2"
 }
 
+/** A file's page names the Docs that use it, from the same cached graph. */
+function fileMetadata(
+  spaceId: string,
+  handle: ResolvedDocumentHandle
+): DocumentPageMetadata {
+  const backlinks = peekDocBacklinks(
+    spaceId,
+    handle.document.path,
+    pathMovesFor(handle.aliases)
+  )
+  return backlinks ? { backlinks } : {}
+}
+
 async function pageForHandle(
   spaceId: string,
   handle: ResolvedDocumentHandle,
@@ -298,7 +311,9 @@ async function pageForHandle(
   const storageV2 = await usesDocumentStorageV2()
   const metadata = integration
     ? await integration.readMetadata(spaceId, handle)
-    : null
+    : handle.document.format.id === BUILTIN_DOCUMENT_FORMATS.file
+      ? fileMetadata(spaceId, handle)
+      : null
   const { data: space } = sharingAuthorized
     ? await readSpace(spaceId)
     : { data: null }

@@ -1311,6 +1311,116 @@ describe("format-neutral document route", () => {
     }
   })
 
+  it("serves a file as it was at an earlier moment, for an old Doc version", async () => {
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    try {
+      const instance = app()
+      const url = (query: string) =>
+        `/api/spaces/${spaceId}/documents/file?path=design/flow.png${query}`
+      const before = new Date(Date.now() - 60_000).toISOString()
+      await instance.request(url(""), { method: "PUT", body: "Monday" })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      const monday = new Date().toISOString()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(
+        (await instance.request(url("&replace=1"), { method: "PUT", body: "Tuesday" }))
+          .status
+      ).toBe(200)
+
+      expect(await (await instance.request(url(""))).text()).toBe("Tuesday")
+      const then = await instance.request(url(`&at=${encodeURIComponent(monday)}`))
+      expect(await then.text()).toBe("Monday")
+      expect(then.headers.get("cache-control")).toContain("immutable")
+      // Nothing was kept from before the file existed: never today's file.
+      expect(
+        (await instance.request(url(`&at=${encodeURIComponent(before)}`))).status
+      ).toBe(404)
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
+
+  it("restores a Doc with the images it showed, leaving the shared image as it is", async () => {
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    try {
+      const instance = app()
+      const docs = join(root, "spaces", spaceId, "docs")
+      const request = (method: string, action: string, body?: unknown) =>
+        instance.request(`/api/spaces/${spaceId}/documents${action}`, {
+          method,
+          ...(body === undefined
+            ? {}
+            : {
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(body),
+              }),
+        })
+      await instance.request(
+        `/api/spaces/${spaceId}/documents/file?path=spec/shot.png`,
+        { method: "PUT", body: "Monday" }
+      )
+      const created = await request("POST", "", {
+        path: "spec",
+        format: { id: "worktable.markdown", sourceVersion: 1 },
+        lifetime: "durable",
+        source: "# Spec\n\n![Shot](spec/shot.png)\n",
+      })
+      expect(created.status).toBe(201)
+      const monday = (
+        (await (await request("GET", "/versions?path=spec&all=true")).json()) as {
+          versions: Array<{ id: string }>
+        }
+      ).versions.at(-1)!.id
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      // Tuesday: a new screenshot, and the spec changes.
+      await instance.request(
+        `/api/spaces/${spaceId}/documents/file?path=spec/shot.png&replace=1`,
+        { method: "PUT", body: "Tuesday" }
+      )
+      const tuesday = await request("PUT", "", {
+        path: "spec",
+        source: "# Spec\n\nRewritten.\n\n![Shot](spec/shot.png)\n",
+        expectedRevision: (await readRegisteredDocumentSource({ spaceId, path: "spec" }))
+          .sourceRevision,
+      })
+      expect(tuesday.status).toBe(200)
+
+      const restored = await request("POST", "/restore-version", {
+        path: "spec",
+        versionId: monday,
+        expectedRevision: (await readRegisteredDocumentSource({ spaceId, path: "spec" }))
+          .sourceRevision,
+      })
+      expect(restored.status).toBe(200)
+      const body = (await restored.json()) as {
+        keptImages: string[]
+        sourceRevision: string
+      }
+      const day = new Date(Date.parse(monday.slice(0, 10))).toISOString().slice(0, 10)
+      expect(body.keptImages).toEqual([`spec/shot-${day}.png`])
+      // The restored spec shows Monday's screenshot, kept as a copy beside it.
+      expect(await readFile(join(docs, "spec.md"), "utf8")).toBe(
+        `# Spec\n\n![Shot](spec/shot-${day}.png)\n`
+      )
+      expect(await readFile(join(docs, "spec", `shot-${day}.png`), "utf8")).toBe(
+        "Monday"
+      )
+      // The shared screenshot, which other Docs may use, stays as it is.
+      expect(await readFile(join(docs, "spec", "shot.png"), "utf8")).toBe("Tuesday")
+      // The revision returned is the Doc's current one.
+      expect(body.sourceRevision).toBe(
+        (await readRegisteredDocumentSource({ spaceId, path: "spec" })).sourceRevision
+      )
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
+
   it("deletes mixed folders with common write authority while preserving unclaimed files", async () => {
     const instance = app()
     const forbiddenDelete = await instance.request(

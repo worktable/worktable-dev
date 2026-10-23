@@ -6,6 +6,8 @@ import { buildRecordCollectionSchema, createRecord, deleteRecord, getRecordDiagn
 import { recordIndex, recordIndexEnabled } from "../record-index.ts";
 import { noteRecordMutated } from "../search-index.ts";
 import { wsManager } from "../ws.ts";
+import { filesPreviewEnabled } from "../files-preview.ts";
+import { importIntoRecords, proposeImport } from "../records-import.ts";
 
 export const recordsRouter = new Hono();
 
@@ -117,6 +119,57 @@ recordsRouter.get("/:collectionId", requireScope("records:read"), async (c) => {
     integrityWarningsComplete: integrity.complete,
     projection,
   });
+});
+
+const ImportBody = z.strictObject({
+  path: z.string().min(1).max(4096),
+  dryRun: z.boolean().optional(),
+  columns: z
+    .array(
+      z.strictObject({
+        column: z.string().min(1),
+        field: z.string().min(1),
+        type: z.enum(["text", "number", "date", "boolean"]),
+      })
+    )
+    .max(200)
+    .optional(),
+  idColumn: z.string().optional(),
+  titleColumn: z.string().optional(),
+  name: z.string().trim().min(1).max(200).optional(),
+});
+
+// Import a CSV, TSV or JSONL file in the Space into a collection: with
+// dryRun, the proposed fields; with columns, those columns imported, by the
+// rules agents' imports keep. Part of the files preview.
+// Reading the file needs documents:read, as an agent's import does.
+recordsRouter.post("/:collectionId/import", requireScope("records:write"), requireScope("documents:read"), async (c) => {
+  if (!filesPreviewEnabled()) return c.json({ error: "Not found" }, 404);
+  const parsed = ImportBody.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
+  }
+  const spaceId = c.req.param("spaceId") ?? "";
+  const collectionId = c.req.param("collectionId") ?? "";
+  try {
+    if (parsed.data.dryRun || !parsed.data.columns) {
+      return c.json({ proposal: await proposeImport(spaceId, parsed.data.path, collectionId) });
+    }
+    const result = await importIntoRecords({
+      spaceId,
+      path: parsed.data.path,
+      collectionId,
+      columns: parsed.data.columns,
+      ...(parsed.data.idColumn ? { idColumn: parsed.data.idColumn } : {}),
+      ...(parsed.data.titleColumn ? { titleColumn: parsed.data.titleColumn } : {}),
+      ...(parsed.data.name ? { name: parsed.data.name } : {}),
+      createdBy: restWriteActor(c),
+    });
+    wsManager.broadcast(spaceId, { type: "record_collection_update", spaceId, collectionId });
+    return c.json(result);
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+  }
 });
 
 recordsRouter.post("/:collectionId/query", requireScope("records:read"), async (c) => {

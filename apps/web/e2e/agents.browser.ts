@@ -38,6 +38,133 @@ test.afterAll(async () => {
   await harness?.stop()
 })
 
+test("a connected Grok account stays editable while another account is added", async ({
+  page,
+}, testInfo) => {
+  const first = {
+    id: "oauth:grok:first",
+    displayName: "Comet",
+    participantId: "ptc_comet",
+    emailSender: "wake.first@agents.worktable.dev",
+  }
+  const second = {
+    id: "oauth:grok:second",
+    displayName: "Cursor",
+    participantId: "ptc_orbit",
+    emailSender: "wake.second@agents.worktable.dev",
+  }
+  const candidates = [first]
+  const bots = [
+    {
+      connectionId: first.id,
+      participantId: first.participantId,
+      enabled: true,
+      executionMinutes: 30,
+      wakeMethod: "email",
+      emailAddress: "comet@mail.grokbot.com",
+      status: "ready",
+      verifiedAt: "2026-10-23T00:00:00Z",
+    },
+  ]
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.route("**/api/system/connection", (route) =>
+    route.fulfill({ json: connection })
+  )
+  await page.route("**/api/agent-connections", (route) =>
+    route.fulfill({
+      json: {
+        connections: [],
+        grokBotMcpUrl: "https://example.test/mcp",
+        grokBotCandidates: candidates,
+        grokBots: bots,
+      },
+    })
+  )
+  await page.route("**/api/grok-bot/**", (route) => {
+    expect(
+      decodeURIComponent(new URL(route.request().url()).pathname)
+    ).toContain(second.id)
+    if (route.request().method() === "PUT") {
+      expect(route.request().postDataJSON()).toMatchObject({
+        name: "Orbit",
+        wakeMethod: "email",
+        emailAddress: "orbit@mail.grokbot.com",
+      })
+      second.displayName = "Orbit"
+      bots.push({
+        ...bots[0]!,
+        connectionId: second.id,
+        participantId: second.participantId,
+        emailAddress: "orbit@mail.grokbot.com",
+        status: "configured",
+        verifiedAt: "",
+      })
+    } else {
+      expect(new URL(route.request().url()).pathname).toMatch(/\/check$/)
+      bots[1]!.status = "ready"
+      bots[1]!.verifiedAt = "2026-10-23T01:00:00Z"
+    }
+    return route.fulfill({ json: { ok: true } })
+  })
+  await openAgents(page)
+  const dialog = page.getByRole("dialog")
+  await dialog.getByRole("button", { name: /^Always-on agents/ }).click()
+  await dialog.getByRole("tab", { name: "Grok Bot", exact: true }).click()
+  await expect(dialog.getByText("Comet", { exact: true })).toBeVisible()
+  await dialog
+    .getByRole("button", { name: "Connection settings", exact: true })
+    .click()
+  await expect(dialog.getByLabel("Bot name", { exact: true })).toHaveValue(
+    "Comet"
+  )
+  await dialog
+    .getByRole("button", { name: "Add another Grok account", exact: true })
+    .click()
+  await expect(
+    dialog.getByText(
+      "Send this from another Grok account, then authorize Worktable.",
+      { exact: true }
+    )
+  ).toBeVisible()
+  await dialog.getByRole("button", { name: "Continue", exact: true }).click()
+  await dialog
+    .getByRole("button", { name: "Refresh connections", exact: true })
+    .click()
+  await expect(
+    dialog.getByRole("button", { name: "Refresh connections", exact: true })
+  ).toBeVisible()
+  candidates.push(second)
+  await dialog
+    .getByRole("button", { name: "Refresh connections", exact: true })
+    .click()
+  await dialog.getByLabel("Bot name", { exact: true }).fill("Orbit")
+  await dialog
+    .getByLabel("Bot email address", { exact: true })
+    .fill("orbit@mail.grokbot.com")
+  await dialog.getByRole("button", { name: "Continue", exact: true }).click()
+  await dialog
+    .getByRole("button", { name: "Save and check", exact: true })
+    .click()
+  await expect(dialog.getByText("Connected", { exact: true })).toBeVisible()
+  await expect(
+    dialog.getByRole("combobox", { name: "Grok Bot sign-in" })
+  ).toHaveText("Orbit")
+  await dialog.getByRole("combobox", { name: "Grok Bot sign-in" }).click()
+  await page.getByRole("option", { name: "Comet", exact: true }).click()
+  await dialog
+    .getByRole("button", { name: "Connection settings", exact: true })
+    .click()
+  await expect(dialog.getByLabel("Bot name", { exact: true })).toHaveValue(
+    "Comet"
+  )
+  await expect(
+    dialog.getByLabel("Bot email address", { exact: true })
+  ).toHaveValue("comet@mail.grokbot.com")
+  await page.screenshot({
+    path: testInfo.outputPath("grok-multiple-accounts.png"),
+  })
+})
+
 test("Cloud shows equivalent setup and inventory without touching local credential routes", async ({
   page,
 }) => {

@@ -159,7 +159,12 @@ with bounded backoff, then asks you to check the routine, key, approvals, and
 Worktable sign-in. Grok's own approval prompts and account limits still apply.
 
 Select **Pause** to stop new claims and **Resume** to accept them again.
-Under **Connection settings**, you can switch methods and run a fresh connection
+Choose a **Bot name** during setup or edit it under **Connection settings**.
+Renaming keeps the existing connection and threads. Each connection represents
+one Grok account. In Settings, select **Add another Grok account** to connect a
+different account; use the sign-in selector to return to an existing connection.
+
+Under **Connection settings**, you can also switch methods and run a fresh connection
 check. Only the selected method sends wakes; update the existing routine with
 the new instructions. **Remove routine** deletes its saved notification settings
 and stops new claims from that routine;

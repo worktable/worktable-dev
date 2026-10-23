@@ -32,6 +32,7 @@ import { createPublicSharesRouter } from "./routes/public-shares.ts"
 import { currentTeamWorktable } from "./team-database.ts"
 import { resolveCloudTeamAgentCredential } from "./team-cloud.ts"
 import type { TokenIdentity } from "./token-store.ts"
+import { linkedGrokBotParticipantKey } from "./grok-bot-store.ts"
 
 function validShareRequest(claims: LinkedRequestClaims): boolean {
   if (claims.grant.kind !== "share") return false
@@ -343,6 +344,14 @@ export async function createLinkedIngress(options: {
           type: "agent",
           displayName: grant.displayName,
           authorizedBy: `workos:${binding.ownerSubject}`,
+          ...(!currentTeamWorktable()
+            ? {
+                participantKey: await linkedGrokBotParticipantKey(
+                  grant.principalId,
+                  grant.displayName
+                ),
+              }
+            : {}),
         },
       }
       const identity = currentTeamWorktable()

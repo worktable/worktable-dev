@@ -145,13 +145,18 @@ for (const wakeMethod of ["webhook", "email"] as const)
         return route.fulfill({ json: { ok: true } })
       }
       if (route.request().method() === "PUT") {
-        expect(route.request().postDataJSON()).toMatchObject({
+        const body = route.request().postDataJSON()
+        expect(body).toMatchObject({
           wakeMethod,
-          ...(wakeMethod === "email"
+          name: configured ? "Orbit" : "Comet",
+          ...(!configured && wakeMethod === "email"
             ? { emailAddress: "onboarding@mail.grokbot.com" }
-            : { webhookKey: "grok-onboarding-secret" }),
+            : !configured
+              ? { webhookKey: "grok-onboarding-secret" }
+              : {}),
           enabled: true,
         })
+        candidate.displayName = body.name
         configured = true
         saves += 1
         return route.fulfill({ json: { ok: true } })
@@ -264,6 +269,7 @@ for (const wakeMethod of ["webhook", "email"] as const)
       await expect(options.getByRole("alert")).toHaveCount(0)
     }
     expect(saves).toBe(0)
+    await page.getByLabel("Bot name", { exact: true }).fill("Comet")
     await page.screenshot({ path: testInfo.outputPath("grok-setup.png") })
     await options.getByRole("button", { name: "Continue", exact: true }).click()
     await page
@@ -336,15 +342,41 @@ for (const wakeMethod of ["webhook", "email"] as const)
     await page.screenshot({
       path: testInfo.outputPath("grok-connected-mobile.png"),
     })
+    const connectionSettings = page.getByRole("button", {
+      name: "Connection settings",
+      exact: true,
+    })
+    await connectionSettings.click()
+    await expect(connectionSettings).toHaveAttribute("aria-expanded", "true")
+    await expect(page.getByLabel("Bot name", { exact: true })).toHaveValue(
+      "Comet"
+    )
+    await page.getByLabel("Bot name", { exact: true }).fill("Orbit")
+    await page
+      .getByRole("button", { name: "Save changes", exact: true })
+      .click()
+    await expect(page.getByText("Orbit", { exact: true })).toBeVisible()
+    expect(checks).toBe(2)
+    await connectionSettings.click()
+    await expect(connectionSettings).toHaveAttribute("aria-expanded", "false")
+    await expect(page.getByLabel("Bot name", { exact: true })).not.toBeVisible()
     linkReady = false
     await page.reload({ waitUntil: "domcontentloaded" })
     await page.getByRole("button", { name: /^Always-on agents/ }).click()
     await page.getByRole("tab", { name: "Grok Bot", exact: true }).click()
     await page.getByText("Connection settings", { exact: true }).click()
     await page.getByRole("combobox", { name: "Notify Grok using" }).click()
-    await page.getByRole("option", { name: wakeMethod === "email" ? "Webhook" : "Email" }).click()
-    await expect(page.getByRole("button", { name: "Copy instructions", exact: true })).toBeDisabled()
-    await expect(page.getByRole("button", { name: "Remove routine", exact: true })).toBeEnabled()
+    await page
+      .getByRole("option", {
+        name: wakeMethod === "email" ? "Webhook" : "Email",
+      })
+      .click()
+    await expect(
+      page.getByRole("button", { name: "Copy instructions", exact: true })
+    ).toBeDisabled()
+    await expect(
+      page.getByRole("button", { name: "Remove routine", exact: true })
+    ).toBeEnabled()
   })
 
 test("a new owner creates their Worktable, connects agents and finishes their first steps in Getting Started", async ({

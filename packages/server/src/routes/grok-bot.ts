@@ -30,6 +30,7 @@ export const grokBotRouter = new Hono()
 grokBotRouter.use("*", requireAgentManager())
 const saveSchema = z
   .object({
+    name: z.string().trim().min(1).max(100).optional(),
     webhookUrl: z.string().max(2048).optional(),
     webhookKey: z.string().min(1).max(4096).regex(/^\S+$/).optional(),
     wakeMethod: z.enum(["webhook", "email"]).optional(),
@@ -56,7 +57,7 @@ grokBotRouter.put("/:id/configuration", async (c) => {
   if (!parsed.success)
     return c.json(
       {
-        error: "Check the notification settings and run timeout",
+        error: "Check the Bot name, notification settings and run timeout",
         code: "BAD_REQUEST",
       },
       400
@@ -103,22 +104,25 @@ grokBotRouter.put("/:id/configuration", async (c) => {
     previous?.webhookKey !== webhookKey ||
     previous?.emailAddress !== emailAddress
   try {
-    await saveGrokBot({
-      connectionId: candidate.id,
-      principalId: candidate.principalId,
-      participantId: candidate.participantId,
-      participantKey: candidate.participantKey,
-      webhookUrl,
-      webhookKey,
-      wakeMethod,
-      ...(emailAddress ? { emailAddress } : {}),
-      executionMinutes: parsed.data.executionMinutes,
-      enabled: parsed.data.enabled,
-      ...(!changed && previous?.verifiedAt
-        ? { verifiedAt: previous.verifiedAt }
-        : {}),
-      ...(!changed && previous?.probe ? { probe: previous.probe } : {}),
-    })
+    await saveGrokBot(
+      {
+        connectionId: candidate.id,
+        principalId: candidate.principalId,
+        participantId: candidate.participantId,
+        participantKey: candidate.participantKey,
+        webhookUrl,
+        webhookKey,
+        wakeMethod,
+        ...(emailAddress ? { emailAddress } : {}),
+        executionMinutes: parsed.data.executionMinutes,
+        enabled: parsed.data.enabled,
+        ...(!changed && previous?.verifiedAt
+          ? { verifiedAt: previous.verifiedAt }
+          : {}),
+        ...(!changed && previous?.probe ? { probe: previous.probe } : {}),
+      },
+      parsed.data.name
+    )
   } catch (error) {
     if (error instanceof GrokBotConfigurationError)
       return c.json({ error: error.message, code: "CONFLICT" }, 409)
@@ -194,9 +198,7 @@ grokBotRouter.post("/:id/retry", async (c) => {
   const deliveries = await grokBotDeliveries(connection.participantId)
   const uncertain =
     deliveries.find((d) => d.error?.code === "REMOTE_EXECUTION_UNCONFIRMED") ??
-    deliveries.find(
-      (d) => d.state === "failed" && !isRetiredThreadDelivery(d)
-    )
+    deliveries.find((d) => d.state === "failed" && !isRetiredThreadDelivery(d))
   if (uncertain) {
     if (uncertain.location.kind === "space")
       assertSpaceAccess(uncertain.location.spaceId, "edit")
@@ -217,8 +219,10 @@ grokBotRouter.post("/:id/retry", async (c) => {
       participantId: connection.participantId,
     })
   }
-  const missingProbe = deliveries.some((d) =>
-    d.messageId === connection.probe?.messageId && isRetiredThreadDelivery(d))
+  const missingProbe = deliveries.some(
+    (d) =>
+      d.messageId === connection.probe?.messageId && isRetiredThreadDelivery(d)
+  )
   await updateGrokBot(connection, {
     error: undefined,
     wake: undefined,

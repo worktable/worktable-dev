@@ -34,6 +34,7 @@ import { DocTable } from "@/components/document/doc-table"
 import { DocDetails, DocSummary } from "@/components/document/doc-details"
 import { DataTooltips } from "@/components/document/data-tooltip"
 import { NumberedList } from "@worktable/ui/lib/numbered-list"
+import { Disclosure } from "@worktable/ui/components/disclosure"
 import { markdownTitleLine } from "@worktable/ui/document-reading-preview"
 import "@/styles/document-controls.css"
 import { renderDocLinkHref } from "@/lib/doc-links"
@@ -337,12 +338,12 @@ export function MarkdownViewer({
                                   <AlertTriangle className="h-4 w-4 shrink-0" />
                                   Diagram could not be rendered
                                 </div>
-                                <details className="mt-3 text-xs text-muted-foreground">
-                                  <summary className="cursor-pointer font-medium select-none">
-                                    View diagram source
-                                  </summary>
+                                <Disclosure
+                                  title="View diagram source"
+                                  className="mt-3 text-xs"
+                                >
                                   <ScrollableMermaidSource source={source} />
-                                </details>
+                                </Disclosure>
                               </div>
                             }
                           />

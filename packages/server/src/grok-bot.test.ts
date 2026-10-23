@@ -138,89 +138,177 @@ function fakeFetch(
 }
 
 describe("Grok Bot", () => {
-  it.each(["runtime", "claim"])("fences pre-configuration work after its lease expires (%s)", async (path) => {
-    const assigned = await assign("Work claimed before routine setup")
-    const claim = (await claimNextThreadDelivery(grok, 0, 2))!
-    expect(claim.messageId).toBe(assigned.messageId)
-    await configure()
-    expect((await app.request(`${base}/check`, { method: "POST" })).status).toBe(200)
-    const now = Date.parse(claim.leaseExpiresAt) + 1
-    const clock = jest.spyOn(Date, "now").mockReturnValue(now)
-    try {
-      if (path === "runtime") await expireGrokBotDeliveries(participantId)
-      else expect(await claimNextThreadDelivery(grok, 0, 2)).toBeNull()
-      expect((await grokBotDeliveries(participantId)).find((d) => d.messageId === assigned.messageId)).toMatchObject({
-        state: "failed",
-        error: { code: "REMOTE_EXECUTION_UNCONFIRMED" },
-      })
-      expect(await nextThreadDeliveryEligibleAt(participantId)).toBeUndefined()
-      expect((await grokBotInventory([])).grokBots[0]?.uncertain?.messageId).toBe(assigned.messageId)
-    } finally {
-      clock.mockRestore()
-    }
-  })
-
-  it.each([false, true])("recovers when a claimed assignment disappears (connection check: %s)", async (probe) => {
-    if (probe) {
+  it.each(["runtime", "claim"])(
+    "fences pre-configuration work after its lease expires (%s)",
+    async (path) => {
+      const assigned = await assign("Work claimed before routine setup")
+      const claim = (await claimNextThreadDelivery(grok, 0, 2))!
+      expect(claim.messageId).toBe(assigned.messageId)
       await configure()
-      expect((await app.request(`${base}/check`, { method: "POST" })).status).toBe(200)
-    } else {
-      await verified()
-      await assign("Assignment removed before reading")
+      expect(
+        (await app.request(`${base}/check`, { method: "POST" })).status
+      ).toBe(200)
+      const now = Date.parse(claim.leaseExpiresAt) + 1
+      const clock = jest.spyOn(Date, "now").mockReturnValue(now)
+      try {
+        if (path === "runtime") await expireGrokBotDeliveries(participantId)
+        else expect(await claimNextThreadDelivery(grok, 0, 2)).toBeNull()
+        expect(
+          (await grokBotDeliveries(participantId)).find(
+            (d) => d.messageId === assigned.messageId
+          )
+        ).toMatchObject({
+          state: "failed",
+          error: { code: "REMOTE_EXECUTION_UNCONFIRMED" },
+        })
+        expect(
+          await nextThreadDeliveryEligibleAt(participantId)
+        ).toBeUndefined()
+        expect(
+          (await grokBotInventory([])).grokBots[0]?.uncertain?.messageId
+        ).toBe(assigned.messageId)
+      } finally {
+        clock.mockRestore()
+      }
     }
-    const claim = (await claimNextThreadDelivery(grok, 0, 2))!
-    await rm(join(workspaceDir, "threads", `${claim.threadId}.json`))
-    await failThreadDelivery({
-      participantId,
-      messageId: claim.messageId,
-      leaseId: claim.leaseId,
-      retryable: false,
-      code: "THREAD_NOT_FOUND",
-      message: "The portable thread no longer exists.",
-    })
-    expect((await grokBotInventory([])).grokBots[0]?.status).toBe(probe ? "needs-attention" : "ready")
-    expect((await app.request(`${base}/retry`, { method: "POST" })).status).toBe(200)
-    if (probe) {
-      expect((await readGrokBots())[0]?.probe).toBeUndefined()
-      expect((await app.request(`${base}/check`, { method: "POST" })).status).toBe(200)
-      expect((await claimNextThreadDelivery(grok, 0, 2))?.messageId).toBe((await readGrokBots())[0]?.probe?.messageId)
-      return
-    }
-    const next = await assign("A later assignment")
-    expect((await claimNextThreadDelivery(grok, 0, 2))?.messageId).toBe(next.messageId)
-  })
+  )
 
-  it.each(["Cursor", "Orbit"])("classifies the selected Bot while preserving custom names (%s)", async (name) => {
-    const identity: TokenIdentity = {
-      ...grok,
-      agent: "Cursor",
-      principal: { ...grok.principal, id: "oauth:native-bot:owner", displayName: name },
+  it.each([false, true])(
+    "recovers when a claimed assignment disappears (connection check: %s)",
+    async (probe) => {
+      if (probe) {
+        await configure()
+        expect(
+          (await app.request(`${base}/check`, { method: "POST" })).status
+        ).toBe(200)
+      } else {
+        await verified()
+        await assign("Assignment removed before reading")
+      }
+      const claim = (await claimNextThreadDelivery(grok, 0, 2))!
+      await rm(join(workspaceDir, "threads", `${claim.threadId}.json`))
+      await failThreadDelivery({
+        participantId,
+        messageId: claim.messageId,
+        leaseId: claim.leaseId,
+        retryable: false,
+        code: "THREAD_NOT_FOUND",
+        message: "The portable thread no longer exists.",
+      })
+      expect((await grokBotInventory([])).grokBots[0]?.status).toBe(
+        probe ? "needs-attention" : "ready"
+      )
+      expect(
+        (await app.request(`${base}/retry`, { method: "POST" })).status
+      ).toBe(200)
+      if (probe) {
+        expect((await readGrokBots())[0]?.probe).toBeUndefined()
+        expect(
+          (await app.request(`${base}/check`, { method: "POST" })).status
+        ).toBe(200)
+        expect((await claimNextThreadDelivery(grok, 0, 2))?.messageId).toBe(
+          (await readGrokBots())[0]?.probe?.messageId
+        )
+        return
+      }
+      const next = await assign("A later assignment")
+      expect((await claimNextThreadDelivery(grok, 0, 2))?.messageId).toBe(
+        next.messageId
+      )
     }
-    const selected = (await resolveParticipant(
-      identity,
-      name === "Cursor" ? {} : { name }
-    )).participant
-    const cursor = (await resolveParticipant({
-      agent: "cursor",
-      principal: { id: "local-token:cursor", type: "agent", displayName: "Cursor" },
-    })).participant
-    await claimNextThreadDelivery(identity, 0, 2)
-    const path = `/grok/${encodeURIComponent(identity.principal.id)}/configuration`
-    const save = () => app.request(path, {
-      method: "PUT",
-      body: JSON.stringify({ webhookUrl: url, webhookKey: secret }),
-    })
-    expect((await save()).status).toBe(200)
-    const expected = name === "Cursor" ? "Grok Bot" : name
-    const display = await listThreadParticipantsForDisplay(owner)
-    expect(display.participants.find((p) => p.id === selected.id)).toMatchObject({ name: expected, platform: "grok-bot" })
-    expect(display.presentations[identity.principal.id]).toMatchObject({ name: expected, platform: "grok-bot" })
-    expect((await readGrokBotCandidates()).find((c) => c.id === identity.principal.id)?.displayName).toBe(expected)
-    expect((await participantsByKey()).get("agent:cursor")).toMatchObject({ id: cursor.id, name: "Cursor" })
-    await resolveParticipant(identity, { name: "Comet" })
-    expect((await save()).status).toBe(200)
-    expect((await participantsByKey()).get("agent:Cursor")).toMatchObject({ id: selected.id, name: "Comet" })
-  })
+  )
+
+  it.each(["Cursor", "Orbit"])(
+    "classifies the selected Bot while preserving custom names (%s)",
+    async (name) => {
+      const identity: TokenIdentity = {
+        ...grok,
+        agent: "Cursor",
+        principal: {
+          ...grok.principal,
+          id: "oauth:native-bot:owner",
+          displayName: name,
+        },
+      }
+      const selected = (
+        await resolveParticipant(identity, name === "Cursor" ? {} : { name })
+      ).participant
+      const cursor = (
+        await resolveParticipant({
+          agent: "cursor",
+          principal: {
+            id: "local-token:cursor",
+            type: "agent",
+            displayName: "Cursor",
+          },
+        })
+      ).participant
+      await claimNextThreadDelivery(identity, 0, 2)
+      const path = `/grok/${encodeURIComponent(identity.principal.id)}/configuration`
+      const save = (name?: string) =>
+        app.request(path, {
+          method: "PUT",
+          body: JSON.stringify({
+            webhookUrl: url,
+            webhookKey: secret,
+            ...(name ? { name } : {}),
+          }),
+        })
+      expect((await save()).status).toBe(200)
+      const expected = name === "Cursor" ? "Grok Bot" : name
+      const display = await listThreadParticipantsForDisplay(owner)
+      expect(
+        display.participants.find((p) => p.id === selected.id)
+      ).toMatchObject({ name: expected, platform: "grok-bot" })
+      expect(display.presentations[identity.principal.id]).toMatchObject({
+        name: expected,
+        platform: "grok-bot",
+      })
+      expect(
+        (await readGrokBotCandidates()).find(
+          (c) => c.id === identity.principal.id
+        )?.displayName
+      ).toBe(expected)
+      expect((await participantsByKey()).get("agent:cursor")).toMatchObject({
+        id: cursor.id,
+        name: "Cursor",
+      })
+      const connection = (await readGrokBots()).find(
+        (c) => c.connectionId === identity.principal.id
+      )!
+      const verifiedAt = new Date().toISOString()
+      await updateGrokBot(connection, { verifiedAt })
+      expect((await save(" Comet ")).status).toBe(200)
+      expect((await save()).status).toBe(200)
+      expect((await participantsByKey()).get("agent:Cursor")).toMatchObject({
+        id: selected.id,
+        name: "Comet",
+      })
+      expect(
+        (await readGrokBots()).find(
+          (c) => c.connectionId === identity.principal.id
+        )
+      ).toMatchObject({ participantId: selected.id, verifiedAt })
+      expect(
+        (await readGrokBotCandidates()).find(
+          (c) => c.id === identity.principal.id
+        )?.displayName
+      ).toBe("Comet")
+      for (const name of [" ", "x".repeat(101)]) {
+        expect(
+          (
+            await app.request(path, {
+              method: "PUT",
+              body: JSON.stringify({ name }),
+            })
+          ).status
+        ).toBe(400)
+      }
+      expect((await participantsByKey()).get("agent:Cursor")?.name).toBe(
+        "Comet"
+      )
+    }
+  )
 
   it("repairs an existing Cursor-named Bot once without changing its identity or verification", async () => {
     const connection = await verified()
@@ -241,10 +329,17 @@ describe("Grok Bot", () => {
       verifiedAt,
       identityDefaultsApplied: true,
     })
-    expect((await listThreadParticipantsForDisplay(owner)).presentations[participantId]).toMatchObject({ name: "Grok Bot", platform: "grok-bot" })
+    expect(
+      (await listThreadParticipantsForDisplay(owner)).presentations[
+        participantId
+      ]
+    ).toMatchObject({ name: "Grok Bot", platform: "grok-bot" })
     await resolveParticipant(grok, { name: "Cursor" })
     await applyGrokBotIdentityDefaults(current)
-    expect((await listThreadParticipants(owner)).find((p) => p.id === participantId)?.name).toBe("Cursor")
+    expect(
+      (await listThreadParticipants(owner)).find((p) => p.id === participantId)
+        ?.name
+    ).toBe("Cursor")
   })
 
   it("switches between webhook and email without retaining the previous wake or verification", async () => {

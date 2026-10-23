@@ -109,6 +109,18 @@ export async function readGrokBotCandidates() {
   return (await read()).candidates
 }
 
+/** Preserve an existing Bot's binding while separating accounts sharing a client label. */
+export async function linkedGrokBotParticipantKey(
+  principalId: string,
+  agent: string
+): Promise<string | undefined> {
+  const connections = await readGrokBots()
+  const existing = connections.find((c) => c.principalId === principalId)
+  if (existing) return existing.participantKey
+  if (connections.some((c) => c.participantKey === `agent:${agent}`))
+    return `principal:${principalId}`
+}
+
 /** The principal comes only from authenticated MCP ingress, never a setup form or display name. */
 export async function observeGrokBotCandidate(
   identity: Pick<TokenIdentity, "principal" | "agent" | "credentialClass">,
@@ -173,7 +185,8 @@ export function signalGrokBotChange(): void {
 export async function saveGrokBot(
   input: Omit<StoredGrokBot, "generation" | "wakeMethod"> & {
     wakeMethod?: StoredGrokBot["wakeMethod"]
-  }
+  },
+  name?: string
 ): Promise<void> {
   const saved = await mutate((file) => {
     if (
@@ -208,20 +221,27 @@ export async function saveGrokBot(
     file.connections.push(connection)
     return connection
   })
-  await applyGrokBotIdentityDefaults(saved)
+  await applyGrokBotIdentityDefaults(saved, name)
   signalGrokBotChange()
 }
 
 /** Classify the selected identity once; later owner names survive routine edits and restarts. */
 export async function applyGrokBotIdentityDefaults(
-  connection: StoredGrokBot
+  connection: StoredGrokBot,
+  requestedName?: string
 ): Promise<void> {
-  if (connection.removed || connection.identityDefaultsApplied) return
+  if (
+    connection.removed ||
+    (connection.identityDefaultsApplied && !requestedName)
+  )
+    return
   const participant = (await participantsByKey()).get(connection.participantKey)
   if (!participant || participant.id !== connection.participantId) return
-  const name = participant.name.trim().toLowerCase() === "cursor"
-    ? "Grok Bot"
-    : participant.name
+  const name =
+    requestedName ??
+    (participant.name.trim().toLowerCase() === "cursor"
+      ? "Grok Bot"
+      : participant.name)
   if (name !== participant.name) {
     await resolveParticipant(
       {
@@ -238,12 +258,15 @@ export async function applyGrokBotIdentityDefaults(
   }
   await mutate((file) => {
     const current = file.connections.find(
-      (c) => c.connectionId === connection.connectionId &&
+      (c) =>
+        c.connectionId === connection.connectionId &&
         c.generation === connection.generation
     )
     if (!current) return
     current.identityDefaultsApplied = true
-    const candidate = file.candidates.find((c) => c.id === connection.connectionId)
+    const candidate = file.candidates.find(
+      (c) => c.id === connection.connectionId
+    )
     if (candidate) candidate.displayName = name
   })
 }

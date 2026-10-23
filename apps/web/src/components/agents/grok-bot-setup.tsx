@@ -27,6 +27,7 @@ import {
   CollapsibleTrigger,
 } from "@worktable/ui/components/collapsible"
 import { CopyField } from "@worktable/ui/components/copy-field"
+import { Disclosure } from "@worktable/ui/components/disclosure"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { ResponsiveDialogClose } from "@worktable/ui/components/responsive-dialog"
 import { Input } from "@worktable/ui/components/input"
@@ -128,11 +129,14 @@ export function GrokBotSetupPanel({
     enabled: open,
   })
   const [selected, setSelected] = useState("")
+  const adding = selected === "new-account"
+  const previousAccounts = useRef(new Set<string>())
   const [step, setStep] = useState<number | null>(null)
   const [linkSetup, setLinkSetup] = useState(false)
   const candidates = inventory.data?.grokBotCandidates ?? []
-  const candidate =
-    candidates.find((item) => item.id === selected) ?? candidates[0]
+  const candidate = adding
+    ? undefined
+    : (candidates.find((item) => item.id === selected) ?? candidates[0])
   const saved = inventory.data?.grokBots?.find(
     (item) => item.connectionId === candidate?.id
   )
@@ -157,7 +161,20 @@ export function GrokBotSetupPanel({
   }, [candidate, saved, onConnected])
   const refresh = async () => {
     const result = await inventory.refetch()
-    if (result.data?.grokBotCandidates?.length) setStep(null)
+    const accounts = result.data?.grokBotCandidates ?? []
+    if (adding) {
+      const next = accounts.find(
+        (item) => !previousAccounts.current.has(item.id)
+      )
+      if (next) {
+        setSelected(next.id)
+        setStep(null)
+      } else {
+        toast.info(
+          "No new account yet. Connect from another Grok account, then refresh."
+        )
+      }
+    } else if (accounts.length) setStep(null)
   }
   if (inventory.isPending)
     return (
@@ -175,7 +192,7 @@ export function GrokBotSetupPanel({
       </Callout>
     )
   const signIn =
-    candidates.length > 1 ? (
+    !adding && candidates.length > 1 ? (
       <Select
         value={candidate?.id ?? ""}
         onValueChange={(value) => {
@@ -225,7 +242,9 @@ export function GrokBotSetupPanel({
             {mcpUrl ? (
               <>
                 <p className="text-sm text-muted-foreground">
-                  Send this in Grok Bot, then authorize Worktable.
+                  {adding
+                    ? "Send this from another Grok account, then authorize Worktable."
+                    : "Send this in Grok Bot, then authorize Worktable."}
                 </p>
                 <CopyField
                   label="Message to Grok Bot"
@@ -324,6 +343,27 @@ export function GrokBotSetupPanel({
           )}
         </ol>
       )}
+      {!onConnected && candidates.length > 0 && (
+        <div>
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (adding) {
+                setSelected("")
+                setStep(null)
+              } else {
+                previousAccounts.current = new Set(
+                  candidates.map((item) => item.id)
+                )
+                setSelected("new-account")
+                setStep(1)
+              }
+            }}
+          >
+            {adding ? "Back to connections" : "Add another Grok account"}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
@@ -348,6 +388,11 @@ function GrokBotRoutine({
   const id = useId()
   const navigate = useNavigate()
   const mobile = useIsMobile()
+  const [name, setName] = useState(
+    candidate.displayName.trim().toLowerCase() === "cursor"
+      ? "Grok Bot"
+      : candidate.displayName
+  )
   const [method, setMethod] = useState<"webhook" | "email">(
     () => saved?.wakeMethod ?? (mobile ? "email" : "webhook")
   )
@@ -375,6 +420,7 @@ function GrokBotRoutine({
     await fetchJSON(`${base}/configuration?scope=workspace`, {
       method: "PUT",
       body: JSON.stringify({
+        ...(includeDraft ? { name: name.trim() } : {}),
         ...(includeDraft ? { wakeMethod: method } : {}),
         ...(includeDraft && method === "email"
           ? { emailAddress: email.trim() }
@@ -408,6 +454,7 @@ function GrokBotRoutine({
           if (
             !saved ||
             needsCheck ||
+            name.trim() !== candidate.displayName ||
             Number(minutes) !== saved.executionMinutes ||
             !saved.enabled
           )
@@ -433,6 +480,22 @@ function GrokBotRoutine({
         error instanceof Error ? error.message : "Could not update Grok Bot"
       ),
   })
+  const nameField = (
+    <div className="space-y-2">
+      <label className="text-sm font-medium" htmlFor={`${id}-name`}>
+        Bot name
+      </label>
+      <Input
+        id={`${id}-name`}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        maxLength={100}
+        required
+        autoComplete="off"
+        disabled={action.isPending}
+      />
+    </div>
+  )
   const methodSelector = (
     <div className="space-y-2">
       <label id={`${id}-method-label`} className="text-sm font-medium">
@@ -462,9 +525,11 @@ function GrokBotRoutine({
   const instructions = (
     <>
       <p className="text-sm text-muted-foreground">
-        {!mcpUrl ? "Worktable Link must be online to copy routine instructions." : method === "email"
-          ? "Send these instructions to Grok, then paste its Bot email address below."
-          : "Send these instructions to Grok, then copy the POST URL and key from its desktop app."}
+        {!mcpUrl
+          ? "Worktable Link must be online to copy routine instructions."
+          : method === "email"
+            ? "Send these instructions to Grok, then paste its Bot email address below."
+            : "Send these instructions to Grok, then copy the POST URL and key from its desktop app."}
       </p>
       <div>
         <Button
@@ -616,6 +681,8 @@ function GrokBotRoutine({
     />
   )
   const valid = Boolean(
+    name.trim() &&
+    name.trim().length <= 100 &&
     !hasShortcut &&
     (method === "email"
       ? candidate.emailSender && GrokBotEmailAddress.safeParse(email).success
@@ -659,17 +726,15 @@ function GrokBotRoutine({
           </div>
         )}
         {onboarding && retry}
-        <details className="group text-sm">
-          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-            Connection settings
-          </summary>
+        <Disclosure title="Connection settings" keepMounted>
           <form
-            className="mt-4 flex flex-col gap-4"
+            className="flex flex-col gap-4"
             onSubmit={(event) => {
               event.preventDefault()
               action.mutate(needsCheck ? "check" : "save")
             }}
           >
+            {nameField}
             {methodSelector}
             {needsCheck && instructions}
             {fields}
@@ -693,7 +758,7 @@ function GrokBotRoutine({
               </Button>
             </div>
           </form>
-        </details>
+        </Disclosure>
         {confirmation}
       </div>
     )
@@ -706,16 +771,14 @@ function GrokBotRoutine({
         open={current === 3}
         onOpenChange={() => onStep(current === 3 ? 0 : 3)}
       >
+        {nameField}
         {methodSelector}
         {instructions}
         {fields}
         {shortcutError}
-        <details className="text-sm">
-          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-            Advanced
-          </summary>
-          <div className="mt-3">{timeout}</div>
-        </details>
+        <Disclosure title="Advanced" keepMounted>
+          {timeout}
+        </Disclosure>
         <div>
           <Button
             disabled={!valid || action.isPending}

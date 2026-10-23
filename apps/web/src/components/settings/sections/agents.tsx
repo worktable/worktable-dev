@@ -1229,15 +1229,21 @@ export function ConnectedAgentsGroup() {
       )
       const grokId = grok?.connectionId ?? candidate?.id
       const result = await disconnectAgentConnection(connection)
-      const cleaned = grokId
-        ? await fetchJSON(
-            `/api/grok-bot/${encodeURIComponent(grokId)}/configuration?scope=workspace&disconnect=1`,
-            { method: "DELETE" }
-          ).then(
-            () => true,
-            () => false
-          )
-        : true
+      // Workspace/Team disconnects own this cleanup. A gateway sign-in is
+      // disconnected on Cloud, so its local routine must be retired here.
+      const cleaned =
+        grokId &&
+        connection.authKind === "oauth" &&
+        connection.ownership === undefined &&
+        connection.requestScope !== "workspace"
+          ? await fetchJSON(
+              `/api/grok-bot/${encodeURIComponent(grokId)}/configuration?scope=workspace&disconnect=1`,
+              { method: "DELETE" }
+            ).then(
+              () => true,
+              () => false
+            )
+          : true
       if (!cleaned)
         toast.warning("Agent disconnected. Could not remove its Grok routine.")
       return result

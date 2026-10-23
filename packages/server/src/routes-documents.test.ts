@@ -1102,6 +1102,15 @@ describe("format-neutral document route", () => {
         ((await versions.json()) as { versions: unknown[] }).versions.length
       ).toBe(3)
 
+      // Upload New Version replaces whatever the file holds now.
+      expect(
+        (await upload("design/error.png", "fourth", {}, "&replace=1")).status
+      ).toBe(200)
+      expect(await (await instance.request(fileUrl("design/error.png"))).text()).toBe(
+        "fourth"
+      )
+      expect((await upload("design/missing.png", "x", {}, "&replace=1")).status).toBe(404)
+
       // A Doc's path is not a file's, whatever revision is offered.
       const docRevision = (
         await readRegisteredDocumentSource({ spaceId, path: "notes/readme" })

@@ -185,6 +185,7 @@ export function RecentRows({ items }: { items: RecentItem[] }) {
           >
             <DocumentFormatIcon
               formatId={document.format.id}
+              name={document.path}
               className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
             />
             <span className="min-w-0 truncate font-medium text-foreground">
@@ -243,6 +244,7 @@ function TemporaryRow({ item }: { item: RecentItem }) {
       />
       <DocumentFormatIcon
         formatId={document.format.id}
+        name={document.path}
         className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
       />
       <span className="min-w-0 truncate font-medium text-foreground">

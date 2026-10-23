@@ -79,6 +79,8 @@ import { writeWorkspaceSnapshot } from "./workspace-snapshot.ts"
 import { restoreLiveWorkspaceSnapshot, readWorkspaceSnapshotRestoreStatus } from "./workspace-snapshot-restore.ts"
 import { closeShareLinkStores, createShareLink, getShareLink } from "./share-links-store.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
+import { createPublicSharesRouter } from "./routes/public-shares.ts"
+import { SHARE_CAPABILITY_HEADER } from "./hosted.ts"
 
 const originalEnv = { ...process.env }
 let root: string
@@ -266,6 +268,17 @@ describe("live workspace replacement", () => {
     expect(await resolveDocumentShare(after.token)).toEqual(after)
     expect(getShareLink(current.link.id)?.revokedAt).toBeNull()
     expect(await resolveDocumentShare(before.token)).toBeNull()
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    const visitor = await createPublicSharesRouter(() => "https://share.example.test").fetch(
+      new Request("http://tenant/public/share", {
+        headers: { [SHARE_CAPABILITY_HEADER]: current.token },
+      })
+    )
+    expect(visitor.status).toBe(200)
+    expect(await visitor.json()).toMatchObject({
+      kind: "doc",
+      projectionHtml: expect.stringContaining("BeforeOnly"),
+    })
   }, 20_000)
 
   it("lets reads continue during a capture, holds writes briefly, and releases long polls", async () => {

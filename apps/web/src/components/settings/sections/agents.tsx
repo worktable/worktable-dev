@@ -99,10 +99,8 @@ import { AgentAccessFields } from "@/components/agents/agent-access-fields"
 import { AgentAvatar } from "@/components/agents/agent-avatar"
 import { AgentEditDialog } from "@/components/agents/agent-edit-dialog"
 import { DesktopAgentSkillsGroup } from "./desktop-agent-skills"
-import {
-  GrokBotSetupPanel,
-  GROK_BOT_STATUS_LABELS,
-} from "@/components/agents/grok-bot-setup"
+import { GrokBotSetupPanel } from "@/components/agents/grok-bot-setup"
+import { GROK_BOT_STATUS_LABELS } from "@/lib/grok-bot-status"
 import {
   AGENT_SETUP_CATEGORIES,
   AgentSetupCategory,

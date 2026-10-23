@@ -43,6 +43,7 @@ import { useCopy } from "@worktable/ui/hooks/use-copy"
 import { cn } from "@worktable/ui/lib/utils"
 import { listAgentConnections } from "@/lib/agent-connections-api"
 import { fetchJSON } from "@/lib/http"
+import { GROK_BOT_STATUS_LABELS } from "@/lib/grok-bot-status"
 import type { ConnectionInfo } from "@/lib/system-api"
 import { useIsMobile } from "@/hooks/use-mobile"
 
@@ -51,17 +52,6 @@ const WorktableLinkSetup = lazy(() =>
     default: module.CloudSection,
   }))
 )
-export const GROK_BOT_STATUS_LABELS: Record<
-  GrokBotConnection["status"],
-  string
-> = {
-  configured: "Needs a connection check",
-  checking: "Checking…",
-  ready: "Connected",
-  working: "Working",
-  paused: "Paused",
-  "needs-attention": "Needs attention",
-}
 
 function SetupStep({
   number,

@@ -38,6 +38,7 @@ import {
 import { notifyDocContentChanged } from "./content-events.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { DOCUMENT_STORAGE_PROFILE_IDS } from "./document-storage-profile.ts"
+import { hasDocumentsBelow, moveDocumentFolder } from "./document-folder-move.ts"
 
 export interface RenameOutcome {
   renamed: Array<{ from: string; to: string }>
@@ -46,6 +47,25 @@ export interface RenameOutcome {
 
 /** Rename one document and apply every path-keyed lifecycle update. */
 export async function renameDocAndSync(
+  spaceId: string,
+  fromPath: string,
+  toPath: string
+): Promise<RenameOutcome> {
+  const from = sanitizeDocPath(fromPath)
+  const to = sanitizeDocPath(toPath)
+  // A Doc's folder belongs to it: sub-Docs and files under it move with it,
+  // as one move.
+  if (from !== to && (await hasDocumentsBelow(spaceId, from))) {
+    const moved = await moveDocumentFolder(spaceId, from, to)
+    return moved.ok
+      ? { renamed: moved.renamed, error: null }
+      : { renamed: [], error: moved.error }
+  }
+  return renameDocExactlyAndSync(spaceId, from, to)
+}
+
+/** Rename one document alone, leaving anything under its path in place. */
+export async function renameDocExactlyAndSync(
   spaceId: string,
   fromPath: string,
   toPath: string

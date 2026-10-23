@@ -73,6 +73,7 @@ import { useDocName, useNameFromTitleOnLeave } from "@/hooks/use-doc-name"
 import { takeJustCreated } from "@/hooks/use-new-doc"
 import { DocumentByline } from "@/components/document/document-byline"
 import { useBylineState } from "@/hooks/use-byline-state"
+import { useEditorFiles } from "@/hooks/use-editor-files"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
 import { MarkdownViewer } from "@/components/editor/markdown-viewer"
 import {
@@ -774,6 +775,7 @@ function MarkdownDocPage({
   onDownload?: () => void
   onRecoverOfflineEdits?: () => void
 }) {
+  const readingFiles = useEditorFiles(spaceId, docPath, { upload: false })
   const contentQuery = useDocumentContent(spaceId, docPath, revision, validated)
   const content = contentQuery.data?.content
   const readingRef = useRef<HTMLDivElement>(null)
@@ -938,6 +940,7 @@ function MarkdownDocPage({
                     initialContent={previewVersion.after.content as never[]}
                     editable={false}
                     afterTitle={byline}
+                    files={readingFiles}
                   />
                 ) : previewVersion &&
                   typeof previewVersion.after.content === "string" ? (
@@ -1120,6 +1123,10 @@ function BlockNoteDocPage({
   onDownload?: () => void
   onRecoverOfflineEdits?: () => void
 }) {
+  const editingFiles = useEditorFiles(spaceId, docPath, {
+    upload: !readOnly && !archived,
+  })
+  const readingFiles = useEditorFiles(spaceId, docPath, { upload: false })
   const validated = page !== null
   const ydocRef = useRef<Y.Doc | null>(null)
   const idbRef = useRef<IndexeddbPersistence | null>(null)
@@ -1535,6 +1542,7 @@ function BlockNoteDocPage({
                   editable={!convertingToMarkdown}
                   title={editorTitle}
                   afterTitle={byline}
+                  files={editingFiles}
                   annotations={annotations}
                   activeAnnotationId={activeAnnotationId}
                   onSelectAnnotation={selectAnnotation}
@@ -1579,6 +1587,7 @@ function BlockNoteDocPage({
                     initialContent={previewVersion.after.content as never[]}
                     editable={false}
                     afterTitle={byline}
+                    files={readingFiles}
                   />
                 ) : previewVersion &&
                   typeof previewVersion.after.content === "string" ? (

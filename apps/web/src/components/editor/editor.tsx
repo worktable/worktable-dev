@@ -183,6 +183,18 @@ interface EditorProps {
   afterTitle?: ReactNode
   /** How the editor shows the Doc's name, its title. */
   title?: EditorTitle
+  /**
+   * The Doc's files: where an embed loads from, and, while editing, how a
+   * pasted or dropped file is saved. Without it, media blocks take URLs only.
+   */
+  files?: EditorFiles
+}
+
+export interface EditorFiles {
+  /** The URL an embed's stored path loads from. */
+  resolve: (url: string) => string
+  /** Save a file into the Doc's folder; returns the path to embed. */
+  upload?: (file: File) => Promise<string>
 }
 
 export interface EditorTitle {
@@ -204,6 +216,7 @@ export function Editor({
   onSelectAnnotation,
   afterTitle,
   title,
+  files,
 }: EditorProps) {
   const { theme } = useTheme()
   const isMobile = useIsMobile()
@@ -232,6 +245,7 @@ export function Editor({
       onSelectAnnotation={onSelectAnnotation}
       afterTitle={afterTitle}
       title={title}
+      files={files}
       resolvedTheme={resolvedTheme}
       isMobile={isMobile}
       spellcheck={spellcheck}
@@ -251,6 +265,7 @@ function EditorInner({
   onSelectAnnotation,
   afterTitle,
   title,
+  files,
   resolvedTheme,
   isMobile,
   spellcheck,
@@ -271,6 +286,12 @@ function EditorInner({
   const baseOptions = {
     schema,
     extensions: [syntaxHighlighter],
+    ...(files
+      ? {
+          resolveFileUrl: async (url: string) => files.resolve(url),
+          ...(files.upload ? { uploadFile: files.upload } : {}),
+        }
+      : {}),
     _tiptapOptions: {
       editorProps: {
         attributes: {

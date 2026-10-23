@@ -323,13 +323,13 @@ function fileMetadata(
   spaceId: string,
   handle: ResolvedDocumentHandle
 ): DocumentPageMetadata {
-  const backlinks = peekDocBacklinks(
-    spaceId,
-    handle.document.path,
-    pathMovesFor(handle.aliases)
-  )
+  const moves = pathMovesFor(handle.aliases)
+  const backlinks = peekDocBacklinks(spaceId, handle.document.path, moves)
+  // Records whose file fields name it use it too.
+  const referrers = peekDocReferrers(spaceId, handle.document.path, moves.current)
   return {
     ...(backlinks ? { backlinks } : {}),
+    ...(referrers ? { referrers } : {}),
     ...(handle.sourceStamp ? { version: handle.sourceStamp } : {}),
   }
 }

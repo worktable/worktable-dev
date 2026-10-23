@@ -675,7 +675,7 @@ function DetailFieldValue({
     <div className="min-w-0 flex-1">{valueBody}</div>
     {editable && !empty && column.type === "url" && isSafeHttpUrl(String(value)) && <a className={cn(buttonVariants({ size: "icon-xs", variant: "ghost" }), "-my-1")} href={String(value)} target="_blank" rel="noopener noreferrer" aria-label={`Open ${columnLabel(column)}`}><ExternalLink className="size-3.5" /></a>}
     {editable && !empty && column.type === "email" && <a className={cn(buttonVariants({ size: "icon-xs", variant: "ghost" }), "-my-1")} href={`mailto:${String(value)}`} aria-label={`Email ${String(value)}`}><ExternalLink className="size-3.5" /></a>}
-    {editable && !empty && ["document", "relation"].includes(column.type) && <Popover>
+    {editable && !empty && ["document", "file", "relation"].includes(column.type) && <Popover>
       <PopoverTrigger render={<Button size="icon-xs" variant="ghost" className="-my-1" aria-label={`Open ${columnLabel(column)}`} />}><ExternalLink className="size-3.5" /></PopoverTrigger>
       <FieldPopoverContent align="end" aria-label={`Open ${columnLabel(column)}`}><FieldValue column={column} value={value} spaceId={spaceId} expanded={expanded} danglingTargets={danglingTargets} mode="detail" /></FieldPopoverContent>
     </Popover>}

@@ -209,6 +209,7 @@ export function FilePage({
               ? { updatedAt: page.document.updatedAt }
               : {})}
             {...(page.backlinks ? { backlinks: page.backlinks } : {})}
+            {...(page.referrers ? { referrers: page.referrers } : {})}
           />
           <FileContent view={view} url={url} name={name} />
         </article>

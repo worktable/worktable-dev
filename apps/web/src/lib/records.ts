@@ -350,6 +350,7 @@ export const INLINE_EDITABLE_TYPES = new Set([
   "select",
   "multi_select",
   "document",
+  "file",
 ])
 
 /**
@@ -407,6 +408,15 @@ export function coerceFieldInput(
       }
       return { value: column.field?.many ? paths : paths[0] }
     }
+    case "file": {
+      // A file is named by its path in the Space, extension included.
+      const inputs = Array.isArray(raw) ? raw : column.field?.many ? String(raw).split(",") : [raw]
+      const paths = inputs
+        .map((entry) => String(entry).trim().replace(/^\/+/, ""))
+        .filter(Boolean)
+      if (paths.length === 0) return { value: null }
+      return { value: column.field?.many ? paths : paths[0] }
+    }
     case "multi_select": {
       // Optionless multi_select fields collect a comma-separated string.
       if (typeof raw === "string") {
@@ -444,7 +454,7 @@ export function coerceFieldInput(
  * same ISO, so an untouched blur is a no-op commit.
  */
 export function fieldEditorSeed(column: { type: string }, value: unknown): unknown {
-  if (column.type === "document" && Array.isArray(value)) return value.join(", ")
+  if ((column.type === "document" || column.type === "file") && Array.isArray(value)) return value.join(", ")
   if (column.type === "multi_select" && Array.isArray(value)) return value.join(", ")
   if (column.type === "datetime" && typeof value === "string" && value) {
     const date = new Date(value)

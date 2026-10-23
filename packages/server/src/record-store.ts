@@ -451,6 +451,18 @@ export function undeclaredFieldsError(keys: Iterable<string>, schema: RecordColl
   return `${one ? "Field" : "Fields"} ${undeclared.map((key) => `"${key}"`).join(", ")} ${one ? "is" : "are"} not in the schema of collection "${collectionId}". Check the spelling, or add ${one ? "it" : "them"} with upsert_collection first. Declared fields: ${Object.keys(schema.fields).join(", ")}.`;
 }
 
+/** A Space-relative file path: no leading slash, no .., no query or fragment. */
+function isRecordFilePath(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 4096 &&
+    !value.startsWith("/") &&
+    !/[\0?#\\]/.test(value) &&
+    value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..")
+  );
+}
+
 /** Check record data against the schema. `onlyKeys` limits the check to the
  *  fields a write changes, so an update to one field is not refused over an
  *  unrelated stored value that a later schema or a hand edit made invalid. */
@@ -461,7 +473,7 @@ function validateAgainstSchema(data: Record<string, unknown>, schema: RecordColl
     const value = data[field];
     const type = normalizeRecordFieldType(spec.type);
     const emptyRequiredSelection = Array.isArray(value) && value.length === 0 && (
-      type === "multi_select" || ((type === "relation" || type === "document") && spec.many)
+      type === "multi_select" || ((type === "relation" || type === "document" || type === "file") && spec.many)
     );
     if (spec.required && (value === undefined || value === null || value === "" || emptyRequiredSelection)) return `Missing required field: ${field}`;
     if (value === undefined || value === null) continue;
@@ -511,6 +523,17 @@ function validateAgainstSchema(data: Record<string, unknown>, schema: RecordColl
         const parsed = parseDocumentReference(entry);
         if ("error" in parsed) return `Field ${field} ${parsed.error}`;
         if (parsed.path !== entry) return `Field ${field} must use canonical document path ${parsed.path}`;
+      }
+    }
+    if (type === "file") {
+      // A file in the Space, by its path with its extension, as the file's
+      // page and every link name it.
+      const values = spec.many ? value : [value];
+      if (!Array.isArray(values)) return `Field ${field} must be ${spec.many ? "an array of file paths" : "a file path"}`;
+      for (const entry of values) {
+        if (!isRecordFilePath(entry)) {
+          return `Field ${field} must be a file path in the Space, such as design/logo.png`;
+        }
       }
     }
     if (type === "json") {

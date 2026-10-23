@@ -43,6 +43,9 @@ describe("record document fields and portable column order", () => {
   it("normalizes friendly scalar and many document input", () => {
     expect(coerceFieldInput({ type: "document", field: { type: "document" } }, "/Notes/Caf%C3%A9.md")).toEqual({ value: "Notes/Café" })
     expect(coerceFieldInput({ type: "document", field: { type: "document", many: true } }, ["/one.md", "two.json"])).toEqual({ value: ["one", "two"] })
+    // Files keep their extension: the path is the file's whole name.
+    expect(coerceFieldInput({ type: "file", field: { type: "file" } }, " /spec/shot.png ")).toEqual({ value: "spec/shot.png" })
+    expect(coerceFieldInput({ type: "file", field: { type: "file", many: true } }, "a.csv, spec/b.png")).toEqual({ value: ["a.csv", "spec/b.png"] })
   })
 
   it("clears scalar document input without trying to parse it", () => {

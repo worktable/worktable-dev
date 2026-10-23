@@ -9,7 +9,7 @@ export const RECORD_FIELD_TYPES_V1 = ["string", "number", "boolean", "date", "da
 // The version-2 additions. `select`/`multi_select` supersede `enum` and
 // `relation` supersedes `reference` — v1 spellings remain readable forever and
 // are normalized at validation/query time (files are never rewritten).
-export const RECORD_FIELD_TYPES_V2 = ["text", "url", "email", "person", "select", "multi_select", "relation", "document"] as const;
+export const RECORD_FIELD_TYPES_V2 = ["text", "url", "email", "person", "select", "multi_select", "relation", "document", "file"] as const;
 
 // Field types this version of Worktable knows how to validate and write.
 // Readers must stay tolerant of types beyond this list (see RecordFieldSchema).

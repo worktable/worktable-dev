@@ -18,6 +18,13 @@ import {
   moveRegisteredDocument,
   readRegisteredDocumentSource,
 } from "./document-write-service.ts"
+import {
+  buildRecordCollectionSchema,
+  createRecord,
+  readRecord,
+  writeRecordCollectionSchema,
+} from "./record-store.ts"
+import { peekDocReferrers, settleDocReferrers } from "./doc-referrers.ts"
 import { noteSpaceChanged } from "./workspace-read-model.ts"
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
 
@@ -235,6 +242,43 @@ describe("rewriting links after a move", () => {
       })
       expect(new TextDecoder().decode(current.bytes)).toContain("../../onboarding/spec")
       expect(moved.sourceRevision).toBe(current.sourceRevision)
+    })
+
+    it("keeps records' file fields pointing at a file that moved, and lists them as its uses", async () => {
+      process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+      await seed()
+      await writeRecordCollectionSchema(
+        SPACE,
+        buildRecordCollectionSchema({
+          id: "shots",
+          fields: { shot: { type: "file" } },
+          createdBy: "test",
+        })
+      )
+      expect(
+        (await createRecord(SPACE, "shots", { id: "bad", data: { shot: "../x.png" } })).error
+      ).toContain("must be a file path")
+      expect(
+        (await createRecord(SPACE, "shots", { id: "error", data: { shot: "onboarding/spec/error.png" } }))
+          .error
+      ).toBeNull()
+
+      // The first look starts reading the Space's records.
+      peekDocReferrers(SPACE, "onboarding/spec/error.png")
+      await settleDocReferrers(SPACE)
+      expect(
+        peekDocReferrers(SPACE, "onboarding/spec/error.png")?.map((referrer) =>
+          referrer.kind === "record" ? referrer.recordId : referrer.kind
+        )
+      ).toEqual(["error"])
+
+      expect(
+        (await renameDocAndSync(SPACE, "onboarding/spec", "flows/signup")).error
+      ).toBeNull()
+      await settleLinkRewrites()
+      expect((await readRecord(SPACE, "shots", "error")).data?.data).toEqual({
+        shot: "flows/signup/error.png",
+      })
     })
 
     it("leaves Docs' text alone with files off, as aliases keep links working", async () => {

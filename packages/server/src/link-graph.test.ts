@@ -97,7 +97,7 @@ describe("link graph", () => {
         "# Doc",
         "See [other](/notes/other) and [rel](../sibling).",
         "![diagram](/assets/pic.png)",
-        '<img alt="Error" src="shots/error.png">',
+        '<img data-alt="x" alt="Error" data-src="lazy.png" src="shots/error.png">',
         "`[not a link](/code-span)`",
         "```",
         "[fenced](/inside-fence)",

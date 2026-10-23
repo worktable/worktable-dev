@@ -91,8 +91,9 @@ function embedWithContext(target: string, label: string): ExtractedDocLink {
 }
 
 /** Media tags a Markdown Doc may write as HTML, with the file they show. */
-const HTML_MEDIA_RE = /<(?:img|video|audio|source)\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>/gi;
-const HTML_ALT_RE = /\balt\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
+// Whole attribute names: \bsrc would also match the end of data-src.
+const HTML_MEDIA_RE = /<(?:img|video|audio|source)\b[^>]*?\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>/gi;
+const HTML_ALT_RE = /\salt\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
 
 /** Lines that start a block of their own rather than continue a paragraph. */
 const BLOCK_START = /^\s{0,3}(?:#{1,6}\s|>|[-*+]\s|\d+[.)]\s|\|)/;

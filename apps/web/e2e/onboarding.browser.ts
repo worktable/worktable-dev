@@ -338,6 +338,7 @@ for (const wakeMethod of ["webhook", "email"] as const)
     })
     linkReady = false
     await page.reload({ waitUntil: "domcontentloaded" })
+    await page.getByRole("button", { name: /^Always-on agents/ }).click()
     await page.getByRole("tab", { name: "Grok Bot", exact: true }).click()
     await page.getByText("Connection settings", { exact: true }).click()
     await page.getByRole("combobox", { name: "Notify Grok using" }).click()

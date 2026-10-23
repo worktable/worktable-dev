@@ -76,9 +76,8 @@ Install its Worktable plugin:
 openclaw plugins install clawhub:@worktable/openclaw
 ```
 
-For local or self-hosted Worktable, run `openclaw worktable connect --server
-
-<address>` and approve the agent at the link it prints, or generate a
+For local or self-hosted Worktable, run
+`openclaw worktable connect --server <address>` and approve the agent at the link it prints, or generate a
 single-use pairing command in Settings. For Cloud, run the displayed Agent Registration
 command and complete the claim in the browser. The OpenClaw plugin includes
 Worktable skills; a separate skills installation is unnecessary.
@@ -161,8 +160,9 @@ Worktable sign-in. Grok's own approval prompts and account limits still apply.
 Select **Pause** to stop new claims and **Resume** to accept them again.
 Choose a **Bot name** during setup or edit it under **Connection settings**.
 Renaming keeps the existing connection and threads. Each connection represents
-one Grok account. In Settings, select **Add another Grok account** to connect a
-different account; use the sign-in selector to return to an existing connection.
+one Grok account. Connected Bots appear with the other **Connected agents**;
+select **Edit** for their routine settings. To connect another account, use
+**Always-on agents → Grok Bot** again.
 
 Under **Connection settings**, you can also switch methods and run a fresh connection
 check. Only the selected method sends wakes; update the existing routine with

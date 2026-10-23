@@ -51,7 +51,10 @@ const WorktableLinkSetup = lazy(() =>
     default: module.CloudSection,
   }))
 )
-const STATUS: Record<GrokBotConnection["status"], string> = {
+export const GROK_BOT_STATUS_LABELS: Record<
+  GrokBotConnection["status"],
+  string
+> = {
   configured: "Needs a connection check",
   checking: "Checking…",
   ready: "Connected",
@@ -115,10 +118,14 @@ export function GrokBotSetupPanel({
   connection,
   open,
   onConnected,
+  connectionId,
+  onRemoved,
 }: {
   connection: ConnectionInfo
   open: boolean
   onConnected?: (candidate: GrokBotCandidate, saved: GrokBotConnection) => void
+  connectionId?: string
+  onRemoved?: () => void
 }) {
   const client = useQueryClient()
   const cloud = connection.mcpAuthMode === "oauth"
@@ -129,14 +136,18 @@ export function GrokBotSetupPanel({
     enabled: open,
   })
   const [selected, setSelected] = useState("")
-  const adding = selected === "new-account"
-  const previousAccounts = useRef(new Set<string>())
   const [step, setStep] = useState<number | null>(null)
   const [linkSetup, setLinkSetup] = useState(false)
-  const candidates = inventory.data?.grokBotCandidates ?? []
-  const candidate = adding
-    ? undefined
-    : (candidates.find((item) => item.id === selected) ?? candidates[0])
+  const candidates = (inventory.data?.grokBotCandidates ?? []).filter((item) =>
+    connectionId
+      ? item.id === connectionId
+      : onConnected ||
+        !inventory.data?.grokBots?.some(
+          (bot) => bot.connectionId === item.id && bot.verifiedAt
+        )
+  )
+  const candidate =
+    candidates.find((item) => item.id === selected) ?? candidates[0]
   const saved = inventory.data?.grokBots?.find(
     (item) => item.connectionId === candidate?.id
   )
@@ -161,20 +172,15 @@ export function GrokBotSetupPanel({
   }, [candidate, saved, onConnected])
   const refresh = async () => {
     const result = await inventory.refetch()
-    const accounts = result.data?.grokBotCandidates ?? []
-    if (adding) {
-      const next = accounts.find(
-        (item) => !previousAccounts.current.has(item.id)
+    if (
+      result.data?.grokBotCandidates?.some(
+        (item) =>
+          !result.data?.grokBots?.some(
+            (bot) => bot.connectionId === item.id && bot.verifiedAt
+          )
       )
-      if (next) {
-        setSelected(next.id)
-        setStep(null)
-      } else {
-        toast.info(
-          "No new account yet. Connect from another Grok account, then refresh."
-        )
-      }
-    } else if (accounts.length) setStep(null)
+    )
+      setStep(null)
   }
   if (inventory.isPending)
     return (
@@ -192,7 +198,7 @@ export function GrokBotSetupPanel({
       </Callout>
     )
   const signIn =
-    !adding && candidates.length > 1 ? (
+    !connectionId && candidates.length > 1 ? (
       <Select
         value={candidate?.id ?? ""}
         onValueChange={(value) => {
@@ -223,6 +229,8 @@ export function GrokBotSetupPanel({
         onStep={setStep}
         onChanged={changed}
         onboarding={Boolean(onConnected)}
+        onRemoved={onRemoved}
+        settingsInitiallyOpen={Boolean(connectionId)}
       />
     ) : null
   return (
@@ -242,9 +250,7 @@ export function GrokBotSetupPanel({
             {mcpUrl ? (
               <>
                 <p className="text-sm text-muted-foreground">
-                  {adding
-                    ? "Send this from another Grok account, then authorize Worktable."
-                    : "Send this in Grok Bot, then authorize Worktable."}
+                  Send this in Grok Bot, then authorize Worktable.
                 </p>
                 <CopyField
                   label="Message to Grok Bot"
@@ -343,27 +349,6 @@ export function GrokBotSetupPanel({
           )}
         </ol>
       )}
-      {!onConnected && candidates.length > 0 && (
-        <div>
-          <Button
-            variant="outline"
-            onClick={() => {
-              if (adding) {
-                setSelected("")
-                setStep(null)
-              } else {
-                previousAccounts.current = new Set(
-                  candidates.map((item) => item.id)
-                )
-                setSelected("new-account")
-                setStep(1)
-              }
-            }}
-          >
-            {adding ? "Back to connections" : "Add another Grok account"}
-          </Button>
-        </div>
-      )}
     </div>
   )
 }
@@ -376,6 +361,8 @@ function GrokBotRoutine({
   onStep,
   onChanged,
   onboarding,
+  onRemoved,
+  settingsInitiallyOpen,
 }: {
   candidate: GrokBotCandidate
   saved?: GrokBotConnection
@@ -384,12 +371,14 @@ function GrokBotRoutine({
   onStep: (step: number | null) => void
   onChanged: () => Promise<void>
   onboarding: boolean
+  onRemoved?: () => void
+  settingsInitiallyOpen?: boolean
 }) {
   const id = useId()
   const navigate = useNavigate()
   const mobile = useIsMobile()
   const [name, setName] = useState(
-    candidate.displayName.trim().toLowerCase() === "cursor"
+    !saved && candidate.displayName.trim().toLowerCase() === "cursor"
       ? "Grok Bot"
       : candidate.displayName
   )
@@ -469,6 +458,7 @@ function GrokBotRoutine({
           setUrl("")
           setKey("")
           setEmail("")
+          onRemoved?.()
         }
         setConfirmRetry(false)
       } finally {
@@ -677,7 +667,7 @@ function GrokBotRoutine({
       description="The previous run may have completed. Retrying could repeat its work."
       confirmLabel="Retry assignment"
       loading={action.isPending}
-      onConfirm={() => action.mutateAsync("retry")}
+      onConfirm={() => action.mutate("retry")}
     />
   )
   const valid = Boolean(
@@ -697,7 +687,9 @@ function GrokBotRoutine({
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="font-medium">{candidate.displayName}</span>
-          <Badge variant="secondary">{STATUS[saved.status]}</Badge>
+          <Badge variant="secondary">
+            {GROK_BOT_STATUS_LABELS[saved.status]}
+          </Badge>
         </div>
         {attention}
         {!onboarding && (
@@ -726,7 +718,11 @@ function GrokBotRoutine({
           </div>
         )}
         {onboarding && retry}
-        <Disclosure title="Connection settings" keepMounted>
+        <Disclosure
+          title="Connection settings"
+          keepMounted
+          defaultOpen={settingsInitiallyOpen}
+        >
           <form
             className="flex flex-col gap-4"
             onSubmit={(event) => {

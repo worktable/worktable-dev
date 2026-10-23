@@ -99,7 +99,10 @@ import { AgentAccessFields } from "@/components/agents/agent-access-fields"
 import { AgentAvatar } from "@/components/agents/agent-avatar"
 import { AgentEditDialog } from "@/components/agents/agent-edit-dialog"
 import { DesktopAgentSkillsGroup } from "./desktop-agent-skills"
-import { GrokBotSetupPanel } from "@/components/agents/grok-bot-setup"
+import {
+  GrokBotSetupPanel,
+  GROK_BOT_STATUS_LABELS,
+} from "@/components/agents/grok-bot-setup"
 import {
   AGENT_SETUP_CATEGORIES,
   AgentSetupCategory,
@@ -1221,12 +1224,19 @@ export function ConnectedAgentsGroup() {
             entry.participantId === connection.participant.id) ||
           (clientId && entry.connectionId.startsWith(`oauth:${clientId}:`))
       )
-      if (grok)
-        await fetchJSON(
-          `/api/grok-bot/${encodeURIComponent(grok.connectionId)}/configuration?scope=workspace`,
-          { method: "DELETE" }
-        )
-      return disconnectAgentConnection(id)
+      const cleaned = grok
+        ? await fetchJSON(
+            `/api/grok-bot/${encodeURIComponent(grok.connectionId)}/configuration?scope=workspace`,
+            { method: "DELETE" }
+          ).then(
+            () => true,
+            () => false
+          )
+        : true
+      const result = await disconnectAgentConnection(id)
+      if (!cleaned)
+        toast.warning("Agent disconnected. Could not remove its Grok routine.")
+      return result
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
@@ -1257,7 +1267,40 @@ export function ConnectedAgentsGroup() {
       ),
   })
   const [editing, setEditing] = useState<AgentConnection | null>(null)
+  const [editingGrok, setEditingGrok] = useState<string | null>(null)
   const connections = connectionsQuery.data?.connections ?? []
+  const grokBots = connectionsQuery.data?.grokBots ?? []
+  const candidates = connectionsQuery.data?.grokBotCandidates ?? []
+  const botForConnection = (connection: AgentConnection) =>
+    grokBots.find(
+      (bot) =>
+        bot.participantId === connection.participant?.id ||
+        (connection.authKind === "oauth" &&
+          connection.target.kind === "mcp-client" &&
+          connection.target.clientId &&
+          bot.connectionId.startsWith(`oauth:${connection.target.clientId}:`))
+    )
+  const rows = [
+    ...connections.map((connection) => ({
+      connection,
+      grok: botForConnection(connection),
+    })),
+    ...grokBots
+      .filter(
+        (bot) =>
+          !connections.some(
+            (connection) =>
+              botForConnection(connection)?.connectionId === bot.connectionId
+          )
+      )
+      .map((grok) => ({ connection: undefined, grok })),
+  ]
+  const editingCandidate = candidates.find(
+    (candidate) => candidate.id === editingGrok
+  )
+  const editingConnection = connections.find(
+    (connection) => botForConnection(connection)?.connectionId === editingGrok
+  )
   const oauthInventoryUnavailable =
     (connectionsQuery.data?.unavailableAuthKinds?.length ?? 0) > 0
   return (
@@ -1281,25 +1324,32 @@ export function ConnectedAgentsGroup() {
             <p className="text-sm text-muted-foreground">
               Owner access required.
             </p>
-          ) : connections.length === 0 ? (
+          ) : rows.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               No agents connected yet.
             </p>
           ) : (
             <ul className="flex flex-col gap-2">
-              {connections.map((connection) => {
-                const name = agentConnectionName(connection)
-                const platform = agentConnectionPlatform(connection)
+              {rows.map(({ connection, grok }) => {
+                const candidate = candidates.find(
+                  (candidate) => candidate.id === grok?.connectionId
+                )
+                const name =
+                  candidate?.displayName ??
+                  (connection ? agentConnectionName(connection) : "Grok Bot")
+                const platform = grok
+                  ? "grok-bot"
+                  : agentConnectionPlatform(connection!)
                 const platformName = AGENT_PLATFORMS[platform].name
                 return (
                   <li
-                    key={connection.id}
+                    key={connection?.id ?? grok!.connectionId}
                     className="flex min-h-14 items-center gap-3 rounded-xl bg-surface-inset px-3 py-2"
                   >
                     <AgentAvatar
                       name={name}
                       platform={platform}
-                      icon={connection.icon}
+                      icon={connection?.icon}
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -1307,7 +1357,7 @@ export function ConnectedAgentsGroup() {
                           {name}
                         </span>
                         <Badge variant="secondary">
-                          {connection.mode === "always-on"
+                          {grok || connection?.mode === "always-on"
                             ? "Always-on"
                             : "On-demand"}
                         </Badge>
@@ -1316,25 +1366,32 @@ export function ConnectedAgentsGroup() {
                         {platform !== "other" && platformName !== name
                           ? `${platformName} · `
                           : ""}
-                        {connection.machine ? `${connection.machine} · ` : ""}
-                        {connection.lastSeenAt
-                          ? `Last seen ${timeAgo(connection.lastSeenAt)}`
-                          : "Not used yet"}
+                        {connection?.machine ? `${connection.machine} · ` : ""}
+                        {grok
+                          ? GROK_BOT_STATUS_LABELS[grok.status]
+                          : connection?.lastSeenAt
+                            ? `Last seen ${timeAgo(connection.lastSeenAt)}`
+                            : "Not used yet"}
                       </p>
                     </div>
-                    {connection.canManage !== false &&
-                    (connection.authKind === "local-token" ||
-                      (connection.authKind === "oauth" &&
+                    {connection?.canManage !== false &&
+                    (grok ||
+                      connection?.authKind === "local-token" ||
+                      (connection?.authKind === "oauth" &&
                         connection.access)) ? (
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setEditing(connection)}
+                        onClick={() =>
+                          grok
+                            ? setEditingGrok(grok.connectionId)
+                            : setEditing(connection!)
+                        }
                       >
                         Edit
                       </Button>
                     ) : null}
-                    {connection.canReconnect && (
+                    {connection?.canReconnect && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -1344,16 +1401,18 @@ export function ConnectedAgentsGroup() {
                         Reconnect
                       </Button>
                     )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={
-                        disconnect.isPending || connection.canManage === false
-                      }
-                      onClick={() => disconnect.mutate(connection.id)}
-                    >
-                      Disconnect
-                    </Button>
+                    {connection && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={
+                          disconnect.isPending || connection.canManage === false
+                        }
+                        onClick={() => disconnect.mutate(connection.id)}
+                      >
+                        Disconnect
+                      </Button>
+                    )}
                   </li>
                 )
               })}
@@ -1367,6 +1426,55 @@ export function ConnectedAgentsGroup() {
           if (!open) setEditing(null)
         }}
       />
+      <ResponsiveDialog
+        open={Boolean(editingGrok)}
+        onOpenChange={(open) => {
+          if (!open) setEditingGrok(null)
+        }}
+      >
+        <ResponsiveDialogContent>
+          <ResponsiveDialogHeader>
+            <AgentAvatar
+              name={editingCandidate?.displayName ?? "Grok Bot"}
+              platform="grok-bot"
+              className="mb-1 size-10"
+            />
+            <ResponsiveDialogTitle>
+              {editingCandidate?.displayName ?? "Grok Bot"}
+            </ResponsiveDialogTitle>
+            <ResponsiveDialogDescription>Grok Bot</ResponsiveDialogDescription>
+          </ResponsiveDialogHeader>
+          <ResponsiveDialogBody>
+            {editingGrok && systemConnection.data && (
+              <GrokBotSetupPanel
+                key={editingGrok}
+                connection={systemConnection.data}
+                connectionId={editingGrok}
+                open
+                onRemoved={() => setEditingGrok(null)}
+              />
+            )}
+          </ResponsiveDialogBody>
+          <ResponsiveDialogFooter>
+            {editingConnection &&
+              (editingConnection.authKind === "local-token" ||
+                editingConnection.access) && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setEditingGrok(null)
+                    setEditing(editingConnection)
+                  }}
+                >
+                  Access and avatar
+                </Button>
+              )}
+            <Button variant="outline" onClick={() => setEditingGrok(null)}>
+              Close
+            </Button>
+          </ResponsiveDialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
     </section>
   )
 }

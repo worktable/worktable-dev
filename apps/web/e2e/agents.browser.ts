@@ -66,7 +66,6 @@ test("a connected Grok account stays editable while another account is added", a
       verifiedAt: "2026-10-23T00:00:00Z",
     },
   ]
-  await page.setViewportSize({ width: 390, height: 844 })
   await page.route("**/api/system/connection", (route) =>
     route.fulfill({ json: connection })
   )
@@ -107,24 +106,21 @@ test("a connected Grok account stays editable while another account is added", a
     return route.fulfill({ json: { ok: true } })
   })
   await openAgents(page)
+  await page.setViewportSize({ width: 390, height: 844 })
   const dialog = page.getByRole("dialog")
-  await dialog.getByRole("button", { name: /^Always-on agents/ }).click()
-  await dialog.getByRole("tab", { name: "Grok Bot", exact: true }).click()
-  await expect(dialog.getByText("Comet", { exact: true })).toBeVisible()
-  await dialog
-    .getByRole("button", { name: "Connection settings", exact: true })
-    .click()
-  await expect(dialog.getByLabel("Bot name", { exact: true })).toHaveValue(
+  const connected = dialog.getByRole("region", { name: "Connected agents" })
+  const comet = connected.getByRole("listitem").filter({ hasText: "Comet" })
+  await comet.getByRole("button", { name: "Edit", exact: true }).click()
+  await expect(page.getByLabel("Bot name", { exact: true })).toHaveValue(
     "Comet"
   )
-  await dialog
-    .getByRole("button", { name: "Add another Grok account", exact: true })
-    .click()
+  await page.getByRole("button", { name: "Close", exact: true }).click()
+  await dialog.getByRole("button", { name: /^Always-on agents/ }).click()
+  await dialog.getByRole("tab", { name: "Grok Bot", exact: true }).click()
   await expect(
-    dialog.getByText(
-      "Send this from another Grok account, then authorize Worktable.",
-      { exact: true }
-    )
+    dialog.getByText("Send this in Grok Bot, then authorize Worktable.", {
+      exact: true,
+    })
   ).toBeVisible()
   await dialog.getByRole("button", { name: "Continue", exact: true }).click()
   await dialog
@@ -145,21 +141,28 @@ test("a connected Grok account stays editable while another account is added", a
   await dialog
     .getByRole("button", { name: "Save and check", exact: true })
     .click()
-  await expect(dialog.getByText("Connected", { exact: true })).toBeVisible()
+  const orbit = connected.getByRole("listitem").filter({ hasText: "Orbit" })
+  await expect(orbit).toContainText("Connected")
+  await expect(comet).toContainText("Connected")
+  await orbit.getByRole("button", { name: "Edit", exact: true }).click()
+  await expect(page.getByLabel("Bot name", { exact: true })).toHaveValue(
+    "Orbit"
+  )
   await expect(
-    dialog.getByRole("combobox", { name: "Grok Bot sign-in" })
-  ).toHaveText("Orbit")
-  await dialog.getByRole("combobox", { name: "Grok Bot sign-in" }).click()
-  await page.getByRole("option", { name: "Comet", exact: true }).click()
-  await dialog
-    .getByRole("button", { name: "Connection settings", exact: true })
-    .click()
-  await expect(dialog.getByLabel("Bot name", { exact: true })).toHaveValue(
+    page.getByLabel("Bot email address", { exact: true })
+  ).toHaveValue("orbit@mail.grokbot.com")
+  await page.screenshot({
+    path: testInfo.outputPath("grok-connection-settings-mobile.png"),
+  })
+  await page.getByRole("button", { name: "Close", exact: true }).click()
+  await comet.getByRole("button", { name: "Edit", exact: true }).click()
+  await expect(page.getByLabel("Bot name", { exact: true })).toHaveValue(
     "Comet"
   )
   await expect(
-    dialog.getByLabel("Bot email address", { exact: true })
+    page.getByLabel("Bot email address", { exact: true })
   ).toHaveValue("comet@mail.grokbot.com")
+  await page.getByRole("button", { name: "Close", exact: true }).click()
   await page.screenshot({
     path: testInfo.outputPath("grok-multiple-accounts.png"),
   })
@@ -168,6 +171,8 @@ test("a connected Grok account stays editable while another account is added", a
 test("Cloud shows equivalent setup and inventory without touching local credential routes", async ({
   page,
 }) => {
+  let disconnected = false
+  let grokConfigured = false
   const forbiddenRequests: string[] = []
   let topLevelNavigations = 0
   page.on("request", (request) => {
@@ -193,21 +198,33 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
     route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        connections: [
-          {
-            id: "oauth:conn_app_claude",
-            authKind: "oauth",
-            displayName: "Claude",
-            target: { kind: "mcp-client", clientId: "conn_app_claude" },
-            mode: "on-demand",
-            participant: null,
-            machine: null,
-            scopes: ["docs:read"],
-            connectedAt: null,
-            lastSeenAt: null,
-            permissionGroups: null,
-          },
-        ],
+        grokBots: grokConfigured
+          ? [
+              {
+                connectionId: "oauth:conn_app_claude:owner",
+                participantId: "ptc_bot",
+                status: "ready",
+                enabled: true,
+              },
+            ]
+          : [],
+        connections: disconnected
+          ? []
+          : [
+              {
+                id: "oauth:conn_app_claude",
+                authKind: "oauth",
+                displayName: "Claude",
+                target: { kind: "mcp-client", clientId: "conn_app_claude" },
+                mode: "on-demand",
+                participant: null,
+                machine: null,
+                scopes: ["docs:read"],
+                connectedAt: null,
+                lastSeenAt: null,
+                permissionGroups: null,
+              },
+            ],
       }),
     })
   )
@@ -249,6 +266,29 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
   expect(forbiddenRequests).toEqual([])
   expect(page.url()).toBe(originalUrl)
   expect(topLevelNavigations).toBe(navigationsAfterOpen)
+  grokConfigured = true
+  await openAgents(page)
+  await page.route("**/api/grok-bot/**", (route) =>
+    route.fulfill({ status: 503, json: { error: "Cleanup unavailable" } })
+  )
+  await page.route(
+    "**/api/agent-connections/oauth%3Aconn_app_claude",
+    (route) => {
+      expect(route.request().method()).toBe("DELETE")
+      disconnected = true
+      return route.fulfill({ json: { ok: true } })
+    }
+  )
+  await dialog.getByRole("button", { name: "Disconnect", exact: true }).click()
+  await expect(
+    dialog.getByRole("button", { name: "Disconnect", exact: true })
+  ).toHaveCount(0)
+  await expect(
+    page.getByText("Agent disconnected. Could not remove its Grok routine.", {
+      exact: true,
+    })
+  ).toBeVisible()
+  expect(disconnected).toBe(true)
 })
 
 test("local setup uses one disclosure at a time and separates connection management", async ({

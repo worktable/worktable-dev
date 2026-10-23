@@ -12,14 +12,16 @@ export function Disclosure({
   children,
   className,
   keepMounted,
+  defaultOpen,
 }: {
   title: ReactNode
   children: ReactNode
   className?: string
   keepMounted?: boolean
+  defaultOpen?: boolean
 }) {
   return (
-    <Collapsible className={cn("text-sm", className)}>
+    <Collapsible className={cn("text-sm", className)} defaultOpen={defaultOpen}>
       <CollapsibleTrigger className="flex min-h-11 w-full items-center gap-2 text-left text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none [&[data-panel-open]>svg]:rotate-90">
         <ChevronRight
           aria-hidden

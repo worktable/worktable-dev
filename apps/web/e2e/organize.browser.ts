@@ -75,6 +75,9 @@ test("folder creation keeps Docs, drawings, and HTML docs in the chosen folder",
   })
   await page.getByRole("menuitem", { name: "Doc", exact: true }).click()
   await expect(page).toHaveURL(/documents\/plans\/nested\/untitled$/)
+  // The route changes before the new Doc loads and focuses its title. Let
+  // that initial focus finish before opening another creation menu.
+  await expect(page.locator('[contenteditable="true"]')).toBeFocused()
 
   await nestedNew.click()
   await page.getByRole("menuitem", { name: "Drawing", exact: true }).click()

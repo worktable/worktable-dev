@@ -44,9 +44,11 @@ import {
 import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
+  withoutSuffix,
   type DocumentFormatRegistry,
 } from "./document-format-registry.ts"
 import { storedDocTitle } from "./doc-title-text.ts"
+import { filesPreviewEnabled } from "./files-preview.ts"
 import {
   DOCUMENT_STORAGE_PROFILE_IDS,
   documentStorageProfiles,
@@ -432,9 +434,9 @@ function registeredFileLogicalPath(
   ) {
     return null
   }
-  return claim.source.relativePath.slice(
-    "docs/".length,
-    -registration.source.extension.length
+  return withoutSuffix(
+    claim.source.relativePath.slice("docs/".length),
+    registration.source.extension
   )
 }
 
@@ -970,7 +972,7 @@ async function buildDocumentCatalogFromFiles(
     registry
   )
   options.signal?.throwIfAborted()
-  const merged = await inventoryClaims(
+  const inventoried = await inventoryClaims(
     spaceRoot,
     spaceId,
     legacyClaims,
@@ -979,6 +981,16 @@ async function buildDocumentCatalogFromFiles(
     lstatPath,
     options.signal
   )
+  // With files off, files that gained an identity while they were on take no
+  // part in the Space: not listed, and in no conflict with a Doc's path.
+  const merged = filesPreviewEnabled()
+    ? inventoried
+    : {
+        ...inventoried,
+        claims: inventoried.claims.filter(
+          (claim) => claim.format.id !== BUILTIN_DOCUMENT_FORMATS.file
+        ),
+      }
   const htmlProperties = new Map<DocumentId, HtmlDocumentPropertiesRead | null>()
   const htmlClaims = merged.claims.filter(
     (claim) =>

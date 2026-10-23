@@ -926,6 +926,69 @@ describe("format-neutral document route", () => {
     await writeFile(docsMetaPath, validDocMeta)
   }, 10_000)
 
+  it("moves, archives, restores and deletes a plain file once files are on", async () => {
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    try {
+      const instance = app()
+      const docs = join(root, "spaces", spaceId, "docs")
+      await mkdir(join(docs, "notes", "readme"), { recursive: true })
+      await writeFile(join(docs, "notes", "readme", "error.png"), "png bytes")
+      noteSpaceChanged(spaceId)
+      const post = (action: string, body: unknown) =>
+        instance.request(`/api/spaces/${spaceId}/documents/${action}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        })
+      const fileEntry = async (path: string) =>
+        (
+          await buildDocumentCatalog({ workspaceRoot: root, spaceId })
+        ).entries.find(
+          (entry) => entry.kind === "document" && entry.descriptor.path === path
+        )
+
+      // Nothing under a hidden name is a file, so a file can't move there.
+      const hiddenMove = await post("move", {
+        path: "notes/readme/error.png",
+        to: ".private/error.png",
+      })
+      expect(hiddenMove.status).toBe(409)
+      expect(
+        await readFile(join(docs, "notes", "readme", "error.png"), "utf8")
+      ).toBe("png bytes")
+
+      const moved = await post("move", {
+        path: "notes/readme/error.png",
+        to: "design/error.png",
+      })
+      expect(moved.status).toBe(200)
+      expect(await readFile(join(docs, "design", "error.png"), "utf8")).toBe(
+        "png bytes"
+      )
+      expect(await fileEntry("notes/readme/error.png")).toBeUndefined()
+      const entry = await fileEntry("design/error.png")
+      expect(entry?.kind === "document" && entry.descriptor.format.id).toBe(
+        "worktable.file"
+      )
+
+      expect((await post("archive", { path: "design/error.png" })).status).toBe(
+        200
+      )
+      expect((await post("restore", { path: "design/error.png" })).status).toBe(
+        200
+      )
+      expect((await post("delete", { path: "design/error.png" })).status).toBe(
+        200
+      )
+      await expect(access(join(docs, "design", "error.png"))).rejects.toThrow()
+      expect(await fileEntry("design/error.png")).toBeUndefined()
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
+
   it("deletes mixed folders with common write authority while preserving unclaimed files", async () => {
     const instance = app()
     const forbiddenDelete = await instance.request(

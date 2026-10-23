@@ -37,6 +37,9 @@ export interface PreparedDocumentWrite {
  * The canonical on-disk shape for a format stored as one managed file under
  * a space's docs directory. The discovery version applies before a durable
  * inventory claim exists.
+ *
+ * The file format's extension is empty: it claims any file no other format
+ * does, and its logical path is the whole name, extension included.
  */
 export interface RegisteredDocumentFileSource {
   extension: string
@@ -117,12 +120,17 @@ function compareStrings(a: string, b: string): number {
 export class DocumentFormatRegistry {
   readonly #byId = new Map<DocumentFormatId, ServerDocumentFormatRegistration>()
   readonly #byExtension = new Map<string, ServerDocumentFormatRegistration>()
+  #anyFile: ServerDocumentFormatRegistration | undefined
 
   constructor(registrations: readonly ServerDocumentFormatRegistration[]) {
     for (const adapter of registrations) {
       const id = DocumentFormatIdSchema.parse(adapter.id)
       if (this.#byId.has(id)) {
         throw new Error(`duplicate document format id: ${id}`)
+      }
+      if (adapter.fileSource?.extension === "") {
+        this.#registerAnyFile(id, adapter)
+        continue
       }
       if (
         adapter.sourceVersions.length === 0 ||
@@ -228,6 +236,26 @@ export class DocumentFormatRegistry {
     }
   }
 
+  #registerAnyFile(
+    id: DocumentFormatId,
+    adapter: ServerDocumentFormatRegistration
+  ): void {
+    if (
+      this.#anyFile ||
+      adapter.extensions.length > 0 ||
+      !adapter.sourceVersions.includes(adapter.fileSource!.discoveryVersion) ||
+      adapter.rendererKey !== null ||
+      adapter.renderDisposition !==
+        DOCUMENT_RENDER_DISPOSITIONS.attachmentOnly ||
+      adapter.prepareWrite
+    ) {
+      throw new Error(`invalid any-file document format: ${id}`)
+    }
+    const normalized = { ...adapter, id }
+    this.#byId.set(id, normalized)
+    this.#anyFile = normalized
+  }
+
   get(formatId: string): ServerDocumentFormatRegistration | undefined {
     return this.#byId.get(formatId as DocumentFormatId)
   }
@@ -256,7 +284,10 @@ export class DocumentFormatRegistry {
     return { registration: adapter, source: adapter.fileSource }
   }
 
-  fileSourceForFilename(filename: string):
+  fileSourceForFilename(
+    filename: string,
+    options: { anyFile?: boolean } = {}
+  ):
     | {
         registration: ServerDocumentFormatRegistration
         source: RegisteredDocumentFileSource
@@ -266,11 +297,17 @@ export class DocumentFormatRegistry {
     // forFilename lookup remains case-insensitive for import classification.
     for (const adapter of this.#byId.values()) {
       if (
+        adapter !== this.#anyFile &&
         adapter.fileSource &&
         filename.endsWith(adapter.fileSource.extension)
       ) {
         return { registration: adapter, source: adapter.fileSource }
       }
+    }
+    // Any other file, once files are on: callers decide, because discovery
+    // follows the files preview and the registry reads no settings.
+    if (options.anyFile && this.#anyFile && !isHiddenName(filename)) {
+      return { registration: this.#anyFile, source: this.#anyFile.fileSource! }
     }
     return undefined
   }
@@ -301,11 +338,27 @@ export class DocumentFormatRegistry {
   }
 }
 
+/** A name without a registered extension; the file format's is empty. */
+export function withoutSuffix(name: string, extension: string): string {
+  return extension ? name.slice(0, -extension.length) : name
+}
+
+/** Hidden names (a leading dot) never hold files. */
+export function isHiddenName(name: string): boolean {
+  return name.startsWith(".")
+}
+
+/** Whether a path names or passes through something hidden. */
+export function pathIsHidden(path: string): boolean {
+  return path.split("/").some(isHiddenName)
+}
+
 export const BUILTIN_DOCUMENT_FORMATS = {
   markdown: "worktable.markdown",
   richText: "worktable.rich-text",
   html: "worktable.html",
   excalidraw: "worktable.excalidraw",
+  file: "worktable.file",
 } as const satisfies Record<string, DocumentFormatId>
 
 export const BUILTIN_DOCUMENT_COMPANIONS = {
@@ -417,6 +470,22 @@ export function createBuiltinDocumentFormatRegistry(): DocumentFormatRegistry {
       extensions: [".excalidraw"],
       sourceVersions: [1],
       fileSource: { extension: ".excalidraw", discoveryVersion: 1 },
+      rendererKey: null,
+      renderDisposition: DOCUMENT_RENDER_DISPOSITIONS.attachmentOnly,
+      capabilities: {
+        authoring: "none",
+        publicProjection: "none",
+        execution: "none",
+      },
+      versionedCompanionKeys: [],
+      portableState: "none",
+    },
+    {
+      // Any other file. Its path keeps its whole name, extension included.
+      id: BUILTIN_DOCUMENT_FORMATS.file,
+      extensions: [],
+      sourceVersions: [1],
+      fileSource: { extension: "", discoveryVersion: 1 },
       rendererKey: null,
       renderDisposition: DOCUMENT_RENDER_DISPOSITIONS.attachmentOnly,
       capabilities: {

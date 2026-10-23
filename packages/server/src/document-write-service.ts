@@ -45,6 +45,7 @@ import {
 import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
+  pathIsHidden,
   type DocumentFormatRegistry,
   type ServerDocumentFormatRegistration,
 } from "./document-format-registry.ts"
@@ -813,6 +814,12 @@ export async function createRegisteredDocument(options: {
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   const path = requirePortablePath(options.path)
+  if (
+    options.format.id === BUILTIN_DOCUMENT_FORMATS.file &&
+    pathIsHidden(path)
+  ) {
+    throw new DocumentWriteError("invalid", "Files can't go in hidden folders")
+  }
   const registration = writableRegistration(registry, options.format)
   const bytes = await preparedBytes(registration, options.format, options.bytes)
 

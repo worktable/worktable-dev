@@ -19,6 +19,7 @@ import { createToken } from "./token-store.ts";
 import { setOwnerPassword } from "./session-store.ts";
 import { configuredMcpSurface } from "./mcp/surface.ts";
 import { sharingPreviewEnabled } from "./sharing-preview.ts";
+import { filesPreviewEnabled } from "./files-preview.ts";
 
 let appDir: string;
 let workspaceDir: string;
@@ -197,6 +198,35 @@ describe("preview sharing features", () => {
   });
 });
 
+describe("preview file features", () => {
+  afterEach(() => {
+    delete process.env["WORKTABLE_FILES_PREVIEW"];
+    delete process.env["WORKTABLE_HOSTED"];
+  });
+
+  it("are off until the owner turns them on, follow the environment, and stay off on Cloud", async () => {
+    const capability = async () => ((await (await app().request("/api/system/deployment")).json()) as DeploymentInfo).capabilities.filesPreview;
+    expect(filesPreviewEnabled()).toBe(false);
+    expect(await capability()).toBe(false);
+
+    const turnOn = await app().request("/api/system/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ files: { preview: true } }),
+    });
+    expect(turnOn.status).toBe(200);
+    invalidateServerSettingsCache();
+    expect(await capability()).toBe(true);
+    await expect(updateServerSettings({ files: { other: true } } as never)).rejects.toThrow("Unknown files field: other");
+
+    process.env["WORKTABLE_FILES_PREVIEW"] = "0";
+    expect(filesPreviewEnabled()).toBe(false);
+    delete process.env["WORKTABLE_FILES_PREVIEW"];
+    process.env["WORKTABLE_HOSTED"] = "1";
+    expect(filesPreviewEnabled()).toBe(false);
+  });
+});
+
 describe("GET /api/system/settings", () => {
   it("returns full settings without an owner gate", async () => {
     const res = await app().fetch(new Request("http://localhost/api/system/settings"));
@@ -205,6 +235,7 @@ describe("GET /api/system/settings", () => {
       ...SETTINGS_DEFAULTS,
       agents: { ...SETTINGS_DEFAULTS.agents, previewToolsOverride: null },
       sharing: { ...SETTINGS_DEFAULTS.sharing, previewOverride: null },
+      files: { ...SETTINGS_DEFAULTS.files, previewOverride: null },
     });
   });
 });

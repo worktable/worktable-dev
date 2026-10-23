@@ -107,6 +107,14 @@ export interface ServerSettings {
      */
     preview: boolean;
   };
+  files: {
+    /**
+     * Run the file features that aren't released yet: any file in a Space's
+     * folder becomes part of it. MACHINE-LOCAL; ignored on Cloud. Read it
+     * through filesPreviewEnabled(), which applies WORKTABLE_FILES_PREVIEW.
+     */
+    preview: boolean;
+  };
 }
 
 export const SETTINGS_DEFAULTS: ServerSettings = {
@@ -119,6 +127,7 @@ export const SETTINGS_DEFAULTS: ServerSettings = {
   history: { retention: RETENTION_CARRIED_OVER, retentionNotice: null },
   agents: { previewTools: false },
   sharing: { preview: false },
+  files: { preview: false },
 };
 
 type StoredRetention =
@@ -257,6 +266,9 @@ function coerce(parsed: unknown): ServerSettings {
   const sharing = (obj["sharing"] && typeof obj["sharing"] === "object"
     ? obj["sharing"]
     : {}) as Record<string, unknown>;
+  const files = (obj["files"] && typeof obj["files"] === "object"
+    ? obj["files"]
+    : {}) as Record<string, unknown>;
   return {
     version: 1,
     updates: {
@@ -277,6 +289,9 @@ function coerce(parsed: unknown): ServerSettings {
     },
     sharing: {
       preview: boolOr(sharing["preview"], SETTINGS_DEFAULTS.sharing.preview),
+    },
+    files: {
+      preview: boolOr(files["preview"], SETTINGS_DEFAULTS.files.preview),
     },
   };
 }
@@ -378,6 +393,7 @@ export interface ServerSettingsPatch {
   history?: { retention?: unknown };
   agents?: { previewTools?: unknown };
   sharing?: { preview?: unknown };
+  files?: { preview?: unknown };
 }
 
 export class SettingsValidationError extends Error {
@@ -512,11 +528,12 @@ async function applyPatchWithResult(
     history: { ...current.history },
     agents: { ...current.agents },
     sharing: { ...current.sharing },
+    files: { ...current.files },
   };
 
   const patchObj = patch as Record<string, unknown>;
   for (const key of Object.keys(patchObj)) {
-    if (key !== "updates" && key !== "editor" && key !== "network" && key !== "history" && key !== "agents" && key !== "sharing") {
+    if (key !== "updates" && key !== "editor" && key !== "network" && key !== "history" && key !== "agents" && key !== "sharing" && key !== "files") {
       throw new SettingsValidationError(`Unknown settings group: ${key}`);
     }
   }
@@ -594,6 +611,25 @@ async function applyPatchWithResult(
     }
     if (group["preview"] !== undefined) {
       next.sharing.preview = assertBool(group["preview"], "sharing.preview");
+    }
+  }
+
+  if (patch.files !== undefined) {
+    if (
+      !patch.files ||
+      typeof patch.files !== "object" ||
+      Array.isArray(patch.files)
+    ) {
+      throw new SettingsValidationError("files must be an object");
+    }
+    const group = patch.files as Record<string, unknown>;
+    for (const key of Object.keys(group)) {
+      if (key !== "preview") {
+        throw new SettingsValidationError(`Unknown files field: ${key}`);
+      }
+    }
+    if (group["preview"] !== undefined) {
+      next.files.preview = assertBool(group["preview"], "files.preview");
     }
   }
 

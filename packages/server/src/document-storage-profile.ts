@@ -68,7 +68,7 @@ const REGISTERED_FILE_PROFILE: DocumentStorageProfile = {
   },
   sourceForLogicalPath(format, logicalPath, registry) {
     const suffix = registeredFileExtension(format, registry)
-    return suffix
+    return suffix !== null
       ? { kind: "file", relativePath: `docs/${logicalPath}${suffix}` }
       : null
   },

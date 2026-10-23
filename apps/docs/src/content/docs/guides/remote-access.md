@@ -127,14 +127,16 @@ Worktable with Link on running while its window shows another Worktable, until
 you quit Desktop. Authorized requests pass through Cloud to the device; Link
 does not copy its workspace into the hosted workspace, synchronize the two, or
 expose the full local interface remotely.
-Each device follows its selected subscription, with up to three devices across
-the payer's account. On a team installation, an operator enables Link and its
+Each device follows its selected subscription: Solo links one device, Team
+three and Business five. **Your Worktables** in Cloud lists each linked Worktable
+with its device and whether it is online. On a team installation, an operator enables Link and its
 AI apps follow that member's Space permissions as personal agents.
 
 Turn off **Worktable Link** to pause AI access and public sharing. Turning it on
 again restores the same MCP URL, share links, and approved connections. You can
 also pause, resume, or disconnect individual apps under **Manage devices**.
 
-**Unlink** ends that device's access. Linking again creates a new MCP URL.
-Replacing the local workspace also requires linking again. Signing out of Cloud
+**Unlink** ends that device's access. Linking the same Worktable again restores
+its MCP URL and the AI apps approved for it, so disconnect any app you don't want
+back before you unlink. Replacing the local workspace also requires linking again. Signing out of Cloud
 in local Settings does not unlink the device; pause or unlink it to stop access.

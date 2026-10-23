@@ -7,11 +7,33 @@ export const LINKED_ASSERTION_ISSUER = "worktable-cloud-linked-access"
 export const LINKED_ASSERTION_TTL_SECONDS = 60
 export const LINKED_REQUEST_MAX_BYTES = 8 * 1024 * 1024
 
+/**
+ * A linked Worktable's address in the account's directory, served at
+ * `/api/mcp/w/<id>` like a hosted one. The prefix keeps it apart from hosted
+ * ids, which never contain an underscore.
+ */
+export const LINKED_WORKTABLE_ID = /^wl_[a-f0-9]{32}$/
+export const isLinkedWorktableId = (id: string): boolean =>
+  LINKED_WORKTABLE_ID.test(id)
+/** A new linked Worktable takes its first device's destination as its id. */
+export const linkedWorktableIdFor = (destinationId: string): string =>
+  `wl_${destinationId}`
+
 export const LinkedEnrollment = z
   .object({
     controlHash: z.string().regex(/^[a-f0-9]{64}$/),
     workspaceEpoch: z.string().min(1).max(256),
     label: z.string().trim().min(1).max(80),
+    /**
+     * The folder's own id from its manifest. Relinking the same folder keeps
+     * its directory entry and address. Devices released before it send none.
+     */
+    localWorkspaceId: z
+      .string()
+      .regex(/^ws_[A-Za-z0-9_-]{1,128}$/)
+      .optional(),
+    /** The folder's Worktable name, for the account's list of Worktables. */
+    localWorkspaceName: z.string().trim().min(1).max(100).optional(),
   })
   .strict()
 
@@ -70,6 +92,8 @@ const LinkedHostReplyBase = z.object({
     .string()
     .regex(/^[a-f0-9]{32}$/)
     .optional(),
+  /** Absent from Cloud versions before the directory; use `/d/` then. */
+  worktableId: z.string().regex(LINKED_WORKTABLE_ID).optional(),
   ownerSubject: z.string().optional(),
   generation: z.number().int().positive().optional(),
   signingKey: z

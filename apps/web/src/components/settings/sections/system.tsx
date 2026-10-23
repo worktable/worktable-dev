@@ -94,7 +94,7 @@ export function SystemSection() {
     <div className="flex flex-col gap-6">
       <AboutGroup />
       {deployment?.capabilities.previewStatus ? <PreviewsGroup /> : null}
-      {owner ? <SharingPreviewGroup /> : null}
+      {owner ? <PreviewFeaturesGroup /> : null}
       {inDesktop && desktopUpdate.isError ? (
         <DesktopUpdateFrame>
           <StatusRow
@@ -299,40 +299,55 @@ function PreviewsGroup() {
   )
 }
 
-// Owners only, and never on Cloud, which ignores the setting. The capability
-// follows the switch, so features that read it update with it.
-function SharingPreviewGroup() {
+// Owners only, and never on Cloud, which ignores the settings. Capabilities
+// follow the switches, so features that read them update with them.
+function PreviewFeaturesGroup() {
   const queryClient = useQueryClient()
   const settingsQuery = useServerSettings()
   const patch = useSettingsPatch()
   const settings = settingsQuery.data
   if (settingsQuery.isError) return null
-  const override = settings?.sharing.previewOverride ?? null
+  const refreshCapabilities = {
+    onSuccess: () =>
+      void queryClient.invalidateQueries({
+        queryKey: DEPLOYMENT_QUERY_KEY,
+        exact: true,
+      }),
+  }
+  const sharingOverride = settings?.sharing.previewOverride ?? null
+  const filesOverride = settings?.files.previewOverride ?? null
   return (
     <section className="flex flex-col gap-3">
-      <div className="rounded-xl card-surface p-4">
+      <div className="flex flex-col gap-3 rounded-xl card-surface p-4">
         <SettingRow
           label="Preview sharing features"
           description={
-            override === null
+            sharingOverride === null
               ? "Try sharing features that aren’t released yet."
               : "Set by WORKTABLE_SHARING_PREVIEW on this server."
           }
         >
           <Switch
-            checked={override ?? settings?.sharing.preview ?? false}
-            disabled={!settings || patch.isPending || override !== null}
+            checked={sharingOverride ?? settings?.sharing.preview ?? false}
+            disabled={!settings || patch.isPending || sharingOverride !== null}
             onCheckedChange={(preview) =>
-              patch.mutate(
-                { sharing: { preview } },
-                {
-                  onSuccess: () =>
-                    void queryClient.invalidateQueries({
-                      queryKey: DEPLOYMENT_QUERY_KEY,
-                      exact: true,
-                    }),
-                }
-              )
+              patch.mutate({ sharing: { preview } }, refreshCapabilities)
+            }
+          />
+        </SettingRow>
+        <SettingRow
+          label="Preview file features"
+          description={
+            filesOverride === null
+              ? "Try file features that aren’t released yet."
+              : "Set by WORKTABLE_FILES_PREVIEW on this server."
+          }
+        >
+          <Switch
+            checked={filesOverride ?? settings?.files.preview ?? false}
+            disabled={!settings || patch.isPending || filesOverride !== null}
+            onCheckedChange={(preview) =>
+              patch.mutate({ files: { preview } }, refreshCapabilities)
             }
           />
         </SettingRow>

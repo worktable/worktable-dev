@@ -537,6 +537,7 @@ describe("GET /api/system/deployment", () => {
         documentSharing: false,
         shareLinks: false,
         sharingPreview: false,
+        filesPreview: false,
       },
     };
     expect(getDeploymentInfo()).toEqual(expected);
@@ -565,6 +566,7 @@ describe("GET /api/system/deployment", () => {
         documentSharing: false,
         shareLinks: false,
         sharingPreview: false,
+        filesPreview: false,
       },
     };
     expect(getDeploymentInfo()).toEqual(expected);

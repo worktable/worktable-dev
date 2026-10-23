@@ -25,6 +25,8 @@ import {
 } from "../settings-store.ts";
 import { mcpPreviewEnvOverride } from "../mcp/surface.ts";
 import { sharingPreviewEnabled, sharingPreviewEnvOverride } from "../sharing-preview.ts";
+import { filesPreviewEnabled, filesPreviewEnvOverride } from "../files-preview.ts";
+import { noteAllSpacesChanged } from "../workspace-read-model.ts";
 import { sharingV2Active } from "../share-links-store.ts";
 import { teamMemberForIdentity } from "../team-policy.ts";
 import { memberAccess } from "../team-access.ts";
@@ -173,6 +175,8 @@ export interface DeploymentInfo {
     shareLinks: boolean;
     /** Sharing features that aren't released yet are on (sharingPreviewEnabled). */
     sharingPreview: boolean;
+    /** File features that aren't released yet are on (filesPreviewEnabled). */
+    filesPreview: boolean;
   };
 }
 
@@ -197,6 +201,7 @@ export function getDeploymentInfo(): DeploymentInfo {
       // Without Teams the only person here is the owner.
       shareLinks: documentSharing && sharingV2Active(),
       sharingPreview: sharingPreviewEnabled(),
+      filesPreview: filesPreviewEnabled(),
     },
   };
 }
@@ -408,6 +413,7 @@ function withEnvironmentOverrides(settings: ServerSettings) {
     ...settings,
     agents: { ...settings.agents, previewToolsOverride: mcpPreviewEnvOverride() },
     sharing: { ...settings.sharing, previewOverride: sharingPreviewEnvOverride() },
+    files: { ...settings.files, previewOverride: filesPreviewEnvOverride() },
   };
 }
 
@@ -444,6 +450,7 @@ systemRouter.put("/settings", async (c) => {
       );
     }
     const sharingPreviewWasOn = sharingPreviewEnabled();
+    const filesPreviewWasOn = filesPreviewEnabled();
     const result = await updateServerSettingsWithResult(body);
     const merged = result.settings;
     // A retention-policy change triggers an immediate full sweep so the new
@@ -468,6 +475,8 @@ systemRouter.put("/settings", async (c) => {
         );
       }
     }
+    // Files on or off changes what every Space lists.
+    if (filesPreviewWasOn !== filesPreviewEnabled()) noteAllSpacesChanged();
     if (!sharingPreviewWasOn && sharingPreviewEnabled()) {
       const { startV1ShareLinkDrain } = await import("../share-links-drain.ts");
       // The response does not wait for catalog discovery or migration I/O.

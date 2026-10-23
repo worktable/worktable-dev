@@ -44,9 +44,11 @@ import {
 import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
+  withoutSuffix,
   type DocumentFormatRegistry,
 } from "./document-format-registry.ts"
 import { storedDocTitle } from "./doc-title-text.ts"
+import { filesPreviewEnabled } from "./files-preview.ts"
 import {
   DOCUMENT_STORAGE_PROFILE_IDS,
   documentStorageProfiles,
@@ -432,9 +434,9 @@ function registeredFileLogicalPath(
   ) {
     return null
   }
-  return claim.source.relativePath.slice(
-    "docs/".length,
-    -registration.source.extension.length
+  return withoutSuffix(
+    claim.source.relativePath.slice("docs/".length),
+    registration.source.extension
   )
 }
 
@@ -1133,13 +1135,22 @@ async function buildDocumentCatalogFromFiles(
       ],
     }
   }
-  entries.sort((a, b) => {
+  // With files off, files that gained an identity while they were on stay
+  // out of lists rather than showing as missing.
+  const listed = filesPreviewEnabled()
+    ? entries
+    : entries.filter(
+        (entry) =>
+          entry.kind === "conflict" ||
+          entry.descriptor.format.id !== BUILTIN_DOCUMENT_FORMATS.file
+      )
+  listed.sort((a, b) => {
     const aKey = a.kind === "conflict" ? a.pathKey : a.descriptor.path
     const bKey = b.kind === "conflict" ? b.pathKey : b.descriptor.path
     return compareStrings(aKey, bKey)
   })
   return {
-    entries,
+    entries: listed,
     aliases: aliasResult.aliases,
     inventoryDiagnostics: merged.diagnostics,
     provenCoreBundleIdentities: merged.provenCoreBundleIdentities,

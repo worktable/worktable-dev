@@ -11,8 +11,11 @@ import { analyzeDocumentPath } from "./document-path.ts"
 import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
+  isHiddenName,
+  withoutSuffix,
   type DocumentFormatRegistry,
 } from "./document-format-registry.ts"
+import { filesPreviewEnabled } from "./files-preview.ts"
 import { inspectDocumentSource } from "./document-inventory.ts"
 import { parseCanonicalYaml } from "./yaml.ts"
 import {
@@ -127,7 +130,8 @@ async function scanLegacyDocDirectory(
   reserved: (path: string) => unknown,
   budget: LegacyCatalogBudget,
   registry: DocumentFormatRegistry,
-  limit: ReturnType<typeof createConcurrencyLimit>
+  limit: ReturnType<typeof createConcurrencyLimit>,
+  anyFile: boolean
 ): Promise<DocumentSourceClaim[]> {
   const directory = join(root, ...relativeSegments)
   const entries = await limit(() => readLegacyDirectory(directory, budget))
@@ -136,6 +140,8 @@ async function scanLegacyDocDirectory(
     entries.map(async (entry): Promise<DocumentSourceClaim[]> => {
       const segments = [...relativeSegments, entry.name]
       if (entry.isSymbolicLink()) return []
+      // With files on, hidden folders are not part of the Space either.
+      if (anyFile && isHiddenName(entry.name)) return []
       if (entry.isDirectory()) {
         return scanLegacyDocDirectory(
           root,
@@ -143,16 +149,19 @@ async function scanLegacyDocDirectory(
           reserved,
           budget,
           registry,
-          limit
+          limit,
+          anyFile
         )
       }
       if (!entry.isFile()) return []
-      const registration = registry.fileSourceForFilename(entry.name)
+      const registration = registry.fileSourceForFilename(entry.name, {
+        anyFile,
+      })
       if (!registration) return []
       const { registration: format, source } = registration
       const logicalSegments = [
         ...relativeSegments,
-        entry.name.slice(0, -source.extension.length),
+        withoutSuffix(entry.name, source.extension),
       ]
       const path = logicalSegments.join("/")
       if (reserved(path)) return []
@@ -170,7 +179,11 @@ async function scanLegacyDocDirectory(
             kind: "file",
             relativePath: ["docs", ...segments].join("/"),
           },
-          title: humanizePath(path),
+          // A file is named by its filename; a Doc by its title.
+          title:
+            format.id === BUILTIN_DOCUMENT_FORMATS.file
+              ? entry.name
+              : humanizePath(path),
           archiveProvider: "legacy-doc-metadata",
           diagnostics: analyzed.diagnostics,
         },
@@ -210,7 +223,8 @@ export async function listLegacyDocClaims(
     createDocAliasReservationLookup(aliases),
     { entries: 0 },
     registry,
-    createConcurrencyLimit(LEGACY_SCAN_CONCURRENCY)
+    createConcurrencyLimit(LEGACY_SCAN_CONCURRENCY),
+    filesPreviewEnabled()
   )
 }
 

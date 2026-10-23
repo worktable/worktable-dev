@@ -166,6 +166,82 @@ describe("shadow document catalog", () => {
     ).toEqual(["Broken", "Status board", "Launch brief"])
   })
 
+  it("lists every visible file by its whole name once files are on", async () => {
+    const docs = join(root, "spaces", spaceId, "docs")
+    await mkdir(join(docs, "onboarding", "signup-flow"), { recursive: true })
+    await mkdir(join(docs, ".git"))
+    await writeFile(join(docs, "onboarding", "signup-flow.md"), "# Signup flow")
+    await writeFile(
+      join(docs, "onboarding", "signup-flow", "signup-error.png"),
+      "png"
+    )
+    await writeFile(join(docs, "feedback.csv"), "id,score\n007,5\n")
+    await writeFile(join(docs, ".DS_Store"), "")
+    await writeFile(join(docs, ".git", "HEAD"), "ref")
+
+    const listed = async () =>
+      (await buildDocumentCatalog({ workspaceRoot: root, spaceId })).entries.map(
+        (entry) =>
+          entry.kind === "document"
+            ? [
+                entry.descriptor.path,
+                entry.descriptor.format.id,
+                entry.descriptor.title,
+                entry.handle.storageProfile,
+              ]
+            : [entry.pathKey, "conflict"]
+      )
+
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    try {
+      process.env["WORKTABLE_FILES_PREVIEW"] = "0"
+      expect(await listed()).toEqual([
+        [
+          "onboarding/signup-flow",
+          "worktable.markdown",
+          "Signup flow",
+          "legacy-doc-file",
+        ],
+      ])
+
+      process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+      expect(await listed()).toEqual([
+        ["feedback.csv", "worktable.file", "feedback.csv", "legacy-doc-file"],
+        [
+          "onboarding/signup-flow",
+          "worktable.markdown",
+          "Signup flow",
+          "legacy-doc-file",
+        ],
+        [
+          "onboarding/signup-flow/signup-error.png",
+          "worktable.file",
+          "signup-error.png",
+          "legacy-doc-file",
+        ],
+      ])
+
+      // A file that gained an identity stays out of lists once files are off.
+      await updateDocumentInventory(spaceId, {
+        upsert: [
+          {
+            documentId: mintDocumentId(),
+            path: "feedback.csv",
+            format: { id: "worktable.file", sourceVersion: 1 },
+            source: { kind: "file", relativePath: "docs/feedback.csv" },
+          },
+        ],
+      })
+      process.env["WORKTABLE_FILES_PREVIEW"] = "0"
+      expect((await listed()).map(([path]) => path)).toEqual([
+        "onboarding/signup-flow",
+      ])
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
+
   it("keeps missing, newer, and unknown inventoried formats visible and inert", async () => {
     const newerId = mintDocumentId()
     const unknownId = mintDocumentId()

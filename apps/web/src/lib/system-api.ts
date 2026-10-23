@@ -153,6 +153,8 @@ export interface DeploymentInfo {
     shareLinks: boolean
     /** Sharing features that aren't released yet are on. */
     sharingPreview: boolean
+    /** File features that aren't released yet are on. */
+    filesPreview: boolean
   }
 }
 
@@ -233,6 +235,12 @@ export interface ServerSettings {
     /** Set when WORKTABLE_SHARING_PREVIEW overrides the setting on this server. */
     previewOverride?: boolean | null
   }
+  /** Machine-local: run the file features not yet released. */
+  files: {
+    preview: boolean
+    /** Set when WORKTABLE_FILES_PREVIEW overrides the setting on this server. */
+    previewOverride?: boolean | null
+  }
 }
 
 /**
@@ -246,6 +254,7 @@ export interface ServerSettingsPatch {
   history?: Partial<ServerSettings["history"]>
   agents?: Partial<ServerSettings["agents"]>
   sharing?: Partial<ServerSettings["sharing"]>
+  files?: Partial<ServerSettings["files"]>
 }
 
 export async function getSystemVersion() {

@@ -16,6 +16,7 @@ import {
   renameSync,
   rmdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs"
 import {
@@ -86,7 +87,10 @@ import {
 import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
+  isHiddenName,
+  withoutSuffix,
 } from "./document-format-registry.ts"
+import { filesPreviewEnabled } from "./files-preview.ts"
 import {
   DOCUMENT_STORAGE_PROFILE_IDS,
   documentStorageProfiles,
@@ -2641,7 +2645,10 @@ async function prepareExactRename(
         const source = requestedProfile.sourceForLogicalPath?.(format, from)
         if (!source) return []
         const candidate = resolve(spaceRoot, source.relativePath)
-        return existsSync(candidate) ? [realpathSync(candidate)] : []
+        // A file's logical path can name a Doc's folder; only files count.
+        return existsSync(candidate) && statSync(candidate).isFile()
+          ? [realpathSync(candidate)]
+          : []
       } catch {
         return []
       }
@@ -7646,10 +7653,13 @@ function verifyRecoveryCatalogCheckpoint(
       claims.push({ path, source })
     }
   }
+  const anyFile = filesPreviewEnabled()
   const scanDocs = (directory: string, segments: string[]): void => {
     for (const entry of readRecoveryDirectory(directory)) {
       account()
       if (entry.isSymbolicLink()) continue
+      // Discovery's rule: with files on, hidden names are not in the Space.
+      if (anyFile && isHiddenName(entry.name)) continue
       const nextSegments = [...segments, entry.name]
       const absolute = join(directory, entry.name)
       if (entry.isDirectory()) {
@@ -7664,11 +7674,11 @@ function verifyRecoveryCatalogCheckpoint(
             : entry.name.endsWith(".json")
               ? ".json"
               : null
-          : (registry.fileSourceForFilename(entry.name)?.source.extension ??
-            null)
-      if (!extension) continue
+          : (registry.fileSourceForFilename(entry.name, { anyFile })?.source
+              .extension ?? null)
+      if (extension === null) continue
       maybeClaim(
-        [...segments, entry.name.slice(0, -extension.length)].join("/"),
+        [...segments, withoutSuffix(entry.name, extension)].join("/"),
         ["docs", ...nextSegments].join("/")
       )
     }

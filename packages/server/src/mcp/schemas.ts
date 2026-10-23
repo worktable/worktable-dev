@@ -1154,6 +1154,38 @@ export const RecordsWriteInputPreview = z.strictObject({
     actionSchema("update", UpdateRecordInput.shape),
     actionSchema("create_many", CreateRecordsInput.shape),
     actionSchema("update_many", UpdateRecordsInput.shape),
+    actionSchema("import", {
+      spaceId: z.string(),
+      collectionId: z.string(),
+      path: z
+        .string()
+        .min(1)
+        .max(4096)
+        .describe("A .csv, .tsv or .jsonl file in the Space, e.g. research/feedback.csv"),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe("Return the file's columns and proposed fields, writing nothing"),
+      columns: z
+        .array(
+          z.strictObject({
+            column: z.string().min(1).describe("The column's name in the file"),
+            field: z.string().min(1).describe("The Record field it fills"),
+            type: z.enum(["text", "number", "date", "boolean"]),
+          })
+        )
+        .max(200)
+        .optional()
+        .describe("The columns to import; the rest are left out and reported"),
+      idColumn: z
+        .string()
+        .optional()
+        .describe("A column whose values become record ids, so a row already imported is skipped"),
+      titleColumn: z
+        .string()
+        .optional()
+        .describe("An imported column that names each record; a new collection defaults to the proposal's titleColumn"),
+    }),
   ]),
 })
 

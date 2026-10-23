@@ -75,6 +75,7 @@ import {
   hasDocumentsBelow,
   moveDocumentFolder,
 } from "./document-folder-move.ts"
+import { rewriteLinksAfterMove } from "./link-rewrite.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import {
   prepareSuppressedDocReplay,
@@ -1947,8 +1948,9 @@ export async function moveRegisteredDocument(options: {
   // as one folder move, which takes its own lock. A first child created while
   // this decides is seen under the lock, and the move starts again.
   let result: DocumentMoveResult | null = null
+  let withFolder = false
   for (let pass = 0; pass < 2 && !result; pass += 1) {
-    const withFolder =
+    withFolder =
       options.path !== to &&
       (await hasDocumentsBelow(options.spaceId, options.path))
     if (withFolder) {
@@ -1984,6 +1986,11 @@ export async function moveRegisteredDocument(options: {
     type: "documentCorpus",
     spaceId: options.spaceId,
   })
+  // A folder move rewrote its links already; an exact one does it here,
+  // outside the lock, because rewriting writes the Docs that hold them.
+  if (!withFolder) {
+    await rewriteLinksAfterMove(options.spaceId, [{ from: result.from, to }])
+  }
   return result
 }
 

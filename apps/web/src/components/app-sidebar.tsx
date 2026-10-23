@@ -1914,9 +1914,15 @@ const TreeItem = memo(function TreeItem(props: TreeRowProps) {
   if (view === "doc" && !node.isFolder && index.doc(node.path, node.archived)) {
     return <DocTreeItem {...props} />
   }
+  // Drawings and files have rows of their own, with every action; anything
+  // else without a working view reads as a plain file.
   if (
     !node.isFolder &&
-    !(node.format?.id === "worktable.quickdraw" && node.health === "supported")
+    !(
+      (node.format?.id === "worktable.quickdraw" ||
+        node.format?.id === "worktable.file") &&
+      node.health === "supported"
+    )
   ) {
     return (
       <UnavailableDocumentTreeItem
@@ -2458,12 +2464,12 @@ function DocTreeItem({
             onArchive={handleArchive}
             onRestore={handleRestore}
             onCopyMarkdown={
-              node.format?.id === "worktable.quickdraw"
+              node.format?.id === "worktable.quickdraw" || isFile
                 ? undefined
                 : handleCopyMarkdown
             }
             onDownload={
-              node.format?.id === "worktable.quickdraw"
+              node.format?.id === "worktable.quickdraw" || isFile
                 ? undefined
                 : handleDownload
             }

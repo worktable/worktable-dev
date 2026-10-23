@@ -238,25 +238,28 @@ export function rewriteBlockLinks(
 
 // ── After a move ────────────────────────────────────────────
 
-const writeOptions = {
-  updatedBy: "system",
-  source: "system",
-  reason: "Updated links after a move",
-  managedIdentity: true,
-}
-
-async function rewriteDoc(
+/**
+ * Rewrite targets in one Doc as it is now, open or not: a Markdown Doc by its
+ * text, a rich Doc block by block, so people typing in it are not
+ * interrupted. Saved as a version with `reason`.
+ */
+export async function rewriteDocTargets(
   spaceId: string,
   docPath: string,
-  oldPath: string,
-  moved: ReadonlyMap<string, string>
+  rewrite: Rewrite,
+  options: { reason: string; imagesOnly?: boolean }
 ): Promise<void> {
+  const writeOptions = {
+    updatedBy: "system",
+    source: "system",
+    reason: options.reason,
+    managedIdentity: true,
+  }
+  const scan = { imagesOnly: options.imagesOnly ?? false }
   const current = await agentChangeBase(spaceId, docPath, undefined, false)
-  const rewrite: Rewrite = (target) =>
-    rewrittenTarget(target, oldPath, docPath, moved)
   const base = current.base
   if (typeof base === "string") {
-    const next = rewriteMarkdownLinks(base, rewrite)
+    const next = rewriteMarkdownLinks(base, rewrite, scan)
     if (next === base) return
     const written = await writeDoc(spaceId, docPath, next, {
       ...writeOptions,
@@ -264,7 +267,7 @@ async function rewriteDoc(
     })
     if (!written.ok) throw new Error(written.error ?? "Links were not updated")
   } else if (Array.isArray(base)) {
-    const { blocks, changed } = rewriteBlockLinks(base, rewrite)
+    const { blocks, changed } = rewriteBlockLinks(base, rewrite, scan)
     if (changed.length === 0) return
     const written = await commitAgentBlocks({
       spaceId,
@@ -312,8 +315,14 @@ export async function rewriteLinksAfterMove(
     }
     for (const docPath of docs) {
       if (!(await docExists(spaceId, docPath))) continue
+      const oldPath = formerPath.get(docPath) ?? docPath
       try {
-        await rewriteDoc(spaceId, docPath, formerPath.get(docPath) ?? docPath, moved)
+        await rewriteDocTargets(
+          spaceId,
+          docPath,
+          (target) => rewrittenTarget(target, oldPath, docPath, moved),
+          { reason: "Updated links after a move" }
+        )
       } catch (error) {
         console.warn("[links] a Doc's links were not updated after a move:", logError(error))
       }

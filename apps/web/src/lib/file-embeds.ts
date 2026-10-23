@@ -16,9 +16,9 @@ export function fileSourceUrl(
   spaceId: string,
   path: string,
   contentHash: string | null = null,
-  options: { download?: boolean } = {}
+  options: { download?: boolean; at?: string } = {}
 ): string {
-  return `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}${contentHash ? `&v=${encodeURIComponent(contentHash)}` : ""}${options.download ? "&download=1" : ""}`
+  return `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}${contentHash ? `&v=${encodeURIComponent(contentHash)}` : ""}${options.download ? "&download=1" : ""}${options.at ? `&at=${encodeURIComponent(options.at)}` : ""}`
 }
 
 /** Upload New Version: the file's new bytes, keeping the old in its history. */
@@ -45,14 +45,20 @@ export async function replaceFile(
   return { contentHash: body.contentHash }
 }
 
-/** The URL an embed loads from: a file in the Doc's Space, or the target itself. */
+/**
+ * The URL an embed loads from: a file in the Doc's Space, or the target
+ * itself. `at` asks for the file as it was then, for an old version.
+ */
 export function embedSourceUrl(
   spaceId: string,
   docPath: string,
-  target: string
+  target: string,
+  at?: string
 ): string {
   const path = resolveDocLink(docPath, target)
-  return path === null ? target : fileSourceUrl(spaceId, path)
+  return path === null
+    ? target
+    : fileSourceUrl(spaceId, path, null, at ? { at } : {})
 }
 
 function slug(text: string): string {

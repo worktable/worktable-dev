@@ -10,14 +10,15 @@ import { useDeploymentInfo } from "./use-deployment-info"
 export function useEditorFiles(
   spaceId: string,
   docPath: string,
-  options: { upload: boolean }
+  options: { upload: boolean; at?: string }
 ): EditorFiles | undefined {
   const filesOn = useDeploymentInfo().data?.capabilities.filesPreview ?? false
   return useMemo(
     () =>
       filesOn
         ? {
-            resolve: (url: string) => embedSourceUrl(spaceId, docPath, url),
+            resolve: (url: string) =>
+              embedSourceUrl(spaceId, docPath, url, options.at),
             ...(options.upload
               ? {
                   upload: (file: File) =>
@@ -26,6 +27,6 @@ export function useEditorFiles(
               : {}),
           }
         : undefined,
-    [filesOn, spaceId, docPath, options.upload]
+    [filesOn, spaceId, docPath, options.upload, options.at]
   )
 }

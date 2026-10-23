@@ -74,6 +74,10 @@ import {
 import { filesPreviewEnabled } from "../files-preview.ts"
 import { fileMediaType, fileShownInline } from "../file-media.ts"
 import { usesAtOrBelow } from "../document-uses.ts"
+import {
+  keepEarlierImagesAfterRestore,
+  readFileAsOf,
+} from "../file-history.ts"
 
 /** Format-neutral document collection for common browser surfaces. */
 export const documentsRouter = new Hono()
@@ -531,6 +535,46 @@ function numberedFilePath(path: string, n: number): string {
     : `${folder}${leaf}-${n}`
 }
 
+/**
+ * A file's bytes, shown inline only when an image. Every response is
+ * sandboxed and unsniffed. A request naming the content's hash, or bytes
+ * from a moment past, may be kept for good; others revalidate by ETag.
+ */
+function serveFileBytes(
+  c: Context,
+  bytes: Uint8Array,
+  fileName: string,
+  options: { cacheForGood: boolean }
+): Response {
+  const hash = fileContentHash(bytes)
+  const etag = `"${hash}"`
+  const cacheControl =
+    options.cacheForGood || c.req.query("v") === hash
+      ? "private, max-age=31536000, immutable"
+      : "private, no-cache"
+  const headers: Record<string, string> = {
+    "Cache-Control": cacheControl,
+    ETag: etag,
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "X-Content-Type-Options": "nosniff",
+  }
+  if (c.req.header("if-none-match") === etag) {
+    return new Response(null, { status: 304, headers })
+  }
+  const inline = fileShownInline(fileName) && c.req.query("download") !== "1"
+  return new Response(new Uint8Array(bytes).buffer, {
+    headers: {
+      ...headers,
+      "Content-Type": fileMediaType(fileName),
+      "Content-Disposition": documentSourceDisposition(
+        fileName,
+        inline ? "inline" : "attachment"
+      ),
+    },
+  })
+}
+
 documentsRouter.get("/file", requireScope("documents:read"), async (c) => {
   if (!filesPreviewEnabled()) {
     return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
@@ -543,6 +587,20 @@ documentsRouter.get("/file", requireScope("documents:read"), async (c) => {
     )
   }
   try {
+    // An old Doc version asks for its files as they were then.
+    const atQuery = c.req.query("at")
+    if (atQuery !== undefined) {
+      const at = Date.parse(atQuery)
+      const then = Number.isFinite(at)
+        ? await readFileAsOf(c.req.param("spaceId") ?? "", path, at)
+        : null
+      if (!then) {
+        return c.json({ error: "This file wasn't kept from then.", code: "NOT_FOUND" }, 404)
+      }
+      return serveFileBytes(c, then.bytes, then.fileName, {
+        cacheForGood: true,
+      })
+    }
     const result = await readRawDocumentSource({
       spaceId: c.req.param("spaceId") ?? "",
       path,
@@ -562,35 +620,7 @@ documentsRouter.get("/file", requireScope("documents:read"), async (c) => {
       )
     }
     const { bytes, fileName } = result.source
-    const hash = fileContentHash(bytes)
-    const etag = `"${hash}"`
-    // A request naming the current content may keep it for good: a file's
-    // bytes at a hash never change. Otherwise check again each time.
-    const cacheControl =
-      c.req.query("v") === hash
-        ? "private, max-age=31536000, immutable"
-        : "private, no-cache"
-    const headers: Record<string, string> = {
-      "Cache-Control": cacheControl,
-      ETag: etag,
-      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
-      "Cross-Origin-Resource-Policy": "same-origin",
-      "X-Content-Type-Options": "nosniff",
-    }
-    if (c.req.header("if-none-match") === etag) {
-      return new Response(null, { status: 304, headers })
-    }
-    const inline = fileShownInline(fileName) && c.req.query("download") !== "1"
-    return new Response(new Uint8Array(bytes).buffer, {
-      headers: {
-        ...headers,
-        "Content-Type": fileMediaType(fileName),
-        "Content-Disposition": documentSourceDisposition(
-          fileName,
-          inline ? "inline" : "attachment"
-        ),
-      },
-    })
+    return serveFileBytes(c, bytes, fileName, { cacheForGood: false })
   } catch (error) {
     if (error instanceof DocumentSourceReadError) {
       return c.json(
@@ -946,7 +976,27 @@ documentsRouter.post(
         source: attribution.source,
         reason: parsed.data.reason,
       })
-      return c.json({ ok: true, ...result })
+      const kept = await keepEarlierImagesAfterRestore(
+        c.req.param("spaceId") ?? "",
+        result.path,
+        parsed.data.versionId,
+        attribution.actor
+      )
+      return c.json({
+        ok: true,
+        ...result,
+        ...(kept.length > 0
+          ? {
+              keptImages: kept,
+              sourceRevision: (
+                await readRegisteredDocumentSource({
+                  spaceId: c.req.param("spaceId") ?? "",
+                  path: result.path,
+                })
+              ).sourceRevision,
+            }
+          : {}),
+      })
     } catch (error) {
       if (error instanceof DocumentWriteError) {
         return c.json(

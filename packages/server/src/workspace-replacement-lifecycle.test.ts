@@ -4,6 +4,7 @@ import { closeTeamDatabases } from "./team-database.ts"
 import { canAccessSpace, createTeamAgent, bindTeamAgentCredential, setSpaceAccessPolicy, resolveTeamAgentCredential } from "./team-policy.ts"
 import type { TokenIdentity } from "./token-store.ts"
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
+import { Hono } from "hono"
 import {
   mkdir,
   readdir,
@@ -269,7 +270,8 @@ describe("live workspace replacement", () => {
     expect(getShareLink(current.link.id)?.revokedAt).toBeNull()
     expect(await resolveDocumentShare(before.token)).toBeNull()
     process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
-    const visitor = await createPublicSharesRouter(() => "https://share.example.test").fetch(
+    const publicApp = new Hono().route("/public/share", createPublicSharesRouter(() => "https://share.example.test"))
+    const visitor = await publicApp.fetch(
       new Request("http://tenant/public/share", {
         headers: { [SHARE_CAPABILITY_HEADER]: current.token },
       })

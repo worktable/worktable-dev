@@ -15,7 +15,7 @@ import {
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { setAppDirOverride } from "./app-storage.ts"
+import { getAppDir, setAppDirOverride } from "./app-storage.ts"
 import {
   setStarterSeedScheduleHookForTests,
   setWorkspaceReplacementAfterCheckpointHookForTests,
@@ -203,7 +203,7 @@ afterEach(async () => {
 })
 
 describe("live workspace replacement", () => {
-  it("keeps links published after a completed restore valid across a later restart", async () => {
+  it.each(["current", "legacy"] as const)("keeps links published after a completed restore valid across a later restart (%s journal)", async (journal) => {
     const server = startServer(0, "127.0.0.1")
     const origin = `http://127.0.0.1:${server.port}`
     await withDeadline((async () => {
@@ -237,6 +237,14 @@ describe("live workspace replacement", () => {
         await Bun.sleep(20)
       }
     })(), 10_000, "snapshot restore did not complete")
+    if (journal === "legacy") {
+      const path = join(getAppDir(), "workspace-transfers", "jobs", `wss_${operationId}`, "job.json")
+      const saved = JSON.parse(await readFile(path, "utf8"))
+      expect(saved.visitorCommentsRestored).toBe(true)
+      // Previous writers persisted private completion but not the reset flag.
+      delete saved.resetPending
+      await writeFile(path, `${JSON.stringify(saved)}\n`)
+    }
     expect(await resolveDocumentShare(before.token)).toBeNull()
     const epoch = await getWorkspaceCollaborationEpoch()
     const after = await createDocumentShare({ kind: "doc", spaceId: "notes", artifactKey: "note" })

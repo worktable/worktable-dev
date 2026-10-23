@@ -26,6 +26,7 @@ interface RecoverableJob {
   cleanupPending?: boolean
   resetPending?: boolean
   resetWorkspaceKey?: string
+  visitorCommentsRestored?: boolean
   prepared?: {
     stagingPath?: string
     backupPath?: string
@@ -93,13 +94,21 @@ function updateJob(path: string, job: RecoverableJob): void {
   renameSync(temporary, path)
 }
 
+function replacementResetRequired(job: RecoverableJob): boolean {
+  if (job.kind === "document-storage-v2") return false
+  if (job.resetPending !== undefined) return job.resetPending
+  // Older snapshot writers persisted this only after the workspace reset and
+  // all private restoration succeeded. Other legacy outcomes remain uncertain.
+  return !(job.kind === "snapshot" && job.visitorCommentsRestored === true)
+}
+
 function finishRecovery(
   path: string,
   job: RecoverableJob,
   state: "complete" | "failed",
   error: string | undefined,
   cleanup: () => void,
-  resetRequired = job.kind === "document-storage-v2" ? false : (job.resetPending ?? true)
+  resetRequired = replacementResetRequired(job)
 ): void {
   // Keep this requirement durable until startup has refreshed derived state.
   // Cleanup may finish before a crash; absence of `prepared` is not an acknowledgement.
@@ -140,7 +149,7 @@ function finishRecovery(
 
 function recoveryResult(
   job: RecoverableJob,
-  resetRequired = job.kind === "document-storage-v2" ? false : (job.resetPending ?? true)
+  resetRequired = replacementResetRequired(job)
 ): WorkspaceReplacementRecovery {
   return {
     id: job.id,

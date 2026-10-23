@@ -154,7 +154,7 @@ describe("interrupted replacement recovery", () => {
     }
   )
 
-  it.each(["import", "clear"])(
+  it.each(["import", "clear", "snapshot"])(
     "never restores a partially deleted %s backup after the commit point",
     async (kind) => {
       const archive = await writeWorkspaceExportV2(join(root, "committed"), {
@@ -170,7 +170,8 @@ describe("interrupted replacement recovery", () => {
           version: 1,
           id,
           kind,
-          state: "replacing",
+          state: kind === "snapshot" ? "complete" : "replacing",
+          ...(kind === "snapshot" ? { resetPending: true, visitorCommentsRestored: true } : {}),
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
@@ -187,7 +188,9 @@ describe("interrupted replacement recovery", () => {
       await rename(prepared.backupPath, committedBackup)
       await rm(join(committedBackup, "spaces", "notes", "docs", "note.md"))
 
-      expect(recoverInterruptedWorkspaceReplacements()).toEqual([id])
+      expect(recoverInterruptedWorkspaceReplacements({ details: true })).toEqual([
+        { id, kind, state: "complete", resetRequired: true },
+      ])
       expect(
         await readFile(
           join(active, "spaces", "notes", "docs", "note.md"),

@@ -582,11 +582,14 @@ function GrokBotRoutine({
     saved?.status === "needs-attention" ? (
       <Callout
         variant="warning"
-        title={saved.uncertain ? "No reply received" : "Check Grok Bot"}
+        title={
+          saved.uncertain ? "No reply received" : "Connection needs attention"
+        }
       >
         {saved.uncertain
           ? "Check the run in Grok before retrying."
-          : "Check the routine and its connection, then retry."}
+          : (saved.error ??
+            "Check the routine and its connection, then retry.")}
       </Callout>
     ) : null
   const retry =
@@ -732,9 +735,11 @@ function GrokBotRoutine({
         {attention}
         {saved?.probe ? (
           <>
-            <p role="status" className="text-sm text-muted-foreground">
-              Waiting for Grok Bot to reply…
-            </p>
+            {(saved.status === "checking" || saved.status === "working") && (
+              <p role="status" className="text-sm text-muted-foreground">
+                Waiting for Grok Bot to reply…
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"

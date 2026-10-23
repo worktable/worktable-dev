@@ -86,6 +86,7 @@ for (const wakeMethod of ["webhook", "email"] as const)
     let configured = false
     let checking = false
     let verified = false
+    let notificationError: string | undefined
     let saves = 0
     let checks = 0
     await page.route("**/api/workspace", async (route) => {
@@ -115,9 +116,12 @@ for (const wakeMethod of ["webhook", "email"] as const)
                   executionMinutes: 30,
                   status: verified
                     ? "ready"
-                    : checking
-                      ? "checking"
-                      : "configured",
+                    : notificationError
+                      ? "needs-attention"
+                      : checking
+                        ? "checking"
+                        : "configured",
+                  ...(notificationError ? { error: notificationError } : {}),
                   ...(verified ? { verifiedAt: "2026-10-22T00:00:00Z" } : {}),
                   ...(checking && !verified
                     ? {
@@ -136,6 +140,10 @@ for (const wakeMethod of ["webhook", "email"] as const)
       })
     )
     await page.route("**/api/grok-bot/**", (route) => {
+      if (route.request().url().endsWith("/retry")) {
+        notificationError = undefined
+        return route.fulfill({ json: { ok: true } })
+      }
       if (route.request().method() === "PUT") {
         expect(route.request().postDataJSON()).toMatchObject({
           wakeMethod,
@@ -271,6 +279,32 @@ for (const wakeMethod of ["webhook", "email"] as const)
     await page
       .getByRole("button", { name: "Check connection", exact: true })
       .click()
+    await expect(
+      page.getByText("Waiting for Grok Bot to reply…", { exact: true })
+    ).toBeVisible()
+    notificationError =
+      wakeMethod === "email"
+        ? "Email notification failed (HTTP 401). Check the Bot address and Worktable connection."
+        : "Grok Bot rejected the wake (HTTP 401). Check the routine URL and key."
+    await page
+      .getByRole("button", { name: "Refresh status", exact: true })
+      .click()
+    await expect(
+      page.getByText("Connection needs attention", { exact: true })
+    ).toBeVisible()
+    await expect(
+      page.getByText(notificationError, { exact: true })
+    ).toBeVisible()
+    await expect(
+      page.getByText("Waiting for Grok Bot to reply…", { exact: true })
+    ).toHaveCount(0)
+    await expect(
+      page.getByRole("button", { name: "Continue", exact: true })
+    ).toBeDisabled()
+    await page.screenshot({
+      path: testInfo.outputPath("grok-notification-failed.png"),
+    })
+    await page.getByRole("button", { name: "Retry", exact: true }).click()
     await expect(
       page.getByText("Waiting for Grok Bot to reply…", { exact: true })
     ).toBeVisible()

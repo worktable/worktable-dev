@@ -5,6 +5,7 @@ import {
   linkedStatus,
 } from "./linked-runtime.ts"
 import { createDocumentShare, resolveDocumentShare } from "./share-store.ts"
+import { grokBotInventory } from "./grok-bot-connections.ts"
 import { afterEach, beforeEach, expect, test } from "bun:test"
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises"
 import { join } from "node:path"
@@ -101,7 +102,8 @@ beforeEach(async () => {
     }
     if (url.endsWith("/link")) {
       linkActions++
-      if (body.action === "enable") expect(body.workspaceId).toBe("subscription_one")
+      if (body.action === "enable")
+        expect(body.workspaceId).toBe("subscription_one")
       if (body.action === "pause") paused = body.paused
       return Response.json({
         destinationId: "a".repeat(32),
@@ -260,6 +262,8 @@ test("the Settings toggle preserves the MCP URL and share capability, while Unli
   const off = await setLinkEnabled(false)
   expect(off.enabled).toBe(false)
   expect(off.mcpUrl).toBe(first.mcpUrl)
+  // A remembered address is not a working connector while the device is paused.
+  expect((await grokBotInventory([])).grokBotMcpUrl).toBeNull()
   expect(await resolveDocumentShare(share.token)).not.toBeNull()
   // On a fresh runtime, a failed first heartbeat cannot claim that access is off.
   const stop = startLinkedRuntime()
@@ -273,6 +277,8 @@ test("the Settings toggle preserves the MCP URL and share capability, while Unli
   const on = await setLinkEnabled(true)
   expect(on.enabled).toBe(true)
   expect(on.mcpUrl).toBe(first.mcpUrl)
+  // Re-enabling still needs a confirmed relay heartbeat before setup offers it.
+  expect((await grokBotInventory([])).grokBotMcpUrl).toBeNull()
   expect(await resolveDocumentShare(share.token)).not.toBeNull()
   await disconnectLink()
   expect(await resolveDocumentShare(share.token)).toBeNull()

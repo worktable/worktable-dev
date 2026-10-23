@@ -76,6 +76,7 @@ export async function grokBotInventory(connections: AgentConnection[]) {
         : {}),
     })
   }
+  const link = linkedStatus()
   return {
     grokBots,
     grokBotCandidates: candidates.map(({ id, displayName, participantId }) => ({
@@ -83,6 +84,6 @@ export async function grokBotInventory(connections: AgentConnection[]) {
       displayName,
       participantId,
     })),
-    grokBotMcpUrl: linkedStatus().mcpUrl ?? null,
+    grokBotMcpUrl: link.state === "online" ? (link.mcpUrl ?? null) : null,
   }
 }

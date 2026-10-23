@@ -221,9 +221,12 @@ export function GrokBotSetupPanel({
             {mcpUrl ? (
               <>
                 <p className="text-sm text-muted-foreground">
-                  Add this MCP connection in Grok Bot and sign in.
+                  Send this in Grok Bot, then authorize Worktable.
                 </p>
-                <CopyField label="MCP endpoint" value={mcpUrl} />
+                <CopyField
+                  label="Message to Grok Bot"
+                  value={`Add this MCP server: ${mcpUrl}`}
+                />
                 <div>
                   <Button onClick={() => setStep(2)}>Continue</Button>
                 </div>

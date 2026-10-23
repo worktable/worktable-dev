@@ -80,6 +80,7 @@ test("Grok setup waits for a reply and recovers when a check fails after saving"
     participantId: "ptc_grokonboarding",
   }
   let signedIn = false
+  let linkReady = false
   let configured = false
   let checking = false
   let verified = false
@@ -97,7 +98,7 @@ test("Grok setup waits for a reply and recovers when a check fails after saving"
     route.fulfill({
       json: {
         connections: [],
-        grokBotMcpUrl: "https://example.test/mcp",
+        grokBotMcpUrl: linkReady ? "https://example.test/mcp" : null,
         grokBotCandidates: signedIn ? [candidate] : [],
         grokBots: configured
           ? [
@@ -158,6 +159,28 @@ test("Grok setup waits for a reply and recovers when a check fails after saving"
   const options = page
     .getByRole("list")
     .filter({ hasText: "Connect Worktable" })
+  await options.getByRole("button", { name: "Set up Worktable Link" }).click()
+  await expect(
+    options.getByRole("button", { name: "Sign in", exact: true })
+  ).toBeVisible()
+  await options
+    .getByRole("button", { name: "Continue setup", exact: true })
+    .click()
+  await expect(
+    page.getByText("Finish connecting Worktable Link first.")
+  ).toBeVisible()
+  await expect(
+    options.getByText("Add this MCP server:", { exact: false })
+  ).toHaveCount(0)
+  linkReady = true
+  await options
+    .getByRole("button", { name: "Continue setup", exact: true })
+    .click()
+  await expect(
+    options.getByText("Add this MCP server: https://example.test/mcp", {
+      exact: true,
+    })
+  ).toBeVisible()
   await options.getByRole("button", { name: "Continue", exact: true }).click()
   signedIn = true
   await page

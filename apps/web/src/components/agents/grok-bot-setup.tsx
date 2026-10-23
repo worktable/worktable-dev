@@ -230,7 +230,7 @@ export function GrokBotSetupPanel({
         onChanged={changed}
         onboarding={Boolean(onConnected)}
         onRemoved={onRemoved}
-        settingsInitiallyOpen={Boolean(connectionId)}
+        editing={Boolean(connectionId)}
       />
     ) : null
   return (
@@ -362,7 +362,7 @@ function GrokBotRoutine({
   onChanged,
   onboarding,
   onRemoved,
-  settingsInitiallyOpen,
+  editing,
 }: {
   candidate: GrokBotCandidate
   saved?: GrokBotConnection
@@ -372,7 +372,7 @@ function GrokBotRoutine({
   onChanged: () => Promise<void>
   onboarding: boolean
   onRemoved?: () => void
-  settingsInitiallyOpen?: boolean
+  editing?: boolean
 }) {
   const id = useId()
   const navigate = useNavigate()
@@ -686,7 +686,9 @@ function GrokBotRoutine({
     return (
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-medium">{candidate.displayName}</span>
+          {!editing && (
+            <span className="font-medium">{candidate.displayName}</span>
+          )}
           <Badge variant="secondary">
             {GROK_BOT_STATUS_LABELS[saved.status]}
           </Badge>
@@ -694,20 +696,21 @@ function GrokBotRoutine({
         {attention}
         {!onboarding && (
           <div className="flex flex-wrap gap-2">
-            {retry ?? (
-              <ResponsiveDialogClose
-                className={buttonVariants()}
-                onClick={() =>
-                  void navigate({
-                    to: "/threads/$",
-                    params: { _splat: "" },
-                    search: { location: "all" },
-                  })
-                }
-              >
-                Open Threads
-              </ResponsiveDialogClose>
-            )}
+            {retry ??
+              (!editing && (
+                <ResponsiveDialogClose
+                  className={buttonVariants()}
+                  onClick={() =>
+                    void navigate({
+                      to: "/threads/$",
+                      params: { _splat: "" },
+                      search: { location: "all" },
+                    })
+                  }
+                >
+                  Open Threads
+                </ResponsiveDialogClose>
+              ))}
             <Button
               variant="outline"
               disabled={action.isPending}
@@ -721,7 +724,7 @@ function GrokBotRoutine({
         <Disclosure
           title="Connection settings"
           keepMounted
-          defaultOpen={settingsInitiallyOpen}
+          defaultOpen={editing}
         >
           <form
             className="flex flex-col gap-4"

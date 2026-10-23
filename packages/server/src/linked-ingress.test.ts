@@ -258,6 +258,7 @@ it("keeps the legacy Grok identity and routes additional accounts with the same 
   expect(second.participantId).not.toBe(first.participantId)
   const owner = {
     agent: null,
+    scopes: ["*"],
     principal: { id: "owner", type: "human" as const, displayName: "Owner" },
   }
   const assign = (to: string, body: string) =>

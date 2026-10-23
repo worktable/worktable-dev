@@ -49,6 +49,8 @@ import {
 } from "./workspace-request-lifecycle.ts"
 import { waitForThreadSignal } from "./thread-waiters.ts"
 import {
+  inspectPortableWorkspaceTree,
+  portableWorkspaceCheckpoint,
   setWorkspaceExportBeforePublishHookForTests,
   setWorkspaceExportCaptureHookForTests,
   writeWorkspaceExportV2,
@@ -75,7 +77,6 @@ import { createDocumentShare, resolveDocumentShare } from "./share-store.ts"
 import { operatorSnapshotDirectory } from "./operator-snapshot.ts"
 import { writeWorkspaceSnapshot } from "./workspace-snapshot.ts"
 import { restoreLiveWorkspaceSnapshot, readWorkspaceSnapshotRestoreStatus } from "./workspace-snapshot-restore.ts"
-import { calculateWorkspaceContentCheckpoint } from "./workspace-transfer-v2.ts"
 import { closeShareLinkStores, createShareLink, getShareLink } from "./share-links-store.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 
@@ -219,7 +220,7 @@ describe("live workspace replacement", () => {
       operationId,
       workspaceId: snapshot.workspaceId,
       sourceCheckpoint: snapshot.sourceCheckpoint,
-      safetyCheckpoint: await calculateWorkspaceContentCheckpoint(active),
+      safetyCheckpoint: portableWorkspaceCheckpoint(await inspectPortableWorkspaceTree(active)),
     }
     expect((await restoreLiveWorkspaceSnapshot(request)).state).toBe("replacing")
     await withDeadline((async () => {

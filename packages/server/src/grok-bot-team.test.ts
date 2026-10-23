@@ -160,7 +160,7 @@ it("requires current Threads access and skips inaccessible work without exhausti
         idempotencyKey: spaceId,
       })
     )
-  await assign("restricted")
+  const queued = await assign("restricted")
   updateTeamAgent(agent.id, { spaceIds: ["available"] }, owner)
   await drainWorkspaceChanges()
   await updateGrokBot(connection, {
@@ -184,10 +184,10 @@ it("requires current Threads access and skips inaccessible work without exhausti
   expect((await readGrokBots())[0]?.wake).toBeUndefined()
   expect(wakes).toBe(0)
   expect((await readGrokBots())[0]?.error).toBeUndefined()
-  const accessible = await assign("available")
+  updateTeamAgent(agent.id, { spaceIds: ["restricted", "available"] }, owner)
   await woken.promise
   const delivery = await runWithTeamIdentity(bot, () =>
     claimNextThreadDelivery(bot, 0, 2)
   )
-  expect(delivery?.messageId).toBe(accessible.messageId)
+  expect(delivery?.messageId).toBe(queued.messageId)
 })

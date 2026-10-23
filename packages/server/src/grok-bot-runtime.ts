@@ -19,7 +19,7 @@ import {
   teamAgentForParticipantKey,
   teamAgentHasSpaceAccess,
 } from "./team-policy.ts"
-import { currentTeamWorktable } from "./team-database.ts"
+import { currentTeamWorktable, onTeamPolicyChange } from "./team-database.ts"
 import { hasScope } from "./token-store.ts"
 import { sendGrokEmailWake } from "./grok-bot-email.ts"
 import { scanAllThreadDigests } from "./thread-store.ts"
@@ -242,6 +242,7 @@ export function startGrokBotRuntime(
       })
   }
   const offConfig = onGrokBotChange(nudge)
+  const offPolicy = onTeamPolicyChange(nudge)
   const offWorkspace = onWorkspaceChange((event) => {
     if (event.type === "thread" || event.type === "workspaceReset")
       canonicalRevision += 1
@@ -256,6 +257,7 @@ export function startGrokBotRuntime(
   return () => {
     stopped = true
     offConfig()
+    offPolicy()
     offWorkspace()
     abort.abort()
     if (timer) clearTimeout(timer)

@@ -9,6 +9,8 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.27] - 2026-10-23
+
 ### Fixed
 
 - **Cloud HTML tools:** HTML Docs read and save data in the selected Worktable when your account can access more than one.

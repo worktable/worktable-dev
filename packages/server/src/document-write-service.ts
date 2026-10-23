@@ -602,15 +602,18 @@ async function pruneCommittedHistory(input: {
   })
 }
 
-async function ensurePreEditBaseline(input: {
+/** The newest version, and whether it already holds exactly these bytes. */
+async function newestVersionHolding(input: {
   workspaceRoot: string
   spaceId: string
   document: WritableDocument
   documentId: DocumentId
   bytes: Uint8Array
-  beforeCreatedAt: string
-  registry: DocumentFormatRegistry
-}): Promise<{ generationId: string; created: boolean }> {
+}): Promise<{
+  count: number
+  newestId: string | undefined
+  holds: boolean
+}> {
   const legacyKind = input.document.registration.legacyVersionKind
   const existing = await listCompatibleDocumentVersionsV2({
     workspaceRoot: input.workspaceRoot,
@@ -644,11 +647,25 @@ async function ensurePreEditBaseline(input: {
       previousBytes &&
       Buffer.from(previousBytes).equals(Buffer.from(input.bytes))
     ) {
-      return { generationId: latest.id, created: false }
+      return { count: existing.length, newestId: latest.id, holds: true }
     }
   }
+  return { count: existing.length, newestId: latest?.id, holds: false }
+}
+
+async function ensurePreEditBaseline(input: {
+  workspaceRoot: string
+  spaceId: string
+  document: WritableDocument
+  documentId: DocumentId
+  bytes: Uint8Array
+  beforeCreatedAt: string
+  registry: DocumentFormatRegistry
+}): Promise<{ generationId: string; created: boolean }> {
+  const newest = await newestVersionHolding(input)
+  if (newest.holds) return { generationId: newest.newestId!, created: false }
   const baselineLabel =
-    existing.length === 0 ? "Pre-tracking baseline" : "Pre-edit recovery point"
+    newest.count === 0 ? "Pre-tracking baseline" : "Pre-edit recovery point"
   const createdAt = new Date(
     Math.max(0, Date.parse(input.beforeCreatedAt) - 1)
   ).toISOString()
@@ -1123,6 +1140,79 @@ export async function readRegisteredDocumentSourceLocked(options: {
     }),
     ...(updatedAt ? { updatedAt } : {}),
   }
+}
+
+/**
+ * Keep the version a file has after something outside Worktable changed it,
+ * such as an agent writing straight to disk. A file's history starts once it
+ * has an identity: uploaded, moved or otherwise kept by Worktable. Bytes the
+ * newest version already holds record nothing, and quick successive changes
+ * merge into one version as people's saves do.
+ */
+export async function recordExternalFileChange(options: {
+  spaceId: string
+  path: string
+}): Promise<{ recorded: boolean }> {
+  const workspaceRoot = getWorkspaceRoot()
+  const registry = createBuiltinDocumentFormatRegistry()
+  return withDocPathLock(options.spaceId, async () => {
+    await requireV2Workspace(workspaceRoot)
+    const catalog = await buildDocumentCatalog({
+      workspaceRoot,
+      spaceId: options.spaceId,
+      registry,
+    })
+    const entry = entryAt(catalog, options.path)
+    if (
+      entry?.kind !== "document" ||
+      entry.descriptor.path !== options.path ||
+      entry.descriptor.format.id !== BUILTIN_DOCUMENT_FORMATS.file ||
+      entry.handle.identity !== "durable"
+    ) {
+      return { recorded: false }
+    }
+    const document = resolveWritableDocument(catalog, options.path, registry)
+    let bytes: Uint8Array
+    try {
+      bytes = await readSource(workspaceRoot, options.spaceId, document)
+    } catch {
+      // Gone again, or past what one version can hold.
+      return { recorded: false }
+    }
+    const newest = await newestVersionHolding({
+      workspaceRoot,
+      spaceId: options.spaceId,
+      document,
+      documentId: document.documentId,
+      bytes,
+    })
+    if (newest.holds) return { recorded: false }
+    const now = new Date().toISOString()
+    await writeDocumentGenerationV2({
+      workspaceRoot,
+      spaceId: options.spaceId,
+      documentId: document.documentId,
+      generationId: mintVersionId(now),
+      ...(newest.newestId ? { coalesceWith: newest.newestId } : {}),
+      logicalPath: document.path,
+      format: document.format,
+      operation: newest.count === 0 ? "create" : "update",
+      createdAt: now,
+      createdBy: "external",
+      source: "filesystem",
+      reason: "Changed on disk",
+      authoredSource: {
+        kind: "file",
+        entries: [{ path: generationEntryName(document), bytes }],
+      },
+      registry,
+    })
+    await pruneCommittedHistory({
+      spaceId: options.spaceId,
+      documentId: document.documentId,
+    })
+    return { recorded: true }
+  })
 }
 
 export async function replaceRegisteredDocument(options: {

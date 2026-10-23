@@ -88,7 +88,6 @@ describe("WorkspaceWatcher", () => {
       "space/docs.meta.json",
       "space/docs.meta.json.tmp",
       "space/documents.meta.json",
-      "space/docs/canvas.bin",
       "space/widgets/canvas/source.md",
       "space/widgets/canvas.wtdoc/state.yaml",
     ]) {
@@ -96,6 +95,14 @@ describe("WorkspaceWatcher", () => {
         parseChangedPath("/workspace/spaces", path, "/workspace/spaces")
       ).toEqual({ type: "documentCorpus", spaceId: "space" })
     }
+    // A file below docs/ names itself, so its change can be kept as a version.
+    expect(
+      parseChangedPath(
+        "/workspace/spaces",
+        "space/docs/design/canvas.bin",
+        "/workspace/spaces"
+      )
+    ).toEqual({ type: "documentCorpus", spaceId: "space", path: "design/canvas.bin" })
     expect(
       parseChangedPath(
         "/workspace/spaces",

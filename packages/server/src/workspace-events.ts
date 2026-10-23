@@ -22,6 +22,8 @@ export interface DocChangeEvent {
 export interface DocumentCorpusChangeEvent {
   type: "documentCorpus"
   spaceId: string
+  /** The file below docs/ that changed on disk, when one did. */
+  path?: string
 }
 
 export interface WidgetChangeEvent {

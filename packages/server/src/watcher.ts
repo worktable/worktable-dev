@@ -269,7 +269,7 @@ export function parseChangedPath(
       const widgetId = docParts.join("/").replace(/\.html$/, "")
       return { type: "widget", spaceId, widgetId }
     }
-    return { type: "documentCorpus", spaceId }
+    return { type: "documentCorpus", spaceId, path: docParts.join("/") }
   }
 
   if (

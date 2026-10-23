@@ -184,6 +184,7 @@ import {
 } from "./workspace-events.ts";
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts";
 import { runServerMaintenance } from "./server-maintenance.ts";
+import { noteExternalFileChange } from "./file-change-recorder.ts";
 import { beginPreparedWorkspaceReplacement } from "./workspace-replacement.ts";
 import {
   calculateLocalWorkspaceContentCheckpoints,
@@ -1712,6 +1713,11 @@ export function startServer(
         widgetChangeCoalescer.set(key, { timer, flush });
         // The deferred callback owns this event's broadcast.
         return;
+      }
+
+      // Keep a version of a file an agent changed on disk.
+      if (event.type === "documentCorpus" && event.path) {
+        noteExternalFileChange(event.spaceId, event.path);
       }
 
       // Sync external doc changes into Yjs in-memory state

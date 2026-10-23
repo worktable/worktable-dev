@@ -142,7 +142,10 @@ describe("Grok Bot", () => {
       agent: "Cursor",
       principal: { ...grok.principal, id: "oauth:native-bot:owner", displayName: name },
     }
-    const selected = (await resolveParticipant(identity)).participant
+    const selected = (await resolveParticipant(
+      identity,
+      name === "Cursor" ? {} : { name }
+    )).participant
     const cursor = (await resolveParticipant({
       agent: "cursor",
       principal: { id: "local-token:cursor", type: "agent", displayName: "Cursor" },

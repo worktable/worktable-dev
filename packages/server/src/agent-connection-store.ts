@@ -478,7 +478,7 @@ export async function listAgentConnections(): Promise<AgentConnection[]> {
     ? await listTeamAgentConnections()
     : await listLocalAgentConnections()
   const grokIds = new Set((await readGrokBots()).map((c) => c.participantId))
-  return connections.map((connection) =>
+  return connections.map<AgentConnection>((connection) =>
     connection.participant && grokIds.has(connection.participant.id)
       ? {
           ...connection,

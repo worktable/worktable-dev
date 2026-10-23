@@ -89,13 +89,21 @@ function blankCode(markdown: string): string {
     .replace(/`[^`\n]*`/g, blank)
 }
 
-/** A Markdown Doc with its link, image and media targets rewritten. */
-export function rewriteMarkdownLinks(markdown: string, rewrite: Rewrite): string {
+/**
+ * A Markdown Doc with its link, image and media targets rewritten, or with
+ * `imagesOnly`, its images alone.
+ */
+export function rewriteMarkdownLinks(
+  markdown: string,
+  rewrite: Rewrite,
+  options: { imagesOnly?: boolean } = {}
+): string {
   const scanned = blankCode(markdown)
   const edits: Array<{ at: number; length: number; text: string }> = []
   let match: RegExpExecArray | null
   MARKDOWN_LINK.lastIndex = 0
   while ((match = MARKDOWN_LINK.exec(scanned)) !== null) {
+    if (options.imagesOnly && match[1] !== "!") continue
     const target = match[3]!
     const open = match[0].indexOf("](") + 2
     const at = match.index + match[0].indexOf(target, open)
@@ -104,6 +112,7 @@ export function rewriteMarkdownLinks(markdown: string, rewrite: Rewrite): string
   }
   HTML_MEDIA_SRC.lastIndex = 0
   while ((match = HTML_MEDIA_SRC.exec(scanned)) !== null) {
+    if (options.imagesOnly && !/^<img\b/i.test(match[0])) continue
     const target = match[1] ?? match[2] ?? ""
     const at = match.index + match[0].length - target.length - 1
     const text = rewrite(target)
@@ -165,10 +174,16 @@ function rewriteTable(content: Block, rewrite: Rewrite): Block | null {
 }
 
 /** One block with its targets rewritten, or null when nothing changed. */
-function rewriteBlock(block: Block, rewrite: Rewrite): Block | null {
+function rewriteBlock(
+  block: Block,
+  rewrite: Rewrite,
+  imagesOnly = false
+): Block | null {
   let next: Block | null = null
   const content = block.content
-  if (Array.isArray(content)) {
+  if (imagesOnly) {
+    // Only image blocks: their url.
+  } else if (Array.isArray(content)) {
     const inline = rewriteInline(content, rewrite)
     if (inline) next = { ...block, content: inline }
   } else if (
@@ -182,7 +197,7 @@ function rewriteBlock(block: Block, rewrite: Rewrite): Block | null {
   const props = block.props as Block | undefined
   if (
     typeof block.type === "string" &&
-    MEDIA_BLOCKS.has(block.type) &&
+    (imagesOnly ? block.type === "image" : MEDIA_BLOCKS.has(block.type)) &&
     typeof props?.url === "string" &&
     props.url
   ) {
@@ -192,7 +207,7 @@ function rewriteBlock(block: Block, rewrite: Rewrite): Block | null {
   if (Array.isArray(block.children)) {
     let childChanged = false
     const children = block.children.map((child) => {
-      const rewritten = rewriteBlock(child as Block, rewrite)
+      const rewritten = rewriteBlock(child as Block, rewrite, imagesOnly)
       if (!rewritten) return child
       childChanged = true
       return rewritten
@@ -202,14 +217,18 @@ function rewriteBlock(block: Block, rewrite: Rewrite): Block | null {
   return next
 }
 
-/** A rich Doc's blocks with targets rewritten, and the top-level blocks that changed. */
+/**
+ * A rich Doc's blocks with targets rewritten, or with `imagesOnly`, its image
+ * blocks alone, and the top-level blocks that changed.
+ */
 export function rewriteBlockLinks(
   blocks: unknown[],
-  rewrite: Rewrite
+  rewrite: Rewrite,
+  options: { imagesOnly?: boolean } = {}
 ): { blocks: unknown[]; changed: Block[] } {
   const changed: Block[] = []
   const next = blocks.map((block) => {
-    const rewritten = rewriteBlock(block as Block, rewrite)
+    const rewritten = rewriteBlock(block as Block, rewrite, options.imagesOnly)
     if (!rewritten) return block
     changed.push(rewritten)
     return rewritten

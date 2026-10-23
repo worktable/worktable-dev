@@ -51,7 +51,8 @@ interface PlannedDocumentFolderDelete extends DurablePrefixDeleteDocument {
 
 async function planDocumentFolderDelete(
   spaceId: string,
-  prefix: string
+  prefix: string,
+  keep: ReadonlySet<string>
 ): Promise<PlannedDocumentFolderDelete[] | DeleteDocumentFolderResult> {
   if (!CanonicalIdSchema.safeParse(spaceId).success) {
     return {
@@ -89,7 +90,8 @@ async function planDocumentFolderDelete(
   const relevant = catalog.entries.filter((entry) =>
     entry.kind === "conflict"
       ? entry.claims.some((claim) => withinFolder(claim.path))
-      : withinFolder(entry.descriptor.path)
+      : withinFolder(entry.descriptor.path) &&
+        !keep.has(entry.descriptor.path)
   )
   const hasDescendant = relevant.some((entry) =>
     entry.kind === "conflict"
@@ -190,14 +192,19 @@ async function publishFolderDelete(
   await notifyWorkspaceChangeAndWait({ type: "documentCorpus", spaceId })
 }
 
-/** Permanently delete one bounded mixed-format document folder atomically. */
+/**
+ * Permanently delete one bounded mixed-format document folder atomically.
+ * Documents named in `keep` stay where they are.
+ */
 export async function deleteDocumentFolder(
   spaceId: string,
-  path: string
+  path: string,
+  options: { keep?: readonly string[] } = {}
 ): Promise<DeleteDocumentFolderResult> {
+  const keep = new Set(options.keep ?? [])
   let planned: PlannedDocumentFolderDelete[] | DeleteDocumentFolderResult
   try {
-    planned = await planDocumentFolderDelete(spaceId, path)
+    planned = await planDocumentFolderDelete(spaceId, path, keep)
     if (
       Array.isArray(planned) &&
       planned.some((document) => document.identity === "provisional")
@@ -217,7 +224,7 @@ export async function deleteDocumentFolder(
           intent: "delete",
         })
       }
-      planned = await planDocumentFolderDelete(spaceId, path)
+      planned = await planDocumentFolderDelete(spaceId, path, keep)
     }
   } catch (error) {
     if (error instanceof DocumentInventorySpaceNotFoundError) {
@@ -255,7 +262,8 @@ export async function deleteDocumentFolder(
     const outcome = await deleteDurableDocumentsByPrefixLocked(
       spaceId,
       path,
-      planned
+      planned,
+      keep
     )
     if (outcome.error) {
       return { ok: false, kind: "conflict", error: outcome.error }

@@ -3711,7 +3711,8 @@ async function preparePrefixArchive(
 async function preparePrefixDelete(
   spaceId: string,
   prefix: string,
-  expectedDocuments: readonly DurablePrefixDeleteDocument[]
+  expectedDocuments: readonly DurablePrefixDeleteDocument[],
+  keep: ReadonlySet<string>
 ): Promise<PreparedJournal | null> {
   const prefixAnalysis = analyzeDocumentPath(prefix)
   if (
@@ -3750,10 +3751,11 @@ async function preparePrefixDelete(
       key && documentPathKeyIsBelow(key, prefixAnalysis.comparisonKey!)
     )
   }
+  // Documents the caller keeps stay where they are, outside the deletion.
   const relevant = catalog.entries.filter((entry) =>
     entry.kind === "conflict"
       ? entry.claims.some((claim) => withinPrefix(claim.path))
-      : withinPrefix(entry.descriptor.path)
+      : withinPrefix(entry.descriptor.path) && !keep.has(entry.descriptor.path)
   )
   if (relevant.length === 0) return null
   if (relevant.some((entry) => entry.kind !== "document")) {
@@ -9802,7 +9804,8 @@ export function setDurableDocumentArchivedExactlyLocked(
 async function deleteDurableDocumentsByPrefixSerialized(
   spaceId: string,
   prefix: string,
-  expectedDocuments: readonly DurablePrefixDeleteDocument[]
+  expectedDocuments: readonly DurablePrefixDeleteDocument[],
+  keep: ReadonlySet<string>
 ): Promise<DurablePrefixDeleteOutcome> {
   const root = resolve(getSpacesBaseDir(), spaceId)
   const storePaths = [
@@ -9841,7 +9844,8 @@ async function deleteDurableDocumentsByPrefixSerialized(
                 prepared = await preparePrefixDelete(
                   spaceId,
                   prefix,
-                  expectedDocuments
+                  expectedDocuments,
+                  keep
                 )
               } catch (error) {
                 if (error instanceof DocumentLifecyclePreconditionError) {
@@ -9981,11 +9985,15 @@ async function deleteDurableDocumentsByPrefixSerialized(
   return outcome
 }
 
-/** Retire one bounded mixed-format subtree as one durable generation. */
+/**
+ * Retire one bounded mixed-format subtree as one durable generation. Paths in
+ * `keep` stay, outside the deletion.
+ */
 export function deleteDurableDocumentsByPrefixLocked(
   spaceId: string,
   prefix: string,
-  expectedDocuments: readonly DurablePrefixDeleteDocument[]
+  expectedDocuments: readonly DurablePrefixDeleteDocument[],
+  keep: ReadonlySet<string> = new Set()
 ): Promise<DurablePrefixDeleteOutcome> {
   return withWorkspaceLifecycleLock(() =>
     withDocumentDataV2PrefixDelete(
@@ -9995,7 +10003,8 @@ export function deleteDurableDocumentsByPrefixLocked(
         deleteDurableDocumentsByPrefixSerialized(
           spaceId,
           prefix,
-          expectedDocuments
+          expectedDocuments,
+          keep
         )
     )
   )

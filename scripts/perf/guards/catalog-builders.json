@@ -162,12 +162,12 @@
       "why": "Writer: re-reads the catalog after a move commits."
     },
     {
-      "site": "packages/server/src/document-write-service.ts#setRegisteredDocumentArchived.catalog",
+      "site": "packages/server/src/document-write-service.ts#setRegisteredDocumentArchivedExactly.catalog",
       "kind": "buildDocumentCatalog",
       "why": "Writer: checks the current files under the write lock; writers never read snapshots."
     },
     {
-      "site": "packages/server/src/document-write-service.ts#deleteRegisteredDocument.catalog",
+      "site": "packages/server/src/document-write-service.ts#deleteRegisteredDocumentExactly.catalog",
       "kind": "buildDocumentCatalog",
       "why": "Writer: checks the current files under the write lock; writers never read snapshots."
     },

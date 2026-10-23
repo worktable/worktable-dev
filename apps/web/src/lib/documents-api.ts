@@ -227,6 +227,34 @@ export function writeDocumentSource(
   })
 }
 
+/** What deleting a document takes: it and its folder, with outside uses. */
+export interface DocumentUses {
+  path: string
+  title: string
+  formatId: string
+  usedBy: string[]
+}
+
+export function readDocumentUses(spaceId: string, path: string) {
+  return fetchJSON<{ items: DocumentUses[] }>(
+    `/api/spaces/${encodeURIComponent(spaceId)}/documents/uses?path=${encodeURIComponent(path)}`
+  )
+}
+
+/**
+ * Permanently delete a document. With files on, its folder goes with it,
+ * except `keep`; the server keeps what's used elsewhere when omitted.
+ */
+export function deleteDocument(spaceId: string, path: string, keep?: string[]) {
+  return fetchJSON<{ ok: true }>(
+    `/api/spaces/${encodeURIComponent(spaceId)}/documents/delete`,
+    {
+      method: "POST",
+      body: JSON.stringify({ path, ...(keep ? { keep } : {}) }),
+    }
+  )
+}
+
 export async function mutateDocument(
   spaceId: string,
   action: "move" | "archive" | "restore" | "delete",

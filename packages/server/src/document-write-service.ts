@@ -69,6 +69,10 @@ import {
 import { resolveDocAliasIn, reservedByAliasIn } from "./doc-aliases.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
 import { hasDocumentsBelow, moveDocumentFolder } from "./document-folder-move.ts"
+import { setDocumentFolderArchived } from "./document-folder-archive.ts"
+import { deleteDocumentFolder } from "./document-folder-delete.ts"
+import { usesAtOrBelow } from "./document-uses.ts"
+import { filesPreviewEnabled } from "./files-preview.ts"
 import { rewriteLinksAfterMove } from "./link-rewrite.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import {
@@ -2020,7 +2024,7 @@ export async function moveRegisteredDocument(options: {
   return result
 }
 
-export async function setRegisteredDocumentArchived(options: {
+type ArchiveOptions = {
   spaceId: string
   path: string
   archived: boolean
@@ -2032,12 +2036,62 @@ export async function setRegisteredDocumentArchived(options: {
    */
   onlyIfDueBy?: number
   registry?: DocumentFormatRegistry
-}): Promise<{
+}
+
+type ArchiveResult = {
   documentId: DocumentId
   path: string
   archived: boolean
   notDue?: true
-}> {
+}
+
+/**
+ * Archive or restore a document. With files on, a Doc's folder goes with it:
+ * archiving or restoring a Doc does the same to everything in its folder.
+ */
+export async function setRegisteredDocumentArchived(
+  options: ArchiveOptions
+): Promise<ArchiveResult> {
+  const withFolder =
+    filesPreviewEnabled() &&
+    (await hasDocumentsBelow(options.spaceId, options.path))
+  // A lifetime archive checks it is due under the Doc's own lock first.
+  const result =
+    withFolder && options.onlyIfDueBy === undefined
+      ? null
+      : await setRegisteredDocumentArchivedExactly(options)
+  if (!withFolder || result?.notDue) {
+    return result ?? (await setRegisteredDocumentArchivedExactly(options))
+  }
+  const folder = await setDocumentFolderArchived({
+    spaceId: options.spaceId,
+    path: options.path,
+    archived: options.archived,
+    archivedBy: options.archivedBy,
+    ...(options.reason ? { reason: options.reason } : {}),
+  })
+  if (!folder.ok) {
+    if (result) return result
+    if (folder.kind === "not-found") {
+      return setRegisteredDocumentArchivedExactly(options)
+    }
+    throw new DocumentWriteError("conflict", folder.error)
+  }
+  if (result) return result
+  const self = (await usesAtOrBelow(options.spaceId, options.path)).find(
+    (entry) => entry.path === options.path
+  )
+  if (!self) throw new DocumentWriteError("not-found", "Document not found")
+  return {
+    documentId: self.documentId as DocumentId,
+    path: options.path,
+    archived: options.archived,
+  }
+}
+
+async function setRegisteredDocumentArchivedExactly(
+  options: ArchiveOptions
+): Promise<ArchiveResult> {
   assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
@@ -2136,7 +2190,47 @@ export async function setRegisteredDocumentArchived(options: {
   return result
 }
 
+/**
+ * Permanently delete a document. With files on, a Doc's folder goes with it:
+ * everything in it is deleted too, except what other documents use, unless
+ * `keep` names exactly what stays. When everything in it stays, the Doc is
+ * deleted alone.
+ */
 export async function deleteRegisteredDocument(options: {
+  spaceId: string
+  path: string
+  keep?: readonly string[]
+  registry?: DocumentFormatRegistry
+}): Promise<{ documentId: DocumentId; path: string }> {
+  if (
+    filesPreviewEnabled() &&
+    (await hasDocumentsBelow(options.spaceId, options.path))
+  ) {
+    const uses = await usesAtOrBelow(options.spaceId, options.path)
+    const self = uses.find((entry) => entry.path === options.path)
+    if (self) {
+      const keep =
+        options.keep ??
+        uses.flatMap((entry) =>
+          entry.path !== options.path && entry.usedBy.length > 0
+            ? [entry.path]
+            : []
+        )
+      const folder = await deleteDocumentFolder(options.spaceId, options.path, {
+        keep: keep.filter((path) => path !== options.path),
+      })
+      if (folder.ok) {
+        return { documentId: self.documentId as DocumentId, path: options.path }
+      }
+      if (folder.kind !== "not-found") {
+        throw new DocumentWriteError("conflict", folder.error)
+      }
+    }
+  }
+  return deleteRegisteredDocumentExactly(options)
+}
+
+async function deleteRegisteredDocumentExactly(options: {
   spaceId: string
   path: string
   registry?: DocumentFormatRegistry

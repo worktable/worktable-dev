@@ -149,6 +149,7 @@ import {
 } from "@worktable/ui/components/dropdown-menu"
 import { RenameDialog } from "@/components/docs/rename-dialog"
 import { DeleteDialog } from "@/components/docs/delete-dialog"
+import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import {
   renameDoc,
   retitleDoc,
@@ -179,6 +180,7 @@ import type { TreeNode } from "@/lib/tree"
 import {
   mutateDocument,
   archiveDocumentFolder,
+  deleteDocument,
   deleteDocumentFolder,
   moveDocumentFolder,
   restoreDocumentFolder,
@@ -2036,6 +2038,13 @@ function DocTreeItem({
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const userCollapsedNodeRef = useRef(false)
+  const filesOn = useDeploymentInfo().data?.capabilities.filesPreview ?? false
+  const isFile = node.format?.id === "worktable.file"
+  // Files and drawings use the common document operations; with files on,
+  // Docs do too, so a Doc's folder goes with it.
+  const commonOperations =
+    isFile || node.format?.id === "worktable.quickdraw" || filesOn
+  const noun = isFile ? "File" : "Doc"
 
   useEffect(() => {
     if (
@@ -2094,7 +2103,7 @@ function DocTreeItem({
       // than the human-typed newPath when re-navigating an open document.
       const result = node.isFolder
         ? await moveDocumentFolder(spaceId, node.path, newPath)
-        : node.format?.id === "worktable.quickdraw"
+        : node.format?.id === "worktable.quickdraw" || isFile
           ? await mutateDocument(spaceId, "move", node.path, newPath).then(
               (result) => ({
                 renamed: [{ from: node.path, to: result.to ?? newPath }],
@@ -2104,7 +2113,7 @@ function DocTreeItem({
             ? await retitleDoc(spaceId, node.path, newPath)
             : await renameDoc(spaceId, node.path, newPath, "document")
       await follow(result.renamed ?? [])
-      toast.success(node.isFolder ? "Folder renamed" : "Doc renamed")
+      toast.success(node.isFolder ? "Folder renamed" : `${noun} renamed`)
       return true
     } catch (error) {
       // A doc can move before setting its title fails.
@@ -2132,7 +2141,8 @@ function DocTreeItem({
     }
   }
 
-  const handleDelete = async (): Promise<boolean> => {
+  /** `keep`: what in a Doc's folder stays; the server decides when omitted. */
+  const handleDelete = async (keep?: string[]): Promise<boolean> => {
     try {
       const openRelation = routeRelation(
         router.state.location.pathname,
@@ -2141,12 +2151,12 @@ function DocTreeItem({
       const navigateAfterDelete = node.isFolder
         ? openRelation !== null
         : openRelation === "self"
-      if (node.isFolder) {
+      if (node.isFolder && !(filesOn && hasDocumentAtFolder)) {
         await deleteDocumentFolder(spaceId, node.path)
+      } else if (commonOperations) {
+        await deleteDocument(spaceId, node.path, keep)
       } else {
-        if (node.format?.id === "worktable.quickdraw")
-          await mutateDocument(spaceId, "delete", node.path)
-        else await deleteDoc(spaceId, node.path)
+        await deleteDoc(spaceId, node.path)
       }
       if (navigateAfterDelete) {
         await navigate({ to: "/spaces/$spaceId", params: { spaceId } })
@@ -2156,13 +2166,17 @@ function DocTreeItem({
       } else {
         await onRefresh()
       }
-      toast.success(node.isFolder ? "Folder deleted" : "Doc deleted")
+      toast.success(
+        node.isFolder && !(filesOn && hasDocumentAtFolder)
+          ? "Folder deleted"
+          : `${noun} deleted`
+      )
       return true
     } catch (error) {
       toast.error(
         node.isFolder
           ? folderLifecycleError(error, "Couldn’t delete folder. Try again.")
-          : "Couldn’t delete this doc. Try again."
+          : `Couldn’t delete this ${noun.toLowerCase()}. Try again.`
       )
       return false
     }
@@ -2170,25 +2184,23 @@ function DocTreeItem({
 
   const handleArchive = async () => {
     try {
-      if (node.format?.id === "worktable.quickdraw")
-        await mutateDocument(spaceId, "archive", node.path)
+      if (commonOperations) await mutateDocument(spaceId, "archive", node.path)
       else await archiveDoc(spaceId, node.path)
       await onRefresh()
-      toast.success("Doc archived")
+      toast.success(`${noun} archived`)
     } catch {
-      toast.error("Failed to archive doc")
+      toast.error(`Failed to archive ${noun.toLowerCase()}`)
     }
   }
 
   const handleRestore = async () => {
     try {
-      if (node.format?.id === "worktable.quickdraw")
-        await mutateDocument(spaceId, "restore", node.path)
+      if (commonOperations) await mutateDocument(spaceId, "restore", node.path)
       else await restoreDoc(spaceId, node.path)
       await onRefresh()
-      toast.success("Doc restored")
+      toast.success(`${noun} restored`)
     } catch {
-      toast.error("Failed to restore doc")
+      toast.error(`Failed to restore ${noun.toLowerCase()}`)
     }
   }
 
@@ -2395,12 +2407,15 @@ function DocTreeItem({
           />
         </DeferredMount>
         <DeferredMount active={deleteOpen}>
+          {/* A Doc with things under it is deleted as a Doc with its folder. */}
           <DeleteDialog
             open={deleteOpen}
             onClose={() => setDeleteOpen(false)}
             onConfirm={handleDelete}
             itemName={node.name}
-            isFolder
+            {...(filesOn && hasDocumentAtFolder
+              ? { noun, uses: { spaceId, path: node.path } }
+              : { isFolder: true })}
           />
         </DeferredMount>
       </>
@@ -2470,6 +2485,8 @@ function DocTreeItem({
           onClose={() => setDeleteOpen(false)}
           onConfirm={handleDelete}
           itemName={node.name}
+          noun={noun}
+          {...(filesOn ? { uses: { spaceId, path: node.path } } : {})}
         />
       </DeferredMount>
     </>

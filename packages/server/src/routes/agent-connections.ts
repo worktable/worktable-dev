@@ -33,8 +33,8 @@ agentConnectionsRouter.get("/", async (c) => {
 
 agentConnectionsRouter.delete("/:id", async (c) => {
   const connection = (await listAgentConnections()).find((entry) => entry.id === c.req.param("id"))
-  await disconnectAgentConnection(c.req.param("id"))
-  if (connection?.participant) {
+  const disconnected = await disconnectAgentConnection(c.req.param("id"))
+  if (disconnected && connection?.participant) {
     for (const grok of await readGrokBots()) {
       if (grok.participantId === connection.participant.id) await removeGrokBot(grok.connectionId)
     }

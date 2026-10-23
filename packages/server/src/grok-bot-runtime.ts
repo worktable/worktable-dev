@@ -208,6 +208,10 @@ export function startGrokBotRuntime(
         console.error(
           "[Worktable] Grok Bot connection state could not be processed"
         )
+        if (live()) {
+          timer = setTimeout(nudge, RETRIES[0])
+          timer.unref?.()
+        }
       })
       .finally(() => {
         running = undefined

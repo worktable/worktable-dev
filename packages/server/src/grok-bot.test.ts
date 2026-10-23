@@ -680,6 +680,36 @@ describe("Grok Bot", () => {
     expect(await claimNextThreadDelivery(grok, 0, 2)).toBeNull()
   })
 
+  it("resumes queued work after a private-state read failure without another workspace event", async () => {
+    await verified()
+    await assign("Waiting through a temporary private-state error")
+    await drainWorkspaceChanges()
+    const path = join(appDir, "grok-bots", `${workspaceCacheKey()}.json`)
+    const original = await readFile(path, "utf8")
+    await writeFile(path, "{")
+    const failed = Promise.withResolvers<void>()
+    const woken = Promise.withResolvers<void>()
+    const errors = jest
+      .spyOn(console, "error")
+      .mockImplementation(() => failed.resolve())
+    jest.useFakeTimers({ now: Date.now() })
+    try {
+      stop = startGrokBotRuntime({ fetch: fakeFetch(() => woken.resolve()) })
+      await failed.promise
+      await writeFile(path, original)
+      jest.advanceTimersByTime(15_000)
+      await woken.promise
+      await stop()
+      stop = undefined
+      expect((await readGrokBots())[0]?.wake?.attempts).toBe(1)
+    } finally {
+      await stop?.()
+      stop = undefined
+      jest.useRealTimers()
+      errors.mockRestore()
+    }
+  })
+
   it("recovers a durable wake with the same ID and stops retries when disconnected", async () => {
     const connection = await verified()
     await assign("Queued before restart")

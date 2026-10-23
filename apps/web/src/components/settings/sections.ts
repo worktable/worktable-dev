@@ -1,5 +1,12 @@
 import type { DeploymentInfo } from "@/lib/system-api"
-import { lazy, type ComponentType } from "react"
+import type { ComponentType } from "react"
+import { preloadableComponent } from "@worktable/ui/lib/preloadable-component"
+import { GeneralSection } from "./sections/general"
+import { ProfileSection } from "./sections/profile"
+import { AppearanceSection } from "./sections/appearance"
+import { EditorSection } from "./sections/editor"
+import { HistorySection } from "./sections/history"
+import { HelpSection } from "./sections/help"
 import type { LucideIcon } from "lucide-react"
 import {
   Bot,
@@ -16,67 +23,51 @@ import {
   UserRound,
   UsersRound,
 } from "lucide-react"
-const TeamSection = lazy(() => import("./sections/team").then((module) => ({ default: module.TeamSection })));
-const TEAM: SettingsSection = { id: "team", group: "Worktable", label: "Team", description: "People, invitations and Space access.", icon: UsersRound, component: TeamSection };
-const LinksSection = lazy(() =>
+// Small sections arrive with the dialog. Larger sections can be warmed without
+// mounting them or starting their queries, pairing flows, or update checks.
+const TeamSection = preloadableComponent<Record<string, never>>(() =>
+  import("./sections/team").then((module) => ({ default: module.TeamSection }))
+)
+const TEAM: SettingsSection = {
+  id: "team",
+  group: "Worktable",
+  label: "Team",
+  description: "People, invitations and Space access.",
+  icon: UsersRound,
+  component: TeamSection.Component,
+  preload: TeamSection.preload,
+}
+const LinksSection = preloadableComponent<Record<string, never>>(() =>
   import("./sections/links").then((module) => ({
     default: module.LinksSection,
   }))
 )
-const AccountSection = lazy(() =>
+const AccountSection = preloadableComponent<Record<string, never>>(() =>
   import("./sections/account").then((module) => ({
     default: module.AccountSection,
   }))
 )
-const CloudSection = lazy(() =>
+const CloudSection = preloadableComponent<Record<string, never>>(() =>
   import("./sections/cloud").then((module) => ({
     default: module.CloudSection,
   }))
 )
-const GeneralSection = lazy(() =>
-  import("./sections/general").then((module) => ({
-    default: module.GeneralSection,
-  }))
-)
-const ProfileSection = lazy(() =>
-  import("./sections/profile").then((module) => ({
-    default: module.ProfileSection,
-  }))
-)
-const AppearanceSection = lazy(() =>
-  import("./sections/appearance").then((module) => ({
-    default: module.AppearanceSection,
-  }))
-)
-const EditorSection = lazy(() =>
-  import("./sections/editor").then((module) => ({
-    default: module.EditorSection,
-  }))
-)
-const BackupsSection = lazy(() =>
+const BackupsSection = preloadableComponent<Record<string, never>>(() =>
   import("./sections/backups").then((module) => ({
     default: module.BackupsSection,
   }))
 )
-const HistorySection = lazy(() =>
-  import("./sections/history").then((module) => ({
-    default: module.HistorySection,
-  }))
-)
-const AgentsSection = lazy(() =>
+const AgentsSection = preloadableComponent<Record<string, never>>(() =>
   import("./sections/agents").then((module) => ({
     default: module.AgentsSection,
   }))
 )
-const HelpSection = lazy(() =>
-  import("./sections/help").then((module) => ({ default: module.HelpSection }))
-)
-const SystemSection = lazy(() =>
+const SystemSection = preloadableComponent<Record<string, never>>(() =>
   import("./sections/system").then((module) => ({
     default: module.SystemSection,
   }))
 )
-const PortabilitySection = lazy(() =>
+const PortabilitySection = preloadableComponent<Record<string, never>>(() =>
   import("./sections/portability").then((module) => ({
     default: module.PortabilitySection,
   }))
@@ -107,6 +98,8 @@ export interface SettingsSection {
   description?: string
   icon: LucideIcon
   component: ComponentType
+  /** Download code ahead without mounting a section's effects. */
+  preload?: () => Promise<unknown>
 }
 
 export const DEFAULT_SETTINGS_SECTION_ID: SettingsSectionId = "general"
@@ -126,7 +119,8 @@ const LINK: SettingsSection = {
   label: "Worktable Cloud",
   description: "AI connections and document sharing.",
   icon: UserRound,
-  component: CloudSection,
+  component: CloudSection.Component,
+  preload: CloudSection.preload,
 }
 
 const ACCOUNT: SettingsSection = {
@@ -135,7 +129,8 @@ const ACCOUNT: SettingsSection = {
   label: "Subscription",
   description: "Plan and billing.",
   icon: CreditCard,
-  component: AccountSection,
+  component: AccountSection.Component,
+  preload: AccountSection.preload,
 }
 
 const LINKS: SettingsSection = {
@@ -144,7 +139,8 @@ const LINKS: SettingsSection = {
   label: "Links",
   description: "Every share link in this Worktable.",
   icon: Link2,
-  component: LinksSection,
+  component: LinksSection.Component,
+  preload: LinksSection.preload,
 }
 
 const PROFILE: SettingsSection = {
@@ -188,7 +184,8 @@ const PORTABILITY: SettingsSection = {
   group: "Worktable",
   label: "Import & Export",
   icon: PackageOpen,
-  component: PortabilitySection,
+  component: PortabilitySection.Component,
+  preload: PortabilitySection.preload,
 }
 
 const AGENTS: SettingsSection = {
@@ -197,7 +194,8 @@ const AGENTS: SettingsSection = {
   label: "Agents",
   description: "Connect agents and manage their access.",
   icon: Bot,
-  component: AgentsSection,
+  component: AgentsSection.Component,
+  preload: AgentsSection.preload,
 }
 
 const HELP: SettingsSection = {
@@ -215,7 +213,8 @@ const SYSTEM: SettingsSection = {
   label: "System",
   description: "Version, address, previews, and software updates.",
   icon: MonitorCog,
-  component: SystemSection,
+  component: SystemSection.Component,
+  preload: SystemSection.preload,
 }
 
 const CLOUD_GENERAL: SettingsSection = {
@@ -250,7 +249,8 @@ export function getSettingsSections(
         label: "Backups",
         description: "",
         icon: Archive,
-        component: BackupsSection,
+        component: BackupsSection.Component,
+        preload: BackupsSection.preload,
       },
       ...(capabilities.workspacePortability ? [PORTABILITY] : []),
       AGENTS,

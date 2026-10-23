@@ -82,16 +82,39 @@ test.afterAll(async () => {
   await harness?.stop()
 })
 
-test("Settings opens and remains navigable while a section is still loading", async ({
+test("Settings prepares sections on open and stays navigable while code is loading", async ({
   page,
 }) => {
+  let sectionRequests = 0
+  const inactiveRequests: string[] = []
+  const switchingRequests: string[] = []
+  let switching = false
+  page.on("request", (request) => {
+    const url = new URL(request.url())
+    if (
+      ["/api/system/update", "/api/system/previews"].includes(url.pathname) ||
+      (url.pathname === "/api/system/version" &&
+        !url.searchParams.has("cached"))
+    ) {
+      inactiveRequests.push(url.pathname)
+    }
+    if (
+      switching &&
+      /\/settings\/sections\/(profile|appearance|editor|history|help)\.tsx/.test(
+        url.pathname
+      )
+    ) {
+      switchingRequests.push(url.pathname)
+    }
+  })
   let releaseSection!: () => void
   const sectionReady = new Promise<void>((resolve) => {
     releaseSection = resolve
   })
   await page.route(
-    "**/components/settings/sections/general.tsx*",
+    "**/components/settings/sections/system.tsx*",
     async (route) => {
+      sectionRequests += 1
       await sectionReady
       await route.continue()
     }
@@ -101,13 +124,32 @@ test("Settings opens and remains navigable while a section is still loading", as
     await expect(
       settings.getByRole("navigation", { name: "Settings" })
     ).toBeVisible()
-    await expect(settings.getByRole("status")).toHaveText("Loading General…")
-    await settings.getByRole("button", { name: "Editor", exact: true }).click()
+    await expect(settings.getByLabel("Name", { exact: true })).toBeVisible()
+    // System code is prepared before visiting it, without starting its work.
+    await expect.poll(() => sectionRequests).toBe(1)
+    switching = true
+    for (const [section, content] of [
+      ["Profile", settings.getByRole("textbox", { name: "Display name" })],
+      ["Appearance", settings.getByRole("radiogroup", { name: "Theme" })],
+      ["Editor", settings.getByText("Spellcheck", { exact: true })],
+      ["History", settings.getByRole("combobox")],
+      ["Help", settings.getByText("Contact support", { exact: true })],
+    ] as const) {
+      await settings.getByRole("button", { name: section, exact: true }).click()
+      await expect(content).toBeVisible()
+    }
+    expect(switchingRequests).toEqual([])
+    expect(inactiveRequests).toEqual([])
+    await settings.getByRole("button", { name: "System", exact: true }).click()
+    await expect(settings.getByRole("status")).toHaveText("Loading System…")
+    await settings
+      .getByRole("button", { name: "Appearance", exact: true })
+      .click()
     await expect(
-      settings.getByText("Spellcheck", { exact: true })
+      settings.getByRole("radiogroup", { name: "Theme" })
     ).toBeVisible()
-    await settings.getByRole("button", { name: "General", exact: true }).click()
     releaseSection()
+    await settings.getByRole("button", { name: "General", exact: true }).click()
     await expect(settings.getByLabel("Name", { exact: true })).toBeVisible()
     await settings.getByRole("button", { name: "Close", exact: true }).click()
     await expect(settings).toBeHidden()

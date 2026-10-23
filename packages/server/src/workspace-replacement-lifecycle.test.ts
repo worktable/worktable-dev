@@ -252,7 +252,7 @@ describe("live workspace replacement", () => {
     const epoch = await getWorkspaceCollaborationEpoch()
     const after = await createDocumentShare({ kind: "doc", spaceId: "notes", artifactKey: "note" })
     const document = await useResolvedDocumentHandle(
-      { spaceId: "notes", path: "note" },
+      { spaceId: "notes", path: "note", materializeIdentity: true },
       async (handle) => ({ documentId: handle.documentId })
     )
     if (!("documentId" in document)) throw new Error("restored document is missing")

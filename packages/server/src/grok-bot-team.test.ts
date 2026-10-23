@@ -173,7 +173,7 @@ it("requires current Threads access and skips inaccessible work without exhausti
       wakes++
       woken.resolve()
       return new Response(null, { status: 200 })
-    }) as typeof fetch,
+    }) as unknown as typeof fetch,
   })
   for (
     let attempt = 0;

@@ -7,6 +7,7 @@ import { listAgentConnections } from "../agent-connection-store.ts"
 import { visibleGrokBotCandidates } from "../grok-bot-connections.ts"
 import {
   GrokBotConfigurationError,
+  applyGrokBotIdentityDefaults,
   readGrokBots,
   removeGrokBot,
   saveGrokBot,
@@ -103,6 +104,18 @@ grokBotRouter.put("/:id/configuration", async (c) => {
     previous?.webhookUrl !== webhookUrl ||
     previous?.webhookKey !== webhookKey ||
     previous?.emailAddress !== emailAddress
+  if (
+    previous &&
+    !previous.removed &&
+    !changed &&
+    parsed.data.name &&
+    previous.enabled === parsed.data.enabled &&
+    previous.executionMinutes === parsed.data.executionMinutes
+  ) {
+    await applyGrokBotIdentityDefaults(previous, parsed.data.name)
+    notifyWorkspaceChange({ type: "participants" })
+    return c.json({ ok: true })
+  }
   try {
     await saveGrokBot(
       {

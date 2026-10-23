@@ -279,6 +279,11 @@ describe("Grok Bot", () => {
       const verifiedAt = new Date().toISOString()
       await updateGrokBot(connection, { verifiedAt })
       expect((await save(" Comet ")).status).toBe(200)
+      expect(
+        (await readGrokBots()).find(
+          (c) => c.connectionId === identity.principal.id
+        )?.generation
+      ).toBe(connection.generation)
       expect((await save()).status).toBe(200)
       expect((await participantsByKey()).get("agent:Cursor")).toMatchObject({
         id: selected.id,

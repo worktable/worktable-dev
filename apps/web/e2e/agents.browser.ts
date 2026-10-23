@@ -172,7 +172,6 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
   page,
 }) => {
   let disconnected = false
-  let grokConfigured = false
   const forbiddenRequests: string[] = []
   let topLevelNavigations = 0
   page.on("request", (request) => {
@@ -198,16 +197,6 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
     route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        grokBots: grokConfigured
-          ? [
-              {
-                connectionId: "oauth:conn_app_claude:owner",
-                participantId: "ptc_bot",
-                status: "ready",
-                enabled: true,
-              },
-            ]
-          : [],
         connections: disconnected
           ? []
           : [
@@ -266,7 +255,21 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
   expect(forbiddenRequests).toEqual([])
   expect(page.url()).toBe(originalUrl)
   expect(topLevelNavigations).toBe(navigationsAfterOpen)
-  grokConfigured = true
+  await page.route("**/api/agent-connections?scope=workspace", (route) =>
+    route.fulfill({
+      json: {
+        connections: [],
+        grokBots: [
+          {
+            connectionId: "oauth:conn_app_claude:owner",
+            participantId: "ptc_bot",
+            status: "ready",
+            enabled: true,
+          },
+        ],
+      },
+    })
+  )
   await openAgents(page)
   await page.route("**/api/grok-bot/**", (route) =>
     route.fulfill({ status: 503, json: { error: "Cleanup unavailable" } })

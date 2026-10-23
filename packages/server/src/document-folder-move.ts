@@ -1,6 +1,9 @@
+import { readdir, rmdir } from "node:fs/promises"
+import { join, resolve } from "node:path"
 import { CanonicalIdSchema } from "@worktable/types"
 import { noteDocumentActivity } from "./document-activity.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
+import { readDocumentCatalogSnapshot } from "./document-query.ts"
 import {
   analyzeDocumentPath,
   documentPathKeyIsAtOrBelow,
@@ -259,6 +262,49 @@ async function publishFolderMove(
 }
 
 /** Move one bounded mixed-format subtree as a single durable generation. */
+/**
+ * Whether anything sits in the folder named after a document: sub-Docs or
+ * files. A Doc's folder belongs to it, so such a Doc moves with its folder.
+ * Reads the Space's snapshot; callers decide under their own locks.
+ */
+export async function hasDocumentsBelow(
+  spaceId: string,
+  path: string
+): Promise<boolean> {
+  const key = analyzeDocumentPath(path).comparisonKey
+  if (!key) return false
+  // A Space that can't be read here is refused by the move itself, with its
+  // own reason.
+  const catalog = await readDocumentCatalogSnapshot(spaceId).catch(() => null)
+  if (!catalog) return false
+  return catalog.entries.some((entry) => {
+    const entryKey =
+      entry.kind === "conflict"
+        ? entry.pathKey
+        : analyzeDocumentPath(entry.descriptor.path).comparisonKey
+    return Boolean(entryKey && documentPathKeyIsBelow(entryKey, key))
+  })
+}
+
+/**
+ * Remove the folders a move left empty, deepest first, so the Space's folder
+ * matches what it lists. A folder with anything still in it stays.
+ */
+async function removeEmptiedFolders(directory: string): Promise<void> {
+  let entries
+  try {
+    entries = await readdir(directory, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory() && !entry.isSymbolicLink()) {
+      await removeEmptiedFolders(join(directory, entry.name))
+    }
+  }
+  await rmdir(directory).catch(() => undefined)
+}
+
 export async function moveDocumentFolder(
   spaceId: string,
   fromPrefix: string,
@@ -325,6 +371,9 @@ export async function moveDocumentFolder(
         logError(error)
       )
     }
+    await removeEmptiedFolders(
+      resolve(getWorkspaceRoot(), "spaces", spaceId, "docs", ...fromPrefix.split("/"))
+    )
     return {
       ok: true,
       from: fromPrefix,

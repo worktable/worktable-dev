@@ -68,6 +68,7 @@ import {
 } from "./document-storage-profile.ts"
 import { resolveDocAliasIn, reservedByAliasIn } from "./doc-aliases.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
+import { hasDocumentsBelow, moveDocumentFolder } from "./document-folder-move.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import {
   prepareSuppressedDocReplay,
@@ -1934,6 +1935,20 @@ export async function moveRegisteredDocument(options: {
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   const to = requirePortablePath(options.to)
+  // A Doc's folder belongs to it: sub-Docs and files under it move with it,
+  // as one folder move, which takes its own lock.
+  const withFolder =
+    options.path !== to &&
+    (await hasDocumentsBelow(options.spaceId, options.path))
+  if (withFolder) {
+    const folder = await moveDocumentFolder(options.spaceId, options.path, to)
+    if (!folder.ok) {
+      throw new DocumentWriteError(
+        folder.kind === "not-found" ? "not-found" : "conflict",
+        folder.error
+      )
+    }
+  }
   const result = await withDocPathLock(options.spaceId, async () => {
     assertSpaceAccess(options.spaceId, "edit");
     await requireV2Workspace(workspaceRoot)
@@ -1942,6 +1957,19 @@ export async function moveRegisteredDocument(options: {
       spaceId: options.spaceId,
       registry,
     })
+    if (withFolder) {
+      const moved = resolveManagedFileDocument(catalog, to, registry)
+      const bytes = await readSource(workspaceRoot, options.spaceId, moved)
+      return {
+        documentId: moved.documentId,
+        from: options.path,
+        to,
+        sourceRevision: await registeredDocumentSourceRevision({
+          ...moved,
+          bytes,
+        }),
+      }
+    }
     const current = resolveManagedFileDocument(catalog, options.path, registry)
     // The lifecycle planner owns destination conflicts and can retire an alias
     // belonging to this same document when moving it back to a former path.

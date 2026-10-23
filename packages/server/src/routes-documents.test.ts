@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import {
   access,
   mkdir,
+  readdir,
   mkdtemp,
   readFile,
   rm,
@@ -21,6 +22,7 @@ import { ownerIdentity } from "./auth.ts"
 import { createAnnotation } from "./annotation-store.ts"
 import { HOSTED_BROWSER_RUNTIME_SCOPES } from "./hosted-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
+import { renameDocAndSync } from "./doc-rename.ts"
 import { getSpaceLinkGraph } from "./link-graph.ts"
 import {
   readRegisteredDocumentSource,
@@ -1189,6 +1191,41 @@ describe("format-neutral document route", () => {
       expect(
         ((await page.json()) as { page: { backlinks?: unknown } }).page.backlinks
       ).toEqual([{ path: "notes/readme", context: "Signup error", count: 1 }])
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
+
+  it("moves a Doc together with its folder of sub-Docs and files", async () => {
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    try {
+      const docs = join(root, "spaces", spaceId, "docs")
+      await writeDoc(spaceId, "notes/readme/details", "# Details", {
+        updatedBy: "test",
+        source: "rest-api",
+      })
+      await writeFile(join(docs, "notes", "readme", "error.png"), "png")
+      noteSpaceChanged(spaceId)
+
+      expect(
+        (await renameDocAndSync(spaceId, "notes/readme", "guides/start")).error
+      ).toBeNull()
+      expect(await readFile(join(docs, "guides", "start.md"), "utf8")).toBe(
+        "# Readme"
+      )
+      expect(
+        await readFile(join(docs, "guides", "start", "details.md"), "utf8")
+      ).toBe("# Details")
+      expect(
+        await readFile(join(docs, "guides", "start", "error.png"), "utf8")
+      ).toBe("png")
+      expect(
+        await readdir(join(docs, "notes", "readme"), { recursive: true }).catch(
+          () => "gone"
+        )
+      ).toEqual("gone")
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
       else process.env["WORKTABLE_FILES_PREVIEW"] = previous

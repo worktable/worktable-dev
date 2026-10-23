@@ -29,11 +29,6 @@ import {
 } from "../visitor-comment-access.ts"
 import { pauseVisitorComments } from "../visitor-comment-store.ts"
 import { prepareShareLinkAccess } from "../link-sharing-access.ts"
-import { readWidgetDocument } from "../widget-store.ts"
-import {
-  isolatedToolSource,
-  IsolatedToolSourceError,
-} from "../isolated-tool-source.ts"
 import {
   linkDocumentGeneration,
   linkSpaceSchemaGeneration,
@@ -312,15 +307,12 @@ async function checkGrant(
   grant: LinkGrant,
   spaceId: string,
   kind: string,
-  policy: SharingPolicy,
-  path: string | undefined
+  policy: SharingPolicy
 ): Promise<Response | null> {
   if (!sharingPreviewEnabled() || !policy.liveLinks || kind !== "html")
     return invalid(c, "Live links aren't allowed here", "LIVE_NOT_AVAILABLE")
   if (Buffer.byteLength(JSON.stringify(grant)) > 256 * 1024)
     return invalid(c, "The link's access is too large", "LINK_GRANT_INVALID")
-  const tool = await checkLiveTool(c, spaceId, path)
-  if (tool) return tool
   const issues = validateLinkGrant(
     grant,
     await readLinkGrantSchemas(spaceId, grant)
@@ -335,26 +327,6 @@ async function checkGrant(
         400
       )
     : null
-}
-
-async function checkLiveTool(
-  c: Context,
-  spaceId: string,
-  path: string | undefined
-): Promise<Response | null> {
-  if (path === undefined) return notFound(c)
-  const { data } = await readWidgetDocument(spaceId, path)
-  if (!data || data.widget.archive) return notFound(c)
-  try {
-    if (isolatedToolSource(data.html) !== null) return null
-  } catch (error) {
-    if (!(error instanceof IsolatedToolSourceError)) throw error
-  }
-  return invalid(
-    c,
-    "Rebuild this tool with the current authoring guide before sharing live data.",
-    "TOOL_FORMAT_REQUIRED"
-  )
 }
 
 function grantGeneration(spaceId: string, path: string) {
@@ -421,8 +393,6 @@ shareLinksRouter.post("/access", async (c) => {
     return notFound(c)
   if (!policy.liveLinks)
     return invalid(c, "Live links aren't allowed here", "LIVE_NOT_AVAILABLE")
-  const tool = await checkLiveTool(c, target.spaceId, target.path)
-  if (tool) return tool
   const access = await prepareShareLinkAccess({
     ...target,
     grant,
@@ -488,8 +458,7 @@ shareLinksRouter.post("/", async (c) => {
       grant,
       target.spaceId,
       target.kind,
-      policy,
-      target.path
+      policy
     )
     if (problem) return problem
   }
@@ -662,8 +631,7 @@ shareLinksRouter.patch("/:linkId", async (c) => {
       input.data.grant,
       link.spaceId,
       link.kind,
-      policy,
-      path
+      policy
     )
     if (problem) return problem
   }

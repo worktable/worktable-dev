@@ -136,10 +136,8 @@ test("a live share SDK starts first in an opaque frame and uses only the visitor
       )
     )
     .toBe(40)
-  const rejectedRefresh = page.waitForEvent(
-    "console",
-    (message) => message.type() === "error"
-  )
+  // A change while the subscription's read is in flight queues one refresh
+  // instead of another request, so it can't overrun the full broker.
   await page.evaluate(() =>
     document
       .querySelector("iframe")!
@@ -148,28 +146,37 @@ test("a live share SDK starts first in an opaque frame and uses only the visitor
         "*"
       )
   )
-  await rejectedRefresh
-  await page.evaluate(() => {
-    const frame = document.querySelector("iframe")!.contentWindow!
-    for (const request of (window as unknown as { held: Array<{ id: string }> })
-      .held) {
-      frame.postMessage(
-        {
-          type: "worktable.api.response",
-          id: request.id,
-          ok: true,
-          status: 200,
-          body: {
-            records: [
-              { id: "opaque", data: { name: "Retained initial data" } },
-            ],
-          },
-        },
-        "*"
-      )
-    }
-  })
+  const respond = (from: number, name: string) =>
+    page.evaluate(
+      ({ from, name }) => {
+        const frame = document.querySelector("iframe")!.contentWindow!
+        const held = (window as unknown as { held: Array<{ id: string }> })
+          .held
+        for (const request of held.slice(from))
+          frame.postMessage(
+            {
+              type: "worktable.api.response",
+              id: request.id,
+              ok: true,
+              status: 200,
+              body: { records: [{ id: "opaque", data: { name } }] },
+            },
+            "*"
+          )
+      },
+      { from, name }
+    )
+  await respond(0, "Retained initial data")
   await expect(frame.locator("#subscription")).toHaveText(
     "Retained initial data"
   )
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { held: unknown[] }).held.length
+      )
+    )
+    .toBe(41)
+  await respond(40, "Refreshed data")
+  await expect(frame.locator("#subscription")).toHaveText("Refreshed data")
 })

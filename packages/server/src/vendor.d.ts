@@ -65,5 +65,3 @@ declare module "@quickdrawjs/core/freehand" {
 
 declare module "*.woff2" { const path: string; export default path }
 declare module "*.bundle.js" { const path: string; export default path }
-
-declare module "*.bundle.js.gz" { const path: string; export default path }

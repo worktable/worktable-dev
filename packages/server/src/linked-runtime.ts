@@ -541,7 +541,6 @@ function launch(): void {
                         capabilities: [
                           LINKED_CAPABILITIES.SHARE_TICKETS,
                           LINKED_CAPABILITIES.SHARE_BRIDGE,
-                          LINKED_CAPABILITIES.SHARE_ISOLATED_TOOLS,
                           LINKED_CAPABILITIES.SHARE_READ_HINTS,
                           LINKED_CAPABILITIES.SHARE_COMMENTS,
                           LINKED_CAPABILITIES.SHARE_COMMENT_PAGES,

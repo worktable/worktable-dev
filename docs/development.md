@@ -133,8 +133,7 @@ MCP metadata, theme files, brand assets, and drawing preview assets are checked
 in but generated. Regenerate the corresponding output with `generate:tools`,
 `generate:theme`, `generate:brand`, or `generate:previews`; do not edit it by hand.
 `generate:previews` updates the shared font manifest and native drawing browser
-bundle and isolated tool assets after changes to their source, dependencies,
-or the Quickdraw patch.
+bundle after changes to their source, font dependencies, or the Quickdraw patch.
 Check generated outputs with:
 
 ```sh

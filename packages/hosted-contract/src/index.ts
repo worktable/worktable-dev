@@ -336,30 +336,8 @@ export const PublicShareComments = z
 export type PublicShareComments = z.infer<typeof PublicShareComments>
 
 /** A live HTML link: the tool runs on the link's data through the bridge. */
-export const PUBLIC_TOOL_RUNTIME_PROFILE = "isolated-v1"
-export const PublicShareTool = z
-  .object({
-    v: z.literal(1),
-    runtime: z.literal(PUBLIC_TOOL_RUNTIME_PROFILE),
-    asset: z.string().regex(/^[a-f0-9]{64}$/),
-    source: z
-      .string()
-      .min(1)
-      .max(512 * 1024)
-      .refine(
-        (value) =>
-          value.trim().length > 0 &&
-          new TextEncoder().encode(value).byteLength <= 512 * 1024,
-        "Tool source must be at most 512 KiB of UTF-8"
-      ),
-  })
-  .strict()
-export type PublicShareTool = z.infer<typeof PublicShareTool>
-
 export const PublicShareLive = z
   .object({
-    runtime: z.literal(PUBLIC_TOOL_RUNTIME_PROFILE),
-    asset: z.string().regex(/^[a-f0-9]{64}$/),
     /** The tool's revision, which the frame URL and its caches carry. */
     rev: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
     /** Seconds between checks for changes while a visitor uses the tool. */

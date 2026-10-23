@@ -93,55 +93,6 @@ describe("widget REST routes", () => {
     expect(contentRes.text).toContain("__worktableDiagnostics");
   });
 
-  it("serves isolated tools only in preview and retains the document record permission gate", async () => {
-    const keys = ["WORKTABLE_SHARING_PREVIEW", "WORKTABLE_HOSTED", "WORKTABLE_RESOURCE_URL", "WORKTABLE_CLOUD_WORKSPACE_ID", "WORKTABLE_PUBLIC_URL"] as const;
-    const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
-    const source = "await worktable.ui.render({tag:'p',children:['Équipe 東京']});";
-    const html = `<body onload="fetch('https://outside.invalid')"><script type="application/worktable">${source}</script><img src="https://outside.invalid">`;
-    try {
-      process.env.WORKTABLE_SHARING_PREVIEW = "0";
-      const held = await req(app, "POST", "/api/spaces/meta/widgets", { id: "isolated", name: "Isolated", html });
-      expect(held.status).toBe(400);
-      process.env.WORKTABLE_SHARING_PREVIEW = "1";
-      expect((await req(app, "POST", "/api/spaces/meta/widgets", { id: "isolated", name: "Isolated", html, permissions: { network: true, records: {}, state: { read: true, write: true } } })).status).toBe(201);
-      const content = await req(app, "GET", "/api/spaces/meta/widgets/isolated/content?theme=light");
-      expect(content.status).toBe(200);
-      const dom = new JSDOM(content.text);
-      const config = JSON.parse(dom.window.document.querySelector("#worktable-tool-config")!.textContent!);
-      expect(config.source).toBe(source);
-      expect(config.mode).toBe("member");
-      expect(dom.window.document.querySelector("img,[onload]")).toBeNull();
-      expect(content.headers.get("content-security-policy")).toContain("connect-src 'none'");
-      expect(content.headers.get("content-security-policy")).not.toContain("'unsafe-inline'; style-src");
-      expect((await req(app, "POST", `${config.apiBase}/records/tasks/query`, {})).status).toBe(403);
-      process.env.WORKTABLE_HOSTED = "1";
-      process.env.WORKTABLE_RESOURCE_URL = "https://app.example.test/api/mcp/w/cloud-team";
-      process.env.WORKTABLE_CLOUD_WORKSPACE_ID = "cloud-team";
-      delete process.env.WORKTABLE_PUBLIC_URL;
-      const proxied = await app.fetch(new Request("http://sprite.internal/api/spaces/meta/widgets/isolated/content", {
-        headers: { "X-Forwarded-Host": "untrusted.example.test", "X-Forwarded-Proto": "http" },
-      }));
-      expect(proxied.status).toBe(200);
-      const hostedDom = new JSDOM(await proxied.text());
-      const scriptPath = hostedDom.window.document.querySelector("script[src]")!.getAttribute("src")!;
-      expect(scriptPath.startsWith("/t/cloud-team/worktable-runtime/")).toBe(true);
-      const policy = proxied.headers.get("content-security-policy")!;
-      expect(policy).toContain("frame-ancestors https://app.example.test");
-      expect(policy).toContain(`script-src https://app.example.test${scriptPath} 'wasm-unsafe-eval'`);
-      expect(policy).toContain("font-src https://app.example.test/t/cloud-team/worktable-preview/fonts/");
-      expect(policy).toContain("connect-src 'none'");
-      expect(policy).not.toContain("sprite.internal");
-      expect(policy).not.toContain("untrusted.example.test");
-      process.env.WORKTABLE_SHARING_PREVIEW = "0";
-      expect((await req(app, "GET", "/api/spaces/meta/widgets/isolated/content")).status).toBe(404);
-    } finally {
-      for (const key of keys) {
-        if (previous[key] === undefined) delete process.env[key];
-        else process.env[key] = previous[key];
-      }
-    }
-  });
-
   it("surfaces smoothness warnings for brittle widget patterns without blocking creation", async () => {
     const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>:root{--ad-bg:#fff;--ad-surface:#fff;--ad-text:#111;--ad-muted:#666;--ad-border:#ddd;--ad-accent:#2563eb}html[data-theme="dark"]{--ad-bg:#111;--ad-surface:#222;--ad-text:#fff;--ad-muted:#aaa;--ad-border:#333;--ad-accent:#8ab4ff}</style></head><body><form><input name="title"><button>Save</button></form><script>localStorage.setItem('x','y'); fetch('/api/spaces/meta/records/tasks')</script></body></html>`;
     const createRes = await req(app, "POST", "/api/spaces/meta/widgets", {

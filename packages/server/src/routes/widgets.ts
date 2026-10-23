@@ -1,10 +1,4 @@
-import { previewFontCss } from "../preview-fonts.ts";
 import { buildWidgetCsp, canWidgetRecord, deniedWidgetQueryCollection, widgetRecordReadGuard, WidgetRecordAccessError } from "../widget-runtime-policy.ts";
-import { isolatedToolSource, IsolatedToolSourceError } from "../isolated-tool-source.ts";
-import { isolatedToolCsp, isolatedToolFrame } from "@worktable/ui/tool-runtime/document";
-import { sharingPreviewEnabled } from "../sharing-preview.ts";
-import { isHosted } from "../hosted.ts";
-import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts";
 import { requireScope, requireHumanWorkspaceOwner, restWriteActor } from "../auth.ts";
 import { documentSourceDisposition } from "../content-disposition.ts";
 import { existsSync } from "node:fs";
@@ -371,38 +365,14 @@ async function handleGetContent(c: Context, spaceId: string, widgetId: string) {
       },
     });
   }
-  let program: string | null;
-  try { program = isolatedToolSource(data); }
-  catch (error) {
-    if (!(error instanceof IsolatedToolSourceError)) throw error;
-    return c.json({ error: error.message, code: error.code }, 422);
-  }
-  if (program !== null && !sharingPreviewEnabled())
-    return c.json({ error: "This tool is not available.", code: "NOT_FOUND" }, 404);
-  const origin = program === null
-    ? new URL(c.req.url).origin
-    : resolveWorkspaceOriginForRequest(c.req.raw).origin;
-  const cloudWorkspace = program !== null && isHosted()
-    ? process.env["WORKTABLE_CLOUD_WORKSPACE_ID"]?.trim()
-    : undefined;
-  const assetPrefix = cloudWorkspace ? `/t/${encodeURIComponent(cloudWorkspace)}` : "";
-  const fontRoot = `${assetPrefix}/worktable-preview`;
-  const theme = c.req.query("theme") === "light" ? "light" : "dark";
-  const themedHtml = program === null
-    ? injectWidgetRuntime(applyWidgetTheme(data, theme), spaceId, widgetId)
-    : isolatedToolFrame(program, {
-        mode: "member", spaceId, widgetId,
-        apiBase: `/api/spaces/${encodeURIComponent(spaceId)}/widgets/__document/${Buffer.from(widgetId, "utf8").toString("base64url")}`,
-      }, { theme, fontStyles: previewFontCss(fontRoot), assetPrefix });
+  const themedHtml = injectWidgetRuntime(applyWidgetTheme(data, c.req.query("theme")), spaceId, widgetId);
   // A frame asked for by its current revision never changes: the browser
   // keeps it. Any other request revalidates, so it never holds old content.
   const current = c.req.query("rev") === htmlContentRevisionOf(document);
   return new Response(themedHtml, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy": program === null
-        ? buildWidgetCsp(widget.permissions?.network ?? false, origin)
-        : isolatedToolCsp({ assetOrigin: origin, assetPrefix, parentOrigin: origin, fontSources: [`${origin}${fontRoot}/fonts/`] }),
+      "Content-Security-Policy": buildWidgetCsp(widget.permissions?.network ?? false, new URL(c.req.url).origin),
       "X-Content-Type-Options": "nosniff",
       "Cache-Control": current
         ? "private, max-age=31536000, immutable"

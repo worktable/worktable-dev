@@ -17,7 +17,6 @@ import { teamRouter } from "./routes/team.ts"
 import { memberAccess } from "./team-access.ts"
 import { teamAuthRouter } from "./routes/team-auth.ts"
 import { closePreviewBrowsers } from "./document-preview-browser.ts"
-import { isolatedToolAsset } from "./isolated-tool-assets.ts"
 import {
   fulfillPreviewFont,
   previewFontVersion,
@@ -445,9 +444,6 @@ app.route("/api/tokens", tokensRouter);
 app.route("/api/agent-connections", agentConnectionsRouter);
 app.route("/api/linked", cloudCallbackRouter);
 // Public immutable application assets only; this map cannot read workspace files.
-app.on(["GET", "HEAD"], "/worktable-runtime/:hash/tool.js", (c) =>
-  isolatedToolAsset(c.req.raw) ?? c.notFound()
-)
 let previewFontStyles:
   | { version: string; css: string; gzip: Buffer }
   | undefined

@@ -43,7 +43,7 @@ export const CLOUD_PLANS = {
     name: "Business",
     amount: 19900,
     peopleLimit: 50,
-    linkedDevices: 3,
+    linkedDevices: 5,
     ...PLAN_TERMS,
   },
 } as const satisfies Record<CloudPlanId, { id: CloudPlanId; [key: string]: unknown }>

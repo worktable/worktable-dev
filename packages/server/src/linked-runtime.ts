@@ -12,12 +12,17 @@ import { z } from "zod"
 import {
   HOSTED_OAUTH_SCOPES,
   LINKED_CAPABILITIES,
+  LINKED_WORKTABLE_ID,
   LinkedHostReply,
   GROK_LINKED_EMAIL_WAKE_PATH,
   type GrokEmailWake,
 } from "@worktable/hosted-contract"
 import { ensureAppDir } from "./app-storage.ts"
-import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
+import {
+  ensureWorkspaceManifest,
+  getWorkspaceRoot,
+  workspaceCacheKey,
+} from "./workspace.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { createLinkedIngress } from "./linked-ingress.ts"
@@ -170,12 +175,44 @@ async function prepareLink(): Promise<StoredLink> {
   }
   return link
 }
+/**
+ * The folder's own id, so relinking it keeps its Worktable's address, and its
+ * name for the account's list of Worktables.
+ */
+function localWorkspace(): {
+  localWorkspaceId?: string
+  localWorkspaceName?: string
+} {
+  try {
+    const { id, name } = ensureWorkspaceManifest()
+    const trimmed = name.trim().slice(0, 100)
+    return {
+      ...(/^ws_[A-Za-z0-9_-]{1,128}$/.test(id) ? { localWorkspaceId: id } : {}),
+      ...(trimmed ? { localWorkspaceName: trimmed } : {}),
+    }
+  } catch {
+    return {}
+  }
+}
+
 function enrollment(link: StoredLink) {
   return {
     controlHash: createHash("sha256").update(link.controlSecret).digest("hex"),
     workspaceEpoch: link.workspaceEpoch,
     label: link.label,
+    ...localWorkspace(),
   }
+}
+
+/** Cloud versions before the directory name only the device. */
+function mcpUrlFor(
+  cloudOrigin: string,
+  reply: { destinationId: string; worktableId?: unknown }
+): string {
+  return typeof reply.worktableId === "string" &&
+    LINKED_WORKTABLE_ID.test(reply.worktableId)
+    ? `${cloudOrigin}/api/mcp/w/${reply.worktableId}`
+    : `${cloudOrigin}/api/mcp/d/${reply.destinationId}`
 }
 
 /** Released web clients can finish their explicit browser approval after an update. */
@@ -276,7 +313,10 @@ async function enableLink(billingWorkspaceId?: string): Promise<LinkedStatus> {
       cloudOrigin: link.cloudOrigin,
       billingWorkspaceId: link.billingWorkspaceId,
       label: link.label,
-      mcpUrl: `${link.cloudOrigin}/api/mcp/d/${destinationId}`,
+      mcpUrl: mcpUrlFor(link.cloudOrigin, {
+        destinationId,
+        worktableId: data["worktableId"],
+      }),
     }
     return linkedStatus()
   })
@@ -323,7 +363,10 @@ export async function setLinkEnabled(
       cloudOrigin: link.cloudOrigin,
       billingWorkspaceId: link.billingWorkspaceId,
       label: link.label,
-      mcpUrl: `${link.cloudOrigin}/api/mcp/d/${destinationId}`,
+      mcpUrl: mcpUrlFor(link.cloudOrigin, {
+        destinationId,
+        worktableId: data["worktableId"],
+      }),
     }
     return linkedStatus()
   })
@@ -580,7 +623,10 @@ function launch(): void {
                 billingWorkspaceId: link.billingWorkspaceId,
                 ...(reply.destinationId
                   ? {
-                      mcpUrl: `${link.cloudOrigin}/api/mcp/d/${reply.destinationId}`,
+                      mcpUrl: mcpUrlFor(link.cloudOrigin, {
+                        destinationId: reply.destinationId,
+                        worktableId: reply.worktableId,
+                      }),
                     }
                   : {}),
                 label: link.label,
@@ -616,7 +662,10 @@ function launch(): void {
                 !reply.signingKey
               )
                 throw new Error("INVALID_BINDING")
-              const mcpUrl = `${link.cloudOrigin}/api/mcp/d/${reply.destinationId}`
+              const mcpUrl = mcpUrlFor(link.cloudOrigin, {
+                destinationId: reply.destinationId,
+                worktableId: reply.worktableId,
+              })
               if (!ingress)
                 ingress = await createLinkedIngress({
                   binding: {

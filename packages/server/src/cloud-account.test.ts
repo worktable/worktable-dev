@@ -12,7 +12,11 @@ import { join } from "node:path"
 import { tmpdir } from "node:os"
 import fc from "fast-check"
 import { setAppDirOverride } from "./app-storage.ts"
-import { setWorkspaceRootOverride, workspaceCacheKey } from "./workspace.ts"
+import {
+  ensureWorkspaceManifest,
+  setWorkspaceRootOverride,
+  workspaceCacheKey,
+} from "./workspace.ts"
 import {
   cloudAccountStatus,
   cloudLinkRequest,
@@ -26,6 +30,7 @@ const realFetch = globalThis.fetch
 let exchanges = 0
 let refreshes = 0
 let linkActions = 0
+let linkRequests: { enrollment?: { localWorkspaceId?: string } }[] = []
 let expiry = new Date(Date.now() + 300_000).toISOString()
 let refreshStatus = 200
 let exchangeStatus = 200
@@ -40,6 +45,7 @@ beforeEach(async () => {
   setAppDirOverride(join(root, "app"))
   setWorkspaceRootOverride(join(root, "workspace"))
   exchanges = refreshes = linkActions = 0
+  linkRequests = []
   expiry = new Date(Date.now() + 300_000).toISOString()
   refreshStatus = 200
   exchangeStatus = 200
@@ -102,11 +108,13 @@ beforeEach(async () => {
     }
     if (url.endsWith("/link")) {
       linkActions++
+      linkRequests.push(body)
       if (body.action === "enable")
         expect(body.workspaceId).toBe("subscription_one")
       if (body.action === "pause") paused = body.paused
       return Response.json({
         destinationId: "a".repeat(32),
+        worktableId: `wl_${"b".repeat(32)}`,
         workspaceId: "subscription_one",
         ownerSubject: "owner",
         state: paused ? "paused" : "online",
@@ -253,6 +261,11 @@ test("the Settings toggle preserves the MCP URL and share capability, while Unli
   await startCloudSignIn(origin)
   await completeCloudSignIn(callback())
   const first = await setLinkEnabled(true, "subscription_one")
+  // The folder's id travels with the link, and its Worktable's address is shown.
+  expect(linkRequests[0]?.enrollment?.localWorkspaceId).toBe(
+    ensureWorkspaceManifest().id
+  )
+  expect(first.mcpUrl).toBe(`${cloud}/api/mcp/w/wl_${"b".repeat(32)}`)
   expect(first.billingWorkspaceId).toBe("subscription_one")
   const share = await createDocumentShare({
     kind: "doc",

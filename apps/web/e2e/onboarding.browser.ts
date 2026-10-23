@@ -188,10 +188,36 @@ test("Grok setup waits for a reply and recovers when a check fails after saving"
     .click()
   await page
     .getByLabel("Webhook URL", { exact: true })
-    .fill("https://api2.cursor.sh/automations/webhook/onboarding_fixture")
+    .fill(
+      "grokbot://app/v1/sidebar?target=webhook-url&automation=worktable-inbox"
+    )
   await page
     .getByLabel("Webhook key", { exact: true })
     .fill("grok-onboarding-secret")
+  await expect(options.getByRole("alert")).toContainText("Grok shortcut")
+  await expect(
+    options.getByRole("button", { name: "Continue", exact: true })
+  ).toBeDisabled()
+  await page
+    .getByLabel("Webhook URL", { exact: true })
+    .fill("https://api2.cursor.sh/automations/webhook/onboarding_fixture")
+  await page
+    .getByLabel("Webhook key", { exact: true })
+    .fill(
+      "grokbot://app/v1/sidebar?target=webhook-key&automation=worktable-inbox"
+    )
+  await expect(page.getByLabel("Webhook key", { exact: true })).toHaveAttribute(
+    "aria-invalid",
+    "true"
+  )
+  await expect(
+    options.getByRole("button", { name: "Continue", exact: true })
+  ).toBeDisabled()
+  await page
+    .getByLabel("Webhook key", { exact: true })
+    .fill("grok-onboarding-secret")
+  await expect(options.getByRole("alert")).toHaveCount(0)
+  expect(saves).toBe(0)
   await page.screenshot({ path: testInfo.outputPath("grok-setup.png") })
   await options.getByRole("button", { name: "Continue", exact: true }).click()
   await page

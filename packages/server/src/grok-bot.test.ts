@@ -396,6 +396,23 @@ describe("Grok Bot", () => {
     ]) {
       expect(() => validateGrokWebhook(endpoint)).toThrow()
     }
+    const shortcut =
+      "grokbot://app/v1/sidebar?target=webhook-key&automation=worktable-inbox"
+    expect(() => validateGrokWebhook(shortcut)).toThrow("Grok shortcut")
+    for (const field of ["webhookUrl", "webhookKey"]) {
+      const response = await app.request(`${base}/configuration`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          webhookUrl: url,
+          webhookKey: secret,
+          [field]: shortcut,
+        }),
+      })
+      expect(response.status).toBe(400)
+      expect((await response.json()).error).toContain("Grok shortcut")
+    }
+    expect(await readGrokBots()).toEqual([])
     const connection = await verified()
     await assign("Existing assignment")
     const impostor = {

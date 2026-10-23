@@ -1,6 +1,7 @@
 import { Hono } from "hono"
 import { requireAgentManager } from "../auth.ts"
 import { z } from "zod"
+import { GROK_BOT_SHORTCUT_MESSAGE, isGrokBotShortcut } from "@worktable/types"
 import { listAgentConnections } from "../agent-connection-store.ts"
 import { visibleGrokBotCandidates } from "../grok-bot-connections.ts"
 import {
@@ -60,6 +61,11 @@ grokBotRouter.put("/:id/configuration", async (c) => {
   const candidates = await visibleGrokBotCandidates(
     await listAgentConnections()
   )
+  if (isGrokBotShortcut(parsed.data.webhookKey ?? ""))
+    return c.json(
+      { error: GROK_BOT_SHORTCUT_MESSAGE, code: "BAD_REQUEST" },
+      400
+    )
   const candidate = candidates.find(
     (candidate) => candidate.id === c.req.param("id")
   )!

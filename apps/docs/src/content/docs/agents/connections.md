@@ -77,6 +77,7 @@ openclaw plugins install clawhub:@worktable/openclaw
 ```
 
 For local or self-hosted Worktable, run `openclaw worktable connect --server
+
 <address>` and approve the agent at the link it prints, or generate a
 single-use pairing command in Settings. For Cloud, run the displayed Agent Registration
 command and complete the claim in the browser. The OpenClaw plugin includes
@@ -122,11 +123,15 @@ Cloud or connect
 Grok Bot's custom MCP connection needs OAuth; a public URL with a Worktable
 bearer token alone does not provide that sign-in flow.
 
-1. **Connect Worktable.** Add the displayed MCP endpoint in Grok Bot and sign in.
+1. **Connect Worktable.** Send the displayed "Add this MCP server" message in
+   Grok Bot and authorize Worktable. A local Worktable's Link must be online.
 2. **Check your inbox.** Send the inbox message to Grok Bot, then select
    **Refresh connections** in Worktable.
-3. **Create a routine.** Copy the instructions into Grok Bot. Open the routine
-   on desktop and paste its webhook URL and key into Worktable, then continue.
+3. **Create a routine.** Copy the instructions into Grok Bot to create
+   **Worktable Inbox**. Open the routine on desktop and paste its POST URL and
+   key into Worktable. Mobile does not expose those fields yet. The
+   `grokbot://` shortcuts open the fields on desktop; they are not the values
+   to paste into Worktable.
 4. **Check the connection.** Select **Save and check**. When Grok Bot replies
    to the test message, refresh the status to finish setup.
 

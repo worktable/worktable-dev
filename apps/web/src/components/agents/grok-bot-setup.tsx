@@ -11,7 +11,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { Check, ChevronRight } from "lucide-react"
 import {
+  GROK_BOT_SHORTCUT_MESSAGE,
   grokBotRoutineInstructions,
+  isGrokBotShortcut,
   type GrokBotCandidate,
   type GrokBotConnection,
 } from "@worktable/types"
@@ -345,6 +347,9 @@ function GrokBotRoutine({
   const navigate = useNavigate()
   const [url, setUrl] = useState("")
   const [key, setKey] = useState("")
+  const urlIsShortcut = isGrokBotShortcut(url)
+  const keyIsShortcut = isGrokBotShortcut(key)
+  const hasShortcut = urlIsShortcut || keyIsShortcut
   const [minutes, setMinutes] = useState(String(saved?.executionMinutes ?? 30))
   const [confirmRetry, setConfirmRetry] = useState(false)
   const copy = useCopy(() => toast.success("Copied"))
@@ -353,6 +358,7 @@ function GrokBotRoutine({
     enabled = saved?.enabled ?? true,
     includeDraft = true
   ) => {
+    if (includeDraft && hasShortcut) throw new Error(GROK_BOT_SHORTCUT_MESSAGE)
     await fetchJSON(`${base}/configuration?scope=workspace`, {
       method: "PUT",
       body: JSON.stringify({
@@ -416,6 +422,8 @@ function GrokBotRoutine({
           id={`${id}-url`}
           type="url"
           value={url}
+          aria-invalid={urlIsShortcut || undefined}
+          aria-describedby={urlIsShortcut ? `${id}-shortcut-error` : undefined}
           onChange={(event) => setUrl(event.target.value)}
           autoComplete="off"
           placeholder={saved ? "Saved · paste a URL to replace" : "https://…"}
@@ -431,6 +439,8 @@ function GrokBotRoutine({
           id={`${id}-key`}
           type="password"
           value={key}
+          aria-invalid={keyIsShortcut || undefined}
+          aria-describedby={keyIsShortcut ? `${id}-shortcut-error` : undefined}
           onChange={(event) => setKey(event.target.value)}
           autoComplete="new-password"
           placeholder={
@@ -442,6 +452,15 @@ function GrokBotRoutine({
       </div>
     </>
   )
+  const shortcutError = hasShortcut ? (
+    <p
+      id={`${id}-shortcut-error`}
+      role="alert"
+      className="text-sm text-destructive"
+    >
+      {GROK_BOT_SHORTCUT_MESSAGE}
+    </p>
+  ) : null
   const timeout = (
     <div className="space-y-2">
       <label className="text-sm font-medium" htmlFor={`${id}-timeout`}>
@@ -540,12 +559,13 @@ function GrokBotRoutine({
             }}
           >
             {fields}
+            {shortcutError}
             {timeout}
             <div className="flex flex-wrap gap-2">
               <Button
                 type="submit"
                 variant="outline"
-                disabled={action.isPending}
+                disabled={action.isPending || hasShortcut}
               >
                 Save changes
               </Button>
@@ -564,6 +584,7 @@ function GrokBotRoutine({
       </div>
     )
   const valid = Boolean(
+    !hasShortcut &&
     (saved || (url.trim() && key.trim())) &&
     Number.isInteger(Number(minutes)) &&
     Number(minutes) >= 1 &&
@@ -579,8 +600,8 @@ function GrokBotRoutine({
         onOpenChange={() => onStep(current === 3 ? 0 : 3)}
       >
         <p className="text-sm text-muted-foreground">
-          Send the instructions to Grok Bot. Open the routine on desktop and
-          copy its webhook URL and key here.
+          Create the routine in chat, then copy its POST URL and key from Grok
+          on desktop. Mobile can't copy these fields yet.
         </p>
         <div>
           <Button
@@ -591,6 +612,7 @@ function GrokBotRoutine({
           </Button>
         </div>
         {fields}
+        {shortcutError}
         <details className="text-sm">
           <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
             Advanced

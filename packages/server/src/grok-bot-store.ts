@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { z } from "zod"
+import { GROK_BOT_SHORTCUT_MESSAGE, isGrokBotShortcut } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { readFileFingerprint } from "./file-fingerprint.ts"
@@ -259,6 +260,7 @@ export async function grokBotPolicy(
 
 /** Only the provider's routine endpoint can receive its bearer secret. No redirects. */
 export function validateGrokWebhook(value: string): string {
+  if (isGrokBotShortcut(value)) throw new Error(GROK_BOT_SHORTCUT_MESSAGE)
   let url: URL
   try {
     url = new URL(value)

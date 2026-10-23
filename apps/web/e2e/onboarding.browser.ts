@@ -140,7 +140,7 @@ for (const wakeMethod of ["webhook", "email"] as const)
       })
     )
     await page.route("**/api/grok-bot/**", (route) => {
-      if (route.request().url().endsWith("/retry")) {
+      if (new URL(route.request().url()).pathname.endsWith("/retry")) {
         notificationError = undefined
         return route.fulfill({ json: { ok: true } })
       }

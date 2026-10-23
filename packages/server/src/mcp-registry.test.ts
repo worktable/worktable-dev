@@ -15,6 +15,7 @@ import {
 import {
   PREVIEW_INPUT_SCHEMAS,
   PREVIEW_TOOL_DESCRIPTIONS,
+  PREVIEW_TOOL_NAMES,
 } from "./mcp/tools.ts"
 import {
   AnnotationsWriteInput,
@@ -384,8 +385,11 @@ describe("preview tool surface", () => {
   it("changes only the tools with held changes and keeps the released surface as it is", async () => {
     const released = (await listTools()).tools
     const preview = (await listTools("preview")).tools
+    // The same tools, a few under their preview names.
+    const previewName = (name: string) =>
+      PREVIEW_TOOL_NAMES[name as keyof typeof PREVIEW_TOOL_NAMES] ?? name
     expect(preview.map((tool) => tool.name)).toEqual(
-      released.map((tool) => tool.name)
+      released.map((tool) => previewName(tool.name))
     )
     const changed = preview
       .filter(
@@ -396,7 +400,9 @@ describe("preview tool surface", () => {
     expect(changed.sort()).toEqual(
       Object.keys(PREVIEW_TOOL_DESCRIPTIONS)
         .concat(Object.keys(PREVIEW_INPUT_SCHEMAS))
+        .concat(Object.keys(PREVIEW_TOOL_NAMES))
         .filter((name, index, all) => all.indexOf(name) === index)
+        .map(previewName)
         .sort()
     )
     const recordsWrite = preview.find(

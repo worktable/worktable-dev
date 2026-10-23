@@ -66,10 +66,14 @@ function widget(id: string, name: string, archived = false): WidgetFile {
   }
 }
 
-async function connect(scopes = ["documents:read"]): Promise<Client> {
+async function connect(
+  scopes = ["documents:read"],
+  surface: "released" | "preview" = "released"
+): Promise<Client> {
   const server = createWorktableMcpServer({
     version: "test",
     scopes,
+    surface,
   })
   client = new Client({ name: "documents-test", version: "1" })
   const [clientTransport, serverTransport] =
@@ -96,6 +100,97 @@ afterEach(async () => {
   setWorkspaceRootOverride(null)
   invalidateSearchIndex()
   await rm(root, { recursive: true, force: true })
+})
+
+describe("files for agents on the preview surface", () => {
+  it("creates, reads and replaces files through the file tools", async () => {
+    const manifestPath = join(root, "worktable.workspace.json")
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      unknown
+    >
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify({ ...manifest, version: 2 }, null, 2)}\n`
+    )
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    try {
+      const connected = await connect(
+        ["documents:read", "documents:write"],
+        "preview"
+      )
+      const write = (request: Record<string, unknown>) =>
+        connected.callTool({ name: "worktable_files_write", arguments: { request } })
+      const read = (request: Record<string, unknown>) =>
+        connected.callTool({ name: "worktable_files_read", arguments: { request } })
+      const file = { id: "worktable.file", sourceVersion: 1 }
+
+      const csv = await write({
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "data/feedback.csv",
+        format: file,
+        source: "id,score\n007,5\n008,4\n",
+      })
+      expect(csv.isError).not.toBe(true)
+      const png = await write({
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "design/dot.png",
+        format: file,
+        source: Buffer.from("\x89PNG\r\n\x1a\nfake").toString("base64"),
+        encoding: "base64",
+      })
+      expect(png.isError).not.toBe(true)
+
+      // A text file reads as text, an image as an image the model can see.
+      const text = await read({ action: "read_source", spaceId, path: "data/feedback.csv" })
+      expect(text.isError).not.toBe(true)
+      expect(text.structuredContent).toMatchObject({
+        encoding: "utf8",
+        source: "id,score\n007,5\n008,4\n",
+      })
+      const image = await read({ action: "read_source", spaceId, path: "design/dot.png" })
+      expect(image.isError).not.toBe(true)
+      expect(image.structuredContent).toMatchObject({
+        encoding: "image",
+        mediaType: "image/png",
+      })
+      expect(image.structuredContent).not.toHaveProperty("source")
+      expect(
+        (image.content as Array<{ type: string; mimeType?: string }>).some(
+          (block) => block.type === "image" && block.mimeType === "image/png"
+        )
+      ).toBe(true)
+
+      // Overwriting a CSV says what changed, row by row.
+      const replaced = await write({
+        action: "replace",
+        spaceId,
+        path: "data/feedback.csv",
+        source: "id,score\n007,5\n009,3\n",
+        expectedRevision: (text.structuredContent as { sourceRevision: string })
+          .sourceRevision,
+      })
+      expect(replaced.isError).not.toBe(true)
+      expect(replaced.structuredContent).toMatchObject({
+        changes: {
+          header: "unchanged",
+          rowsBefore: 2,
+          rowsAfter: 2,
+          rowsKept: 1,
+          rowsAdded: 1,
+          rowsRemoved: 1,
+        },
+      })
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
 })
 
 describe("format-neutral document access", () => {

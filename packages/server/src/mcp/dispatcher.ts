@@ -167,6 +167,13 @@ import {
 import type { MermaidDocumentRepair } from "@worktable/types"
 import type { McpSurface } from "./surface.ts"
 import {
+  DELIMITED_NAME,
+  delimitedChanges,
+  readableFileSource,
+} from "./file-results.ts"
+import { withResultMedia } from "./media.ts"
+import { BUILTIN_DOCUMENT_FORMATS } from "../document-format-registry.ts"
+import {
   logRecordPracticeWarnings,
   recordPracticeIdentitiesMatch,
   recordPracticeIdentity,
@@ -1184,6 +1191,35 @@ async function _dispatchOperationInner(
         spaceId: args["spaceId"] as string,
         path: args["path"] as string,
       })
+      // With the preview, a file reads as what it is: an image the model can
+      // see, or text, rather than base64.
+      if (
+        context.surface === "preview" &&
+        result.format.id === BUILTIN_DOCUMENT_FORMATS.file
+      ) {
+        const readable = readableFileSource(result.path, result.bytes)
+        if (readable) {
+          const fields = {
+            documentId: result.documentId,
+            path: result.path,
+            format: result.format,
+            byteLength: result.bytes.byteLength,
+            sourceRevision: result.sourceRevision,
+          }
+          return readable.kind === "text"
+            ? { ...fields, source: readable.text, encoding: "utf8" as const }
+            : withResultMedia(
+                { ...fields, encoding: "image" as const, mediaType: readable.mediaType },
+                [
+                  {
+                    type: "image",
+                    data: Buffer.from(result.bytes).toString("base64"),
+                    mimeType: readable.mediaType,
+                  },
+                ]
+              )
+        }
+      }
       return {
         documentId: result.documentId,
         path: result.path,
@@ -1276,19 +1312,36 @@ async function _dispatchOperationInner(
       }
     }
     case "documents.replace": {
+      const bytes = decodeGenericDocumentSource(
+        args["source"] as string,
+        (args["encoding"] as "utf8" | "base64" | undefined) ?? "utf8"
+      )
+      // With the preview, overwriting a CSV or TSV says what changed, so an
+      // agent sees a dropped row or a changed header at once.
+      const tableBefore =
+        context.surface === "preview" && DELIMITED_NAME.test(args["path"] as string)
+          ? await readRegisteredDocumentSource({
+              spaceId: args["spaceId"] as string,
+              path: args["path"] as string,
+            }).catch(() => null)
+          : null
       const result = await replaceRegisteredDocument({
         spaceId: args["spaceId"] as string,
         path: args["path"] as string,
-        bytes: decodeGenericDocumentSource(
-          args["source"] as string,
-          (args["encoding"] as "utf8" | "base64" | undefined) ?? "utf8"
-        ),
+        bytes,
         expectedRevision: args["expectedRevision"] as string,
         updatedBy: actorId,
         source: "mcp",
         reason: args["reason"] as string | undefined,
       })
-      return { ok: true, ...result }
+      return {
+        ok: true,
+        ...result,
+        ...(tableBefore &&
+        tableBefore.format.id === BUILTIN_DOCUMENT_FORMATS.file
+          ? { changes: delimitedChanges(result.path, tableBefore.bytes, bytes) }
+          : {}),
+      }
     }
     case "documents.checkpoint": {
       const result = await checkpointRegisteredDocument({

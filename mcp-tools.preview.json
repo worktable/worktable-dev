@@ -1371,9 +1371,9 @@
     }
   },
   {
-    "name": "worktable_documents_read",
-    "title": "Read Worktable documents",
-    "description": "List every document format, safely read source or versions, diff a document's text against an earlier revision, or render drawings and HTML as model-visible PNG previews with action render.",
+    "name": "worktable_files_read",
+    "title": "Read Worktable files",
+    "description": "List every file in a Space, Docs included, read a file's source, versions or text diff, or render drawings and HTML as model-visible PNG previews with action render. A file's path is its whole name, extension included. read_source returns an image file as an image you can see and a text file as text; other files come as base64.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1922,13 +1922,17 @@
           "additionalProperties": false
         },
         "source": {
-          "description": "Returned by action \"read_source\".",
+          "description": "Returned by action \"read_source\", except for an image, which comes as image content.",
           "type": "string"
         },
         "encoding": {
-          "description": "Returned by action \"read_source\".",
+          "description": "Returned by action \"read_source\": utf8 for a text file, image for an image file, else base64.",
           "type": "string",
-          "const": "base64"
+          "enum": [
+            "base64",
+            "utf8",
+            "image"
+          ]
         },
         "byteLength": {
           "description": "Returned by action \"read_source\".",
@@ -1983,11 +1987,14 @@
         "truncated": {
           "description": "Returned by action \"diff\"; true when unified stops before the end of the diff.",
           "type": "boolean"
+        },
+        "mediaType": {
+          "description": "Returned by action \"read_source\" of an image file.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
-      "description": "Structured result from worktable_documents_read. Fields vary by request.action.",
       "definitions": {
         "DocumentListItem": {
           "oneOf": [
@@ -2549,7 +2556,7 @@
       }
     },
     "annotations": {
-      "title": "Read Worktable documents",
+      "title": "Read Worktable files",
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,
@@ -2571,9 +2578,9 @@
     }
   },
   {
-    "name": "worktable_documents_write",
-    "title": "Write Worktable documents",
-    "description": "Create, replace, checkpoint, restore, move, archive, or restore registered documents and mixed-format folders through format-neutral actions. Every create chooses a lifetime (durable or temporary); set_lifetime and set_folder_lifetime change it later.",
+    "name": "worktable_files_write",
+    "title": "Write Worktable files",
+    "description": "Create, replace, checkpoint, restore, move, archive, or restore files, Docs included, and mixed-format folders. A file is created with format worktable.file from utf8 or base64 source; replacing a CSV or TSV reports what changed row by row, so check it for rows you didn't mean to drop. Archiving, moving or deleting a Doc takes its folder with it. Every create chooses a lifetime (durable or temporary); set_lifetime and set_folder_lifetime change it later.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3146,17 +3153,63 @@
           "items": {
             "type": "string"
           }
+        },
+        "changes": {
+          "description": "Returned by action \"replace\" of a CSV or TSV file: what changed, row by row.",
+          "type": "object",
+          "properties": {
+            "header": {
+              "type": "string",
+              "enum": [
+                "unchanged",
+                "changed"
+              ]
+            },
+            "rowsBefore": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "rowsAfter": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "rowsKept": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "rowsAdded": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "rowsRemoved": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "header",
+            "rowsBefore",
+            "rowsAfter",
+            "rowsKept",
+            "rowsAdded",
+            "rowsRemoved"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
         "ok"
       ],
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": {},
-      "description": "Structured result from worktable_documents_write. Fields vary by request.action."
+      "additionalProperties": {}
     },
     "annotations": {
-      "title": "Write Worktable documents",
+      "title": "Write Worktable files",
       "readOnlyHint": false,
       "destructiveHint": true,
       "idempotentHint": false,

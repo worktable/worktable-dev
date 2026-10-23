@@ -17,6 +17,10 @@ infrastructure and personal context out of release notes.
 
 - **Agent setup:** Getting Started and Settings group agent connections by how they work, with consistent connection steps and platform logos.
 
+### Fixed
+
+- **Share links across Worktables:** Unlinking or replacing one Worktable on a device no longer ends the share links of other Worktables there.
+
 ## [0.1.27] - 2026-10-23
 
 ### Fixed

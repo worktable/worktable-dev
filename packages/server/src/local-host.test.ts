@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -344,13 +345,60 @@ describe("local workspace authority", () => {
 
     // A release that ran one host at a time wrote a single lease. It still
     // counts for its own Worktable, and only for it.
-    const older = lease("ws_gamma", 17483)
+    const older = { ...lease("ws_gamma", 17483), pid: process.ppid }
+    delete (older as { ownerIdentity?: string }).ownerIdentity
     writeFileSync(getLegacyLocalRuntimePath(), JSON.stringify(older))
     expect(readLocalRuntime("ws_gamma")).toMatchObject({ nonce: older.nonce })
     expect(readLocalRuntime("ws_alpha")).toBeNull()
     expect(
       readLocalRuntimes().runtimes.map((runtime) => runtime.workspaceId)
     ).toEqual(["ws_beta", "ws_gamma"])
+
+    // A stale new lease does not hide that live older lease.
+    writeLocalRuntime({
+      ...lease("ws_gamma", 17483),
+      ownerIdentity: "not-the-current-process-start",
+    })
+    expect(readLocalRuntime("ws_gamma")).toMatchObject({ nonce: older.nonce })
+    expect(
+      readLocalRuntimes().runtimes.filter(
+        (runtime) => runtime.workspaceId === "ws_gamma"
+      )
+    ).toMatchObject([{ nonce: older.nonce }])
+  })
+
+  it("keeps the configured host visible to older releases in the single-host lease", () => {
+    const lease = (workspaceId: string, port: number) =>
+      createLocalRuntimeRecord({
+        owner: "desktop",
+        installId: "ins_hosts",
+        workspaceId,
+        workspacePath: join(appDir, workspaceId),
+        host: "127.0.0.1",
+        port,
+      })
+    const configured = lease("ws_configured", 17491)
+    writeLocalRuntime(configured, { legacy: true })
+    const legacyFile = () =>
+      JSON.parse(readFileSync(getLegacyLocalRuntimePath(), "utf8")) as {
+        nonce: string
+      }
+    expect(legacyFile().nonce).toBe(configured.nonce)
+    // Listed once, though both files hold it.
+    expect(readLocalRuntimes().runtimes).toHaveLength(1)
+
+    // Another live host keeps the single-host lease it holds.
+    const other = { ...lease("ws_other", 17492), pid: process.ppid }
+    delete (other as { ownerIdentity?: string }).ownerIdentity
+    writeFileSync(getLegacyLocalRuntimePath(), JSON.stringify(other))
+    writeLocalRuntime(lease("ws_second", 17493), { legacy: true })
+    expect(legacyFile().nonce).toBe(other.nonce)
+
+    // Exiting clears this host's own copy and nothing else.
+    writeFileSync(getLegacyLocalRuntimePath(), JSON.stringify(configured))
+    expect(clearLocalRuntime(configured)).toBe(true)
+    expect(existsSync(getLegacyLocalRuntimePath())).toBe(false)
+    expect(readLocalRuntime("ws_configured")).toBeNull()
   })
 
   it("treats a live recycled PID as a stale runtime lease", async () => {

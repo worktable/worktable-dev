@@ -133,16 +133,25 @@ async function claimLegacySharesLocked(): Promise<void> {
         const tokens = new Set(current.shares.map((share) => share.token))
         for (const share of claimed) {
           if (tokens.has(share.token)) continue
+          // One link per artifact, the newest, as sharing again replaces the
+          // old link. An older release run in between may have made a newer
+          // one; an older link must not come back.
+          const existing = current.shares.find(
+            (candidate) =>
+              candidate.workspaceEpoch === epoch &&
+              sameArtifact(candidate, share)
+          )
           if (
-            current.shares.some(
-              (candidate) =>
-                candidate.workspaceEpoch === epoch &&
-                sameArtifact(candidate, share)
-            )
+            existing &&
+            Date.parse(existing.createdAt) >= Date.parse(share.createdAt)
           ) {
             continue
           }
+          current.shares = current.shares.filter(
+            (candidate) => candidate !== existing
+          )
           current.shares.push(share)
+          tokens.add(share.token)
         }
         await saveShareState(path, `${JSON.stringify(current, null, 2)}\n`)
         const remaining = legacy.shares.filter(

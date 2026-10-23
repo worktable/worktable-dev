@@ -9,6 +9,7 @@ import {
   getServerSettings,
   invalidateServerSettingsCache,
   SETTINGS_DEFAULTS,
+  settingsRepairSettledForTests,
   settleRetentionPolicy,
   updateServerSettings,
   updateServerSettingsWithResult,
@@ -104,6 +105,8 @@ describe("settings-store", () => {
     invalidateServerSettingsCache();
     const s = getServerSettings(); // must not throw
     expect(s).toEqual(SETTINGS_DEFAULTS);
+    expect(publicSurfaceAuthRequired()).toBe(true);
+    await settingsRepairSettledForTests();
     expect(existsSync(`${settingsPath()}.corrupt`)).toBe(true);
     expect(readFileSync(`${settingsPath()}.corrupt`, "utf8")).toBe("{ this is not json ");
     expect(publicSurfaceAuthRequired()).toBe(true);

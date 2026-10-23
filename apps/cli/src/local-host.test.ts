@@ -2001,7 +2001,7 @@ describe("local-authority state model and command integration", () => {
       ["--workspace", first, "--port", String(firstPort)],
       "cli"
     )
-    let secondHost: ReturnType<typeof launch> | null = null
+    let secondHost: ReturnType<typeof Bun.spawn> | null = null
     try {
       await waitForPublishedLease()
       await waitForWorktableHealth(firstPort)
@@ -2048,15 +2048,22 @@ describe("local-authority state model and command integration", () => {
 
       // Another Worktable runs beside it, as Desktop keeps a linked
       // Worktable online, without changing the configured one.
-      secondHost = launch(
+      // Desktop is modelled by a parent shell that waits on its host.
+      secondHost = Bun.spawn(
         [
-          "--keep-configured-workspace",
-          "--workspace",
+          "sh",
+          "-c",
+          '"$0" "$1" launch --foreground --no-browser --keep-configured-workspace --workspace "$2" --port "$3" & wait',
+          process.execPath,
+          cliEntry,
           second,
-          "--port",
           String(secondPort),
         ],
-        "desktop"
+        {
+          env: { ...environment, WORKTABLE_LOCAL_OWNER: "desktop" },
+          stdout: "pipe",
+          stderr: "pipe",
+        }
       )
       await waitForWorktableHealth(secondPort)
       const inspection = await runCli(["local-host", "inspect", "--json"])
@@ -2085,11 +2092,25 @@ describe("local-authority state model and command integration", () => {
           readFileSync(join(appDir, "local-workspaces.json"), "utf8")
         ).workspaces.map((entry: { path: string }) => entry.path)
       ).toEqual(expect.arrayContaining([first, second]))
+      // Older releases read only the single-host lease: it names the
+      // configured Worktable's host.
+      expect(
+        JSON.parse(readFileSync(join(appDir, "local-runtime.json"), "utf8"))
+      ).toMatchObject({ workspacePath: first, port: firstPort })
+
+      // When Desktop goes away without stopping its host, the host stops.
+      const secondLease = publishedLeasePaths().find((path) =>
+        readFileSync(path, "utf8").includes(second)
+      )!
+      secondHost.kill("SIGKILL")
+      await secondHost.exited
+      await waitForFileRemoval(secondLease)
     } finally {
       firstHost.kill("SIGTERM")
-      secondHost?.kill("SIGTERM")
+      secondHost?.kill("SIGKILL")
       await Promise.all([firstHost.exited, secondHost?.exited])
     }
     expect(publishedLeasePaths()).toEqual([])
+    expect(existsSync(join(appDir, "local-runtime.json"))).toBe(false)
   })
 })

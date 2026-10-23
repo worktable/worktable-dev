@@ -429,6 +429,16 @@ function localWorkspaceIdForPath(workspacePath: string): string | null {
   }
 }
 
+/**
+ * Whether two folders are the same Worktable: the same path, or the same
+ * manifest id when both have one (a path reached through a symlink, say).
+ */
+function sameLocalWorktable(left: string, right: string): boolean {
+  if (resolve(left) === resolve(right)) return true
+  const leftId = localWorkspaceIdForPath(left)
+  return leftId !== null && leftId === localWorkspaceIdForPath(right)
+}
+
 /** Inspect the host serving one Worktable folder, if one published a lease. */
 async function inspectWorkspaceRuntime(
   workspacePath: string,
@@ -461,6 +471,8 @@ function liveHostOnPort(
   )
 }
 
+const DESKTOP_PARENT_CHECK_MS = 2_000
+
 function installLocalRuntimeCleanup(runtime: LocalRuntimeRecord): void {
   const cleanup = () => {
     try {
@@ -476,6 +488,20 @@ function installLocalRuntimeCleanup(runtime: LocalRuntimeRecord): void {
       process.exit(0)
     })
   }
+}
+
+/**
+ * A Desktop-owned host stops when Desktop goes away, even when Desktop
+ * crashed and never asked it to, so no orphaned host keeps a Worktable.
+ * Desktop starts the host directly, so a new parent process means it is gone.
+ */
+function stopWithDesktop(): void {
+  const parent = process.ppid
+  const check = setInterval(() => {
+    if (process.ppid === parent) return
+    clearInterval(check)
+    process.kill(process.pid, "SIGTERM")
+  }, DESKTOP_PARENT_CHECK_MS)
 }
 
 /** True if something is already listening on the port (any protocol). */
@@ -2035,7 +2061,7 @@ async function commandLocalHostActivate(
     const configuredPath = resolve(beforeConfig.workspace)
     const becomesConfigured =
       !existsSync(getConfigPath()) ||
-      configuredPath === targetPath ||
+      sameLocalWorktable(configuredPath, targetPath) ||
       (!currentService.installed &&
         classifyWorkspaceTarget(configuredPath).outcome !== "valid")
     if (!becomesConfigured) {
@@ -2304,7 +2330,10 @@ async function commandLocalHostRestart(
     }
     // The background service serves only the configured Worktable; Desktop
     // owns the host of any other.
-    if (!service.installed || workspacePath !== resolve(config.workspace)) {
+    if (
+      !service.installed ||
+      !sameLocalWorktable(workspacePath, config.workspace)
+    ) {
       console.log(
         JSON.stringify({
           schemaVersion: 1,
@@ -2764,7 +2793,7 @@ async function commandLaunchUnderAuthority(
   const additionalHost =
     !supervised &&
     opts.keepConfiguredWorkspace === true &&
-    resolve(temporary.workspace) !== resolve(config.workspace)
+    !sameLocalWorktable(temporary.workspace, config.workspace)
   const service: ServiceStatus = supervised
     ? {
         platform: "unsupported",
@@ -3275,8 +3304,11 @@ async function commandLaunchUnderAuthority(
     // cross-process authority lock, so a second surface cannot race this lease.
     startedServer = startServer(temporary.service.port, temporary.service.host)
     if (localRuntime) {
-      writeLocalRuntime(localRuntime)
+      // Older releases sharing this app directory read only the single-host
+      // lease, so the configured Worktable's host keeps publishing it there.
+      writeLocalRuntime(localRuntime, { legacy: !additionalHost })
       installLocalRuntimeCleanup(localRuntime)
+      if (localRuntime.owner === "desktop") stopWithDesktop()
     }
   } catch (error) {
     if (startedServer) {

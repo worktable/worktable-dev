@@ -634,9 +634,36 @@ export function readLocalRuntime(
   workspaceId: string
 ): LocalRuntimeRecord | null {
   const current = readLocalRuntimeFile(getLocalRuntimePath(workspaceId))
-  if (current) return current
-  const legacy = readLocalRuntimeFile(getLegacyLocalRuntimePath())
-  return legacy?.workspaceId === workspaceId ? legacy : null
+  let legacy: LocalRuntimeRecord | null
+  try {
+    legacy = readLocalRuntimeFile(getLegacyLocalRuntimePath())
+  } catch (error) {
+    // Only a missing current lease depends on the legacy file.
+    if (current) return current
+    throw error
+  }
+  return preferredLocalRuntime(
+    current,
+    legacy?.workspaceId === workspaceId ? legacy : null
+  )
+}
+
+/**
+ * Choose between this release's lease and the single-host lease for one
+ * Worktable. The legacy file may hold a copy of the same lease (the configured
+ * Worktable's host writes both), or an older release's host. A stale new
+ * lease never hides a live legacy one.
+ */
+function preferredLocalRuntime(
+  current: LocalRuntimeRecord | null,
+  legacy: LocalRuntimeRecord | null
+): LocalRuntimeRecord | null {
+  if (!current || !legacy || current.nonce === legacy.nonce) {
+    return current ?? legacy
+  }
+  return !localRuntimeProcessAlive(current) && localRuntimeProcessAlive(legacy)
+    ? legacy
+    : current
 }
 
 export interface LocalRuntimeFileError {
@@ -695,23 +722,26 @@ export function readLocalRuntimes(): LocalRuntimeListing {
   const errors: LocalRuntimeFileError[] = []
   const legacyPath = getLegacyLocalRuntimePath()
   const files = readLocalRuntimeFiles()
+  const legacy = files.find((file) => file.path === legacyPath)?.runtime ?? null
+  let legacyListed = false
   for (const file of files) {
     if (file.error) errors.push(file.error)
-    if (!file.runtime) continue
-    const runtime = file.runtime
-    // An older release's lease counts only until this release publishes one
-    // for the same Worktable.
-    if (
-      file.path === legacyPath &&
-      files.some(
-        (other) =>
-          other.path !== legacyPath &&
-          other.runtime?.workspaceId === runtime.workspaceId
-      )
-    ) {
-      continue
-    }
-    runtimes.push(runtime)
+    if (!file.runtime || file.path === legacyPath) continue
+    // One lease per Worktable: the legacy lease stands in for this one only
+    // while it is alive and this one is not.
+    const chosen =
+      legacy?.workspaceId === file.runtime.workspaceId
+        ? preferredLocalRuntime(file.runtime, legacy)!
+        : file.runtime
+    if (chosen === legacy) legacyListed = true
+    runtimes.push(chosen)
+  }
+  if (
+    legacy &&
+    !legacyListed &&
+    !runtimes.some((runtime) => runtime.workspaceId === legacy.workspaceId)
+  ) {
+    runtimes.push(legacy)
   }
   return { runtimes, errors }
 }
@@ -749,45 +779,80 @@ export function createLocalRuntimeRecord(input: {
   return parseRuntime(record)
 }
 
-export function writeLocalRuntime(record: LocalRuntimeRecord): void {
+/**
+ * Publish a host's lease. The configured Worktable's host also publishes it in
+ * the single-host `local-runtime.json` (`legacy`), which is all that older
+ * releases sharing this app directory read, so they keep seeing that host.
+ * The legacy file is never taken from another live host.
+ */
+export function writeLocalRuntime(
+  record: LocalRuntimeRecord,
+  options: { legacy?: boolean } = {}
+): void {
   const parsed = parseRuntime(record)
   withLocalRuntimeFileLock(parsed.workspaceId, () => {
     writePrivateJson(getLocalRuntimePath(parsed.workspaceId), parsed)
   })
-  // A lease an older release left for this Worktable is superseded. Remove it
-  // once its process is gone so it never reappears after this host exits.
   try {
     withLocalRuntimeFileLock(undefined, () => {
-      const legacy = readLocalRuntimeFile(getLegacyLocalRuntimePath())
-      if (
-        legacy?.workspaceId === parsed.workspaceId &&
-        !localRuntimeProcessAlive(legacy)
-      ) {
-        rmSync(getLegacyLocalRuntimePath(), { force: true })
+      const legacyPath = getLegacyLocalRuntimePath()
+      let legacy: LocalRuntimeRecord | null = null
+      try {
+        legacy = readLocalRuntimeFile(legacyPath)
+      } catch {
+        // An unreadable legacy lease is left for `local-host recover`.
+        return
       }
+      const legacyLive =
+        legacy !== null &&
+        legacy.pid !== parsed.pid &&
+        localRuntimeProcessAlive(legacy)
+      if (options.legacy && !legacyLive) {
+        writePrivateJson(legacyPath, parsed)
+      } else if (
+        legacy?.workspaceId === parsed.workspaceId &&
+        !legacyLive &&
+        legacy.nonce !== parsed.nonce
+      ) {
+        // A dead lease an older release left for this Worktable is
+        // superseded; remove it so it never reappears after this host exits.
+        rmSync(legacyPath, { force: true })
+      }
+    })
+  } catch {
+    // The per-Worktable lease is published; the legacy copy is best effort.
+  }
+}
+
+/**
+ * Remove this process's own lease for a Worktable, and its legacy copy; a
+ * newer owner's is kept.
+ */
+export function clearLocalRuntime(
+  runtime: Pick<LocalRuntimeRecord, "workspaceId" | "nonce">
+): boolean {
+  const owned = (current: LocalRuntimeRecord | null) =>
+    current !== null &&
+    current.nonce === runtime.nonce &&
+    current.pid === process.pid
+  const cleared = withLocalRuntimeFileLock(runtime.workspaceId, () => {
+    const path = getLocalRuntimePath(runtime.workspaceId)
+    if (!owned(readLocalRuntimeFile(path))) return false
+    rmSync(path, { force: true })
+    return true
+  })
+  let legacyCleared = false
+  try {
+    legacyCleared = withLocalRuntimeFileLock(undefined, () => {
+      const legacyPath = getLegacyLocalRuntimePath()
+      if (!owned(readLocalRuntimeFile(legacyPath))) return false
+      rmSync(legacyPath, { force: true })
+      return true
     })
   } catch {
     // An unreadable legacy lease is left for `local-host recover`.
   }
-}
-
-/** Remove this process's own lease for a Worktable; a newer owner's is kept. */
-export function clearLocalRuntime(
-  runtime: Pick<LocalRuntimeRecord, "workspaceId" | "nonce">
-): boolean {
-  return withLocalRuntimeFileLock(runtime.workspaceId, () => {
-    const path = getLocalRuntimePath(runtime.workspaceId)
-    const current = readLocalRuntimeFile(path)
-    if (
-      !current ||
-      current.nonce !== runtime.nonce ||
-      current.pid !== process.pid
-    ) {
-      return false
-    }
-    rmSync(path, { force: true })
-    return true
-  })
+  return cleared || legacyCleared
 }
 
 export function localProcessAlive(pid: number): boolean {

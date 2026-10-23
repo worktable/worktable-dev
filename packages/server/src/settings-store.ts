@@ -333,6 +333,34 @@ function rememberWrittenSettings(next: ServerSettings): void {
   _cacheCheckedAt = Date.now();
 }
 
+let _settingsRepair: Promise<void> = Promise.resolve();
+
+/**
+ * Move a corrupt settings.json aside and write defaults, under the settings
+ * lock other hosts write with. A file another host replaced since it was read
+ * is left alone.
+ */
+function quarantineCorruptSettings(signature: string): void {
+  const repair = async () => {
+    await withCrossProcessLock(`${settingsFile()}.lock`, { label: "Settings" }, async () => {
+      if (settingsFileSignature() !== signature) return;
+      const file = settingsFile();
+      renameSync(file, `${file}.corrupt`);
+      const tmp = `${file}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
+      await writeFile(tmp, JSON.stringify(SETTINGS_DEFAULTS, null, 2), { encoding: "utf8", mode: 0o600 });
+      await rename(tmp, file);
+    });
+  };
+  _settingsRepair = _settingsRepair.then(repair).catch((err) => {
+    console.warn("[settings] failed to quarantine corrupt settings.json:", logError(err));
+  });
+}
+
+/** Resolves once a corrupt settings file found so far has been moved aside. */
+export function settingsRepairSettledForTests(): Promise<void> {
+  return _settingsRepair;
+}
+
 /** Serialize a read-merge-write with other hosts' settings writes. */
 function withSettingsFileLock<T>(operation: () => Promise<T>): Promise<T> {
   return withCrossProcessLock(
@@ -368,7 +396,7 @@ export function getRetentionPolicyGeneration(): number {
  * Because settings now carry the public-origin exposure signal, corrupt or
  * unreadable settings fail closed until an explicit settings write succeeds.
  */
-function readFromDisk(): ServerSettings {
+function readFromDisk(signature: string): ServerSettings {
   const file = settingsFile();
   let raw: string;
   try {
@@ -389,14 +417,7 @@ function readFromDisk(): ServerSettings {
     // Corrupt JSON: preserve the bytes for forensics, reset to defaults, and
     // require auth until an owner successfully rewrites settings.
     markFailClosed("settings.json was corrupt; requiring auth until settings are rewritten");
-    try {
-      renameSync(file, `${file}.corrupt`);
-      writeFileSync(file, JSON.stringify(SETTINGS_DEFAULTS, null, 2), {
-        mode: 0o600,
-      });
-    } catch (writeErr) {
-      console.warn("[settings] failed to quarantine corrupt settings.json:", logError(writeErr));
-    }
+    quarantineCorruptSettings(signature);
     console.warn(
       `[settings] settings.json was not valid JSON; preserved as settings.json.corrupt, reset to defaults, and auth will fail closed until settings are rewritten`,
     );
@@ -421,7 +442,7 @@ export function getServerSettings(): ServerSettings {
   const signature = settingsFileSignature();
   if (_cache && signature === _cacheSignature) return _cache;
   const previous = _cache;
-  _cache = readFromDisk();
+  _cache = readFromDisk(signature);
   // The identity from before the read: a write that lands in between is read
   // again on the next check rather than missed.
   _cacheSignature = signature;

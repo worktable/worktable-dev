@@ -572,8 +572,9 @@ struct LocalAuthorityRuntime {
 #[serde(rename_all = "camelCase")]
 struct LocalAuthorityWorkspace {
     workspace_id: String,
+    /// None when the authority couldn't read the Worktable's link record.
     #[serde(default)]
-    linked: bool,
+    linked: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -664,6 +665,9 @@ struct DesktopHostState {
     runtime: Mutex<Option<DesktopRuntime>>,
     /// Desktop-owned hosts by Worktable id. Lock before `active_instance_token`.
     local_hosts: Mutex<HashMap<String, OwnedLocalHost>>,
+    /// The shown host's endpoint after it exited, so it can restart in the
+    /// background once the window moves on, if its Link is on.
+    exited_shown_host: Mutex<Option<LocalHostEndpoint>>,
     status: Mutex<DesktopBootstrapStatus>,
     connections: Mutex<DesktopConnections>,
     pending_local: Mutex<Option<WorkspacePrepared>>,
@@ -695,6 +699,7 @@ impl Default for DesktopHostState {
         Self {
             runtime: Mutex::new(None),
             local_hosts: Mutex::new(HashMap::new()),
+            exited_shown_host: Mutex::new(None),
             status: Mutex::new(DesktopBootstrapStatus::base(
                 "initializing",
                 "Preparing Worktable…",
@@ -3961,12 +3966,21 @@ fn authority_matches_workspace_endpoint(
     config_matches && runtime_matches
 }
 
-/// Whether Worktable Link is on for this Worktable on this device.
-fn authority_workspace_linked(authority: &LocalAuthorityInspection, workspace_id: &str) -> bool {
+/// Whether Worktable Link is on for this Worktable on this device. None when
+/// the authority can't tell: an unreadable registry or link record, or a
+/// Worktable missing from the registry. Desktop keeps a host it can't judge.
+fn authority_workspace_link(
+    authority: &LocalAuthorityInspection,
+    workspace_id: &str,
+) -> Option<bool> {
+    if authority.registry_error.is_some() {
+        return None;
+    }
     authority
         .workspaces
         .iter()
-        .any(|workspace| workspace.workspace_id == workspace_id && workspace.linked)
+        .find(|workspace| workspace.workspace_id == workspace_id)
+        .and_then(|workspace| workspace.linked)
 }
 
 /// Whether a process other than Desktop's own currently holds this Worktable.
@@ -4112,6 +4126,16 @@ async fn start_prepared_local(
     // A retry may still own its saved endpoint. Stop that host before asking
     // the shared authority to attach or activate the selected workspace. A
     // host for another Worktable stays running while its Link is on.
+    if let Ok(mut exited) = app.state::<DesktopHostState>().exited_shown_host.lock() {
+        // Opening the Worktable whose shown host exited starts it in front.
+        if exited
+            .as_ref()
+            .map(|endpoint| endpoint.workspace.id.as_str())
+            == Some(prepared.workspace.id.as_str())
+        {
+            exited.take();
+        }
+    }
     if displayed_owned_workspace_id(app).as_deref() == Some(prepared.workspace.id.as_str()) {
         stop_local_host(app);
     } else {
@@ -5142,7 +5166,8 @@ fn start_local_host(
         },
         0,
         true,
-    )?;
+    )?
+    .ok_or_else(|| "the local host was not started".to_string())?;
     append_desktop_host_log(&logs_path, "Desktop started its owned Worktable host.");
     let instance_token = spawned.token;
     let verification_token = spawned.verification_token;
@@ -5296,12 +5321,14 @@ struct SpawnedLocalHost {
 
 /// Start a Desktop-owned host for one Worktable and keep it in the host map.
 /// A shown host becomes the active instance before it can report its exit.
+/// A background start (`show` false) does nothing, returning None, when a
+/// host for that Worktable is already in the map.
 fn spawn_owned_local_host(
     app: &AppHandle,
     endpoint: &LocalHostEndpoint,
     restarts: u32,
     show: bool,
-) -> Result<SpawnedLocalHost, String> {
+) -> Result<Option<SpawnedLocalHost>, String> {
     let workspace = &endpoint.workspace;
     let port = endpoint.port;
     let path = workspace
@@ -5331,6 +5358,9 @@ fn spawn_owned_local_host(
             .local_hosts
             .lock()
             .map_err(|_| "local host map lock is poisoned".to_string())?;
+        if !show && hosts.contains_key(&workspace.id) {
+            return Ok(None);
+        }
         let (events, child) = command
             .spawn()
             .map_err(|error| format!("failed to start packaged Worktable sidecar: {error}"))?;
@@ -5354,7 +5384,7 @@ fn spawn_owned_local_host(
         (events, previous)
     };
     if let Some(previous) = previous {
-        terminate_local_children(vec![previous.child]);
+        thread::spawn(move || terminate_local_children(vec![previous.child]));
     }
     // ExitRequested can race an awaited workspace preparation: it may run before
     // the child exists. Re-check after storing the child so a host that appeared
@@ -5401,11 +5431,11 @@ fn spawn_owned_local_host(
             }
         }
     });
-    Ok(SpawnedLocalHost {
+    Ok(Some(SpawnedLocalHost {
         token,
         verification_token: config.verification_token,
         ready: ready_receiver,
-    })
+    }))
 }
 
 /// A Desktop-owned host exited. The shown one turns into a connection error
@@ -5437,6 +5467,9 @@ fn owned_local_host_exited(app: &AppHandle, workspace_id: &str, token: &str, cod
             .unwrap_or((None, None));
         if let Some(host) = &exited {
             append_desktop_host_log(&host.endpoint.logs_path, &message);
+            if let Ok(mut remembered) = app.state::<DesktopHostState>().exited_shown_host.lock() {
+                remembered.replace(host.endpoint.clone());
+            }
         }
         let recovery_app = app.clone();
         let recovery_token = token.to_string();
@@ -5503,13 +5536,22 @@ fn restart_background_local_host(app: AppHandle, endpoint: LocalHostEndpoint, re
                 return;
             }
         };
-        // Another surface may have started this Worktable, or Link was turned off.
-        if !authority_workspace_linked(&authority, &workspace_id)
-            || authority_workspace_has_live_host(&authority, &workspace_id)
-            || already_running()
-        {
+        match authority_workspace_link(&authority, &workspace_id) {
+            Some(true) => {}
+            // Link was turned off: the host stays stopped.
+            Some(false) => return,
+            // The authority can't tell yet; ask again later.
+            None => {
+                restart_background_local_host(app.clone(), endpoint, restarts.saturating_add(1));
+                return;
+            }
+        }
+        // Another surface may have started this Worktable.
+        if authority_workspace_has_live_host(&authority, &workspace_id) {
             return;
         }
+        // Starting only when no host for this Worktable is in the map happens
+        // under the map lock, so a start from the window can't race it.
         if let Err(error) = spawn_owned_local_host(&app, &endpoint, restarts, false) {
             append_desktop_host_log(&endpoint.logs_path, &error);
             restart_background_local_host(app.clone(), endpoint, restarts.saturating_add(1));
@@ -5589,51 +5631,45 @@ fn displayed_owned_workspace_id<R: Runtime>(app: &AppHandle<R>) -> Option<String
 }
 
 /// Stop showing the local host. Desktop-owned hosts keep running in the
-/// background while their Worktable has Link on; the rest stop.
-fn detach_local_host<R: Runtime>(app: &AppHandle<R>) {
-    let was_showing = app
-        .state::<DesktopHostState>()
+/// background while their Worktable has Link on; the rest stop. A shown host
+/// that exited restarts in the background if its Link is on.
+fn detach_local_host(app: &AppHandle) {
+    let state = app.state::<DesktopHostState>();
+    let was_showing = state
         .active_instance_token
         .lock()
         .ok()
         .and_then(|mut token| token.take())
         .is_some();
-    if was_showing {
+    let exited = state
+        .exited_shown_host
+        .lock()
+        .ok()
+        .and_then(|mut exited| exited.take());
+    if was_showing || exited.is_some() {
         let app = app.clone();
-        tauri::async_runtime::spawn(async move { stop_unlinked_background_hosts(&app).await });
+        tauri::async_runtime::spawn(async move { settle_background_hosts(&app, exited).await });
     }
 }
 
-async fn stop_unlinked_background_hosts<R: Runtime>(app: &AppHandle<R>) {
-    let linked: HashSet<String> = {
-        let runtime = match runtime_for(app) {
-            Ok(runtime) => runtime,
-            Err(_) => return,
-        };
-        let inspection = match configured_sidecar(
-            app,
-            &runtime,
-            vec!["local-host".into(), "inspect".into(), "--json".into()],
-        ) {
-            Ok(command) => command.output().await.ok(),
-            Err(_) => None,
-        };
-        // Without an answer, keep every host: stopping one could take a
-        // linked Worktable offline.
-        let Some(authority) = inspection
-            .and_then(|output| {
-                serde_json::from_slice::<LocalAuthorityInspection>(&output.stdout).ok()
-            })
-            .filter(|authority| authority.ok)
-        else {
-            return;
-        };
-        authority
-            .workspaces
-            .iter()
-            .filter(|workspace| workspace.linked)
-            .map(|workspace| workspace.workspace_id.clone())
-            .collect()
+/// Worktables whose Desktop-owned background host should stop: those the
+/// authority reports with Link off. Unknown ones keep their host.
+fn background_hosts_with_link_off<'a>(
+    authority: &LocalAuthorityInspection,
+    workspace_ids: impl IntoIterator<Item = &'a str>,
+) -> Vec<String> {
+    workspace_ids
+        .into_iter()
+        .filter(|id| authority_workspace_link(authority, id) == Some(false))
+        .map(str::to_string)
+        .collect()
+}
+
+async fn settle_background_hosts(app: &AppHandle, exited: Option<LocalHostEndpoint>) {
+    // Without an answer, keep every host: stopping one could take a linked
+    // Worktable offline.
+    let Ok(authority) = inspect_local_authority(app).await else {
+        return;
     };
     let stopped: Vec<CommandChild> = {
         let state = app.state::<DesktopHostState>();
@@ -5645,14 +5681,13 @@ async fn stop_unlinked_background_hosts<R: Runtime>(app: &AppHandle<R>) {
             .lock()
             .ok()
             .and_then(|token| token.clone());
-        let unlinked: Vec<String> = hosts
+        let background: Vec<&str> = hosts
             .iter()
-            .filter(|(id, host)| {
-                active.as_deref() != Some(host.token.as_str()) && !linked.contains(*id)
-            })
-            .map(|(id, _)| id.clone())
+            .filter(|(_, host)| active.as_deref() != Some(host.token.as_str()))
+            .map(|(id, _)| id.as_str())
             .collect();
-        unlinked
+        let link_off = background_hosts_with_link_off(&authority, background);
+        link_off
             .iter()
             .filter_map(|id| hosts.remove(id))
             .map(|host| {
@@ -5667,6 +5702,11 @@ async fn stop_unlinked_background_hosts<R: Runtime>(app: &AppHandle<R>) {
     if !stopped.is_empty() {
         thread::spawn(move || terminate_local_children(stopped));
     }
+    if let Some(endpoint) = exited {
+        if authority_workspace_link(&authority, &endpoint.workspace.id) != Some(false) {
+            restart_background_local_host(app.clone(), endpoint, 1);
+        }
+    }
 }
 
 /// Stop the Desktop-owned host of one Worktable, shown or not.
@@ -5677,6 +5717,15 @@ fn stop_owned_local_host<R: Runtime>(app: &AppHandle<R>, workspace_id: &str) {
         .lock()
         .ok()
         .and_then(|mut hosts| hosts.remove(workspace_id));
+    if let Ok(mut exited) = state.exited_shown_host.lock() {
+        if exited
+            .as_ref()
+            .map(|endpoint| endpoint.workspace.id.as_str())
+            == Some(workspace_id)
+        {
+            exited.take();
+        }
+    }
     if let Some(host) = removed {
         let _ = clear_local_instance_if_active(app, &host.token);
         terminate_local_children(vec![host.child]);
@@ -8112,7 +8161,8 @@ mod tests {
                 "ok": true,
                 "workspaces": [
                     { "workspaceId": "ws_linked", "path": "/tmp/Linked", "linked": true },
-                    { "workspaceId": "ws_local", "path": "/tmp/Local", "linked": false }
+                    { "workspaceId": "ws_local", "path": "/tmp/Local", "linked": false },
+                    { "workspaceId": "ws_unreadable", "path": "/tmp/Unreadable", "linked": null }
                 ],
                 "runtime": null,
                 "runtimes": [
@@ -8129,11 +8179,41 @@ mod tests {
             }"#,
         )
         .unwrap();
-        assert!(authority_workspace_linked(&inspection, "ws_linked"));
-        assert!(!authority_workspace_linked(&inspection, "ws_local"));
-        assert!(!authority_workspace_linked(&inspection, "ws_unknown"));
+        assert_eq!(
+            authority_workspace_link(&inspection, "ws_linked"),
+            Some(true)
+        );
+        assert_eq!(
+            authority_workspace_link(&inspection, "ws_local"),
+            Some(false)
+        );
+        assert_eq!(authority_workspace_link(&inspection, "ws_unreadable"), None);
+        assert_eq!(authority_workspace_link(&inspection, "ws_unknown"), None);
         assert!(authority_workspace_has_live_host(&inspection, "ws_local"));
         assert!(!authority_workspace_has_live_host(&inspection, "ws_linked"));
+        let hosts = ["ws_linked", "ws_local", "ws_unreadable", "ws_unknown"];
+        // Only a Worktable reported with Link off loses its background host.
+        assert_eq!(
+            background_hosts_with_link_off(&inspection, hosts),
+            vec!["ws_local".to_string()]
+        );
+
+        // An unreadable registry reports no Worktables: every host is kept.
+        let unreadable_registry: LocalAuthorityInspection = serde_json::from_str(
+            r#"{
+                "schemaVersion": 1,
+                "ok": true,
+                "registryError": "invalid local workspace registry",
+                "workspaces": [],
+                "runtime": null
+            }"#,
+        )
+        .unwrap();
+        assert!(background_hosts_with_link_off(&unreadable_registry, hosts).is_empty());
+        assert_eq!(
+            authority_workspace_link(&unreadable_registry, "ws_local"),
+            None
+        );
 
         let delays: Vec<u64> = (0..9)
             .map(|restarts| background_host_restart_delay(restarts).as_secs())

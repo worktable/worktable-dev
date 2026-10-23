@@ -1192,6 +1192,7 @@ async function commandLocalHostInspect(): Promise<void> {
         },
         activeWorkspace: active,
         // Desktop keeps a host running for a Worktable whose Link is on.
+        // `linked` is null when its link record can't be read.
         workspaces: registry.workspaces.map((entry) => ({
           ...entry,
           linked: localWorkspaceLinked(entry.path),

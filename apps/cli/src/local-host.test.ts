@@ -278,6 +278,24 @@ describe("local-authority state model and command integration", () => {
         )
       )
     ).toEqual({ [first]: false, [second]: true })
+    expect(inspection.stdout).not.toContain(controlSecret)
+
+    // An unreadable link record is unknown, never "off".
+    writeFileSync(
+      join(
+        appDir,
+        "linked",
+        `${createHash("sha256").update(first).digest("hex").slice(0, 16)}.json`
+      ),
+      "{ not json"
+    )
+    const unknown = JSON.parse(
+      (await runCli(["local-host", "inspect", "--json"])).stdout
+    )
+    expect(
+      unknown.workspaces.find((entry: { path: string }) => entry.path === first)
+        .linked
+    ).toBeNull()
     expect(inspected.activeWorkspace.path).toBe(first)
     expect(inspected.runtime).toBeNull()
     expect(inspected.runtimes).toEqual([])

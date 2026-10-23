@@ -153,23 +153,30 @@ function emptyRegistry(): LocalWorkspaceRegistry {
 /**
  * Whether Worktable Link is on for the Worktable at this path on this device:
  * its link record exists and is not disabled. Pausing happens in Cloud, so a
- * paused link still counts as on here.
+ * paused link still counts as on here. null when the record can't be read,
+ * so a caller never mistakes an unreadable record for Link being off.
  */
-export function localWorkspaceLinked(workspacePath: string): boolean {
+export function localWorkspaceLinked(workspacePath: string): boolean | null {
+  let text: string
   try {
-    const link = JSON.parse(
-      readFileSync(
-        join(
-          ensureAppDir(),
-          "linked",
-          `${workspaceCacheKeyForRoot(resolve(workspacePath))}.json`
-        ),
-        "utf8"
-      )
-    ) as unknown
-    return isRecord(link) && link["disabled"] === false
+    text = readFileSync(
+      join(
+        ensureAppDir(),
+        "linked",
+        `${workspaceCacheKeyForRoot(resolve(workspacePath))}.json`
+      ),
+      "utf8"
+    )
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? false : null
+  }
+  try {
+    const link = JSON.parse(text) as unknown
+    return isRecord(link) && typeof link["disabled"] === "boolean"
+      ? link["disabled"] === false
+      : null
   } catch {
-    return false
+    return null
   }
 }
 

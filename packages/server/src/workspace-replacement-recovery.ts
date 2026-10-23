@@ -99,7 +99,11 @@ function replacementResetRequired(job: RecoverableJob): boolean {
   if (job.resetPending !== undefined) return job.resetPending
   // Older snapshot writers persisted this only after the workspace reset and
   // all private restoration succeeded. Other legacy outcomes remain uncertain.
-  return !(job.kind === "snapshot" && job.visitorCommentsRestored === true)
+  return !(
+    job.kind === "snapshot" &&
+    job.state === "complete" &&
+    job.visitorCommentsRestored === true
+  )
 }
 
 function finishRecovery(

@@ -223,7 +223,15 @@ describe("live workspace replacement", () => {
     }
     expect((await restoreLiveWorkspaceSnapshot(request)).state).toBe("replacing")
     await withDeadline((async () => {
-      while ((await readWorkspaceSnapshotRestoreStatus(request)).state !== "complete") {
+      while (true) {
+        try {
+          const status = await readWorkspaceSnapshotRestoreStatus(request)
+          if (status.state === "complete") break
+          if (status.state === "failed") throw new Error("snapshot restore failed")
+        } catch (error) {
+          if (!(error instanceof Error) || !("reason" in error) ||
+              (error.reason !== "changed" && error.reason !== "missing")) throw error
+        }
         // test-policy: external-readiness-backoff
         await Bun.sleep(20)
       }

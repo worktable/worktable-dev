@@ -5,17 +5,20 @@ import { join } from "node:path"
 import { Hono } from "hono"
 import { setAppDirOverride } from "./app-storage.ts"
 import { setWorkspaceRootOverride, workspaceCacheKey } from "./workspace.ts"
-import { resolveParticipant } from "./participant-store.ts"
+import { participantsByKey, resolveParticipant } from "./participant-store.ts"
 import type { TokenIdentity } from "./token-store.ts"
 import {
   acceptDelivery,
   claimNextThreadDelivery,
   listThreadParticipants,
+  listThreadParticipantsForDisplay,
   postThreadMessage,
 } from "./thread-service.ts"
 import { grokBotRouter } from "./routes/grok-bot.ts"
 import { grokBotInventory } from "./grok-bot-connections.ts"
 import {
+  applyGrokBotIdentityDefaults,
+  readGrokBotCandidates,
   readGrokBots,
   removeGrokBot,
   updateGrokBot,
@@ -133,6 +136,60 @@ function fakeFetch(
 }
 
 describe("Grok Bot", () => {
+  it.each(["Cursor", "Orbit"])("classifies the selected Bot while preserving custom names (%s)", async (name) => {
+    const identity: TokenIdentity = {
+      ...grok,
+      agent: "Cursor",
+      principal: { ...grok.principal, id: "oauth:native-bot:owner", displayName: name },
+    }
+    const selected = (await resolveParticipant(identity)).participant
+    const cursor = (await resolveParticipant({
+      agent: "cursor",
+      principal: { id: "local-token:cursor", type: "agent", displayName: "Cursor" },
+    })).participant
+    await claimNextThreadDelivery(identity, 0, 2)
+    const path = `/grok/${encodeURIComponent(identity.principal.id)}/configuration`
+    const save = () => app.request(path, {
+      method: "PUT",
+      body: JSON.stringify({ webhookUrl: url, webhookKey: secret }),
+    })
+    expect((await save()).status).toBe(200)
+    const expected = name === "Cursor" ? "Grok Bot" : name
+    const display = await listThreadParticipantsForDisplay(owner)
+    expect(display.participants.find((p) => p.id === selected.id)).toMatchObject({ name: expected, platform: "grok-bot" })
+    expect(display.presentations[identity.principal.id]).toMatchObject({ name: expected, platform: "grok-bot" })
+    expect((await readGrokBotCandidates()).find((c) => c.id === identity.principal.id)?.displayName).toBe(expected)
+    expect((await participantsByKey()).get("agent:cursor")).toMatchObject({ id: cursor.id, name: "Cursor" })
+    await resolveParticipant(identity, { name: "Comet" })
+    expect((await save()).status).toBe(200)
+    expect((await participantsByKey()).get("agent:Cursor")).toMatchObject({ id: selected.id, name: "Comet" })
+  })
+
+  it("repairs an existing Cursor-named Bot once without changing its identity or verification", async () => {
+    const connection = await verified()
+    const verifiedAt = (await readGrokBots())[0]!.verifiedAt
+    await resolveParticipant(grok, { name: "Cursor" })
+    const path = join(appDir, "grok-bots", `${workspaceCacheKey()}.json`)
+    const saved = JSON.parse(await readFile(path, "utf8"))
+    delete saved.connections[0].identityDefaultsApplied
+    await writeFile(path, JSON.stringify(saved))
+    const legacy = (await readGrokBots())[0]!
+    await applyGrokBotIdentityDefaults(legacy)
+    const current = (await readGrokBots())[0]!
+    expect(current).toMatchObject({
+      connectionId: connection.connectionId,
+      participantId,
+      principalId: connection.principalId,
+      generation: connection.generation,
+      verifiedAt,
+      identityDefaultsApplied: true,
+    })
+    expect((await listThreadParticipantsForDisplay(owner)).presentations[participantId]).toMatchObject({ name: "Grok Bot", platform: "grok-bot" })
+    await resolveParticipant(grok, { name: "Cursor" })
+    await applyGrokBotIdentityDefaults(current)
+    expect((await listThreadParticipants(owner)).find((p) => p.id === participantId)?.name).toBe("Cursor")
+  })
+
   it("switches between webhook and email without retaining the previous wake or verification", async () => {
     const previous = await verified()
     for (const emailAddress of [

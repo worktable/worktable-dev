@@ -9,7 +9,11 @@ import { readFileFingerprint } from "./file-fingerprint.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 import type { TokenIdentity } from "./token-store.ts"
-import { participantKey } from "./participant-store.ts"
+import {
+  participantKey,
+  participantsByKey,
+  resolveParticipant,
+} from "./participant-store.ts"
 
 const probeSchema = z.object({
   location: z.discriminatedUnion("kind", [
@@ -34,6 +38,7 @@ const connectionSchema = z.object({
   /** A secret-free tombstone keeps an old native routine from claiming as an ordinary adapter. */
   removed: z.boolean().optional(),
   executionMinutes: z.number().int().min(1).max(120),
+  identityDefaultsApplied: z.boolean().optional(),
   verifiedAt: z.string().optional(),
   probe: probeSchema.optional(),
   error: z.string().optional(),
@@ -170,7 +175,7 @@ export async function saveGrokBot(
     wakeMethod?: StoredGrokBot["wakeMethod"]
   }
 ): Promise<void> {
-  await mutate((file) => {
+  const saved = await mutate((file) => {
     if (
       file.connections.some(
         (c) =>
@@ -183,18 +188,64 @@ export async function saveGrokBot(
         "This identity already has a Grok Bot routine. Remove that routine before connecting another sign-in."
       )
     }
+    const previous = file.connections.find(
+      (c) => c.connectionId === input.connectionId
+    )
     file.connections = file.connections.filter(
       (c) =>
         c.connectionId !== input.connectionId &&
         !(c.removed && c.participantId === input.participantId)
     )
-    file.connections.push({
+    const connection: StoredGrokBot = {
       wakeMethod: "webhook",
       ...input,
+      identityDefaultsApplied:
+        previous?.participantId === input.participantId
+          ? previous.identityDefaultsApplied
+          : undefined,
       generation: randomUUID(),
-    })
+    }
+    file.connections.push(connection)
+    return connection
   })
+  await applyGrokBotIdentityDefaults(saved)
   signalGrokBotChange()
+}
+
+/** Classify the selected identity once; later owner names survive routine edits and restarts. */
+export async function applyGrokBotIdentityDefaults(
+  connection: StoredGrokBot
+): Promise<void> {
+  if (connection.removed || connection.identityDefaultsApplied) return
+  const participant = (await participantsByKey()).get(connection.participantKey)
+  if (!participant || participant.id !== connection.participantId) return
+  const name = participant.name.trim().toLowerCase() === "cursor"
+    ? "Grok Bot"
+    : participant.name
+  if (name !== participant.name) {
+    await resolveParticipant(
+      {
+        agent: null,
+        principal: {
+          id: connection.principalId,
+          type: "agent",
+          displayName: name,
+          participantKey: connection.participantKey,
+        },
+      },
+      { name }
+    )
+  }
+  await mutate((file) => {
+    const current = file.connections.find(
+      (c) => c.connectionId === connection.connectionId &&
+        c.generation === connection.generation
+    )
+    if (!current) return
+    current.identityDefaultsApplied = true
+    const candidate = file.candidates.find((c) => c.id === connection.connectionId)
+    if (candidate) candidate.displayName = name
+  })
 }
 export async function updateGrokBot(
   connection: Pick<StoredGrokBot, "connectionId" | "generation">,

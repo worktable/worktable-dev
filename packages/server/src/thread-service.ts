@@ -1100,7 +1100,13 @@ async function buildParticipantPresentations(): Promise<Record<string, Participa
     }
   }
   for (const grok of await readGrokBots()) {
-    presentations[grok.participantId] = { ...presentations[grok.participantId], platform: "grok-bot" }
+    const participant = bindings.get(grok.participantKey)
+    presentations[grok.participantId] = {
+      ...presentations[grok.participantId],
+      ...(participant ? { name: participant.name } : {}),
+      platform: "grok-bot",
+    }
+    presentations[grok.principalId] = presentations[grok.participantId]!
   }
   for (const [key, participant] of bindings) {
     if (participant.kind === "human") {

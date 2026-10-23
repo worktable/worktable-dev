@@ -44,6 +44,7 @@ import { listSpaces } from "./store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
 import { logError } from "./debug-log.ts"
+import { readGrokBots } from "./grok-bot-store.ts"
 
 interface StoredAgentConnection {
   id: string
@@ -473,7 +474,22 @@ export async function agentNamesByPrincipal(): Promise<Map<string, string>> {
 }
 
 export async function listAgentConnections(): Promise<AgentConnection[]> {
-  if (teamsEnabled()) return listTeamAgentConnections();
+  const connections = teamsEnabled()
+    ? await listTeamAgentConnections()
+    : await listLocalAgentConnections()
+  const grokIds = new Set((await readGrokBots()).map((c) => c.participantId))
+  return connections.map((connection) =>
+    connection.participant && grokIds.has(connection.participant.id)
+      ? {
+          ...connection,
+          platform: "grok-bot",
+          displayName: connection.participant.name,
+        }
+      : connection
+  )
+}
+
+async function listLocalAgentConnections(): Promise<AgentConnection[]> {
   const [file, tokens, participants] = await Promise.all([
     loadFile(),
     listTokens(),

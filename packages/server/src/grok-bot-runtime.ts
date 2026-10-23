@@ -3,6 +3,7 @@ import {
   grokBotDeliveries,
 } from "./thread-delivery-store.ts"
 import {
+  applyGrokBotIdentityDefaults,
   onGrokBotChange,
   readGrokBots,
   reserveGrokBotWake,
@@ -40,6 +41,7 @@ export function startGrokBotRuntime(
     }
     for (const original of await readGrokBots()) {
       if (!live()) return
+      await applyGrokBotIdentityDefaults(original)
       const key = `${original.participantId}\0${original.generation}`
       if (reconciled.get(key) !== canonicalRevision) {
         const revision = canonicalRevision

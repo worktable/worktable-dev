@@ -21,6 +21,7 @@ import { ownerIdentity } from "./auth.ts"
 import { createAnnotation } from "./annotation-store.ts"
 import { HOSTED_BROWSER_RUNTIME_SCOPES } from "./hosted-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
+import { getSpaceLinkGraph } from "./link-graph.ts"
 import {
   readRegisteredDocumentSource,
   recordExternalFileChanges,
@@ -1162,6 +1163,32 @@ describe("format-neutral document route", () => {
       expect(
         await recordExternalFileChanges({ spaceId, paths: ["data/dropped.csv"] })
       ).toEqual({ recorded: [] })
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
+
+  it("names the Docs that use a file on the file's page", async () => {
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    try {
+      const instance = app()
+      await instance.request(
+        `/api/spaces/${spaceId}/documents/file?path=notes/readme/error.png`,
+        { method: "PUT", body: "png" }
+      )
+      await writeDoc(spaceId, "notes/readme", "# Readme\n\n![Signup error](readme/error.png)", {
+        updatedBy: "test",
+        source: "rest-api",
+      })
+      await getSpaceLinkGraph(spaceId)
+      const page = await instance.request(
+        `/api/spaces/${spaceId}/documents/page?path=notes/readme/error.png`
+      )
+      expect(
+        ((await page.json()) as { page: { backlinks?: unknown } }).page.backlinks
+      ).toEqual([{ path: "notes/readme", context: "Signup error", count: 1 }])
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
       else process.env["WORKTABLE_FILES_PREVIEW"] = previous

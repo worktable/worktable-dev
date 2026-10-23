@@ -27,6 +27,9 @@ import {
 } from "./doc-aliases.ts";
 import { onWorkspaceChange } from "./workspace-events.ts";
 import { canReuseDerived, type DerivedRevision } from "./derived-revision.ts";
+import { readDocumentCatalogSnapshot } from "./document-query.ts";
+import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts";
+import { filesPreviewEnabled } from "./files-preview.ts";
 
 export { resolveDocLink } from "@worktable/types";
 
@@ -69,6 +72,8 @@ export interface DocBacklink extends InboundLinks {
 /** A link target and the sentence it sits in. */
 export interface ExtractedDocLink {
   target: string;
+  /** An image, video, audio or file the doc shows, rather than links to. */
+  embed?: true;
   /** The sentence holding the link, as plain text, trimmed to fit a row. */
   context: string;
   /** Where the link's words sit in `context`. */
@@ -79,6 +84,15 @@ function linkWithContext(target: string, marked: string): ExtractedDocLink {
   const { text, mark } = sentenceContext(marked);
   return { target, context: text, ...(mark ? { mark } : {}) };
 }
+
+/** An embedded file, described by its alt text, caption or name. */
+function embedWithContext(target: string, label: string): ExtractedDocLink {
+  return { ...linkWithContext(target, label.trim()), embed: true };
+}
+
+/** Media tags a Markdown Doc may write as HTML, with the file they show. */
+const HTML_MEDIA_RE = /<(?:img|video|audio|source)\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>/gi;
+const HTML_ALT_RE = /\balt\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
 
 /** Lines that start a block of their own rather than continue a paragraph. */
 const BLOCK_START = /^\s{0,3}(?:#{1,6}\s|>|[-*+]\s|\d+[.)]\s|\|)/;
@@ -137,7 +151,10 @@ function extractMarkdownLinks(markdown: string): ExtractedDocLink[] {
   const scanned = withoutFences.replace(/`[^`\n]*`/g, (span) => " ".repeat(span.length));
   let match: RegExpExecArray | null;
   while ((match = linkRe.exec(scanned)) !== null) {
-    if (match[1] === "!") continue;
+    if (match[1] === "!") {
+      links.push(embedWithContext(match[3]!, match[2] ?? ""));
+      continue;
+    }
     // The block the link sits in, with this link's words marked; code spans
     // read as their text.
     const [start, end] = blockAround(withoutFences, match.index, match[0].length);
@@ -156,6 +173,13 @@ function extractMarkdownLinks(markdown: string): ExtractedDocLink[] {
       .join(" ");
     links.push(linkWithContext(match[3]!, lines));
   }
+  let media: RegExpExecArray | null;
+  while ((media = HTML_MEDIA_RE.exec(scanned)) !== null) {
+    const alt = HTML_ALT_RE.exec(media[0]);
+    links.push(
+      embedWithContext(media[1] ?? media[2] ?? "", alt?.[1] ?? alt?.[2] ?? "")
+    );
+  }
   return links;
 }
 
@@ -173,6 +197,33 @@ function inlineText(content: unknown[], marked?: unknown): string {
   return text;
 }
 
+/** Rich-text blocks that show a file at their `url`. */
+const MEDIA_BLOCKS = new Set(["image", "video", "audio", "file"]);
+
+function extractInlineLinks(content: unknown[], links: ExtractedDocLink[]): void {
+  for (const inline of content) {
+    if (!inline || typeof inline !== "object") continue;
+    const node = inline as Record<string, unknown>;
+    if (node.type === "link" && typeof node.href === "string") {
+      links.push(linkWithContext(node.href, inlineText(content, inline)));
+    }
+  }
+}
+
+/** A table's cells, each an inline run, whichever shape the cell has. */
+function tableCellRuns(content: Record<string, unknown>): unknown[][] {
+  const rows = Array.isArray(content.rows) ? content.rows : [];
+  return rows.flatMap((row) => {
+    const cells = (row as Record<string, unknown> | null)?.cells;
+    if (!Array.isArray(cells)) return [];
+    return cells.flatMap((cell) => {
+      if (Array.isArray(cell)) return [cell];
+      const inner = (cell as Record<string, unknown> | null)?.content;
+      return Array.isArray(inner) ? [inner] : [];
+    });
+  });
+}
+
 function extractBlockNoteLinks(
   blocks: unknown[],
   links: ExtractedDocLink[] = []
@@ -181,13 +232,30 @@ function extractBlockNoteLinks(
     if (!block || typeof block !== "object") continue;
     const b = block as Record<string, unknown>;
     if (Array.isArray(b.content)) {
-      for (const inline of b.content) {
-        if (!inline || typeof inline !== "object") continue;
-        const node = inline as Record<string, unknown>;
-        if (node.type === "link" && typeof node.href === "string") {
-          links.push(linkWithContext(node.href, inlineText(b.content, inline)));
-        }
+      extractInlineLinks(b.content, links);
+    } else if (
+      b.content &&
+      typeof b.content === "object" &&
+      (b.content as Record<string, unknown>).type === "tableContent"
+    ) {
+      for (const run of tableCellRuns(b.content as Record<string, unknown>)) {
+        extractInlineLinks(run, links);
       }
+    }
+    const props = b.props as Record<string, unknown> | undefined;
+    if (
+      typeof b.type === "string" &&
+      MEDIA_BLOCKS.has(b.type) &&
+      typeof props?.url === "string" &&
+      props.url
+    ) {
+      const label =
+        typeof props.caption === "string" && props.caption
+          ? props.caption
+          : typeof props.name === "string"
+            ? props.name
+            : "";
+      links.push(embedWithContext(props.url, label));
     }
     if (Array.isArray(b.children)) {
       extractBlockNoteLinks(b.children, links);
@@ -282,8 +350,11 @@ function resolveSpaceLinkGraph(
   docPaths: string[],
   docs: ReadonlyMap<string, DocTargets>,
   aliases: DocAliases,
+  filePaths: ReadonlySet<string> | null,
 ): SpaceLinkGraph {
-  const docSet = new Set(docPaths);
+  // Embeds count only once files are part of the Space; until then a doc's
+  // images are none of the graph's business.
+  const docSet = new Set([...docPaths, ...(filePaths ?? [])]);
   const outbound = new Map<string, DocLink[]>();
   const inbound = new Map<string, string[]>();
   const broken: SpaceLinkGraph["broken"] = [];
@@ -295,7 +366,8 @@ function resolveSpaceLinkGraph(
 
     const links: DocLink[] = [];
     const seen = new Set<string>();
-    for (const { target, context, mark } of extracted) {
+    for (const { target, context, mark, embed } of extracted) {
+      if (embed && !filePaths) continue;
       const lexicalPath = resolveDocLink(docPath, target);
       if (lexicalPath === null) continue;
       const resolvedPath = resolveDocAliasIn(aliases, lexicalPath);
@@ -328,6 +400,19 @@ function resolveSpaceLinkGraph(
 
   const orphans = docPaths.filter((path) => !inbound.has(path));
   return { outbound, inbound, orphans, broken, inboundContext };
+}
+
+/** The Space's files, from the catalog snapshot rather than its folder. */
+async function spaceFilePaths(spaceId: string): Promise<Set<string>> {
+  const catalog = await readDocumentCatalogSnapshot(spaceId);
+  return new Set(
+    catalog.entries.flatMap((entry) =>
+      entry.kind === "document" &&
+      entry.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file
+        ? [entry.descriptor.path]
+        : [],
+    ),
+  );
 }
 
 async function buildSpaceLinks(spaceId: string, space: SpaceLinks): Promise<void> {
@@ -365,7 +450,12 @@ async function buildSpaceLinks(spaceId: string, space: SpaceLinks): Promise<void
       });
     }
 
-    const graph = resolveSpaceLinkGraph(docPaths, docs, aliases);
+    const graph = resolveSpaceLinkGraph(
+      docPaths,
+      docs,
+      aliases,
+      filesPreviewEnabled() ? await spaceFilePaths(spaceId) : null,
+    );
     await rebuildHookForTests?.();
     space.docs = docs;
     space.graph = graph;

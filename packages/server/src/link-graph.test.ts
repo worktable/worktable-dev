@@ -26,6 +26,7 @@ import {
 import { setAppDirOverride } from "./app-storage.ts";
 import { pathMovesFor } from "./doc-aliases.ts";
 import { notifyWorkspaceChange } from "./workspace-events.ts";
+import { noteAllSpacesChanged } from "./workspace-read-model.ts";
 import type { SpaceFile } from "@worktable/types";
 
 const testDir = join(tmpdir(), `worktable-link-graph-test-${Date.now()}`);
@@ -91,11 +92,12 @@ describe("link graph", () => {
   });
 
   describe("extractDocLinkTargets", () => {
-    it("extracts markdown links but not images, code, or autolinks in fences", () => {
+    it("extracts markdown links and embeds, but not code or links in fences", () => {
       const md = [
         "# Doc",
         "See [other](/notes/other) and [rel](../sibling).",
         "![diagram](/assets/pic.png)",
+        '<img alt="Error" src="shots/error.png">',
         "`[not a link](/code-span)`",
         "```",
         "[fenced](/inside-fence)",
@@ -105,13 +107,23 @@ describe("link graph", () => {
       expect(extractDocLinkTargets(md)).toEqual([
         "/notes/other",
         "../sibling",
+        "/assets/pic.png",
         "https://example.com",
         "mailto:x@y.z",
         "#section",
+        "shots/error.png",
+      ]);
+      expect(
+        extractDocLinks(md).flatMap((link) =>
+          link.embed ? [[link.target, link.context]] : []
+        )
+      ).toEqual([
+        ["/assets/pic.png", "diagram"],
+        ["shots/error.png", "Error"],
       ]);
     });
 
-    it("extracts BlockNote inline links including nested children", () => {
+    it("extracts BlockNote links, media blocks and table links, including nested children", () => {
       const blocks = [
         {
           type: "paragraph",
@@ -120,8 +132,41 @@ describe("link graph", () => {
             { type: "paragraph", content: [{ type: "link", href: "nested", content: [] }] },
           ],
         },
+        {
+          type: "image",
+          props: { url: "spec/error.png", caption: "Signup error", name: "error.png" },
+          children: [],
+        },
+        { type: "file", props: { url: "", name: "empty" }, children: [] },
+        {
+          type: "table",
+          content: {
+            type: "tableContent",
+            rows: [
+              {
+                cells: [
+                  {
+                    type: "tableCell",
+                    content: [{ type: "link", href: "in-table", content: [] }],
+                  },
+                ],
+              },
+            ],
+          },
+          children: [],
+        },
       ];
-      expect(extractDocLinkTargets(blocks)).toEqual(["/target-doc", "nested"]);
+      expect(extractDocLinkTargets(blocks)).toEqual([
+        "/target-doc",
+        "nested",
+        "spec/error.png",
+        "in-table",
+      ]);
+      expect(extractDocLinks(blocks)[2]).toMatchObject({
+        target: "spec/error.png",
+        context: "Signup error",
+        embed: true,
+      });
     });
   });
 
@@ -243,6 +288,40 @@ describe("link graph", () => {
       expect(graph.broken).toEqual([
         { docPath: "hub", target: "/never-written", resolvedPath: "never-written" },
       ]);
+    });
+
+    it("counts a Doc's embeds as uses of the file, once files are on", async () => {
+      const shots = join(spacesDir, SPACE, "docs", "spec");
+      mkdirSync(shots, { recursive: true });
+      writeFileSync(join(shots, "error.png"), "png");
+      await write("spec", "# Spec\n\n![Signup error](spec/error.png)\n\n![Gone](spec/gone.png)");
+      await write("bug", "# Bug\n\n![Same screen](/spec/error.png)");
+
+      const previous = process.env["WORKTABLE_FILES_PREVIEW"];
+      try {
+        process.env["WORKTABLE_FILES_PREVIEW"] = "0";
+        noteAllSpacesChanged();
+        invalidateLinkGraph();
+        let graph = await getSpaceLinkGraph(SPACE);
+        expect(graph.inbound.get("spec/error.png")).toBeUndefined();
+        expect(graph.broken).toEqual([]);
+
+        process.env["WORKTABLE_FILES_PREVIEW"] = "1";
+        noteAllSpacesChanged();
+        invalidateLinkGraph();
+        graph = await getSpaceLinkGraph(SPACE);
+        expect(graph.inbound.get("spec/error.png")?.sort()).toEqual(["bug", "spec"]);
+        expect(graph.inboundContext.get("spec/error.png")?.get("spec")?.context).toBe(
+          "Signup error"
+        );
+        // A missing file shows as a broken embed, as a missing Doc does.
+        expect(graph.broken).toEqual([
+          { docPath: "spec", target: "spec/gone.png", resolvedPath: "spec/gone.png" },
+        ]);
+      } finally {
+        if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"];
+        else process.env["WORKTABLE_FILES_PREVIEW"] = previous;
+      }
     });
 
     it("backlinks are symmetric with outbound resolved links", async () => {

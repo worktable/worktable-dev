@@ -160,7 +160,7 @@ export async function listTeamAgentConnections(): Promise<AgentConnection[]> {
 }
 
 export async function createTeamAgentConnection(input: {
-  label: DirectAgentLabel
+  label: DirectAgentLabel | null
   displayName?: string
   icon?: string | null
   access: AgentAccess
@@ -176,19 +176,21 @@ export async function createTeamAgentConnection(input: {
     `${teamDatabasePath()}.agent-connections.lock`,
     { label: "Agent connection" },
     async () => {
-      const previous = listTeamAgents(identity).find(
-        (agent) =>
-          agent.active &&
-          agent.ownership === "personal" &&
-          agent.memberId === member.id &&
-          agent.platform === input.label
-      )
+      const previous = input.label
+        ? listTeamAgents(identity).find(
+            (agent) =>
+              agent.active &&
+              agent.ownership === "personal" &&
+              agent.memberId === member.id &&
+              agent.platform === input.label
+          )
+        : undefined
       const agent =
         previous ??
         createTeamAgent(
           {
-            name: input.displayName ?? input.label,
-            platform: input.label,
+            name: input.displayName ?? input.label ?? "My agent",
+            platform: input.label ?? "other",
             ownership: "personal",
           },
           identity
@@ -196,7 +198,7 @@ export async function createTeamAgentConnection(input: {
       let minted: Awaited<ReturnType<typeof createToken>> | undefined
       try {
         minted = await createToken({
-          agent: input.label,
+          agent: agent.platform,
           scopes,
           user: member.userId,
         })

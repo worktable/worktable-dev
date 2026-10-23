@@ -49,8 +49,21 @@ import type {
   ThreadLocation,
   ThreadReadResult,
   ThreadListItem,
+  AgentConnectionInventory,
 } from "@worktable/types"
 import { threadLocationKey } from "@worktable/types"
+
+function refreshGrokConnections(queryClient: QueryClient): void {
+  for (const cloud of [true, false]) {
+    const queryKey = ["agent-connections", cloud] as const
+    if (
+      queryClient.getQueryData<AgentConnectionInventory>(queryKey)?.grokBots
+        ?.length
+    ) {
+      refreshLive(queryClient, [{ queryKey, exact: true }])
+    }
+  }
+}
 
 const WS_BASE =
   import.meta.env.VITE_WS_URL ??
@@ -375,6 +388,7 @@ export function applyThreadEvent(
     // Progress while an agent works leaves Pending as it was; a delivery
     // that ends, fails or starts over can change it.
     if (update?.state !== "working" && update?.state !== "receiving") {
+      refreshGrokConnections(queryClient)
       refreshLive(queryClient, [pending])
     }
     return
@@ -450,7 +464,11 @@ function applyOwnCollaborativeSave(
     )
   }
   // Lists on other pages read again when they next open.
-  for (const queryKey of [["search"], recentQueryKeys.all, activityQueryKeys.all]) {
+  for (const queryKey of [
+    ["search"],
+    recentQueryKeys.all,
+    activityQueryKeys.all,
+  ]) {
     void queryClient.invalidateQueries({ queryKey, refetchType: "none" })
   }
   const listed = queryClient
@@ -550,7 +568,11 @@ export function applySpaceEvent(
     const changedSpace = message.spaceId
     if (typeof changedSpace === "string" && changedSpace) {
       void import("./visitor-comment-events").then((module) =>
-        module.applyVisitorCommentChange(queryClient, changedSpace, message.data)
+        module.applyVisitorCommentChange(
+          queryClient,
+          changedSpace,
+          message.data
+        )
       )
     }
     return
@@ -677,6 +699,7 @@ export function applySpaceEvent(
     applyThreadEvent(queryClient, message, { kind: "space", spaceId })
   }
   if (type === "participants_update") {
+    refreshGrokConnections(queryClient)
     refresh.push({ queryKey: threadQueryKeys.participants, exact: true })
     refresh.push({ queryKey: queryKeys.workspace, exact: true })
   }
@@ -768,6 +791,7 @@ function applyMessage(
     if (THREAD_EVENTS.has(message.type)) {
       applyThreadEvent(queryClient, message, null)
     } else if (message.type === "participants_update") {
+      refreshGrokConnections(queryClient)
       refreshLive(queryClient, [
         { queryKey: threadQueryKeys.participants, exact: true },
         { queryKey: queryKeys.workspace, exact: true },
@@ -849,9 +873,10 @@ function connectShared(
     }
     if (message.type === "share_policy_changed") {
       const client = connection.queryClient
-      if (client) void import("./sharing-cache").then(({ invalidateSharingQueries }) => {
-        invalidateSharingQueries(client, message.revision)
-      })
+      if (client)
+        void import("./sharing-cache").then(({ invalidateSharingQueries }) => {
+          invalidateSharingQueries(client, message.revision)
+        })
       return
     }
     if (message.type === "team_access") {
@@ -973,7 +998,10 @@ function subscribeShared(
       // Nothing keeps this Space's cache current any more: whatever is
       // cached reads again when it is next shown.
       if (connection.queryClient && stream !== THREAD_STREAM) {
-        for (const queryKey of [["spaces", stream], ["annotations", stream]]) {
+        for (const queryKey of [
+          ["spaces", stream],
+          ["annotations", stream],
+        ]) {
           void connection.queryClient.invalidateQueries({
             queryKey,
             // Content at a revision never changes.

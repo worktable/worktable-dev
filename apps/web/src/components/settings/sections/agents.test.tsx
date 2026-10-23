@@ -10,7 +10,8 @@ test("connected identity and disconnect remain available when OAuth inventory is
       mcpAuthMode: "oauth",
       agentPairing: false,
     })
-    client.setQueryData(["agent-connections", false], {
+    // OAuth inventories include the workspace's connections even when pairing is unavailable.
+    client.setQueryData(["agent-connections", true], {
       unavailableAuthKinds,
       connections: [
         {

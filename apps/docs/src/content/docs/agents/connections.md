@@ -19,15 +19,19 @@ To select one client, run `worktable mcp setup <client>`. Supported IDs are
 `claude-code`, `codex`, `cursor`, `vscode`, and `opencode`. Goose uses a manual
 configuration from `worktable mcp print-config goose`.
 
-For an agent on another computer, generate its command under **Connect an
-agent**, or run `worktable agent invite` on the Worktable host. The command
+For an agent on another computer, generate its command under **Coding
+agents**, or run `worktable agent invite` on the Worktable host. The command
 redeems a single-use pairing code and configures the client. The host must be
 reachable from that computer; see [Remote access](/guides/remote-access/).
 
-For **Worktable Cloud**, use the command under **Connect an agent**. It configures
+For **Worktable Cloud**, use the command under **Coding agents**. It configures
 the hosted MCP endpoint without downloading a Worktable token. Open or restart
-the client and complete its browser-based OAuth approval. **Manual install**
-provides configuration for clients you manage yourself.
+the client and complete its browser-based OAuth approval.
+
+For any other MCP agent, choose **Connect any MCP agent**. Add the MCP endpoint
+to your agent and sign in on Cloud. On local or self-hosted Worktable, choose
+its access and create an access token. Copy the token while it is shown and
+paste it into your agent alongside the endpoint.
 
 ## Plugins
 
@@ -62,7 +66,7 @@ in the connected client before reading or writing workspace content.
 ## Always-on agents
 
 Always-on agents run continuously and answer thread messages addressed to them.
-Set one up from its section in **Settings → Agents**.
+Choose a provider under **Settings → Agents → Always-on agents**.
 
 ### OpenClaw
 
@@ -72,8 +76,8 @@ Install its Worktable plugin:
 openclaw plugins install clawhub:@worktable/openclaw
 ```
 
-For local or self-hosted Worktable, run `openclaw worktable connect --server
-<address>` and approve the agent at the link it prints, or generate a
+For local or self-hosted Worktable, run
+`openclaw worktable connect --server <address>` and approve the agent at the link it prints, or generate a
 single-use pairing command in Settings. For Cloud, run the displayed Agent Registration
 command and complete the claim in the browser. The OpenClaw plugin includes
 Worktable skills; a separate skills installation is unnecessary.
@@ -100,7 +104,7 @@ Then connect the Hermes profile:
   open the printed link elsewhere and paste the final address back into Hermes.
 - **Local or self-hosted:** `hermes worktable connect <address>`, then approve
   Hermes at the link it prints. Or generate the single-use command in
-  **Settings → Agents → Hermes** and run it where Hermes is installed.
+  **Settings → Agents → Always-on agents → Hermes** and run it where Hermes is installed.
 
 Restart the gateway with `hermes gateway restart`. Hermes then answers thread
 messages addressed to it and uses Worktable's tools and skills in any of its
@@ -109,9 +113,72 @@ with `hermes worktable disconnect`, then disconnect the agent in Settings.
 
 See [Threads](/guides/threads/) for delivery behavior.
 
-## Desktop apps
+### Grok Bot
 
-For local or self-hosted Worktable, open **Desktop apps** in Settings.
+Open **Settings → Agents → Always-on agents → Grok Bot**, or choose
+**Grok Bot** under **Always-on agents** during Getting Started. Use Worktable
+Cloud or connect
+[Worktable Link](/guides/remote-access/) for a local or self-hosted workspace.
+Grok Bot's custom MCP connection needs OAuth; a public URL with a Worktable
+bearer token alone does not provide that sign-in flow.
+
+1. **Connect Worktable.** Send the displayed "Add this MCP server" message in
+   Grok Bot and authorize Worktable. A local Worktable's Link must be online.
+2. **Check your inbox.** Send the inbox message to Grok Bot, then select
+   **Refresh connections** in Worktable.
+3. **Create a routine.** Copy the instructions into Grok Bot to create
+   **Worktable Inbox**. Choose **Email** to set up from a phone or desktop,
+   then paste your Bot’s `mail.grokbot.com` address. Choose **Webhook** to
+   copy the routine’s POST URL and key from Grok’s desktop app. The
+   `grokbot://` shortcuts open fields; paste their values, not those shortcuts.
+4. **Check the connection.** Select **Save and check**. When Grok Bot replies
+   to the test message, refresh the status to finish setup.
+
+You can then assign a thread message to Grok Bot, or have another connected
+agent assign it using Worktable's thread tools. Grok Bot acts through the
+accounts linked to its Grok account. A sender's external accounts and access
+do not transfer with a request. Grok's app connections are account-wide, so
+separate Bots on one account do not provide separate account permissions.
+
+Email routines accept authenticated mail only from the sender in the copied
+instructions. Team accounts may require an admin to enable Agent Email.
+Email delivery may take longer than a webhook.
+
+Worktable sends only a wake signal to the routine; Grok Bot retrieves the
+assignment through authenticated MCP. Repeated wake signals cannot claim the
+same active assignment twice. One assignment runs at a time for each linked
+identity. The default execution deadline is 30 minutes, configurable in Settings.
+Worktable does not require Grok Bot to send frequent heartbeat calls.
+
+If an execution deadline passes, the assignment needs attention and further
+dispatch pauses. Check the native run in Grok Bot before selecting **Retry**:
+work in another app may already have completed. Worktable rejects replies with
+an expired or replaced lease. When a wake cannot start work, Worktable retries
+with bounded backoff, then asks you to check the routine, key, approvals, and
+Worktable sign-in. Grok's own approval prompts and account limits still apply.
+
+Select **Pause** to stop new claims and **Resume** to accept them again.
+Choose a **Bot name** during setup or edit it under **Connection settings**.
+Renaming keeps the existing connection and threads. Each connection represents
+one Grok account. Connected Bots appear with the other **Connected agents**;
+select **Edit** for their routine settings. To connect another account, use
+**Always-on agents → Grok Bot** again.
+
+Under **Connection settings**, you can also switch methods and run a fresh connection
+check. Only the selected method sends wakes; update the existing routine with
+the new instructions. **Remove routine** deletes its saved notification settings
+and stops new claims from that routine;
+threads remain. Revoke the Worktable OAuth connection in Grok Bot or disconnect
+the connected agent to remove its access as well. Removing the routine does
+not cancel work already running in Grok Bot or other apps.
+
+For native setup and webhook behavior, see
+[Grok Bot routines](https://prod.cursor.com/help/grok-bot/routines) and
+[Bot email](https://prod.cursor.com/help/grok-bot/agent-email).
+
+## Chat apps
+
+For local or self-hosted Worktable, open **Settings → Agents → Chat apps**.
 Claude Desktop on macOS uses the downloadable `.mcpb` extension. Open it in
 Claude, approve installation, and enter the endpoint and any token shown by
 Worktable. Worktable Cloud uses a remote OAuth connection instead of this

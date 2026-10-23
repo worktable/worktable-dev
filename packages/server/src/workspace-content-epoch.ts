@@ -7,7 +7,7 @@ export function isWorkspaceContentMutation(
 ): boolean {
   return (
     !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase()) &&
-    ["/api/spaces", "/api/threads", "/api/shares"].some(
+    ["/api/spaces", "/api/threads", "/api/shares", "/api/grok-bot"].some(
       (root) => pathname === root || pathname.startsWith(`${root}/`)
     )
   )

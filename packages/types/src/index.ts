@@ -125,4 +125,5 @@ export { DRAWING_THEME } from "./drawing-theme.generated";
 
 export * from "./drawing-bindings.ts";
 export * from "./drawing-record-comparison.ts";
+export * from "./grok-bot.ts";
 export * from "./document-preview.ts";

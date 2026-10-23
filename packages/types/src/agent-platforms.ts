@@ -6,6 +6,7 @@ import { MCP_SNIPPET_CLIENT_IDS } from "./mcp-clients"
 export const AGENT_PLATFORM_IDS = [
   "openclaw",
   "hermes",
+  "grok-bot",
   "chatgpt",
   "claude",
   "claude-code",
@@ -29,6 +30,12 @@ export interface AgentPlatform {
 }
 
 export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
+  "grok-bot": {
+    id: "grok-bot",
+    name: "Grok Bot",
+    mode: "always-on",
+    logo: "grok.svg",
+  },
   openclaw: {
     id: "openclaw",
     name: "OpenClaw",
@@ -60,10 +67,25 @@ export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
     logo: "claude.svg",
   },
   codex: { id: "codex", name: "Codex", mode: "on-demand", logo: "openai.svg" },
-  cursor: { id: "cursor", name: "Cursor", mode: "on-demand", logo: null },
-  opencode: { id: "opencode", name: "opencode", mode: "on-demand", logo: null },
-  vscode: { id: "vscode", name: "VS Code", mode: "on-demand", logo: null },
-  goose: { id: "goose", name: "Goose", mode: "on-demand", logo: null },
+  cursor: {
+    id: "cursor",
+    name: "Cursor",
+    mode: "on-demand",
+    logo: "cursor.svg",
+  },
+  opencode: {
+    id: "opencode",
+    name: "opencode",
+    mode: "on-demand",
+    logo: "opencode.svg",
+  },
+  vscode: {
+    id: "vscode",
+    name: "VS Code",
+    mode: "on-demand",
+    logo: "vscode.svg",
+  },
+  goose: { id: "goose", name: "Goose", mode: "on-demand", logo: "goose.png" },
   other: { id: "other", name: "Agent", mode: "on-demand", logo: null },
 }
 

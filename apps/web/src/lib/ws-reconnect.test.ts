@@ -17,6 +17,7 @@ import { recentQueryKeys } from "./lifetime"
 import { firstHeadingText, registerLiveDocument } from "./live-documents"
 import {
   applySpaceEvent,
+  applyThreadEvent,
   applyThreadActivityToQueries,
   reconcileSpaceThreadQueries,
   revalidateSpaceAfterReconnect,
@@ -285,6 +286,55 @@ describe("Space WebSocket reconnect backoff", () => {
 })
 
 describe("Space events in the query cache", () => {
+  it("updates an observed Grok inventory on delivery activity without fetching unrelated inventories", async () => {
+    const client = new QueryClient()
+    const key = ["agent-connections", false] as const
+    const grok = watched(
+      client,
+      key,
+      { connections: [], grokBots: [{ status: "working" }] },
+      async () => ({
+        connections: [],
+        grokBots: [{ status: "needs-attention" }],
+      })
+    )
+    const other = watched(client, ["agent-connections", true], {
+      connections: [],
+    })
+    try {
+      applyThreadEvent(
+        client,
+        {
+          type: "thread_activity",
+          threadId: "thr_bot",
+          data: { state: "receiving" },
+        },
+        { kind: "worktable" }
+      )
+      await settle(client)
+      expect(grok.reads).toBe(0)
+      applyThreadEvent(
+        client,
+        {
+          type: "thread_activity",
+          threadId: "thr_bot",
+          data: { state: "failed" },
+        },
+        { kind: "worktable" }
+      )
+      await settle(client)
+      expect(client.getQueryData(key)).toMatchObject({
+        grokBots: [{ status: "needs-attention" }],
+      })
+      expect(grok.reads).toBe(1)
+      expect(other.reads).toBe(0)
+    } finally {
+      grok.unsubscribe()
+      other.unsubscribe()
+      client.clear()
+    }
+  })
+
   it("reads back nothing for a synced document's own collaborative saves", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const doc = headingDoc("Plan")

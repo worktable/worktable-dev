@@ -85,6 +85,8 @@ export function classifyWorkspaceRequest(
     pathname === "/api/profile" ||
     pathname === "/api/agent-connections" ||
     pathname.startsWith("/api/agent-connections/") ||
+    pathname === "/api/grok-bot" ||
+    pathname.startsWith("/api/grok-bot/") ||
     pathname === "/api/pairing" ||
     pathname.startsWith("/api/pairing/") ||
     pathname === "/api/team" ||

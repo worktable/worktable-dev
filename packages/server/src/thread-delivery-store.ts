@@ -8,6 +8,7 @@ import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { readFileFingerprint } from "./file-fingerprint.ts"
 import { notifyWorkspaceChange, onWorkspaceChange } from "./workspace-events.ts"
 import { workspaceCacheKey } from "./workspace.ts"
+import { grokBotPolicy } from "./grok-bot-store.ts"
 
 type InternalDeliveryState =
   | "queued"
@@ -31,6 +32,8 @@ interface DeliveryRecord {
   nextAttemptAt?: string
   leaseId?: string
   leaseExpiresAt?: string
+  /** Persisted fencing survives disconnects, restarts, and routine edits. */
+  managedBy?: "grok-bot"
   receivedCharacters?: number
   error?: {
     code: string
@@ -318,38 +321,222 @@ function requireLease(
   return record
 }
 
-export async function requireThreadDeliveryLease(input: {
+interface DeliveryReplyLease {
   messageId: string
   threadId: string
   location: ThreadLocation
   identityId: string
   participantId: string
   leaseId: string
-}): Promise<void> {
-  await serialized(async () => {
-    const file = await loadFile()
-    const record = requireLease(
-      file,
-      input.messageId,
-      input.leaseId,
-      input.participantId
+}
+
+function replyLease(
+  file: DeliveryFile,
+  input: DeliveryReplyLease
+): DeliveryRecord {
+  const record = requireLease(
+    file,
+    input.messageId,
+    input.leaseId,
+    input.participantId
+  )
+  if (
+    record.threadId !== input.threadId ||
+    threadLocationKey(record.location) !== threadLocationKey(input.location) ||
+    record.identityId !== input.identityId
+  ) {
+    throw new ThreadDeliveryError(
+      "LEASE_LOST",
+      `Delivery lease does not authorize ${input.identityId} in thread ${input.threadId}`
     )
-    if (
-      record.threadId !== input.threadId ||
-      threadLocationKey(record.location) !==
-        threadLocationKey(input.location) ||
-      record.identityId !== input.identityId
-    ) {
-      throw new ThreadDeliveryError(
-        "LEASE_LOST",
-        `Delivery lease does not authorize ${input.identityId} in thread ${input.threadId}`
-      )
+  }
+  if (record.managedBy === "grok-bot" && record.state === "leased") {
+    throw new ThreadDeliveryError(
+      "LEASE_LOST",
+      "Accept the Grok Bot delivery before posting its reply"
+    )
+  }
+  return record
+}
+
+export async function requireThreadDeliveryLease(
+  input: DeliveryReplyLease
+): Promise<void> {
+  await serialized(async () => {
+    replyLease(await loadFile(), input)
+  })
+}
+
+/** Linearize a managed reply with expiry/retry, including the canonical append. */
+export async function commitThreadDeliveryReply<T>(
+  input: DeliveryReplyLease,
+  append: () => Promise<T>,
+  replay?: () => Promise<T | null>
+): Promise<T> {
+  return serialized(async () => {
+    const file = await loadFile()
+    let record: DeliveryRecord
+    try {
+      record = replyLease(file, input)
+    } catch (error) {
+      if (
+        error instanceof ThreadDeliveryError &&
+        error.code === "LEASE_LOST" &&
+        replay
+      ) {
+        const committed = await replay()
+        if (committed) return committed
+      }
+      throw error
     }
+    const result = await append()
+    record.state = "replied"
+    record.leaseId = undefined
+    record.leaseExpiresAt = undefined
+    record.nextAttemptAt = undefined
+    record.error = undefined
+    record.revision += 1
+    record.updatedAt = new Date().toISOString()
+    await saveFile(file)
+    notify(record)
+    return result
   })
 }
 
 function renewLease(record: DeliveryRecord, nowMs: number): void {
+  // Native routines cannot reliably heartbeat. Their claim has one absolute deadline.
+  if (record.managedBy === "grok-bot") return
   record.leaseExpiresAt = new Date(nowMs + LEASE_MS).toISOString()
+}
+
+export async function requiresManagedDeliveryLease(input: {
+  participantId: string
+  messageId: string
+  threadId: string
+  location: ThreadLocation
+}): Promise<boolean> {
+  if (await grokBotPolicy(input.participantId)) return true
+  return (await readDeliveryState()).deliveries.some(
+    (record) =>
+      record.managedBy === "grok-bot" &&
+      record.participantId === input.participantId &&
+      record.messageId === input.messageId &&
+      record.threadId === input.threadId &&
+      threadLocationKey(record.location) === threadLocationKey(input.location)
+  )
+}
+
+function active(record: DeliveryRecord): boolean {
+  return (
+    record.state !== "queued" &&
+    record.state !== "replied" &&
+    record.state !== "failed"
+  )
+}
+function expireManaged(
+  file: DeliveryFile,
+  participantId: string,
+  now: number,
+  includeLegacy = false
+): DeliveryRecord[] {
+  const expired = file.deliveries.filter(
+    (record) =>
+      record.participantId === participantId &&
+      (record.managedBy === "grok-bot" || includeLegacy) &&
+      active(record) &&
+      (!record.leaseExpiresAt || Date.parse(record.leaseExpiresAt) <= now)
+  )
+  for (const record of expired) {
+    record.managedBy = "grok-bot"
+    record.state = "failed"
+    record.leaseId = undefined
+    record.leaseExpiresAt = undefined
+    record.nextAttemptAt = undefined
+    record.error = {
+      code: "REMOTE_EXECUTION_UNCONFIRMED",
+      retryable: false,
+      message:
+        "Grok Bot's execution deadline passed. Check its run before retrying; external work may have completed.",
+    }
+    record.revision += 1
+    record.updatedAt = new Date(now).toISOString()
+  }
+  return expired
+}
+
+/** A background deadline pass, driven by the nearest actual deadline, never polling. */
+export async function expireGrokBotDeliveries(
+  participantId: string,
+  now = Date.now()
+): Promise<void> {
+  await serialized(async () => {
+    const file = await loadFile()
+    const expired = expireManaged(file, participantId, now, Boolean(await grokBotPolicy(participantId)))
+    if (!expired.length) return
+    await saveFile(file)
+    for (const record of expired) notify(record)
+  })
+}
+
+export async function grokBotDeliveries(participantId: string) {
+  return (await readDeliveryState()).deliveries
+    .filter((record) => record.participantId === participantId)
+    .map((record) => ({
+      location: record.location,
+      threadId: record.threadId,
+      messageId: record.messageId,
+      identityId: record.identityId,
+      state: record.state,
+      leaseExpiresAt: record.leaseExpiresAt,
+      nextAttemptAt: record.nextAttemptAt,
+      error: record.error,
+    }))
+}
+
+/** No canonical assignment remains to retry. */
+export function isRetiredThreadDelivery(record: { error?: { code: string } }): boolean {
+  return record.error?.code === "DELIVERY_RETIRED" || record.error?.code === "THREAD_NOT_FOUND"
+}
+
+/** An explicit owner action starts a new attempt; old leases can never authorize it. */
+export async function retryGrokBotDelivery(input: {
+  participantId: string
+  messageId: string
+  threadId: string
+  location: ThreadLocation
+  identityId: string
+}): Promise<void> {
+  await serialized(async () => {
+    const file = await loadFile()
+    const record = file.deliveries.find(
+      (record) =>
+        record.participantId === input.participantId &&
+        record.messageId === input.messageId &&
+        record.threadId === input.threadId &&
+        record.identityId === input.identityId &&
+        threadLocationKey(record.location) === threadLocationKey(input.location)
+    )
+    if (
+      !record ||
+      record.state !== "failed" ||
+      record.error?.code === "DELIVERY_RETIRED"
+    ) {
+      throw new ThreadDeliveryError(
+        "DELIVERY_FAILED",
+        "Only a current failed assignment can be retried"
+      )
+    }
+    record.state = "queued"
+    record.leaseId = undefined
+    record.leaseExpiresAt = undefined
+    record.nextAttemptAt = undefined
+    record.error = undefined
+    record.attempts = 0
+    record.revision += 1
+    record.updatedAt = new Date().toISOString()
+    await saveFile(file)
+    notify(record)
+  })
 }
 
 export async function queueThreadDelivery(input: {
@@ -704,7 +891,7 @@ export async function reconcileThreadDeliveries(
           changed.push(existing)
         } else if (
           existing.state === "failed" &&
-          existing.error?.code === "DELIVERY_RETIRED" &&
+          isRetiredThreadDelivery(existing) &&
           input.threadRevision > (previousCanonicalRevisions[canonicalKey] ?? 0)
         ) {
           existing.state = "queued"
@@ -802,11 +989,21 @@ export async function nextThreadDeliveryEligibleAt(
   }
 ): Promise<number | undefined> {
   const now = Date.now()
+  const policy = await grokBotPolicy(participantId)
+  if (policy) {
+    if (!policy.enabled || policy.error) return undefined
+    const records = (await readDeliveryState()).deliveries.filter((r) => r.participantId === participantId)
+    if (records.some((r) => r.error?.code === "REMOTE_EXECUTION_UNCONFIRMED")) return undefined
+    const running = records.find(active)
+    if (running) return running.leaseExpiresAt ? Date.parse(running.leaseExpiresAt) : now
+  }
   let next: number | undefined
   const blockedThreads = new Set<string>()
   for (const record of (await readDeliveryState()).deliveries) {
     if (
       record.participantId !== participantId ||
+      (record.managedBy === "grok-bot" && !policy) ||
+      (policy && !policy.verifiedAt && policy.probe?.messageId !== record.messageId) ||
       (!options.allowWorktable && record.location.kind === "worktable") ||
       (options.isDeliverable && !options.isDeliverable(record.location)) ||
       record.state === "replied" ||
@@ -835,19 +1032,32 @@ export async function claimThreadDelivery(
   options: {
     allowWorktable?: boolean
     isDeliverable?: (location: ThreadLocation) => boolean
+    authenticatedPrincipalId?: string
   } = {
     allowWorktable: true,
   }
 ): Promise<ClaimedDelivery | null> {
   return serialized(async () => {
     const file = await loadFile()
+    const policy = await grokBotPolicy(participantId)
     const nowMs = Date.now()
     const now = new Date(nowMs).toISOString()
     const exhausted: DeliveryRecord[] = []
     const blockedThreads = new Set<string>()
     let candidate: DeliveryRecord | undefined
+    if (policy) {
+      const expired = expireManaged(file, participantId, nowMs, true)
+      if (expired.length) {
+        await saveFile(file)
+        for (const record of expired) notify(record)
+      }
+      if ((options.authenticatedPrincipalId && options.authenticatedPrincipalId !== policy.principalId) || !policy.enabled || policy.error || file.deliveries.some((r) => r.participantId === participantId &&
+        (active(r) || r.error?.code === "REMOTE_EXECUTION_UNCONFIRMED"))) return null
+    }
     for (const record of file.deliveries) {
       if (record.participantId !== participantId) continue
+      if (record.managedBy === "grok-bot" && !policy) continue
+      if (policy && !policy.verifiedAt && policy.probe?.messageId !== record.messageId) continue
       if (!options.allowWorktable && record.location.kind === "worktable") {
         continue
       }
@@ -893,6 +1103,10 @@ export async function claimThreadDelivery(
       candidate.state = "leased"
       candidate.leaseId = `lease_${randomBytes(18).toString("base64url")}`
       candidate.leaseExpiresAt = new Date(nowMs + LEASE_MS).toISOString()
+      if (policy) {
+        candidate.managedBy = "grok-bot"
+        candidate.leaseExpiresAt = new Date(nowMs + policy.executionMinutes * 60_000).toISOString()
+      }
       candidate.attempts += 1
       candidate.nextAttemptAt = undefined
       candidate.error = undefined
@@ -1016,7 +1230,7 @@ export async function failThreadDelivery(input: {
     const nowMs = Date.now()
     const refund = input.retryable && input.spendAttempt === false
     if (refund) record.attempts = Math.max(0, record.attempts - 1)
-    const retry = refund || (input.retryable && record.attempts < MAX_ATTEMPTS)
+    const retry = refund || (record.managedBy !== "grok-bot" && input.retryable && record.attempts < MAX_ATTEMPTS)
     record.state = retry ? "queued" : "failed"
     record.error = {
       code: input.code,

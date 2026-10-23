@@ -5,7 +5,7 @@ import {
   listTeamAgentConnections,
   updateTeamAgentConnection,
 } from "./team-agent-connections.ts"
-import { createHash } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { chmod, readFile, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import type {
@@ -44,6 +44,7 @@ import { listSpaces } from "./store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
 import { logError } from "./debug-log.ts"
+import { readGrokBots } from "./grok-bot-store.ts"
 
 interface StoredAgentConnection {
   id: string
@@ -473,7 +474,25 @@ export async function agentNamesByPrincipal(): Promise<Map<string, string>> {
 }
 
 export async function listAgentConnections(): Promise<AgentConnection[]> {
-  if (teamsEnabled()) return listTeamAgentConnections();
+  const connections = teamsEnabled()
+    ? await listTeamAgentConnections()
+    : await listLocalAgentConnections()
+  const grok = new Map((await readGrokBots()).map((c) => [c.participantId, c]))
+  return connections.map<AgentConnection>((connection) =>
+    connection.participant && grok.has(connection.participant.id)
+      ? {
+          ...connection,
+          platform: "grok-bot",
+          displayName: connection.participant.name,
+          mode: grok.get(connection.participant.id)!.removed
+            ? connection.mode
+            : "always-on",
+        }
+      : connection
+  )
+}
+
+async function listLocalAgentConnections(): Promise<AgentConnection[]> {
   const [file, tokens, participants] = await Promise.all([
     loadFile(),
     listTokens(),
@@ -516,7 +535,7 @@ export async function findAppAgent(
 }
 
 export async function disconnectAgentConnection(id: string): Promise<boolean> {
-  if (teamsEnabled()) return disconnectTeamAgentConnection(id);
+  if (teamsEnabled()) return disconnectTeamAgentConnection(id)
   return serialized(async () => {
     const [file, tokens] = await Promise.all([loadFile(), listTokens()])
     const workspace = getWorkspaceRoot()
@@ -574,7 +593,7 @@ export async function currentAgentScopes(
  * other credentials take the same access. Returns the credential once.
  */
 export async function createAgentCredential(input: {
-  label: DirectAgentLabel
+  label: DirectAgentLabel | null
   displayName?: string
   icon?: string | null
   access: AgentAccess
@@ -583,9 +602,33 @@ export async function createAgentCredential(input: {
   if (scopes.length === 0) {
     throw new AgentConnectionUpdateError("Choose at least one kind of access")
   }
-  if (teamsEnabled()) return createTeamAgentConnection(input);
-  const { token, metadata } = await createToken({ agent: input.label, scopes })
+  if (teamsEnabled()) return createTeamAgentConnection(input)
+  const { token, metadata } = await createToken({
+    agent: input.label ?? `manual@${randomUUID()}`,
+    scopes,
+  })
   try {
+    if (input.label === null) {
+      const { participant } = await resolveParticipant(metadata, {
+        name: input.displayName ?? "My agent",
+      })
+      const target = { kind: "mcp-client" as const, clientId: null }
+      await upsertAgentConnection({
+        target,
+        mode: "on-demand",
+        participant,
+        machine: null,
+        credentialId: metadata.id,
+        ...(input.icon ? { icon: input.icon } : {}),
+      })
+      const connection = (await listAgentConnections()).find(
+        (entry) =>
+          entry.id ===
+          connectionId(target, null, getWorkspaceRoot(), metadata.id)
+      )
+      if (!connection) throw new Error("The new credential was revoked")
+      return { token, connection }
+    }
     const connection = await updateAgentConnection(
       labeledConnectionId(getWorkspaceRoot(), input.label),
       {
@@ -618,21 +661,35 @@ export async function updateAgentConnection(
     spaceIds?: string[] | null
   }
 ): Promise<AgentConnection | null> {
+  if (
+    changes.access?.threads === false &&
+    (await listAgentConnections()).find((connection) => connection.id === id)
+      ?.mode === "always-on"
+  ) {
+    throw new AgentConnectionUpdateError(
+      "An always-on agent needs threads: that is how it receives messages"
+    )
+  }
   if (teamsEnabled()) {
     // The same rules as a one-person Worktable, checked before the team store
     // applies anything.
     if (changes.access) {
       const mode = requireTeamDatabase()
-        .query<{ mode: string }, [string]>("SELECT mode FROM wt_agents WHERE id = ?")
+        .query<
+          { mode: string },
+          [string]
+        >("SELECT mode FROM wt_agents WHERE id = ?")
         .get(id)?.mode
       if (mode === "always-on" && !changes.access.threads)
         throw new AgentConnectionUpdateError(
           "An always-on agent needs threads: that is how it receives messages"
         )
       if (scopesForAccess(changes.access).length === 0)
-        throw new AgentConnectionUpdateError("Choose at least one kind of access")
+        throw new AgentConnectionUpdateError(
+          "Choose at least one kind of access"
+        )
     }
-    return updateTeamAgentConnection(id, changes);
+    return updateTeamAgentConnection(id, changes)
   }
   const token = await serialized(async () => {
     const [file, tokens] = await Promise.all([loadFile(), listTokens()])
@@ -741,6 +798,16 @@ export async function updateSignInAgent(
     threads?: boolean
   }
 ): Promise<void> {
+  if (
+    changes.threads === false &&
+    (await readGrokBots()).some(
+      (c) => c.principalId === principalId && !c.removed
+    )
+  ) {
+    throw new AgentConnectionUpdateError(
+      "An always-on agent needs threads: that is how it receives messages"
+    )
+  }
   await serialized(async () => {
     const file = await loadFile()
     const signIns = (file.signIns ??= [])

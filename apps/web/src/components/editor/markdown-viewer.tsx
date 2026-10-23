@@ -337,12 +337,12 @@ export function MarkdownViewer({
                                   <AlertTriangle className="h-4 w-4 shrink-0" />
                                   Diagram could not be rendered
                                 </div>
-                                <details className="mt-3 text-xs text-muted-foreground">
-                                  <summary className="cursor-pointer font-medium select-none">
-                                    View diagram source
-                                  </summary>
-                                  <ScrollableMermaidSource source={source} />
-                                </details>
+                                <div className="mt-3 text-xs">
+                                  <DocDetails>
+                                    <DocSummary>View diagram source</DocSummary>
+                                    <ScrollableMermaidSource source={source} />
+                                  </DocDetails>
+                                </div>
                               </div>
                             }
                           />

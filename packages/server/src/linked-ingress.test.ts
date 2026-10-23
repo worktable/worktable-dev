@@ -30,6 +30,14 @@ import {
 } from "./share-links-store.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { createLinkedIngress } from "./linked-ingress.ts"
+import {
+  readGrokBotCandidates,
+  readGrokBots,
+  saveGrokBot,
+  updateGrokBot,
+  removeGrokBot,
+} from "./grok-bot-store.ts"
+import { postThreadMessage } from "./thread-service.ts"
 import { drainWorkspaceChanges } from "./workspace-events.ts"
 import { createHtmlDocument } from "./html-document-create.ts"
 import {
@@ -97,7 +105,7 @@ const grant = {
   scopes: HOSTED_OAUTH_SCOPES,
 }
 
-function newIngress() {
+function newIngress(scopes = ["docs:read", "docs:write", "spaces:read"]) {
   const reply = LinkedHostReply.parse({
     state: "linked",
     publicOrigin: "https://app.example.test",
@@ -111,7 +119,7 @@ function newIngress() {
       ownerSubject: "user_owner",
       generation: 1,
     },
-    scopes: ["docs:read", "docs:write", "spaces:read"],
+    scopes,
     publicOrigin: reply.publicOrigin,
     shareOrigin: reply.sharingEnabled ? reply.shareOrigin : undefined,
   })
@@ -181,6 +189,100 @@ async function mcpRequest(
     ),
   })
 }
+
+it("keeps the legacy Grok identity and routes additional accounts with the same client label independently", async () => {
+  const botIngress = await newIngress([...HOSTED_OAUTH_SCOPES])
+  const claim = async (principalId: string) => {
+    const response = await botIngress.fetch(
+      await createLinkedRequest({
+        origin: server.url.origin,
+        key,
+        binding: botIngress.binding,
+        grant: { ...grant, principalId, displayName: "Cursor" },
+        method: "POST",
+        path: "/api/mcp",
+        body: new TextEncoder().encode(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: {
+              name: "worktable_thread_delivery",
+              arguments: {
+                request: {
+                  action: "claim",
+                  waitSeconds: 0,
+                  threadLocationVersion: 2,
+                },
+              },
+            },
+          })
+        ),
+      })
+    )
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.result.isError).not.toBe(true)
+    return body.result.structuredContent.delivery
+  }
+  const firstId = "oauth:grok:account-one"
+  const secondId = "oauth:grok:account-two"
+  expect(await claim(firstId)).toBeNull()
+  const configure = async (id: string, name: string) => {
+    const candidate = (await readGrokBotCandidates()).find((c) => c.id === id)!
+    await saveGrokBot(
+      {
+        connectionId: id,
+        principalId: id,
+        participantId: candidate.participantId,
+        participantKey: candidate.participantKey,
+        wakeMethod: "email",
+        emailAddress: `${name.toLowerCase()}@mail.grokbot.com`,
+        webhookUrl: "",
+        webhookKey: "",
+        enabled: true,
+        executionMinutes: 30,
+      },
+      name
+    )
+    const connection = (await readGrokBots()).find(
+      (c) => c.connectionId === id
+    )!
+    await updateGrokBot(connection, { verifiedAt: new Date().toISOString() })
+    return connection
+  }
+  const first = await configure(firstId, "Comet")
+  expect(first.participantKey).toBe("agent:Cursor")
+  expect(await claim(secondId)).toBeNull()
+  const second = await configure(secondId, "Orbit")
+  expect(second.participantId).not.toBe(first.participantId)
+  const owner = {
+    agent: null,
+    scopes: ["*"],
+    principal: { id: "owner", type: "human" as const, displayName: "Owner" },
+  }
+  const assign = (to: string, body: string) =>
+    postThreadMessage(owner, {
+      location: { kind: "worktable" },
+      to,
+      body,
+      idempotencyKey: body,
+      expectsReply: true,
+    })
+  const a = await assign(first.participantId, "For Comet")
+  const b = await assign(second.participantId, "For Orbit")
+  expect(await claim(secondId)).toMatchObject({ messageId: b.messageId })
+  expect(await claim(firstId)).toMatchObject({ messageId: a.messageId })
+  expect((await readGrokBotCandidates()).map((c) => c.displayName)).toEqual(
+    expect.arrayContaining(["Comet", "Orbit"])
+  )
+  await removeGrokBot(secondId)
+  expect(await claim(secondId)).toBeNull()
+  expect(
+    (await readGrokBots()).find((c) => c.connectionId === firstId)
+      ?.participantId
+  ).toBe(first.participantId)
+})
 
 it("serves real MCP writes and read-only shares through a separate socket, with no implicit owner access", async () => {
   expect(
@@ -777,38 +879,74 @@ it("carries bounded live bridge calls and reserves MCP capacity while share bodi
       ok: true,
       result: {},
     })
-    const projection = await fetch(await createLinkedRequest({
-      origin: server.url.origin, key, binding: ingress.binding,
-      grant: { kind: "share", capability: token }, method: "GET", path: "/public/share",
-    }))
+    const projection = await fetch(
+      await createLinkedRequest({
+        origin: server.url.origin,
+        key,
+        binding: ingress.binding,
+        grant: { kind: "share", capability: token },
+        method: "GET",
+        path: "/public/share",
+      })
+    )
     expect(projection.status).toBe(200)
     const { contentTicket, live } = await projection.json()
-    const frameRequest = (contentRevision?: string) => createLinkedRequest({
-      origin: server.url.origin, key, binding: ingress.binding,
-      grant: { kind: "share", capability: contentTicket, ...(contentRevision ? { contentRevision } : {}) },
-      method: "GET", path: "/public/share/content",
-    })
+    const frameRequest = (contentRevision?: string) =>
+      createLinkedRequest({
+        origin: server.url.origin,
+        key,
+        binding: ingress.binding,
+        grant: {
+          kind: "share",
+          capability: contentTicket,
+          ...(contentRevision ? { contentRevision } : {}),
+        },
+        method: "GET",
+        path: "/public/share/content",
+      })
     const frame = await fetch(await frameRequest())
     expect(frame.status).toBe(200)
     expect(await frame.text()).toContain("Live report")
     expect((await fetch(await frameRequest(live.rev))).status).toBe(304)
     const wrongPath = await createLinkedRequest({
-      origin: server.url.origin, key, binding: ingress.binding,
+      origin: server.url.origin,
+      key,
+      binding: ingress.binding,
       grant: { kind: "share", capability: token, contentRevision: live.rev },
-      method: "POST", path: "/public/share/bridge", body,
+      method: "POST",
+      path: "/public/share/bridge",
+      body,
     })
     expect((await fetch(wrongPath)).status).toBe(403)
     const clientCall = await createLinkedRequest({
-      origin: server.url.origin, key, binding: ingress.binding,
-      grant: { kind: "share", capability: token, clientAddress: "a".repeat(32) },
-      method: "POST", path: "/public/share/bridge", body,
+      origin: server.url.origin,
+      key,
+      binding: ingress.binding,
+      grant: {
+        kind: "share",
+        capability: token,
+        clientAddress: "a".repeat(32),
+      },
+      method: "POST",
+      path: "/public/share/bridge",
+      body,
     })
     expect((await fetch(clientCall)).status).toBe(200)
     const forbiddenRead = await createLinkedRequest({
-      origin: server.url.origin, key, binding: ingress.binding,
+      origin: server.url.origin,
+      key,
+      binding: ingress.binding,
       grant: { kind: "share", capability: token },
-      method: "POST", path: "/public/share/bridge",
-      body: new TextEncoder().encode(JSON.stringify({ v: 1, op: "records.query", collection: "ungranted", query: {} })),
+      method: "POST",
+      path: "/public/share/bridge",
+      body: new TextEncoder().encode(
+        JSON.stringify({
+          v: 1,
+          op: "records.query",
+          collection: "ungranted",
+          query: {},
+        })
+      ),
     })
     const refused = await fetch(forbiddenRead)
     expect(refused.status).toBe(403)
@@ -827,7 +965,9 @@ it("carries bounded live bridge calls and reserves MCP capacity while share bodi
           closeBodies.push(() => {
             try {
               controller.close()
-            } catch { /* A response can already have cancelled the upload. */ }
+            } catch {
+              /* A response can already have cancelled the upload. */
+            }
           })
         },
       })

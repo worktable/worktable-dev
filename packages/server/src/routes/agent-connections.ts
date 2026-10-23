@@ -19,17 +19,40 @@ import {
 } from "../agent-connection-store.ts"
 import { isHosted } from "../hosted.ts"
 import { getOwnerSubject } from "../oauth-jwt.ts"
+import { grokBotInventory } from "../grok-bot-connections.ts"
+import {
+  readGrokBotCandidates,
+  readGrokBots,
+  removeGrokBot,
+} from "../grok-bot-store.ts"
 
 export const agentConnectionsRouter = new Hono()
 
 agentConnectionsRouter.use("*", requireAgentManager())
 
-agentConnectionsRouter.get("/", async (c) =>
-  c.json({ connections: await listAgentConnections() })
-)
+agentConnectionsRouter.get("/", async (c) => {
+  const connections = await listAgentConnections()
+  return c.json({ connections, ...(await grokBotInventory(connections)) })
+})
 
 agentConnectionsRouter.delete("/:id", async (c) => {
-  await disconnectAgentConnection(c.req.param("id"))
+  const connection = (await listAgentConnections()).find(
+    (entry) => entry.id === c.req.param("id")
+  )
+  const disconnected = await disconnectAgentConnection(c.req.param("id"))
+  if (disconnected && connection?.participant) {
+    const ids = new Set([
+      ...(await readGrokBots())
+        .filter((grok) => grok.participantId === connection.participant!.id)
+        .map((grok) => grok.connectionId),
+      ...(await readGrokBotCandidates())
+        .filter(
+          (candidate) => candidate.participantId === connection.participant!.id
+        )
+        .map((candidate) => candidate.id),
+    ])
+    for (const id of ids) await removeGrokBot(id, { forgetIdentity: true })
+  }
   return c.json({ ok: true })
 })
 
@@ -83,7 +106,7 @@ agentConnectionsRouter.post("/", async (c) => {
     access?: unknown
   } | null
   if (!body) return c.json(badRequest("Expected a JSON object"), 400)
-  if (!isDirectAgentLabel(body.client)) {
+  if (body.client !== null && !isDirectAgentLabel(body.client)) {
     return c.json(badRequest("client must be an app Worktable connects"), 400)
   }
   const displayName =
@@ -235,13 +258,19 @@ agentConnectionsRouter.put("/sign-ins/:clientId", async (c) => {
   if (body.platform !== undefined && !isAgentPlatformId(body.platform)) {
     return c.json(badRequest("platform must be a known agent platform"), 400)
   }
-  await updateSignInAgent(hostedOAuthPrincipalId(clientId, owner), {
-    ...(displayName !== undefined ? { displayName } : {}),
-    ...(body.icon !== undefined ? { icon: body.icon as string | null } : {}),
-    ...(body.platform !== undefined
-      ? { platform: body.platform as AgentPlatformId }
-      : {}),
-    ...(typeof body.threads === "boolean" ? { threads: body.threads } : {}),
-  })
+  try {
+    await updateSignInAgent(hostedOAuthPrincipalId(clientId, owner), {
+      ...(displayName !== undefined ? { displayName } : {}),
+      ...(body.icon !== undefined ? { icon: body.icon as string | null } : {}),
+      ...(body.platform !== undefined
+        ? { platform: body.platform as AgentPlatformId }
+        : {}),
+      ...(typeof body.threads === "boolean" ? { threads: body.threads } : {}),
+    })
+  } catch (error) {
+    if (error instanceof AgentConnectionUpdateError)
+      return c.json(badRequest(error.message), 400)
+    throw error
+  }
   return c.json({ ok: true as const })
 })

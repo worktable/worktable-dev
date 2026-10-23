@@ -19,12 +19,9 @@ import {
   DEFAULT_AGENT_ACCESS,
   CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS,
   MCP_CLIENTS,
-  MCP_SNIPPET_CLIENT_IDS,
-  mcpClientSnippet,
   type AgentAccess,
   type AgentConnection,
   type ConnectorInstallableMcpClientId,
-  type McpSnippetClientId,
 } from "@worktable/types"
 import { Button, buttonVariants } from "@worktable/ui/components/button"
 import { Badge } from "@worktable/ui/components/badge"
@@ -101,30 +98,14 @@ import { AgentAccessFields } from "@/components/agents/agent-access-fields"
 import { AgentAvatar } from "@/components/agents/agent-avatar"
 import { AgentEditDialog } from "@/components/agents/agent-edit-dialog"
 import { DesktopAgentSkillsGroup } from "./desktop-agent-skills"
+import { GrokBotSetupPanel } from "@/components/agents/grok-bot-setup"
+import { GROK_BOT_STATUS_LABELS } from "@/lib/grok-bot-status"
+import {
+  AGENT_SETUP_CATEGORIES,
+  AgentSetupCategory,
+  AgentSetupTabs,
+} from "@/components/agents/agent-setup-category"
 import { useSettingsSectionActive } from "../settings-dialog"
-
-const CLIENT_KEY = "worktable-connect-client"
-const DEFAULT_CLIENT: McpSnippetClientId = "claude-code"
-
-// The scopes a "Connect an agent" token grants — everything an interactive agent
-// needs, minus token management (the shared agent-token scope set).
-
-const CLIENT_OPTIONS = MCP_SNIPPET_CLIENT_IDS.map((id) => MCP_CLIENTS[id])
-
-function readStoredClient(): McpSnippetClientId {
-  try {
-    const stored = localStorage.getItem(CLIENT_KEY)
-    if (
-      stored &&
-      MCP_SNIPPET_CLIENT_IDS.includes(stored as McpSnippetClientId)
-    ) {
-      return stored as McpSnippetClientId
-    }
-  } catch {
-    // localStorage unavailable — fall through to the default.
-  }
-  return DEFAULT_CLIENT
-}
 
 // The nav rail / tab strip already names the section, so no repeated heading —
 // group headers carry the hierarchy (mirrors SystemSection).
@@ -165,7 +146,7 @@ export function AgentsSection() {
   if (connectionQuery.data.mcpAuthMode === "oauth") {
     return (
       <div className="flex flex-col gap-6">
-        <CloudAgentSetupGroup connection={connectionQuery.data} />
+        <AgentSetupGroup connection={connectionQuery.data} />
         <ConnectedAgentsGroup />
         <DesktopAgentSkillsGroup enabled={sectionActive} />
       </div>
@@ -208,61 +189,6 @@ function PreviewToolsRow() {
         />
       </SettingRow>
     </div>
-  )
-}
-
-type CloudAgentSetupPanel =
-  | "quick"
-  | AlwaysOnAgent["adapter"]
-  | "desktop"
-  | "manual"
-
-function CloudAgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
-  const [openPanel, setOpenPanel] = useState<CloudAgentSetupPanel | null>(null)
-
-  function panelProps(panel: CloudAgentSetupPanel) {
-    return {
-      open: openPanel === panel,
-      onOpenChange: (open: boolean) => setOpenPanel(open ? panel : null),
-    }
-  }
-
-  return (
-    <section aria-label="Agent connections">
-      <Card className="gap-0 py-0">
-        <AgentSetupDisclosure title="Coding agents" {...panelProps("quick")}>
-          <CloudQuickConnectPanel connection={connection} />
-        </AgentSetupDisclosure>
-        {ALWAYS_ON_AGENTS.map((agent) => (
-          <AgentSetupDisclosure
-            key={agent.adapter}
-            title={agent.name}
-            className="border-t border-border/60"
-            {...panelProps(agent.adapter)}
-          >
-            {connection.agentPairing ? (
-              <AlwaysOnSetupPanel connection={connection} agent={agent} />
-            ) : (
-              <CloudAlwaysOnPanel connection={connection} agent={agent} />
-            )}
-          </AgentSetupDisclosure>
-        ))}
-        <AgentSetupDisclosure
-          title="Claude and ChatGPT"
-          className="border-t border-border/60"
-          {...panelProps("desktop")}
-        >
-          <CloudNativeAppsPanel connection={connection} />
-        </AgentSetupDisclosure>
-        <AgentSetupDisclosure
-          title="Manual setup"
-          className="border-t border-border/60"
-          {...panelProps("manual")}
-        >
-          <CloudManualInstallPanel connection={connection} />
-        </AgentSetupDisclosure>
-      </Card>
-    </section>
   )
 }
 
@@ -337,8 +263,22 @@ function CloudAlwaysOnPanel({
 }
 
 function CloudNativeAppsPanel({ connection }: { connection: ConnectionInfo }) {
+  const [app, setApp] = useState<"claude" | "chatgpt">("claude")
   return (
-    <div>
+    <div className="flex flex-col gap-3">
+      <AgentSetupTabs
+        value={app}
+        onValueChange={setApp}
+        options={[
+          { value: "claude", label: "Claude", platform: "claude" },
+          { value: "chatgpt", label: "ChatGPT", platform: "chatgpt" },
+        ]}
+      />
+      <p className="text-sm text-muted-foreground">
+        {app === "claude"
+          ? "In Claude, add a custom connector in Settings → Connectors. Paste this address and sign in."
+          : "In ChatGPT on the web, create an app in Settings → Apps. Paste this address and sign in."}
+      </p>
       <CopyField
         label="MCP endpoint"
         value={connection.remoteMcpUrl}
@@ -353,53 +293,15 @@ function CloudManualInstallPanel({
 }: {
   connection: ConnectionInfo
 }) {
-  const [clientId, setClientId] = useState<McpSnippetClientId>(readStoredClient)
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(CLIENT_KEY, clientId)
-    } catch {
-      // Best-effort persistence.
-    }
-  }, [clientId])
-
-  const meta = MCP_CLIENTS[clientId]
-  const snippet = mcpClientSnippet(clientId, {
-    endpoint: connection.remoteMcpUrl,
-  })
-  const pasteCaption = meta.configPathHint
-    ? `Paste into ${meta.configPathHint}`
-    : ""
-  const copied = () => toast.success("Copied")
-
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-foreground">Client</span>
-        <Select
-          value={clientId}
-          onValueChange={(value) => setClientId(value as McpSnippetClientId)}
-        >
-          <SelectTrigger aria-label="Cloud agent" className="w-full sm:w-64">
-            <SelectValue>{meta.label}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {CLIENT_OPTIONS.map((client) => (
-              <SelectItem key={client.id} value={client.id}>
-                {client.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <Snippet code={snippet.body} onCopied={copied} />
-      <p className="text-sm text-muted-foreground">{pasteCaption}</p>
-
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted-foreground">
+        Add this address as a custom connector or MCP server, then sign in.
+      </p>
       <CopyField
         label="MCP endpoint"
         value={connection.remoteMcpUrl}
-        onCopied={copied}
+        onCopied={() => toast.success("Copied")}
       />
     </div>
   )
@@ -407,89 +309,97 @@ function CloudManualInstallPanel({
 
 // ── Local/self-hosted setup disclosures ─────────────────────────────────────
 
-type AgentSetupPanel = "quick" | AlwaysOnAgent["adapter"] | "desktop" | "manual"
+type AgentSetupCategoryId = keyof typeof AGENT_SETUP_CATEGORIES | "manual"
+type AlwaysOnChoice = AlwaysOnAgent["adapter"] | "grok-bot"
 
 function AgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
-  const [openPanel, setOpenPanel] = useState<AgentSetupPanel | null>(null)
-
-  function panelProps(panel: AgentSetupPanel) {
-    return {
-      open: openPanel === panel,
-      onOpenChange: (open: boolean) => setOpenPanel(open ? panel : null),
-    }
-  }
-
+  const active = useSettingsSectionActive()
+  const cloud = connection.mcpAuthMode === "oauth"
+  const [open, setOpen] = useState<AgentSetupCategoryId | null>(null)
+  const [provider, setProvider] = useState<AlwaysOnChoice>("openclaw")
+  const [visited, setVisited] = useState<AlwaysOnChoice[]>(["openclaw"])
+  const categoryProps = (id: keyof typeof AGENT_SETUP_CATEGORIES) => ({
+    ...AGENT_SETUP_CATEGORIES[id],
+    open: open === id,
+    onOpenChange: (next: boolean) => setOpen(next ? id : null),
+    keepMounted: true,
+  })
   return (
     <section aria-label="Agent connections">
-      <Card className="gap-0 py-0">
-        <AgentSetupDisclosure title="Coding agents" {...panelProps("quick")}>
-          <QuickConnectPanel connection={connection} />
-        </AgentSetupDisclosure>
-
-        {ALWAYS_ON_AGENTS.map((agent) => (
-          <AgentSetupDisclosure
-            key={agent.adapter}
-            title={agent.name}
-            className="border-t border-border/60"
-            {...panelProps(agent.adapter)}
-          >
-            <AlwaysOnSetupPanel connection={connection} agent={agent} />
-          </AgentSetupDisclosure>
-        ))}
-
-        <AgentSetupDisclosure
-          title="Claude and ChatGPT"
-          className="border-t border-border/60"
-          {...panelProps("desktop")}
-        >
-          <DesktopAppsPanel connection={connection} />
-        </AgentSetupDisclosure>
-
-        <AgentSetupDisclosure
-          title="Manual setup"
-          className="border-t border-border/60"
-          {...panelProps("manual")}
-        >
-          <ManualInstallPanel connection={connection} />
-        </AgentSetupDisclosure>
-      </Card>
-    </section>
-  )
-}
-
-function AgentSetupDisclosure({
-  title,
-  open,
-  onOpenChange,
-  className,
-  children,
-}: {
-  title: string
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  className?: string
-  children: ReactNode
-}) {
-  return (
-    <Collapsible open={open} onOpenChange={onOpenChange} className={className}>
-      <CollapsibleTrigger className="flex min-h-12 w-full items-center gap-3 rounded-xl px-4 py-2.5 text-left transition-colors outline-none hover:bg-surface-hover focus-visible:ring-3 focus-visible:ring-ring/50">
-        <span className="min-w-0 flex-1 text-sm font-medium text-foreground">
-          {title}
-        </span>
-        <ChevronDown
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform",
-            open && "rotate-180"
+      <div className="overflow-hidden rounded-xl card-surface">
+        <AgentSetupCategory {...categoryProps("code")}>
+          {cloud ? (
+            <CloudQuickConnectPanel connection={connection} />
+          ) : (
+            <QuickConnectPanel connection={connection} />
           )}
-          aria-hidden
-        />
-      </CollapsibleTrigger>
-      {/* Setup can hold a live pairing or a one-time token. Switching panels
-          must hide, not destroy, that in-progress state. */}
-      <CollapsibleContent keepMounted>
-        <div className="border-t border-border/60 px-4 py-4">{children}</div>
-      </CollapsibleContent>
-    </Collapsible>
+        </AgentSetupCategory>
+        <AgentSetupCategory {...categoryProps("chat")}>
+          {cloud ? (
+            <CloudNativeAppsPanel connection={connection} />
+          ) : (
+            <DesktopAppsPanel connection={connection} />
+          )}
+        </AgentSetupCategory>
+        <AgentSetupCategory {...categoryProps("always")}>
+          <AgentSetupTabs
+            value={provider}
+            onValueChange={(value) => {
+              setProvider(value)
+              setVisited((previous) =>
+                previous.includes(value) ? previous : [...previous, value]
+              )
+            }}
+            options={AGENT_SETUP_CATEGORIES.always.platforms.map(
+              (platform) => ({
+                value: platform as AlwaysOnChoice,
+                label: AGENT_PLATFORMS[platform].name,
+                platform,
+              })
+            )}
+          />
+          {visited.map((value) => (
+            <div key={value} hidden={provider !== value}>
+              {value === "grok-bot" ? (
+                <GrokBotSetupPanel
+                  connection={connection}
+                  open={active && open === "always" && provider === value}
+                />
+              ) : (
+                (() => {
+                  const agent = ALWAYS_ON_AGENTS.find(
+                    (agent) => agent.adapter === value
+                  )!
+                  return cloud && !connection.agentPairing ? (
+                    <CloudAlwaysOnPanel connection={connection} agent={agent} />
+                  ) : (
+                    <AlwaysOnSetupPanel connection={connection} agent={agent} />
+                  )
+                })()
+              )}
+            </div>
+          ))}
+        </AgentSetupCategory>
+      </div>
+      <Collapsible
+        open={open === "manual"}
+        onOpenChange={(next) => setOpen(next ? "manual" : null)}
+      >
+        <CollapsibleTrigger className="mt-5 text-sm text-muted-foreground hover:text-foreground">
+          Using something else?{" "}
+          <span className="text-primary-text">Connect any MCP agent</span>
+        </CollapsibleTrigger>
+        <CollapsibleContent keepMounted>
+          <div className="pt-4">
+            {cloud ? (
+              <CloudManualInstallPanel connection={connection} />
+            ) : (
+              <ManualInstallPanel connection={connection} />
+            )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </section>
   )
 }
 
@@ -614,7 +524,7 @@ function QuickConnectPanel({
           }}
           disabled={create.isPending}
         >
-          <SelectTrigger className="w-full sm:w-64">
+          <SelectTrigger aria-label="Coding agent" className="w-full sm:w-64">
             <SelectValue>
               {clientChoice === "auto"
                 ? "Detect automatically"
@@ -1035,26 +945,17 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-foreground">Desktop app</span>
-        <Select
-          value={app}
-          onValueChange={(value) => {
-            setApp(value as DesktopAppChoice)
-            setAccess(null)
-          }}
-        >
-          <SelectTrigger aria-label="Desktop app" className="w-full sm:w-64">
-            <SelectValue>
-              {app === "claude-desktop" ? "Claude Desktop" : "ChatGPT desktop"}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="claude-desktop">Claude Desktop</SelectItem>
-            <SelectItem value="chatgpt-desktop">ChatGPT desktop</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <AgentSetupTabs
+        value={app}
+        onValueChange={(value) => {
+          setApp(value)
+          setAccess(null)
+        }}
+        options={[
+          { value: "claude-desktop", label: "Claude", platform: "claude" },
+          { value: "chatgpt-desktop", label: "ChatGPT", platform: "chatgpt" },
+        ]}
+      />
 
       {app === "claude-desktop" ? (
         <article className="flex flex-col gap-4">
@@ -1218,200 +1119,58 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
 
 function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
   const queryClient = useQueryClient()
-
-  const [clientId, setClientId] = useState<McpSnippetClientId>(readStoredClient)
-  useEffect(() => {
-    try {
-      localStorage.setItem(CLIENT_KEY, clientId)
-    } catch {
-      // Best-effort persistence.
-    }
-  }, [clientId])
-
-  // The minted connection secret lives ONLY in this component's state — never
-  // persisted or logged. The shell keeps sections mounted while the dialog is
-  // open (so switching sections can't destroy a one-time token) but unmounts
-  // everything on close, so the token can't survive a close. Switching client
-  // also drops it (it was minted for the prior agent).
+  const [access, setAccess] = useState<AgentAccess>(DEFAULT_AGENT_ACCESS)
+  // Keep the one-time secret in this mounted panel, never in persisted state.
   const [token, setToken] = useState<string | null>(null)
-  const [chosenAccess, setAccess] = useState<AgentAccess | null>(null)
-  // Connecting a client again is the same agent: start from its access.
-  const existing = useQuery({
-    queryKey: ["agent-connections", "app", clientId],
-    queryFn: () => getAppAgent(clientId),
-  })
-  const existingAgent = existing.data?.connection ?? null
-  // Until it is known whether the app is already an agent, its access is not:
-  // generating then could widen an agent its owner had limited.
-  const appKnown = existing.isSuccess
-  const access = chosenAccess ?? existingAgent?.access ?? DEFAULT_AGENT_ACCESS
-
   const mint = useMutation({
-    mutationFn: () => connectAgentApp({ client: clientId, access }),
-    onSuccess: (res) => {
-      setToken(res.token)
-      // The new bearer must show up (and be revocable) in the table below.
-      // Minting does not change literal-loopback MCP's implicit-owner posture.
+    mutationFn: () =>
+      connectAgentApp({ client: null, displayName: "My agent", access }),
+    onSuccess: (result) => {
+      setToken(result.token)
       void queryClient.invalidateQueries({ queryKey: ["tokens"] })
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
     },
-    onError: (err) =>
+    onError: (error) =>
       toast.error(
-        err instanceof Error ? err.message : "Couldn't generate a token."
+        error instanceof Error
+          ? error.message
+          : "Couldn’t create an access token."
       ),
   })
-
-  function selectClient(next: McpSnippetClientId) {
-    setClientId(next)
-    setToken(null)
-    setAccess(null)
-    mint.reset()
-  }
-
-  const meta = MCP_CLIENTS[clientId]
-  const pasteCaption = meta.configPathHint
-    ? `Paste into ${meta.configPathHint}`
-    : "Run in a terminal"
-
-  // A remote agent must reach the install at the user-facing origin, not the
-  // loopback endpoint the server advertises for same-machine clients. A
-  // configured origin counts too: a loopback install fronted by a tunnel saves
-  // a Worktable URL precisely so generated configs point through the tunnel.
-  const publicUrlUsed = Boolean(
-    connection && (connection.reachable || connection.originConfigured)
-  )
-  const mcpUrl = connection
-    ? publicUrlUsed
-      ? connection.remoteMcpUrl
-      : connection.endpoint
-    : null
-  // /mcp needs a bearer when the install is exposed or whenever the snippet
-  // points at a PUBLIC URL: a tunnel in front of a
-  // tokenless loopback install would otherwise expose the Worktable to anyone
-  // who finds the URL. Until one is minted here, render the config in its real
-  // shape with a visible placeholder — not the shared module's CLI-facing
-  // guidance; the Generate button is right here.
-  const needsToken = Boolean(
-    connection &&
-    (connection.reachable || connection.mcpTokenRequired || publicUrlUsed)
-  )
-  const placeholderShown = needsToken && !token
-  const snippet =
-    connection && mcpUrl
-      ? mcpClientSnippet(clientId, {
-          endpoint: mcpUrl,
-          token: token ?? (needsToken ? "<generated-token>" : undefined),
-          reachable: connection.reachable,
-        })
-      : null
-
-  const copied = () => toast.success("Copied")
-
+  const endpoint = desktopAgentConnectionDetails(connection).endpoint
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-foreground">Client</span>
-        <Select
-          value={clientId}
-          onValueChange={(value) => selectClient(value as McpSnippetClientId)}
-        >
-          <SelectTrigger
-            aria-label="Manual setup agent"
-            className="w-full sm:w-64"
-          >
-            <SelectValue>{meta.label}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {CLIENT_OPTIONS.map((client) => (
-              <SelectItem key={client.id} value={client.id}>
-                {client.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {!snippet ? (
-        <p className="text-sm text-muted-foreground">
-          Couldn’t read connection info for this install.
-        </p>
+      <p className="text-sm text-muted-foreground">
+        Add Worktable to your agent as an MCP server with this address and an
+        access token.
+      </p>
+      <CopyField label="MCP endpoint" value={endpoint} />
+      {token ? (
+        <>
+          <Callout variant="info">
+            Copy the token now. It isn’t shown again.
+          </Callout>
+          <CopyField label="Access token" value={token} />
+        </>
       ) : (
         <>
-          {needsToken && !token ? (
-            <div className="flex flex-col gap-4">
-              <AgentAccessFields
-                value={access}
-                onChange={setAccess}
-                disabled={mint.isPending || !appKnown}
-              />
-              {existing.isError ? (
-                <Callout variant="danger">
-                  Couldn’t check whether this client is already connected.{" "}
-                  <button
-                    type="button"
-                    className="font-medium underline underline-offset-2"
-                    onClick={() => void existing.refetch()}
-                  >
-                    Try again
-                  </button>
-                </Callout>
-              ) : null}
-              {existingAgent ? (
-                <p className="text-xs text-muted-foreground">
-                  Already connected as {existingAgent.displayName}. A new token
-                  joins it.
-                </p>
-              ) : null}
-              <div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => mint.mutate()}
-                  disabled={
-                    mint.isPending ||
-                    !appKnown ||
-                    !(access.threads || access.read || access.edit)
-                  }
-                >
-                  {mint.isPending ? "Generating…" : "Generate connection token"}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {token ? (
-            <Callout variant="info">
-              Copy now. This token is shown once.
-            </Callout>
-          ) : null}
-
-          <Snippet code={snippet.body} onCopied={copied} />
-
-          <p className="text-sm text-muted-foreground">
-            {pasteCaption}
-            {placeholderShown &&
-              ". Generate a token above to complete this config."}
-          </p>
-
-          {!needsToken ? (
-            <p className="text-sm text-muted-foreground">
-              No token needed on this computer.
-            </p>
-          ) : !connection.reachable && publicUrlUsed ? (
-            <p className="text-sm text-muted-foreground">
-              Public URLs require a token.
-            </p>
-          ) : !connection.reachable && connection.mcpTokenRequired ? (
-            <p className="text-sm text-muted-foreground">
-              This Worktable requires a token.
-            </p>
-          ) : null}
-
-          <CopyField
-            label="MCP endpoint"
-            value={mcpUrl ?? connection.endpoint}
-            onCopied={copied}
+          <AgentAccessFields
+            value={access}
+            onChange={setAccess}
+            disabled={mint.isPending}
           />
+          <div>
+            <Button
+              variant="outline"
+              disabled={
+                mint.isPending ||
+                !(access.threads || access.read || access.edit)
+              }
+              onClick={() => mint.mutate()}
+            >
+              {mint.isPending ? "Creating…" : "Create access token"}
+            </Button>
+          </div>
         </>
       )}
     </div>
@@ -1441,16 +1200,54 @@ export function ConnectedAgentsGroup() {
     queryFn: getConnection,
     enabled: sectionActive,
   })
-  const workspaceAgentsOnCloud =
-    systemConnection.data?.mcpAuthMode === "oauth" &&
-    systemConnection.data.agentPairing === true
+  const workspaceAgentsOnCloud = systemConnection.data?.mcpAuthMode === "oauth"
   const connectionsQuery = useQuery({
     queryKey: ["agent-connections", workspaceAgentsOnCloud],
     queryFn: () => listAgentConnections({ workspaceAgentsOnCloud }),
     enabled: sectionActive && systemConnection.isFetched,
   })
   const disconnect = useMutation({
-    mutationFn: disconnectAgentConnection,
+    mutationFn: async (id: string) => {
+      const inventory = connectionsQuery.data
+      const connection = inventory?.connections.find((entry) => entry.id === id)
+      if (!connection) throw new Error("Agent connection not found")
+      const clientId =
+        connection?.authKind === "oauth" &&
+        connection.target.kind === "mcp-client"
+          ? connection.target.clientId
+          : null
+      const grok = inventory?.grokBots?.find(
+        (entry) =>
+          (connection?.participant &&
+            entry.participantId === connection.participant.id) ||
+          (clientId && entry.connectionId.startsWith(`oauth:${clientId}:`))
+      )
+      const candidate = inventory?.grokBotCandidates?.find(
+        (entry) =>
+          entry.participantId === connection.participant?.id ||
+          (clientId && entry.id.startsWith(`oauth:${clientId}:`))
+      )
+      const grokId = grok?.connectionId ?? candidate?.id
+      const result = await disconnectAgentConnection(connection)
+      // Workspace/Team disconnects own this cleanup. A gateway sign-in is
+      // disconnected on Cloud, so its local routine must be retired here.
+      const cleaned =
+        grokId &&
+        connection.authKind === "oauth" &&
+        connection.ownership === undefined &&
+        connection.requestScope !== "workspace"
+          ? await fetchJSON(
+              `/api/grok-bot/${encodeURIComponent(grokId)}/configuration?scope=workspace&disconnect=1`,
+              { method: "DELETE" }
+            ).then(
+              () => true,
+              () => false
+            )
+          : true
+      if (!cleaned)
+        toast.warning("Agent disconnected. Could not remove its Grok routine.")
+      return result
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
       void queryClient.invalidateQueries({ queryKey: ["tokens"] })
@@ -1464,12 +1261,57 @@ export function ConnectedAgentsGroup() {
   })
 
   const reconnect = useMutation({
-    mutationFn: (id: string) => fetchJSON(`/api/team/agents/${encodeURIComponent(id)}/reconnect`, {method: "POST"}),
-    onSuccess: () => { toast.success("Sign in again from your agent to finish reconnecting."); void queryClient.invalidateQueries({queryKey: ["agent-connections"]}) },
-    onError: error => toast.error(error instanceof Error ? error.message : "Could not reconnect the agent."),
+    mutationFn: (id: string) =>
+      fetchJSON(`/api/team/agents/${encodeURIComponent(id)}/reconnect`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      toast.success("Sign in again from your agent to finish reconnecting.")
+      void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
+    },
+    onError: (error) =>
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not reconnect the agent."
+      ),
   })
   const [editing, setEditing] = useState<AgentConnection | null>(null)
+  const [editingGrok, setEditingGrok] = useState<string | null>(null)
+  const [grokOpen, setGrokOpen] = useState(false)
   const connections = connectionsQuery.data?.connections ?? []
+  const grokBots = connectionsQuery.data?.grokBots ?? []
+  const candidates = connectionsQuery.data?.grokBotCandidates ?? []
+  const botForConnection = (connection: AgentConnection) =>
+    grokBots.find(
+      (bot) =>
+        bot.participantId === connection.participant?.id ||
+        (connection.authKind === "oauth" &&
+          connection.target.kind === "mcp-client" &&
+          connection.target.clientId &&
+          bot.connectionId.startsWith(`oauth:${connection.target.clientId}:`))
+    )
+  const rows = [
+    ...connections.map((connection) => ({
+      connection,
+      grok: botForConnection(connection),
+    })),
+    ...grokBots
+      .filter(
+        (bot) =>
+          !connections.some(
+            (connection) =>
+              botForConnection(connection)?.connectionId === bot.connectionId
+          )
+      )
+      .map((grok) => ({ connection: undefined, grok })),
+  ]
+  const editingCandidate = candidates.find(
+    (candidate) => candidate.id === editingGrok
+  )
+  const editingConnection = connections.find(
+    (connection) => botForConnection(connection)?.connectionId === editingGrok
+  )
   const oauthInventoryUnavailable =
     (connectionsQuery.data?.unavailableAuthKinds?.length ?? 0) > 0
   return (
@@ -1493,25 +1335,32 @@ export function ConnectedAgentsGroup() {
             <p className="text-sm text-muted-foreground">
               Owner access required.
             </p>
-          ) : connections.length === 0 ? (
+          ) : rows.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               No agents connected yet.
             </p>
           ) : (
             <ul className="flex flex-col gap-2">
-              {connections.map((connection) => {
-                const name = agentConnectionName(connection)
-                const platform = agentConnectionPlatform(connection)
+              {rows.map(({ connection, grok }) => {
+                const candidate = candidates.find(
+                  (candidate) => candidate.id === grok?.connectionId
+                )
+                const name =
+                  candidate?.displayName ??
+                  (connection ? agentConnectionName(connection) : "Grok Bot")
+                const platform = grok
+                  ? "grok-bot"
+                  : agentConnectionPlatform(connection!)
                 const platformName = AGENT_PLATFORMS[platform].name
                 return (
                   <li
-                    key={connection.id}
+                    key={connection?.id ?? grok!.connectionId}
                     className="flex min-h-14 items-center gap-3 rounded-xl bg-surface-inset px-3 py-2"
                   >
                     <AgentAvatar
                       name={name}
                       platform={platform}
-                      icon={connection.icon}
+                      icon={connection?.icon}
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -1519,7 +1368,7 @@ export function ConnectedAgentsGroup() {
                           {name}
                         </span>
                         <Badge variant="secondary">
-                          {connection.mode === "always-on"
+                          {grok || connection?.mode === "always-on"
                             ? "Always-on"
                             : "On-demand"}
                         </Badge>
@@ -1528,31 +1377,54 @@ export function ConnectedAgentsGroup() {
                         {platform !== "other" && platformName !== name
                           ? `${platformName} · `
                           : ""}
-                        {connection.machine ? `${connection.machine} · ` : ""}
-                        {connection.lastSeenAt
-                          ? `Last seen ${timeAgo(connection.lastSeenAt)}`
-                          : "Not used yet"}
+                        {connection?.machine ? `${connection.machine} · ` : ""}
+                        {grok
+                          ? GROK_BOT_STATUS_LABELS[grok.status]
+                          : connection?.lastSeenAt
+                            ? `Last seen ${timeAgo(connection.lastSeenAt)}`
+                            : "Not used yet"}
                       </p>
                     </div>
-                    {connection.canManage !== false && (connection.authKind === "local-token" ||
-                    (connection.authKind === "oauth" && connection.access)) ? (
+                    {connection?.canManage !== false &&
+                    (grok ||
+                      connection?.authKind === "local-token" ||
+                      (connection?.authKind === "oauth" &&
+                        connection.access)) ? (
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setEditing(connection)}
+                        onClick={() => {
+                          if (grok) {
+                            setEditingGrok(grok.connectionId)
+                            setGrokOpen(true)
+                          } else setEditing(connection!)
+                        }}
                       >
                         Edit
                       </Button>
                     ) : null}
-                    {connection.canReconnect && <Button variant="outline" size="sm" disabled={reconnect.isPending} onClick={() => reconnect.mutate(connection.id)}>Reconnect</Button>}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={disconnect.isPending || connection.canManage === false}
-                      onClick={() => disconnect.mutate(connection.id)}
-                    >
-                      Disconnect
-                    </Button>
+                    {connection?.canReconnect && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={reconnect.isPending}
+                        onClick={() => reconnect.mutate(connection.id)}
+                      >
+                        Reconnect
+                      </Button>
+                    )}
+                    {connection && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={
+                          disconnect.isPending || connection.canManage === false
+                        }
+                        onClick={() => disconnect.mutate(connection.id)}
+                      >
+                        Disconnect
+                      </Button>
+                    )}
                   </li>
                 )
               })}
@@ -1566,6 +1438,55 @@ export function ConnectedAgentsGroup() {
           if (!open) setEditing(null)
         }}
       />
+      <ResponsiveDialog
+        open={grokOpen}
+        onOpenChange={(open) => {
+          setGrokOpen(open)
+        }}
+      >
+        <ResponsiveDialogContent>
+          <ResponsiveDialogHeader>
+            <AgentAvatar
+              name={editingCandidate?.displayName ?? "Grok Bot"}
+              platform="grok-bot"
+              className="mb-1 size-10"
+            />
+            <ResponsiveDialogTitle>
+              {editingCandidate?.displayName ?? "Grok Bot"}
+            </ResponsiveDialogTitle>
+            <ResponsiveDialogDescription>Grok Bot</ResponsiveDialogDescription>
+          </ResponsiveDialogHeader>
+          <ResponsiveDialogBody>
+            {editingGrok && systemConnection.data && (
+              <GrokBotSetupPanel
+                key={editingGrok}
+                connection={systemConnection.data}
+                connectionId={editingGrok}
+                open={grokOpen}
+                onRemoved={() => setGrokOpen(false)}
+              />
+            )}
+          </ResponsiveDialogBody>
+          <ResponsiveDialogFooter>
+            {editingConnection &&
+              (editingConnection.authKind === "local-token" ||
+                editingConnection.access) && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setGrokOpen(false)
+                    setEditing(editingConnection)
+                  }}
+                >
+                  Access and avatar
+                </Button>
+              )}
+            <Button variant="outline" onClick={() => setGrokOpen(false)}>
+              Close
+            </Button>
+          </ResponsiveDialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
     </section>
   )
 }
@@ -1700,6 +1621,7 @@ function connectionIdentity(token: TokenMetadata): {
 } {
   const label = token.agent
   if (!label) return { name: "Unnamed token", machine: null }
+  if (label.startsWith("manual@")) return { name: "MCP agent", machine: null }
   if (label === MANAGED_LABEL) {
     return { name: "Local agents", machine: "this machine" }
   }

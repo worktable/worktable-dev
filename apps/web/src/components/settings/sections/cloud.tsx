@@ -44,8 +44,9 @@ const STATES: Record<string, string> = {
   error: "Could not connect",
 }
 
-export function CloudSection() {
-  const active = useSettingsSectionActive()
+export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
+  const sectionActive = useSettingsSectionActive()
+  const active = enabled ?? sectionActive
   const client = useQueryClient()
   const [signInUrl, setSignInUrl] = useState<string | null>(null)
   const [confirm, setConfirm] = useState(false)

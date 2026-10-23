@@ -33,9 +33,10 @@ export function AgentAvatar({
   className?: string
 }) {
   const logo = icon ? null : agentLogoUrl(platform)
-  // Hermes fills its circle; OpenAI's artwork includes its own padding.
-  const fullBleed = platform === "hermes"
-  const prePadded = platform === "chatgpt" || platform === "codex"
+  // Hermes fills its circle; OpenAI and Goose artwork include their own padding.
+  const fullBleed = platform === "hermes" || platform === "grok-bot"
+  const prePadded =
+    platform === "chatgpt" || platform === "codex" || platform === "goose"
   const initials = participantInitials(name)
   const fallback = icon ? (
     <NamedIcon

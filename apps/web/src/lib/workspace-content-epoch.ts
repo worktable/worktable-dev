@@ -103,7 +103,7 @@ export function isBrowserContentMutation(
     input instanceof Request ? input.url : String(input),
     typeof location === "undefined" ? "http://localhost" : location.href
   ).pathname.replace(/^\/t\/[A-Za-z0-9_-]+(?=\/|$)/, "")
-  return ["/api/spaces", "/api/threads", "/api/shares"].some(
+  return ["/api/spaces", "/api/threads", "/api/shares", "/api/grok-bot"].some(
     (root) => pathname === root || pathname.startsWith(`${root}/`)
   )
 }

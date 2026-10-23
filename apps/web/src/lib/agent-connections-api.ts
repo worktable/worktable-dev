@@ -12,6 +12,17 @@ import {
 } from "@worktable/types"
 import { fetchJSON } from "./http"
 
+type ListedAgentConnection = AgentConnection & {
+  requestScope?: "workspace"
+}
+type ListedAgentInventory = Omit<AgentConnectionInventory, "connections"> & {
+  connections: ListedAgentConnection[]
+}
+
+function connectionPath(id: string, scope?: "workspace"): string {
+  return `/api/agent-connections/${encodeURIComponent(id)}${scope ? "?scope=workspace" : ""}`
+}
+
 /**
  * Every agent connected to this Worktable. On Cloud, sign-ins such as Claude
  * and ChatGPT come from the gateway, and agents paired with the workspace from
@@ -19,7 +30,7 @@ import { fetchJSON } from "./http"
  */
 export async function listAgentConnections(
   options: { workspaceAgentsOnCloud?: boolean } = {}
-): Promise<AgentConnectionInventory> {
+): Promise<ListedAgentInventory> {
   if (!options.workspaceAgentsOnCloud || browserTeamMemberId()) {
     return fetchJSON("/api/agent-connections")
   }
@@ -30,7 +41,16 @@ export async function listAgentConnections(
     ).catch(() => null),
   ])
   return {
-    connections: [...(paired?.connections ?? []), ...signIns.connections],
+    grokBots: paired?.grokBots,
+    grokBotCandidates: paired?.grokBotCandidates,
+    grokBotMcpUrl: paired?.grokBotMcpUrl,
+    connections: [
+      ...(paired?.connections ?? []).map((connection) => ({
+        ...connection,
+        requestScope: "workspace" as const,
+      })),
+      ...signIns.connections,
+    ],
     unavailableAuthKinds: [
       ...(signIns.unavailableAuthKinds ?? []),
       ...(paired ? [] : (["local-token"] as const)),
@@ -39,12 +59,11 @@ export async function listAgentConnections(
 }
 
 export function disconnectAgentConnection(
-  connectionId: string
+  connection: ListedAgentConnection
 ): Promise<{ ok: true }> {
-  return fetchJSON(
-    `/api/agent-connections/${encodeURIComponent(connectionId)}`,
-    { method: "DELETE" }
-  )
+  return fetchJSON(connectionPath(connection.id, connection.requestScope), {
+    method: "DELETE",
+  })
 }
 
 export function renameAgentConnection(
@@ -68,12 +87,13 @@ export function updateAgentConnection(
     icon?: string | null
     access?: AgentAccess
     spaceIds?: string[] | null
-  }
+  },
+  scope?: "workspace"
 ): Promise<{ ok: true; connection: AgentConnection }> {
-  return fetchJSON(
-    `/api/agent-connections/${encodeURIComponent(connectionId)}`,
-    { method: "PATCH", body: JSON.stringify(changes) }
-  )
+  return fetchJSON(connectionPath(connectionId, scope), {
+    method: "PATCH",
+    body: JSON.stringify(changes),
+  })
 }
 
 /** On Cloud, how a sign-in agent such as Claude or ChatGPT appears in threads. */
@@ -119,7 +139,7 @@ export function getAppAgent(
  * owner chose. The token is returned once.
  */
 export function connectAgentApp(input: {
-  client: DirectAgentLabel
+  client: DirectAgentLabel | null
   displayName?: string
   icon?: string | null
   access: AgentAccess
@@ -142,7 +162,7 @@ function sameAccess(a: AgentAccess | null, b: AgentAccess | null): boolean {
  * still take part.
  */
 export async function saveAgentChanges(
-  connection: AgentConnection,
+  connection: ListedAgentConnection,
   changes: {
     name: string
     icon: string | null
@@ -155,7 +175,10 @@ export async function saveAgentChanges(
   const iconChanged = changes.icon !== (connection.icon ?? null)
   const shownPlatform = agentConnectionPlatform(connection)
   const signInClient =
-    connection.ownership === undefined && connection.authKind === "oauth" && connection.target.kind === "mcp-client"
+    connection.requestScope !== "workspace" &&
+    connection.ownership === undefined &&
+    connection.authKind === "oauth" &&
+    connection.target.kind === "mcp-client"
       ? connection.target.clientId
       : null
   if (signInClient) {
@@ -176,12 +199,16 @@ export async function saveAgentChanges(
     JSON.stringify(changes.spaceIds) !==
       JSON.stringify(connection.spaceIds ?? null)
   if (renamed || iconChanged || accessChanged || spacesChanged) {
-    await updateAgentConnection(connection.id, {
-      ...(renamed ? { displayName: name } : {}),
-      ...(spacesChanged ? { spaceIds: changes.spaceIds } : {}),
-      ...(iconChanged ? { icon: changes.icon } : {}),
-      ...(accessChanged && changes.access ? { access: changes.access } : {}),
-    })
+    await updateAgentConnection(
+      connection.id,
+      {
+        ...(renamed ? { displayName: name } : {}),
+        ...(spacesChanged ? { spaceIds: changes.spaceIds } : {}),
+        ...(iconChanged ? { icon: changes.icon } : {}),
+        ...(accessChanged && changes.access ? { access: changes.access } : {}),
+      },
+      connection.requestScope
+    )
   }
   if (signInClient) {
     await updateSignInAgent(signInClient, {

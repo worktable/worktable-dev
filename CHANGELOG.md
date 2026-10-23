@@ -9,6 +9,14 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Grok Bot conversations:** Connect Grok Bot from Getting Started or Settings and let it answer Worktable threads using Email or Webhook routines.
+
+### Changed
+
+- **Agent setup:** Getting Started and Settings group agent connections by how they work, with consistent connection steps and platform logos.
+
 ## [0.1.27] - 2026-10-23
 
 ### Fixed

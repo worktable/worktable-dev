@@ -125,12 +125,17 @@ export function openTeamDatabase(create = false): Database | null {
     const version =
       db.query<{ user_version: number }, []>("PRAGMA user_version").get()
         ?.user_version ?? 0
-    if (version !== 0 && version !== 1 && version !== 2 && version !== SCHEMA_VERSION) {
+    if (
+      version !== 0 &&
+      version !== 1 &&
+      version !== 2 &&
+      version !== SCHEMA_VERSION
+    ) {
       db.close()
       throw new TeamStateError("Team state uses an unsupported version")
     }
     db.transaction(() => {
-    db.exec(`
+      db.exec(`
       CREATE TABLE IF NOT EXISTS wt_worktables (
         id TEXT PRIMARY KEY, organization_id TEXT NOT NULL UNIQUE,
         root_key TEXT NOT NULL UNIQUE, policy_revision INTEGER NOT NULL DEFAULT 1
@@ -201,28 +206,49 @@ export function openTeamDatabase(create = false): Database | null {
       );
       CREATE INDEX IF NOT EXISTS wt_enrollments_user ON wt_enrollments(worktable_id, user_id, active);
     `)
-    const agentColumns = new Set(db.query<{name: string}, []>("PRAGMA table_info(wt_agents)").all().map(column => column.name))
-    if (!agentColumns.has("mode")) db.exec("ALTER TABLE wt_agents ADD COLUMN mode TEXT NOT NULL DEFAULT 'on-demand'")
-    if (!agentColumns.has("worktable_threads")) db.exec("ALTER TABLE wt_agents ADD COLUMN worktable_threads TEXT NOT NULL DEFAULT 'none' CHECK (worktable_threads IN ('none', 'read', 'edit'))")
-    const credentialColumns = new Set(db.query<{name: string}, []>("PRAGMA table_info(wt_agent_credentials)").all().map(column => column.name))
-    if (!credentialColumns.has("minimum_issued_at")) db.exec("ALTER TABLE wt_agent_credentials ADD COLUMN minimum_issued_at INTEGER NOT NULL DEFAULT 0")
-    // Every change to who may access what advances policy_revision, whichever
-    // connection or process makes it, so a revision read is a complete check.
-    for (const table of [
-      "wt_space_policy",
-      "wt_space_grants",
-      "wt_enrollments",
-      "wt_agents",
-      "wt_agent_credentials",
-      "wt_operators",
-      "wt_identity_bindings",
-    ])
-      for (const event of ["INSERT", "UPDATE", "DELETE"])
+      const agentColumns = new Set(
+        db
+          .query<{ name: string }, []>("PRAGMA table_info(wt_agents)")
+          .all()
+          .map((column) => column.name)
+      )
+      if (!agentColumns.has("mode"))
         db.exec(
-          `CREATE TRIGGER IF NOT EXISTS wt_revision_${table}_${event.toLowerCase()} AFTER ${event} ON ${table} BEGIN UPDATE wt_worktables SET policy_revision = policy_revision + 1; END`
+          "ALTER TABLE wt_agents ADD COLUMN mode TEXT NOT NULL DEFAULT 'on-demand'"
         )
-    ensureAccountRevisionTriggers(db)
-    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`)
+      if (!agentColumns.has("worktable_threads"))
+        db.exec(
+          "ALTER TABLE wt_agents ADD COLUMN worktable_threads TEXT NOT NULL DEFAULT 'none' CHECK (worktable_threads IN ('none', 'read', 'edit'))"
+        )
+      const credentialColumns = new Set(
+        db
+          .query<{ name: string }, []>(
+            "PRAGMA table_info(wt_agent_credentials)"
+          )
+          .all()
+          .map((column) => column.name)
+      )
+      if (!credentialColumns.has("minimum_issued_at"))
+        db.exec(
+          "ALTER TABLE wt_agent_credentials ADD COLUMN minimum_issued_at INTEGER NOT NULL DEFAULT 0"
+        )
+      // Every change to who may access what advances policy_revision, whichever
+      // connection or process makes it, so a revision read is a complete check.
+      for (const table of [
+        "wt_space_policy",
+        "wt_space_grants",
+        "wt_enrollments",
+        "wt_agents",
+        "wt_agent_credentials",
+        "wt_operators",
+        "wt_identity_bindings",
+      ])
+        for (const event of ["INSERT", "UPDATE", "DELETE"])
+          db.exec(
+            `CREATE TRIGGER IF NOT EXISTS wt_revision_${table}_${event.toLowerCase()} AFTER ${event} ON ${table} BEGIN UPDATE wt_worktables SET policy_revision = policy_revision + 1; END`
+          )
+      ensureAccountRevisionTriggers(db)
+      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`)
     }).immediate()
     const file = statSync(path)
     databases.set(path, { db, dev: file.dev, ino: file.ino })
@@ -406,9 +432,10 @@ function resolveTeamWorktable(): TeamWorktable | null {
   const base = resolveTeamBase()
   if (base.kind === "solo") return null
   const row = requireTeamDatabase()
-    .query<{ policy_revision: number }, [string]>(
-      "SELECT policy_revision FROM wt_worktables WHERE id = ?"
-    )
+    .query<
+      { policy_revision: number },
+      [string]
+    >("SELECT policy_revision FROM wt_worktables WHERE id = ?")
     .get(base.id)
   if (!row) throw new TeamStateError()
   return {
@@ -516,6 +543,15 @@ export function teamsEnabled(): boolean {
   return currentTeamWorktable() !== null
 }
 
+const policyListeners = new Set<() => void>()
+
+export function onTeamPolicyChange(listener: () => void): () => void {
+  policyListeners.add(listener)
+  return () => {
+    policyListeners.delete(listener)
+  }
+}
+
 export function advanceTeamPolicy(worktableId: string): void {
   try {
     requireTeamDatabase()
@@ -525,6 +561,7 @@ export function advanceTeamPolicy(worktableId: string): void {
       .run(worktableId)
   } finally {
     invalidateTeamState()
+    for (const listener of policyListeners) listener()
   }
 }
 

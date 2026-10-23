@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Check, ChevronRight, Loader2 } from "lucide-react"
+import { Check, Loader2 } from "lucide-react"
 import {
   AGENT_PLATFORMS,
   DEFAULT_AGENT_ACCESS,
-  DEFAULT_AGENT_TOKEN_SCOPES,
   type AgentConnection,
   type AgentPlatformId,
   type ConnectorInstallableMcpClientId,
@@ -17,11 +16,15 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@worktable/ui/components/collapsible"
-import { Tabs, TabsList, TabsTrigger } from "@worktable/ui/components/tabs"
 import { useCopy } from "@worktable/ui/hooks/use-copy"
 import { cn } from "@worktable/ui/lib/utils"
 
-import { AgentAvatar } from "@/components/agents/agent-avatar"
+import {
+  AGENT_SETUP_CATEGORIES,
+  AgentSetupCategory,
+  AgentSetupTabs,
+} from "@/components/agents/agent-setup-category"
+import { GrokBotSetupPanel } from "@/components/agents/grok-bot-setup"
 import {
   agentConnectionPlatform,
   connectAgentApp,
@@ -45,7 +48,7 @@ import {
   type PairingCreated,
 } from "@/lib/pairing-api"
 import { getConnection, type ConnectionInfo } from "@/lib/system-api"
-import { listTokens, mintToken } from "@/lib/tokens-api"
+import { listTokens } from "@/lib/tokens-api"
 import { StepHeading } from "./onboarding-shared"
 
 type RowId = "code" | "chat" | "always" | "mcp"
@@ -56,6 +59,7 @@ type Option =
   | { kind: "chat"; tab: string; app: "claude" | "chatgpt" }
   | { kind: "always-on"; tab: string; agent: AlwaysOnAgent }
   | { kind: "mcp"; tab: string }
+  | { kind: "grok"; tab: string }
 
 interface Row {
   id: RowId
@@ -68,9 +72,7 @@ interface Row {
 const ON_DEMAND: Row[] = [
   {
     id: "code",
-    title: "Coding agents",
-    description: "Claude Code, Codex, Cursor and more",
-    platforms: ["claude-code", "codex"],
+    ...AGENT_SETUP_CATEGORIES.code,
     options: [
       { kind: "cli", tab: "Claude Code", client: "claude-code" },
       { kind: "cli", tab: "Codex", client: "codex" },
@@ -80,9 +82,7 @@ const ON_DEMAND: Row[] = [
   },
   {
     id: "chat",
-    title: "Chat apps",
-    description: "Claude and ChatGPT, on desktop or the web",
-    platforms: ["claude", "chatgpt"],
+    ...AGENT_SETUP_CATEGORIES.chat,
     options: [
       { kind: "chat", tab: "Claude", app: "claude" },
       { kind: "chat", tab: "ChatGPT", app: "chatgpt" },
@@ -92,12 +92,11 @@ const ON_DEMAND: Row[] = [
 
 const ALWAYS_ON: Row = {
   id: "always",
-  title: "Always-on agents",
-  description: "OpenClaw and Hermes, on your server",
-  platforms: ["openclaw", "hermes"],
+  ...AGENT_SETUP_CATEGORIES.always,
   options: [
     { kind: "always-on", tab: "OpenClaw", agent: OPENCLAW },
     { kind: "always-on", tab: "Hermes", agent: HERMES },
+    { kind: "grok", tab: "Grok Bot" },
   ],
 }
 
@@ -120,6 +119,8 @@ function agentName(option: Option): string {
       return AGENT_PLATFORMS[option.app].name
     case "always-on":
       return option.agent.name
+    case "grok":
+      return "Grok Bot"
     case "mcp":
       return "My agent"
   }
@@ -138,6 +139,8 @@ function platformOf(option: Option): AgentPlatformId {
       return option.app
     case "always-on":
       return option.agent.adapter
+    case "grok":
+      return "grok-bot"
     case "mcp":
       return "other"
   }
@@ -252,7 +255,7 @@ function setupFor(
     name,
     harness: option.tab === "Other" ? "MCP agent" : option.tab,
     mode:
-      option.kind === "always-on"
+      option.kind === "always-on" || option.kind === "grok"
         ? "always-on"
         : "on-demand",
     verified: true,
@@ -403,9 +406,7 @@ function TokenPanel({
   onConnected,
 }: PanelProps) {
   const queryClient = useQueryClient()
-  const [token, setToken] = useState<{ value: string; id: string } | null>(
-    null
-  )
+  const [token, setToken] = useState<{ value: string; id: string } | null>(null)
   const label = option.kind === "chat" ? CHAT_LABELS[option.app] : null
   // An app connected before is the same agent: keep its name and access.
   const existing = useQuery({
@@ -425,7 +426,11 @@ function TokenPanel({
         return result.token
       }
       return (
-        await mintToken({ scopes: [...DEFAULT_AGENT_TOKEN_SCOPES], agent: name })
+        await connectAgentApp({
+          client: null,
+          displayName: name,
+          access: DEFAULT_AGENT_ACCESS,
+        })
       ).token
     },
     onSuccess: (value) => {
@@ -552,9 +557,7 @@ function SignInPanel({
       return selected
     },
     onSuccess: (selected) =>
-      onConnected(
-        setupFor(rowId, option, selected.id, selected.displayName)
-      ),
+      onConnected(setupFor(rowId, option, selected.id, selected.displayName)),
   })
   // Each agent that signs in is added once.
   const accepted = useRef<string | null>(null)
@@ -618,6 +621,24 @@ function SignInPanel({
 function OptionPanel(props: PanelProps) {
   const cloud = props.connection.mcpAuthMode === "oauth"
   const { option } = props
+  if (option.kind === "grok")
+    return (
+      <GrokBotSetupPanel
+        connection={props.connection}
+        open
+        onConnected={(candidate, saved) => {
+          if (!props.connected)
+            props.onConnected(
+              setupFor(
+                props.rowId,
+                option,
+                saved.connectionId,
+                candidate.displayName
+              )
+            )
+        }}
+      />
+    )
   if (!cloud) {
     return option.kind === "cli" || option.kind === "always-on" ? (
       <PairingPanel {...props} />
@@ -631,21 +652,6 @@ function OptionPanel(props: PanelProps) {
   return <SignInPanel {...props} />
 }
 
-function LogoStack({ platforms }: { platforms: AgentPlatformId[] }) {
-  return (
-    <span className="flex w-11 shrink-0" aria-hidden>
-      {platforms.map((platform, index) => (
-        <AgentAvatar
-          key={platform}
-          name={AGENT_PLATFORMS[platform].name}
-          platform={platform}
-          className={cn("size-6 rounded-md ring-2 ring-card", index > 0 && "-ml-1.5")}
-        />
-      ))}
-    </span>
-  )
-}
-
 function RowItem({
   row,
   open,
@@ -656,13 +662,10 @@ function RowItem({
 }: Omit<PanelProps, "option" | "rowId" | "connected"> & {
   row: Row
   open: boolean
-  /** Opens or closes the row, on the tab it shows. */
   onOpenChange: (open: boolean, source: string) => void
-  /** Look again from now for agents that sign in on this tab. */
   onTabChange: (source: string) => void
   connected: SetupRecord[]
 }) {
-  // A row opens on the tab that already connected, if one did.
   const [tab, setTab] = useState(() =>
     Math.max(
       0,
@@ -672,98 +675,37 @@ function RowItem({
     )
   )
   const option = row.options[tab]!
-  const done = connected.find((setup) =>
-    setup.source?.startsWith(`${row.id}:`)
-  )
+  const done = connected.find((setup) => setup.source?.startsWith(`${row.id}:`))
   return (
-    <Collapsible
+    <AgentSetupCategory
+      {...row}
       open={open}
       onOpenChange={(next) => onOpenChange(next, sourceOf(row.id, option))}
-      className="border-border not-first:border-t"
+      connectedName={done?.name}
     >
-      <CollapsibleTrigger className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:outline-none">
-        <LogoStack platforms={row.platforms} />
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium text-foreground">
-            {row.title}
-          </span>
-          <span className="block text-xs text-muted-foreground">
-            {row.description}
-          </span>
-        </span>
-        {done ? (
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="grid size-4 place-items-center rounded-full bg-success text-background">
-              <Check className="size-2.5" strokeWidth={3} />
-            </span>
-            {done.name}
-          </span>
-        ) : null}
-        <ChevronRight
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform duration-300 motion-reduce:transition-none",
-            open && "rotate-90"
+      <AgentSetupTabs
+        value={tab}
+        onValueChange={(value) => {
+          onTabChange(sourceOf(row.id, row.options[value]!))
+          setTab(value)
+        }}
+        options={row.options.map((item, index) => ({
+          value: index,
+          label: item.tab,
+          ...(item.tab === "Other" ? {} : { platform: platformOf(item) }),
+        }))}
+      />
+      <div key={tab}>
+        <OptionPanel
+          {...panel}
+          option={option}
+          rowId={row.id}
+          connected={connected.find(
+            (setup) => setup.source === sourceOf(row.id, option)
           )}
         />
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="pt-3 pr-3.5 pb-5 pl-3.5 sm:pl-[4.25rem]">
-          <Tabs
-            value={tab}
-            onValueChange={(value) => {
-              onTabChange(sourceOf(row.id, row.options[value as number]!))
-              setTab(value as number)
-            }}
-          >
-            <TabsList className="mb-3">
-              {row.options.map((item, index) => (
-                <TabsTrigger key={item.tab} value={index} className="px-2.5 text-xs">
-                  {item.tab}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-          <div key={tab}>
-            <OptionPanel
-              {...panel}
-              option={option}
-              rowId={row.id}
-              connected={connected.find(
-                (setup) => setup.source === sourceOf(row.id, option)
-              )}
-            />
-          </div>
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
-
-function Group({
-  title,
-  description,
-  live,
-  children,
-}: {
-  title: string
-  description: string
-  live?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <section className="mt-7 first:mt-0">
-      <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-        {live ? (
-          <span
-            aria-hidden
-            className="size-1.5 rounded-full bg-success ring-3 ring-success/20"
-          />
-        ) : null}
-        {title}
-      </h2>
-      <p className="mt-0.5 mb-2.5 text-xs text-muted-foreground">{description}</p>
-      <div className="card-surface overflow-hidden rounded-xl">{children}</div>
-    </section>
+      </div>
+    </AgentSetupCategory>
   )
 }
 
@@ -795,17 +737,15 @@ export function AgentConnectOptions({
   const openWaiting =
     active !== null && !setups.some((setup) => setup.source === active)
   const connections = useQuery({
-    queryKey: ["agent-connections"],
-    queryFn: () => listAgentConnections(),
+    queryKey: ["agent-connections", Boolean(cloud)],
+    queryFn: () => listAgentConnections({ workspaceAgentsOnCloud: cloud }),
     enabled: cloud,
-    refetchInterval: cloud && openWaiting ? 3_000 : false,
+    refetchInterval:
+      cloud && openWaiting && active !== "always:Grok Bot" ? 3_000 : false,
   })
 
   function addSetup(setup: SetupRecord) {
-    onSetupsChange([
-      ...setups.filter((item) => item.id !== setup.id),
-      setup,
-    ])
+    onSetupsChange([...setups.filter((item) => item.id !== setup.id), setup])
   }
 
   const panel = {
@@ -871,21 +811,12 @@ export function AgentConnectOptions({
   }
   return (
     <div>
-      <Group
-        title="On demand"
-        description="Start them from your terminal, editor or chat app."
-      >
+      <div className="overflow-hidden rounded-xl card-surface">
         {ON_DEMAND.map((row) => (
           <RowItem key={row.id} {...rowProps(row)} />
         ))}
-      </Group>
-      <Group
-        title="Always on"
-        description="Ask them from Worktable and they get to work."
-        live
-      >
         <RowItem {...rowProps(ALWAYS_ON)} />
-      </Group>
+      </div>
       <Collapsible
         open={open === "mcp"}
         onOpenChange={(next) => openRow("mcp", next, sourceOf("mcp", ANY_MCP))}

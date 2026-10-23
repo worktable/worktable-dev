@@ -195,6 +195,14 @@ export function deliveryPresentation(
     }
   }
   if (activity.state === "failed") {
+    if (activity.error?.code === "REMOTE_EXECUTION_UNCONFIRMED") {
+      return {
+        label: "No reply received. Check Grok before retrying.",
+        visible: true,
+        live: false,
+        failed: true,
+      }
+    }
     const attempts =
       activity.attempts > 0
         ? ` after ${activity.attempts} ${activity.attempts === 1 ? "attempt" : "attempts"}`

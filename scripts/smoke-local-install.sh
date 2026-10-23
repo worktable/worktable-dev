@@ -415,7 +415,7 @@ printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\
 await_mcp_response 2
 printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"worktable_spaces\",\"arguments\":{\"request\":{\"action\":\"create\",\"name\":\"Smoke MCP Space\"}}}}" >&3
 await_mcp_response 3
-printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"worktable_docs_write\",\"arguments\":{\"request\":{\"action\":\"write\",\"spaceId\":\"smoke-mcp-space\",\"docPath\":\"json-doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Hello from JSON\",\"styles\":{}}]},{\"type\":\"codeBlock\",\"props\":{\"language\":\"mermaid\"},\"content\":[{\"type\":\"text\",\"text\":\"graph TD; A-->B\",\"styles\":{}}]}]}}}}" >&3
+printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"worktable_docs_write\",\"arguments\":{\"request\":{\"action\":\"write\",\"spaceId\":\"smoke-mcp-space\",\"docPath\":\"json-doc\",\"lifetime\":\"temporary\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Hello from JSON\",\"styles\":{}}]},{\"type\":\"codeBlock\",\"props\":{\"language\":\"mermaid\"},\"content\":[{\"type\":\"text\",\"text\":\"graph TD; A-->B\",\"styles\":{}}]}]}}}}" >&3
 await_mcp_response 4
 printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"worktable_docs_read\",\"arguments\":{\"request\":{\"action\":\"read\",\"spaceId\":\"smoke-mcp-space\",\"docPath\":\"json-doc\"}}}}" >&3
 await_mcp_response 5

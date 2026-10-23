@@ -548,6 +548,8 @@ describe("format-neutral document route", () => {
     // Simulate a conflicting file arriving from an external filesystem writer;
     // managed writes correctly reject this collision before creating anything.
     await writeFile(join(root, "spaces", spaceId, "docs", "library", "readme.html"), "<h1>Conflict</h1>")
+    // This route-only fixture has no watcher; report its external file change.
+    noteSpaceChanged(spaceId)
     const conflict = await resolve("notes/readme")
     expect(conflict.status).toBe(409)
     expect(await conflict.json()).toMatchObject({ code: "CONFLICT" })

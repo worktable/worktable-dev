@@ -14,6 +14,7 @@
 // mailto:, anchors) are ignored. Broken links are legal — they may
 // simply be not-yet-written docs — and are reported, not rejected.
 
+import { Parser } from "htmlparser2";
 import { docStat, listDocs, readDoc } from "./store.ts";
 import { onDocContentChanged } from "./content-events.ts";
 import { LINK_CLOSE, LINK_OPEN, sentenceContext } from "./link-context.ts";
@@ -90,10 +91,30 @@ function embedWithContext(target: string, label: string): ExtractedDocLink {
   return { ...linkWithContext(target, label.trim()), embed: true };
 }
 
-/** Media tags a Markdown Doc may write as HTML, with the file they show. */
-// Whole attribute names: \bsrc would also match the end of data-src.
-const HTML_MEDIA_RE = /<(?:img|video|audio|source)\b[^>]*?\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>/gi;
-const HTML_ALT_RE = /\salt\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
+/** Media tags a Markdown Doc may write as HTML. */
+const HTML_MEDIA_TAGS = new Set(["img", "video", "audio", "source"]);
+const HTML_MEDIA_HINT = /<(?:img|video|audio|source)\b/i;
+
+/**
+ * The files a Doc's HTML media tags show, read as a browser reads them:
+ * whole attributes, outside other attributes' values, entities decoded.
+ */
+function htmlMediaEmbeds(markdown: string): ExtractedDocLink[] {
+  if (!HTML_MEDIA_HINT.test(markdown)) return [];
+  const embeds: ExtractedDocLink[] = [];
+  const parser = new Parser({
+    onopentag(name, attributes) {
+      if (!HTML_MEDIA_TAGS.has(name) || !attributes.src) return;
+      embeds.push(embedWithContext(attributes.src, attributes.alt ?? ""));
+    },
+  });
+  parser.write(markdown);
+  parser.end();
+  return embeds;
+}
+
+/** Fenced code, with backticks or tildes, which never holds links. */
+const FENCED_CODE = /^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[`~]*[ \t]*$|(?![\s\S]))/gm;
 
 /** Lines that start a block of their own rather than continue a paragraph. */
 const BLOCK_START = /^\s{0,3}(?:#{1,6}\s|>|[-*+]\s|\d+[.)]\s|\|)/;
@@ -146,7 +167,7 @@ function extractMarkdownLinks(markdown: string): ExtractedDocLink[] {
   const links: ExtractedDocLink[] = [];
   // Inline links [text](target "title"), excluding images ![alt](src).
   const linkRe = /(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g;
-  const withoutFences = markdown.replace(/^```[\s\S]*?^```/gm, "");
+  const withoutFences = markdown.replace(FENCED_CODE, "");
   // Code spans never register as links; blanking them keeps offsets, so a
   // link whose text wraps onto the next line still matches.
   const scanned = withoutFences.replace(/`[^`\n]*`/g, (span) => " ".repeat(span.length));
@@ -174,13 +195,7 @@ function extractMarkdownLinks(markdown: string): ExtractedDocLink[] {
       .join(" ");
     links.push(linkWithContext(match[3]!, lines));
   }
-  let media: RegExpExecArray | null;
-  while ((media = HTML_MEDIA_RE.exec(scanned)) !== null) {
-    const alt = HTML_ALT_RE.exec(media[0]);
-    links.push(
-      embedWithContext(media[1] ?? media[2] ?? "", alt?.[1] ?? alt?.[2] ?? "")
-    );
-  }
+  links.push(...htmlMediaEmbeds(scanned));
   return links;
 }
 

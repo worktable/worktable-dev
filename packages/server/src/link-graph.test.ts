@@ -97,11 +97,15 @@ describe("link graph", () => {
         "# Doc",
         "See [other](/notes/other) and [rel](../sibling).",
         "![diagram](/assets/pic.png)",
-        '<img data-alt="x" alt="Error" data-src="lazy.png" src="shots/error.png">',
+        '<img data-alt="x" title=\'use src="old.png"\' alt="Error" data-src="lazy.png" src="shots/error.png">',
+        '<img alt="A &amp; B" src="shots/a&amp;b.png">',
         "`[not a link](/code-span)`",
         "```",
         "[fenced](/inside-fence)",
         "```",
+        "~~~html",
+        '<img src="example.png"> [tilde](/inside-tilde-fence)',
+        "~~~",
         "[external](https://example.com) [mail](mailto:x@y.z) [anchor](#section)",
       ].join("\n");
       expect(extractDocLinkTargets(md)).toEqual([
@@ -112,6 +116,7 @@ describe("link graph", () => {
         "mailto:x@y.z",
         "#section",
         "shots/error.png",
+        "shots/a&b.png",
       ]);
       expect(
         extractDocLinks(md).flatMap((link) =>
@@ -120,6 +125,7 @@ describe("link graph", () => {
       ).toEqual([
         ["/assets/pic.png", "diagram"],
         ["shots/error.png", "Error"],
+        ["shots/a&b.png", "A & B"],
       ]);
     });
 

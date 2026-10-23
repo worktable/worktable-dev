@@ -94,7 +94,8 @@ describe("widget REST routes", () => {
   });
 
   it("serves isolated tools only in preview and retains the document record permission gate", async () => {
-    const previous = process.env.WORKTABLE_SHARING_PREVIEW;
+    const keys = ["WORKTABLE_SHARING_PREVIEW", "WORKTABLE_HOSTED", "WORKTABLE_RESOURCE_URL", "WORKTABLE_CLOUD_WORKSPACE_ID", "WORKTABLE_PUBLIC_URL"] as const;
+    const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
     const source = "await worktable.ui.render({tag:'p',children:['Équipe 東京']});";
     const html = `<body onload="fetch('https://outside.invalid')"><script type="application/worktable">${source}</script><img src="https://outside.invalid">`;
     try {
@@ -113,11 +114,31 @@ describe("widget REST routes", () => {
       expect(content.headers.get("content-security-policy")).toContain("connect-src 'none'");
       expect(content.headers.get("content-security-policy")).not.toContain("'unsafe-inline'; style-src");
       expect((await req(app, "POST", `${config.apiBase}/records/tasks/query`, {})).status).toBe(403);
+      process.env.WORKTABLE_HOSTED = "1";
+      process.env.WORKTABLE_RESOURCE_URL = "https://app.example.test/api/mcp/w/cloud-team";
+      process.env.WORKTABLE_CLOUD_WORKSPACE_ID = "cloud-team";
+      delete process.env.WORKTABLE_PUBLIC_URL;
+      const proxied = await app.fetch(new Request("http://sprite.internal/api/spaces/meta/widgets/isolated/content", {
+        headers: { "X-Forwarded-Host": "untrusted.example.test", "X-Forwarded-Proto": "http" },
+      }));
+      expect(proxied.status).toBe(200);
+      const hostedDom = new JSDOM(await proxied.text());
+      const scriptPath = hostedDom.window.document.querySelector("script[src]")!.getAttribute("src")!;
+      expect(scriptPath.startsWith("/t/cloud-team/worktable-runtime/")).toBe(true);
+      const policy = proxied.headers.get("content-security-policy")!;
+      expect(policy).toContain("frame-ancestors https://app.example.test");
+      expect(policy).toContain(`script-src https://app.example.test${scriptPath} 'wasm-unsafe-eval'`);
+      expect(policy).toContain("font-src https://app.example.test/t/cloud-team/worktable-preview/fonts/");
+      expect(policy).toContain("connect-src 'none'");
+      expect(policy).not.toContain("sprite.internal");
+      expect(policy).not.toContain("untrusted.example.test");
       process.env.WORKTABLE_SHARING_PREVIEW = "0";
       expect((await req(app, "GET", "/api/spaces/meta/widgets/isolated/content")).status).toBe(404);
     } finally {
-      if (previous === undefined) delete process.env.WORKTABLE_SHARING_PREVIEW;
-      else process.env.WORKTABLE_SHARING_PREVIEW = previous;
+      for (const key of keys) {
+        if (previous[key] === undefined) delete process.env[key];
+        else process.env[key] = previous[key];
+      }
     }
   });
 

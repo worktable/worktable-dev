@@ -9,7 +9,14 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
-## [0.1.26] - 2026-10-21
+## [0.1.27] - 2026-10-23
+
+### Fixed
+
+- **Links after restore:** Links created after restoring a backup keep working when Worktable restarts.
+- **Cloud HTML tools:** HTML Docs read and save data in the selected Worktable when your account can access more than one.
+
+## [0.1.26] - 2026-10-22
 
 ### Added
 
@@ -25,6 +32,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Agent compatibility:** Older agent connections can read and update pinned documents using their existing tool definitions.
 - **`worktable doctor` on servers without previews:** Previews that can't start are a warning, so `worktable doctor --check` passes on a server that runs everything else. When the preview browser is missing system libraries, `doctor` names them and, on Debian or Ubuntu, the command that installs them.
 - **Edit keeps your place:** Pressing **Edit** on a Markdown Doc keeps the line you were reading where it was and puts the caret in it, instead of opening at the top. A rich Doc that opens while you scroll its preview keeps your place the same way.
 - **Code languages:** A Doc whose code is marked with a language the editor doesn't list, such as `txt`, opens instead of showing an error. Common names for plain text are recognized, other languages show by their own name without highlighting, and code marked with no language stays unmarked, so a Doc converted to rich text and back keeps its code fences as written.

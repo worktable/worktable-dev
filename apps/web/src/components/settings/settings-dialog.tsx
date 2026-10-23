@@ -25,6 +25,9 @@ import { useWorkspace } from "@/lib/queries"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useScrollFadeX } from "@/hooks/use-scroll-fade-x"
 import { useUpdateWaiting } from "@/hooks/use-update-availability"
+import { useServerSettings } from "@/hooks/use-server-settings"
+import { useQuery } from "@tanstack/react-query"
+import { getConnection } from "@/lib/system-api"
 import {
   DEFAULT_SETTINGS_SECTION_ID,
   getSettingsSections,
@@ -108,6 +111,22 @@ function SettingsBody({
   const { isMobile } = useResponsiveDialog()
   useEffect(() => markSettingsSectionVisible(activeId), [activeId])
   const deploymentQuery = useDeploymentInfo()
+  // Shared reads start on open, alongside the remaining section code, so a
+  // first visit to Editor, History, or Agents can reuse the same query cache.
+  useServerSettings()
+  useQuery({
+    queryKey: ["system", "connection"],
+    queryFn: getConnection,
+    staleTime: 30_000,
+  })
+  useEffect(() => {
+    if (!deploymentQuery.data) return
+    for (const section of getSettingsSections(deploymentQuery.data)) {
+      // A speculative failure must not interrupt the open section. The
+      // preloadable component can retry when the section is visited.
+      void section.preload?.().catch(() => {})
+    }
+  }, [deploymentQuery.data])
   const updateAvailable = useUpdateWaiting()
   const sections = deploymentQuery.data
     ? getSettingsSections(deploymentQuery.data)

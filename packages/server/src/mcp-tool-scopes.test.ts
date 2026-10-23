@@ -23,6 +23,8 @@ const ACTIONS: Array<{
   { tool: "worktable_discover", request: { action: "search", query: "x" }, scope: "search:read" },
   { tool: "worktable_discover", request: { action: "space_index", spaceId: "s" }, scope: "docs:read" },
   { tool: "worktable_spaces", request: { action: "create", name: "S" }, scope: "docs:write" },
+  { tool: "worktable_spaces", request: { action: "update", spaceId: "s", pins: [] }, scope: "docs:write", additionalScopes: ["documents:write"] },
+  { tool: "worktable_spaces", request: { action: "update", spaceId: "s", startHere: [] }, scope: "docs:write", additionalScopes: ["documents:write"] },
   { tool: "worktable_documents_read", request: { action: "list", spaceId: "s" }, scope: "documents:read" },
   { tool: "worktable_documents_read", request: { action: "read", spaceId: "s", path: "d" }, scope: "documents:read" },
   { tool: "worktable_documents_read", request: { action: "render", spaceId: "s", path: "d" }, scope: "documents:read" },

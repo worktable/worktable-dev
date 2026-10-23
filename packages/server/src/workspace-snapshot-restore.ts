@@ -136,6 +136,7 @@ interface RestoreJob extends SnapshotRestoreRequest {
   /** Missing is a legacy job; null explicitly restores no private state. */
   visitorComments?: VisitorCommentBackupState | null
   visitorCommentsRestored?: boolean
+  resetPending?: boolean
   id: string
   kind: "snapshot"
   state: "replacing" | "complete" | "failed"
@@ -318,6 +319,8 @@ export async function restoreLiveWorkspaceSnapshot(
                 job.workspaceId
               )
               job.visitorCommentsRestored = true
+              // All replacement state is applied before requests reopen.
+              job.resetPending = false
               await saveJob(jobDirectory, job)
               releasePrivateWrites?.()
             },
@@ -333,6 +336,7 @@ export async function restoreLiveWorkspaceSnapshot(
               // An ambiguous swap remains recoverable and fenced until startup.
               if (options?.recoveryIncomplete) return
               releasePrivateWrites?.()
+              job.resetPending = false
               job.state = "failed"
               job.error =
                 "Checkpoint restore failed; the current workspace was retained."
@@ -345,6 +349,7 @@ export async function restoreLiveWorkspaceSnapshot(
           })
         } catch (error) {
           releasePrivateWrites?.()
+          job.resetPending = false
           job.state = "failed"
           job.error =
             "Checkpoint preparation failed; the current workspace was retained."

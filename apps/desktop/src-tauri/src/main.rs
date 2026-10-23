@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use std::net::TcpListener;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     env,
     fs::OpenOptions,
     io::{Read, Write},

@@ -148,35 +148,15 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page.goto(pageUrl)
     const frame = page.frameLocator("iframe")
     // The change cursor includes B while the original read of A is still in
-    // flight. Establishing the cursor must refresh, even with no hint rows.
+    // flight. Establishing the cursor marks the subscription for a refresh,
+    // which waits for that read: one read at a time, then the newer data.
+    await baseline
+    expect(calls.filter((call) => call.op === "records.query")).toHaveLength(1)
+    releaseInitial()
     await expect(frame.locator("#records")).toHaveText("Baseline change")
     const authored = page
       .frames()
       .find((candidate) => candidate !== page.mainFrame())!
-    await authored.evaluate(() => {
-      ;(
-        window as unknown as { initialReadFinished: Promise<void> }
-      ).initialReadFinished = new Promise<void>((resolve) => {
-        const done = (event: MessageEvent) => {
-          if (
-            event.source !== parent ||
-            event.data?.type !== "worktable.api.response" ||
-            event.data.body?.records?.[0]?.data?.name !== "Granted data"
-          )
-            return
-          window.removeEventListener("message", done)
-          resolve()
-        }
-        window.addEventListener("message", done)
-      })
-    })
-    releaseInitial()
-    await authored.evaluate(
-      () =>
-        (window as unknown as { initialReadFinished: Promise<void> })
-          .initialReadFinished
-    )
-    await expect(frame.locator("#records")).toHaveText("Baseline change")
     await expect(frame.locator("#state")).toHaveText(
       JSON.stringify({ teamValue: "first" })
     )

@@ -1268,6 +1268,7 @@ export function ConnectedAgentsGroup() {
   })
   const [editing, setEditing] = useState<AgentConnection | null>(null)
   const [editingGrok, setEditingGrok] = useState<string | null>(null)
+  const [grokOpen, setGrokOpen] = useState(false)
   const connections = connectionsQuery.data?.connections ?? []
   const grokBots = connectionsQuery.data?.grokBots ?? []
   const candidates = connectionsQuery.data?.grokBotCandidates ?? []
@@ -1382,11 +1383,12 @@ export function ConnectedAgentsGroup() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() =>
-                          grok
-                            ? setEditingGrok(grok.connectionId)
-                            : setEditing(connection!)
-                        }
+                        onClick={() => {
+                          if (grok) {
+                            setEditingGrok(grok.connectionId)
+                            setGrokOpen(true)
+                          } else setEditing(connection!)
+                        }}
                       >
                         Edit
                       </Button>
@@ -1427,9 +1429,9 @@ export function ConnectedAgentsGroup() {
         }}
       />
       <ResponsiveDialog
-        open={Boolean(editingGrok)}
+        open={grokOpen}
         onOpenChange={(open) => {
-          if (!open) setEditingGrok(null)
+          setGrokOpen(open)
         }}
       >
         <ResponsiveDialogContent>
@@ -1450,8 +1452,8 @@ export function ConnectedAgentsGroup() {
                 key={editingGrok}
                 connection={systemConnection.data}
                 connectionId={editingGrok}
-                open
-                onRemoved={() => setEditingGrok(null)}
+                open={grokOpen}
+                onRemoved={() => setGrokOpen(false)}
               />
             )}
           </ResponsiveDialogBody>
@@ -1462,14 +1464,14 @@ export function ConnectedAgentsGroup() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setEditingGrok(null)
+                    setGrokOpen(false)
                     setEditing(editingConnection)
                   }}
                 >
                   Access and avatar
                 </Button>
               )}
-            <Button variant="outline" onClick={() => setEditingGrok(null)}>
+            <Button variant="outline" onClick={() => setGrokOpen(false)}>
               Close
             </Button>
           </ResponsiveDialogFooter>

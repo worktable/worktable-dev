@@ -151,8 +151,10 @@ test("a connected Grok account stays editable while another account is added", a
   await expect(
     page.getByLabel("Bot email address", { exact: true })
   ).toHaveValue("orbit@mail.grokbot.com")
+  await page.getByLabel("Bot name", { exact: true }).scrollIntoViewIfNeeded()
   await page.screenshot({
     path: testInfo.outputPath("grok-connection-settings-mobile.png"),
+    animations: "disabled",
   })
   await page.getByRole("button", { name: "Close", exact: true }).click()
   await comet.getByRole("button", { name: "Edit", exact: true }).click()
@@ -163,8 +165,12 @@ test("a connected Grok account stays editable while another account is added", a
     page.getByLabel("Bot email address", { exact: true })
   ).toHaveValue("comet@mail.grokbot.com")
   await page.getByRole("button", { name: "Close", exact: true }).click()
+  await expect(
+    page.getByRole("dialog", { name: "Comet", exact: true })
+  ).not.toBeVisible()
   await page.screenshot({
     path: testInfo.outputPath("grok-multiple-accounts.png"),
+    animations: "disabled",
   })
 })
 

@@ -103,6 +103,7 @@ export const OPERATION_DEFINITIONS = {
   "records.create": tool("records:write", "records"),
   "records.update": tool("records:write", "records"),
   "records.create_many": tool("records:write", "records"),
+  "records.import": tool("records:write", "records"),
   "records.update_many": tool("records:write", "records"),
   "records.delete": tool("records:write", "records"),
   "annotations.list": tool("annotations:read", "none"),
@@ -139,6 +140,7 @@ export const PREVIEW_OPERATIONS: ReadonlySet<OperationId> =
     "threads.rename",
     "records.create_many",
     "records.update_many",
+    "records.import",
   ])
 
 function tool(
@@ -272,6 +274,7 @@ export const WORKTABLE_TOOL_ROUTES: Record<
     update: "records.update",
     create_many: "records.create_many",
     update_many: "records.update_many",
+    import: "records.import",
   },
   worktable_annotations_read: {
     list: "annotations.list",

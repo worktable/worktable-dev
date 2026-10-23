@@ -2,7 +2,7 @@ import { readdir, rmdir } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { CanonicalIdSchema } from "@worktable/types"
 import { noteDocumentActivity } from "./document-activity.ts"
-import { buildDocumentCatalog } from "./document-catalog.ts"
+import { buildDocumentCatalog, type DocumentCatalog } from "./document-catalog.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
 import {
   analyzeDocumentPath,
@@ -261,22 +261,13 @@ async function publishFolderMove(
   await notifyWorkspaceChangeAndWait({ type: "documentCorpus", spaceId })
 }
 
-/** Move one bounded mixed-format subtree as a single durable generation. */
-/**
- * Whether anything sits in the folder named after a document: sub-Docs or
- * files. A Doc's folder belongs to it, so such a Doc moves with its folder.
- * Reads the Space's snapshot; callers decide under their own locks.
- */
-export async function hasDocumentsBelow(
-  spaceId: string,
+/** Whether a catalog lists anything below `path`: sub-Docs or files. */
+export function catalogHasDocumentsBelow(
+  catalog: DocumentCatalog,
   path: string
-): Promise<boolean> {
+): boolean {
   const key = analyzeDocumentPath(path).comparisonKey
   if (!key) return false
-  // A Space that can't be read here is refused by the move itself, with its
-  // own reason.
-  const catalog = await readDocumentCatalogSnapshot(spaceId).catch(() => null)
-  if (!catalog) return false
   return catalog.entries.some((entry) => {
     const entryKey =
       entry.kind === "conflict"
@@ -284,6 +275,33 @@ export async function hasDocumentsBelow(
         : analyzeDocumentPath(entry.descriptor.path).comparisonKey
     return Boolean(entryKey && documentPathKeyIsBelow(entryKey, key))
   })
+}
+
+/**
+ * Whether a Doc has a folder of its own to move with it: the Doc exists and
+ * sub-Docs or files sit in the folder named after it. A folder with no Doc
+ * of its own is not a Doc's, and a move naming it finds no Doc. Reads the
+ * Space's snapshot; a single-Doc move checks again under its lock.
+ */
+export async function hasDocumentsBelow(
+  spaceId: string,
+  path: string,
+  options: { lockHeld?: boolean } = {}
+): Promise<boolean> {
+  const key = analyzeDocumentPath(path).comparisonKey
+  if (!key) return false
+  // A Space that can't be read here is refused by the move itself, with its
+  // own reason.
+  const catalog = await readDocumentCatalogSnapshot(spaceId, options).catch(
+    () => null
+  )
+  if (!catalog) return false
+  const isDocument = catalog.entries.some(
+    (entry) =>
+      entry.kind === "document" &&
+      analyzeDocumentPath(entry.descriptor.path).comparisonKey === key
+  )
+  return isDocument && catalogHasDocumentsBelow(catalog, path)
 }
 
 /**
@@ -305,6 +323,7 @@ async function removeEmptiedFolders(directory: string): Promise<void> {
   await rmdir(directory).catch(() => undefined)
 }
 
+/** Move one bounded mixed-format subtree as a single durable generation. */
 export async function moveDocumentFolder(
   spaceId: string,
   fromPrefix: string,

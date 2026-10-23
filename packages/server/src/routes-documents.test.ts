@@ -1226,6 +1226,27 @@ describe("format-neutral document route", () => {
           () => "gone"
         )
       ).toEqual("gone")
+
+      // A folder with no Doc of its own is not a Doc's: nothing moves.
+      const move = (path: string, to: string) =>
+        app().request(`/api/spaces/${spaceId}/documents/move`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path, to }),
+        })
+      expect((await move("guides", "elsewhere")).status).toBe(404)
+      expect(
+        await readFile(join(docs, "guides", "start", "error.png"), "utf8")
+      ).toBe("png")
+
+      // Moving back to where it was reclaims the old path.
+      expect((await move("guides/start", "notes/readme")).status).toBe(200)
+      expect(
+        await readFile(join(docs, "notes", "readme", "error.png"), "utf8")
+      ).toBe("png")
+      expect(await readFile(join(docs, "notes", "readme.md"), "utf8")).toBe(
+        "# Readme"
+      )
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
       else process.env["WORKTABLE_FILES_PREVIEW"] = previous

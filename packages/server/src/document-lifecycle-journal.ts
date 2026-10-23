@@ -98,6 +98,7 @@ import {
 } from "./document-storage-profile.ts"
 import {
   DOC_ALIASES_MAX_BYTES,
+  aliasesReclaimedByFolderMove,
   prepareDocAliasBatch,
   prepareDocAliasMove,
   prepareDocAliasPrefixRetirement,
@@ -105,6 +106,7 @@ import {
   parseDocAliasesSnapshot,
   readDocAliases,
   reservedByAliasIn,
+  resolveDocAliasIn,
   withDocAliasLock,
 } from "./doc-aliases.ts"
 import {
@@ -2333,7 +2335,13 @@ function preparePrefixAliasesEdit(
     : [{ from: fromPrefix, to: toPrefix, kind: "prefix" as const }]
   let after: Buffer
   try {
-    after = Buffer.from(prepareDocAliasBatch(result.aliases, entries), "utf8")
+    after = Buffer.from(
+      prepareDocAliasBatch(
+        aliasesReclaimedByFolderMove(result.aliases, fromPrefix, toPrefix),
+        entries
+      ),
+      "utf8"
+    )
   } catch (error) {
     throw new DocumentLifecyclePreconditionError(
       error instanceof Error
@@ -3254,9 +3262,11 @@ async function preparePrefixRename(
         `Target path already exists: ${move.to}`
       )
     }
+    // Moving back to a former path reclaims the alias that move left.
     if (
       reservedByAliasIn(catalog.aliases, move.to) &&
-      !sourceComparisonKeys.has(targetKey)
+      !sourceComparisonKeys.has(targetKey) &&
+      resolveDocAliasIn(catalog.aliases, move.to) !== move.from
     ) {
       throw new DocumentLifecyclePreconditionError(
         `Target path is reserved by a document alias: ${move.to}`

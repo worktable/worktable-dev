@@ -38,7 +38,12 @@ import {
 import { notifyDocContentChanged } from "./content-events.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { DOCUMENT_STORAGE_PROFILE_IDS } from "./document-storage-profile.ts"
-import { hasDocumentsBelow, moveDocumentFolder } from "./document-folder-move.ts"
+import {
+  catalogHasDocumentsBelow,
+  hasDocumentsBelow,
+  moveDocumentFolder,
+} from "./document-folder-move.ts"
+import { readDocumentCatalogSnapshot } from "./document-query.ts"
 
 export interface RenameOutcome {
   renamed: Array<{ from: string; to: string }>
@@ -53,15 +58,21 @@ export async function renameDocAndSync(
 ): Promise<RenameOutcome> {
   const from = sanitizeDocPath(fromPath)
   const to = sanitizeDocPath(toPath)
+  if (from === to) return renameOneDoc(spaceId, from, to, false)
   // A Doc's folder belongs to it: sub-Docs and files under it move with it,
-  // as one move.
-  if (from !== to && (await hasDocumentsBelow(spaceId, from))) {
-    const moved = await moveDocumentFolder(spaceId, from, to)
-    return moved.ok
-      ? { renamed: moved.renamed, error: null }
-      : { renamed: [], error: moved.error }
+  // as one move. A first child created while this decides is seen under the
+  // lock, and the move starts again as a folder move.
+  for (let pass = 0; pass < 2; pass += 1) {
+    if (await hasDocumentsBelow(spaceId, from)) {
+      const moved = await moveDocumentFolder(spaceId, from, to)
+      return moved.ok
+        ? { renamed: moved.renamed, error: null }
+        : { renamed: [], error: moved.error }
+    }
+    const outcome = await renameOneDoc(spaceId, from, to, true)
+    if (outcome !== FOLDER_APPEARED) return outcome
   }
-  return renameDocExactlyAndSync(spaceId, from, to)
+  return FOLDER_APPEARED
 }
 
 /** Rename one document alone, leaving anything under its path in place. */
@@ -70,8 +81,26 @@ export async function renameDocExactlyAndSync(
   fromPath: string,
   toPath: string
 ): Promise<RenameOutcome> {
-  const from = sanitizeDocPath(fromPath)
-  const to = sanitizeDocPath(toPath)
+  return renameOneDoc(
+    spaceId,
+    sanitizeDocPath(fromPath),
+    sanitizeDocPath(toPath),
+    false
+  )
+}
+
+/** A Doc gained a folder of its own while a move of it alone was deciding. */
+const FOLDER_APPEARED: RenameOutcome = {
+  renamed: [],
+  error: "The Doc's folder changed during the move. Try again.",
+}
+
+async function renameOneDoc(
+  spaceId: string,
+  from: string,
+  to: string,
+  alone: boolean
+): Promise<RenameOutcome> {
   if (from === to) {
     return withDocPathLock(spaceId, () =>
       renameDocAndSyncLocked(spaceId, from, to)
@@ -84,7 +113,19 @@ export async function renameDocExactlyAndSync(
   }
   return refuseBusyMove(() =>
     yjsManager.withDocPathMoveTransition(spaceId, from, to, () =>
-      withDocPathLock(spaceId, () => renameDocAndSyncLocked(spaceId, from, to))
+      withDocPathLock(spaceId, async () => {
+        if (alone) {
+          // A Space that can't be read here is refused by the move itself,
+          // with its own reason.
+          const catalog = await readDocumentCatalogSnapshot(spaceId, {
+            lockHeld: true,
+          }).catch(() => null)
+          if (catalog && catalogHasDocumentsBelow(catalog, from)) {
+            return FOLDER_APPEARED
+          }
+        }
+        return renameDocAndSyncLocked(spaceId, from, to)
+      })
     )
   )
 }

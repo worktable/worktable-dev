@@ -769,6 +769,35 @@ export function prepareDocAliasBatch(
 }
 
 /**
+ * The aliases left once a folder moves back to a former path: aliases at or
+ * below the destination that lead into the moving folder retire, since those
+ * paths become real again. Any other alias stays and still reserves its path.
+ */
+export function aliasesReclaimedByFolderMove(
+  aliases: DocAliases,
+  fromPrefix: string,
+  toPrefix: string
+): DocAliases {
+  const fromKey = analyzeDocumentPath(fromPrefix).comparisonKey
+  const toKey = analyzeDocumentPath(toPrefix).comparisonKey
+  if (!fromKey || !toKey) return aliases
+  const resolve = createDocAliasResolver(aliases)
+  const keeps = (source: string) => {
+    const key = analyzeDocumentPath(source).comparisonKey
+    if (!key || !documentPathKeyIsAtOrBelow(key, toKey)) return true
+    const resolved = resolve(source)
+    const resolvedKey = resolved ? analyzeDocumentPath(resolved).comparisonKey : null
+    return !(resolvedKey && documentPathKeyIsAtOrBelow(resolvedKey, fromKey))
+  }
+  const keep = (entries: Record<string, string>) =>
+    Object.assign(
+      Object.create(null),
+      Object.fromEntries(Object.entries(entries).filter(([source]) => keeps(source)))
+    ) as Record<string, string>
+  return { exact: keep(aliases.exact), prefixes: keep(aliases.prefixes) }
+}
+
+/**
  * Prepare the exact alias change for one document move. A destination exact
  * alias may be reclaimed only when it already resolves to this document; a
  * prefix alias still owns a whole subtree and therefore remains reserved.

@@ -1,6 +1,5 @@
 import { readProductFontSource } from "./product-fonts.ts"
 import { stagePreviewRuntime } from "./preview-runtime.ts"
-import { buildIsolatedToolAssets } from "./isolated-tool-assets.ts"
 import {
   copyFileSync,
   cpSync,
@@ -115,7 +114,6 @@ run([process.execPath, "run", "check:previews"])
 
 const compiledMetafiles = new Map<string, Bun.BuildMetafile[]>()
 let drawingPreviewMetafile: Bun.BuildMetafile | undefined
-let isolatedToolMetafiles: Bun.BuildMetafile[] | undefined
 
 async function buildExecutable(
   target: ReleaseTarget,
@@ -178,16 +176,10 @@ async function buildExecutable(
       )
     drawingPreviewMetafile = browserBuild.metafile!
   }
-  const embedsIsolatedTool = Object.keys(result.metafile!.inputs).some(
-    (path) => path.endsWith("tool-runtime/generated/tool.bundle.js")
-  )
-  if (embedsIsolatedTool && !isolatedToolMetafiles)
-    isolatedToolMetafiles = (await buildIsolatedToolAssets()).metafiles
   const metafiles = [
     ...(compiledMetafiles.get(destination) ?? []),
     result.metafile!,
     ...(embedsDrawingPreview ? [drawingPreviewMetafile!] : []),
-    ...(embedsIsolatedTool ? isolatedToolMetafiles! : []),
   ]
   compiledMetafiles.set(destination, metafiles)
   writeCompiledJsNotices(metafiles, process.cwd(), destination)

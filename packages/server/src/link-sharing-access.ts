@@ -13,7 +13,6 @@ import { effectiveLinkGrant, validateLinkGrant } from "./link-grant.ts"
 import { createLinkKey, openLinkReadView } from "./link-grant-view.ts"
 import { suggestLinkGrant } from "./link-grant-suggest.ts"
 import { readWidgetDocument } from "./widget-store.ts"
-import { isolatedToolSource } from "./isolated-tool-source.ts"
 import { inferWidgetRecordPermissions } from "./widget-authoring.ts"
 import { canWidgetRecord } from "./widget-runtime-policy.ts"
 import { recordIndex, recordIndexEnabled } from "./record-index.ts"
@@ -35,8 +34,7 @@ export async function prepareShareLinkAccess(input: {
 }): Promise<ShareLinkAccess | null> {
   const { data } = await readWidgetDocument(input.spaceId, input.path)
   if (!data || data.widget.archive) return null
-  let html = isolatedToolSource(data.html)
-  if (html === null) return null
+  let html = data.html
   let permissions = data.widget.permissions
   let observed: ObservedRecordQuery[] = []
   const warnings: ShareLinkAccess["warnings"] = []
@@ -48,8 +46,6 @@ export async function prepareShareLinkAccess(input: {
         spaceId: input.spaceId,
         path: input.path,
       })
-      const source = isolatedToolSource(snapshot.html)
-      if (source === null) return null
       const capture = await captureHtmlPreview({
         snapshot,
         scopes: input.scopes,
@@ -57,7 +53,7 @@ export async function prepareShareLinkAccess(input: {
         options: { timeoutMs: 5000 },
         observeRecordReads: true,
       })
-      html = source
+      html = snapshot.html
       permissions = snapshot.permissions
       observed = capture.observed ?? []
       if (capture.status !== "complete")

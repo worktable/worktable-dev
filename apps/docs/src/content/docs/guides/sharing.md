@@ -43,7 +43,7 @@ document keeps its preview links attached to the same document.
 
 ### Live tools
 
-For an HTML Doc built for the preview runtime, turn on **Live tool** in the
+For an HTML Doc, turn on **Live tool** in the
 sharing form. Under **What this link opens**, choose the Records collections,
 rows and fields readers may see. Choose **Check access** to confirm the scope,
 then create the link and use **View as visitor** to inspect it.
@@ -56,10 +56,9 @@ sharing policy can reduce what an existing link can read.
 Record rules filter Records API reads. They do not hide text or data written
 directly into the tool itself, which is shared with every reader of the link.
 
-Preview tools use an isolated program and Worktable's view API. Existing HTML
-that depends on browser scripts, DOM libraries or external resources needs to
-be rebuilt for this runtime. Ask your connected agent to read the HTML runtime
-guidance supplied by this Worktable before building the tool.
+Readers run the same HTML Doc your team uses, so any tool your agents build
+works on a live link without changes. Parts of a tool that change Records or
+open other documents are unavailable to readers.
 
 ### Visitor comments
 

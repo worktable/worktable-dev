@@ -10,7 +10,6 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { buildIsolatedToolAssets } from "./isolated-tool-assets"
 import {
   verifyCompiledJsNotices,
   writeCompiledJsNotices,
@@ -153,7 +152,7 @@ test("compiled notice gate follows real bundle contributors and rejects source o
   }
 })
 
-test("embedded browser runtimes carry reviewed font and VM dependency notices", async () => {
+test("native drawing and legacy SVG bundles carry reviewed font and embedded dependency notices", async () => {
   const output = mkdtempSync(join(tmpdir(), "worktable-drawing-notice-gate-"))
   try {
     const build = await Bun.build({
@@ -178,22 +177,16 @@ test("embedded browser runtimes carry reviewed font and VM dependency notices", 
     // The generated browser bundle is an asset in the server metafile; include
     // its own contributors so native renderer attribution is not lost.
     writeCompiledJsNotices(
-      [build.metafile!, browser.metafile!, ...(await buildIsolatedToolAssets()).metafiles],
+      [build.metafile!, browser.metafile!],
       process.cwd(),
       output
     )
-    expect(verifyCompiledJsNotices(output)).toBeGreaterThan(0)
-    const inventory = JSON.parse(readFileSync(join(output, "licenses/bundled-javascript.json"), "utf8"))
-    expect(inventory.packages).toEqual(expect.arrayContaining([
-      "quickjs-emscripten-core@0.32.0",
-      "@jitl/quickjs-singlefile-browser-release-sync@0.32.0",
-    ]))
+    expect(verifyCompiledJsNotices(output)).toBe(2)
     const notices = readFileSync(
       join(output, "licenses/bundled-javascript-NOTICES.md"),
       "utf8"
     )
     expect(notices).toContain("Noto Project Authors")
-    expect(notices).toContain("QuickJS Javascript Engine")
     expect(notices).toContain("Source archive SHA256:")
   } finally {
     rmSync(output, { recursive: true, force: true })

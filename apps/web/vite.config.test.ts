@@ -9,7 +9,6 @@ describe("development server proxy", () => {
     expect(Object.keys(devServerProxy)).toEqual([
       "/api",
       "/worktable-preview/fonts",
-      "/worktable-runtime/",
       "/auth",
       "/ws",
       "/yjs",
@@ -18,7 +17,6 @@ describe("development server proxy", () => {
       "/api",
       "/auth",
       "/worktable-preview/fonts",
-      "/worktable-runtime/",
     ] as const) {
       expect(devServerProxy[route].changeOrigin).toBe(false)
     }

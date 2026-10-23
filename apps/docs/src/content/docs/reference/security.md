@@ -104,12 +104,11 @@ Record rules constrain Records API reads. The complete tool program, including
 any text or data embedded in it, is shared with every reader of the link.
 Review that content before sharing; a Record rule does not hide it.
 
-Preview tool programs run in an isolated JavaScript engine with bounded memory
-and execution. They have no browser objects, network access, DOM or persistent
-browser storage. Worktable renders a validated view through its own UI API;
-authored outer HTML, styles and resource URLs are not executed. Existing HTML
-programs that rely on browser APIs must be rebuilt for this runtime before
-being shared live.
+A live tool runs in a sandboxed frame on a separate origin for each Worktable,
+with no network access, cookies or persistent browser storage. The frame is not
+the data boundary: browsers still let a script signal out through DNS lookups
+or WebRTC. Worktable therefore limits what a link exposes on the server, and
+treats everything a link can read as visible to its readers.
 
 Visitor comments are stored outside the portable workspace. Agents cannot read
 them until a member passes them to the team as quoted outside input. See

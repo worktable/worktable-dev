@@ -34,19 +34,24 @@ function request(path,method,body){
 }
 const readonly=()=>Promise.reject(fail('LINK_READ_ONLY','This link is view only.'));
 const recordPath=collection=>'/link/records/'+encodeURIComponent(collection)+'/query';
+// A burst of change hints becomes one query in flight and one trailing
+// refresh, so a busy collection can't fill the broker's request slots.
 function subscribe(collection,query,callback,detailed){
   let closed=false;
-  let requested=0;
-  let delivered=0;
-  const load=async()=>{
-    const current=++requested;
-    const result=await request(recordPath(collection),'POST',query||{});
-    if(!closed&&current>delivered){delivered=current;callback(detailed?result:result.records)}
+  let inFlight=false;
+  let dirty=false;
+  const load=()=>{
+    if(closed)return;
+    if(inFlight){dirty=true;return}
+    inFlight=true;
+    request(recordPath(collection),'POST',query||{})
+      .then(result=>{if(!closed)callback(detailed?result:result.records)},error=>{if(!closed)console.error(error)})
+      .finally(()=>{inFlight=false;if(dirty&&!closed){dirty=false;load()}});
   };
-  const changed=event=>{if(event.source===window.parent&&event.data?.type==='worktable.records.changed'&&event.data.collection===collection&&!closed)void load().catch(console.error)};
+  const changed=event=>{if(event.source===window.parent&&event.data?.type==='worktable.records.changed'&&event.data.collection===collection)load()};
   window.addEventListener('message',changed);
   post({type:'worktable.subscribe',collection},'*');
-  void load().catch(console.error);
+  load();
   return()=>{closed=true;window.removeEventListener('message',changed);post({type:'worktable.unsubscribe',collection},'*')};
 }
 const records={
@@ -56,16 +61,20 @@ const records={
   subscribe:(collection,query,callback)=>subscribe(collection,query,callback,false),
   subscribeDetailed:(collection,query,callback)=>subscribe(collection,query,callback,true)
 };
+// Writes read the state, then replace it: run them one at a time so two
+// quick writes can't drop each other's changes.
+let stateWrites=Promise.resolve();
+function mutateState(action){const result=stateWrites.then(action);stateWrites=result.catch(()=>{});return result}
 const state={
   get:async key=>{const result=await request('/link/state');return typeof key==='string'?result.state[key]:result.state},
-  set:async(key,value)=>{
+  set:(key,value)=>mutateState(async()=>{
     const snapshot=await request('/link/state');
     const current=snapshot.visitorState||snapshot.state;
     const next=typeof key==='string'?{...current,[key]:value}:key&&typeof key==='object'?{...current,...key}:{};
     await request('/link/state','PUT',{state:next});
     return typeof key==='string'?value:key&&typeof key==='object'?{...snapshot.state,...next}:{};
-  },
-  update:async updater=>{
+  }),
+  update:updater=>mutateState(async()=>{
     const snapshot=await request('/link/state');
     const next=await updater(snapshot.state)||{};
     if(typeof next!=='object'||Array.isArray(next))throw fail('INVALID_QUERY',"The state isn't valid.");
@@ -73,7 +82,7 @@ const state={
     const overlay=Object.create(null);
     for(const [key,value] of Object.entries(next))if(Object.hasOwn(own,key)||JSON.stringify(value)!==JSON.stringify(snapshot.state[key]))overlay[key]=value;
     await request('/link/state','PUT',{state:overlay});return next;
-  }
+  })
 };
 const ui={getTheme:()=>document.documentElement.getAttribute('data-theme'),getViewport:()=>({width:innerWidth,height:innerHeight}),notify:message=>window.dispatchEvent(new CustomEvent('worktable:notice',{detail:{message:String(message)}})),getDiagnostics:()=>[],reportDiagnostic:()=>{}};
 window.worktable={version:cfg.runtimeVersion,records,state,ui,navigation:{openDocument:()=>Promise.reject(fail('NOT_AVAILABLE','This link cannot open other documents.'))},diagnostics:{list:ui.getDiagnostics,report:ui.reportDiagnostic},toast:ui.notify};

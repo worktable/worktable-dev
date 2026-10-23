@@ -174,7 +174,6 @@ interface Worker {
 }
 interface Job {
   kind: PreviewKind
-  isolatedTool: boolean
   task: (page: Page) => Promise<unknown>
   resolve: (value: unknown) => void
   reject: (error: unknown) => void
@@ -266,7 +265,7 @@ export class PreviewBrowserPool {
   async run<T>(
     kind: PreviewKind,
     task: (page: Page) => Promise<T>,
-    options: { signal?: AbortSignal; isolatedTool?: boolean } = {}
+    options: { signal?: AbortSignal } = {}
   ): Promise<T> {
     if (options.signal?.aborted)
       throw new PreviewBrowserError(
@@ -293,7 +292,6 @@ export class PreviewBrowserPool {
         interrupted,
         interrupt,
         kind,
-        isolatedTool: kind === "html" && options.isolatedTool === true,
         task,
         resolve: (value) => resolveJob(value as T),
         reject,
@@ -420,13 +418,9 @@ export class PreviewBrowserPool {
           viewport: { width: 1280, height: 900 },
           deviceScaleFactor: 1,
         })
-        await context.route("**/*", (route) =>
-          job.isolatedTool && route.request().url().startsWith("blob:")
-            ? route.continue()
-            : route.abort("blockedbyclient")
-        )
+        await context.route("**/*", (route) => route.abort("blockedbyclient"))
         await context.routeWebSocket("**/*", (socket) => socket.close())
-        await context.addInitScript((isolatedTool: boolean) => {
+        await context.addInitScript(() => {
           try {
             const serviceWorker = navigator.serviceWorker
             if (serviceWorker)
@@ -455,16 +449,13 @@ export class PreviewBrowserPool {
             "Worker",
             "SharedWorker",
           ]) {
-            // Only the trusted VM bootstrap may create a worker. Its document
-            // is rebuilt from a tool program and contains no authored DOM.
-            if (key === "Worker" && isolatedTool) continue
             Object.defineProperty(globalThis, key, {
               value: undefined,
               writable: false,
               configurable: false,
             })
           }
-        }, job.isolatedTool)
+        })
         const page = await context.newPage()
         page.setDefaultTimeout(10_000)
         page.setDefaultNavigationTimeout(10_000)
@@ -558,7 +549,7 @@ let pool = new PreviewBrowserPool()
 export function withPreviewPage<T>(
   kind: PreviewKind,
   task: (page: Page) => Promise<T>,
-  options: { signal?: AbortSignal; isolatedTool?: boolean } = {}
+  options: { signal?: AbortSignal } = {}
 ): Promise<T> {
   return (scopedPools.getStore() ?? pool).run(kind, task, options)
 }

@@ -122,9 +122,11 @@ A remote self-hosted installation needs an HTTPS address.
    OAuth authentication.
 4. Sign in with the same Cloud account and approve the connection.
 
-Keep the device online and Worktable running. Authorized requests pass through
-Cloud to the device; Link does not copy its workspace into the hosted workspace,
-synchronize the two, or expose the full local interface remotely.
+Keep the device online and Worktable running. Worktable Desktop keeps a
+Worktable with Link on running while its window shows another Worktable, until
+you quit Desktop. Authorized requests pass through Cloud to the device; Link
+does not copy its workspace into the hosted workspace, synchronize the two, or
+expose the full local interface remotely.
 Each device follows its selected subscription, with up to three devices across
 the payer's account. On a team installation, an operator enables Link and its
 AI apps follow that member's Space permissions as personal agents.

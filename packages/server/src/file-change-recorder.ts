@@ -14,9 +14,16 @@ import { filesPreviewEnabled } from "./files-preview.ts"
 import { logError } from "./debug-log.ts"
 
 const SETTLE_MS = 1000
+/** A Space that never goes quiet, such as one with a growing log, still records. */
+const MAX_SETTLE_MS = 10_000
 const pending = new Map<
   string,
-  { paths: Set<string>; timer: ReturnType<typeof setTimeout>; record: () => void }
+  {
+    paths: Set<string>
+    firstNotedAt: number
+    timer: ReturnType<typeof setTimeout>
+    record: () => void
+  }
 >()
 let track: (task: Promise<unknown>) => void = () => {}
 
@@ -33,6 +40,7 @@ export function noteExternalFileChange(spaceId: string, path: string): void {
   const previous = pending.get(spaceId)
   if (previous) clearTimeout(previous.timer)
   const paths = previous?.paths ?? new Set<string>()
+  const firstNotedAt = previous?.firstNotedAt ?? Date.now()
   paths.add(path)
   const record = () => {
     pending.delete(spaceId)
@@ -47,9 +55,13 @@ export function noteExternalFileChange(spaceId: string, path: string): void {
       )
     )
   }
-  const timer = setTimeout(record, SETTLE_MS)
+  const wait = Math.max(
+    0,
+    Math.min(SETTLE_MS, firstNotedAt + MAX_SETTLE_MS - Date.now())
+  )
+  const timer = setTimeout(record, wait)
   timer.unref?.()
-  pending.set(spaceId, { paths, timer, record })
+  pending.set(spaceId, { paths, firstNotedAt, timer, record })
 }
 
 /** Record every settling change now, as shutdown and export need. */

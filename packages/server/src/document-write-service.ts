@@ -1188,8 +1188,16 @@ export async function recordExternalFileChanges(options: {
     }
     const recorded: string[] = []
     for (const path of candidates) {
-      if (await recordFileVersionLocked(workspaceRoot, options.spaceId, catalog, path, registry)) {
-        recorded.push(path)
+      // One file that can't be kept leaves the rest of the batch kept.
+      try {
+        if (await recordFileVersionLocked(workspaceRoot, options.spaceId, catalog, path, registry)) {
+          recorded.push(path)
+        }
+      } catch (error) {
+        console.warn(
+          "[files] a version for a change on disk was not kept:",
+          logError(error)
+        )
       }
     }
     return { recorded }

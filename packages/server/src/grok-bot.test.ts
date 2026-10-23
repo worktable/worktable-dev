@@ -26,6 +26,8 @@ import {
 } from "./grok-bot-store.ts"
 import {
   expireGrokBotDeliveries,
+  failThreadDelivery,
+  nextThreadDeliveryEligibleAt,
   commitThreadDeliveryReply,
   retryGrokBotDelivery,
   getThreadActivity,
@@ -136,6 +138,58 @@ function fakeFetch(
 }
 
 describe("Grok Bot", () => {
+  it.each(["runtime", "claim"])("fences pre-configuration work after its lease expires (%s)", async (path) => {
+    const assigned = await assign("Work claimed before routine setup")
+    const claim = (await claimNextThreadDelivery(grok, 0, 2))!
+    expect(claim.messageId).toBe(assigned.messageId)
+    await configure()
+    expect((await app.request(`${base}/check`, { method: "POST" })).status).toBe(200)
+    const now = Date.parse(claim.leaseExpiresAt) + 1
+    const clock = jest.spyOn(Date, "now").mockReturnValue(now)
+    try {
+      if (path === "runtime") await expireGrokBotDeliveries(participantId)
+      else expect(await claimNextThreadDelivery(grok, 0, 2)).toBeNull()
+      expect((await grokBotDeliveries(participantId)).find((d) => d.messageId === assigned.messageId)).toMatchObject({
+        state: "failed",
+        error: { code: "REMOTE_EXECUTION_UNCONFIRMED" },
+      })
+      expect(await nextThreadDeliveryEligibleAt(participantId)).toBeUndefined()
+      expect((await grokBotInventory([])).grokBots[0]?.uncertain?.messageId).toBe(assigned.messageId)
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  it.each([false, true])("recovers when a claimed assignment disappears (connection check: %s)", async (probe) => {
+    if (probe) {
+      await configure()
+      expect((await app.request(`${base}/check`, { method: "POST" })).status).toBe(200)
+    } else {
+      await verified()
+      await assign("Assignment removed before reading")
+    }
+    const claim = (await claimNextThreadDelivery(grok, 0, 2))!
+    await rm(join(workspaceDir, "threads", `${claim.threadId}.json`))
+    await failThreadDelivery({
+      participantId,
+      messageId: claim.messageId,
+      leaseId: claim.leaseId,
+      retryable: false,
+      code: "THREAD_NOT_FOUND",
+      message: "The portable thread no longer exists.",
+    })
+    expect((await grokBotInventory([])).grokBots[0]?.status).toBe(probe ? "needs-attention" : "ready")
+    expect((await app.request(`${base}/retry`, { method: "POST" })).status).toBe(200)
+    if (probe) {
+      expect((await readGrokBots())[0]?.probe).toBeUndefined()
+      expect((await app.request(`${base}/check`, { method: "POST" })).status).toBe(200)
+      expect((await claimNextThreadDelivery(grok, 0, 2))?.messageId).toBe((await readGrokBots())[0]?.probe?.messageId)
+      return
+    }
+    const next = await assign("A later assignment")
+    expect((await claimNextThreadDelivery(grok, 0, 2))?.messageId).toBe(next.messageId)
+  })
+
   it.each(["Cursor", "Orbit"])("classifies the selected Bot while preserving custom names (%s)", async (name) => {
     const identity: TokenIdentity = {
       ...grok,

@@ -16,6 +16,7 @@ import {
 } from "../grok-bot-store.ts"
 import {
   grokBotDeliveries,
+  isRetiredThreadDelivery,
   retryGrokBotDelivery,
 } from "../thread-delivery-store.ts"
 import {
@@ -194,7 +195,7 @@ grokBotRouter.post("/:id/retry", async (c) => {
   const uncertain =
     deliveries.find((d) => d.error?.code === "REMOTE_EXECUTION_UNCONFIRMED") ??
     deliveries.find(
-      (d) => d.state === "failed" && d.error?.code !== "DELIVERY_RETIRED"
+      (d) => d.state === "failed" && !isRetiredThreadDelivery(d)
     )
   if (uncertain) {
     if (uncertain.location.kind === "space")
@@ -216,7 +217,13 @@ grokBotRouter.post("/:id/retry", async (c) => {
       participantId: connection.participantId,
     })
   }
-  await updateGrokBot(connection, { error: undefined, wake: undefined })
+  const missingProbe = deliveries.some((d) =>
+    d.messageId === connection.probe?.messageId && isRetiredThreadDelivery(d))
+  await updateGrokBot(connection, {
+    error: undefined,
+    wake: undefined,
+    ...(missingProbe ? { probe: undefined } : {}),
+  })
   signalGrokBotChange()
   notifyWorkspaceChange({ type: "participants" })
   return c.json({ ok: true })

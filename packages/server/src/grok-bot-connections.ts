@@ -1,7 +1,7 @@
 import type { AgentConnection, GrokBotConnection } from "@worktable/types"
 import { currentTeamWorktable } from "./team-database.ts"
 import { linkedStatus } from "./linked-runtime.ts"
-import { grokBotDeliveries } from "./thread-delivery-store.ts"
+import { grokBotDeliveries, isRetiredThreadDelivery } from "./thread-delivery-store.ts"
 import { readGrokBotCandidates, readGrokBots } from "./grok-bot-store.ts"
 import { grokBotEmailSender } from "./grok-bot-email.ts"
 
@@ -29,7 +29,8 @@ export async function grokBotInventory(connections: AgentConnection[]) {
     const failed =
       uncertain ??
       deliveries.find(
-        (d) => d.state === "failed" && d.error?.code !== "DELIVERY_RETIRED"
+        (d) => d.state === "failed" &&
+          (!isRetiredThreadDelivery(d) || d.messageId === connection.probe?.messageId)
       )
     const working = deliveries.some(
       (d) => !["queued", "replied", "failed"].includes(d.state)

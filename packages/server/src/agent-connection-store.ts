@@ -477,13 +477,14 @@ export async function listAgentConnections(): Promise<AgentConnection[]> {
   const connections = teamsEnabled()
     ? await listTeamAgentConnections()
     : await listLocalAgentConnections()
-  const grokIds = new Set((await readGrokBots()).map((c) => c.participantId))
+  const grok = new Map((await readGrokBots()).map((c) => [c.participantId, c]))
   return connections.map<AgentConnection>((connection) =>
-    connection.participant && grokIds.has(connection.participant.id)
+    connection.participant && grok.has(connection.participant.id)
       ? {
           ...connection,
           platform: "grok-bot",
           displayName: connection.participant.name,
+          mode: grok.get(connection.participant.id)!.removed ? connection.mode : "always-on",
         }
       : connection
   )
@@ -634,6 +635,12 @@ export async function updateAgentConnection(
     spaceIds?: string[] | null
   }
 ): Promise<AgentConnection | null> {
+  if (changes.access?.threads === false &&
+      (await listAgentConnections()).find((connection) => connection.id === id)?.mode === "always-on") {
+    throw new AgentConnectionUpdateError(
+      "An always-on agent needs threads: that is how it receives messages"
+    )
+  }
   if (teamsEnabled()) {
     // The same rules as a one-person Worktable, checked before the team store
     // applies anything.
@@ -757,6 +764,12 @@ export async function updateSignInAgent(
     threads?: boolean
   }
 ): Promise<void> {
+  if (changes.threads === false &&
+      (await readGrokBots()).some((c) => c.principalId === principalId && !c.removed)) {
+    throw new AgentConnectionUpdateError(
+      "An always-on agent needs threads: that is how it receives messages"
+    )
+  }
   await serialized(async () => {
     const file = await loadFile()
     const signIns = (file.signIns ??= [])

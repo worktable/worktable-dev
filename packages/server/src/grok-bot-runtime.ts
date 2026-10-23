@@ -15,6 +15,7 @@ import { workspaceCacheKey } from "./workspace.ts"
 import { reconcileParticipantDeliveries } from "./thread-service.ts"
 import { runWithoutTeamIdentity } from "./team-policy.ts"
 import { sendGrokEmailWake } from "./grok-bot-email.ts"
+import { scanAllThreadDigests } from "./thread-store.ts"
 
 const RETRIES = [15_000, 30_000, 60_000, 120_000, 300_000, 600_000]
 const isActive = (state: string) =>
@@ -34,8 +35,10 @@ export function startGrokBotRuntime(
   const workspace = workspaceCacheKey()
   const live = () => !stopped && workspace === workspaceCacheKey()
 
-  async function pass(): Promise<void> {
+  async function reconcileGrokBots(): Promise<void> {
     let nextAt: number | undefined
+    const revision = canonicalRevision
+    let scan: Awaited<ReturnType<typeof scanAllThreadDigests>> | undefined
     const schedule = (at: number) => {
       nextAt = nextAt === undefined ? at : Math.min(nextAt, at)
     }
@@ -43,11 +46,11 @@ export function startGrokBotRuntime(
       if (!live()) return
       await applyGrokBotIdentityDefaults(original)
       const key = `${original.participantId}\0${original.generation}`
-      if (reconciled.get(key) !== canonicalRevision) {
-        const revision = canonicalRevision
+      if (reconciled.get(key) !== revision) {
         // Repair the crash window between publishing a thread and queuing its
         // delivery. The existing catalog reuses unchanged thread digests.
-        await reconcileParticipantDeliveries(original.participantId)
+        scan ??= await scanAllThreadDigests()
+        await reconcileParticipantDeliveries(original.participantId, scan)
         reconciled.set(key, revision)
       }
       await expireGrokBotDeliveries(original.participantId)
@@ -197,7 +200,7 @@ export function startGrokBotRuntime(
         dirty = false
         if (timer) clearTimeout(timer)
         timer = undefined
-        await pass()
+        await reconcileGrokBots()
       }
     })
       .catch(() => {

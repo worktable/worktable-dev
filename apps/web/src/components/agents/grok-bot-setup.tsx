@@ -462,14 +462,14 @@ function GrokBotRoutine({
   const instructions = (
     <>
       <p className="text-sm text-muted-foreground">
-        {method === "email"
+        {!mcpUrl ? "Worktable Link must be online to copy routine instructions." : method === "email"
           ? "Send these instructions to Grok, then paste its Bot email address below."
           : "Send these instructions to Grok, then copy the POST URL and key from its desktop app."}
       </p>
       <div>
         <Button
           variant="outline"
-          disabled={method === "email" && !candidate.emailSender}
+          disabled={!mcpUrl || (method === "email" && !candidate.emailSender)}
           onClick={() =>
             void copy.copy(
               grokBotRoutineInstructions(

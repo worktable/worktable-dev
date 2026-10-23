@@ -336,6 +336,14 @@ for (const wakeMethod of ["webhook", "email"] as const)
     await page.screenshot({
       path: testInfo.outputPath("grok-connected-mobile.png"),
     })
+    linkReady = false
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await page.getByRole("tab", { name: "Grok Bot", exact: true }).click()
+    await page.getByText("Connection settings", { exact: true }).click()
+    await page.getByRole("combobox", { name: "Notify Grok using" }).click()
+    await page.getByRole("option", { name: wakeMethod === "email" ? "Webhook" : "Email" }).click()
+    await expect(page.getByRole("button", { name: "Copy instructions", exact: true })).toBeDisabled()
+    await expect(page.getByRole("button", { name: "Remove routine", exact: true })).toBeEnabled()
   })
 
 test("a new owner creates their Worktable, connects agents and finishes their first steps in Getting Started", async ({

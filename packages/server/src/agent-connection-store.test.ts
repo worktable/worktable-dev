@@ -18,6 +18,8 @@ import {
   listThreadParticipantsForDisplay,
 } from "./thread-service.ts"
 import { createToken, rotateAgentToken, verifyToken } from "./token-store.ts"
+import { saveGrokBot, removeGrokBot } from "./grok-bot-store.ts"
+import { participantKey } from "./participant-store.ts"
 import * as agentConnections from "./agent-connection-store.ts"
 import { setWorkspaceRootOverride } from "./workspace.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
@@ -44,6 +46,36 @@ afterEach(async () => {
 })
 
 describe("semantic agent connections", () => {
+  it("keeps Threads access while a Grok routine is configured", async () => {
+    const credential = await createToken({ agent: "cursor", scopes: ["*"] })
+    const identity = { agent: credential.metadata.agent, principal: credential.metadata.principal }
+    const participant = (await resolveParticipant(identity)).participant
+    await upsertAgentConnection({
+      target: { kind: "mcp-client", clientId: "cursor" },
+      mode: "on-demand",
+      participant,
+      machine: null,
+      credentialId: credential.metadata.id,
+    })
+    const id = (await listAgentConnections())[0]!.id
+    await saveGrokBot({
+      connectionId: "fixture-grok",
+      participantId: participant.id,
+      participantKey: participantKey(identity),
+      principalId: identity.principal.id,
+      webhookUrl: "https://api2.cursor.sh/automations/webhook/fixture",
+      webhookKey: "fixture-only",
+      enabled: true,
+      executionMinutes: 30,
+    })
+    expect((await listAgentConnections())[0]).toMatchObject({ platform: "grok-bot", mode: "always-on" })
+    const access = { threads: false, read: true, edit: true }
+    await expect(updateAgentConnection(id, { access })).rejects.toThrow("An always-on agent needs threads")
+    expect((await verifyToken(credential.token))?.scopes).toEqual(["*"])
+    await removeGrokBot("fixture-grok")
+    expect((await updateAgentConnection(id, { access }))?.access?.threads).toBe(false)
+  })
+
   it("invalidates thread participants after always-on metadata changes", async () => {
     const credential = await createToken({
       scopes: ["threads:*"],

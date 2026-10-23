@@ -244,13 +244,19 @@ agentConnectionsRouter.put("/sign-ins/:clientId", async (c) => {
   if (body.platform !== undefined && !isAgentPlatformId(body.platform)) {
     return c.json(badRequest("platform must be a known agent platform"), 400)
   }
-  await updateSignInAgent(hostedOAuthPrincipalId(clientId, owner), {
-    ...(displayName !== undefined ? { displayName } : {}),
-    ...(body.icon !== undefined ? { icon: body.icon as string | null } : {}),
-    ...(body.platform !== undefined
-      ? { platform: body.platform as AgentPlatformId }
-      : {}),
-    ...(typeof body.threads === "boolean" ? { threads: body.threads } : {}),
-  })
+  try {
+    await updateSignInAgent(hostedOAuthPrincipalId(clientId, owner), {
+      ...(displayName !== undefined ? { displayName } : {}),
+      ...(body.icon !== undefined ? { icon: body.icon as string | null } : {}),
+      ...(body.platform !== undefined
+        ? { platform: body.platform as AgentPlatformId }
+        : {}),
+      ...(typeof body.threads === "boolean" ? { threads: body.threads } : {}),
+    })
+  } catch (error) {
+    if (error instanceof AgentConnectionUpdateError)
+      return c.json(badRequest(error.message), 400)
+    throw error
+  }
   return c.json({ ok: true as const })
 })

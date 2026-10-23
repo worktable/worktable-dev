@@ -436,16 +436,18 @@ function active(record: DeliveryRecord): boolean {
 function expireManaged(
   file: DeliveryFile,
   participantId: string,
-  now: number
+  now: number,
+  includeLegacy = false
 ): DeliveryRecord[] {
   const expired = file.deliveries.filter(
     (record) =>
       record.participantId === participantId &&
-      record.managedBy === "grok-bot" &&
+      (record.managedBy === "grok-bot" || includeLegacy) &&
       active(record) &&
       (!record.leaseExpiresAt || Date.parse(record.leaseExpiresAt) <= now)
   )
   for (const record of expired) {
+    record.managedBy = "grok-bot"
     record.state = "failed"
     record.leaseId = undefined
     record.leaseExpiresAt = undefined
@@ -469,7 +471,7 @@ export async function expireGrokBotDeliveries(
 ): Promise<void> {
   await serialized(async () => {
     const file = await loadFile()
-    const expired = expireManaged(file, participantId, now)
+    const expired = expireManaged(file, participantId, now, Boolean(await grokBotPolicy(participantId)))
     if (!expired.length) return
     await saveFile(file)
     for (const record of expired) notify(record)
@@ -489,6 +491,11 @@ export async function grokBotDeliveries(participantId: string) {
       nextAttemptAt: record.nextAttemptAt,
       error: record.error,
     }))
+}
+
+/** No canonical assignment remains to retry. */
+export function isRetiredThreadDelivery(record: { error?: { code: string } }): boolean {
+  return record.error?.code === "DELIVERY_RETIRED" || record.error?.code === "THREAD_NOT_FOUND"
 }
 
 /** An explicit owner action starts a new attempt; old leases can never authorize it. */
@@ -884,7 +891,7 @@ export async function reconcileThreadDeliveries(
           changed.push(existing)
         } else if (
           existing.state === "failed" &&
-          existing.error?.code === "DELIVERY_RETIRED" &&
+          isRetiredThreadDelivery(existing) &&
           input.threadRevision > (previousCanonicalRevisions[canonicalKey] ?? 0)
         ) {
           existing.state = "queued"
@@ -1039,7 +1046,7 @@ export async function claimThreadDelivery(
     const blockedThreads = new Set<string>()
     let candidate: DeliveryRecord | undefined
     if (policy) {
-      const expired = expireManaged(file, participantId, nowMs)
+      const expired = expireManaged(file, participantId, nowMs, true)
       if (expired.length) {
         await saveFile(file)
         for (const record of expired) notify(record)

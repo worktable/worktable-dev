@@ -374,6 +374,9 @@ export const CATALOG_BUILDERS = [
  * reason; every other call is registered in catalog-builders.json.
  */
 export const BACKGROUND_FUNCTIONS = [
+  // Grok's event/timer worker shares one thread snapshot across configured identities.
+  // It never runs on a request's awaited path.
+  "packages/server/src/grok-bot-runtime.ts#reconcileGrokBots",
   // Boot: finishes interrupted document lifecycle work before serving.
   "packages/server/src/document-data-lifecycle-v2.ts#reconcileDocumentDataV2LifecycleRecovery",
   // CLI preflight and storage migration.

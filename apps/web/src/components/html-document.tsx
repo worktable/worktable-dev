@@ -46,7 +46,7 @@ import {
 import { resolveWidgetApiTarget } from "@/lib/widget-broker"
 import { resolveDocumentNavigation } from "@/lib/documents-api"
 import { documentHref, documentRoute } from "@/lib/document-views"
-import { authenticatedFetch, HttpError, redirectToLogin } from "@/lib/http"
+import { authenticatedFetch, BASE_URL, HttpError, redirectToLogin } from "@/lib/http"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
 import { useTheme } from "@/components/theme-provider"
 import { useNavigate } from "@tanstack/react-router"
@@ -567,7 +567,7 @@ function WidgetDetailPage({
         return
       }
       try {
-        const res = await authenticatedFetch(target, {
+        const res = await authenticatedFetch(`${BASE_URL}${target}`, {
           method: data.method || "GET",
           headers: { "Content-Type": "application/json" },
           body: data.body ?? undefined,

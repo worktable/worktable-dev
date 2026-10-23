@@ -69,6 +69,7 @@ import {
 import { resolveDocAliasIn, reservedByAliasIn } from "./doc-aliases.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
 import { hasDocumentsBelow, moveDocumentFolder } from "./document-folder-move.ts"
+import { rewriteLinksAfterMove } from "./link-rewrite.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import {
   prepareSuppressedDocReplay,
@@ -2011,6 +2012,11 @@ export async function moveRegisteredDocument(options: {
     type: "documentCorpus",
     spaceId: options.spaceId,
   })
+  // A folder move rewrote its links already; an exact one does it here,
+  // outside the lock, because rewriting writes the Docs that hold them.
+  if (!withFolder) {
+    await rewriteLinksAfterMove(options.spaceId, [{ from: result.from, to }])
+  }
   return result
 }
 

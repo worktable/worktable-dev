@@ -39,6 +39,7 @@ import { notifyDocContentChanged } from "./content-events.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { DOCUMENT_STORAGE_PROFILE_IDS } from "./document-storage-profile.ts"
 import { hasDocumentsBelow, moveDocumentFolder } from "./document-folder-move.ts"
+import { rewriteLinksAfterMove } from "./link-rewrite.ts"
 
 export interface RenameOutcome {
   renamed: Array<{ from: string; to: string }>
@@ -82,11 +83,14 @@ export async function renameDocExactlyAndSync(
   if ((await docExists(spaceId, from)) && (await docExists(spaceId, to))) {
     return { renamed: [], error: targetExistsError(to) }
   }
-  return refuseBusyMove(() =>
+  const outcome = await refuseBusyMove(() =>
     yjsManager.withDocPathMoveTransition(spaceId, from, to, () =>
       withDocPathLock(spaceId, () => renameDocAndSyncLocked(spaceId, from, to))
     )
   )
+  // Outside the locks: rewriting links writes the Docs that hold them.
+  if (!outcome.error) await rewriteLinksAfterMove(spaceId, outcome.renamed)
+  return outcome
 }
 
 function targetExistsError(path: string): string {

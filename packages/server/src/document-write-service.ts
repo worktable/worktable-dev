@@ -1141,6 +1141,14 @@ export async function replaceRegisteredDocument(options: {
     kind: "restore"
     label?: string
   }
+  /** Replace only a document of this format, checked under the lock. */
+  expectedFormatId?: string
+  /**
+   * Keep this replacement as a version of its own. By default a quick
+   * successive save by the same author continues the newest version, as
+   * typing does; an upload is a deliberate version and never merges.
+   */
+  separateVersion?: boolean
 }): Promise<DocumentWriteResult> {
   assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
@@ -1154,6 +1162,15 @@ export async function replaceRegisteredDocument(options: {
       registry,
     })
     const current = resolveWritableDocument(catalog, options.path, registry)
+    if (
+      options.expectedFormatId &&
+      current.format.id !== options.expectedFormatId
+    ) {
+      throw new DocumentWriteError(
+        "unsupported",
+        "This document is not of the expected format"
+      )
+    }
     if (options.agentMutation) {
       const replay = await replayAgentMutationLocked({
         workspaceRoot,
@@ -1243,7 +1260,10 @@ export async function replaceRegisteredDocument(options: {
         : undefined
       // The newest version holds the content this save replaces; when it is
       // the same actor's open version, this save continues it.
-      const coalesceWith = baseline.created ? undefined : baseline.generationId
+      const coalesceWith =
+        baseline.created || options.separateVersion
+          ? undefined
+          : baseline.generationId
       const written = await writeDocumentGenerationV2({
         workspaceRoot,
         spaceId: options.spaceId,

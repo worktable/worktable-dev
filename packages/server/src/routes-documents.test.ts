@@ -21,6 +21,7 @@ import { ownerIdentity } from "./auth.ts"
 import { createAnnotation } from "./annotation-store.ts"
 import { HOSTED_BROWSER_RUNTIME_SCOPES } from "./hosted-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
+import { readRegisteredDocumentSource } from "./document-write-service.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import {
   mintDocumentId,
@@ -983,6 +984,123 @@ describe("format-neutral document route", () => {
       )
       await expect(access(join(docs, "design", "error.png"))).rejects.toThrow()
       expect(await fileEntry("design/error.png")).toBeUndefined()
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
+
+  it("uploads, serves and replaces files, keeping each version", async () => {
+    const instance = app()
+    const fileUrl = (path: string, query = "") =>
+      `/api/spaces/${spaceId}/documents/file?path=${encodeURIComponent(path)}${query}`
+    const upload = (
+      path: string,
+      body: string,
+      headers: Record<string, string> = {},
+      query = ""
+    ) =>
+      instance.request(fileUrl(path, query), {
+        method: "PUT",
+        headers,
+        body,
+      })
+
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    try {
+      process.env["WORKTABLE_FILES_PREVIEW"] = "0"
+      expect((await upload("design/error.png", "png")).status).toBe(404)
+
+      process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+      expect(
+        (
+          await upload("design/error.png", "png", {
+            "x-test-scopes": "documents:read",
+          })
+        ).status
+      ).toBe(403)
+      // A Doc's name is for the Doc tools.
+      expect((await upload("design/notes.md", "# Notes")).status).toBe(415)
+
+      const created = await upload("design/error.png", "first")
+      expect(created.status).toBe(201)
+      const first = (await created.json()) as {
+        path: string
+        sourceRevision: string
+        contentHash: string
+      }
+      expect(first.path).toBe("design/error.png")
+      // A taken name is refused unless both are kept.
+      expect((await upload("design/error.png", "other")).status).toBe(409)
+      const kept = await upload("design/error.png", "other", {}, "&keepBoth=1")
+      expect(((await kept.json()) as { path: string }).path).toBe(
+        "design/error-2.png"
+      )
+
+      const read = await instance.request(
+        fileUrl("design/error.png"),
+        { headers: { "x-test-scopes": "documents:read" } }
+      )
+      expect(read.status).toBe(200)
+      expect(await read.text()).toBe("first")
+      expect(read.headers.get("content-type")).toBe("image/png")
+      expect(read.headers.get("content-disposition")).toStartWith(
+        'inline; filename="error.png";'
+      )
+      expect(read.headers.get("x-content-type-options")).toBe("nosniff")
+      expect(read.headers.get("content-security-policy")).toContain("sandbox")
+      expect(read.headers.get("cache-control")).toBe("private, no-cache")
+      const pinned = await instance.request(
+        fileUrl("design/error.png", `&v=${first.contentHash}`)
+      )
+      expect(pinned.headers.get("cache-control")).toContain("immutable")
+      const revisit = await instance.request(fileUrl("design/error.png"), {
+        headers: { "if-none-match": `"${first.contentHash}"` },
+      })
+      expect(revisit.status).toBe(304)
+
+      await upload("data/feedback.csv", "id,score\n007,5\n")
+      const csv = await instance.request(fileUrl("data/feedback.csv"))
+      expect(csv.headers.get("content-disposition")).toStartWith("attachment;")
+      expect(await csv.text()).toBe("id,score\n007,5\n")
+
+      // Replacing needs the revision it read, and keeps the old version.
+      expect(
+        (await upload("design/error.png", "second", { "if-match": "rev_stale" }))
+          .status
+      ).toBe(409)
+      const replaced = await upload("design/error.png", "second", {
+        "if-match": first.sourceRevision,
+      })
+      expect(replaced.status).toBe(200)
+      expect(await (await instance.request(fileUrl("design/error.png"))).text()).toBe(
+        "second"
+      )
+      // Each upload is a version of its own, however quickly they follow.
+      const second = (await replaced.json()) as { sourceRevision: string }
+      expect(
+        (
+          await upload("design/error.png", "third", {
+            "if-match": second.sourceRevision,
+          })
+        ).status
+      ).toBe(200)
+      const versions = await instance.request(
+        `/api/spaces/${spaceId}/documents/versions?path=design/error.png&all=true`
+      )
+      expect(
+        ((await versions.json()) as { versions: unknown[] }).versions.length
+      ).toBe(3)
+
+      // A Doc's path is not a file's, whatever revision is offered.
+      const docRevision = (
+        await readRegisteredDocumentSource({ spaceId, path: "notes/readme" })
+      ).sourceRevision
+      expect(
+        (await upload("notes/readme", "replaced", { "if-match": docRevision }))
+          .status
+      ).toBe(409)
+      expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
       else process.env["WORKTABLE_FILES_PREVIEW"] = previous

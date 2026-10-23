@@ -406,7 +406,12 @@ function LinkedFrom({
           className={REFERRER_ROW}
         >
           <ReferrerRow
-            icon={<DocumentFormatIcon formatId={link.node.format?.id} />}
+            icon={
+              <DocumentFormatIcon
+                formatId={link.node.format?.id}
+                name={link.node.path}
+              />
+            }
             name={link.node.label}
             where={<DocLocation path={link.path} />}
             note={

@@ -6,6 +6,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query"
 import { AlertTriangle, Download, FileQuestion } from "lucide-react"
+import { FilePage } from "@/components/file-page"
 import type { DocumentPage, DocumentPageResult } from "@worktable/types"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
 import { pageShareTarget, useSetPageMeta } from "@/hooks/use-page-meta"
@@ -263,6 +264,9 @@ function DocumentPageRoute() {
     )
   }
 
+  if (page.document.format.id === "worktable.file") {
+    return <FilePage spaceId={spaceId} page={page} />
+  }
   const renderer = page.renderer ? browserDocumentRenderer(page.renderer) : null
   if (!renderer) {
     return <UnavailableDocumentPage spaceId={spaceId} page={page} />

@@ -906,6 +906,7 @@ const PinnedLink = memo(function PinnedLink({
     >
       <DocumentFormatIcon
         formatId={formatId}
+        name={path}
         className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
       />
       <span className="min-w-0 truncate">{title}</span>

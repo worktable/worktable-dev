@@ -507,6 +507,18 @@ function namesAFile(path: string): boolean {
   )
 }
 
+/** A file's current revision, to replace it with whatever it holds now. */
+async function currentFileRevision(
+  spaceId: string,
+  path: string
+): Promise<string> {
+  const current = await readRegisteredDocumentSource({ spaceId, path })
+  if (current.format.id !== BUILTIN_DOCUMENT_FORMATS.file) {
+    throw new DocumentWriteError("unsupported", "This document is not a file")
+  }
+  return current.sourceRevision
+}
+
 /** `name-2.ext`, `name-3.ext`… for keeping both when a name is taken. */
 function numberedFilePath(path: string, n: number): string {
   const slash = path.lastIndexOf("/")
@@ -601,7 +613,8 @@ documentsRouter.get("/file", requireScope("documents:read"), async (c) => {
 // The body is the file's bytes. Without If-Match it creates the file; a name
 // that is taken is refused, or numbered with keepBoth=1. With If-Match, the
 // file's current sourceRevision, it replaces the file and keeps the old
-// version in its history.
+// version in its history; replace=1 replaces whatever is current, as Upload
+// New Version does, since nothing replaced is lost from history.
 documentsRouter.put("/file", requireScope("documents:write"), async (c) => {
   if (!filesPreviewEnabled()) {
     return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
@@ -638,8 +651,12 @@ documentsRouter.put("/file", requireScope("documents:write"), async (c) => {
     )
   }
   const attribution = documentWriteAttribution(c.get("identity").principal)
-  const expectedRevision = c.req.header("if-match")?.replace(/^"|"$/g, "")
   try {
+    const expectedRevision =
+      c.req.header("if-match")?.replace(/^"|"$/g, "") ??
+      (c.req.query("replace") === "1"
+        ? await currentFileRevision(spaceId, path)
+        : undefined)
     if (expectedRevision) {
       const result = await replaceRegisteredDocument({
         spaceId,

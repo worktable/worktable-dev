@@ -1,14 +1,21 @@
 import { AppWindow, File, FileText, Pencil } from "lucide-react"
 import { cn } from "@worktable/ui/lib/utils"
+import { FileTypeIcon } from "@/components/file-type-icon"
 
 /** The icon the sidebar uses for a document format, for lists elsewhere. */
 export function DocumentFormatIcon({
   formatId,
+  name,
   className = "size-4",
 }: {
   formatId?: string
+  /** A file's name, which says what kind of file it is. */
+  name?: string
   className?: string
 }) {
+  if (formatId === "worktable.file") {
+    return <FileTypeIcon name={name ?? ""} className={className} />
+  }
   if (formatId === "worktable.html") return <AppWindow className={className} />
   if (formatId === "worktable.quickdraw") return <Pencil className={className} />
   if (formatId === "worktable.markdown") return <File className={className} />

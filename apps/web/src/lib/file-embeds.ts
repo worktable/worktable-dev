@@ -8,6 +8,43 @@
 import { resolveDocLink } from "@worktable/types"
 import { authenticatedFetch, BASE_URL, HttpError } from "./http"
 
+/**
+ * A file's bytes in a Space. Naming its content hash lets the browser keep
+ * that content for good; `download` asks for a download, even of an image.
+ */
+export function fileSourceUrl(
+  spaceId: string,
+  path: string,
+  contentHash: string | null = null,
+  options: { download?: boolean } = {}
+): string {
+  return `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}${contentHash ? `&v=${encodeURIComponent(contentHash)}` : ""}${options.download ? "&download=1" : ""}`
+}
+
+/** Upload New Version: the file's new bytes, keeping the old in its history. */
+export async function replaceFile(
+  spaceId: string,
+  path: string,
+  file: File
+): Promise<{ contentHash: string }> {
+  const response = await authenticatedFetch(
+    `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}&replace=1`,
+    { method: "PUT", body: file }
+  )
+  const body = (await response.json().catch(() => null)) as {
+    contentHash?: string
+    error?: string
+  } | null
+  if (!response.ok || typeof body?.contentHash !== "string") {
+    throw new HttpError(
+      response.status,
+      body,
+      body?.error ?? "The file could not be replaced"
+    )
+  }
+  return { contentHash: body.contentHash }
+}
+
 /** The URL an embed loads from: a file in the Doc's Space, or the target itself. */
 export function embedSourceUrl(
   spaceId: string,
@@ -15,8 +52,7 @@ export function embedSourceUrl(
   target: string
 ): string {
   const path = resolveDocLink(docPath, target)
-  if (path === null) return target
-  return `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}`
+  return path === null ? target : fileSourceUrl(spaceId, path)
 }
 
 function slug(text: string): string {
@@ -49,15 +85,17 @@ export function embeddedFileName(file: File, now = new Date()): string {
 }
 
 /**
- * Save a file pasted or dropped into a Doc in the Doc's own folder, keeping
- * any file already there, and return the path the Doc should embed.
+ * Save a file into a folder of a Space (its top level when folder is empty),
+ * keeping any file already there under a numbered name. Returns its path.
  */
-export async function uploadEmbeddedFile(
+export async function uploadFileToFolder(
   spaceId: string,
-  docPath: string,
+  folder: string,
   file: File
 ): Promise<string> {
-  const target = `${docPath}/${embeddedFileName(file)}`
+  const target = folder
+    ? `${folder}/${embeddedFileName(file)}`
+    : embeddedFileName(file)
   const response = await authenticatedFetch(
     `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(target)}&keepBoth=1`,
     { method: "PUT", body: file }
@@ -73,9 +111,22 @@ export async function uploadEmbeddedFile(
       body?.error ?? "The file could not be saved"
     )
   }
+  return body.path
+}
+
+/**
+ * Save a file pasted or dropped into a Doc in the Doc's own folder, keeping
+ * any file already there, and return the path the Doc should embed.
+ */
+export async function uploadEmbeddedFile(
+  spaceId: string,
+  docPath: string,
+  file: File
+): Promise<string> {
+  const path = await uploadFileToFolder(spaceId, docPath, file)
   // Embeds are relative to the folder the Doc sits in.
   const folder = docPath.includes("/")
     ? docPath.slice(0, docPath.lastIndexOf("/") + 1)
     : ""
-  return body.path.startsWith(folder) ? body.path.slice(folder.length) : `/${body.path}`
+  return path.startsWith(folder) ? path.slice(folder.length) : `/${path}`
 }

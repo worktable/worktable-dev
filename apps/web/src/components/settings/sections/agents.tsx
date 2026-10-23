@@ -1210,6 +1210,7 @@ export function ConnectedAgentsGroup() {
     mutationFn: async (id: string) => {
       const inventory = connectionsQuery.data
       const connection = inventory?.connections.find((entry) => entry.id === id)
+      if (!connection) throw new Error("Agent connection not found")
       const clientId =
         connection?.authKind === "oauth" &&
         connection.target.kind === "mcp-client"
@@ -1221,10 +1222,16 @@ export function ConnectedAgentsGroup() {
             entry.participantId === connection.participant.id) ||
           (clientId && entry.connectionId.startsWith(`oauth:${clientId}:`))
       )
-      const result = await disconnectAgentConnection(id)
-      const cleaned = grok
+      const candidate = inventory?.grokBotCandidates?.find(
+        (entry) =>
+          entry.participantId === connection.participant?.id ||
+          (clientId && entry.id.startsWith(`oauth:${clientId}:`))
+      )
+      const grokId = grok?.connectionId ?? candidate?.id
+      const result = await disconnectAgentConnection(connection)
+      const cleaned = grokId
         ? await fetchJSON(
-            `/api/grok-bot/${encodeURIComponent(grok.connectionId)}/configuration?scope=workspace`,
+            `/api/grok-bot/${encodeURIComponent(grokId)}/configuration?scope=workspace&disconnect=1`,
             { method: "DELETE" }
           ).then(
             () => true,

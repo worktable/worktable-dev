@@ -314,8 +314,13 @@ export async function reserveGrokBotWake(
     return current.wake
   })
 }
-export async function removeGrokBot(connectionId: string): Promise<void> {
+export async function removeGrokBot(
+  connectionId: string,
+  options: { forgetIdentity?: boolean } = {}
+): Promise<void> {
   await mutate((file) => {
+    if (options.forgetIdentity)
+      file.candidates = file.candidates.filter((c) => c.id !== connectionId)
     const current = file.connections.find(
       (c) => c.connectionId === connectionId
     )

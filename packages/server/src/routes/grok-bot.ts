@@ -156,7 +156,9 @@ grokBotRouter.put("/:id/configuration", async (c) => {
   return c.json({ ok: true })
 })
 grokBotRouter.delete("/:id/configuration", async (c) => {
-  await removeGrokBot(c.req.param("id"))
+  await removeGrokBot(c.req.param("id"), {
+    forgetIdentity: c.req.query("disconnect") === "1",
+  })
   notifyWorkspaceChange({ type: "participants" })
   return c.json({ ok: true })
 })

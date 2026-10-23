@@ -20,7 +20,11 @@ import {
 import { isHosted } from "../hosted.ts"
 import { getOwnerSubject } from "../oauth-jwt.ts"
 import { grokBotInventory } from "../grok-bot-connections.ts"
-import { readGrokBots, removeGrokBot } from "../grok-bot-store.ts"
+import {
+  readGrokBotCandidates,
+  readGrokBots,
+  removeGrokBot,
+} from "../grok-bot-store.ts"
 
 export const agentConnectionsRouter = new Hono()
 
@@ -28,16 +32,26 @@ agentConnectionsRouter.use("*", requireAgentManager())
 
 agentConnectionsRouter.get("/", async (c) => {
   const connections = await listAgentConnections()
-  return c.json({ connections, ...await grokBotInventory(connections) })
+  return c.json({ connections, ...(await grokBotInventory(connections)) })
 })
 
 agentConnectionsRouter.delete("/:id", async (c) => {
-  const connection = (await listAgentConnections()).find((entry) => entry.id === c.req.param("id"))
+  const connection = (await listAgentConnections()).find(
+    (entry) => entry.id === c.req.param("id")
+  )
   const disconnected = await disconnectAgentConnection(c.req.param("id"))
   if (disconnected && connection?.participant) {
-    for (const grok of await readGrokBots()) {
-      if (grok.participantId === connection.participant.id) await removeGrokBot(grok.connectionId)
-    }
+    const ids = new Set([
+      ...(await readGrokBots())
+        .filter((grok) => grok.participantId === connection.participant!.id)
+        .map((grok) => grok.connectionId),
+      ...(await readGrokBotCandidates())
+        .filter(
+          (candidate) => candidate.participantId === connection.participant!.id
+        )
+        .map((candidate) => candidate.id),
+    ])
+    for (const id of ids) await removeGrokBot(id, { forgetIdentity: true })
   }
   return c.json({ ok: true })
 })

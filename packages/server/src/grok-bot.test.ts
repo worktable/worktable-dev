@@ -9,6 +9,7 @@ import { participantsByKey, resolveParticipant } from "./participant-store.ts"
 import type { TokenIdentity } from "./token-store.ts"
 import {
   acceptDelivery,
+  assignResponseRequest,
   claimNextThreadDelivery,
   listThreadParticipants,
   listThreadParticipantsForDisplay,
@@ -34,7 +35,7 @@ import {
   grokBotDeliveries,
 } from "./thread-delivery-store.ts"
 import { startGrokBotRuntime } from "./grok-bot-runtime.ts"
-import { appendThreadMessage } from "./thread-store.ts"
+import { appendThreadMessage, assignThreadMessage } from "./thread-store.ts"
 import {
   drainWorkspaceChanges,
   notifyWorkspaceChangeAndWaitOrThrow,
@@ -138,6 +139,72 @@ function fakeFetch(
 }
 
 describe("Grok Bot", () => {
+  it.each([false, true])(
+    "forgets a disconnected sign-in until it authenticates again (configured: %s)",
+    async (configured) => {
+      if (configured) await configure()
+      expect(
+        (
+          await app.request(`${base}/configuration?disconnect=1`, {
+            method: "DELETE",
+          })
+        ).status
+      ).toBe(200)
+      expect((await grokBotInventory([])).grokBotCandidates).toHaveLength(0)
+      expect(
+        (
+          await app.request(`${base}/configuration`, {
+            method: "PUT",
+            body: JSON.stringify({ webhookUrl: url, webhookKey: secret }),
+          })
+        ).status
+      ).toBe(404)
+      await claimNextThreadDelivery(grok, 0, 2)
+      await configure()
+    }
+  )
+
+  it.each(["withdrawn", "reassigned", "deleted"])(
+    "releases an expired execution fence after its assignment is %s",
+    async (change) => {
+      await verified()
+      const assigned = await assign("Execution with an unknown outcome")
+      const claim = (await claimNextThreadDelivery(grok, 0, 2))!
+      await acceptDelivery(grok, claim.messageId, claim.leaseId)
+      await expire(claim.messageId)
+      expect(
+        (await grokBotInventory([])).grokBots[0]?.uncertain?.messageId
+      ).toBe(claim.messageId)
+      if (change === "withdrawn") {
+        await assignResponseRequest(owner, { ...assigned, identityId: null })
+      } else if (change === "reassigned") {
+        const humanIdentity = claim.thread.identities.find(
+          (identity) => identity.memberId !== participantId
+        )!
+        await assignThreadMessage(
+          assigned.location,
+          assigned.threadId,
+          assigned.messageId,
+          humanIdentity.id
+        )
+      } else {
+        await rm(join(workspaceDir, "threads", `${claim.threadId}.json`))
+      }
+      const next = await assign("A later assignment after the request closed")
+      const woken = Promise.withResolvers<void>()
+      stop = startGrokBotRuntime({ fetch: fakeFetch(() => woken.resolve()) })
+      await woken.promise
+      await stop()
+      stop = undefined
+      expect(
+        (await grokBotInventory([])).grokBots[0]?.uncertain
+      ).toBeUndefined()
+      expect((await claimNextThreadDelivery(grok, 0, 2))?.messageId).toBe(
+        next.messageId
+      )
+    }
+  )
+
   it.each(["runtime", "claim"])(
     "fences pre-configuration work after its lease expires (%s)",
     async (path) => {

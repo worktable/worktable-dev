@@ -281,6 +281,9 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
   let disconnectAttempts = 0
   await page.route("**/api/grok-bot/**", (route) => {
     cleanupRequests++
+    expect(new URL(route.request().url()).searchParams.get("disconnect")).toBe(
+      "1"
+    )
     return route.fulfill({
       status: 503,
       json: { error: "Cleanup unavailable" },

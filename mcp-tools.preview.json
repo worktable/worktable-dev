@@ -10366,6 +10366,7 @@
                 },
                 "columns": {
                   "description": "The columns to import; the rest are left out and reported",
+                  "minItems": 1,
                   "maxItems": 200,
                   "type": "array",
                   "items": {

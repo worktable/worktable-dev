@@ -437,6 +437,68 @@ describe("importing a file into Records", () => {
       })
       expect(JSON.stringify(noId.content)).toContain("row 2: no id in id")
 
+      // A blank line is no row; a row longer than its header, an empty
+      // column choice and a file past the row limit are refused.
+      await write("worktable_files_write", {
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "research/ragged.csv",
+        format: file,
+        source: "a,b\n1,2\n\n3\n",
+      })
+      const ragged = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "ragged",
+        path: "research/ragged.csv",
+        dryRun: true,
+      })
+      expect(ragged.structuredContent).toMatchObject({ proposal: { rowCount: 2 } })
+      expect(
+        (
+          await write("worktable_records_write", {
+            action: "import",
+            spaceId,
+            collectionId: "ragged",
+            path: "research/ragged.csv",
+            columns: [],
+          })
+        ).isError
+      ).toBe(true)
+      await write("worktable_files_write", {
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "research/wide.csv",
+        format: file,
+        source: "a,b\n1,2,3\n",
+      })
+      const wide = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "wide",
+        path: "research/wide.csv",
+        dryRun: true,
+      })
+      expect(JSON.stringify(wide.content)).toContain("Row 1 has 3 values for 2 columns")
+      await write("worktable_files_write", {
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "research/long.csv",
+        format: file,
+        source: `n\n${"1\n".repeat(5001)}`,
+      })
+      const long = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "long",
+        path: "research/long.csv",
+        dryRun: true,
+      })
+      expect(JSON.stringify(long.content)).toContain("import up to 5,000 at a time")
+
       // A repeated column name is refused; a JSONL number keeps every digit.
       await write("worktable_files_write", {
         action: "create",

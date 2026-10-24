@@ -28,6 +28,8 @@ import {
 
 /** Rows one import may hold. */
 export const IMPORT_MAX_ROWS = 5000
+/** Columns an import reads at most, as many as a collection takes. */
+const IMPORT_MAX_COLUMNS = 200
 /** Problems and row results a response lists before counting the rest. */
 const LISTED_MAX = 50
 
@@ -56,13 +58,34 @@ class NumberText {
 
 const rawJSON = (JSON as unknown as { rawJSON(text: string): unknown }).rawJSON
 
+function tooManyRows(count: number): Error {
+  return new Error(
+    `This file has ${count.toLocaleString("en-US")} rows; import up to ${IMPORT_MAX_ROWS.toLocaleString("en-US")} at a time`
+  )
+}
+
+function tooManyColumns(): Error {
+  return new Error(`Import reads up to ${IMPORT_MAX_COLUMNS} columns`)
+}
+
+/**
+ * The file's columns and rows, all as text. Rows past the import's limit
+ * are refused while reading, before the file's rows are all held.
+ */
 function readTable(path: string, bytes: Uint8Array): ImportTable {
   const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes)
   if (/\.jsonl$/i.test(path)) {
     const rows: Array<Record<string, string>> = []
     const columns: string[] = []
-    for (const [index, line] of text.split(/\r?\n/).entries()) {
+    const known = new Set<string>()
+    let start = 0
+    for (let index = 0; start <= text.length; index++) {
+      const newline = text.indexOf("\n", start)
+      const end = newline === -1 ? text.length : newline
+      const line = text.slice(start, end).replace(/\r$/, "")
+      start = end + 1
       if (!line.trim()) continue
+      if (rows.length === IMPORT_MAX_ROWS) throw tooManyRows(IMPORT_MAX_ROWS + 1)
       let value: unknown
       try {
         value = JSON.parse(
@@ -80,7 +103,11 @@ function readTable(path: string, bytes: Uint8Array): ImportTable {
       }
       const row: Record<string, string> = {}
       for (const [key, cell] of Object.entries(value)) {
-        if (!columns.includes(key)) columns.push(key)
+        if (!known.has(key)) {
+          if (known.size === IMPORT_MAX_COLUMNS) throw tooManyColumns()
+          known.add(key)
+          columns.push(key)
+        }
         // Values stay as text, as a CSV's do, until a field type is chosen.
         row[key] =
           cell === null || cell === undefined
@@ -97,7 +124,11 @@ function readTable(path: string, bytes: Uint8Array): ImportTable {
     }
     return { columns, rows }
   }
-  const table = parseDelimitedText(text, delimiterForFilename(path))
+  const table = parseDelimitedText(text, delimiterForFilename(path), {
+    maxRows: IMPORT_MAX_ROWS,
+  })
+  if (table.rowCount > IMPORT_MAX_ROWS) throw tooManyRows(table.rowCount)
+  if (table.header.length > IMPORT_MAX_COLUMNS) throw tooManyColumns()
   // Rows become objects by column name, so a repeated name would lose a column.
   const seen = new Set<string>()
   for (const column of table.header) {
@@ -106,12 +137,21 @@ function readTable(path: string, bytes: Uint8Array): ImportTable {
     }
     seen.add(column)
   }
-  return {
-    columns: table.header,
-    rows: table.rows.map((cells) =>
+  const rows: Array<Record<string, string>> = []
+  for (const [index, cells] of table.rows.entries()) {
+    // A blank line is no row. A row longer than the header would lose
+    // values; a shorter one leaves the rest empty, as exports often do.
+    if (cells.length === 1 && cells[0] === "" && table.header.length > 1) continue
+    if (cells.length > table.header.length) {
+      throw new Error(
+        `Row ${index + 1} has ${cells.length} values for ${table.header.length} columns`
+      )
+    }
+    rows.push(
       Object.fromEntries(table.header.map((column, i) => [column, cells[i] ?? ""]))
-    ),
+    )
   }
+  return { columns: table.header, rows }
 }
 
 async function readImportFile(spaceId: string, path: string) {
@@ -122,13 +162,7 @@ async function readImportFile(spaceId: string, path: string) {
   if (source.format.id !== BUILTIN_DOCUMENT_FORMATS.file) {
     throw new Error("Import reads a file, not a Doc")
   }
-  const table = readTable(path, source.bytes)
-  if (table.rows.length > IMPORT_MAX_ROWS) {
-    throw new Error(
-      `This file has ${table.rows.length} rows; import up to ${IMPORT_MAX_ROWS} at a time`
-    )
-  }
-  return table
+  return readTable(path, source.bytes)
 }
 
 /** A Record field key from a column name. */
@@ -222,9 +256,15 @@ export async function proposeImport(
   // Columns whose names make one key, such as First Name and first_name,
   // are proposed distinct fields.
   const taken = new Set<string>()
+  const nextSuffix = new Map<string, number>()
   const columns = table.columns.map((column) => {
-    let field = fieldKeyFor(column)
-    for (let n = 2; taken.has(field); n++) field = `${fieldKeyFor(column)}_${n}`
+    const key = fieldKeyFor(column)
+    let field = key
+    // Each key remembers its next suffix, so many clashes stay quick.
+    for (let n = nextSuffix.get(key) ?? 2; taken.has(field); n++) {
+      field = `${key}_${n}`
+      nextSuffix.set(key, n + 1)
+    }
     taken.add(field)
     return {
       column,
@@ -301,6 +341,9 @@ export async function importIntoRecords(options: {
   titleColumn?: string
   createdBy: string
 }): Promise<ImportResult> {
+  if (options.columns.length === 0) {
+    throw new Error("Choose at least one column to import")
+  }
   const { spaceId, collectionId } = options
   const table = await readImportFile(spaceId, options.path)
   for (const column of options.columns) {

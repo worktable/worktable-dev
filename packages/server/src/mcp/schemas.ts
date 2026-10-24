@@ -1174,6 +1174,7 @@ export const RecordsWriteInputPreview = z.strictObject({
             type: z.enum(["text", "number", "date", "boolean"]),
           })
         )
+        .min(1)
         .max(200)
         .optional()
         .describe("The columns to import; the rest are left out and reported"),

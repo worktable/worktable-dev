@@ -19,7 +19,8 @@ export function DocumentNodeIcon({
   className?: string
 }) {
   if (node.kind === "conflict") return <AlertTriangle className={className} />
-  if (node.isFolder) return <Folder className={className} />
+  // A document that also holds a folder shows as the document it is.
+  if (node.isFolder && node.kind === "folder") return <Folder className={className} />
   if (node.format?.id === "worktable.file") {
     return <FileTypeIcon name={node.path} className={className} />
   }

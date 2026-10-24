@@ -659,6 +659,10 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
       .frameLocator('iframe[title="Live Status"]')
       .getByRole("heading", { name: "Ready now" })
   ).toBeVisible()
+  // Opening a Doc leaves what it holds folded; its chevron unfolds it.
+  await racePage
+    .getByRole("button", { name: "Expand Live Status", exact: true })
+    .click()
   await expect(
     racePage.getByRole("link", { name: "Move Note", exact: true })
   ).toBeVisible()

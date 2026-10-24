@@ -114,7 +114,7 @@ function htmlMediaEmbeds(markdown: string): ExtractedDocLink[] {
 }
 
 /** Fenced code, with backticks or tildes, which never holds links. */
-const FENCED_CODE = /^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[`~]*[ \t]*$|(?![\s\S]))/gm;
+export const FENCED_CODE = /^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[`~]*[ \t]*$|(?![\s\S]))/gm;
 
 /** Lines that start a block of their own rather than continue a paragraph. */
 const BLOCK_START = /^\s{0,3}(?:#{1,6}\s|>|[-*+]\s|\d+[.)]\s|\|)/;

@@ -10,10 +10,11 @@
 // fragment and `.md` style are kept. Aliases remain for anything missed.
 
 import { posix } from "node:path"
+import { Parser } from "htmlparser2"
 import { resolveDocLink } from "@worktable/types"
 import { logError } from "./debug-log.ts"
 import { filesPreviewEnabled } from "./files-preview.ts"
-import { getSpaceLinkGraph } from "./link-graph.ts"
+import { FENCED_CODE, getSpaceLinkGraph } from "./link-graph.ts"
 import {
   agentChangeBase,
   commitAgentBlocks,
@@ -78,15 +79,66 @@ export function rewrittenTarget(
 // ── Markdown ────────────────────────────────────────────────
 
 const MARKDOWN_LINK = /(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g
-const HTML_MEDIA_SRC =
-  /<(?:img|video|audio|source)\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')/gi
+const HTML_MEDIA_TAGS = new Set(["img", "video", "audio", "source"])
+const HTML_MEDIA_HINT = /<(?:img|video|audio|source)\b/i
 
 /** Code keeps its offsets but can never match a link. */
 function blankCode(markdown: string): string {
   const blank = (text: string) => text.replace(/[^\n]/g, " ")
   return markdown
-    .replace(/^```[\s\S]*?^```/gm, blank)
+    .replace(FENCED_CODE, blank)
     .replace(/`[^`\n]*`/g, blank)
+}
+
+/**
+ * The src values of a Doc's HTML media tags, read as a browser reads them,
+ * with where each sits in the text and the quote around it.
+ */
+function htmlMediaSources(
+  scanned: string
+): Array<{ at: number; length: number; value: string; quote: string | null }> {
+  if (!HTML_MEDIA_HINT.test(scanned)) return []
+  const sources: Array<{ at: number; length: number; value: string; quote: string | null }> = []
+  let tag = ""
+  const parser: Parser = new Parser({
+    onopentagname(name) {
+      tag = name
+    },
+    onattribute(name, value, quote) {
+      if (!HTML_MEDIA_TAGS.has(tag) || name !== "src") return
+      // The attribute's text runs from its name; its value follows the "=".
+      const raw = scanned.slice(parser.startIndex, parser.endIndex + 1)
+      const equals = raw.indexOf("=")
+      if (equals === -1) return
+      let start = equals + 1
+      while (/\s/.test(raw[start] ?? "")) start += 1
+      if (quote) start += 1
+      let end = start
+      while (
+        end < raw.length &&
+        (quote ? raw[end] !== quote : !/[\s>]/.test(raw[end]!))
+      ) {
+        end += 1
+      }
+      sources.push({
+        at: parser.startIndex + start,
+        length: end - start,
+        value,
+        quote: quote ?? null,
+      })
+    },
+  })
+  parser.write(scanned)
+  parser.end()
+  return sources
+}
+
+/** A path as an HTML attribute value holds it. */
+function htmlAttributeText(value: string, quote: string | null): string {
+  const text = value.replace(/&/g, "&amp;")
+  if (quote === "'") return text.replace(/'/g, "&#39;")
+  if (quote === '"') return text.replace(/"/g, "&quot;")
+  return text.replace(/[\s"'=<>`]/g, (char) => `&#${char.charCodeAt(0)};`)
 }
 
 /** A Markdown Doc with its link, image and media targets rewritten. */
@@ -102,12 +154,15 @@ export function rewriteMarkdownLinks(markdown: string, rewrite: Rewrite): string
     const text = rewrite(target)
     if (text !== null) edits.push({ at, length: target.length, text })
   }
-  HTML_MEDIA_SRC.lastIndex = 0
-  while ((match = HTML_MEDIA_SRC.exec(scanned)) !== null) {
-    const target = match[1] ?? match[2] ?? ""
-    const at = match.index + match[0].length - target.length - 1
-    const text = rewrite(target)
-    if (text !== null) edits.push({ at, length: target.length, text })
+  for (const source of htmlMediaSources(scanned)) {
+    const text = rewrite(source.value)
+    if (text !== null) {
+      edits.push({
+        at: source.at,
+        length: source.length,
+        text: htmlAttributeText(text, source.quote),
+      })
+    }
   }
   let result = markdown
   for (const edit of edits.sort((a, b) => b.at - a.at)) {

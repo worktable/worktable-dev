@@ -43,23 +43,31 @@ describe("rewriting links after a move", () => {
 
   it("rewrites Markdown links, images and media tags, never code", () => {
     const rewrite = (target: string) =>
-      target === "old.png" ? "new.png" : null
+      target === "old.png" ? "new.png" : target === "a&b.png" ? "c&d.png" : null
     const markdown = [
       "![Shot](old.png) and [the file](old.png).",
-      '<img alt="x" src="old.png">',
+      '<img data-src="old.png" title=\'src="old.png"\' alt="x" src="old.png">',
+      "<video src=old.png></video> <img src='a&amp;b.png'>",
       "`![Shot](old.png)`",
       "```",
       "![Shot](old.png)",
       "```",
+      "~~~html",
+      '<img src="old.png">',
+      "~~~",
     ].join("\n")
     expect(rewriteMarkdownLinks(markdown, rewrite)).toBe(
       [
         "![Shot](new.png) and [the file](new.png).",
-        '<img alt="x" src="new.png">',
+        '<img data-src="old.png" title=\'src="old.png"\' alt="x" src="new.png">',
+        "<video src=new.png></video> <img src='c&amp;d.png'>",
         "`![Shot](old.png)`",
         "```",
         "![Shot](old.png)",
         "```",
+        "~~~html",
+        '<img src="old.png">',
+        "~~~",
       ].join("\n")
     )
   })

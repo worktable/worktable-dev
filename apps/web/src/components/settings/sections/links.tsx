@@ -386,8 +386,8 @@ function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {
 }
 
 /**
- * Where links can be made and opened. Hidden while links work in every
- * Space, the default; a selection made earlier stays so it can be cleared.
+ * Where links can be made and opened. Choosing some Spaces starts from all
+ * of them, so nothing stops until the owner leaves one out.
  */
 function SpacesSetting({
   policy,
@@ -396,11 +396,10 @@ function SpacesSetting({
   policy: SharingPolicy
   onChange: (change: Partial<SharingPolicy>) => void
 }) {
-  const spaces = (useSpaces().data ?? []).filter(
-    (space) => !getSpaceArchiveInfo(space)
-  )
-  if (policy.spaces.mode !== "selected") return null
-  const chosen = new Set(policy.spaces.spaceIds)
+  const loaded = useSpaces().data
+  const spaces = (loaded ?? []).filter((space) => !getSpaceArchiveInfo(space))
+  const selected = policy.spaces.mode === "selected" ? policy.spaces : null
+  const chosen = new Set(selected?.spaceIds ?? [])
 
   function toggle(spaceId: string, on: boolean) {
     const next = new Set(chosen)
@@ -417,43 +416,58 @@ function SpacesSetting({
         description="Where links can be made and opened."
       >
         <Select
-          value="selected"
+          value={policy.spaces.mode}
           onValueChange={(mode) => {
             if (mode === "all") onChange({ spaces: { mode: "all" } })
+            else if (mode === "selected" && !selected && loaded) {
+              onChange({
+                spaces: {
+                  mode: "selected",
+                  spaceIds: spaces.map((space) => space.id),
+                },
+              })
+            }
           }}
         >
           <SelectTrigger className="w-48">
-            <SelectValue>Selected Spaces</SelectValue>
+            <SelectValue>
+              {selected ? "Selected Spaces" : "All Spaces"}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Spaces</SelectItem>
-            <SelectItem value="selected">Selected Spaces</SelectItem>
+            {/* Starts from every Space, so it waits until they are known. */}
+            <SelectItem value="selected" disabled={!loaded}>
+              Selected Spaces
+            </SelectItem>
           </SelectContent>
         </Select>
       </SettingRow>
-      <fieldset className="flex flex-col gap-1 rounded-lg bg-surface-inset p-2">
-        <legend className="sr-only">Spaces where links work</legend>
-        {spaces.map((space) => (
-          <label
-            key={space.id}
-            className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-surface-hover"
-          >
-            <Checkbox
-              checked={chosen.has(space.id)}
-              onCheckedChange={(on) => toggle(space.id, on === true)}
-            />
-            <SpaceIcon space={space} size="xs" />
-            <span className="min-w-0 truncate text-sm text-foreground">
-              {space.name}
-            </span>
-          </label>
-        ))}
-        {chosen.size === 0 ? (
-          <p className="px-2 py-1 text-xs text-destructive">
-            With no Space selected, no link opens.
-          </p>
-        ) : null}
-      </fieldset>
+      {selected ? (
+        <fieldset className="flex flex-col gap-1 rounded-lg bg-surface-inset p-2">
+          <legend className="sr-only">Spaces where links work</legend>
+          {spaces.map((space) => (
+            <label
+              key={space.id}
+              className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-surface-hover"
+            >
+              <Checkbox
+                checked={chosen.has(space.id)}
+                onCheckedChange={(on) => toggle(space.id, on === true)}
+              />
+              <SpaceIcon space={space} size="xs" />
+              <span className="min-w-0 truncate text-sm text-foreground">
+                {space.name}
+              </span>
+            </label>
+          ))}
+          {chosen.size === 0 ? (
+            <p className="px-2 py-1 text-xs text-destructive">
+              With no Space selected, no link opens.
+            </p>
+          ) : null}
+        </fieldset>
+      ) : null}
     </div>
   )
 }

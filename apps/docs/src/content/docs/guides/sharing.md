@@ -39,7 +39,7 @@ interactive experience available inside Worktable.
 
 Owners manage sharing in **Settings → Links**. **Pause all links** stops every
 link at once until it is turned off. Owners can also choose who can share on a
-team and the longest expiry. These settings apply
+team, which Spaces can be shared and the longest expiry. These settings apply
 to existing links as well as new ones. The link table lists links across
 Spaces; open a link's menu to copy or revoke it.
 

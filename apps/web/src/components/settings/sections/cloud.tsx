@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CLOUD_PLANS } from "@worktable/hosted-contract/plans"
 import { Badge } from "@worktable/ui/components/badge"
 import { Button } from "@worktable/ui/components/button"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
@@ -74,10 +73,6 @@ function LinkStatus({ state }: { state: string }) {
     </Badge>
   )
 }
-
-const { solo, team, business } = CLOUD_PLANS
-/** Devices each plan links, from the plan definitions. */
-const DEVICE_LIMITS = `${solo.name} links ${solo.linkedDevices} ${solo.linkedDevices === 1 ? "device" : "devices"}, ${team.name} ${team.linkedDevices} and ${business.name} ${business.linkedDevices}, per subscription.`
 
 function LinkDetails() {
   return (
@@ -311,7 +306,6 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-sm text-muted-foreground">{DEVICE_LIMITS}</p>
               {subscriptions.isError && (
                 <Button
                   variant="outline"

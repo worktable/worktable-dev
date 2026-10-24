@@ -279,14 +279,6 @@ ${DOCUMENT_CONTENT_CSS}
 .html-page { height: 100vh; overflow: hidden; }
 .html-page::before { display: none; }
 .html-shell { height: calc(100vh - 3rem); background: var(--background); }
-body:not(.html-page) { display: flex; flex-direction: column; }
-body:not(.html-page) > main { flex: 1 0 auto; }
-.share-footer { display: flex; justify-content: center; min-height: 2.5rem; align-items: center; }
-.share-footer a { color: var(--muted-foreground); font-size: .75rem; text-underline-offset: .2em; }
-.share-footer a:hover { color: var(--foreground); }
-.share-footer a:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
-.html-page .share-footer { min-height: 2rem; height: 2rem; }
-.html-page.has-footer .html-shell { height: calc(100vh - 5rem); }
 .html-shell iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--background); }
 .unavailable-shell { min-height: calc(100vh - 3rem); display: grid; place-items: center; padding: 2rem 1.5rem 5rem; text-align: center; }
 .unavailable { width: min(100%, 32rem); }
@@ -381,7 +373,7 @@ body:not(.html-page) > main { flex: 1 0 auto; }
   .brand-name, .header-separator { display: none; }
 }
 @media print {
-  body::before, .app-header, .share-footer { display: none; }
+  body::before, .app-header { display: none; }
   .shared-document { max-width: none; padding: 0; }
 }
 `
@@ -399,19 +391,6 @@ function header(
   comments?: PublicShareCommentsPage
 ): string {
   return `<header class="app-header"><div class="header-inner"><span class="brand-mark" aria-hidden="true">${iconSvg}</span><span class="brand-name">Worktable</span>${title ? `<span class="header-separator" aria-hidden="true"></span><span class="document-name">${escapeHtml(title)}</span>` : ""}${comments ? commentToggle : title ? '<span class="view-only">View only</span>' : ""}</div></header>`
-}
-
-/** The source offer for visitors: a small link to this build's source. */
-function footer(sourceUrl?: string): string {
-  if (!sourceUrl) return ""
-  try {
-    const url = new URL(sourceUrl)
-    if (url.protocol !== "https:" || url.username || url.password) return ""
-    return `<footer class="share-footer"><a href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer">Source</a></footer>`
-  } catch {
-    // Omit invalid links from callers outside the validated share contract.
-    return ""
-  }
 }
 
 function pageDocument(title: string, body: string): string {
@@ -480,14 +459,13 @@ export function renderPublicDocumentPage(
   if (document.kind === "doc") {
     return pageDocument(
       "Shared document",
-      `<body>${header(iconSvg, document.title, comments)}<main class="document-shell"><article class="shared-document worktable-markdown ${document.format}">${document.projectionHtml}</article></main>${footer(document.sourceUrl)}${diagramScripts(document.projectionHtml)}${commentScripts(comments)}</body>`
+      `<body>${header(iconSvg, document.title, comments)}<main class="document-shell"><article class="shared-document worktable-markdown ${document.format}">${document.projectionHtml}</article></main>${diagramScripts(document.projectionHtml)}${commentScripts(comments)}</body>`
     )
   }
 
-  const htmlFooter = footer(document.sourceUrl)
   return pageDocument(
     "Shared HTML document",
-    `<body class="html-page${htmlFooter ? " has-footer" : ""}">${header(iconSvg, document.title, comments)}<main class="html-shell"><iframe title="${escapeHtml(document.title)}" src="${escapeHtml(document.contentUrl)}" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe></main>${htmlFooter}${commentScripts(comments)}</body>`
+    `<body class="html-page">${header(iconSvg, document.title, comments)}<main class="html-shell"><iframe title="${escapeHtml(document.title)}" src="${escapeHtml(document.contentUrl)}" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe></main>${commentScripts(comments)}</body>`
   )
 }
 
@@ -509,10 +487,9 @@ export function renderPublicLivePage(
   iconSvg: string,
   comments?: PublicShareCommentsPage
 ): string {
-  const liveFooter = footer(document.sourceUrl)
   return pageDocument(
     "Shared HTML document",
-    `<body class="html-page${liveFooter ? " has-footer" : ""}">${header(iconSvg, document.title, comments)}<main class="html-shell"><noscript><div class="unavailable-shell"><section class="unavailable"><h1>This tool needs JavaScript</h1></section></div></noscript></main>${liveFooter}${liveScripts({ frame: { url: frame.url, title: document.title }, poll: frame.poll })}${commentScripts(comments)}</body>`
+    `<body class="html-page">${header(iconSvg, document.title, comments)}<main class="html-shell"><noscript><div class="unavailable-shell"><section class="unavailable"><h1>This tool needs JavaScript</h1></section></div></noscript></main>${liveScripts({ frame: { url: frame.url, title: document.title }, poll: frame.poll })}${commentScripts(comments)}</body>`
   )
 }
 

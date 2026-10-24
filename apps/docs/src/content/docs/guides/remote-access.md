@@ -110,7 +110,7 @@ HTTPS boundaries in detail.
 
 Where available for your Cloud account, Worktable Link connects a local or
 self-hosted installation to supported AI apps and public document sharing.
-Check **Settings → Remote Access** for availability and the device limit.
+Check **Settings → Remote Access** for availability.
 A remote self-hosted installation needs an HTTPS address.
 
 1. Choose **Sign in** in **Settings → Remote Access**. Complete browser
@@ -130,8 +130,9 @@ you quit Desktop. Authorized requests pass through Cloud to the device; Link
 does not copy its workspace into the hosted workspace, synchronize the two, or
 expose the full local interface remotely.
 Each device follows its selected subscription: Solo links one device, Team
-three and Business five. **Your Worktables** in Cloud lists each linked Worktable
-with its device and whether it is online. On a team installation, an operator enables Link and its
+three and Business five. If a Worktable's devices are all linked, unlink one in
+Cloud to connect another. **Your Worktables** in Cloud lists each linked
+Worktable with its device and whether it is online. On a team installation, an operator enables Link and its
 AI apps follow that member's Space permissions as personal agents.
 
 Turn off **Worktable Link** to pause AI access and public sharing. Turning it on

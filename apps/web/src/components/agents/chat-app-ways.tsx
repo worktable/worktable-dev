@@ -1,8 +1,8 @@
 import { lazy, Suspense, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Check } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
 import { fetchJSON } from "@/lib/http"
+import { SetupStep } from "./setup-step"
 
 type ChatApp = "chatgpt" | "claude"
 
@@ -18,9 +18,6 @@ const WorktableLinkSetup = lazy(() =>
   }))
 )
 
-const STEPS_CLASS =
-  "list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground marker:text-foreground/60"
-
 /**
  * Steps for using a chat app with this Worktable on this computer, through the
  * local address. `token` adds the access token step.
@@ -32,18 +29,24 @@ export function LocalChatSteps({
   app: ChatApp
   token?: boolean
 }) {
-  return app === "chatgpt" ? (
-    <ol className={STEPS_CLASS}>
-      <li>In ChatGPT, open Settings → MCP servers.</li>
-      <li>Add Worktable with Streamable HTTP and paste this address.</li>
-      {token ? <li>Create an access token and paste it too.</li> : null}
-    </ol>
-  ) : (
-    <ol className={STEPS_CLASS}>
-      <li>Download the Worktable extension and open it in Claude Desktop.</li>
-      <li>Paste this address.</li>
-      {token ? <li>Create an access token and paste it too.</li> : null}
-      <li>Restart Claude.</li>
+  const steps =
+    app === "chatgpt"
+      ? [
+          "In ChatGPT, open Settings → MCP servers.",
+          "Add Worktable with Streamable HTTP and paste this address.",
+          ...(token ? ["Create an access token and paste it too."] : []),
+        ]
+      : [
+          "Download the Worktable extension and open it in Claude Desktop.",
+          "Paste this address.",
+          ...(token ? ["Create an access token and paste it too."] : []),
+          "Restart Claude.",
+        ]
+  return (
+    <ol className="space-y-1">
+      {steps.map((step, index) => (
+        <SetupStep key={step} number={index + 1} title={step} />
+      ))}
     </ol>
   )
 }
@@ -65,6 +68,7 @@ export function ChatAppWays({
   local: ReactNode
 }) {
   const [linkSetup, setLinkSetup] = useState(false)
+  const [linkStepOpen, setLinkStepOpen] = useState<boolean | null>(null)
   // Shares the Link settings' status; their polling keeps it current.
   const link = useQuery({
     queryKey: ["linked"],
@@ -76,7 +80,7 @@ export function ChatAppWays({
     <div className="flex flex-col gap-5">
       <section
         aria-labelledby={`chat-anywhere-${app}`}
-        className="flex flex-col gap-2 rounded-xl bg-surface-inset px-3.5 py-3"
+        className="flex flex-col gap-1"
       >
         <h3
           id={`chat-anywhere-${app}`}
@@ -84,46 +88,34 @@ export function ChatAppWays({
         >
           Any device
         </h3>
-        <ol className={STEPS_CLASS}>
-          <li>
-            {linkOn ? (
-              <span className="text-foreground">
-                <Check
-                  aria-hidden
-                  className="mr-1.5 inline size-4 align-[-0.2em] text-success"
-                />
-                Worktable Link is on
-              </span>
+        <ol className="space-y-1">
+          <SetupStep
+            number={1}
+            title={
+              linkOn ? "Worktable Link is on" : "Turn on Worktable Link here."
+            }
+            complete={linkOn}
+            open={linkStepOpen ?? !linkOn}
+            onOpenChange={() => setLinkStepOpen(!(linkStepOpen ?? !linkOn))}
+          >
+            {linkSetup ? (
+              <Suspense
+                fallback={
+                  <p role="status" className="text-sm text-muted-foreground">
+                    Loading Worktable Link…
+                  </p>
+                }
+              >
+                <WorktableLinkSetup active={active} />
+              </Suspense>
             ) : (
-              <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-                Turn on Worktable Link here.
-                {linkSetup ? null : (
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    onClick={() => setLinkSetup(true)}
-                  >
-                    Set Up
-                  </Button>
-                )}
-              </span>
+              <div>
+                <Button onClick={() => setLinkSetup(true)}>Set Up</Button>
+              </div>
             )}
-          </li>
-          <li>{OFFICIAL_APP[app]}</li>
+          </SetupStep>
+          <SetupStep number={2} title={OFFICIAL_APP[app]} />
         </ol>
-        {linkSetup ? (
-          <div className="pt-2">
-            <Suspense
-              fallback={
-                <p role="status" className="text-sm text-muted-foreground">
-                  Loading Worktable Link…
-                </p>
-              }
-            >
-              <WorktableLinkSetup active={active} />
-            </Suspense>
-          </div>
-        ) : null}
       </section>
       <section
         aria-labelledby={`chat-local-${app}`}

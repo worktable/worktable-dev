@@ -1044,7 +1044,7 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
                       >
                         {mintClaude.isPending
                           ? "Generating…"
-                          : "Generate Claude access token"}
+                          : "Create Access Token"}
                       </Button>
                     </div>
                   </div>

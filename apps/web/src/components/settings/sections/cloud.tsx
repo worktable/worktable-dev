@@ -83,14 +83,9 @@ function LinkDetails() {
   return (
     <InfoTip label="About Worktable Link">
       <p>
-        Worktable Link connects this Worktable to your Cloud account. AI apps
-        you approve reach it through Cloud, and share links open for anyone you
-        send them to. Nothing is copied to Cloud.
-      </p>
-      <p>{DEVICE_LIMITS}</p>
-      <p>
-        Turning it off pauses AI apps and share links until you turn it on
-        again. Unlink removes this device from your account.
+        Worktable Link lets AI apps on any device reach this Worktable. Your
+        files stay on this device, private to you, the agents you allow and
+        people you share with.
       </p>
     </InfoTip>
   )
@@ -337,21 +332,12 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
               )}
             </div>
           )}
-          <div className="flex items-start justify-between gap-6">
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-1.5">
-                <label htmlFor="worktable-link" className="text-sm font-medium">
-                  Worktable Link
-                </label>
-                <LinkDetails />
-              </div>
-              <p
-                id="worktable-link-description"
-                className="text-sm text-muted-foreground"
-              >
-                Use this Worktable from AI apps on your phone or any device.
-                Files stay on this device.
-              </p>
+          <div className="flex items-center justify-between gap-6">
+            <div className="flex items-center gap-1.5">
+              <label htmlFor="worktable-link" className="text-sm font-medium">
+                Worktable Link
+              </label>
+              <LinkDetails />
             </div>
             <div className="flex min-h-11 shrink-0 items-center gap-3">
               {data.enabled !== null && <LinkStatus state={data.state} />}
@@ -376,7 +362,6 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
                     <Switch
                       id="worktable-link"
                       aria-label="Worktable Link"
-                      aria-describedby="worktable-link-description"
                       checked={
                         toggle.isPending ? toggle.variables : data.enabled
                       }
@@ -393,8 +378,8 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
             <Disclosure title="Connect another app">
               <div className="flex flex-col gap-3">
                 <p className="text-sm text-muted-foreground">
-                  Apps with a Worktable app or plugin don’t need this. For any
-                  other app, add this address as a custom connector and sign in.
+                  For apps without the official Worktable plugin. Add it as a
+                  custom connector.
                 </p>
                 <CopyField label="MCP URL" value={data.mcpUrl} />
               </div>

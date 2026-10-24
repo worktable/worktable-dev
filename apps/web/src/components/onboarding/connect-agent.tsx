@@ -24,7 +24,7 @@ import {
   AgentSetupCategory,
   AgentSetupTabs,
 } from "@/components/agents/agent-setup-category"
-import { ChatAppWays } from "@/components/agents/chat-app-ways"
+import { ChatAppWays, LocalChatSteps } from "@/components/agents/chat-app-ways"
 import { GrokBotSetupPanel } from "@/components/agents/grok-bot-setup"
 import {
   agentConnectionPlatform,
@@ -457,16 +457,18 @@ function TokenPanel({
   }, [used, token?.id])
 
   const endpoint = desktopAgentConnectionDetails(connection).endpoint
-  const instruction =
-    option.kind === "chat"
-      ? option.app === "claude"
-        ? "Download the Worktable extension for Claude Desktop and open it. Paste this address and the access token, then restart Claude."
-        : "In ChatGPT desktop, open Settings, then MCP servers, and add Worktable with Streamable HTTP. Paste this address and the access token."
-      : "Add Worktable to your agent as an MCP server with this address and an access token."
-
   const steps = (
     <>
-      <Instruction>{instruction}</Instruction>
+      {option.kind === "chat" ? (
+        <div className="mb-3">
+          <LocalChatSteps app={option.app} />
+        </div>
+      ) : (
+        <Instruction>
+          Add Worktable to your agent as an MCP server with this address and an
+          access token.
+        </Instruction>
+      )}
       <div className="space-y-2">
         <CommandBlock value={endpoint} />
         {token && !connected ? (
@@ -495,7 +497,7 @@ function TokenPanel({
             disabled={mint.isPending || (Boolean(label) && !existing.isSuccess)}
             onClick={() => mint.mutate()}
           >
-            {mint.isPending ? "Creating…" : "Create access token"}
+            {mint.isPending ? "Creating…" : "Create Access Token"}
           </Button>
         )}
       </div>

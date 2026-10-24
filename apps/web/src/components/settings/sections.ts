@@ -116,8 +116,8 @@ const GENERAL: SettingsSection = {
 const LINK: SettingsSection = {
   id: "cloud",
   group: "Worktable",
-  label: "Worktable Cloud",
-  description: "AI connections and document sharing.",
+  label: "Remote Access",
+  description: "Use this Worktable away from this device.",
   icon: UserRound,
   component: CloudSection.Component,
   preload: CloudSection.preload,

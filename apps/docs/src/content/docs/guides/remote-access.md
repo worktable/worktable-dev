@@ -110,15 +110,16 @@ HTTPS boundaries in detail.
 
 Where available for your Cloud account, Worktable Link connects a local or
 self-hosted installation to supported AI apps and public document sharing.
-Check **Settings → Worktable Cloud** for availability and the device limit.
+Check **Settings → Remote Access** for availability and the device limit.
 A remote self-hosted installation needs an HTTPS address.
 
-1. Choose **Sign in** in **Settings → Worktable Cloud**. Complete browser
+1. Choose **Sign in** in **Settings → Remote Access**. Complete browser
    sign-in and confirm the server address when prompted.
 2. Return to Settings, choose a payer-owned **Worktable subscription**, and turn
    on **Worktable Link**. Sign-in alone does not
    enable remote access. Complete subscription setup if requested.
-3. In ChatGPT or Claude, add the Worktable app. For another AI app, open
+3. In ChatGPT or Claude, add the official Worktable app after Link is on; an
+   app added first is bound to another Worktable. For another AI app, open
    **Connect another app**, copy the device's **MCP URL** into its connector
    setup and choose OAuth authentication.
 4. Sign in with the same Cloud account and approve the connection.

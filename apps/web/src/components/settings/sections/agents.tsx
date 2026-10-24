@@ -99,7 +99,7 @@ import { AgentAvatar } from "@/components/agents/agent-avatar"
 import { AgentEditDialog } from "@/components/agents/agent-edit-dialog"
 import { DesktopAgentSkillsGroup } from "./desktop-agent-skills"
 import { GrokBotSetupPanel } from "@/components/agents/grok-bot-setup"
-import { ChatAppWays } from "@/components/agents/chat-app-ways"
+import { ChatAppWays, LocalChatSteps } from "@/components/agents/chat-app-ways"
 import { GROK_BOT_STATUS_LABELS } from "@/lib/grok-bot-status"
 import {
   AGENT_SETUP_CATEGORIES,
@@ -1053,15 +1053,7 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
             </article>
           ) : (
             <article className="flex flex-col gap-4">
-              <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground marker:text-foreground/60">
-                <li>Open ChatGPT Settings → MCP servers.</li>
-                <li>Select Add server and name it Worktable.</li>
-                <li>Choose Streamable HTTP and paste the endpoint below.</li>
-                {needsToken ? (
-                  <li>Generate and supply the bearer token shown here.</li>
-                ) : null}
-                <li>Save, restart, and type /mcp to verify Worktable.</li>
-              </ol>
+              <LocalChatSteps app="chatgpt" token={needsToken} />
 
               <CopyField
                 label="MCP endpoint"
@@ -1116,7 +1108,7 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
                       >
                         {mintChatGpt.isPending
                           ? "Generating…"
-                          : "Generate ChatGPT access token"}
+                          : "Create Access Token"}
                       </Button>
                     </div>
                   </div>

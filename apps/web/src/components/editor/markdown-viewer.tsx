@@ -37,6 +37,8 @@ import { NumberedList } from "@worktable/ui/lib/numbered-list"
 import { markdownTitleLine } from "@worktable/ui/document-reading-preview"
 import "@/styles/document-controls.css"
 import { renderDocLinkHref } from "@/lib/doc-links"
+import { embedSourceUrl } from "@/lib/file-embeds"
+import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { externalLinkProps, worktableLinkOrigins } from "@/lib/external-links"
 import { BASE_URL } from "@/lib/http"
 import { useTheme } from "@/components/theme-provider"
@@ -167,6 +169,8 @@ interface MarkdownViewerProps {
   docPath: string
   /** Shown under the title (the opening level-one heading), or first when there is none. */
   afterTitle?: ReactNode
+  /** The versions of the Doc's files, from its page. */
+  fileVersions?: Readonly<Record<string, string>>
 }
 
 export function MarkdownViewer({
@@ -174,6 +178,7 @@ export function MarkdownViewer({
   spaceId,
   docPath,
   afterTitle,
+  fileVersions,
 }: MarkdownViewerProps) {
   const router = useRouter()
   const fade = useScrollFade<HTMLDivElement>(8, { top: false })
@@ -195,6 +200,8 @@ export function MarkdownViewer({
     [titleLine, afterTitle]
   )
   const { theme } = useTheme()
+  // With files on, an image's relative path names a file in this Space.
+  const filesOn = useDeploymentInfo().data?.capabilities.filesPreview ?? false
   const worktableOrigins = useMemo(
     () =>
       typeof window === "undefined"
@@ -284,9 +291,13 @@ export function MarkdownViewer({
                     void node
                     return <NumberedList {...props} />
                   },
-                  img: ({ node, title, ...props }) => {
+                  img: ({ node, title, src, ...props }) => {
                     void node
-                    const image = <img {...props} title={title} />
+                    const source =
+                      filesOn && typeof src === "string"
+                        ? embedSourceUrl(spaceId, docPath, src, fileVersions)
+                        : src
+                    const image = <img {...props} src={source} title={title} />
                     return title ? (
                       <span className="worktable-figure">
                         {image}

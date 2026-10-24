@@ -22,6 +22,8 @@ export interface DocumentOpenHint {
   revision: string
   title?: string
   archived?: boolean
+  /** The versions of the Doc's files, from the page the tab last read. */
+  embeds?: Readonly<Record<string, string>>
 }
 
 const RENDERERS: Record<string, DocumentOpenHint["renderer"]> = {
@@ -82,6 +84,7 @@ export function documentOpenHint(
         revision: page.revision,
         title: page.document.title,
         ...(page.document.archived ? { archived: true } : {}),
+        ...(page.embeds ? { embeds: page.embeds } : {}),
       })
     }
   }
@@ -118,7 +121,11 @@ export function documentOpenHint(
     consider(spaceKey, rowHint({ ...pin, archived: pin.status === "archived" }))
   }
 
-  return (best as { hint: DocumentOpenHint } | null)?.hint ?? null
+  const hint = (best as { hint: DocumentOpenHint } | null)?.hint ?? null
+  // Only the page knows the files' versions; they hold whichever row is newer.
+  return hint && page?.kind === "document" && page.embeds && !hint.embeds
+    ? { ...hint, embeds: page.embeds }
+    : hint
 }
 
 /**

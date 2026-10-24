@@ -102,4 +102,16 @@ describe("saved document preview", () => {
     expect(html).toMatch(/<table[ >]/)
     expect(html).toContain("Cell")
   })
+
+  it("loads an image's stored path from where the Doc's files load", () => {
+    const html = renderToStaticMarkup(
+      <DocumentPreview
+        content={[
+          { id: "a", type: "image", props: { url: "readme/shot.png", caption: "Shot" }, children: [] },
+        ]}
+        resolveUrl={(url) => `/files/${url}`}
+      />
+    )
+    expect(html).toContain('src="/files/readme/shot.png"')
+  })
 })

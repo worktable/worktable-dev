@@ -73,6 +73,8 @@ import { useDocName, useNameFromTitleOnLeave } from "@/hooks/use-doc-name"
 import { takeJustCreated } from "@/hooks/use-new-doc"
 import { DocumentByline } from "@/components/document/document-byline"
 import { useBylineState } from "@/hooks/use-byline-state"
+import { useEditorFiles } from "@/hooks/use-editor-files"
+import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
 import { MarkdownViewer } from "@/components/editor/markdown-viewer"
 import {
@@ -377,6 +379,9 @@ function DocEditorPage({
   const archived = page
     ? Boolean(page.document.archived)
     : Boolean(preview?.archived)
+  // Until the check lands, the page the tab last read gives the files'
+  // versions, so the stand-in loads them from the browser's cache too.
+  const fileVersions = page ? page.embeds : preview?.embeds
 
   const [converting, setConverting] = useState(false)
   const [convertingToMarkdown, setConvertingToMarkdown] = useState(false)
@@ -630,6 +635,7 @@ function DocEditorPage({
         spaceId={spaceId}
         docPath={docPath}
         page={page}
+        fileVersions={fileVersions}
         archived={archived}
         validated={validated}
         revision={revision}
@@ -654,6 +660,7 @@ function DocEditorPage({
       archived={archived}
       readOnly={!page || page.capabilities.edit === false}
       page={page}
+        fileVersions={fileVersions}
       revision={revision}
       onRestore={handleRestore}
       restoring={restoring}
@@ -748,6 +755,7 @@ function MarkdownDocPage({
   spaceId,
   docPath,
   page,
+  fileVersions,
   archived,
   validated,
   revision,
@@ -763,6 +771,8 @@ function MarkdownDocPage({
   spaceId: string
   docPath: string
   page: DocumentPage | null
+  /** The versions of the Doc's files, known before the page check lands. */
+  fileVersions?: Readonly<Record<string, string>>
   archived: boolean
   validated: boolean
   revision: string | undefined
@@ -774,6 +784,7 @@ function MarkdownDocPage({
   onDownload?: () => void
   onRecoverOfflineEdits?: () => void
 }) {
+  const readingFiles = useEditorFiles(spaceId, docPath, { upload: false })
   const contentQuery = useDocumentContent(spaceId, docPath, revision, validated)
   const content = contentQuery.data?.content
   const readingRef = useRef<HTMLDivElement>(null)
@@ -892,6 +903,7 @@ function MarkdownDocPage({
             content={content}
             spaceId={spaceId}
             docPath={docPath}
+            fileVersions={fileVersions}
             afterTitle={
               <DocumentByline
                 spaceId={spaceId}
@@ -938,6 +950,7 @@ function MarkdownDocPage({
                     initialContent={previewVersion.after.content as never[]}
                     editable={false}
                     afterTitle={byline}
+                    files={readingFiles}
                   />
                 ) : previewVersion &&
                   typeof previewVersion.after.content === "string" ? (
@@ -1094,6 +1107,7 @@ function BlockNoteDocPage({
   archived,
   readOnly = false,
   page,
+  fileVersions,
   revision,
   onRestore,
   restoring,
@@ -1111,6 +1125,8 @@ function BlockNoteDocPage({
   readOnly?: boolean
   /** The route's check; the editor and its room wait for it. */
   page: DocumentPage | null
+  /** The versions of the Doc's files, known before the page check lands. */
+  fileVersions?: Readonly<Record<string, string>>
   revision: string | undefined
   onRestore: () => void
   restoring: boolean
@@ -1120,6 +1136,13 @@ function BlockNoteDocPage({
   onDownload?: () => void
   onRecoverOfflineEdits?: () => void
 }) {
+  // The editor learns once whether files can be added, so it waits to know.
+  const deploymentKnown = useDeploymentInfo().data !== undefined
+  const editingFiles = useEditorFiles(spaceId, docPath, {
+    upload: !readOnly && !archived,
+    versions: fileVersions,
+  })
+  const readingFiles = useEditorFiles(spaceId, docPath, { upload: false })
   const validated = page !== null
   const ydocRef = useRef<Y.Doc | null>(null)
   const idbRef = useRef<IndexeddbPersistence | null>(null)
@@ -1500,6 +1523,7 @@ function BlockNoteDocPage({
                   content={opening.markdown}
                   spaceId={spaceId}
                   docPath={docPath}
+                  fileVersions={fileVersions}
                   afterTitle={byline}
                 />
               ) : previewContent ? (
@@ -1508,6 +1532,7 @@ function BlockNoteDocPage({
                   content={previewContent}
                   titlePlaceholder={docName}
                   afterTitle={byline}
+                  resolveUrl={editingFiles?.resolve}
                 />
               ) : (
                 <EditorSkeleton />
@@ -1522,9 +1547,12 @@ function BlockNoteDocPage({
           >
             {/* Build the editor once its first usable Yjs state exists. Mounting an
                 empty editor first runs its normalization/plugins again on sync. */}
-            {provider && collabDoc && readyContent === provider && (
+            {provider && collabDoc && readyContent === provider && deploymentKnown && (
               <Suspense fallback={<EditorSkeleton />}>
                 <Editor
+                  // The editor learns what it can do with files once; turning the files
+                  // preview on or off makes a new one that knows.
+                  key={editingFiles ? (editingFiles.upload ? "files" : "file-links") : "no-files"}
                   onReady={handleEditorReady}
                   collaboration={{
                     ydoc: collabDoc,
@@ -1535,6 +1563,7 @@ function BlockNoteDocPage({
                   editable={!convertingToMarkdown}
                   title={editorTitle}
                   afterTitle={byline}
+                  files={editingFiles}
                   annotations={annotations}
                   activeAnnotationId={activeAnnotationId}
                   onSelectAnnotation={selectAnnotation}
@@ -1579,6 +1608,7 @@ function BlockNoteDocPage({
                     initialContent={previewVersion.after.content as never[]}
                     editable={false}
                     afterTitle={byline}
+                    files={readingFiles}
                   />
                 ) : previewVersion &&
                   typeof previewVersion.after.content === "string" ? (

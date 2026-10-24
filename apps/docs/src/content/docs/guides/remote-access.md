@@ -118,8 +118,9 @@ A remote self-hosted installation needs an HTTPS address.
 2. Return to Settings, choose a payer-owned **Worktable subscription**, and turn
    on **Worktable Link**. Sign-in alone does not
    enable remote access. Complete subscription setup if requested.
-3. Copy the device's **MCP URL** into your AI app's connector setup and choose
-   OAuth authentication.
+3. In ChatGPT or Claude, add the Worktable app. For another AI app, open
+   **Connect another app**, copy the device's **MCP URL** into its connector
+   setup and choose OAuth authentication.
 4. Sign in with the same Cloud account and approve the connection.
 
 Keep the device online and Worktable running. Worktable Desktop keeps a
@@ -127,8 +128,9 @@ Worktable with Link on running while its window shows another Worktable, until
 you quit Desktop. Authorized requests pass through Cloud to the device; Link
 does not copy its workspace into the hosted workspace, synchronize the two, or
 expose the full local interface remotely.
-Each device follows its selected subscription, with up to three devices across
-the payer's account. On a team installation, an operator enables Link and its
+Each device follows its selected subscription. Each plan links a set number of
+devices per subscription, listed under the info button beside **Worktable
+Link**. On a team installation, an operator enables Link and its
 AI apps follow that member's Space permissions as personal agents.
 
 Turn off **Worktable Link** to pause AI access and public sharing. Turning it on

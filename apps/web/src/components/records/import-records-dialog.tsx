@@ -137,12 +137,20 @@ export function ImportRecordsDialog({
         to: "/spaces/$spaceId/records/$",
         params: { spaceId, _splat: collectionId },
       })
-      const { created, skipped } = result.counts
-      toast.success(
-        skipped > 0
-          ? `Imported ${created} ${created === 1 ? "row" : "rows"}; ${skipped} were already there`
-          : `Imported ${created} ${created === 1 ? "row" : "rows"}`
-      )
+      const { created, skipped, failed } = result.counts
+      const imported = `Imported ${created} ${created === 1 ? "row" : "rows"}`
+      if (failed > 0) {
+        // Rows that weren't written are named, so the import can be fixed.
+        const first = result.rows.find((row) => row.error)
+        toast.error(
+          `${imported}; ${failed} ${failed === 1 ? "row" : "rows"} failed`,
+          first ? { description: `Row ${first.row}: ${first.error}` } : undefined
+        )
+      } else {
+        toast.success(
+          skipped > 0 ? `${imported}; ${skipped} were already there` : imported
+        )
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Couldn’t import the file")
     } finally {

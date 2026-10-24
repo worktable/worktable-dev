@@ -43,7 +43,8 @@ export function readableFileSource(
   try {
     return {
       kind: "text",
-      text: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+      // A byte-order mark stays, so writing the text back keeps the file.
+      text: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes),
     }
   } catch {
     return null
@@ -60,16 +61,34 @@ export interface DelimitedChanges {
   rowsRemoved: number
 }
 
-/** What overwriting a CSV or TSV changed, row by row as whole rows. */
+/** Tables larger than these get no summary; the write itself still lands. */
+const CHANGES_MAX_BYTES = 4 * 1024 * 1024
+const CHANGES_MAX_ROWS = 20_000
+
+/**
+ * What overwriting a CSV or TSV changed, row by row as whole rows, or null
+ * for tables too large to compare.
+ */
 export function delimitedChanges(
   path: string,
   before: Uint8Array,
   after: Uint8Array
-): DelimitedChanges {
+): DelimitedChanges | null {
+  if (
+    before.byteLength > CHANGES_MAX_BYTES ||
+    after.byteLength > CHANGES_MAX_BYTES
+  ) {
+    return null
+  }
   const delimiter = delimiterForFilename(path)
   const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes)
-  const old = parseDelimitedText(decode(before), delimiter)
-  const next = parseDelimitedText(decode(after), delimiter)
+  const read = (bytes: Uint8Array) =>
+    parseDelimitedText(decode(bytes), delimiter, { maxRows: CHANGES_MAX_ROWS })
+  const old = read(before)
+  const next = read(after)
+  if (old.rowCount > CHANGES_MAX_ROWS || next.rowCount > CHANGES_MAX_ROWS) {
+    return null
+  }
   const key = (row: string[]) => JSON.stringify(row)
   const remaining = new Map<string, number>()
   for (const row of old.rows) {

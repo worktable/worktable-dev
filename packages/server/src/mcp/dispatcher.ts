@@ -212,6 +212,7 @@ import { deleteDocumentFolder } from "../document-folder-delete.ts"
 import { wsManager } from "../ws.ts"
 import { docSnapshotRevision } from "../document-content-revision.ts"
 import { FORMAT_SPEC } from "./format-spec.ts"
+import { withPreviewToolNames } from "./preview-names.ts"
 import {
   isMarkdownSafe,
   extractMarkdownHeadings,
@@ -1339,7 +1340,10 @@ async function _dispatchOperationInner(
         ...result,
         ...(tableBefore &&
         tableBefore.format.id === BUILTIN_DOCUMENT_FORMATS.file
-          ? { changes: delimitedChanges(result.path, tableBefore.bytes, bytes) }
+          ? (() => {
+              const changes = delimitedChanges(result.path, tableBefore.bytes, bytes)
+              return changes ? { changes } : {}
+            })()
           : {}),
       }
     }
@@ -2882,9 +2886,17 @@ async function _dispatchOperationInner(
       return await previewMermaid(args["source"] as string, theme)
     }
     case "guidance.drawings":
-      return { guide: DRAWING_GUIDE }
+      return {
+        guide:
+          context.surface === "preview"
+            ? withPreviewToolNames(DRAWING_GUIDE)
+            : DRAWING_GUIDE,
+      }
     case "guidance.format_spec": {
-      return { spec: FORMAT_SPEC.trim() }
+      const spec = FORMAT_SPEC.trim()
+      return {
+        spec: context.surface === "preview" ? withPreviewToolNames(spec) : spec,
+      }
     }
     default:
       throw new Error(`Unknown operation: ${operationId}`)

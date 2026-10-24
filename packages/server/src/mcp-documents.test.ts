@@ -166,6 +166,35 @@ describe("files for agents on the preview surface", () => {
         )
       ).toBe(true)
 
+      // A byte-order mark reads back as it is, so writing it back changes nothing.
+      const marked = await write({
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "data/marked.csv",
+        format: file,
+        source: "\uFEFFid,score\n007,5\n",
+      })
+      expect(marked.isError).not.toBe(true)
+      expect(
+        (
+          (await read({ action: "read_source", spaceId, path: "data/marked.csv" }))
+            .structuredContent as { source: string }
+        ).source
+      ).toBe("\uFEFFid,score\n007,5\n")
+
+      // Guidance names the tools this surface offers.
+      const spec = JSON.stringify(
+        (
+          await connected.callTool({
+            name: "worktable_guidance",
+            arguments: { request: { action: "format_spec" } },
+          })
+        ).structuredContent
+      )
+      expect(spec).not.toContain("worktable_documents_read")
+      expect(spec).not.toContain("worktable_documents_write")
+
       // Overwriting a CSV says what changed, row by row.
       const replaced = await write({
         action: "replace",

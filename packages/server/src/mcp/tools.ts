@@ -43,6 +43,7 @@ import {
   MermaidInput,
 } from "./schemas.ts"
 import { dispatchOperation } from "./dispatcher.ts"
+import { PREVIEW_TOOL_NAMES } from "./preview-names.ts"
 import { registerCompanyKnowledgeTools } from "./company-knowledge.ts"
 import {
   assertPublicOperationOutput,
@@ -188,10 +189,7 @@ export const PREVIEW_TOOL_DESCRIPTIONS: Partial<
  * Doc is a kind of file, so the document tools are the file tools. The
  * released surface keeps its names until the files preview ships.
  */
-export const PREVIEW_TOOL_NAMES: Partial<Record<WorktableToolName, string>> = {
-  worktable_documents_read: "worktable_files_read",
-  worktable_documents_write: "worktable_files_write",
-}
+export { PREVIEW_TOOL_NAMES } from "./preview-names.ts"
 
 const PREVIEW_TOOL_TITLES: Partial<Record<WorktableToolName, string>> = {
   worktable_documents_read: "Read Worktable files",

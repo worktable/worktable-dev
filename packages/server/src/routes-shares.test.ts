@@ -173,8 +173,6 @@ beforeEach(async () => {
   process.env["WORKTABLE_SHARE_BASE_URL"] = "https://share.worktable.cloud"
   process.env["WORKTABLE_HTML_SHARE_BASE_URL"] =
     "https://html.worktable-usercontent.com"
-  // Links are for everyone; Cloud leaves the sharing preview off.
-  delete process.env["WORKTABLE_SHARING_PREVIEW"]
   const now = new Date().toISOString()
   await writeSpace({
     type: "worktable.space",
@@ -290,7 +288,7 @@ describe("Cloud document share HTTP boundary", () => {
     expect((await publicRequest(token)).status).toBe(404)
   })
 
-  it("takes passwords without the sharing preview, and keeps comment links and live data behind it", async () => {
+  it("keeps comment links and live data to the owner policy, and takes passwords", async () => {
     const doc = { kind: "doc" as const, spaceId: "space", artifactKey: "plan" }
     await writeDoc(doc.spaceId, doc.artifactKey, "# Plan")
     const refused = async (extra: Record<string, unknown>, code: string) => {
@@ -311,14 +309,15 @@ describe("Cloud document share HTTP boundary", () => {
       "LIVE_NOT_AVAILABLE"
     )
     const link = await created(doc)
-    expect(
-      (await ownerRequest("POST", "/access", { target: target(doc) })).status
-    ).toBe(404)
     expect((await publicRequest(link.token, "/public/share/comments")).status).toBe(
       404
     )
     expect(
-      (await publicRequest(link.token, "/public/share/bridge", "POST")).status
+      (
+        await publicRequest(link.token, "/public/share/bridge", "POST", {
+          "Content-Type": "application/json",
+        })
+      ).status
     ).toBe(404)
 
     // An HTML Doc's password link: the visitor unlocks it, and its frame
@@ -331,7 +330,7 @@ describe("Cloud document share HTTP boundary", () => {
     expect(locked.link.hasPassword).toBe(true)
     const token = locked.url.split("/").at(-1)!
     expect((await publicRequest(token)).status).toBe(401)
-    expect((await publicRequest(token, "/public/share/content")).status).toBe(401)
+    expect((await publicRequest(token, "/public/share/content")).status).toBe(404)
     const unlock = (value: string) =>
       app().fetch(
         new Request("http://tenant/public/share/unlock", {
@@ -442,15 +441,25 @@ describe("Cloud document share HTTP boundary", () => {
     )
 
     const { token } = await created(artifact)
-    const outer = await publicRequest(token)
-    expect(await outer.json()).toEqual({
+    const outer = (await (await publicRequest(token)).json()) as {
+      kind: string
+      title: string
+      contentTicket: string
+    }
+    expect(outer).toEqual({
       kind: "html",
       title: "Status board",
+      contentTicket: expect.any(String),
     })
 
-    // Without the preview, the frame opens with the link itself, as the
-    // gateway expects today; no frame ticket is needed.
-    const content = await publicRequest(token, "/public/share/content")
+    // The frame opens with its ticket, never with the link itself.
+    expect((await publicRequest(token, "/public/share/content")).status).toBe(
+      404
+    )
+    const content = await publicRequest(
+      outer.contentTicket,
+      "/public/share/content"
+    )
     const contentHtml = await content.text()
     expect(content.status).toBe(200)
     expect(contentHtml).toContain("Operational")
@@ -475,7 +484,7 @@ describe("Cloud document share HTTP boundary", () => {
     expect(renamed.error).toBeNull()
     renamed.release?.()
     const renamedOuter = await publicRequest(token)
-    expect(await renamedOuter.json()).toEqual({
+    expect(await renamedOuter.json()).toMatchObject({
       kind: "html",
       title: "Live status",
     })

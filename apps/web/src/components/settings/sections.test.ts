@@ -15,7 +15,6 @@ const capabilities: DeploymentInfo["capabilities"] = {
   updateChecks: true,
   documentSharing: false,
   shareLinks: false,
-  sharingPreview: false,
   filesPreview: false,
 }
 

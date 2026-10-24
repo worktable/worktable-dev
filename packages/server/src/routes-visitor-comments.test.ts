@@ -117,7 +117,6 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "comment-routes-workspace-"))
   setAppDirOverride(appDir)
   setWorkspaceRootOverride(root)
-  process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
   delete process.env["WORKTABLE_HOSTED"]
   ensureWorkspaceManifest()
   const now = new Date().toISOString()

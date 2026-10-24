@@ -13,7 +13,6 @@ import {
   resolveShareLinkView,
   shareLinkStillOpens,
 } from "../share-link-views.ts"
-import { sharingPreviewEnabled } from "../sharing-preview.ts"
 import {
   visitorCommentNamespace,
   notifyVisitorComments,
@@ -83,7 +82,6 @@ export function createPublicVisitorCommentsRouter(
     c.header("Cache-Control", "no-store")
     c.header("Referrer-Policy", "no-referrer")
     c.header("X-Content-Type-Options", "nosniff")
-    if (!sharingPreviewEnabled()) return c.json(UNAVAILABLE, 404)
     if (!trustedLinkIngress && !cameThroughGateway(c.req.raw))
       return c.json({ error: "Forbidden", code: "GATEWAY_REQUIRED" }, 403)
     return next()
@@ -120,7 +118,6 @@ export function createPublicVisitorCommentsRouter(
       return c.json(UNAVAILABLE, 404)
     const context = await visitorCommentNamespace()
     const current = async () =>
-      sharingPreviewEnabled() &&
       (await visitorNamespaceStillCurrent(context)) &&
       context.epoch === view.link.workspaceEpoch &&
       shareLinkStillOpens(view.link, view.policyRevision, { comments: true })

@@ -83,8 +83,6 @@ for (const appearance of [
       page,
     }, info) => {
       test.setTimeout(120_000)
-      const previousPreview = process.env["WORKTABLE_SHARING_PREVIEW"]
-      process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
       const harness = await startWebHarness("visitor-review", {
         sharing: {
           workspaceId: "ws_browser",
@@ -342,9 +340,6 @@ for (const appearance of [
         expect(errors).toEqual([])
       } finally {
         await harness.stop()
-        if (previousPreview === undefined)
-          delete process.env["WORKTABLE_SHARING_PREVIEW"]
-        else process.env["WORKTABLE_SHARING_PREVIEW"] = previousPreview
       }
     })
   })

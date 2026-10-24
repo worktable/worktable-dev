@@ -37,14 +37,15 @@ without their links.
 Shared HTML docs retain their layout and safe external links. Scripts, forms,
 record access, saved interface state, and links to private Worktable content are
 disabled. A shared calculator therefore displays its exported content, not the
-interactive experience available inside Worktable.
+interactive experience available inside Worktable. To share a working tool,
+give its link live data; see [Live tools](#live-tools).
 
 ## Owner controls
 
 Owners manage sharing in **Settings → Links**. **Pause all links** stops every
 link at once until it is turned off. Owners can also choose who can share on a
-team, which Spaces can be shared, whether every link needs a password and the
-longest expiry. These settings apply
+team, which Spaces can be shared, whether every link needs a password, the
+longest expiry, and whether links can have live tools or visitor comments. These settings apply
 to existing links as well as new ones. The link table lists links across
 Spaces; open a link's menu to copy or revoke it.
 
@@ -53,15 +54,12 @@ preserve working links after full machine recovery. Make new links after a
 recovery. Restoring a workspace on a machine that still has its sharing store
 does not replace the current policy with an older copy.
 
-## Sharing preview
-
-Selected Worktables have a sharing preview with live tools and visitor
-comments. These controls appear only where the preview is enabled. Live tools
-also need a compatible share host.
+## Live tools and visitor comments
 
 Owners first enable **Live tools** and **Comment links** in
 **Settings → Links**. Both are off by default. The workflows below are
-available when the owner permits them.
+available when the owner permits them. Live tools also need a compatible share
+host.
 
 ### Live tools
 

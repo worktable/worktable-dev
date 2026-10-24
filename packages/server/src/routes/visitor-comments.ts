@@ -1,5 +1,4 @@
 import { Hono, type Context } from "hono"
-import { sharingPreviewEnabled } from "../sharing-preview.ts"
 import { withStoreWriteLock } from "../store.ts"
 import {
   passVisitorComment,
@@ -37,7 +36,6 @@ import { authorizeShareAction, currentSharingPolicy } from "../share-policy.ts"
 export const visitorCommentsRouter = new Hono()
 visitorCommentsRouter.use("*", async (c, next) => {
   c.header("Cache-Control", "no-store")
-  if (!sharingPreviewEnabled()) return c.json({ error: "Not found" }, 404)
   if (!visitorCommentReader(c, c.req.param("spaceId") ?? ""))
     return c.json({ error: "Forbidden", code: "HUMAN_REQUIRED" }, 403)
   return next()

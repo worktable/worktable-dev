@@ -17,7 +17,6 @@ import {
   AGENT_ROUTE_HEADERS,
   VISITOR_HEADERS,
 } from "@worktable/hosted-contract"
-import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import {
@@ -35,13 +34,11 @@ import { linkedGrokBotParticipantKey } from "./grok-bot-store.ts"
 
 function validShareRequest(claims: LinkedRequestClaims): boolean {
   if (claims.grant.kind !== "share") return false
-  const preview = sharingPreviewEnabled()
   // Visitor comments come in one page; this binary names no comment pages.
   if (claims.grant.commentCursor !== undefined) return false
   if (claims.path === "/public/share/comments") {
     const visitor = claims.grant.visitor
     return Boolean(
-      preview &&
       visitor &&
       ShareLinkToken.safeParse(claims.grant.capability).success &&
       claims.grant.clientAddress === undefined &&
@@ -53,23 +50,20 @@ function validShareRequest(claims: LinkedRequestClaims): boolean {
   if (claims.grant.visitor !== undefined) return false
   if (
     claims.grant.clientAddress !== undefined &&
-    (!preview || claims.path !== "/public/share/bridge")
+    claims.path !== "/public/share/bridge"
   )
     return false
   if (
     claims.grant.contentRevision !== undefined &&
-    (!preview ||
-      claims.path !== "/public/share/content" ||
+    (claims.path !== "/public/share/content" ||
       !["GET", "HEAD"].includes(claims.method))
   )
     return false
-  // Passwords and their tickets work without the preview; live data doesn't.
   if (
     claims.path === "/public/share/unlock" ||
     claims.path === "/public/share/bridge"
   ) {
     return (
-      (preview || claims.path === "/public/share/unlock") &&
       claims.method === "POST" &&
       ShareLinkToken.safeParse(claims.grant.capability).success
     )

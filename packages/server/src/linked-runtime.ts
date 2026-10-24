@@ -30,7 +30,6 @@ import { linkedConnectorBinary } from "./linked-connector.ts"
 import { setLinkedSharing } from "./linked-sharing.ts"
 import { invalidateAllDocumentShares } from "./share-store.ts"
 import { revokeAllLinks } from "./share-links-lifecycle.ts"
-import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import { isHosted } from "./hosted.ts"
 import {
   localServiceOrigin,
@@ -596,17 +595,11 @@ function launch(): void {
                   bootNonce,
                   port,
                   connected,
-                  // Passwords need tickets with or without the preview;
-                  // live data and visitor comments only with it.
                   capabilities: [
                     LINKED_CAPABILITIES.SHARE_TICKETS,
-                    ...(sharingPreviewEnabled()
-                      ? [
-                          LINKED_CAPABILITIES.SHARE_BRIDGE,
-                          LINKED_CAPABILITIES.SHARE_READ_HINTS,
-                          LINKED_CAPABILITIES.SHARE_COMMENTS,
-                        ]
-                      : []),
+                    LINKED_CAPABILITIES.SHARE_BRIDGE,
+                    LINKED_CAPABILITIES.SHARE_READ_HINTS,
+                    LINKED_CAPABILITIES.SHARE_COMMENTS,
                   ],
                   ...linkedOpenUrl(),
                 }),

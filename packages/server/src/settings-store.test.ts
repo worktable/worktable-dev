@@ -8,6 +8,7 @@ import { setWorkspaceRootOverride } from "./workspace.ts";
 import {
   getServerSettings,
   invalidateServerSettingsCache,
+  legacySharingPreviewSetting,
   SETTINGS_DEFAULTS,
   settingsRepairSettledForTests,
   settleRetentionPolicy,
@@ -19,7 +20,6 @@ import { mcpBearerRequired, publicSurfaceAuthRequired, trustedLocalIdentity } fr
 import { createToken } from "./token-store.ts";
 import { setOwnerPassword } from "./session-store.ts";
 import { configuredMcpSurface } from "./mcp/surface.ts";
-import { sharingPreviewEnabled } from "./sharing-preview.ts";
 import { filesPreviewEnabled } from "./files-preview.ts";
 
 let appDir: string;
@@ -100,6 +100,34 @@ describe("settings-store", () => {
     expect((s as unknown as Record<string, unknown>)["extra"]).toBeUndefined(); // unknown key dropped
   });
 
+  it("loads a file with the retired sharing preview switch and keeps one that was on", async () => {
+    writeFileSync(
+      settingsPath(),
+      JSON.stringify({ version: 1, editor: { spellcheck: true }, sharing: { preview: true } }),
+    );
+    invalidateServerSettingsCache();
+    expect(getServerSettings().editor.spellcheck).toBe(true);
+    expect("sharing" in getServerSettings()).toBe(false);
+    expect(legacySharingPreviewSetting()).toBe(true);
+
+    // Kept through writes and restarts, for links stores that open later.
+    await updateServerSettings({ updates: { autoCheck: false } });
+    let stored = JSON.parse(readFileSync(settingsPath(), "utf8"));
+    expect(stored.sharing).toEqual({ preview: true });
+    expect(stored.editor.spellcheck).toBe(true);
+    invalidateServerSettingsCache();
+    expect(legacySharingPreviewSetting()).toBe(true);
+    await expect(updateServerSettings({ sharing: { preview: true } } as never)).rejects.toThrow("Unknown settings group: sharing");
+
+    // One that was off is dropped.
+    writeFileSync(settingsPath(), JSON.stringify({ version: 1, sharing: { preview: false } }));
+    invalidateServerSettingsCache();
+    await updateServerSettings({ updates: { autoCheck: false } });
+    stored = JSON.parse(readFileSync(settingsPath(), "utf8"));
+    expect(stored.sharing).toBeUndefined();
+    expect(legacySharingPreviewSetting()).toBe(false);
+  });
+
   it("quarantines corrupt JSON as .corrupt, resets to defaults, and fails closed", async () => {
     writeFileSync(settingsPath(), "{ this is not json ");
     invalidateServerSettingsCache();
@@ -161,46 +189,6 @@ describe("preview agent tools", () => {
   });
 });
 
-describe("preview sharing features", () => {
-  const turnOn = (headers: Record<string, string> = {}) =>
-    app().request("/api/system/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", ...headers },
-      body: JSON.stringify({ sharing: { preview: true } }),
-    });
-  const capability = async () => ((await (await app().request("/api/system/deployment")).json()) as DeploymentInfo).capabilities.sharingPreview;
-
-  it("are off until the owner turns them on, and tell the web app", async () => {
-    expect(sharingPreviewEnabled()).toBe(false);
-    expect(await capability()).toBe(false);
-
-    const { token } = await createToken({ scopes: ["docs:read"] });
-    expect((await turnOn({ Authorization: `Bearer ${token}` })).status).toBe(403);
-    expect((await turnOn()).status).toBe(200);
-    invalidateServerSettingsCache();
-    expect(sharingPreviewEnabled()).toBe(true);
-    expect(await capability()).toBe(true);
-
-    await expect(updateServerSettings({ sharing: { preview: "yes" } })).rejects.toThrow("sharing.preview must be a boolean");
-    await expect(updateServerSettings({ sharing: { other: true } } as never)).rejects.toThrow("Unknown sharing field: other");
-  });
-
-  it("follow the environment over the setting, stay off on Cloud, and show the override", async () => {
-    await updateServerSettings({ sharing: { preview: true } });
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0";
-    expect(sharingPreviewEnabled()).toBe(false);
-    const settings = (await (await app().request("/api/system/settings")).json()) as { sharing: unknown };
-    expect(settings.sharing).toEqual({ preview: true, previewOverride: false });
-    delete process.env["WORKTABLE_SHARING_PREVIEW"];
-
-    process.env["WORKTABLE_HOSTED"] = "1";
-    expect(sharingPreviewEnabled()).toBe(false);
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1";
-    await updateServerSettings({ sharing: { preview: false } });
-    expect(sharingPreviewEnabled()).toBe(true);
-  });
-});
-
 describe("preview file features", () => {
   afterEach(() => {
     delete process.env["WORKTABLE_FILES_PREVIEW"];
@@ -237,7 +225,6 @@ describe("GET /api/system/settings", () => {
     expect(await res.json()).toEqual({
       ...SETTINGS_DEFAULTS,
       agents: { ...SETTINGS_DEFAULTS.agents, previewToolsOverride: null },
-      sharing: { ...SETTINGS_DEFAULTS.sharing, previewOverride: null },
       files: { ...SETTINGS_DEFAULTS.files, previewOverride: null },
     });
   });

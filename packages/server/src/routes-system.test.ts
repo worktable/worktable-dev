@@ -536,7 +536,6 @@ describe("GET /api/system/deployment", () => {
         previewStatus: true,
         documentSharing: false,
         shareLinks: false,
-        sharingPreview: false,
         filesPreview: false,
       },
     };
@@ -565,7 +564,6 @@ describe("GET /api/system/deployment", () => {
         previewStatus: false,
         documentSharing: false,
         shareLinks: false,
-        sharingPreview: false,
         filesPreview: false,
       },
     };
@@ -583,8 +581,7 @@ describe("GET /api/system/deployment", () => {
     process.env["WORKTABLE_HTML_SHARE_BASE_URL"] =
       "https://html.worktable-usercontent.com";
 
-    // Links come with sharing, whether or not the sharing preview is on.
-    expect(getDeploymentInfo().capabilities).toMatchObject({ documentSharing: true, shareLinks: true, sharingPreview: false });
+    expect(getDeploymentInfo().capabilities).toMatchObject({ documentSharing: true, shareLinks: true });
     delete process.env["WORKTABLE_HTML_SHARE_BASE_URL"];
     expect(getDeploymentInfo().capabilities).toMatchObject({ documentSharing: false, shareLinks: false });
   });

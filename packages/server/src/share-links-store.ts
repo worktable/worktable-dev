@@ -25,7 +25,8 @@ import { chmodSync, existsSync, mkdirSync } from "node:fs"
 import { chmod, link, mkdir, open, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { getAppDir } from "./app-storage.ts"
-import { sharingPreviewEnabled } from "./sharing-preview.ts"
+import { isHosted } from "./hosted.ts"
+import { legacySharingPreviewSetting } from "./settings-store.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 
 // ============================================================
@@ -172,16 +173,22 @@ const flag = (value: number): boolean | null =>
   value === 0 ? false : value === 1 ? true : null
 
 /**
- * Passwords are supported with the known hash encoding. Grants and comment
- * links need the preview; pinned versions come with later binaries. Comment
+ * Passwords are supported with the known hash encoding. Grants are for HTML
+ * links only; pinned versions come with later binaries. Comment
  * settings apply only from the comment level, but must still be ones this
  * binary knows.
  */
 // Parsed grants are immutable stored inputs, bounded by entries and bytes.
 // A future or malformed grant never makes a link executable.
-const storedGrants = new Map<string, { grant: LinkGrant | null; revision: string; bytes: number }>()
+const storedGrants = new Map<
+  string,
+  { grant: LinkGrant | null; revision: string; bytes: number }
+>()
 let storedGrantBytes = 0
-function storedGrant(json: string | null): { grant: LinkGrant | null; revision: string } {
+function storedGrant(json: string | null): {
+  grant: LinkGrant | null
+  revision: string
+} {
   if (json === null) return { grant: null, revision: "static" }
   const cached = storedGrants.get(json)
   if (cached) return cached
@@ -190,9 +197,15 @@ function storedGrant(json: string | null): { grant: LinkGrant | null; revision: 
     try {
       const parsed = LinkGrantSchema.safeParse(JSON.parse(json))
       if (parsed.success) grant = parsed.data
-    } catch { /* An unreadable grant stays closed. */ }
+    } catch {
+      /* An unreadable grant stays closed. */
+    }
   }
-  const entry = { grant, revision: createHash("sha256").update(json).digest("base64url"), bytes: Buffer.byteLength(json) * 2 }
+  const entry = {
+    grant,
+    revision: createHash("sha256").update(json).digest("base64url"),
+    bytes: Buffer.byteLength(json) * 2,
+  }
   if (entry.bytes > 512 * 1024) return entry
   storedGrants.set(json, entry)
   storedGrantBytes += entry.bytes
@@ -207,13 +220,15 @@ function storedGrant(json: string | null): { grant: LinkGrant | null; revision: 
 function servable(row: LinkRow): boolean {
   return (
     (row.kind === "doc" || row.kind === "html") &&
-    (row.level === "view" || (sharingPreviewEnabled() && row.level === "comment")) &&
+    (row.level === "view" || row.level === "comment") &&
     (row.password_hash === null ||
       supportedSharePasswordHash(row.password_hash)) &&
     Number.isSafeInteger(row.password_rev) &&
     row.password_rev >= 0 &&
-    (row.grant_json === null || (sharingPreviewEnabled() && row.kind === "html" && storedGrant(row.grant_json).grant !== null)) &&
-    row.link_key instanceof Uint8Array && row.link_key.byteLength === 32 &&
+    (row.grant_json === null ||
+      (row.kind === "html" && storedGrant(row.grant_json).grant !== null)) &&
+    row.link_key instanceof Uint8Array &&
+    row.link_key.byteLength === 32 &&
     row.pinned_version === null &&
     flag(row.accept_comments) !== null &&
     flag(row.anonymous_allowed) !== null &&
@@ -328,6 +343,65 @@ function normalizeVisitorSettings(db: Database): void {
     ).run()
 }
 
+/** Policy settings that held their defaults while the sharing preview was off. */
+const PREVIEW_POLICY_KEYS = [
+  "levels",
+  "liveLinks",
+  "records",
+  "recordsDefaultExpiryDays",
+  "allowComments",
+] as const satisfies readonly (keyof SharingPolicy)[]
+
+/** Whether the removed sharing preview was on, read as it was. */
+function sharingPreviewWasOn(): boolean {
+  const env = process.env["WORKTABLE_SHARING_PREVIEW"]?.trim().toLowerCase()
+  if (env === "1" || env === "true") return true
+  if (env === "0" || env === "false") return false
+  return !isHosted() && legacySharingPreviewSetting()
+}
+
+/**
+ * Live links, comments and Records access were preview settings, held at
+ * their defaults while the preview was off. Once per store, a Worktable whose
+ * preview was off saves those defaults, so links its owner stopped by turning
+ * the preview off don't start working again. A Worktable whose preview was on
+ * keeps its policy as saved. Owners change it from here on.
+ */
+function settleSharingPreviewPolicy(db: Database): void {
+  const settled =
+    "SELECT 1 FROM share_meta WHERE key = 'preview_policy_settled'"
+  // Read first, so an open that finds it settled never takes the write lock.
+  if (db.query(settled).get()) return
+  const previewOn = sharingPreviewWasOn()
+  db.transaction(() => {
+    if (db.query(settled).get()) return
+    const row = db
+      .query<
+        { policy: string },
+        []
+      >("SELECT policy FROM share_policy WHERE id = 1")
+      .get()
+    // A policy this binary can't read already stops every link, and is left
+    // for its own version or for the owner to save again.
+    const policy = row && !previewOn ? readablePolicy(row.policy) : null
+    if (policy) {
+      const held = { ...policy }
+      for (const key of PREVIEW_POLICY_KEYS)
+        Object.assign(held, { [key]: DEFAULT_POLICY[key] })
+      if (JSON.stringify(held) !== JSON.stringify(policy)) {
+        db.query(
+          `UPDATE share_policy SET policy = ?, revision = revision + 1,
+             updated_by = 'system', updated_at = ? WHERE id = 1`
+        ).run(JSON.stringify(held), Date.now())
+        policyCache = null
+      }
+    }
+    db.query(
+      "INSERT INTO share_meta (key, value) VALUES ('preview_policy_settled', ?)"
+    ).run(String(Date.now()))
+  })()
+}
+
 function openDatabase(create: boolean): Database | null {
   const path = shareLinksDatabasePath()
   const cached = databases.get(path)
@@ -353,6 +427,7 @@ function openDatabase(create: boolean): Database | null {
       throw new ShareLinksStoreError("Share links use an unsupported version")
     }
     normalizeVisitorSettings(db)
+    settleSharingPreviewPolicy(db)
   } catch (error) {
     db.close()
     if (error instanceof ShareLinksStoreError) throw error
@@ -469,7 +544,12 @@ function sealToken(db: Database, linkId: string, token: string): void {
 
 function openToken(
   key: Buffer,
-  row: { id: string; token_hash: Uint8Array; nonce: Uint8Array; sealed: Uint8Array }
+  row: {
+    id: string
+    token_hash: Uint8Array
+    nonce: Uint8Array
+    sealed: Uint8Array
+  }
 ): string | null {
   const sealed = Buffer.from(row.sealed)
   if (row.nonce.byteLength !== 12 || sealed.length <= 16) return null
@@ -554,13 +634,19 @@ function forgetTokens(db: Database, ids: readonly string[]): void {
 // never a GET. Matching the exact JSON prevents an unknown or damaged grant
 // from counting as open. Version 2: grants have one kind (chosen collections).
 const GRANT_READER_VERSION = 2
-function noteSupportedGrant(db: Database, id: string, grant: LinkGrant | null): void {
+function noteSupportedGrant(
+  db: Database,
+  id: string,
+  grant: LinkGrant | null
+): void {
   db.exec(`CREATE TABLE IF NOT EXISTS share_link_grants (
     link_id TEXT PRIMARY KEY, grant_json TEXT NOT NULL, reader_version INTEGER NOT NULL
   )`)
   if (grant) {
     const json = JSON.stringify(LinkGrantSchema.parse(grant))
-    db.query("INSERT OR REPLACE INTO share_link_grants (link_id, grant_json, reader_version) VALUES (?, ?, ?)").run(id, json, GRANT_READER_VERSION)
+    db.query(
+      "INSERT OR REPLACE INTO share_link_grants (link_id, grant_json, reader_version) VALUES (?, ?, ?)"
+    ).run(id, json, GRANT_READER_VERSION)
   } else db.query("DELETE FROM share_link_grants WHERE link_id = ?").run(id)
 }
 
@@ -570,7 +656,10 @@ function noteSupportedGrant(db: Database, id: string, grant: LinkGrant | null): 
  * read (a removed kind, such as totals only) loses its proof, matching its
  * link, which no longer opens.
  */
-export function refreshShareLinkGrantProofs(): { kept: number; dropped: number } {
+export function refreshShareLinkGrantProofs(): {
+  kept: number
+  dropped: number
+} {
   const db = openDatabase(false)
   if (!db) return { kept: 0, dropped: 0 }
   try {
@@ -586,22 +675,31 @@ export function refreshShareLinkGrantProofs(): { kept: number; dropped: number }
       for (const row of stale) {
         let readable = false
         try {
-          readable = LinkGrantSchema.safeParse(JSON.parse(row.grant_json)).success
+          readable = LinkGrantSchema.safeParse(
+            JSON.parse(row.grant_json)
+          ).success
         } catch {
           readable = false
         }
         if (readable) {
-          db.query("UPDATE share_link_grants SET reader_version = ? WHERE link_id = ?").run(GRANT_READER_VERSION, row.link_id)
+          db.query(
+            "UPDATE share_link_grants SET reader_version = ? WHERE link_id = ?"
+          ).run(GRANT_READER_VERSION, row.link_id)
           kept += 1
         } else {
-          db.query("DELETE FROM share_link_grants WHERE link_id = ?").run(row.link_id)
+          db.query("DELETE FROM share_link_grants WHERE link_id = ?").run(
+            row.link_id
+          )
           dropped += 1
         }
       }
       return { kept, dropped }
     })()
   } catch (error) {
-    if (error instanceof Error && error.message === "no such table: share_link_grants")
+    if (
+      error instanceof Error &&
+      error.message === "no such table: share_link_grants"
+    )
       return { kept: 0, dropped: 0 }
     throw error
   }
@@ -635,38 +733,38 @@ export function createShareLink(input: NewShareLink): {
   const id = newLinkId()
   const grant = input.grant ? LinkGrantSchema.parse(input.grant) : null
   db.transaction(() => {
-  if (grant) noteSupportedGrant(db, id, grant)
-  db.query(
-    `INSERT INTO share_links (id, token_hash, token_hint, link_key,
+    if (grant) noteSupportedGrant(db, id, grant)
+    db.query(
+      `INSERT INTO share_links (id, token_hash, token_hint, link_key,
       workspace_epoch, space_id, document_id, kind, label, level,
       created_by_id, created_by_name, created_at, expires_at,
       accept_comments, anonymous_allowed, show_sharer_name, visitors_see, password_hash, password_rev, grant_json)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    id,
-    tokenDigest(token),
-    token.slice(-4),
-    randomBytes(32),
-    input.workspaceEpoch,
-    input.spaceId,
-    input.documentId,
-    input.kind,
-    input.label,
-    input.level,
-    input.createdBy.id,
-    input.createdBy.name,
-    input.now ?? Date.now(),
-    input.expiresAt,
-    input.comments.acceptComments ? 1 : 0,
-    0,
-    0,
-    "own",
-    input.passwordHash ?? null,
-    input.passwordHash ? 1 : 0,
-    grant ? JSON.stringify(grant) : null
-  )
-  sealToken(db, id, token)
-  db.query(MARK_V1_DRAINED).run(String(Date.now()))
+    ).run(
+      id,
+      tokenDigest(token),
+      token.slice(-4),
+      randomBytes(32),
+      input.workspaceEpoch,
+      input.spaceId,
+      input.documentId,
+      input.kind,
+      input.label,
+      input.level,
+      input.createdBy.id,
+      input.createdBy.name,
+      input.now ?? Date.now(),
+      input.expiresAt,
+      input.comments.acceptComments ? 1 : 0,
+      0,
+      0,
+      "own",
+      input.passwordHash ?? null,
+      input.passwordHash ? 1 : 0,
+      grant ? JSON.stringify(grant) : null
+    )
+    sealToken(db, id, token)
+    db.query(MARK_V1_DRAINED).run(String(Date.now()))
   })()
   return { link: getShareLink(id)!, token }
 }
@@ -806,16 +904,22 @@ export function updateShareLink(
   }
   const bit = (value: boolean) => (value ? 1 : 0)
   const comments = change.comments ?? {}
-  if (change.level !== undefined) set("level",change.level)
+  if (change.level !== undefined) set("level", change.level)
   if (change.passwordHash !== undefined) {
     set("password_hash", change.passwordHash)
     sets.push("password_rev = password_rev + 1")
   }
   if (change.grant !== undefined) {
-    set("grant_json", change.grant === null ? null : JSON.stringify(LinkGrantSchema.parse(change.grant)))
+    set(
+      "grant_json",
+      change.grant === null
+        ? null
+        : JSON.stringify(LinkGrantSchema.parse(change.grant))
+    )
     // The credential revision is monotonic, so A → B → A cannot revive an
     // unlock or frame ticket made before the access edit.
-    if (change.passwordHash === undefined) sets.push("password_rev = password_rev + 1")
+    if (change.passwordHash === undefined)
+      sets.push("password_rev = password_rev + 1")
   }
   if (change.label !== undefined) set("label", change.label)
   if (change.expiresAt !== undefined) set("expires_at", change.expiresAt)
@@ -824,11 +928,11 @@ export function updateShareLink(
   }
   if (sets.length > 0) {
     db.transaction(() => {
-    if (change.grant !== undefined) noteSupportedGrant(db, id, change.grant)
-    db.query(
-      `UPDATE share_links SET ${sets.join(", ")}
+      if (change.grant !== undefined) noteSupportedGrant(db, id, change.grant)
+      db.query(
+        `UPDATE share_links SET ${sets.join(", ")}
        WHERE id = ? AND revoked_at IS NULL`
-    ).run(...values, id)
+      ).run(...values, id)
     })()
     notifyChanged([id])
   }
@@ -987,7 +1091,7 @@ export function findShareLinkWithPolicy(id: string): {
     ? {
         link: storedLink(row),
         policy: policyAt(db, row.policy_revision ?? 0),
-    policyRevision: row.policy_revision ?? 0,
+        policyRevision: row.policy_revision ?? 0,
         unlockSecret: decodeUnlockSecret(row.unlock_secret),
       }
     : null
@@ -1046,8 +1150,17 @@ export function commentLinkTargets(
 }
 
 /** An indexed existence check for the private Visitors tab, with no link history. */
-export function documentHasCommentLink(spaceId: string, documentId: string): boolean {
-  return Boolean(openDatabase(false)?.query("SELECT 1 FROM share_links WHERE space_id=? AND document_id=? AND revoked_at IS NULL AND level='comment' LIMIT 1").get(spaceId, documentId))
+export function documentHasCommentLink(
+  spaceId: string,
+  documentId: string
+): boolean {
+  return Boolean(
+    openDatabase(false)
+      ?.query(
+        "SELECT 1 FROM share_links WHERE space_id=? AND document_id=? AND revoked_at IS NULL AND level='comment' LIMIT 1"
+      )
+      .get(spaceId, documentId)
+  )
 }
 
 /** Count and next expiry only; never materialize a document's link history. */
@@ -1090,10 +1203,14 @@ export function documentShareLinkSummary(
         AND (password_hash IS NULL OR password_hash GLOB ?)
         AND (? = 0 OR password_hash IS NOT NULL)
         AND typeof(password_rev) = 'integer' AND password_rev BETWEEN 0 AND 9007199254740991
-        AND (grant_json IS NULL ${live ? `OR (kind = 'html' AND EXISTS (
+        AND (grant_json IS NULL ${
+          live
+            ? `OR (kind = 'html' AND EXISTS (
           SELECT 1 FROM share_link_grants g WHERE g.link_id = share_links.id
             AND g.grant_json = share_links.grant_json AND g.reader_version = ${GRANT_READER_VERSION}
-        ))` : ""}) AND pinned_version IS NULL
+        ))`
+            : ""
+        }) AND pinned_version IS NULL
         AND typeof(link_key) = 'blob' AND length(link_key) = 32
         AND accept_comments IN (0, 1) AND anonymous_allowed IN (0, 1)
         AND show_sharer_name IN (0, 1) AND visitors_see IN ('own', 'all')
@@ -1108,17 +1225,22 @@ export function documentShareLinkSummary(
         spaceId,
         documentId,
         levels.includes("view") ? 1 : 0,
-        sharingPreviewEnabled() && levels.includes("comment") ? 1 : 0,
+        levels.includes("comment") ? 1 : 0,
         SHARE_PASSWORD_HASH_GLOB,
         requirePassword ? 1 : 0,
         now
       ) ?? []
   let groups: ReturnType<typeof readGroups>
-  try { groups = readGroups(allowLive && sharingPreviewEnabled()) }
-  catch (error) {
+  try {
+    groups = readGroups(allowLive)
+  } catch (error) {
     // Existing v2 stores have no live proof index until their first grant
     // is saved. Keep their static aggregate available without a read-side DDL.
-    if (!(error instanceof Error) || error.message !== "no such table: share_link_grants") throw error
+    if (
+      !(error instanceof Error) ||
+      error.message !== "no such table: share_link_grants"
+    )
+      throw error
     groups = readGroups(false)
   }
   return groups.reduce<{ activeLinks: number; nextExpiry: number | null }>(
@@ -1228,17 +1350,32 @@ export function sweepRevokedShareLinks(now = Date.now()): number {
     const db = openDatabase(false)
     if (!db) return 0
     return db.transaction(() => {
-      const removed = db.query("DELETE FROM share_links WHERE revoked_at IS NOT NULL AND revoked_at <= ?").run(now - REVOKED_LISTED_MS).changes
+      const removed = db
+        .query(
+          "DELETE FROM share_links WHERE revoked_at IS NOT NULL AND revoked_at <= ?"
+        )
+        .run(now - REVOKED_LISTED_MS).changes
       if (removed) {
-        try { db.exec("DELETE FROM share_link_grants WHERE link_id NOT IN (SELECT id FROM share_links)") }
-        catch (error) {
-          if (!(error instanceof Error) || error.message !== "no such table: share_link_grants") throw error
+        try {
+          db.exec(
+            "DELETE FROM share_link_grants WHERE link_id NOT IN (SELECT id FROM share_links)"
+          )
+        } catch (error) {
+          if (
+            !(error instanceof Error) ||
+            error.message !== "no such table: share_link_grants"
+          )
+            throw error
         }
       }
       // Older binaries revoke without deleting seals; none outlives its link.
-      try { db.exec("DELETE FROM share_link_tokens WHERE link_id NOT IN (SELECT id FROM share_links WHERE revoked_at IS NULL)") }
-      catch (error) {
-        if (!(error instanceof Error) || error.message !== NO_TOKEN_TABLE) throw error
+      try {
+        db.exec(
+          "DELETE FROM share_link_tokens WHERE link_id NOT IN (SELECT id FROM share_links WHERE revoked_at IS NULL)"
+        )
+      } catch (error) {
+        if (!(error instanceof Error) || error.message !== NO_TOKEN_TABLE)
+          throw error
       }
       return removed
     })()
@@ -1296,6 +1433,11 @@ const REMOVED_POLICY_KEYS = ["allowVisitorsSeeAll"] as const
  * policy again here.
  */
 function parsePolicy(text: string): SharingPolicy {
+  return readablePolicy(text) ?? { ...DEFAULT_POLICY, paused: true }
+}
+
+/** A saved policy with earlier versions' settings read as today's, or null. */
+function readablePolicy(text: string): SharingPolicy | null {
   try {
     const saved: unknown = JSON.parse(text)
     if (saved !== null && typeof saved === "object" && !Array.isArray(saved)) {
@@ -1305,7 +1447,7 @@ function parsePolicy(text: string): SharingPolicy {
     }
     return SharingPolicySchema.parse(saved)
   } catch {
-    return { ...DEFAULT_POLICY, paused: true }
+    return null
   }
 }
 

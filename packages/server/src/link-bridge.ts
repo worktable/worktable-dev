@@ -6,7 +6,6 @@ import {
   SHARE_CAPABILITY_HEADER,
   SHARE_UNLOCK_HEADER,
 } from "@worktable/hosted-contract"
-import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import {
   resolveShareLinkView,
   shareLinkStillOpens,
@@ -137,7 +136,7 @@ async function readCall(
 export function linkBridge(getShareOrigin: () => string | null) {
   return async (c: Context): Promise<Response> => {
     const origin = getShareOrigin()
-    if (!origin || !sharingPreviewEnabled()) return unavailable()
+    if (!origin) return unavailable()
     // The authenticated gateway checks browser Origin before forwarding. Direct
     // browser attempts to this closed surface still cannot widen that origin.
     if (c.req.header("Origin") && c.req.header("Origin") !== origin)
@@ -177,7 +176,6 @@ export function linkBridge(getShareOrigin: () => string | null) {
         const call = await readCall(c.req.raw, deadline)
         if (!call) return Date.now() >= deadline ? busy() : invalid()
         if (expired) return busy()
-        if (!sharingPreviewEnabled()) return unavailable()
         let result: unknown = {}
         let refused: Response | null = null
         let changed = false
@@ -314,10 +312,7 @@ export function linkBridge(getShareOrigin: () => string | null) {
             linkSchemaGeneration(view.link.spaceId, collections) !==
               tool.schemaGeneration
         }
-        if (
-          !sharingPreviewEnabled() ||
-          !shareLinkStillOpens(view.link, view.policyRevision)
-        )
+        if (!shareLinkStillOpens(view.link, view.policyRevision))
           return unavailable()
         if (expired || changed || Date.now() > deadline) return busy()
         if (refused) return refused

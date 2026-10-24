@@ -1,4 +1,3 @@
-import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { useRef, useState } from "react"
 import {
   useInfiniteQuery,
@@ -230,7 +229,6 @@ function useSharingPolicy(enabled: boolean) {
 }
 
 function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {
-  const preview = useDeploymentInfo().data?.capabilities.sharingPreview === true
   const { query, update } = useSharingPolicy(enabled)
   const policy = query.data?.policy
 
@@ -310,29 +308,27 @@ function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {
             </SettingRow>
           ) : null}
           <SpacesSetting policy={policy} onChange={update} />
-          {preview ? <>
-            <SettingRow label="Live tools" description="Run shared HTML Docs with the Records access saved on each link.">
-              <Switch aria-label="Live tools" checked={policy.liveLinks} onCheckedChange={liveLinks => update({liveLinks})} />
-            </SettingRow>
-            <SettingRow label="Records access" description="What a live link may show from Records.">
-              <Select value={policy.records} onValueChange={records => {if (records) update({records})}}>
-                <SelectTrigger className="w-48" aria-label="Records access"><SelectValue>{{none: "No Records", scoped: "Chosen collections"}[policy.records]}</SelectValue></SelectTrigger>
-                <SelectContent><SelectItem value="none">No Records</SelectItem><SelectItem value="scoped">Chosen collections</SelectItem></SelectContent>
-              </Select>
-            </SettingRow>
-            <SettingRow label="Records link expiry" description="The default for a new link that reads Records. The longest expiry still applies.">
-              <Select value={policy.recordsDefaultExpiryDays === null ? "none" : String(policy.recordsDefaultExpiryDays)} onValueChange={value => {const choice = LONGEST_EXPIRY.find(choice => choice.value === value); if (choice) update({recordsDefaultExpiryDays: choice.days})}}>
-                <SelectTrigger className="w-48" aria-label="Records link expiry"><SelectValue>{expiryLabel(policy.recordsDefaultExpiryDays)}</SelectValue></SelectTrigger>
-                <SelectContent>{LONGEST_EXPIRY.map(choice => <SelectItem key={choice.value} value={choice.value}>{choice.label}</SelectItem>)}</SelectContent>
-              </Select>
-            </SettingRow>
-            <SettingRow label="Comment links" description="Let sharers make links that can receive visitor comments.">
-              <Switch aria-label="Comment links" checked={policy.levels.includes("comment")} disabled={policy.levels.length === 1 && policy.levels.includes("comment")} onCheckedChange={enabled => update({levels: enabled ? [...policy.levels.filter(level => level !== "comment"), "comment"] : policy.levels.filter(level => level !== "comment")})} />
-            </SettingRow>
-            <SettingRow label="Accept visitor comments" description="Turning this off pauses new comments on every link.">
-              <Switch aria-label="Accept visitor comments" checked={policy.allowComments} onCheckedChange={allowComments => update({allowComments})} />
-            </SettingRow>
-          </> : null}
+          <SettingRow label="Live tools" description="Run shared HTML Docs with the Records access saved on each link.">
+            <Switch aria-label="Live tools" checked={policy.liveLinks} onCheckedChange={liveLinks => update({liveLinks})} />
+          </SettingRow>
+          <SettingRow label="Records access" description="What a live link may show from Records.">
+            <Select value={policy.records} onValueChange={records => {if (records) update({records})}}>
+              <SelectTrigger className="w-48" aria-label="Records access"><SelectValue>{{none: "No Records", scoped: "Chosen collections"}[policy.records]}</SelectValue></SelectTrigger>
+              <SelectContent><SelectItem value="none">No Records</SelectItem><SelectItem value="scoped">Chosen collections</SelectItem></SelectContent>
+            </Select>
+          </SettingRow>
+          <SettingRow label="Records link expiry" description="The default for a new link that reads Records. The longest expiry still applies.">
+            <Select value={policy.recordsDefaultExpiryDays === null ? "none" : String(policy.recordsDefaultExpiryDays)} onValueChange={value => {const choice = LONGEST_EXPIRY.find(choice => choice.value === value); if (choice) update({recordsDefaultExpiryDays: choice.days})}}>
+              <SelectTrigger className="w-48" aria-label="Records link expiry"><SelectValue>{expiryLabel(policy.recordsDefaultExpiryDays)}</SelectValue></SelectTrigger>
+              <SelectContent>{LONGEST_EXPIRY.map(choice => <SelectItem key={choice.value} value={choice.value}>{choice.label}</SelectItem>)}</SelectContent>
+            </Select>
+          </SettingRow>
+          <SettingRow label="Comment links" description="Let sharers make links that can receive visitor comments.">
+            <Switch aria-label="Comment links" checked={policy.levels.includes("comment")} disabled={policy.levels.length === 1 && policy.levels.includes("comment")} onCheckedChange={enabled => update({levels: enabled ? [...policy.levels.filter(level => level !== "comment"), "comment"] : policy.levels.filter(level => level !== "comment")})} />
+          </SettingRow>
+          <SettingRow label="Accept visitor comments" description="Turning this off pauses new comments on every link.">
+            <Switch aria-label="Accept visitor comments" checked={policy.allowComments} onCheckedChange={allowComments => update({allowComments})} />
+          </SettingRow>
           <SettingRow
             label="Require a password"
             description="Links without a password stop opening while this is on."

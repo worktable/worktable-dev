@@ -100,14 +100,6 @@ export interface ServerSettings {
      */
     previewTools: boolean;
   };
-  sharing: {
-    /**
-     * Run the sharing features that aren't released yet. MACHINE-LOCAL;
-     * ignored on Cloud. Read it through sharingPreviewEnabled(), which applies
-     * WORKTABLE_SHARING_PREVIEW.
-     */
-    preview: boolean;
-  };
   files: {
     /**
      * Run the file features that aren't released yet: any file in a Space's
@@ -127,7 +119,6 @@ export const SETTINGS_DEFAULTS: ServerSettings = {
   // policy reads as the longest one offered, so nothing is pruned early.
   history: { retention: RETENTION_CARRIED_OVER, retentionNotice: null },
   agents: { previewTools: false },
-  sharing: { preview: false },
   files: { preview: false },
 };
 
@@ -264,9 +255,6 @@ function coerce(parsed: unknown): ServerSettings {
   const agents = (obj["agents"] && typeof obj["agents"] === "object"
     ? obj["agents"]
     : {}) as Record<string, unknown>;
-  const sharing = (obj["sharing"] && typeof obj["sharing"] === "object"
-    ? obj["sharing"]
-    : {}) as Record<string, unknown>;
   const files = (obj["files"] && typeof obj["files"] === "object"
     ? obj["files"]
     : {}) as Record<string, unknown>;
@@ -288,9 +276,6 @@ function coerce(parsed: unknown): ServerSettings {
     agents: {
       previewTools: boolOr(agents["previewTools"], SETTINGS_DEFAULTS.agents.previewTools),
     },
-    sharing: {
-      preview: boolOr(sharing["preview"], SETTINGS_DEFAULTS.sharing.preview),
-    },
     files: {
       preview: boolOr(files["preview"], SETTINGS_DEFAULTS.files.preview),
     },
@@ -302,7 +287,12 @@ async function persist(settings: ServerSettings): Promise<void> {
   // Unique tmp name (pid + random): two concurrent writers must not share a tmp
   // path, or the loser's rename would ENOENT after the winner moved it away.
   const tmp = `${file}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
-  await writeFile(tmp, JSON.stringify(settings, null, 2), "utf8");
+  // A sharing preview that was on stays in the file, for every Worktable's
+  // links store to read when it first opens, on whichever boot that is.
+  const saved = legacySharingPreviewSetting()
+    ? { ...settings, sharing: { preview: true } }
+    : settings;
+  await writeFile(tmp, JSON.stringify(saved, null, 2), "utf8");
   await chmod(tmp, 0o600);
   await rename(tmp, file);
   await clearFailClosed();
@@ -400,6 +390,18 @@ export function getRetentionPolicyGeneration(): number {
  * Because settings now carry the public-origin exposure signal, corrupt or
  * unreadable settings fail closed until an explicit settings write succeeds.
  */
+/**
+ * The removed sharing preview's setting, read by each Worktable's share links
+ * store to settle its policy once (see `settleSharingPreviewPolicy`). Writes
+ * keep it in the file when it was on.
+ */
+let legacySharingPreview: boolean | null = null;
+
+export function legacySharingPreviewSetting(): boolean {
+  if (legacySharingPreview === null) getServerSettings();
+  return legacySharingPreview ?? false;
+}
+
 function readFromDisk(signature: string): ServerSettings {
   const file = settingsFile();
   let raw: string;
@@ -417,6 +419,8 @@ function readFromDisk(signature: string): ServerSettings {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
+    const sharing = (parsed as { sharing?: { preview?: unknown } } | null)?.sharing;
+    legacySharingPreview ??= sharing?.preview === true;
   } catch {
     // Corrupt JSON: preserve the bytes for forensics, reset to defaults, and
     // require auth until an owner successfully rewrites settings.
@@ -467,6 +471,7 @@ export function invalidateServerSettingsCache(): void {
   _cacheSignature = null;
   _cacheCheckedAt = 0;
   _failClosedInMemory = false;
+  legacySharingPreview = null;
 }
 
 /** A partial patch: any subset of the known groups and their known fields. */
@@ -476,7 +481,6 @@ export interface ServerSettingsPatch {
   network?: { publicUrl?: unknown };
   history?: { retention?: unknown };
   agents?: { previewTools?: unknown };
-  sharing?: { preview?: unknown };
   files?: { preview?: unknown };
 }
 
@@ -609,13 +613,12 @@ async function applyPatchWithResult(
     network: { ...current.network },
     history: { ...current.history },
     agents: { ...current.agents },
-    sharing: { ...current.sharing },
     files: { ...current.files },
   };
 
   const patchObj = patch as Record<string, unknown>;
   for (const key of Object.keys(patchObj)) {
-    if (key !== "updates" && key !== "editor" && key !== "network" && key !== "history" && key !== "agents" && key !== "sharing" && key !== "files") {
+    if (key !== "updates" && key !== "editor" && key !== "network" && key !== "history" && key !== "agents" && key !== "files") {
       throw new SettingsValidationError(`Unknown settings group: ${key}`);
     }
   }
@@ -674,25 +677,6 @@ async function applyPatchWithResult(
     }
     if (group["previewTools"] !== undefined) {
       next.agents.previewTools = assertBool(group["previewTools"], "agents.previewTools");
-    }
-  }
-
-  if (patch.sharing !== undefined) {
-    if (
-      !patch.sharing ||
-      typeof patch.sharing !== "object" ||
-      Array.isArray(patch.sharing)
-    ) {
-      throw new SettingsValidationError("sharing must be an object");
-    }
-    const group = patch.sharing as Record<string, unknown>;
-    for (const key of Object.keys(group)) {
-      if (key !== "preview") {
-        throw new SettingsValidationError(`Unknown sharing field: ${key}`);
-      }
-    }
-    if (group["preview"] !== undefined) {
-      next.sharing.preview = assertBool(group["preview"], "sharing.preview");
     }
   }
 

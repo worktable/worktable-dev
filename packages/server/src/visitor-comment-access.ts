@@ -12,7 +12,6 @@ import {
   readDocumentIdentities,
 } from "./document-query.ts"
 import { authorizeShareAction, currentSharingPolicy } from "./share-policy.ts"
-import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import { teamsEnabled } from "./team-database.ts"
 import { canAccessSpace, requireTeamHuman } from "./team-policy.ts"
 import type { TokenIdentity } from "./token-store.ts"
@@ -32,7 +31,6 @@ import { documentHasCommentLink, type StoredShareLink } from "./share-links-stor
 export async function commentPausesForLinks(
   links: readonly StoredShareLink[]
 ): Promise<Map<string, string>> {
-  if (!sharingPreviewEnabled()) return new Map()
   const comments = links.filter((link) => link.level === "comment")
   if (!comments.length) return new Map()
   try {
@@ -53,6 +51,9 @@ export async function visitorCommentPageSummary(c: Context, spaceId: string, doc
   if (!visitorCommentReader(c, spaceId)) return undefined
   try {
     const context = await visitorCommentNamespace()
+    // Most documents have no comments and no comment link: that answer
+    // reveals nothing, so it skips checking the document's Space again.
+    if (visitorCommentCounts(context.worktableId, documentId).total === 0 && !documentHasCommentLink(spaceId, documentId)) return {documentId, newCount: 0, available: false}
     if (!(await visitorDocumentInSpace(spaceId, documentId, { lockHeld: true })) || !(await visitorNamespaceStillCurrent(context)) || !visitorCommentReader(c, spaceId)) return undefined
     const counts = visitorCommentCounts(context.worktableId, documentId)
     return {documentId, newCount: counts.newCount, available: counts.total > 0 || documentHasCommentLink(spaceId, documentId)}
@@ -68,7 +69,6 @@ export function notifyVisitorComments(
   documentId: string,
   linkId: string
 ): void {
-  if (!sharingPreviewEnabled()) return
   wsManager.sendToPeopleWithAccess(spaceId, {
     type: "visitor_comments_changed",
     spaceId,
@@ -80,7 +80,7 @@ export function notifyVisitorComments(
 export async function notifyRetainedVisitorComments(
   changes: readonly VisitorCommentRetentionChange[]
 ): Promise<void> {
-  if (!sharingPreviewEnabled() || !changes.length) return
+  if (!changes.length) return
   const context = await visitorCommentNamespace()
   const spaces = new Map<string, VisitorCommentRetentionChange[]>()
   for (const change of changes) {
@@ -110,7 +110,6 @@ export async function notifyRetainedVisitorComments(
 export function visitorCommentReader(c: Context, spaceId: string): boolean {
   const identity = c.get("identity") as TokenIdentity | undefined
   if (
-    !sharingPreviewEnabled() ||
     !identity ||
     identity.agent !== null ||
     identity.operatorVerification ||

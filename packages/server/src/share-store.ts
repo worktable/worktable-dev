@@ -440,14 +440,18 @@ export interface StoredDocumentShare extends DocumentShare {
 }
 
 /** Whether an earlier version ever wrote the file. */
+/** Whether this Worktable's own file of earlier links exists. */
+export function ownDocumentSharesFileExists(): boolean {
+  return existsSync(shareFilePath())
+}
+
 /**
- * Whether this Worktable has earlier links to move. The file older releases
- * shared between Worktables exists for every Worktable on the machine, so
- * this Worktable's links are claimed out of it first, and only its own file
- * counts.
+ * Claim this Worktable's earlier links out of the file older releases shared
+ * between Worktables. That file exists for every Worktable on the machine,
+ * so it says nothing about this one until its links are claimed into its own
+ * file. Returns whether this Worktable now has earlier links to move.
  */
-export async function documentSharesToMove(): Promise<boolean> {
-  if (existsSync(shareFilePath())) return true
+export async function claimSharedDocumentShares(): Promise<boolean> {
   if (!existsSync(legacyShareFilePath())) return false
   await ensureLegacySharesClaimed()
   return existsSync(shareFilePath())

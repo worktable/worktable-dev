@@ -1261,6 +1261,26 @@ describe("moving today's links into links v2", () => {
     return await createDocumentShare({ kind, spaceId: "space", artifactKey })
   }
 
+  it("moves links from the file older releases shared between Worktables", async () => {
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    await writeDoc("space", "plan", "# Plan")
+    const token = "L".repeat(43)
+    // A release from before each Worktable kept its own file, and no store yet.
+    await writeFile(
+      join(appDir, "document-shares.json"),
+      JSON.stringify({
+        type: "worktable.document-shares",
+        version: 1,
+        shares: [{ token, kind: "doc", spaceId: "space", artifactKey: "plan", workspaceEpoch: await getWorkspaceCollaborationEpoch(), createdAt: "2026-10-01T00:00:00.000Z" }],
+      }),
+      "utf8"
+    )
+    expect(existsSync(shareLinksDatabasePath())).toBe(false)
+    await drainV1ShareLinks()
+    expect((await documentLinks("plan")).links).toHaveLength(1)
+    expect((await view(token)).status).toBe(200)
+  })
+
   /** What an older binary reads from the file: strictly parsed, or it throws. */
   async function v1FileAsOlderBinaryReadsIt(token: string) {
     expect(JSON.parse(await readFile(v1File(), "utf8"))).toEqual({

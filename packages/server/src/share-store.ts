@@ -11,7 +11,7 @@ import { onWorkspaceChange } from "./workspace-events.ts"
 import { assertWorkspaceAvailable } from "./workspace-safety.ts"
 
 // The earlier version's links, one per document path, in
-// <appDir>/document-shares.json. No route makes links here any more: the boot
+// <appDir>/document-shares/<workspace>.json. No route makes links here any more: the boot
 // move reads this file into the links store, views fall back to it for a link
 // not yet moved, and lifecycle events still stop such a link. The create
 // functions remain for tests that act as an older binary.
@@ -440,8 +440,12 @@ export interface StoredDocumentShare extends DocumentShare {
 }
 
 /** Whether an earlier version ever wrote the file. */
+/**
+ * Whether this Worktable may have links to move: its own file, or the file
+ * older releases shared between Worktables, which the move claims from.
+ */
 export function documentSharesFileExists(): boolean {
-  return existsSync(shareFilePath())
+  return existsSync(shareFilePath()) || existsSync(legacyShareFilePath())
 }
 
 /** Every share in the file, without taking its locks. */

@@ -279,11 +279,13 @@ ${DOCUMENT_CONTENT_CSS}
 .html-page { height: 100vh; overflow: hidden; }
 .html-page::before { display: none; }
 .html-shell { height: calc(100vh - 3rem); background: var(--background); }
-.share-footer { display: flex; justify-content: center; min-height: 2rem; align-items: center; }
+body:not(.html-page) { display: flex; flex-direction: column; }
+body:not(.html-page) > main { flex: 1 0 auto; }
+.share-footer { display: flex; justify-content: center; min-height: 2.5rem; align-items: center; }
 .share-footer a { color: var(--muted-foreground); font-size: .75rem; text-underline-offset: .2em; }
 .share-footer a:hover { color: var(--foreground); }
 .share-footer a:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
-.html-page .share-footer { height: 2rem; }
+.html-page .share-footer { min-height: 2rem; height: 2rem; }
 .html-page.has-footer .html-shell { height: calc(100vh - 5rem); }
 .html-shell iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--background); }
 .unavailable-shell { min-height: calc(100vh - 3rem); display: grid; place-items: center; padding: 2rem 1.5rem 5rem; text-align: center; }

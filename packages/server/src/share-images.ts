@@ -33,7 +33,10 @@ const IMAGE_MAX_BYTES = 2 * 1024 * 1024
 const PAGE_IMAGE_BUDGET_BYTES = 4 * 1024 * 1024
 const READ_TIMEOUT_MS = 10_000
 
-/** What a cached page showed of a file, to tell when it changed. */
+/**
+ * What a cached page saw of a file it embeds, to tell when it changed: its
+ * size, time and inode, or -1 for each while it isn't there to read.
+ */
 export interface FileStamp {
   absolutePath: string
   size: number
@@ -41,20 +44,23 @@ export interface FileStamp {
   ino: number
 }
 
-async function stampOf(absolutePath: string): Promise<FileStamp | null> {
+async function stampOf(absolutePath: string): Promise<FileStamp> {
   const info = await lstat(absolutePath).catch(() => null)
-  if (!info?.isFile()) return null
-  return { absolutePath, size: info.size, mtimeMs: info.mtimeMs, ino: info.ino }
+  return info?.isFile()
+    ? { absolutePath, size: info.size, mtimeMs: info.mtimeMs, ino: info.ino }
+    : { absolutePath, size: -1, mtimeMs: -1, ino: -1 }
 }
 
-/** Whether every file a cached page showed is still as it was. */
+/**
+ * Whether every file a cached page embeds is as it was: shown, too large, or
+ * missing then, and still so, so a file that appears or changes renders anew.
+ */
 export async function stampsStillHold(
   stamps: readonly FileStamp[]
 ): Promise<boolean> {
   for (const stamp of stamps) {
     const now = await stampOf(stamp.absolutePath)
     if (
-      !now ||
       now.size !== stamp.size ||
       now.mtimeMs !== stamp.mtimeMs ||
       now.ino !== stamp.ino
@@ -83,9 +89,10 @@ export async function inlineSharedImages<T extends string | unknown[]>(
   content: T
 ): Promise<{ content: T; stamps: FileStamp[] }> {
   if (!filesPreviewEnabled()) return { content, stamps: [] }
-  const targets = new Set<string>()
+  // Each image's occurrences, as every one carries its own data URL.
+  const targets = new Map<string, number>()
   const collect = (target: string) => {
-    targets.add(target)
+    targets.set(target, (targets.get(target) ?? 0) + 1)
     return null
   }
   if (typeof content === "string") {
@@ -109,14 +116,22 @@ export async function inlineSharedImages<T extends string | unknown[]>(
   const dataUrls = new Map<string, string>()
   const stamps: FileStamp[] = []
   let budget = PAGE_IMAGE_BUDGET_BYTES
-  for (const target of targets) {
+  for (const [target, occurrences] of targets) {
     const path = resolveDocLink(docPath, target)
-    const entry = path === null ? undefined : files.get(path)
     const mediaType = path === null ? undefined : imageType(path)
-    if (!entry || !mediaType || entry.handle.source.kind !== "file") continue
-    const absolutePath = resolve(spaceRoot, entry.handle.source.relativePath)
+    if (path === null || !mediaType) continue
+    const entry = files.get(path)
+    // Every image the page refers to is stamped, shown or not, so one that
+    // appears, recovers or shrinks later renders the page anew.
+    const absolutePath =
+      entry && entry.handle.source.kind === "file"
+        ? resolve(spaceRoot, entry.handle.source.relativePath)
+        : resolve(spaceRoot, "docs", ...path.split("/"))
     const stamp = await stampOf(absolutePath)
-    if (!stamp || stamp.size > IMAGE_MAX_BYTES || stamp.size > budget) continue
+    stamps.push(stamp)
+    if (!entry || entry.handle.source.kind !== "file") continue
+    if (stamp.size < 0 || stamp.size > IMAGE_MAX_BYTES) continue
+    if (stamp.size * occurrences > budget) continue
     let bytes: Uint8Array
     try {
       bytes = await readDocumentSource({
@@ -130,13 +145,12 @@ export async function inlineSharedImages<T extends string | unknown[]>(
     } catch {
       continue
     }
-    if (bytes.byteLength > budget) continue
-    budget -= bytes.byteLength
+    if (bytes.byteLength * occurrences > budget) continue
+    budget -= bytes.byteLength * occurrences
     dataUrls.set(
       target,
       `data:${mediaType};base64,${Buffer.from(bytes).toString("base64")}`
     )
-    stamps.push(stamp)
   }
   const inline = (target: string) => dataUrls.get(target) ?? null
   const inlined =

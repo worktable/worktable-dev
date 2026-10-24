@@ -82,17 +82,8 @@ export const LinkedHeartbeat = z
     openUrl: z
       .string()
       .max(2048)
-      .refine(
-        (value) => {
-          try {
-            const url = new URL(value)
-            return url.protocol === "http:" || url.protocol === "https:"
-          } catch {
-            return false
-          }
-        },
-        { message: "must be an http(s) URL" }
-      )
+      .url()
+      .refine((value) => /^https?:\/\//.test(value))
       .optional(),
   })
   .strict()

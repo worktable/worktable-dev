@@ -30,9 +30,11 @@ import { documentOpenHint, type DocumentOpenHint } from "@/lib/document-rows"
 import { toast } from "@worktable/ui/components/sonner"
 import { HttpError } from "@/lib/http"
 
-// A file's page loads only when one opens, so Docs don't carry it.
+// A file's page loads with the Doc renderer when one opens.
 const FilePage = lazy(() =>
-  import("@/components/file-page").then((module) => ({ default: module.FilePage }))
+  import("@/components/file-page-entry").then((module) => ({
+    default: module.FilePage,
+  }))
 )
 
 /**

@@ -162,9 +162,10 @@ export function SpaceNewActions({
 
   const uploadFiles = async (files: File[]) => {
     // Upload code loads when a file is chosen, not with every page.
-    let upload: typeof import("@/lib/file-embeds").uploadFileToFolder
+    let upload: typeof import("@/components/file-page-entry").uploadFileToFolder
     try {
-      upload = (await import("@/lib/file-embeds")).uploadFileToFolder
+      // With the Doc renderer, which the uploaded file's page opens with.
+      upload = (await import("@/components/file-page-entry")).uploadFileToFolder
     } catch (err) {
       console.error("File upload failed:", err)
       toast.error("Couldn’t upload the file. Try again.")

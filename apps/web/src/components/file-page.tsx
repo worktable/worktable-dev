@@ -34,6 +34,10 @@ function fileView(name: string): FileView {
 const PREVIEW_MAX_BYTES = 5 * 1024 * 1024
 /** Rows a table shows; the rest stay in the file. */
 const TABLE_MAX_ROWS = 1000
+/** Cells a table shows at most, so one very wide row can't stall the tab. */
+const TABLE_MAX_CELLS = 50_000
+/** Columns a table shows at most. */
+const TABLE_MAX_COLUMNS = 200
 
 /** The file's text, or null once it passes the preview limit. */
 async function readPreviewText(url: string): Promise<string | null> {
@@ -208,9 +212,17 @@ function FileContent({
     )
   }
   const table = parseDelimitedText(text.data, delimiterForFilename(name))
-  const rows = table.rows.slice(0, TABLE_MAX_ROWS)
-  // A row longer than the header keeps its values, under unnamed columns.
-  const columns = Math.max(table.header.length, ...rows.map((row) => row.length))
+  // A row longer than the header keeps its values, under unnamed columns,
+  // up to what the table shows; the whole file stays one Download away.
+  let widest = table.header.length
+  for (const row of table.rows.slice(0, TABLE_MAX_ROWS)) {
+    widest = Math.max(widest, row.length)
+  }
+  const columns = Math.min(widest, TABLE_MAX_COLUMNS)
+  const rows = table.rows.slice(
+    0,
+    Math.min(TABLE_MAX_ROWS, Math.floor(TABLE_MAX_CELLS / Math.max(columns, 1)))
+  )
   return (
     <>
       <DocTable>
@@ -239,6 +251,9 @@ function FileContent({
         {table.rows.length > rows.length
           ? `First ${rows.length.toLocaleString()} of ${table.rows.length.toLocaleString()} rows`
           : `${table.rows.length.toLocaleString()} ${table.rows.length === 1 ? "row" : "rows"}`}
+        {widest > columns
+          ? `, first ${columns.toLocaleString()} of ${widest.toLocaleString()} columns`
+          : ""}
       </p>
     </>
   )

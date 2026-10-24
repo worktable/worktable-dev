@@ -37,7 +37,7 @@ const DOC_EXTENSION = /\.(?:md|json)$/i
  * Encode only what would break a Markdown link or an HTML attribute, or read
  * as a query or fragment: a name may hold "#" or "?" itself.
  */
-function encodeTargetPath(path: string): string {
+export function encodeTargetPath(path: string): string {
   // encodeURIComponent leaves "(" and ")" as they are, which would end a
   // Markdown link early, so every one is encoded by its code.
   return path.replace(

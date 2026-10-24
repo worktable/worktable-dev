@@ -100,6 +100,7 @@ import {
   DrawerTitle,
 } from "@worktable/ui/components/drawer"
 import { toast } from "@worktable/ui/components/sonner"
+import { versionFilesAt } from "@/lib/file-embeds"
 import * as Y from "yjs"
 import { WebsocketProvider } from "y-websocket"
 import { IndexeddbPersistence } from "y-indexeddb"
@@ -808,7 +809,7 @@ function MarkdownDocPage({
   // An old version shows its files as they were when it was saved.
   const readingFiles = useEditorFiles(spaceId, docPath, {
     upload: false,
-    ...(previewVersion ? { at: previewVersion.createdAt } : {}),
+    ...(previewVersion ? { at: versionFilesAt(previewVersion) } : {}),
   })
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(
     null
@@ -943,7 +944,7 @@ function MarkdownDocPage({
                 ) : previewVersion &&
                   typeof previewVersion.after.content === "string" ? (
                   <MarkdownViewer
-                    filesAt={previewVersion.createdAt}
+                    filesAt={versionFilesAt(previewVersion)}
                     content={previewVersion.after.content}
                     afterTitle={byline}
                     spaceId={spaceId}
@@ -1252,7 +1253,7 @@ function BlockNoteDocPage({
   // An old version shows its files as they were when it was saved.
   const readingFiles = useEditorFiles(spaceId, docPath, {
     upload: false,
-    ...(previewVersion ? { at: previewVersion.createdAt } : {}),
+    ...(previewVersion ? { at: versionFilesAt(previewVersion) } : {}),
   })
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(
     null
@@ -1605,7 +1606,7 @@ function BlockNoteDocPage({
                 ) : previewVersion &&
                   typeof previewVersion.after.content === "string" ? (
                   <MarkdownViewer
-                    filesAt={previewVersion.createdAt}
+                    filesAt={versionFilesAt(previewVersion)}
                     content={previewVersion.after.content}
                     afterTitle={byline}
                     spaceId={spaceId}

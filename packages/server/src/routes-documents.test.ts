@@ -1536,15 +1536,16 @@ describe("format-neutral document route", () => {
                 body: JSON.stringify(body),
               }),
         })
+      // The link differs from the file's name in case, and encodes its space.
       await instance.request(
-        `/api/spaces/${spaceId}/documents/file?path=spec/shot.png`,
+        `/api/spaces/${spaceId}/documents/file?path=${encodeURIComponent("spec/Shot one.png")}`,
         { method: "PUT", body: "Monday" }
       )
       const created = await request("POST", "", {
         path: "spec",
         format: { id: "worktable.markdown", sourceVersion: 1 },
         lifetime: "durable",
-        source: "# Spec\n\n![Shot](spec/shot.png)\n",
+        source: "# Spec\n\n![Shot](spec/shot%20one.png)\n",
       })
       expect(created.status).toBe(201)
       const monday = (
@@ -1556,12 +1557,12 @@ describe("format-neutral document route", () => {
       // Tuesday: a new screenshot, and the spec changes.
       setSystemTime(new Date("2026-10-21T09:00:00.000Z"))
       await instance.request(
-        `/api/spaces/${spaceId}/documents/file?path=spec/shot.png&replace=1`,
+        `/api/spaces/${spaceId}/documents/file?path=${encodeURIComponent("spec/Shot one.png")}&replace=1`,
         { method: "PUT", body: "Tuesday" }
       )
       const tuesday = await request("PUT", "", {
         path: "spec",
-        source: "# Spec\n\nRewritten.\n\n![Shot](spec/shot.png)\n",
+        source: "# Spec\n\nRewritten.\n\n![Shot](spec/shot%20one.png)\n",
         expectedRevision: (await readRegisteredDocumentSource({ spaceId, path: "spec" }))
           .sourceRevision,
       })
@@ -1579,16 +1580,16 @@ describe("format-neutral document route", () => {
         sourceRevision: string
       }
       const day = new Date(Date.parse(monday.slice(0, 10))).toISOString().slice(0, 10)
-      expect(body.keptImages).toEqual([`spec/shot-${day}.png`])
+      expect(body.keptImages).toEqual([`spec/Shot one-${day}.png`])
       // The restored spec shows Monday's screenshot, kept as a copy beside it.
       expect(await readFile(join(docs, "spec.md"), "utf8")).toBe(
-        `# Spec\n\n![Shot](spec/shot-${day}.png)\n`
+        `# Spec\n\n![Shot](spec/Shot%20one-${day}.png)\n`
       )
-      expect(await readFile(join(docs, "spec", `shot-${day}.png`), "utf8")).toBe(
+      expect(await readFile(join(docs, "spec", `Shot one-${day}.png`), "utf8")).toBe(
         "Monday"
       )
       // The shared screenshot, which other Docs may use, stays as it is.
-      expect(await readFile(join(docs, "spec", "shot.png"), "utf8")).toBe("Tuesday")
+      expect(await readFile(join(docs, "spec", "Shot one.png"), "utf8")).toBe("Tuesday")
       // The revision returned is the Doc's current one.
       expect(body.sourceRevision).toBe(
         (await readRegisteredDocumentSource({ spaceId, path: "spec" })).sourceRevision

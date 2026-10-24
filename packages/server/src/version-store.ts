@@ -19,9 +19,12 @@ import crypto from "node:crypto"
 import { existsSync } from "node:fs"
 import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import { type DocSourceCategory } from "@worktable/types"
+import { type DocSourceCategory, versionIdTimestamp } from "@worktable/types"
 import { getVersionsDir } from "./workspace.ts"
 import { assertWorkspaceAvailable } from "./workspace-safety.ts"
+
+export { versionIdTimestamp }
+
 
 export type VersionKind = "docs" | "widgets"
 
@@ -104,16 +107,6 @@ export function mintVersionId(nowIso: string): string {
   return `${stamp}-${sequence}-${crypto.randomUUID().slice(0, 8)}`
 }
 
-/** Recover the authoritative timestamp encoded by current and legacy version ids. */
-export function versionIdTimestamp(versionId: string): number | null {
-  const match = versionId.match(
-    /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z/
-  )
-  if (!match) return null
-  const iso = `${match[1]}T${match[2]}:${match[3]}:${match[4]}.${match[5]}Z`
-  const timestamp = Date.parse(iso)
-  return Number.isNaN(timestamp) ? null : timestamp
-}
 
 /**
  * Order version entries newest-first.

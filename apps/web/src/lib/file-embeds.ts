@@ -5,7 +5,7 @@
 // a Doc go in the Doc's own folder (`onboarding/signup-flow.md` owns
 // `onboarding/signup-flow/`), and the Doc stores the path relative to it.
 
-import { resolveDocLink } from "@worktable/types"
+import { resolveDocLink, versionIdTimestamp } from "@worktable/types"
 import { authenticatedFetch, BASE_URL, HttpError } from "./http"
 
 /**
@@ -67,6 +67,16 @@ export function embedSourceUrl(
     : files.at
       ? fileSourceUrl(spaceId, path, null, { at: files.at })
       : fileSourceUrl(spaceId, path, files.versions?.[path] ?? null)
+}
+
+/**
+ * When an old version's content was saved, to show its files as they were
+ * then. A version that merged rapid saves keeps the first one's createdAt;
+ * its id names the last.
+ */
+export function versionFilesAt(version: { id: string; createdAt: string }): string {
+  const savedAt = versionIdTimestamp(version.id)
+  return savedAt === null ? version.createdAt : new Date(savedAt).toISOString()
 }
 
 /** A path as a link holds it: characters a URL reads as syntax are encoded. */

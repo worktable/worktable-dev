@@ -17,6 +17,7 @@ import {
 } from "./document-write-service.ts"
 import { filesPreviewEnabled } from "./files-preview.ts"
 import {
+  encodeTargetPath,
   rewriteBlockLinks,
   rewriteDocTargets,
   rewriteMarkdownLinks,
@@ -25,6 +26,7 @@ import { agentChangeBase } from "./mcp/dispatcher.ts"
 import { versionIdTimestamp } from "./version-store.ts"
 import { logError } from "./debug-log.ts"
 import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts"
+import { analyzeDocumentPath } from "./document-path.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
 import {
   listDocumentGenerationsV2,
@@ -39,13 +41,17 @@ export async function readFileAsOf(
   at: number
 ): Promise<{ bytes: Uint8Array; fileName: string } | null> {
   const catalog = await readDocumentCatalogSnapshot(spaceId)
+  // Paths compare as the current file read compares them, so a link that
+  // differs from the file's name only in case finds it here too.
+  const key = (candidate: string) =>
+    analyzeDocumentPath(candidate).comparisonKey ?? candidate
   const fileAt = (candidate: string | null) =>
     candidate === null
       ? undefined
       : catalog.entries.find(
           (entry) =>
             entry.kind === "document" &&
-            entry.descriptor.path === candidate &&
+            key(entry.descriptor.path) === key(candidate) &&
             entry.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file &&
             entry.handle.identity === "durable"
         )
@@ -61,6 +67,18 @@ export async function readFileAsOf(
   // A version that merged later saves holds what the last of them saved.
   const savedAt = (generation: (typeof generations)[number]) =>
     Date.parse(generation.updatedAt ?? generation.createdAt)
+  // Between its first and last save, what the file held was not kept: an
+  // earlier version would be the wrong image, so there is none.
+  if (
+    generations.some(
+      (generation) =>
+        generation.updatedAt !== undefined &&
+        Date.parse(generation.createdAt) <= at &&
+        at < savedAt(generation)
+    )
+  ) {
+    return null
+  }
   const then = generations
     .filter((generation) => savedAt(generation) <= at)
     .sort((a, b) => savedAt(b) - savedAt(a))[0]
@@ -149,7 +167,10 @@ export async function keepEarlierImagesForRestoredDoc(
     await rewriteDocTargets(
       spaceId,
       docPath,
-      (target) => copies.get(target) ?? null,
+      (target) => {
+        const copy = copies.get(target)
+        return copy === undefined ? null : encodeTargetPath(copy)
+      },
       { reason: "Kept the images of a restored version", imagesOnly: true }
     )
   }

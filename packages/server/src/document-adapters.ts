@@ -57,6 +57,8 @@ export interface DocumentSourceClaim {
   source: DocumentSource
   title: string
   updatedAt?: string
+  /** A file source's stamp, from the catalog's look at it. */
+  sourceStamp?: string
   archived?: boolean
   archiveProvider?: "legacy-doc-metadata"
   diagnostics: SourceClaimDiagnostic[]

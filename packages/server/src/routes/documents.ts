@@ -544,13 +544,15 @@ documentsRouter.get("/file", requireScope("documents:read"), async (c) => {
         409
       )
     }
-    const { bytes, fileName } = result.source
+    const { bytes, fileName, version } = result.source
     const hash = fileContentHash(bytes)
     const etag = `"${hash}"`
-    // A request naming the current content may keep it for good: a file's
-    // bytes at a hash never change. Otherwise check again each time.
+    // A request naming the current content, by its hash or by the version a
+    // Doc's page gave for it, may keep it for good: a file's bytes at either
+    // never change. Otherwise check again each time.
+    const v = c.req.query("v")
     const cacheControl =
-      c.req.query("v") === hash
+      v === hash || (version !== undefined && v === version)
         ? "private, max-age=31536000, immutable"
         : "private, no-cache"
     const headers: Record<string, string> = {

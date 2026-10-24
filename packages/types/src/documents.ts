@@ -305,6 +305,12 @@ export const DocumentPageSchema = z.object({
   /** Absent until the Space's activity has been summarized once. */
   contributors: DocumentContributorsSchema.optional(),
   /**
+   * The version of each file the Doc links to or embeds, by path, so the
+   * files load from addresses a browser keeps. Absent with files off, or
+   * until the Space's link graph has been built once.
+   */
+  embeds: z.record(z.string(), z.string()).optional(),
+  /**
    * The document's share links, for people who may share it, while links v2
    * is on. Absent otherwise; the page then shares through today's single link.
    */

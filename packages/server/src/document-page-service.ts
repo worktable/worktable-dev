@@ -30,6 +30,7 @@ import {
 import { listDocumentAnnotationsForHandle } from "./document-annotation-service.ts"
 import {
   legacySpecializedDocumentView,
+  readDocumentCatalogSnapshot,
   type DocumentHandleResolution,
   type ResolvedDocumentHandle,
   useResolvedDocumentHandle,
@@ -48,7 +49,8 @@ import {
   readDocumentSource,
 } from "./document-source-reader.ts"
 import { peekDocActivity } from "./activity-log.ts"
-import { peekDocBacklinks } from "./link-graph.ts"
+import { peekDocBacklinks, peekDocOutbound } from "./link-graph.ts"
+import { filesPreviewEnabled } from "./files-preview.ts"
 import { peekDocReferrers } from "./doc-referrers.ts"
 import {
   documentShareLinkSummary,
@@ -82,6 +84,36 @@ interface DocumentPageMetadata {
   backlinks?: DocumentBacklink[]
   referrers?: DocumentReferrer[]
   contributors?: DocumentContributors
+  embeds?: Record<string, string>
+}
+
+/**
+ * The version of each file a Doc links to or embeds, from the cached link
+ * graph and the catalog snapshot, so its files load from addresses a
+ * browser keeps without asking again.
+ */
+async function embedVersions(
+  spaceId: string,
+  docPath: string
+): Promise<Record<string, string> | undefined> {
+  if (!filesPreviewEnabled()) return undefined
+  const targets = peekDocOutbound(spaceId, docPath)
+  if (!targets || targets.length === 0) return undefined
+  // A page reads under the Space's lock, which this read must not take again.
+  const catalog = await readDocumentCatalogSnapshot(spaceId, { lockHeld: true })
+  const wanted = new Set(targets)
+  const embeds: Record<string, string> = {}
+  for (const entry of catalog.entries) {
+    if (
+      entry.kind === "document" &&
+      entry.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file &&
+      entry.handle.sourceStamp &&
+      wanted.has(entry.descriptor.path)
+    ) {
+      embeds[entry.descriptor.path] = entry.handle.sourceStamp
+    }
+  }
+  return Object.keys(embeds).length > 0 ? embeds : undefined
 }
 
 interface DocumentPageIntegration {
@@ -105,10 +137,11 @@ const PAGE_INTEGRATIONS: readonly DocumentPageIntegration[] = [
     legacyShareKind: "doc",
     annotationTarget: (path) => ({ docPath: path }),
     async readMetadata(spaceId, handle) {
-      const [meta, epoch, revision] = await Promise.all([
+      const [meta, epoch, revision, embeds] = await Promise.all([
         getDocMetaView(spaceId, handle.document.path),
         getWorkspaceCollaborationEpoch(),
         docSourceContentRevision(spaceId, handle.source),
+        embedVersions(spaceId, handle.document.path),
       ])
       // Backlinks and who has worked on the doc come from per-Space caches
       // that answer without reading files. A Space whose cache is not built
@@ -127,6 +160,7 @@ const PAGE_INTEGRATIONS: readonly DocumentPageIntegration[] = [
         ...(revision ? { revision } : {}),
         ...(backlinks ? { backlinks } : {}),
         ...(referrers ? { referrers } : {}),
+        ...(embeds ? { embeds } : {}),
         ...(activity
           ? {
               contributors: {
@@ -364,6 +398,7 @@ async function pageForHandle(
         }
       : {}),
     ...(metadata?.contributors ? { contributors: metadata.contributors } : {}),
+    ...(metadata?.embeds ? { embeds: metadata.embeds } : {}),
     ...(links || visitorSummary ? { sharing: {...(links ?? {activeLinks: 0, canCreate: false}), ...(visitorSummary ? {visitorComments: visitorSummary} : {})} } : {}),
   }
 }
@@ -560,6 +595,8 @@ export interface RawDocumentSource {
   bytes: Uint8Array
   fileName: string
   formatId: string
+  /** What the source's bytes are, as the catalog saw them. */
+  version?: string
 }
 
 export type RawDocumentSourceResolution =
@@ -604,6 +641,7 @@ export async function readRawDocumentSource(options: {
           bytes,
           fileName: sourceFileName(handle),
           formatId: handle.document.format.id,
+          ...(handle.sourceStamp ? { version: handle.sourceStamp } : {}),
         },
       }
     }

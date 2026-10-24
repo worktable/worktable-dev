@@ -183,6 +183,37 @@ interface EditorProps {
   afterTitle?: ReactNode
   /** How the editor shows the Doc's name, its title. */
   title?: EditorTitle
+  /**
+   * The Doc's files: where an embed loads from, and, while editing, how a
+   * pasted or dropped file is saved. Without it, media blocks take URLs only.
+   */
+  files?: EditorFiles
+}
+
+export interface EditorFiles {
+  /** The URL an embed's stored path loads from. */
+  resolve: (url: string) => string
+  /** Save a file into the Doc's folder; returns the path to embed. */
+  upload?: (file: File) => Promise<string>
+}
+
+/** The file handlers an editor made once reads, always the latest given. */
+class LatestFiles {
+  private files: EditorFiles | undefined
+  constructor(files: EditorFiles | undefined) {
+    this.files = files
+  }
+  set(files: EditorFiles | undefined): void {
+    this.files = files
+  }
+  resolve(url: string): string {
+    return this.files ? this.files.resolve(url) : url
+  }
+  upload(file: File): Promise<string> {
+    const upload = this.files?.upload
+    if (!upload) return Promise.reject(new Error("Files can't be added to this Doc now"))
+    return upload(file)
+  }
 }
 
 export interface EditorTitle {
@@ -204,6 +235,7 @@ export function Editor({
   onSelectAnnotation,
   afterTitle,
   title,
+  files,
 }: EditorProps) {
   const { theme } = useTheme()
   const isMobile = useIsMobile()
@@ -232,6 +264,7 @@ export function Editor({
       onSelectAnnotation={onSelectAnnotation}
       afterTitle={afterTitle}
       title={title}
+      files={files}
       resolvedTheme={resolvedTheme}
       isMobile={isMobile}
       spellcheck={spellcheck}
@@ -251,6 +284,7 @@ function EditorInner({
   onSelectAnnotation,
   afterTitle,
   title,
+  files,
   resolvedTheme,
   isMobile,
   spellcheck,
@@ -268,9 +302,21 @@ function EditorInner({
     [initialContent]
   )
 
+  // The editor is made once; its file handlers read the latest ones, so
+  // versions that arrive with the Doc's page still reach its images.
+  const [currentFiles] = useState(() => new LatestFiles(files))
+  useEffect(() => currentFiles.set(files), [currentFiles, files])
   const baseOptions = {
     schema,
     extensions: [syntaxHighlighter],
+    ...(files
+      ? {
+          resolveFileUrl: async (url: string) => currentFiles.resolve(url),
+          ...(files.upload
+            ? { uploadFile: (file: File) => currentFiles.upload(file) }
+            : {}),
+        }
+      : {}),
     _tiptapOptions: {
       editorProps: {
         attributes: {

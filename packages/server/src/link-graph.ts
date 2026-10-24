@@ -588,6 +588,20 @@ export function peekDocBacklinks(
   return [...backlinks].map(([path, links]) => ({ path, ...links }));
 }
 
+/**
+ * The paths a doc links to or embeds that resolve, without waiting: from
+ * the Space's last graph, or null until one is built.
+ */
+export function peekDocOutbound(spaceId: string, docPath: string): string[] | null {
+  const space = spaces.get(spaceId);
+  if (!space?.graph || space.dirty) warmLinkGraph(spaceId);
+  const graph = space?.graph;
+  if (!graph) return null;
+  return (graph.outbound.get(docPath) ?? []).flatMap((link) =>
+    link.resolved ? [link.resolvedPath] : []
+  );
+}
+
 /** Start building a Space's graph in the background if it is missing or out of date. */
 export function warmLinkGraph(spaceId: string): void {
   void getSpaceLinkGraph(spaceId).catch(() => undefined);

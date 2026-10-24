@@ -51,6 +51,9 @@ export async function visitorCommentPageSummary(c: Context, spaceId: string, doc
   if (!visitorCommentReader(c, spaceId)) return undefined
   try {
     const context = await visitorCommentNamespace()
+    // Most documents have no comments and no comment link: that answer
+    // reveals nothing, so it skips checking the document's Space again.
+    if (visitorCommentCounts(context.worktableId, documentId).total === 0 && !documentHasCommentLink(spaceId, documentId)) return {documentId, newCount: 0, available: false}
     if (!(await visitorDocumentInSpace(spaceId, documentId, { lockHeld: true })) || !(await visitorNamespaceStillCurrent(context)) || !visitorCommentReader(c, spaceId)) return undefined
     const counts = visitorCommentCounts(context.worktableId, documentId)
     return {documentId, newCount: counts.newCount, available: counts.total > 0 || documentHasCommentLink(spaceId, documentId)}

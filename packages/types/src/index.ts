@@ -19,6 +19,7 @@ export * from "./doc-links";
 export * from "./document-reference";
 export * from "./documents";
 export * from "./document-storage-v2";
+export * from "./version-ids";
 export * from "./threads";
 export * from "./agent-connections";
 export * from "./agent-platforms";

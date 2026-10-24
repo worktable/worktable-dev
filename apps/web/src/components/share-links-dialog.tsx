@@ -469,7 +469,7 @@ export function ShareLinksDialog({
 
         <ResponsiveDialogBody
           ref={scrollRef}
-          className="scroll-fade min-h-24 space-y-4"
+          className="scroll-fade min-h-16 space-y-4"
         >
           {list.data && !list.data.canCreate ? (
             <Callout>

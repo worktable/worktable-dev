@@ -674,14 +674,7 @@ for (const appearance of [
           },
           counts: { deals: 2 },
           sentences: [],
-          warnings: body.observe
-            ? [
-                {
-                  code: "later_reads",
-                  message: "Later filters may need other fields.",
-                },
-              ]
-            : [],
+          warnings: [],
           issues: [],
           stateReadable: true,
         },
@@ -698,7 +691,8 @@ for (const appearance of [
           .click()
         await page
           .getByRole("dialog", { name: "Page", exact: true })
-          .getByRole("button", { name: "Share", exact: true })
+          // With a link open it reads "Share" and "Link active".
+          .getByRole("button", { name: /^Share/ })
           .click()
       } else await page.getByRole("button", { name: "Share document" }).click()
     }
@@ -725,9 +719,6 @@ for (const appearance of [
     await expect(live).toContainText("2 Deals")
     const hidden = dialog.getByRole("list", { name: "Hidden from Deals" })
     await expect(hidden.getByRole("listitem")).toHaveText(["Amount", "Secret"])
-    await expect(
-      dialog.getByText("Later filters may need other fields.")
-    ).toBeVisible()
     await expect(
       dialog.getByRole("button", { name: "View as Visitor", exact: true })
     ).toBeEnabled()

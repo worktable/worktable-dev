@@ -26,7 +26,6 @@ import { canWidgetRecord } from "./widget-runtime-policy.ts";
 export type LinkGrantSuggestionWarningCode =
   | "whole_records"
   | "search_fields"
-  | "later_reads"
   | "long_search"
   | "fields_left_out"
   | "archived_rows"
@@ -173,10 +172,6 @@ export function suggestLinkGrant(input: {
     if (reads.some((read) => read.search)) warnings.push({
       code: "search_fields", collectionId,
       message: `This tool searches all ${nameOf(collectionId)} fields. A link searches only the fields it shows, so matching records may differ.`,
-    });
-    if (named.includes(collectionId) && asked.has(collectionId)) warnings.push({
-      code: "later_reads", collectionId,
-      message: `This preview saw ${nameOf(collectionId)} reads on first load only. Later actions may need other fields; check them before sharing.`,
     });
     if (archived.has(collectionId)) {
       warnings.push({ code: "archived_rows", collectionId, message: `This tool reads archived ${nameOf(collectionId)} records, which links never show.` });

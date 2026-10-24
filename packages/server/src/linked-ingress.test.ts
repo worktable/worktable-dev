@@ -12,7 +12,6 @@ import {
   LINKED_ASSERTION_TYPE,
   LINKED_ASSERTION_TTL_SECONDS,
   VISITOR_HEADERS,
-  SHARE_COMMENT_CURSOR_HEADER,
   type ShareVisitor,
   type LinkedRequestGrant,
   type LinkedDestinationBinding,
@@ -603,9 +602,6 @@ it("carries password unlocks and frame tickets over authenticated Link requests"
       passwordHash: await hashSharePassword(password),
       comments: {
         acceptComments: true,
-        anonymousAllowed: false,
-        showSharerName: false,
-        visitorsSee: "own",
       },
     })
     const request = async (
@@ -697,9 +693,6 @@ it("carries only signed visitor authority to comments and isolates each visitor"
       expiresAt: null,
       comments: {
         acceptComments: true,
-        anonymousAllowed: false,
-        showSharerName: false,
-        visitorsSee: "own",
       },
     })
     const visitor: ShareVisitor = {
@@ -774,6 +767,7 @@ it("carries only signed visitor authority to comments and isolates each visitor"
       await signed("GET", { verified: false, key: "c".repeat(64) })
     )
     expect((await other.json()).comments).toEqual([])
+    // This binary names no comment pages, so a signed cursor is refused.
     const cursor = Buffer.from(
       JSON.stringify({
         receivedAt: Date.parse(receipt.receivedAt),
@@ -781,21 +775,14 @@ it("carries only signed visitor authority to comments and isolates each visitor"
         scope: "s".repeat(43),
       })
     ).toString("base64url")
-    const unsigned = await signed("GET", { verified: false, key: visitor.key })
-    unsigned.headers.set(SHARE_COMMENT_CURSOR_HEADER, cursor)
-    expect((await (await fetch(unsigned)).json()).reset).toBeUndefined()
-    const continued = await fetch(
+    for (const request of [
       await signed(
         "GET",
         { verified: false, key: visitor.key },
         undefined,
         undefined,
         cursor
-      )
-    )
-    expect(continued.status).toBe(200)
-    expect((await continued.json()).reset).toBe(true)
-    for (const request of [
+      ),
       await signed("POST", visitor, undefined, undefined, cursor),
       await signed("GET", undefined, "/public/share", undefined, cursor),
     ])
@@ -858,9 +845,6 @@ it("carries bounded live bridge calls and reserves MCP capacity while share bodi
       expiresAt: null,
       comments: {
         acceptComments: true,
-        anonymousAllowed: false,
-        showSharerName: false,
-        visitorsSee: "own",
       },
       grant: LinkGrantSchema.parse({ version: 1 }),
     })

@@ -72,9 +72,6 @@ const DAY = 86_400_000
 
 const COMMENTS = {
   acceptComments: true,
-  anonymousAllowed: false,
-  showSharerName: false,
-  visitorsSee: "own",
   autoPaused: false,
 } as const
 

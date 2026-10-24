@@ -28,9 +28,6 @@ function link(
     canManage: true,
     comments: {
       acceptComments: true,
-      anonymousAllowed: false,
-      showSharerName: false,
-      visitorsSee: "own",
       autoPaused: false,
     },
     ...overrides,

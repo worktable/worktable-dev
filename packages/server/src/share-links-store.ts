@@ -243,12 +243,8 @@ function storedLink(row: LinkRow): StoredShareLink {
     grant: storedGrant(row.grant_json).grant,
     grantRevision: storedGrant(row.grant_json).revision,
     linkKey: row.link_key,
-    comments: {
-      acceptComments: row.accept_comments === 1,
-      anonymousAllowed: row.anonymous_allowed === 1,
-      showSharerName: row.show_sharer_name === 1,
-      visitorsSee: row.visitors_see === "all" ? "all" : "own",
-    },
+    // The visitor columns are constants (see `normalizeVisitorSettings`).
+    comments: { acceptComments: row.accept_comments === 1 },
     revokedAt: row.revoked_at,
     revokedReason: row.revoked_reason,
     lastUsedAt: row.last_used_at,
@@ -313,6 +309,26 @@ function migrate(db: Database): void {
   })()
 }
 
+/**
+ * Visitors see only their own comments and give a name. Links saved when
+ * a link could show every comment, allow anonymous comments or sign replies
+ * with the sharer's name are set back, once per open and idempotently, so
+ * an older binary run on this store later can't bring those back. The
+ * columns stay: older binaries read them. Only values this binary knew are
+ * changed; a later binary's values keep the link unservable here.
+ */
+function normalizeVisitorSettings(db: Database): void {
+  const legacy = `visitors_see IN ('own', 'all') AND anonymous_allowed IN (0, 1)
+    AND show_sharer_name IN (0, 1)
+    AND (visitors_see = 'all' OR anonymous_allowed = 1 OR show_sharer_name = 1)`
+  // Read first, so an open that finds nothing to change never takes the write lock.
+  if (db.query(`SELECT 1 FROM share_links WHERE ${legacy} LIMIT 1`).get())
+    db.query(
+      `UPDATE share_links SET visitors_see = 'own', anonymous_allowed = 0,
+         show_sharer_name = 0 WHERE ${legacy}`
+    ).run()
+}
+
 function openDatabase(create: boolean): Database | null {
   const path = shareLinksDatabasePath()
   const cached = databases.get(path)
@@ -337,6 +353,7 @@ function openDatabase(create: boolean): Database | null {
     else if (version !== SCHEMA_VERSION) {
       throw new ShareLinksStoreError("Share links use an unsupported version")
     }
+    normalizeVisitorSettings(db)
   } catch (error) {
     db.close()
     if (error instanceof ShareLinksStoreError) throw error
@@ -642,9 +659,9 @@ export function createShareLink(input: NewShareLink): {
     input.now ?? Date.now(),
     input.expiresAt,
     input.comments.acceptComments ? 1 : 0,
-    input.comments.anonymousAllowed ? 1 : 0,
-    input.comments.showSharerName ? 1 : 0,
-    input.comments.visitorsSee,
+    0,
+    0,
+    "own",
     input.passwordHash ?? null,
     input.passwordHash ? 1 : 0,
     grant ? JSON.stringify(grant) : null
@@ -805,15 +822,6 @@ export function updateShareLink(
   if (change.expiresAt !== undefined) set("expires_at", change.expiresAt)
   if (comments.acceptComments !== undefined) {
     set("accept_comments", bit(comments.acceptComments))
-  }
-  if (comments.anonymousAllowed !== undefined) {
-    set("anonymous_allowed", bit(comments.anonymousAllowed))
-  }
-  if (comments.showSharerName !== undefined) {
-    set("show_sharer_name", bit(comments.showSharerName))
-  }
-  if (comments.visitorsSee !== undefined) {
-    set("visitors_see", comments.visitorsSee)
   }
   if (sets.length > 0) {
     db.transaction(() => {
@@ -1279,6 +1287,13 @@ let policyCache: (StoredSharingPolicy & { path: string }) | null = null
 const REMOVED_RECORD_ACCESS = new Set<unknown>(["summaries", "fixed"])
 
 /**
+ * Settings earlier versions saved and this one dropped: whether sharers could
+ * let visitors see every comment on a link. Visitors now see only their own,
+ * so the setting is ignored rather than read as a later version's.
+ */
+const REMOVED_POLICY_KEYS = ["allowVisitorsSeeAll"] as const
+
+/**
  * A saved policy this binary can't read, such as one a later version saved
  * with settings it doesn't know, stops every link until an owner saves the
  * policy again here.
@@ -1286,12 +1301,11 @@ const REMOVED_RECORD_ACCESS = new Set<unknown>(["summaries", "fixed"])
 function parsePolicy(text: string): SharingPolicy {
   try {
     const saved: unknown = JSON.parse(text)
-    if (
-      saved !== null &&
-      typeof saved === "object" &&
-      REMOVED_RECORD_ACCESS.has((saved as { records?: unknown }).records)
-    )
-      (saved as { records: string }).records = "none"
+    if (saved !== null && typeof saved === "object" && !Array.isArray(saved)) {
+      const fields = saved as Record<string, unknown>
+      if (REMOVED_RECORD_ACCESS.has(fields.records)) fields.records = "none"
+      for (const key of REMOVED_POLICY_KEYS) delete fields[key]
+    }
     return SharingPolicySchema.parse(saved)
   } catch {
     return { ...DEFAULT_POLICY, paused: true }

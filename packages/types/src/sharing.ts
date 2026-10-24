@@ -41,10 +41,6 @@ export type ShareLinkBlockedBy = z.infer<typeof ShareLinkBlockedBySchema>
 const ShareLinkLabelSchema = z.string().trim().max(SHARE_LINK_LABEL_MAX_LENGTH)
 const ShareLinkPasswordSchema = z.string().min(8).max(128)
 
-/** Who sees a link's visitor comments: each visitor their own, or everyone holding the link. */
-export const VisitorsSeeSchema = z.enum(["own", "all"])
-export type VisitorsSee = z.infer<typeof VisitorsSeeSchema>
-
 // Settings live in two forms: without defaults for inputs, so an update or a
 // replacement never quietly resets what it omits, and with defaults for
 // creating and reading stored values.
@@ -60,15 +56,13 @@ function withDefaults<S extends Record<string, z.ZodType>>(
   ) as { [K in keyof S]: z.ZodDefault<S[K]> }
 }
 
+/**
+ * Each visitor sees only their own comments and the team's replies to them,
+ * and gives a name with every comment.
+ */
 const CommentSettingsFieldsSchema = z.strictObject({
   /** The sharer's switch. Turning it on also resumes comments paused after a burst. */
   acceptComments: z.boolean(),
-  /** Visitors may comment without a name. */
-  anonymousAllowed: z.boolean(),
-  /** Replies show the sharer's name instead of "The team". */
-  showSharerName: z.boolean(),
-  /** `all` needs the owner policy's `allowVisitorsSeeAll`. */
-  visitorsSee: VisitorsSeeSchema,
 })
 
 /** Per-link comment settings. They apply while the link's level is `comment` or higher. */
@@ -79,9 +73,6 @@ export type ShareLinkCommentSettings = z.infer<
 export const DEFAULT_SHARE_LINK_COMMENT_SETTINGS: Readonly<ShareLinkCommentSettings> =
   {
     acceptComments: true,
-    anonymousAllowed: false,
-    showSharerName: false,
-    visitorsSee: "own",
   }
 
 export const ShareLinkCommentSettingsSchema = z.strictObject(
@@ -246,8 +237,6 @@ export const SharingPolicyInputSchema = z.strictObject({
   recordsDefaultExpiryDays: DAYS.nullable(),
   /** Comment links take comments. Off stops new comments without stopping the links. */
   allowComments: z.boolean(),
-  /** Sharers may set a link's Visitors See to every comment on it. */
-  allowVisitorsSeeAll: z.boolean(),
   /** Agents can't make links. A later version widens this to `view`. */
   agentLinks: z.enum(["off"]),
 })
@@ -265,7 +254,6 @@ const DEFAULT_SHARING_POLICY: Readonly<SharingPolicy> = {
   records: "scoped",
   recordsDefaultExpiryDays: 30,
   allowComments: true,
-  allowVisitorsSeeAll: true,
   agentLinks: "off",
 }
 
@@ -286,7 +274,6 @@ export const SHARING_PREVIEW_POLICY_KEYS = [
   "records",
   "recordsDefaultExpiryDays",
   "allowComments",
-  "allowVisitorsSeeAll",
 ] as const satisfies readonly (keyof SharingPolicy)[]
 
 /**
@@ -335,7 +322,7 @@ export interface VisitorComment {
   documentId: string
   linkId: string
   linkLabel: string
-  /** Null when the visitor commented anonymously. */
+  /** Null on comments from before a name was required. */
   visitorName: string | null
   /** Null once erased: when deleted, and 30 days after passing on. */
   body: string | null
@@ -361,9 +348,9 @@ export interface VisitorCommentReply {
 
 /** A document's visitor comments, for members. */
 export interface VisitorCommentsResponse {
+  /** The latest 100. */
   comments: VisitorComment[]
   pausedLinks?: {id: string; label: string; canResume: boolean}[]
-  nextCursor?: string | null
 }
 
 export const VisitorCommentReplyInputSchema = z.strictObject({
@@ -389,59 +376,44 @@ export type PassVisitorCommentInput = z.input<
 /** A comment as visitors see it on the share page. Replies come from the team, never another visitor. */
 export interface VisitorCommentForVisitor {
   id: string
-  /** The name it was sent under; null when anonymous. */
+  /** The name it was sent under; null on comments from before a name was required. */
   name: string | null
   body: string
   receivedAt: string
-  /** Sent from this browser. */
-  mine: boolean
-  /** `from` is "The team", or the sharer's name when the link shows it. */
-  replies: { body: string; from: string; at: string }[]
+  /** Sent from this browser: always, as visitors see only their own. */
+  mine: true
+  replies: { body: string; from: "The team"; at: string }[]
 }
 
-/** A link's comments as its share page shows them. With Visitors See `own`, every comment is the visitor's own. */
+/**
+ * A visitor's own comments, the latest 100, as the share page shows them.
+ * The Cloud gateway parses this strictly and still requires
+ * `anonymousAllowed` and `visitorsSee`, so they are sent as constants.
+ */
 export interface VisitorCommentsForVisitor {
   accepting: boolean
-  anonymousAllowed: boolean
-  visitorsSee: VisitorsSee
+  anonymousAllowed: false
+  visitorsSee: "own"
   comments: VisitorCommentForVisitor[]
-  /** Older runtimes omit pagination metadata. Null ends the retained history. */
-  nextCursor?: string | null
-  /** Replace the visible history after its access or visibility scope changes. */
-  reset?: true
 }
 
-/** A visitor's new comment. A name is required unless the visitor comments anonymously. */
-export const VisitorCommentInputSchema = z
-  .strictObject({
-    name: z
-      .string()
-      .trim()
-      .min(1)
-      .max(VISITOR_NAME_MAX_LENGTH)
-      // Control characters, line and paragraph separators, and direction
-      // overrides could break a name across lines or disguise it.
-      .refine(
-        (name) => !/[\p{Cc}\p{Zl}\p{Zp}\u202A-\u202E\u2066-\u2069]/u.test(name),
-        { message: "Name must be one line of plain text" }
-      )
-      .optional(),
-    anonymous: z.boolean().default(false),
-    body: CommentBodySchema,
-    /** Repeats with the same id from the same visitor store one comment. */
-    requestId: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/),
-  })
-  .superRefine((input, ctx) => {
-    if (input.anonymous === (input.name !== undefined)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["name"],
-        message: input.anonymous
-          ? "Anonymous comments have no name"
-          : "Name is required",
-      })
-    }
-  })
+/** A visitor's new comment. A name is required: anonymous comments are refused. */
+export const VisitorCommentInputSchema = z.strictObject({
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(VISITOR_NAME_MAX_LENGTH)
+    // Control characters, line and paragraph separators, and direction
+    // overrides could break a name across lines or disguise it.
+    .refine(
+      (name) => !/[\p{Cc}\p{Zl}\p{Zp}\u202A-\u202E\u2066-\u2069]/u.test(name),
+      { message: "Name must be one line of plain text" }
+    ),
+  body: CommentBodySchema,
+  /** Repeats with the same id from the same visitor store one comment. */
+  requestId: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/),
+})
 export type VisitorCommentInput = z.input<typeof VisitorCommentInputSchema>
 
 export interface VisitorCommentCreated {

@@ -166,11 +166,7 @@ export function shareLinkStillOpens(
     found &&
     (!options.comments ||
       (found.link.level === link.level &&
-        found.link.comments.acceptComments === link.comments.acceptComments &&
-        found.link.comments.anonymousAllowed ===
-          link.comments.anonymousAllowed &&
-        found.link.comments.showSharerName === link.comments.showSharerName &&
-        found.link.comments.visitorsSee === link.comments.visitorsSee)) &&
+        found.link.comments.acceptComments === link.comments.acceptComments)) &&
     found.link.revokedAt === null &&
     found.link.passwordRevision === link.passwordRevision &&
     found.link.grantRevision === link.grantRevision &&

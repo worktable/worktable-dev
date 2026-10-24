@@ -3,10 +3,9 @@ import { fetchJSON } from "./http"
 
 export { visitorCommentsQueryKey } from "./visitor-comment-events"
 const base = (spaceId: string) => `/api/spaces/${encodeURIComponent(spaceId)}/visitor-comments`
-export function getVisitorComments(spaceId: string, documentId: string, before: string | null): Promise<VisitorCommentsResponse> {
-  const query = new URLSearchParams({documentId})
-  if (before) query.set("before", before)
-  return fetchJSON(`${base(spaceId)}?${query}`)
+/** The latest 100. */
+export function getVisitorComments(spaceId: string, documentId: string): Promise<VisitorCommentsResponse> {
+  return fetchJSON(`${base(spaceId)}?${new URLSearchParams({documentId})}`)
 }
 export function replyToVisitor(spaceId: string, id: string, body: string): Promise<{ok: true}> {
   return fetchJSON(`${base(spaceId)}/${encodeURIComponent(id)}/replies`, {method: "POST", body: JSON.stringify({body})})

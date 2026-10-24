@@ -5,7 +5,6 @@ import {
 } from "@worktable/types"
 import {
   SHARE_CAPABILITY_HEADER,
-  SHARE_COMMENT_CURSOR_HEADER,
   SHARE_UNLOCK_HEADER,
   VISITOR_HEADERS,
 } from "@worktable/hosted-contract"
@@ -28,11 +27,6 @@ import {
   visitorReplies,
   VisitorCommentRefused,
 } from "../visitor-comment-store.ts"
-import {
-  nextVisitorCommentCursor,
-  readVisitorCommentCursor,
-  visitorCommentPageScope,
-} from "../visitor-comment-pages.ts"
 
 const DIGEST = /^[a-f0-9]{32,64}$/
 const UNAVAILABLE = {
@@ -131,55 +125,34 @@ export function createPublicVisitorCommentsRouter(
       context.epoch === view.link.workspaceEpoch &&
       shareLinkStillOpens(view.link, view.policyRevision, { comments: true })
     if (!(await current())) return c.json(UNAVAILABLE, 404)
-    const visitorsSee = view.policy.allowVisitorsSeeAll
-      ? view.link.comments.visitorsSee
-      : "own"
     const accepting =
       view.policy.allowComments &&
       view.link.comments.acceptComments &&
       !commentPause(context.worktableId, view.link.id)
-    const rawCursor = c.req.header(SHARE_COMMENT_CURSOR_HEADER)
-    if (c.req.method === "POST" && rawCursor !== undefined)
-      return c.json({ error: "Invalid cursor", code: "INVALID_REQUEST" }, 400)
     if (c.req.method === "GET" || c.req.method === "HEAD") {
-      const scope = visitorCommentPageScope([
-        context.worktableId,
-        context.epoch,
-        view.link.id,
-        visitorKey,
-        view.policyRevision,
-        view.link.comments,
-        visitorsSee,
-      ])
-      const page = readVisitorCommentCursor(rawCursor, scope)
-      if (!page)
-        return c.json({ error: "Invalid cursor", code: "INVALID_REQUEST" }, 400)
+      // A visitor sees only their own comments, the latest 100, and the
+      // team's replies to them.
       const rows = visitorCommentRows({
         worktableId: context.worktableId,
         linkId: view.link.id,
-        ...(visitorsSee === "own" ? { visitorKey } : {}),
-        before: page.before,
-        limit: 101,
+        visitorKey,
       })
-      const candidates = rows.slice(0, 100)
-      const replies = visitorReplies(candidates.map((row) => row.id))
-      const comments = []
-      // Reserve the envelope and maximum cursor before accounting for rows.
+      const replies = visitorReplies(rows.map((row) => row.id))
+      const comments: VisitorCommentsForVisitor["comments"] = []
+      // Reserve the envelope before accounting for rows.
       let bytes = 1024
-      for (const row of candidates) {
+      for (const row of rows) {
         const item = {
           id: row.id,
           name: row.visitor_name,
           body: row.body!,
           receivedAt: new Date(row.received_at).toISOString(),
-          mine: row.visitor_key === visitorKey,
+          mine: true as const,
           replies: replies
             .filter((reply) => reply.comment_id === row.id)
             .map((reply) => ({
               body: reply.body,
-              from: view.link.comments.showSharerName
-                ? view.link.createdByName
-                : "The team",
+              from: "The team" as const,
               at: new Date(reply.created_at).toISOString(),
             })),
         }
@@ -192,17 +165,12 @@ export function createPublicVisitorCommentsRouter(
           { error: "Comments are unavailable", code: "COMMENTS_UNAVAILABLE" },
           503
         )
-      const last = candidates[comments.length - 1]
+      // The Cloud gateway parses this strictly and requires both settings.
       return c.json({
         accepting,
-        anonymousAllowed: view.link.comments.anonymousAllowed,
-        visitorsSee,
+        anonymousAllowed: false,
+        visitorsSee: "own",
         comments,
-        nextCursor:
-          last && rows.length > comments.length
-            ? nextVisitorCommentCursor(last, scope)
-            : null,
-        ...(page.reset ? { reset: true } : {}),
       } satisfies VisitorCommentsForVisitor)
     }
     const clientKey = c.req.header(VISITOR_HEADERS.CLIENT) ?? ""
@@ -240,16 +208,9 @@ export function createPublicVisitorCommentsRouter(
           }
         : null
     )
-    if (
-      !parsed.success ||
-      (parsed.data.anonymous && !view.link.comments.anonymousAllowed)
-    )
+    if (!parsed.success)
       return c.json(
-        {
-          error:
-            "Enter a name and comment, or choose anonymous when available.",
-          code: "INVALID_REQUEST",
-        },
+        { error: "Enter a name and comment.", code: "INVALID_REQUEST" },
         400
       )
     // Nothing asynchronous follows the last authority/epoch check and insert.
@@ -263,7 +224,7 @@ export function createPublicVisitorCommentsRouter(
         documentId: view.link.documentId,
         spaceId: view.link.spaceId,
         kind: view.link.kind,
-        visitorName: parsed.data.anonymous ? null : parsed.data.name!,
+        visitorName: parsed.data.name,
         visitorKey,
         clientKey,
         body: parsed.data.body,

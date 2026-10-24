@@ -82,9 +82,10 @@ three seconds.
 
 ### Visitor comments
 
-Open **Comments** in **Share** and turn on **Allow comments**. Visitors see
-their own comments and the team's replies. A visitor may need to complete a
-human check before sending a comment.
+Open **Comments** in **Share** and turn on **Allow comments**. Each visitor
+sees only their own comments and the team's replies to them, never another
+visitor's. A comment needs the visitor's name, and a visitor may need to
+complete a human check before sending one.
 
 Review visitor comments in the document's comments panel. They stay separate
 from agent-readable team content until a member chooses **Pass to Team**.

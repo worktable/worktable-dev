@@ -21,7 +21,6 @@ interface Post {
   body: string
   requestId: string
   name?: string
-  anonymous?: boolean
   visitor: string
   pass?: string
   turnstileToken?: string
@@ -35,10 +34,11 @@ interface Stored extends Post {
 async function fixture(page: Page, live = false) {
   const workspaceId = live ? "workspace /é".repeat(9) : "ws_cloud"
   const url = `${shareOrigin}/s/${encodeURIComponent(workspaceId)}/${token}`
+  // Visitors see only their own comments, always under a name.
   const state = {
     accepting: true,
     anonymousAllowed: false,
-    visitorsSee: "own" as "own" | "all",
+    visitorsSee: "own" as const,
   }
   const posts: Post[] = []
   const stored: Stored[] = []
@@ -51,13 +51,6 @@ async function fixture(page: Page, live = false) {
     containment: boolean
     readAborts: number
     checks: number
-    cursors: Array<string | undefined>
-    page: {
-      skip: number
-      take: number
-      nextCursor: string | null
-      reset?: true
-    } | null
     onGet: () => Promise<"ok" | "error" | "busy">
     onPost: (
       post: Post
@@ -67,8 +60,6 @@ async function fixture(page: Page, live = false) {
     containment: true,
     readAborts: 0,
     checks: 0,
-    cursors: [],
-    page: null,
     onGet: async () => "ok",
     onPost: async () => "ok",
   }
@@ -213,7 +204,6 @@ async function fixture(page: Page, live = false) {
       const visitor = request.headers()["x-share-visitor"] ?? ""
       if (request.method() === "GET") {
         views.push(visitor)
-        backend.cursors.push(request.headers()["x-worktable-comment-cursor"])
         const outcome = await backend.onGet()
         if (outcome !== "ok")
           return route.fulfill({
@@ -222,36 +212,18 @@ async function fixture(page: Page, live = false) {
             json: { error: { code: "ERROR" } },
           })
         const comments = stored
-          .filter(
-            (row) => state.visitorsSee === "all" || row.visitor === visitor
-          )
+          .filter((row) => row.visitor === visitor)
           .map((row) => ({
             id: row.id,
             name: row.name ?? null,
             body: row.body,
             receivedAt: at,
-            mine: row.visitor === visitor,
+            mine: true,
             replies: [
               { body: "Thanks for the feedback.", from: "The team", at },
             ],
           }))
-        // Explicit server windows keep the browser fixture independent of
-        // the runtime's cursor generation and ordering implementation.
-        const window = backend.page
-        return route.fulfill({
-          json: {
-            ...state,
-            comments: window
-              ? comments.slice(window.skip, window.skip + window.take)
-              : comments,
-            ...(window
-              ? {
-                  nextCursor: window.nextCursor,
-                  ...(window.reset ? { reset: true } : {}),
-                }
-              : {}),
-          },
-        })
+        return route.fulfill({ json: { ...state, comments } })
       }
       const post: Post = { ...request.postDataJSON(), visitor }
       posts.push(post)
@@ -346,8 +318,7 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
   await expect(text).toHaveValue("Next draft")
   await expect(page.locator(".comment-form .comment-status")).toBeEmpty()
   f.state.accepting = false
-  f.state.anonymousAllowed = true
-  f.state.visitorsSee = "all"
+  // Outside text in the visitor's own comment stays text.
   const outside =
     '<img src="https://attacker.example/pixel"> https://attacker.example/'
   f.stored.push({
@@ -355,7 +326,7 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
     body: outside,
     name: "Visitor",
     requestId: "outside",
-    visitor: "different",
+    visitor: f.posts[0]!.visitor,
   })
   await page.getByRole("button", { name: "Close", exact: true }).click()
   await toggle.click()
@@ -371,82 +342,10 @@ test("mobile visitors recover, keep edited drafts and follow refreshed comment s
   await expect(text).toHaveValue("Next draft")
   await expect(
     page.getByRole("checkbox", { name: "Comment anonymously" })
-  ).toBeVisible()
-  await expect(page.locator(".comment-note")).toContainText("Other visitors")
-  const older = page.getByRole("button", {
-    name: "Older comments",
-    exact: true,
-  })
-  f.backend.page = { skip: 0, take: 1, nextCursor: "page_one" }
-  await page.getByRole("button", { name: "Close", exact: true }).click()
-  await toggle.click()
-  await expect(page.locator(".comment-item")).toHaveCount(1)
-  await expect(older).toBeVisible()
-  await expect(text).toHaveValue("Next draft")
-  await page.screenshot({
-    path: testInfo.outputPath("visitor-comments-history-mobile.png"),
-    fullPage: true,
-  })
-  f.backend.page = { skip: 1, take: 1, nextCursor: "page_two" }
-  f.backend.onGet = async () => "error"
-  await older.click()
-  await expect(page.locator(".comment-read-error")).toBeVisible()
-  await expect(page.locator(".comment-item")).toHaveCount(1)
-  await expect(send).toBeEnabled()
-  f.backend.onPost = async () => "error"
-  const historyPosts = f.posts.length
-  await send.click()
-  await expect.poll(() => f.posts.length).toBe(historyPosts + 1)
-  await expect(page.locator(".comment-form .comment-status")).toContainText(
-    "Couldn't send"
-  )
-  await expect(send).toBeEnabled()
-  await expect(text).toHaveValue("Next draft")
-  await expect(page.locator(".comment-read-error")).toBeVisible()
-  f.backend.onPost = async () => "ok"
-  f.backend.onGet = async () => "ok"
-  await page.getByRole("button", { name: "Retry", exact: true }).click()
-  await expect(page.locator(".comment-item")).toHaveCount(2)
-  expect(f.backend.cursors.at(-1)).toBe("page_one")
-  f.backend.page = { skip: 2, take: 1, nextCursor: "page_three" }
-  await older.click()
-  await expect(page.locator(".comment-item")).toHaveCount(3)
-  expect(f.backend.cursors.at(-1)).toBe("page_two")
-  await expect(page.locator(".comment-list")).toContainText(outside)
-  // An older-page read also belongs to the panel's cancellation lifetime.
-  let releaseOlder = () => {}
-  f.backend.onGet = () =>
-    new Promise((resolve) => {
-      releaseOlder = () => resolve("ok")
-    })
-  const olderReads = f.views.length
-  const olderAborts = f.backend.readAborts
-  await older.click()
-  await expect.poll(() => f.views.length).toBe(olderReads + 1)
-  await page.getByRole("button", { name: "Close", exact: true }).click()
-  await expect.poll(() => f.backend.readAborts).toBe(olderAborts + 1)
-  releaseOlder()
-  f.backend.onGet = async () => "ok"
-  f.backend.page = { skip: 0, take: 3, nextCursor: "all_more" }
-  await toggle.click()
-  await expect(page.locator(".comment-item")).toHaveCount(3)
-  f.state.visitorsSee = "own"
-  f.backend.page = { skip: 0, take: 1, nextCursor: "own_more", reset: true }
-  await older.click()
-  await expect(page.locator(".comment-item")).toHaveCount(1)
-  await expect(page.locator(".comment-list")).not.toContainText(outside)
-  f.backend.page = { skip: 1, take: 1, nextCursor: null }
-  await older.click()
-  await expect(page.locator(".comment-item")).toHaveCount(2)
-  await expect(older).toBeHidden()
-  await expect(text).toHaveValue("Next draft")
-  // The same client still accepts an older runtime without page metadata.
-  f.backend.page = null
-  f.state.visitorsSee = "all"
-  await page.getByRole("button", { name: "Close", exact: true }).click()
-  await toggle.click()
-  await expect(page.locator(".comment-item")).toHaveCount(3)
-  await expect(older).toBeHidden()
+  ).toBeHidden()
+  await expect(
+    page.getByRole("button", { name: "Older comments", exact: true })
+  ).toBeHidden()
   expect(f.parentReadable.length).toBeGreaterThan(0)
   expect(f.parentReadable.every((readable) => !readable)).toBe(true)
   expect(f.errors).toEqual([])

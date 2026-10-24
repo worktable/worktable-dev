@@ -1,5 +1,4 @@
 import { Hono, type Context } from "hono"
-import { z } from "zod"
 import { sharingPreviewEnabled } from "../sharing-preview.ts"
 import { withStoreWriteLock } from "../store.ts"
 import {
@@ -10,6 +9,7 @@ import {
   DocumentIdSchema,
   PassVisitorCommentInputSchema,
   VisitorCommentReplyInputSchema,
+  type VisitorCommentsResponse,
 } from "@worktable/types"
 import {
   canDeleteVisitorComment,
@@ -35,10 +35,6 @@ import { listDocumentShareLinks } from "../share-links-store.ts"
 import { authorizeShareAction, currentSharingPolicy } from "../share-policy.ts"
 
 export const visitorCommentsRouter = new Hono()
-const Cursor = z.strictObject({
-  receivedAt: z.number().int().nonnegative(),
-  id: z.string().regex(/^vc_[A-Za-z0-9_-]{22}$/),
-})
 visitorCommentsRouter.use("*", async (c, next) => {
   c.header("Cache-Control", "no-store")
   if (!sharingPreviewEnabled()) return c.json({ error: "Not found" }, 404)
@@ -67,19 +63,6 @@ visitorCommentsRouter.get("/", async (c) => {
   const parsed = DocumentIdSchema.safeParse(c.req.query("documentId"))
   if (!parsed.success)
     return c.json({ error: "Choose a document", code: "INVALID_REQUEST" }, 400)
-  const rawCursor = c.req.query("before")
-  let before: z.infer<typeof Cursor> | undefined
-  if (rawCursor !== undefined) {
-    try {
-      if (rawCursor.length > 256 || !/^[A-Za-z0-9_-]+$/.test(rawCursor))
-        throw new Error()
-      before = Cursor.parse(
-        JSON.parse(Buffer.from(rawCursor, "base64url").toString())
-      )
-    } catch {
-      return c.json({ error: "Invalid cursor", code: "INVALID_REQUEST" }, 400)
-    }
-  }
   const spaceId = c.req.param("spaceId")!
   const context = await visitorCommentNamespace()
   const links = listDocumentShareLinks(spaceId, parsed.data).filter(
@@ -93,18 +76,15 @@ visitorCommentsRouter.get("/", async (c) => {
     !visitorCommentReader(c, spaceId)
   )
     return c.json({ error: "Forbidden" }, 403)
+  // The latest 100, in one request.
   const rows = visitorCommentRows({
     worktableId: context.worktableId,
     documentId: parsed.data,
     includeErased: true,
-    before,
-    limit: 101,
   })
-  const page = rows.slice(0, 100)
-  const last = page.at(-1)
   const policy = currentSharingPolicy()
   return c.json({
-    comments: memberVisitorComments(c, spaceId, page, policy),
+    comments: memberVisitorComments(c, spaceId, rows, policy),
     pausedLinks: links
       .filter((link) => pauses.get(link.id) === "spike")
       .map((link) => ({
@@ -115,13 +95,7 @@ visitorCommentsRouter.get("/", async (c) => {
           policy,
         }).allowed,
       })),
-    nextCursor:
-      rows.length > 100 && last
-        ? Buffer.from(
-            JSON.stringify({ receivedAt: last.received_at, id: last.id })
-          ).toString("base64url")
-        : null,
-  })
+  } satisfies VisitorCommentsResponse)
 })
 /** Serialize the explicit pass with private edits and deletion of its receipt. */
 async function withEditableComment(

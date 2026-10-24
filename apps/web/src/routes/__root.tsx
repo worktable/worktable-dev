@@ -68,6 +68,8 @@ const AppSidebar = lazy(() =>
     default: memo(module.AppSidebar),
   }))
 )
+// Only header actions that explain themselves load the tooltip.
+const HeaderActionTooltip = lazy(() => import("@/components/header-action-tooltip"))
 const SettingsDialog = lazy(() =>
   import("@/components/settings/settings-dialog").then((module) => ({
     default: module.SettingsDialog,
@@ -777,32 +779,49 @@ const PageHeaderActions = memo(function PageHeaderActions({
       {/* Narrow screens keep one action; the page menu holds the rest. */}
       {secondaryAction &&
         SecondaryActionIcon &&
-        (!isMobile || narrowHeaderAction(pageMeta) === "secondary") && (
-          <Button
-            variant={secondaryAction.displayLabel ? "outline" : "ghost"}
-            size={secondaryAction.displayLabel ? "sm" : "icon"}
-            className={
-              secondaryAction.displayLabel
-                ? "h-8 shrink-0 gap-1.5 px-2.5 max-sm:size-8 max-sm:px-0"
-                : "size-8 shrink-0 text-muted-foreground hover:text-foreground"
-            }
-            onClick={secondaryAction.onClick}
-            aria-label={secondaryAction.label}
-            title={secondaryAction.label}
-            disabled={secondaryAction.disabled || secondaryAction.pending}
-          >
-            {secondaryAction.pending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <SecondaryActionIcon className="size-4" />
-            )}
-            {secondaryAction.displayLabel ? (
-              <span className="hidden sm:inline">
-                {secondaryAction.displayLabel}
-              </span>
-            ) : null}
-          </Button>
-        )}
+        (!isMobile || narrowHeaderAction(pageMeta) === "secondary") &&
+        (() => {
+          const button = (
+            <Button
+              variant={secondaryAction.displayLabel ? "outline" : "ghost"}
+              size={secondaryAction.displayLabel ? "sm" : "icon"}
+              className={
+                secondaryAction.displayLabel
+                  ? "h-8 shrink-0 gap-1.5 px-2.5 max-sm:size-8 max-sm:px-0"
+                  : "size-8 shrink-0 text-muted-foreground hover:text-foreground"
+              }
+              onClick={secondaryAction.onClick}
+              aria-label={secondaryAction.label}
+              {...(secondaryAction.description
+                ? {}
+                : { title: secondaryAction.label })}
+              disabled={secondaryAction.disabled || secondaryAction.pending}
+            >
+              {secondaryAction.pending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <SecondaryActionIcon className="size-4" />
+              )}
+              {secondaryAction.displayLabel ? (
+                <span className="hidden sm:inline">
+                  {secondaryAction.displayLabel}
+                </span>
+              ) : null}
+            </Button>
+          )
+          return secondaryAction.description ? (
+            <Suspense fallback={button}>
+              <HeaderActionTooltip
+                label={secondaryAction.label}
+                description={secondaryAction.description}
+              >
+                {button}
+              </HeaderActionTooltip>
+            </Suspense>
+          ) : (
+            button
+          )
+        })()}
 
       {!isMobile && pageMeta?.annotations && (
         <Button

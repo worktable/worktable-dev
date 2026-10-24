@@ -39,6 +39,8 @@ export interface PageSecondaryAction {
   label: string
   /** Optional compact visible label; its presence renders an outline button. */
   displayLabel?: string
+  /** A line under the name in the tooltip, for what the action changes. */
+  description?: string
   icon: LucideIcon
   pending?: boolean
   disabled?: boolean

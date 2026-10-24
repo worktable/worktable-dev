@@ -119,8 +119,8 @@ describe("a link's records reads", () => {
     const closed = { status: 403, body: { error: "This link can't read that collection.", code: "LINK_COLLECTION_NOT_AVAILABLE" } } as const;
     expect(await read("notes")).toEqual(closed);
 
-    // A tighter owner policy cuts a collection off; it isn't switched to summaries.
-    expect(await read("deals", { ...POLICY, records: "summaries" })).toEqual(closed);
+    // An owner policy without Records closes every collection.
+    expect(await read("deals", { ...POLICY, records: "none" })).toEqual(closed);
     // A link pinned to a version reads that version's permissions...
     const readPinned = () => queryRecordsForLink(link({ pinnedVersion: pinned!.id }), "notes", {}, { policy: POLICY, budgets: new LinkBudgets() });
     expect(await readPinned()).toEqual(before[1]!);

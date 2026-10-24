@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { AnnotationCategorySchema } from "./annotations"
-import { LinkGrantSchema, type FixedRead, type LinkGrant } from "./link-grants"
+import { LinkGrantSchema, type LinkGrant } from "./link-grants"
 import type { RecordCollectionSchema } from "./records"
 import { SHARE_LINK_LABEL_MAX_LENGTH } from "./constants"
 import { CanonicalIdSchema, IsoTimestampSchema } from "./widgets"
@@ -172,7 +172,6 @@ export interface ShareLinkAccess {
   collections: Record<string, RecordCollectionSchema>
   counts: Record<string, number>
   sentences: string[]
-  fixedReads: Record<string, FixedRead[]>
   warnings: Array<{ code: string; collectionId?: string; message: string }>
   issues: Array<{ collectionId: string; message: string }>
   stateReadable: boolean
@@ -208,16 +207,11 @@ export type DocumentSharingSummary = z.infer<
 // ---- Owner policy --------------------------------------------------------
 
 /**
- * The widest record access a link may grant, narrowest first. `fixed` allows
- * summaries and saved reads; `scoped` allows any read inside the grant. A
- * collection whose mode the policy no longer allows becomes unavailable.
+ * Whether links may open Records: `scoped` lets a link show the collections
+ * and fields its grant names. With `none`, every collection a link names is
+ * unavailable.
  */
-export const SHARING_RECORD_ACCESS = [
-  "none",
-  "summaries",
-  "fixed",
-  "scoped",
-] as const
+export const SHARING_RECORD_ACCESS = ["none", "scoped"] as const
 
 const DAYS = z.number().int().min(1).max(3650)
 

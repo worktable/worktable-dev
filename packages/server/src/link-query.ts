@@ -66,7 +66,7 @@ export async function queryRecordsForLink(
       // A page never holds more rows than the link has left this hour.
       const page = { ...grant.limits, rowsPerQuery: Math.min(grant.limits.rowsPerQuery, admission.rowsLeft) };
       const load = async () => {
-        const view = await openLinkReadView(target.spaceId, { ...grant, limits: page }, target.linkKey, { linkId: target.linkId, schemas: options.schemas, loadRows: options.loadRows, onQueryRows: options.onQueryRows });
+        const view = await openLinkReadView(target.spaceId, { ...grant, limits: page }, target.linkKey, { schemas: options.schemas, loadRows: options.loadRows, onQueryRows: options.onQueryRows });
         return queryRecords(target.spaceId, collectionId, query, { view });
       };
       const result = options.memo ? await options.memo(load, page.rowsPerQuery) : await load();

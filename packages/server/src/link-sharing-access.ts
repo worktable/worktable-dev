@@ -137,10 +137,8 @@ export async function prepareShareLinkAccess(input: {
         createLinkKey(randomBytes(32)),
         { schemas, loadRows }
       )
-      for (const [id, collection] of Object.entries(
-        effectiveGrant.collections
-      )) {
-        if (blocked.has(id) || collection.mode === "fixed") continue
+      for (const id of Object.keys(effectiveGrant.collections)) {
+        if (blocked.has(id)) continue
         try {
           counts[id] = (await view.rows(id)).length
         } catch (error) {
@@ -167,7 +165,6 @@ export async function prepareShareLinkAccess(input: {
       collections,
       counts,
     }).sentences,
-    fixedReads: suggestion.fixedReads,
     warnings: [...warnings, ...suggestion.warnings],
     issues,
     stateReadable: permissions.state?.read !== false,

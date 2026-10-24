@@ -435,9 +435,10 @@ function newLinkId(): string {
 }
 
 // An additive proof index lets the member summary count supported live
-// grants in SQL. Only explicit saves populate it, never a GET. Matching the
-// exact JSON prevents an unknown or damaged grant from counting as open.
-const GRANT_READER_VERSION = 1
+// grants in SQL. Only explicit saves and the boot refresh below populate it,
+// never a GET. Matching the exact JSON prevents an unknown or damaged grant
+// from counting as open. Version 2: grants have one kind (chosen collections).
+const GRANT_READER_VERSION = 2
 function noteSupportedGrant(db: Database, id: string, grant: LinkGrant | null): void {
   db.exec(`CREATE TABLE IF NOT EXISTS share_link_grants (
     link_id TEXT PRIMARY KEY, grant_json TEXT NOT NULL, reader_version INTEGER NOT NULL
@@ -446,6 +447,49 @@ function noteSupportedGrant(db: Database, id: string, grant: LinkGrant | null): 
     const json = JSON.stringify(LinkGrantSchema.parse(grant))
     db.query("INSERT OR REPLACE INTO share_link_grants (link_id, grant_json, reader_version) VALUES (?, ?, ?)").run(id, json, GRANT_READER_VERSION)
   } else db.query("DELETE FROM share_link_grants WHERE link_id = ?").run(id)
+}
+
+/**
+ * Bring proofs written by an earlier reader up to date, once per boot. A
+ * stored grant this version still reads keeps counting as open; one it can't
+ * read (a removed kind, such as totals only) loses its proof, matching its
+ * link, which no longer opens.
+ */
+export function refreshShareLinkGrantProofs(): { kept: number; dropped: number } {
+  const db = openDatabase(false)
+  if (!db) return { kept: 0, dropped: 0 }
+  try {
+    return db.transaction(() => {
+      const stale = db
+        .query<{ link_id: string; grant_json: string }, [number]>(
+          `SELECT g.link_id, g.grant_json FROM share_link_grants g
+            WHERE g.reader_version < ?`
+        )
+        .all(GRANT_READER_VERSION)
+      let kept = 0
+      let dropped = 0
+      for (const row of stale) {
+        let readable = false
+        try {
+          readable = LinkGrantSchema.safeParse(JSON.parse(row.grant_json)).success
+        } catch {
+          readable = false
+        }
+        if (readable) {
+          db.query("UPDATE share_link_grants SET reader_version = ? WHERE link_id = ?").run(GRANT_READER_VERSION, row.link_id)
+          kept += 1
+        } else {
+          db.query("DELETE FROM share_link_grants WHERE link_id = ?").run(row.link_id)
+          dropped += 1
+        }
+      }
+      return { kept, dropped }
+    })()
+  } catch (error) {
+    if (error instanceof Error && error.message === "no such table: share_link_grants")
+      return { kept: 0, dropped: 0 }
+    throw error
+  }
 }
 
 // ── Writes ───────────────────────────────────────────────────
@@ -1112,13 +1156,27 @@ const DEFAULT_POLICY: SharingPolicy = defaultSharingPolicy()
 let policyCache: (StoredSharingPolicy & { path: string }) | null = null
 
 /**
+ * Record access earlier versions saved and this one no longer has: links
+ * that showed only totals, or only saved reads. A policy that allowed no more
+ * than those allows no live Records now. Links themselves keep opening.
+ */
+const REMOVED_RECORD_ACCESS = new Set<unknown>(["summaries", "fixed"])
+
+/**
  * A saved policy this binary can't read, such as one a later version saved
  * with settings it doesn't know, stops every link until an owner saves the
  * policy again here.
  */
 function parsePolicy(text: string): SharingPolicy {
   try {
-    return SharingPolicySchema.parse(JSON.parse(text))
+    const saved: unknown = JSON.parse(text)
+    if (
+      saved !== null &&
+      typeof saved === "object" &&
+      REMOVED_RECORD_ACCESS.has((saved as { records?: unknown }).records)
+    )
+      (saved as { records: string }).records = "none"
+    return SharingPolicySchema.parse(saved)
   } catch {
     return { ...DEFAULT_POLICY, paused: true }
   }

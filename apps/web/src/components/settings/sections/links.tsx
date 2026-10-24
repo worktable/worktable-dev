@@ -313,10 +313,10 @@ function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {
             <SettingRow label="Live tools" description="Run shared HTML Docs with the Records access saved on each link.">
               <Switch aria-label="Live tools" checked={policy.liveLinks} onCheckedChange={liveLinks => update({liveLinks})} />
             </SettingRow>
-            <SettingRow label="Records access" description="The widest access a live link may offer.">
+            <SettingRow label="Records access" description="What a live link may show from Records.">
               <Select value={policy.records} onValueChange={records => {if (records) update({records})}}>
-                <SelectTrigger className="w-48" aria-label="Records access"><SelectValue>{{none: "No Records", summaries: "Totals only", fixed: "Saved reads and totals", scoped: "Scoped queries"}[policy.records]}</SelectValue></SelectTrigger>
-                <SelectContent><SelectItem value="none">No Records</SelectItem><SelectItem value="summaries">Totals only</SelectItem><SelectItem value="fixed">Saved reads and totals</SelectItem><SelectItem value="scoped">Scoped queries</SelectItem></SelectContent>
+                <SelectTrigger className="w-48" aria-label="Records access"><SelectValue>{{none: "No Records", scoped: "Chosen collections"}[policy.records]}</SelectValue></SelectTrigger>
+                <SelectContent><SelectItem value="none">No Records</SelectItem><SelectItem value="scoped">Chosen collections</SelectItem></SelectContent>
               </Select>
             </SettingRow>
             <SettingRow label="Records link expiry" description="The default for a new link that reads Records. The longest expiry still applies.">

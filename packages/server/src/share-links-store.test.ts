@@ -62,6 +62,9 @@ import {
 } from "./share-store.ts"
 import {
   closeShareLinkStores,
+  documentShareLinkSummary,
+  getShareLink,
+  refreshShareLinkGrantProofs,
   flushShareLinkUse,
   importV1ShareLink,
   revokeShareLink,
@@ -534,7 +537,7 @@ describe("share links", () => {
     // Two real 1.5s timeout paths plus filesystem fixture setup and recovery.
   }, 10_000)
 
-  it("updates totals and summaries when an unreturned row leaves the link's scope", async () => {
+  it("updates totals and counts when an unreturned row leaves the link's scope", async () => {
     process.env["WORKTABLE_RECORDS_INDEX"] = "1"
     saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true }, "local:owner")
     await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "clients", name: "Clients", fields: { name: { type: "text" } } }))
@@ -547,7 +550,7 @@ describe("share links", () => {
     await createHtmlDocument({ spaceId: "space", name: "Counts", html: "<h1>Counts</h1>", permissions: { network: false, records: { deals: { read: true }, clients: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
     const rows = { field: "visibility", op: "eq", value: "public" }
     const scoped = await createLink("counts", { grant: LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: ["name", "client"], rows }, clients: { fields: ["name"] } } }) }, "html")
-    const summary = await createLink("counts", { grant: LinkGrantSchema.parse({ version: 1, collections: { deals: { mode: "summaries", fields: [], rows, summaries: { groupBy: [], measures: [], fns: ["count"], minGroupSize: 2 } } } }) }, "html")
+    const summary = await createLink("counts", { grant: LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: [], rows } } }) }, "html")
     const bridge = (token: string, value: unknown) => app().request("/public/share/bridge", { method: "POST", headers: { "Content-Type": "application/json", "x-worktable-share-capability": token }, body: JSON.stringify(value) })
     const call = async (token: string, value: unknown) => {
       let response: Response
@@ -632,8 +635,70 @@ describe("share links", () => {
       expect(changed).toEqual(["deals"])
     }
     expect((await call(scoped.token, query({ limit: 1 }))).total).toBe(1)
-    expect((await call(summary.token, aggregate)).groups).toEqual([])
+    expect((await call(summary.token, aggregate)).groups).toEqual([{ n: 1 }])
   }, 10_000)
+
+  it("keeps links saved while links had several ways to read Records", async () => {
+    process.env["WORKTABLE_RECORDS_INDEX"] = "1"
+    saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true }, "local:owner")
+    await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, stage: { type: "select", values: ["won"] } } }))
+    const at = new Date().toISOString()
+    await writeRecord("space", { version: 1, kind: "worktable.record", id: "deal", collectionId: "deals", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: "Renewal", stage: "won" } })
+    await createHtmlDocument({ spaceId: "space", name: "Board", html: "<h1>Board</h1>", permissions: { network: false, records: { deals: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
+    await writeDoc("space", "plan", "# Plan")
+    const grant = LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: ["name"] } } })
+    const [scoped, totals, saved] = [await createLink("board", { grant }, "html"), await createLink("board", { grant }, "html"), await createLink("board", { grant }, "html")]
+    const doc = await createLink("plan")
+    // Grants and the owner policy as earlier versions stored them.
+    const stored = (collection: Record<string, unknown>) => JSON.stringify({ version: 1, collections: { deals: { rows: null, fields: ["name"], timestamps: true, ...collection } }, limits: { rowsPerQuery: 200, queriesPerMinute: 120, rowsPerHour: 10_000 }, state: "visitor" })
+    closeShareLinkStores()
+    const db = new Database(shareLinksDatabasePath())
+    for (const [link, collection] of [
+      [scoped, { mode: "scoped" }],
+      [totals, { mode: "summaries", fields: [], summaries: { groupBy: ["stage"], measures: [], fns: ["count"], minGroupSize: 5 } }],
+      [saved, { mode: "fixed", fixed: [{ id: "read-1", query: {}, params: {} }] }],
+    ] as const) {
+      db.query("UPDATE share_links SET grant_json = ? WHERE id = ?").run(stored(collection), link.link.id)
+      // The proof an earlier reader wrote for that grant.
+      db.query("INSERT OR REPLACE INTO share_link_grants (link_id, grant_json, reader_version) VALUES (?, ?, 1)").run(link.link.id, stored(collection))
+    }
+    db.close()
+    // The boot refresh keeps the proof of a grant this version reads and drops
+    // the others, so the document's summary counts only links that open.
+    expect(refreshShareLinkGrantProofs()).toEqual({ kept: 1, dropped: 2 })
+    const board = getShareLink(scoped.link.id)!
+    expect(documentShareLinkSummary(board.spaceId, board.documentId, Date.now(), null, () => true, false, true).activeLinks).toBe(1)
+    const bridge = async (token: string) => {
+      let response = await app().request("/public/share/bridge", { method: "POST", headers: { "Content-Type": "application/json", "x-worktable-share-capability": token }, body: JSON.stringify({ v: 1, op: "records.query", collection: "deals", query: {} }) })
+      for (let attempt = 0; response.status === 429 && attempt < 10; attempt++) {
+        await drainWorkspaceChanges()
+        response = await app().request("/public/share/bridge", { method: "POST", headers: { "Content-Type": "application/json", "x-worktable-share-capability": token }, body: JSON.stringify({ v: 1, op: "records.query", collection: "deals", query: {} }) })
+      }
+      return response
+    }
+    recordIndex.start()
+    await recordIndex.whenReady()
+    // A scoped grant opens as before; totals and saved reads close their own
+    // link only.
+    expect((await view(scoped.token)).status).toBe(200)
+    const opened = await bridge(scoped.token)
+    expect(opened.status).toBe(200)
+    expect((await opened.json()).result.records.map((record: RecordFile) => record.data)).toEqual([{ name: "Renewal" }])
+    expect([(await view(totals.token)).status, (await view(saved.token)).status]).toEqual([404, 404])
+    expect((await view(doc.token)).status).toBe(200)
+
+    // A policy that allowed only totals or saved reads turns live Records
+    // off, and pauses nothing.
+    for (const records of ["summaries", "fixed"]) {
+      closeShareLinkStores()
+      const policyDb = new Database(shareLinksDatabasePath())
+      policyDb.query("UPDATE share_policy SET policy = ?, revision = revision + 1 WHERE id = 1").run(JSON.stringify({ ...defaultSharingPolicy(), liveLinks: true, records }))
+      policyDb.close()
+      expect((await (await send("GET", "/api/shares/policy")).json()).policy).toMatchObject({ paused: false, liveLinks: true, records: "none" })
+      expect([(await view(scoped.token)).status, (await view(doc.token)).status]).toEqual([200, 200])
+      expect((await bridge(scoped.token)).status).toBe(403)
+    }
+  })
 
   it("requires passwords, binds unlocks to current credentials, and expires links", async () => {
     await writeDoc("space", "plan", "# Plan")

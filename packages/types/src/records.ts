@@ -192,7 +192,7 @@ function predicateSchemaAt(depth: number): z.ZodType<RecordPredicate> {
 /**
  * A predicate tree in the canonical form the query engine's parser returns.
  * Unlike `RecordQuery.where`, it never accepts a flat filter map, so stored
- * conditions (link grants, saved reads) have exactly one spelling.
+ * conditions such as link grants have exactly one spelling.
  */
 export const RecordPredicateSchema = predicateSchemaAt(0);
 

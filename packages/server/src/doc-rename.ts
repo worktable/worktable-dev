@@ -253,13 +253,16 @@ export async function renameDocsByPrefixAndSync(
       return { renamed: [], error: targetExistsError(move.to) }
     }
   }
-  return refuseBusyMove(() =>
+  const outcome = await refuseBusyMove(() =>
     yjsManager.withDocPathMoveTransitions(spaceId, planned, () =>
       withDocPathLock(spaceId, () =>
         renameDocsByPrefixAndSyncLocked(spaceId, from, to, planned)
       )
     )
   )
+  // Outside the locks: rewriting links writes the Docs that hold them.
+  if (!outcome.error) await rewriteLinksAfterMove(spaceId, outcome.renamed)
+  return outcome
 }
 
 async function renameDocsByPrefixAndSyncLocked(

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { SpaceFile } from "@worktable/types"
 import { setAppDirOverride } from "./app-storage.ts"
-import { renameDocAndSync } from "./doc-rename.ts"
+import { renameDocAndSync, renameDocsByPrefixAndSync } from "./doc-rename.ts"
 import { invalidateLinkGraph } from "./link-graph.ts"
 import {
   settleLinkRewrites,
@@ -49,6 +49,9 @@ describe("rewriting links after a move", () => {
     expect(
       rewrittenTarget("/old#intro", "notes/a", "notes/a", new Map([["old", "new#part"]]))
     ).toBe("/new%23part#intro")
+    expect(
+      rewrittenTarget("/old", "notes/a", "notes/a", new Map([["old", "new)"]]))
+    ).toBe("/new%29")
     // A Doc moved into the folder of the Doc it links to still names it.
     expect(rewrittenTarget("b#section", "a", "b/a", new Map([["a", "b/a"]]))).toBe(
       "../b#section"
@@ -88,6 +91,14 @@ describe("rewriting links after a move", () => {
         "    ![Shot](old.png)",
       ].join("\n")
     )
+  })
+
+  it("skips fenced code in a Doc too large to parse in full", () => {
+    const filler = "Words.\n\n".repeat(40_000)
+    const markdown = `${filler}~~~\n[a](old.png)\n~~~\n[b](old.png)\n`
+    expect(
+      rewriteMarkdownLinks(markdown, (target) => (target === "old.png" ? "new.png" : null))
+    ).toBe(`${filler}~~~\n[a](old.png)\n~~~\n[b](new.png)\n`)
   })
 
   it("rewrites rich-text links, media blocks and table links, and names the blocks it changed", () => {
@@ -175,6 +186,18 @@ describe("rewriting links after a move", () => {
       )
       expect((await readDoc(SPACE, "research/bug")).data).toBe(
         "# Bug\n\nSee [the spec](../flows/signup) and ![it](/flows/signup/error.png).\n"
+      )
+    })
+
+    it("rewrites links when a folder is renamed as a folder", async () => {
+      process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+      await seed()
+      expect(
+        (await renameDocsByPrefixAndSync(SPACE, "research", "archive/research")).error
+      ).toBeNull()
+      await settleLinkRewrites()
+      expect((await readDoc(SPACE, "archive/research/bug")).data).toBe(
+        "# Bug\n\nSee [the spec](../../onboarding/spec) and ![it](/onboarding/spec/error.png).\n"
       )
     })
 

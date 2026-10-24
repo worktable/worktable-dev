@@ -38,7 +38,12 @@ const DOC_EXTENSION = /\.(?:md|json)$/i
  * as a query or fragment: a name may hold "#" or "?" itself.
  */
 function encodeTargetPath(path: string): string {
-  return path.replace(/[ ()<>"'#?%]/g, (character) => encodeURIComponent(character))
+  // encodeURIComponent leaves "(" and ")" as they are, which would end a
+  // Markdown link early, so every one is encoded by its code.
+  return path.replace(
+    /[ ()<>"'#?%]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  )
 }
 
 /**

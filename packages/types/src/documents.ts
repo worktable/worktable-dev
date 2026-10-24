@@ -311,6 +311,11 @@ export const DocumentPageSchema = z.object({
    */
   embeds: z.record(z.string(), z.string()).optional(),
   /**
+   * For a file, what its bytes are now; an address naming it may be kept
+   * for good, and a new one comes with new bytes.
+   */
+  version: z.string().optional(),
+  /**
    * The document's share links, for people who may share it, while links v2
    * is on. Absent otherwise; the page then shares through today's single link.
    */

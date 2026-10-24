@@ -1201,9 +1201,12 @@ describe("format-neutral document route", () => {
       const page = await instance.request(
         `/api/spaces/${spaceId}/documents/page?path=notes/readme/error.png`
       )
-      expect(
-        ((await page.json()) as { page: { backlinks?: unknown } }).page.backlinks
-      ).toEqual([{ path: "notes/readme", context: "Signup error", count: 1 }])
+      const filePage = (await page.json()) as {
+        page: { backlinks?: unknown; version?: string }
+      }
+      expect(filePage.page.backlinks).toEqual([
+        { path: "notes/readme", context: "Signup error", count: 1 },
+      ])
 
       // The Doc's page gives the file's version, which loads it for good.
       const docPage = (await (
@@ -1211,6 +1214,8 @@ describe("format-neutral document route", () => {
       ).json()) as { page: { embeds?: Record<string, string> } }
       const version = docPage.page.embeds?.["notes/readme/error.png"]
       expect(version).toBeString()
+      // The file's own page gives the same version.
+      expect(filePage.page.version).toBe(version)
       const file = await instance.request(
         `/api/spaces/${spaceId}/documents/file?path=notes/readme/error.png&v=${encodeURIComponent(version!)}`
       )

@@ -62,8 +62,17 @@ export function FilePage({
   const fade = useScrollFade<HTMLDivElement>(8, { top: false })
   const picker = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
-  // A new version loads by its own content, past any cached copy.
-  const [version, setVersion] = useState<string | null>(null)
+  // The file loads by what its bytes are, so an unchanged file comes from
+  // the browser's cache and a changed one loads anew. Right after Upload New
+  // Version, the new bytes' hash stands in until the page catches up.
+  const [uploaded, setUploaded] = useState<{
+    hash: string
+    replacedVersion: string | undefined
+  } | null>(null)
+  const version =
+    uploaded && uploaded.replacedVersion === page.version
+      ? uploaded.hash
+      : (page.version ?? null)
   const url = fileSourceUrl(spaceId, path, version)
 
   const uploadVersion = useCallback(
@@ -71,7 +80,7 @@ export function FilePage({
       setUploading(true)
       try {
         const { contentHash } = await replaceFile(spaceId, path, file)
-        setVersion(contentHash)
+        setUploaded({ hash: contentHash, replacedVersion: page.version })
         void queryClient.invalidateQueries({
           queryKey: documentQueryKeys.page(spaceId, path),
           exact: true,
@@ -84,7 +93,7 @@ export function FilePage({
         setUploading(false)
       }
     },
-    [path, queryClient, spaceId]
+    [page.version, path, queryClient, spaceId]
   )
 
   useEffect(() => {
@@ -184,20 +193,22 @@ function FileContent({
   }
   const table = parseDelimitedText(text.data, delimiterForFilename(name))
   const rows = table.rows.slice(0, TABLE_MAX_ROWS)
+  // A row longer than the header keeps its values, under unnamed columns.
+  const columns = Math.max(table.header.length, ...rows.map((row) => row.length))
   return (
     <>
       <DocTable>
         <thead>
           <tr>
-            {table.header.map((cell, index) => (
-              <th key={index}>{cell}</th>
+            {Array.from({ length: columns }, (_, index) => (
+              <th key={index}>{table.header[index] ?? ""}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, rowIndex) => (
             <tr key={rowIndex}>
-              {table.header.map((_, index) => (
+              {Array.from({ length: columns }, (_, index) => (
                 <td key={index}>{row[index] ?? ""}</td>
               ))}
             </tr>

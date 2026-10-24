@@ -85,6 +85,7 @@ interface DocumentPageMetadata {
   referrers?: DocumentReferrer[]
   contributors?: DocumentContributors
   embeds?: Record<string, string>
+  version?: string
 }
 
 /**
@@ -327,7 +328,10 @@ function fileMetadata(
     handle.document.path,
     pathMovesFor(handle.aliases)
   )
-  return backlinks ? { backlinks } : {}
+  return {
+    ...(backlinks ? { backlinks } : {}),
+    ...(handle.sourceStamp ? { version: handle.sourceStamp } : {}),
+  }
 }
 
 async function pageForHandle(
@@ -399,6 +403,7 @@ async function pageForHandle(
       : {}),
     ...(metadata?.contributors ? { contributors: metadata.contributors } : {}),
     ...(metadata?.embeds ? { embeds: metadata.embeds } : {}),
+    ...(metadata?.version ? { version: metadata.version } : {}),
     ...(links || visitorSummary ? { sharing: {...(links ?? {activeLinks: 0, canCreate: false}), ...(visitorSummary ? {visitorComments: visitorSummary} : {})} } : {}),
   }
 }

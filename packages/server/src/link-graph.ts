@@ -15,6 +15,7 @@
 // simply be not-yet-written docs — and are reported, not rejected.
 
 import { Parser } from "htmlparser2";
+import { blankRanges, markdownCodeRanges } from "./markdown-code.ts";
 import { docStat, listDocs, readDoc } from "./store.ts";
 import { onDocContentChanged } from "./content-events.ts";
 import { LINK_CLOSE, LINK_OPEN, sentenceContext } from "./link-context.ts";
@@ -113,8 +114,6 @@ function htmlMediaEmbeds(markdown: string): ExtractedDocLink[] {
   return embeds;
 }
 
-/** Fenced code, with backticks or tildes, which never holds links. */
-export const FENCED_CODE = /^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[`~]*[ \t]*$|(?![\s\S]))/gm;
 
 /** Lines that start a block of their own rather than continue a paragraph. */
 const BLOCK_START = /^\s{0,3}(?:#{1,6}\s|>|[-*+]\s|\d+[.)]\s|\|)/;
@@ -167,10 +166,13 @@ function extractMarkdownLinks(markdown: string): ExtractedDocLink[] {
   const links: ExtractedDocLink[] = [];
   // Inline links [text](target "title"), excluding images ![alt](src).
   const linkRe = /(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g;
-  const withoutFences = markdown.replace(FENCED_CODE, "");
+  // Code holds no links: code blocks are blanked for everything, inline code
+  // only for matching, as a link's context reads it as its text.
+  const code = markdownCodeRanges(markdown);
+  const withoutFences = blankRanges(markdown, code.blocks);
   // Code spans never register as links; blanking them keeps offsets, so a
   // link whose text wraps onto the next line still matches.
-  const scanned = withoutFences.replace(/`[^`\n]*`/g, (span) => " ".repeat(span.length));
+  const scanned = blankRanges(withoutFences, code.inline);
   let match: RegExpExecArray | null;
   while ((match = linkRe.exec(scanned)) !== null) {
     if (match[1] === "!") {

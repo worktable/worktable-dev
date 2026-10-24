@@ -8,11 +8,16 @@ import { setAppDirOverride } from "./app-storage.ts"
 import { renameDocAndSync } from "./doc-rename.ts"
 import { invalidateLinkGraph } from "./link-graph.ts"
 import {
+  settleLinkRewrites,
   rewriteBlockLinks,
   rewriteMarkdownLinks,
   rewrittenTarget,
 } from "./link-rewrite.ts"
 import { readDoc, writeSpace } from "./store.ts"
+import {
+  moveRegisteredDocument,
+  readRegisteredDocumentSource,
+} from "./document-write-service.ts"
 import { noteSpaceChanged } from "./workspace-read-model.ts"
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
 
@@ -39,6 +44,15 @@ describe("rewriting links after a move", () => {
     expect(inMoved("spec/error.png")).toBe("signup/error.png")
     expect(inMoved("./intro")).toBe("../onboarding/intro")
     expect(inMoved("/brand/logo.svg")).toBeNull()
+
+    // A name holding "#" keeps it as part of the path.
+    expect(
+      rewrittenTarget("/old#intro", "notes/a", "notes/a", new Map([["old", "new#part"]]))
+    ).toBe("/new%23part#intro")
+    // A Doc moved into the folder of the Doc it links to still names it.
+    expect(rewrittenTarget("b#section", "a", "b/a", new Map([["a", "b/a"]]))).toBe(
+      "../b#section"
+    )
   })
 
   it("rewrites Markdown links, images and media tags, never code", () => {
@@ -55,6 +69,8 @@ describe("rewriting links after a move", () => {
       "~~~html",
       '<img src="old.png">',
       "~~~",
+      "",
+      "    ![Shot](old.png)",
     ].join("\n")
     expect(rewriteMarkdownLinks(markdown, rewrite)).toBe(
       [
@@ -68,6 +84,8 @@ describe("rewriting links after a move", () => {
         "~~~html",
         '<img src="old.png">',
         "~~~",
+        "",
+        "    ![Shot](old.png)",
       ].join("\n")
     )
   })
@@ -120,7 +138,8 @@ describe("rewriting links after a move", () => {
       invalidateLinkGraph()
     })
 
-    afterEach(() => {
+    afterEach(async () => {
+      await settleLinkRewrites()
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
       else process.env["WORKTABLE_FILES_PREVIEW"] = previous
       setWorkspaceRootOverride(null)
@@ -149,6 +168,8 @@ describe("rewriting links after a move", () => {
       expect(
         (await renameDocAndSync(SPACE, "onboarding/spec", "flows/signup")).error
       ).toBeNull()
+      // Docs elsewhere are rewritten after the move returns.
+      await settleLinkRewrites()
       expect((await readDoc(SPACE, "flows/signup")).data).toBe(
         "# Spec\n\n![Error](signup/error.png)\n"
       )
@@ -157,12 +178,30 @@ describe("rewriting links after a move", () => {
       )
     })
 
+    it("answers a move with the revision the moved Doc has once its links are rewritten", async () => {
+      process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+      await seed()
+      const moved = await moveRegisteredDocument({
+        spaceId: SPACE,
+        path: "research/bug",
+        to: "research/deep/bug",
+      })
+      const current = await readRegisteredDocumentSource({
+        spaceId: SPACE,
+        path: "research/deep/bug",
+      })
+      expect(new TextDecoder().decode(current.bytes)).toContain("../../onboarding/spec")
+      expect(moved.sourceRevision).toBe(current.sourceRevision)
+    })
+
     it("leaves Docs' text alone with files off, as aliases keep links working", async () => {
       process.env["WORKTABLE_FILES_PREVIEW"] = "0"
       await seed()
       expect(
         (await renameDocAndSync(SPACE, "onboarding/spec", "flows/signup")).error
       ).toBeNull()
+      // Docs elsewhere are rewritten after the move returns.
+      await settleLinkRewrites()
       expect((await readDoc(SPACE, "research/bug")).data).toBe(
         "# Bug\n\nSee [the spec](../onboarding/spec) and ![it](/onboarding/spec/error.png).\n"
       )

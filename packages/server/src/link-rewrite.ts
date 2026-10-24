@@ -14,7 +14,8 @@ import { Parser } from "htmlparser2"
 import { resolveDocLink } from "@worktable/types"
 import { logError } from "./debug-log.ts"
 import { filesPreviewEnabled } from "./files-preview.ts"
-import { FENCED_CODE, getSpaceLinkGraph } from "./link-graph.ts"
+import { getSpaceLinkGraph } from "./link-graph.ts"
+import { blankRanges, markdownCodeRanges } from "./markdown-code.ts"
 import {
   agentChangeBase,
   commitAgentBlocks,
@@ -32,9 +33,12 @@ type Rewrite = (target: string) => string | null
 const SUFFIX = /[?#].*$/
 const DOC_EXTENSION = /\.(?:md|json)$/i
 
-/** Encode only what would break a Markdown link or an HTML attribute. */
+/**
+ * Encode only what would break a Markdown link or an HTML attribute, or read
+ * as a query or fragment: a name may hold "#" or "?" itself.
+ */
 function encodeTargetPath(path: string): string {
-  return path.replace(/[ ()<>"']/g, (character) => encodeURIComponent(character))
+  return path.replace(/[ ()<>"'#?%]/g, (character) => encodeURIComponent(character))
 }
 
 /**
@@ -70,6 +74,8 @@ export function rewrittenTarget(
       posix.dirname(`/${newDoc}`),
       `/${destination}`
     )
+    // A Doc moved into the folder of the Doc it links to names it from above.
+    if (path === "") path = `../${posix.basename(destination)}`
     if (body.startsWith("./") && !path.startsWith(".")) path = `./${path}`
   }
   const text = `${encodeTargetPath(`${path}${extension}`)}${suffix}`
@@ -84,10 +90,8 @@ const HTML_MEDIA_HINT = /<(?:img|video|audio|source)\b/i
 
 /** Code keeps its offsets but can never match a link. */
 function blankCode(markdown: string): string {
-  const blank = (text: string) => text.replace(/[^\n]/g, " ")
-  return markdown
-    .replace(FENCED_CODE, blank)
-    .replace(/`[^`\n]*`/g, blank)
+  const code = markdownCodeRanges(markdown)
+  return blankRanges(markdown, [...code.blocks, ...code.inline])
 }
 
 /**
@@ -286,14 +290,14 @@ async function rewriteDoc(
   docPath: string,
   oldPath: string,
   moved: ReadonlyMap<string, string>
-): Promise<void> {
+): Promise<boolean> {
   const current = await agentChangeBase(spaceId, docPath, undefined, false)
   const rewrite: Rewrite = (target) =>
     rewrittenTarget(target, oldPath, docPath, moved)
   const base = current.base
   if (typeof base === "string") {
     const next = rewriteMarkdownLinks(base, rewrite)
-    if (next === base) return
+    if (next === base) return false
     const written = await writeDoc(spaceId, docPath, next, {
       ...writeOptions,
       sourceRevision: current.sourceRevision,
@@ -301,7 +305,7 @@ async function rewriteDoc(
     if (!written.ok) throw new Error(written.error ?? "Links were not updated")
   } else if (Array.isArray(base)) {
     const { blocks, changed } = rewriteBlockLinks(base, rewrite)
-    if (changed.length === 0) return
+    if (changed.length === 0) return false
     const written = await commitAgentBlocks({
       spaceId,
       docPath,
@@ -317,44 +321,91 @@ async function rewriteDoc(
     })
     if (!written.ok) throw new Error(written.error ?? "Links were not updated")
   } else {
-    return
+    return false
   }
   await syncDocAfterToolWrite(spaceId, docPath)
+  return true
+}
+
+let track: (task: Promise<unknown>) => void = () => {}
+const queues = new Map<string, Promise<void>>()
+
+/** Where background rewrites go so the server's drains wait for them. */
+export function setLinkRewriteTracker(
+  tracker: (task: Promise<unknown>) => void
+): void {
+  track = tracker
 }
 
 /**
- * Rewrite the links a move affected: in every Doc that moved, and in every
- * Doc that links to or embeds something that moved. A Doc that can't be
+ * Rewrite the links a move affected. The Docs that moved are rewritten now,
+ * from their own text: the move's request waits for them, and their callers
+ * get them as written. Docs elsewhere that link to or embed what moved are
+ * found through the Space's link graph, a read of the whole Space, so they
+ * are rewritten after the request, a Space at a time. A Doc that can't be
  * updated keeps working through aliases; the move itself has already
  * happened and is never undone here.
  */
 export async function rewriteLinksAfterMove(
   spaceId: string,
   moves: readonly PathMove[]
-): Promise<void> {
-  if (!filesPreviewEnabled()) return
+): Promise<{ rewritten: string[] }> {
+  const rewritten: string[] = []
+  if (!filesPreviewEnabled()) return { rewritten }
   const actual = moves.filter((move) => move.from !== move.to)
-  if (actual.length === 0) return
+  if (actual.length === 0) return { rewritten }
   const moved = new Map(actual.map((move) => [move.from, move.to]))
-  const formerPath = new Map(actual.map((move) => [move.to, move.from]))
-  try {
-    // Built after the move: its links resolve through the new aliases, so a
-    // moved path's sources are listed under where it is now.
-    const graph = await getSpaceLinkGraph(spaceId)
-    const docs = new Set<string>()
-    for (const move of actual) {
-      docs.add(move.to)
-      for (const source of graph.inbound.get(move.to) ?? []) docs.add(source)
-    }
-    for (const docPath of docs) {
-      if (!(await docExists(spaceId, docPath))) continue
-      try {
-        await rewriteDoc(spaceId, docPath, formerPath.get(docPath) ?? docPath, moved)
-      } catch (error) {
-        console.warn("[links] a Doc's links were not updated after a move:", logError(error))
+  for (const move of actual) {
+    try {
+      if (!(await docExists(spaceId, move.to))) continue
+      if (await rewriteDoc(spaceId, move.to, move.from, moved)) {
+        rewritten.push(move.to)
       }
+    } catch (error) {
+      console.warn("[links] a moved Doc's links were not updated:", logError(error))
     }
-  } catch (error) {
-    console.warn("[links] links were not updated after a move:", logError(error))
   }
+  const task = (queues.get(spaceId) ?? Promise.resolve())
+    .then(() => rewriteLinksTo(spaceId, actual, moved))
+    .catch((error) => {
+      console.warn("[links] links were not updated after a move:", logError(error))
+    })
+  queues.set(spaceId, task)
+  void task.finally(() => {
+    if (queues.get(spaceId) === task) queues.delete(spaceId)
+  })
+  track(task)
+  return { rewritten }
+}
+
+/** Rewrite the Docs, other than those that moved, that link to what moved. */
+async function rewriteLinksTo(
+  spaceId: string,
+  actual: readonly PathMove[],
+  moved: ReadonlyMap<string, string>
+): Promise<void> {
+  // Built after the move: its links resolve through the new aliases, so a
+  // moved path's sources are listed under where it is now.
+  const graph = await getSpaceLinkGraph(spaceId)
+  const movedDocs = new Set(actual.map((move) => move.to))
+  const docs = new Set<string>()
+  for (const move of actual) {
+    for (const source of graph.inbound.get(move.to) ?? []) {
+      if (!movedDocs.has(source)) docs.add(source)
+    }
+  }
+  for (const docPath of docs) {
+    try {
+      if (await docExists(spaceId, docPath)) {
+        await rewriteDoc(spaceId, docPath, docPath, moved)
+      }
+    } catch (error) {
+      console.warn("[links] a Doc's links were not updated after a move:", logError(error))
+    }
+  }
+}
+
+/** Wait for the link rewrites under way; shutdown and tests use this. */
+export async function settleLinkRewrites(): Promise<void> {
+  while (queues.size > 0) await Promise.allSettled([...queues.values()])
 }

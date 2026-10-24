@@ -1989,7 +1989,18 @@ export async function moveRegisteredDocument(options: {
   // A folder move rewrote its links already; an exact one does it here,
   // outside the lock, because rewriting writes the Docs that hold them.
   if (!withFolder) {
-    await rewriteLinksAfterMove(options.spaceId, [{ from: result.from, to }])
+    const { rewritten } = await rewriteLinksAfterMove(options.spaceId, [
+      { from: result.from, to },
+    ])
+    // Its own links changed: answer with the revision it has now.
+    if (rewritten.includes(to)) {
+      const current = await readRegisteredDocumentSource({
+        spaceId: options.spaceId,
+        path: to,
+        registry,
+      })
+      return { ...result, sourceRevision: current.sourceRevision }
+    }
   }
   return result
 }

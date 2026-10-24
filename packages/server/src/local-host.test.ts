@@ -24,6 +24,7 @@ import {
   inspectLocalRuntimeDetailed,
   localHostsSharePortSpace,
   localHttpOrigin,
+  mirrorLocalRuntimeToLegacy,
   readLocalRuntime,
   readLocalRuntimes,
   readLocalWorkspaceRegistry,
@@ -392,6 +393,21 @@ describe("local workspace authority", () => {
     delete (other as { ownerIdentity?: string }).ownerIdentity
     writeFileSync(getLegacyLocalRuntimePath(), JSON.stringify(other))
     writeLocalRuntime(lease("ws_second", 17493), { legacy: true })
+    expect(legacyFile().nonce).toBe(other.nonce)
+
+    // A live host's mirror of its own lease is handed over when another
+    // Worktable becomes the configured one.
+    const mirror = { ...lease("ws_previous", 17494), pid: process.ppid }
+    delete (mirror as { ownerIdentity?: string }).ownerIdentity
+    writeLocalRuntime(mirror)
+    writeFileSync(getLegacyLocalRuntimePath(), JSON.stringify(mirror))
+    const next = lease("ws_next", 17495)
+    writeLocalRuntime(next)
+    expect(mirrorLocalRuntimeToLegacy("ws_next")).toBe(true)
+    expect(legacyFile().nonce).toBe(next.nonce)
+    // An older release's live host keeps it.
+    writeFileSync(getLegacyLocalRuntimePath(), JSON.stringify(other))
+    expect(mirrorLocalRuntimeToLegacy("ws_next")).toBe(false)
     expect(legacyFile().nonce).toBe(other.nonce)
 
     // Exiting clears this host's own copy and nothing else.

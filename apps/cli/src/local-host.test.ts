@@ -2158,13 +2158,39 @@ describe("local-authority state model and command integration", () => {
         JSON.parse(readFileSync(join(appDir, "local-runtime.json"), "utf8"))
       ).toMatchObject({ workspacePath: first, port: firstPort })
 
-      // When Desktop goes away without stopping its host, the host stops.
+      // When the person switches agents to the second Worktable, its running
+      // host takes over the single-host lease, and the first host's exit
+      // leaves that copy alone.
+      expect(
+        (
+          await runCli([
+            "local-host",
+            "activate",
+            second,
+            "--make-configured",
+            "--json",
+          ])
+        ).exitCode
+      ).toBe(0)
+      const legacyLease = () =>
+        JSON.parse(readFileSync(join(appDir, "local-runtime.json"), "utf8"))
+      expect(legacyLease()).toMatchObject({
+        workspacePath: second,
+        port: secondPort,
+      })
+      firstHost.kill("SIGTERM")
+      await firstHost.exited
+      expect(legacyLease()).toMatchObject({ workspacePath: second })
+
+      // When Desktop goes away without stopping its host, the host stops and
+      // removes its own leases.
       const secondLease = publishedLeasePaths().find((path) =>
         readFileSync(path, "utf8").includes(second)
       )!
       secondHost.kill("SIGKILL")
       await secondHost.exited
       await waitForFileRemoval(secondLease)
+      await waitForFileRemoval(join(appDir, "local-runtime.json"))
     } finally {
       firstHost.kill("SIGTERM")
       secondHost?.kill("SIGKILL")

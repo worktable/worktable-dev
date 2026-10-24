@@ -57,6 +57,7 @@ export {
   localProcessIdentity,
   localRuntimeProcessAlive,
   localWorkspaceLinked,
+  mirrorLocalRuntimeToLegacy,
   readLocalRuntime,
   readLocalRuntimeFiles,
   readLocalRuntimes,

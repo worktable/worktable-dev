@@ -124,6 +124,7 @@ import {
   localProcessAlive,
   localProcessIdentity,
   localWorkspaceLinked,
+  mirrorLocalRuntimeToLegacy,
   PAIRING_TTL_MS,
   readLocalRuntimeFiles,
   readLocalWorkspaceRegistry,
@@ -2153,6 +2154,13 @@ async function commandLocalHostActivate(
       writeConfig(nextConfig)
       applyRuntimeConfig(nextConfig)
       rememberConfiguredLocalWorkspace(nextConfig, classification.manifest)
+      // Older releases read only the single-host lease. The running host of
+      // the newly configured Worktable takes it over from the previous one.
+      try {
+        mirrorLocalRuntimeToLegacy(classification.manifest.id)
+      } catch {
+        // Best effort: the per-Worktable lease remains authoritative.
+      }
       if (opts.waitForWelcome) {
         const deadline = Date.now() + 30_000
         while (!(await starterWorkspaceReady())) {

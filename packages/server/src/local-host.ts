@@ -834,10 +834,7 @@ export function writeLocalRuntime(
         // An unreadable legacy lease is left for `local-host recover`.
         return
       }
-      const legacyLive =
-        legacy !== null &&
-        legacy.pid !== parsed.pid &&
-        localRuntimeProcessAlive(legacy)
+      const legacyLive = legacyLeaseHeldElsewhere(legacy, parsed)
       if (options.legacy && !legacyLive) {
         writePrivateJson(legacyPath, parsed)
       } else if (
@@ -853,6 +850,46 @@ export function writeLocalRuntime(
   } catch {
     // The per-Worktable lease is published; the legacy copy is best effort.
   }
+}
+
+/**
+ * Whether the single-host lease belongs to a host other than `runtime` that
+ * must keep it: a live host of an older release. A live host's mirror of its
+ * own per-Worktable lease is handed over when the configured Worktable moves.
+ */
+function legacyLeaseHeldElsewhere(
+  legacy: LocalRuntimeRecord | null,
+  runtime: LocalRuntimeRecord
+): boolean {
+  if (!legacy || legacy.pid === runtime.pid || legacy.nonce === runtime.nonce)
+    return false
+  if (!localRuntimeProcessAlive(legacy)) return false
+  let mirrored: LocalRuntimeRecord | null = null
+  try {
+    mirrored = readLocalRuntimeFile(getLocalRuntimePath(legacy.workspaceId))
+  } catch {
+    // An unreadable per-Worktable lease proves nothing; keep the legacy one.
+  }
+  return mirrored?.nonce !== legacy.nonce
+}
+
+/**
+ * Make the running host of `workspaceId` the one older releases see in the
+ * single-host lease, as when it becomes the configured Worktable. That host
+ * removes the copy itself on exit, since it carries its own nonce and PID.
+ * Returns false when no live host serves the Worktable or the legacy lease
+ * belongs to a live older-release host.
+ */
+export function mirrorLocalRuntimeToLegacy(workspaceId: string): boolean {
+  const runtime = readLocalRuntimeFile(getLocalRuntimePath(workspaceId))
+  if (!runtime || !localRuntimeProcessAlive(runtime)) return false
+  return withLocalRuntimeFileLock(undefined, () => {
+    const legacyPath = getLegacyLocalRuntimePath()
+    if (legacyLeaseHeldElsewhere(readLocalRuntimeFile(legacyPath), runtime))
+      return false
+    writePrivateJson(legacyPath, runtime)
+    return true
+  })
 }
 
 /**

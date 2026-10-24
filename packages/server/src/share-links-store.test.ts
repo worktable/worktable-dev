@@ -1122,8 +1122,8 @@ describe("share links", () => {
       // Only what the Doc embeds: a linked file is not placed in the page.
       expect(first).not.toContain(Buffer.from("not embedded").toString("base64"))
 
-      // A new version of the image shows without the Doc changing.
-      await new Promise((resolve) => setTimeout(resolve, 20))
+      // A new version of the image shows without the Doc changing; its new
+      // size tells it apart even within the same millisecond.
       await writeFile(join(docs, "spec", "shot.png"), "second image, longer")
       expect(await projection()).toContain(
         Buffer.from("second image, longer").toString("base64")

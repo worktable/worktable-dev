@@ -3,8 +3,9 @@ import { documentQueryKeys } from "@/lib/documents-queries"
 import { notePageLinks } from "@/lib/sharing-cache"
 import { expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
-import type { ShareLink } from "@worktable/types"
+import { LinkGrantSchema, type ShareLink } from "@worktable/types"
 import { formatArchiveDate } from "@/lib/lifetime"
+import { LiveDataPanel } from "./share-link-access"
 import { DefaultLink, OtherLinkList } from "./share-links-dialog"
 
 const DAY = 86_400_000
@@ -126,4 +127,41 @@ test("link changes preserve the next expiry even when the active count stays the
   ])
   expect(read().activeLinks).toBe(0)
   expect(read().nextExpiry).toBeUndefined()
+})
+
+test("live data offers to remove a collection deleted since the link was saved", () => {
+  const grant = LinkGrantSchema.parse({
+    version: 1,
+    collections: { "old-tasks": { fields: [] } },
+  })
+  const html = renderToStaticMarkup(
+    <LiveDataPanel
+      grant={grant}
+      access={{
+        grant,
+        effectiveGrant: { ...grant, collections: {} },
+        collections: {},
+        counts: {},
+        sentences: [],
+        warnings: [],
+        issues: [
+          {
+            collectionId: "old-tasks",
+            message: "This collection is gone.",
+          },
+        ],
+        stateReadable: true,
+      }}
+      checking={false}
+      checkFailed={false}
+      canTurnOn
+      busy={false}
+      url={undefined}
+      onRetry={() => {}}
+      onTurnOn={() => {}}
+      onTurnOff={() => {}}
+      onSaveGrant={async () => {}}
+    />
+  )
+  expect(text(html)).toContain("This collection is gone.Remove")
 })

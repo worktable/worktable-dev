@@ -234,16 +234,21 @@ export function ShareLinksDialog({
       link: ShareLink
       change: UpdateShareLinkInput
       said: string
+      /** Saved from the link form, which closes on success. */
+      fromForm?: boolean
     }) =>
       // Saving access is refused while the tool changes; ask once more.
       change.grant
         ? retryOnPreviewChange(() => updateShareLink(link.id, change))
         : updateShareLink(link.id, change),
-    onSuccess: ({ link }, { said }) => {
+    onSuccess: ({ link }, { said, fromForm }) => {
       replaceLink(link)
-      setEditing((current) =>
-        current?.kind === "edit" && current.link.id === link.id ? null : current
-      )
+      if (fromForm)
+        setEditing((current) =>
+          current?.kind === "edit" && current.link.id === link.id
+            ? null
+            : current
+        )
       setAnnouncement(said)
     },
   })
@@ -381,6 +386,7 @@ export function ShareLinksDialog({
     update.mutate({
       link,
       said: "Link saved",
+      fromForm: true,
       change: {
         ...(link.label ? { label: draft.label.trim() } : {}),
         ...(expiresAt !== undefined && (expiresAt ?? link.expiresAt) !== null

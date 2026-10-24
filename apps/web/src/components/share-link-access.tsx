@@ -181,6 +181,15 @@ export function LiveDataPanel({
       })
     : []
 
+  // A collection deleted since the link was saved can't be checked, and the
+  // server refuses any change while the link still names it.
+  function remove(collectionId: string) {
+    if (!grant) return
+    const { [collectionId]: _removed, ...rest } = grant.collections
+    setHiding(null)
+    void onSaveGrant({ ...grant, collections: rest }).catch(() => {})
+  }
+
   function save() {
     if (!grant || !hiding) return
     void onSaveGrant({
@@ -229,7 +238,22 @@ export function LiveDataPanel({
           {access.issues.length > 0 ? (
             <Callout>
               {access.issues.map((issue, index) => (
-                <p key={index}>{issue.message}</p>
+                <p key={index}>
+                  {issue.message}
+                  {Object.hasOwn(grant.collections, issue.collectionId) &&
+                  !Object.hasOwn(access.collections, issue.collectionId) ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="link"
+                      className="ml-1 h-auto p-0"
+                      disabled={busy}
+                      onClick={() => remove(issue.collectionId)}
+                    >
+                      Remove
+                    </Button>
+                  ) : null}
+                </p>
               ))}
             </Callout>
           ) : null}

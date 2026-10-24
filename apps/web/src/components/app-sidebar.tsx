@@ -2491,6 +2491,7 @@ function DocTreeItem({
           onRename={handleRename}
           currentPath={node.path}
           title={namedByTitle ? node.label : undefined}
+          itemType={isFile ? "File" : "Doc"}
         />
       </DeferredMount>
       <DeferredMount active={deleteOpen}>

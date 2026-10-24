@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Database, Download, File as FileIcon, Upload } from "lucide-react"
 import { toast } from "@worktable/ui/components/sonner"
@@ -16,8 +16,14 @@ import { documentQueryKeys } from "@/lib/documents-queries"
 import { authenticatedFetch } from "@/lib/http"
 import { fileSourceUrl, replaceFile } from "@/lib/file-embeds"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
-import { ImportRecordsDialog } from "@/components/records/import-records-dialog"
 import "@/styles/document-controls.css"
+
+// Only a table file's import loads the dialog, when it opens.
+const ImportRecordsDialog = lazy(() =>
+  import("@/components/records/import-records-dialog").then((module) => ({
+    default: module.ImportRecordsDialog,
+  }))
+)
 
 /** How a file shows on its page, decided by its name. */
 type FileView = "image" | "table" | "text" | "card"

@@ -27,7 +27,7 @@ import {
   proposeRecordsImport,
   type ImportColumn,
   type ImportFieldType,
-} from "@/lib/records-api"
+} from "@/lib/records-import-api"
 
 const TYPE_LABELS: Record<ImportFieldType, string> = {
   text: "Text",

@@ -504,7 +504,6 @@ previewTest(
     })
     expect(access).not.toBeNull()
     expect(access!.grant.collections.tasks?.fields).toEqual(["title"])
-    expect(access!.fixedReads.tasks).toHaveLength(1)
     expect(access!.counts.tasks).toBe(1)
     expect(
       access!.warnings.some((warning) => warning.code === "later_reads")

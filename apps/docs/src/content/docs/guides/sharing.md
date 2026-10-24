@@ -44,11 +44,12 @@ document keeps its preview links attached to the same document.
 ### Live tools
 
 For an HTML Doc, turn on **Live tool** in the
-sharing form. Under **What this link opens**, choose the Records collections,
-rows and fields readers may see. Choose **Check access** to confirm the scope,
-then create the link and use **View as visitor** to inspect it.
+sharing form. Under **What this link opens**, choose the Records collections
+the link opens and clear any fields readers should not see. Readers see every
+record in a chosen collection. Choose **Check access** to confirm what the link
+shows, then create the link and use **View as visitor** to inspect it.
 
-The tool reads current data within that link's scope. Readers cannot change
+The tool reads current data from those collections. Readers cannot change
 Records. Interface choices such as filters stay in their tab and do not change
 the team's saved state. Tightening the document's permissions or the owner's
 sharing policy can reduce what an existing link can read.

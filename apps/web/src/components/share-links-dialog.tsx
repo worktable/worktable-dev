@@ -546,7 +546,6 @@ export function ShareLinksDialog({
                     ) : null}
                     {draft.live ? (
                       <ShareLinkAccessEditor
-                        spaceId={spaceId}
                         container={portalContainer}
                         access={access}
                         grant={draft.grant}

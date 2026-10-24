@@ -83,7 +83,7 @@ export class LinkChangeJournal {
       for (const id of ids) this.remember(entry, related, id)
   }
 
-  /** Counts and summaries depend on matching rows even when no row is shown. */
+  /** Counts and totals depend on matching rows even when no row is shown. */
   queried(
     linkId: string,
     collection: string,

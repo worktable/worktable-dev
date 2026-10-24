@@ -1,29 +1,24 @@
 // What a share link should open for an HTML Doc, judged from what the tool
-// reads: the collections and fields its reads name, a row condition every
-// read shares, totals where it only ever asks for totals, and its reads as
-// candidates for saving. The sharer starts from this and edits it.
+// reads: the collections and fields its reads name. The sharer starts from
+// this and edits it.
 
 import {
   CanonicalIdSchema,
   LinkGrantSchema,
   normalizeRecordFieldType,
   RecordFieldTypeSchema,
-  type FixedRead,
-  type FixedReadQuery,
   type LinkGrant,
   type LinkGrantInput,
   type RecordCollectionSchema,
   type RecordPredicate,
   type RecordQuery,
-  type SummaryRules,
   type WidgetFile,
 } from "@worktable/types";
 import { LINK_SEARCH_MAX_LENGTH } from "./link-query-limits.ts";
 import type { ObservedRecordQuery } from "./html-preview.ts";
-import { canonicalJson, canonicalPredicate, canonicalRecordQuery, compareText, opaqueIdOrdering } from "./link-fixed-reads.ts";
-import { forEachLeaf, isRecordKey, validateLinkGrant } from "./link-grant.ts";
-import { admitSummaries, LinkQueryError, projectFields } from "./link-grant-view.ts";
-import { referencedCollections, RecordQueryShapeError } from "./record-query.ts";
+import { forEachLeaf, isRecordKey } from "./link-grant.ts";
+import { compareText } from "./link-grant-view.ts";
+import { flatWhereToPredicate, isPredicateTree, parsePredicate, referencedCollections, RecordQueryShapeError } from "./record-query.ts";
 import { parseRecordQuery, RecordQueryError } from "./record-store.ts";
 import { hasDynamicRecordCollection, inferWidgetRecordPermissions } from "./widget-authoring.ts";
 import { canWidgetRecord } from "./widget-runtime-policy.ts";
@@ -32,14 +27,12 @@ export type LinkGrantSuggestionWarningCode =
   | "whole_records"
   | "search_fields"
   | "later_reads"
-  | "unsupported_reads"
+  | "long_search"
   | "fields_left_out"
   | "archived_rows"
-  | "small_groups_hidden"
   | "dynamic_collection"
   | "static_only"
   | "declared_unseen"
-  | "too_many_reads"
   | "too_many_fields";
 
 export interface LinkGrantSuggestionWarning {
@@ -49,18 +42,21 @@ export interface LinkGrantSuggestionWarning {
 }
 
 export interface LinkGrantSuggestion {
-  /** Scoped or summaries collections only: saved reads are the sharer's choice. */
+  /** Whole collections, with the fields the tool's reads name. */
   grant: LinkGrant;
-  /** Each collection's observed reads, ready to save if the sharer opens it through saved reads. */
-  fixedReads: Record<string, FixedRead[]>;
   warnings: LinkGrantSuggestionWarning[];
+}
+
+/** A read the preview saw, with its filter as a predicate tree. */
+interface ObservedRead {
+  query: RecordQuery;
+  where?: RecordPredicate;
 }
 
 /** Field types a whole-record read doesn't suggest: they name people or hold
  *  paths and free-form data. */
 const NOT_SUGGESTED_FOR_WHOLE_RECORDS = new Set(["person", "email", "document", "json"]);
 const MAX_FIELDS = 200;
-const MAX_FIXED_READS = 50;
 
 /**
  * Suggests a link grant for an HTML Doc from its declared permissions, its
@@ -72,15 +68,11 @@ const MAX_FIXED_READS = 50;
  * missed. It never widens what the tool may read, and never names `*`.
  * - Collections: those the tool may read, among the ones its HTML names, its
  *   reads query and its reads reach through relations, expands and backlinks.
+ *   Each opens whole: every live record.
  * - Fields: every field a read names. A read without `select` takes whole
  *   records, so every field but people, email addresses, documents and JSON
  *   is suggested, and a warning says so. A relation shows only when the
- *   suggestion opens its target's rows: ids the tool never looked up on
- *   first load aren't worth opening another collection for.
- * - Rows: an `eq` or `has` condition every read of the collection shares.
- * - Mode: summaries when every read of the collection is a total that a
- *   summaries link can answer. The preview can't tell group sizes, so a
- *   warning says small totals are hidden.
+ *   suggestion opens its target too.
  * Warnings also name fields the tool reads that a link can't show, and
  * archived rows it reads, which links never show.
  */
@@ -100,35 +92,36 @@ export function suggestLinkGrant(input: {
     return spec && normalizeRecordFieldType(spec.type) === "relation" && spec.references ? spec.references : null;
   };
 
-  // The reads the tool made, once each in canonical form. A read that
-  // reaches a collection the tool may not read, itself or through a
-  // relation, was refused, so it read nothing.
-  const asked = new Map<string, FixedReadQuery[]>();
+  // The reads the tool made. A read that reaches a collection the tool may
+  // not read, itself or through a relation, was refused, so it read nothing.
+  const asked = new Map<string, ObservedRead[]>();
   // Collections the tool read archived rows of, which links never show.
   const archived = new Set<string>();
   for (const { collectionId, query } of input.observed) {
     if (!mayRead(collectionId)) continue;
     const fields = schemas.get(collectionId)!.fields;
-    let parsed: RecordQuery;
-    let canonical: FixedReadQuery;
+    let read: ObservedRead;
     try {
-      parsed = parseRecordQuery(query);
-      canonical = canonicalRecordQuery(parsed, fields);
+      const parsed = parseRecordQuery(query);
+      if (!referencedCollections(parsed, fields).every(mayRead)) continue;
+      const where = parsed.where && Object.keys(parsed.where).length > 0
+        ? parsePredicate(isPredicateTree(parsed.where, fields) ? parsed.where : flatWhereToPredicate(parsed.where)!, 0, fields)
+        : undefined;
+      read = { query: parsed, ...(where ? { where } : {}) };
     } catch (error) {
       if (error instanceof RecordQueryError || error instanceof RecordQueryShapeError) continue;
       throw error;
     }
-    if (!referencedCollections(canonical as RecordQuery, fields).every(mayRead)) continue;
-    if (parsed.includeArchived) archived.add(collectionId);
+    if (read.query.includeArchived) archived.add(collectionId);
     const reads = asked.get(collectionId) ?? [];
-    if (!reads.some((read) => canonicalJson(read) === canonicalJson(canonical))) reads.push(canonical);
+    reads.push(read);
     asked.set(collectionId, reads);
   }
-  // Collections whose rows another read reaches, which totals can't serve.
+  // Collections whose rows another read reaches.
   const reached = new Set<string>();
   for (const [collectionId, reads] of asked) {
-    for (const read of reads) {
-      for (const target of referencedCollections(read as RecordQuery, schemas.get(collectionId)!.fields)) reached.add(target);
+    for (const { query } of reads) {
+      for (const target of referencedCollections(query, schemas.get(collectionId)!.fields)) reached.add(target);
     }
   }
   const named = Object.entries(inferWidgetRecordPermissions(html)).filter(([, actions]) => actions.read).map(([collectionId]) => collectionId);
@@ -146,10 +139,11 @@ export function suggestLinkGrant(input: {
     if (target) show(target, path.slice(dot + 1));
   };
   for (const [collectionId, reads] of asked) {
-    for (const read of reads) {
+    for (const { query: read, where } of reads) {
       for (const name of read.select ?? []) show(collectionId, name);
-      if (read.where) forEachLeaf(read.where, (path) => showPath(collectionId, path));
-      for (const entry of (read.orderBy ?? []) as { field: string }[]) show(collectionId, entry.field);
+      if (where) forEachLeaf(where, (path) => showPath(collectionId, path));
+      const orderBy = typeof read.orderBy === "string" ? [read.orderBy] : (read.orderBy ?? []).map((entry) => entry.field);
+      for (const name of orderBy) show(collectionId, name);
       if (read.aggregate?.groupBy !== undefined) show(collectionId, read.aggregate.groupBy);
       for (const spec of Object.values(read.aggregate?.select ?? {})) if (spec.field !== undefined) show(collectionId, spec.field);
       for (const [name, projection] of Object.entries(read.expand ?? {})) {
@@ -164,46 +158,26 @@ export function suggestLinkGrant(input: {
     }
   }
 
-  const summaries = new Map<string, SummaryRules>();
-  for (const collectionId of collections) {
-    const reads = asked.get(collectionId) ?? [];
-    if (reached.has(collectionId) || reads.length === 0 || !reads.every((read) => read.aggregate)) continue;
-    const rules = summaryRules(collectionId, reads, schemas);
-    if (rules) summaries.set(collectionId, rules);
-  }
-
   const warnings: LinkGrantSuggestionWarning[] = [];
   if (hasDynamicRecordCollection(html)) {
     warnings.push({ code: "dynamic_collection", message: "This tool chooses some collections as it runs, so it may read collections this suggestion leaves out." });
   }
   const grants: Record<string, NonNullable<LinkGrantInput["collections"]>[string]> = {};
-  const fixedReads: Record<string, FixedRead[]> = {};
   for (const collectionId of collections) {
     const schema = schemas.get(collectionId)!;
-    const reads = asked.get(collectionId) ?? [];
-    const rows = sharedRowCondition(schema, reads);
-    const rules = summaries.get(collectionId);
-    const saveableReads = reads.filter((read) => (read.search?.length ?? 0) <= LINK_SEARCH_MAX_LENGTH && opaqueIdOrdering(read, collectionId, schemas).length === 0);
-    if (saveableReads.length !== reads.length) warnings.push({
-      code: "unsupported_reads", collectionId,
-      message: `Some ${nameOf(collectionId)} reads exceed the link's ${LINK_SEARCH_MAX_LENGTH}-character search limit or sort by record IDs. Those reads cannot be saved.`,
+    const reads = (asked.get(collectionId) ?? []).map((read) => read.query);
+    if (reads.some((read) => (read.search?.length ?? 0) > LINK_SEARCH_MAX_LENGTH)) warnings.push({
+      code: "long_search", collectionId,
+      message: `Some ${nameOf(collectionId)} reads search more than ${LINK_SEARCH_MAX_LENGTH} characters, which links refuse.`,
     });
     if (reads.some((read) => read.search)) warnings.push({
       code: "search_fields", collectionId,
-      message: `This tool searches all ${nameOf(collectionId)} fields. A link searches only the fields it shows, so matching records or totals may differ.`,
+      message: `This tool searches all ${nameOf(collectionId)} fields. A link searches only the fields it shows, so matching records may differ.`,
     });
     if (named.includes(collectionId) && asked.has(collectionId)) warnings.push({
       code: "later_reads", collectionId,
-      message: `This preview saw ${nameOf(collectionId)} reads on first load only. Later actions may need different fields or rows; check those actions before sharing.`,
+      message: `This preview saw ${nameOf(collectionId)} reads on first load only. Later actions may need other fields; check them before sharing.`,
     });
-    if (saveableReads.length > 0) fixedReads[collectionId] = saveableReads.slice(0, MAX_FIXED_READS).map((query, i) => ({ id: `read-${i + 1}`, query, params: {} }));
-    if (reads.length > MAX_FIXED_READS) {
-      warnings.push({
-        code: "too_many_reads",
-        collectionId,
-        message: `This tool read ${nameOf(collectionId)} in more ways than a link can save. Saving its reads would cover only the first ${MAX_FIXED_READS}.`,
-      });
-    }
     if (archived.has(collectionId)) {
       warnings.push({ code: "archived_rows", collectionId, message: `This tool reads archived ${nameOf(collectionId)} records, which links never show.` });
     }
@@ -227,10 +201,10 @@ export function suggestLinkGrant(input: {
       // A relation shows only where its target's rows show too.
       if (type !== "relation") return true;
       const target = relationTarget(collectionId, name);
-      return target !== null && collections.includes(target) && !summaries.has(target);
+      return target !== null && collections.includes(target);
     }).sort(compareText);
     const left = [...explicit].filter((name) => !["id", "createdAt", "updatedAt"].includes(name) && !fields.includes(name)).sort(compareText);
-    if (left.length > 0 && !rules) {
+    if (left.length > 0) {
       warnings.push({
         code: "fields_left_out",
         collectionId,
@@ -244,18 +218,7 @@ export function suggestLinkGrant(input: {
         message: `This tool reads more ${nameOf(collectionId)} fields than a link can show. The suggestion shows the first ${MAX_FIELDS}; choose the ones the link needs.`,
       });
     }
-    if (rules) {
-      // Totals read only their groupings and measures. The fields stay listed
-      // so the saved reads still fit if the sharer switches to them.
-      grants[collectionId] = { rows, fields: fields.slice(0, MAX_FIELDS), mode: "summaries", summaries: rules };
-      warnings.push({
-        code: "small_groups_hidden",
-        collectionId,
-        message: `This link shows ${nameOf(collectionId)} only as totals and hides totals of fewer than ${rules.minGroupSize} records, so some totals the tool shows may be missing.`,
-      });
-      continue;
-    }
-    grants[collectionId] = { rows, fields: fields.slice(0, MAX_FIELDS) };
+    grants[collectionId] = { fields: fields.slice(0, MAX_FIELDS) };
     if (named.includes(collectionId) && !asked.has(collectionId) && !reached.has(collectionId)) {
       warnings.push({
         code: "static_only",
@@ -272,61 +235,5 @@ export function suggestLinkGrant(input: {
       message: `This tool may read ${nameOf(collectionId)}, but didn't when it first loaded, so the suggestion leaves it out.`,
     });
   }
-  return { grant: LinkGrantSchema.parse({ version: 1, collections: grants }), fixedReads, warnings };
-}
-
-/** Summary rules that answer every read, or null when a summaries link
- *  would refuse one of them. */
-function summaryRules(collectionId: string, reads: readonly FixedReadQuery[], schemas: ReadonlyMap<string, RecordCollectionSchema>): SummaryRules | null {
-  const groupBy = new Set<string>();
-  const measures = new Set<string>();
-  const fns = new Set<SummaryRules["fns"][number]>();
-  for (const read of reads) {
-    if (read.aggregate!.groupBy !== undefined) groupBy.add(read.aggregate!.groupBy);
-    for (const spec of Object.values(read.aggregate!.select)) {
-      fns.add(spec.fn);
-      if (spec.field !== undefined) measures.add(spec.field);
-    }
-    if (read.where) forEachLeaf(read.where, (path) => groupBy.add(path));
-  }
-  if (groupBy.size > 6 || measures.size > 12) return null;
-  const grant = LinkGrantSchema.parse({
-    version: 1,
-    collections: {
-      [collectionId]: {
-        fields: [],
-        mode: "summaries",
-        summaries: { groupBy: [...groupBy].sort(compareText), measures: [...measures].sort(compareText), fns: [...fns].sort(compareText) },
-      },
-    },
-  });
-  if (validateLinkGrant(grant, schemas).length > 0) return null;
-  const collection = grant.collections[collectionId]!;
-  const fields = projectFields(schemas.get(collectionId)!, collection);
-  try {
-    for (const read of reads) admitSummaries(fields, collection.summaries!, read as RecordQuery);
-  } catch (error) {
-    if (error instanceof LinkQueryError) return null;
-    throw error;
-  }
-  return collection.summaries!;
-}
-
-/** The `eq` and `has` conditions on the collection's own fields that every
- *  read applies at its top level, as one row condition. */
-function sharedRowCondition(schema: RecordCollectionSchema, reads: readonly FixedReadQuery[]): RecordPredicate | null {
-  if (reads.length === 0) return null;
-  const usable = (leaf: RecordPredicate): leaf is Extract<RecordPredicate, { field: string }> => {
-    if (!("field" in leaf) || (leaf.op !== "eq" && leaf.op !== "has") || leaf.value === undefined) return false;
-    if (leaf.field === "id") return true;
-    if (leaf.field === "data" || leaf.field in Object.prototype || !Object.hasOwn(schema.fields, leaf.field)) return false;
-    return normalizeRecordFieldType(schema.fields[leaf.field]!.type) !== "document";
-  };
-  const leafSets = reads.map((read) => {
-    const top = !read.where ? [] : "and" in read.where ? read.where.and : [read.where];
-    return new Map<string, RecordPredicate>(top.filter(usable).map((leaf) => [canonicalJson(leaf), leaf]));
-  });
-  const leaves = [...leafSets[0]!].filter(([key]) => leafSets.every((set) => set.has(key))).map(([, leaf]) => leaf);
-  if (leaves.length === 0) return null;
-  return canonicalPredicate(leaves.length === 1 ? leaves[0]! : { and: leaves });
+  return { grant: LinkGrantSchema.parse({ version: 1, collections: grants }), warnings };
 }

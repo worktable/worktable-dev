@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { LinkGrantSchema, type RecordCollectionSchema, type WidgetFile } from "@worktable/types";
+import type { RecordCollectionSchema, WidgetFile } from "@worktable/types";
 import { validateLinkGrant } from "./link-grant.ts";
 import { suggestLinkGrant } from "./link-grant-suggest.ts";
 import { buildRecordCollectionSchema } from "./record-store.ts";
@@ -76,50 +76,38 @@ describe("suggestLinkGrant", () => {
       ],
       schemas,
     });
-    expect(suggestion.warnings.map((warning) => warning.code)).toEqual(expect.arrayContaining(["search_fields", "later_reads", "unsupported_reads"]));
+    expect(suggestion.warnings.map((warning) => warning.code)).toEqual(expect.arrayContaining(["search_fields", "later_reads", "long_search"]));
     expect(suggestion.grant.collections.deals!.fields).toEqual(["name"]);
-    expect(suggestion.fixedReads.deals).toHaveLength(1);
-    expect(suggestion.fixedReads.deals![0]!.query.search).toBe("private note");
   });
-  it("warns about stale explicit fields and omits reads ordered by opaque IDs", () => {
+  it("warns about stale explicit fields", () => {
     const suggestion = suggestLinkGrant({
       permissions: PERMISSIONS,
       html: "",
       observed: [
         { collectionId: "deals", query: { select: ["name", "id", "createdAt", "updatedAt"], orderBy: "removed" } },
-        { collectionId: "deals", query: { select: ["name"], orderBy: "id", limit: 1 } },
-        { collectionId: "deals", query: { select: ["name"], orderBy: "client", limit: 1 } },
       ],
       schemas,
     });
     const omitted = suggestion.warnings.find((warning) => warning.code === "fields_left_out")!;
     expect(omitted.message).toContain('"removed"');
     for (const name of ["id", "createdAt", "updatedAt"]) expect(omitted.message).not.toContain(`"${name}"`);
-    expect(suggestion.warnings.map((warning) => warning.code)).toContain("unsupported_reads");
-    expect(suggestion.fixedReads.deals).toHaveLength(1);
-    expect(suggestion.fixedReads.deals![0]!.query.orderBy).toEqual([{ field: "removed", dir: "asc" }]);
   });
   it("suggests the least a tool's first load needs, and says what it may have missed", () => {
     const suggestion = suggestLinkGrant({ permissions: PERMISSIONS, html: HTML, observed: OBSERVED, schemas });
-    const scoped = { rows: null, timestamps: true, mode: "scoped" } as const;
+    const scoped = { rows: null, timestamps: true } as const;
     expect(suggestion.grant.collections).toEqual({
       // Reached through an expand, so its rows show.
       clients: { ...scoped, fields: ["name"] },
       // Read whole: everything but people, email, documents, JSON and names
       // records use for themselves.
       contacts: { ...scoped, fields: ["company", "name", "phone"] },
-      // Every field a read names, and the condition every read shares.
-      deals: { ...scoped, rows: { field: "region", op: "eq", value: "eu" }, fields: ["amount", "client", "name", "region", "stage"] },
+      // Every field a read names, on every record: a condition every read
+      // shares doesn't narrow the link.
+      deals: { ...scoped, fields: ["amount", "client", "name", "region", "stage"] },
       // Named in the HTML but only read after a click.
       notes: { ...scoped, fields: [] },
-      // Only ever asked for totals.
-      orders: {
-        rows: { field: "region", op: "eq", value: "eu" },
-        fields: ["amount", "channel", "region"],
-        timestamps: true,
-        mode: "summaries",
-        summaries: { groupBy: ["channel", "region"], measures: ["amount"], fns: ["count", "sum"], minGroupSize: 5 },
-      },
+      // Totals read their groupings and measures.
+      orders: { ...scoped, fields: ["amount", "channel", "region"] },
     });
     expect(suggestion.warnings.map((warning) => [warning.code, warning.collectionId])).toEqual([
       ["dynamic_collection", undefined],
@@ -130,36 +118,23 @@ describe("suggestLinkGrant", () => {
       ["static_only", "notes"],
       ["later_reads", "orders"],
       ["archived_rows", "orders"],
-      ["small_groups_hidden", "orders"],
       ["declared_unseen", "archive"],
     ]);
     expect(validateLinkGrant(suggestion.grant, schemas)).toEqual([]);
-
-    // The reads it saw, once each, can be saved as they are, totals included.
-    // Refused reads read nothing, so they aren't among them.
-    expect(suggestion.fixedReads.deals!.map((read) => read.id)).toEqual(["read-1", "read-2"]);
-    expect(suggestion.fixedReads.contacts!.map((read) => read.query)).toEqual([{}]);
-    const asSaved = (collectionId: string) => ({ ...suggestion.grant.collections[collectionId], mode: "fixed", summaries: undefined, fixed: suggestion.fixedReads[collectionId] });
-    const fixed = LinkGrantSchema.parse({
-      ...suggestion.grant,
-      collections: { ...suggestion.grant.collections, deals: asSaved("deals"), orders: asSaved("orders") },
-    });
-    expect(validateLinkGrant(fixed, schemas)).toEqual([]);
 
     // Reading every collection never suggests all of them.
     const everything = suggestLinkGrant({ permissions: { ...PERMISSIONS, records: { "*": { read: true } } }, html: HTML, observed: OBSERVED, schemas });
     expect(Object.keys(everything.grant.collections)).toEqual(["clients", "contacts", "deals", "notes", "orders", "secrets"]);
 
-    // More reads or fields than a link can hold are kept to its limits, and said so.
+    // More fields than a link can hold are kept to its limit, and said so.
     const wide = buildRecordCollectionSchema({ id: "wide", fields: Object.fromEntries(Array.from({ length: 201 }, (_, i) => [`f${i}`, { type: "text" }])) });
     const busy = suggestLinkGrant({
       permissions: { ...PERMISSIONS, records: { ...PERMISSIONS.records, wide: { read: true } } },
       html: "",
-      observed: [...Array.from({ length: 51 }, (_, i) => ({ collectionId: "notes", query: { where: { body: `note ${i}` } } })), { collectionId: "wide", query: {} }],
+      observed: [{ collectionId: "wide", query: {} }],
       schemas: new Map([...schemas, ["wide", wide]]),
     });
-    expect(busy.fixedReads.notes).toHaveLength(50);
     expect(busy.grant.collections.wide!.fields).toHaveLength(200);
-    expect(busy.warnings.map((warning) => [warning.code, warning.collectionId])).toEqual(expect.arrayContaining([["too_many_reads", "notes"], ["too_many_fields", "wide"]]));
+    expect(busy.warnings.map((warning) => [warning.code, warning.collectionId])).toEqual(expect.arrayContaining([["too_many_fields", "wide"]]));
   });
 });

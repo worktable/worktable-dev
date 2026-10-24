@@ -1,60 +1,18 @@
 import type {
   CollectionGrant,
   LinkGrant,
-  RecordPredicate,
   ShareLinkAccess,
 } from "@worktable/types"
 import {
   LINK_GRANT_MAX_COLLECTIONS,
   LINK_GRANT_MAX_FIELDS,
-  LINK_SUMMARY_MAX_GROUP_FIELDS,
-  LINK_SUMMARY_MAX_MEASURES,
 } from "@worktable/types/constants"
 import { Loader2 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
 import { Callout } from "@worktable/ui/components/callout"
 import { Checkbox } from "@worktable/ui/components/checkbox"
-import { Input } from "@worktable/ui/components/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@worktable/ui/components/select"
 import { FieldEditorScope } from "./records/field-editor"
-import { FilterButton, FilterChips } from "./records/filter-bar"
-import {
-  recordFieldColumns,
-  type RecordFilter,
-  type RecordFieldColumn,
-} from "@/lib/records"
-
-function rowFilters(rows: RecordPredicate | null): RecordFilter[] | null {
-  if (!rows) return []
-  if ("field" in rows)
-    return [
-      {
-        f: rows.field,
-        op: rows.op,
-        ...(rows.value !== undefined ? { v: rows.value } : {}),
-      },
-    ]
-  if ("and" in rows && rows.and.every((row) => "field" in row))
-    return rows.and.map((row) => {
-      const leaf = row as Extract<RecordPredicate, { field: string }>
-      return {
-        f: leaf.field,
-        op: leaf.op,
-        ...(leaf.value !== undefined ? { v: leaf.value } : {}),
-      }
-    })
-  return null
-}
-
-function validGroupSize(size: number): boolean {
-  return Number.isInteger(size) && size >= 2 && size <= 1000
-}
+import { recordFieldColumns, type RecordFieldColumn } from "@/lib/records"
 
 function Choice({
   checked,
@@ -123,7 +81,6 @@ function FieldSelection({
 
 /** Edits only a proposed grant. Checking it never creates or widens a link. */
 export function ShareLinkAccessEditor({
-  spaceId,
   container,
   access,
   grant,
@@ -134,7 +91,6 @@ export function ShareLinkAccessEditor({
   onChange,
   onCheck,
 }: {
-  spaceId: string
   container?: HTMLElement | null
   access: ShareLinkAccess | null
   grant: LinkGrant | null
@@ -145,11 +101,6 @@ export function ShareLinkAccessEditor({
   onChange: (grant: LinkGrant) => void
   onCheck: () => void
 }) {
-  const invalidTotals = Object.values(grant?.collections ?? {}).some(
-    (collection) =>
-      collection.mode === "summaries" &&
-      !validGroupSize(collection.summaries!.minGroupSize)
-  )
   function changeCollection(id: string, value: CollectionGrant | null) {
     if (!grant) return
     const collections = { ...grant.collections }
@@ -206,16 +157,6 @@ export function ShareLinkAccessEditor({
               const columns = recordFieldColumns(schema, []).filter(
                 (column) => column.type !== "document"
               )
-              const filters = collection ? rowFilters(collection.rows) : []
-              const saved = Object.hasOwn(access.fixedReads, id)
-                ? access.fixedReads[id]!
-                : []
-              const modeLabel =
-                collection?.mode === "summaries"
-                  ? "Totals"
-                  : collection?.mode === "fixed"
-                    ? "Saved reads"
-                    : "Records"
               return (
                 <fieldset
                   key={id}
@@ -233,12 +174,7 @@ export function ShareLinkAccessEditor({
                       changeCollection(
                         id,
                         enabled
-                          ? {
-                              fields: [],
-                              rows: null,
-                              timestamps: false,
-                              mode: "scoped",
-                            }
+                          ? { fields: [], rows: null, timestamps: false }
                           : null
                       )
                     }
@@ -247,246 +183,41 @@ export function ShareLinkAccessEditor({
                   </Choice>
                   {collection ? (
                     <>
-                      <Select
-                        value={collection.mode}
-                        onValueChange={(mode) => {
-                          if (!mode) return
-                          const base = { ...collection }
-                          delete base.summaries
-                          delete base.fixed
-                          if (mode === "summaries")
-                            changeCollection(id, {
-                              ...base,
-                              mode,
-                              fields: [],
-                              summaries: {
-                                groupBy: [],
-                                measures: [],
-                                fns: ["count", "sum", "avg"],
-                                minGroupSize: 5,
-                              },
-                            })
-                          else if (mode === "fixed" && saved.length)
-                            changeCollection(id, {
-                              ...base,
-                              mode,
-                              fixed: saved,
-                            })
-                          else if (mode === "scoped")
-                            changeCollection(id, { ...base, mode })
-                        }}
-                      >
-                        <SelectTrigger
-                          className="w-full"
-                          aria-label={`Read mode for ${schema.name || id}`}
-                        >
-                          <SelectValue>{modeLabel}</SelectValue>
-                        </SelectTrigger>
-                        <SelectContent container={container}>
-                          <SelectItem value="scoped">Records</SelectItem>
-                          <SelectItem value="summaries">Totals</SelectItem>
-                          <SelectItem
-                            value="fixed"
-                            disabled={
-                              !saved.length && collection.mode !== "fixed"
-                            }
-                          >
-                            Saved reads
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-medium">Rows</span>
-                          {filters && (
-                            <FilterButton
-                              container={container}
-                              spaceId={spaceId}
-                              columns={columns}
-                              filters={filters}
-                              onChange={(next) =>
-                                changeCollection(id, {
-                                  ...collection,
-                                  rows: next.length
-                                    ? {
-                                        and: next.map((filter) => ({
-                                          field: filter.f,
-                                          op: filter.op,
-                                          ...(filter.v !== undefined
-                                            ? { value: filter.v }
-                                            : {}),
-                                        })),
-                                      }
-                                    : null,
-                                })
-                              }
-                            />
-                          )}
-                        </div>
-                        {filters ? (
-                          filters.length ? (
-                            <FilterChips
-                              container={container}
-                              spaceId={spaceId}
-                              columns={columns}
-                              filters={filters}
-                              onChange={(next) =>
-                                changeCollection(id, {
-                                  ...collection,
-                                  rows: next.length
-                                    ? {
-                                        and: next.map((filter) => ({
-                                          field: filter.f,
-                                          op: filter.op,
-                                          ...(filter.v !== undefined
-                                            ? { value: filter.v }
-                                            : {}),
-                                        })),
-                                      }
-                                    : null,
-                                })
-                              }
-                            />
-                          ) : (
-                            <p className="text-xs text-muted-foreground">
-                              All live rows
-                            </p>
-                          )
-                        ) : (
-                          <p className="text-xs text-muted-foreground">
-                            This link keeps its existing combined row
-                            conditions.
-                          </p>
-                        )}
-                      </div>
-                      {collection.mode !== "summaries" ? (
-                        <div className="space-y-2">
-                          <p className="text-xs font-medium">
-                            Fields visitors can see
-                          </p>
-                          <FieldSelection
-                            columns={columns}
-                            selected={collection.fields}
-                            limit={LINK_GRANT_MAX_FIELDS}
-                            onChange={(fields) =>
-                              changeCollection(id, { ...collection, fields })
-                            }
-                          />
-                          {columns.length > LINK_GRANT_MAX_FIELDS ? (
-                            <p className="text-xs text-muted-foreground">
-                              Choose up to {LINK_GRANT_MAX_FIELDS} fields.
-                            </p>
-                          ) : null}
-                          <Choice
-                            checked={collection.timestamps}
-                            onChange={(timestamps) =>
-                              changeCollection(id, {
-                                ...collection,
-                                timestamps,
-                              })
-                            }
-                          >
-                            Created and updated times
-                          </Choice>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <p className="text-xs text-muted-foreground">
-                            Only totals are returned.
-                          </p>
-                          <p className="text-xs font-medium">Group totals by</p>
-                          <FieldSelection
-                            columns={columns.filter((column) =>
-                              ["select", "multi_select", "boolean"].includes(
-                                column.type
-                              )
-                            )}
-                            selected={collection.summaries!.groupBy}
-                            limit={LINK_SUMMARY_MAX_GROUP_FIELDS}
-                            onChange={(groupBy) =>
-                              changeCollection(id, {
-                                ...collection,
-                                summaries: {
-                                  ...collection.summaries!,
-                                  groupBy,
-                                },
-                              })
-                            }
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Choose up to {LINK_SUMMARY_MAX_GROUP_FIELDS}{" "}
-                            grouping fields.
-                          </p>
-                          <p className="text-xs font-medium">
-                            Number fields for totals
-                          </p>
-                          <FieldSelection
-                            columns={columns.filter(
-                              (column) => column.type === "number"
-                            )}
-                            selected={collection.summaries!.measures}
-                            limit={LINK_SUMMARY_MAX_MEASURES}
-                            onChange={(measures) =>
-                              changeCollection(id, {
-                                ...collection,
-                                summaries: {
-                                  ...collection.summaries!,
-                                  measures,
-                                },
-                              })
-                            }
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Choose up to {LINK_SUMMARY_MAX_MEASURES} number
-                            fields.
-                          </p>
-                          <label className="flex items-center justify-between gap-3 text-sm">
-                            Minimum records per group
-                            <Input
-                              className="w-24"
-                              type="number"
-                              min={2}
-                              max={1000}
-                              step={1}
-                              aria-invalid={
-                                !validGroupSize(
-                                  collection.summaries!.minGroupSize
-                                )
-                              }
-                              value={collection.summaries!.minGroupSize || ""}
-                              onChange={(event) =>
-                                changeCollection(id, {
-                                  ...collection,
-                                  summaries: {
-                                    ...collection.summaries!,
-                                    minGroupSize: Number(event.target.value),
-                                  },
-                                })
-                              }
-                            />
-                          </label>
-                          <p className="text-xs text-muted-foreground">
-                            Comparing totals can reveal values for small groups,
-                            even with this minimum.
-                          </p>
-                          {!validGroupSize(
-                            collection.summaries!.minGroupSize
-                          ) ? (
-                            <p
-                              role="alert"
-                              className="text-xs text-destructive"
-                            >
-                              Choose a whole number from 2 to 1000.
-                            </p>
-                          ) : null}
-                        </div>
-                      )}
-                      {collection.mode === "fixed" ? (
+                      {collection.rows ? (
                         <p className="text-xs text-muted-foreground">
-                          {collection.fixed?.length} saved reads. Other queries
-                          are refused. Check the tool’s filters before sharing.
+                          Shows only records that match this link’s saved
+                          conditions.
                         </p>
                       ) : null}
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium">
+                          Fields visitors can see
+                        </p>
+                        <FieldSelection
+                          columns={columns}
+                          selected={collection.fields}
+                          limit={LINK_GRANT_MAX_FIELDS}
+                          onChange={(fields) =>
+                            changeCollection(id, { ...collection, fields })
+                          }
+                        />
+                        {columns.length > LINK_GRANT_MAX_FIELDS ? (
+                          <p className="text-xs text-muted-foreground">
+                            Choose up to {LINK_GRANT_MAX_FIELDS} fields.
+                          </p>
+                        ) : null}
+                        <Choice
+                          checked={collection.timestamps}
+                          onChange={(timestamps) =>
+                            changeCollection(id, {
+                              ...collection,
+                              timestamps,
+                            })
+                          }
+                        >
+                          Created and updated times
+                        </Choice>
+                      </div>
                     </>
                   ) : null}
                 </fieldset>
@@ -551,7 +282,7 @@ export function ShareLinkAccessEditor({
           type="button"
           variant="outline"
           size="sm"
-          disabled={disabled || busy || invalidTotals}
+          disabled={disabled || busy}
           onClick={onCheck}
         >
           {busy ? <Loader2 className="size-4 animate-spin" /> : null}

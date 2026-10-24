@@ -23,7 +23,6 @@ describe("LinkGrantSchema", () => {
           rows,
           fields: ["name", "amount"],
           timestamps: true,
-          mode: "scoped",
         },
       },
       limits: { rowsPerQuery: 200, queriesPerMinute: 120, rowsPerHour: 10_000 },
@@ -49,7 +48,8 @@ describe("LinkGrantSchema", () => {
       { rows: { field: "stage", op: "in", value: "won" }, fields: [] },
     ],
     ["an unknown collection key", { fields: [], share: true }],
-    ["summaries mode without rules", { fields: [], mode: "summaries" }],
+    ["a totals mode", { fields: [], mode: "summaries" }],
+    ["a saved reads mode", { fields: [], mode: "fixed" }],
     [
       "a delete permission",
       { fields: [], writes: { create: true, delete: true } },

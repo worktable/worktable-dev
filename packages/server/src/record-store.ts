@@ -742,17 +742,14 @@ export interface RecordReadView {
   /** The collection's fields as the reader sees them, or null when the
    *  reader can't read it. Hidden and missing collections look the same. */
   fields(collectionId: string): FieldTypeMap | null;
-  /** The rows the reader may see, as fresh records. Given the admitted
-   *  query, only the rows that query may read. Throws when the reader can't
-   *  read the collection. */
-  rows(collectionId: string, query?: RecordQuery): Promise<RecordFile[]>;
+  /** The rows the reader may see, as fresh records. Throws when the reader
+   *  can't read the collection. */
+  rows(collectionId: string): Promise<RecordFile[]>;
   /** The query to run in place of the reader's, or a throw when it names
    *  something the reader can't see. Opens a sealed cursor. */
   admit(collectionId: string, query: RecordQuery): RecordQuery;
   /** Binds a next-page cursor to this reader and the admitted query. */
   sealCursor(collectionId: string, query: RecordQuery, cursor: string): string;
-  /** The groups of an aggregate answer the reader may see. */
-  shownGroups(collectionId: string, groups: Record<string, unknown>[]): Record<string, unknown>[];
 }
 
 // A reader with a view runs only on the view's rows and fields: no archived
@@ -768,7 +765,7 @@ async function queryRecordsInView(
   try {
     const query = view.admit(collectionId, parseRecordQuery(input));
     const result = await runQueryV2(
-      await view.rows(collectionId, query),
+      await view.rows(collectionId),
       query,
       view.fields(collectionId) ?? undefined,
       async (targetCollectionId) => {
@@ -781,7 +778,6 @@ async function queryRecordsInView(
       { groupEachValue: options.groupEachValue, onQueryRows: view.onQueryRows ? (rows) => view.onQueryRows!(collectionId, rows) : undefined },
     );
     if (result.nextCursor) result.nextCursor = view.sealCursor(collectionId, query, result.nextCursor);
-    if (result.groups) result.groups = view.shownGroups(collectionId, result.groups);
     return result;
   } catch (error) {
     if (error instanceof RecordQueryShapeError) throw new RecordQueryError([error.message]);

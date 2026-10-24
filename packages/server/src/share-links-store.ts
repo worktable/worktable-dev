@@ -1112,13 +1112,27 @@ const DEFAULT_POLICY: SharingPolicy = defaultSharingPolicy()
 let policyCache: (StoredSharingPolicy & { path: string }) | null = null
 
 /**
+ * Record access earlier versions saved and this one no longer has: links
+ * that showed only totals, or only saved reads. A policy that allowed no more
+ * than those allows no live Records now. Links themselves keep opening.
+ */
+const REMOVED_RECORD_ACCESS = new Set<unknown>(["summaries", "fixed"])
+
+/**
  * A saved policy this binary can't read, such as one a later version saved
  * with settings it doesn't know, stops every link until an owner saves the
  * policy again here.
  */
 function parsePolicy(text: string): SharingPolicy {
   try {
-    return SharingPolicySchema.parse(JSON.parse(text))
+    const saved: unknown = JSON.parse(text)
+    if (
+      saved !== null &&
+      typeof saved === "object" &&
+      REMOVED_RECORD_ACCESS.has((saved as { records?: unknown }).records)
+    )
+      (saved as { records: string }).records = "none"
+    return SharingPolicySchema.parse(saved)
   } catch {
     return { ...DEFAULT_POLICY, paused: true }
   }

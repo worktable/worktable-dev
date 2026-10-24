@@ -56,33 +56,19 @@ describe("describeAbilities for links", () => {
     )
   })
 
-  it("says summaries never show individual records", () => {
+  it("counts every record of a whole collection", () => {
     expect(
-      linkText({
-        opportunities: {
-          fields: [],
-          mode: "summaries",
-          summaries: { groupBy: ["client", "stage"], measures: ["amount"] },
+      linkText(
+        {
+          opportunities: {
+            fields: ["name", "client", "stage", "amount", "closes"],
+            timestamps: false,
+          },
         },
-      })
+        { opportunities: 42 }
+      )
     ).toBe(
-      "Anyone with this link can see totals of Opportunities by Client and Stage, never individual records. Totals include the sum and average of Amount."
-    )
-  })
-
-  it("counts the reads saved with a fixed link", () => {
-    const read = (id: string) => ({ id, query: { limit: 20 } })
-    expect(
-      linkText({
-        opportunities: {
-          fields: ["name", "client", "stage", "amount", "closes"],
-          timestamps: false,
-          mode: "fixed",
-          fixed: [read("open"), read("won"), read("lost")],
-        },
-      })
-    ).toBe(
-      "Anyone with this link can see Opportunities only through the 3 reads saved with this link: Name, Client, Stage, Amount, Close date. Hidden: Owner, Email, Notes, Created, Updated."
+      "Anyone with this link can see all 42 Opportunities: Name, Client, Stage, Amount, Close date. Hidden: Owner, Email, Notes, Created, Updated."
     )
   })
 

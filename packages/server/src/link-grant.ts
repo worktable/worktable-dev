@@ -3,8 +3,7 @@
 // granted field that disappears, or turns into something a link can't show,
 // closes the collection rather than widening it.
 
-import { normalizeRecordFieldType, RecordFieldTypeSchema, recordTitleFieldKey, SHARING_RECORD_ACCESS, type LinkGrant, type RecordCollectionSchema, type RecordPredicate, type SharingPolicy, type WidgetFile } from "@worktable/types";
-import { fixedReadIssues } from "./link-fixed-reads.ts";
+import { normalizeRecordFieldType, RecordFieldTypeSchema, type LinkGrant, type RecordCollectionSchema, type RecordPredicate, type SharingPolicy, type WidgetFile } from "@worktable/types";
 import { readRecordCollectionSchema } from "./record-store.ts";
 import { parsePredicate, RecordQueryShapeError } from "./record-query.ts";
 import { canWidgetRecord } from "./widget-runtime-policy.ts";
@@ -14,8 +13,6 @@ export interface LinkGrantIssue {
   message: string;
 }
 
-const DIMENSION_TYPES = new Set(["select", "multi_select", "boolean"]);
-
 /** Keys a link's record already has beside `data`. Queries read these from
  *  the record before its data, so a data field under one of them would be
  *  filtered, sorted and grouped by the wrong value. */
@@ -23,19 +20,12 @@ const VIEW_RECORD_KEYS = new Set(["id", "version", "kind", "collectionId", "crea
 export const isRecordKey = (name: string) => VIEW_RECORD_KEYS.has(name) || name in Object.prototype;
 const recordKeyIssue = (name: string) => `Field "${name}" has a name records use for themselves, so links can't show it.`;
 
-/** Whether totals may be split by a field of this type: few values, none of
- *  which names a row. */
-export function isSummaryDimension(type: string): boolean {
-  return DIMENSION_TYPES.has(normalizeRecordFieldType(type));
-}
-
 /**
  * What a link may read on this call: its grant, narrowed by what its tool may
  * read now and by the owner policy, so a republish or a tighter policy
  * narrows a link and never widens it.
  * - A collection stays only if the tool may read it (a `*` entry counts) and
- *   the policy allows its mode. Otherwise it is unavailable; it is never
- *   switched to another mode.
+ *   the policy lets links open Records. Otherwise it is unavailable.
  * - Fields and row conditions come only from the grant.
  * - Writes are reserved, so a collection that sets them is unavailable.
  * - Limits are the grant's: the policy sets none yet.
@@ -46,10 +36,9 @@ export function effectiveLinkGrant(
   permissions: WidgetFile["permissions"] | undefined,
   policy: Pick<SharingPolicy, "records">,
 ): LinkGrant {
-  const widest = SHARING_RECORD_ACCESS.indexOf(policy.records);
   const collections = Object.entries(grant.collections).filter(([collectionId, collection]) =>
+    policy.records === "scoped" &&
     canWidgetRecord({ permissions }, collectionId, "read") &&
-    SHARING_RECORD_ACCESS.indexOf(collection.mode) <= widest &&
     !collection.writes);
   return {
     version: grant.version,
@@ -88,10 +77,7 @@ export function validateLinkGrant(grant: LinkGrant, schemas: ReadonlyMap<string,
       return spec ? normalizeRecordFieldType(spec.type) : undefined;
     };
 
-    // `fields` is what rows show. A summaries view shows no rows and reads
-    // only its groupings and measures, so leftover row fields don't matter.
-    const rowFields = collection.mode === "summaries" ? [] : collection.fields;
-    for (const name of rowFields) {
+    for (const name of collection.fields) {
       const spec = field(name);
       const type = typeOf(name);
       if (!spec) add(`Field "${name}" doesn't exist.`);
@@ -101,12 +87,6 @@ export function validateLinkGrant(grant: LinkGrant, schemas: ReadonlyMap<string,
       else if (!RecordFieldTypeSchema.safeParse(spec.type).success) add(`Field "${name}" has a type links can't show yet.`);
       else if (type === "relation" && (!spec.references || !Object.hasOwn(grant.collections, spec.references))) {
         add(`Field "${name}" points at a collection this link doesn't open.`);
-      } else if (type === "relation" && grant.collections[spec.references!]!.mode === "summaries") {
-        // Its values would name rows the link shows only as totals.
-        add(`Field "${name}" points at a collection this link shows only as totals.`);
-      } else if (type === "relation" && collection.mode === "scoped" && grant.collections[spec.references!]!.mode === "fixed") {
-        // Any query could follow it to rows only saved reads may reach.
-        add(`Field "${name}" points at a collection this link opens only through saved reads.`);
       }
     }
 
@@ -128,26 +108,6 @@ export function validateLinkGrant(grant: LinkGrant, schemas: ReadonlyMap<string,
       }
     }
 
-    if (collection.summaries) {
-      // Rows are never shown in summaries, so dimensions are chosen for what
-      // a total may be split by: low-cardinality fields that don't name a row.
-      // Groupings and measures are the fields a summaries view reads.
-      const titleField = recordTitleFieldKey(schema);
-      for (const name of collection.summaries.groupBy) {
-        const spec = field(name);
-        if (!spec) add(`Summary grouping "${name}" isn't a field of this collection.`);
-        else if (isRecordKey(name)) add(recordKeyIssue(name));
-        else if (!isSummaryDimension(spec.type) || spec.unique === true || name === titleField) {
-          add(`Summaries can't be grouped by "${name}". Use a select, multi-select or yes/no field.`);
-        }
-      }
-      for (const name of collection.summaries.measures) {
-        if (!field(name)) add(`Summary measure "${name}" isn't a field of this collection.`);
-        else if (isRecordKey(name)) add(recordKeyIssue(name));
-        else if (typeOf(name) !== "number") add(`Summary measure "${name}" must be a number field.`);
-      }
-    }
-    for (const message of fixedReadIssues(collectionId, grant, schemas)) add(message);
     if (collection.writes) add("Links can't change records yet.");
   }
   return issues;

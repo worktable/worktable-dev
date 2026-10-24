@@ -606,7 +606,6 @@ for (const appearance of [
           rows: null,
           fields: ["name"],
           timestamps: false,
-          mode: "scoped" as const,
         },
       },
       limits: { rowsPerQuery: 200, queriesPerMinute: 120, rowsPerHour: 10_000 },
@@ -660,22 +659,6 @@ for (const appearance of [
                     name: { type: "text", name: "Name" },
                     amount: { type: "number", name: "Amount" },
                     secret: { type: "text", name: "Secret" },
-                    ...(laterSchema
-                      ? Object.fromEntries([
-                          ...Array.from({ length: 7 }, (_, index) => [
-                            `group-${index}`,
-                            {
-                              type: "select",
-                              name: `Group ${index}`,
-                              values: ["A", "B"],
-                            },
-                          ]),
-                          ...Array.from({ length: 13 }, (_, index) => [
-                            `measure-${index}`,
-                            { type: "number", name: `Measure ${index}` },
-                          ]),
-                        ])
-                      : {}),
                   },
                   createdAt: at,
                   updatedAt: at,
@@ -685,13 +668,6 @@ for (const appearance of [
               },
               counts: { deals: 2 },
               sentences: ["Anyone with this link can read 2 Deals records."],
-              fixedReads: body.observe
-                ? {
-                    deals: [
-                      { id: "read-1", query: { fields: ["name"] }, params: {} },
-                    ],
-                  }
-                : {},
               warnings: body.observe
                 ? [
                     {
@@ -804,21 +780,9 @@ for (const appearance of [
       dialog.getByText("Anyone with this link can read 2 Deals records.")
     ).toBeVisible()
     expect(checks[0]?.observe).toBe(true)
-    const mode = dialog.getByRole("combobox", { name: "Read mode for Deals" })
-    await mode.click()
-    await page.getByRole("option", { name: "Totals", exact: true }).click()
-    await expect(dialog.getByText("Only totals are returned.")).toBeVisible()
-    const totalsNotice = dialog.getByText(
-      "Comparing totals can reveal values for small groups, even with this minimum."
-    )
-    await totalsNotice.scrollIntoViewIfNeeded()
-    await expect(totalsNotice).toBeVisible()
-    await dialog.screenshot({
-      path: testInfo.outputPath(`live-totals-${appearance.colorScheme}.png`),
-    })
-    await mode.click()
-    await page.getByRole("option", { name: "Records", exact: true }).click()
-    await dialog.getByRole("checkbox", { name: "Name", exact: true }).click()
+    await expect(
+      dialog.getByRole("checkbox", { name: "Name", exact: true })
+    ).toBeChecked()
     await dialog.getByRole("checkbox", { name: "Amount", exact: true }).click()
     await dialog
       .getByRole("checkbox", { name: "Read team saved state", exact: true })
@@ -836,12 +800,6 @@ for (const appearance of [
     await expect(
       dialog.getByText("Later filters may need other fields.")
     ).toBeVisible()
-    await mode.click()
-    await expect(
-      page.getByRole("option", { name: "Saved reads", exact: true })
-    ).toBeEnabled()
-    await page.keyboard.press("Escape")
-    await expect(dialog).toBeVisible()
     if (appearance.width >= 640)
       await expect(
         dialog.getByRole("button", { name: "Close", exact: true })
@@ -891,42 +849,6 @@ for (const appearance of [
         exact: true,
       })
       .click()
-    await mode.click()
-    await page.getByRole("option", { name: "Totals", exact: true }).click()
-    for (let index = 0; index < 6; index++)
-      await dialog
-        .getByRole("checkbox", { name: `Group ${index}`, exact: true })
-        .click()
-    await expect(
-      dialog.getByRole("checkbox", { name: "Group 6", exact: true })
-    ).toBeDisabled()
-    for (let index = 0; index < 12; index++)
-      await dialog
-        .getByRole("checkbox", { name: `Measure ${index}`, exact: true })
-        .click()
-    await expect(
-      dialog.getByRole("checkbox", { name: "Measure 12", exact: true })
-    ).toBeDisabled()
-    const groupSize = dialog.getByRole("spinbutton", {
-      name: "Minimum records per group",
-    })
-    const checkAccess = dialog.getByRole("button", {
-      name: "Check access",
-      exact: true,
-    })
-    const checksBeforeInvalid = checks.length
-    for (const invalid of ["1001", "", "1.5"]) {
-      await groupSize.fill(invalid)
-      await expect(checkAccess).toBeDisabled()
-      await expect(
-        dialog.getByText("Choose a whole number from 2 to 1000.")
-      ).toBeVisible()
-      await expect(
-        dialog.getByRole("button", { name: "Save", exact: true })
-      ).toBeDisabled()
-    }
-    expect(checks).toHaveLength(checksBeforeInvalid)
-    await groupSize.fill("2")
     await dialog
       .getByRole("button", { name: "Check access", exact: true })
       .click()

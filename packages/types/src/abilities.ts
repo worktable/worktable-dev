@@ -185,49 +185,13 @@ function readSentences(
   input: DescribeAbilitiesInput
 ): string[] {
   const condition = describeRows(id, grant.rows, input)
-  if (grant.mode === "summaries") {
-    const groups = (grant.summaries?.groupBy ?? []).map((field) =>
-      fieldName(input.collections, id, field)
-    )
-    const by = groups.length > 0 ? ` by ${joinWords(groups, "and")}` : ""
-    const sentences = [
-      `${LINK_SUBJECT} see totals of ${name}${by}${condition}, never individual records.`,
-    ]
-    // Name the fields totals read and what they compute, beyond counting rows.
-    const measures = (grant.summaries?.measures ?? []).map((field) =>
-      fieldName(input.collections, id, field)
-    )
-    const computed = (grant.summaries?.fns ?? []).flatMap((fn) =>
-      fn === "count" ? [] : [MEASURE_WORDS[fn]]
-    )
-    if (measures.length > 0 && computed.length > 0)
-      sentences.push(
-        `Totals include the ${joinWords(computed, "and")} of ${listNames(measures)}.`
-      )
-    return sentences
-  }
   const { shown, hidden } = fieldLists(id, grant, input.collections)
   const listed = shown.length > 0 ? `: ${listFields(shown)}` : ""
-  const reads = grant.fixed?.length ?? 0
-  const saved = reads === 1 ? "the read" : `the ${reads} reads`
   const sentences = [
-    grant.mode === "fixed"
-      ? `${LINK_SUBJECT} see ${name}${condition} only through ${saved} saved with this link${listed}.`
-      : `${LINK_SUBJECT} see ${countedName(name, own(input.counts ?? {}, id), grant.rows !== null)}${condition}${listed}.`,
+    `${LINK_SUBJECT} see ${countedName(name, own(input.counts ?? {}, id), grant.rows !== null)}${condition}${listed}.`,
   ]
   if (hidden.length > 0) sentences.push(`Hidden: ${listFields(hidden)}.`)
   return sentences
-}
-
-const MEASURE_WORDS: Record<
-  Exclude<NonNullable<CollectionGrant["summaries"]>["fns"][number], "count">,
-  string
-> = {
-  sum: "sum",
-  avg: "average",
-  min: "lowest value",
-  max: "highest value",
-  unique: "number of different values",
 }
 
 function countedName(

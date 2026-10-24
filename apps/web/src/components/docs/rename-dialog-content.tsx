@@ -12,6 +12,7 @@ import { Button } from "@worktable/ui/components/button"
 import { Input } from "@worktable/ui/components/input"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { Pencil, ArrowRight } from "lucide-react"
+import { renamedFileName } from "@/lib/file-names"
 
 export interface RenameDialogProps {
   open: boolean
@@ -31,7 +32,7 @@ export interface RenameDialogProps {
   title?: string
   isFolder?: boolean
   pathInput?: boolean
-  itemType?: "Doc" | "Thread"
+  itemType?: "Doc" | "File" | "Thread"
   maxLength?: number
 }
 
@@ -55,6 +56,9 @@ export function RenameDialog({
   const currentName = parts[parts.length - 1]
   const parentDir = parts.slice(0, -1).join("/")
   const currentValue = title ?? (pathInput ? currentPath : currentName)
+  // A file keeps its extension when the new name gives none.
+  const finalName = (typed: string) =>
+    itemType === "File" ? renamedFileName(currentName ?? "", typed) : typed
 
   useEffect(() => {
     if (open) {
@@ -73,8 +77,8 @@ export function RenameDialog({
       title !== undefined || pathInput
         ? newName.trim()
         : parentDir
-          ? `${parentDir}/${newName.trim()}`
-          : newName.trim()
+          ? `${parentDir}/${finalName(newName.trim())}`
+          : finalName(newName.trim())
     setPending(true)
     try {
       const renamed = await onRename(newPath)
@@ -147,7 +151,7 @@ export function RenameDialog({
               </span>
               <ArrowRight className="h-4 w-4 shrink-0" />
               <span className="truncate font-medium text-foreground">
-                {newName.trim()}
+                {finalName(newName.trim())}
               </span>
             </div>
           )}

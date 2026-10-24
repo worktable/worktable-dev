@@ -54,7 +54,6 @@ import {
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { createRecordCollection } from "@/lib/records-api"
 import { createWidget } from "@/lib/widgets-api"
-import { uploadFileToFolder } from "@/lib/file-embeds"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 
 const NewCollectionDialog = lazy(() =>
@@ -162,11 +161,20 @@ export function SpaceNewActions({
   const picker = useRef<HTMLInputElement>(null)
 
   const uploadFiles = async (files: File[]) => {
+    // Upload code loads when a file is chosen, not with every page.
+    let upload: typeof import("@/lib/file-embeds").uploadFileToFolder
+    try {
+      upload = (await import("@/lib/file-embeds")).uploadFileToFolder
+    } catch (err) {
+      console.error("File upload failed:", err)
+      toast.error("Couldn’t upload the file. Try again.")
+      return
+    }
     const paths: string[] = []
     let failed: File | null = null
     for (const file of files) {
       try {
-        paths.push(await uploadFileToFolder(spaceId, folder ?? "", file))
+        paths.push(await upload(spaceId, folder ?? "", file))
       } catch (err) {
         console.error("File upload failed:", err)
         failed = file

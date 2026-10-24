@@ -8,7 +8,7 @@ import {
 } from "lucide-react"
 import { specializedDocumentView } from "@/lib/document-views"
 import type { TreeNode } from "@/lib/tree"
-import { FileTypeIcon } from "@/components/file-type-icon"
+import { FileTypeIcon } from "@/components/document-format-icon"
 
 /** The icon the sidebar shows for a folder or document of this format. */
 export function DocumentNodeIcon({

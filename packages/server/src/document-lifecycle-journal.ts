@@ -2417,7 +2417,8 @@ function prepareSpaceOrderBatchDeleteEdit(
   blobs: Map<string, Buffer>,
   spaceRoot: string,
   spaceId: string,
-  prefix: string
+  prefix: string,
+  keep: ReadonlySet<string> = new Set()
 ): ArtifactEdit | null {
   const path = join(spaceRoot, "space.json")
   const before = readOptionalRegularFile(path, ARTIFACT_MAX_BYTES)
@@ -2440,12 +2441,21 @@ function prepareSpaceOrderBatchDeleteEdit(
   const settings = isObject(raw["settings"]) ? { ...raw["settings"] } : {}
   const order = settings["docOrder"]
   if (!Array.isArray(order)) return null
+  // What stays keeps its place, as do the folders that still hold it.
+  const keptKeys = [...keep].flatMap((kept) => {
+    const key = analyzeDocumentPath(kept).comparisonKey
+    return key ? [key] : []
+  })
   const afterOrder = order.filter((entry) => {
     const key =
       typeof entry === "string"
         ? analyzeDocumentPath(entry).comparisonKey
         : null
-    return !key || !documentPathKeyIsAtOrBelow(key, prefixKey)
+    return (
+      !key ||
+      !documentPathKeyIsAtOrBelow(key, prefixKey) ||
+      keptKeys.some((kept) => documentPathKeyIsAtOrBelow(kept, key))
+    )
   })
   if (afterOrder.length === order.length) return null
   settings["docOrder"] = afterOrder
@@ -2510,7 +2520,8 @@ async function prepareInventoryBatchDeleteEdit(
 function preparePrefixDeleteAliasesEdit(
   blobs: Map<string, Buffer>,
   spaceRoot: string,
-  prefix: string
+  prefix: string,
+  keep: ReadonlySet<string>
 ): ArtifactEdit | null {
   const path = join(spaceRoot, "doc-aliases.json")
   const before = readOptionalRegularFile(path, DOC_ALIASES_MAX_BYTES)
@@ -2522,7 +2533,7 @@ function preparePrefixDeleteAliasesEdit(
   }
   let afterText: string | null
   try {
-    afterText = prepareDocAliasPrefixRetirement(result.aliases, prefix)
+    afterText = prepareDocAliasPrefixRetirement(result.aliases, prefix, keep)
   } catch (error) {
     throw new DocumentLifecyclePreconditionError(
       error instanceof Error
@@ -3721,7 +3732,8 @@ async function preparePrefixArchive(
 async function preparePrefixDelete(
   spaceId: string,
   prefix: string,
-  expectedDocuments: readonly DurablePrefixDeleteDocument[]
+  expectedDocuments: readonly DurablePrefixDeleteDocument[],
+  keep: ReadonlySet<string>
 ): Promise<PreparedJournal | null> {
   const prefixAnalysis = analyzeDocumentPath(prefix)
   if (
@@ -3760,10 +3772,11 @@ async function preparePrefixDelete(
       key && documentPathKeyIsBelow(key, prefixAnalysis.comparisonKey!)
     )
   }
+  // Documents the caller keeps stay where they are, outside the deletion.
   const relevant = catalog.entries.filter((entry) =>
     entry.kind === "conflict"
       ? entry.claims.some((claim) => withinPrefix(claim.path))
-      : withinPrefix(entry.descriptor.path)
+      : withinPrefix(entry.descriptor.path) && !keep.has(entry.descriptor.path)
   )
   if (relevant.length === 0) return null
   if (relevant.some((entry) => entry.kind !== "document")) {
@@ -3964,9 +3977,9 @@ async function preparePrefixDelete(
     html.length > 0
       ? prepareWidgetMetaBatchDeleteEdit(blobs, spaceRoot, html)
       : null,
-    prepareSpaceOrderBatchDeleteEdit(blobs, spaceRoot, spaceId, prefix),
+    prepareSpaceOrderBatchDeleteEdit(blobs, spaceRoot, spaceId, prefix, keep),
     await prepareInventoryBatchDeleteEdit(blobs, spaceRoot, spaceId, deletions),
-    preparePrefixDeleteAliasesEdit(blobs, spaceRoot, prefix),
+    preparePrefixDeleteAliasesEdit(blobs, spaceRoot, prefix, keep),
   ].filter((edit): edit is ArtifactEdit => Boolean(edit))
   const totalBytes = [...blobs.values()].reduce(
     (total, bytes) => total + bytes.byteLength,
@@ -9812,7 +9825,8 @@ export function setDurableDocumentArchivedExactlyLocked(
 async function deleteDurableDocumentsByPrefixSerialized(
   spaceId: string,
   prefix: string,
-  expectedDocuments: readonly DurablePrefixDeleteDocument[]
+  expectedDocuments: readonly DurablePrefixDeleteDocument[],
+  keep: ReadonlySet<string>
 ): Promise<DurablePrefixDeleteOutcome> {
   const root = resolve(getSpacesBaseDir(), spaceId)
   const storePaths = [
@@ -9851,7 +9865,8 @@ async function deleteDurableDocumentsByPrefixSerialized(
                 prepared = await preparePrefixDelete(
                   spaceId,
                   prefix,
-                  expectedDocuments
+                  expectedDocuments,
+                  keep
                 )
               } catch (error) {
                 if (error instanceof DocumentLifecyclePreconditionError) {
@@ -9991,11 +10006,15 @@ async function deleteDurableDocumentsByPrefixSerialized(
   return outcome
 }
 
-/** Retire one bounded mixed-format subtree as one durable generation. */
+/**
+ * Retire one bounded mixed-format subtree as one durable generation. Paths in
+ * `keep` stay, outside the deletion.
+ */
 export function deleteDurableDocumentsByPrefixLocked(
   spaceId: string,
   prefix: string,
-  expectedDocuments: readonly DurablePrefixDeleteDocument[]
+  expectedDocuments: readonly DurablePrefixDeleteDocument[],
+  keep: ReadonlySet<string> = new Set()
 ): Promise<DurablePrefixDeleteOutcome> {
   return withWorkspaceLifecycleLock(() =>
     withDocumentDataV2PrefixDelete(
@@ -10005,7 +10024,8 @@ export function deleteDurableDocumentsByPrefixLocked(
         deleteDurableDocumentsByPrefixSerialized(
           spaceId,
           prefix,
-          expectedDocuments
+          expectedDocuments,
+          keep
         )
     )
   )

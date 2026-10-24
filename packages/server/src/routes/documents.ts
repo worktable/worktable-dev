@@ -71,6 +71,7 @@ import {
 } from "../document-format-registry.ts"
 import { filesPreviewEnabled } from "../files-preview.ts"
 import { fileMediaType, fileShownInline } from "../file-media.ts"
+import { usesAtOrBelow } from "../document-uses.ts"
 
 /** Format-neutral document collection for common browser surfaces. */
 export const documentsRouter = new Hono()
@@ -1112,8 +1113,31 @@ documentsRouter.post("/restore", requireScope("documents:write"), async (c) => {
   }
 })
 
+const DeleteDocumentSchema = ExactDocumentSchema.extend({
+  /** With files on: what in the Doc's folder stays. Defaults to what's used elsewhere. */
+  keep: z.array(z.string().min(1).max(4096)).max(1000).optional(),
+})
+
+// What deleting a document would take with it: the document and, with files
+// on, everything in its folder, each with the documents outside that use it.
+documentsRouter.get("/uses", requireScope("documents:read"), async (c) => {
+  const path = exactDocumentPath(c.req.query("path"))
+  if (!path) {
+    return c.json(
+      { error: "Enter a valid document path.", code: "VALIDATION_ERROR" },
+      400
+    )
+  }
+  const spaceId = c.req.param("spaceId") ?? ""
+  const all = await usesAtOrBelow(spaceId, path)
+  const items = filesPreviewEnabled()
+    ? all
+    : all.filter((entry) => entry.path === path)
+  return c.json({ items })
+})
+
 documentsRouter.post("/delete", requireScope("documents:write"), async (c) => {
-  const parsed = ExactDocumentSchema.safeParse(
+  const parsed = DeleteDocumentSchema.safeParse(
     await c.req.json().catch(() => null)
   )
   if (!parsed.success) {
@@ -1128,6 +1152,7 @@ documentsRouter.post("/delete", requireScope("documents:write"), async (c) => {
       ...(await deleteRegisteredDocument({
         spaceId: c.req.param("spaceId") ?? "",
         path: parsed.data.path,
+        ...(parsed.data.keep ? { keep: parsed.data.keep } : {}),
       })),
     })
   } catch (error) {

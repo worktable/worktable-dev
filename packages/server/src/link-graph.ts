@@ -34,7 +34,6 @@ import {
 import { onWorkspaceChange } from "./workspace-events.ts";
 import { canReuseDerived, type DerivedRevision } from "./derived-revision.ts";
 import { readDocumentCatalogSnapshot } from "./document-query.ts";
-import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts";
 import { filesPreviewEnabled } from "./files-preview.ts";
 
 export { resolveDocLink } from "@worktable/types";
@@ -449,14 +448,16 @@ function resolveSpaceLinkGraph(
 }
 
 /** The Space's files, from the catalog snapshot rather than its folder. */
+/**
+ * Every document a link can reach, from the catalog snapshot rather than the
+ * Space's folder: files, drawings and HTML Docs as well as Docs, so what
+ * uses one counts wherever it is, such as before its folder is deleted.
+ */
 async function spaceFilePaths(spaceId: string): Promise<Set<string>> {
   const catalog = await readDocumentCatalogSnapshot(spaceId);
   return new Set(
     catalog.entries.flatMap((entry) =>
-      entry.kind === "document" &&
-      entry.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file
-        ? [entry.descriptor.path]
-        : [],
+      entry.kind === "document" ? [entry.descriptor.path] : [],
     ),
   );
 }

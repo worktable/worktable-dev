@@ -13434,6 +13434,16 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 4096
+                },
+                "keep": {
+                  "description": "Paths in the Doc's folder that stay. Without it, what other documents use stays and the rest is deleted.",
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
                 }
               },
               "required": [

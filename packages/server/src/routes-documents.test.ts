@@ -25,7 +25,8 @@ import { createAnnotation } from "./annotation-store.ts"
 import { HOSTED_BROWSER_RUNTIME_SCOPES } from "./hosted-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { renameDocAndSync } from "./doc-rename.ts"
-import { resolveDocAlias } from "./doc-aliases.ts"
+import { recordDocAlias, resolveDocAlias } from "./doc-aliases.ts"
+import { deleteHtmlDocument } from "./html-document-delete.ts"
 import { moveHtmlDocument } from "./html-document-move.ts"
 import { getSpaceLinkGraph } from "./link-graph.ts"
 import {
@@ -40,6 +41,7 @@ import {
 import {
   getDocArchiveInfo,
   readDoc,
+  readSpace,
   setDocArchived,
   writeDoc,
   writeSpace,
@@ -1340,6 +1342,141 @@ describe("format-neutral document route", () => {
       ).toBe("png")
       expect(await readFile(join(docs, "notes", "readme.md"), "utf8")).toBe(
         "# Readme"
+      )
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
+
+  it("archives and deletes a Doc with its folder, keeping files used elsewhere", async () => {
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    try {
+      const instance = app()
+      const docs = join(root, "spaces", spaceId, "docs")
+      const options = { updatedBy: "test", source: "rest-api" as const }
+      // details is kept because elsewhere links to it, and so is what it
+      // embeds; elsewhere embeds shared.png through an old path's alias.
+      await writeDoc(
+        spaceId,
+        "notes/readme/details",
+        "# Details\n\n![Inner](/notes/readme/inner.png)",
+        options
+      )
+      await mkdir(join(docs, "notes", "readme"), { recursive: true })
+      await writeFile(join(docs, "notes", "readme", "shared.png"), "shared")
+      await writeFile(join(docs, "notes", "readme", "own.png"), "own")
+      await writeFile(join(docs, "notes", "readme", "inner.png"), "inner")
+      noteSpaceChanged(spaceId)
+      await recordDocAlias(spaceId, "old-shot.png", "notes/readme/shared.png", "exact")
+      const inFolderBoard = await writeWidget(
+        spaceId,
+        { ...htmlDocument(), id: "notes/readme/board", name: "Board" },
+        "<h1>Board</h1>"
+      )
+      inFolderBoard.release?.()
+      await writeDoc(
+        spaceId,
+        "elsewhere",
+        "# Elsewhere\n\n![Shot](/old-shot.png) and [details](/notes/readme/details) on the [board](/notes/readme/board)",
+        options
+      )
+      noteSpaceChanged(spaceId)
+      await getSpaceLinkGraph(spaceId)
+      const post = (action: string, body: unknown) =>
+        instance.request(`/api/spaces/${spaceId}/documents/${action}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        })
+      const listed = async () => {
+        const paths = (
+          await buildDocumentCatalog({ workspaceRoot: root, spaceId })
+        ).entries.flatMap((entry) =>
+          entry.kind === "document" && entry.descriptor.path.startsWith("notes/readme")
+            ? [entry.descriptor.path]
+            : []
+        )
+        return Promise.all(
+          paths.map(async (path) => [
+            path,
+            Boolean(await getDocArchiveInfo(spaceId, path)),
+          ] as const)
+        )
+      }
+
+      const uses = await instance.request(
+        `/api/spaces/${spaceId}/documents/uses?path=notes/readme`
+      )
+      expect(
+        ((await uses.json()) as { items: Array<{ path: string; usedBy: string[] }> }).items
+          .map((item) => [item.path, item.usedBy])
+          .sort()
+      ).toEqual([
+        ["notes/readme", []],
+        ["notes/readme/board", ["elsewhere"]],
+        ["notes/readme/details", ["elsewhere"]],
+        ["notes/readme/inner.png", ["notes/readme/details"]],
+        ["notes/readme/own.png", []],
+        ["notes/readme/shared.png", ["elsewhere"]],
+      ])
+
+      // Archiving and restoring the Doc takes its folder along, however the
+      // path's case is written.
+      expect((await post("archive", { path: "Notes/Readme" })).status).toBe(200)
+      expect((await listed()).every(([, archived]) => archived)).toBe(true)
+      expect((await post("restore", { path: "notes/readme" })).status).toBe(200)
+      expect((await listed()).every(([, archived]) => !archived)).toBe(true)
+
+      // A path to keep that isn't in the folder is refused, deleting nothing.
+      expect(
+        (await post("delete", { path: "notes/readme", keep: ["notes/readme/missing.png"] }))
+          .status
+      ).toBe(400)
+      expect((await listed()).length).toBe(6)
+
+      // Deleting it takes its folder too, except what another Doc uses,
+      // which keeps its place in the Space's order.
+      const space = await readSpace(spaceId)
+      await writeSpace({
+        ...space.data!,
+        settings: {
+          ...space.data!.settings,
+          docOrder: ["notes/readme", "notes/readme/own.png", "notes/readme/shared.png"],
+        },
+      })
+      expect((await post("delete", { path: "notes/readme" })).status).toBe(200)
+      expect((await readSpace(spaceId)).data?.settings["docOrder"]).toEqual([
+        "notes/readme",
+        "notes/readme/shared.png",
+      ])
+      expect((await listed()).map(([path]) => path).sort()).toEqual([
+        "notes/readme/board",
+        "notes/readme/details",
+        "notes/readme/inner.png",
+        "notes/readme/shared.png",
+      ])
+      expect(
+        await readFile(join(docs, "notes", "readme", "shared.png"), "utf8")
+      ).toBe("shared")
+      // HTML tools delete an HTML Doc alone: its folder is not theirs.
+      const board = await writeWidget(
+        spaceId,
+        { ...htmlDocument(), id: "boards/plan", name: "Plan" },
+        "<h1>Plan</h1>"
+      )
+      board.release?.()
+      await writeDoc(spaceId, "boards/plan/notes", "# Notes", options)
+      noteSpaceChanged(spaceId)
+      expect((await deleteHtmlDocument(spaceId, "boards/plan")).ok).toBe(true)
+      expect(await readFile(join(docs, "boards", "plan", "notes.md"), "utf8")).toBe(
+        "# Notes"
+      )
+
+      // The alias that leads to a kept file still does.
+      expect((await resolveDocAlias(spaceId, "old-shot.png")).path).toBe(
+        "notes/readme/shared.png"
       )
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]

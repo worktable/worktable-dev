@@ -78,7 +78,8 @@ import { createDocumentShare, resolveDocumentShare } from "./share-store.ts"
 import { operatorSnapshotDirectory } from "./operator-snapshot.ts"
 import { writeWorkspaceSnapshot } from "./workspace-snapshot.ts"
 import { restoreLiveWorkspaceSnapshot, readWorkspaceSnapshotRestoreStatus } from "./workspace-snapshot-restore.ts"
-import { closeShareLinkStores, createShareLink, getShareLink } from "./share-links-store.ts"
+import { closeShareLinkStores, createShareLink, findShareLinkByToken, getShareLink } from "./share-links-store.ts"
+import { drainV1ShareLinks } from "./share-links-drain.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { createPublicSharesRouter } from "./routes/public-shares.ts"
 import { SHARE_CAPABILITY_HEADER } from "./hosted.ts"
@@ -348,7 +349,9 @@ describe("live workspace replacement", () => {
       })(), 15_000, "upgraded runtime did not become ready")
       expect(ensureWorkspaceManifest()).toEqual({ ...original, version: 2 })
       expect(await getWorkspaceCollaborationEpoch()).toBe(epoch)
-      expect(await resolveDocumentShare(share.token)).toEqual(share)
+      // Boot moves earlier links into the links store; the link survives the upgrade.
+      await drainV1ShareLinks()
+      expect(findShareLinkByToken(share.token)).toMatchObject({ spaceId: "notes", kind: "doc" })
       expect(resets).toEqual([])
       expect((await fetch(`${origin}/api/spaces`)).status).toBe(200)
       const backups = (await readdir(root)).filter(name => name.endsWith(".committed"))

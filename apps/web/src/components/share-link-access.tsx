@@ -185,9 +185,10 @@ export function LiveDataPanel({
   // server refuses any change while the link still names it.
   function remove(collectionId: string) {
     if (!grant) return
-    const { [collectionId]: _removed, ...rest } = grant.collections
+    const collections = { ...grant.collections }
+    delete collections[collectionId]
     setHiding(null)
-    void onSaveGrant({ ...grant, collections: rest }).catch(() => {})
+    void onSaveGrant({ ...grant, collections }).catch(() => {})
   }
 
   function save() {

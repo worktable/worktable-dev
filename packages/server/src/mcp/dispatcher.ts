@@ -167,6 +167,13 @@ import {
 import type { MermaidDocumentRepair } from "@worktable/types"
 import type { McpSurface } from "./surface.ts"
 import {
+  DELIMITED_NAME,
+  delimitedChanges,
+  readableFileSource,
+} from "./file-results.ts"
+import { withResultMedia } from "./media.ts"
+import { BUILTIN_DOCUMENT_FORMATS } from "../document-format-registry.ts"
+import {
   logRecordPracticeWarnings,
   recordPracticeIdentitiesMatch,
   recordPracticeIdentity,
@@ -205,6 +212,7 @@ import { deleteDocumentFolder } from "../document-folder-delete.ts"
 import { wsManager } from "../ws.ts"
 import { docSnapshotRevision } from "../document-content-revision.ts"
 import { FORMAT_SPEC } from "./format-spec.ts"
+import { withPreviewToolNames } from "./preview-names.ts"
 import {
   isMarkdownSafe,
   extractMarkdownHeadings,
@@ -1099,7 +1107,10 @@ async function _dispatchOperationInner(
     case "html.guide": {
       return {
         profile: "runtime" as const,
-        guide: getHtmlAuthoringGuide(),
+        guide:
+          context.surface === "preview"
+            ? withPreviewToolNames(getHtmlAuthoringGuide())
+            : getHtmlAuthoringGuide(),
         tokens: WIDGET_STYLE_TOKENS,
       }
     }
@@ -1184,6 +1195,35 @@ async function _dispatchOperationInner(
         spaceId: args["spaceId"] as string,
         path: args["path"] as string,
       })
+      // With the preview, a file reads as what it is: an image the model can
+      // see, or text, rather than base64.
+      if (
+        context.surface === "preview" &&
+        result.format.id === BUILTIN_DOCUMENT_FORMATS.file
+      ) {
+        const readable = readableFileSource(result.path, result.bytes)
+        if (readable) {
+          const fields = {
+            documentId: result.documentId,
+            path: result.path,
+            format: result.format,
+            byteLength: result.bytes.byteLength,
+            sourceRevision: result.sourceRevision,
+          }
+          return readable.kind === "text"
+            ? { ...fields, source: readable.text, encoding: "utf8" as const }
+            : withResultMedia(
+                { ...fields, encoding: "image" as const, mediaType: readable.mediaType },
+                [
+                  {
+                    type: "image",
+                    data: Buffer.from(result.bytes).toString("base64"),
+                    mimeType: readable.mediaType,
+                  },
+                ]
+              )
+        }
+      }
       return {
         documentId: result.documentId,
         path: result.path,
@@ -1276,19 +1316,47 @@ async function _dispatchOperationInner(
       }
     }
     case "documents.replace": {
+      const bytes = decodeGenericDocumentSource(
+        args["source"] as string,
+        (args["encoding"] as "utf8" | "base64" | undefined) ?? "utf8"
+      )
+      // With the preview, overwriting a CSV or TSV says what changed, so an
+      // agent sees a dropped row or a changed header at once. The summary
+      // reads the old table, so it needs read access too; the old bytes come
+      // from the replacement's own read.
+      const summarize =
+        context.surface === "preview" &&
+        DELIMITED_NAME.test(args["path"] as string) &&
+        hasScope(identity.scopes, "documents:read")
+      const tableBefore: { bytes?: Uint8Array; formatId?: string } = {}
       const result = await replaceRegisteredDocument({
         spaceId: args["spaceId"] as string,
         path: args["path"] as string,
-        bytes: decodeGenericDocumentSource(
-          args["source"] as string,
-          (args["encoding"] as "utf8" | "base64" | undefined) ?? "utf8"
-        ),
+        bytes,
+        ...(summarize
+          ? {
+              onPrevious: (previous: Uint8Array, formatId: string) => {
+                tableBefore.bytes = previous
+                tableBefore.formatId = formatId
+              },
+            }
+          : {}),
         expectedRevision: args["expectedRevision"] as string,
         updatedBy: actorId,
         source: "mcp",
         reason: args["reason"] as string | undefined,
       })
-      return { ok: true, ...result }
+      return {
+        ok: true,
+        ...result,
+        ...(tableBefore.bytes &&
+        tableBefore.formatId === BUILTIN_DOCUMENT_FORMATS.file
+          ? (() => {
+              const changes = delimitedChanges(result.path, tableBefore.bytes!, bytes)
+              return changes ? { changes } : {}
+            })()
+          : {}),
+      }
     }
     case "documents.checkpoint": {
       const result = await checkpointRegisteredDocument({
@@ -2122,7 +2190,10 @@ async function _dispatchOperationInner(
               : {}),
           },
           spaces: spacesWithDetail,
-          hint: "Use worktable_documents_read action list for every document format, or worktable_discover action search. Drawing previews and objects are available through worktable_drawings_read.",
+          hint: (() => {
+            const hint = "Use worktable_documents_read action list for every document format, or worktable_discover action search. Drawing previews and objects are available through worktable_drawings_read."
+            return context.surface === "preview" ? withPreviewToolNames(hint) : hint
+          })(),
         }
       }
       const { data: space, error: spaceErr } = await readSpace(spaceId)
@@ -2829,9 +2900,17 @@ async function _dispatchOperationInner(
       return await previewMermaid(args["source"] as string, theme)
     }
     case "guidance.drawings":
-      return { guide: DRAWING_GUIDE }
+      return {
+        guide:
+          context.surface === "preview"
+            ? withPreviewToolNames(DRAWING_GUIDE)
+            : DRAWING_GUIDE,
+      }
     case "guidance.format_spec": {
-      return { spec: FORMAT_SPEC.trim() }
+      const spec = FORMAT_SPEC.trim()
+      return {
+        spec: context.surface === "preview" ? withPreviewToolNames(spec) : spec,
+      }
     }
     default:
       throw new Error(`Unknown operation: ${operationId}`)

@@ -750,6 +750,26 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
       byteLength: z.number().int().nonnegative(),
       sourceRevision: z.string(),
     }),
+    // Preview: a text file as text.
+    z.looseObject({
+      documentId: z.string(),
+      path: z.string(),
+      format: DocumentFormatClaimSchema,
+      source: z.string(),
+      encoding: z.literal("utf8"),
+      byteLength: z.number().int().nonnegative(),
+      sourceRevision: z.string(),
+    }),
+    // Preview: an image file, whose bytes travel as MCP image content.
+    z.looseObject({
+      documentId: z.string(),
+      path: z.string(),
+      format: DocumentFormatClaimSchema,
+      encoding: z.literal("image"),
+      mediaType: z.string(),
+      byteLength: z.number().int().nonnegative(),
+      sourceRevision: z.string(),
+    }),
   ],
   "documents.versions": [
     z.looseObject({
@@ -1619,6 +1639,32 @@ export function assertPublicOperationOutput(
 export const PREVIEW_OUTPUT_SCHEMAS: Partial<
   Record<keyof typeof WORKTABLE_OUTPUT_SCHEMAS, z.ZodType>
 > = {
+  worktable_documents_read:
+    WORKTABLE_OUTPUT_SCHEMAS.worktable_documents_read.extend({
+      source: forActions(
+        z.string(),
+        '"read_source", except for an image, which comes as image content'
+      ),
+      encoding: forActions(
+        z.enum(["base64", "utf8", "image"]),
+        '"read_source": utf8 for a text file, image for an image file, else base64'
+      ),
+      mediaType: forActions(z.string(), '"read_source" of an image file'),
+    }),
+  worktable_documents_write:
+    WORKTABLE_OUTPUT_SCHEMAS.worktable_documents_write.extend({
+      changes: forActions(
+        z.object({
+          header: z.enum(["unchanged", "changed"]),
+          rowsBefore: z.number().int().nonnegative(),
+          rowsAfter: z.number().int().nonnegative(),
+          rowsKept: z.number().int().nonnegative(),
+          rowsAdded: z.number().int().nonnegative(),
+          rowsRemoved: z.number().int().nonnegative(),
+        }),
+        '"replace" of a CSV or TSV file: what changed, row by row'
+      ),
+    }),
   worktable_threads_write:
     WORKTABLE_OUTPUT_SCHEMAS.worktable_threads_write.extend({
       threadId: forActions(z.string(), '"post", "assign_response" or "rename"'),

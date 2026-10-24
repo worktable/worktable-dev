@@ -1305,6 +1305,8 @@ export async function replaceRegisteredDocument(options: {
    * typing does; an upload is a deliberate version and never merges.
    */
   separateVersion?: boolean
+  /** Given the bytes being replaced, as read under the lock for the write. */
+  onPrevious?: (bytes: Uint8Array, formatId: string) => void
 }): Promise<DocumentWriteResult> {
   assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
@@ -1337,6 +1339,7 @@ export async function replaceRegisteredDocument(options: {
       if (replay) return replay
     }
     const before = await readSource(workspaceRoot, options.spaceId, current)
+    options.onPrevious?.(before, current.format.id)
     const beforeRevision = await registeredDocumentSourceRevision({
       ...current,
       bytes: before,

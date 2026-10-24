@@ -15,7 +15,12 @@ import { NumberedList } from "./lib/numbered-list"
 import { COPY_ICON, WRAP_ICON } from "./lib/code-icons"
 
 type Props = Record<string, unknown>
-type Budget = { remaining: number; truncated: boolean }
+type Budget = {
+  remaining: number
+  truncated: boolean
+  /** Where an image's stored path loads from. */
+  resolveUrl?: (url: string) => string
+}
 
 function record(value: unknown): Props {
   return value && typeof value === "object" ? (value as Props) : {}
@@ -190,7 +195,7 @@ function table(block: Props): ReactNode {
   )
 }
 
-function media(block: Props, props: Props): ReactNode {
+function media(block: Props, props: Props, budget: Budget): ReactNode {
   const url = text(props.url)
   const caption = text(props.caption)
   const width =
@@ -205,7 +210,10 @@ function media(block: Props, props: Props): ReactNode {
   if (!url) return h("div", { className: "worktable-preview-media-empty" })
   let body: ReactNode
   if (block.type === "image")
-    body = h("img", { src: url, alt: caption ?? text(props.name) ?? "" })
+    body = h("img", {
+      src: budget.resolveUrl ? budget.resolveUrl(url) : url,
+      alt: caption ?? text(props.name) ?? "",
+    })
   else if (block.type === "file")
     return h(
       "div",
@@ -338,7 +346,7 @@ function single(
     case "video":
     case "audio":
     case "file":
-      return h("div", { key }, media(block, props))
+      return h("div", { key }, media(block, props, budget))
     case "mermaid":
       if (props.collapsed === "true")
         return h(
@@ -492,9 +500,12 @@ export function DocumentReadingPreview({
   showStatus = true,
   afterTitle,
   titlePlaceholder,
+  resolveUrl,
 }: {
   content: unknown[] | string
   showStatus?: boolean
+  /** Where an image's stored path loads from, when it names a file. */
+  resolveUrl?: (url: string) => string
   /** Shown under the title (the opening level-one heading), as the open Doc shows it. */
   afterTitle?: ReactNode
   /**
@@ -505,9 +516,10 @@ export function DocumentReadingPreview({
 }) {
   // Keep the opening preview bounded even for thousands of blocks. The full
   // editor still receives the complete document through collaboration.
-  const budget = {
+  const budget: Budget = {
     remaining: 80,
     truncated: typeof content === "string" && content.length > 64 * 1024,
+    ...(resolveUrl ? { resolveUrl } : {}),
   }
   const opensWithTitle = documentOpensWithTitle(content)
   const titled = afterTitle != null && opensWithTitle

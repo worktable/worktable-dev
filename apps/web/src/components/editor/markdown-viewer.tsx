@@ -169,6 +169,8 @@ interface MarkdownViewerProps {
   docPath: string
   /** Shown under the title (the opening level-one heading), or first when there is none. */
   afterTitle?: ReactNode
+  /** The versions of the Doc's files, from its page. */
+  fileVersions?: Readonly<Record<string, string>>
 }
 
 export function MarkdownViewer({
@@ -176,6 +178,7 @@ export function MarkdownViewer({
   spaceId,
   docPath,
   afterTitle,
+  fileVersions,
 }: MarkdownViewerProps) {
   const router = useRouter()
   const fade = useScrollFade<HTMLDivElement>(8, { top: false })
@@ -292,7 +295,7 @@ export function MarkdownViewer({
                     void node
                     const source =
                       filesOn && typeof src === "string"
-                        ? embedSourceUrl(spaceId, docPath, src)
+                        ? embedSourceUrl(spaceId, docPath, src, fileVersions)
                         : src
                     const image = <img {...props} src={source} title={title} />
                     return title ? (

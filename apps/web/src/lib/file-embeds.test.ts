@@ -1,5 +1,7 @@
-import { describe, expect, it } from "bun:test"
-import { embeddedFileName, embedSourceUrl } from "./file-embeds"
+import { afterEach, describe, expect, it } from "bun:test"
+import { embeddedFileName, embedSourceUrl, uploadEmbeddedFile } from "./file-embeds"
+
+const realFetch = globalThis.fetch
 
 describe("a Doc's embedded files", () => {
   it("load from the Doc's Space, resolved from the Doc's folder", () => {
@@ -15,6 +17,32 @@ describe("a Doc's embedded files", () => {
     )
     expect(embedSourceUrl("product", "a", "data:image/png;base64,AAAA")).toBe(
       "data:image/png;base64,AAAA"
+    )
+    // With the version the Doc's page gave, the browser keeps the file.
+    expect(
+      embedSourceUrl("product", "onboarding/signup-flow", "signup-flow/error.png", {
+        "onboarding/signup-flow/error.png": "2026-10-23T14:02:00.000Z",
+      })
+    ).toEndWith("error.png&v=2026-10-23T14%3A02%3A00.000Z")
+  })
+
+  afterEach(() => {
+    globalThis.fetch = realFetch
+  })
+
+  it("saved into a Doc whose name holds \"#\" load from where they were saved", async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ path: "notes/review#1/error.png" }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      })) as unknown as typeof fetch
+    const stored = await uploadEmbeddedFile(
+      "product",
+      "notes/review#1",
+      new File(["x"], "error.png", { type: "image/png" })
+    )
+    expect(embedSourceUrl("product", "notes/review#1", stored)).toEndWith(
+      "?path=notes%2Freview%231%2Ferror.png"
     )
   })
 

@@ -894,6 +894,7 @@ function MarkdownDocPage({
             content={content}
             spaceId={spaceId}
             docPath={docPath}
+            fileVersions={page?.embeds}
             afterTitle={
               <DocumentByline
                 spaceId={spaceId}
@@ -1125,6 +1126,7 @@ function BlockNoteDocPage({
 }) {
   const editingFiles = useEditorFiles(spaceId, docPath, {
     upload: !readOnly && !archived,
+    versions: page?.embeds,
   })
   const readingFiles = useEditorFiles(spaceId, docPath, { upload: false })
   const validated = page !== null
@@ -1507,6 +1509,7 @@ function BlockNoteDocPage({
                   content={opening.markdown}
                   spaceId={spaceId}
                   docPath={docPath}
+                  fileVersions={page?.embeds}
                   afterTitle={byline}
                 />
               ) : previewContent ? (
@@ -1515,6 +1518,7 @@ function BlockNoteDocPage({
                   content={previewContent}
                   titlePlaceholder={docName}
                   afterTitle={byline}
+                  resolveUrl={editingFiles?.resolve}
                 />
               ) : (
                 <EditorSkeleton />

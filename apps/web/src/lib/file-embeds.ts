@@ -8,15 +8,33 @@
 import { resolveDocLink } from "@worktable/types"
 import { authenticatedFetch, BASE_URL, HttpError } from "./http"
 
-/** The URL an embed loads from: a file in the Doc's Space, or the target itself. */
+/**
+ * The URL an embed loads from: a file in the Doc's Space, or the target
+ * itself. With the file's version from the Doc's page, the browser keeps
+ * the file and shows it again without asking.
+ */
 export function embedSourceUrl(
   spaceId: string,
   docPath: string,
-  target: string
+  target: string,
+  versions?: Readonly<Record<string, string>>
 ): string {
   const path = resolveDocLink(docPath, target)
   if (path === null) return target
-  return `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}`
+  const version = versions?.[path]
+  return `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}${version ? `&v=${encodeURIComponent(version)}` : ""}`
+}
+
+/** A path as a link holds it: characters a URL reads as syntax are encoded. */
+function linkPath(path: string): string {
+  return path
+    .split("/")
+    .map((segment) =>
+      segment.replace(/[ #?%()<>"']/g, (character) =>
+        `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+      )
+    )
+    .join("/")
 }
 
 function slug(text: string): string {
@@ -77,5 +95,7 @@ export async function uploadEmbeddedFile(
   const folder = docPath.includes("/")
     ? docPath.slice(0, docPath.lastIndexOf("/") + 1)
     : ""
-  return body.path.startsWith(folder) ? body.path.slice(folder.length) : `/${body.path}`
+  return linkPath(
+    body.path.startsWith(folder) ? body.path.slice(folder.length) : `/${body.path}`
+  )
 }

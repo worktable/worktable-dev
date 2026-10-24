@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Download, File as FileIcon, Upload } from "lucide-react"
+import { Database, Download, File as FileIcon, Upload } from "lucide-react"
 import { toast } from "@worktable/ui/components/sonner"
 import {
   delimiterForFilename,
@@ -15,7 +15,15 @@ import { DocumentByline } from "@/components/document/document-byline"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { authenticatedFetch } from "@/lib/http"
 import { fileSourceUrl, replaceFile } from "@/lib/file-embeds"
+import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import "@/styles/document-controls.css"
+
+// Only a table file's import loads the dialog, when it opens.
+const ImportRecordsDialog = lazy(() =>
+  import("@/components/records/import-records-dialog").then((module) => ({
+    default: module.ImportRecordsDialog,
+  }))
+)
 
 /** How a file shows on its page, decided by its name. */
 type FileView = "image" | "table" | "text" | "card"
@@ -97,6 +105,10 @@ export function FilePage({
     uploaded && uploaded.replacedVersion === page.version
       ? uploaded.hash
       : (page.version ?? null)
+  const [importOpen, setImportOpen] = useState(false)
+  const canEdit = page.capabilities.edit !== false && !page.document.archived
+  // A table people will keep working in belongs in Records.
+  const importable = canEdit && /\.(?:csv|tsv|jsonl)$/i.test(name)
   const url = fileSourceUrl(spaceId, path, version)
 
   const uploadVersion = useCallback(
@@ -133,7 +145,19 @@ export function FilePage({
           })
         },
       },
-      ...(page.capabilities.edit !== false && !page.document.archived
+      ...(importable
+        ? {
+            overflowActions: [
+              {
+                id: "import-records",
+                label: "Import into Records",
+                icon: Database,
+                onSelect: () => setImportOpen(true),
+              },
+            ],
+          }
+        : {}),
+      ...(canEdit
         ? {
             secondaryAction: {
               label: "Upload New Version",
@@ -148,10 +172,19 @@ export function FilePage({
         : {}),
     })
     return () => setPageMeta(null)
-  }, [name, page, path, setPageMeta, spaceId, uploading])
+  }, [canEdit, importable, name, page, path, setPageMeta, spaceId, uploading])
 
   return (
     <div className="flex h-full flex-col">
+      <DeferredMount active={importOpen}>
+        <ImportRecordsDialog
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          spaceId={spaceId}
+          path={path}
+          fileName={name}
+        />
+      </DeferredMount>
       <input
         ref={picker}
         type="file"

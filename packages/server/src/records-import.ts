@@ -340,6 +340,8 @@ export async function importIntoRecords(options: {
    * is named by the proposed column, so its records aren't named by ids.
    */
   titleColumn?: string
+  /** What a new collection is called; its id stays `collectionId`. */
+  name?: string
   createdBy: string
 }): Promise<ImportResult> {
   if (options.columns.length === 0) {
@@ -406,6 +408,7 @@ export async function importIntoRecords(options: {
     createdBy: options.createdBy,
     existing: existing ?? undefined,
     ...(titleField ? { titleField } : {}),
+    ...(!existing && options.name ? { name: options.name } : {}),
   })
   const problems: string[] = []
   for (const row of rows) {

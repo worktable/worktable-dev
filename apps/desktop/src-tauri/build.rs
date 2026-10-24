@@ -52,6 +52,7 @@ fn main() {
             "desktop_choose_workspace_folder",
             "desktop_inspect_workspace",
             "desktop_start_local_connection",
+            "desktop_choose_agent_worktable",
             "desktop_use_existing_installation",
             "desktop_retry_connection",
             "desktop_restart_local_host",

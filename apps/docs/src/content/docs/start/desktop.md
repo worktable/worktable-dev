@@ -41,8 +41,12 @@ connecting the agent are separate steps; see [Skills](/agents/skills/).
 
 Use the Worktable application menu to change the selected workspace or server.
 Returning to the same local workspace restores its stable agent endpoint.
-Switching workspaces selects a different endpoint, so update an agent app that
-was connected directly to the previous one.
+When you open a local Worktable other than the one agents on this Mac use,
+Desktop asks whether to switch them. **Switch agents** moves the CLI, the
+background service, and `worktable mcp` to it. Desktop doesn't ask again
+about the same two Worktables until it restarts. Each Worktable has its own
+endpoint, so update an agent app that was connected directly to the previous
+one.
 
 - **Change Connection…** keeps a saved self-hosted session while returning to
   the connection chooser.
@@ -60,8 +64,8 @@ Desktop and a local host it owns keep running, so agent connections stay
 available. Reopen it from the Dock, by launching Worktable again, or with
 **Window → Worktable**.
 
-Use **Worktable → Quit Worktable** to stop the app. Quitting also stops a local
-host owned by Desktop. A managed CLI service that Desktop only attached to
+Use **Worktable → Quit Worktable** to stop the app. Quitting also stops every
+local host owned by Desktop. A managed CLI service that Desktop only attached to
 continues running.
 
 ## Connect an agent

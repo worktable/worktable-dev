@@ -15,6 +15,7 @@ import {
 } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { ensureAppDir } from "./app-storage.ts"
+import { workspaceCacheKeyForRoot } from "./workspace.ts"
 
 export const LOCAL_HOST_SCHEMA_VERSION = 1
 export const LOCAL_WORKSPACES_FILE = "local-workspaces.json"
@@ -146,6 +147,36 @@ function emptyRegistry(): LocalWorkspaceRegistry {
     schemaVersion: LOCAL_HOST_SCHEMA_VERSION,
     activeWorkspaceId: null,
     workspaces: [],
+  }
+}
+
+/**
+ * Whether Worktable Link is on for the Worktable at this path on this device:
+ * its link record exists and is not disabled. Pausing happens in Cloud, so a
+ * paused link still counts as on here. null when the record can't be read,
+ * so a caller never mistakes an unreadable record for Link being off.
+ */
+export function localWorkspaceLinked(workspacePath: string): boolean | null {
+  let text: string
+  try {
+    text = readFileSync(
+      join(
+        ensureAppDir(),
+        "linked",
+        `${workspaceCacheKeyForRoot(resolve(workspacePath))}.json`
+      ),
+      "utf8"
+    )
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? false : null
+  }
+  try {
+    const link = JSON.parse(text) as unknown
+    return isRecord(link) && typeof link["disabled"] === "boolean"
+      ? link["disabled"] === false
+      : null
+  } catch {
+    return null
   }
 }
 
@@ -803,10 +834,7 @@ export function writeLocalRuntime(
         // An unreadable legacy lease is left for `local-host recover`.
         return
       }
-      const legacyLive =
-        legacy !== null &&
-        legacy.pid !== parsed.pid &&
-        localRuntimeProcessAlive(legacy)
+      const legacyLive = legacyLeaseHeldElsewhere(legacy, parsed)
       if (options.legacy && !legacyLive) {
         writePrivateJson(legacyPath, parsed)
       } else if (
@@ -822,6 +850,46 @@ export function writeLocalRuntime(
   } catch {
     // The per-Worktable lease is published; the legacy copy is best effort.
   }
+}
+
+/**
+ * Whether the single-host lease belongs to a host other than `runtime` that
+ * must keep it: a live host of an older release. A live host's mirror of its
+ * own per-Worktable lease is handed over when the configured Worktable moves.
+ */
+function legacyLeaseHeldElsewhere(
+  legacy: LocalRuntimeRecord | null,
+  runtime: LocalRuntimeRecord
+): boolean {
+  if (!legacy || legacy.pid === runtime.pid || legacy.nonce === runtime.nonce)
+    return false
+  if (!localRuntimeProcessAlive(legacy)) return false
+  let mirrored: LocalRuntimeRecord | null = null
+  try {
+    mirrored = readLocalRuntimeFile(getLocalRuntimePath(legacy.workspaceId))
+  } catch {
+    // An unreadable per-Worktable lease proves nothing; keep the legacy one.
+  }
+  return mirrored?.nonce !== legacy.nonce
+}
+
+/**
+ * Make the running host of `workspaceId` the one older releases see in the
+ * single-host lease, as when it becomes the configured Worktable. That host
+ * removes the copy itself on exit, since it carries its own nonce and PID.
+ * Returns false when no live host serves the Worktable or the legacy lease
+ * belongs to a live older-release host.
+ */
+export function mirrorLocalRuntimeToLegacy(workspaceId: string): boolean {
+  const runtime = readLocalRuntimeFile(getLocalRuntimePath(workspaceId))
+  if (!runtime || !localRuntimeProcessAlive(runtime)) return false
+  return withLocalRuntimeFileLock(undefined, () => {
+    const legacyPath = getLegacyLocalRuntimePath()
+    if (legacyLeaseHeldElsewhere(readLocalRuntimeFile(legacyPath), runtime))
+      return false
+    writePrivateJson(legacyPath, runtime)
+    return true
+  })
 }
 
 /**

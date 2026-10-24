@@ -18,6 +18,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs"
+import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -249,14 +250,73 @@ describe("local-authority state model and command integration", () => {
     // Another Worktable gets its own endpoint; the configured one stays.
     expect(readFileSync(configPath, "utf8")).toBe(configuredFirst)
 
+    // Worktable Link is on for the second Worktable: Desktop keeps its host
+    // running while the window shows another one.
+    const controlSecret = "c".repeat(64)
+    mkdirSync(join(appDir, "linked"), { recursive: true })
+    writeFileSync(
+      join(
+        appDir,
+        "linked",
+        `${createHash("sha256").update(second).digest("hex").slice(0, 16)}.json`
+      ),
+      JSON.stringify({ disabled: false, controlSecret })
+    )
+
     const inspection = await runCli(["local-host", "inspect", "--json"])
     expect(inspection.exitCode).toBe(0)
     expect(inspection.stdout.trim().split("\n")).toHaveLength(1)
     const inspected = JSON.parse(inspection.stdout)
     expect(inspected.workspaces).toHaveLength(2)
+    expect(
+      Object.fromEntries(
+        inspected.workspaces.map(
+          (entry: { path: string; linked: boolean }) => [
+            entry.path,
+            entry.linked,
+          ]
+        )
+      )
+    ).toEqual({ [first]: false, [second]: true })
+    expect(inspection.stdout).not.toContain(controlSecret)
+
+    // An unreadable link record is unknown, never "off".
+    writeFileSync(
+      join(
+        appDir,
+        "linked",
+        `${createHash("sha256").update(first).digest("hex").slice(0, 16)}.json`
+      ),
+      "{ not json"
+    )
+    const unknown = JSON.parse(
+      (await runCli(["local-host", "inspect", "--json"])).stdout
+    )
+    expect(
+      unknown.workspaces.find((entry: { path: string }) => entry.path === first)
+        .linked
+    ).toBeNull()
     expect(inspected.activeWorkspace.path).toBe(first)
     expect(inspected.runtime).toBeNull()
     expect(inspected.runtimes).toEqual([])
+    expect(inspection.stdout).not.toContain(controlSecret)
+
+    // When the person chooses to switch agents, Desktop makes it configured.
+    const madeConfigured = await runCli([
+      "local-host",
+      "activate",
+      second,
+      "--make-configured",
+      "--json",
+    ])
+    expect(madeConfigured.exitCode).toBe(0)
+    expect(JSON.parse(madeConfigured.stdout)).toMatchObject({
+      port: secondResult.port,
+    })
+    expect(JSON.parse(readFileSync(configPath, "utf8"))).toMatchObject({
+      workspace: second,
+      service: { port: secondResult.port },
+    })
     expect(inspection.stdout).not.toContain("proofToken")
     expect(inspection.stdout).not.toContain("WORKTABLE_LOCAL_PROOF_TOKEN")
   })
@@ -2098,13 +2158,39 @@ describe("local-authority state model and command integration", () => {
         JSON.parse(readFileSync(join(appDir, "local-runtime.json"), "utf8"))
       ).toMatchObject({ workspacePath: first, port: firstPort })
 
-      // When Desktop goes away without stopping its host, the host stops.
+      // When the person switches agents to the second Worktable, its running
+      // host takes over the single-host lease, and the first host's exit
+      // leaves that copy alone.
+      expect(
+        (
+          await runCli([
+            "local-host",
+            "activate",
+            second,
+            "--make-configured",
+            "--json",
+          ])
+        ).exitCode
+      ).toBe(0)
+      const legacyLease = () =>
+        JSON.parse(readFileSync(join(appDir, "local-runtime.json"), "utf8"))
+      expect(legacyLease()).toMatchObject({
+        workspacePath: second,
+        port: secondPort,
+      })
+      firstHost.kill("SIGTERM")
+      await firstHost.exited
+      expect(legacyLease()).toMatchObject({ workspacePath: second })
+
+      // When Desktop goes away without stopping its host, the host stops and
+      // removes its own leases.
       const secondLease = publishedLeasePaths().find((path) =>
         readFileSync(path, "utf8").includes(second)
       )!
       secondHost.kill("SIGKILL")
       await secondHost.exited
       await waitForFileRemoval(secondLease)
+      await waitForFileRemoval(join(appDir, "local-runtime.json"))
     } finally {
       firstHost.kill("SIGTERM")
       secondHost?.kill("SIGKILL")

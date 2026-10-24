@@ -123,6 +123,8 @@ import {
   localHttpOrigin,
   localProcessAlive,
   localProcessIdentity,
+  localWorkspaceLinked,
+  mirrorLocalRuntimeToLegacy,
   PAIRING_TTL_MS,
   readLocalRuntimeFiles,
   readLocalWorkspaceRegistry,
@@ -1190,7 +1192,12 @@ async function commandLocalHostInspect(): Promise<void> {
             publicOriginConfiguredFromEnv(),
         },
         activeWorkspace: active,
-        workspaces: registry.workspaces,
+        // Desktop keeps a host running for a Worktable whose Link is on.
+        // `linked` is null when its link record can't be read.
+        workspaces: registry.workspaces.map((entry) => ({
+          ...entry,
+          linked: localWorkspaceLinked(entry.path),
+        })),
         registryError,
         registryErrorCode,
         runtime,
@@ -1981,7 +1988,7 @@ async function activateAdditionalLocalWorkspace(input: {
 
 async function commandLocalHostActivate(
   directory: string,
-  opts: { port?: number; waitForWelcome?: boolean }
+  opts: { port?: number; waitForWelcome?: boolean; makeConfigured?: boolean }
 ): Promise<void> {
   const targetPath = resolve(directory)
   let journal: LocalActivationJournal | null = null
@@ -2059,7 +2066,10 @@ async function commandLocalHostActivate(
     // background service use. Another Worktable gets its own host without
     // changing that, so the service keeps serving the configured one.
     const configuredPath = resolve(beforeConfig.workspace)
+    // Desktop asks the person before it passes --make-configured, which
+    // moves config, agents and the service to this Worktable.
     const becomesConfigured =
+      opts.makeConfigured === true ||
       !existsSync(getConfigPath()) ||
       sameLocalWorktable(configuredPath, targetPath) ||
       (!currentService.installed &&
@@ -2144,6 +2154,13 @@ async function commandLocalHostActivate(
       writeConfig(nextConfig)
       applyRuntimeConfig(nextConfig)
       rememberConfiguredLocalWorkspace(nextConfig, classification.manifest)
+      // Older releases read only the single-host lease. The running host of
+      // the newly configured Worktable takes it over from the previous one.
+      try {
+        mirrorLocalRuntimeToLegacy(classification.manifest.id)
+      } catch {
+        // Best effort: the per-Worktable lease remains authoritative.
+      }
       if (opts.waitForWelcome) {
         const deadline = Date.now() + 30_000
         while (!(await starterWorkspaceReady())) {
@@ -5568,6 +5585,12 @@ export function buildProgram(): Command {
       new CommanderOption(
         "--wait-for-welcome",
         "wait for first-run starter content before attaching"
+      ).hideHelp()
+    )
+    .addOption(
+      new CommanderOption(
+        "--make-configured",
+        "make this the configured Worktable that config.json, agents and the service use"
       ).hideHelp()
     )
     .option("--json", "machine-readable output")

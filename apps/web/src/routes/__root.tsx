@@ -76,6 +76,7 @@ const SettingsDialog = lazy(() =>
 import type { SettingsSectionId } from "@/components/settings/sections"
 import { onOpenSettings } from "@/lib/settings-open"
 import { UpdateNudge } from "@/components/update-nudge"
+import { DesktopAgentOffer } from "@/components/desktop-agent-offer"
 import { BillingRoot } from "@/components/billing/billing-root"
 import { UpdateIndicatorDot } from "@/components/update-indicator"
 import { ShareDocumentAction } from "@/components/share-document-action"
@@ -720,6 +721,7 @@ function RootLayout() {
         <Toaster theme={theme} />
         {/* After the login guard above, so an unauthenticated page never polls. */}
         <UpdateNudge />
+        <DesktopAgentOffer />
         {workspace ? <PreloadScreensWhenIdle /> : null}
         {/* Last, so a socket the page opens on mount counts as reconnecting. */}
         <DiscardRecoveryOverlay discarded={discarded} />

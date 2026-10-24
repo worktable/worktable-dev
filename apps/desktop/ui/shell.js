@@ -52,10 +52,6 @@ const elements = {
   createWorkspace: document.querySelector("#create-workspace"),
   openExisting: document.querySelector("#open-existing"),
   recoveryTitle: document.querySelector("#recovery-title"),
-  agentChoiceTitle: document.querySelector("#agent-choice-title"),
-  agentChoiceMessage: document.querySelector("#agent-choice-message"),
-  switchAgents: document.querySelector("#switch-agents"),
-  keepAgents: document.querySelector("#keep-agents"),
   recoveryMessage: document.querySelector("#recovery-message"),
   recoveryWorkspace: document.querySelector("#recovery-workspace"),
   recoveryPath: document.querySelector("#recovery-path"),
@@ -109,7 +105,6 @@ const viewPages = {
   remote: document.querySelector("#remote-page"),
   cloud: document.querySelector("#cloud-page"),
   recovery: document.querySelector("#recovery-page"),
-  agents: document.querySelector("#agent-choice-page"),
 }
 
 let viewTransitionTimer = 0
@@ -651,17 +646,6 @@ function render(status) {
   }
   elements.cancelCloudConnection.hidden = true
 
-  // Opening a Worktable other than the one agents on this Mac use.
-  if (status.state === "choosingAgentWorktable") {
-    setView("agents", "forward")
-    const opening = status.workspace?.name ?? "this Worktable"
-    const current = status.agentWorktable ?? ""
-    elements.agentChoiceTitle.textContent = `Switch agents to “${opening}”?`
-    elements.agentChoiceMessage.textContent = `Agents on this Mac work in “${current}”.`
-    elements.keepAgents.textContent = `Keep “${current}”`
-    return
-  }
-
   if (status.state === "needsSelection") {
     if (previousState === "ready") {
       selectedCreatePath = ""
@@ -1058,18 +1042,6 @@ elements.openExisting.addEventListener("click", () =>
     setOpenFeedback(inspection.message, "warning")
     return false
   }, setOpenFeedback)
-)
-
-elements.switchAgents.addEventListener("click", () =>
-  runAction(() =>
-    invoke("desktop_choose_agent_worktable", { switchAgents: true })
-  )
-)
-
-elements.keepAgents.addEventListener("click", () =>
-  runAction(() =>
-    invoke("desktop_choose_agent_worktable", { switchAgents: false })
-  )
 )
 
 elements.retryConnection.addEventListener("click", () =>

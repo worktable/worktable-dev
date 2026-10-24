@@ -49,3 +49,49 @@ export async function switchDesktopWorktable(): Promise<
     return "unavailable"
   }
 }
+
+/** Desktop offers to move agents on this Mac to the Worktable this page shows. */
+export interface DesktopAgentOffer {
+  /** The Worktable agents use now. */
+  agentWorktable: string
+  /** The Worktable this page shows. */
+  worktable: string
+}
+
+/**
+ * The offer waiting for this page, if any. Null outside Desktop, in a Desktop
+ * build without the offer, and on pages other than the active local one.
+ */
+export async function desktopAgentOffer(): Promise<DesktopAgentOffer | null> {
+  const call = invoke()
+  if (!call) return null
+  try {
+    const offer = (await call("desktop_workspace_agent_offer")) as {
+      agentWorktable?: unknown
+      worktable?: unknown
+    } | null
+    if (
+      typeof offer?.agentWorktable !== "string" ||
+      typeof offer.worktable !== "string"
+    ) {
+      return null
+    }
+    return { agentWorktable: offer.agentWorktable, worktable: offer.worktable }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Keeps agents where they are, or moves them to this Worktable. Moving saves
+ * the open drawing first; with the background service installed, Desktop
+ * reopens this page.
+ */
+export async function answerDesktopAgentOffer(
+  switchAgents: boolean
+): Promise<void> {
+  const call = invoke()
+  if (!call) return
+  if (switchAgents) await saveOpenDrawing()
+  await call("desktop_workspace_answer_agent_offer", { switchAgents })
+}

@@ -418,13 +418,18 @@ test("creates, copies, edits and revokes Doc links from the header action", asyn
   await expect(
     dialog.getByText("Anyone with the link can view this document")
   ).toBeVisible()
-  // With no link yet, one button makes it.
+  // With no link yet, the settings it will have show first, and one button
+  // makes it.
   await expect(dialog.getByRole("textbox")).toHaveCount(0)
+  const expires = dialog.getByRole("button", { name: /^Expires/ })
+  await expect(expires).toContainText("14 days")
+  await expect(dialog.getByRole("button", { name: /^Password/ })).toContainText(
+    "Off"
+  )
   await dialog.getByRole("button", { name: "Create Link", exact: true }).click()
   createGate.resolve()
   const url = dialog.getByRole("textbox", { name: "Link", exact: true })
   await expect(url).toHaveValue(SHARED_URL)
-  await expect(dialog.getByText("Expires in 14 days")).toBeVisible()
   await dialog.getByRole("button", { name: "Copy", exact: true }).click()
   expect(await clipboard()).toBe(SHARED_URL)
   expect(daysFromNow(mutations[0]?.body.expiresAt)).toBe(14)
@@ -448,15 +453,13 @@ test("creates, copies, edits and revokes Doc links from the header action", asyn
   await page.getByRole("menuitem", { name: "Copy Link" }).click()
   await expect.poll(clipboard).toBe(SHARED_URL)
 
-  await actions.click()
-  await page.getByRole("menuitem", { name: "Edit Link" }).click()
+  // Its settings change it in place.
+  await expires.click()
   await dialog.getByRole("combobox", { name: "Expires", exact: true }).click()
   await page.getByRole("option", { name: "30 days", exact: true }).click()
-  await dialog.getByRole("button", { name: "Save", exact: true }).click()
-  await expect(url).toHaveValue(SHARED_URL)
-  expect(mutations[1]?.method).toBe("PATCH")
+  await expect.poll(() => mutations[1]?.method).toBe("PATCH")
   expect(daysFromNow(mutations[1]?.body.expiresAt)).toBe(30)
-  await expect(dialog.getByText(/^Expires [A-Z][a-z]{2} \d+/)).toBeVisible()
+  await expect(url).toHaveValue(SHARED_URL)
 
   // A link for someone in particular has a label and lives under More links.
   const more = dialog.getByRole("button", { name: /^More links/ })
@@ -529,9 +532,8 @@ test("creates and edits password links without retaining a password in the form"
   await share.click()
   const dialog = page.getByRole("dialog", { name: "Share “Launch plan”" })
   // A Worktable that requires passwords asks for one before the first link.
-  await dialog.getByRole("button", { name: "Create Link", exact: true }).click()
   const passwordSwitch = dialog.getByRole("switch", {
-    name: "Password",
+    name: "Ask for a password",
     exact: true,
   })
   await expect(passwordSwitch).toBeChecked()
@@ -551,37 +553,36 @@ test("creates and edits password links without retaining a password in the form"
     password: "test-only board password",
   })
 
-  const save = dialog.getByRole("button", { name: "Save", exact: true })
-  const edit = async () => {
-    await dialog.getByRole("button", { name: "Link actions" }).click()
-    await page.getByRole("menuitem", { name: "Edit Link" }).click()
+  // The link's Password row changes it in place; a blank field keeps it.
+  const passwordRow = dialog.getByRole("button", { name: /^Password/ })
+  const openPassword = async () => {
+    if ((await passwordRow.getAttribute("aria-expanded")) !== "true")
+      await passwordRow.click()
   }
-  await edit()
+  const save = dialog.getByRole("button", { name: "Save", exact: true })
+  await openPassword()
   const replacement = dialog.getByLabel("New password", { exact: true })
   await expect(replacement).toHaveValue("")
-  await save.click()
   await expect(save).toBeHidden()
-  expect(mutations[1]?.body).not.toHaveProperty("password")
-  await edit()
   await replacement.fill("replacement test password")
   await save.click()
   await expect(save).toBeHidden()
-  expect(mutations[2]?.body.password).toBe("replacement test password")
+  await expect(replacement).toHaveValue("")
+  expect(mutations[1]?.body).toEqual({ password: "replacement test password" })
 
   // Once passwords are optional, one can be removed and another link made with one.
   await dialog.getByRole("button", { name: "Done", exact: true }).click()
   requirePassword = false
   await share.click()
-  await edit()
+  await openPassword()
   await passwordSwitch.click()
-  await save.click()
-  await expect(save).toBeHidden()
-  expect(mutations[3]?.body.password).toBeNull()
+  await expect.poll(() => mutations[2]?.body).toEqual({ password: null })
+  await expect(passwordRow).toContainText("Off")
 
   await dialog.getByRole("button", { name: /^More links/ }).click()
   await dialog.getByRole("button", { name: "New Link", exact: true }).click()
   await dialog.getByLabel("Label", { exact: true }).fill("Board")
-  await passwordSwitch.click()
+  await passwordSwitch.last().click()
   await dialog
     .getByLabel("Link password", { exact: true })
     .fill("test-only second password")
@@ -589,7 +590,7 @@ test("creates and edits password links without retaining a password in the form"
   await expect(
     dialog.getByRole("list", { name: "Other links" }).getByRole("listitem")
   ).toHaveText([/^BoardPassword/])
-  expect(mutations[4]?.body).toMatchObject({
+  expect(mutations[3]?.body).toMatchObject({
     label: "Board",
     password: "test-only second password",
   })

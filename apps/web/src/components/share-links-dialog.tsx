@@ -62,6 +62,7 @@ import {
   defaultShareLinkExpiry,
   otherCurrentLinkCount,
   shareLinkExpiresAt,
+  shareLinkExpiry,
   shareLinkExpiryChoices,
   shareLinkSummary,
   type ShareLinkDetail,
@@ -84,17 +85,13 @@ interface LinkDraft {
   expiry: ShareLinkExpiry
   passwordEnabled: boolean
   password: string
+  /** Only the first link is made with comments or live data. */
+  comments: boolean
+  live: boolean
 }
 
-/**
- * `default` makes the first link when the owner policy needs a password for
- * it; `new` makes a labelled link under More links.
- */
-type Editing =
-  | { kind: "default" }
-  | { kind: "new" }
-  | { kind: "edit"; link: ShareLink }
-  | null
+/** `new` makes a labelled link under More links. */
+type Editing = { kind: "new" } | { kind: "edit"; link: ShareLink } | null
 
 function newDraft(policy: SharerPolicy | undefined): LinkDraft {
   return {
@@ -102,6 +99,8 @@ function newDraft(policy: SharerPolicy | undefined): LinkDraft {
     expiry: defaultShareLinkExpiry(policy),
     passwordEnabled: false,
     password: "",
+    comments: false,
+    live: false,
   }
 }
 
@@ -110,9 +109,10 @@ function linkName(link: ShareLink): string {
 }
 
 /**
- * The share dialog: the document's default link to copy, its live data and
- * comments, and any other links. Loaded when the page's Share is first
- * opened; it reads the document's links once per opening.
+ * The share dialog: the document's default link to copy, its settings, and
+ * any other links. Before the default link exists, the same settings show
+ * what it will be made with. Loaded when the page's Share is first opened;
+ * it reads the document's links once per opening.
  */
 export function ShareLinksDialog({
   target,
@@ -172,11 +172,10 @@ export function ShareLinksDialog({
     target.kind === "html" &&
     defaultLink !== null &&
     (policy?.liveLinks === true || defaultLink.grant !== undefined)
+  const commentsAllowed = preview && policy?.levels.includes("comment") === true
   const commentsShown =
-    preview &&
     defaultLink !== null &&
-    (policy?.levels.includes("comment") === true ||
-      defaultLink.level === "comment")
+    (commentsAllowed || (preview && defaultLink.level === "comment"))
   const checked =
     defaultLink && access?.linkId === defaultLink.id ? access.access : null
 
@@ -209,21 +208,29 @@ export function ShareLinksDialog({
         target: shareTarget,
         label: input.label.trim(),
         ...(preview
-          ? { level: "view", comments: DEFAULT_SHARE_LINK_COMMENT_SETTINGS }
+          ? {
+              level: input.comments ? "comment" : "view",
+              comments: DEFAULT_SHARE_LINK_COMMENT_SETTINGS,
+            }
           : {}),
         expiresAt: shareLinkExpiresAt(input.expiry) ?? null,
         ...(input.passwordEnabled || passwordRequired
           ? { password: input.password }
           : {}),
       }),
-    onSuccess: (result) => {
+    onSuccess: (result, input) => {
       const link = { ...result.link, url: result.link.url ?? result.url }
       writeLinks((current) => [
         link,
         ...current.filter((candidate) => candidate.id !== link.id),
       ])
       setEditing(null)
+      setDraft(newDraft(policy))
       setAnnouncement("Link created")
+      if (!input.live) return
+      // Open, so what visitors will see shows as soon as it's checked.
+      setLiveOpen(true)
+      turnOn.mutate({ link, session: session.current })
     },
   })
   const update = useMutation({
@@ -310,6 +317,7 @@ export function ShareLinksDialog({
     setShownOpen(open)
     if (open) {
       setEditing(null)
+      setDraft(newDraft(undefined))
       setLiveOpen(false)
       setMoreOpen(false)
       setAccess(null)
@@ -338,21 +346,22 @@ export function ShareLinksDialog({
             expiry: next.link.expiresAt ? "keep" : "never",
             passwordEnabled: next.link.hasPassword,
             password: "",
+            comments: false,
+            live: false,
           }
         : newDraft(policy)
     )
   }
 
   function createDefault() {
-    if (passwordRequired) {
-      startEditing({ kind: "default" })
-      return
-    }
-    const expiry = allowedShareLinkExpiry(
-      defaultShareLinkExpiry(policy),
-      shareLinkExpiryChoices(policy, null)
-    )
-    create.mutate({ ...newDraft(policy), expiry })
+    if (busy) return
+    create.mutate({
+      ...draft,
+      label: "",
+      expiry: allowedShareLinkExpiry(draft.expiry, choices),
+      comments: draft.comments && commentsAllowed,
+      live: draft.live && liveAllowed,
+    })
   }
 
   function openLive(next: boolean) {
@@ -373,12 +382,8 @@ export function ShareLinksDialog({
   function submit() {
     if (busy || !editing) return
     const expiry = allowedShareLinkExpiry(draft.expiry, choices)
-    if (editing.kind !== "edit") {
-      create.mutate({
-        ...draft,
-        expiry,
-        label: editing.kind === "new" ? draft.label : "",
-      })
+    if (editing.kind === "new") {
+      create.mutate({ ...draft, expiry, comments: false, live: false })
       return
     }
     const link = editing.link
@@ -403,7 +408,7 @@ export function ShareLinksDialog({
     })
   }
 
-  function form(kind: "default" | "new" | "edit") {
+  function form(kind: "new" | "edit") {
     return (
       <LinkForm
         draft={{
@@ -416,7 +421,7 @@ export function ShareLinksDialog({
         passwordRequired={passwordRequired}
         hasPassword={editingLink?.hasPassword ?? false}
         busy={busy}
-        submitLabel={kind === "edit" ? "Save" : "Create Link"}
+        submitLabel={kind === "new" ? "Create Link" : "Save"}
         onSubmit={submit}
         onCancel={() => setEditing(null)}
         container={portalContainer}
@@ -431,7 +436,11 @@ export function ShareLinksDialog({
         label={label}
         container={portalContainer}
         disabled={busy}
-        onEdit={() => startEditing({ kind: "edit", link })}
+        onEdit={
+          link === defaultLink
+            ? undefined
+            : () => startEditing({ kind: "edit", link })
+        }
         onRevoke={() => {
           revoke.reset()
           setRevoking(link)
@@ -464,9 +473,15 @@ export function ShareLinksDialog({
             {title ? `Share “${title}”` : "Share"}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
-            {target.kind === "html"
-              ? "Anyone with the link can use this tool"
-              : "Anyone with the link can view this document"}
+            {`Anyone with the link${
+              (
+                defaultLink
+                  ? defaultLink.hasPassword
+                  : draft.passwordEnabled || passwordRequired
+              )
+                ? " and its password"
+                : ""
+            } can ${target.kind === "html" ? "use this tool" : "view this document"}`}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
@@ -501,27 +516,84 @@ export function ShareLinksDialog({
             <InlineError>Couldn’t load this document’s links.</InlineError>
           ) : !links ? (
             <DefaultLinkSkeleton />
-          ) : editing?.kind === "default" ||
-            (editingLink && editingLink.id === defaultLink?.id) ? (
-            form(editing?.kind === "default" ? "default" : "edit")
           ) : defaultLink ? (
             <DefaultLink
               link={defaultLink}
               menu={menu(defaultLink, "Link actions")}
               onCopied={() => setAnnouncement("Link copied")}
             />
-          ) : canCreate ? (
-            <Button
-              type="button"
-              className="w-full"
-              disabled={busy}
-              onClick={createDefault}
+          ) : canCreate && editing === null ? (
+            <form
+              className="space-y-3"
+              onSubmit={(event) => {
+                event.preventDefault()
+                createDefault()
+              }}
             >
-              {create.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : null}
-              {create.isPending ? "Creating…" : "Create Link"}
-            </Button>
+              <div className="grid gap-1.5">
+                <ExpiryRow
+                  value={allowedShareLinkExpiry(draft.expiry, choices)}
+                  choices={choices}
+                  disabled={busy}
+                  container={portalContainer}
+                  onChange={(expiry) => setDraft({ ...draft, expiry })}
+                />
+                <Disclosure
+                  variant="row"
+                  title="Password"
+                  status={
+                    draft.passwordEnabled || passwordRequired ? "On" : "Off"
+                  }
+                  defaultOpen={passwordRequired}
+                >
+                  <PasswordFields
+                    enabled={draft.passwordEnabled || passwordRequired}
+                    required={passwordRequired}
+                    hasPassword={false}
+                    value={draft.password}
+                    disabled={busy}
+                    onEnabledChange={(passwordEnabled) =>
+                      setDraft({ ...draft, passwordEnabled, password: "" })
+                    }
+                    onValueChange={(password) =>
+                      setDraft({ ...draft, password })
+                    }
+                  />
+                </Disclosure>
+                {commentsAllowed ? (
+                  <Disclosure
+                    variant="row"
+                    title="Comments"
+                    status={draft.comments ? "On" : "Off"}
+                  >
+                    <CommentsSwitch
+                      checked={draft.comments}
+                      disabled={busy}
+                      onChange={(comments) => setDraft({ ...draft, comments })}
+                    />
+                  </Disclosure>
+                ) : null}
+                {liveAllowed ? (
+                  <Disclosure
+                    variant="row"
+                    title="Live data"
+                    status={draft.live ? "On" : "Off"}
+                  >
+                    <LiveSwitch
+                      checked={draft.live}
+                      disabled={busy}
+                      onChange={(live) => setDraft({ ...draft, live })}
+                    />
+                  </Disclosure>
+                ) : null}
+              </div>
+              <Button type="submit" className="w-full" disabled={busy}>
+                {create.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : null}
+                {create.isPending ? "Creating…" : "Create Link"}
+              </Button>
+            </form>
           ) : null}
 
           {create.isError ? (
@@ -534,8 +606,77 @@ export function ShareLinksDialog({
             <InlineError>Couldn’t turn on live data. Try again.</InlineError>
           ) : null}
 
-          {links && (liveShown || commentsShown || moreShown) ? (
+          {links && (defaultLink || moreShown) ? (
             <div className="grid gap-1.5">
+              {defaultLink ? (
+                <>
+                  <ExpiryRow
+                    status={shareLinkExpiry(defaultLink)}
+                    value={defaultLink.expiresAt ? "keep" : "never"}
+                    choices={shareLinkExpiryChoices(policy, defaultLink)}
+                    disabled={busy}
+                    container={portalContainer}
+                    onChange={(expiry) => {
+                      const expiresAt = shareLinkExpiresAt(expiry)
+                      if (expiresAt !== undefined)
+                        update.mutate({
+                          link: defaultLink,
+                          change: { expiresAt },
+                          said: "Expiry saved",
+                        })
+                    }}
+                  />
+                  <Disclosure
+                    variant="row"
+                    title="Password"
+                    status={defaultLink.hasPassword ? "On" : "Off"}
+                  >
+                    <LinkPassword
+                      key={defaultLink.id}
+                      link={defaultLink}
+                      required={passwordRequired}
+                      busy={busy}
+                      onSave={(password) =>
+                        update.mutateAsync({
+                          link: defaultLink,
+                          change: { password },
+                          said: password
+                            ? "Password saved"
+                            : "Password removed",
+                        })
+                      }
+                    />
+                  </Disclosure>
+                </>
+              ) : null}
+
+              {commentsShown && defaultLink ? (
+                <Disclosure
+                  variant="row"
+                  title="Comments"
+                  status={commentsStatus(defaultLink)}
+                >
+                  <CommentsSwitch
+                    checked={commentsOn(defaultLink)}
+                    disabled={busy}
+                    onChange={(allow) =>
+                      update.mutate({
+                        link: defaultLink,
+                        said: allow ? "Comments on" : "Comments off",
+                        change: allow
+                          ? {
+                              ...(defaultLink.level !== "comment"
+                                ? { level: "comment" }
+                                : {}),
+                              comments: { acceptComments: true },
+                            }
+                          : { comments: { acceptComments: false } },
+                      })
+                    }
+                  />
+                </Disclosure>
+              ) : null}
+
               {liveShown && defaultLink ? (
                 <Disclosure
                   variant="row"
@@ -577,33 +718,6 @@ export function ShareLinksDialog({
                         link: defaultLink,
                         change: { grant },
                         said: "Fields saved",
-                      })
-                    }
-                  />
-                </Disclosure>
-              ) : null}
-
-              {commentsShown && defaultLink ? (
-                <Disclosure
-                  variant="row"
-                  title="Comments"
-                  status={commentsStatus(defaultLink)}
-                >
-                  <CommentsSwitch
-                    link={defaultLink}
-                    disabled={busy}
-                    onChange={(allow) =>
-                      update.mutate({
-                        link: defaultLink,
-                        said: allow ? "Comments on" : "Comments off",
-                        change: allow
-                          ? {
-                              ...(defaultLink.level !== "comment"
-                                ? { level: "comment" }
-                                : {}),
-                              comments: { acceptComments: true },
-                            }
-                          : { comments: { acceptComments: false } },
                       })
                     }
                   />
@@ -752,11 +866,11 @@ function commentsStatus(link: ShareLink): string {
 
 /** One switch for the default link: its comment level and whether it takes comments. */
 function CommentsSwitch({
-  link,
+  checked,
   disabled,
   onChange,
 }: {
-  link: ShareLink
+  checked: boolean
   disabled: boolean
   onChange: (allow: boolean) => void
 }) {
@@ -765,11 +879,229 @@ function CommentsSwitch({
     <SettingRow label="Allow comments" htmlFor={id}>
       <Switch
         id={id}
-        checked={commentsOn(link)}
+        checked={checked}
         disabled={disabled}
         onCheckedChange={onChange}
       />
     </SettingRow>
+  )
+}
+
+/** Live data for a link not made yet; fields can be hidden once it is. */
+function LiveSwitch({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean
+  disabled: boolean
+  onChange: (live: boolean) => void
+}) {
+  const id = useId()
+  return (
+    <SettingRow label="Show live data" htmlFor={id}>
+      <Switch
+        id={id}
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onChange}
+      />
+    </SettingRow>
+  )
+}
+
+/** When a link stops opening, as a row whose status is the choice or date. */
+function ExpiryRow({
+  value,
+  choices,
+  status,
+  disabled,
+  container,
+  onChange,
+}: {
+  value: ShareLinkExpiry
+  choices: Array<{ value: ShareLinkExpiry; label: string }>
+  /** The saved link's expiry; a new link shows its choice. */
+  status?: ShareLinkDetail
+  disabled: boolean
+  container: HTMLElement | null
+  onChange: (expiry: ShareLinkExpiry) => void
+}) {
+  const label = choices.find((choice) => choice.value === value)?.label
+  return (
+    <Disclosure
+      variant="row"
+      title="Expires"
+      status={
+        <span className={cn(status?.stopped && "text-destructive")}>
+          {status?.text ?? label}
+        </span>
+      }
+    >
+      <ExpirySelect
+        value={value}
+        choices={choices}
+        disabled={disabled}
+        container={container}
+        onChange={onChange}
+        aria-label="Expires"
+      />
+    </Disclosure>
+  )
+}
+
+function ExpirySelect({
+  value,
+  choices,
+  disabled,
+  container,
+  onChange,
+  ...labelled
+}: {
+  value: ShareLinkExpiry
+  choices: Array<{ value: ShareLinkExpiry; label: string }>
+  disabled: boolean
+  container: HTMLElement | null
+  onChange: (expiry: ShareLinkExpiry) => void
+} & ({ "aria-label": string } | { "aria-labelledby": string })) {
+  return (
+    <Select
+      value={value}
+      disabled={disabled}
+      onValueChange={(expiry) => {
+        if (expiry && expiry !== value) onChange(expiry)
+      }}
+    >
+      <SelectTrigger {...labelled} className="h-10 w-full">
+        <SelectValue>
+          {choices.find((choice) => choice.value === value)?.label}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent container={container}>
+        {choices.map((choice) => (
+          <SelectItem key={choice.value} value={choice.value}>
+            {choice.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
+/** A password switch and, while it's on, the field for a new password. */
+function PasswordFields({
+  enabled,
+  required,
+  hasPassword,
+  value,
+  disabled,
+  onEnabledChange,
+  onValueChange,
+}: {
+  enabled: boolean
+  /** The owner policy needs a password on every link. */
+  required: boolean
+  /** The link already has one; a blank field keeps it. */
+  hasPassword: boolean
+  value: string
+  disabled: boolean
+  onEnabledChange: (enabled: boolean) => void
+  onValueChange: (value: string) => void
+}) {
+  const id = useId()
+  return (
+    <div className="space-y-2">
+      <SettingRow label="Ask for a password" htmlFor={`${id}-enabled`}>
+        <Switch
+          id={`${id}-enabled`}
+          checked={enabled}
+          disabled={disabled || required}
+          onCheckedChange={onEnabledChange}
+        />
+      </SettingRow>
+      {enabled ? (
+        <>
+          <label htmlFor={`${id}-password`} className="sr-only">
+            {hasPassword ? "New password" : "Link password"}
+          </label>
+          <Input
+            id={`${id}-password`}
+            type="password"
+            autoComplete="new-password"
+            minLength={8}
+            maxLength={128}
+            required={!hasPassword}
+            disabled={disabled}
+            placeholder={
+              hasPassword
+                ? "Leave blank to keep the password"
+                : "At least 8 characters"
+            }
+            value={value}
+            onChange={(event) => onValueChange(event.target.value)}
+          />
+          {hasPassword && value ? (
+            <p className="text-xs text-muted-foreground">
+              Changing it asks visitors to unlock the link again.
+            </p>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * The default link's password. Turning it off saves at once; a new password
+ * saves with its button.
+ */
+function LinkPassword({
+  link,
+  required,
+  busy,
+  onSave,
+}: {
+  link: ShareLink
+  required: boolean
+  busy: boolean
+  onSave: (password: string | null) => Promise<unknown>
+}) {
+  const [enabled, setEnabled] = useState(link.hasPassword || required)
+  const [value, setValue] = useState("")
+  const on = enabled || required
+  return (
+    <form
+      className="space-y-2"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (value)
+          void onSave(value).then(
+            () => setValue(""),
+            () => {}
+          )
+      }}
+    >
+      <PasswordFields
+        enabled={on}
+        required={required}
+        hasPassword={link.hasPassword}
+        value={value}
+        disabled={busy}
+        onEnabledChange={(next) => {
+          setEnabled(next)
+          setValue("")
+          if (!next && link.hasPassword)
+            void onSave(null).catch(() => setEnabled(true))
+        }}
+        onValueChange={setValue}
+      />
+      {on && value ? (
+        <Button type="submit" size="sm" disabled={busy}>
+          {busy ? <Loader2 className="size-4 animate-spin" /> : null}
+          Save
+        </Button>
+      ) : null}
+    </form>
   )
 }
 
@@ -799,7 +1131,10 @@ function DetailLine({
   )
 }
 
-/** The default link: its URL to copy, when it expires, and its menu. */
+/**
+ * The default link: its URL to copy and its menu, and why it doesn't open
+ * when it doesn't. Its expiry and password are rows below it.
+ */
 export function DefaultLink({
   link,
   menu,
@@ -810,34 +1145,33 @@ export function DefaultLink({
   onCopied: () => void
 }) {
   const { copied, copy } = useCopy(onCopied)
+  const stopped = shareLinkSummary(link, { opened: false }).filter(
+    (part) => part.stopped
+  )
   return (
     <div className="space-y-1.5">
-      {link.url ? (
-        <div className="flex gap-2">
-          <Input
-            readOnly
-            aria-label="Link"
-            value={link.url}
-            className="min-w-0 flex-1 font-mono text-xs"
-            onFocus={(event) => event.currentTarget.select()}
-          />
-          <Button type="button" onClick={() => void copy(link.url!)}>
-            {copied ? "Copied" : "Copy"}
-          </Button>
-        </div>
-      ) : null}
-      <div className="flex min-h-7 items-center gap-2">
-        <DetailLine
-          parts={shareLinkSummary(link, { opened: false })}
-          className="min-w-0 flex-1"
-        />
+      <div className="flex items-center gap-2">
+        {link.url ? (
+          <>
+            <Input
+              readOnly
+              aria-label="Link"
+              value={link.url}
+              className="min-w-0 flex-1 font-mono text-xs"
+              onFocus={(event) => event.currentTarget.select()}
+            />
+            <Button type="button" onClick={() => void copy(link.url!)}>
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </>
+        ) : (
+          <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+            Make a new link to copy it again.
+          </p>
+        )}
         {menu}
       </div>
-      {!link.url ? (
-        <p className="text-sm text-muted-foreground">
-          Make a new link to copy it again.
-        </p>
-      ) : null}
+      {stopped.length > 0 ? <DetailLine parts={stopped} /> : null}
     </div>
   )
 }
@@ -910,7 +1244,8 @@ function LinkMenu({
   label: string
   container: HTMLElement | null
   disabled: boolean
-  onEdit: () => void
+  /** Absent for the default link, whose settings show in the dialog. */
+  onEdit?: () => void
   onRevoke: () => void
 }) {
   return (
@@ -933,10 +1268,12 @@ function LinkMenu({
         align="end"
         className="min-w-40"
       >
-        <DropdownMenuItem onClick={onEdit}>
-          <Pencil className="mr-2 size-4" />
-          Edit Link
-        </DropdownMenuItem>
+        {onEdit ? (
+          <DropdownMenuItem onClick={onEdit}>
+            <Pencil className="mr-2 size-4" />
+            Edit Link
+          </DropdownMenuItem>
+        ) : null}
         {link.url ? (
           <DropdownMenuItem onClick={() => copyShareLink(link.url!)}>
             <Copy className="mr-2 size-4" />
@@ -980,7 +1317,6 @@ function LinkForm({
   container: HTMLElement | null
 }) {
   const id = useId()
-  const passwordOn = draft.passwordEnabled || passwordRequired
   return (
     <form
       className="space-y-3"
@@ -1011,72 +1347,26 @@ function LinkForm({
         <span id={`${id}-expires`} className="block text-sm font-medium">
           Expires
         </span>
-        <Select
+        <ExpirySelect
           value={draft.expiry}
+          choices={choices}
           disabled={busy}
-          onValueChange={(expiry) => {
-            if (expiry) onChange({ ...draft, expiry })
-          }}
-        >
-          <SelectTrigger
-            aria-labelledby={`${id}-expires`}
-            className="h-10 w-full"
-          >
-            <SelectValue>
-              {choices.find((choice) => choice.value === draft.expiry)?.label}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent container={container}>
-            {choices.map((choice) => (
-              <SelectItem key={choice.value} value={choice.value}>
-                {choice.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          container={container}
+          onChange={(expiry) => onChange({ ...draft, expiry })}
+          aria-labelledby={`${id}-expires`}
+        />
       </div>
-      <div className="space-y-2">
-        <SettingRow label="Password" htmlFor={`${id}-password-enabled`}>
-          <Switch
-            id={`${id}-password-enabled`}
-            checked={passwordOn}
-            disabled={busy || passwordRequired}
-            onCheckedChange={(passwordEnabled) =>
-              onChange({ ...draft, passwordEnabled, password: "" })
-            }
-          />
-        </SettingRow>
-        {passwordOn ? (
-          <>
-            <label htmlFor={`${id}-password`} className="sr-only">
-              {hasPassword ? "New password" : "Link password"}
-            </label>
-            <Input
-              id={`${id}-password`}
-              type="password"
-              autoComplete="new-password"
-              minLength={8}
-              maxLength={128}
-              required={!hasPassword}
-              disabled={busy}
-              placeholder={
-                hasPassword
-                  ? "Leave blank to keep the password"
-                  : "At least 8 characters"
-              }
-              value={draft.password}
-              onChange={(event) =>
-                onChange({ ...draft, password: event.target.value })
-              }
-            />
-            {hasPassword && draft.password ? (
-              <p className="text-xs text-muted-foreground">
-                Changing it asks visitors to unlock the link again.
-              </p>
-            ) : null}
-          </>
-        ) : null}
-      </div>
+      <PasswordFields
+        enabled={draft.passwordEnabled || passwordRequired}
+        required={passwordRequired}
+        hasPassword={hasPassword}
+        value={draft.password}
+        disabled={busy}
+        onEnabledChange={(passwordEnabled) =>
+          onChange({ ...draft, passwordEnabled, password: "" })
+        }
+        onValueChange={(password) => onChange({ ...draft, password })}
+      />
       <div className="flex gap-2">
         <Button
           type="submit"

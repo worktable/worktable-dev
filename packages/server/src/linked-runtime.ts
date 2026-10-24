@@ -32,6 +32,10 @@ import { invalidateAllDocumentShares } from "./share-store.ts"
 import { revokeAllLinks } from "./share-links-lifecycle.ts"
 import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import { isHosted } from "./hosted.ts"
+import {
+  localServiceOrigin,
+  resolveConfiguredWorkspaceOrigin,
+} from "./workspace-origin.ts"
 import { currentTeamWorktable, requireTeamDatabase } from "./team-database.ts"
 import {
   currentRequestIdentity,
@@ -106,6 +110,19 @@ async function saveLink(file: string, link: StoredLink) {
   }
 }
 const cloudOrigin = linkedCloudOrigin
+/**
+ * Where the owner opens this Worktable, for Cloud to link to: the Workspace
+ * URL when one is set, else this host's local address.
+ */
+export function linkedOpenUrl(): { openUrl?: string } {
+  const configured = resolveConfiguredWorkspaceOrigin()
+  const openUrl =
+    configured && configured.originSource !== "resource"
+      ? configured.origin
+      : localServiceOrigin()
+  return openUrl.length <= 2048 ? { openUrl } : {}
+}
+
 export function linkedStatus(): LinkedStatus {
   return { ...status }
 }
@@ -591,6 +608,7 @@ function launch(): void {
                         ]
                       : []),
                   ],
+                  ...linkedOpenUrl(),
                 }),
                 signal: signal(),
                 redirect: "error",

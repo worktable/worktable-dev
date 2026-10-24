@@ -9,6 +9,8 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.28] - 2026-10-24
+
 ### Added
 
 - **Link passwords:** A share link can have a password that readers enter before the document opens, and owners can require one for every link in Settings → Links.

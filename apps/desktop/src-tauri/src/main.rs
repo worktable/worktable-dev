@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use std::net::TcpListener;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env,
     fs::OpenOptions,
     io::{Read, Write},
@@ -181,6 +181,10 @@ struct DesktopBootstrapStatus {
     saved_connections: Vec<DesktopSavedConnectionSummary>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     cloud_worktables: Vec<cloud_auth::CloudWorktableChoice>,
+    /// The configured Worktable agents on this Mac use, while Desktop asks
+    /// whether they should move to `workspace`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent_worktable: Option<String>,
     workspace_native_commands: &'static str,
 }
 
@@ -205,8 +209,18 @@ impl DesktopBootstrapStatus {
             connection_profile_id: None,
             saved_connections: Vec::new(),
             cloud_worktables: Vec::new(),
+            agent_worktable: None,
             workspace_native_commands: "pending",
         }
+    }
+
+    fn agent_choice(workspace: DesktopWorkspaceSummary, agent_worktable: String) -> Self {
+        let mut status = Self::base("choosingAgentWorktable", "");
+        status.provider = Some("local");
+        status.selected_path = workspace.path.clone();
+        status.workspace = Some(workspace);
+        status.agent_worktable = Some(agent_worktable);
+        status
     }
 
     fn selection(inspection: WorkspaceInspection) -> Self {
@@ -572,6 +586,10 @@ struct LocalAuthorityRuntime {
 #[serde(rename_all = "camelCase")]
 struct LocalAuthorityWorkspace {
     workspace_id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    path: String,
     /// None when the authority couldn't read the Worktable's link record.
     #[serde(default)]
     linked: Option<bool>,
@@ -632,6 +650,12 @@ struct LocalRestartEnvelope {
     error: Option<LocalActivationError>,
 }
 
+struct PendingAgentChoice {
+    prepared: WorkspacePrepared,
+    configured_id: String,
+    service_installed: bool,
+}
+
 #[derive(Clone, Debug)]
 struct PendingRemoteConnection {
     origin: String,
@@ -668,6 +692,10 @@ struct DesktopHostState {
     /// The shown host's endpoint after it exited, so it can restart in the
     /// background once the window moves on, if its Link is on.
     exited_shown_host: Mutex<Option<LocalHostEndpoint>>,
+    /// A Worktable waiting for the person to say whether agents move to it.
+    pending_agent_choice: Mutex<Option<PendingAgentChoice>>,
+    /// (configured, opened) Worktable pairs already asked about this session.
+    answered_agent_choices: Mutex<HashSet<(String, String)>>,
     status: Mutex<DesktopBootstrapStatus>,
     connections: Mutex<DesktopConnections>,
     pending_local: Mutex<Option<WorkspacePrepared>>,
@@ -700,6 +728,8 @@ impl Default for DesktopHostState {
             runtime: Mutex::new(None),
             local_hosts: Mutex::new(HashMap::new()),
             exited_shown_host: Mutex::new(None),
+            pending_agent_choice: Mutex::new(None),
+            answered_agent_choices: Mutex::new(HashSet::new()),
             status: Mutex::new(DesktopBootstrapStatus::base(
                 "initializing",
                 "Preparing Worktable…",
@@ -2626,7 +2656,92 @@ async fn desktop_start_local_connection(
             .lock()
             .map_err(|_| "pending workspace lock is poisoned".to_string())?
             .replace(prepared.clone());
+        if let Some(status) = ask_about_agent_worktable(&app, &prepared).await {
+            set_status(&app, status);
+            return Ok(());
+        }
         start_prepared_local(&app, prepared, true).await
+    })
+    .await
+}
+
+/// When the person opens a Worktable other than the configured one, ask
+/// whether agents on this Mac should move to it. Returns the question to
+/// show, after remembering what to open; None opens it without asking.
+async fn ask_about_agent_worktable(
+    app: &AppHandle,
+    prepared: &WorkspacePrepared,
+) -> Option<DesktopBootstrapStatus> {
+    let authority = inspect_local_authority(app).await.ok()?;
+    let state = app.state::<DesktopHostState>();
+    let configured = {
+        let answered = state.answered_agent_choices.lock().ok()?;
+        agent_worktable_question(&authority, &prepared.workspace.id, &answered)?.clone()
+    };
+    state
+        .pending_agent_choice
+        .lock()
+        .ok()?
+        .replace(PendingAgentChoice {
+            prepared: prepared.clone(),
+            configured_id: configured.workspace_id.clone(),
+            service_installed: authority
+                .service
+                .as_ref()
+                .is_some_and(|service| service.installed),
+        });
+    Some(DesktopBootstrapStatus::agent_choice(
+        DesktopWorkspaceSummary {
+            id: prepared.workspace.id.clone(),
+            name: prepared.workspace.name.clone(),
+            path: Some(prepared.path.clone()),
+        },
+        configured.name,
+    ))
+}
+
+#[tauri::command]
+async fn desktop_choose_agent_worktable(
+    webview: Webview,
+    app: AppHandle,
+    switch_agents: bool,
+) -> Result<(), String> {
+    require_trusted_surface(&webview)?;
+    run_guarded_operation(&app, async {
+        let choice = app
+            .state::<DesktopHostState>()
+            .pending_agent_choice
+            .lock()
+            .map_err(|_| "agent choice lock is poisoned".to_string())?
+            .take()
+            .ok_or_else(|| "No Worktable is waiting to open.".to_string())?;
+        if let Ok(mut answered) = app
+            .state::<DesktopHostState>()
+            .answered_agent_choices
+            .lock()
+        {
+            answered.insert((
+                choice.configured_id.clone(),
+                choice.prepared.workspace.id.clone(),
+            ));
+        }
+        let mut status = DesktopBootstrapStatus::progress(
+            "preparingWorkspace",
+            "Opening Worktable…",
+            &choice.prepared.path,
+        );
+        status.workspace = Some(DesktopWorkspaceSummary {
+            id: choice.prepared.workspace.id.clone(),
+            name: choice.prepared.workspace.name.clone(),
+            path: Some(choice.prepared.path.clone()),
+        });
+        set_status(&app, status);
+        // The background service moves to the Worktable only when no other
+        // host holds it, so Desktop's own background host gives way.
+        if switch_agents && choice.service_installed {
+            stop_owned_local_host(&app, &choice.prepared.workspace.id);
+        }
+        start_prepared_local_with(&app, choice.prepared, true, switch_agents).await
     })
     .await
 }
@@ -3476,6 +3591,9 @@ fn clear_pending_workspace<R: Runtime>(app: &AppHandle<R>) {
     if let Ok(mut pending) = app.state::<DesktopHostState>().pending_local.lock() {
         *pending = None;
     }
+    if let Ok(mut pending) = app.state::<DesktopHostState>().pending_agent_choice.lock() {
+        *pending = None;
+    }
 }
 
 fn inherited_sidecar_env_allowed(key: &std::ffi::OsStr) -> bool {
@@ -3791,6 +3909,7 @@ async fn activate_local_workspace(
     app: &AppHandle,
     prepared: &WorkspacePrepared,
     preferred_port: Option<u16>,
+    make_configured: bool,
 ) -> Result<LocalActivationEnvelope, String> {
     let runtime = runtime_for(app)?;
     let mut args = vec![
@@ -3801,6 +3920,9 @@ async fn activate_local_workspace(
     ];
     if prepared.created {
         args.push("--wait-for-welcome".into());
+    }
+    if make_configured {
+        args.push("--make-configured".into());
     }
     if let Some(port) = preferred_port.filter(|port| *port > 0) {
         args.push("--port".into());
@@ -3983,6 +4105,31 @@ fn authority_workspace_link(
         .and_then(|workspace| workspace.linked)
 }
 
+/// The configured Worktable to ask about when the person opens `target`:
+/// agents on this Mac, the CLI and the background service use it. None when
+/// `target` is already configured, the authority can't say, or this pair was
+/// answered earlier in the session.
+fn agent_worktable_question<'a>(
+    authority: &'a LocalAuthorityInspection,
+    target_id: &str,
+    answered: &HashSet<(String, String)>,
+) -> Option<&'a LocalAuthorityWorkspace> {
+    if authority.configured != Some(true) || authority.registry_error.is_some() {
+        return None;
+    }
+    let config = authority.config.as_ref()?;
+    let configured = authority
+        .workspaces
+        .iter()
+        .find(|workspace| Path::new(&workspace.path) == Path::new(&config.workspace))?;
+    if configured.workspace_id == target_id
+        || answered.contains(&(configured.workspace_id.clone(), target_id.to_string()))
+    {
+        return None;
+    }
+    Some(configured)
+}
+
 /// Whether a process other than Desktop's own currently holds this Worktable.
 fn authority_workspace_has_live_host(
     authority: &LocalAuthorityInspection,
@@ -4115,6 +4262,17 @@ async fn start_prepared_local(
     prepared: WorkspacePrepared,
     persist: bool,
 ) -> Result<(), String> {
+    start_prepared_local_with(app, prepared, persist, false).await
+}
+
+/// Open a local Worktable. With `make_configured`, it also becomes the
+/// configured Worktable that agents, the CLI and the background service use.
+async fn start_prepared_local_with(
+    app: &AppHandle,
+    prepared: WorkspacePrepared,
+    persist: bool,
+    make_configured: bool,
+) -> Result<(), String> {
     if persist {
         app.state::<DesktopHostState>()
             .pending_local
@@ -4142,10 +4300,17 @@ async fn start_prepared_local(
         detach_local_host(app);
     }
     close_workspace_webview(app);
-    if show_background_local_host(app, &prepared, persist)? {
+    if !make_configured && show_background_local_host(app, &prepared, persist)? {
         return Ok(());
     }
-    let activation = activate_local_workspace(app, &prepared, preferred).await?;
+    let activation = activate_local_workspace(app, &prepared, preferred, make_configured).await?;
+    // Making a Worktable configured whose host already runs in the background
+    // keeps that host and only moves the shared config to it.
+    if activation.action.as_deref() == Some("attach")
+        && show_background_local_host(app, &prepared, persist)?
+    {
+        return Ok(());
+    }
     let port = activation
         .port
         .ok_or_else(|| "local workspace authority omitted its port".to_string())?;
@@ -7658,6 +7823,7 @@ fn main() {
             desktop_choose_workspace_folder,
             desktop_inspect_workspace,
             desktop_start_local_connection,
+            desktop_choose_agent_worktable,
             desktop_use_existing_installation,
             desktop_retry_connection,
             desktop_restart_local_host,
@@ -8219,6 +8385,49 @@ mod tests {
             .map(|restarts| background_host_restart_delay(restarts).as_secs())
             .collect();
         assert_eq!(delays, vec![1, 1, 2, 4, 8, 16, 32, 60, 60]);
+    }
+
+    #[test]
+    fn asks_about_agents_only_for_another_worktable_once_per_pair() {
+        let authority: LocalAuthorityInspection = serde_json::from_str(
+            r#"{
+                "schemaVersion": 1,
+                "ok": true,
+                "configured": true,
+                "config": {
+                    "workspace": "/tmp/Alpha",
+                    "host": "127.0.0.1",
+                    "port": 43110,
+                    "origin": "http://127.0.0.1:43110",
+                    "requiresOwnerLogin": false
+                },
+                "workspaces": [
+                    { "workspaceId": "ws_alpha", "name": "Alpha", "path": "/tmp/Alpha", "linked": false },
+                    { "workspaceId": "ws_beta", "name": "Beta", "path": "/tmp/Beta", "linked": true }
+                ],
+                "runtime": null
+            }"#,
+        )
+        .unwrap();
+        let mut answered = HashSet::new();
+        assert_eq!(
+            agent_worktable_question(&authority, "ws_beta", &answered).map(|w| w.name.as_str()),
+            Some("Alpha")
+        );
+        // Opening the configured Worktable asks nothing.
+        assert!(agent_worktable_question(&authority, "ws_alpha", &answered).is_none());
+        // Once answered, the same pair isn't asked again this session.
+        answered.insert(("ws_alpha".to_string(), "ws_beta".to_string()));
+        assert!(agent_worktable_question(&authority, "ws_beta", &answered).is_none());
+
+        // Before anything is configured, or when the registry can't be read,
+        // there is nothing to ask.
+        let mut unconfigured = authority.clone();
+        unconfigured.configured = Some(false);
+        assert!(agent_worktable_question(&unconfigured, "ws_beta", &HashSet::new()).is_none());
+        let mut unreadable = authority.clone();
+        unreadable.registry_error = Some("invalid local workspace registry".into());
+        assert!(agent_worktable_question(&unreadable, "ws_beta", &HashSet::new()).is_none());
     }
 
     #[test]

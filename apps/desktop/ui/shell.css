@@ -181,7 +181,8 @@ body[data-view="providers"] .provider-page,
 body[data-view="local"] .local-page,
 body[data-view="remote"] .remote-page,
 body[data-view="cloud"] .cloud-page,
-body[data-view="recovery"] .recovery-page {
+body[data-view="recovery"] .recovery-page,
+body[data-view="agents"] .agent-choice-page {
   display: flex;
 }
 
@@ -225,7 +226,8 @@ body[data-transition-direction="replace"] .bootstrap-page.is-leaving {
 
 .progress-page,
 .update-page,
-.recovery-page {
+.recovery-page,
+.agent-choice-page {
   max-width: 680px;
   flex-direction: column;
   align-items: center;

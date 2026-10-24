@@ -300,6 +300,23 @@ describe("local-authority state model and command integration", () => {
     expect(inspected.runtime).toBeNull()
     expect(inspected.runtimes).toEqual([])
     expect(inspection.stdout).not.toContain(controlSecret)
+
+    // When the person chooses to switch agents, Desktop makes it configured.
+    const madeConfigured = await runCli([
+      "local-host",
+      "activate",
+      second,
+      "--make-configured",
+      "--json",
+    ])
+    expect(madeConfigured.exitCode).toBe(0)
+    expect(JSON.parse(madeConfigured.stdout)).toMatchObject({
+      port: secondResult.port,
+    })
+    expect(JSON.parse(readFileSync(configPath, "utf8"))).toMatchObject({
+      workspace: second,
+      service: { port: secondResult.port },
+    })
     expect(inspection.stdout).not.toContain("proofToken")
     expect(inspection.stdout).not.toContain("WORKTABLE_LOCAL_PROOF_TOKEN")
   })

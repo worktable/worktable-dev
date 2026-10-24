@@ -11,6 +11,7 @@ interface BootstrapStatus {
   workspace?: { id: string; name: string; path: string }
   savedConnections?: unknown[]
   cloudWorktables?: Array<{ id: string; name: string }>
+  agentWorktable?: string
   canRepair?: boolean
   canRetry?: boolean
   canRestart?: boolean
@@ -120,6 +121,10 @@ async function installTauriBoundary(
                 }
                 return
               }
+              if (command === "desktop_choose_agent_worktable") {
+                current = { state: "ready", provider: "local" }
+                return
+              }
               if (command === "desktop_cancel_cloud_connection") {
                 current = {
                   state: "needsSelection",
@@ -194,6 +199,42 @@ test("selects and opens an existing local workspace through the Tauri boundary",
     args: { intent: "open", path: "/Users/test/Existing" },
   })
 })
+
+for (const [label, switchAgents] of [
+  ["Switch agents", true],
+  ["Keep “Alpha”", false],
+] as const) {
+  test(`asks before agents move to another Worktable: ${label}`, async ({
+    page,
+  }) => {
+    await installTauriBoundary(page, {
+      state: "choosingAgentWorktable",
+      provider: "local",
+      workspace: { id: "ws_beta", name: "Beta", path: "/Users/test/Beta" },
+      agentWorktable: "Alpha",
+      savedConnections: [],
+    })
+    await page.goto("/")
+    await expect(
+      page.getByRole("heading", { name: "Switch agents to “Beta”?" })
+    ).toBeVisible()
+    await expect(
+      page.getByText("Agents on this Mac work in “Alpha”.")
+    ).toBeVisible()
+    await page.getByRole("button", { name: label, exact: true }).click()
+
+    await expect
+      .poll(async () =>
+        (await desktopCalls(page)).find(
+          ({ command }) => command === "desktop_choose_agent_worktable"
+        )
+      )
+      .toEqual({
+        command: "desktop_choose_agent_worktable",
+        args: { switchAgents },
+      })
+  })
+}
 
 test("requires explicit confirmation before an HTTP self-hosted connection", async ({
   page,

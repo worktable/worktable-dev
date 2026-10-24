@@ -171,6 +171,7 @@ describe("desktop package contracts", () => {
         "allow-desktop-choose-workspace-folder",
         "allow-desktop-inspect-workspace",
         "allow-desktop-start-local-connection",
+        "allow-desktop-choose-agent-worktable",
         "allow-desktop-use-existing-installation",
         "allow-desktop-retry-connection",
         "allow-desktop-restart-local-host",

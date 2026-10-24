@@ -72,10 +72,14 @@ export function ChatAppWays({
   // Shares the Link settings' status; their polling keeps it current.
   const link = useQuery({
     queryKey: ["linked"],
-    queryFn: () => fetchJSON<{ enabled: boolean | null }>("/api/linked"),
+    queryFn: () =>
+      fetchJSON<{ enabled: boolean | null; state: string }>("/api/linked"),
     enabled: active,
   })
-  const linkOn = link.data?.enabled === true
+  // On but locked or failing doesn't let an app in, so the step isn't done.
+  const linkOn =
+    link.data?.enabled === true &&
+    !["locked", "error"].includes(link.data.state)
   return (
     <div className="flex flex-col gap-5">
       <section

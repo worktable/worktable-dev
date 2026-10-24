@@ -197,6 +197,25 @@ export interface EditorFiles {
   upload?: (file: File) => Promise<string>
 }
 
+/** The file handlers an editor made once reads, always the latest given. */
+class LatestFiles {
+  private files: EditorFiles | undefined
+  constructor(files: EditorFiles | undefined) {
+    this.files = files
+  }
+  set(files: EditorFiles | undefined): void {
+    this.files = files
+  }
+  resolve(url: string): string {
+    return this.files ? this.files.resolve(url) : url
+  }
+  upload(file: File): Promise<string> {
+    const upload = this.files?.upload
+    if (!upload) return Promise.reject(new Error("Files can't be added to this Doc now"))
+    return upload(file)
+  }
+}
+
 export interface EditorTitle {
   /** Grey text for an empty title, and for a Doc that has none yet. */
   placeholder: string
@@ -283,13 +302,19 @@ function EditorInner({
     [initialContent]
   )
 
+  // The editor is made once; its file handlers read the latest ones, so
+  // versions that arrive with the Doc's page still reach its images.
+  const [currentFiles] = useState(() => new LatestFiles(files))
+  useEffect(() => currentFiles.set(files), [currentFiles, files])
   const baseOptions = {
     schema,
     extensions: [syntaxHighlighter],
     ...(files
       ? {
-          resolveFileUrl: async (url: string) => files.resolve(url),
-          ...(files.upload ? { uploadFile: files.upload } : {}),
+          resolveFileUrl: async (url: string) => currentFiles.resolve(url),
+          ...(files.upload
+            ? { uploadFile: (file: File) => currentFiles.upload(file) }
+            : {}),
         }
       : {}),
     _tiptapOptions: {

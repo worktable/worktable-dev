@@ -51,12 +51,14 @@ function slug(text: string): string {
  * or, for a clipboard image with a generic name, one that says when.
  */
 export function embeddedFileName(file: File, now = new Date()): string {
-  const dot = file.name.lastIndexOf(".")
-  const base = dot > 0 ? file.name.slice(0, dot) : file.name
+  // Some runtimes leave an empty name undefined.
+  const fileName = file.name ?? ""
+  const dot = fileName.lastIndexOf(".")
+  const base = dot > 0 ? fileName.slice(0, dot) : fileName
   const fromType = file.type.startsWith("image/")
     ? file.type.slice("image/".length).replace("jpeg", "jpg").replace("svg+xml", "svg")
     : ""
-  const extension = (dot > 0 ? file.name.slice(dot + 1) : fromType)
+  const extension = (dot > 0 ? fileName.slice(dot + 1) : fromType)
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "")
   const named = slug(base)

@@ -74,6 +74,7 @@ import { takeJustCreated } from "@/hooks/use-new-doc"
 import { DocumentByline } from "@/components/document/document-byline"
 import { useBylineState } from "@/hooks/use-byline-state"
 import { useEditorFiles } from "@/hooks/use-editor-files"
+import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
 import { MarkdownViewer } from "@/components/editor/markdown-viewer"
 import {
@@ -378,6 +379,9 @@ function DocEditorPage({
   const archived = page
     ? Boolean(page.document.archived)
     : Boolean(preview?.archived)
+  // Until the check lands, the page the tab last read gives the files'
+  // versions, so the stand-in loads them from the browser's cache too.
+  const fileVersions = page ? page.embeds : preview?.embeds
 
   const [converting, setConverting] = useState(false)
   const [convertingToMarkdown, setConvertingToMarkdown] = useState(false)
@@ -631,6 +635,7 @@ function DocEditorPage({
         spaceId={spaceId}
         docPath={docPath}
         page={page}
+        fileVersions={fileVersions}
         archived={archived}
         validated={validated}
         revision={revision}
@@ -655,6 +660,7 @@ function DocEditorPage({
       archived={archived}
       readOnly={!page || page.capabilities.edit === false}
       page={page}
+        fileVersions={fileVersions}
       revision={revision}
       onRestore={handleRestore}
       restoring={restoring}
@@ -749,6 +755,7 @@ function MarkdownDocPage({
   spaceId,
   docPath,
   page,
+  fileVersions,
   archived,
   validated,
   revision,
@@ -764,6 +771,8 @@ function MarkdownDocPage({
   spaceId: string
   docPath: string
   page: DocumentPage | null
+  /** The versions of the Doc's files, known before the page check lands. */
+  fileVersions?: Readonly<Record<string, string>>
   archived: boolean
   validated: boolean
   revision: string | undefined
@@ -894,7 +903,7 @@ function MarkdownDocPage({
             content={content}
             spaceId={spaceId}
             docPath={docPath}
-            fileVersions={page?.embeds}
+            fileVersions={fileVersions}
             afterTitle={
               <DocumentByline
                 spaceId={spaceId}
@@ -1098,6 +1107,7 @@ function BlockNoteDocPage({
   archived,
   readOnly = false,
   page,
+  fileVersions,
   revision,
   onRestore,
   restoring,
@@ -1115,6 +1125,8 @@ function BlockNoteDocPage({
   readOnly?: boolean
   /** The route's check; the editor and its room wait for it. */
   page: DocumentPage | null
+  /** The versions of the Doc's files, known before the page check lands. */
+  fileVersions?: Readonly<Record<string, string>>
   revision: string | undefined
   onRestore: () => void
   restoring: boolean
@@ -1124,9 +1136,11 @@ function BlockNoteDocPage({
   onDownload?: () => void
   onRecoverOfflineEdits?: () => void
 }) {
+  // The editor learns once whether files can be added, so it waits to know.
+  const deploymentKnown = useDeploymentInfo().data !== undefined
   const editingFiles = useEditorFiles(spaceId, docPath, {
     upload: !readOnly && !archived,
-    versions: page?.embeds,
+    versions: fileVersions,
   })
   const readingFiles = useEditorFiles(spaceId, docPath, { upload: false })
   const validated = page !== null
@@ -1509,7 +1523,7 @@ function BlockNoteDocPage({
                   content={opening.markdown}
                   spaceId={spaceId}
                   docPath={docPath}
-                  fileVersions={page?.embeds}
+                  fileVersions={fileVersions}
                   afterTitle={byline}
                 />
               ) : previewContent ? (
@@ -1533,7 +1547,7 @@ function BlockNoteDocPage({
           >
             {/* Build the editor once its first usable Yjs state exists. Mounting an
                 empty editor first runs its normalization/plugins again on sync. */}
-            {provider && collabDoc && readyContent === provider && (
+            {provider && collabDoc && readyContent === provider && deploymentKnown && (
               <Suspense fallback={<EditorSkeleton />}>
                 <Editor
                   onReady={handleEditorReady}

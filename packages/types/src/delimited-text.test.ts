@@ -25,6 +25,7 @@ describe("reading CSV and TSV", () => {
     expect(parseDelimitedText("a\tb\n1\n2\t3\t4", "\t")).toEqual({
       header: ["a", "b"],
       rows: [["1"], ["2", "3", "4"]],
+      rowCount: 2,
     })
   })
 })

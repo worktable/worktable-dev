@@ -79,6 +79,28 @@ export function versionFilesAt(version: { id: string; createdAt: string }): stri
   return savedAt === null ? version.createdAt : new Date(savedAt).toISOString()
 }
 
+// The sizes of images shown this session, by URL. A page shown again gives
+// each image its space before it loads, so nothing below it jumps.
+const imageSizes = new Map<string, { width: number; height: number }>()
+const IMAGE_SIZES_MAX = 500
+
+/** An image's size when it was shown before, for its width and height. */
+export function knownImageSize(
+  url: string
+): { width: number; height: number } | undefined {
+  return imageSizes.get(url)
+}
+
+/** Remember a loaded image's size, under the URL it loaded from. */
+export function rememberImageSize(url: string, image: HTMLImageElement): void {
+  if (image.naturalWidth === 0 || imageSizes.has(url)) return
+  if (imageSizes.size >= IMAGE_SIZES_MAX) {
+    const oldest = imageSizes.keys().next().value
+    if (oldest !== undefined) imageSizes.delete(oldest)
+  }
+  imageSizes.set(url, { width: image.naturalWidth, height: image.naturalHeight })
+}
+
 /** A path as a link holds it: characters a URL reads as syntax are encoded. */
 function linkPath(path: string): string {
   return path

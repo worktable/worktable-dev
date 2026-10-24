@@ -47,6 +47,12 @@ import {
   Loader2,
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@worktable/ui/components/tooltip"
 import { THEME_SHELL_COLORS } from "@worktable/ui/theme"
 import {
   PRODUCT_FONT_PATH,
@@ -778,30 +784,47 @@ const PageHeaderActions = memo(function PageHeaderActions({
       {secondaryAction &&
         SecondaryActionIcon &&
         (!isMobile || narrowHeaderAction(pageMeta) === "secondary") && (
-          <Button
-            variant={secondaryAction.displayLabel ? "outline" : "ghost"}
-            size={secondaryAction.displayLabel ? "sm" : "icon"}
-            className={
-              secondaryAction.displayLabel
-                ? "h-8 shrink-0 gap-1.5 px-2.5 max-sm:size-8 max-sm:px-0"
-                : "size-8 shrink-0 text-muted-foreground hover:text-foreground"
-            }
-            onClick={secondaryAction.onClick}
-            aria-label={secondaryAction.label}
-            title={secondaryAction.label}
-            disabled={secondaryAction.disabled || secondaryAction.pending}
-          >
-            {secondaryAction.pending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <SecondaryActionIcon className="size-4" />
-            )}
-            {secondaryAction.displayLabel ? (
-              <span className="hidden sm:inline">
-                {secondaryAction.displayLabel}
-              </span>
-            ) : null}
-          </Button>
+          <TooltipProvider delay={500}>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant={secondaryAction.displayLabel ? "outline" : "ghost"}
+                    size={secondaryAction.displayLabel ? "sm" : "icon"}
+                    className={
+                      secondaryAction.displayLabel
+                        ? "h-8 shrink-0 gap-1.5 px-2.5 max-sm:size-8 max-sm:px-0"
+                        : "size-8 shrink-0 text-muted-foreground hover:text-foreground"
+                    }
+                    onClick={secondaryAction.onClick}
+                    aria-label={secondaryAction.label}
+                    disabled={secondaryAction.disabled || secondaryAction.pending}
+                  />
+                }
+              >
+                {secondaryAction.pending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <SecondaryActionIcon className="size-4" />
+                )}
+                {secondaryAction.displayLabel ? (
+                  <span className="hidden sm:inline">
+                    {secondaryAction.displayLabel}
+                  </span>
+                ) : null}
+              </TooltipTrigger>
+              <TooltipContent>
+                {secondaryAction.description ? (
+                  <span className="flex flex-col gap-0.5">
+                    <span className="font-medium">{secondaryAction.label}</span>
+                    <span className="opacity-70">{secondaryAction.description}</span>
+                  </span>
+                ) : (
+                  secondaryAction.label
+                )}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
 
       {!isMobile && pageMeta?.annotations && (

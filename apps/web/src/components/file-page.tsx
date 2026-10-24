@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Download, File as FileIcon, Upload } from "lucide-react"
 import { toast } from "@worktable/ui/components/sonner"
@@ -8,6 +8,7 @@ import {
   type DocumentPage,
 } from "@worktable/types"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
+import { mergeRefs, usePaneWidth } from "@/hooks/use-pane-width"
 import { useSetPageMeta } from "@/hooks/use-page-meta"
 import { DocTable } from "@/components/document/doc-table"
 import { DocumentByline } from "@/components/document/document-byline"
@@ -80,6 +81,9 @@ export function FilePage({
   const setPageMeta = useSetPageMeta()
   const queryClient = useQueryClient()
   const fade = useScrollFade<HTMLDivElement>(8, { top: false })
+  // A table's Expand widens it to this pane, as it does in a Doc.
+  const paneWidth = usePaneWidth<HTMLDivElement>()
+  const scrollRef = useMemo(() => mergeRefs(fade, paneWidth), [fade, paneWidth])
   const picker = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   // The file loads by what its bytes are, so an unchanged file comes from
@@ -133,6 +137,8 @@ export function FilePage({
         ? {
             secondaryAction: {
               label: "Upload New Version",
+              description:
+                "Replaces this file everywhere it's used. The current version stays in its history.",
               icon: Upload,
               pending: uploading,
               disabled: uploading,
@@ -157,7 +163,7 @@ export function FilePage({
         }}
       />
       <div
-        ref={fade}
+        ref={scrollRef}
         data-document-scroll-root
         className="scroll-fade h-full w-full flex-1 overflow-auto"
       >

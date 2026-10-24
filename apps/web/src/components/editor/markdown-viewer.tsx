@@ -37,7 +37,11 @@ import { NumberedList } from "@worktable/ui/lib/numbered-list"
 import { markdownTitleLine } from "@worktable/ui/document-reading-preview"
 import "@/styles/document-controls.css"
 import { renderDocLinkHref } from "@/lib/doc-links"
-import { embedSourceUrl } from "@/lib/file-embeds"
+import {
+  embedSourceUrl,
+  knownImageSize,
+  rememberImageSize,
+} from "@/lib/file-embeds"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { externalLinkProps, worktableLinkOrigins } from "@/lib/external-links"
 import { BASE_URL } from "@/lib/http"
@@ -303,7 +307,27 @@ export function MarkdownViewer({
                             at: filesAt,
                           })
                         : src
-                    const image = <img {...props} src={source} title={title} />
+                    // A size known from before holds the image's space, unless
+                    // the Doc gives one itself.
+                    const known =
+                      typeof source === "string" &&
+                      props.width === undefined &&
+                      props.height === undefined
+                        ? knownImageSize(source)
+                        : undefined
+                    const image = (
+                      <img
+                        {...known}
+                        {...props}
+                        src={source}
+                        title={title}
+                        onLoad={(event) => {
+                          if (typeof source === "string") {
+                            rememberImageSize(source, event.currentTarget)
+                          }
+                        }}
+                      />
+                    )
                     return title ? (
                       <span className="worktable-figure">
                         {image}

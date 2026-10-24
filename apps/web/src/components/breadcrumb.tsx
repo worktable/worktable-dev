@@ -38,9 +38,11 @@ export function Breadcrumb() {
   const provenanceLabel = pageMeta?.provenanceLabel
 
   return (
+    // One height on every page, so the trail holds still when a page adds
+    // a button to its title, as a Records collection does.
     <nav
       aria-label="Breadcrumb"
-      className="flex items-center gap-1 overflow-hidden text-xs text-muted-foreground"
+      className="flex h-6 items-center gap-1 overflow-hidden text-xs text-muted-foreground"
     >
       {crumbs.map((crumb, i) => (
         <span key={i} className="flex min-w-0 items-center gap-1">

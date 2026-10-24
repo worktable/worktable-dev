@@ -1545,7 +1545,8 @@ describe("format-neutral document route", () => {
         path: "spec",
         format: { id: "worktable.markdown", sourceVersion: 1 },
         lifetime: "durable",
-        source: "# Spec\n\n![Shot](spec/shot%20one.png)\n",
+        // Two spellings of one image get one copy.
+        source: "# Spec\n\n![Shot](spec/shot%20one.png)\n\n![Again](./spec/Shot%20one.png#top)\n",
       })
       expect(created.status).toBe(201)
       const monday = (
@@ -1583,7 +1584,7 @@ describe("format-neutral document route", () => {
       expect(body.keptImages).toEqual([`spec/Shot one-${day}.png`])
       // The restored spec shows Monday's screenshot, kept as a copy beside it.
       expect(await readFile(join(docs, "spec.md"), "utf8")).toBe(
-        `# Spec\n\n![Shot](spec/Shot%20one-${day}.png)\n`
+        `# Spec\n\n![Shot](spec/Shot%20one-${day}.png)\n\n![Again](spec/Shot%20one-${day}.png)\n`
       )
       expect(await readFile(join(docs, "spec", `Shot one-${day}.png`), "utf8")).toBe(
         "Monday"

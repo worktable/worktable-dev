@@ -34,6 +34,10 @@ import {
 } from "./document-version-store-v2.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 
+/** Copies one restore makes at most, and their bytes together. */
+const RESTORE_COPIES_MAX = 50
+const RESTORE_COPY_BYTES_MAX = 256 * 1024 * 1024
+
 /** The bytes a file had at `at` (epoch ms), or null when none were kept. */
 export async function readFileAsOf(
   spaceId: string,
@@ -121,14 +125,26 @@ export async function keepEarlierImagesForRestoredDoc(
   } else if (Array.isArray(current.base)) {
     rewriteBlockLinks(current.base, collect, { imagesOnly: true })
   }
-  const copies = new Map<string, string>()
-  const docLeaf = docPath.split("/").at(-1) ?? docPath
-  const day = new Date(at).toISOString().slice(0, 10)
+  // Spellings of one file (`x.png`, `./x.png`, `x.png#a`) share one copy.
+  const byFile = new Map<string, { path: string; spellings: string[] }>()
   for (const target of targets) {
     const path = resolveDocLink(docPath, target)
     if (path === null) continue
+    const key = analyzeDocumentPath(path).comparisonKey ?? path
+    const file = byFile.get(key)
+    if (file) file.spellings.push(target)
+    else byFile.set(key, { path, spellings: [target] })
+  }
+  const copies = new Map<string, string>()
+  const kept: string[] = []
+  let keptBytes = 0
+  const docLeaf = docPath.split("/").at(-1) ?? docPath
+  const day = new Date(at).toISOString().slice(0, 10)
+  for (const { path, spellings } of byFile.values()) {
+    // One restore copies a bounded amount; images past it show as they are now.
+    if (kept.length >= RESTORE_COPIES_MAX) break
     const then = await readFileAsOf(spaceId, path, at)
-    if (!then) continue
+    if (!then || keptBytes + then.bytes.byteLength > RESTORE_COPY_BYTES_MAX) continue
     const now = await readRegisteredDocumentSource({ spaceId, path }).catch(
       () => null
     )
@@ -154,7 +170,10 @@ export async function keepEarlierImagesForRestoredDoc(
           source: "system",
           reason: "Kept with a restored version",
         })
-        copies.set(target, `${docLeaf}/${name}`)
+        const copy = `${docLeaf}/${name}`
+        kept.push(copy)
+        keptBytes += then.bytes.byteLength
+        for (const spelling of spellings) copies.set(spelling, copy)
         break
       } catch (error) {
         if (!(error instanceof DocumentWriteError) || error.reason !== "conflict") {
@@ -174,7 +193,7 @@ export async function keepEarlierImagesForRestoredDoc(
       { reason: "Kept the images of a restored version", imagesOnly: true }
     )
   }
-  return [...copies.values()]
+  return kept
 }
 
 /**

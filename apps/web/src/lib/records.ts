@@ -410,7 +410,7 @@ export function coerceFieldInput(
     }
     case "file": {
       // A file is named by its path in the Space, extension included.
-      const inputs = Array.isArray(raw) ? raw : column.field?.many ? String(raw).split(",") : [raw]
+      const inputs = Array.isArray(raw) ? raw : column.field?.many ? splitFileList(String(raw)) : [raw]
       const paths = inputs
         .map((entry) => String(entry).trim().replace(/^\/+/, ""))
         .filter(Boolean)
@@ -454,7 +454,8 @@ export function coerceFieldInput(
  * same ISO, so an untouched blur is a no-op commit.
  */
 export function fieldEditorSeed(column: { type: string }, value: unknown): unknown {
-  if ((column.type === "document" || column.type === "file") && Array.isArray(value)) return value.join(", ")
+  if (column.type === "file" && Array.isArray(value)) return value.map((path) => quoteFilePath(String(path))).join(", ")
+  if (column.type === "document" && Array.isArray(value)) return value.join(", ")
   if (column.type === "multi_select" && Array.isArray(value)) return value.join(", ")
   if (column.type === "datetime" && typeof value === "string" && value) {
     const date = new Date(value)
@@ -477,4 +478,39 @@ export function isSafeHttpUrl(value: string): boolean {
   } catch {
     return false
   }
+}
+
+/** A file path in an edited list: quoted, as in a CSV, when it holds a comma. */
+function quoteFilePath(path: string): string {
+  return /[,"]/.test(path) ? `"${path.replace(/"/g, '""')}"` : path
+}
+
+/** File paths from an edited list, splitting at commas outside quotes. */
+function splitFileList(text: string): string[] {
+  const paths: string[] = []
+  let current = ""
+  let quoted = false
+  for (let i = 0; i < text.length; i++) {
+    const character = text[i]
+    if (quoted) {
+      if (character === '"' && text[i + 1] === '"') {
+        current += '"'
+        i += 1
+      } else if (character === '"') {
+        quoted = false
+      } else {
+        current += character
+      }
+    } else if (character === '"' && current.trim() === "") {
+      current = ""
+      quoted = true
+    } else if (character === ",") {
+      paths.push(current)
+      current = ""
+    } else {
+      current += character
+    }
+  }
+  paths.push(current)
+  return paths
 }

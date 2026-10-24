@@ -23,7 +23,12 @@ import {
 } from "./mcp/dispatcher.ts"
 import { docExists, writeDoc } from "./store.ts"
 import { normalizeRecordFieldType } from "@worktable/types"
-import { listRecordCollections, listRecords, updateRecord } from "./record-store.ts"
+import {
+  listRecordCollections,
+  listRecords,
+  RECORD_CHANGED,
+  updateRecord,
+} from "./record-store.ts"
 
 export interface PathMove {
   from: string
@@ -415,6 +420,7 @@ async function rewriteRecordFields(
     })) {
       const data = record.data as Record<string, unknown>
       const changes: Record<string, unknown> = {}
+      const before: Record<string, unknown> = {}
       for (const [key] of fields) {
         const value = data[key]
         const next = Array.isArray(value)
@@ -424,14 +430,20 @@ async function rewriteRecordFields(
           : typeof value === "string"
             ? (moved.get(value) ?? value)
             : value
-        if (JSON.stringify(next) !== JSON.stringify(value)) changes[key] = next
+        if (JSON.stringify(next) !== JSON.stringify(value)) {
+          changes[key] = next
+          before[key] = value
+        }
       }
       if (Object.keys(changes).length === 0) continue
+      // Only while the fields still hold what was read: an edit made since
+      // stands, and an old path in it still works through aliases.
       const updated = await updateRecord(spaceId, collection.id, record.id, {
         data: changes,
+        ifData: before,
         updatedBy: "system",
       })
-      if (updated.error) {
+      if (updated.error && updated.error !== RECORD_CHANGED) {
         console.warn("[links] a record was not updated after a move:", updated.error)
       }
     }

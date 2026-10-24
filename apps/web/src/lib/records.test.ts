@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { DocumentListItem, RecordCollectionSchema, RecordFile } from "@worktable/types"
-import { canApplyFilterValue, compareGroupLabels, documentPathIsSelected, normalizeDocumentPickerSearch, toggleDocumentPath, collectRecordQueryWarnings, coerceFieldInput, fieldLabel, filterOpsForType, indexDanglingRelations, recordActorName, recordDetailSections, recordFieldColumns, resolveDocumentGroupValue } from "./records"
+import { canApplyFilterValue, compareGroupLabels, documentPathIsSelected, normalizeDocumentPickerSearch, toggleDocumentPath, collectRecordQueryWarnings, coerceFieldInput, fieldEditorSeed, fieldLabel, filterOpsForType, indexDanglingRelations, recordActorName, recordDetailSections, recordFieldColumns, resolveDocumentGroupValue } from "./records"
 
 const schema = {
   version: 2,
@@ -46,6 +46,11 @@ describe("record document fields and portable column order", () => {
     // Files keep their extension: the path is the file's whole name.
     expect(coerceFieldInput({ type: "file", field: { type: "file" } }, " /spec/shot.png ")).toEqual({ value: "spec/shot.png" })
     expect(coerceFieldInput({ type: "file", field: { type: "file", many: true } }, "a.csv, spec/b.png")).toEqual({ value: ["a.csv", "spec/b.png"] })
+    // A name with a comma round-trips through the editor, quoted.
+    const many = { type: "file" as const, field: { type: "file", many: true } }
+    const seed = fieldEditorSeed(many, ["design/logo,final.png", "a.csv"])
+    expect(seed).toBe('"design/logo,final.png", a.csv')
+    expect(coerceFieldInput(many, seed)).toEqual({ value: ["design/logo,final.png", "a.csv"] })
   })
 
   it("clears scalar document input without trying to parse it", () => {

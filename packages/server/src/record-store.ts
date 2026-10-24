@@ -1148,19 +1148,22 @@ function recordIdFromTitle(title: string | null): string {
 
 const RECORD_ID_LENGTH = 40;
 
+/** An update with `ifData` found the record changed since it was read. */
+export const RECORD_CHANGED = "Record changed since it was read";
+
 /** A short id for a record with nothing to name it by. */
 function randomRecordId(): string {
   return `rec-${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}`;
 }
 
-export async function updateRecord(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string; strictFields?: boolean }): Promise<{ data: RecordFile | null; error: string | null }> {
+export async function updateRecord(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string; strictFields?: boolean; ifData?: Record<string, unknown> }): Promise<{ data: RecordFile | null; error: string | null }> {
   assertSpaceAccess(spaceId, "edit");
   const result = await updateRecordInner(spaceId, collectionId, recordId, patch);
   if (result.data) noteRecordActivity(spaceId, collectionId, "records.updated");
   return result;
 }
 
-async function updateRecordInner(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string; strictFields?: boolean }): Promise<{ data: RecordFile | null; error: string | null }> {
+async function updateRecordInner(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string; strictFields?: boolean; ifData?: Record<string, unknown> }): Promise<{ data: RecordFile | null; error: string | null }> {
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
   if (!isCanonicalId(recordId)) return { data: null, error: invalidIdError("record", recordId) };
@@ -1170,6 +1173,10 @@ async function updateRecordInner(spaceId: string, collectionId: string, recordId
   return withUniqueLock(spaceId, collectionId, (schema) => withStoreWriteLock(recordPath(spaceId, collectionId, recordId), async () => {
     const { data: existing, error } = await readRecord(spaceId, collectionId, recordId);
     if (error || !existing) return { data: null, error: error ?? `Record not found: ${recordId}` };
+    // `ifData`: apply only while these fields still hold what the caller read.
+    if (patch.ifData && Object.entries(patch.ifData).some(([key, value]) => JSON.stringify(existing.data[key]) !== JSON.stringify(value))) {
+      return { data: null, error: RECORD_CHANGED };
+    }
     const clash = await findUniqueClash(spaceId, collectionId, schema, patch.data ?? {}, { excludeId: recordId, onlyKeys: touched });
     if (clash) return { data: null, error: `Field ${clash.field} must be unique: record ${clash.recordId} already has this value` };
     // Data and metadata both merge key by key: a patch names what changes,

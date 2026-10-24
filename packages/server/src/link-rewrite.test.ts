@@ -22,6 +22,8 @@ import {
   buildRecordCollectionSchema,
   createRecord,
   readRecord,
+  RECORD_CHANGED,
+  updateRecord,
   writeRecordCollectionSchema,
 } from "./record-store.ts"
 import { peekDocReferrers, settleDocReferrers } from "./doc-referrers.ts"
@@ -276,6 +278,19 @@ describe("rewriting links after a move", () => {
         (await renameDocAndSync(SPACE, "onboarding/spec", "flows/signup")).error
       ).toBeNull()
       await settleLinkRewrites()
+      expect((await readRecord(SPACE, "shots", "error")).data?.data).toEqual({
+        shot: "flows/signup/error.png",
+      })
+      // A rewrite applies only while the field still holds what it read, so
+      // an edit made in between stands.
+      expect(
+        (
+          await updateRecord(SPACE, "shots", "error", {
+            data: { shot: "elsewhere/error.png" },
+            ifData: { shot: "onboarding/spec/error.png" },
+          })
+        ).error
+      ).toBe(RECORD_CHANGED)
       expect((await readRecord(SPACE, "shots", "error")).data?.data).toEqual({
         shot: "flows/signup/error.png",
       })

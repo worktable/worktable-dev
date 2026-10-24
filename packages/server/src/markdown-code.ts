@@ -42,6 +42,8 @@ export interface MarkdownLayout {
   inline: Range[]
   /** Inline link and image destinations as written, outside code. */
   destinations: Range[]
+  /** Which of the destinations are images' rather than links'. */
+  images: boolean[]
 }
 
 function matchRanges(pattern: RegExp, text: string): Range[] {
@@ -85,11 +87,13 @@ export function markdownLayout(markdown: string): MarkdownLayout {
     : []
   const scanned = blankRanges(markdown, [...blocks, ...inline])
   const destinations: Range[] = []
+  const images: boolean[] = []
   for (const match of scanned.matchAll(MARKDOWN_LINK_PATTERN)) {
     const start = match[0].indexOf(match[3]!, match[0].indexOf("](") + 2)
     destinations.push([match.index + start, match.index + start + match[3]!.length])
+    images.push(match[1] === "!")
   }
-  return { blocks, inline, destinations }
+  return { blocks, inline, destinations, images }
 }
 
 /** Where a Markdown text's code blocks and inline code sit. */

@@ -188,13 +188,14 @@ function readSentences(
   const { shown, hidden } = fieldLists(id, grant, input.collections)
   const listed = shown.length > 0 ? `: ${listFields(shown)}` : ""
   const sentences = [
-    `${LINK_SUBJECT} see ${countedName(name, own(input.counts ?? {}, id), grant.rows !== null)}${condition}${listed}.`,
+    `${LINK_SUBJECT} see ${countedRecordsName(name, own(input.counts ?? {}, id), grant.rows !== null)}${condition}${listed}.`,
   ]
   if (hidden.length > 0) sentences.push(`Hidden: ${listFields(hidden)}.`)
   return sentences
 }
 
-function countedName(
+/** A collection's rows as a link shows them: "all 42 Deals", "3 Deals", "1 record in Deals". */
+export function countedRecordsName(
   name: string,
   count: number | undefined,
   filtered: boolean

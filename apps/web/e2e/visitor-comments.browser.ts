@@ -283,31 +283,20 @@ for (const appearance of [
             .click()
         } else
           await page.getByRole("button", { name: "Share document" }).click()
-        const sharing = page.getByRole("dialog", { name: "Share document" })
+        const sharing = page.getByRole("dialog", { name: /^Share “/ })
+        // A labelled link lives under More links, which says comments paused.
+        await sharing.getByRole("button", { name: /^More links/ }).click()
         await sharing
           .getByRole("listitem")
-          .filter({ hasText: "Paused after a burst of comments" })
+          .filter({ hasText: "Comments paused" })
           .getByRole("button", { name: "Actions for Audit comments" })
           .click()
         await page.getByRole("menuitem", { name: "Edit Link" }).click()
         await sharing
           .getByLabel("Label", { exact: true })
           .fill("Audit follow-up")
-        await sharing
-          .getByRole("switch", { name: "Allow anonymous comments" })
-          .click()
-        await sharing
-          .getByRole("switch", { name: "Show sharer’s name in replies" })
-          .click()
-        await sharing.getByRole("combobox", { name: "Visitors see" }).click()
-        await page
-          .getByRole("option", {
-            name: "All comments on this link",
-            exact: true,
-          })
-          .click()
         await sharing.screenshot({
-          path: info.outputPath("comment-settings.png"),
+          path: info.outputPath("comment-link-edit.png"),
         })
         const saved = page.waitForResponse(
           (response) =>
@@ -317,14 +306,13 @@ for (const appearance of [
         await sharing.getByRole("button", { name: "Save", exact: true }).click()
         const edit = await saved
         expect(edit.status()).toBe(200)
+        expect(edit.request().postDataJSON()).toEqual({
+          label: "Audit follow-up",
+        })
         expect((await edit.json()).link).toMatchObject({
           label: "Audit follow-up",
-          comments: {
-            anonymousAllowed: true,
-            showSharerName: true,
-            visitorsSee: "all",
-            autoPaused: true,
-          },
+          level: "comment",
+          comments: { autoPaused: true },
         })
         await expect(
           sharing.getByRole("button", { name: "Save", exact: true })

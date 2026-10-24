@@ -68,81 +68,155 @@ function deferred() {
 
 const SHARED_URL =
   "https://share.worktable.cloud/s/workspace_browser/abcdefghijklmnopqrstuvwxyzABCDEFGH123456789"
+const DAY = 86_400_000
 
-/** A Cloud Worktable whose pages carry their links, as without the preview. */
-async function mockCloudSharing(
+const COMMENTS = {
+  acceptComments: true,
+  anonymousAllowed: false,
+  showSharerName: false,
+  visitorsSee: "own",
+  autoPaused: false,
+} as const
+
+/** A link as the server returns it, the nth made in a journey. */
+function mockLink(
+  index: number,
+  target: { kind: "doc" | "html"; path: string },
+  body: Record<string, unknown>
+): ShareLink {
+  return {
+    id: `lnk_${String(index).padStart(22, "a")}`,
+    spaceId: "share-browser",
+    documentId: "doc_shared",
+    kind: target.kind,
+    path: target.path,
+    title: target.path,
+    label: String(body.label ?? ""),
+    level: "view",
+    createdBy: { id: "local:owner", name: "Owner" },
+    createdAt: new Date(Date.now() + index).toISOString(),
+    expiresAt: typeof body.expiresAt === "string" ? body.expiresAt : null,
+    hasPassword: typeof body.password === "string",
+    lastUsedAt: null,
+    status: "active",
+    tokenHint: "abcd",
+    url: index === 0 ? SHARED_URL : `${SHARED_URL.slice(0, -1)}${index}`,
+    canManage: true,
+    comments: { ...COMMENTS },
+  }
+}
+
+/** Applies a PATCH body as the server would. */
+function patched(link: ShareLink, body: Record<string, unknown>): ShareLink {
+  const next: ShareLink = { ...link }
+  if (typeof body.label === "string") next.label = body.label
+  if (body.expiresAt !== undefined)
+    next.expiresAt = body.expiresAt as string | null
+  if (body.password !== undefined) next.hasPassword = body.password !== null
+  if (body.grant !== undefined) {
+    if (body.grant) next.grant = body.grant as ShareLink["grant"]
+    else delete next.grant
+  }
+  return next
+}
+
+type Mutation = { method: string; path: string; body: Record<string, unknown> }
+
+/**
+ * A Cloud Worktable's link routes. Without the preview, pages carry their
+ * links as they do in production.
+ */
+async function mockSharing(
   page: Page,
-  options: { createGate?: Promise<void>; sharingEnabled?: () => boolean } = {}
+  options: {
+    createGate?: Promise<void>
+    sharingEnabled?: () => boolean
+    preview?: boolean
+    policy?: () => Partial<ReturnType<typeof defaultSharingPolicy>>
+    links?: ShareLink[]
+  } = {}
 ) {
-  let links: ShareLink[] = []
-  const created: Array<Record<string, unknown>> = []
+  const state = { links: options.links ?? [], made: 0 }
+  const mutations: Mutation[] = []
 
   await page.route("**/api/system/deployment", (route) =>
     route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
+      json: {
         ...cloudDeployment,
         capabilities: {
           ...cloudDeployment.capabilities,
           documentSharing: options.sharingEnabled?.() ?? true,
           shareLinks: true,
-          sharingPreview: false,
+          sharingPreview: options.preview ?? false,
         },
-      }),
+      },
     })
   )
   await page.route(
-    "**/api/spaces/share-browser/documents/page?*",
+    /\/api\/spaces\/share-browser\/documents\/page\?/,
     async (route) => {
       const response = await route.fetch()
       const body = await response.json()
-      body.page.sharing = { activeLinks: links.length, canCreate: true }
+      body.page.sharing = {
+        activeLinks: state.links.filter((link) => link.status === "active")
+          .length,
+        canCreate: true,
+      }
       body.page.capabilities.sharing = true
       await route.fulfill({ response, json: body })
     }
   )
-  await page.route(/\/api\/shares\/links(?:\?.*)?$/, async (route) => {
-    if (route.request().method() === "GET") {
-      await route.fulfill({
-        json: { links, canCreate: true, policy: defaultSharingPolicy() },
-      })
-      return
+  await page.route(
+    /\/api\/shares\/links(?:\/lnk_[^/?]+)?(?:\?.*)?$/,
+    async (route) => {
+      const request = route.request()
+      const method = request.method()
+      if (method === "GET") {
+        await route.fulfill({
+          json: {
+            links: state.links,
+            canCreate: true,
+            policy: { ...defaultSharingPolicy(), ...options.policy?.() },
+          },
+        })
+        return
+      }
+      const path = new URL(request.url()).pathname
+      const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
+      mutations.push({ method, path, body })
+      if (method === "POST") {
+        await options.createGate
+        const link = mockLink(
+          state.made++,
+          body.target as { kind: "doc" | "html"; path: string },
+          body
+        )
+        state.links = [link, ...state.links]
+        await route.fulfill({ status: 201, json: { link, url: link.url } })
+        return
+      }
+      const id = path.split("/").at(-1)
+      const current = state.links.find((link) => link.id === id)!
+      const link =
+        method === "DELETE"
+          ? { ...current, status: "revoked" as const }
+          : patched(current, body)
+      state.links =
+        method === "DELETE"
+          ? state.links.filter((candidate) => candidate.id !== id)
+          : state.links.map((candidate) =>
+              candidate.id === id ? link : candidate
+            )
+      await route.fulfill({ json: { link } })
     }
-    const body = route.request().postDataJSON() as Record<string, unknown>
-    created.push(body)
-    await options.createGate
-    const target = body.target as { kind: "doc" | "html"; path: string }
-    const link: ShareLink = {
-      id: "lnk_aaaaaaaaaaaaaaaaaaaaaa",
-      spaceId: "share-browser",
-      documentId: "doc_shared",
-      kind: target.kind,
-      path: target.path,
-      title: target.path,
-      label: String(body.label ?? ""),
-      level: "view",
-      createdBy: { id: "local:owner", name: "Owner" },
-      createdAt: new Date().toISOString(),
-      expiresAt: null,
-      hasPassword: false,
-      lastUsedAt: null,
-      status: "active",
-      tokenHint: SHARED_URL.slice(-4),
-      url: SHARED_URL,
-      canManage: true,
-      comments: {
-        acceptComments: true,
-        anonymousAllowed: false,
-        showSharerName: false,
-        visitorsSee: "own",
-        autoPaused: false,
-      },
-    }
-    links = [link]
-    await route.fulfill({ status: 201, json: { link, url: SHARED_URL } })
-  })
+  )
 
-  return created
+  return { state, mutations }
+}
+
+/** Ignores the moment a journey's assertion ran, to the nearest day. */
+function daysFromNow(iso: unknown): number {
+  return Math.round((Date.parse(String(iso)) - Date.now()) / DAY)
 }
 
 test.beforeAll(async () => {
@@ -280,14 +354,14 @@ test("keeps confirmed policy saves cached and recovers a newer owner update duri
   }
 })
 
-test("creates a Doc link from the header action and copies it again later", async ({
+test("creates, copies, edits and revokes Doc links from the header action", async ({
   page,
   context,
   browserName,
 }) => {
   let sharingEnabled = false
   const createGate = deferred()
-  const created = await mockCloudSharing(page, {
+  const { mutations } = await mockSharing(page, {
     createGate: createGate.promise,
     sharingEnabled: () => sharingEnabled,
   })
@@ -320,6 +394,11 @@ test("creates a Doc link from the header action and copies it again later", asyn
     browserName === "chromium"
       ? page.evaluate(() => navigator.clipboard.readText())
       : Promise.resolve(copiedText)
+  const clearClipboard = async () => {
+    if (browserName === "chromium")
+      await page.evaluate(() => navigator.clipboard.writeText(""))
+    else copiedText = ""
+  }
   await page.goto(appUrl("/spaces/share-browser/documents/launch-plan"), {
     waitUntil: "domcontentloaded",
   })
@@ -338,40 +417,79 @@ test("creates a Doc link from the header action and copies it again later", asyn
   await expect(shareButton).toBeVisible({ timeout: 30_000 })
   await shareButton.click()
 
-  const dialog = page.getByRole("dialog", { name: "Share document" })
-  await dialog.getByRole("button", { name: "Create link", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Share “Launch plan”" })
+  await expect(
+    dialog.getByText("Anyone with the link can view this document")
+  ).toBeVisible()
+  // With no link yet, one button makes it.
+  await expect(dialog.getByRole("textbox")).toHaveCount(0)
+  await dialog.getByRole("button", { name: "Create Link", exact: true }).click()
   createGate.resolve()
-  await expect(dialog.getByText(SHARED_URL)).toBeVisible()
-  await expect(dialog.getByText(/shown again/i)).toHaveCount(0)
+  const url = dialog.getByRole("textbox", { name: "Link", exact: true })
+  await expect(url).toHaveValue(SHARED_URL)
+  await expect(dialog.getByText("Expires in 14 days")).toBeVisible()
   await dialog.getByRole("button", { name: "Copy", exact: true }).click()
   expect(await clipboard()).toBe(SHARED_URL)
+  expect(daysFromNow(mutations[0]?.body.expiresAt)).toBe(14)
+  // Without the preview, a link carries no password, level or live data.
+  expect(mutations[0]?.body).toMatchObject({
+    target: { kind: "doc", spaceId: "share-browser", path: "launch-plan" },
+    label: "",
+  })
+  expect(mutations[0]?.body).not.toHaveProperty("password")
+  expect(mutations[0]?.body).not.toHaveProperty("grant")
+  expect(mutations[0]?.body).not.toHaveProperty("level")
   await dialog.getByRole("button", { name: "Done", exact: true }).click()
 
-  // Opened again, the link's URL is still there to copy.
-  if (browserName === "chromium")
-    await page.evaluate(() => navigator.clipboard.writeText(""))
-  else copiedText = ""
+  // Opened again, the link is still there to copy, from its menu too.
+  await clearClipboard()
   await shareButton.click()
-  await expect(dialog.getByText(SHARED_URL)).toHaveCount(0)
-  await dialog.getByRole("button", { name: "Actions for Untitled link" }).click()
+  await expect(url).toHaveValue(SHARED_URL)
+  const actions = dialog.getByRole("button", { name: "Link actions" })
+  await actions.click()
   await page.getByRole("menuitem", { name: "Copy Link" }).click()
   await expect.poll(clipboard).toBe(SHARED_URL)
 
-  expect(created).toEqual([
-    expect.objectContaining({
-      target: { kind: "doc", spaceId: "share-browser", path: "launch-plan" },
-    }),
-  ])
-  // Without the preview, a link carries no password, level or live data.
-  expect(created[0]).not.toHaveProperty("password")
-  expect(created[0]).not.toHaveProperty("grant")
-  expect(created[0]).not.toHaveProperty("level")
+  await actions.click()
+  await page.getByRole("menuitem", { name: "Edit Link" }).click()
+  await dialog.getByRole("combobox", { name: "Expires", exact: true }).click()
+  await page.getByRole("option", { name: "30 days", exact: true }).click()
+  await dialog.getByRole("button", { name: "Save", exact: true }).click()
+  await expect(url).toHaveValue(SHARED_URL)
+  expect(mutations[1]?.method).toBe("PATCH")
+  expect(daysFromNow(mutations[1]?.body.expiresAt)).toBe(30)
+  await expect(dialog.getByText(/^Expires [A-Z][a-z]{2} \d+/)).toBeVisible()
+
+  // A link for someone in particular has a label and lives under More links.
+  const more = dialog.getByRole("button", { name: /^More links/ })
+  await more.click()
+  await dialog.getByRole("button", { name: "New Link", exact: true }).click()
+  await dialog.getByLabel("Label", { exact: true }).fill("Board")
+  await dialog.getByRole("button", { name: "Create Link", exact: true }).click()
+  const others = dialog.getByRole("list", { name: "Other links" })
+  await expect(others.getByRole("listitem")).toHaveText([/^Board/])
+  await expect(more).toContainText("1")
+  expect(mutations[2]?.body).toMatchObject({ label: "Board" })
+  expect(daysFromNow(mutations[2]?.body.expiresAt)).toBe(14)
+
+  await dialog.getByRole("button", { name: "Actions for Board" }).click()
+  await page.getByRole("menuitem", { name: "Revoke Link" }).click()
+  await page
+    .getByRole("dialog", { name: "Revoke this link?" })
+    .getByRole("button", { name: "Revoke", exact: true })
+    .click()
+  await expect(others).toHaveCount(0)
+  expect(mutations[3]).toMatchObject({
+    method: "DELETE",
+    path: expect.stringMatching(/\/lnk_a+1$/),
+  })
+  await expect(url).toHaveValue(SHARED_URL)
 })
 
 test("explains the inert shared-HTML boundary before creating a link", async ({
   page,
 }) => {
-  const created = await mockCloudSharing(page)
+  const { mutations } = await mockSharing(page)
   await page.goto(appUrl("/spaces/share-browser/documents/status-card"), {
     waitUntil: "domcontentloaded",
   })
@@ -379,204 +497,115 @@ test("explains the inert shared-HTML boundary before creating a link", async ({
   const shareButton = page.getByRole("button", { name: "Share document" })
   await expect(shareButton).toBeVisible({ timeout: 30_000 })
   await shareButton.click()
-  const dialog = page.getByRole("dialog", { name: "Share document" })
+  const dialog = page.getByRole("dialog", { name: "Share “Status card”" })
+  await expect(
+    dialog.getByText("Anyone with the link can use this tool")
+  ).toBeVisible()
   await expect(
     dialog.getByText(/Records and links to other Worktable content/i)
   ).toBeVisible()
-  await dialog.getByRole("button", { name: "Create link", exact: true }).click()
+  await dialog.getByRole("button", { name: "Create Link", exact: true }).click()
 
   await expect
-    .poll(() => created)
-    .toContainEqual(
-      expect.objectContaining({
-        target: { kind: "html", spaceId: "share-browser", path: "status-card" },
-      })
-    )
+    .poll(() => mutations.map((mutation) => mutation.body.target))
+    .toContainEqual({
+      kind: "html",
+      spaceId: "share-browser",
+      path: "status-card",
+    })
 })
 
 test("creates and edits password links without retaining a password in the form", async ({
   page,
 }, testInfo) => {
-  const mutations: Array<{ method: string; body: Record<string, unknown> }> = []
-  let links: ShareLink[] = []
-  let requirePassword = false
-  await page.route("**/api/system/deployment", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        ...cloudDeployment,
-        capabilities: {
-          ...cloudDeployment.capabilities,
-          shareLinks: true,
-          sharingPreview: true,
-        },
-      }),
-    })
-  )
-  await page.route(
-    "**/api/spaces/share-browser/documents/page?*",
-    async (route) => {
-      const response = await route.fetch()
-      const body = await response.json()
-      body.page.sharing = { activeLinks: links.length, canCreate: true }
-      body.page.capabilities.sharing = true
-      await route.fulfill({ response, json: body })
-    }
-  )
-  await page.route(
-    /\/api\/shares\/links(?:\/[^/?]+)?(?:\?.*)?$/,
-    async (route) => {
-      const method = route.request().method()
-      if (method === "GET") {
-        await route.fulfill({
-          json: {
-            links,
-            canCreate: true,
-            policy: { ...defaultSharingPolicy(), requirePassword },
-          },
-        })
-        return
-      }
-      const body = route.request().postDataJSON() as Record<string, unknown>
-      mutations.push({ method, body })
-      if (method === "POST") {
-        const link: ShareLink = {
-          id: "lnk_aaaaaaaaaaaaaaaaaaaaaa",
-          spaceId: "share-browser",
-          documentId: "doc_plan",
-          kind: "doc",
-          path: "launch-plan",
-          title: "Launch plan",
-          label: String(body.label),
-          level: "view",
-          createdBy: { id: "local:owner", name: "Owner" },
-          createdAt: new Date().toISOString(),
-          expiresAt: null,
-          hasPassword: typeof body.password === "string",
-          lastUsedAt: null,
-          status: "active",
-          tokenHint: "abcd",
-          canManage: true,
-          comments: {
-            acceptComments: true,
-            anonymousAllowed: false,
-            showSharerName: false,
-            visitorsSee: "own",
-            autoPaused: false,
-          },
-        }
-        links = [link]
-        await route.fulfill({
-          status: 201,
-          json: {
-            link,
-            url: "https://share.example.test/s/workspace/" + "a".repeat(43),
-          },
-        })
-      } else {
-        const link = {
-          ...links[0]!,
-          label: String(body.label),
-          ...(body.password !== undefined
-            ? { hasPassword: body.password !== null }
-            : {}),
-        }
-        links = [link]
-        await route.fulfill({ json: { link } })
-      }
-    }
-  )
+  let requirePassword = true
+  const { mutations } = await mockSharing(page, {
+    preview: true,
+    policy: () => ({ requirePassword }),
+  })
   await page.goto(appUrl("/spaces/share-browser/documents/launch-plan"), {
     waitUntil: "domcontentloaded",
   })
   const share = page.getByRole("button", { name: "Share document" })
   await expect(share).toBeVisible({ timeout: 30_000 })
   await share.click()
-  const dialog = page.getByRole("dialog", { name: "Share document" })
-  await dialog.getByLabel("Label", { exact: true }).fill("Board")
-  await dialog.getByRole("switch", { name: "Password", exact: true }).click()
-  await dialog
-    .getByLabel("Link password", { exact: true })
-    .fill("test-only board password")
+  const dialog = page.getByRole("dialog", { name: "Share “Launch plan”" })
+  // A Worktable that requires passwords asks for one before the first link.
+  await dialog.getByRole("button", { name: "Create Link", exact: true }).click()
+  const passwordSwitch = dialog.getByRole("switch", {
+    name: "Password",
+    exact: true,
+  })
+  await expect(passwordSwitch).toBeChecked()
+  await expect(passwordSwitch).toBeDisabled()
+  const newPassword = dialog.getByLabel("Link password", { exact: true })
+  await expect(newPassword).toHaveAttribute("required", "")
+  await newPassword.fill("test-only board password")
   await dialog.screenshot({
     path: testInfo.outputPath("password-link-form.png"),
   })
-  await dialog.getByRole("button", { name: "Create link", exact: true }).click()
+  await dialog.getByRole("button", { name: "Create Link", exact: true }).click()
   await expect(
-    dialog.getByText("https://share.example.test/s/workspace/" + "a".repeat(43))
-  ).toBeVisible()
-  expect(mutations[0]?.body.password).toBe("test-only board password")
+    dialog.getByRole("textbox", { name: "Link", exact: true })
+  ).toHaveValue(SHARED_URL)
+  expect(mutations[0]?.body).toMatchObject({
+    label: "",
+    level: "view",
+    password: "test-only board password",
+  })
+
+  const save = dialog.getByRole("button", { name: "Save", exact: true })
   const edit = async () => {
-    await dialog.getByRole("button", { name: "Actions for Board" }).click()
+    await dialog.getByRole("button", { name: "Link actions" }).click()
     await page.getByRole("menuitem", { name: "Edit Link" }).click()
   }
   await edit()
-  await expect(dialog.getByLabel("New password", { exact: true })).toHaveValue(
-    ""
-  )
-  await dialog.getByRole("button", { name: "Save", exact: true }).click()
-  await expect(
-    dialog.getByRole("button", { name: "Save", exact: true })
-  ).toBeHidden()
+  const replacement = dialog.getByLabel("New password", { exact: true })
+  await expect(replacement).toHaveValue("")
+  await save.click()
+  await expect(save).toBeHidden()
   expect(mutations[1]?.body).not.toHaveProperty("password")
   await edit()
-  await dialog
-    .getByLabel("New password", { exact: true })
-    .fill("replacement test password")
-  await dialog.getByRole("button", { name: "Save", exact: true }).click()
-  await expect(
-    dialog.getByRole("button", { name: "Save", exact: true })
-  ).toBeHidden()
+  await replacement.fill("replacement test password")
+  await save.click()
+  await expect(save).toBeHidden()
   expect(mutations[2]?.body.password).toBe("replacement test password")
-  await edit()
-  await dialog.getByRole("switch", { name: "Password", exact: true }).click()
-  await dialog.getByRole("button", { name: "Save", exact: true }).click()
-  await expect(
-    dialog.getByRole("button", { name: "Save", exact: true })
-  ).toBeHidden()
-  expect(mutations[3]?.body.password).toBeNull()
+
+  // Once passwords are optional, one can be removed and another link made with one.
   await dialog.getByRole("button", { name: "Done", exact: true }).click()
-  requirePassword = true
-  await share.click()
-  await dialog.getByRole("button", { name: "New link", exact: true }).click()
-  await expect(
-    dialog.getByRole("switch", { name: "Password", exact: true })
-  ).toBeChecked()
-  await expect(
-    dialog.getByRole("switch", { name: "Password", exact: true })
-  ).toBeDisabled()
-  await expect(
-    dialog.getByLabel("Link password", { exact: true })
-  ).toHaveAttribute("required", "")
-  await expect(dialog.getByLabel("Link password", { exact: true })).toHaveValue(
-    ""
-  )
-  await dialog.getByRole("button", { name: "Create link", exact: true }).click()
-  expect(mutations).toHaveLength(4)
-  // Existing reserved access is preserved by an ordinary metadata edit.
-  // Creating new links still offers only the supported levels.
   requirePassword = false
-  links = [{ ...links[0]!, level: "use" }]
-  await page.reload({ waitUntil: "networkidle" })
   await share.click()
   await edit()
+  await passwordSwitch.click()
+  await save.click()
+  await expect(save).toBeHidden()
+  expect(mutations[3]?.body.password).toBeNull()
+
+  await dialog.getByRole("button", { name: /^More links/ }).click()
+  await dialog.getByRole("button", { name: "New Link", exact: true }).click()
+  await dialog.getByLabel("Label", { exact: true }).fill("Board")
+  await passwordSwitch.click()
+  await dialog
+    .getByLabel("Link password", { exact: true })
+    .fill("test-only second password")
+  await dialog.getByRole("button", { name: "Create Link", exact: true }).click()
   await expect(
-    dialog.getByRole("combobox", { name: "Access", exact: true })
-  ).toContainText("Can use")
-  await dialog.getByLabel("Label", { exact: true }).fill("Board renamed")
-  await dialog.getByRole("button", { name: "Save", exact: true }).click()
-  await expect(
-    dialog.getByRole("button", { name: "Save", exact: true })
-  ).toBeHidden()
-  expect(mutations[4]?.body.label).toBe("Board renamed")
-  expect(mutations[4]?.body).not.toHaveProperty("level")
+    dialog.getByRole("list", { name: "Other links" }).getByRole("listitem")
+  ).toHaveText([/^BoardPassword/])
+  expect(mutations[4]?.body).toMatchObject({
+    label: "Board",
+    password: "test-only second password",
+  })
+  // Editing a link never changes what it allows.
+  for (const mutation of mutations.filter((entry) => entry.method === "PATCH"))
+    expect(mutation.body).not.toHaveProperty("level")
 })
 
 for (const appearance of [
   { colorScheme: "light" as const, width: 1280, height: 900 },
   { colorScheme: "dark" as const, width: 390, height: 844 },
 ]) {
-  test(`checks live link access before sharing in ${appearance.colorScheme} mode`, async ({
+  test(`shows and narrows a tool's live data in ${appearance.colorScheme} mode`, async ({
     page,
   }, testInfo) => {
     await page.setViewportSize({
@@ -589,264 +618,150 @@ for (const appearance of [
       appearance.colorScheme
     )
     const at = new Date().toISOString()
-    const initialGrant = {
+    const suggested = {
       version: 1 as const,
       collections: {
-        deals: {
-          rows: null,
-          fields: ["name"],
-          timestamps: false,
-        },
+        deals: { rows: null, fields: ["name"], timestamps: false },
       },
       limits: { rowsPerQuery: 200, queriesPerMinute: 120, rowsPerHour: 10_000 },
       state: "visitor" as const,
     }
-    let links: ShareLink[] = []
-    const mutations: Array<Record<string, unknown>> = []
     const checks: Array<Record<string, unknown>> = []
-    let laterSchema = false
-    await page.route("**/api/system/deployment", (route) =>
-      route.fulfill({
+    const { mutations } = await mockSharing(page, {
+      preview: true,
+      policy: () => ({ liveLinks: true }),
+      links: [
+        mockLink(
+          0,
+          { kind: "html", path: "status-card" },
+          { expiresAt: new Date(Date.now() + 14 * DAY).toISOString() }
+        ),
+      ],
+    })
+    // Access checks, which the link routes leave alone.
+    await page.route("**/api/shares/links/access", async (route) => {
+      const body = route.request().postDataJSON()
+      checks.push(body)
+      // Right after a tool changes, the first check is refused.
+      if (checks.length === 1) {
+        await route.fulfill({
+          status: 503,
+          json: { error: "Changed", code: "LINK_PREVIEW_CHANGED" },
+        })
+        return
+      }
+      const grant = body.grant ?? suggested
+      await route.fulfill({
         json: {
-          ...cloudDeployment,
-          capabilities: {
-            ...cloudDeployment.capabilities,
-            shareLinks: true,
-            sharingPreview: true,
+          grant,
+          effectiveGrant: grant,
+          collections: {
+            deals: {
+              version: 1,
+              kind: "worktable.recordSchema",
+              id: "deals",
+              name: "Deals",
+              fields: {
+                name: { type: "text", name: "Name" },
+                amount: { type: "number", name: "Amount" },
+                secret: { type: "text", name: "Secret" },
+              },
+              createdAt: at,
+              updatedAt: at,
+              createdBy: "test",
+              metadata: {},
+            },
           },
+          counts: { deals: 2 },
+          sentences: [],
+          warnings: body.observe
+            ? [
+                {
+                  code: "later_reads",
+                  message: "Later filters may need other fields.",
+                },
+              ]
+            : [],
+          issues: [],
+          stateReadable: true,
         },
       })
-    )
-    await page.route(
-      "**/api/spaces/share-browser/documents/page?*",
-      async (route) => {
-        const response = await route.fetch()
-        const body = await response.json()
-        body.page.sharing = { activeLinks: links.length, canCreate: true }
-        body.page.capabilities.sharing = true
-        await route.fulfill({ response, json: body })
-      }
-    )
-    await page.route(
-      /\/api\/shares\/links(?:\/[^/?]+)?(?:\?.*)?$/,
-      async (route) => {
-        const request = route.request()
-        if (new URL(request.url()).pathname.endsWith("/access")) {
-          const body = request.postDataJSON()
-          checks.push(body)
-          const grant = body.grant ?? initialGrant
-          await route.fulfill({
-            json: {
-              grant,
-              effectiveGrant: grant,
-              collections: {
-                deals: {
-                  version: 1,
-                  kind: "worktable.recordSchema",
-                  id: "deals",
-                  name: "Deals",
-                  fields: {
-                    name: { type: "text", name: "Name" },
-                    amount: { type: "number", name: "Amount" },
-                    secret: { type: "text", name: "Secret" },
-                  },
-                  createdAt: at,
-                  updatedAt: at,
-                  createdBy: "test",
-                  metadata: {},
-                },
-              },
-              counts: { deals: 2 },
-              sentences: ["Anyone with this link can read 2 Deals records."],
-              warnings: body.observe
-                ? [
-                    {
-                      code: "later_reads",
-                      message: "Later filters may need other fields.",
-                    },
-                  ]
-                : [],
-              issues:
-                Object.hasOwn(grant.collections, "gone") ||
-                grant.collections.deals?.fields.includes("removed-field")
-                  ? [
-                      {
-                        collectionId: "deals",
-                        message: "Some saved access is no longer available.",
-                      },
-                    ]
-                  : [],
-              stateReadable: !laterSchema,
-            },
-          })
-          return
-        }
-        if (request.method() === "GET") {
-          await route.fulfill({
-            json: {
-              links,
-              canCreate: true,
-              policy: { ...defaultSharingPolicy(), liveLinks: true },
-            },
-          })
-          return
-        }
-        const body = request.postDataJSON()
-        mutations.push(body)
-        const link: ShareLink = {
-          id: "lnk_aaaaaaaaaaaaaaaaaaaaaa",
-          spaceId: "share-browser",
-          documentId: "doc_status",
-          kind: "html",
-          path: "status-card",
-          title: "Status card",
-          label: String(body.label),
-          level: "view",
-          grant:
-            laterSchema && request.method() === "PATCH" && !body.grant
-              ? (() => {
-                  const saved = links[0]!.grant!
-                  return {
-                    ...saved,
-                    collections: {
-                      ...saved.collections,
-                      deals: {
-                        ...saved.collections.deals!,
-                        fields: [
-                          ...saved.collections.deals!.fields,
-                          "removed-field",
-                        ],
-                      },
-                      gone: { ...saved.collections.deals!, fields: [] },
-                    },
-                  }
-                })()
-              : (body.grant ?? links[0]?.grant),
-          createdBy: { id: "local:owner", name: "Owner" },
-          createdAt: at,
-          expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
-          hasPassword: false,
-          lastUsedAt: null,
-          status: "active",
-          tokenHint: "abcd",
-          canManage: true,
-          comments: {
-            acceptComments: true,
-            anonymousAllowed: false,
-            showSharerName: false,
-            visitorsSee: "own",
-            autoPaused: false,
-          },
-        }
-        links = [link]
-        await route.fulfill({
-          status: 201,
-          json: {
-            link,
-            url: "https://share.example.test/s/workspace/" + "a".repeat(43),
-          },
-        })
-      }
-    )
+    })
     await page.goto(appUrl("/spaces/share-browser/documents/status-card"), {
       waitUntil: "domcontentloaded",
     })
-    if (appearance.width < 640) {
-      await page
-        .locator("[data-worktable-app-header]")
-        .getByRole("button", { name: "Status card", exact: true })
-        .click()
-      await page
-        .getByRole("dialog", { name: "Page", exact: true })
-        .getByRole("button", { name: "Share", exact: true })
-        .click()
-    } else await page.getByRole("button", { name: "Share document" }).click()
-    const dialog = page.getByRole("dialog", { name: "Share document" })
-    await dialog.getByRole("switch", { name: "Live tool", exact: true }).click()
+    const openShare = async () => {
+      if (appearance.width < 640) {
+        await page
+          .locator("[data-worktable-app-header]")
+          .getByRole("button", { name: "Status card", exact: true })
+          .click()
+        await page
+          .getByRole("dialog", { name: "Page", exact: true })
+          .getByRole("button", { name: "Share", exact: true })
+          .click()
+      } else await page.getByRole("button", { name: "Share document" }).click()
+    }
+    await openShare()
+    const dialog = page.getByRole("dialog", { name: "Share “Status card”" })
+    const live = dialog.getByRole("button", { name: /^Live data/ })
+    await expect(live).toContainText("Off")
+    await live.click()
+    expect(checks).toHaveLength(0)
+    await dialog
+      .getByRole("switch", { name: "Show live data", exact: true })
+      .click()
+
+    // The refused check is asked again, then the suggested access is saved.
     await expect(
-      dialog.getByRole("heading", { name: "What this link opens" })
+      dialog.getByText("Visitors can read all 2 Deals, except:")
+    ).toBeVisible()
+    expect(checks).toHaveLength(2)
+    expect(checks[1]).toMatchObject({
+      observe: true,
+      linkId: "lnk_aaaaaaaaaaaaaaaaaaaaa0",
+    })
+    expect(mutations[0]?.body).toEqual({ grant: suggested })
+    await expect(live).toContainText("2 Deals")
+    const hidden = dialog.getByRole("list", { name: "Hidden from Deals" })
+    await expect(hidden.getByRole("listitem")).toHaveText(["Amount", "Secret"])
+    await expect(
+      dialog.getByText("Later filters may need other fields.")
     ).toBeVisible()
     await expect(
-      dialog.getByText("Anyone with this link can read 2 Deals records.")
-    ).toBeVisible()
-    expect(checks[0]?.observe).toBe(true)
+      dialog.getByRole("button", { name: "View as Visitor", exact: true })
+    ).toBeEnabled()
+    await dialog.screenshot({
+      path: testInfo.outputPath(`live-data-${appearance.colorScheme}.png`),
+    })
+
+    await dialog
+      .getByRole("button", { name: "Hide Fields", exact: true })
+      .click()
     await expect(
       dialog.getByRole("checkbox", { name: "Name", exact: true })
     ).toBeChecked()
     await dialog.getByRole("checkbox", { name: "Amount", exact: true }).click()
-    await dialog
-      .getByRole("checkbox", { name: "Read team saved state", exact: true })
-      .click()
-    await expect(
-      dialog.getByRole("button", { name: "Create link", exact: true })
-    ).toBeDisabled()
-    await dialog
-      .getByRole("button", { name: "Check access", exact: true })
-      .click()
-    await expect(
-      dialog.getByRole("button", { name: "Create link", exact: true })
-    ).toBeEnabled()
-    expect(checks[1]?.observe).toBe(true)
-    await expect(
-      dialog.getByText("Later filters may need other fields.")
-    ).toBeVisible()
-    if (appearance.width >= 640)
-      await expect(
-        dialog.getByRole("button", { name: "Close", exact: true })
-      ).toBeInViewport()
-    await dialog.screenshot({
-      path: testInfo.outputPath(`live-access-${appearance.colorScheme}.png`),
-    })
-    await dialog
-      .getByRole("button", { name: "Create link", exact: true })
-      .click()
-    await expect(
-      dialog.getByRole("button", { name: "View as visitor", exact: true })
-    ).toBeVisible()
-    expect(mutations[0]).not.toHaveProperty("expiresAt")
-    expect(
-      (mutations[0]?.grant as typeof initialGrant).collections.deals.fields
-    ).toEqual(["name", "amount"])
-    await dialog
-      .getByRole("button", { name: "Actions for Untitled link" })
-      .click()
-    await page.getByRole("menuitem", { name: "Edit Link" }).click()
-    await expect
-      .poll(() => checks.at(-1)?.linkId)
-      .toBe("lnk_aaaaaaaaaaaaaaaaaaaaaa")
-    laterSchema = true
-    await dialog.getByLabel("Label", { exact: true }).fill("Board")
     await dialog.getByRole("button", { name: "Save", exact: true }).click()
-    await expect(
-      dialog.getByRole("button", { name: "Save", exact: true })
-    ).toBeHidden()
-    expect(mutations[1]).not.toHaveProperty("grant")
-    await dialog.getByRole("button", { name: "Actions for Board" }).click()
-    await page.getByRole("menuitem", { name: "Edit Link" }).click()
-    const teamState = dialog.getByRole("checkbox", {
-      name: "Read team saved state",
-      exact: true,
+    await expect(hidden.getByRole("listitem")).toHaveText(["Secret"])
+    expect(
+      (mutations[1]?.body.grant as typeof suggested).collections.deals.fields
+    ).toEqual(["name", "amount"])
+
+    // Opened again, the saved access is checked once its section opens.
+    await dialog.getByRole("button", { name: "Done", exact: true }).click()
+    await openShare()
+    await expect(live).toContainText("On")
+    await live.click()
+    await expect(live).toContainText("2 Deals")
+    expect(checks.at(-1)).toMatchObject({
+      observe: false,
+      linkId: "lnk_aaaaaaaaaaaaaaaaaaaaa0",
     })
-    await expect(teamState).toBeChecked()
-    await expect(teamState).toBeEnabled()
-    await teamState.click()
     await dialog
-      .getByRole("checkbox", { name: "gone (unavailable)", exact: true })
+      .getByRole("switch", { name: "Show live data", exact: true })
       .click()
-    await dialog
-      .getByRole("checkbox", {
-        name: "removed-field (unavailable)",
-        exact: true,
-      })
-      .click()
-    await dialog
-      .getByRole("button", { name: "Check access", exact: true })
-      .click()
-    await expect(
-      dialog.getByRole("button", { name: "Save", exact: true })
-    ).toBeEnabled()
-    const finalGrant = checks.at(-1)!.grant as typeof initialGrant
-    expect(finalGrant.collections).not.toHaveProperty("gone")
-    expect(finalGrant.state).toBe("visitor")
+    await expect(live).toContainText("Off")
+    expect(mutations.at(-1)?.body).toEqual({ grant: null })
   })
 }

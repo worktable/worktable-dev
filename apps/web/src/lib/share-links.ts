@@ -136,17 +136,101 @@ export function shareLinkExpiry(link: ShareLink): ShareLinkDetail {
     : { text: date }
 }
 
+/** A link that hasn't been revoked or run out, even if the owner policy holds it back. */
+function current(link: ShareLink): boolean {
+  return link.status !== "revoked" && link.status !== "expired"
+}
+
+/**
+ * The link the share dialog leads with: the oldest current one without a
+ * label that the reader manages. Labelled links are made for someone and
+ * stay under More links.
+ */
+export function defaultShareLink(
+  links: readonly ShareLink[]
+): ShareLink | null {
+  let found: ShareLink | null = null
+  for (const link of links) {
+    if (link.label || !link.canManage || !current(link)) continue
+    if (!found || Date.parse(link.createdAt) < Date.parse(found.createdAt))
+      found = link
+  }
+  return found
+}
+
+/** Links other than the default that still open or may again. */
+export function otherCurrentLinkCount(
+  links: readonly ShareLink[],
+  defaultLink: ShareLink | null
+): number {
+  return links.filter((link) => link !== defaultLink && current(link)).length
+}
+
+/** "Expires in 14 days" up to two weeks out, "Expires Nov 23" after, "Never expires". */
+export function shareLinkExpiresText(
+  expiresAt: string | null,
+  now = Date.now()
+): string {
+  if (!expiresAt) return "Never expires"
+  const days = Math.ceil((Date.parse(expiresAt) - now) / DAY_MS)
+  if (days <= 0) return "Expires today"
+  if (days === 1) return "Expires tomorrow"
+  if (days <= 14) return `Expires in ${days} days`
+  return `Expires ${formatArchiveDate(expiresAt)}`
+}
+
+/**
+ * What the share dialog says under a link: "Password · Expires Nov 1 ·
+ * Opened today", or why it stopped. `opened` adds when it was last opened.
+ */
+export function shareLinkSummary(
+  link: ShareLink,
+  { opened = true, now = Date.now() }: { opened?: boolean; now?: number } = {}
+): ShareLinkDetail[] {
+  if (link.status === "revoked") return [{ text: "Revoked", stopped: true }]
+  const parts: ShareLinkDetail[] = []
+  if (link.hasPassword) parts.push({ text: "Password" })
+  if (link.status === "expired" && link.expiresAt)
+    parts.push({
+      text: `Expired ${formatArchiveDate(link.expiresAt)}`,
+      stopped: true,
+    })
+  else if (link.blockedBy !== "expiry-cap")
+    parts.push({ text: shareLinkExpiresText(link.expiresAt, now) })
+  if (link.status === "blocked" && link.blockedBy)
+    parts.push({ text: BLOCKED_LABELS[link.blockedBy], stopped: true })
+  if (link.level === "comment" && link.comments.autoPaused)
+    parts.push({ text: "Comments paused", stopped: true })
+  if (opened && link.lastUsedAt) {
+    const when = openedWhen(link.lastUsedAt, now)
+    parts.push({ text: `Opened ${when}` })
+  }
+  return parts
+}
+
 /**
  * An expiry choice: "never", a number of days from now, or "keep" to leave
  * an edited link's expiry as it is.
  */
 export type ShareLinkExpiry = string
 
-const EXPIRY_DAYS = [7, 30, 90]
+const EXPIRY_DAYS = [7, 14, 30, 90]
+const DEFAULT_EXPIRY_DAYS = 14
+
+/** A new link's expiry: two weeks, or the owner policy's longest if shorter. */
+export function defaultShareLinkExpiry(
+  policy: SharerPolicy | undefined
+): ShareLinkExpiry {
+  const cap = policy?.maxExpiryDays ?? null
+  return String(
+    cap === null ? DEFAULT_EXPIRY_DAYS : Math.min(DEFAULT_EXPIRY_DAYS, cap)
+  )
+}
 
 /**
- * Expiries within the owner policy's longest one, plus the edited link's own
- * date. A longest expiry that isn't among them is offered itself.
+ * Expiries within the owner policy's longest one, shortest first, plus the
+ * edited link's own date. A longest expiry that isn't among them is offered
+ * itself.
  */
 export function shareLinkExpiryChoices(
   policy: SharerPolicy | undefined,
@@ -155,15 +239,16 @@ export function shareLinkExpiryChoices(
   const cap = policy?.maxExpiryDays ?? null
   const days = EXPIRY_DAYS.filter((count) => cap === null || count <= cap)
   if (cap !== null && !days.includes(cap)) days.push(cap)
+  days.sort((a, b) => a - b)
   return [
     ...(editing?.expiresAt
       ? [{ value: "keep", label: formatArchiveDate(editing.expiresAt) }]
       : []),
-    ...(cap === null ? [{ value: "never", label: "Never" }] : []),
     ...days.map((count) => ({
       value: String(count),
       label: count === 1 ? "1 day" : `${count} days`,
     })),
+    ...(cap === null ? [{ value: "never", label: "Never" }] : []),
   ]
 }
 

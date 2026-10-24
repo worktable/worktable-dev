@@ -5474,7 +5474,7 @@
   {
     "name": "worktable_drawings_write",
     "title": "Edit Worktable drawings",
-    "description": "Create drawings or apply atomic typed edits, preview proposed edits, and undo/redo a specific batch. Requires documents:read and documents:write. Returns a saved-revision preview by default. Reuse requestId only when retrying the same request. Change a lifetime later with worktable_documents_write action set_lifetime.",
+    "description": "Create drawings or apply atomic typed edits, preview proposed edits, and undo/redo a specific batch. Requires documents:read and documents:write. Returns a saved-revision preview by default. Reuse requestId only when retrying the same request. Change a lifetime later with worktable_files_write action set_lifetime.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -8674,7 +8674,7 @@
   {
     "name": "worktable_html_write",
     "title": "Write Worktable HTML Docs",
-    "description": "Create, update, rename, move, archive, or restore Worktable HTML Docs. Create/update may request an opt-in PNG preview; preview failure never undoes a successful save. Change a lifetime later with worktable_documents_write action set_lifetime.",
+    "description": "Create, update, rename, move, archive, or restore Worktable HTML Docs. Create/update may request an opt-in PNG preview; preview failure never undoes a successful save. Change a lifetime later with worktable_files_write action set_lifetime.",
     "inputSchema": {
       "type": "object",
       "properties": {

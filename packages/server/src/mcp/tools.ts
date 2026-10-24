@@ -43,7 +43,7 @@ import {
   MermaidInput,
 } from "./schemas.ts"
 import { dispatchOperation } from "./dispatcher.ts"
-import { PREVIEW_TOOL_NAMES } from "./preview-names.ts"
+import { PREVIEW_TOOL_NAMES, withPreviewToolNames } from "./preview-names.ts"
 import { registerCompanyKnowledgeTools } from "./company-knowledge.ts"
 import {
   assertPublicOperationOutput,
@@ -276,9 +276,13 @@ function toolMetadata(
     TOOL_TITLES[toolName]
   return {
     title,
+    // On the preview surface, descriptions name the tools it offers.
     description:
-      (surface === "preview" ? PREVIEW_TOOL_DESCRIPTIONS[toolName] : undefined) ??
-      TOOL_DESCRIPTIONS[toolName],
+      surface === "preview"
+        ? withPreviewToolNames(
+            PREVIEW_TOOL_DESCRIPTIONS[toolName] ?? TOOL_DESCRIPTIONS[toolName]
+          )
+        : TOOL_DESCRIPTIONS[toolName],
     // Directory checks such as Anthropic's read the display name from
     // annotations.title, so it repeats the top-level title.
     annotations: { title, ...annotations },

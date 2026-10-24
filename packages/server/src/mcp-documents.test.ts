@@ -194,6 +194,11 @@ describe("files for agents on the preview surface", () => {
       )
       expect(spec).not.toContain("worktable_documents_read")
       expect(spec).not.toContain("worktable_documents_write")
+      const descriptions = JSON.stringify(
+        (await connected.listTools()).tools.map((tool) => tool.description)
+      )
+      expect(descriptions).not.toContain("worktable_documents_read")
+      expect(descriptions).not.toContain("worktable_documents_write")
 
       // Overwriting a CSV says what changed, row by row.
       const replaced = await write({
@@ -215,6 +220,37 @@ describe("files for agents on the preview surface", () => {
           rowsRemoved: 1,
         },
       })
+
+      // A credential that can't read the file isn't told what was in it.
+      const writeOnly = await connect(["documents:write"], "preview")
+      const blind = await writeOnly.callTool({
+        name: "worktable_files_write",
+        arguments: {
+          request: {
+            action: "replace",
+            spaceId,
+            path: "data/feedback.csv",
+            source: "id,score\n010,1\n",
+            expectedRevision: (replaced.structuredContent as { sourceRevision: string })
+              .sourceRevision,
+          },
+        },
+      })
+      expect(blind.isError).not.toBe(true)
+      expect(blind.structuredContent).not.toHaveProperty("changes")
+
+      // Bytes that aren't UTF-8 get no summary rather than a wrong one.
+      const latin1 = await write({
+        action: "replace",
+        spaceId,
+        path: "data/feedback.csv",
+        source: Buffer.from("id,score\ncaf\xE9,5\n", "latin1").toString("base64"),
+        encoding: "base64",
+        expectedRevision: (blind.structuredContent as { sourceRevision: string })
+          .sourceRevision,
+      })
+      expect(latin1.isError).not.toBe(true)
+      expect(latin1.structuredContent).not.toHaveProperty("changes")
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
       else process.env["WORKTABLE_FILES_PREVIEW"] = previous

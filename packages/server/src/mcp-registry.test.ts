@@ -16,6 +16,7 @@ import {
   PREVIEW_INPUT_SCHEMAS,
   PREVIEW_TOOL_DESCRIPTIONS,
   PREVIEW_TOOL_NAMES,
+  TOOL_DESCRIPTIONS,
 } from "./mcp/tools.ts"
 import {
   AnnotationsWriteInput,
@@ -401,6 +402,16 @@ describe("preview tool surface", () => {
       Object.keys(PREVIEW_TOOL_DESCRIPTIONS)
         .concat(Object.keys(PREVIEW_INPUT_SCHEMAS))
         .concat(Object.keys(PREVIEW_TOOL_NAMES))
+        // Descriptions that name a renamed tool name its preview name.
+        .concat(
+          Object.entries(TOOL_DESCRIPTIONS)
+            .filter(([, description]) =>
+              Object.keys(PREVIEW_TOOL_NAMES).some((name) =>
+                description.includes(name)
+              )
+            )
+            .map(([name]) => name)
+        )
         .filter((name, index, all) => all.indexOf(name) === index)
         .map(previewName)
         .sort()

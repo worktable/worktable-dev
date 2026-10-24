@@ -1319,8 +1319,11 @@ async function _dispatchOperationInner(
       )
       // With the preview, overwriting a CSV or TSV says what changed, so an
       // agent sees a dropped row or a changed header at once.
+      // The summary reads the old table, so it needs read access too.
       const tableBefore =
-        context.surface === "preview" && DELIMITED_NAME.test(args["path"] as string)
+        context.surface === "preview" &&
+        DELIMITED_NAME.test(args["path"] as string) &&
+        hasScope(identity.scopes, "documents:read")
           ? await readRegisteredDocumentSource({
               spaceId: args["spaceId"] as string,
               path: args["path"] as string,

@@ -81,11 +81,21 @@ export function delimitedChanges(
     return null
   }
   const delimiter = delimiterForFilename(path)
-  const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes)
-  const read = (bytes: Uint8Array) =>
-    parseDelimitedText(decode(bytes), delimiter, { maxRows: CHANGES_MAX_ROWS })
-  const old = read(before)
-  const next = read(after)
+  // Bytes that aren't UTF-8 could read as equal when they differ, so such
+  // tables get no summary rather than a wrong one.
+  const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
+  let old: ReturnType<typeof parseDelimitedText>
+  let next: ReturnType<typeof parseDelimitedText>
+  try {
+    old = parseDelimitedText(decoder.decode(before), delimiter, {
+      maxRows: CHANGES_MAX_ROWS,
+    })
+    next = parseDelimitedText(decoder.decode(after), delimiter, {
+      maxRows: CHANGES_MAX_ROWS,
+    })
+  } catch {
+    return null
+  }
   if (old.rowCount > CHANGES_MAX_ROWS || next.rowCount > CHANGES_MAX_ROWS) {
     return null
   }

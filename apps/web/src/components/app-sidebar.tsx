@@ -2035,10 +2035,13 @@ function DocTreeItem({
   const archived = node.isFolder ? folderArchived : exactDocumentArchived
   const folderKey = `${spaceId}:${node.path}`
   const revealCurrent = useContext(RevealCurrent)
+  // A Doc that holds files or sub-Docs opens without unfolding them, as a
+  // page does; they unfold when one of them is open, or from the chevron.
+  const routeOpens =
+    (containsCurrent && revealCurrent) || (isActive && !hasDocumentAtFolder)
   const [open, setOpenStored] = useState(
     () =>
-      (containsCurrent && revealCurrent) ||
-      isActive ||
+      routeOpens ||
       (node.isFolder && (rememberedOpen("folder", folderKey) ?? false))
   )
   const setOpenState = (next: boolean) => {
@@ -2059,7 +2062,7 @@ function DocTreeItem({
   useEffect(() => {
     if (
       node.isFolder &&
-      ((containsCurrent && revealCurrent) || isActive) &&
+      routeOpens &&
       !open &&
       !userCollapsedNodeRef.current
     ) {
@@ -2069,7 +2072,7 @@ function DocTreeItem({
     if (!containsCurrent && !isActive) {
       userCollapsedNodeRef.current = false
     }
-  }, [containsCurrent, isActive, open, node.isFolder, revealCurrent])
+  }, [containsCurrent, isActive, open, node.isFolder, routeOpens])
 
   const folderRowRef = useRef<HTMLDivElement>(null)
   const handleToggleNode = (nextOpen: boolean) => {
@@ -2275,11 +2278,12 @@ function DocTreeItem({
           >
             {dropIndicator}
             {hasDocumentAtFolder ? (
-              // A document can also own a path with descendants: its icon folds
-              // them, and its name opens the document and unfolds them.
+              // A document can also own a path with descendants. It keeps its
+              // own icon, which turns into a chevron on hover to fold them;
+              // its name opens the document.
               <div className="flex min-h-10 min-w-0 flex-1 items-center sm:min-h-0">
                 <CollapsibleTrigger
-                  className="flex h-full shrink-0 items-center py-2 pr-1 pl-3"
+                  className="group/fold relative flex h-full shrink-0 items-center py-2 pr-1 pl-3"
                   render={
                     <button
                       type="button"
@@ -2289,17 +2293,17 @@ function DocTreeItem({
                 >
                   <DocumentNodeIcon
                     node={node}
-                    className={`size-4 shrink-0 ${node.kind === "conflict" ? "text-sidebar-foreground/40" : "text-sidebar-primary/60"}`}
+                    className={`size-4 shrink-0 transition-opacity sm:group-hover/folder:opacity-0 group-focus-visible/fold:opacity-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
+                  />
+                  <ChevronRight
+                    aria-hidden
+                    className={`absolute left-3 size-4 text-sidebar-foreground/60 opacity-0 transition-[opacity,transform] sm:group-hover/folder:opacity-100 group-focus-visible/fold:opacity-100 ${open ? "rotate-90" : ""}`}
                   />
                 </CollapsibleTrigger>
                 <SpecializedDocumentLink
                   spaceId={spaceId}
                   path={node.path}
-                  onClick={() => {
-                    // The page changes too, so this opens without a transition.
-                    setOpenState(true)
-                    onNavigate()
-                  }}
+                  onClick={onNavigate}
                   className={`flex min-w-0 flex-1 items-center py-2 pr-3 pl-1 text-sm ${
                     isActive
                       ? "font-medium text-sidebar-primary"

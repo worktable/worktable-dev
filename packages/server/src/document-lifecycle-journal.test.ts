@@ -36,7 +36,11 @@ import {
   mintDocumentId,
   updateDocumentInventory,
 } from "./document-inventory.ts"
-import { renameDocAndSync, renameDocsByPrefixAndSync } from "./doc-rename.ts"
+import {
+  renameDocAndSync,
+  renameDocExactlyAndSync,
+  renameDocsByPrefixAndSync,
+} from "./doc-rename.ts"
 import { recordDocAlias, resolveDocAlias } from "./doc-aliases.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
 import { DOCUMENT_STORAGE_PROFILE_IDS } from "./document-storage-profile.ts"
@@ -1014,7 +1018,7 @@ describe("recoverable document lifecycle", () => {
     )
 
     expect(
-      (await renameDocAndSync("space", "rename-parent", "rename-target")).error
+      (await renameDocExactlyAndSync("space", "rename-parent", "rename-target")).error
     ).toBeNull()
     expect(await listDocVersions("space", "rename-parent")).toEqual([])
     expect(await listDocVersions("space", "rename-target")).toEqual(
@@ -1035,7 +1039,7 @@ describe("recoverable document lifecycle", () => {
 
     expect(
       (
-        await renameDocAndSync(
+        await renameDocExactlyAndSync(
           "space",
           "provisional-parent",
           "provisional-target"

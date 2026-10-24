@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import {
   access,
   mkdir,
+  readdir,
   mkdtemp,
   readFile,
   rm,
@@ -21,6 +22,9 @@ import { ownerIdentity } from "./auth.ts"
 import { createAnnotation } from "./annotation-store.ts"
 import { HOSTED_BROWSER_RUNTIME_SCOPES } from "./hosted-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
+import { renameDocAndSync } from "./doc-rename.ts"
+import { resolveDocAlias } from "./doc-aliases.ts"
+import { moveHtmlDocument } from "./html-document-move.ts"
 import { getSpaceLinkGraph } from "./link-graph.ts"
 import {
   readRegisteredDocumentSource,
@@ -1189,6 +1193,114 @@ describe("format-neutral document route", () => {
       expect(
         ((await page.json()) as { page: { backlinks?: unknown } }).page.backlinks
       ).toEqual([{ path: "notes/readme", context: "Signup error", count: 1 }])
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
+
+  it("moves a Doc together with its folder of sub-Docs and files", async () => {
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    try {
+      const docs = join(root, "spaces", spaceId, "docs")
+      await writeDoc(spaceId, "notes/readme/details", "# Details", {
+        updatedBy: "test",
+        source: "rest-api",
+      })
+      await writeFile(join(docs, "notes", "readme", "error.png"), "png")
+      noteSpaceChanged(spaceId)
+
+      // A child renamed before the move.
+      await writeDoc(spaceId, "notes/readme/draft", "# Draft", {
+        updatedBy: "test",
+        source: "rest-api",
+      })
+      expect(
+        (await renameDocAndSync(spaceId, "notes/readme/draft", "notes/readme/final"))
+          .error
+      ).toBeNull()
+
+      // A Docs-only credential can't move the file in the Doc's folder.
+      expect(
+        await renameDocAndSync(spaceId, "notes/readme", "guides/start", {
+          scopes: ["docs:write"],
+        })
+      ).toMatchObject({ forbidden: true, renamed: [] })
+      expect(
+        await readFile(join(docs, "notes", "readme", "error.png"), "utf8")
+      ).toBe("png")
+
+      expect(
+        (await renameDocAndSync(spaceId, "notes/readme", "guides/start")).error
+      ).toBeNull()
+      expect(await readFile(join(docs, "guides", "start.md"), "utf8")).toBe(
+        "# Readme"
+      )
+      expect(
+        await readFile(join(docs, "guides", "start", "details.md"), "utf8")
+      ).toBe("# Details")
+      expect(
+        await readFile(join(docs, "guides", "start", "error.png"), "utf8")
+      ).toBe("png")
+      expect(
+        await readdir(join(docs, "notes", "readme"), { recursive: true }).catch(
+          () => "gone"
+        )
+      ).toEqual("gone")
+
+      // A folder with no Doc of its own is not a Doc's: nothing moves.
+      const move = (path: string, to: string) =>
+        app().request(`/api/spaces/${spaceId}/documents/move`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path, to }),
+        })
+      expect((await move("guides", "elsewhere")).status).toBe(404)
+      expect(
+        await readFile(join(docs, "guides", "start", "error.png"), "utf8")
+      ).toBe("png")
+
+      // Moving back to where it was reclaims the old path, and keeps the
+      // way to a child renamed in between.
+      expect(
+        (await renameDocAndSync(spaceId, "guides/start/details", "guides/start/more"))
+          .error
+      ).toBeNull()
+      expect((await move("guides/start", "notes/readme")).status).toBe(200)
+      expect((await resolveDocAlias(spaceId, "notes/readme/details")).path).toBe(
+        "notes/readme/more"
+      )
+      expect((await resolveDocAlias(spaceId, "notes/readme/draft")).path).toBe(
+        "notes/readme/final"
+      )
+
+      // An HTML-only credential can't move the Doc in an HTML Doc's folder.
+      const board = await writeWidget(
+        spaceId,
+        { ...htmlDocument(), id: "boards/plan", name: "Plan" },
+        "<h1>Plan</h1>"
+      )
+      board.release?.()
+      await writeDoc(spaceId, "boards/plan/notes", "# Notes", {
+        updatedBy: "test",
+        source: "rest-api",
+      })
+      noteSpaceChanged(spaceId)
+      expect(
+        await moveHtmlDocument(spaceId, "boards/plan", "boards/later", {
+          scopes: ["widgets:write"],
+        })
+      ).toMatchObject({ ok: false, kind: "forbidden" })
+      expect(
+        await readFile(join(docs, "boards", "plan", "notes.md"), "utf8")
+      ).toBe("# Notes")
+      expect(
+        await readFile(join(docs, "notes", "readme", "error.png"), "utf8")
+      ).toBe("png")
+      expect(await readFile(join(docs, "notes", "readme.md"), "utf8")).toBe(
+        "# Readme"
+      )
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
       else process.env["WORKTABLE_FILES_PREVIEW"] = previous

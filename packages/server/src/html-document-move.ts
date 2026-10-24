@@ -36,7 +36,7 @@ export type MoveHtmlDocumentResult =
     }
   | {
       ok: false
-      kind: "not-found" | "conflict"
+      kind: "not-found" | "conflict" | "forbidden"
       error: string
     }
 
@@ -48,7 +48,9 @@ export type MoveHtmlDocumentResult =
 export async function moveHtmlDocument(
   spaceId: string,
   from: string,
-  to: string
+  to: string,
+  /** A credential's scopes, which bound what moving the Doc's folder may move. */
+  options: { scopes?: readonly string[] } = {}
 ): Promise<MoveHtmlDocumentResult> {
   const storageV2 = await usesHtmlDocumentStorageV2()
   if (
@@ -77,7 +79,12 @@ export async function moveHtmlDocument(
 
   if (storageV2) {
     try {
-      const moved = await moveRegisteredDocument({ spaceId, path: from, to })
+      const moved = await moveRegisteredDocument({
+        spaceId,
+        path: from,
+        to,
+        ...(options.scopes ? { scopes: options.scopes } : {}),
+      })
       invalidateSearchIndex({ spaceId })
       const { data: widget } = await readWidget(spaceId, to)
       if (widget) {
@@ -99,7 +106,10 @@ export async function moveHtmlDocument(
       if (error instanceof DocumentWriteError) {
         return {
           ok: false,
-          kind: error.reason === "not-found" ? "not-found" : "conflict",
+          kind:
+            error.reason === "not-found" || error.reason === "forbidden"
+              ? error.reason
+              : "conflict",
           error: error.message,
         }
       }

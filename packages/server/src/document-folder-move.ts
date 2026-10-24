@@ -1,6 +1,10 @@
+import { readdir, rmdir } from "node:fs/promises"
+import { join, resolve } from "node:path"
 import { CanonicalIdSchema } from "@worktable/types"
 import { noteDocumentActivity } from "./document-activity.ts"
-import { buildDocumentCatalog } from "./document-catalog.ts"
+import { buildDocumentCatalog, type DocumentCatalog } from "./document-catalog.ts"
+import { readDocumentCatalogSnapshot } from "./document-query.ts"
+import { hasScope } from "./token-store.ts"
 import {
   analyzeDocumentPath,
   documentPathKeyIsAtOrBelow,
@@ -45,7 +49,7 @@ export type MoveDocumentFolderResult =
     }
   | {
       ok: false
-      kind: "not-found" | "conflict"
+      kind: "not-found" | "conflict" | "forbidden"
       error: string
     }
 
@@ -258,11 +262,98 @@ async function publishFolderMove(
   await notifyWorkspaceChangeAndWait({ type: "documentCorpus", spaceId })
 }
 
+/** Whether a catalog lists anything below `path`: sub-Docs or files. */
+export function catalogHasDocumentsBelow(
+  catalog: DocumentCatalog,
+  path: string
+): boolean {
+  const key = analyzeDocumentPath(path).comparisonKey
+  if (!key) return false
+  return catalog.entries.some((entry) => {
+    const entryKey =
+      entry.kind === "conflict"
+        ? entry.pathKey
+        : analyzeDocumentPath(entry.descriptor.path).comparisonKey
+    return Boolean(entryKey && documentPathKeyIsBelow(entryKey, key))
+  })
+}
+
+/**
+ * The formats a credential may move, by its scopes: Docs with docs:write,
+ * HTML Docs with widgets:write, anything with documents:write. Undefined
+ * when nothing limits it, as for the app's own moves, which pass no scopes.
+ */
+export function formatsWritableWith(
+  scopes: readonly string[] | undefined
+): ReadonlySet<string> | undefined {
+  if (!scopes || hasScope([...scopes], "documents:write")) return undefined
+  const formats = new Set<string>()
+  if (hasScope([...scopes], "docs:write")) {
+    formats.add(BUILTIN_DOCUMENT_FORMATS.markdown)
+    formats.add(BUILTIN_DOCUMENT_FORMATS.richText)
+  }
+  if (hasScope([...scopes], "widgets:write")) {
+    formats.add(BUILTIN_DOCUMENT_FORMATS.html)
+  }
+  return formats
+}
+
+/**
+ * Whether a Doc has a folder of its own to move with it: the Doc exists and
+ * sub-Docs or files sit in the folder named after it. A folder with no Doc
+ * of its own is not a Doc's, and a move naming it finds no Doc. Reads the
+ * Space's snapshot; a single-Doc move checks again under its lock.
+ */
+export async function hasDocumentsBelow(
+  spaceId: string,
+  path: string,
+  options: { lockHeld?: boolean } = {}
+): Promise<boolean> {
+  const key = analyzeDocumentPath(path).comparisonKey
+  if (!key) return false
+  // A Space that can't be read here is refused by the move itself, with its
+  // own reason.
+  const catalog = await readDocumentCatalogSnapshot(spaceId, options).catch(
+    () => null
+  )
+  if (!catalog) return false
+  const isDocument = catalog.entries.some(
+    (entry) =>
+      entry.kind === "document" &&
+      analyzeDocumentPath(entry.descriptor.path).comparisonKey === key
+  )
+  return isDocument && catalogHasDocumentsBelow(catalog, path)
+}
+
+/**
+ * Remove the folders a move left empty, deepest first, so the Space's folder
+ * matches what it lists. A folder with anything still in it stays.
+ */
+async function removeEmptiedFolders(directory: string): Promise<void> {
+  let entries
+  try {
+    entries = await readdir(directory, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory() && !entry.isSymbolicLink()) {
+      await removeEmptiedFolders(join(directory, entry.name))
+    }
+  }
+  await rmdir(directory).catch(() => undefined)
+}
+
 /** Move one bounded mixed-format subtree as a single durable generation. */
 export async function moveDocumentFolder(
   spaceId: string,
   fromPrefix: string,
-  toPrefix: string
+  toPrefix: string,
+  /**
+   * The formats the caller may move. Checked on the plan, which the move
+   * confirms under its lock, so nothing else slips in.
+   */
+  options: { formats?: ReadonlySet<string> } = {}
 ): Promise<MoveDocumentFolderResult> {
   let planned: PlannedFolderMove[] | MoveDocumentFolderResult
   try {
@@ -278,6 +369,15 @@ export async function moveDocumentFolder(
     throw error
   }
   if (!Array.isArray(planned)) return planned
+  const { formats } = options
+  if (formats && planned.some((move) => !formats.has(move.formatId))) {
+    return {
+      ok: false,
+      kind: "forbidden",
+      error:
+        "This folder holds documents this access can't move. Moving it needs documents:write access.",
+    }
+  }
   if (fromPrefix === toPrefix) {
     return {
       ok: true,
@@ -325,6 +425,9 @@ export async function moveDocumentFolder(
         logError(error)
       )
     }
+    await removeEmptiedFolders(
+      resolve(getWorkspaceRoot(), "spaces", spaceId, "docs", ...fromPrefix.split("/"))
+    )
     return {
       ok: true,
       from: fromPrefix,

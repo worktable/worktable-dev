@@ -208,8 +208,9 @@ function documentWriteAttribution(principal: {
   return { actor: "system", source: "system" }
 }
 
-function documentWriteStatus(error: DocumentWriteError): 400 | 404 | 409 {
+function documentWriteStatus(error: DocumentWriteError): 400 | 403 | 404 | 409 {
   if (error.reason === "not-found") return 404
+  if (error.reason === "forbidden") return 403
   if (error.reason === "invalid") return 400
   return 409
 }
@@ -958,6 +959,7 @@ documentsRouter.post("/move", requireScope("documents:write"), async (c) => {
         spaceId: c.req.param("spaceId") ?? "",
         path: parsed.data.path,
         to: parsed.data.to,
+        scopes: c.get("identity")?.scopes ?? [],
       })),
     })
   } catch (error) {

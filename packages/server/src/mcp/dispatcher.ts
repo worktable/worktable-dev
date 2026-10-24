@@ -1320,6 +1320,7 @@ async function _dispatchOperationInner(
         spaceId: args["spaceId"] as string,
         path: args["path"] as string,
         to: args["to"] as string,
+        scopes: identity.scopes,
       })
       return {
         ok: true,
@@ -2024,7 +2025,9 @@ async function _dispatchOperationInner(
       const spaceId = args["spaceId"] as string
       const widgetId = args["widgetId"] as string
       const newPath = args["newPath"] as string
-      const result = await moveHtmlDocument(spaceId, widgetId, newPath)
+      const result = await moveHtmlDocument(spaceId, widgetId, newPath, {
+        scopes: identity.scopes,
+      })
       if (!result.ok) throw new Error(result.error)
       return {
         widgetId: result.to,
@@ -2732,7 +2735,9 @@ async function _dispatchOperationInner(
       const spaceId = args["spaceId"] as string
       const oldPath = args["oldPath"] as string
       const newPath = args["newPath"] as string
-      const outcome = await renameDocAndSync(spaceId, oldPath, newPath)
+      const outcome = await renameDocAndSync(spaceId, oldPath, newPath, {
+        scopes: identity.scopes,
+      })
       if (outcome.error) throw new Error(outcome.error)
       const move = outcome.renamed[0]!
       return { ok: true, oldPath: move.from, newPath: move.to }

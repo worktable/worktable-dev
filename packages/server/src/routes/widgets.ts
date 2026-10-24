@@ -619,10 +619,18 @@ async function handleMoveWidget(c: Context, spaceId: string, widgetId: string) {
   ) {
     return c.json({ error: "New HTML doc path is invalid", code: "VALIDATION_ERROR" }, 400);
   }
-  const result = await moveHtmlDocument(spaceId, widgetId, newPath);
+  const result = await moveHtmlDocument(spaceId, widgetId, newPath, {
+    scopes: c.get("identity")?.scopes ?? [],
+  });
   if (!result.ok) {
-    const status = result.kind === "not-found" ? 404 : 409;
-    const code = result.kind === "not-found" ? "NOT_FOUND" : "CONFLICT";
+    const status =
+      result.kind === "not-found" ? 404 : result.kind === "forbidden" ? 403 : 409;
+    const code =
+      result.kind === "not-found"
+        ? "NOT_FOUND"
+        : result.kind === "forbidden"
+          ? "FORBIDDEN"
+          : "CONFLICT";
     return c.json({ error: result.error, code }, status);
   }
   return c.json({

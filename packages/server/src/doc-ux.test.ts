@@ -668,9 +668,9 @@ describe("doc UX routes", () => {
       expect(onDisk.data?.settings["docOrder"]).toEqual(["gamma", "alpha"]);
     });
 
-    it("exact doc rename leaves a same-named folder's children untouched", async () => {
-      // "guide" is BOTH a doc and a folder; renaming the doc must not
-      // rewrite order entries for guide/* (those files do not move).
+    it("doc rename moves the Doc's folder and its order entries with it", async () => {
+      // "guide" is BOTH a doc and a folder; the folder is the Doc's, so its
+      // children move with it and keep their place in the order.
       await req(app, "PUT", "/api/spaces/doc-ux-space/docs/guide", { content: [] });
       await req(app, "PUT", "/api/spaces/doc-ux-space/docs/guide/intro", { content: [] });
       await req(app, "PUT", "/api/spaces/doc-ux-space/doc-order", {
@@ -683,7 +683,7 @@ describe("doc UX routes", () => {
       });
 
       const onDisk = await readSpace("doc-ux-space");
-      expect(onDisk.data?.settings["docOrder"]).toEqual(["manual", "guide/intro"]);
+      expect(onDisk.data?.settings["docOrder"]).toEqual(["manual", "manual/intro"]);
     });
 
     it("MCP rename migrates order through the shared lifecycle", async () => {

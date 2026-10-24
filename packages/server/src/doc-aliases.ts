@@ -769,6 +769,59 @@ export function prepareDocAliasBatch(
 }
 
 /**
+ * The aliases left once a folder moves back to a former path. Aliases at or
+ * below the destination that lead into the moving folder now lead where the
+ * folder goes, so a child renamed at any point stays found; one that would
+ * lead to itself retires, as its path becomes real again. A retiring folder
+ * alias also carried the redirects inside the folder; those carry over to
+ * the reclaimed path. Any other alias stays and still reserves its path.
+ */
+export function aliasesReclaimedByFolderMove(
+  aliases: DocAliases,
+  fromPrefix: string,
+  toPrefix: string
+): DocAliases {
+  const fromKey = analyzeDocumentPath(fromPrefix).comparisonKey
+  const toKey = analyzeDocumentPath(toPrefix).comparisonKey
+  if (!fromKey || !toKey) return aliases
+  const keyOf = (path: string) => analyzeDocumentPath(path).comparisonKey
+  const resolve = createDocAliasResolver(aliases)
+  const inside = (path: string | null, prefixKey: string) => {
+    const key = path ? keyOf(path) : null
+    return Boolean(key && documentPathKeyIsAtOrBelow(key, prefixKey))
+  }
+  const remap = (path: string) =>
+    inside(path, fromKey) ? `${toPrefix}${path.slice(fromPrefix.length)}` : path
+  const reclaimed = (source: string) =>
+    inside(source, toKey) && inside(resolve(source), fromKey)
+
+  const next: DocAliases = {
+    exact: Object.create(null) as Record<string, string>,
+    prefixes: Object.create(null) as Record<string, string>,
+  }
+  const keep = (kind: keyof DocAliases, source: string, target: string) => {
+    if (keyOf(source) === keyOf(target)) return
+    if (source in next.exact || source in next.prefixes) return
+    next[kind][source] = target
+  }
+  for (const kind of ["exact", "prefixes"] as const) {
+    for (const [source, target] of Object.entries(aliases[kind])) {
+      keep(kind, source, reclaimed(source) ? remap(target) : target)
+    }
+  }
+  for (const [retired, target] of Object.entries(aliases.prefixes)) {
+    if (!reclaimed(retired)) continue
+    for (const kind of ["exact", "prefixes"] as const) {
+      for (const [source, inner] of Object.entries(aliases[kind])) {
+        if (!source.startsWith(`${target}/`)) continue
+        keep(kind, `${retired}${source.slice(target.length)}`, remap(inner))
+      }
+    }
+  }
+  return next
+}
+
+/**
  * Prepare the exact alias change for one document move. A destination exact
  * alias may be reclaimed only when it already resolves to this document; a
  * prefix alias still owns a whole subtree and therefore remains reserved.

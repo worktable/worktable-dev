@@ -410,7 +410,7 @@ describe("linked request contract", () => {
       expect(parses(grant, "POST", path)).toBe(false)
   })
 
-  it("takes capability names Cloud doesn't know yet, and no other new heartbeat field", () => {
+  it("takes capability names Cloud doesn't know yet and an http(s) open URL, and no other new heartbeat field", () => {
     const heartbeat = {
       workspaceEpoch: "epoch",
       bootSequence: 1,
@@ -424,7 +424,18 @@ describe("linked request contract", () => {
       ...heartbeat,
       capabilities,
     })
+    for (const openUrl of [
+      "http://127.0.0.1:43110",
+      "https://worktable.example.com",
+    ])
+      expect(LinkedHeartbeat.parse({ ...heartbeat, openUrl })).toEqual({
+        ...heartbeat,
+        openUrl,
+      })
     for (const invalid of [
+      { ...heartbeat, openUrl: "javascript:alert(1)" },
+      { ...heartbeat, openUrl: "127.0.0.1:43110" },
+      { ...heartbeat, openUrl: `https://example.com/${"a".repeat(2048)}` },
       { ...heartbeat, capabilities: ["Share Unlock"] },
       {
         ...heartbeat,

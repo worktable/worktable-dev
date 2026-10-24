@@ -52,6 +52,26 @@ export const LinkedHeartbeat = z
       .array(z.string().regex(/^[a-z][a-z0-9-]{0,63}$/))
       .max(32)
       .optional(),
+    /**
+     * Where the owner opens this Worktable on its device: the Workspace URL
+     * from Settings, else the local address. Cloud links to it; it is never
+     * a route into the Worktable.
+     */
+    openUrl: z
+      .string()
+      .max(2048)
+      .refine(
+        (value) => {
+          try {
+            const url = new URL(value)
+            return url.protocol === "http:" || url.protocol === "https:"
+          } catch {
+            return false
+          }
+        },
+        { message: "must be an http(s) URL" }
+      )
+      .optional(),
   })
   .strict()
 

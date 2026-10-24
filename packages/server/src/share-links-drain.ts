@@ -14,7 +14,7 @@ import {
   ensureShareUnlockSecret,
 } from "./share-links-store.ts"
 import {
-  documentSharesFileExists,
+  documentSharesToMove,
   readStoredDocumentShares,
   removeMovedDocumentShares,
   type StoredDocumentShare,
@@ -101,7 +101,7 @@ export function drainV1ShareLinks(): Promise<void> {
 async function drain(): Promise<void> {
   // A Worktable that never shared needs no store: one made now would keep a
   // later recovery from bringing back its owner policy.
-  if (!shareLinksStoreExists() && !documentSharesFileExists()) return
+  if (!shareLinksStoreExists() && !(await documentSharesToMove())) return
   // Legacy HTML needs a frame ticket while the asynchronous move is pending.
   // Prepare its secret before yielding; visitor GETs never create it.
   ensureShareUnlockSecret()

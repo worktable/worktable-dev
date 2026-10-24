@@ -1261,6 +1261,24 @@ describe("moving today's links into links v2", () => {
     return await createDocumentShare({ kind, spaceId: "space", artifactKey })
   }
 
+  it("makes no store for a Worktable whose links aren't in the shared file", async () => {
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    // Every Worktable on the machine sees the file older releases shared. One
+    // whose links aren't in it gets no store, so a later recovery can still
+    // restore its owner policy.
+    await writeFile(
+      join(appDir, "document-shares.json"),
+      JSON.stringify({
+        type: "worktable.document-shares",
+        version: 1,
+        shares: [{ token: "O".repeat(43), kind: "doc", spaceId: "space", artifactKey: "plan", workspaceEpoch: "A".repeat(43), createdAt: "2026-10-01T00:00:00.000Z" }],
+      }),
+      "utf8"
+    )
+    await drainV1ShareLinks()
+    expect(existsSync(shareLinksDatabasePath())).toBe(false)
+  })
+
   it("moves links from the file older releases shared between Worktables", async () => {
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     await writeDoc("space", "plan", "# Plan")

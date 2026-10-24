@@ -441,11 +441,16 @@ export interface StoredDocumentShare extends DocumentShare {
 
 /** Whether an earlier version ever wrote the file. */
 /**
- * Whether this Worktable may have links to move: its own file, or the file
- * older releases shared between Worktables, which the move claims from.
+ * Whether this Worktable has earlier links to move. The file older releases
+ * shared between Worktables exists for every Worktable on the machine, so
+ * this Worktable's links are claimed out of it first, and only its own file
+ * counts.
  */
-export function documentSharesFileExists(): boolean {
-  return existsSync(shareFilePath()) || existsSync(legacyShareFilePath())
+export async function documentSharesToMove(): Promise<boolean> {
+  if (existsSync(shareFilePath())) return true
+  if (!existsSync(legacyShareFilePath())) return false
+  await ensureLegacySharesClaimed()
+  return existsSync(shareFilePath())
 }
 
 /** Every share in the file, without taking its locks. */

@@ -46,6 +46,16 @@ interface ImportTable {
   rows: Array<Record<string, string>>
 }
 
+/** A JSON number as the file wrote it, so no digit is lost to a float. */
+class NumberText {
+  readonly text: string
+  constructor(text: string) {
+    this.text = text
+  }
+}
+
+const rawJSON = (JSON as unknown as { rawJSON(text: string): unknown }).rawJSON
+
 function readTable(path: string, bytes: Uint8Array): ImportTable {
   const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes)
   if (/\.jsonl$/i.test(path)) {
@@ -55,7 +65,13 @@ function readTable(path: string, bytes: Uint8Array): ImportTable {
       if (!line.trim()) continue
       let value: unknown
       try {
-        value = JSON.parse(line)
+        value = JSON.parse(
+          line,
+          (_key, cell: unknown, context?: { source?: string }) =>
+            typeof cell === "number" && context?.source !== undefined
+              ? new NumberText(context.source)
+              : cell
+        )
       } catch {
         throw new Error(`Line ${index + 1} is not JSON`)
       }
@@ -71,13 +87,25 @@ function readTable(path: string, bytes: Uint8Array): ImportTable {
             ? ""
             : typeof cell === "string"
               ? cell
-              : JSON.stringify(cell)
+              : cell instanceof NumberText
+                ? cell.text
+                : JSON.stringify(cell, (_key, inner: unknown) =>
+                    inner instanceof NumberText ? rawJSON(inner.text) : inner
+                  )
       }
       rows.push(row)
     }
     return { columns, rows }
   }
   const table = parseDelimitedText(text, delimiterForFilename(path))
+  // Rows become objects by column name, so a repeated name would lose a column.
+  const seen = new Set<string>()
+  for (const column of table.header) {
+    if (seen.has(column)) {
+      throw new Error(`The file has two columns named "${column}"; rename one to import it`)
+    }
+    seen.add(column)
+  }
   return {
     columns: table.header,
     rows: table.rows.map((cells) =>

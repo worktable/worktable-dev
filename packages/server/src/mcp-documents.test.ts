@@ -437,6 +437,48 @@ describe("importing a file into Records", () => {
       })
       expect(JSON.stringify(noId.content)).toContain("row 2: no id in id")
 
+      // A repeated column name is refused; a JSONL number keeps every digit.
+      await write("worktable_files_write", {
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "research/twice.csv",
+        format: file,
+        source: "name,name\nAlice,Bob\n",
+      })
+      const twice = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "twice",
+        path: "research/twice.csv",
+        dryRun: true,
+      })
+      expect(JSON.stringify(twice.content)).toContain('two columns named \\"name\\"')
+      await write("worktable_files_write", {
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "research/accounts.jsonl",
+        format: file,
+        source: '{"account":9007199254740993,"meta":{"n":9007199254740993}}\n',
+      })
+      const accounts = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "accounts",
+        path: "research/accounts.jsonl",
+        dryRun: true,
+      })
+      expect(accounts.structuredContent).toMatchObject({
+        proposal: {
+          columns: [
+            { column: "account", type: "text" },
+            { column: "meta", type: "text" },
+          ],
+          sample: [{ account: "9007199254740993", meta: '{"n":9007199254740993}' }],
+        },
+      })
+
       // Reading a file to import it needs documents:read as well.
       const recordsOnly = await connect(["records:read", "records:write"], "preview")
       const unscoped = await recordsOnly.callTool({

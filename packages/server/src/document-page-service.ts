@@ -108,10 +108,10 @@ async function embedVersions(
     if (
       entry.kind === "document" &&
       entry.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file &&
-      entry.descriptor.updatedAt &&
+      entry.handle.sourceStamp &&
       wanted.has(entry.descriptor.path)
     ) {
-      embeds[entry.descriptor.path] = entry.descriptor.updatedAt
+      embeds[entry.descriptor.path] = entry.handle.sourceStamp
     }
   }
   return Object.keys(embeds).length > 0 ? embeds : undefined
@@ -597,7 +597,7 @@ export interface RawDocumentSource {
   bytes: Uint8Array
   fileName: string
   formatId: string
-  /** When the source last changed, as the catalog saw it. */
+  /** What the source's bytes are, as the catalog saw them. */
   version?: string
 }
 
@@ -643,9 +643,7 @@ export async function readRawDocumentSource(options: {
           bytes,
           fileName: sourceFileName(handle),
           formatId: handle.document.format.id,
-          ...(handle.document.updatedAt
-            ? { version: handle.document.updatedAt }
-            : {}),
+          ...(handle.sourceStamp ? { version: handle.sourceStamp } : {}),
         },
       }
     }

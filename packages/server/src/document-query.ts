@@ -87,6 +87,7 @@ interface QueryDocumentClaim {
   title: string
   health: DocumentHealth
   updatedAt?: string
+  sourceStamp?: string
   folderMoveSupported: boolean
   folderArchiveSupported: boolean
   folderDeleteSupported: boolean
@@ -131,6 +132,8 @@ export interface ResolvedDocumentHandle {
   identity: "durable" | "provisional"
   document: DocumentSummary
   source: DocumentSource
+  /** For a file source, what its bytes are; changes whenever they do. */
+  sourceStamp?: string
   storageProfile: DocumentStorageProfileId | null
   rendererKey: string | null
   renderDisposition: DocumentRenderDisposition | null
@@ -166,6 +169,9 @@ function claimsFor(entry: DocumentCatalogEntry): QueryClaim[] {
         documentId: entry.descriptor.documentId,
         identity: entry.handle.identity,
         source: entry.handle.source,
+        ...(entry.handle.sourceStamp
+          ? { sourceStamp: entry.handle.sourceStamp }
+          : {}),
         path: entry.descriptor.path,
         format: entry.descriptor.format,
         title: entry.descriptor.title,
@@ -213,6 +219,7 @@ function claimsFor(entry: DocumentCatalogEntry): QueryClaim[] {
           documentId: claim.documentId,
           identity: claim.identity,
           source: claim.source,
+          ...(claim.sourceStamp ? { sourceStamp: claim.sourceStamp } : {}),
           path: claim.path,
           format: claim.format,
           title: claim.title,
@@ -1096,6 +1103,9 @@ function handleForPrepared(
       identity: classified.claim.identity,
       document: classified.item,
       source: classified.claim.source,
+      ...(classified.claim.sourceStamp
+        ? { sourceStamp: classified.claim.sourceStamp }
+        : {}),
       storageProfile: classified.claim.storageProfile,
       rendererKey: registration?.rendererKey ?? null,
       renderDisposition: registration?.renderDisposition ?? null,

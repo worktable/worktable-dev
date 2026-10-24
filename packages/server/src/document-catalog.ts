@@ -57,10 +57,28 @@ import {
 import { timing } from "./request-timing.ts"
 import { documentPortableStateV2Directory } from "./workspace-storage-v2.ts"
 
+/**
+ * What a file source's bytes are, as its metadata says: the change time an
+ * edit always moves, with the modification time, inode and size. A file
+ * replaced with its modification time kept still gets a new stamp.
+ */
+export function sourceStampOf(info: {
+  mtimeNs: bigint
+  ctimeNs: bigint
+  ino: bigint
+  size: bigint
+}): string {
+  return [info.mtimeNs, info.ctimeNs, info.ino, info.size]
+    .map((value) => value.toString(36))
+    .join(".")
+}
+
 export interface DocumentHandle {
   documentId: DocumentId
   identity: "durable" | "provisional"
   source: DocumentSource
+  /** For a file source, what its bytes are; changes whenever they do. */
+  sourceStamp?: string
   storageProfile: DocumentStorageProfileId | null
   archived?: boolean
   archiveProvider?: "legacy-doc-metadata"
@@ -83,6 +101,7 @@ export interface CatalogDocumentClaim {
   health: DocumentHealth
   updatedAt?: string
   source: DocumentSource
+  sourceStamp?: string
   storageProfile: DocumentStorageProfileId | null
   archived?: boolean
   archiveProvider?: "legacy-doc-metadata"
@@ -449,9 +468,10 @@ async function inspectSourceOwnership(
   source: DocumentSource,
   identities: ReadonlySet<string>,
   lstatPath: BuildLstat
-): Promise<{ ownedByCoreBundle: boolean; updatedAt?: string }> {
+): Promise<{ ownedByCoreBundle: boolean; updatedAt?: string; sourceStamp?: string }> {
   let current: string | null = source.relativePath
   let updatedAt: string | undefined
+  let sourceStamp: string | undefined
   while (current) {
     try {
       const info = await lstatPath(resolve(spaceRoot, current))
@@ -462,6 +482,7 @@ async function inspectSourceOwnership(
         !info.isSymbolicLink()
       ) {
         updatedAt = info.mtime.toISOString()
+        sourceStamp = sourceStampOf(info)
       }
       // Only a proven core bundle can own a source; without one, its
       // ancestors need no inspection.
@@ -470,6 +491,7 @@ async function inspectSourceOwnership(
         return {
           ownedByCoreBundle: true,
           ...(updatedAt ? { updatedAt } : {}),
+          ...(sourceStamp ? { sourceStamp } : {}),
         }
       }
     } catch (error) {
@@ -482,6 +504,7 @@ async function inspectSourceOwnership(
   return {
     ownedByCoreBundle: false,
     ...(updatedAt ? { updatedAt } : {}),
+    ...(sourceStamp ? { sourceStamp } : {}),
   }
 }
 
@@ -654,11 +677,13 @@ async function inventoryClaims(
   legacyClaims.forEach((claim, index) => {
     const inspected = ownership[index]!
     if (!inspected.ownedByCoreBundle) {
-      visibleLegacyClaims.push(
-        claim.updatedAt || !inspected.updatedAt
-          ? claim
-          : { ...claim, updatedAt: inspected.updatedAt }
-      )
+      visibleLegacyClaims.push({
+        ...claim,
+        ...(!claim.updatedAt && inspected.updatedAt
+          ? { updatedAt: inspected.updatedAt }
+          : {}),
+        ...(inspected.sourceStamp ? { sourceStamp: inspected.sourceStamp } : {}),
+      })
     }
   })
   const bySource = new Map(
@@ -726,12 +751,14 @@ async function inventoryClaims(
       )
       const sourceExists = sourceValidation.safe
       let updatedAt = provenCoreBundleUpdatedAt.get(entry.documentId)
+      let sourceStamp: string | undefined
       if (sourceValidation.safe && entry.source.kind === "file") {
         const info = await lstatPath(sourceValidation.absolutePath).catch(
           () => null
         )
         if (info?.isFile() && !info.isSymbolicLink()) {
           updatedAt = info.mtime.toISOString()
+          sourceStamp = sourceStampOf(info)
         }
       }
       if (!sourceValidation.safe) {
@@ -798,6 +825,7 @@ async function inventoryClaims(
         source: entry.source,
         title: humanizePath(entry.path),
         ...(updatedAt ? { updatedAt } : {}),
+        ...(sourceStamp ? { sourceStamp } : {}),
         ...(usesLegacyDocArchiveMetadata(entry, registry)
           ? { archiveProvider: "legacy-doc-metadata" as const }
           : {}),
@@ -842,6 +870,7 @@ function catalogDocumentClaim(
     health: claimHealth(claim.format, claim.diagnostics, registry),
     ...(claim.updatedAt ? { updatedAt: claim.updatedAt } : {}),
     source: claim.source,
+    ...(claim.sourceStamp ? { sourceStamp: claim.sourceStamp } : {}),
     storageProfile: documentStorageProfiles.resolve(
       claim.format,
       claim.source,
@@ -1096,6 +1125,7 @@ async function buildDocumentCatalogFromFiles(
         documentId: claim.documentId,
         identity: claim.identity,
         source: claim.source,
+        ...(claim.sourceStamp ? { sourceStamp: claim.sourceStamp } : {}),
         storageProfile: documentStorageProfiles.resolve(
           claim.format,
           claim.source,

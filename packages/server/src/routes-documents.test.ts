@@ -7,6 +7,8 @@ import {
   mkdtemp,
   readFile,
   rm,
+  stat,
+  utimes,
   writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -1204,6 +1206,19 @@ describe("format-neutral document route", () => {
         `/api/spaces/${spaceId}/documents/file?path=notes/readme/error.png&v=${encodeURIComponent(version!)}`
       )
       expect(file.headers.get("cache-control")).toContain("immutable")
+
+      // Replaced with its modification time kept, the file still gets a new
+      // version, so no browser keeps showing the old bytes.
+      const onDisk = join(root, "spaces", spaceId, "docs", "notes", "readme", "error.png")
+      const { mtime } = await stat(onDisk)
+      await writeFile(onDisk, "new png")
+      await utimes(onDisk, mtime, mtime)
+      noteSpaceChanged(spaceId)
+      const replaced = (await (
+        await instance.request(`/api/spaces/${spaceId}/documents/page?path=notes/readme`)
+      ).json()) as { page: { embeds?: Record<string, string> } }
+      expect(replaced.page.embeds?.["notes/readme/error.png"]).toBeString()
+      expect(replaced.page.embeds?.["notes/readme/error.png"]).not.toBe(version)
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
       else process.env["WORKTABLE_FILES_PREVIEW"] = previous

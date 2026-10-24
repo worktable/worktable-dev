@@ -1550,6 +1550,9 @@ function BlockNoteDocPage({
             {provider && collabDoc && readyContent === provider && deploymentKnown && (
               <Suspense fallback={<EditorSkeleton />}>
                 <Editor
+                  // The editor learns what it can do with files once; turning the files
+                  // preview on or off makes a new one that knows.
+                  key={editingFiles ? (editingFiles.upload ? "files" : "file-links") : "no-files"}
                   onReady={handleEditorReady}
                   collaboration={{
                     ydoc: collabDoc,

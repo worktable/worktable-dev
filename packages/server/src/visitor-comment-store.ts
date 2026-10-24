@@ -592,6 +592,7 @@ export function pendingVisitorCommentGroups(worktableId: string): Array<{
     )
     .all(worktableId) ?? []) as ReturnType<typeof pendingVisitorCommentGroups>
 }
+/** The latest 100 comments, newest first. */
 export function visitorCommentRows(input: {
   worktableId: string
   linkId?: string
@@ -599,8 +600,6 @@ export function visitorCommentRows(input: {
   visitorKey?: string
   /** Member review keeps passed receipts after retention erases visitor text. */
   includeErased?: boolean
-  before?: { receivedAt: number; id: string }
-  limit?: number
 }): StoredVisitorComment[] {
   const db = database()
   if (!db || (!input.linkId && !input.documentId)) return []
@@ -616,14 +615,9 @@ export function visitorCommentRows(input: {
       where.push(`${column}=?`)
       args.push(value)
     }
-  if (input.before !== undefined) {
-    where.push("(received_at,id)<(?,?)")
-    args.push(input.before.receivedAt, input.before.id)
-  }
-  args.push(Math.min(101, Math.max(1, input.limit ?? 100)))
   return db
     .query(
-      `SELECT * FROM visitor_comments WHERE ${where.join(" AND ")} ORDER BY received_at DESC,id DESC LIMIT ?`
+      `SELECT * FROM visitor_comments WHERE ${where.join(" AND ")} ORDER BY received_at DESC,id DESC LIMIT 100`
     )
     .all(...args) as StoredVisitorComment[]
 }

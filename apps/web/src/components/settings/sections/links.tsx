@@ -332,9 +332,6 @@ function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {
             <SettingRow label="Accept visitor comments" description="Turning this off pauses new comments on every link.">
               <Switch aria-label="Accept visitor comments" checked={policy.allowComments} onCheckedChange={allowComments => update({allowComments})} />
             </SettingRow>
-            <SettingRow label="Shared visitor threads" description="Let sharers show every visitor’s comment and name to anyone with their link.">
-              <Switch aria-label="Shared visitor threads" checked={policy.allowVisitorsSeeAll} onCheckedChange={allowVisitorsSeeAll => update({allowVisitorsSeeAll})} />
-            </SettingRow>
           </> : null}
           {preview ? (
             <SettingRow

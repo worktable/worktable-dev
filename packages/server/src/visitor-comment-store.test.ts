@@ -69,34 +69,12 @@ function comment(
   }
 }
 describe("private visitor comments", () => {
-  it("pages tied receipts once and uses the latest receipt label for Pending", () => {
+  it("uses the latest receipt label for Pending", () => {
     const now = Date.now()
     const clock = spyOn(Date, "now").mockReturnValue(now)
     try {
-      const expected = new Set(
-        Array.from(
-          { length: 4 },
-          (_, index) =>
-            receiveVisitorComment(comment({ requestId: `paging0${index}` })).id
-        )
-      )
-      const first = visitorCommentRows({
-        worktableId: "worktableId",
-        linkId: "link",
-        limit: 2,
-      })
-      expect(first).toHaveLength(2)
-      const last = first.at(-1)!
-      const second = visitorCommentRows({
-        worktableId: "worktableId",
-        linkId: "link",
-        limit: 2,
-        before: { receivedAt: last.received_at, id: last.id },
-      })
-      expect(second).toHaveLength(2)
-      expect(new Set([...first, ...second].map((row) => row.id))).toEqual(
-        expected
-      )
+      for (let index = 0; index < 4; index++)
+        receiveVisitorComment(comment({ requestId: `pending0${index}` }))
       clock.mockReturnValue(now + 1)
       receiveVisitorComment(
         comment({

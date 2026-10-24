@@ -1,5 +1,5 @@
 import { useCallback, useId, useState } from "react"
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { MoreVertical } from "lucide-react"
 import type {
   Annotation,
@@ -62,12 +62,9 @@ export function VisitorCommentsPanel({
   )
   const queryClient = useQueryClient()
   const [resuming, setResuming] = useState<string | null>(null)
-  const list = useInfiniteQuery({
+  const list = useQuery({
     queryKey: visitorCommentsQueryKey(context.spaceId, context.documentId),
-    queryFn: ({ pageParam }) =>
-      getVisitorComments(context.spaceId, context.documentId, pageParam),
-    initialPageParam: null as string | null,
-    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    queryFn: () => getVisitorComments(context.spaceId, context.documentId),
   })
   // Render no cached visitor text after an authorization or availability failure.
   if (list.isError)
@@ -85,13 +82,13 @@ export function VisitorCommentsPanel({
         Loading visitor comments…
       </p>
     )
-  const comments = list.data.pages.flatMap((page) => page.comments)
+  const { comments, pausedLinks } = list.data
   return (
     <div
       ref={panelRef}
       className="scroll-fade h-full min-h-0 overflow-auto px-4 pb-4"
     >
-      {list.data.pages[0]?.pausedLinks?.map((link) => (
+      {pausedLinks?.map((link) => (
         <Callout key={link.id} variant="warning" className="my-3">
           <div className="space-y-2">
             <p>
@@ -146,17 +143,6 @@ export function VisitorCommentsPanel({
             until you pass one to the team.
           </p>
         </div>
-      )}
-      {list.hasNextPage && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-4 w-full"
-          disabled={list.isFetchingNextPage}
-          onClick={() => void list.fetchNextPage()}
-        >
-          {list.isFetchingNextPage ? "Loading…" : "Show more"}
-        </Button>
       )}
     </div>
   )

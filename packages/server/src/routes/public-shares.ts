@@ -530,10 +530,10 @@ export function createPublicSharesRouter(
             view.policy.allowComments &&
             view.link.comments.acceptComments &&
             !commentPause(context.worktableId, view.link.id),
-          anonymousAllowed: view.link.comments.anonymousAllowed,
-          visitorsSee: view.policy.allowVisitorsSeeAll
-            ? view.link.comments.visitorsSee
-            : "own",
+          // The gateway requires both; visitors see only their own
+          // comments, always under a name.
+          anonymousAllowed: false,
+          visitorsSee: "own",
         }
       }
       if (view.link.kind === "html") {

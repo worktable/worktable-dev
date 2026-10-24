@@ -261,7 +261,7 @@ describe("live workspace replacement", () => {
       workspaceEpoch: epoch, spaceId: "notes", documentId: document.documentId, kind: "doc",
       label: "After restore", level: "view", createdBy: { id: "owner", name: "Owner" },
       expiresAt: null,
-      comments: { acceptComments: true, anonymousAllowed: false, visitorsSee: "own", showSharerName: false },
+      comments: { acceptComments: true },
     })
     await stopActiveServer()
     const restarted = startServer(0, "127.0.0.1")

@@ -16,9 +16,14 @@ describe("sharing inputs never reset what they omit", () => {
     expect(SharingPolicySchema.parse({ paused: true })).toEqual(policy)
   })
 
-  it("changes only the comment settings a link update names", () => {
+  it("changes only the comment setting a link update names, and nothing else", () => {
     expect(
-      UpdateShareLinkInputSchema.parse({ comments: { visitorsSee: "all" } })
-    ).toEqual({ comments: { visitorsSee: "all" } })
+      UpdateShareLinkInputSchema.parse({ comments: { acceptComments: false } })
+    ).toEqual({ comments: { acceptComments: false } })
+    // Visitors always see only their own comments, under a name.
+    for (const comments of [{ visitorsSee: "all" }, { anonymousAllowed: true }])
+      expect(UpdateShareLinkInputSchema.safeParse({ comments }).success).toBe(
+        false
+      )
   })
 })

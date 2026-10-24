@@ -207,7 +207,6 @@ function sharerPolicy(policy: SharingPolicy): SharerPolicy {
     records: policy.records,
     recordsDefaultExpiryDays: policy.recordsDefaultExpiryDays,
     allowComments: policy.allowComments,
-    allowVisitorsSeeAll: policy.allowVisitorsSeeAll,
   }
 }
 

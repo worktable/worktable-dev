@@ -11,7 +11,6 @@ import {
   LinkedDestinationBinding,
   LinkedRequestClaims,
   SHARE_CAPABILITY_HEADER,
-  SHARE_COMMENT_CURSOR_HEADER,
   ShareLinkToken,
   ShareTicket,
   SHARE_UNLOCK_HEADER,
@@ -37,6 +36,8 @@ import { linkedGrokBotParticipantKey } from "./grok-bot-store.ts"
 function validShareRequest(claims: LinkedRequestClaims): boolean {
   if (claims.grant.kind !== "share") return false
   const preview = sharingPreviewEnabled()
+  // Visitor comments come in one page; this binary names no comment pages.
+  if (claims.grant.commentCursor !== undefined) return false
   if (claims.path === "/public/share/comments") {
     const visitor = claims.grant.visitor
     return Boolean(
@@ -46,17 +47,10 @@ function validShareRequest(claims: LinkedRequestClaims): boolean {
       claims.grant.clientAddress === undefined &&
       claims.grant.contentRevision === undefined &&
       (["GET", "HEAD"].includes(claims.method) ||
-        (claims.method === "POST" &&
-          claims.grant.commentCursor === undefined &&
-          visitor.verified &&
-          visitor.client))
+        (claims.method === "POST" && visitor.verified && visitor.client))
     )
   }
-  if (
-    claims.grant.visitor !== undefined ||
-    claims.grant.commentCursor !== undefined
-  )
-    return false
+  if (claims.grant.visitor !== undefined) return false
   if (claims.grant.unlock !== undefined && !preview) return false
   if (
     claims.grant.clientAddress !== undefined &&
@@ -310,8 +304,6 @@ export async function createLinkedIngress(options: {
           if (claims.grant.visitor.client)
             headers.set(VISITOR_HEADERS.CLIENT, claims.grant.visitor.client)
         }
-        if (claims.grant.commentCursor !== undefined)
-          headers.set(SHARE_COMMENT_CURSOR_HEADER, claims.grant.commentCursor)
         if (claims.grant.clientAddress)
           headers.set(
             AGENT_ROUTE_HEADERS.CLIENT_ADDRESS,

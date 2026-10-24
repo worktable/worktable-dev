@@ -543,7 +543,6 @@ function launch(): void {
                           LINKED_CAPABILITIES.SHARE_BRIDGE,
                           LINKED_CAPABILITIES.SHARE_READ_HINTS,
                           LINKED_CAPABILITIES.SHARE_COMMENTS,
-                          LINKED_CAPABILITIES.SHARE_COMMENT_PAGES,
                         ],
                       }
                     : {}),

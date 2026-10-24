@@ -241,6 +241,18 @@ describe("document aliases", () => {
         "root/folder"
       )
     ).toThrow("broader folder alias");
+
+    // What a deletion keeps stays reachable through the folder alias that
+    // led there, unless a more specific alias led somewhere else.
+    const keeping = JSON.parse(
+      prepareDocAliasPrefixRetirement(
+        { exact: {}, prefixes: { old: "parent", "old/special": "elsewhere" } },
+        "parent",
+        new Set(["parent/kept.png", "parent/special/image.png"])
+      )!
+    ) as DocAliases;
+    expect(keeping.exact).toEqual({ "old/kept.png": "parent/kept.png" });
+    expect(keeping.prefixes).toEqual({ "old/special": "elsewhere" });
   });
 
   it("fails closed on corrupt or comparison-ambiguous portable state", async () => {

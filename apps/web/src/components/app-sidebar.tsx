@@ -112,6 +112,11 @@ const NewSpaceDialog = lazy(() =>
     default: module.NewSpaceDialog,
   }))
 )
+const DeleteDialog = lazy(() =>
+  import("@/components/docs/delete-dialog").then((module) => ({
+    default: module.DeleteDialog,
+  }))
+)
 import {
   SidebarSearchInput,
   SidebarSearchResults,
@@ -148,7 +153,6 @@ import {
   DropdownMenuTrigger,
 } from "@worktable/ui/components/dropdown-menu"
 import { RenameDialog } from "@/components/docs/rename-dialog"
-import { DeleteDialog } from "@/components/docs/delete-dialog"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import {
   renameDoc,

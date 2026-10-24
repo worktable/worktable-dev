@@ -575,6 +575,9 @@ export async function setWidgetArchived(
         archived,
         archivedBy,
         ...(reason ? { reason } : {}),
+        // HTML tools archive the HTML Doc alone: their access covers HTML,
+        // not what its folder may hold.
+        alone: true,
       });
       const result = await readWidget(spaceId, widgetId);
       if (archived) {

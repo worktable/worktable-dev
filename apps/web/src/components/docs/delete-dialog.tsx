@@ -104,6 +104,22 @@ export function DeleteDialog({
             </div>
           )}
 
+          {uses && usesQuery.isError && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-warning/25 bg-warning/5 p-3 text-sm">
+              <p className="text-muted-foreground">
+                Couldn’t check what’s in its folder and what uses it.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void usesQuery.refetch()}
+                disabled={usesQuery.isFetching}
+              >
+                Try Again
+              </Button>
+            </div>
+          )}
+
           {self && self.usedBy.length > 0 && (
             <div className="flex items-start gap-3 rounded-lg border border-warning/25 bg-warning/5 p-3 text-sm">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
@@ -157,7 +173,8 @@ export function DeleteDialog({
           <Button
             variant="destructive"
             onClick={handleConfirm}
-            disabled={pending || (Boolean(uses) && usesQuery.isPending)}
+            // Deleting needs to know what goes with it first.
+            disabled={pending || (Boolean(uses) && !usesQuery.isSuccess)}
           >
             {pending ? "Deleting…" : "Delete"}
           </Button>

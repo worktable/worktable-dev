@@ -2090,6 +2090,8 @@ type ArchiveOptions = {
    */
   onlyIfDueBy?: number
   registry?: DocumentFormatRegistry
+  /** Archive the document alone, leaving its folder as it is. */
+  alone?: boolean
 }
 
 type ArchiveResult = {
@@ -2097,6 +2099,12 @@ type ArchiveResult = {
   path: string
   archived: boolean
   notDue?: true
+}
+
+/** Whether two paths name the same document, as the catalog compares them. */
+function samePath(left: string, right: string): boolean {
+  const leftKey = analyzeDocumentPath(left).comparisonKey
+  return leftKey !== null && leftKey === analyzeDocumentPath(right).comparisonKey
 }
 
 /**
@@ -2107,6 +2115,7 @@ export async function setRegisteredDocumentArchived(
   options: ArchiveOptions
 ): Promise<ArchiveResult> {
   const withFolder =
+    !options.alone &&
     filesPreviewEnabled() &&
     (await hasDocumentsBelow(options.spaceId, options.path))
   // A lifetime archive checks it is due under the Doc's own lock first.
@@ -2133,12 +2142,12 @@ export async function setRegisteredDocumentArchived(
   }
   if (result) return result
   const self = (await usesAtOrBelow(options.spaceId, options.path)).find(
-    (entry) => entry.path === options.path
+    (entry) => samePath(entry.path, options.path)
   )
   if (!self) throw new DocumentWriteError("not-found", "Document not found")
   return {
     documentId: self.documentId as DocumentId,
-    path: options.path,
+    path: self.path,
     archived: options.archived,
   }
 }
@@ -2255,26 +2264,29 @@ export async function deleteRegisteredDocument(options: {
   path: string
   keep?: readonly string[]
   registry?: DocumentFormatRegistry
+  /** Delete the document alone, leaving its folder as it is. */
+  alone?: boolean
 }): Promise<{ documentId: DocumentId; path: string }> {
   if (
+    !options.alone &&
     filesPreviewEnabled() &&
     (await hasDocumentsBelow(options.spaceId, options.path))
   ) {
     const uses = await usesAtOrBelow(options.spaceId, options.path)
-    const self = uses.find((entry) => entry.path === options.path)
+    const self = uses.find((entry) => samePath(entry.path, options.path))
     if (self) {
       const keep =
         options.keep ??
         uses.flatMap((entry) =>
-          entry.path !== options.path && entry.usedBy.length > 0
+          !samePath(entry.path, options.path) && entry.usedBy.length > 0
             ? [entry.path]
             : []
         )
       const folder = await deleteDocumentFolder(options.spaceId, options.path, {
-        keep: keep.filter((path) => path !== options.path),
+        keep: keep.filter((path) => !samePath(path, options.path)),
       })
       if (folder.ok) {
-        return { documentId: self.documentId as DocumentId, path: options.path }
+        return { documentId: self.documentId as DocumentId, path: self.path }
       }
       if (folder.kind !== "not-found") {
         throw new DocumentWriteError("conflict", folder.error)

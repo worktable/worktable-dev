@@ -26,6 +26,7 @@ import { HOSTED_BROWSER_RUNTIME_SCOPES } from "./hosted-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { renameDocAndSync } from "./doc-rename.ts"
 import { recordDocAlias, resolveDocAlias } from "./doc-aliases.ts"
+import { deleteHtmlDocument } from "./html-document-delete.ts"
 import { moveHtmlDocument } from "./html-document-move.ts"
 import { getSpaceLinkGraph } from "./link-graph.ts"
 import {
@@ -1413,8 +1414,9 @@ describe("format-neutral document route", () => {
         ["notes/readme/shared.png", ["elsewhere"]],
       ])
 
-      // Archiving and restoring the Doc takes its folder along.
-      expect((await post("archive", { path: "notes/readme" })).status).toBe(200)
+      // Archiving and restoring the Doc takes its folder along, however the
+      // path's case is written.
+      expect((await post("archive", { path: "Notes/Readme" })).status).toBe(200)
       expect((await listed()).every(([, archived]) => archived)).toBe(true)
       expect((await post("restore", { path: "notes/readme" })).status).toBe(200)
       expect((await listed()).every(([, archived]) => !archived)).toBe(true)
@@ -1429,6 +1431,20 @@ describe("format-neutral document route", () => {
       expect(
         await readFile(join(docs, "notes", "readme", "shared.png"), "utf8")
       ).toBe("shared")
+      // HTML tools delete an HTML Doc alone: its folder is not theirs.
+      const board = await writeWidget(
+        spaceId,
+        { ...htmlDocument(), id: "boards/plan", name: "Plan" },
+        "<h1>Plan</h1>"
+      )
+      board.release?.()
+      await writeDoc(spaceId, "boards/plan/notes", "# Notes", options)
+      noteSpaceChanged(spaceId)
+      expect((await deleteHtmlDocument(spaceId, "boards/plan")).ok).toBe(true)
+      expect(await readFile(join(docs, "boards", "plan", "notes.md"), "utf8")).toBe(
+        "# Notes"
+      )
+
       // The alias that leads to a kept file still does.
       expect((await resolveDocAlias(spaceId, "old-shot.png")).path).toBe(
         "notes/readme/shared.png"

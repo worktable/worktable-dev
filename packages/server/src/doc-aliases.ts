@@ -983,7 +983,14 @@ export function prepareDocAliasPrefixRetirement(
       for (const kept of keep) {
         if (kept.startsWith(`${target}/`)) {
           const source = `${from}${kept.slice(target.length)}`
-          if (!(source in next.exact)) next.exact[source] = kept
+          // Only where this folder alias was what led there: a more
+          // specific alias that leads elsewhere keeps doing so.
+          if (
+            !(source in next.exact) &&
+            resolveDocAliasInMode(aliases, source, true, index) === kept
+          ) {
+            next.exact[source] = kept
+          }
         }
       }
     }

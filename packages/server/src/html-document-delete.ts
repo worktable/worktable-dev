@@ -57,6 +57,9 @@ export async function deleteHtmlDocument(
       const deleted = await deleteRegisteredDocument({
         spaceId,
         path: widgetId,
+        // HTML tools delete the HTML Doc alone: their access covers HTML,
+        // not what its folder may hold.
+        alone: true,
       })
       invalidateSearchIndex({ spaceId })
       wsManager.broadcast(spaceId, {

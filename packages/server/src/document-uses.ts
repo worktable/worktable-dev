@@ -45,7 +45,12 @@ export async function usesAtOrBelow(
     changed = false
     for (const entry of inside) {
       const entryPath = entry.descriptor.path
-      if (entryPath === path || kept.has(entryPath)) continue
+      if (
+        analyzeDocumentPath(entryPath).comparisonKey === key ||
+        kept.has(entryPath)
+      ) {
+        continue
+      }
       if ((graph.inbound.get(entryPath) ?? []).some(stays)) {
         kept.add(entryPath)
         changed = true

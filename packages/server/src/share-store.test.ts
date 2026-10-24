@@ -3,10 +3,12 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
+import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import {
   createDocumentShare,
   createDocumentShareIfEligible,
   getDocumentShare,
+  invalidateAllDocumentShares,
   invalidateDocumentShares,
   invalidateDocumentSharesWithinLifecycle,
   resolveDocumentShare,
@@ -14,11 +16,14 @@ import {
   withDocumentShareLifecycle,
   withResolvedDocumentShare,
 } from "./share-store.ts"
-import { setWorkspaceRootOverride } from "./workspace.ts"
+import { setWorkspaceRootOverride, workspaceCacheKey } from "./workspace.ts"
 import { notifyWorkspaceChangeAndWaitOrThrow } from "./workspace-events.ts"
 
 let appDir: string
 let workspaceDir: string
+
+const shareFile = () =>
+  join(appDir, "document-shares", `${workspaceCacheKey()}.json`)
 
 const doc = {
   kind: "doc" as const,
@@ -57,7 +62,7 @@ describe("document share store", () => {
     expect(await resolveDocumentShare(wrongToken)).toBeNull()
     expect(await resolveDocumentShare("short")).toBeNull()
 
-    const path = join(appDir, "document-shares.json")
+    const path = shareFile()
     expect((await stat(path)).mode & 0o777).toBe(0o600)
     expect(await readFile(path, "utf8")).toContain(first.token)
   })
@@ -167,10 +172,79 @@ describe("document share store", () => {
 
     expect(await getDocumentShare(doc)).toBeNull()
     expect(await resolveDocumentShare(share.token)).toBeNull()
-    expect(
-      JSON.parse(await readFile(join(appDir, "document-shares.json"), "utf8"))
-        .shares
-    ).toEqual([])
+    expect(JSON.parse(await readFile(shareFile(), "utf8")).shares).toEqual([])
+  })
+
+  it("keeps each Worktable's links when another Worktable drops its own", async () => {
+    const otherWorkspace = await mkdtemp(
+      join(tmpdir(), "worktable-document-shares-other-")
+    )
+    try {
+      const mine = await createDocumentShare(doc)
+      setWorkspaceRootOverride(otherWorkspace)
+      // The same Space and path in another Worktable is another document.
+      const theirs = await createDocumentShare(doc)
+      expect(theirs.token).not.toBe(mine.token)
+      expect(await resolveDocumentShare(mine.token)).toBeNull()
+
+      // Unlinking or replacing a Worktable drops every link it made.
+      await invalidateAllDocumentShares()
+      expect(await resolveDocumentShare(theirs.token)).toBeNull()
+
+      setWorkspaceRootOverride(workspaceDir)
+      expect(await resolveDocumentShare(mine.token)).toEqual(mine)
+      expect(await getDocumentShare(doc)).toEqual(mine)
+    } finally {
+      await rm(otherWorkspace, { recursive: true, force: true })
+    }
+  })
+
+  it("moves links from the shared file of older releases to their own Worktable", async () => {
+    const otherWorkspace = await mkdtemp(
+      join(tmpdir(), "worktable-document-shares-other-")
+    )
+    try {
+      const myEpoch = await getWorkspaceCollaborationEpoch()
+      setWorkspaceRootOverride(otherWorkspace)
+      const theirEpoch = await getWorkspaceCollaborationEpoch()
+      setWorkspaceRootOverride(workspaceDir)
+      const stored = (token: string, workspaceEpoch: string) => ({
+        token,
+        ...doc,
+        workspaceEpoch,
+        createdAt: "2026-10-01T00:00:00.000Z",
+      })
+      const mine = "M".repeat(43)
+      const theirs = "T".repeat(43)
+      const legacyPath = join(appDir, "document-shares.json")
+      await writeFile(
+        legacyPath,
+        JSON.stringify({
+          type: "worktable.document-shares",
+          version: 1,
+          shares: [stored(mine, myEpoch), stored(theirs, theirEpoch)],
+        }),
+        "utf8"
+      )
+
+      expect((await resolveDocumentShare(mine))?.token).toBe(mine)
+      expect(await resolveDocumentShare(theirs)).toBeNull()
+      // Dropping this Worktable's links leaves the other's waiting for it.
+      await invalidateAllDocumentShares()
+      expect(await resolveDocumentShare(mine)).toBeNull()
+
+      setWorkspaceRootOverride(otherWorkspace)
+      expect((await resolveDocumentShare(theirs))?.token).toBe(theirs)
+      expect((await getDocumentShare(doc))?.token).toBe(theirs)
+      // An older release still reads a valid file, with nothing left to serve.
+      expect(JSON.parse(await readFile(legacyPath, "utf8"))).toEqual({
+        type: "worktable.document-shares",
+        version: 1,
+        shares: [],
+      })
+    } finally {
+      await rm(otherWorkspace, { recursive: true, force: true })
+    }
   })
 
   it("fails closed when private registry state is malformed", async () => {

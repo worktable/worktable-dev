@@ -5,6 +5,7 @@ import { z } from "zod"
 import { ensureAppDir } from "./app-storage.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
+import { workspaceCacheKey } from "./workspace.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 import { assertWorkspaceAvailable } from "./workspace-safety.ts"
 
@@ -48,8 +49,19 @@ type ShareFile = z.infer<typeof ShareFile>
 let mutationQueue: Promise<unknown> = Promise.resolve()
 let lifecycleQueue: Promise<unknown> = Promise.resolve()
 
+// Each Worktable on this machine keeps its links in its own file, so
+// unlinking or replacing one Worktable never touches another's links. Older
+// releases kept every Worktable's links in one file; a Worktable takes its own
+// links out of that file the first time this process needs them.
+const LEGACY_SHARE_FILE = "document-shares.json"
+const claimedLegacyShares = new Set<string>()
+
 function shareFilePath(): string {
-  return join(ensureAppDir(), "document-shares.json")
+  return join(ensureAppDir(), "document-shares", `${workspaceCacheKey()}.json`)
+}
+
+function legacyShareFilePath(): string {
+  return join(ensureAppDir(), LEGACY_SHARE_FILE)
 }
 
 function emptyFile(): ShareFile {
@@ -78,17 +90,83 @@ function publicShare(share: StoredShare): DocumentShare {
   }
 }
 
-async function loadFile(): Promise<ShareFile> {
+async function loadShareFile(path: string): Promise<ShareFile> {
   try {
-    return ShareFile.parse(JSON.parse(await readFile(shareFilePath(), "utf8")))
+    return ShareFile.parse(JSON.parse(await readFile(path, "utf8")))
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyFile()
     throw new Error("Invalid document share state", { cause: error })
   }
 }
 
+async function loadFile(): Promise<ShareFile> {
+  return loadShareFile(shareFilePath())
+}
+
 async function saveFile(file: ShareFile): Promise<void> {
   await saveShareState(shareFilePath(), `${JSON.stringify(file, null, 2)}\n`)
+}
+
+/**
+ * Move this Worktable's links out of the file older releases shared between
+ * every Worktable on the machine. A link belongs to the Worktable whose
+ * current collaboration epoch it carries, so its token keeps resolving here
+ * and nowhere else. Links of other Worktables stay for those Worktables to
+ * claim. The copy is written before the shared file is shortened, so an
+ * interrupted move repeats without losing or duplicating a link. The caller
+ * holds this Worktable's mutation lock.
+ */
+async function claimLegacySharesLocked(): Promise<void> {
+  const path = shareFilePath()
+  if (claimedLegacyShares.has(path)) return
+  await withCrossProcessLock(
+    `${legacyShareFilePath()}.lock`,
+    { label: "Document share state" },
+    async () => {
+      const legacy = await loadShareFile(legacyShareFilePath())
+      const epoch = await getWorkspaceCollaborationEpoch()
+      const claimed = legacy.shares.filter(
+        (share) => share.workspaceEpoch === epoch
+      )
+      if (claimed.length > 0) {
+        const current = await loadShareFile(path)
+        const tokens = new Set(current.shares.map((share) => share.token))
+        for (const share of claimed) {
+          if (tokens.has(share.token)) continue
+          // One link per artifact, the newest, as sharing again replaces the
+          // old link. An older release run in between may have made a newer
+          // one; an older link must not come back.
+          const existing = current.shares.find(
+            (candidate) =>
+              candidate.workspaceEpoch === epoch &&
+              sameArtifact(candidate, share)
+          )
+          if (
+            existing &&
+            Date.parse(existing.createdAt) >= Date.parse(share.createdAt)
+          ) {
+            continue
+          }
+          current.shares = current.shares.filter(
+            (candidate) => candidate !== existing
+          )
+          current.shares.push(share)
+          tokens.add(share.token)
+        }
+        await saveShareState(path, `${JSON.stringify(current, null, 2)}\n`)
+        const remaining = legacy.shares.filter(
+          (share) => share.workspaceEpoch !== epoch
+        )
+        // An older release reads this file strictly, so it stays a valid file
+        // even when no Worktable's links are left in it.
+        await saveShareState(
+          legacyShareFilePath(),
+          `${JSON.stringify({ ...legacy, shares: remaining }, null, 2)}\n`
+        )
+      }
+    }
+  )
+  claimedLegacyShares.add(path)
 }
 
 async function saveShareState(path: string, content: string): Promise<void> {
@@ -127,17 +205,33 @@ async function fsyncShareDirectory(path: string): Promise<void> {
 }
 
 function serialized<T>(operation: () => Promise<T>): Promise<T> {
-  const locked = () => {
+  return queuedMutation(() => {
     assertWorkspaceAvailable()
-    return withCrossProcessLock(
-      `${shareFilePath()}.lock`,
-      { label: "Document share state" },
-      operation
-    )
-  }
+    return lockedMutation(operation)
+  })
+}
+
+function queuedMutation<T>(locked: () => Promise<T>): Promise<T> {
   const next = mutationQueue.then(locked, locked)
   mutationQueue = next.catch(() => undefined)
   return next
+}
+
+function lockedMutation<T>(operation: () => Promise<T>): Promise<T> {
+  return withCrossProcessLock(
+    `${shareFilePath()}.lock`,
+    { label: "Document share state" },
+    async () => {
+      await claimLegacySharesLocked()
+      return operation()
+    }
+  )
+}
+
+/** Readers call this first, outside the mutation lock, so they see claimed links. */
+async function ensureLegacySharesClaimed(): Promise<void> {
+  if (claimedLegacyShares.has(shareFilePath())) return
+  await queuedMutation(() => lockedMutation(async () => undefined))
 }
 
 function serializedLifecycle<T>(operation: () => Promise<T>): Promise<T> {
@@ -199,6 +293,7 @@ async function createDocumentShareState(
 export async function getDocumentShare(
   artifact: ShareArtifact
 ): Promise<DocumentShare | null> {
+  await ensureLegacySharesClaimed()
   const [file, workspaceEpoch] = await Promise.all([
     loadFile(),
     getWorkspaceCollaborationEpoch(),
@@ -249,6 +344,7 @@ export async function withResolvedDocumentShare<T>(
   use: (share: DocumentShare) => Promise<T>
 ): Promise<T | null> {
   if (!TOKEN_PATTERN.test(token)) return null
+  await ensureLegacySharesClaimed()
   return serializedLifecycle(async () => {
     const [file, workspaceEpoch] = await Promise.all([
       loadFile(),
@@ -340,6 +436,7 @@ export interface StoredDocumentShare extends DocumentShare {
 export async function readStoredDocumentShares(): Promise<
   StoredDocumentShare[]
 > {
+  await ensureLegacySharesClaimed()
   return (await loadFile()).shares.map((share) => ({
     ...publicShare(share),
     workspaceEpoch: share.workspaceEpoch,
@@ -428,7 +525,10 @@ export async function removeMovedDocumentShares(
   )
 }
 
-/** Workspace replacement invalidates every capability from the old content. */
+/**
+ * Workspace replacement and unlinking invalidate every capability of this
+ * Worktable. Other Worktables on the machine keep theirs.
+ */
 export async function invalidateAllDocumentShares(): Promise<void> {
   await serializedLifecycle(() =>
     serialized(async () => {

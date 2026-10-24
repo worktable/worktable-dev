@@ -143,15 +143,27 @@ function runCliSubprocess(
   }
 }
 
+/** The lease a host publishes for this Worktable, once it has an id. */
+function runtimeLeasePath(appDir: string, workspace: string): string | null {
+  try {
+    const { id } = JSON.parse(
+      readFileSync(join(workspace, "worktable.workspace.json"), "utf8")
+    ) as { id: string }
+    return join(appDir, "local-runtime", `${id}.json`)
+  } catch {
+    return null
+  }
+}
+
 async function waitForServiceAuthority(
   appDir: string,
   workspace: string
 ): Promise<ServiceRuntimeProof> {
-  const runtimePath = join(appDir, "local-runtime.json")
   const deadline = Date.now() + 8_000
   let diagnostic = "runtime record has not been published"
   while (Date.now() < deadline) {
-    if (existsSync(runtimePath)) {
+    const runtimePath = runtimeLeasePath(appDir, workspace)
+    if (runtimePath && existsSync(runtimePath)) {
       try {
         const runtime = JSON.parse(
           readFileSync(runtimePath, "utf8")
@@ -1024,7 +1036,7 @@ describe("reachability and owner-auth command integration", () => {
         JSON.parse(readFileSync(join(app, "managed-service.json"), "utf8"))
       ).toMatchObject({ publicUrl: "https://worktable.example.com" })
       const runtime = JSON.parse(
-        readFileSync(join(app, "local-runtime.json"), "utf8")
+        readFileSync(runtimeLeasePath(app, ws)!, "utf8")
       ) as { port: number }
       const bare = await fetch(
         `http://127.0.0.1:${runtime.port}/api/system/connection`

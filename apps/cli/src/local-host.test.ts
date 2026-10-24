@@ -102,14 +102,24 @@ async function freePort(): Promise<number> {
   return port
 }
 
-async function waitForFile(path: string): Promise<void> {
+/** Leases the CLI published, one file per Worktable. */
+function publishedLeasePaths(): string[] {
+  const directory = join(appDir, "local-runtime")
+  if (!existsSync(directory)) return []
+  return readdirSync(directory)
+    .filter((name) => name.endsWith(".json") && !name.includes(".corrupt-"))
+    .map((name) => join(directory, name))
+}
+
+async function waitForPublishedLease(): Promise<string> {
   const deadline = Date.now() + LOCAL_TEST_READINESS_TIMEOUT_MS
   while (Date.now() < deadline) {
-    if (existsSync(path)) return
+    const [path] = publishedLeasePaths()
+    if (path) return path
     // test-policy: external-readiness-backoff
     await Bun.sleep(50)
   }
-  throw new Error(`timed out waiting for ${path}`)
+  throw new Error("timed out waiting for a published runtime lease")
 }
 
 async function waitForFileRemoval(path: string): Promise<void> {
@@ -224,6 +234,8 @@ describe("local-authority state model and command integration", () => {
       port: firstPort,
     })
 
+    const configPath = join(appDir, "config.json")
+    const configuredFirst = readFileSync(configPath, "utf8")
     const activatedSecond = await runCli([
       "local-host",
       "activate",
@@ -232,15 +244,19 @@ describe("local-authority state model and command integration", () => {
     ])
     expect(activatedSecond.exitCode).toBe(0)
     const secondResult = JSON.parse(activatedSecond.stdout)
+    expect(secondResult).toMatchObject({ action: "start-owned" })
     expect(secondResult.port).not.toBe(firstPort)
+    // Another Worktable gets its own endpoint; the configured one stays.
+    expect(readFileSync(configPath, "utf8")).toBe(configuredFirst)
 
     const inspection = await runCli(["local-host", "inspect", "--json"])
     expect(inspection.exitCode).toBe(0)
     expect(inspection.stdout.trim().split("\n")).toHaveLength(1)
     const inspected = JSON.parse(inspection.stdout)
     expect(inspected.workspaces).toHaveLength(2)
-    expect(inspected.activeWorkspace.path).toBe(second)
+    expect(inspected.activeWorkspace.path).toBe(first)
     expect(inspected.runtime).toBeNull()
+    expect(inspected.runtimes).toEqual([])
     expect(inspection.stdout).not.toContain("proofToken")
     expect(inspection.stdout).not.toContain("WORKTABLE_LOCAL_PROOF_TOKEN")
   })
@@ -377,10 +393,22 @@ describe("local-authority state model and command integration", () => {
       config.mcp.endpoint = `http://127.0.0.1:${config.service.port}/mcp`
       writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n")
     }
+    const configureSecond = async (): Promise<void> => {
+      expect(
+        (
+          await runCli([
+            "setup",
+            "--yes",
+            "--skip-mcp",
+            "--no-launch",
+            "--workspace",
+            second,
+          ])
+        ).exitCode
+      ).toBe(0)
+    }
+    await configureSecond()
     makeCurrentWorkspaceReachable()
-    expect(
-      (await runCli(["local-host", "activate", second, "--json"])).exitCode
-    ).toBe(0)
 
     const setup = await runCli([
       "setup",
@@ -396,9 +424,7 @@ describe("local-authority state model and command integration", () => {
       service: { host: "127.0.0.1", port: firstPort },
     })
 
-    expect(
-      (await runCli(["local-host", "activate", second, "--json"])).exitCode
-    ).toBe(0)
+    await configureSecond()
     const launched = Bun.spawn(
       [
         process.execPath,
@@ -416,8 +442,7 @@ describe("local-authority state model and command integration", () => {
       }
     )
     try {
-      const runtimePath = join(appDir, "local-runtime.json")
-      await waitForFile(runtimePath)
+      const runtimePath = await waitForPublishedLease()
       expect(JSON.parse(readFileSync(runtimePath, "utf8"))).toMatchObject({
         workspacePath: first,
         host: "127.0.0.1",
@@ -485,7 +510,7 @@ describe("local-authority state model and command integration", () => {
       { env: environment, stdout: "pipe", stderr: "pipe" }
     )
     try {
-      await waitForFile(join(appDir, "local-runtime.json"))
+      await waitForPublishedLease()
       // Simulate a pre-authority-lock foreground host that still carries a valid,
       // endpoint-proven runtime lease. The workspace path remains authoritative
       // even when a copied manifest retains the same workspace ID.
@@ -575,16 +600,16 @@ describe("local-authority state model and command integration", () => {
       }
     )
     try {
-      await waitForFile(join(appDir, "local-runtime.json"))
+      await waitForPublishedLease()
       await waitForWorktableHealth(port)
       expect(
-        JSON.parse(readFileSync(join(appDir, "local-runtime.json"), "utf8"))
+        JSON.parse(readFileSync(await waitForPublishedLease(), "utf8"))
       ).toMatchObject({ owner: "service", workspacePath: workspace, port })
     } finally {
       service.kill("SIGTERM")
       await service.exited
     }
-    expect(existsSync(join(appDir, "local-runtime.json"))).toBe(false)
+    expect(publishedLeasePaths()).toEqual([])
   })
 
   it("rolls back config and registry when a committed endpoint collides", async () => {
@@ -721,12 +746,12 @@ describe("local-authority state model and command integration", () => {
     )
     let ownerStopped = false
     try {
-      await waitForFile(join(appDir, "local-runtime.json"))
+      await waitForPublishedLease()
       // The lease is published just before the foreground launch commits its
       // transition by releasing this lock. Exercise attach after that boundary.
       await waitForFileRemoval(join(appDir, "local-authority.lock"))
       const { proofToken } = JSON.parse(
-        readFileSync(join(appDir, "local-runtime.json"), "utf8")
+        readFileSync(await waitForPublishedLease(), "utf8")
       ) as { proofToken: string }
       await waitForWorktableHealth(runningPort, proofToken)
       const configPath = join(appDir, "config.json")
@@ -812,7 +837,7 @@ describe("local-authority state model and command integration", () => {
       { env: environment, stdout: "pipe", stderr: "pipe" }
     )
     try {
-      await waitForFile(join(appDir, "local-runtime.json"))
+      await waitForPublishedLease()
       const configPath = join(appDir, "config.json")
       const registryPath = join(appDir, "local-workspaces.json")
       const config = JSON.parse(readFileSync(configPath, "utf8"))
@@ -855,9 +880,7 @@ describe("local-authority state model and command integration", () => {
 
   it("retries an unreachable live lease but blocks a rejected proof", async () => {
     const first = join(root, "first")
-    const second = join(root, "second")
     await prepare(first)
-    await prepare(second)
     expect(
       (await runCli(["local-host", "activate", first, "--json"])).exitCode
     ).toBe(0)
@@ -919,7 +942,9 @@ describe("local-authority state model and command integration", () => {
       rejectProof = true
       const beforeConfig = readFileSync(configPath, "utf8")
       const beforeRegistry = readFileSync(registryPath, "utf8")
-      const refused = await runCli(["local-host", "activate", second, "--json"])
+      // A host for another Worktable does not stand in the way, but this
+      // Worktable's own unproven host does.
+      const refused = await runCli(["local-host", "activate", first, "--json"])
       expect(refused.exitCode).toBe(1)
       expect(JSON.parse(refused.stdout)).toMatchObject({
         ok: false,
@@ -1283,7 +1308,7 @@ describe("local-authority state model and command integration", () => {
     ])
     expect(refused.exitCode).toBe(1)
     expect(refused.stderr).toContain("transition is already running")
-    expect(existsSync(join(appDir, "local-runtime.json"))).toBe(false)
+    expect(publishedLeasePaths()).toEqual([])
     expect(existsSync(lockPath)).toBe(true)
   })
 
@@ -1360,7 +1385,7 @@ describe("local-authority state model and command integration", () => {
     ])
     expect(refused.exitCode).toBe(1)
     expect(refused.stderr).toContain("transition is already running")
-    expect(existsSync(join(appDir, "local-runtime.json"))).toBe(false)
+    expect(publishedLeasePaths()).toEqual([])
     expect(existsSync(lockPath)).toBe(true)
   })
 
@@ -1401,17 +1426,17 @@ describe("local-authority state model and command integration", () => {
       }
     )
     try {
-      await waitForFile(join(appDir, "local-runtime.json"))
+      await waitForPublishedLease()
       await waitForWorktableHealth(port)
       expect(
-        JSON.parse(readFileSync(join(appDir, "local-runtime.json"), "utf8"))
+        JSON.parse(readFileSync(await waitForPublishedLease(), "utf8"))
       ).toMatchObject({ owner: "service", workspacePath: workspace, port })
       expect(existsSync(lockPath)).toBe(true)
     } finally {
       service.kill("SIGTERM")
       await service.exited
     }
-    expect(existsSync(join(appDir, "local-runtime.json"))).toBe(false)
+    expect(publishedLeasePaths()).toEqual([])
   })
 
   it("setup refuses a health-only Worktable listener without a proven lease", async () => {
@@ -1527,8 +1552,7 @@ describe("local-authority state model and command integration", () => {
       }
     )
     try {
-      const runtimePath = join(appDir, "local-runtime.json")
-      await waitForFile(runtimePath)
+      const runtimePath = await waitForPublishedLease()
       // Simulate a host from before the long-lived authority lock existed. The
       // proven runtime lease must still prevent destructive uninstall.
       rmSync(join(appDir, "local-authority.lock"), { force: true })
@@ -1551,9 +1575,7 @@ describe("local-authority state model and command integration", () => {
 
   it("setup refuses a proven service owner with no installed service artifact", async () => {
     const first = join(root, "unmanaged-service-first")
-    const second = join(root, "unmanaged-service-second")
     await prepare(first)
-    await prepare(second)
     const port = await freePort()
     const service = Bun.spawn(
       [
@@ -1574,7 +1596,7 @@ describe("local-authority state model and command integration", () => {
       }
     )
     try {
-      await waitForFile(join(appDir, "local-runtime.json"))
+      await waitForPublishedLease()
       // Exercise ownership after startup commits, not its transient lock.
       await waitForFileRemoval(join(appDir, "local-authority.lock"))
       const configPath = join(appDir, "config.json")
@@ -1582,13 +1604,15 @@ describe("local-authority state model and command integration", () => {
       const beforeConfig = readFileSync(configPath, "utf8")
       const beforeRegistry = readFileSync(registryPath, "utf8")
 
+      // Hosts for other Worktables may keep running, but this Worktable's
+      // own host must be the managed service before setup reconfigures it.
       const refused = await runCli([
         "setup",
         "--yes",
         "--skip-mcp",
         "--no-launch",
         "--workspace",
-        second,
+        first,
       ])
       expect(refused.exitCode).toBe(1)
       expect(refused.stderr).toContain("An unmanaged Worktable service process")
@@ -1599,8 +1623,6 @@ describe("local-authority state model and command integration", () => {
         "launch",
         "--background",
         "--no-browser",
-        "--workspace",
-        second,
       ])
       expect(refusedLaunch.exitCode).toBe(1)
       expect(refusedLaunch.stderr).toContain(
@@ -1643,7 +1665,7 @@ describe("local-authority state model and command integration", () => {
       }
     )
     try {
-      await waitForFile(join(appDir, "local-runtime.json"))
+      await waitForPublishedLease()
       // Exercise ownership after startup commits, not its transient lock.
       await waitForFileRemoval(join(appDir, "local-authority.lock"))
       // The marker makes the process backend appear installed, but with no
@@ -1706,7 +1728,7 @@ describe("local-authority state model and command integration", () => {
       (await runCli(["launch", "--background", "--no-browser"])).exitCode
     ).toBe(0)
     try {
-      await waitForFile(join(appDir, "local-runtime.json"))
+      await waitForPublishedLease()
       const configPath = join(appDir, "config.json")
       const beforeConfig = readFileSync(configPath, "utf8")
       rmSync(join(appDir, "local-workspaces.json"), { force: true })
@@ -1730,23 +1752,13 @@ describe("local-authority state model and command integration", () => {
       // A loaded/running manager is not enough proof by itself. Model an orphan
       // overwriting the lease with its own live PID while the real managed child
       // remains healthy; lifecycle operations must match the manager's exact PID.
-      const runtimePath = join(appDir, "local-runtime.json")
+      const runtimePath = await waitForPublishedLease()
       const orphanedRuntime = JSON.parse(readFileSync(runtimePath, "utf8"))
       orphanedRuntime.pid = process.pid
       delete orphanedRuntime.ownerIdentity
       writeFileSync(
         runtimePath,
         JSON.stringify(orphanedRuntime, null, 2) + "\n"
-      )
-      const refusedActivation = await runCli([
-        "local-host",
-        "activate",
-        second,
-        "--json",
-      ])
-      expect(refusedActivation.exitCode).toBe(1)
-      expect(JSON.parse(refusedActivation.stdout).error.message).toContain(
-        "unmanaged service process"
       )
       const refusedRestart = await runCliSubprocess(["service", "restart"])
       expect(refusedRestart.exitCode).toBe(1)
@@ -1817,16 +1829,20 @@ describe("local-authority state model and command integration", () => {
     const beforeConfig = JSON.parse(readFileSync(configPath, "utf8"))
     const beforeRegistry = JSON.parse(readFileSync(registryPath, "utf8"))
 
+    // Activating another Worktable leaves config alone, so make the second
+    // one the configured Worktable that the interrupted activation targeted.
     const port = await freePort()
     expect(
       (
         await runCli([
-          "local-host",
-          "activate",
+          "setup",
+          "--yes",
+          "--skip-mcp",
+          "--no-launch",
+          "--workspace",
           second,
           "--port",
           String(port),
-          "--json",
         ])
       ).exitCode
     ).toBe(0)
@@ -1835,7 +1851,7 @@ describe("local-authority state model and command integration", () => {
       { env: environment, stdout: "pipe", stderr: "pipe" }
     )
     try {
-      await waitForFile(join(appDir, "local-runtime.json"))
+      await waitForPublishedLease()
       // Model a journal written by the pre-fix attach path. The proven host is
       // deliberately allowed to outlive the transition lock for this recovery
       // regression, as older Desktop builds did. Restoring the old registry also
@@ -1899,7 +1915,7 @@ describe("local-authority state model and command integration", () => {
     expect(refused.stderr).toContain(
       "previous local workspace activation did not finish"
     )
-    expect(existsSync(join(appDir, "local-runtime.json"))).toBe(false)
+    expect(publishedLeasePaths()).toEqual([])
     expect(readFileSync(configPath, "utf8")).toBe(beforeConfig)
     expect(existsSync(journalPath)).toBe(true)
   })
@@ -1958,45 +1974,52 @@ describe("local-authority state model and command integration", () => {
     }
   })
 
-  it("refuses a second foreground owner before changing durable workspace state", async () => {
+  it("runs one host per Worktable and refuses a second host for the same Worktable or port", async () => {
     const first = join(root, "first")
     const second = join(root, "second")
     await prepare(first)
     await prepare(second)
     const firstPort = await freePort()
     const secondPort = firstPort === 65_535 ? firstPort - 1 : firstPort + 1
-    const owner = Bun.spawn(
-      [
-        process.execPath,
-        cliEntry,
+    const launch = (args: string[], owner: string) =>
+      Bun.spawn(
+        [
+          process.execPath,
+          cliEntry,
+          "launch",
+          "--foreground",
+          "--no-browser",
+          ...args,
+        ],
+        {
+          env: { ...environment, WORKTABLE_LOCAL_OWNER: owner },
+          stdout: "pipe",
+          stderr: "pipe",
+        }
+      )
+    const firstHost = launch(
+      ["--workspace", first, "--port", String(firstPort)],
+      "cli"
+    )
+    let secondHost: ReturnType<typeof Bun.spawn> | null = null
+    try {
+      await waitForPublishedLease()
+      await waitForWorktableHealth(firstPort)
+      const configPath = join(appDir, "config.json")
+      const beforeConfig = readFileSync(configPath, "utf8")
+
+      const sameWorktable = await runCli([
         "launch",
         "--foreground",
         "--no-browser",
         "--workspace",
         first,
         "--port",
-        String(firstPort),
-      ],
-      { env: environment, stdout: "pipe", stderr: "pipe" }
-    )
-    try {
-      await waitForFile(join(appDir, "local-runtime.json"))
-      await waitForWorktableHealth(firstPort)
-      const beforeConfig = readFileSync(join(appDir, "config.json"), "utf8")
-      const refused = await runCli([
-        "launch",
-        "--foreground",
-        "--no-browser",
-        "--workspace",
-        second,
-        "--port",
         String(secondPort),
       ])
-      expect(refused.exitCode).toBe(1)
-      expect(refused.stderr).toContain("already owns")
-      expect(readFileSync(join(appDir, "config.json"), "utf8")).toBe(
-        beforeConfig
-      )
+      expect(sameWorktable.exitCode).toBe(1)
+      expect(sameWorktable.stderr).toContain("already owns")
+      expect(readFileSync(configPath, "utf8")).toBe(beforeConfig)
 
       const refusedPostureChange = await runCli([
         "launch",
@@ -2007,13 +2030,87 @@ describe("local-authority state model and command integration", () => {
       ])
       expect(refusedPostureChange.exitCode).toBe(1)
       expect(refusedPostureChange.stderr).toContain("already owns")
-      expect(readFileSync(join(appDir, "config.json"), "utf8")).toBe(
-        beforeConfig
+      expect(readFileSync(configPath, "utf8")).toBe(beforeConfig)
+
+      const samePort = await runCli([
+        "launch",
+        "--foreground",
+        "--no-browser",
+        "--keep-configured-workspace",
+        "--workspace",
+        second,
+        "--port",
+        String(firstPort),
+      ])
+      expect(samePort.exitCode).toBe(1)
+      expect(samePort.stderr).toContain(`127.0.0.1:${firstPort} belongs to`)
+      expect(readFileSync(configPath, "utf8")).toBe(beforeConfig)
+
+      // Another Worktable runs beside it, as Desktop keeps a linked
+      // Worktable online, without changing the configured one.
+      // Desktop is modelled by a parent shell that waits on its host.
+      secondHost = Bun.spawn(
+        [
+          "sh",
+          "-c",
+          '"$0" "$1" launch --foreground --no-browser --keep-configured-workspace --workspace "$2" --port "$3" & wait',
+          process.execPath,
+          cliEntry,
+          second,
+          String(secondPort),
+        ],
+        {
+          env: { ...environment, WORKTABLE_LOCAL_OWNER: "desktop" },
+          stdout: "pipe",
+          stderr: "pipe",
+        }
       )
+      await waitForWorktableHealth(secondPort)
+      const inspection = await runCli(["local-host", "inspect", "--json"])
+      expect(inspection.exitCode).toBe(0)
+      const inspected = JSON.parse(inspection.stdout)
+      expect(inspected.runtime).toMatchObject({
+        workspacePath: first,
+        endpointVerified: true,
+      })
+      expect(
+        inspected.runtimes.map(
+          (runtime: { workspacePath: string; endpointVerified: boolean }) => [
+            runtime.workspacePath,
+            runtime.endpointVerified,
+          ]
+        )
+      ).toEqual(
+        expect.arrayContaining([
+          [first, true],
+          [second, true],
+        ])
+      )
+      expect(readFileSync(configPath, "utf8")).toBe(beforeConfig)
+      expect(
+        JSON.parse(
+          readFileSync(join(appDir, "local-workspaces.json"), "utf8")
+        ).workspaces.map((entry: { path: string }) => entry.path)
+      ).toEqual(expect.arrayContaining([first, second]))
+      // Older releases read only the single-host lease: it names the
+      // configured Worktable's host.
+      expect(
+        JSON.parse(readFileSync(join(appDir, "local-runtime.json"), "utf8"))
+      ).toMatchObject({ workspacePath: first, port: firstPort })
+
+      // When Desktop goes away without stopping its host, the host stops.
+      const secondLease = publishedLeasePaths().find((path) =>
+        readFileSync(path, "utf8").includes(second)
+      )!
+      secondHost.kill("SIGKILL")
+      await secondHost.exited
+      await waitForFileRemoval(secondLease)
     } finally {
-      owner.kill("SIGTERM")
-      await owner.exited
+      firstHost.kill("SIGTERM")
+      secondHost?.kill("SIGKILL")
+      await Promise.all([firstHost.exited, secondHost?.exited])
     }
+    expect(publishedLeasePaths()).toEqual([])
     expect(existsSync(join(appDir, "local-runtime.json"))).toBe(false)
   })
 })

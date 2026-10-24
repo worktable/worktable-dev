@@ -1,8 +1,9 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { chmod, rename, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { ensureAppDir } from "./app-storage.ts";
+import { withCrossProcessLock } from "./cross-process-lock.ts";
 import { normalizePublicUrl } from "./public-origin.ts";
 import { logError } from "./debug-log.ts";
 
@@ -309,6 +310,70 @@ async function persist(settings: ServerSettings): Promise<void> {
 
 let _cache: ServerSettings | null = null;
 
+// Every Worktable host on this machine shares settings.json, and another
+// host's write replaces the file. The cache notices that by the file's
+// identity, checked at most once a second so a request never waits on more
+// than this one cheap stat.
+const SETTINGS_REVALIDATE_MS = 1_000;
+let _cacheSignature: string | null = null;
+let _cacheCheckedAt = 0;
+
+function settingsFileSignature(): string {
+  try {
+    const stat = statSync(settingsFile());
+    return `${stat.ino}:${stat.size}:${stat.mtimeMs}`;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "unreadable";
+  }
+}
+
+function rememberWrittenSettings(next: ServerSettings): void {
+  _cache = next;
+  _cacheSignature = settingsFileSignature();
+  _cacheCheckedAt = Date.now();
+}
+
+let _settingsRepair: Promise<void> = Promise.resolve();
+
+/**
+ * Move a corrupt settings.json aside and write defaults, under the settings
+ * lock other hosts write with. A file another host replaced since it was read
+ * is left alone.
+ */
+function quarantineCorruptSettings(signature: string): void {
+  const repair = async () => {
+    await withCrossProcessLock(`${settingsFile()}.lock`, { label: "Settings" }, async () => {
+      if (settingsFileSignature() !== signature) return;
+      const file = settingsFile();
+      renameSync(file, `${file}.corrupt`);
+      const tmp = `${file}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
+      await writeFile(tmp, JSON.stringify(SETTINGS_DEFAULTS, null, 2), { encoding: "utf8", mode: 0o600 });
+      await rename(tmp, file);
+    });
+  };
+  _settingsRepair = _settingsRepair.then(repair).catch((err) => {
+    console.warn("[settings] failed to quarantine corrupt settings.json:", logError(err));
+  });
+}
+
+/** Resolves once a corrupt settings file found so far has been moved aside. */
+export function settingsRepairSettledForTests(): Promise<void> {
+  return _settingsRepair;
+}
+
+/** Serialize a read-merge-write with other hosts' settings writes. */
+function withSettingsFileLock<T>(operation: () => Promise<T>): Promise<T> {
+  return withCrossProcessLock(
+    `${settingsFile()}.lock`,
+    { label: "Settings" },
+    () => {
+      // Merge into what is on disk now, not what this host last saw.
+      _cacheCheckedAt = 0;
+      return operation();
+    },
+  );
+}
+
 // Monotonic RETENTION-POLICY write counter — bumped only when a write actually
 // changes history.retention. Long-running consumers of a policy SNAPSHOT (the
 // retention sweep walks every doc dir with the policy it launched with) compare
@@ -318,6 +383,10 @@ let _cache: ServerSettings | null = null;
 let _retentionGeneration = 0;
 
 export function getRetentionPolicyGeneration(): number {
+  // Sweeps authorize each deletion on this counter. Refresh it first (the
+  // throttled stat in getServerSettings) so a policy another host relaxed
+  // stops destructive work here too.
+  getServerSettings();
   return _retentionGeneration;
 }
 
@@ -331,7 +400,7 @@ export function getRetentionPolicyGeneration(): number {
  * Because settings now carry the public-origin exposure signal, corrupt or
  * unreadable settings fail closed until an explicit settings write succeeds.
  */
-function readFromDisk(): ServerSettings {
+function readFromDisk(signature: string): ServerSettings {
   const file = settingsFile();
   let raw: string;
   try {
@@ -352,14 +421,7 @@ function readFromDisk(): ServerSettings {
     // Corrupt JSON: preserve the bytes for forensics, reset to defaults, and
     // require auth until an owner successfully rewrites settings.
     markFailClosed("settings.json was corrupt; requiring auth until settings are rewritten");
-    try {
-      renameSync(file, `${file}.corrupt`);
-      writeFileSync(file, JSON.stringify(SETTINGS_DEFAULTS, null, 2), {
-        mode: 0o600,
-      });
-    } catch (writeErr) {
-      console.warn("[settings] failed to quarantine corrupt settings.json:", logError(writeErr));
-    }
+    quarantineCorruptSettings(signature);
     console.warn(
       `[settings] settings.json was not valid JSON; preserved as settings.json.corrupt, reset to defaults, and auth will fail closed until settings are rewritten`,
     );
@@ -373,15 +435,37 @@ function readFromDisk(): ServerSettings {
 // Public API
 // ============================================================
 
-/** Current server settings (cached; invalidated on every write). */
+/**
+ * Current server settings: cached, refreshed on this host's writes and, within
+ * a second, on another host's.
+ */
 export function getServerSettings(): ServerSettings {
-  if (!_cache) _cache = readFromDisk();
+  const now = Date.now();
+  if (_cache && now - _cacheCheckedAt < SETTINGS_REVALIDATE_MS) return _cache;
+  _cacheCheckedAt = now;
+  const signature = settingsFileSignature();
+  if (_cache && signature === _cacheSignature) return _cache;
+  const previous = _cache;
+  _cache = readFromDisk(signature);
+  // The identity from before the read: a write that lands in between is read
+  // again on the next check rather than missed.
+  _cacheSignature = signature;
+  if (
+    previous &&
+    JSON.stringify(previous.history.retention) !==
+      JSON.stringify(_cache.history.retention)
+  ) {
+    // Another host changed the policy; a sweep running here on the old one stops.
+    _retentionGeneration += 1;
+  }
   return _cache;
 }
 
 /** Drop the in-memory cache (tests, and after an out-of-band file change). */
 export function invalidateServerSettingsCache(): void {
   _cache = null;
+  _cacheSignature = null;
+  _cacheCheckedAt = 0;
   _failClosedInMemory = false;
 }
 
@@ -504,10 +588,8 @@ export function updateServerSettingsWithResult(
   // the same snapshot and the later persist would silently revert the earlier
   // group. Chaining makes the later writer re-read the earlier one's result; a
   // rejected predecessor (validation error) must not poison the chain.
-  const run = _writeChain.then(
-    () => applyPatchWithResult(patch),
-    () => applyPatchWithResult(patch),
-  );
+  const apply = () => withSettingsFileLock(() => applyPatchWithResult(patch));
+  const run = _writeChain.then(apply, apply);
   _writeChain = run.catch(() => undefined);
   return run;
 }
@@ -684,7 +766,7 @@ async function applyPatchWithResult(
     JSON.stringify(current.history.retention) !==
     JSON.stringify(next.history.retention);
   await persist(next);
-  _cache = next;
+  rememberWrittenSettings(next);
   if (retentionChanged) _retentionGeneration += 1;
   return {
     settings: next,
@@ -711,10 +793,9 @@ export function settleRetentionPolicy(options: {
   hasVersionHistory: () => boolean;
   now?: () => Date;
 }): Promise<ServerSettings> {
-  const run = _writeChain.then(
-    () => settleRetentionPolicyNow(options),
-    () => settleRetentionPolicyNow(options),
-  );
+  const settle = () =>
+    withSettingsFileLock(() => settleRetentionPolicyNow(options));
+  const run = _writeChain.then(settle, settle);
   _writeChain = run.catch(() => undefined);
   return run;
 }
@@ -770,7 +851,7 @@ async function settleRetentionPolicyNow(options: {
     history: { retention, retentionNotice },
   };
   await persist(next);
-  _cache = next;
+  rememberWrittenSettings(next);
   if (JSON.stringify(current.history.retention) !== JSON.stringify(retention)) {
     _retentionGeneration += 1;
   }

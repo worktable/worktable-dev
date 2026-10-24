@@ -11,7 +11,7 @@ import {
   writeFileSync,
   writeSync,
 } from "node:fs"
-import { dirname, join, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 import type { Option } from "@clack/prompts"
 import {
   Command,
@@ -113,15 +113,18 @@ import {
   findLocalWorkspace,
   findLocalWorkspaceByPath,
   getLocalWorkspaceRegistryPath,
-  getLocalRuntimePath,
+  getLocalRuntimeDirectory,
   getServerSettings,
   inspectLocalRuntime,
   inspectLocalRuntimeDetailed,
+  inspectLocalRuntimeLease,
+  inspectLocalRuntimes,
   localHostsSharePortSpace,
   localHttpOrigin,
   localProcessAlive,
   localProcessIdentity,
   PAIRING_TTL_MS,
+  readLocalRuntimeFiles,
   readLocalWorkspaceRegistry,
   rememberLocalWorkspace,
   remoteMcpUrl,
@@ -132,6 +135,7 @@ import {
   writeLocalRuntime,
   writeLocalWorkspaceRegistry,
   type LocalRuntimeOwner,
+  type LocalRuntimeFileError,
   type LocalRuntimeInspection,
   type LocalRuntimeRecord,
 } from "@worktable/server/runtime"
@@ -209,6 +213,7 @@ interface LaunchOptions {
   port?: number
   host?: string
   workspace?: string
+  keepConfiguredWorkspace?: boolean
   ephemeralWorkspace?: string
   reachable?: boolean
   bind?: boolean
@@ -410,10 +415,68 @@ function rememberConfiguredLocalWorkspace(
   })
 }
 
+/**
+ * The portable id of a Worktable folder: its manifest's, or the registry's
+ * when the folder cannot be read. Leases are published per id.
+ */
+function localWorkspaceIdForPath(workspacePath: string): string | null {
+  const classification = classifyWorkspaceTarget(workspacePath)
+  if (classification.outcome === "valid") return classification.manifest.id
+  try {
+    return findLocalWorkspaceByPath(workspacePath)?.workspaceId ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Whether two folders are the same Worktable: the same path, or the same
+ * manifest id when both have one (a path reached through a symlink, say).
+ */
+function sameLocalWorktable(left: string, right: string): boolean {
+  if (resolve(left) === resolve(right)) return true
+  const leftId = localWorkspaceIdForPath(left)
+  return leftId !== null && leftId === localWorkspaceIdForPath(right)
+}
+
+/** Inspect the host serving one Worktable folder, if one published a lease. */
+async function inspectWorkspaceRuntime(
+  workspacePath: string,
+  timeoutMs?: number
+): Promise<LocalRuntimeInspection | null> {
+  const workspaceId = localWorkspaceIdForPath(workspacePath)
+  return workspaceId
+    ? inspectLocalRuntimeDetailed(workspaceId, timeoutMs)
+    : null
+}
+
+/**
+ * A live host for another Worktable that holds this endpoint's port. Each
+ * Worktable has its own endpoint, so hosts for different Worktables run side
+ * by side; only a shared port conflicts.
+ */
+function liveHostOnPort(
+  runtimes: readonly LocalRuntimeInspection[],
+  endpoint: { workspaceId?: string | null; host: string; port: number }
+): LocalRuntimeInspection | null {
+  return (
+    runtimes.find(
+      (runtime) =>
+        runtime.processAlive &&
+        runtime.pid !== process.pid &&
+        runtime.workspaceId !== endpoint.workspaceId &&
+        runtime.port === endpoint.port &&
+        localHostsSharePortSpace(runtime.host, endpoint.host)
+    ) ?? null
+  )
+}
+
+const DESKTOP_PARENT_CHECK_MS = 2_000
+
 function installLocalRuntimeCleanup(runtime: LocalRuntimeRecord): void {
   const cleanup = () => {
     try {
-      clearLocalRuntime(runtime.nonce)
+      clearLocalRuntime(runtime)
     } catch {
       // The runtime record may already have been replaced by a newer owner.
     }
@@ -425,6 +488,20 @@ function installLocalRuntimeCleanup(runtime: LocalRuntimeRecord): void {
       process.exit(0)
     })
   }
+}
+
+/**
+ * A Desktop-owned host stops when Desktop goes away, even when Desktop
+ * crashed and never asked it to, so no orphaned host keeps a Worktable.
+ * Desktop starts the host directly, so a new parent process means it is gone.
+ */
+function stopWithDesktop(): void {
+  const parent = process.ppid
+  const check = setInterval(() => {
+    if (process.ppid === parent) return
+    clearInterval(check)
+    process.kill(process.pid, "SIGTERM")
+  }, DESKTOP_PARENT_CHECK_MS)
 }
 
 /** True if something is already listening on the port (any protocol). */
@@ -741,7 +818,9 @@ async function runStdioMcp(): Promise<void> {
 
   // Prefer the running server for this workspace. Without one (or when it
   // requires a token), serve in-process as before.
-  const runtime = await inspectLocalRuntimeDetailed(500).catch(() => null)
+  const runtime = await inspectWorkspaceRuntime(config.workspace, 500).catch(
+    () => null
+  )
   const endpoint = stdioForwardEndpoint({
     workspacePath: config.workspace,
     runtime,
@@ -871,16 +950,23 @@ async function printDoctor(check = false): Promise<void> {
   applyRuntimeConfig(config)
   const paths = getDoctorPaths()
   const service = getServiceStatus()
-  let localRuntime: Awaited<ReturnType<typeof inspectLocalRuntime>> = null
-  let localRuntimeError: string | null = null
-  let localRuntimeUnsupported = false
+  let localRuntimes: LocalRuntimeInspection[] = []
+  let localRuntimeErrors: LocalRuntimeFileError[] = []
   try {
-    localRuntime = await inspectLocalRuntime()
+    const inspected = await inspectLocalRuntimes()
+    localRuntimes = inspected.runtimes
+    localRuntimeErrors = inspected.errors
   } catch (error) {
-    localRuntimeError = error instanceof Error ? error.message : String(error)
-    localRuntimeUnsupported =
-      error instanceof UnsupportedLocalRuntimeSchemaError
+    localRuntimeErrors = [
+      { path: getLocalRuntimeDirectory(), workspaceId: null, error },
+    ]
   }
+  const localRuntime =
+    localRuntimes.find((runtime) =>
+      paths.workspaceId
+        ? runtime.workspaceId === paths.workspaceId
+        : resolve(runtime.workspacePath) === resolve(config.workspace)
+    ) ?? null
   const mcp = getMcpStatuses(config)
   console.log(style.bold("Worktable doctor"))
   console.log()
@@ -910,25 +996,36 @@ async function printDoctor(check = false): Promise<void> {
   console.log(
     `Local host owner:      ${localRuntime?.endpointVerified ? `${localRuntime.owner} (pid ${localRuntime.pid})` : "none"}`
   )
-  console.log(`Local runtime record: ${getLocalRuntimePath()}`)
-  if (localRuntimeError) {
+  for (const runtime of localRuntimes) {
+    if (runtime === localRuntime || !runtime.endpointVerified) continue
     console.log(
-      `${style.yellow("Runtime warning:")}    ${localRuntimeError}.${localRuntimeUnsupported ? " Upgrade Worktable before modifying this newer runtime lease." : " Run `worktable local-host recover --json` to quarantine the invalid lease."}`
+      `Other local host:     ${runtime.owner} (pid ${runtime.pid}) serves ${runtime.workspacePath} at ${clientOriginFor(runtime.host, runtime.port)}`
+    )
+  }
+  console.log(`Local runtime leases: ${getLocalRuntimeDirectory()}`)
+  for (const { path, error } of localRuntimeErrors) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.log(
+      `${style.yellow("Runtime warning:")}    ${path}: ${message}.${error instanceof UnsupportedLocalRuntimeSchemaError ? " Upgrade Worktable before modifying this newer runtime lease." : " Run `worktable local-host recover --json` to quarantine the invalid lease."}`
     )
     if (check) process.exitCode = 1
   }
-  if (localRuntime?.processAlive && !localRuntime.endpointVerified) {
+  for (const runtime of localRuntimes) {
+    if (!runtime.processAlive || runtime.endpointVerified) continue
     console.log(
-      `${style.yellow("Authority warning:")}  A live ${localRuntime.owner} process holds the runtime lease but did not prove ownership of ${clientOriginFor(localRuntime.host, localRuntime.port)}.`
+      `${style.yellow("Authority warning:")}  A live ${runtime.owner} process holds the runtime lease for ${runtime.workspacePath} but did not prove ownership of ${clientOriginFor(runtime.host, runtime.port)}.`
     )
     if (check) process.exitCode = 1
   }
+  const serviceRuntime = localRuntimes.find((runtime) =>
+    isVerifiedManagedServiceRuntime(runtime, service)
+  )
   if (
-    localRuntime?.endpointVerified &&
-    resolve(localRuntime.workspacePath) !== resolve(config.workspace)
+    serviceRuntime &&
+    resolve(serviceRuntime.workspacePath) !== resolve(config.workspace)
   ) {
     console.log(
-      `${style.yellow("Authority warning:")}  Running ${localRuntime.owner} host serves ${localRuntime.workspacePath}, but config points at ${config.workspace}.`
+      `${style.yellow("Authority warning:")}  The background service serves ${serviceRuntime.workspacePath}, but config points at ${config.workspace}.`
     )
     if (check) process.exitCode = 1
   }
@@ -1024,18 +1121,51 @@ async function commandLocalHostInspect(): Promise<void> {
         workspaces: [],
       }
     }
-    let runtime: Awaited<ReturnType<typeof inspectLocalRuntime>> = null
-    let runtimeError: string | null = null
-    let runtimeErrorCode: string | null = null
+    // Every Worktable with a running host publishes its own lease. `runtime`
+    // stays the configured Worktable's, as earlier Desktop releases read it.
+    let runtimes: LocalRuntimeInspection[] = []
+    let runtimeErrors: LocalRuntimeFileError[] = []
     try {
-      runtime = await inspectLocalRuntime()
+      const inspected = await inspectLocalRuntimes()
+      runtimes = inspected.runtimes
+      runtimeErrors = inspected.errors
     } catch (error) {
-      runtimeError = error instanceof Error ? error.message : String(error)
-      runtimeErrorCode =
-        error instanceof UnsupportedLocalRuntimeSchemaError
-          ? "LOCAL_RUNTIME_SCHEMA_UNSUPPORTED"
-          : null
+      runtimeErrors = [
+        { path: getLocalRuntimeDirectory(), workspaceId: null, error },
+      ]
     }
+    const configuredWorkspaceId = localWorkspaceIdForPath(config.workspace)
+    // Earlier Desktop releases read the public view without endpointState.
+    const publicRuntime = (
+      inspection: LocalRuntimeInspection
+    ): Omit<LocalRuntimeInspection, "endpointState"> => {
+      const runtime: Partial<LocalRuntimeInspection> = { ...inspection }
+      delete runtime.endpointState
+      return runtime as Omit<LocalRuntimeInspection, "endpointState">
+    }
+    const configuredRuntime =
+      runtimes.find((runtime) =>
+        configuredWorkspaceId
+          ? runtime.workspaceId === configuredWorkspaceId
+          : resolve(runtime.workspacePath) === resolve(config.workspace)
+      ) ?? null
+    const runtime = configuredRuntime ? publicRuntime(configuredRuntime) : null
+    // The configured Worktable's unreadable lease first, then any other.
+    const firstRuntimeError =
+      runtimeErrors.find(
+        (entry) =>
+          entry.workspaceId === null ||
+          entry.workspaceId === configuredWorkspaceId
+      ) ?? runtimeErrors[0]
+    const runtimeError = firstRuntimeError
+      ? firstRuntimeError.error instanceof Error
+        ? firstRuntimeError.error.message
+        : String(firstRuntimeError.error)
+      : null
+    const runtimeErrorCode =
+      firstRuntimeError?.error instanceof UnsupportedLocalRuntimeSchemaError
+        ? "LOCAL_RUNTIME_SCHEMA_UNSUPPORTED"
+        : null
     const service = getServiceStatus()
     const configured = existsSync(getConfigPath())
     const active = registry.activeWorkspaceId
@@ -1064,6 +1194,7 @@ async function commandLocalHostInspect(): Promise<void> {
         registryError,
         registryErrorCode,
         runtime,
+        runtimes: runtimes.map(publicRuntime),
         runtimeError,
         runtimeErrorCode,
         service,
@@ -1514,6 +1645,15 @@ export async function waitForExactLocalRuntime(
     Date.now() +
     (options.readinessTimeoutMs ?? LOCAL_RUNTIME_READINESS_TIMEOUT_MS)
   let lastRetry: "pending" | "unreachable" = "pending"
+  // The lease is published under the Worktable's id. A new folder gets its id
+  // when its host starts, so look it up again on each attempt.
+  const inspectExpected = (timeoutMs: number) => {
+    const workspaceId =
+      expected.workspaceId ?? localWorkspaceIdForPath(expected.workspacePath)
+    return workspaceId
+      ? inspectLocalRuntimeDetailed(workspaceId, timeoutMs)
+      : Promise.resolve(null)
+  }
 
   for (;;) {
     const remaining = deadline - Date.now()
@@ -1527,7 +1667,7 @@ export async function waitForExactLocalRuntime(
       }
     }
 
-    let runtime = await inspectLocalRuntimeDetailed(
+    let runtime = await inspectExpected(
       Math.max(
         1,
         Math.min(
@@ -1548,7 +1688,7 @@ export async function waitForExactLocalRuntime(
       // A valid service may publish while the ordinary health request is in
       // flight. Refresh authenticated state before declaring a responsive
       // Worktable endpoint unleased and stopping it as a wrong child.
-      runtime = await inspectLocalRuntimeDetailed(
+      runtime = await inspectExpected(
         Math.max(
           1,
           Math.min(
@@ -1766,6 +1906,79 @@ function printLocalHostMachineError(code: string, error: unknown): void {
   process.exitCode = 1
 }
 
+/**
+ * Activate a Worktable other than the configured one. Its host runs beside
+ * any other: an existing host is attached, otherwise the caller starts one on
+ * the Worktable's stable endpoint. config.json and the background service are
+ * left as they are.
+ */
+async function activateAdditionalLocalWorkspace(input: {
+  targetPath: string
+  manifest: { id: string; name: string }
+  config: WorktableConfig
+  runtime: LocalRuntimeInspection | null
+  port: number | undefined
+  waitForWelcome: boolean
+}): Promise<void> {
+  const { targetPath, manifest, config, runtime } = input
+  const known = registeredLocalWorkspaceForPath(targetPath)
+  const host = runtime?.host ?? known?.host ?? config.service.host
+  const port =
+    runtime?.port ??
+    known?.port ??
+    input.port ??
+    (await stablePortForWorkspace(targetPath, host, config.service.port))
+  if (!runtime) {
+    const portState = await classifyPort(host, port)
+    if (portState !== "free") {
+      throw new UsageError(
+        portState === "worktable"
+          ? `Another Worktable process is using ${clientOriginFor(host, port)}, but it does not carry the shared ownership proof. Restart that process before attaching Desktop.`
+          : `Port ${port} is already in use by another process.`
+      )
+    }
+  }
+  rememberLocalWorkspace({
+    workspaceId: manifest.id,
+    name: manifest.name,
+    path: targetPath,
+    host,
+    port,
+    active: false,
+  })
+  if (runtime && input.waitForWelcome) {
+    applyRuntimeConfig({
+      ...config,
+      workspace: targetPath,
+      service: { ...config.service, host, port },
+    })
+    const deadline = Date.now() + 30_000
+    while (!(await starterWorkspaceReady())) {
+      if (Date.now() >= deadline) {
+        throw new UsageError(
+          "The local host is running, but the Welcome space was not ready in time."
+        )
+      }
+      await Bun.sleep(100)
+    }
+  }
+  console.log(
+    JSON.stringify({
+      schemaVersion: 1,
+      ok: true,
+      action: runtime ? "attach" : "start-owned",
+      owner: runtime?.owner ?? null,
+      workspace: { id: manifest.id, name: manifest.name, path: targetPath },
+      host,
+      port,
+      origin: clientOriginFor(host, port),
+      requiresOwnerLogin:
+        !isLoopbackHost(host) || publicOriginConfiguredFromEnv(),
+      logsPath: join(getAppDir(), "logs", "desktop-host.log"),
+    })
+  )
+}
+
 async function commandLocalHostActivate(
   directory: string,
   opts: { port?: number; waitForWelcome?: boolean }
@@ -1792,7 +2005,11 @@ async function commandLocalHostActivate(
     }
     const beforeConfig = readConfig()
     const beforeRegistry = readLocalWorkspaceRegistry()
-    let observedRuntime = await inspectLocalRuntimeDetailed()
+    // Only this Worktable's own host matters: hosts for other Worktables keep
+    // running on their own endpoints.
+    let observedRuntime = await inspectLocalRuntimeDetailed(
+      classification.manifest.id
+    )
     if (
       observedRuntime?.processAlive &&
       observedRuntime.endpointState === "unreachable"
@@ -1809,7 +2026,9 @@ async function commandLocalHostActivate(
       if (readiness.ok) {
         observedRuntime = readiness.runtime
       } else if (readiness.reason === "absent") {
-        observedRuntime = await inspectLocalRuntimeDetailed()
+        observedRuntime = await inspectLocalRuntimeDetailed(
+          classification.manifest.id
+        )
       }
     }
     const runtime = observedRuntime
@@ -1829,9 +2048,32 @@ async function commandLocalHostActivate(
       !runningWorkspaceMatches &&
       !isVerifiedManagedServiceRuntime(runtime, currentService)
     ) {
+      // The same Worktable identity is served from another folder, such as
+      // the original of a copied folder.
       throw new UsageError(
         `${runtime.owner === "desktop" ? "Worktable Desktop" : runtime.owner === "service" ? "An unmanaged service process" : "A foreground Worktable command"} is currently serving ${runtime.workspacePath}. Stop it before switching the shared local workspace.`
       )
+    }
+
+    // The configured Worktable is the one config.json, the CLI and the
+    // background service use. Another Worktable gets its own host without
+    // changing that, so the service keeps serving the configured one.
+    const configuredPath = resolve(beforeConfig.workspace)
+    const becomesConfigured =
+      !existsSync(getConfigPath()) ||
+      sameLocalWorktable(configuredPath, targetPath) ||
+      (!currentService.installed &&
+        classifyWorkspaceTarget(configuredPath).outcome !== "valid")
+    if (!becomesConfigured) {
+      await activateAdditionalLocalWorkspace({
+        targetPath,
+        manifest: classification.manifest,
+        config: beforeConfig,
+        runtime: runningWorkspaceMatches ? runtime : null,
+        port: opts.port,
+        waitForWelcome: opts.waitForWelcome === true,
+      })
+      return
     }
     if (currentService.installed && currentService.state === "unknown") {
       throw new UsageError(
@@ -2066,13 +2308,16 @@ async function commandLocalHostActivate(
   }
 }
 
-async function commandLocalHostRestart(): Promise<void> {
+async function commandLocalHostRestart(
+  opts: { workspace?: string } = {}
+): Promise<void> {
   let authorityLock: LocalAuthorityLock | null = null
   try {
     authorityLock = acquireLocalAuthorityLock()
     assertNoPendingLocalActivation("restarting Worktable")
     const config = readConfig()
-    const runtime = await inspectLocalRuntime()
+    const workspacePath = resolve(opts.workspace ?? config.workspace)
+    const runtime = await inspectWorkspaceRuntime(workspacePath)
     const service = getServiceStatus()
     if (
       runtime?.endpointVerified &&
@@ -2083,7 +2328,12 @@ async function commandLocalHostRestart(): Promise<void> {
         "A foreground Worktable command owns this endpoint. Stop it in that terminal before restarting from Desktop."
       )
     }
-    if (!service.installed) {
+    // The background service serves only the configured Worktable; Desktop
+    // owns the host of any other.
+    if (
+      !service.installed ||
+      !sameLocalWorktable(workspacePath, config.workspace)
+    ) {
       console.log(
         JSON.stringify({
           schemaVersion: 1,
@@ -2256,35 +2506,45 @@ function repairInvalidLocalWorkspaceRegistry():
 async function repairUnusableLocalRuntime(): Promise<
   "cleared-stale-runtime" | "quarantined-corrupt-runtime" | null
 > {
-  const path = getLocalRuntimePath()
-  if (!existsSync(path)) return null
-  let runtime: Awaited<ReturnType<typeof inspectLocalRuntime>>
-  try {
-    runtime = await inspectLocalRuntime()
-  } catch (error) {
-    if (error instanceof UnsupportedLocalRuntimeSchemaError) {
+  // Check every lease before changing any, so a refusal leaves all in place.
+  const files = readLocalRuntimeFiles()
+  const stale: string[] = []
+  const corrupt: string[] = []
+  for (const file of files) {
+    if (file.error) {
+      if (file.error.error instanceof UnsupportedLocalRuntimeSchemaError) {
+        throw new UsageError(
+          `${file.error.error.message}. Upgrade Worktable before repairing local host state; this lease was left untouched.`
+        )
+      }
+      corrupt.push(file.path)
+      continue
+    }
+    const runtime = await inspectLocalRuntimeLease(file.runtime!)
+    if (!runtime.processAlive) {
+      stale.push(file.path)
+    } else if (!runtime.endpointVerified) {
       throw new UsageError(
-        `${error.message}. Upgrade Worktable before repairing local host state; this lease was left untouched.`
+        `A live ${runtime.owner} process still holds the local Worktable runtime lease for ${runtime.workspacePath} but did not answer its ownership proof. Stop that process before repairing local host state.`
       )
     }
-    const quarantine = join(
-      dirname(path),
-      `local-runtime.corrupt-${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2)}.json`
+  }
+  for (const path of corrupt) {
+    const name = basename(path, ".json")
+    renameSync(
+      path,
+      join(
+        dirname(path),
+        `${name}.corrupt-${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2)}.json`
+      )
     )
-    renameSync(path, quarantine)
-    return "quarantined-corrupt-runtime"
   }
-  if (!runtime) return null
-  if (runtime.processAlive) {
-    if (!runtime.endpointVerified) {
-      throw new UsageError(
-        `A live ${runtime.owner} process still holds the local Worktable runtime lease but did not answer its ownership proof. Stop that process before repairing local host state.`
-      )
-    }
-    return null
-  }
-  rmSync(path, { force: true })
-  return "cleared-stale-runtime"
+  for (const path of stale) rmSync(path, { force: true })
+  return corrupt.length > 0
+    ? "quarantined-corrupt-runtime"
+    : stale.length > 0
+      ? "cleared-stale-runtime"
+      : null
 }
 
 async function commandWorkspaceExport(
@@ -2434,6 +2694,14 @@ async function commandLaunch(opts: LaunchOptions): Promise<void> {
   if (opts.ephemeralWorkspace && opts.foreground !== true) {
     throw new UsageError("--ephemeral-workspace requires --foreground")
   }
+  if (
+    opts.keepConfiguredWorkspace &&
+    (opts.foreground !== true || opts.workspace === undefined)
+  ) {
+    throw new UsageError(
+      "--keep-configured-workspace requires --foreground and --workspace"
+    )
+  }
   // The hidden Desktop mode is process-local in every dimension: workspace,
   // host, and port. Starting from defaults avoids even reading CLI config
   // because readConfig may repair/refresh its durable backup as a side effect.
@@ -2520,6 +2788,12 @@ async function commandLaunchUnderAuthority(
       "--ephemeral-workspace is limited to loopback foreground hosts"
     )
   }
+  // Desktop serves a Worktable other than the configured one beside it: no
+  // change to config.json, the configured endpoint or the background service.
+  const additionalHost =
+    !supervised &&
+    opts.keepConfiguredWorkspace === true &&
+    !sameLocalWorktable(temporary.workspace, config.workspace)
   const service: ServiceStatus = supervised
     ? {
         platform: "unsupported",
@@ -2531,7 +2805,9 @@ async function commandLaunchUnderAuthority(
       }
     : getServiceStatus()
   if (!supervised) {
-    runtime = await inspectLocalRuntime()
+    // Hosts for other Worktables run beside this one on their own endpoints;
+    // only a host already serving this Worktable stands in the way.
+    runtime = await inspectWorkspaceRuntime(temporary.workspace)
     if (runtime?.processAlive && runtime.pid !== process.pid) {
       const requestsAnotherWorkspace =
         opts.workspace !== undefined &&
@@ -2605,6 +2881,7 @@ async function commandLaunchUnderAuthority(
   // up-front persist here and the running-service reinstall decision below.
   const serviceConfigChanged =
     !supervised &&
+    !additionalHost &&
     (config.service.reachable !== temporary.service.reachable ||
       config.service.host !== temporary.service.host ||
       config.service.port !== temporary.service.port ||
@@ -2614,6 +2891,7 @@ async function commandLaunchUnderAuthority(
       config.service.httpsUpstream !== temporary.service.httpsUpstream)
   const workspaceChanged =
     !supervised &&
+    !additionalHost &&
     opts.workspace !== undefined &&
     config.workspace !== temporary.workspace
 
@@ -2744,7 +3022,18 @@ async function commandLaunchUnderAuthority(
     try {
       const workspace = ensureWorkspaceManifest()
       ensureInstallIdentity()
-      rememberConfiguredLocalWorkspace(temporary, workspace)
+      if (additionalHost) {
+        rememberLocalWorkspace({
+          workspaceId: workspace.id,
+          name: workspace.name,
+          path: temporary.workspace,
+          host: temporary.service.host,
+          port: temporary.service.port,
+          active: false,
+        })
+      } else {
+        rememberConfiguredLocalWorkspace(temporary, workspace)
+      }
       localReservationCommitted = true
     } catch (error) {
       try {
@@ -2964,7 +3253,7 @@ async function commandLaunchUnderAuthority(
     if (!supervised) {
       const runtimeOwner = resolvedLocalRuntimeOwner()
       const workspace = ensureWorkspaceManifest()
-      const existingRuntime = await inspectLocalRuntime()
+      const existingRuntime = await inspectLocalRuntimeDetailed(workspace.id)
       if (
         existingRuntime?.processAlive &&
         existingRuntime.pid !== process.pid
@@ -2979,6 +3268,19 @@ async function commandLaunchUnderAuthority(
           existingRuntime.endpointVerified
             ? `${existingRuntime.owner === "desktop" ? "Worktable Desktop" : existingRuntime.owner === "service" ? "The Worktable background service" : "Another foreground Worktable command"} already owns ${sameDestination ? url : `${existingRuntime.workspacePath} at ${clientOriginFor(existingRuntime.host, existingRuntime.port)}`}. Stop or reuse it instead of starting a second local host.`
             : `A live ${existingRuntime.owner} process still holds the local Worktable runtime lease but did not answer its ownership proof. Stop or repair that host before starting another one.`
+        )
+      }
+      const portHolder = liveHostOnPort(
+        (await inspectLocalRuntimes()).runtimes,
+        {
+          workspaceId: workspace.id,
+          host: temporary.service.host,
+          port: temporary.service.port,
+        }
+      )
+      if (portHolder) {
+        throw new UsageError(
+          `Another Worktable host already serves ${portHolder.workspacePath} at ${clientOriginFor(portHolder.host, portHolder.port)}. Choose another port for this Worktable.`
         )
       }
       const install = ensureInstallIdentity()
@@ -3002,8 +3304,11 @@ async function commandLaunchUnderAuthority(
     // cross-process authority lock, so a second surface cannot race this lease.
     startedServer = startServer(temporary.service.port, temporary.service.host)
     if (localRuntime) {
-      writeLocalRuntime(localRuntime)
+      // Older releases sharing this app directory read only the single-host
+      // lease, so the configured Worktable's host keeps publishing it there.
+      writeLocalRuntime(localRuntime, { legacy: !additionalHost })
       installLocalRuntimeCleanup(localRuntime)
+      if (localRuntime.owner === "desktop") stopWithDesktop()
     }
   } catch (error) {
     if (startedServer) {
@@ -3597,7 +3902,12 @@ async function commandSetup(opts: SetupOptions): Promise<void> {
       host,
       port,
     })
-    const activeRuntime = await inspectLocalRuntime()
+    // Hosts for other Worktables keep running; only this Worktable's own host
+    // must be the service setup reconfigures.
+    const activeRuntime =
+      workspaceClassification.outcome === "valid"
+        ? await inspectLocalRuntime(workspaceClassification.manifest.id)
+        : null
     const setupPlan = planLocalAuthority({
       operation: "setup",
       desired: {
@@ -3843,12 +4153,23 @@ async function commandStatus(opts: { json?: boolean }): Promise<void> {
     config.service.host,
     config.service.port
   )
-  let localRuntime: Awaited<ReturnType<typeof inspectLocalRuntime>> = null
+  let localRuntime: LocalRuntimeInspection | null = null
   let localRuntimeError: string | null = null
+  let otherLocalHosts: LocalRuntimeInspection[] = []
   try {
-    localRuntime = await inspectLocalRuntime()
+    localRuntime = await inspectWorkspaceRuntime(config.workspace)
   } catch (error) {
     localRuntimeError = error instanceof Error ? error.message : String(error)
+  }
+  try {
+    otherLocalHosts = (await inspectLocalRuntimes()).runtimes.filter(
+      (runtime) =>
+        runtime.endpointVerified &&
+        runtime.workspaceId !== localRuntime?.workspaceId &&
+        resolve(runtime.workspacePath) !== resolve(config.workspace)
+    )
+  } catch {
+    // The configured Worktable's own lease above is what status reports on.
   }
   // Live-but-bounded: cached within the TTL, otherwise one short fetch. status
   // is the command people run to ask "how is this install doing?", so it is a
@@ -3873,6 +4194,7 @@ async function commandStatus(opts: { json?: boolean }): Promise<void> {
           service,
           localRuntime,
           localRuntimeError,
+          otherLocalHosts,
           workspace: config.workspace,
           mcp,
         },
@@ -3896,6 +4218,11 @@ async function commandStatus(opts: { json?: boolean }): Promise<void> {
   } else if (localRuntime?.endpointVerified) {
     console.log(
       `Local host:  ${localRuntime.owner} owns ${localRuntime.workspacePath} (pid ${localRuntime.pid})`
+    )
+  }
+  for (const runtime of otherLocalHosts) {
+    console.log(
+      `Other host:  ${runtime.workspacePath} at ${clientOriginFor(runtime.host, runtime.port)} (${runtime.owner})`
     )
   }
   console.log(`Workspace:  ${config.workspace}`)
@@ -4880,15 +5207,20 @@ async function commandUninstall(opts: {
   try {
     const currentService = getServiceStatus()
     assertLocalAuthorityStateUnchanged(initialAuthorityState, currentService)
-    let activeRuntime: Awaited<ReturnType<typeof inspectLocalRuntime>>
+    // Every running host shares this installation; only the managed service
+    // may be stopped by the uninstall itself.
+    let runtimes: LocalRuntimeInspection[]
     try {
-      activeRuntime = await inspectLocalRuntime()
+      const inspected = await inspectLocalRuntimes()
+      if (inspected.errors.length > 0) throw inspected.errors[0]!.error
+      runtimes = inspected.runtimes
     } catch (error) {
       throw new UsageError(
         `Worktable cannot safely identify the current local host (${error instanceof Error ? error.message : String(error)}). Repair or upgrade Worktable before uninstalling.`
       )
     }
-    if (activeRuntime?.processAlive) {
+    for (const activeRuntime of runtimes) {
+      if (!activeRuntime.processAlive) continue
       if (!activeRuntime.endpointVerified) {
         throw new UsageError(
           `A live ${activeRuntime.owner} process still holds the local Worktable runtime lease but did not answer its ownership proof. Stop or repair that host before uninstalling.`
@@ -5136,6 +5468,12 @@ export function buildProgram(): Command {
     .option("-w, --workspace <dir>", "workspace directory")
     .addOption(
       new CommanderOption(
+        "--keep-configured-workspace",
+        "serve --workspace beside the configured Worktable without changing config"
+      ).hideHelp()
+    )
+    .addOption(
+      new CommanderOption(
         "--ephemeral-workspace <dir>",
         "use process-local workspace and bind settings without reading or persisting CLI config"
       ).hideHelp()
@@ -5237,8 +5575,12 @@ export function buildProgram(): Command {
   localHost
     .command("restart")
     .description("Restart the canonical local host without changing workspaces")
+    .option(
+      "--workspace <dir>",
+      "restart the host of this Worktable rather than the configured one"
+    )
     .option("--json", "machine-readable output")
-    .action(() => commandLocalHostRestart())
+    .action((opts: { workspace?: string }) => commandLocalHostRestart(opts))
   localHost
     .command("recover")
     .description("Roll back an interrupted local workspace activation")

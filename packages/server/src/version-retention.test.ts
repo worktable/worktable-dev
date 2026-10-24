@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, setSystemTime } from "bun:test"
 import fc from "fast-check"
 import {
   existsSync,
@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -484,6 +485,33 @@ describe("runRetentionSweep — integration", () => {
 
     expect(res.filesDeleted).toBe(0)
     expect(remainingIds(SP, "superseded")).toHaveLength(5)
+  })
+
+  it("stops a sweep when another Worktable host relaxes the shared policy", async () => {
+    const now = Date.now()
+    for (let i = 0; i < 5; i++) {
+      await writeVersionFile(SP, "relaxed", vid(new Date(now - i * DAY), `v${i}`))
+    }
+    const tightened = await updateServerSettingsWithResult({
+      history: { retention: { mode: "count", maxPerDoc: 1 } },
+    })
+    // Another host on this machine writes settings.json; this host only
+    // notices through the file, within its one-second check.
+    const settingsPath = join(appDir, "settings.json")
+    const relaxed = JSON.parse(readFileSync(settingsPath, "utf8"))
+    relaxed.history.retention = { mode: "count", maxPerDoc: 7 }
+    writeFileSync(`${settingsPath}.other-host`, JSON.stringify(relaxed))
+    renameSync(`${settingsPath}.other-host`, settingsPath)
+    setSystemTime(new Date(now + 1_100))
+    try {
+      const res = await runRetentionSweep(tightened.settings.history.retention, {
+        expectedRetentionGeneration: tightened.retentionGeneration,
+      })
+      expect(res.filesDeleted).toBe(0)
+      expect(remainingIds(SP, "relaxed")).toHaveLength(5)
+    } finally {
+      setSystemTime()
+    }
   })
 })
 

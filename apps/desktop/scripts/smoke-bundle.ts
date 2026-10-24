@@ -25,7 +25,17 @@ const portPath = join(appData, "desktop-port")
 const connectionsPath = join(appData, "desktop-connections.json")
 const cliConfigPath = join(localAppData, "config.json")
 const localRegistryPath = join(localAppData, "local-workspaces.json")
-const localRuntimePath = join(localAppData, "local-runtime.json")
+// Each Worktable's host publishes its own lease, named by the Worktable's id.
+const localRuntimePath = (): string => {
+  try {
+    const { id } = JSON.parse(
+      readFileSync(join(workspace, "worktable.workspace.json"), "utf8")
+    ) as { id: string }
+    return join(localAppData, "local-runtime", `${id}.json`)
+  } catch {
+    return join(localAppData, "local-runtime", "(no workspace yet).json")
+  }
+}
 const remoteWorkspace = join(root, "remote-workspace")
 const remoteServerAppData = join(root, "remote-server-app-data")
 const remoteDesktopAppData = join(root, "remote-desktop-app-data")
@@ -564,7 +574,7 @@ try {
   const firstWorkspace = await waitFor("verified workspace identity", () =>
     workspaceIdentity(firstPort)
   )
-  const firstRuntime = JSON.parse(readFileSync(localRuntimePath, "utf8")) as {
+  const firstRuntime = JSON.parse(readFileSync(localRuntimePath(), "utf8")) as {
     owner?: unknown
     workspaceId?: unknown
     workspacePath?: unknown
@@ -596,7 +606,7 @@ try {
   await waitFor("supervised sidecar shutdown", async () =>
     (await health(firstPort)) ? null : true
   )
-  if (existsSync(localRuntimePath)) {
+  if (existsSync(localRuntimePath())) {
     fail("Desktop-owned runtime lease survived application quit")
   }
   running = null
@@ -650,15 +660,15 @@ try {
   await waitFor("restarted sidecar shutdown", async () =>
     (await health(secondPort)) ? null : true
   )
-  if (existsSync(localRuntimePath)) {
+  if (existsSync(localRuntimePath())) {
     fail("Restarted Desktop-owned runtime lease survived application quit")
   }
   running = null
 
   cliOwner = startCliOwner()
   await waitFor("foreground CLI ownership", () => {
-    if (!existsSync(localRuntimePath)) return null
-    const runtime = JSON.parse(readFileSync(localRuntimePath, "utf8")) as {
+    if (!existsSync(localRuntimePath())) return null
+    const runtime = JSON.parse(readFileSync(localRuntimePath(), "utf8")) as {
       owner?: unknown
       port?: unknown
     }
@@ -672,7 +682,7 @@ try {
   await waitFor("Desktop attachment to foreground CLI", () => {
     try {
       if (!bundleWindowVisible(running!.appPid)) return null
-      const runtime = JSON.parse(readFileSync(localRuntimePath, "utf8")) as {
+      const runtime = JSON.parse(readFileSync(localRuntimePath(), "utf8")) as {
         owner?: unknown
         pid?: unknown
       }
@@ -690,7 +700,7 @@ try {
     fail("Quitting Desktop stopped the foreground CLI host it had attached to")
   }
   const attachedRuntime = JSON.parse(
-    readFileSync(localRuntimePath, "utf8")
+    readFileSync(localRuntimePath(), "utf8")
   ) as {
     owner?: unknown
     pid?: unknown
@@ -708,7 +718,7 @@ try {
   await waitFor("foreground CLI shutdown", async () =>
     (await health(firstPort)) ? null : true
   )
-  if (existsSync(localRuntimePath)) {
+  if (existsSync(localRuntimePath())) {
     fail("Foreground CLI runtime lease survived its process shutdown")
   }
 
@@ -752,7 +762,7 @@ try {
   })
   if (
     desktopOwnsLocalSidecar(running.appPid) ||
-    existsSync(join(remoteDesktopLocalAppData, "local-runtime.json"))
+    existsSync(join(remoteDesktopLocalAppData, "local-runtime"))
   ) {
     fail("A self-hosted Desktop connection started a local sidecar or lease")
   }
@@ -779,7 +789,7 @@ try {
   })
   if (
     desktopOwnsLocalSidecar(running.appPid) ||
-    existsSync(join(remoteDesktopLocalAppData, "local-runtime.json"))
+    existsSync(join(remoteDesktopLocalAppData, "local-runtime"))
   ) {
     fail("Restarting a self-hosted profile started local authority")
   }

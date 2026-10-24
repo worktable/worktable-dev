@@ -302,18 +302,32 @@ describe("backend detection", () => {
     );
   });
 
-  it("refuses to start a service beside a Desktop-owned local host", () => {
+  it("refuses to start a service beside a Desktop host for its Worktable, not another's", () => {
     const appDir = tempAppDir();
     tempHome();
     process.env["WORKTABLE_SERVICE_BACKEND"] = "process";
+    // The service serves the configured Worktable.
+    const configured = createDefaultConfig();
+    writeLocalRuntime(
+      createLocalRuntimeRecord({
+        owner: "desktop",
+        installId: "ins_test",
+        workspaceId: "ws_other",
+        workspacePath: join(appDir, "other"),
+        host: "127.0.0.1",
+        port: configured.service.port + 1,
+      })
+    );
+    expect(startService().state).toBe("not-installed");
+
     writeLocalRuntime(
       createLocalRuntimeRecord({
         owner: "desktop",
         installId: "ins_test",
         workspaceId: "ws_desktop",
-        workspacePath: join(appDir, "workspace"),
+        workspacePath: configured.workspace,
         host: "127.0.0.1",
-        port: 17480,
+        port: configured.service.port,
       })
     );
     expect(() => startService()).toThrow(

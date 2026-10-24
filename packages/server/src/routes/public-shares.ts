@@ -1,3 +1,8 @@
+import {
+  inlineSharedImages,
+  stampsStillHold,
+  type FileStamp,
+} from "../share-images.ts"
 import { createPublicVisitorCommentsRouter } from "./public-visitor-comments.ts"
 import { visitorCommentNamespace } from "../visitor-comment-access.ts"
 import { commentPause } from "../visitor-comment-store.ts"
@@ -152,6 +157,8 @@ interface RenderedPage {
   body: string
   bytes: number
   gzip?: ReturnType<typeof gzipAsync>
+  /** The images the page shows, so a page whose images changed renders again. */
+  stamps?: FileStamp[]
 }
 
 const renderedPages = new Map<string, RenderedPage>()
@@ -168,9 +175,15 @@ function forgetPage(key: string): void {
 function rememberPage(
   key: string,
   revision: string,
-  body: string
+  body: string,
+  stamps: FileStamp[] = []
 ): RenderedPage {
-  const page = { revision, body, bytes: Buffer.byteLength(body) }
+  const page = {
+    revision,
+    body,
+    bytes: Buffer.byteLength(body),
+    ...(stamps.length > 0 ? { stamps } : {}),
+  }
   forgetPage(key)
   // One large page must not push every other share out of the cache.
   if (page.bytes > MAX_RENDERED_BYTES / 4) return page
@@ -253,6 +266,7 @@ async function renderLinkBody(
   if (!document) return null
   let body: string
   let revision: string | null
+  let stamps: FileStamp[] = []
   if (document.kind === "html-title") {
     body = JSON.stringify(
       PublicShareProjection.parse({
@@ -266,6 +280,13 @@ async function renderLinkBody(
     body = renderPublicHtmlProjection(document.html)
     revision = document.revision
   } else {
+    // The images the Doc embeds from its Space show in the page itself.
+    const inlined = await inlineSharedImages(
+      view.link.spaceId,
+      view.path,
+      document.content
+    )
+    stamps = inlined.stamps
     body = JSON.stringify(
       PublicShareProjection.parse({
         kind: "doc",
@@ -273,7 +294,7 @@ async function renderLinkBody(
         format: document.format,
         title: document.title,
         projectionHtml: await renderPublicDocProjection(
-          document.content,
+          inlined.content,
           document.format
         ),
       })
@@ -291,7 +312,8 @@ async function renderLinkBody(
   return rememberPage(
     linkPageKey(view.link.id, surface, view.path, revision, view.title),
     revision,
-    body
+    body,
+    stamps
   )
 }
 
@@ -334,11 +356,13 @@ async function renderLinkPage(
     view.title
   )
   const cached = renderedPages.get(key)
-  if (cached) {
+  // A page's images can change while the Doc doesn't: then it renders again.
+  if (cached && (!cached.stamps || (await stampsStillHold(cached.stamps)))) {
     renderedPages.delete(key)
     renderedPages.set(key, cached)
     return cached
   }
+  if (cached) forgetPage(key)
   // Requests for the same page wait for one render.
   let rendering = renderingLinkPages.get(key)
   if (!rendering) {

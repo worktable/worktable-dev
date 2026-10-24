@@ -99,9 +99,21 @@ const HTML_MEDIA_HINT = /<(?:img|video|audio|source)\b/i
  */
 function htmlMediaSources(
   scanned: string
-): Array<{ at: number; length: number; value: string; quote: string | null }> {
+): Array<{
+  at: number
+  length: number
+  value: string
+  quote: string | null
+  tag: string
+}> {
   if (!HTML_MEDIA_HINT.test(scanned)) return []
-  const sources: Array<{ at: number; length: number; value: string; quote: string | null }> = []
+  const sources: Array<{
+    at: number
+    length: number
+    value: string
+    quote: string | null
+    tag: string
+  }> = []
   let tag = ""
   const parser: Parser = new Parser({
     onopentagname(name) {
@@ -128,6 +140,7 @@ function htmlMediaSources(
         length: end - start,
         value,
         quote: quote ?? null,
+        tag,
       })
     },
   })
@@ -144,14 +157,22 @@ function htmlAttributeText(value: string, quote: string | null): string {
   return text.replace(/[\s"'=<>`]/g, (char) => `&#${char.charCodeAt(0)};`)
 }
 
-/** A Markdown Doc with its link, image and media targets rewritten. */
-export function rewriteMarkdownLinks(markdown: string, rewrite: Rewrite): string {
+/**
+ * A Markdown Doc with its link, image and media targets rewritten, or with
+ * `imagesOnly`, its images alone.
+ */
+export function rewriteMarkdownLinks(
+  markdown: string,
+  rewrite: Rewrite,
+  options: { imagesOnly?: boolean } = {}
+): string {
   // One read says where code and link destinations sit; code keeps its
   // offsets but can never match a link or a media tag.
   const layout = markdownLayout(markdown)
   const scanned = blankRanges(markdown, [...layout.blocks, ...layout.inline])
   const edits: Array<{ at: number; length: number; text: string }> = []
-  for (const [start, end] of layout.destinations) {
+  for (const [index, [start, end]] of layout.destinations.entries()) {
+    if (options.imagesOnly && !layout.images[index]) continue
     // A destination in angle brackets keeps them; its path sits inside.
     const angled = markdown[start] === "<" && markdown[end - 1] === ">"
     const at = angled ? start + 1 : start
@@ -160,6 +181,7 @@ export function rewriteMarkdownLinks(markdown: string, rewrite: Rewrite): string
     if (text !== null) edits.push({ at, length: target.length, text })
   }
   for (const source of htmlMediaSources(scanned)) {
+    if (options.imagesOnly && source.tag !== "img") continue
     const text = rewrite(source.value)
     if (text !== null) {
       edits.push({
@@ -229,10 +251,16 @@ function rewriteTable(content: Block, rewrite: Rewrite): Block | null {
 }
 
 /** One block with its targets rewritten, or null when nothing changed. */
-function rewriteBlock(block: Block, rewrite: Rewrite): Block | null {
+function rewriteBlock(
+  block: Block,
+  rewrite: Rewrite,
+  imagesOnly = false
+): Block | null {
   let next: Block | null = null
   const content = block.content
-  if (Array.isArray(content)) {
+  if (imagesOnly) {
+    // Only image blocks: their url.
+  } else if (Array.isArray(content)) {
     const inline = rewriteInline(content, rewrite)
     if (inline) next = { ...block, content: inline }
   } else if (
@@ -246,7 +274,7 @@ function rewriteBlock(block: Block, rewrite: Rewrite): Block | null {
   const props = block.props as Block | undefined
   if (
     typeof block.type === "string" &&
-    MEDIA_BLOCKS.has(block.type) &&
+    (imagesOnly ? block.type === "image" : MEDIA_BLOCKS.has(block.type)) &&
     typeof props?.url === "string" &&
     props.url
   ) {
@@ -256,7 +284,7 @@ function rewriteBlock(block: Block, rewrite: Rewrite): Block | null {
   if (Array.isArray(block.children)) {
     let childChanged = false
     const children = block.children.map((child) => {
-      const rewritten = rewriteBlock(child as Block, rewrite)
+      const rewritten = rewriteBlock(child as Block, rewrite, imagesOnly)
       if (!rewritten) return child
       childChanged = true
       return rewritten
@@ -269,11 +297,12 @@ function rewriteBlock(block: Block, rewrite: Rewrite): Block | null {
 /** A rich Doc's blocks with targets rewritten, and the top-level blocks that changed. */
 export function rewriteBlockLinks(
   blocks: unknown[],
-  rewrite: Rewrite
+  rewrite: Rewrite,
+  options: { imagesOnly?: boolean } = {}
 ): { blocks: unknown[]; changed: Block[] } {
   const changed: Block[] = []
   const next = blocks.map((block) => {
-    const rewritten = rewriteBlock(block as Block, rewrite)
+    const rewritten = rewriteBlock(block as Block, rewrite, options.imagesOnly)
     if (!rewritten) return block
     changed.push(rewritten)
     return rewritten

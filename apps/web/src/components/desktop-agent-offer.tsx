@@ -33,7 +33,7 @@ export function DesktopAgentOffer() {
           }
         )
       }
-      toast(`Your agents still use ${offer.agentWorktable}.`, {
+      toast.info(`Your agents still use ${offer.agentWorktable}.`, {
         id: "desktop-agent-offer",
         duration: Number.POSITIVE_INFINITY,
         closeButton: true,

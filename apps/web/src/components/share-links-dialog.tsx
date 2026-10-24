@@ -146,6 +146,9 @@ export function ShareLinksDialog({
   )
   const [liveOpen, setLiveOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  // The first link's Password row; null until opened or closed by hand.
+  const [passwordOpen, setPasswordOpen] = useState<boolean | null>(null)
+  const passwordInput = useRef<HTMLInputElement>(null)
   // Checked access, for the link it was checked for.
   const [access, setAccess] = useState<{
     linkId: string
@@ -320,6 +323,7 @@ export function ShareLinksDialog({
       setDraft(newDraft(undefined))
       setLiveOpen(false)
       setMoreOpen(false)
+      setPasswordOpen(null)
       setAccess(null)
       setAnnouncement("")
     }
@@ -355,6 +359,16 @@ export function ShareLinksDialog({
 
   function createDefault() {
     if (busy) return
+    // A closed row's field isn't in the form, so the browser can't check it.
+    const passwordOn = draft.passwordEnabled || passwordRequired
+    if (passwordOn && draft.password.length < 8) {
+      setPasswordOpen(true)
+      requestAnimationFrame(() => {
+        passwordInput.current?.focus()
+        passwordInput.current?.reportValidity()
+      })
+      return
+    }
     create.mutate({
       ...draft,
       label: "",
@@ -544,12 +558,14 @@ export function ShareLinksDialog({
                   status={
                     draft.passwordEnabled || passwordRequired ? "On" : "Off"
                   }
-                  defaultOpen={passwordRequired}
+                  open={passwordOpen ?? passwordRequired}
+                  onOpenChange={setPasswordOpen}
                 >
                   <PasswordFields
                     enabled={draft.passwordEnabled || passwordRequired}
                     required={passwordRequired}
                     hasPassword={false}
+                    inputRef={passwordInput}
                     value={draft.password}
                     disabled={busy}
                     onEnabledChange={(passwordEnabled) =>
@@ -997,6 +1013,7 @@ function PasswordFields({
   disabled,
   onEnabledChange,
   onValueChange,
+  inputRef,
 }: {
   enabled: boolean
   /** The owner policy needs a password on every link. */
@@ -1007,6 +1024,7 @@ function PasswordFields({
   disabled: boolean
   onEnabledChange: (enabled: boolean) => void
   onValueChange: (value: string) => void
+  inputRef?: React.Ref<HTMLInputElement>
 }) {
   const id = useId()
   return (
@@ -1025,6 +1043,7 @@ function PasswordFields({
             {hasPassword ? "New password" : "Link password"}
           </label>
           <Input
+            ref={inputRef}
             id={`${id}-password`}
             type="password"
             autoComplete="new-password"

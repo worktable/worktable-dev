@@ -540,6 +540,13 @@ test("creates and edits password links without retaining a password in the form"
   await expect(passwordSwitch).toBeDisabled()
   const newPassword = dialog.getByLabel("Link password", { exact: true })
   await expect(newPassword).toHaveAttribute("required", "")
+  // Closing the row doesn't let the link through without its password.
+  const passwordRow = dialog.getByRole("button", { name: /^Password/ })
+  await passwordRow.click()
+  await expect(newPassword).toBeHidden()
+  await dialog.getByRole("button", { name: "Create Link", exact: true }).click()
+  await expect(newPassword).toBeFocused()
+  expect(mutations).toHaveLength(0)
   await newPassword.fill("test-only board password")
   await dialog.screenshot({
     path: testInfo.outputPath("password-link-form.png"),
@@ -554,7 +561,6 @@ test("creates and edits password links without retaining a password in the form"
   })
 
   // The link's Password row changes it in place; a blank field keeps it.
-  const passwordRow = dialog.getByRole("button", { name: /^Password/ })
   const openPassword = async () => {
     if ((await passwordRow.getAttribute("aria-expanded")) !== "true")
       await passwordRow.click()

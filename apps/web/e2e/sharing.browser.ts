@@ -275,6 +275,8 @@ test("keeps confirmed policy saves cached and recovers a newer owner update duri
   } finally {
     saveGate.resolve()
     refreshGate.resolve()
+    // The page may still be asking for itself as the test ends.
+    await page.unrouteAll({ behavior: "ignoreErrors" })
   }
 })
 

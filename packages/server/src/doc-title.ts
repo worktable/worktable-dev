@@ -201,7 +201,9 @@ export async function renameDocToTitle(
   spaceId: string,
   docPath: string,
   title: string | undefined,
-  updatedBy: string
+  updatedBy: string,
+  /** A credential's scopes, which bound what moving the Doc's folder may move. */
+  options: { scopes?: readonly string[] } = {}
 ): Promise<RenameOutcome> {
   const from = sanitizeDocPath(docPath)
   let name: string
@@ -224,7 +226,7 @@ export async function renameDocToTitle(
   }
   const to = await pathForTitle(spaceId, docPath, name)
   if (to !== from) {
-    const moved = await renameDocAndSync(spaceId, from, to)
+    const moved = await renameDocAndSync(spaceId, from, to, options)
     if (moved.error) return moved
   }
   try {

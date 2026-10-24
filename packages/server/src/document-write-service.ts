@@ -26,6 +26,7 @@ import {
   buildDocumentCatalog,
   type DocumentCatalog,
 } from "./document-catalog.ts"
+import { readDocumentCatalogSnapshot } from "./document-query.ts"
 import {
   advanceDocumentCreateRecoveryV2,
   finishDocumentCreateRecoveryV2,
@@ -68,6 +69,12 @@ import {
 } from "./document-storage-profile.ts"
 import { resolveDocAliasIn, reservedByAliasIn } from "./doc-aliases.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
+import {
+  catalogHasDocumentsBelow,
+  formatsWritableWith,
+  hasDocumentsBelow,
+  moveDocumentFolder,
+} from "./document-folder-move.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import {
   prepareSuppressedDocReplay,
@@ -106,6 +113,7 @@ export type DocumentWriteFailure =
   | "conflict"
   | "invalid"
   | "unsupported"
+  | "forbidden"
 
 export class DocumentWriteError extends Error {
   readonly reason: DocumentWriteFailure
@@ -1929,12 +1937,65 @@ export async function moveRegisteredDocument(options: {
   path: string
   to: string
   registry?: DocumentFormatRegistry
+  /** A credential's scopes, which bound what moving the Doc's folder may move. */
+  scopes?: readonly string[]
 }): Promise<DocumentMoveResult> {
   assertSpaceAccess(options.spaceId, "edit");
-  const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   const to = requirePortablePath(options.to)
-  const result = await withDocPathLock(options.spaceId, async () => {
+  // A Doc's folder belongs to it: sub-Docs and files under it move with it,
+  // as one folder move, which takes its own lock. A first child created while
+  // this decides is seen under the lock, and the move starts again.
+  let result: DocumentMoveResult | null = null
+  for (let pass = 0; pass < 2 && !result; pass += 1) {
+    const withFolder =
+      options.path !== to &&
+      (await hasDocumentsBelow(options.spaceId, options.path))
+    if (withFolder) {
+      // Refuse a Doc this move can't answer for, as moving it alone would,
+      // before its folder moves.
+      resolveManagedFileDocument(
+        await readDocumentCatalogSnapshot(options.spaceId),
+        options.path,
+        registry
+      )
+      const formats = formatsWritableWith(options.scopes)
+      const folder = await moveDocumentFolder(options.spaceId, options.path, to, {
+        ...(formats ? { formats } : {}),
+      })
+      if (!folder.ok) {
+        throw new DocumentWriteError(
+          folder.kind === "conflict" ? "conflict" : folder.kind,
+          folder.error
+        )
+      }
+    }
+    result = await moveRegisteredDocumentLocked(options, to, registry, withFolder)
+  }
+  if (!result) {
+    throw new DocumentWriteError(
+      "conflict",
+      "The Doc's folder changed during the move. Try again."
+    )
+  }
+  await noteDocumentActivity(options.spaceId, [to])
+  await publishMutation(options.spaceId)
+  await notifyWorkspaceChangeAndWait({
+    type: "documentCorpus",
+    spaceId: options.spaceId,
+  })
+  return result
+}
+
+/** The move under the lock; null when the Doc gained a folder meanwhile. */
+function moveRegisteredDocumentLocked(
+  options: { spaceId: string; path: string },
+  to: string,
+  registry: DocumentFormatRegistry,
+  withFolder: boolean
+): Promise<DocumentMoveResult | null> {
+  const workspaceRoot = getWorkspaceRoot()
+  return withDocPathLock(options.spaceId, async () => {
     assertSpaceAccess(options.spaceId, "edit");
     await requireV2Workspace(workspaceRoot)
     const catalog = await buildDocumentCatalog({
@@ -1942,7 +2003,23 @@ export async function moveRegisteredDocument(options: {
       spaceId: options.spaceId,
       registry,
     })
+    if (withFolder) {
+      const moved = resolveManagedFileDocument(catalog, to, registry)
+      const bytes = await readSource(workspaceRoot, options.spaceId, moved)
+      return {
+        documentId: moved.documentId,
+        from: options.path,
+        to,
+        sourceRevision: await registeredDocumentSourceRevision({
+          ...moved,
+          bytes,
+        }),
+      }
+    }
     const current = resolveManagedFileDocument(catalog, options.path, registry)
+    if (current.path !== to && catalogHasDocumentsBelow(catalog, current.path)) {
+      return null
+    }
     // The lifecycle planner owns destination conflicts and can retire an alias
     // belonging to this same document when moving it back to a former path.
     // A blanket alias rejection here prevents that supported round trip.
@@ -1977,13 +2054,6 @@ export async function moveRegisteredDocument(options: {
       }),
     }
   })
-  await noteDocumentActivity(options.spaceId, [to])
-  await publishMutation(options.spaceId)
-  await notifyWorkspaceChangeAndWait({
-    type: "documentCorpus",
-    spaceId: options.spaceId,
-  })
-  return result
 }
 
 export async function setRegisteredDocumentArchived(options: {

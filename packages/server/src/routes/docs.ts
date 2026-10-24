@@ -364,14 +364,19 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
       spaceId,
       docPath,
       parsed.data.title,
-      restWriteActor(c)
+      restWriteActor(c),
+      { scopes: c.get("identity")?.scopes ?? [] }
     );
     if (outcome.error) {
-      const status = outcome.error.includes("not found") ? 404 : 409;
+      const status = outcome.forbidden
+        ? 403
+        : outcome.error.includes("not found")
+          ? 404
+          : 409;
       return c.json(
         {
           error: outcome.error,
-          code: status === 404 ? "NOT_FOUND" : "CONFLICT",
+          code: status === 403 ? "FORBIDDEN" : status === 404 ? "NOT_FOUND" : "CONFLICT",
           // A Doc can move before its title fails; callers follow it.
           renamed: outcome.renamed,
         },
@@ -427,9 +432,12 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
         return c.json({ ok: true, renamed: [{ from: docPath, to: docPath }], count: 1 });
       }
 
-      const outcome = await renameDocAndSync(spaceId, docPath, newPath);
+      const outcome = await renameDocAndSync(spaceId, docPath, newPath, {
+        scopes: c.get("identity")?.scopes ?? [],
+      });
       if (outcome.error) {
         const error = outcome.error;
+        if (outcome.forbidden) return c.json({ error, code: "FORBIDDEN" }, 403);
         const status = error.includes("not found") ? 404 : 409;
         return c.json({ error, code: status === 404 ? "NOT_FOUND" : "CONFLICT" }, status);
       }

@@ -38,20 +38,31 @@ function link(overrides: Partial<ShareLink>): ShareLink {
 
 const text = (html: string) => html.replace(/<[^>]+>/g, "")
 
-test("the default link offers its URL to copy, or says how to get one again", () => {
+test("the default link offers its URL to copy, and says when it doesn't open", () => {
   const url =
     "https://share.example.test/s/ws/abcdefghijklmnopqrstuvwxyzABCDEFGH123456789"
   const soon = new Date(Date.now() + 14 * DAY - 60_000).toISOString()
   const shown = renderToStaticMarkup(
     <DefaultLink
-      link={link({ url, expiresAt: soon })}
+      link={link({ url, expiresAt: soon, hasPassword: true })}
       menu={null}
       onCopied={() => {}}
     />
   )
   expect(shown).toContain(`value="${url}"`)
-  expect(text(shown)).toContain("Expires in 14 days")
-  expect(text(shown)).not.toContain("Make a new link")
+  // Expiry and password have their own rows in the dialog.
+  expect(text(shown)).toBe("Copy")
+
+  const held = text(
+    renderToStaticMarkup(
+      <DefaultLink
+        link={link({ url, status: "blocked", blockedBy: "paused" })}
+        menu={null}
+        onCopied={() => {}}
+      />
+    )
+  )
+  expect(held).toContain("Paused")
 
   // Links made before their URLs were kept can't be copied again.
   const sealed = text(
@@ -59,7 +70,6 @@ test("the default link offers its URL to copy, or says how to get one again", ()
       <DefaultLink link={link({})} menu={null} onCopied={() => {}} />
     )
   )
-  expect(sealed).toContain("Never expires")
   expect(sealed).toContain("Make a new link to copy it again.")
 })
 

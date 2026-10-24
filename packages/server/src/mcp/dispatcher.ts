@@ -172,6 +172,7 @@ import {
   readableFileSource,
 } from "./file-results.ts"
 import { withResultMedia } from "./media.ts"
+import { keepEarlierImagesAfterRestore } from "../file-history.ts"
 import { BUILTIN_DOCUMENT_FORMATS } from "../document-format-registry.ts"
 import {
   logRecordPracticeWarnings,
@@ -1381,7 +1382,28 @@ async function _dispatchOperationInner(
         source: "mcp",
         reason: args["reason"] as string | undefined,
       })
-      return { ok: true, ...result }
+      // An image changed since keeps its earlier copy with the restored Doc.
+      const kept = await keepEarlierImagesAfterRestore(
+        args["spaceId"] as string,
+        result.path,
+        args["versionId"] as string,
+        actorId
+      )
+      return {
+        ok: true,
+        ...result,
+        ...(kept.length > 0
+          ? {
+              keptImages: kept,
+              sourceRevision: (
+                await readRegisteredDocumentSource({
+                  spaceId: args["spaceId"] as string,
+                  path: result.path,
+                })
+              ).sourceRevision,
+            }
+          : {}),
+      }
     }
     case "documents.move": {
       const moved = await moveRegisteredDocument({

@@ -5,7 +5,7 @@
 // a Doc go in the Doc's own folder (`onboarding/signup-flow.md` owns
 // `onboarding/signup-flow/`), and the Doc stores the path relative to it.
 
-import { resolveDocLink } from "@worktable/types"
+import { resolveDocLink, versionIdTimestamp } from "@worktable/types"
 import { authenticatedFetch, BASE_URL, HttpError } from "./http"
 
 /**
@@ -17,9 +17,9 @@ export function fileSourceUrl(
   spaceId: string,
   path: string,
   version: string | null = null,
-  options: { download?: boolean } = {}
+  options: { download?: boolean; at?: string } = {}
 ): string {
-  return `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}${version ? `&v=${encodeURIComponent(version)}` : ""}${options.download ? "&download=1" : ""}`
+  return `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}${version ? `&v=${encodeURIComponent(version)}` : ""}${options.download ? "&download=1" : ""}${options.at ? `&at=${encodeURIComponent(options.at)}` : ""}`
 }
 
 /** Upload New Version: the file's new bytes, keeping the old in its history. */
@@ -49,18 +49,34 @@ export async function replaceFile(
 /**
  * The URL an embed loads from: a file in the Doc's Space, or the target
  * itself. With the file's version from the Doc's page, the browser keeps
- * the file and shows it again without asking.
+ * the file and shows it again without asking. `at` asks for the file as it
+ * was then, for an old version.
  */
 export function embedSourceUrl(
   spaceId: string,
   docPath: string,
   target: string,
-  versions?: Readonly<Record<string, string>>
+  files: {
+    versions?: Readonly<Record<string, string>> | undefined
+    at?: string | undefined
+  } = {}
 ): string {
   const path = resolveDocLink(docPath, target)
   return path === null
     ? target
-    : fileSourceUrl(spaceId, path, versions?.[path] ?? null)
+    : files.at
+      ? fileSourceUrl(spaceId, path, null, { at: files.at })
+      : fileSourceUrl(spaceId, path, files.versions?.[path] ?? null)
+}
+
+/**
+ * When an old version's content was saved, to show its files as they were
+ * then. A version that merged rapid saves keeps the first one's createdAt;
+ * its id names the last.
+ */
+export function versionFilesAt(version: { id: string; createdAt: string }): string {
+  const savedAt = versionIdTimestamp(version.id)
+  return savedAt === null ? version.createdAt : new Date(savedAt).toISOString()
 }
 
 /** A path as a link holds it: characters a URL reads as syntax are encoded. */

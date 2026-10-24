@@ -3,7 +3,10 @@ import {
   disconnectLink,
   startLinkedRuntime,
   linkedStatus,
+  linkedOpenUrl,
 } from "./linked-runtime.ts"
+import { LinkedHeartbeat } from "@worktable/hosted-contract"
+import { updateServerSettings } from "./settings-store.ts"
 import { createDocumentShare, resolveDocumentShare } from "./share-store.ts"
 import { grokBotInventory } from "./grok-bot-connections.ts"
 import { afterEach, beforeEach, expect, test } from "bun:test"
@@ -39,6 +42,7 @@ const cloud = "https://app.worktable.cloud"
 let state = ""
 let paused = false
 let heartbeatAttempted: Promise<void>
+let heartbeats: unknown[] = []
 let resolveHeartbeatAttempted: () => void
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "worktable-cloud-account-"))
@@ -50,12 +54,14 @@ beforeEach(async () => {
   refreshStatus = 200
   exchangeStatus = 200
   paused = false
+  heartbeats = []
   heartbeatAttempted = new Promise((resolve) => {
     resolveHeartbeatAttempted = resolve
   })
   globalThis.fetch = (async (input, init) => {
     const url = String(input)
     if (url === `${cloud}/linked/heartbeat`) {
+      heartbeats.push(JSON.parse(String(init?.body)))
       resolveHeartbeatAttempted()
       throw new Error("Cloud unavailable")
     }
@@ -284,6 +290,15 @@ test("the Settings toggle preserves the MCP URL and share capability, while Unli
     await heartbeatAttempted
     await new Promise<void>((resolve) => setImmediate(resolve))
     expect(linkedStatus()).toMatchObject({ state: "offline", enabled: null })
+    // The heartbeat meets Cloud's strict contract and says where to open
+    // this Worktable: the local address until a Workspace URL is set.
+    expect(LinkedHeartbeat.parse(heartbeats[0]).openUrl).toMatch(
+      /^http:\/\/127\.0\.0\.1:\d+$/
+    )
+    await updateServerSettings({
+      network: { publicUrl: "https://notes.example.com" },
+    })
+    expect(linkedOpenUrl()).toEqual({ openUrl: "https://notes.example.com" })
   } finally {
     await stop()
   }

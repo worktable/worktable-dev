@@ -287,7 +287,12 @@ async function persist(settings: ServerSettings): Promise<void> {
   // Unique tmp name (pid + random): two concurrent writers must not share a tmp
   // path, or the loser's rename would ENOENT after the winner moved it away.
   const tmp = `${file}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
-  await writeFile(tmp, JSON.stringify(settings, null, 2), "utf8");
+  // A sharing preview that was on stays in the file, for every Worktable's
+  // links store to read when it first opens, on whichever boot that is.
+  const saved = legacySharingPreviewSetting()
+    ? { ...settings, sharing: { preview: true } }
+    : settings;
+  await writeFile(tmp, JSON.stringify(saved, null, 2), "utf8");
   await chmod(tmp, 0o600);
   await rename(tmp, file);
   await clearFailClosed();
@@ -386,9 +391,9 @@ export function getRetentionPolicyGeneration(): number {
  * unreadable settings fail closed until an explicit settings write succeeds.
  */
 /**
- * The removed sharing preview's setting, as this process first read it: the
- * next settings write drops the group. Read once by the share links store to
- * settle its policy (see `settleSharingPreviewPolicy`).
+ * The removed sharing preview's setting, read by each Worktable's share links
+ * store to settle its policy once (see `settleSharingPreviewPolicy`). Writes
+ * keep it in the file when it was on.
  */
 let legacySharingPreview: boolean | null = null;
 

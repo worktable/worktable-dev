@@ -100,7 +100,7 @@ describe("settings-store", () => {
     expect((s as unknown as Record<string, unknown>)["extra"]).toBeUndefined(); // unknown key dropped
   });
 
-  it("loads a file with the retired sharing preview switch and drops it on the next write", async () => {
+  it("loads a file with the retired sharing preview switch and keeps one that was on", async () => {
     writeFileSync(
       settingsPath(),
       JSON.stringify({ version: 1, editor: { spellcheck: true }, sharing: { preview: true } }),
@@ -110,13 +110,22 @@ describe("settings-store", () => {
     expect("sharing" in getServerSettings()).toBe(false);
     expect(legacySharingPreviewSetting()).toBe(true);
 
+    // Kept through writes and restarts, for links stores that open later.
     await updateServerSettings({ updates: { autoCheck: false } });
-    const stored = JSON.parse(readFileSync(settingsPath(), "utf8"));
-    expect(stored.sharing).toBeUndefined();
+    let stored = JSON.parse(readFileSync(settingsPath(), "utf8"));
+    expect(stored.sharing).toEqual({ preview: true });
     expect(stored.editor.spellcheck).toBe(true);
-    // Remembered as first read, for the share policy settled after it.
+    invalidateServerSettingsCache();
     expect(legacySharingPreviewSetting()).toBe(true);
     await expect(updateServerSettings({ sharing: { preview: true } } as never)).rejects.toThrow("Unknown settings group: sharing");
+
+    // One that was off is dropped.
+    writeFileSync(settingsPath(), JSON.stringify({ version: 1, sharing: { preview: false } }));
+    invalidateServerSettingsCache();
+    await updateServerSettings({ updates: { autoCheck: false } });
+    stored = JSON.parse(readFileSync(settingsPath(), "utf8"));
+    expect(stored.sharing).toBeUndefined();
+    expect(legacySharingPreviewSetting()).toBe(false);
   });
 
   it("quarantines corrupt JSON as .corrupt, resets to defaults, and fails closed", async () => {

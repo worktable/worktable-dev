@@ -99,6 +99,7 @@ import { AgentAvatar } from "@/components/agents/agent-avatar"
 import { AgentEditDialog } from "@/components/agents/agent-edit-dialog"
 import { DesktopAgentSkillsGroup } from "./desktop-agent-skills"
 import { GrokBotSetupPanel } from "@/components/agents/grok-bot-setup"
+import { ChatAppWays, LocalChatSteps } from "@/components/agents/chat-app-ways"
 import { GROK_BOT_STATUS_LABELS } from "@/lib/grok-bot-status"
 import {
   AGENT_SETUP_CATEGORIES,
@@ -892,6 +893,7 @@ function AlwaysOnPairingStatus({
 type DesktopAppChoice = "claude-desktop" | "chatgpt-desktop"
 
 function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
+  const sectionActive = useSettingsSectionActive()
   const queryClient = useQueryClient()
   const [app, setApp] = useState<DesktopAppChoice>("claude-desktop")
   const [claudeToken, setClaudeToken] = useState<string | null>(null)
@@ -957,160 +959,170 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
         ]}
       />
 
-      {app === "claude-desktop" ? (
-        <article className="flex flex-col gap-4">
-          <div>
-            <a
-              href="/integrations/claude-desktop.mcpb"
-              download="worktable-claude-desktop.mcpb"
-              className={buttonVariants()}
-            >
-              <Download className="size-4" aria-hidden />
-              Download extension
-            </a>
-          </div>
-
-          <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground marker:text-foreground/60">
-            <li>Download and open the extension, then approve installation.</li>
-            <li>Paste the MCP endpoint shown below.</li>
-            <li>
-              {needsToken
-                ? "Generate an access token and paste it into the extension."
-                : "Leave the optional access token blank for this same-machine connection."}
-            </li>
-            <li>Restart Claude, then ask it to list the Worktable tools.</li>
-          </ol>
-
-          <CopyField label="MCP endpoint" value={endpoint} onCopied={copied} />
-
-          {needsToken ? (
-            claudeToken ? (
-              <div className="flex flex-col gap-2">
-                <SecretReveal secret={claudeToken} onCopied={copied} />
-                <Callout variant="info">
-                  This token is shown once. Updating or revoking it requires
-                  replacing the value in Claude Desktop.
-                </Callout>
+      <ChatAppWays
+        app={app === "claude-desktop" ? "claude" : "chatgpt"}
+        active={sectionActive}
+        local={
+          app === "claude-desktop" ? (
+            <article className="flex flex-col gap-4">
+              <div>
+                <a
+                  href="/integrations/claude-desktop.mcpb"
+                  download="worktable-claude-desktop.mcpb"
+                  className={buttonVariants()}
+                >
+                  <Download className="size-4" aria-hidden />
+                  Download extension
+                </a>
               </div>
-            ) : (
-              <div className="flex flex-col gap-4">
-                <AgentAccessFields
-                  value={access}
-                  onChange={setAccess}
-                  disabled={mintClaude.isPending || !appKnown}
-                />
-                {existing.isError ? (
-                  <Callout variant="danger">
-                    Couldn’t check whether this app is already connected.{" "}
-                    <button
-                      type="button"
-                      className="font-medium underline underline-offset-2"
-                      onClick={() => void existing.refetch()}
-                    >
-                      Try again
-                    </button>
-                  </Callout>
-                ) : null}
-                {existingAgent ? (
-                  <p className="text-xs text-muted-foreground">
-                    Already connected as {existingAgent.displayName}. A new
-                    token joins it.
-                  </p>
-                ) : null}
-                <div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => mintClaude.mutate()}
-                    disabled={
-                      mintClaude.isPending ||
-                      !appKnown ||
-                      !(access.threads || access.read || access.edit)
-                    }
-                  >
-                    {mintClaude.isPending
-                      ? "Generating…"
-                      : "Generate Claude access token"}
-                  </Button>
-                </div>
-              </div>
-            )
-          ) : null}
-        </article>
-      ) : (
-        <article className="flex flex-col gap-4">
-          <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground marker:text-foreground/60">
-            <li>Open ChatGPT Settings → MCP servers.</li>
-            <li>Select Add server and name it Worktable.</li>
-            <li>Choose Streamable HTTP and paste the endpoint below.</li>
-            {needsToken ? (
-              <li>Generate and supply the bearer token shown here.</li>
-            ) : null}
-            <li>Save, restart, and type /mcp to verify Worktable.</li>
-          </ol>
 
-          <CopyField label="MCP endpoint" value={endpoint} onCopied={copied} />
+              <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground marker:text-foreground/60">
+                <li>
+                  Download and open the extension, then approve installation.
+                </li>
+                <li>Paste the MCP endpoint shown below.</li>
+                <li>
+                  {needsToken
+                    ? "Generate an access token and paste it into the extension."
+                    : "Leave the optional access token blank for this same-machine connection."}
+                </li>
+                <li>
+                  Restart Claude, then ask it to list the Worktable tools.
+                </li>
+              </ol>
 
-          {needsToken ? (
-            chatGptToken ? (
-              <div className="flex flex-col gap-2">
-                <SecretReveal secret={chatGptToken} onCopied={copied} />
-                <Callout variant="info">
-                  This token is shown once. Revoke it under Connections and
-                  replace it in ChatGPT when needed.
-                </Callout>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-4">
-                <AgentAccessFields
-                  value={access}
-                  onChange={setAccess}
-                  disabled={mintChatGpt.isPending || !appKnown}
-                />
-                {existing.isError ? (
-                  <Callout variant="danger">
-                    Couldn’t check whether this app is already connected.{" "}
-                    <button
-                      type="button"
-                      className="font-medium underline underline-offset-2"
-                      onClick={() => void existing.refetch()}
-                    >
-                      Try again
-                    </button>
-                  </Callout>
-                ) : null}
-                {existingAgent ? (
-                  <p className="text-xs text-muted-foreground">
-                    Already connected as {existingAgent.displayName}. A new
-                    token joins it.
-                  </p>
-                ) : null}
-                <div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => mintChatGpt.mutate()}
-                    disabled={
-                      mintChatGpt.isPending ||
-                      !appKnown ||
-                      !(access.threads || access.read || access.edit)
-                    }
-                  >
-                    {mintChatGpt.isPending
-                      ? "Generating…"
-                      : "Generate ChatGPT access token"}
-                  </Button>
-                </div>
-              </div>
-            )
-          ) : null}
+              <CopyField
+                label="MCP endpoint"
+                value={endpoint}
+                onCopied={copied}
+              />
 
-          <Callout variant="info">
-            Codex and ChatGPT share MCP settings. Already connected in Codex?
-            Restart ChatGPT.
-          </Callout>
-        </article>
-      )}
+              {needsToken ? (
+                claudeToken ? (
+                  <div className="flex flex-col gap-2">
+                    <SecretReveal secret={claudeToken} onCopied={copied} />
+                    <Callout variant="info">
+                      This token is shown once. Updating or revoking it requires
+                      replacing the value in Claude Desktop.
+                    </Callout>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <AgentAccessFields
+                      value={access}
+                      onChange={setAccess}
+                      disabled={mintClaude.isPending || !appKnown}
+                    />
+                    {existing.isError ? (
+                      <Callout variant="danger">
+                        Couldn’t check whether this app is already connected.{" "}
+                        <button
+                          type="button"
+                          className="font-medium underline underline-offset-2"
+                          onClick={() => void existing.refetch()}
+                        >
+                          Try again
+                        </button>
+                      </Callout>
+                    ) : null}
+                    {existingAgent ? (
+                      <p className="text-xs text-muted-foreground">
+                        Already connected as {existingAgent.displayName}. A new
+                        token joins it.
+                      </p>
+                    ) : null}
+                    <div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => mintClaude.mutate()}
+                        disabled={
+                          mintClaude.isPending ||
+                          !appKnown ||
+                          !(access.threads || access.read || access.edit)
+                        }
+                      >
+                        {mintClaude.isPending
+                          ? "Generating…"
+                          : "Create Access Token"}
+                      </Button>
+                    </div>
+                  </div>
+                )
+              ) : null}
+            </article>
+          ) : (
+            <article className="flex flex-col gap-4">
+              <LocalChatSteps app="chatgpt" token={needsToken} />
+
+              <CopyField
+                label="MCP endpoint"
+                value={endpoint}
+                onCopied={copied}
+              />
+
+              {needsToken ? (
+                chatGptToken ? (
+                  <div className="flex flex-col gap-2">
+                    <SecretReveal secret={chatGptToken} onCopied={copied} />
+                    <Callout variant="info">
+                      This token is shown once. Revoke it under Connections and
+                      replace it in ChatGPT when needed.
+                    </Callout>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <AgentAccessFields
+                      value={access}
+                      onChange={setAccess}
+                      disabled={mintChatGpt.isPending || !appKnown}
+                    />
+                    {existing.isError ? (
+                      <Callout variant="danger">
+                        Couldn’t check whether this app is already connected.{" "}
+                        <button
+                          type="button"
+                          className="font-medium underline underline-offset-2"
+                          onClick={() => void existing.refetch()}
+                        >
+                          Try again
+                        </button>
+                      </Callout>
+                    ) : null}
+                    {existingAgent ? (
+                      <p className="text-xs text-muted-foreground">
+                        Already connected as {existingAgent.displayName}. A new
+                        token joins it.
+                      </p>
+                    ) : null}
+                    <div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => mintChatGpt.mutate()}
+                        disabled={
+                          mintChatGpt.isPending ||
+                          !appKnown ||
+                          !(access.threads || access.read || access.edit)
+                        }
+                      >
+                        {mintChatGpt.isPending
+                          ? "Generating…"
+                          : "Create Access Token"}
+                      </Button>
+                    </div>
+                  </div>
+                )
+              ) : null}
+
+              <Callout variant="info">
+                Codex and ChatGPT share MCP settings. Already connected in
+                Codex? Restart ChatGPT.
+              </Callout>
+            </article>
+          )
+        }
+      />
     </div>
   )
 }

@@ -110,16 +110,18 @@ HTTPS boundaries in detail.
 
 Where available for your Cloud account, Worktable Link connects a local or
 self-hosted installation to supported AI apps and public document sharing.
-Check **Settings → Worktable Cloud** for availability and the device limit.
+Check **Settings → Remote Access** for availability.
 A remote self-hosted installation needs an HTTPS address.
 
-1. Choose **Sign in** in **Settings → Worktable Cloud**. Complete browser
+1. Choose **Sign in** in **Settings → Remote Access**. Complete browser
    sign-in and confirm the server address when prompted.
 2. Return to Settings, choose a payer-owned **Worktable subscription**, and turn
    on **Worktable Link**. Sign-in alone does not
    enable remote access. Complete subscription setup if requested.
-3. Copy the device's **MCP URL** into your AI app's connector setup and choose
-   OAuth authentication.
+3. In ChatGPT or Claude, add the official Worktable app after Link is on; an
+   app added first is bound to another Worktable. For another AI app, open
+   **Connect another app**, copy the device's **MCP URL** into its connector
+   setup and choose OAuth authentication.
 4. Sign in with the same Cloud account and approve the connection.
 
 Keep the device online and Worktable running. Worktable Desktop keeps a
@@ -128,8 +130,9 @@ you quit Desktop. Authorized requests pass through Cloud to the device; Link
 does not copy its workspace into the hosted workspace, synchronize the two, or
 expose the full local interface remotely.
 Each device follows its selected subscription: Solo links one device, Team
-three and Business five. **Your Worktables** in Cloud lists each linked Worktable
-with its device and whether it is online. On a team installation, an operator enables Link and its
+three and Business five. If a Worktable's devices are all linked, unlink one in
+Cloud to connect another. **Your Worktables** in Cloud lists each linked
+Worktable with its device and whether it is online. On a team installation, an operator enables Link and its
 AI apps follow that member's Space permissions as personal agents.
 
 Turn off **Worktable Link** to pause AI access and public sharing. Turning it on

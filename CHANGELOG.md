@@ -24,6 +24,8 @@ infrastructure and personal context out of release notes.
 - **Agents stay put unless you choose:** Opening another local Worktable in Worktable Desktop opens it right away and offers to switch agents on this Mac to it.
 - **Linked Worktable addresses:** Linking the same Worktable again keeps its MCP URL, and Your Worktables in Cloud lists linked Worktables with their device and status.
 - **Business links five devices:** A Business subscription now links up to five devices through Worktable Link; Solo links one and Team three.
+- **Chat apps on any device:** Setting up ChatGPT or Claude lists the steps for any device, turning on Worktable Link and then adding the official Worktable app, beside numbered steps for this computer.
+- **Remote Access settings:** Settings → Worktable Cloud is now Settings → Remote Access. It shows Worktable Link's status beside the switch and keeps the MCP URL under Connect another app.
 
 ### Fixed
 

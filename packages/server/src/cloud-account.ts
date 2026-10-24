@@ -312,8 +312,7 @@ export async function cloudLinkRequest(origin: string, body: unknown) {
         const messages: Record<string, string> = {
           BILLING_REQUIRED: "This Worktable's plan needs paying for first.",
           WORKTABLE_REQUIRED: "Choose a Worktable for this device.",
-          NO_WORKTABLE:
-            "Create a Worktable in Cloud first. Solo is free and links one device.",
+          NO_WORKTABLE: "Create a Worktable in Cloud first.",
           BILLING_PAYER_REQUIRED: "Choose a Worktable you pay for.",
           BILLING_LOCKED:
             "Update your Worktable Cloud subscription to continue.",

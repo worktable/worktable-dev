@@ -1,16 +1,7 @@
-import {
-  lazy,
-  Suspense,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react"
+import { lazy, Suspense, useEffect, useId, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { GrokBotEmailAddress } from "@worktable/hosted-contract"
-import { Check, ChevronRight } from "lucide-react"
 import {
   GROK_BOT_SHORTCUT_MESSAGE,
   grokBotRoutineInstructions,
@@ -21,11 +12,6 @@ import {
 import { Button, buttonVariants } from "@worktable/ui/components/button"
 import { Badge } from "@worktable/ui/components/badge"
 import { Callout } from "@worktable/ui/components/callout"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@worktable/ui/components/collapsible"
 import { CopyField } from "@worktable/ui/components/copy-field"
 import { Disclosure } from "@worktable/ui/components/disclosure"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
@@ -40,69 +26,18 @@ import {
 } from "@worktable/ui/components/select"
 import { toast } from "@worktable/ui/components/sonner"
 import { useCopy } from "@worktable/ui/hooks/use-copy"
-import { cn } from "@worktable/ui/lib/utils"
 import { listAgentConnections } from "@/lib/agent-connections-api"
 import { fetchJSON } from "@/lib/http"
 import { GROK_BOT_STATUS_LABELS } from "@/lib/grok-bot-status"
 import type { ConnectionInfo } from "@/lib/system-api"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { SetupStep } from "./setup-step"
 
 const WorktableLinkSetup = lazy(() =>
   import("../settings/sections/cloud").then((module) => ({
     default: module.CloudSection,
   }))
 )
-
-function SetupStep({
-  number,
-  title,
-  complete,
-  open,
-  disabled,
-  onOpenChange,
-  children,
-}: {
-  number: number
-  title: string
-  complete?: boolean
-  open: boolean
-  disabled?: boolean
-  onOpenChange: (open: boolean) => void
-  children?: ReactNode
-}) {
-  return (
-    <li>
-      <Collapsible open={open && !disabled} onOpenChange={onOpenChange}>
-        <CollapsibleTrigger
-          disabled={disabled}
-          className="flex min-h-11 w-full items-center gap-3 text-left text-sm font-medium disabled:cursor-default disabled:text-muted-foreground"
-        >
-          <span
-            className={cn(
-              "grid size-6 shrink-0 place-items-center rounded-full bg-surface-tint text-xs",
-              complete && "bg-success/10 text-success"
-            )}
-          >
-            {complete ? <Check className="size-3.5" aria-hidden /> : number}
-          </span>
-          <span className="flex-1">{title}</span>
-          <ChevronRight
-            aria-hidden
-            className={cn(
-              "size-4 text-muted-foreground transition-transform motion-reduce:transition-none",
-              open && !disabled && "rotate-90"
-            )}
-          />
-        </CollapsibleTrigger>
-        <CollapsibleContent keepMounted>
-          <div className="flex min-w-0 flex-col gap-3 pt-2 pb-4 pl-9">
-            {children}
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-    </li>
-  )
-}
 
 export function GrokBotSetupPanel({
   connection,

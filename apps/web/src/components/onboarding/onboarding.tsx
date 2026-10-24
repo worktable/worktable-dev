@@ -1,8 +1,3 @@
-import { SourceCodeLink } from "@/components/source-code-link"
-import {
-  CACHED_SYSTEM_VERSION_QUERY_KEY,
-  getCachedSystemVersion,
-} from "@/lib/system-api"
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
@@ -379,11 +374,6 @@ function InviteStep({
 }
 
 export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
-  const versionQuery = useQuery({
-    queryKey: CACHED_SYSTEM_VERSION_QUERY_KEY,
-    queryFn: getCachedSystemVersion,
-    staleTime: Infinity,
-  })
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { person } = usePersonalSetup()
@@ -507,11 +497,6 @@ export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
           />
         )}
         <ErrorNote error={finish.error} />
-        {versionQuery.data?.sourceUrl ? (
-          <div className="mt-16 text-center">
-            <SourceCodeLink sourceUrl={versionQuery.data.sourceUrl} />
-          </div>
-        ) : null}
       </main>
     </div>
   )

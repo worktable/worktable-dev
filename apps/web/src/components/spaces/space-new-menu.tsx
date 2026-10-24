@@ -2,6 +2,7 @@ import {
   lazy,
   Suspense,
   useEffect,
+  useRef,
   useState,
   type ReactElement,
   type ReactNode,
@@ -16,6 +17,7 @@ import {
   Monitor,
   Pencil,
   Plus,
+  Upload,
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
@@ -52,6 +54,7 @@ import {
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { createRecordCollection } from "@/lib/records-api"
 import { createWidget } from "@/lib/widgets-api"
+import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 
 const NewCollectionDialog = lazy(() =>
   import("@/components/records/new-collection-dialog").then((module) => ({
@@ -154,6 +157,55 @@ export function SpaceNewActions({
   const [widgetOpen, setWidgetOpen] = useState(false)
   const [collectionOpen, setCollectionOpen] = useState(false)
   const newDoc = useNewDoc(spaceId, onCreated)
+  const filesOn = useDeploymentInfo().data?.capabilities.filesPreview ?? false
+  const picker = useRef<HTMLInputElement>(null)
+
+  const uploadFiles = async (files: File[]) => {
+    // Upload code loads when a file is chosen, not with every page.
+    let upload: typeof import("@/components/file-page-entry").uploadFileToFolder
+    try {
+      // With the Doc renderer, which the uploaded file's page opens with.
+      upload = (await import("@/components/file-page-entry")).uploadFileToFolder
+    } catch (err) {
+      console.error("File upload failed:", err)
+      toast.error("Couldn’t upload the file. Try again.")
+      return
+    }
+    const paths: string[] = []
+    let failed: File | null = null
+    for (const file of files) {
+      try {
+        paths.push(await upload(spaceId, folder ?? "", file))
+      } catch (err) {
+        console.error("File upload failed:", err)
+        failed = file
+        break
+      }
+    }
+    // Files saved before a failure are there: list them either way.
+    if (paths.length > 0) {
+      void queryClient.invalidateQueries({
+        queryKey: documentQueryKeys.list(spaceId),
+        exact: true,
+      })
+      onCreated?.()
+    }
+    if (failed) {
+      toast.error(
+        paths.length === 0
+          ? "Couldn’t upload the file. Try again."
+          : `Uploaded ${paths.length} of ${files.length} files. Couldn’t upload ${failed.name}.`
+      )
+      return
+    }
+    if (paths.length === 1) {
+      void navigate({
+        to: "/spaces/$spaceId/documents/$",
+        params: { spaceId, _splat: paths[0]! },
+      })
+    }
+    toast.success(paths.length === 1 ? "File uploaded" : `${paths.length} files uploaded`)
+  }
 
   // Rethrows on failure: the dialog stays open so the entered name and
   // description survive a rejected create.
@@ -253,6 +305,12 @@ export function SpaceNewActions({
         <AppWindow className="mr-2 h-4 w-4" />
         HTML Doc
       </DropdownMenuItem>
+      {filesOn && (
+        <DropdownMenuItem onClick={() => picker.current?.click()}>
+          <Upload className="mr-2 h-4 w-4" />
+          Upload File
+        </DropdownMenuItem>
+      )}
       {!folder && (
         <DropdownMenuItem onClick={() => setCollectionOpen(true)}>
           <Database className="mr-2 h-4 w-4" />
@@ -276,6 +334,19 @@ export function SpaceNewActions({
   return (
     <>
       {children(items)}
+      {filesOn && (
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            const files = [...(event.target.files ?? [])]
+            event.target.value = ""
+            if (files.length > 0) void uploadFiles(files)
+          }}
+        />
+      )}
       {drawingOpen && (
         <Suspense fallback={null}>
           <NewDrawingDialog

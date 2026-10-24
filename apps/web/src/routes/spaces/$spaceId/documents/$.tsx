@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useState } from "react"
 import { createFileRoute, Navigate } from "@tanstack/react-router"
 import {
   useQuery,
@@ -29,6 +29,13 @@ import {
 import { documentOpenHint, type DocumentOpenHint } from "@/lib/document-rows"
 import { toast } from "@worktable/ui/components/sonner"
 import { HttpError } from "@/lib/http"
+
+// A file's page loads with the Doc renderer when one opens.
+const FilePage = lazy(() =>
+  import("@/components/file-page-entry").then((module) => ({
+    default: module.FilePage,
+  }))
+)
 
 /**
  * Start what opening this document reads: its content at the revision the
@@ -263,6 +270,13 @@ function DocumentPageRoute() {
     )
   }
 
+  if (page.document.format.id === "worktable.file") {
+    return (
+      <Suspense fallback={<EditorSkeleton />}>
+        <FilePage spaceId={spaceId} page={page} />
+      </Suspense>
+    )
+  }
   const renderer = page.renderer ? browserDocumentRenderer(page.renderer) : null
   if (!renderer) {
     return <UnavailableDocumentPage spaceId={spaceId} page={page} />

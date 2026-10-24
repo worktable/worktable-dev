@@ -1102,6 +1102,15 @@ describe("format-neutral document route", () => {
         ((await versions.json()) as { versions: unknown[] }).versions.length
       ).toBe(3)
 
+      // Upload New Version replaces whatever the file holds now.
+      expect(
+        (await upload("design/error.png", "fourth", {}, "&replace=1")).status
+      ).toBe(200)
+      expect(await (await instance.request(fileUrl("design/error.png"))).text()).toBe(
+        "fourth"
+      )
+      expect((await upload("design/missing.png", "x", {}, "&replace=1")).status).toBe(404)
+
       // A Doc's path is not a file's, whatever revision is offered.
       const docRevision = (
         await readRegisteredDocumentSource({ spaceId, path: "notes/readme" })
@@ -1192,9 +1201,12 @@ describe("format-neutral document route", () => {
       const page = await instance.request(
         `/api/spaces/${spaceId}/documents/page?path=notes/readme/error.png`
       )
-      expect(
-        ((await page.json()) as { page: { backlinks?: unknown } }).page.backlinks
-      ).toEqual([{ path: "notes/readme", context: "Signup error", count: 1 }])
+      const filePage = (await page.json()) as {
+        page: { backlinks?: unknown; version?: string }
+      }
+      expect(filePage.page.backlinks).toEqual([
+        { path: "notes/readme", context: "Signup error", count: 1 },
+      ])
 
       // The Doc's page gives the file's version, which loads it for good.
       const docPage = (await (
@@ -1202,6 +1214,8 @@ describe("format-neutral document route", () => {
       ).json()) as { page: { embeds?: Record<string, string> } }
       const version = docPage.page.embeds?.["notes/readme/error.png"]
       expect(version).toBeString()
+      // The file's own page gives the same version.
+      expect(filePage.page.version).toBe(version)
       const file = await instance.request(
         `/api/spaces/${spaceId}/documents/file?path=notes/readme/error.png&v=${encodeURIComponent(version!)}`
       )

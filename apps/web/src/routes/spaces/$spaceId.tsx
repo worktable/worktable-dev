@@ -190,6 +190,7 @@ function PinnedSection({
               <div className="flex min-w-0 items-center gap-2">
                 <DocumentFormatIcon
                   formatId={pin.format?.id}
+                  name={pin.path}
                   className="size-4 shrink-0 text-muted-foreground"
                 />
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">

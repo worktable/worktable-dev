@@ -445,7 +445,7 @@ describe("importing a file into Records", () => {
         spaceId,
         path: "research/ragged.csv",
         format: file,
-        source: "a,b\n1,2\n\n3\n",
+        source: "a,b\n1,2\n\n,\n3\n",
       })
       const ragged = await write("worktable_records_write", {
         action: "import",

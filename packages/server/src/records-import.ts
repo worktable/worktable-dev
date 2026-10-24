@@ -139,9 +139,10 @@ function readTable(path: string, bytes: Uint8Array): ImportTable {
   }
   const rows: Array<Record<string, string>> = []
   for (const [index, cells] of table.rows.entries()) {
-    // A blank line is no row. A row longer than the header would lose
-    // values; a shorter one leaves the rest empty, as exports often do.
-    if (cells.length === 1 && cells[0] === "" && table.header.length > 1) continue
+    // A row with no values, such as a blank line, holds nothing to import.
+    // A row longer than the header would lose values; a shorter one leaves
+    // the rest empty, as exports often do.
+    if (cells.every((cell) => cell === "")) continue
     if (cells.length > table.header.length) {
       throw new Error(
         `Row ${index + 1} has ${cells.length} values for ${table.header.length} columns`

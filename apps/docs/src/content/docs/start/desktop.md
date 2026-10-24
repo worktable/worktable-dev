@@ -41,10 +41,11 @@ connecting the agent are separate steps; see [Skills](/agents/skills/).
 
 Use the Worktable application menu to change the selected workspace or server.
 Returning to the same local workspace restores its stable agent endpoint.
-When you open a local Worktable other than the one agents on this Mac use,
-Desktop asks whether to switch them. **Switch agents** moves the CLI, the
-background service, and `worktable mcp` to it. Desktop doesn't ask again
-about the same two Worktables until it restarts. Each Worktable has its own
+When you open a local Worktable other than the one agents on this Mac use, it
+opens right away and a notice offers to switch them. **Switch them to** moves
+the CLI, the background service, and `worktable mcp` to it; closing the notice
+leaves them where they are. Desktop doesn't offer again for the same two
+Worktables until it restarts. Each Worktable has its own
 endpoint, so update an agent app that was connected directly to the previous
 one.
 

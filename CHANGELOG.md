@@ -21,7 +21,7 @@ infrastructure and personal context out of release notes.
 - **Private visitor comments:** Visitors on a share link see only their own comments and the team's replies, and give a name with each comment.
 - **Agent setup:** Getting Started and Settings group agent connections by how they work, with consistent connection steps and platform logos.
 - **Linked Worktables stay online:** Worktable Desktop keeps a Worktable with Worktable Link on running while you switch to another one, until you quit.
-- **Agents stay put unless you choose:** Opening another local Worktable in Worktable Desktop asks whether agents on this Mac should switch to it.
+- **Agents stay put unless you choose:** Opening another local Worktable in Worktable Desktop opens it right away and offers to switch agents on this Mac to it.
 
 ### Fixed
 

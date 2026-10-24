@@ -48,10 +48,38 @@ test("connected identity and disconnect remain available when OAuth inventory is
           connectedAt: "2026-10-24T10:00:00Z",
           lastSeenAt: "2026-10-24T10:00:00Z",
           permissionGroups: null,
-          canManage: false,
           link: {
             manageUrl: "https://cloud.example/linked/agents?destinationId=d",
           },
+        },
+        // A Grok Bot through Link keeps its local routine's Edit.
+        {
+          id: "acn_link_grok",
+          authKind: "oauth",
+          displayName: "Grok",
+          platform: "other",
+          icon: null,
+          access: null,
+          target: { kind: "mcp-client", clientId: null },
+          mode: "on-demand",
+          participant: { id: "grok-bot", kind: "agent", name: "Grok Bot" },
+          machine: null,
+          scopes: [],
+          connectedAt: "2026-10-24T09:00:00Z",
+          lastSeenAt: "2026-10-24T09:00:00Z",
+          permissionGroups: null,
+          link: {
+            manageUrl: "https://cloud.example/linked/agents?destinationId=d",
+          },
+        },
+      ],
+      grokBots: [
+        {
+          connectionId: "principal:grok",
+          participantId: "grok-bot",
+          enabled: true,
+          executionMinutes: 30,
+          status: "ready",
         },
       ],
     })
@@ -77,6 +105,8 @@ test("connected identity and disconnect remain available when OAuth inventory is
         'href="https://cloud.example/linked/agents?destinationId=d"'
       )
       expect(html.split(">Disconnect<").length - 1).toBe(1)
+      expect(html.split(">Manage<").length - 1).toBe(2)
+      expect(html.split(">Edit<").length - 1).toBe(1)
     } finally {
       client.clear()
     }

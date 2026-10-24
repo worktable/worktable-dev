@@ -580,7 +580,8 @@ function linkedAppConnection(
       linkedAppsSeen.get(`${app.workspace}\0${app.principalId}`) ??
       app.connectedAt,
     permissionGroups: null,
-    canManage: false,
+    // No access to change here (`access` is null), but a Grok Bot's local
+    // routine stays editable.
     link: { manageUrl },
   }
 }

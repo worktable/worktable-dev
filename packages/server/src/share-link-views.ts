@@ -83,9 +83,11 @@ export async function resolveShareLinkView(
   ShareLinkView | "unavailable" | "expired" | "password-required" | null
 > {
   const preview = sharingPreviewEnabled()
-  const frameId =
-    options.content && preview ? shareTicketLinkId(capability, "frame") : null
-  // Once frame tickets are active, HTML frames cannot use the bearer link.
+  const frameId = options.content
+    ? shareTicketLinkId(capability, "frame")
+    : null
+  // With the preview, every HTML frame takes a ticket, never the bearer link.
+  // Without it, a frame may also open with the link and any unlock ticket.
   if (options.content && preview && !frameId) return "unavailable"
   const found = frameId
     ? findShareLinkWithPolicy(frameId)

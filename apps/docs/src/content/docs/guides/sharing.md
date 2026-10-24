@@ -21,6 +21,10 @@ To give an audience its own link, open **More links** and choose **New Link**.
 Each of these links has its own label and expiry, and revoking one does not
 affect the others. Renaming or moving a document keeps its links working.
 
+To protect a link, turn on **Password** when you edit or make it. Readers enter
+the password before the document opens. Changing it asks readers who already
+unlocked the link for the new one.
+
 Shared links are unlisted. Review the content before sending a link. On a
 linked local device, Worktable must stay running, online, and linked for readers
 to reach it.
@@ -39,7 +43,8 @@ interactive experience available inside Worktable.
 
 Owners manage sharing in **Settings → Links**. **Pause all links** stops every
 link at once until it is turned off. Owners can also choose who can share on a
-team, which Spaces can be shared and the longest expiry. These settings apply
+team, which Spaces can be shared, whether every link needs a password and the
+longest expiry. These settings apply
 to existing links as well as new ones. The link table lists links across
 Spaces; open a link's menu to copy or revoke it.
 
@@ -50,14 +55,13 @@ does not replace the current policy with an older copy.
 
 ## Sharing preview
 
-Selected Worktables have a sharing preview with link passwords, live tools and
-visitor comments. These controls appear only where the preview is enabled.
-Live tools also need a compatible share host.
+Selected Worktables have a sharing preview with live tools and visitor
+comments. These controls appear only where the preview is enabled. Live tools
+also need a compatible share host.
 
 Owners first enable **Live tools** and **Comment links** in
 **Settings → Links**. Both are off by default. The workflows below are
-available when the owner permits them. With the preview, a link can also have
-a password, and owners can require one for every link.
+available when the owner permits them.
 
 ### Live tools
 

@@ -515,13 +515,17 @@ export function createPublicSharesRouter(
     if (page === "busy") return busy(c.req.raw, content, shareOrigin)
     if (!page) return unavailable(c.req.raw, content, shareOrigin)
     let response: Response
+    const preview = sharingPreviewEnabled()
+    // A password link's frame can't carry the unlock cookie to the HTML
+    // origin, so it takes a frame ticket even without the preview.
+    const frameTicket =
+      view.link.kind === "html" && (preview || view.link.hasPassword)
     if (
       !content &&
-      sharingPreviewEnabled() &&
-      (view.link.kind === "html" || view.link.level === "comment")
+      (frameTicket || (preview && view.link.level === "comment"))
     ) {
       const projection = JSON.parse(page.body)
-      if (view.link.level === "comment") {
+      if (preview && view.link.level === "comment") {
         const context = await visitorCommentNamespace()
         if (context.epoch !== view.link.workspaceEpoch)
           return unavailable(c.req.raw)
@@ -536,7 +540,7 @@ export function createPublicSharesRouter(
           visitorsSee: "own",
         }
       }
-      if (view.link.kind === "html") {
+      if (frameTicket) {
         if (!view.ticketSecret) return busy(c.req.raw, false, shareOrigin)
         const ticket = mintShareTicket(
           view.ticketSecret,
@@ -678,8 +682,7 @@ export function createPublicSharesRouter(
   }
 
   router.post("/unlock", async (c) => {
-    if (!getShareOrigin() || !sharingPreviewEnabled())
-      return unavailable(c.req.raw)
+    if (!getShareOrigin()) return unavailable(c.req.raw)
     const input = ShareUnlockRequest.safeParse(
       await c.req.json().catch(() => null)
     )
@@ -710,8 +713,7 @@ export function createPublicSharesRouter(
     }
     // Hashing awaits native work. A concurrent revoke/password/flag/policy
     // change must not issue a ticket for the state we verified earlier.
-    if (!sharingPreviewEnabled() || !shareLinkStillOpens(view.link))
-      return unavailable(c.req.raw)
+    if (!shareLinkStillOpens(view.link)) return unavailable(c.req.raw)
     const ticket = mintShareTicket(
       view.ticketSecret,
       view.link,

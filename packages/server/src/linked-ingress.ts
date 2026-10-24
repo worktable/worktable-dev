@@ -51,7 +51,6 @@ function validShareRequest(claims: LinkedRequestClaims): boolean {
     )
   }
   if (claims.grant.visitor !== undefined) return false
-  if (claims.grant.unlock !== undefined && !preview) return false
   if (
     claims.grant.clientAddress !== undefined &&
     (!preview || claims.path !== "/public/share/bridge")
@@ -64,12 +63,13 @@ function validShareRequest(claims: LinkedRequestClaims): boolean {
       !["GET", "HEAD"].includes(claims.method))
   )
     return false
+  // Passwords and their tickets work without the preview; live data doesn't.
   if (
     claims.path === "/public/share/unlock" ||
     claims.path === "/public/share/bridge"
   ) {
     return (
-      preview &&
+      (preview || claims.path === "/public/share/unlock") &&
       claims.method === "POST" &&
       ShareLinkToken.safeParse(claims.grant.capability).success
     )
@@ -81,8 +81,7 @@ function validShareRequest(claims: LinkedRequestClaims): boolean {
     return false
   return (
     ShareLinkToken.safeParse(claims.grant.capability).success ||
-    (preview &&
-      claims.path === "/public/share/content" &&
+    (claims.path === "/public/share/content" &&
       ShareTicket.safeParse(claims.grant.capability).success)
   )
 }

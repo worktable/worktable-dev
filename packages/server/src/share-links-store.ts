@@ -172,8 +172,8 @@ const flag = (value: number): boolean | null =>
   value === 0 ? false : value === 1 ? true : null
 
 /**
- * Passwords are supported only in preview, with the known hash encoding.
- * Grants, pinned versions and levels above view come with later binaries. Comment
+ * Passwords are supported with the known hash encoding. Grants and comment
+ * links need the preview; pinned versions come with later binaries. Comment
  * settings apply only from the comment level, but must still be ones this
  * binary knows.
  */
@@ -209,8 +209,7 @@ function servable(row: LinkRow): boolean {
     (row.kind === "doc" || row.kind === "html") &&
     (row.level === "view" || (sharingPreviewEnabled() && row.level === "comment")) &&
     (row.password_hash === null ||
-      (sharingPreviewEnabled() &&
-        supportedSharePasswordHash(row.password_hash))) &&
+      supportedSharePasswordHash(row.password_hash)) &&
     Number.isSafeInteger(row.password_rev) &&
     row.password_rev >= 0 &&
     (row.grant_json === null || (sharingPreviewEnabled() && row.kind === "html" && storedGrant(row.grant_json).grant !== null)) &&
@@ -1075,7 +1074,6 @@ export function documentShareLinkSummary(
           string,
           number,
           number,
-          number,
           string,
           number,
           number,
@@ -1089,7 +1087,7 @@ export function documentShareLinkSummary(
       FROM share_links
       WHERE space_id = ? AND document_id = ? AND revoked_at IS NULL
         AND kind IN ('doc', 'html') AND ((level = 'view' AND ?=1) OR (level = 'comment' AND ?=1))
-        AND (password_hash IS NULL OR (? = 1 AND password_hash GLOB ?))
+        AND (password_hash IS NULL OR password_hash GLOB ?)
         AND (? = 0 OR password_hash IS NOT NULL)
         AND typeof(password_rev) = 'integer' AND password_rev BETWEEN 0 AND 9007199254740991
         AND (grant_json IS NULL ${live ? `OR (kind = 'html' AND EXISTS (
@@ -1111,7 +1109,6 @@ export function documentShareLinkSummary(
         documentId,
         levels.includes("view") ? 1 : 0,
         sharingPreviewEnabled() && levels.includes("comment") ? 1 : 0,
-        sharingPreviewEnabled() ? 1 : 0,
         SHARE_PASSWORD_HASH_GLOB,
         requirePassword ? 1 : 0,
         now

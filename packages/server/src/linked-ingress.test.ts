@@ -465,14 +465,9 @@ it("serves real MCP writes and read-only shares through a separate socket, with 
   expect(content.headers.get("Content-Security-Policy")).toContain(
     "script-src 'none'"
   )
-  // The contract already carries later share requests; this runtime
-  // still refuses every one of them.
-  const ticket = "v1.lnk_frame.1.1767225600.signature"
+  // Without the sharing preview, live data and visitor comments stay refused.
   const visitor = { verified: true, key: "a".repeat(64) }
   for (const [later, method, path] of [
-    [{ capability: html.token, unlock: ticket }, "GET", "/public/share"],
-    [{ capability: ticket }, "GET", "/public/share/content"],
-    [{ capability: html.token }, "POST", "/public/share/unlock"],
     [{ capability: html.token }, "POST", "/public/share/bridge"],
     [{ capability: html.token, visitor }, "GET", "/public/share/comments"],
     [{ capability: html.token, visitor }, "POST", "/public/share/comments"],
@@ -568,7 +563,8 @@ it("keeps agent permissions bounded and fences revoked, replaced and draining wo
 
 it("carries password unlocks and frame tickets over authenticated Link requests", async () => {
   const previous = process.env["WORKTABLE_SHARING_PREVIEW"]
-  process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+  // Passwords need no sharing preview.
+  process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
   try {
     ingress.setSharingOrigin("https://share.example.test")
     await createHtmlDocument({
@@ -643,18 +639,16 @@ it("carries password unlocks and frame tickets over authenticated Link requests"
     expect(projection.status).toBe(200)
     const { contentTicket } = await projection.json()
     expect(contentTicket).not.toContain(token)
-    expect((await request("/public/share/content", token, ticket)).status).toBe(
-      404
-    )
+    expect((await request("/public/share/content")).status).toBe(401)
     const content = await request("/public/share/content", contentTicket)
     expect(content.status).toBe(200)
     expect(await content.text()).toContain("Protected report")
     expect((await request("/public/share/content", ticket)).status).toBe(404)
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
-    expect((await request("/public/share/content", contentTicket)).status).toBe(
-      403
-    )
+    // With the preview, a frame never opens with the link itself.
     process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    expect((await request("/public/share/content", token, ticket)).status).toBe(
+      404
+    )
     revokeShareLink(link.id, "local:owner")
     expect((await request("/public/share/content", contentTicket)).status).toBe(
       404

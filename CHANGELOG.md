@@ -11,6 +11,7 @@ infrastructure and personal context out of release notes.
 
 ### Added
 
+- **Link passwords:** A share link can have a password that readers enter before the document opens, and owners can require one for every link in Settings → Links.
 - **Grok Bot conversations:** Connect Grok Bot from Getting Started or Settings and let it answer Worktable threads using Email or Webhook routines.
 
 ### Changed

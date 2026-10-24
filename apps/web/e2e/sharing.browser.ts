@@ -428,7 +428,8 @@ test("creates, copies, edits and revokes Doc links from the header action", asyn
   await dialog.getByRole("button", { name: "Copy", exact: true }).click()
   expect(await clipboard()).toBe(SHARED_URL)
   expect(daysFromNow(mutations[0]?.body.expiresAt)).toBe(14)
-  // Without the preview, a link carries no password, level or live data.
+  // Without the preview, a link carries no level or live data, and no
+  // password unless one is set.
   expect(mutations[0]?.body).toMatchObject({
     target: { kind: "doc", spaceId: "share-browser", path: "launch-plan" },
     label: "",
@@ -516,8 +517,8 @@ test("creates and edits password links without retaining a password in the form"
   page,
 }, testInfo) => {
   let requirePassword = true
+  // Passwords need no sharing preview.
   const { mutations } = await mockSharing(page, {
-    preview: true,
     policy: () => ({ requirePassword }),
   })
   await page.goto(appUrl("/spaces/share-browser/documents/launch-plan"), {

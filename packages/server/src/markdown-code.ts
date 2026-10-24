@@ -15,23 +15,25 @@ type Range = readonly [number, number]
 const MAY_HOLD_CODE = /`|~~~|^(?: {4}|\t)/m
 
 /**
- * Fenced code with backticks or tildes, closed by the same or by the end.
- * The fence is taken whole through a lookahead, which never gives characters
+ * Fenced code with backticks or tildes, closed by a run of the same
+ * character at least as long, or by the end. A backtick fence's info string
+ * holds no backticks, so ```a``` on one line is a code span, not a fence. The
+ * fence is taken whole through a lookahead, which never gives characters
  * back, so a long run of backticks can't make matching slow.
  */
 const FENCED_CODE =
-  /^ {0,3}(?=(`{3,}|~{3,}))\1[^\n]*\n[\s\S]*?(?:^ {0,3}\1[`~]*[ \t]*$|(?![\s\S]))/gm
+  /^ {0,3}(?=(([`~])\2{2,}))\1(?:(?<=~)[^\n]*|[^`\n]*)\n[\s\S]*?(?:^ {0,3}\1\2*[ \t]*$|(?![\s\S]))/gm
 const INLINE_CODE = /`[^`\n]*`/g
 const LIST_ITEM = /^ {0,3}(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)/
 const INDENTED = /^(?: {4}|\t)/
 
 /**
- * An inline link or image, whole: a label holds no brackets, and a
+ * An inline link or image, whole and not escaped: a label holds no brackets, and a
  * destination is in angle brackets or allows one level of parentheses,
  * followed by an optional title and the closing parenthesis.
  */
 export const MARKDOWN_LINK_PATTERN =
-  /(!?)\[([^[\]]*)\]\(\s*(<[^<>\n]*>|(?:[^()\s]|\([^()\s]*\))+)(?:\s+"[^"\n]*")?\s*\)/g
+  /(?<!\\)(!?)(?<!\\)\[([^[\]]*)\]\(\s*(<[^<>\n]*>|(?:[^()\s]|\([^()\s]*\))+)(?:\s+"[^"\n]*")?\s*\)/g
 
 export interface MarkdownLayout {
   /** Code blocks, fenced or indented. */

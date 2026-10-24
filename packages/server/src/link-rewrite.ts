@@ -169,12 +169,16 @@ export function rewriteMarkdownLinks(markdown: string, rewrite: Rewrite): string
       })
     }
   }
-  let result = markdown
-  for (const edit of edits.sort((a, b) => b.at - a.at)) {
-    result =
-      result.slice(0, edit.at) + edit.text + result.slice(edit.at + edit.length)
+  // Assembled in one pass, however many links change.
+  const parts: string[] = []
+  let at = 0
+  for (const edit of edits.sort((a, b) => a.at - b.at)) {
+    if (edit.at < at) continue
+    parts.push(markdown.slice(at, edit.at), edit.text)
+    at = edit.at + edit.length
   }
-  return result
+  parts.push(markdown.slice(at))
+  return parts.join("")
 }
 
 // ── Rich text ───────────────────────────────────────────────

@@ -81,6 +81,12 @@ describe("rewriting links after a move", () => {
       "~~~",
       "",
       "    ![Shot](old.png)",
+      "",
+      "\\[not a link](old.png) and ```npm install``` then [a link](old.png)",
+      "```",
+      "~~~",
+      "[in code](old.png)",
+      "```",
     ].join("\n")
     expect(rewriteMarkdownLinks(markdown, rewrite)).toBe(
       [
@@ -97,6 +103,12 @@ describe("rewriting links after a move", () => {
         "~~~",
         "",
         "    ![Shot](old.png)",
+        "",
+        "\\[not a link](old.png) and ```npm install``` then [a link](new.png)",
+        "```",
+        "~~~",
+        "[in code](old.png)",
+        "```",
       ].join("\n")
     )
   })

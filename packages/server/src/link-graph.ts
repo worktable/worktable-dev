@@ -125,6 +125,11 @@ const BLOCK_START = /^\s{0,3}(?:#{1,6}\s|>|[-*+]\s|\d+[.)]\s|\|)/;
 /** An ATX heading is a block of one line. */
 const HEADING = /^\s{0,3}#{1,6}(?:\s|$)/;
 
+/** How far either side of a link its context is read from. */
+const CONTEXT_WINDOW = 1000;
+/** Links in a Doc that get the words around them; later ones keep none. */
+const CONTEXT_LINKS_MAX = 1000;
+
 /** The bounds of the paragraph, list item or other block around `at`. */
 function blockAround(text: string, at: number, length: number): [number, number] {
   const lineAt = (from: number) => {
@@ -187,9 +192,26 @@ function extractMarkdownLinks(markdown: string): ExtractedDocLink[] {
     }
     // The block the link sits in, with this link's words marked; code spans
     // read as their text.
-    const [start, end] = blockAround(withoutFences, match.index, match[0].length);
-    const offset = match.index - start;
-    const block = withoutFences.slice(start, end);
+    // Past the first links, a Doc's links are kept without their words, as
+    // reading context for each would cost more than it's worth.
+    if (links.length >= CONTEXT_LINKS_MAX) {
+      links.push({ target, context: "" });
+      continue;
+    }
+    // Context comes from the text near the link, so a Doc with many links in
+    // one long paragraph costs no more per link than a short one.
+    const windowStart = Math.max(0, match.index - CONTEXT_WINDOW);
+    const nearby = withoutFences.slice(
+      windowStart,
+      match.index + match[0].length + CONTEXT_WINDOW
+    );
+    const [start, end] = blockAround(
+      nearby,
+      match.index - windowStart,
+      match[0].length
+    );
+    const offset = match.index - windowStart - start;
+    const block = nearby.slice(start, end);
     const lines = (
       block.slice(0, offset) +
       `${LINK_OPEN}${match[2] ?? ""}${LINK_CLOSE}` +

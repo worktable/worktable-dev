@@ -230,6 +230,9 @@ agents tool changes that aren't released yet. Agents get them the next time
 they connect. `WORKTABLE_MCP_PREVIEW=1` or `0` overrides the
 setting for one server process, and the switch then shows that it's set by
 the environment. Worktable Cloud serves the released tools.
+With preview tools on, the server instructions also name the Worktable, so an
+agent connected to several can tell them apart. Team Worktables leave the name
+out.
 `mcp-tools.preview.json` lists the preview tools next to the released
 `mcp-tools.json`.
 

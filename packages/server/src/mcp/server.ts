@@ -1,4 +1,6 @@
+import { readFileSync, statSync } from "node:fs"
 import { SOURCE_URL } from "../release-info.ts"
+import { getWorkspaceManifestPath } from "../workspace.ts"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { RequestPrincipal, TokenIdentity } from "../token-store.ts"
 import { SERVER_INSTRUCTIONS } from "./instructions.ts"
@@ -15,6 +17,55 @@ export interface WorktableMcpServerOptions {
   surface?: McpSurface
 }
 
+let namedWorktable: {
+  path: string
+  mtimeMs: number
+  name: string | null
+} | null = null
+
+/**
+ * The Worktable's own name, re-read only when its manifest changes. Null when
+ * the manifest can't be read, and on a team Worktable: there the owner names
+ * it and members' agents would read that name as instructions.
+ */
+function worktableName(): string | null {
+  const path = getWorkspaceManifestPath()
+  try {
+    const { mtimeMs } = statSync(path)
+    if (namedWorktable?.path !== path || namedWorktable.mtimeMs !== mtimeMs) {
+      const { name, teamAccessRequired } = JSON.parse(
+        readFileSync(path, "utf8")
+      ) as { name?: unknown; teamAccessRequired?: unknown }
+      namedWorktable = {
+        path,
+        mtimeMs,
+        name:
+          typeof name === "string" && name.trim() && teamAccessRequired !== true
+            ? name.trim()
+            : null,
+      }
+    }
+    return namedWorktable.name
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Instructions an agent reads on connecting. The preview surface also names
+ * the Worktable, so an agent connected to several can tell them apart.
+ */
+export function serverInstructions(surface: McpSurface = "released"): string {
+  const name = surface === "preview" ? worktableName() : null
+  return [
+    name ? `You are connected to the Worktable ${JSON.stringify(name)}.` : null,
+    SERVER_INSTRUCTIONS,
+    SOURCE_URL ? `Worktable source code: ${SOURCE_URL}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+}
+
 export function createWorktableMcpServer(
   options: WorktableMcpServerOptions
 ): McpServer {
@@ -22,9 +73,7 @@ export function createWorktableMcpServer(
     { name: "worktable", version: options.version },
     {
       capabilities: { tools: {} },
-      instructions: SOURCE_URL
-        ? `${SERVER_INSTRUCTIONS}\n\nWorktable source code: ${SOURCE_URL}`
-        : SERVER_INSTRUCTIONS,
+      instructions: serverInstructions(options.surface),
     }
   )
   registerTools(server, {

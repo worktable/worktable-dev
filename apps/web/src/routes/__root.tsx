@@ -47,12 +47,6 @@ import {
   Loader2,
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@worktable/ui/components/tooltip"
 import { THEME_SHELL_COLORS } from "@worktable/ui/theme"
 import {
   PRODUCT_FONT_PATH,
@@ -74,6 +68,8 @@ const AppSidebar = lazy(() =>
     default: memo(module.AppSidebar),
   }))
 )
+// Only header actions that explain themselves load the tooltip.
+const HeaderActionTooltip = lazy(() => import("@/components/header-action-tooltip"))
 const SettingsDialog = lazy(() =>
   import("@/components/settings/settings-dialog").then((module) => ({
     default: module.SettingsDialog,
@@ -783,49 +779,49 @@ const PageHeaderActions = memo(function PageHeaderActions({
       {/* Narrow screens keep one action; the page menu holds the rest. */}
       {secondaryAction &&
         SecondaryActionIcon &&
-        (!isMobile || narrowHeaderAction(pageMeta) === "secondary") && (
-          <TooltipProvider delay={500}>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant={secondaryAction.displayLabel ? "outline" : "ghost"}
-                    size={secondaryAction.displayLabel ? "sm" : "icon"}
-                    className={
-                      secondaryAction.displayLabel
-                        ? "h-8 shrink-0 gap-1.5 px-2.5 max-sm:size-8 max-sm:px-0"
-                        : "size-8 shrink-0 text-muted-foreground hover:text-foreground"
-                    }
-                    onClick={secondaryAction.onClick}
-                    aria-label={secondaryAction.label}
-                    disabled={secondaryAction.disabled || secondaryAction.pending}
-                  />
-                }
+        (!isMobile || narrowHeaderAction(pageMeta) === "secondary") &&
+        (() => {
+          const button = (
+            <Button
+              variant={secondaryAction.displayLabel ? "outline" : "ghost"}
+              size={secondaryAction.displayLabel ? "sm" : "icon"}
+              className={
+                secondaryAction.displayLabel
+                  ? "h-8 shrink-0 gap-1.5 px-2.5 max-sm:size-8 max-sm:px-0"
+                  : "size-8 shrink-0 text-muted-foreground hover:text-foreground"
+              }
+              onClick={secondaryAction.onClick}
+              aria-label={secondaryAction.label}
+              {...(secondaryAction.description
+                ? {}
+                : { title: secondaryAction.label })}
+              disabled={secondaryAction.disabled || secondaryAction.pending}
+            >
+              {secondaryAction.pending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <SecondaryActionIcon className="size-4" />
+              )}
+              {secondaryAction.displayLabel ? (
+                <span className="hidden sm:inline">
+                  {secondaryAction.displayLabel}
+                </span>
+              ) : null}
+            </Button>
+          )
+          return secondaryAction.description ? (
+            <Suspense fallback={button}>
+              <HeaderActionTooltip
+                label={secondaryAction.label}
+                description={secondaryAction.description}
               >
-                {secondaryAction.pending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <SecondaryActionIcon className="size-4" />
-                )}
-                {secondaryAction.displayLabel ? (
-                  <span className="hidden sm:inline">
-                    {secondaryAction.displayLabel}
-                  </span>
-                ) : null}
-              </TooltipTrigger>
-              <TooltipContent>
-                {secondaryAction.description ? (
-                  <span className="flex flex-col gap-0.5">
-                    <span className="font-medium">{secondaryAction.label}</span>
-                    <span className="opacity-70">{secondaryAction.description}</span>
-                  </span>
-                ) : (
-                  secondaryAction.label
-                )}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
+                {button}
+              </HeaderActionTooltip>
+            </Suspense>
+          ) : (
+            button
+          )
+        })()}
 
       {!isMobile && pageMeta?.annotations && (
         <Button

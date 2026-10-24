@@ -253,7 +253,7 @@ function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {
       ) : !policy ? (
         <div className="flex flex-col gap-4 py-1" role="status">
           <span className="sr-only">Loading the policy</span>
-          {Array.from({ length: teams ? 4 : 3 }, (_, index) => (
+          {Array.from({ length: teams ? 5 : 4 }, (_, index) => (
             <div key={index} className="flex items-center justify-between">
               <div className="space-y-1.5">
                 <Skeleton className="h-4 w-28" />
@@ -333,19 +333,17 @@ function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {
               <Switch aria-label="Accept visitor comments" checked={policy.allowComments} onCheckedChange={allowComments => update({allowComments})} />
             </SettingRow>
           </> : null}
-          {preview ? (
-            <SettingRow
-              label="Require a password"
-              description="Links without a password stop opening while this is on."
-            >
-              <Switch
-                checked={policy.requirePassword}
-                onCheckedChange={(requirePassword) =>
-                  update({ requirePassword })
-                }
-              />
-            </SettingRow>
-          ) : null}
+          <SettingRow
+            label="Require a password"
+            description="Links without a password stop opening while this is on."
+          >
+            <Switch
+              checked={policy.requirePassword}
+              onCheckedChange={(requirePassword) =>
+                update({ requirePassword })
+              }
+            />
+          </SettingRow>
           <SettingRow
             className="flex-col items-start sm:flex-row sm:items-center"
             label="Longest expiry"

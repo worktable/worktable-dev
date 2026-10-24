@@ -164,7 +164,7 @@ export function ShareLinksDialog({
   const defaultLink = links ? defaultShareLink(links) : null
   const others = links?.filter((link) => link !== defaultLink) ?? []
   const canCreate = list.data?.canCreate ?? summary.canCreate
-  const passwordRequired = preview && (policy?.requirePassword ?? false)
+  const passwordRequired = policy?.requirePassword ?? false
   const liveAllowed =
     preview && target.kind === "html" && policy?.liveLinks === true
   const liveShown =
@@ -212,7 +212,7 @@ export function ShareLinksDialog({
           ? { level: "view", comments: DEFAULT_SHARE_LINK_COMMENT_SETTINGS }
           : {}),
         expiresAt: shareLinkExpiresAt(input.expiry) ?? null,
-        ...(preview && (input.passwordEnabled || passwordRequired)
+        ...(input.passwordEnabled || passwordRequired
           ? { password: input.password }
           : {}),
       }),
@@ -392,15 +392,13 @@ export function ShareLinksDialog({
         ...(expiresAt !== undefined && (expiresAt ?? link.expiresAt) !== null
           ? { expiresAt }
           : {}),
-        ...(preview
-          ? !draft.passwordEnabled && !passwordRequired
-            ? link.hasPassword
-              ? { password: null }
-              : {}
-            : draft.password
-              ? { password: draft.password }
-              : {}
-          : {}),
+        ...(!draft.passwordEnabled && !passwordRequired
+          ? link.hasPassword
+            ? { password: null }
+            : {}
+          : draft.password
+            ? { password: draft.password }
+            : {}),
       },
     })
   }
@@ -415,7 +413,6 @@ export function ShareLinksDialog({
         onChange={setDraft}
         choices={choices}
         withLabel={kind === "new" || Boolean(editingLink?.label)}
-        passwords={preview}
         passwordRequired={passwordRequired}
         hasPassword={editingLink?.hasPassword ?? false}
         busy={busy}
@@ -962,7 +959,6 @@ function LinkForm({
   onChange,
   choices,
   withLabel,
-  passwords,
   passwordRequired,
   hasPassword,
   busy,
@@ -975,7 +971,6 @@ function LinkForm({
   onChange: (draft: LinkDraft) => void
   choices: Array<{ value: ShareLinkExpiry; label: string }>
   withLabel: boolean
-  passwords: boolean
   passwordRequired: boolean
   hasPassword: boolean
   busy: boolean
@@ -1040,50 +1035,48 @@ function LinkForm({
           </SelectContent>
         </Select>
       </div>
-      {passwords ? (
-        <div className="space-y-2">
-          <SettingRow label="Password" htmlFor={`${id}-password-enabled`}>
-            <Switch
-              id={`${id}-password-enabled`}
-              checked={passwordOn}
-              disabled={busy || passwordRequired}
-              onCheckedChange={(passwordEnabled) =>
-                onChange({ ...draft, passwordEnabled, password: "" })
+      <div className="space-y-2">
+        <SettingRow label="Password" htmlFor={`${id}-password-enabled`}>
+          <Switch
+            id={`${id}-password-enabled`}
+            checked={passwordOn}
+            disabled={busy || passwordRequired}
+            onCheckedChange={(passwordEnabled) =>
+              onChange({ ...draft, passwordEnabled, password: "" })
+            }
+          />
+        </SettingRow>
+        {passwordOn ? (
+          <>
+            <label htmlFor={`${id}-password`} className="sr-only">
+              {hasPassword ? "New password" : "Link password"}
+            </label>
+            <Input
+              id={`${id}-password`}
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              maxLength={128}
+              required={!hasPassword}
+              disabled={busy}
+              placeholder={
+                hasPassword
+                  ? "Leave blank to keep the password"
+                  : "At least 8 characters"
+              }
+              value={draft.password}
+              onChange={(event) =>
+                onChange({ ...draft, password: event.target.value })
               }
             />
-          </SettingRow>
-          {passwordOn ? (
-            <>
-              <label htmlFor={`${id}-password`} className="sr-only">
-                {hasPassword ? "New password" : "Link password"}
-              </label>
-              <Input
-                id={`${id}-password`}
-                type="password"
-                autoComplete="new-password"
-                minLength={8}
-                maxLength={128}
-                required={!hasPassword}
-                disabled={busy}
-                placeholder={
-                  hasPassword
-                    ? "Leave blank to keep the password"
-                    : "At least 8 characters"
-                }
-                value={draft.password}
-                onChange={(event) =>
-                  onChange({ ...draft, password: event.target.value })
-                }
-              />
-              {hasPassword && draft.password ? (
-                <p className="text-xs text-muted-foreground">
-                  Changing it asks visitors to unlock the link again.
-                </p>
-              ) : null}
-            </>
-          ) : null}
-        </div>
-      ) : null}
+            {hasPassword && draft.password ? (
+              <p className="text-xs text-muted-foreground">
+                Changing it asks visitors to unlock the link again.
+              </p>
+            ) : null}
+          </>
+        ) : null}
+      </div>
       <div className="flex gap-2">
         <Button
           type="submit"

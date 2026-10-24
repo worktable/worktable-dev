@@ -268,7 +268,6 @@ export function defaultSharingPolicy(): SharingPolicy {
 
 /** Policy fields that keep their defaults unless the sharing preview is on. */
 export const SHARING_PREVIEW_POLICY_KEYS = [
-  "requirePassword",
   "levels",
   "liveLinks",
   "records",

@@ -70,8 +70,8 @@ import { canAccessSpace } from "../team-policy.ts"
 import type { TokenIdentity } from "../token-store.ts"
 
 // Share links. Mounted inside the shares router, which admits only people:
-// the Worktable owner, or in Teams a member. Passwords, live data and comment
-// links stay behind the sharing preview.
+// the Worktable owner, or in Teams a member. Live data and comment links stay
+// behind the sharing preview; passwords don't.
 
 export const shareLinksRouter = new Hono()
 
@@ -471,13 +471,6 @@ shareLinksRouter.post("/", async (c) => {
     policy,
   })
   if (!decision.allowed) return denied(c, decision)
-  if (input.data.password !== undefined && !sharingPreviewEnabled()) {
-    return invalid(
-      c,
-      "Passwords aren't available yet",
-      "PASSWORD_NOT_AVAILABLE"
-    )
-  }
   if (grant) {
     const problem = await checkGrant(
       c,
@@ -531,10 +524,7 @@ shareLinksRouter.post("/", async (c) => {
       const latestPolicy = currentSharingPolicy()
       if (grant && (!sharingPreviewEnabled() || !latestPolicy.liveLinks))
         return { grantDenied: true }
-      if (
-        (passwordHash && !sharingPreviewEnabled()) ||
-        (latestPolicy.requirePassword && !passwordHash)
-      )
+      if (latestPolicy.requirePassword && !passwordHash)
         return { passwordDenied: true }
       const latestDecision = authorizeShareAction(
         identity,
@@ -572,11 +562,7 @@ shareLinksRouter.post("/", async (c) => {
   if (created && "grantDenied" in created)
     return invalid(c, "Live links aren't allowed here", "LIVE_NOT_AVAILABLE")
   if (created && "passwordDenied" in created)
-    return invalid(
-      c,
-      "A password is required or unavailable",
-      "PASSWORD_REQUIRED"
-    )
+    return invalid(c, "A password is required", "PASSWORD_REQUIRED")
   if (created && "denied" in created && created.denied)
     return denied(c, created.denied)
   if (created && "expiryPolicy" in created && created.expiryPolicy)
@@ -635,13 +621,6 @@ shareLinksRouter.patch("/:linkId", async (c) => {
     policy,
   })
   if (!decision.allowed) return denied(c, decision)
-  if (input.data.password !== undefined && !sharingPreviewEnabled()) {
-    return invalid(
-      c,
-      "Passwords aren't available yet",
-      "PASSWORD_NOT_AVAILABLE"
-    )
-  }
   if (link.revokedAt !== null) {
     return c.json({ error: "This link was revoked", code: "LINK_REVOKED" }, 409)
   }
@@ -705,8 +684,6 @@ shareLinksRouter.patch("/:linkId", async (c) => {
     }
   )
   if (!latestDecision.allowed) return denied(c, latestDecision)
-  if (passwordHash !== undefined && !sharingPreviewEnabled())
-    return invalid(c, "Passwords aren't available", "PASSWORD_NOT_AVAILABLE")
   if (
     latestPolicy.requirePassword &&
     (passwordHash === null ||

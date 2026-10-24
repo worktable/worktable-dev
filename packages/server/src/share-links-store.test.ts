@@ -1191,7 +1191,7 @@ describe("share links", () => {
     )
   })
 
-  it("lets only people share, and keeps passwords behind the preview", async () => {
+  it("lets only people share", async () => {
     await writeDoc("space", "plan", "# Plan")
     const target = { kind: "doc", spaceId: "space", path: "plan" }
     expect(
@@ -1220,16 +1220,6 @@ describe("share links", () => {
     expect(comment.status).toBe(400)
     expect(await comment.json()).toMatchObject({ code: "LEVEL_NOT_AVAILABLE" })
     expect(existsSync(shareLinksDatabasePath())).toBe(false)
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
-    const password = await send("POST", "/api/shares/links", {
-      target,
-      password: "correct horse battery",
-    })
-    expect(password.status).toBe(400)
-    expect(await password.json()).toMatchObject({
-      code: "PASSWORD_NOT_AVAILABLE",
-    })
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
     const past = await send("POST", "/api/shares/links", {
       target,
       expiresAt: new Date(Date.now() - 60_000).toISOString(),
@@ -1774,7 +1764,6 @@ describe("owner policy", () => {
     const { token } = await createLink("plan")
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     const previewOnly: Partial<SharingPolicy>[] = [
-      { requirePassword: true },
       { levels: ["view", "comment"] },
       { liveLinks: true },
     ]
@@ -1787,18 +1776,22 @@ describe("owner policy", () => {
     }
 
     process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
-    expect((await savePolicy({ requirePassword: true })).status).toBe(200)
+    expect((await savePolicy({ levels: ["comment"] })).status).toBe(200)
     expect((await view(token)).status).toBe(404)
 
     // Off, the preview's settings act as their defaults and keep their
     // values for when it is on again.
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     expect((await view(token)).status).toBe(200)
-    expect((await policyNow()).requirePassword).toBe(false)
+    expect((await policyNow()).levels).toEqual(["view"])
+    // Requiring a password is released: it applies without the preview.
+    expect((await savePolicy({ requirePassword: true })).status).toBe(200)
+    expect((await view(token)).status).toBe(404)
     expect((await savePolicy({ maxExpiryDays: 90 })).status).toBe(200)
+    expect((await view(token)).status).toBe(200)
     process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
     expect(await policyNow()).toMatchObject({
-      requirePassword: true,
+      levels: ["comment"],
       maxExpiryDays: 90,
     })
     expect((await view(token)).status).toBe(404)

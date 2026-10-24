@@ -111,6 +111,35 @@ async function documentLinks(artifact: Artifact): Promise<DocumentShareLinks> {
   ).json()) as DocumentShareLinks
 }
 
+async function writeHtml(
+  artifactKey: string,
+  html: string,
+  name = "Report"
+): Promise<Artifact> {
+  const manifestPath = join(workspaceDir, "worktable.workspace.json")
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"))
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify({ ...manifest, version: 2 }, null, 2)}\n`
+  )
+  const written = await createHtmlDocument({
+    spaceId: "space",
+    explicitId: artifactKey,
+    name,
+    html,
+    createdBy: "test",
+    permissions: {
+      network: true,
+      records: {},
+      state: { read: true, write: true },
+    },
+    versionSource: "test",
+    versionUpdatedBy: "test",
+  })
+  expect(written.error).toBeUndefined()
+  return { kind: "html", spaceId: "space", artifactKey }
+}
+
 async function publicRequest(
   token: string,
   path = "/public/share",
@@ -261,7 +290,7 @@ describe("Cloud document share HTTP boundary", () => {
     expect((await publicRequest(token)).status).toBe(404)
   })
 
-  it("keeps passwords, comment links and live data behind the sharing preview", async () => {
+  it("takes passwords without the sharing preview, and keeps comment links and live data behind it", async () => {
     const doc = { kind: "doc" as const, spaceId: "space", artifactKey: "plan" }
     await writeDoc(doc.spaceId, doc.artifactKey, "# Plan")
     const refused = async (extra: Record<string, unknown>, code: string) => {
@@ -269,7 +298,6 @@ describe("Cloud document share HTTP boundary", () => {
       expect(response.status).toBe(400)
       expect(await response.json()).toMatchObject({ code })
     }
-    await refused({ password: "test-only password" }, "PASSWORD_NOT_AVAILABLE")
     await refused({ level: "comment" }, "LEVEL_NOT_AVAILABLE")
     await refused(
       {
@@ -284,16 +312,61 @@ describe("Cloud document share HTTP boundary", () => {
     )
     const link = await created(doc)
     expect(
-      (await ownerRequest("PATCH", `/${link.link.id}`, { password: "test-only password" }))
-        .status
-    ).toBe(400)
-    expect(
       (await ownerRequest("POST", "/access", { target: target(doc) })).status
     ).toBe(404)
     expect((await publicRequest(link.token, "/public/share/comments")).status).toBe(
       404
     )
-    expect((await publicRequest(link.token)).status).toBe(200)
+    expect(
+      (await publicRequest(link.token, "/public/share/bridge", "POST")).status
+    ).toBe(404)
+
+    // An HTML Doc's password link: the visitor unlocks it, and its frame
+    // takes a ticket, since the unlock cookie stays on the share origin.
+    const artifact = await writeHtml("report", "<h1>Quarterly report</h1>")
+    const password = "test-only visitor password"
+    const response = await createLink(artifact, { password })
+    expect(response.status).toBe(201)
+    const locked = (await response.json()) as CreatedShareLink
+    expect(locked.link.hasPassword).toBe(true)
+    const token = locked.url.split("/").at(-1)!
+    expect((await publicRequest(token)).status).toBe(401)
+    expect((await publicRequest(token, "/public/share/content")).status).toBe(401)
+    const unlock = (value: string) =>
+      app().fetch(
+        new Request("http://tenant/public/share/unlock", {
+          method: "POST",
+          headers: {
+            ...admittedHeaders(),
+            "Content-Type": "application/json",
+            "x-worktable-share-capability": token,
+          },
+          body: JSON.stringify({ password: value }),
+        })
+      )
+    expect((await unlock("wrong password")).status).toBe(401)
+    const unlocked = await unlock(password)
+    expect(unlocked.status).toBe(200)
+    const { ticket } = (await unlocked.json()) as { ticket: string }
+    const outer = await publicRequest(token, "/public/share", "GET", {
+      "x-worktable-share-unlock": ticket,
+    })
+    expect(outer.status).toBe(200)
+    const projection = (await outer.json()) as { contentTicket?: string }
+    expect(projection).not.toHaveProperty("live")
+    const frame = await publicRequest(
+      projection.contentTicket!,
+      "/public/share/content"
+    )
+    expect(frame.status).toBe(200)
+    expect(await frame.text()).toContain("Quarterly report")
+
+    // Removed, the link opens for anyone who has it.
+    expect(
+      (await ownerRequest("PATCH", `/${locked.link.id}`, { password: null }))
+        .status
+    ).toBe(200)
+    expect((await publicRequest(token)).status).toBe(200)
   })
 
   it("follows a Doc through a rename and gives malformed tokens the same page", async () => {
@@ -362,32 +435,11 @@ describe("Cloud document share HTTP boundary", () => {
   })
 
   it("preserves an HTML link across display-name edits and serves a sanitized projection", async () => {
-    const manifestPath = join(workspaceDir, "worktable.workspace.json")
-    const manifest = JSON.parse(await readFile(manifestPath, "utf8"))
-    await writeFile(
-      manifestPath,
-      `${JSON.stringify({ ...manifest, version: 2 }, null, 2)}\n`
+    const artifact = await writeHtml(
+      "status",
+      `<style>.card{color:tomato}</style><main class="card"><h1>Operational</h1><script>fetch("https://attacker.test")</script><a href="https://attacker.test">leave</a></main>`,
+      "Status board"
     )
-    const artifact = {
-      kind: "html" as const,
-      spaceId: "space",
-      artifactKey: "status",
-    }
-    const written = await createHtmlDocument({
-      spaceId: artifact.spaceId,
-      explicitId: artifact.artifactKey,
-      name: "Status board",
-      html: `<style>.card{color:tomato}</style><main class="card"><h1>Operational</h1><script>fetch("https://attacker.test")</script><a href="https://attacker.test">leave</a></main>`,
-      createdBy: "test",
-      permissions: {
-        network: true,
-        records: {},
-        state: { read: true, write: true },
-      },
-      versionSource: "test",
-      versionUpdatedBy: "test",
-    })
-    expect(written.error).toBeUndefined()
 
     const { token } = await created(artifact)
     const outer = await publicRequest(token)

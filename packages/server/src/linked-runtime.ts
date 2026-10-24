@@ -536,16 +536,18 @@ function launch(): void {
                   bootNonce,
                   port,
                   connected,
-                  ...(sharingPreviewEnabled()
-                    ? {
-                        capabilities: [
-                          LINKED_CAPABILITIES.SHARE_TICKETS,
+                  // Passwords need tickets with or without the preview;
+                  // live data and visitor comments only with it.
+                  capabilities: [
+                    LINKED_CAPABILITIES.SHARE_TICKETS,
+                    ...(sharingPreviewEnabled()
+                      ? [
                           LINKED_CAPABILITIES.SHARE_BRIDGE,
                           LINKED_CAPABILITIES.SHARE_READ_HINTS,
                           LINKED_CAPABILITIES.SHARE_COMMENTS,
-                        ],
-                      }
-                    : {}),
+                        ]
+                      : []),
+                  ],
                 }),
                 signal: signal(),
                 redirect: "error",

@@ -199,6 +199,24 @@ describe("files for agents on the preview surface", () => {
       )
       expect(descriptions).not.toContain("worktable_documents_read")
       expect(descriptions).not.toContain("worktable_documents_write")
+      // So do the workspace's orientation and the HTML authoring guide.
+      const everything = await connect(["*"], "preview")
+      const instructions = JSON.stringify([
+        (
+          await everything.callTool({
+            name: "worktable_discover",
+            arguments: { request: { action: "state" } },
+          })
+        ).structuredContent,
+        (
+          await everything.callTool({
+            name: "worktable_html_read",
+            arguments: { request: { action: "guide" } },
+          })
+        ).structuredContent,
+      ])
+      expect(instructions).toContain("worktable_files_read")
+      expect(instructions).not.toContain("worktable_documents_read")
 
       // Overwriting a CSV says what changed, row by row.
       const replaced = await write({

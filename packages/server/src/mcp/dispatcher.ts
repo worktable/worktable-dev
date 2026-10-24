@@ -1107,7 +1107,10 @@ async function _dispatchOperationInner(
     case "html.guide": {
       return {
         profile: "runtime" as const,
-        guide: getHtmlAuthoringGuide(),
+        guide:
+          context.surface === "preview"
+            ? withPreviewToolNames(getHtmlAuthoringGuide())
+            : getHtmlAuthoringGuide(),
         tokens: WIDGET_STYLE_TOKENS,
       }
     }
@@ -1318,21 +1321,26 @@ async function _dispatchOperationInner(
         (args["encoding"] as "utf8" | "base64" | undefined) ?? "utf8"
       )
       // With the preview, overwriting a CSV or TSV says what changed, so an
-      // agent sees a dropped row or a changed header at once.
-      // The summary reads the old table, so it needs read access too.
-      const tableBefore =
+      // agent sees a dropped row or a changed header at once. The summary
+      // reads the old table, so it needs read access too; the old bytes come
+      // from the replacement's own read.
+      const summarize =
         context.surface === "preview" &&
         DELIMITED_NAME.test(args["path"] as string) &&
         hasScope(identity.scopes, "documents:read")
-          ? await readRegisteredDocumentSource({
-              spaceId: args["spaceId"] as string,
-              path: args["path"] as string,
-            }).catch(() => null)
-          : null
+      const tableBefore: { bytes?: Uint8Array; formatId?: string } = {}
       const result = await replaceRegisteredDocument({
         spaceId: args["spaceId"] as string,
         path: args["path"] as string,
         bytes,
+        ...(summarize
+          ? {
+              onPrevious: (previous: Uint8Array, formatId: string) => {
+                tableBefore.bytes = previous
+                tableBefore.formatId = formatId
+              },
+            }
+          : {}),
         expectedRevision: args["expectedRevision"] as string,
         updatedBy: actorId,
         source: "mcp",
@@ -1341,10 +1349,10 @@ async function _dispatchOperationInner(
       return {
         ok: true,
         ...result,
-        ...(tableBefore &&
-        tableBefore.format.id === BUILTIN_DOCUMENT_FORMATS.file
+        ...(tableBefore.bytes &&
+        tableBefore.formatId === BUILTIN_DOCUMENT_FORMATS.file
           ? (() => {
-              const changes = delimitedChanges(result.path, tableBefore.bytes, bytes)
+              const changes = delimitedChanges(result.path, tableBefore.bytes!, bytes)
               return changes ? { changes } : {}
             })()
           : {}),
@@ -2182,7 +2190,10 @@ async function _dispatchOperationInner(
               : {}),
           },
           spaces: spacesWithDetail,
-          hint: "Use worktable_documents_read action list for every document format, or worktable_discover action search. Drawing previews and objects are available through worktable_drawings_read.",
+          hint: (() => {
+            const hint = "Use worktable_documents_read action list for every document format, or worktable_discover action search. Drawing previews and objects are available through worktable_drawings_read."
+            return context.surface === "preview" ? withPreviewToolNames(hint) : hint
+          })(),
         }
       }
       const { data: space, error: spaceErr } = await readSpace(spaceId)

@@ -3,9 +3,10 @@ import { documentQueryKeys } from "@/lib/documents-queries"
 import { notePageLinks } from "@/lib/sharing-cache"
 import { expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
-import type { ShareLink } from "@worktable/types"
+import { LinkGrantSchema, type ShareLink } from "@worktable/types"
 import { formatArchiveDate } from "@/lib/lifetime"
-import { ShareLinkList } from "./share-links-dialog"
+import { LiveDataPanel } from "./share-link-access"
+import { DefaultLink, OtherLinkList } from "./share-links-dialog"
 
 const DAY = 86_400_000
 
@@ -38,50 +39,70 @@ function link(overrides: Partial<ShareLink>): ShareLink {
   }
 }
 
-test("a document's links say what each allows, and the one just made shows its URL", () => {
-  const expires = new Date(Date.now() + 30 * DAY).toISOString()
+const text = (html: string) => html.replace(/<[^>]+>/g, "")
+
+test("the default link offers its URL to copy, or says how to get one again", () => {
+  const url =
+    "https://share.example.test/s/ws/abcdefghijklmnopqrstuvwxyzABCDEFGH123456789"
+  const soon = new Date(Date.now() + 14 * DAY - 60_000).toISOString()
+  const shown = renderToStaticMarkup(
+    <DefaultLink
+      link={link({ url, expiresAt: soon })}
+      menu={null}
+      onCopied={() => {}}
+    />
+  )
+  expect(shown).toContain(`value="${url}"`)
+  expect(text(shown)).toContain("Expires in 14 days")
+  expect(text(shown)).not.toContain("Make a new link")
+
+  // Links made before their URLs were kept can't be copied again.
+  const sealed = text(
+    renderToStaticMarkup(
+      <DefaultLink link={link({})} menu={null} onCopied={() => {}} />
+    )
+  )
+  expect(sealed).toContain("Never expires")
+  expect(sealed).toContain("Make a new link to copy it again.")
+})
+
+test("other links say how each stands, and only the reader's own have menus", () => {
+  const later = new Date(Date.now() + 40 * DAY).toISOString()
   const expired = new Date(Date.now() - DAY).toISOString()
-  const moved = link({
-    expiresAt: expires,
-    lastUsedAt: new Date(Date.now() - 2 * DAY - 60_000).toISOString(),
-  })
   const board = link({
-    id: "lnk_bbbbbbbbbbbbbbbbbbbbbb",
     label: "Board",
+    hasPassword: true,
+    expiresAt: later,
+    lastUsedAt: new Date(Date.now() - 60_000).toISOString(),
+  })
+  const old = link({
+    id: "lnk_bbbbbbbbbbbbbbbbbbbbbb",
+    label: "Old",
     expiresAt: expired,
     status: "expired",
     canManage: false,
   })
-  const url =
-    "https://share.example.test/s/ws/abcdefghijklmnopqrstuvwxyzABCDEFGH123456789"
-  const made = link({ id: "lnk_cccccccccccccccccccccc", label: "Acme", url })
-
+  const audit = link({
+    id: "lnk_cccccccccccccccccccccc",
+    label: "Audit",
+    level: "comment",
+    comments: { ...board.comments, autoPaused: true },
+  })
   const html = renderToStaticMarkup(
-    <ShareLinkList
-      links={[made, moved, board]}
-      created={{ link: made, url }}
+    <OtherLinkList
+      links={[board, old, audit]}
       editingId={null}
-      disabled={false}
-      onEdit={() => {}}
-      onRevoke={() => {}}
-      onCopied={() => {}}
+      form={null}
+      menu={(_link, label) => <button aria-label={label} />}
     />
   )
-  const text = html.replace(/<[^>]+>/g, "")
-
-  expect(text).toContain(
-    `Untitled linkCan view · Expires ${formatArchiveDate(expires)} · Last opened 2 days ago`
+  expect(text(html)).toContain(
+    `BoardPassword · Expires ${formatArchiveDate(later)} · Opened today`
   )
-  expect(text).toContain(
-    `BoardCan view · Expired ${formatArchiveDate(expired)} · Not opened yet`
-  )
-  expect(text).toContain("AcmeCan view · Not opened yet")
-  // The new link's URL shows under it; it can be copied again from its menu.
-  expect(html.split(url)).toHaveLength(2)
-  expect(text).not.toContain("shown again")
-  // Only links the reader may manage have actions.
-  expect(html).toContain('aria-label="Actions for Untitled link"')
-  expect(html).not.toContain('aria-label="Actions for Board"')
+  expect(text(html)).toContain(`OldExpired ${formatArchiveDate(expired)}`)
+  expect(text(html)).toContain("AuditNever expires · Comments paused")
+  expect(html).toContain('aria-label="Actions for Board"')
+  expect(html).not.toContain('aria-label="Actions for Old"')
 })
 
 test("link changes preserve the next expiry even when the active count stays the same", () => {
@@ -106,4 +127,41 @@ test("link changes preserve the next expiry even when the active count stays the
   ])
   expect(read().activeLinks).toBe(0)
   expect(read().nextExpiry).toBeUndefined()
+})
+
+test("live data offers to remove a collection deleted since the link was saved", () => {
+  const grant = LinkGrantSchema.parse({
+    version: 1,
+    collections: { "old-tasks": { fields: [] } },
+  })
+  const html = renderToStaticMarkup(
+    <LiveDataPanel
+      grant={grant}
+      access={{
+        grant,
+        effectiveGrant: { ...grant, collections: {} },
+        collections: {},
+        counts: {},
+        sentences: [],
+        warnings: [],
+        issues: [
+          {
+            collectionId: "old-tasks",
+            message: "This collection is gone.",
+          },
+        ],
+        stateReadable: true,
+      }}
+      checking={false}
+      checkFailed={false}
+      canTurnOn
+      busy={false}
+      url={undefined}
+      onRetry={() => {}}
+      onTurnOn={() => {}}
+      onTurnOff={() => {}}
+      onSaveGrant={async () => {}}
+    />
+  )
+  expect(text(html)).toContain("This collection is gone.Remove")
 })

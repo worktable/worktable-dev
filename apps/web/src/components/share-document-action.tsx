@@ -22,7 +22,7 @@ interface ShareDocumentActionProps {
 
 /**
  * The page's Share button, which says whether links are open, and its
- * dialog of the document's labelled links.
+ * share dialog.
  */
 export function ShareDocumentAction(props: ShareDocumentActionProps) {
   return useShareMode(props.target) ? <ShareLinksAction {...props} /> : null

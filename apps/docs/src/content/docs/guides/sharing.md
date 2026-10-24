@@ -11,14 +11,15 @@ content without signing in.
 
 1. Open a document or HTML doc.
 2. Choose **Share** in its header or page menu.
-3. Optionally give the link a **Label** and choose when it **Expires**.
-4. Choose **Create link**, then copy the URL.
+3. Choose **Create Link**, then **Copy**.
 
-A document can have several links, each with its own label and expiry, so you
-can give each audience its own link and revoke one without affecting the
-others. To copy a link's URL again later, open **Share**, then the link's menu,
-and choose **Copy Link**. Renaming or moving a document keeps its links
-working.
+A new link expires in 14 days, or sooner if the owner's longest expiry is
+shorter. To change that, open the link's menu and choose **Edit Link**. The
+link stays in **Share**, so you can copy it again at any time.
+
+To give an audience its own link, open **More links** and choose **New Link**.
+Each of these links has its own label and expiry, and revoking one does not
+affect the others. Renaming or moving a document keeps its links working.
 
 Shared links are unlisted. Review the content before sending a link. On a
 linked local device, Worktable must stay running, online, and linked for readers
@@ -60,11 +61,11 @@ a password, and owners can require one for every link.
 
 ### Live tools
 
-For an HTML Doc, turn on **Live tool** in the
-sharing form. Under **What this link opens**, choose the Records collections
-the link opens and clear any fields readers should not see. Readers see every
-record in a chosen collection. Choose **Check access** to confirm what the link
-shows, then create the link and use **View as visitor** to inspect it.
+For an HTML Doc, open **Live data** in **Share** and turn on
+**Show live data**. Worktable checks which Records collections the tool reads
+and shows how many records visitors can read, with the fields kept from them.
+Choose **Hide Fields** to change which fields visitors see, and
+**View as Visitor** to inspect the link.
 
 The tool reads current data from those collections. Readers cannot change
 Records. Interface choices such as filters stay in their tab and do not change
@@ -81,18 +82,17 @@ three seconds.
 
 ### Visitor comments
 
-Choose **Can comment** when making a link, then set **Accept comments** and
-**Visitors see**. By default, visitors see their own comments and replies. An
-owner may allow a link to show all its visitor comments instead. A visitor may
-need to complete a human check before sending a comment.
+Open **Comments** in **Share** and turn on **Allow comments**. Visitors see
+their own comments and the team's replies. A visitor may need to complete a
+human check before sending a comment.
 
 Review visitor comments in the document's comments panel. They stay separate
 from agent-readable team content until a member chooses **Pass to Team**.
 
 ## Stop sharing
 
-In the document's link list or in **Settings → Links**, open a link's menu and
-choose **Revoke Link**. Revoke each link you want to stop; revoking is
+In **Share** or in **Settings → Links**, open a link's menu and choose
+**Revoke Link**. Revoke each link you want to stop; revoking is
 permanent. Renaming or moving a document does not revoke its links; archiving
 or deleting it makes them unavailable.
 

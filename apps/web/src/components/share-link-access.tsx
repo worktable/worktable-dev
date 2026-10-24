@@ -1,17 +1,21 @@
+import { useId, useState } from "react"
 import type {
   CollectionGrant,
   LinkGrant,
+  RecordCollectionSchema,
   ShareLinkAccess,
 } from "@worktable/types"
-import {
-  LINK_GRANT_MAX_COLLECTIONS,
-  LINK_GRANT_MAX_FIELDS,
-} from "@worktable/types/constants"
-import { Loader2 } from "lucide-react"
+import { countedRecordsName } from "@worktable/types"
+import { LINK_GRANT_MAX_FIELDS } from "@worktable/types/constants"
+import { ExternalLink, Loader2 } from "lucide-react"
+import { Badge } from "@worktable/ui/components/badge"
 import { Button } from "@worktable/ui/components/button"
 import { Callout } from "@worktable/ui/components/callout"
 import { Checkbox } from "@worktable/ui/components/checkbox"
-import { FieldEditorScope } from "./records/field-editor"
+import { SettingRow } from "@worktable/ui/components/setting-row"
+import { Skeleton } from "@worktable/ui/components/skeleton"
+import { Switch } from "@worktable/ui/components/switch"
+import { InlineError } from "@/components/share-document-action"
 import { recordFieldColumns, type RecordFieldColumn } from "@/lib/records"
 
 function Choice({
@@ -53,7 +57,7 @@ function FieldSelection({
     ...new Set([...columns.map((column) => column.key), ...selected]),
   ]
   return (
-    <div className="grid gap-2 sm:grid-cols-2">
+    <>
       {keys.map((key) => {
         const column = columns.find((entry) => entry.key === key)
         const checked = selected.includes(key)
@@ -75,224 +79,313 @@ function FieldSelection({
           </Choice>
         )
       })}
+    </>
+  )
+}
+
+/** The fields a link may show, as record pages list them. */
+function grantableColumns(schema: RecordCollectionSchema): RecordFieldColumn[] {
+  return recordFieldColumns(schema, []).filter(
+    (column) => column.type !== "document"
+  )
+}
+
+/** What visitors read of one collection, and the fields kept from them. */
+function CollectionSentence({
+  name,
+  count,
+  grant,
+  schema,
+}: {
+  name: string
+  count: number | undefined
+  grant: CollectionGrant
+  schema: RecordCollectionSchema
+}) {
+  const hidden = grantableColumns(schema).filter(
+    (column) => !grant.fields.includes(column.key)
+  )
+  const subject = countedRecordsName(name, count, grant.rows !== null)
+  return (
+    <div className="space-y-2">
+      <p>
+        Visitors can read {subject}
+        {hidden.length > 0 ? ", except:" : "."}
+      </p>
+      {hidden.length > 0 ? (
+        <ul
+          aria-label={`Hidden from ${name}`}
+          className="flex flex-wrap gap-1.5"
+        >
+          {hidden.map((column) => (
+            <li key={column.key}>
+              <Badge
+                variant="outline"
+                className="text-muted-foreground line-through"
+              >
+                {column.field?.name || column.key}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   )
 }
 
-/** Edits only a proposed grant. Checking it never creates or widens a link. */
-export function ShareLinkAccessEditor({
-  container,
-  access,
+/**
+ * Live data for the default link of an HTML Doc: on or off, what visitors
+ * can read, and which fields stay hidden. Turning it on starts from the
+ * access the server suggests for the tool.
+ */
+export function LiveDataPanel({
   grant,
-  checked,
+  access,
+  checking,
+  checkFailed,
+  canTurnOn,
   busy,
-  disabled,
-  error,
-  onChange,
-  onCheck,
+  url,
+  onRetry,
+  onTurnOn,
+  onTurnOff,
+  onSaveGrant,
 }: {
-  container?: HTMLElement | null
-  access: ShareLinkAccess | null
+  /** The link's saved access; null while live data is off. */
   grant: LinkGrant | null
-  checked: boolean
+  /** Counts and collections for `grant`, once checked. */
+  access: ShareLinkAccess | null
+  checking: boolean
+  checkFailed: boolean
+  /** The owner policy allows live links. Turning off is always allowed. */
+  canTurnOn: boolean
   busy: boolean
-  disabled: boolean
-  error: boolean
-  onChange: (grant: LinkGrant) => void
-  onCheck: () => void
+  url: string | undefined
+  onRetry: () => void
+  onTurnOn: () => void
+  onTurnOff: () => void
+  /** Resolves once saved, so the field list can close. */
+  onSaveGrant: (grant: LinkGrant) => Promise<unknown>
 }) {
-  function changeCollection(id: string, value: CollectionGrant | null) {
+  const switchId = useId()
+  const [hiding, setHiding] = useState<Record<string, CollectionGrant> | null>(
+    null
+  )
+  const on = grant !== null || (checking && !access)
+  const collections = access
+    ? Object.entries(grant?.collections ?? {}).flatMap(([id, collection]) => {
+        const schema = Object.hasOwn(access.collections, id)
+          ? access.collections[id]
+          : undefined
+        return schema ? [{ id, collection, schema }] : []
+      })
+    : []
+
+  // A collection deleted since the link was saved can't be checked, and the
+  // server refuses any change while the link still names it.
+  function remove(collectionId: string) {
     if (!grant) return
     const collections = { ...grant.collections }
-    if (value) collections[id] = value
-    else delete collections[id]
-    onChange({ ...grant, collections })
+    delete collections[collectionId]
+    setHiding(null)
+    void onSaveGrant({ ...grant, collections }).catch(() => {})
   }
+
+  function save() {
+    if (!grant || !hiding) return
+    void onSaveGrant({
+      ...grant,
+      collections: { ...grant.collections, ...hiding },
+    }).then(
+      () => setHiding(null),
+      () => {}
+    )
+  }
+
   return (
-    <FieldEditorScope container={container ?? null}>
-      <section
-        aria-label="What this link opens"
-        className="space-y-3 rounded-lg border border-border p-3"
-      >
-        <div className="space-y-1">
-          <h3 className="text-sm font-medium">What this link opens</h3>
-          <p className="text-xs text-muted-foreground">
-            Visitors can view records and use their own saved preferences. They
-            cannot change your Worktable.
-          </p>
-        </div>
-        {access && grant ? (
-          <>
-            {[
-              ...new Set([
-                ...Object.keys(access.collections),
-                ...Object.keys(grant.collections),
-              ]),
-            ].map((id) => {
-              const schema = Object.hasOwn(access.collections, id)
-                ? access.collections[id]
-                : undefined
-              const collection = Object.hasOwn(grant.collections, id)
-                ? grant.collections[id]
-                : undefined
-              if (!schema)
-                return (
-                  <fieldset
-                    key={id}
-                    disabled={disabled || busy}
-                    className="space-y-2 border-t border-border pt-3"
-                  >
-                    <Choice
-                      checked={Boolean(collection)}
-                      onChange={() => changeCollection(id, null)}
+    <div className="space-y-3">
+      <SettingRow label="Show live data" htmlFor={switchId}>
+        <Switch
+          id={switchId}
+          checked={on}
+          disabled={busy || checking || (!canTurnOn && grant === null)}
+          onCheckedChange={(enabled) => {
+            setHiding(null)
+            if (enabled) onTurnOn()
+            else onTurnOff()
+          }}
+        />
+      </SettingRow>
+
+      {grant && access ? (
+        <div className="space-y-3" aria-live="polite">
+          {collections.length === 0 && access.issues.length === 0 ? (
+            <p>Visitors see no Records.</p>
+          ) : null}
+          {collections.map(({ id, collection, schema }) => (
+            <CollectionSentence
+              key={id}
+              name={schema.name || id}
+              count={
+                Object.hasOwn(access.counts, id) ? access.counts[id] : undefined
+              }
+              grant={collection}
+              schema={schema}
+            />
+          ))}
+          {grant.state === "team-read" ? (
+            <p>Visitors can see what your team saved in this tool.</p>
+          ) : null}
+          {access.issues.length > 0 ? (
+            <Callout>
+              {access.issues.map((issue, index) => (
+                <p key={index}>
+                  {issue.message}
+                  {Object.hasOwn(grant.collections, issue.collectionId) &&
+                  !Object.hasOwn(access.collections, issue.collectionId) ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="link"
+                      className="ml-1 h-auto p-0"
+                      disabled={busy}
+                      onClick={() => remove(issue.collectionId)}
                     >
-                      {id} (unavailable)
-                    </Choice>
-                    <p className="text-xs text-muted-foreground">
-                      Remove this collection to save other access changes. The
-                      tool no longer opens it.
-                    </p>
-                  </fieldset>
-                )
-              const columns = recordFieldColumns(schema, []).filter(
-                (column) => column.type !== "document"
-              )
-              return (
-                <fieldset
-                  key={id}
-                  disabled={disabled || busy}
-                  className="space-y-3 border-t border-border pt-3"
-                >
-                  <Choice
-                    checked={Boolean(collection)}
-                    disabled={
-                      !collection &&
-                      Object.keys(grant.collections).length >=
-                        LINK_GRANT_MAX_COLLECTIONS
-                    }
-                    onChange={(enabled) =>
-                      changeCollection(
-                        id,
-                        enabled
-                          ? { fields: [], rows: null, timestamps: false }
-                          : null
-                      )
-                    }
-                  >
-                    {schema.name || id}
-                  </Choice>
-                  {collection ? (
-                    <>
-                      {collection.rows ? (
-                        <p className="text-xs text-muted-foreground">
-                          Shows only records that match this link’s saved
-                          conditions.
+                      Remove
+                    </Button>
+                  ) : null}
+                </p>
+              ))}
+            </Callout>
+          ) : null}
+          {access.warnings.map((warning, index) => (
+            <p key={index} className="text-xs text-muted-foreground">
+              {warning.message}
+            </p>
+          ))}
+
+          {hiding ? (
+            <form
+              className="space-y-3"
+              onSubmit={(event) => {
+                event.preventDefault()
+                save()
+              }}
+            >
+              <fieldset disabled={busy} className="space-y-3">
+                <legend className="sr-only">Fields visitors can see</legend>
+                {collections.map(({ id, schema }) => {
+                  const draft = hiding[id]
+                  if (!draft) return null
+                  const change = (next: CollectionGrant) =>
+                    setHiding((current) =>
+                      current ? { ...current, [id]: next } : current
+                    )
+                  return (
+                    <div key={id} className="space-y-2">
+                      {collections.length > 1 ? (
+                        <p className="text-xs font-medium text-muted-foreground">
+                          {schema.name || id}
                         </p>
                       ) : null}
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium">
-                          Fields visitors can see
-                        </p>
+                      <div className="grid gap-2 sm:grid-cols-2">
                         <FieldSelection
-                          columns={columns}
-                          selected={collection.fields}
+                          columns={grantableColumns(schema)}
+                          selected={draft.fields}
                           limit={LINK_GRANT_MAX_FIELDS}
-                          onChange={(fields) =>
-                            changeCollection(id, { ...collection, fields })
-                          }
+                          onChange={(fields) => change({ ...draft, fields })}
                         />
-                        {columns.length > LINK_GRANT_MAX_FIELDS ? (
-                          <p className="text-xs text-muted-foreground">
-                            Choose up to {LINK_GRANT_MAX_FIELDS} fields.
-                          </p>
-                        ) : null}
                         <Choice
-                          checked={collection.timestamps}
+                          checked={draft.timestamps}
                           onChange={(timestamps) =>
-                            changeCollection(id, {
-                              ...collection,
-                              timestamps,
-                            })
+                            change({ ...draft, timestamps })
                           }
                         >
                           Created and updated times
                         </Choice>
                       </div>
-                    </>
-                  ) : null}
-                </fieldset>
-              )
-            })}
-            <Choice
-              checked={grant.state === "team-read"}
-              disabled={
-                disabled ||
-                busy ||
-                (!access.stateReadable && grant.state !== "team-read")
-              }
-              onChange={(enabled) =>
-                onChange({ ...grant, state: enabled ? "team-read" : "visitor" })
-              }
-            >
-              Read team saved state
-            </Choice>
-            {!access.stateReadable ? (
-              <p className="text-xs text-muted-foreground">
-                This tool no longer allows team saved state. Clear this access
-                to keep it off.
-              </p>
-            ) : null}
-            {checked ? (
-              <div className="space-y-1" aria-live="polite">
-                {access.sentences.map((sentence, index) => (
-                  <p key={index} className="text-sm">
-                    {sentence}
-                  </p>
-                ))}
+                    </div>
+                  )
+                })}
+              </fieldset>
+              <div className="flex gap-2">
+                <Button type="submit" size="sm" disabled={busy}>
+                  {busy ? <Loader2 className="size-4 animate-spin" /> : null}
+                  Save
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => setHiding(null)}
+                >
+                  Cancel
+                </Button>
               </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Check access to update counts and confirm these changes.
-              </p>
-            )}
-            {checked && access.issues.length ? (
-              <Callout>
-                {access.issues.map((issue, index) => (
-                  <p key={index}>
-                    {issue.collectionId}: {issue.message}
-                  </p>
-                ))}
-              </Callout>
-            ) : null}
-            {access.warnings.length ? (
-              <Callout>
-                {access.warnings.map((warning, index) => (
-                  <p key={index}>{warning.message}</p>
-                ))}
-              </Callout>
-            ) : null}
-          </>
-        ) : null}
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            Couldn’t check access. Try again.
-          </p>
-        ) : null}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={disabled || busy}
-          onClick={onCheck}
+            </form>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {collections.length > 0 ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    setHiding(
+                      Object.fromEntries(
+                        collections.map(({ id, collection }) => [
+                          id,
+                          collection,
+                        ])
+                      )
+                    )
+                  }
+                >
+                  Hide Fields
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!url}
+                onClick={() =>
+                  url && window.open(url, "_blank", "noopener,noreferrer")
+                }
+              >
+                <ExternalLink className="size-4" />
+                View as Visitor
+              </Button>
+            </div>
+          )}
+        </div>
+      ) : on && checking ? (
+        <div
+          className="space-y-2"
+          role="status"
+          aria-label="Checking live data"
         >
-          {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-          {busy ? "Checking access…" : "Check access"}
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          Text and data written directly into the tool are always included.
-          Record rules do not hide them.
-        </p>
-      </section>
-    </FieldEditorScope>
+          <Skeleton className="h-4 w-56" />
+          <Skeleton className="h-5 w-40" />
+        </div>
+      ) : grant && checkFailed ? (
+        <div className="space-y-2">
+          <InlineError>Couldn’t check live data.</InlineError>
+          <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+            Try Again
+          </Button>
+        </div>
+      ) : null}
+      {/* Turning on stops before saving when the suggested access doesn't fit. */}
+      {!grant && access && access.issues.length > 0 ? (
+        <Callout>
+          {access.issues.map((issue, index) => (
+            <p key={index}>{issue.message}</p>
+          ))}
+        </Callout>
+      ) : null}
+    </div>
   )
 }

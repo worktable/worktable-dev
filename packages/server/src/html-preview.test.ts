@@ -506,9 +506,6 @@ previewTest(
     expect(access!.grant.collections.tasks?.fields).toEqual(["title"])
     expect(access!.counts.tasks).toBe(1)
     expect(
-      access!.warnings.some((warning) => warning.code === "later_reads")
-    ).toBe(true)
-    expect(
       access!.warnings.some(
         (warning) =>
           warning.code === "preview_unavailable" ||

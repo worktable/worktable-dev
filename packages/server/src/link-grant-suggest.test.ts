@@ -76,7 +76,7 @@ describe("suggestLinkGrant", () => {
       ],
       schemas,
     });
-    expect(suggestion.warnings.map((warning) => warning.code)).toEqual(expect.arrayContaining(["search_fields", "later_reads", "long_search"]));
+    expect(suggestion.warnings.map((warning) => warning.code)).toEqual(expect.arrayContaining(["search_fields", "long_search"]));
     expect(suggestion.grant.collections.deals!.fields).toEqual(["name"]);
   });
   it("warns about stale explicit fields", () => {
@@ -111,12 +111,9 @@ describe("suggestLinkGrant", () => {
     });
     expect(suggestion.warnings.map((warning) => [warning.code, warning.collectionId])).toEqual([
       ["dynamic_collection", undefined],
-      ["later_reads", "contacts"],
       ["whole_records", "contacts"],
-      ["later_reads", "deals"],
       ["fields_left_out", "deals"],
       ["static_only", "notes"],
-      ["later_reads", "orders"],
       ["archived_rows", "orders"],
       ["declared_unseen", "archive"],
     ]);

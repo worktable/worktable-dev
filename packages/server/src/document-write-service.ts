@@ -71,6 +71,7 @@ import { resolveDocAliasIn, reservedByAliasIn } from "./doc-aliases.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
 import {
   catalogHasDocumentsBelow,
+  formatsWritableWith,
   hasDocumentsBelow,
   moveDocumentFolder,
 } from "./document-folder-move.ts"
@@ -112,6 +113,7 @@ export type DocumentWriteFailure =
   | "conflict"
   | "invalid"
   | "unsupported"
+  | "forbidden"
 
 export class DocumentWriteError extends Error {
   readonly reason: DocumentWriteFailure
@@ -1935,6 +1937,8 @@ export async function moveRegisteredDocument(options: {
   path: string
   to: string
   registry?: DocumentFormatRegistry
+  /** A credential's scopes, which bound what moving the Doc's folder may move. */
+  scopes?: readonly string[]
 }): Promise<DocumentMoveResult> {
   assertSpaceAccess(options.spaceId, "edit");
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
@@ -1955,10 +1959,13 @@ export async function moveRegisteredDocument(options: {
         options.path,
         registry
       )
-      const folder = await moveDocumentFolder(options.spaceId, options.path, to)
+      const formats = formatsWritableWith(options.scopes)
+      const folder = await moveDocumentFolder(options.spaceId, options.path, to, {
+        ...(formats ? { formats } : {}),
+      })
       if (!folder.ok) {
         throw new DocumentWriteError(
-          folder.kind === "not-found" ? "not-found" : "conflict",
+          folder.kind === "conflict" ? "conflict" : folder.kind,
           folder.error
         )
       }

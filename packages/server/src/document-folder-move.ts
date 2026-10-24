@@ -4,6 +4,7 @@ import { CanonicalIdSchema } from "@worktable/types"
 import { noteDocumentActivity } from "./document-activity.ts"
 import { buildDocumentCatalog, type DocumentCatalog } from "./document-catalog.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
+import { hasScope } from "./token-store.ts"
 import {
   analyzeDocumentPath,
   documentPathKeyIsAtOrBelow,
@@ -277,11 +278,25 @@ export function catalogHasDocumentsBelow(
   })
 }
 
-/** Formats a docs:write credential writes; anything else needs more. */
-export const DOCS_WRITE_FORMATS: ReadonlySet<string> = new Set([
-  BUILTIN_DOCUMENT_FORMATS.markdown,
-  BUILTIN_DOCUMENT_FORMATS.richText,
-])
+/**
+ * The formats a credential may move, by its scopes: Docs with docs:write,
+ * HTML Docs with widgets:write, anything with documents:write. Undefined
+ * when nothing limits it, as for the app's own moves, which pass no scopes.
+ */
+export function formatsWritableWith(
+  scopes: readonly string[] | undefined
+): ReadonlySet<string> | undefined {
+  if (!scopes || hasScope([...scopes], "documents:write")) return undefined
+  const formats = new Set<string>()
+  if (hasScope([...scopes], "docs:write")) {
+    formats.add(BUILTIN_DOCUMENT_FORMATS.markdown)
+    formats.add(BUILTIN_DOCUMENT_FORMATS.richText)
+  }
+  if (hasScope([...scopes], "widgets:write")) {
+    formats.add(BUILTIN_DOCUMENT_FORMATS.html)
+  }
+  return formats
+}
 
 /**
  * Whether a Doc has a folder of its own to move with it: the Doc exists and
@@ -360,7 +375,7 @@ export async function moveDocumentFolder(
       ok: false,
       kind: "forbidden",
       error:
-        "This folder holds files or HTML Docs. Moving it needs documents:write access.",
+        "This folder holds documents this access can't move. Moving it needs documents:write access.",
     }
   }
   if (fromPrefix === toPrefix) {

@@ -769,12 +769,12 @@ export function prepareDocAliasBatch(
 }
 
 /**
- * The aliases left once a folder moves back to a former path: aliases at or
- * below the destination that lead into the moving folder retire, since those
- * paths become real again. A retiring folder alias also carried the redirects
- * inside the folder, such as a child renamed since; those carry over to the
- * reclaimed path, so links to it keep finding the child. Any other alias
- * stays and still reserves its path.
+ * The aliases left once a folder moves back to a former path. Aliases at or
+ * below the destination that lead into the moving folder now lead where the
+ * folder goes, so a child renamed at any point stays found; one that would
+ * lead to itself retires, as its path becomes real again. A retiring folder
+ * alias also carried the redirects inside the folder; those carry over to
+ * the reclaimed path. Any other alias stays and still reserves its path.
  */
 export function aliasesReclaimedByFolderMove(
   aliases: DocAliases,
@@ -784,32 +784,37 @@ export function aliasesReclaimedByFolderMove(
   const fromKey = analyzeDocumentPath(fromPrefix).comparisonKey
   const toKey = analyzeDocumentPath(toPrefix).comparisonKey
   if (!fromKey || !toKey) return aliases
+  const keyOf = (path: string) => analyzeDocumentPath(path).comparisonKey
   const resolve = createDocAliasResolver(aliases)
-  const retires = (source: string) => {
-    const key = analyzeDocumentPath(source).comparisonKey
-    if (!key || !documentPathKeyIsAtOrBelow(key, toKey)) return false
-    const resolved = resolve(source)
-    const resolvedKey = resolved ? analyzeDocumentPath(resolved).comparisonKey : null
-    return Boolean(resolvedKey && documentPathKeyIsAtOrBelow(resolvedKey, fromKey))
+  const inside = (path: string | null, prefixKey: string) => {
+    const key = path ? keyOf(path) : null
+    return Boolean(key && documentPathKeyIsAtOrBelow(key, prefixKey))
   }
+  const remap = (path: string) =>
+    inside(path, fromKey) ? `${toPrefix}${path.slice(fromPrefix.length)}` : path
+  const reclaimed = (source: string) =>
+    inside(source, toKey) && inside(resolve(source), fromKey)
+
   const next: DocAliases = {
     exact: Object.create(null) as Record<string, string>,
     prefixes: Object.create(null) as Record<string, string>,
   }
+  const keep = (kind: keyof DocAliases, source: string, target: string) => {
+    if (keyOf(source) === keyOf(target)) return
+    if (source in next.exact || source in next.prefixes) return
+    next[kind][source] = target
+  }
   for (const kind of ["exact", "prefixes"] as const) {
     for (const [source, target] of Object.entries(aliases[kind])) {
-      if (!retires(source)) next[kind][source] = target
+      keep(kind, source, reclaimed(source) ? remap(target) : target)
     }
   }
   for (const [retired, target] of Object.entries(aliases.prefixes)) {
-    if (!retires(retired)) continue
+    if (!reclaimed(retired)) continue
     for (const kind of ["exact", "prefixes"] as const) {
       for (const [source, inner] of Object.entries(aliases[kind])) {
         if (!source.startsWith(`${target}/`)) continue
-        const carried = `${retired}${source.slice(target.length)}`
-        if (!(carried in next.exact) && !(carried in next.prefixes)) {
-          next[kind][carried] = inner
-        }
+        keep(kind, `${retired}${source.slice(target.length)}`, remap(inner))
       }
     }
   }

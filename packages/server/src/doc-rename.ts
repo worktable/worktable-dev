@@ -40,11 +40,10 @@ import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { DOCUMENT_STORAGE_PROFILE_IDS } from "./document-storage-profile.ts"
 import {
   catalogHasDocumentsBelow,
-  DOCS_WRITE_FORMATS,
+  formatsWritableWith,
   hasDocumentsBelow,
   moveDocumentFolder,
 } from "./document-folder-move.ts"
-import { hasScope } from "./token-store.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
 
 export interface RenameOutcome {
@@ -70,11 +69,10 @@ export async function renameDocAndSync(
   // lock, and the move starts again as a folder move.
   for (let pass = 0; pass < 2; pass += 1) {
     if (await hasDocumentsBelow(spaceId, from)) {
-      // Docs credentials move Docs; HTML Docs and files need more.
+      // A credential moves only what it may write.
+      const formats = formatsWritableWith(options.scopes)
       const moved = await moveDocumentFolder(spaceId, from, to, {
-        ...(options.scopes && !hasScope([...options.scopes], "documents:write")
-          ? { formats: DOCS_WRITE_FORMATS }
-          : {}),
+        ...(formats ? { formats } : {}),
       })
       if (!moved.ok && moved.kind === "forbidden") {
         return { renamed: [], forbidden: true, error: moved.error }

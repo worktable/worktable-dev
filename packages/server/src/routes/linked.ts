@@ -1,10 +1,12 @@
 import { Hono } from "hono"
+import { APP_FAMILIES, type AppFamily } from "@worktable/hosted-contract"
 import { canOperateHost, trustedLocalIdentity } from "../auth.ts"
 import { isHosted } from "../hosted.ts"
 import {
   beginLink,
   disconnectLink,
   linkedStatus,
+  noteAppSetup,
   setLinkEnabled,
 } from "../linked-runtime.ts"
 import {
@@ -53,6 +55,16 @@ linkedRouter.get("/subscriptions", async (c) => {
   } catch {
     return c.json({ error: "Could not load Cloud subscriptions" }, 503)
   }
+})
+// The person is following a chat app's steps here with Link on.
+linkedRouter.post("/app-intent", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    app?: unknown
+  } | null
+  if (!APP_FAMILIES.includes(body?.app as AppFamily))
+    return c.json({ error: "Invalid request" }, 400)
+  await noteAppSetup(body!.app as AppFamily)
+  return c.json({ ok: true })
 })
 linkedRouter.post("/account", async (c) => {
   try {

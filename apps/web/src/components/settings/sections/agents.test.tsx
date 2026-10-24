@@ -31,6 +31,28 @@ test("connected identity and disconnect remain available when OAuth inventory is
           lastSeenAt: null,
           permissionGroups: null,
         },
+        // An app through Worktable Link is managed on Cloud, which holds
+        // its sign-in.
+        {
+          id: "acn_link_chatgpt",
+          authKind: "oauth",
+          displayName: "ChatGPT",
+          platform: "chatgpt",
+          icon: null,
+          access: null,
+          target: { kind: "mcp-client", clientId: null },
+          mode: "on-demand",
+          participant: null,
+          machine: null,
+          scopes: [],
+          connectedAt: "2026-10-24T10:00:00Z",
+          lastSeenAt: "2026-10-24T10:00:00Z",
+          permissionGroups: null,
+          canManage: false,
+          link: {
+            manageUrl: "https://cloud.example/linked/agents?destinationId=d",
+          },
+        },
       ],
     })
     try {
@@ -50,6 +72,11 @@ test("connected identity and disconnect remain available when OAuth inventory is
       expect(html.includes("Some details are unavailable")).toBe(
         unavailableAuthKinds.length > 0
       )
+      expect(html).toContain("Worktable Link")
+      expect(html).toContain(
+        'href="https://cloud.example/linked/agents?destinationId=d"'
+      )
+      expect(html.split(">Disconnect<").length - 1).toBe(1)
     } finally {
       client.clear()
     }

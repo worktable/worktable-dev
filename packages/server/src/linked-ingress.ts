@@ -31,6 +31,7 @@ import { currentTeamWorktable } from "./team-database.ts"
 import { resolveCloudTeamAgentCredential } from "./team-cloud.ts"
 import type { TokenIdentity } from "./token-store.ts"
 import { linkedGrokBotParticipantKey } from "./grok-bot-store.ts"
+import { noteLinkedApp } from "./agent-connection-store.ts"
 
 function validShareRequest(claims: LinkedRequestClaims): boolean {
   if (claims.grant.kind !== "share") return false
@@ -345,6 +346,9 @@ export async function createLinkedIngress(options: {
           : null
         : credential
       if (!identity) return denied()
+      // A team's agents are its members'; others show in Settings → Agents.
+      // Only an app's first request here waits, for the one write.
+      if (!currentTeamWorktable()) await noteLinkedApp(identity)
       return await handleRemoteMcpRequest(
         new Request(request.url, {
           method: request.method,

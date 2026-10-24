@@ -339,7 +339,10 @@ function AgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
           {cloud ? (
             <CloudNativeAppsPanel connection={connection} />
           ) : (
-            <DesktopAppsPanel connection={connection} />
+            <DesktopAppsPanel
+              connection={connection}
+              open={active && open === "chat"}
+            />
           )}
         </AgentSetupCategory>
         <AgentSetupCategory {...categoryProps("always")}>
@@ -892,8 +895,14 @@ function AlwaysOnPairingStatus({
 
 type DesktopAppChoice = "claude-desktop" | "chatgpt-desktop"
 
-function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
-  const sectionActive = useSettingsSectionActive()
+function DesktopAppsPanel({
+  connection,
+  open,
+}: {
+  connection: ConnectionInfo
+  /** Whether its steps are showing. */
+  open: boolean
+}) {
   const queryClient = useQueryClient()
   const [app, setApp] = useState<DesktopAppChoice>("claude-desktop")
   const [claudeToken, setClaudeToken] = useState<string | null>(null)
@@ -961,7 +970,7 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
 
       <ChatAppWays
         app={app === "claude-desktop" ? "claude" : "chatgpt"}
-        active={sectionActive}
+        active={open}
         local={
           app === "claude-desktop" ? (
             <article className="flex flex-col gap-4">
@@ -1390,6 +1399,7 @@ export function ConnectedAgentsGroup() {
                           ? `${platformName} · `
                           : ""}
                         {connection?.machine ? `${connection.machine} · ` : ""}
+                        {connection?.link ? "Worktable Link · " : ""}
                         {grok
                           ? GROK_BOT_STATUS_LABELS[grok.status]
                           : connection?.lastSeenAt
@@ -1425,7 +1435,21 @@ export function ConnectedAgentsGroup() {
                         Reconnect
                       </Button>
                     )}
-                    {connection && (
+                    {connection?.link ? (
+                      // Cloud holds its sign-in, so it disconnects there.
+                      <a
+                        href={connection.link.manageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={buttonVariants({
+                          variant: "ghost",
+                          size: "sm",
+                        })}
+                        aria-label={`Manage ${name} in Worktable Cloud`}
+                      >
+                        Manage
+                      </a>
+                    ) : connection ? (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1436,7 +1460,7 @@ export function ConnectedAgentsGroup() {
                       >
                         Disconnect
                       </Button>
-                    )}
+                    ) : null}
                   </li>
                 )
               })}

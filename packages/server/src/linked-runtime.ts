@@ -1,5 +1,6 @@
 import {
   cloudAccountStatus,
+  cloudAppIntent,
   cloudLinkRequest,
   linkedCloudOrigin,
 } from "./cloud-account.ts"
@@ -13,8 +14,10 @@ import {
   HOSTED_OAUTH_SCOPES,
   LINKED_CAPABILITIES,
   LINKED_WORKTABLE_ID,
+  linkedWorktableIdFor,
   LinkedHostReply,
   GROK_LINKED_EMAIL_WAKE_PATH,
+  type AppFamily,
   type GrokEmailWake,
 } from "@worktable/hosted-contract"
 import { ensureAppDir } from "./app-storage.ts"
@@ -30,6 +33,7 @@ import { linkedConnectorBinary } from "./linked-connector.ts"
 import { setLinkedSharing } from "./linked-sharing.ts"
 import { invalidateAllDocumentShares } from "./share-store.ts"
 import { revokeAllLinks } from "./share-links-lifecycle.ts"
+import { forgetLinkedApps } from "./agent-connection-store.ts"
 import { isHosted } from "./hosted.ts"
 import {
   localServiceOrigin,
@@ -71,6 +75,8 @@ export type LinkedStatus = {
   cloudOrigin: string
   enabled: boolean | null
   mcpUrl?: string
+  /** This device's id on Cloud, once Cloud has named it. */
+  destinationId?: string
   label?: string
   billingWorkspaceId?: string
   teamAuthorizationRequired?: boolean
@@ -124,6 +130,51 @@ export function linkedOpenUrl(): { openUrl?: string } {
 
 export function linkedStatus(): LinkedStatus {
   return { ...status }
+}
+
+/**
+ * Where the owner manages the apps that reach this Worktable through Link:
+ * the device's AI connections on Cloud, or its devices until Cloud names it.
+ */
+export function linkedManagementUrl(): string {
+  return status.destinationId
+    ? `${status.cloudOrigin}/linked/agents?destinationId=${status.destinationId}`
+    : `${status.cloudOrigin}/linked`
+}
+
+/** When each chat app was last said to be set up here, by link file. */
+const appIntentsSent = new Map<string, number>()
+const APP_INTENT_REPEAT_MS = 10 * 60_000
+
+/**
+ * The person is following the steps for a chat app here with Link on, so
+ * Cloud sends that app here: the ones they already connected and the next
+ * new one. Best effort and asked at most every ten minutes per app. A team
+ * Worktable's apps belong to its members, so it says nothing.
+ */
+export async function noteAppSetup(app: AppFamily): Promise<void> {
+  if (
+    isHosted() ||
+    currentTeamWorktable() ||
+    status.enabled !== true ||
+    ["locked", "error"].includes(status.state)
+  )
+    return
+  const file = path()
+  const key = `${file}\0${app}`
+  if (Date.now() - (appIntentsSent.get(key) ?? 0) < APP_INTENT_REPEAT_MS) return
+  try {
+    const link = await readLink(file)
+    if (!link || link.disabled) return
+    const taken = await cloudAppIntent(link.cloudOrigin, {
+      app,
+      enrollment: enrollment(link),
+    })
+    // A Cloud that doesn't take it won't soon either.
+    if (taken !== false) appIntentsSent.set(key, Date.now())
+  } catch {
+    // Signed out or offline: the next visit asks again.
+  }
 }
 
 /** Uses this device's existing host credential; Cloud binds it to its live link. */
@@ -220,15 +271,23 @@ function enrollment(link: StoredLink) {
   }
 }
 
-/** Cloud versions before the directory name only the device. */
-function mcpUrlFor(
+/**
+ * The device's own id and its Worktable's MCP address. A Cloud that names no
+ * Worktable gave it its first destination's id.
+ */
+function linkedAddress(
   cloudOrigin: string,
   reply: { destinationId: string; worktableId?: unknown }
-): string {
-  return typeof reply.worktableId === "string" &&
+): { mcpUrl: string; destinationId: string } {
+  const worktableId =
+    typeof reply.worktableId === "string" &&
     LINKED_WORKTABLE_ID.test(reply.worktableId)
-    ? `${cloudOrigin}/api/mcp/w/${reply.worktableId}`
-    : `${cloudOrigin}/api/mcp/d/${reply.destinationId}`
+      ? reply.worktableId
+      : linkedWorktableIdFor(reply.destinationId)
+  return {
+    mcpUrl: `${cloudOrigin}/api/mcp/w/${worktableId}`,
+    destinationId: reply.destinationId,
+  }
 }
 
 /** Released web clients can finish their explicit browser approval after an update. */
@@ -329,7 +388,7 @@ async function enableLink(billingWorkspaceId?: string): Promise<LinkedStatus> {
       cloudOrigin: link.cloudOrigin,
       billingWorkspaceId: link.billingWorkspaceId,
       label: link.label,
-      mcpUrl: mcpUrlFor(link.cloudOrigin, {
+      ...linkedAddress(link.cloudOrigin, {
         destinationId,
         worktableId: data["worktableId"],
       }),
@@ -379,7 +438,7 @@ export async function setLinkEnabled(
       cloudOrigin: link.cloudOrigin,
       billingWorkspaceId: link.billingWorkspaceId,
       label: link.label,
-      mcpUrl: mcpUrlFor(link.cloudOrigin, {
+      ...linkedAddress(link.cloudOrigin, {
         destinationId,
         worktableId: data["worktableId"],
       }),
@@ -394,6 +453,7 @@ export async function disconnectLink(): Promise<void> {
     const link = await readLink(file)
     await invalidateAllDocumentShares()
     await revokeAllLinks("link-disconnected")
+    await forgetLinkedApps()
     if (link) {
       await saveLink(file, { ...link, disabled: true })
       status = {
@@ -635,7 +695,7 @@ function launch(): void {
                 billingWorkspaceId: link.billingWorkspaceId,
                 ...(reply.destinationId
                   ? {
-                      mcpUrl: mcpUrlFor(link.cloudOrigin, {
+                      ...linkedAddress(link.cloudOrigin, {
                         destinationId: reply.destinationId,
                         worktableId: reply.worktableId,
                       }),
@@ -674,7 +734,7 @@ function launch(): void {
                 !reply.signingKey
               )
                 throw new Error("INVALID_BINDING")
-              const mcpUrl = mcpUrlFor(link.cloudOrigin, {
+              const address = linkedAddress(link.cloudOrigin, {
                 destinationId: reply.destinationId,
                 worktableId: reply.worktableId,
               })
@@ -752,7 +812,7 @@ function launch(): void {
                 enabled: true,
                 cloudOrigin: link.cloudOrigin,
                 billingWorkspaceId: link.billingWorkspaceId,
-                mcpUrl,
+                ...address,
                 label: link.label,
               }
               setLinkedSharing(

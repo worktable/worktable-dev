@@ -13,6 +13,7 @@ import {
 } from "./document-inventory.ts"
 import { readDocument } from "./document-query.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
+import { fileLinksRouter } from "./routes/file-links.ts"
 import { invalidateSearchIndex, search } from "./search-index.ts"
 import { setDocArchived, writeDoc, writeSpace } from "./store.ts"
 import { withWidgetWriteLock} from "./widget-store.ts"
@@ -269,6 +270,91 @@ describe("files for agents on the preview surface", () => {
       })
       expect(latin1.isError).not.toBe(true)
       expect(latin1.structuredContent).not.toHaveProperty("changes")
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
+})
+
+describe("file links for agents", () => {
+  it("sends a file to a one-time upload link and reads it back from a download link", async () => {
+    const manifestPath = join(root, "worktable.workspace.json")
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>
+    await writeFile(manifestPath, `${JSON.stringify({ ...manifest, version: 2 }, null, 2)}\n`)
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    try {
+      const connected = await connect(["documents:read", "documents:write"], "preview")
+      const write = (request: Record<string, unknown>) =>
+        connected.callTool({ name: "worktable_files_write", arguments: { request } })
+      const read = (request: Record<string, unknown>) =>
+        connected.callTool({ name: "worktable_files_read", arguments: { request } })
+      const token = (url: string) => url.split("/api/file-links/")[1] ?? ""
+      const send = (url: string, body: Uint8Array) =>
+        fileLinksRouter.request(`/${token(url)}`, { method: "PUT", body: Buffer.from(body) })
+
+      const shot = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
+      const upload = await write({ action: "upload", spaceId, path: "design/shot.png" })
+      expect(upload.isError).not.toBe(true)
+      const { uploadUrl, command } = upload.structuredContent as { uploadUrl: string; command: string }
+      expect(command).toContain(`curl --fail-with-body -T`)
+      const sent = await send(uploadUrl, shot)
+      expect(sent.status).toBe(201)
+      expect(await sent.json()).toMatchObject({ path: "design/shot.png", byteLength: shot.byteLength })
+      // A link works once.
+      expect((await send(uploadUrl, shot)).status).toBe(410)
+
+      // Every read of a file links to its bytes.
+      const image = await read({ action: "read_source", spaceId, path: "design/shot.png" })
+      const { downloadUrl } = image.structuredContent as { downloadUrl: string }
+      const fetched = await fileLinksRouter.request(`/${token(downloadUrl)}`)
+      expect(fetched.status).toBe(200)
+      expect(new Uint8Array(await fetched.arrayBuffer())).toEqual(shot)
+
+      // A taken name is refused, numbered, or replaced, as asked.
+      const again = await write({ action: "upload", spaceId, path: "design/shot.png" })
+      expect(
+        (await send((again.structuredContent as { uploadUrl: string }).uploadUrl, shot)).status
+      ).toBe(409)
+      const both = await write({ action: "upload", spaceId, path: "design/shot.png", ifExists: "keep_both" })
+      expect(
+        await (await send((both.structuredContent as { uploadUrl: string }).uploadUrl, shot)).json()
+      ).toMatchObject({ path: "design/shot-2.png" })
+
+      // A binary file past 1 MiB comes by link alone, not as base64.
+      const big = await write({ action: "upload", spaceId, path: "data/archive.bin" })
+      await send((big.structuredContent as { uploadUrl: string }).uploadUrl, new Uint8Array(1_500_000))
+      const bigRead = await read({ action: "read_source", spaceId, path: "data/archive.bin" })
+      expect(bigRead.structuredContent).toMatchObject({ encoding: "download", byteLength: 1_500_000 })
+      expect(bigRead.structuredContent).not.toHaveProperty("source")
+
+      // Docs aren't uploaded, and an unknown token reads as an expired link.
+      expect((await write({ action: "upload", spaceId, path: "notes/plan.md" })).isError).toBe(true)
+      expect((await fileLinksRouter.request(`/${"x".repeat(43)}`)).status).toBe(410)
+
+      // Through Worktable Link the links couldn't reach this Worktable, so none are made.
+      const linked = createWorktableMcpServer({
+        version: "test",
+        scopes: ["documents:read", "documents:write"],
+        surface: "preview",
+        urlOrigin: `https://cloud.example/api/mcp/d/${"a".repeat(32)}`,
+      })
+      const linkedClient = new Client({ name: "linked-test", version: "1" })
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+      await Promise.all([linked.connect(serverTransport), linkedClient.connect(clientTransport)])
+      const refused = await linkedClient.callTool({
+        name: "worktable_files_write",
+        arguments: { request: { action: "upload", spaceId, path: "design/other.png" } },
+      })
+      expect(refused.isError).toBe(true)
+      expect(JSON.stringify(refused.content)).toContain("Worktable Link")
+      const linkedRead = await linkedClient.callTool({
+        name: "worktable_files_read",
+        arguments: { request: { action: "read_source", spaceId, path: "design/shot.png" } },
+      })
+      expect(linkedRead.structuredContent).not.toHaveProperty("downloadUrl")
+      await linkedClient.close()
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
       else process.env["WORKTABLE_FILES_PREVIEW"] = previous

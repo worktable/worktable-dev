@@ -248,6 +248,7 @@ import {
 } from "./operator-export.ts";
 import { runAsActivityActor, setActivityObserver } from "./activity-log.ts";
 import { TeamAccessError } from "./team-policy.ts";
+import { fileLinksRouter } from "./routes/file-links.ts";
 import { TeamStateError } from "./team-database.ts";
 
 // ============================================================
@@ -449,6 +450,10 @@ app.route("/api/pairing", pairingRouter);
 app.route("/api/tokens", tokensRouter);
 app.route("/api/agent-connections", agentConnectionsRouter);
 app.route("/api/linked", cloudCallbackRouter);
+// File links for agents carry their own credential, a one-time or
+// short-lived token, so they mount before the general REST identity
+// middleware; each runs as whoever made the link (files preview only).
+app.route("/api/file-links", fileLinksRouter);
 // Public immutable application assets only; this map cannot read workspace files.
 let previewFontStyles:
   | { version: string; css: string; gzip: Buffer }

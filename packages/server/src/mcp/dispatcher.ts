@@ -172,6 +172,10 @@ import {
   readableFileSource,
 } from "./file-results.ts"
 import { withResultMedia } from "./media.ts"
+import { filesPreviewEnabled } from "../files-preview.ts"
+import { fileDownloadLink, fileUploadLink } from "./file-links.ts"
+import { FILE_UPLOAD_MAX_BYTES, namesAFile } from "../file-uploads.ts"
+import { analyzeDocumentPath } from "../document-path.ts"
 import {
   importIntoRecords,
   proposeImport,
@@ -811,6 +815,9 @@ function htmlLifetime(
   }
 }
 
+/** Binary files past this come by download link rather than base64. */
+const FILE_INLINE_BINARY_MAX_BYTES = 1024 * 1024
+
 interface ToolDispatchContext {
   signal?: AbortSignal
   principal?: RequestPrincipal
@@ -819,6 +826,11 @@ interface ToolDispatchContext {
   canReadRecords?: boolean
   /** The tool surface the caller was offered; preview-only inputs need "preview". */
   surface?: McpSurface
+  /**
+   * Where file links point: the origin the agent reached this Worktable at,
+   * or null where links can't reach it (Worktable Link, Cloud).
+   */
+  fileLinkOrigin?: string | null
   onThreadProgress?: (update: ThreadProgressUpdate) => void | Promise<void>
 }
 
@@ -1207,28 +1219,49 @@ async function _dispatchOperationInner(
         context.surface === "preview" &&
         result.format.id === BUILTIN_DOCUMENT_FORMATS.file
       ) {
-        const readable = readableFileSource(result.path, result.bytes)
-        if (readable) {
-          const fields = {
-            documentId: result.documentId,
-            path: result.path,
-            format: result.format,
-            byteLength: result.bytes.byteLength,
-            sourceRevision: result.sourceRevision,
-          }
-          return readable.kind === "text"
-            ? { ...fields, source: readable.text, encoding: "utf8" as const }
-            : withResultMedia(
-                { ...fields, encoding: "image" as const, mediaType: readable.mediaType },
-                [
-                  {
-                    type: "image",
-                    data: Buffer.from(result.bytes).toString("base64"),
-                    mimeType: readable.mediaType,
-                  },
-                ]
-              )
+        // Every read of a file also gives a link to download it, where the
+        // agent can reach this Worktable directly.
+        const fields = {
+          documentId: result.documentId,
+          path: result.path,
+          format: result.format,
+          byteLength: result.bytes.byteLength,
+          sourceRevision: result.sourceRevision,
+          ...fileDownloadLink(
+            context.fileLinkOrigin,
+            principal,
+            args["spaceId"] as string,
+            result.path
+          ),
         }
+        const readable = readableFileSource(result.path, result.bytes)
+        // A binary file past what a tool result carries well comes by link.
+        if (
+          !readable &&
+          "downloadUrl" in fields &&
+          result.bytes.byteLength > FILE_INLINE_BINARY_MAX_BYTES
+        ) {
+          return { ...fields, encoding: "download" as const }
+        }
+        if (!readable) {
+          return {
+            ...fields,
+            source: Buffer.from(result.bytes).toString("base64"),
+            encoding: "base64" as const,
+          }
+        }
+        return readable.kind === "text"
+          ? { ...fields, source: readable.text, encoding: "utf8" as const }
+          : withResultMedia(
+              { ...fields, encoding: "image" as const, mediaType: readable.mediaType },
+              [
+                {
+                  type: "image",
+                  data: Buffer.from(result.bytes).toString("base64"),
+                  mimeType: readable.mediaType,
+                },
+              ]
+            )
       }
       return {
         documentId: result.documentId,
@@ -1266,6 +1299,45 @@ async function _dispatchOperationInner(
         to: args["to"] as string | undefined,
         context: args["context"] as number | undefined,
       })
+    }
+    case "documents.upload": {
+      const spaceId = args["spaceId"] as string
+      const path = args["path"] as string
+      if (!filesPreviewEnabled()) {
+        throw new Error("Uploads need the files preview, in Settings → System.")
+      }
+      if (!context.fileLinkOrigin) {
+        throw new Error(
+          "Upload links reach this Worktable only when you connect to it directly, not through Worktable Link. Write text files with create, or send small files as base64."
+        )
+      }
+      if (!analyzeDocumentPath(path).safe || !namesAFile(path)) {
+        throw new Error(
+          "Upload a file by its path with its extension, such as design/logo.png. Docs are created with create."
+        )
+      }
+      const ifExists = (args["ifExists"] as "fail" | "keep_both" | "replace" | undefined) ?? "fail"
+      const expectedRevision = args["expectedRevision"] as string | undefined
+      if (expectedRevision !== undefined && ifExists !== "replace") {
+        throw new Error("expectedRevision applies with ifExists replace.")
+      }
+      const link = fileUploadLink(
+        context.fileLinkOrigin,
+        principal,
+        spaceId,
+        path,
+        ifExists === "replace"
+          ? { kind: "replace", ...(expectedRevision ? { expectedRevision } : {}) }
+          : { kind: "create", keepBoth: ifExists === "keep_both" }
+      )
+      return {
+        ok: true as const,
+        path,
+        ...link,
+        method: "PUT" as const,
+        maxBytes: FILE_UPLOAD_MAX_BYTES,
+        command: `curl --fail-with-body -T <local file> '${link.uploadUrl}'`,
+      }
     }
     case "documents.create": {
       assertLifetimeInput(args)

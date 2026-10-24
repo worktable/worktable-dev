@@ -1036,6 +1036,37 @@ export const DocumentsWriteInput = z.strictObject({
   ]),
 })
 
+/**
+ * On the preview surface, files_write also makes a one-time upload link, so
+ * an agent with a shell sends a file's bytes outside the tool call.
+ */
+export const DocumentsWriteInputPreview = z.strictObject({
+  request: z.discriminatedUnion("action", [
+    ...DocumentsWriteInput.shape.request.options,
+    actionSchema("upload", {
+      spaceId: ReadDocInput.shape.spaceId,
+      path: z
+        .string()
+        .min(1)
+        .max(4096)
+        .describe("The file's path in the Space, with its extension, such as onboarding/signup-flow/error.png"),
+      ifExists: z
+        .enum(["fail", "keep_both", "replace"])
+        .optional()
+        .default("fail")
+        .describe(
+          "When the path is taken: fail, keep_both (saves name-2.ext) or replace (a new version; the old one stays in the file's history)"
+        ),
+      expectedRevision: z
+        .string()
+        .min(1)
+        .max(256)
+        .optional()
+        .describe("With ifExists replace: replace only while the file is still at this revision"),
+    }),
+  ]),
+})
+
 export const DocsWriteInput = z.strictObject({
   request: z.discriminatedUnion("action", [
     actionSchema("write", WriteDocInput.shape),

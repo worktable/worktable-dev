@@ -1373,7 +1373,7 @@
   {
     "name": "worktable_files_read",
     "title": "Read Worktable files",
-    "description": "List every file in a Space, Docs included, read a file's source, versions or text diff, or render drawings and HTML as model-visible PNG previews with action render. A file's path is its whole name, extension included. read_source returns an image file as an image you can see and a text file as text; other files come as base64.",
+    "description": "List every file in a Space, Docs included, read a file's source, versions or text diff, or render drawings and HTML as model-visible PNG previews with action render. A file's path is its whole name, extension included. read_source returns an image file as an image you can see and a text file as text; other files come as base64, or over 1 MiB only as a link. Over a direct connection, every file read also gives downloadUrl, a link to its bytes for curl that works for 10 minutes.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1926,12 +1926,13 @@
           "type": "string"
         },
         "encoding": {
-          "description": "Returned by action \"read_source\": utf8 for a text file, image for an image file, else base64.",
+          "description": "Returned by action \"read_source\": utf8 for a text file, image for an image file, download for a binary file over 1 MiB (fetch downloadUrl), else base64.",
           "type": "string",
           "enum": [
             "base64",
             "utf8",
-            "image"
+            "image",
+            "download"
           ]
         },
         "byteLength": {
@@ -1990,6 +1991,14 @@
         },
         "mediaType": {
           "description": "Returned by action \"read_source\" of an image file.",
+          "type": "string"
+        },
+        "downloadUrl": {
+          "description": "Returned by action \"read_source\" of a file, over a direct connection: a short-lived link to its bytes, for curl or a browser.",
+          "type": "string"
+        },
+        "downloadExpiresAt": {
+          "description": "Returned by action \"read_source\" with downloadUrl.",
           "type": "string"
         }
       },
@@ -2580,7 +2589,7 @@
   {
     "name": "worktable_files_write",
     "title": "Write Worktable files",
-    "description": "Create, replace, checkpoint, restore, move, archive, or restore files, Docs included, and mixed-format folders. A file is created with format worktable.file from utf8 or base64 source; replacing a CSV or TSV reports what changed row by row, so check it for rows you didn't mean to drop. Archiving, moving or deleting a Doc takes its folder with it. Every create chooses a lifetime (durable or temporary); set_lifetime and set_folder_lifetime change it later.",
+    "description": "Create, replace, checkpoint, restore, move, archive, or restore files, Docs included, and mixed-format folders. A file is created with format worktable.file from utf8 or base64 source; for an image or other binary file, if you have a shell, use upload instead: it returns a one-time link that takes the file with curl -T within 10 minutes, up to 64 MiB. Replacing a CSV or TSV reports what changed row by row, so check it for rows you didn't mean to drop. Archiving, moving or deleting a Doc takes its folder with it. Every create chooses a lifetime (durable or temporary); set_lifetime and set_folder_lifetime change it later.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3027,6 +3036,46 @@
                 "path"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "upload"
+                },
+                "spaceId": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "description": "The file's path in the Space, with its extension, such as onboarding/signup-flow/error.png"
+                },
+                "ifExists": {
+                  "default": "fail",
+                  "description": "When the path is taken: fail, keep_both (saves name-2.ext) or replace (a new version; the old one stays in the file's history)",
+                  "type": "string",
+                  "enum": [
+                    "fail",
+                    "keep_both",
+                    "replace"
+                  ]
+                },
+                "expectedRevision": {
+                  "description": "With ifExists replace: replace only while the file is still at this revision",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "action",
+                "spaceId",
+                "path"
+              ],
+              "additionalProperties": false
             }
           ]
         }
@@ -3200,6 +3249,29 @@
             "rowsRemoved"
           ],
           "additionalProperties": false
+        },
+        "uploadUrl": {
+          "description": "Returned by action \"upload\": a one-time link that takes the file's bytes with PUT, such as curl -T.",
+          "type": "string"
+        },
+        "method": {
+          "description": "Returned by action \"upload\".",
+          "type": "string",
+          "const": "PUT"
+        },
+        "expiresAt": {
+          "description": "Returned by action \"upload\": when the link stops working.",
+          "type": "string"
+        },
+        "maxBytes": {
+          "description": "Returned by action \"upload\".",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "command": {
+          "description": "Returned by action \"upload\": the curl command to send the file with.",
+          "type": "string"
         }
       },
       "required": [

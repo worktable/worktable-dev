@@ -8,7 +8,6 @@ import {
   revokeAllShareLinks,
   revokeDocumentShareLinks,
   revokeSpaceShareLinks,
-  sharingV2Active,
   ShareLinksStoreError,
 } from "./share-links-store.ts"
 import type { ShareArtifact } from "./share-store.ts"
@@ -261,7 +260,6 @@ onWorkspaceChange((event) => {
     return
   }
   try {
-    if (!sharingV2Active()) return
     if (activeSpaceShareLinks(event.spaceId).length === 0) return
     scheduleReconcile(event.spaceId)
   } catch (error) {

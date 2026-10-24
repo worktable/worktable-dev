@@ -66,65 +66,83 @@ function deferred() {
   return { promise, resolve }
 }
 
+const SHARED_URL =
+  "https://share.worktable.cloud/s/workspace_browser/abcdefghijklmnopqrstuvwxyzABCDEFGH123456789"
+
+/** A Cloud Worktable whose pages carry their links, as without the preview. */
 async function mockCloudSharing(
   page: Page,
   options: { createGate?: Promise<void>; sharingEnabled?: () => boolean } = {}
 ) {
-  let share: { url: string; createdAt: string } | null = null
-  const mutations: Array<{ method: string; body: unknown }> = []
+  let links: ShareLink[] = []
+  const created: Array<Record<string, unknown>> = []
 
   await page.route("**/api/system/deployment", (route) =>
     route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify(
-        options.sharingEnabled
-          ? {
-              ...cloudDeployment,
-              mode: "self-managed",
-              capabilities: {
-                ...cloudDeployment.capabilities,
-                documentSharing: options.sharingEnabled(),
-              },
-            }
-          : cloudDeployment
-      ),
+      body: JSON.stringify({
+        ...cloudDeployment,
+        capabilities: {
+          ...cloudDeployment.capabilities,
+          documentSharing: options.sharingEnabled?.() ?? true,
+          shareLinks: true,
+          sharingPreview: false,
+        },
+      }),
     })
   )
-  await page.route(/\/api\/shares(?:\?.*)?$/, async (route) => {
-    const request = route.request()
-    const method = request.method()
-    if (method === "GET") {
+  await page.route(
+    "**/api/spaces/share-browser/documents/page?*",
+    async (route) => {
+      const response = await route.fetch()
+      const body = await response.json()
+      body.page.sharing = { activeLinks: links.length, canCreate: true }
+      body.page.capabilities.sharing = true
+      await route.fulfill({ response, json: body })
+    }
+  )
+  await page.route(/\/api\/shares\/links(?:\?.*)?$/, async (route) => {
+    if (route.request().method() === "GET") {
       await route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({ share }),
+        json: { links, canCreate: true, policy: defaultSharingPolicy() },
       })
       return
     }
-
-    const body = request.postDataJSON()
-    mutations.push({ method, body })
-    if (method === "POST") {
-      await options.createGate
-      share = {
-        url: "https://share.worktable.cloud/s/workspace_browser/abcdefghijklmnopqrstuvwxyzABCDEFGH123456789",
-        createdAt: "2026-08-08T00:00:00.000Z",
-      }
-      await route.fulfill({
-        status: 201,
-        contentType: "application/json",
-        body: JSON.stringify({ share }),
-      })
-      return
+    const body = route.request().postDataJSON() as Record<string, unknown>
+    created.push(body)
+    await options.createGate
+    const target = body.target as { kind: "doc" | "html"; path: string }
+    const link: ShareLink = {
+      id: "lnk_aaaaaaaaaaaaaaaaaaaaaa",
+      spaceId: "share-browser",
+      documentId: "doc_shared",
+      kind: target.kind,
+      path: target.path,
+      title: target.path,
+      label: String(body.label ?? ""),
+      level: "view",
+      createdBy: { id: "local:owner", name: "Owner" },
+      createdAt: new Date().toISOString(),
+      expiresAt: null,
+      hasPassword: false,
+      lastUsedAt: null,
+      status: "active",
+      tokenHint: SHARED_URL.slice(-4),
+      url: SHARED_URL,
+      canManage: true,
+      comments: {
+        acceptComments: true,
+        anonymousAllowed: false,
+        showSharerName: false,
+        visitorsSee: "own",
+        autoPaused: false,
+      },
     }
-
-    share = null
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ ok: true }),
-    })
+    links = [link]
+    await route.fulfill({ status: 201, json: { link, url: SHARED_URL } })
   })
 
-  return mutations
+  return created
 }
 
 test.beforeAll(async () => {
@@ -165,6 +183,17 @@ test("keeps confirmed policy saves cached and recovers a newer owner update duri
         },
       },
     })
+  )
+  // The page's link summary, as a server that can share sends it.
+  await page.route(
+    "**/api/spaces/share-browser/documents/page?*",
+    async (route) => {
+      const response = await route.fetch()
+      const body = await response.json()
+      body.page.sharing = { activeLinks: 0, canCreate: true }
+      body.page.capabilities.sharing = true
+      await route.fulfill({ response, json: body })
+    }
   )
   await page.route("**/api/shares/links/all**", (route) => {
     linkReads++
@@ -246,17 +275,19 @@ test("keeps confirmed policy saves cached and recovers a newer owner update duri
   } finally {
     saveGate.resolve()
     refreshGate.resolve()
+    // The page may still be asking for itself as the test ends.
+    await page.unrouteAll({ behavior: "ignoreErrors" })
   }
 })
 
-test("creates, copies, and stops one Doc link from the persistent header action", async ({
+test("creates a Doc link from the header action and copies it again later", async ({
   page,
   context,
   browserName,
 }) => {
   let sharingEnabled = false
   const createGate = deferred()
-  const mutations = await mockCloudSharing(page, {
+  const created = await mockCloudSharing(page, {
     createGate: createGate.promise,
     sharingEnabled: () => sharingEnabled,
   })
@@ -268,7 +299,7 @@ test("creates, copies, and stops one Doc link from the persistent header action"
   } else {
     // Playwright cannot grant clipboard permissions in Firefox or WebKit.
     // Chromium exercises the system clipboard; these engines mock that OS
-    // boundary while keeping the full create/copy/stop interaction and bytes.
+    // boundary while keeping the full create and copy interaction and bytes.
     await page.exposeFunction("recordShareClipboard", (text: string) => {
       copiedText = text
     })
@@ -285,6 +316,10 @@ test("creates, copies, and stops one Doc link from the persistent header action"
       })
     })
   }
+  const clipboard = () =>
+    browserName === "chromium"
+      ? page.evaluate(() => navigator.clipboard.readText())
+      : Promise.resolve(copiedText)
   await page.goto(appUrl("/spaces/share-browser/documents/launch-plan"), {
     waitUntil: "domcontentloaded",
   })
@@ -304,81 +339,39 @@ test("creates, copies, and stops one Doc link from the persistent header action"
   await shareButton.click()
 
   const dialog = page.getByRole("dialog", { name: "Share document" })
-  await expect(
-    dialog.getByText("Anyone with the link", { exact: true })
-  ).toBeVisible()
-  await dialog.getByRole("button", { name: "Create link" }).click()
-  await expect(dialog.getByRole("button", { name: "Creating…" })).toBeVisible()
-  await expect(
-    dialog.getByText("Anyone with the link", { exact: true })
-  ).toBeVisible()
-  await expect(
-    dialog.getByRole("heading", { name: "Share document" })
-  ).toBeVisible()
-  await dialog.getByRole("button", { name: "Close" }).click()
-  await expect(dialog).toBeVisible()
-
+  await dialog.getByRole("button", { name: "Create link", exact: true }).click()
   createGate.resolve()
+  await expect(dialog.getByText(SHARED_URL)).toBeVisible()
+  await expect(dialog.getByText(/shown again/i)).toHaveCount(0)
+  await dialog.getByRole("button", { name: "Copy", exact: true }).click()
+  expect(await clipboard()).toBe(SHARED_URL)
+  await dialog.getByRole("button", { name: "Done", exact: true }).click()
 
-  const shareUrl = dialog.getByLabel("Share link")
-  await expect(shareUrl).toHaveValue(/https:\/\/share\.worktable\.cloud\/s\//)
-  await expect(dialog.getByText(/move or rename this document/i)).toBeVisible()
-  await dialog.getByRole("button", { name: "Copy link" }).click()
-  await expect(dialog.getByRole("button", { name: "Copied" })).toBeVisible()
-  const clipboard =
-    browserName === "chromium"
-      ? await page.evaluate(() => navigator.clipboard.readText())
-      : copiedText
-  expect(clipboard).toBe(await shareUrl.inputValue())
-  await dialog.getByRole("button", { name: "Done" }).click()
-  await expect(shareButton).toHaveAttribute("title", "Share link active")
-
+  // Opened again, the link's URL is still there to copy.
+  if (browserName === "chromium")
+    await page.evaluate(() => navigator.clipboard.writeText(""))
+  else copiedText = ""
   await shareButton.click()
-  await dialog.getByRole("button", { name: "Stop sharing" }).click()
-  await expect(
-    dialog.getByRole("heading", { name: "Stop this link?" })
-  ).toBeVisible()
-  await expect(shareUrl).toBeVisible()
-  await dialog
-    .getByRole("button", { name: "Stop sharing", exact: true })
-    .click()
-  await expect(dialog.getByText("Not shared")).toBeVisible()
-  await expect(
-    dialog.getByRole("button", { name: "Create link" })
-  ).toBeVisible()
-  await dialog.getByRole("button", { name: "Cancel" }).click()
-  await expect(shareButton).toHaveAttribute("title", "Share document")
+  await expect(dialog.getByText(SHARED_URL)).toHaveCount(0)
+  await dialog.getByRole("button", { name: "Actions for Untitled link" }).click()
+  await page.getByRole("menuitem", { name: "Copy Link" }).click()
+  await expect.poll(clipboard).toBe(SHARED_URL)
 
-  sharingEnabled = false
-  await page.evaluate(() =>
-    document.dispatchEvent(new Event("visibilitychange", { bubbles: true }))
-  )
-  await expect(shareButton).toBeHidden({ timeout: 10_000 })
-
-  expect(mutations).toEqual([
-    {
-      method: "POST",
-      body: {
-        kind: "doc",
-        spaceId: "share-browser",
-        artifactKey: "launch-plan",
-      },
-    },
-    {
-      method: "DELETE",
-      body: {
-        kind: "doc",
-        spaceId: "share-browser",
-        artifactKey: "launch-plan",
-      },
-    },
+  expect(created).toEqual([
+    expect.objectContaining({
+      target: { kind: "doc", spaceId: "share-browser", path: "launch-plan" },
+    }),
   ])
+  // Without the preview, a link carries no password, level or live data.
+  expect(created[0]).not.toHaveProperty("password")
+  expect(created[0]).not.toHaveProperty("grant")
+  expect(created[0]).not.toHaveProperty("level")
 })
 
 test("explains the inert shared-HTML boundary before creating a link", async ({
   page,
 }) => {
-  const mutations = await mockCloudSharing(page)
+  const created = await mockCloudSharing(page)
   await page.goto(appUrl("/spaces/share-browser/documents/status-card"), {
     waitUntil: "domcontentloaded",
   })
@@ -390,18 +383,15 @@ test("explains the inert shared-HTML boundary before creating a link", async ({
   await expect(
     dialog.getByText(/Records and links to other Worktable content/i)
   ).toBeVisible()
-  await dialog.getByRole("button", { name: "Create link" }).click()
+  await dialog.getByRole("button", { name: "Create link", exact: true }).click()
 
   await expect
-    .poll(() => mutations)
-    .toContainEqual({
-      method: "POST",
-      body: {
-        kind: "html",
-        spaceId: "share-browser",
-        artifactKey: "status-card",
-      },
-    })
+    .poll(() => created)
+    .toContainEqual(
+      expect.objectContaining({
+        target: { kind: "html", spaceId: "share-browser", path: "status-card" },
+      })
+    )
 })
 
 test("creates and edits password links without retaining a password in the form", async ({
@@ -513,7 +503,7 @@ test("creates and edits password links without retaining a password in the form"
   })
   await dialog.getByRole("button", { name: "Create link", exact: true }).click()
   await expect(
-    dialog.getByText("Copy it now. It won’t be shown again.")
+    dialog.getByText("https://share.example.test/s/workspace/" + "a".repeat(43))
   ).toBeVisible()
   expect(mutations[0]?.body.password).toBe("test-only board password")
   const edit = async () => {

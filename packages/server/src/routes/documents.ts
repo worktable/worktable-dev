@@ -1,7 +1,6 @@
 import { teamsEnabled } from "../team-database.ts";
 import { reservedAnnotationInput } from "../annotation-origin.ts"
 import { visitorCommentPageSummary, visitorCommentReader } from "../visitor-comment-access.ts"
-import { canAccessSpace } from "../team-policy.ts";
 import { documentSourceDisposition } from "../content-disposition.ts"
 import { createHash } from "node:crypto"
 import { Hono, type Context } from "hono"
@@ -44,7 +43,6 @@ import {
   setDocumentLifetime,
 } from "../document-lifetime.ts"
 import { getDocumentSharingConfig } from "../linked-sharing.ts"
-import { sharingV2Active } from "../share-links-store.ts"
 import { pageShareAccess } from "../share-policy.ts"
 import { readSpace, slugifyDocPath } from "../store.ts"
 import { hasScope } from "../token-store.ts"
@@ -287,8 +285,8 @@ documentsRouter.get("/resolve", requireScope("documents:read"), async (c) => {
 
 /**
  * Whether a document page offers Share, and whether its reader may make a
- * link now. Only people share: solo the owner; in Teams, today's single link
- * is for the Space's managers, and with links v2 the owner policy decides.
+ * link now. Only people share: solo the owner; in Teams, as the owner policy
+ * decides.
  */
 function pageSharing(
   c: Context,
@@ -300,10 +298,7 @@ function pageSharing(
     ? identity.principal.type === "human"
     : isHumanWorkspaceOwner(c)
   if (!person) return null
-  if (sharingV2Active()) return pageShareAccess(identity, spaceId)
-  return !teamsEnabled() || canAccessSpace(spaceId, "manage")
-    ? { canCreate: true }
-    : null
+  return pageShareAccess(identity, spaceId)
 }
 
 documentsRouter.get("/page", requireScope("documents:read"), async (c) => {

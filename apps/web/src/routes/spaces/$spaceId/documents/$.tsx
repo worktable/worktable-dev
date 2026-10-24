@@ -386,7 +386,6 @@ function UnavailableDocumentPage({
               spaceId,
               artifactKey: page.document.path,
             },
-            page.capabilities.sharing,
             page.sharing?.activeLinks,
             page.sharing?.canCreate
           )

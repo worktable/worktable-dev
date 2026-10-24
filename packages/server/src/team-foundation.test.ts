@@ -805,9 +805,6 @@ describe("team foundation", () => {
       htmlShareOrigin: "https://html.example.test",
     })
     try {
-      // Only links v2 has several links per document to oversee.
-      expect(await shareLinks(owner)).toBe(false)
-      process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
       expect(await shareLinks(owner)).toBe(true)
       expect(await shareLinks(member)).toBe(false)
       grantBob("edit")
@@ -816,7 +813,6 @@ describe("team foundation", () => {
       expect(await shareLinks(member)).toBe(true)
     } finally {
       setLinkedSharing(null)
-      delete process.env["WORKTABLE_SHARING_PREVIEW"]
     }
   })
 
@@ -967,6 +963,7 @@ describe("team foundation", () => {
       await setPolicy({ whoMayShare: "space-managers" })
       const owners = (await (await create(owner)).json()) as {
         link: { id: string }
+        url: string
       }
       for (const access of ["read", "edit"] as const) {
         grantBob(access)
@@ -980,10 +977,25 @@ describe("team foundation", () => {
         "GET",
         "/api/shares/links?kind=doc&spaceId=original&path=brief"
       )
-      expect(await seen.json()).toMatchObject({
+      const seenLinks = (await seen.json()) as {
+        links: Array<{ id: string; canManage: boolean; url?: string }>
+      }
+      expect(seenLinks).toMatchObject({
         canCreate: false,
         createBlockedBy: "sharer",
       })
+      // Only people who may manage a link can copy its URL again.
+      expect(seenLinks.links.length).toBeGreaterThan(0)
+      for (const link of seenLinks.links) {
+        expect(link.canManage).toBe(false)
+        expect(link).not.toHaveProperty("url")
+      }
+      const managed = (await (
+        await request(owner, "GET", "/api/shares/links/all")
+      ).json()) as { links: Array<{ id: string; url?: string }> }
+      expect(
+        managed.links.find((link) => link.id === owners.link.id)?.url
+      ).toBe(owners.url)
       expect(
         (await request(member, "DELETE", `/api/shares/links/${owners.link.id}`))
           .status

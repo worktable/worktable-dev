@@ -1795,8 +1795,8 @@ export function startServer(
       ));
     }
 
-    // With links v2 on, today's links move into it once, after recovery has
-    // settled the documents they point at. Later boots move any an older
+    // Links of the earlier version move into the links store, after recovery
+    // has settled the documents they point at. Later boots move any an older
     // binary made since. Views keep serving the old links meanwhile.
     const recovery = recoveredDocumentTask;
     try {

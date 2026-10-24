@@ -149,8 +149,13 @@ export interface ShareLink {
   status: ShareLinkStatus
   /** Present when `status` is `blocked`. */
   blockedBy?: ShareLinkBlockedBy
-  /** The token's last characters, to tell links apart. The full URL is shown only when a link is made. */
+  /** The token's last characters, to tell links apart. */
   tokenHint: string
+  /**
+   * The link's URL, only for people who may manage it. Absent once revoked,
+   * and for links made before their URLs were kept.
+   */
+  url?: string
   canManage: boolean
   comments: ShareLinkComments
 }
@@ -177,7 +182,7 @@ export interface ShareLinkAccess {
   stateReadable: boolean
 }
 
-/** A link just made: the only time its URL is returned. */
+/** A link just made, with its URL. */
 export interface CreatedShareLink {
   link: ShareLink
   url: string

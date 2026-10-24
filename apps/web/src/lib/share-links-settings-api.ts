@@ -6,7 +6,7 @@ import type {
 import { fetchJSON } from "./http.ts"
 
 // Settings → Links: every link the reader oversees, and the owner policy.
-// Apart from share-api so the page's Share button doesn't load them.
+// Apart from the dialog's requests so the page's Share button doesn't load them.
 
 /** Which links Settings → Links lists. Without a status, all but revoked. */
 export interface ShareLinksFilters {

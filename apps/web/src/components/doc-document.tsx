@@ -38,7 +38,6 @@ import {
   isLiveDocumentSynced,
   registerLiveDocument,
 } from "@/lib/live-documents"
-import { useSpace } from "@/lib/queries"
 import {
   useAnnotationMutations,
   useDocAnnotations,
@@ -220,14 +219,12 @@ function SyncStatusPill({
 /**
  * Publishes the document's header meta. Takes primitives so a re-read of the
  * same document, or a save that only moves its metadata, does not set it again.
- * Actions that change the document or its sharing appear once the route's
- * check has validated the path (`validated`); callers leave them out before.
+ * Actions that change the document appear once the route's check has
+ * validated the path; callers leave them out before.
  */
 function DocPageMeta({
   spaceId,
   docPath,
-  archived,
-  validated,
   onVersionHistory,
   onConvertToMarkdown,
   onCopyMarkdown,
@@ -239,8 +236,6 @@ function DocPageMeta({
 }: {
   spaceId: string
   docPath: string
-  archived: boolean
-  validated: boolean
   onVersionHistory?: () => void
   onConvertToMarkdown?: () => void
   onCopyMarkdown?: () => void
@@ -248,20 +243,12 @@ function DocPageMeta({
   onRecoverOfflineEdits?: () => void
   secondaryAction?: PageSecondaryAction
   annotations?: PageAnnotationsAction
-  /** The page's links while links v2 is on. */
+  /** The page's links. */
   sharing?: DocumentSharingSummary
 }) {
   const setPageMeta = useSetPageMeta()
-  const { data: spaceDetail } = useSpace(spaceId)
   const activeLinks = sharing?.activeLinks
   const canCreateLinks = sharing?.canCreate
-  const shareable = Boolean(
-    validated &&
-    spaceDetail &&
-    spaceDetail.space.permissions?.manage !== false &&
-    !spaceDetail.space.settings["archive"] &&
-    !archived
-  )
   const overflowActions = useMemo<PageOverflowAction[]>(() => {
     const actions: PageOverflowAction[] = []
 
@@ -335,7 +322,6 @@ function DocPageMeta({
       annotations,
       shareTarget: pageShareTarget(
         { kind: "doc", spaceId, artifactKey: docPath },
-        shareable,
         activeLinks,
         canCreateLinks
       ),
@@ -347,7 +333,6 @@ function DocPageMeta({
     overflowActions,
     secondaryAction,
     annotations,
-    shareable,
     activeLinks,
     canCreateLinks,
     spaceId,
@@ -877,8 +862,6 @@ function MarkdownDocPage({
       <DocPageMeta
         spaceId={spaceId}
         docPath={docPath}
-        archived={archived}
-        validated={validated}
         onCopyMarkdown={onCopyMarkdown}
         onDownload={onDownload}
         onRecoverOfflineEdits={validated ? onRecoverOfflineEdits : undefined}
@@ -1493,8 +1476,6 @@ function BlockNoteDocPage({
       <DocPageMeta
         spaceId={spaceId}
         docPath={docPath}
-        archived={archived}
-        validated={validated}
         onVersionHistory={openVersions}
         onConvertToMarkdown={
           convertingToMarkdown || !validated ? undefined : onConvertToMarkdown

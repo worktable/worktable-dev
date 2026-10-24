@@ -41,8 +41,8 @@
       "max": 11
     },
     "cold js, open the app at Home": {
-      "max": 20,
-      "why": "The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file. Configured avatars share one additional 1.1 KB gzip graphics module; identity metadata reuses the existing workspace response."
+      "max": 24,
+      "why": "The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file. Configured avatars share one additional 1.1 KB gzip graphics module; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
     },
     "dom, cold, open the app at Home": {
       "max": 1478,
@@ -52,48 +52,50 @@
       "max": 14
     },
     "cold js, open Space": {
-      "max": 18,
-      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response."
+      "max": 22,
+      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
     },
     "requests, cold, open Markdown doc": {
       "max": 14
     },
     "cold js, open Markdown doc": {
-      "max": 28,
-      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response."
+      "max": 31,
+      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
     },
     "requests, cold, open rich doc": {
       "max": 15
     },
     "cold js, open rich doc": {
-      "max": 35,
-      "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk. The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file. Configured avatars share one additional 1.1 KB gzip graphics module; identity metadata reuses the existing workspace response."
+      "max": 39,
+      "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk. The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file. Configured avatars share one additional 1.1 KB gzip graphics module; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
     },
     "requests, cold, open rich doc (2,000 blocks)": {
       "max": 15
     },
     "cold js, open rich doc (2,000 blocks)": {
-      "max": 35,
-      "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk. The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file. Configured avatars share one additional 1.1 KB gzip graphics module; identity metadata reuses the existing workspace response."
+      "max": 39,
+      "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk. The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file. Configured avatars share one additional 1.1 KB gzip graphics module; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
     },
     "requests, cold, open HTML doc": {
       "max": 14
     },
     "cold js, open HTML doc": {
-      "max": 28,
-      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response."
+      "max": 30,
+      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
     },
     "requests, cold, open Threads": {
       "max": 9
     },
     "cold js, open Threads": {
-      "max": 27
+      "max": 32,
+      "why": "Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
     },
     "requests, cold, open a thread": {
       "max": 10
     },
     "cold js, open a thread": {
-      "max": 27
+      "max": 32,
+      "why": "Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
     },
     "requests, first, open the app at Home": {
       "max": 11

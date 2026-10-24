@@ -11,7 +11,6 @@ import {
   readSharingPolicy,
   saveSharingPolicy,
   ShareLinksStoreError,
-  sharingV2Active,
   type StoredSharingPolicy,
 } from "../share-links-store.ts"
 import {
@@ -28,9 +27,6 @@ import { sharingPreviewEnabled } from "../sharing-preview.ts"
 export const sharePolicyRouter = new Hono()
 
 sharePolicyRouter.use("*", async (c, next) => {
-  if (!sharingV2Active()) {
-    return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
-  }
   if (!canManageUserSettings(c)) {
     return c.json({ error: "Forbidden", code: "FORBIDDEN" }, 403)
   }

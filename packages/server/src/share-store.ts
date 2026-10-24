@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto"
+import { existsSync } from "node:fs"
 import { chmod, open, readFile, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { z } from "zod"
@@ -8,6 +9,12 @@ import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 import { assertWorkspaceAvailable } from "./workspace-safety.ts"
+
+// The earlier version's links, one per document path, in
+// <appDir>/document-shares/<workspace>.json. No route makes links here any more: the boot
+// move reads this file into the links store, views fall back to it for a link
+// not yet moved, and lifecycle events still stop such a link. The create
+// functions remain for tests that act as an older binary.
 
 export const ShareKind = z.enum(["doc", "html"])
 export type ShareKind = z.infer<typeof ShareKind>
@@ -430,6 +437,24 @@ export function invalidateDocumentShare(
 /** A share as this file stores it, for the one-time move into links (v2). */
 export interface StoredDocumentShare extends DocumentShare {
   workspaceEpoch: string
+}
+
+/** Whether an earlier version ever wrote the file. */
+/** Whether this Worktable's own file of earlier links exists. */
+export function ownDocumentSharesFileExists(): boolean {
+  return existsSync(shareFilePath())
+}
+
+/**
+ * Claim this Worktable's earlier links out of the file older releases shared
+ * between Worktables. That file exists for every Worktable on the machine,
+ * so it says nothing about this one until its links are claimed into its own
+ * file. Returns whether this Worktable now has earlier links to move.
+ */
+export async function claimSharedDocumentShares(): Promise<boolean> {
+  if (!existsSync(legacyShareFilePath())) return false
+  await ensureLegacySharesClaimed()
+  return existsSync(shareFilePath())
 }
 
 /** Every share in the file, without taking its locks. */

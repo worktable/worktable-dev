@@ -32,10 +32,7 @@ import { DocumentNodeIcon } from "@/components/document-node-icon"
 import { DocumentLifetimeControls } from "@/components/document-organize"
 import { ShareDocumentAction } from "@/components/share-document-action"
 import { useBreadcrumbs } from "@/hooks/use-breadcrumbs"
-import {
-  useDocumentShareStatus,
-  useShareMode,
-} from "@/hooks/use-document-share"
+import { useShareMode } from "@/hooks/use-document-share"
 import {
   useDocumentOrganizeActions,
   useTemporaryArchiveLabel,
@@ -85,7 +82,6 @@ export function PageMenu() {
   const lifetimePending =
     documentKey !== null && pendingDocument === documentKey
   const shareMode = useShareMode(pageMeta?.shareTarget)
-  const shared = useDocumentShareStatus(pageMeta?.shareTarget).data?.share
   const scrollRef = useScrollFade<HTMLDivElement>()
   if (crumbs.length === 0) return null
 
@@ -131,15 +127,11 @@ export function PageMenu() {
       id: "share",
       label: "Share",
       detail:
-        activeLinks === undefined
-          ? shared
+        !activeLinks
+          ? undefined
+          : activeLinks === 1
             ? "Link active"
-            : undefined
-          : activeLinks === 0
-            ? undefined
-            : activeLinks === 1
-              ? "Link active"
-              : `${activeLinks} links active`,
+            : `${activeLinks} links active`,
       icon: Share2,
       onSelect: () => setShareOpen(true),
     })

@@ -20,7 +20,7 @@ import {
   Trash,
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
-import { queryKeys, useSpace } from "@/lib/queries"
+import { queryKeys } from "@/lib/queries"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { isSpaceLive } from "@/lib/space-observation"
 import type { DocumentRendererProps } from "@/lib/document-renderers"
@@ -676,9 +676,6 @@ function WidgetDetailPage({
     }
   }, [recheckPage, spaceId, widgetId])
 
-  // The space-detail embed tells whether the Space is archived (sharing).
-  const { data: spaceDetail } = useSpace(spaceId)
-
   const handleRename = useCallback(
     async (name: string, description?: string | null) => {
       try {
@@ -796,12 +793,6 @@ function WidgetDetailPage({
       <WidgetPageMeta
         spaceId={spaceId}
         widgetId={widgetId}
-        spaceShareable={Boolean(
-          validated &&
-          spaceDetail &&
-          !spaceDetail.space.settings["archive"] &&
-          spaceDetail.space.permissions?.manage !== false
-        )}
         title={title}
         archived={archived}
         annotations={validated ? annotationsAction : undefined}
@@ -1122,7 +1113,6 @@ function WidgetAnnotationComposer({
 function WidgetPageMeta({
   spaceId,
   widgetId,
-  spaceShareable,
   title,
   archived,
   annotations,
@@ -1131,12 +1121,11 @@ function WidgetPageMeta({
 }: {
   spaceId: string
   widgetId: string
-  spaceShareable: boolean
   title: string
   archived: boolean
   annotations?: PageAnnotationsAction
   overflowActions?: PageOverflowAction[]
-  /** The page's links while links v2 is on. */
+  /** The page's links. */
   sharing?: DocumentSharingSummary
 }) {
   const setPageMeta = useSetPageMeta()
@@ -1151,7 +1140,6 @@ function WidgetPageMeta({
       overflowActions,
       shareTarget: pageShareTarget(
         { kind: "html", spaceId, artifactKey: widgetId },
-        spaceShareable && !archived,
         activeLinks,
         canCreateLinks
       ),
@@ -1162,7 +1150,6 @@ function WidgetPageMeta({
     archived,
     annotations,
     overflowActions,
-    spaceShareable,
     activeLinks,
     canCreateLinks,
     spaceId,

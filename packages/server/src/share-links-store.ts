@@ -13,7 +13,14 @@ import {
   type ShareLinkLevel,
   type SharingPolicy,
 } from "@worktable/types"
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  hkdfSync,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto"
 import { chmodSync, existsSync, mkdirSync } from "node:fs"
 import { chmod, link, mkdir, open, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
@@ -28,13 +35,17 @@ import { workspaceCacheKey } from "./workspace.ts"
 // Links live in <appDir>/sharing/<workspace>/sharing.sqlite, outside the
 // workspace and outside backups; only the owner policy beside them is copied
 // into operator backups. A link is keyed by its document's durable
-// id, so renames and moves keep it. Only a SHA-256 of each token is stored:
-// the URL exists once, in the response that created it.
+// id, so renames and moves keep it. A link is found by a SHA-256 of its
+// token. The token itself is kept only sealed with a key derived from the
+// store's secret (see `sealToken`), so people who manage a link can copy its
+// URL again.
 //
 // Older binaries never open this file. Within it, a binary serves a link only
 // if it understands every column the link sets (see `servable`); new kinds of
 // link fail closed on binaries that predate them. A schema version this
-// binary does not know closes the whole store.
+// binary does not know closes the whole store. Tables added since version 1,
+// such as sealed tokens, are created on first write and leave the version as
+// it is, so binaries that predate them still open the store.
 
 const SCHEMA_VERSION = 1
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
@@ -342,59 +353,13 @@ export function closeShareLinkStores(): void {
   flushShareLinkUse()
   for (const db of databases.values()) db.close()
   databases.clear()
-  drained = null
   policyCache = null
 }
 
-// ── Whether links v2 is on ───────────────────────────────────
-
-let drained: {
-  key: string
-  value: boolean
-  /** Read from the store, so a true value holds for good. */
-  settled: boolean
-  checkedAt: number
-} | null = null
-const DRAINED_RECHECK_MS = MINUTE_MS
-
-/**
- * Whether this Worktable serves and manages links from this store. The
- * sharing preview turns it on; once v1 links have been moved here it stays on
- * whatever the preview says. Otherwise today's links behave as they always
- * have.
- */
-export function sharingV2Active(): boolean {
-  return sharingPreviewEnabled() || v1AlreadyDrained()
-}
-
-function v1AlreadyDrained(): boolean {
-  const key = workspaceCacheKey()
-  const now = Date.now()
-  if (
-    drained?.key === key &&
-    ((drained.value && drained.settled) ||
-      now - drained.checkedAt < DRAINED_RECHECK_MS)
-  ) {
-    return drained.value
-  }
-  let value = false
-  let settled = true
-  try {
-    value =
-      openDatabase(false)
-        ?.query<
-          { value: string },
-          [string]
-        >("SELECT value FROM share_meta WHERE key = ?")
-        .get("v1_drained_at") != null
-  } catch {
-    // A store this version can't read keeps today's routes retired, so no
-    // link is made outside its owner policy; it serves nothing itself.
-    value = true
-    settled = false
-  }
-  drained = { key, value, settled, checkedAt: now }
-  return value
+/** Whether this Worktable has a links store yet, without making one. */
+export function shareLinksStoreExists(): boolean {
+  const path = shareLinksDatabasePath()
+  return databases.has(path) || existsSync(path)
 }
 
 /** Created only on a mutation or boot migration, never by a visitor GET. */
@@ -432,6 +397,140 @@ function tokenDigest(token: string): Buffer {
 
 function newLinkId(): string {
   return `lnk_${randomBytes(16).toString("base64url")}`
+}
+
+// ── Sealed tokens ────────────────────────────────────────────
+//
+// Each link's token is kept sealed with AES-256-GCM, so people who manage the
+// link can copy its URL again. The key comes from HKDF-SHA256 over the
+// store's unlock secret, which a workspace reset replaces after revoking
+// every link. Each seal has its own random 96-bit nonce and authenticates the
+// link's id, so a sealed token can't be moved onto another link, and an
+// opened token must hash to its link's digest. A revoked link's seal is
+// deleted. Links made before tokens were kept have none and show no URL. The
+// table is made on first write, as the grant index is, so the store's version
+// stays the same.
+
+const SEALED_TOKEN_INFO = "worktable-share-link-token-v1"
+const NO_TOKEN_TABLE = "no such table: share_link_tokens"
+
+function tokenKey(secret: Uint8Array): Buffer {
+  return Buffer.from(
+    hkdfSync("sha256", secret, new Uint8Array(0), SEALED_TOKEN_INFO, 32)
+  )
+}
+
+function tokenAad(linkId: string): Buffer {
+  return Buffer.from(`${SEALED_TOKEN_INFO}\0${linkId}`)
+}
+
+/** Seal a link's token, inside the transaction that stores the link. */
+function sealToken(db: Database, linkId: string, token: string): void {
+  const secret = decodeUnlockSecret(
+    db
+      .query<
+        { value: string },
+        []
+      >("SELECT value FROM share_meta WHERE key = 'unlock_secret'")
+      .get()?.value
+  )
+  if (!secret) throw new ShareLinksStoreError()
+  const nonce = randomBytes(12)
+  const cipher = createCipheriv("aes-256-gcm", tokenKey(secret), nonce)
+  cipher.setAAD(tokenAad(linkId))
+  const sealed = Buffer.concat([
+    cipher.update(token, "utf8"),
+    cipher.final(),
+    cipher.getAuthTag(),
+  ])
+  db.exec(`CREATE TABLE IF NOT EXISTS share_link_tokens (
+    link_id TEXT PRIMARY KEY, nonce BLOB NOT NULL, sealed BLOB NOT NULL
+  )`)
+  db.query(
+    "INSERT OR REPLACE INTO share_link_tokens (link_id, nonce, sealed) VALUES (?, ?, ?)"
+  ).run(linkId, nonce, sealed)
+}
+
+function openToken(
+  key: Buffer,
+  row: { id: string; token_hash: Uint8Array; nonce: Uint8Array; sealed: Uint8Array }
+): string | null {
+  const sealed = Buffer.from(row.sealed)
+  if (row.nonce.byteLength !== 12 || sealed.length <= 16) return null
+  try {
+    const decipher = createDecipheriv("aes-256-gcm", key, row.nonce)
+    decipher.setAAD(tokenAad(row.id))
+    decipher.setAuthTag(sealed.subarray(-16))
+    const token = Buffer.concat([
+      decipher.update(sealed.subarray(0, -16)),
+      decipher.final(),
+    ]).toString("utf8")
+    const digest = tokenDigest(token)
+    const stored = Buffer.from(row.token_hash)
+    return TOKEN_PATTERN.test(token) &&
+      stored.length === digest.length &&
+      timingSafeEqual(stored, digest)
+      ? token
+      : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The tokens of these links that have not been revoked, by link id, in one
+ * read. Only for people who may manage the links; a link without a sealed
+ * token, or one that doesn't open, is left out.
+ */
+export function readShareLinkTokens(
+  ids: readonly string[]
+): Map<string, string> {
+  const tokens = new Map<string, string>()
+  const db = ids.length ? openDatabase(false) : null
+  if (!db) return tokens
+  let rows: Array<{
+    id: string
+    token_hash: Uint8Array
+    nonce: Uint8Array
+    sealed: Uint8Array
+    secret: string | null
+  }>
+  try {
+    rows = db
+      .query<(typeof rows)[number], [string]>(
+        `SELECT l.id, l.token_hash, t.nonce, t.sealed, m.value AS secret
+         FROM share_link_tokens t
+         JOIN share_links l ON l.id = t.link_id AND l.revoked_at IS NULL
+         LEFT JOIN share_meta m ON m.key = 'unlock_secret'
+         WHERE t.link_id IN (SELECT value FROM json_each(?))`
+      )
+      .all(JSON.stringify(ids))
+  } catch (error) {
+    if (error instanceof Error && error.message === NO_TOKEN_TABLE)
+      return tokens
+    throw error
+  }
+  const secret = decodeUnlockSecret(rows[0]?.secret)
+  if (!secret) return tokens
+  const key = tokenKey(secret)
+  for (const row of rows) {
+    const token = openToken(key, row)
+    if (token) tokens.set(row.id, token)
+  }
+  return tokens
+}
+
+/** Delete the sealed tokens of links that were revoked. */
+function forgetTokens(db: Database, ids: readonly string[]): void {
+  if (!ids.length) return
+  try {
+    db.query(
+      "DELETE FROM share_link_tokens WHERE link_id IN (SELECT value FROM json_each(?))"
+    ).run(JSON.stringify(ids))
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== NO_TOKEN_TABLE)
+      throw error
+  }
 }
 
 // An additive proof index lets the member summary count supported live
@@ -509,7 +608,7 @@ export interface NewShareLink {
   now?: number
 }
 
-/** Store a new link. The token is returned here and never again. */
+/** Store a new link, its token sealed for people who manage it later. */
 export function createShareLink(input: NewShareLink): {
   link: StoredShareLink
   token: string
@@ -550,6 +649,8 @@ export function createShareLink(input: NewShareLink): {
     input.passwordHash ? 1 : 0,
     grant ? JSON.stringify(grant) : null
   )
+  sealToken(db, id, token)
+  db.query(MARK_V1_DRAINED).run(String(Date.now()))
   })()
   return { link: getShareLink(id)!, token }
 }
@@ -572,27 +673,35 @@ export function importV1ShareLink(input: {
   createdAt: number
 }): boolean {
   const db = openDatabase(true)!
-  const inserted = db
-    .query(
-      `INSERT INTO share_links (id, token_hash, token_hint, link_key,
-        workspace_epoch, space_id, document_id, kind, label, level,
-        created_by_id, created_by_name, created_at, migrated_from)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', 'view', '', '', ?, ?)
-       ON CONFLICT (token_hash) DO NOTHING`
-    )
-    .run(
-      newLinkId(),
-      tokenDigest(input.token),
-      input.token.slice(-4),
-      randomBytes(32),
-      input.workspaceEpoch,
-      input.spaceId,
-      input.documentId,
-      input.kind,
-      input.createdAt,
-      V1_MOVING
-    )
-  return inserted.changes > 0
+  ensureShareUnlockSecret()
+  const id = newLinkId()
+  return db.transaction(() => {
+    const inserted = db
+      .query(
+        `INSERT INTO share_links (id, token_hash, token_hint, link_key,
+          workspace_epoch, space_id, document_id, kind, label, level,
+          created_by_id, created_by_name, created_at, migrated_from)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', 'view', '', '', ?, ?)
+         ON CONFLICT (token_hash) DO NOTHING`
+      )
+      .run(
+        id,
+        tokenDigest(input.token),
+        input.token.slice(-4),
+        randomBytes(32),
+        input.workspaceEpoch,
+        input.spaceId,
+        input.documentId,
+        input.kind,
+        input.createdAt,
+        V1_MOVING
+      )
+    if (inserted.changes === 0) return false
+    // The earlier version kept the token in the clear; sealed, its URL can
+    // still be copied again.
+    sealToken(db, id, input.token)
+    return true
+  })()
 }
 
 /**
@@ -630,6 +739,7 @@ export function settleV1ShareLinks(
        WHERE id = ?`
     )
     for (const id of stopped) revoke.run(now, id)
+    forgetTokens(db, stopped)
     const settle = db.query(
       "UPDATE share_links SET migrated_from = 'v1' WHERE token_hash = ? AND migrated_from = ?"
     )
@@ -641,22 +751,18 @@ export function settleV1ShareLinks(
 }
 
 /**
- * Note that links of the earlier version were moved here. From then on this
- * store serves links whatever the sharing preview says.
+ * Binaries from before links were for everyone serve this store, and stop
+ * making links in the earlier version's file, only once this mark is set.
+ * Every store with links has it, so running one of them again keeps links
+ * opening.
  */
+const MARK_V1_DRAINED =
+  "INSERT OR IGNORE INTO share_meta (key, value) VALUES ('v1_drained_at', ?)"
+
+/** Note that links of the earlier version were moved here. */
 export function markV1SharesDrained(now = Date.now()): void {
   ensureShareUnlockSecret()
-  openDatabase(true)!
-    .query(
-      "INSERT OR IGNORE INTO share_meta (key, value) VALUES ('v1_drained_at', ?)"
-    )
-    .run(String(now))
-  drained = {
-    key: workspaceCacheKey(),
-    value: true,
-    settled: true,
-    checkedAt: now,
-  }
+  openDatabase(true)!.query(MARK_V1_DRAINED).run(String(now))
 }
 
 export interface ShareLinkChange {
@@ -734,6 +840,7 @@ export function revokeShareLink(
     `UPDATE share_links SET revoked_at = ?, revoked_by = ?,
       revoked_reason = ? WHERE id = ? AND revoked_at IS NULL`
   ).run(Date.now(), revokedBy, reason, id)
+  forgetTokens(db, [id])
   notifyChanged([id])
   return getShareLink(id)
 }
@@ -751,6 +858,10 @@ function revokeWhere(
         revoked_reason = ? WHERE revoked_at IS NULL AND ${where} RETURNING id`
     )
     .all(Date.now(), reason, ...params)
+  forgetTokens(
+    db,
+    revoked.map((row) => row.id)
+  )
   if (revoked.length > 0) notifyChanged(revoked.map((row) => row.id))
   return revoked.length
 }
@@ -1118,6 +1229,11 @@ export function sweepRevokedShareLinks(now = Date.now()): number {
         catch (error) {
           if (!(error instanceof Error) || error.message !== "no such table: share_link_grants") throw error
         }
+      }
+      // Older binaries revoke without deleting seals; none outlives its link.
+      try { db.exec("DELETE FROM share_link_tokens WHERE link_id NOT IN (SELECT id FROM share_links WHERE revoked_at IS NULL)") }
+      catch (error) {
+        if (!(error instanceof Error) || error.message !== NO_TOKEN_TABLE) throw error
       }
       return removed
     })()

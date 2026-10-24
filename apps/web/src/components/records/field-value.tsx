@@ -160,17 +160,22 @@ export function FieldValue({
     case "document":
       return <DocumentValue spaceId={spaceId} value={value} linksDisabled={linksDisabled} whole={whole} className={chipRow} />
     case "file": {
-      const paths = (Array.isArray(value) ? value : [value]).filter(
-        (entry): entry is string => typeof entry === "string" && entry.length > 0
+      const entries = (Array.isArray(value) ? value : [value]).filter(
+        (entry) => entry !== null && entry !== undefined && entry !== ""
       )
-      if (paths.length === 0) return <span className="text-muted-foreground/40">—</span>
-      const visible = whole ? paths : paths.slice(0, 2)
+      if (entries.length === 0) return <span className="text-muted-foreground/40">—</span>
+      const visible = whole ? entries : entries.slice(0, 2)
       return (
         <span className={chipRow}>
-          {visible.map((path) => (
-            <FileChip key={path} spaceId={spaceId} path={path} linksDisabled={linksDisabled} />
-          ))}
-          {visible.length < paths.length && <OverflowCount count={paths.length - visible.length} />}
+          {visible.map((entry, index) =>
+            typeof entry === "string" ? (
+              <FileChip key={`${index}:${entry}`} spaceId={spaceId} path={entry} linksDisabled={linksDisabled} />
+            ) : (
+              // A value that isn't a path shows as it is, so it can be fixed.
+              <span key={index} className="font-mono text-xs text-muted-foreground">{safeStringify(entry)}</span>
+            )
+          )}
+          {visible.length < entries.length && <OverflowCount count={entries.length - visible.length} />}
         </span>
       )
     }

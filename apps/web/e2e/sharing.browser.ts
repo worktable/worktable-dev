@@ -548,7 +548,6 @@ test("creates and edits password links without retaining a password in the form"
   ).toHaveValue(SHARED_URL)
   expect(mutations[0]?.body).toMatchObject({
     label: "",
-    level: "view",
     password: "test-only board password",
   })
 

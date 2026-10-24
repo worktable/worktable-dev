@@ -87,8 +87,11 @@ export function ChatAppWays({
         <ol className={STEPS_CLASS}>
           <li>
             {linkOn ? (
-              <span className="inline-flex items-center gap-1.5 text-foreground">
-                <Check aria-hidden className="size-4 text-success" />
+              <span className="text-foreground">
+                <Check
+                  aria-hidden
+                  className="mr-1.5 inline size-4 align-[-0.2em] text-success"
+                />
                 Worktable Link is on
               </span>
             ) : (

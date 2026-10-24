@@ -1209,6 +1209,16 @@ describe("format-neutral document route", () => {
       await writeFile(join(docs, "notes", "readme", "error.png"), "png")
       noteSpaceChanged(spaceId)
 
+      // A Docs-only credential can't move the file in the Doc's folder.
+      expect(
+        await renameDocAndSync(spaceId, "notes/readme", "guides/start", {
+          scopes: ["docs:write"],
+        })
+      ).toMatchObject({ forbidden: true, renamed: [] })
+      expect(
+        await readFile(join(docs, "notes", "readme", "error.png"), "utf8")
+      ).toBe("png")
+
       expect(
         (await renameDocAndSync(spaceId, "notes/readme", "guides/start")).error
       ).toBeNull()

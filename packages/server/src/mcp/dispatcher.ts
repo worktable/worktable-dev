@@ -2732,7 +2732,9 @@ async function _dispatchOperationInner(
       const spaceId = args["spaceId"] as string
       const oldPath = args["oldPath"] as string
       const newPath = args["newPath"] as string
-      const outcome = await renameDocAndSync(spaceId, oldPath, newPath)
+      const outcome = await renameDocAndSync(spaceId, oldPath, newPath, {
+        scopes: identity.scopes,
+      })
       if (outcome.error) throw new Error(outcome.error)
       const move = outcome.renamed[0]!
       return { ok: true, oldPath: move.from, newPath: move.to }

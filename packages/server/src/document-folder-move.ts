@@ -48,7 +48,7 @@ export type MoveDocumentFolderResult =
     }
   | {
       ok: false
-      kind: "not-found" | "conflict"
+      kind: "not-found" | "conflict" | "forbidden"
       error: string
     }
 
@@ -277,6 +277,12 @@ export function catalogHasDocumentsBelow(
   })
 }
 
+/** Formats a docs:write credential writes; anything else needs more. */
+export const DOCS_WRITE_FORMATS: ReadonlySet<string> = new Set([
+  BUILTIN_DOCUMENT_FORMATS.markdown,
+  BUILTIN_DOCUMENT_FORMATS.richText,
+])
+
 /**
  * Whether a Doc has a folder of its own to move with it: the Doc exists and
  * sub-Docs or files sit in the folder named after it. A folder with no Doc
@@ -327,7 +333,12 @@ async function removeEmptiedFolders(directory: string): Promise<void> {
 export async function moveDocumentFolder(
   spaceId: string,
   fromPrefix: string,
-  toPrefix: string
+  toPrefix: string,
+  /**
+   * The formats the caller may move. Checked on the plan, which the move
+   * confirms under its lock, so nothing else slips in.
+   */
+  options: { formats?: ReadonlySet<string> } = {}
 ): Promise<MoveDocumentFolderResult> {
   let planned: PlannedFolderMove[] | MoveDocumentFolderResult
   try {
@@ -343,6 +354,15 @@ export async function moveDocumentFolder(
     throw error
   }
   if (!Array.isArray(planned)) return planned
+  const { formats } = options
+  if (formats && planned.some((move) => !formats.has(move.formatId))) {
+    return {
+      ok: false,
+      kind: "forbidden",
+      error:
+        "This folder holds files or HTML Docs. Moving it needs documents:write access.",
+    }
+  }
   if (fromPrefix === toPrefix) {
     return {
       ok: true,

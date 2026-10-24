@@ -68,7 +68,7 @@ export function ChatAppWays({
   local: ReactNode
 }) {
   const [linkSetup, setLinkSetup] = useState(false)
-  const [linkStepOpen, setLinkStepOpen] = useState<boolean | null>(null)
+  const [linkStepOpen, setLinkStepOpen] = useState(false)
   // Shares the Link settings' status; their polling keeps it current.
   const link = useQuery({
     queryKey: ["linked"],
@@ -95,8 +95,13 @@ export function ChatAppWays({
               linkOn ? "Worktable Link is on" : "Turn on Worktable Link here."
             }
             complete={linkOn}
-            open={linkStepOpen ?? !linkOn}
-            onOpenChange={() => setLinkStepOpen(!(linkStepOpen ?? !linkOn))}
+            // Until Link is on, the step shows how to turn it on.
+            {...(linkOn
+              ? {
+                  open: linkStepOpen,
+                  onOpenChange: () => setLinkStepOpen(!linkStepOpen),
+                }
+              : {})}
           >
             {linkSetup ? (
               <Suspense

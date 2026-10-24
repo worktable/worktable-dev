@@ -28,7 +28,7 @@ function StepMark({
 
 /**
  * One numbered step of a setup, shown with a check once complete. With
- * `onOpenChange` it opens to show its content; without, it is a plain step.
+ * `onOpenChange` it opens to show its content; without, it always shows it.
  * Render inside an `<ol className="space-y-1">`.
  */
 export function SetupStep({
@@ -50,9 +50,16 @@ export function SetupStep({
 }) {
   if (!onOpenChange)
     return (
-      <li className="flex min-h-11 items-center gap-3 text-sm font-medium">
-        <StepMark number={number} complete={complete} />
-        <span className="flex-1">{title}</span>
+      <li>
+        <div className="flex min-h-11 items-center gap-3 text-sm font-medium">
+          <StepMark number={number} complete={complete} />
+          <span className="flex-1">{title}</span>
+        </div>
+        {children ? (
+          <div className="flex min-w-0 flex-col gap-3 pt-2 pb-4 pl-9">
+            {children}
+          </div>
+        ) : null}
       </li>
     )
   return (

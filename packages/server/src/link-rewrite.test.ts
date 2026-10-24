@@ -60,9 +60,16 @@ describe("rewriting links after a move", () => {
 
   it("rewrites Markdown links, images and media tags, never code", () => {
     const rewrite = (target: string) =>
-      target === "old.png" ? "new.png" : target === "a&b.png" ? "c&d.png" : null
+      target === "old.png"
+        ? "new.png"
+        : target === "a&b.png"
+          ? "c&d.png"
+          : target === "shot(1).png"
+            ? "shots/shot(1).png"
+            : null
     const markdown = [
       "![Shot](old.png) and [the file](old.png).",
+      '[Shot](shot(1).png "Title") and ![x](<old.png>)',
       '<img data-src="old.png" title=\'src="old.png"\' alt="x" src="old.png">',
       "<video src=old.png></video> <img src='a&amp;b.png'>",
       "`![Shot](old.png)`",
@@ -78,6 +85,7 @@ describe("rewriting links after a move", () => {
     expect(rewriteMarkdownLinks(markdown, rewrite)).toBe(
       [
         "![Shot](new.png) and [the file](new.png).",
+        '[Shot](shots/shot(1).png "Title") and ![x](<new.png>)',
         '<img data-src="old.png" title=\'src="old.png"\' alt="x" src="new.png">',
         "<video src=new.png></video> <img src='c&amp;d.png'>",
         "`![Shot](old.png)`",
@@ -93,7 +101,7 @@ describe("rewriting links after a move", () => {
     )
   })
 
-  it("skips fenced code in a Doc too large to parse in full", () => {
+  it("skips fenced code in a very large Doc", () => {
     const filler = "Words.\n\n".repeat(40_000)
     const markdown = `${filler}~~~\n[a](old.png)\n~~~\n[b](old.png)\n`
     expect(

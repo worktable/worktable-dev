@@ -1,12 +1,13 @@
 // ============================================================
-// Code in Markdown
+// Code and links in Markdown
 // ============================================================
 //
 // Code shows its text and never holds links: fenced blocks with backticks or
-// tildes, indented blocks and inline spans alike. Readers that look for links
-// blank it out, keeping every other character where it was.
-
-import { fromMarkdown } from "mdast-util-from-markdown"
+// tildes, indented blocks and inline spans alike. A link's destination runs
+// as Markdown reads it, angle brackets and a level of parentheses included.
+// Everything here reads a text in a single pass, so no text, however large
+// or strange, can make reading it slow; a link this can't read with
+// certainty is left for aliases to resolve.
 
 type Range = readonly [number, number]
 
@@ -14,23 +15,79 @@ type Range = readonly [number, number]
 const MAY_HOLD_CODE = /`|~~~|^(?: {4}|\t)/m
 
 /**
- * Above this, a Doc's code is found by its fences and spans alone, as a full
- * parse of a very large text costs more than links in it are worth.
+ * Fenced code with backticks or tildes, closed by the same or by the end.
+ * The fence is taken whole through a lookahead, which never gives characters
+ * back, so a long run of backticks can't make matching slow.
  */
-const PARSE_MAX_CHARS = 256 * 1024
-
-/** Fenced code with backticks or tildes, closed by the same or by the end. */
 const FENCED_CODE =
-  /^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[`~]*[ \t]*$|(?![\s\S]))/gm
+  /^ {0,3}(?=(`{3,}|~{3,}))\1[^\n]*\n[\s\S]*?(?:^ {0,3}\1[`~]*[ \t]*$|(?![\s\S]))/gm
 const INLINE_CODE = /`[^`\n]*`/g
+const LIST_ITEM = /^ {0,3}(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)/
+const INDENTED = /^(?: {4}|\t)/
 
-function scannedCodeRanges(markdown: string): { blocks: Range[]; inline: Range[] } {
-  const ranges = (pattern: RegExp, text: string) =>
-    [...text.matchAll(pattern)].map(
-      (match): Range => [match.index, match.index + match[0].length]
-    )
-  const blocks = ranges(FENCED_CODE, markdown)
-  return { blocks, inline: ranges(INLINE_CODE, blankRanges(markdown, blocks)) }
+/**
+ * An inline link or image, whole: a label holds no brackets, and a
+ * destination is in angle brackets or allows one level of parentheses,
+ * followed by an optional title and the closing parenthesis.
+ */
+export const MARKDOWN_LINK_PATTERN =
+  /(!?)\[([^[\]]*)\]\(\s*(<[^<>\n]*>|(?:[^()\s]|\([^()\s]*\))+)(?:\s+"[^"\n]*")?\s*\)/g
+
+export interface MarkdownLayout {
+  /** Code blocks, fenced or indented. */
+  blocks: Range[]
+  /** Inline code. */
+  inline: Range[]
+  /** Inline link and image destinations as written, outside code. */
+  destinations: Range[]
+}
+
+function matchRanges(pattern: RegExp, text: string): Range[] {
+  return [...text.matchAll(pattern)].map(
+    (match): Range => [match.index, match.index + match[0].length]
+  )
+}
+
+/**
+ * Indented code blocks: indented lines after a blank line, outside a list,
+ * where indenting continues a list item rather than starting code.
+ */
+function indentedCode(text: string): Range[] {
+  const ranges: Range[] = []
+  let at = 0
+  let previousBlank = true
+  let inCode = false
+  let inList = false
+  for (const line of text.split("\n")) {
+    const blank = line.trim() === ""
+    if (!blank && LIST_ITEM.test(line)) inList = true
+    else if (!blank && !INDENTED.test(line)) inList = false
+    const code: boolean = !blank && !inList && INDENTED.test(line) && (previousBlank || inCode)
+    if (code) ranges.push([at, at + line.length])
+    if (!blank) inCode = code
+    previousBlank = blank
+    at += line.length + 1
+  }
+  return ranges
+}
+
+/** Where a Markdown text's code and link destinations sit. */
+export function markdownLayout(markdown: string): MarkdownLayout {
+  const mayHoldCode = MAY_HOLD_CODE.test(markdown)
+  const fenced = mayHoldCode ? matchRanges(FENCED_CODE, markdown) : []
+  const blocks = mayHoldCode
+    ? [...fenced, ...indentedCode(blankRanges(markdown, fenced))]
+    : []
+  const inline = mayHoldCode
+    ? matchRanges(INLINE_CODE, blankRanges(markdown, blocks))
+    : []
+  const scanned = blankRanges(markdown, [...blocks, ...inline])
+  const destinations: Range[] = []
+  for (const match of scanned.matchAll(MARKDOWN_LINK_PATTERN)) {
+    const start = match[0].indexOf(match[3]!, match[0].indexOf("](") + 2)
+    destinations.push([match.index + start, match.index + start + match[3]!.length])
+  }
+  return { blocks, inline, destinations }
 }
 
 /** Where a Markdown text's code blocks and inline code sit. */
@@ -38,27 +95,7 @@ export function markdownCodeRanges(markdown: string): {
   blocks: Range[]
   inline: Range[]
 } {
-  if (!MAY_HOLD_CODE.test(markdown)) return { blocks: [], inline: [] }
-  if (markdown.length > PARSE_MAX_CHARS) return scannedCodeRanges(markdown)
-  const blocks: Range[] = []
-  const inline: Range[] = []
-  type Node = {
-    type: string
-    position?: { start: { offset?: number }; end: { offset?: number } }
-    children?: unknown[]
-  }
-  // Walked with a stack, so deep nesting can't exhaust the call stack.
-  const stack: Node[] = [fromMarkdown(markdown) as Node]
-  while (stack.length > 0) {
-    const node = stack.pop()!
-    const start = node.position?.start.offset
-    const end = node.position?.end.offset
-    if (start !== undefined && end !== undefined) {
-      if (node.type === "code") blocks.push([start, end])
-      else if (node.type === "inlineCode") inline.push([start, end])
-    }
-    for (const child of node.children ?? []) stack.push(child as Node)
-  }
+  const { blocks, inline } = markdownLayout(markdown)
   return { blocks, inline }
 }
 

@@ -15,7 +15,7 @@ import { resolveDocLink } from "@worktable/types"
 import { logError } from "./debug-log.ts"
 import { filesPreviewEnabled } from "./files-preview.ts"
 import { getSpaceLinkGraph } from "./link-graph.ts"
-import { blankRanges, markdownCodeRanges } from "./markdown-code.ts"
+import { blankRanges, markdownLayout } from "./markdown-code.ts"
 import {
   agentChangeBase,
   commitAgentBlocks,
@@ -89,15 +89,9 @@ export function rewrittenTarget(
 
 // ── Markdown ────────────────────────────────────────────────
 
-const MARKDOWN_LINK = /(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g
 const HTML_MEDIA_TAGS = new Set(["img", "video", "audio", "source"])
 const HTML_MEDIA_HINT = /<(?:img|video|audio|source)\b/i
 
-/** Code keeps its offsets but can never match a link. */
-function blankCode(markdown: string): string {
-  const code = markdownCodeRanges(markdown)
-  return blankRanges(markdown, [...code.blocks, ...code.inline])
-}
 
 /**
  * The src values of a Doc's HTML media tags, read as a browser reads them,
@@ -152,14 +146,16 @@ function htmlAttributeText(value: string, quote: string | null): string {
 
 /** A Markdown Doc with its link, image and media targets rewritten. */
 export function rewriteMarkdownLinks(markdown: string, rewrite: Rewrite): string {
-  const scanned = blankCode(markdown)
+  // One read says where code and link destinations sit; code keeps its
+  // offsets but can never match a link or a media tag.
+  const layout = markdownLayout(markdown)
+  const scanned = blankRanges(markdown, [...layout.blocks, ...layout.inline])
   const edits: Array<{ at: number; length: number; text: string }> = []
-  let match: RegExpExecArray | null
-  MARKDOWN_LINK.lastIndex = 0
-  while ((match = MARKDOWN_LINK.exec(scanned)) !== null) {
-    const target = match[3]!
-    const open = match[0].indexOf("](") + 2
-    const at = match.index + match[0].indexOf(target, open)
+  for (const [start, end] of layout.destinations) {
+    // A destination in angle brackets keeps them; its path sits inside.
+    const angled = markdown[start] === "<" && markdown[end - 1] === ">"
+    const at = angled ? start + 1 : start
+    const target = markdown.slice(at, angled ? end - 1 : end)
     const text = rewrite(target)
     if (text !== null) edits.push({ at, length: target.length, text })
   }

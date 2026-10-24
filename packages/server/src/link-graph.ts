@@ -15,7 +15,11 @@
 // simply be not-yet-written docs — and are reported, not rejected.
 
 import { Parser } from "htmlparser2";
-import { blankRanges, markdownCodeRanges } from "./markdown-code.ts";
+import {
+  blankRanges,
+  MARKDOWN_LINK_PATTERN,
+  markdownCodeRanges,
+} from "./markdown-code.ts";
 import { docStat, listDocs, readDoc } from "./store.ts";
 import { onDocContentChanged } from "./content-events.ts";
 import { LINK_CLOSE, LINK_OPEN, sentenceContext } from "./link-context.ts";
@@ -164,8 +168,9 @@ function markdownLineText(line: string): string {
 
 function extractMarkdownLinks(markdown: string): ExtractedDocLink[] {
   const links: ExtractedDocLink[] = [];
-  // Inline links [text](target "title"), excluding images ![alt](src).
-  const linkRe = /(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g;
+  // Inline links [text](target "title") and images ![alt](src), read in one
+  // pass, so no text makes matching slow.
+  const linkRe = new RegExp(MARKDOWN_LINK_PATTERN.source, "g");
   // Code holds no links: code blocks are blanked for everything, inline code
   // only for matching, as a link's context reads it as its text.
   const code = markdownCodeRanges(markdown);
@@ -175,8 +180,9 @@ function extractMarkdownLinks(markdown: string): ExtractedDocLink[] {
   const scanned = blankRanges(withoutFences, code.inline);
   let match: RegExpExecArray | null;
   while ((match = linkRe.exec(scanned)) !== null) {
+    const target = match[3]!.replace(/^<([\s\S]*)>$/, "$1");
     if (match[1] === "!") {
-      links.push(embedWithContext(match[3]!, match[2] ?? ""));
+      links.push(embedWithContext(target, match[2] ?? ""));
       continue;
     }
     // The block the link sits in, with this link's words marked; code spans
@@ -195,7 +201,7 @@ function extractMarkdownLinks(markdown: string): ExtractedDocLink[] {
       .split("\n")
       .map(markdownLineText)
       .join(" ");
-    links.push(linkWithContext(match[3]!, lines));
+    links.push(linkWithContext(target, lines));
   }
   links.push(...htmlMediaEmbeds(scanned));
   return links;

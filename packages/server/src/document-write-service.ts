@@ -26,6 +26,7 @@ import {
   buildDocumentCatalog,
   type DocumentCatalog,
 } from "./document-catalog.ts"
+import { readDocumentCatalogSnapshot } from "./document-query.ts"
 import {
   advanceDocumentCreateRecoveryV2,
   finishDocumentCreateRecoveryV2,
@@ -1947,6 +1948,13 @@ export async function moveRegisteredDocument(options: {
       options.path !== to &&
       (await hasDocumentsBelow(options.spaceId, options.path))
     if (withFolder) {
+      // Refuse a Doc this move can't answer for, as moving it alone would,
+      // before its folder moves.
+      resolveManagedFileDocument(
+        await readDocumentCatalogSnapshot(options.spaceId),
+        options.path,
+        registry
+      )
       const folder = await moveDocumentFolder(options.spaceId, options.path, to)
       if (!folder.ok) {
         throw new DocumentWriteError(

@@ -23,6 +23,7 @@ import { createAnnotation } from "./annotation-store.ts"
 import { HOSTED_BROWSER_RUNTIME_SCOPES } from "./hosted-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { renameDocAndSync } from "./doc-rename.ts"
+import { resolveDocAlias } from "./doc-aliases.ts"
 import { getSpaceLinkGraph } from "./link-graph.ts"
 import {
   readRegisteredDocumentSource,
@@ -1249,8 +1250,16 @@ describe("format-neutral document route", () => {
         await readFile(join(docs, "guides", "start", "error.png"), "utf8")
       ).toBe("png")
 
-      // Moving back to where it was reclaims the old path.
+      // Moving back to where it was reclaims the old path, and keeps the
+      // way to a child renamed in between.
+      expect(
+        (await renameDocAndSync(spaceId, "guides/start/details", "guides/start/more"))
+          .error
+      ).toBeNull()
       expect((await move("guides/start", "notes/readme")).status).toBe(200)
+      expect((await resolveDocAlias(spaceId, "notes/readme/details")).path).toBe(
+        "notes/readme/more"
+      )
       expect(
         await readFile(join(docs, "notes", "readme", "error.png"), "utf8")
       ).toBe("png")

@@ -771,7 +771,10 @@ export function prepareDocAliasBatch(
 /**
  * The aliases left once a folder moves back to a former path: aliases at or
  * below the destination that lead into the moving folder retire, since those
- * paths become real again. Any other alias stays and still reserves its path.
+ * paths become real again. A retiring folder alias also carried the redirects
+ * inside the folder, such as a child renamed since; those carry over to the
+ * reclaimed path, so links to it keep finding the child. Any other alias
+ * stays and still reserves its path.
  */
 export function aliasesReclaimedByFolderMove(
   aliases: DocAliases,
@@ -782,19 +785,35 @@ export function aliasesReclaimedByFolderMove(
   const toKey = analyzeDocumentPath(toPrefix).comparisonKey
   if (!fromKey || !toKey) return aliases
   const resolve = createDocAliasResolver(aliases)
-  const keeps = (source: string) => {
+  const retires = (source: string) => {
     const key = analyzeDocumentPath(source).comparisonKey
-    if (!key || !documentPathKeyIsAtOrBelow(key, toKey)) return true
+    if (!key || !documentPathKeyIsAtOrBelow(key, toKey)) return false
     const resolved = resolve(source)
     const resolvedKey = resolved ? analyzeDocumentPath(resolved).comparisonKey : null
-    return !(resolvedKey && documentPathKeyIsAtOrBelow(resolvedKey, fromKey))
+    return Boolean(resolvedKey && documentPathKeyIsAtOrBelow(resolvedKey, fromKey))
   }
-  const keep = (entries: Record<string, string>) =>
-    Object.assign(
-      Object.create(null),
-      Object.fromEntries(Object.entries(entries).filter(([source]) => keeps(source)))
-    ) as Record<string, string>
-  return { exact: keep(aliases.exact), prefixes: keep(aliases.prefixes) }
+  const next: DocAliases = {
+    exact: Object.create(null) as Record<string, string>,
+    prefixes: Object.create(null) as Record<string, string>,
+  }
+  for (const kind of ["exact", "prefixes"] as const) {
+    for (const [source, target] of Object.entries(aliases[kind])) {
+      if (!retires(source)) next[kind][source] = target
+    }
+  }
+  for (const [retired, target] of Object.entries(aliases.prefixes)) {
+    if (!retires(retired)) continue
+    for (const kind of ["exact", "prefixes"] as const) {
+      for (const [source, inner] of Object.entries(aliases[kind])) {
+        if (!source.startsWith(`${target}/`)) continue
+        const carried = `${retired}${source.slice(target.length)}`
+        if (!(carried in next.exact) && !(carried in next.prefixes)) {
+          next[kind][carried] = inner
+        }
+      }
+    }
+  }
+  return next
 }
 
 /**

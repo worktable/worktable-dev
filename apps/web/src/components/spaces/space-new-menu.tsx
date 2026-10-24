@@ -162,27 +162,40 @@ export function SpaceNewActions({
   const picker = useRef<HTMLInputElement>(null)
 
   const uploadFiles = async (files: File[]) => {
-    try {
-      const paths: string[] = []
-      for (const file of files) {
+    const paths: string[] = []
+    let failed: File | null = null
+    for (const file of files) {
+      try {
         paths.push(await uploadFileToFolder(spaceId, folder ?? "", file))
+      } catch (err) {
+        console.error("File upload failed:", err)
+        failed = file
+        break
       }
+    }
+    // Files saved before a failure are there: list them either way.
+    if (paths.length > 0) {
       void queryClient.invalidateQueries({
         queryKey: documentQueryKeys.list(spaceId),
         exact: true,
       })
       onCreated?.()
-      if (paths.length === 1) {
-        void navigate({
-          to: "/spaces/$spaceId/documents/$",
-          params: { spaceId, _splat: paths[0]! },
-        })
-      }
-      toast.success(paths.length === 1 ? "File uploaded" : `${paths.length} files uploaded`)
-    } catch (err) {
-      toast.error("Couldn’t upload the file. Try again.")
-      console.error("File upload failed:", err)
     }
+    if (failed) {
+      toast.error(
+        paths.length === 0
+          ? "Couldn’t upload the file. Try again."
+          : `Uploaded ${paths.length} of ${files.length} files. Couldn’t upload ${failed.name}.`
+      )
+      return
+    }
+    if (paths.length === 1) {
+      void navigate({
+        to: "/spaces/$spaceId/documents/$",
+        params: { spaceId, _splat: paths[0]! },
+      })
+    }
+    toast.success(paths.length === 1 ? "File uploaded" : `${paths.length} files uploaded`)
   }
 
   // Rethrows on failure: the dialog stays open so the entered name and

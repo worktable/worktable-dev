@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useState } from "react"
 import { createFileRoute, Navigate } from "@tanstack/react-router"
 import {
   useQuery,
@@ -6,7 +6,6 @@ import {
   type QueryClient,
 } from "@tanstack/react-query"
 import { AlertTriangle, Download, FileQuestion } from "lucide-react"
-import { FilePage } from "@/components/file-page"
 import type { DocumentPage, DocumentPageResult } from "@worktable/types"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
 import { pageShareTarget, useSetPageMeta } from "@/hooks/use-page-meta"
@@ -30,6 +29,11 @@ import {
 import { documentOpenHint, type DocumentOpenHint } from "@/lib/document-rows"
 import { toast } from "@worktable/ui/components/sonner"
 import { HttpError } from "@/lib/http"
+
+// A file's page loads only when one opens, so Docs don't carry it.
+const FilePage = lazy(() =>
+  import("@/components/file-page").then((module) => ({ default: module.FilePage }))
+)
 
 /**
  * Start what opening this document reads: its content at the revision the
@@ -265,7 +269,11 @@ function DocumentPageRoute() {
   }
 
   if (page.document.format.id === "worktable.file") {
-    return <FilePage spaceId={spaceId} page={page} />
+    return (
+      <Suspense fallback={<EditorSkeleton />}>
+        <FilePage spaceId={spaceId} page={page} />
+      </Suspense>
+    )
   }
   const renderer = page.renderer ? browserDocumentRenderer(page.renderer) : null
   if (!renderer) {

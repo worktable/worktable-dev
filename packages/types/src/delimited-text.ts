@@ -32,6 +32,8 @@ export function parseDelimitedText(
   const records: string[][] = []
   let row: string[] = []
   let field = ""
+  // A quoted field was begun, though it may hold nothing: "" is a value.
+  let fieldStarted = false
   let quoted = false
   let i = 0
   while (i < source.length) {
@@ -53,23 +55,26 @@ export function parseDelimitedText(
     }
     if (character === '"' && field === "") {
       quoted = true
+      fieldStarted = true
       i += 1
     } else if (character === delimiter) {
       row.push(field)
       field = ""
+      fieldStarted = false
       i += 1
     } else if (character === "\n" || character === "\r") {
       row.push(field)
       records.push(row)
       row = []
       field = ""
+      fieldStarted = false
       i += character === "\r" && source[i + 1] === "\n" ? 2 : 1
     } else {
       field += character
       i += 1
     }
   }
-  if (field !== "" || row.length > 0) {
+  if (field !== "" || fieldStarted || row.length > 0) {
     row.push(field)
     records.push(row)
   }

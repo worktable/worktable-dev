@@ -11,6 +11,8 @@ describe("reading CSV and TSV", () => {
       ["007", " Ada, Lovelace ", 'said "hi"\nthen left'],
       ["008", "", ""],
     ])
+    // A last record that is one quoted empty value is still a record.
+    expect(parseDelimitedText('value\n""').rows).toEqual([[""]])
   })
 
   it("reads TSV by its name, and keeps ragged rows as written", () => {

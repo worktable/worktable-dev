@@ -35,12 +35,28 @@ const PREVIEW_MAX_BYTES = 5 * 1024 * 1024
 /** Rows a table shows; the rest stay in the file. */
 const TABLE_MAX_ROWS = 1000
 
+/** The file's text, or null once it passes the preview limit. */
 async function readPreviewText(url: string): Promise<string | null> {
   const response = await authenticatedFetch(url)
   if (!response.ok) throw new Error(`File read failed: ${response.status}`)
   const length = Number(response.headers.get("content-length") ?? "0")
   if (length > PREVIEW_MAX_BYTES) return null
-  return response.text()
+  // Without a length to trust, read only as far as the limit.
+  const reader = response.body?.getReader()
+  if (!reader) return response.text()
+  const decoder = new TextDecoder()
+  let text = ""
+  let bytes = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) return text + decoder.decode()
+    bytes += value.byteLength
+    if (bytes > PREVIEW_MAX_BYTES) {
+      await reader.cancel()
+      return null
+    }
+    text += decoder.decode(value, { stream: true })
+  }
 }
 
 /**
@@ -201,7 +217,9 @@ function FileContent({
         <thead>
           <tr>
             {Array.from({ length: columns }, (_, index) => (
-              <th key={index}>{table.header[index] ?? ""}</th>
+              <th key={index} className="whitespace-pre-wrap">
+                {table.header[index] ?? ""}
+              </th>
             ))}
           </tr>
         </thead>
@@ -209,7 +227,9 @@ function FileContent({
           {rows.map((row, rowIndex) => (
             <tr key={rowIndex}>
               {Array.from({ length: columns }, (_, index) => (
-                <td key={index}>{row[index] ?? ""}</td>
+                <td key={index} className="whitespace-pre-wrap">
+                  {row[index] ?? ""}
+                </td>
               ))}
             </tr>
           ))}

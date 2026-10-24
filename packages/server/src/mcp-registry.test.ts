@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
+import {
+  mkdtempSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { createWorktableMcpServer } from "./mcp/server.ts"
+import { setWorkspaceRootOverride } from "./workspace.ts"
 import {
   OPERATION_DEFINITIONS,
   type OperationId,
@@ -383,6 +392,38 @@ describe("consolidated MCP registry", () => {
 })
 
 describe("preview tool surface", () => {
+  it("names the Worktable in its instructions only on the preview surface", async () => {
+    const root = mkdtempSync(join(tmpdir(), "worktable-mcp-name-"))
+    const manifest = join(root, "worktable.workspace.json")
+    setWorkspaceRootOverride(root)
+    try {
+      writeFileSync(manifest, JSON.stringify({ name: "Studio Notes" }))
+      const instructions = async (surface?: "preview") => {
+        const server = createWorktableMcpServer({ version: "test", surface })
+        const client = new Client({ name: "instructions-test", version: "1" })
+        openClients.push(client)
+        const [clientTransport, serverTransport] =
+          InMemoryTransport.createLinkedPair()
+        await Promise.all([
+          server.connect(serverTransport),
+          client.connect(clientTransport),
+        ])
+        return client.getInstructions() ?? ""
+      }
+      expect(await instructions("preview")).toStartWith(
+          'You are connected to the Worktable "Studio Notes".\n\n'
+      )
+      expect(await instructions()).not.toContain("Studio Notes")
+      // A rename shows on the next connection.
+      writeFileSync(manifest, JSON.stringify({ name: "Field Notes" }))
+      utimesSync(manifest, new Date(), new Date(Date.now() + 5_000))
+      expect(await instructions("preview")).toContain('"Field Notes"')
+    } finally {
+      setWorkspaceRootOverride(null)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("changes only the tools with held changes and keeps the released surface as it is", async () => {
     const released = (await listTools()).tools
     const preview = (await listTools("preview")).tools

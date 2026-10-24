@@ -8,6 +8,7 @@ import { setWorkspaceRootOverride } from "./workspace.ts";
 import {
   getServerSettings,
   invalidateServerSettingsCache,
+  legacySharingPreviewSetting,
   SETTINGS_DEFAULTS,
   settingsRepairSettledForTests,
   settleRetentionPolicy,
@@ -107,11 +108,14 @@ describe("settings-store", () => {
     invalidateServerSettingsCache();
     expect(getServerSettings().editor.spellcheck).toBe(true);
     expect("sharing" in getServerSettings()).toBe(false);
+    expect(legacySharingPreviewSetting()).toBe(true);
 
     await updateServerSettings({ updates: { autoCheck: false } });
     const stored = JSON.parse(readFileSync(settingsPath(), "utf8"));
     expect(stored.sharing).toBeUndefined();
     expect(stored.editor.spellcheck).toBe(true);
+    // Remembered as first read, for the share policy settled after it.
+    expect(legacySharingPreviewSetting()).toBe(true);
     await expect(updateServerSettings({ sharing: { preview: true } } as never)).rejects.toThrow("Unknown settings group: sharing");
   });
 

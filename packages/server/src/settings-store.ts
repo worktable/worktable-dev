@@ -385,6 +385,18 @@ export function getRetentionPolicyGeneration(): number {
  * Because settings now carry the public-origin exposure signal, corrupt or
  * unreadable settings fail closed until an explicit settings write succeeds.
  */
+/**
+ * The removed sharing preview's setting, as this process first read it: the
+ * next settings write drops the group. Read once by the share links store to
+ * settle its policy (see `settleSharingPreviewPolicy`).
+ */
+let legacySharingPreview: boolean | null = null;
+
+export function legacySharingPreviewSetting(): boolean {
+  if (legacySharingPreview === null) getServerSettings();
+  return legacySharingPreview ?? false;
+}
+
 function readFromDisk(signature: string): ServerSettings {
   const file = settingsFile();
   let raw: string;
@@ -402,6 +414,8 @@ function readFromDisk(signature: string): ServerSettings {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
+    const sharing = (parsed as { sharing?: { preview?: unknown } } | null)?.sharing;
+    legacySharingPreview ??= sharing?.preview === true;
   } catch {
     // Corrupt JSON: preserve the bytes for forensics, reset to defaults, and
     // require auth until an owner successfully rewrites settings.
@@ -452,6 +466,7 @@ export function invalidateServerSettingsCache(): void {
   _cacheSignature = null;
   _cacheCheckedAt = 0;
   _failClosedInMemory = false;
+  legacySharingPreview = null;
 }
 
 /** A partial patch: any subset of the known groups and their known fields. */

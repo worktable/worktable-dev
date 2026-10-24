@@ -2275,13 +2275,24 @@ export async function deleteRegisteredDocument(options: {
     const uses = await usesAtOrBelow(options.spaceId, options.path)
     const self = uses.find((entry) => samePath(entry.path, options.path))
     if (self) {
-      const keep =
-        options.keep ??
-        uses.flatMap((entry) =>
-          !samePath(entry.path, options.path) && entry.usedBy.length > 0
-            ? [entry.path]
-            : []
-        )
+      // Named paths are matched as the catalog compares them, and one that
+      // isn't in the folder is refused rather than deleted unseen.
+      const keep = options.keep
+        ? options.keep.map((requested) => {
+            const entry = uses.find((use) => samePath(use.path, requested))
+            if (!entry) {
+              throw new DocumentWriteError(
+                "invalid",
+                `Not in this Doc's folder: ${requested}`
+              )
+            }
+            return entry.path
+          })
+        : uses.flatMap((entry) =>
+            !samePath(entry.path, options.path) && entry.usedBy.length > 0
+              ? [entry.path]
+              : []
+          )
       const folder = await deleteDocumentFolder(options.spaceId, options.path, {
         keep: keep.filter((path) => !samePath(path, options.path)),
       })

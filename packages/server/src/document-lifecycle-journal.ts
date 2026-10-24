@@ -2417,7 +2417,8 @@ function prepareSpaceOrderBatchDeleteEdit(
   blobs: Map<string, Buffer>,
   spaceRoot: string,
   spaceId: string,
-  prefix: string
+  prefix: string,
+  keep: ReadonlySet<string> = new Set()
 ): ArtifactEdit | null {
   const path = join(spaceRoot, "space.json")
   const before = readOptionalRegularFile(path, ARTIFACT_MAX_BYTES)
@@ -2440,12 +2441,21 @@ function prepareSpaceOrderBatchDeleteEdit(
   const settings = isObject(raw["settings"]) ? { ...raw["settings"] } : {}
   const order = settings["docOrder"]
   if (!Array.isArray(order)) return null
+  // What stays keeps its place, as do the folders that still hold it.
+  const keptKeys = [...keep].flatMap((kept) => {
+    const key = analyzeDocumentPath(kept).comparisonKey
+    return key ? [key] : []
+  })
   const afterOrder = order.filter((entry) => {
     const key =
       typeof entry === "string"
         ? analyzeDocumentPath(entry).comparisonKey
         : null
-    return !key || !documentPathKeyIsAtOrBelow(key, prefixKey)
+    return (
+      !key ||
+      !documentPathKeyIsAtOrBelow(key, prefixKey) ||
+      keptKeys.some((kept) => documentPathKeyIsAtOrBelow(kept, key))
+    )
   })
   if (afterOrder.length === order.length) return null
   settings["docOrder"] = afterOrder
@@ -3967,7 +3977,7 @@ async function preparePrefixDelete(
     html.length > 0
       ? prepareWidgetMetaBatchDeleteEdit(blobs, spaceRoot, html)
       : null,
-    prepareSpaceOrderBatchDeleteEdit(blobs, spaceRoot, spaceId, prefix),
+    prepareSpaceOrderBatchDeleteEdit(blobs, spaceRoot, spaceId, prefix, keep),
     await prepareInventoryBatchDeleteEdit(blobs, spaceRoot, spaceId, deletions),
     preparePrefixDeleteAliasesEdit(blobs, spaceRoot, prefix, keep),
   ].filter((edit): edit is ArtifactEdit => Boolean(edit))

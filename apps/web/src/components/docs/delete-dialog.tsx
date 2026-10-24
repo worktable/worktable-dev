@@ -63,12 +63,9 @@ export function DeleteDialog({
   const handleConfirm = async () => {
     setPending(true)
     try {
-      const keep =
-        inFolder.length > 0
-          ? keepShared
-            ? shared.map((item) => item.path)
-            : []
-          : undefined
+      // Keeping what's used elsewhere is the server's default, decided as it
+      // deletes; only clearing it sends a choice.
+      const keep = inFolder.length > 0 && !keepShared ? [] : undefined
       if (await onConfirm(keep)) onClose()
     } finally {
       setPending(false)

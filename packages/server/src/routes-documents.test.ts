@@ -41,6 +41,7 @@ import {
 import {
   getDocArchiveInfo,
   readDoc,
+  readSpace,
   setDocArchived,
   writeDoc,
   writeSpace,
@@ -1369,10 +1370,16 @@ describe("format-neutral document route", () => {
       await writeFile(join(docs, "notes", "readme", "inner.png"), "inner")
       noteSpaceChanged(spaceId)
       await recordDocAlias(spaceId, "old-shot.png", "notes/readme/shared.png", "exact")
+      const inFolderBoard = await writeWidget(
+        spaceId,
+        { ...htmlDocument(), id: "notes/readme/board", name: "Board" },
+        "<h1>Board</h1>"
+      )
+      inFolderBoard.release?.()
       await writeDoc(
         spaceId,
         "elsewhere",
-        "# Elsewhere\n\n![Shot](/old-shot.png) and [details](/notes/readme/details)",
+        "# Elsewhere\n\n![Shot](/old-shot.png) and [details](/notes/readme/details) on the [board](/notes/readme/board)",
         options
       )
       noteSpaceChanged(spaceId)
@@ -1408,6 +1415,7 @@ describe("format-neutral document route", () => {
           .sort()
       ).toEqual([
         ["notes/readme", []],
+        ["notes/readme/board", ["elsewhere"]],
         ["notes/readme/details", ["elsewhere"]],
         ["notes/readme/inner.png", ["notes/readme/details"]],
         ["notes/readme/own.png", []],
@@ -1421,9 +1429,30 @@ describe("format-neutral document route", () => {
       expect((await post("restore", { path: "notes/readme" })).status).toBe(200)
       expect((await listed()).every(([, archived]) => !archived)).toBe(true)
 
-      // Deleting it takes its folder too, except what another Doc uses.
+      // A path to keep that isn't in the folder is refused, deleting nothing.
+      expect(
+        (await post("delete", { path: "notes/readme", keep: ["notes/readme/missing.png"] }))
+          .status
+      ).toBe(400)
+      expect((await listed()).length).toBe(6)
+
+      // Deleting it takes its folder too, except what another Doc uses,
+      // which keeps its place in the Space's order.
+      const space = await readSpace(spaceId)
+      await writeSpace({
+        ...space.data!,
+        settings: {
+          ...space.data!.settings,
+          docOrder: ["notes/readme", "notes/readme/own.png", "notes/readme/shared.png"],
+        },
+      })
       expect((await post("delete", { path: "notes/readme" })).status).toBe(200)
+      expect((await readSpace(spaceId)).data?.settings["docOrder"]).toEqual([
+        "notes/readme",
+        "notes/readme/shared.png",
+      ])
       expect((await listed()).map(([path]) => path).sort()).toEqual([
+        "notes/readme/board",
         "notes/readme/details",
         "notes/readme/inner.png",
         "notes/readme/shared.png",

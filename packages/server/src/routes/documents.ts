@@ -70,6 +70,7 @@ import {
   FILE_UPLOAD_MAX_BYTES,
   FILE_UPLOAD_TOO_LARGE,
   namesAFile,
+  readLimitedBody,
   writeUploadedFile,
 } from "../file-uploads.ts"
 import { usesAtOrBelow } from "../document-uses.ts"
@@ -594,8 +595,8 @@ documentsRouter.put("/file", requireScope("documents:write"), async (c) => {
       413
     )
   }
-  const bytes = new Uint8Array(await c.req.arrayBuffer())
-  if (bytes.byteLength > FILE_UPLOAD_MAX_BYTES) {
+  const bytes = await readLimitedBody(c.req.raw, FILE_UPLOAD_MAX_BYTES)
+  if (!bytes) {
     return c.json(
       { error: FILE_UPLOAD_TOO_LARGE, code: "PAYLOAD_TOO_LARGE" },
       413

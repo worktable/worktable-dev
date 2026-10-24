@@ -14,10 +14,15 @@ import { serveFileBytes } from "../file-response.ts"
 import {
   FILE_UPLOAD_MAX_BYTES,
   FILE_UPLOAD_TOO_LARGE,
+  readLimitedBody,
   writeUploadedFile,
 } from "../file-uploads.ts"
 import { filesPreviewEnabled } from "../files-preview.ts"
-import { runWithTeamIdentity } from "../team-policy.ts"
+import {
+  assertSpaceAccess,
+  runWithTeamIdentity,
+  TeamAccessError,
+} from "../team-policy.ts"
 
 export const fileLinksRouter = new Hono()
 
@@ -52,8 +57,8 @@ fileLinksRouter.put("/:token", async (c) => {
   }
   const ticket = redeemFileTicket(c.req.param("token"), "upload")
   if (!ticket || ticket.kind !== "upload") return c.json(GONE, 410)
-  const bytes = new Uint8Array(await c.req.arrayBuffer())
-  if (bytes.byteLength > FILE_UPLOAD_MAX_BYTES) {
+  const bytes = await readLimitedBody(c.req.raw, FILE_UPLOAD_MAX_BYTES)
+  if (!bytes) {
     return c.json({ error: FILE_UPLOAD_TOO_LARGE, code: "PAYLOAD_TOO_LARGE" }, 413)
   }
   try {
@@ -89,13 +94,15 @@ fileLinksRouter.get("/:token", async (c) => {
   const ticket = redeemFileTicket(c.req.param("token"), "download")
   if (!ticket) return c.json(GONE, 410)
   try {
-    const result = await asMaker(ticket, () =>
-      readRawDocumentSource({
+    const result = await asMaker(ticket, () => {
+      // The maker may have lost the Space since making the link.
+      assertSpaceAccess(ticket.spaceId, "read")
+      return readRawDocumentSource({
         spaceId: ticket.spaceId,
         path: ticket.path,
         includeArchived: true,
       })
-    )
+    })
     if (
       result.kind === "not-found" ||
       (result.kind === "source" &&
@@ -110,6 +117,9 @@ fileLinksRouter.get("/:token", async (c) => {
       cacheForGood: false,
     })
   } catch (error) {
+    if (error instanceof TeamAccessError) {
+      return c.json({ error: "File not found.", code: "NOT_FOUND" }, 404)
+    }
     if (error instanceof DocumentSourceReadError) {
       return c.json(
         { error: "This file can't be read safely.", code: "SOURCE_UNAVAILABLE" },

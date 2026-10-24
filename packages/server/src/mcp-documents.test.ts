@@ -14,6 +14,7 @@ import {
 import { readDocument } from "./document-query.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
 import { fileLinksRouter } from "./routes/file-links.ts"
+import { readLimitedBody } from "./file-uploads.ts"
 import { invalidateSearchIndex, search } from "./search-index.ts"
 import { setDocArchived, writeDoc, writeSpace } from "./store.ts"
 import { withWidgetWriteLock} from "./widget-store.ts"
@@ -328,6 +329,18 @@ describe("file links for agents", () => {
       const bigRead = await read({ action: "read_source", spaceId, path: "data/archive.bin" })
       expect(bigRead.structuredContent).toMatchObject({ encoding: "download", byteLength: 1_500_000 })
       expect(bigRead.structuredContent).not.toHaveProperty("source")
+
+      // A body is counted as it arrives, so one without Content-Length can't
+      // run past the limit.
+      const chunked = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (let i = 0; i < 3; i++) controller.enqueue(new Uint8Array(4))
+          controller.close()
+        },
+      })
+      expect(
+        await readLimitedBody(new Request("http://x", { method: "PUT", body: chunked }), 10)
+      ).toBeNull()
 
       // Docs aren't uploaded, and an unknown token reads as an expired link.
       expect((await write({ action: "upload", spaceId, path: "notes/plan.md" })).isError).toBe(true)

@@ -25,6 +25,38 @@ export const FILE_UPLOAD_TOO_LARGE = "Files can be up to 64 MiB."
 const FILE_KEEP_BOTH_TRIES = 100
 const fileRegistry = createBuiltinDocumentFormatRegistry()
 
+/**
+ * A request body up to `max` bytes, counted as it arrives, or null past it:
+ * a sender that leaves out Content-Length, as curl does from stdin, can't
+ * make the server hold more.
+ */
+export async function readLimitedBody(
+  request: Request,
+  max: number
+): Promise<Uint8Array | null> {
+  if (!request.body) return new Uint8Array(0)
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > max) {
+      await reader.cancel()
+      return null
+    }
+    chunks.push(value)
+  }
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
+}
+
 export function fileContentHash(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("base64url")
 }

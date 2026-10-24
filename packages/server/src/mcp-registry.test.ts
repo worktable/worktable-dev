@@ -1,12 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
-import {
-  mkdtempSync,
-  rmSync,
-  utimesSync,
-  writeFileSync,
-} from "node:fs"
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createWorktableMcpServer } from "./mcp/server.ts"
@@ -411,13 +406,21 @@ describe("preview tool surface", () => {
         return client.getInstructions() ?? ""
       }
       expect(await instructions("preview")).toStartWith(
-          'You are connected to the Worktable "Studio Notes".\n\n'
+        'You are connected to the Worktable "Studio Notes".\n\n'
       )
       expect(await instructions()).not.toContain("Studio Notes")
       // A rename shows on the next connection.
       writeFileSync(manifest, JSON.stringify({ name: "Field Notes" }))
       utimesSync(manifest, new Date(), new Date(Date.now() + 5_000))
       expect(await instructions("preview")).toContain('"Field Notes"')
+      // On a team Worktable the owner's name for it doesn't reach members'
+      // agents as instructions.
+      writeFileSync(
+        manifest,
+        JSON.stringify({ name: "Field Notes", teamAccessRequired: true })
+      )
+      utimesSync(manifest, new Date(), new Date(Date.now() + 10_000))
+      expect(await instructions("preview")).not.toContain("Field Notes")
     } finally {
       setWorkspaceRootOverride(null)
       rmSync(root, { recursive: true, force: true })
@@ -467,4 +470,3 @@ describe("preview tool surface", () => {
     ).toBe("Create or update Record collection schemas and Records.")
   })
 })
-

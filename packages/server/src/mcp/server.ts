@@ -17,23 +17,33 @@ export interface WorktableMcpServerOptions {
   surface?: McpSurface
 }
 
-let namedWorktable: { path: string; mtimeMs: number; name: string } | null =
-  null
+let namedWorktable: {
+  path: string
+  mtimeMs: number
+  name: string | null
+} | null = null
 
 /**
  * The Worktable's own name, re-read only when its manifest changes. Null when
- * the manifest can't be read, so instructions then just leave the name out.
+ * the manifest can't be read, and on a team Worktable: there the owner names
+ * it and members' agents would read that name as instructions.
  */
 function worktableName(): string | null {
   const path = getWorkspaceManifestPath()
   try {
     const { mtimeMs } = statSync(path)
     if (namedWorktable?.path !== path || namedWorktable.mtimeMs !== mtimeMs) {
-      const { name } = JSON.parse(readFileSync(path, "utf8")) as {
-        name?: unknown
+      const { name, teamAccessRequired } = JSON.parse(
+        readFileSync(path, "utf8")
+      ) as { name?: unknown; teamAccessRequired?: unknown }
+      namedWorktable = {
+        path,
+        mtimeMs,
+        name:
+          typeof name === "string" && name.trim() && teamAccessRequired !== true
+            ? name.trim()
+            : null,
       }
-      if (typeof name !== "string" || !name.trim()) return null
-      namedWorktable = { path, mtimeMs, name: name.trim() }
     }
     return namedWorktable.name
   } catch {

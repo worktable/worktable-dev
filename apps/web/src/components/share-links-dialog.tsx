@@ -48,7 +48,6 @@ import { cn } from "@worktable/ui/lib/utils"
 import { LiveDataPanel } from "@/components/share-link-access"
 import { HtmlSafetyNote, InlineError } from "@/components/share-document-action"
 import { useBreadcrumbs } from "@/hooks/use-breadcrumbs"
-import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import type { PageShareTarget } from "@/hooks/use-page-meta"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { notePageLinks } from "@/lib/sharing-cache"
@@ -125,7 +124,6 @@ export function ShareLinksDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const preview = useDeploymentInfo().data?.capabilities.sharingPreview === true
   const queryClient = useQueryClient()
   const { spaceId, artifactKey: path } = target
   const shareTarget = { kind: target.kind, spaceId, path }
@@ -168,17 +166,15 @@ export function ShareLinksDialog({
   const others = links?.filter((link) => link !== defaultLink) ?? []
   const canCreate = list.data?.canCreate ?? summary.canCreate
   const passwordRequired = policy?.requirePassword ?? false
-  const liveAllowed =
-    preview && target.kind === "html" && policy?.liveLinks === true
+  const liveAllowed = target.kind === "html" && policy?.liveLinks === true
   const liveShown =
-    preview &&
     target.kind === "html" &&
     defaultLink !== null &&
     (policy?.liveLinks === true || defaultLink.grant !== undefined)
-  const commentsAllowed = preview && policy?.levels.includes("comment") === true
+  const commentsAllowed = policy?.levels.includes("comment") === true
   const commentsShown =
     defaultLink !== null &&
-    (commentsAllowed || (preview && defaultLink.level === "comment"))
+    (commentsAllowed || defaultLink.level === "comment")
   const checked =
     defaultLink && access?.linkId === defaultLink.id ? access.access : null
 
@@ -210,12 +206,8 @@ export function ShareLinksDialog({
       createShareLink({
         target: shareTarget,
         label: input.label.trim(),
-        ...(preview
-          ? {
-              level: input.comments ? "comment" : "view",
-              comments: DEFAULT_SHARE_LINK_COMMENT_SETTINGS,
-            }
-          : {}),
+        level: input.comments ? "comment" : "view",
+        comments: DEFAULT_SHARE_LINK_COMMENT_SETTINGS,
         expiresAt: shareLinkExpiresAt(input.expiry) ?? null,
         ...(input.passwordEnabled || passwordRequired
           ? { password: input.password }

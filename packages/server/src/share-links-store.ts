@@ -25,7 +25,6 @@ import { chmodSync, existsSync, mkdirSync } from "node:fs"
 import { chmod, link, mkdir, open, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { getAppDir } from "./app-storage.ts"
-import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 
 // ============================================================
@@ -172,8 +171,8 @@ const flag = (value: number): boolean | null =>
   value === 0 ? false : value === 1 ? true : null
 
 /**
- * Passwords are supported with the known hash encoding. Grants and comment
- * links need the preview; pinned versions come with later binaries. Comment
+ * Passwords are supported with the known hash encoding. Grants are for HTML
+ * links only; pinned versions come with later binaries. Comment
  * settings apply only from the comment level, but must still be ones this
  * binary knows.
  */
@@ -207,12 +206,12 @@ function storedGrant(json: string | null): { grant: LinkGrant | null; revision: 
 function servable(row: LinkRow): boolean {
   return (
     (row.kind === "doc" || row.kind === "html") &&
-    (row.level === "view" || (sharingPreviewEnabled() && row.level === "comment")) &&
+    (row.level === "view" || row.level === "comment") &&
     (row.password_hash === null ||
       supportedSharePasswordHash(row.password_hash)) &&
     Number.isSafeInteger(row.password_rev) &&
     row.password_rev >= 0 &&
-    (row.grant_json === null || (sharingPreviewEnabled() && row.kind === "html" && storedGrant(row.grant_json).grant !== null)) &&
+    (row.grant_json === null || (row.kind === "html" && storedGrant(row.grant_json).grant !== null)) &&
     row.link_key instanceof Uint8Array && row.link_key.byteLength === 32 &&
     row.pinned_version === null &&
     flag(row.accept_comments) !== null &&
@@ -1108,13 +1107,13 @@ export function documentShareLinkSummary(
         spaceId,
         documentId,
         levels.includes("view") ? 1 : 0,
-        sharingPreviewEnabled() && levels.includes("comment") ? 1 : 0,
+        levels.includes("comment") ? 1 : 0,
         SHARE_PASSWORD_HASH_GLOB,
         requirePassword ? 1 : 0,
         now
       ) ?? []
   let groups: ReturnType<typeof readGroups>
-  try { groups = readGroups(allowLive && sharingPreviewEnabled()) }
+  try { groups = readGroups(allowLive) }
   catch (error) {
     // Existing v2 stores have no live proof index until their first grant
     // is saved. Keep their static aggregate available without a read-side DDL.

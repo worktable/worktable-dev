@@ -2,7 +2,6 @@ import { Hono } from "hono"
 import { readActivityAgents, readActivityFeed } from "../activity-feed.ts"
 import { requireScope } from "../auth.ts"
 import { listPending } from "../pending.ts"
-import { sharingPreviewEnabled } from "../sharing-preview.ts"
 import { visitorCommentReader } from "../visitor-comment-access.ts"
 
 export const activityRouter = new Hono()
@@ -53,8 +52,7 @@ pendingRouter.get("/", async (c) =>
     await listPending(
       c.get("identity"),
       c.req.query("spaceId") || undefined,
-      sharingPreviewEnabled() &&
-        c.get("identity").agent === null &&
+      c.get("identity").agent === null &&
         c.get("identity").principal.type === "human" &&
         !c.get("identity").operatorVerification
         ? (spaceId) => visitorCommentReader(c, spaceId)

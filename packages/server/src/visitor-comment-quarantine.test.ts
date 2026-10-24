@@ -69,7 +69,6 @@ beforeEach(async () => {
   setAppDirOverride(appDir)
   setWorkspaceRootOverride(root)
   ensureWorkspaceManifest()
-  process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
   process.env["WORKTABLE_RECORDS_INDEX"] = "0"
   delete process.env["WORKTABLE_HOSTED"]
   delete process.env["WORKTABLE_AUTH_SERVER_URL"]
@@ -174,14 +173,6 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
       },
     },
   })
-  process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
-  try {
-    expect(await (await app.request(documentPage)).text()).not.toContain(
-      '"visitorComments'
-    )
-  } finally {
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
-  }
   const pending = await app.request("/api/pending")
   expect(pending.status).toBe(200)
   expect(await pending.json()).toMatchObject({

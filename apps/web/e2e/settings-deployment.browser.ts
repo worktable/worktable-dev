@@ -306,18 +306,18 @@ test("self-managed Settings retain local controls and normalize Account requests
     settings.getByText("Check for updates automatically", { exact: true })
   ).toBeVisible()
 
-  // The owner turns on sharing previews, and the capability follows.
-  const sharingPreview = settings.getByRole("switch", {
-    name: "Preview sharing features",
+  // The owner turns on file previews, and the capability follows.
+  const filesPreview = settings.getByRole("switch", {
+    name: "Preview file features",
   })
-  await expect(sharingPreview).not.toBeChecked()
+  await expect(filesPreview).not.toBeChecked()
   const capabilityOn = page.waitForResponse(
     async (response) =>
       new URL(response.url()).pathname === "/api/system/deployment" &&
-      (await response.json()).capabilities.sharingPreview === true
+      (await response.json()).capabilities.filesPreview === true
   )
-  await sharingPreview.click()
-  await expect(sharingPreview).toBeChecked()
+  await filesPreview.click()
+  await expect(filesPreview).toBeChecked()
   await capabilityOn
 })
 

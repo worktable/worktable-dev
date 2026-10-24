@@ -24,7 +24,6 @@ import {
   type ServerSettingsPatch,
 } from "../settings-store.ts";
 import { mcpPreviewEnvOverride } from "../mcp/surface.ts";
-import { sharingPreviewEnabled, sharingPreviewEnvOverride } from "../sharing-preview.ts";
 import { filesPreviewEnabled, filesPreviewEnvOverride } from "../files-preview.ts";
 import { noteAllSpacesChanged } from "../workspace-read-model.ts";
 import { invalidateLinkGraph } from "../link-graph.ts";
@@ -171,8 +170,6 @@ export interface DeploymentInfo {
     documentSharing: boolean;
     /** This person may see and manage share links in Settings → Links. */
     shareLinks: boolean;
-    /** Sharing features that aren't released yet are on (sharingPreviewEnabled). */
-    sharingPreview: boolean;
     /** File features that aren't released yet are on (filesPreviewEnabled). */
     filesPreview: boolean;
   };
@@ -198,7 +195,6 @@ export function getDeploymentInfo(): DeploymentInfo {
       documentSharing,
       // Without Teams the only person here is the owner.
       shareLinks: documentSharing,
-      sharingPreview: sharingPreviewEnabled(),
       filesPreview: filesPreviewEnabled(),
     },
   };
@@ -410,7 +406,6 @@ function withEnvironmentOverrides(settings: ServerSettings) {
   return {
     ...settings,
     agents: { ...settings.agents, previewToolsOverride: mcpPreviewEnvOverride() },
-    sharing: { ...settings.sharing, previewOverride: sharingPreviewEnvOverride() },
     files: { ...settings.files, previewOverride: filesPreviewEnvOverride() },
   };
 }

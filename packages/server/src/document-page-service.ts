@@ -1,4 +1,3 @@
-import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import { teamsEnabled } from "./team-database.ts"
 import { canAccessSpace } from "./team-policy.ts"
 import { extname, resolve } from "node:path"
@@ -424,7 +423,7 @@ function sharingSummary(
     const policy = currentSharingPolicy()
     const allowed =
       !policy.paused &&
-      (policy.levels.includes("view") || (sharingPreviewEnabled() && policy.levels.includes("comment"))) &&
+      (policy.levels.includes("view") || policy.levels.includes("comment")) &&
       (policy.spaces.mode === "all" || policy.spaces.spaceIds.includes(spaceId))
     const summary = allowed
       ? documentShareLinkSummary(

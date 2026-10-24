@@ -192,7 +192,6 @@ beforeEach(async () => {
   setWorkspaceRootOverride(workspaceDir)
   ensureWorkspaceManifest()
   delete process.env["WORKTABLE_HOSTED"]
-  process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
   setLinkedSharing(sharing)
   const now = new Date().toISOString()
   await writeSpace({
@@ -242,9 +241,9 @@ describe("share links", () => {
     await drainWorkspaceChanges()
     const grant = LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: ["name"], rows: { field: "visibility", op: "eq", value: "public" } } } })
     const input = { target: { kind: "html", spaceId: "space", path: "access" }, grant, observe: false }
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
-    expect((await send("POST", "/api/shares/links/access", input)).status).toBe(404)
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    saveSharingPolicy(defaultSharingPolicy(), "local:owner")
+    expect((await send("POST", "/api/shares/links/access", input)).status).toBe(400)
+    saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true }, "local:owner")
     expect((await send("POST", "/api/shares/links/access", input, agent)).status).toBe(403)
     const prepared = await send("POST", "/api/shares/links/access", input)
     expect(prepared.status).toBe(200)
@@ -531,7 +530,7 @@ describe("share links", () => {
     })
     try { expect((await bridge(created.token)).status).toBe(404) } finally { paused.mockRestore() }
     expect((await bridge(created.token)).status).toBe(403)
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    expect((await send("PUT", "/api/shares/policy", { ...policy, liveLinks: false })).status).toBe(200)
     expect((await bridge(created.token)).status).toBe(404)
     // Two real 1.5s timeout paths plus filesystem fixture setup and recovery.
   }, 10_000)
@@ -784,7 +783,6 @@ describe("share links", () => {
   })
 
   it("keeps pending legacy HTML links usable without exposing their bearer token in frames", async () => {
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     await createHtmlDocument({
       spaceId: "space",
       explicitId: "legacy",
@@ -804,7 +802,6 @@ describe("share links", () => {
       spaceId: "space",
       artifactKey: "legacy",
     })
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
     const epoch = await getWorkspaceCollaborationEpoch()
     let resume!: () => void
     const held = spyOn(
@@ -949,12 +946,6 @@ describe("share links", () => {
     )
     db.close()
     expect(await page()).toEqual({ activeLinks: 0, canCreate: true })
-
-    // Links need no preview: the page counts them without it too.
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
-    closeShareLinkStores()
-    await createLink("plan")
-    expect(await page()).toEqual({ activeLinks: 1, canCreate: true })
   })
 
   it("keeps tokens only as digests and sealed, so the store's files hold none in the clear", async () => {
@@ -1062,11 +1053,6 @@ describe("share links", () => {
     expect(await closed.json()).toMatchObject({
       code: "SHARE_LINKS_UNAVAILABLE",
     })
-
-    // With the preview off too.
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
-    closeShareLinkStores()
-    expect((await view(legacyToken)).status).toBe(404)
   })
 
   it("follows a Doc through renames and moves, and archiving ends its links for good", async () => {
@@ -1316,10 +1302,6 @@ describe("moving today's links into links v2", () => {
   const v1File = () =>
     join(appDir, "document-shares", `${workspaceCacheKey()}.json`)
 
-  // Links need no preview; the move runs at every boot without it.
-  beforeEach(() => {
-  })
-
   /** A link as an earlier version makes it, in its file. */
   async function legacyLink(
     artifactKey: string,
@@ -1329,7 +1311,6 @@ describe("moving today's links into links v2", () => {
   }
 
   it("makes no store for a Worktable whose links aren't in the shared file", async () => {
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     // Every Worktable on the machine sees the file older releases shared. One
     // whose links aren't in it gets no store, so a later recovery can still
     // restore its owner policy.
@@ -1347,7 +1328,6 @@ describe("moving today's links into links v2", () => {
   })
 
   it("moves links from the file older releases shared between Worktables", async () => {
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     await writeDoc("space", "plan", "# Plan")
     const token = "L".repeat(43)
     // A release from before each Worktable kept its own file, and no store yet.
@@ -1377,8 +1357,6 @@ describe("moving today's links into links v2", () => {
   }
 
   it("keeps their URLs working, drops links that open nothing, and leaves an empty file older binaries read", async () => {
-    // Links need no preview; the move runs at every boot without it.
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     await useHtmlStorageV2()
     await writeDoc("space", "plan", "# Plan\n\nMoved over.")
     await writeDoc("space", "retired", "# Retired")
@@ -1430,9 +1408,11 @@ describe("moving today's links into links v2", () => {
       ((await (await view(plan.token)).json()) as { projectionHtml: string })
         .projectionHtml
     ).toContain("Moved over.")
-    expect((await view(status.token)).status).toBe(200)
+    const outer = await view(status.token)
+    expect(outer.status).toBe(200)
+    const { contentTicket } = (await outer.json()) as { contentTicket: string }
     expect(
-      await (await view(status.token, "/public/share/content")).text()
+      await (await view(contentTicket, "/public/share/content")).text()
     ).toContain("Operational")
     for (const token of [retired.token, removed.token, "E".repeat(43)]) {
       expect((await view(token)).status).toBe(404)
@@ -1451,8 +1431,6 @@ describe("moving today's links into links v2", () => {
   })
 
   it("finishes a move cut short without copying or reviving links, and follows what an older binary does meanwhile", async () => {
-    // Links need no preview; the move runs at every boot without it.
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     const links: Record<string, { token: string; createdAt: string }> = {}
     for (const path of ["kept", "revoked", "stopped"]) {
       await writeDoc("space", path, `# ${path}`)
@@ -1511,8 +1489,6 @@ describe("moving today's links into links v2", () => {
   })
 
   it("keeps unreadable Spaces pending and never finalizes a failed legacy rewrite", async () => {
-    // Links need no preview; the move runs at every boot without it.
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     await writeDoc("space", "plan", "# Plan")
     const plan = await legacyLink("plan")
     await useResolvedDocumentHandle(
@@ -1551,8 +1527,6 @@ describe("moving today's links into links v2", () => {
   })
 
   it("recovers a durable legacy removal before SQLite was settled", async () => {
-    // Links need no preview; the move runs at every boot without it.
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     await writeDoc("space", "plan", "# Plan")
     const plan = await legacyLink("plan")
     await useResolvedDocumentHandle(
@@ -1586,8 +1560,6 @@ describe("moving today's links into links v2", () => {
   })
 
   it("makes a legacy link manageable after its path conflict is resolved", async () => {
-    // Links need no preview; the move runs at every boot without it.
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     await writeDoc("space", "plan", "# Plan")
     const plan = await legacyLink("plan")
     const collision = join(workspaceDir, "spaces", "space", "docs", "plan.html")
@@ -1836,42 +1808,20 @@ describe("owner policy", () => {
     expect((await policyNow()).paused).toBe(true)
   })
 
-  it("keeps settings for unreleased sharing features to the sharing preview", async () => {
+  it("applies the saved policy in full", async () => {
     await writeDoc("space", "plan", "# Plan")
     const { token } = await createLink("plan")
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
-    const previewOnly: Partial<SharingPolicy>[] = [
-      { levels: ["view", "comment"] },
-      { liveLinks: true },
-    ]
-    for (const change of previewOnly) {
-      const refused = await savePolicy(change)
-      expect(refused.status).toBe(400)
-      expect(await refused.json()).toMatchObject({
-        code: "PREVIEW_POLICY_NOT_AVAILABLE",
-      })
-    }
-
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
     expect((await savePolicy({ levels: ["comment"] })).status).toBe(200)
+    expect((await policyNow()).levels).toEqual(["comment"])
     expect((await view(token)).status).toBe(404)
-
-    // Off, the preview's settings act as their defaults and keep their
-    // values for when it is on again.
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
-    expect((await view(token)).status).toBe(200)
-    expect((await policyNow()).levels).toEqual(["view"])
-    // Requiring a password is released: it applies without the preview.
-    expect((await savePolicy({ requirePassword: true })).status).toBe(200)
-    expect((await view(token)).status).toBe(404)
-    expect((await savePolicy({ maxExpiryDays: 90 })).status).toBe(200)
-    expect((await view(token)).status).toBe(200)
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    expect(
+      (await savePolicy({ levels: ["view", "comment"], liveLinks: true })).status
+    ).toBe(200)
     expect(await policyNow()).toMatchObject({
-      levels: ["comment"],
-      maxExpiryDays: 90,
+      levels: ["view", "comment"],
+      liveLinks: true,
     })
-    expect((await view(token)).status).toBe(404)
+    expect((await view(token)).status).toBe(200)
   })
 
   it("travels in operator backups, and comes back only onto a machine with no links store", async () => {

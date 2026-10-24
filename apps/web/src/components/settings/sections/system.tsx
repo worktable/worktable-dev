@@ -314,27 +314,10 @@ function PreviewFeaturesGroup() {
         exact: true,
       }),
   }
-  const sharingOverride = settings?.sharing.previewOverride ?? null
   const filesOverride = settings?.files.previewOverride ?? null
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-col gap-3 rounded-xl card-surface p-4">
-        <SettingRow
-          label="Preview sharing features"
-          description={
-            sharingOverride === null
-              ? "Try sharing features that aren’t released yet."
-              : "Set by WORKTABLE_SHARING_PREVIEW on this server."
-          }
-        >
-          <Switch
-            checked={sharingOverride ?? settings?.sharing.preview ?? false}
-            disabled={!settings || patch.isPending || sharingOverride !== null}
-            onCheckedChange={(preview) =>
-              patch.mutate({ sharing: { preview } }, refreshCapabilities)
-            }
-          />
-        </SettingRow>
         <SettingRow
           label="Preview file features"
           description={

@@ -92,10 +92,10 @@ access where applicable. An agent authorized to write HTML can set the doc's
 permissions; these are not necessarily grants made by a human. See
 [HTML runtime](/reference/html-doc-runtime/) for the sandbox and bridge contract.
 
-## Sharing preview
+## Live tools and visitor comments
 
-The controlled sharing preview supports live tools with explicit, human-chosen
-data access. A link grants only the selected Records rows and fields, further
+Live tools read data only through explicit, human-chosen access, and only when
+the owner allows live tools in Settings → Links. A link grants only the selected Records rows and fields, further
 restricted by the document's current permissions and owner policy. It does not
 give the reader a member account or the maker's credentials. Visitor Records
 access is read only, and interface preferences stay local to the tab.
@@ -112,8 +112,8 @@ treats everything a link can read as visible to its readers.
 
 Visitor comments are stored outside the portable workspace. Agents cannot read
 them until a member passes them to the team as quoted outside input. See
-[Sharing](/guides/sharing/#sharing-preview) for link access, owner controls and
-recovery behavior. The preview is limited to selected Worktables.
+[Sharing](/guides/sharing/#live-tools-and-visitor-comments) for link access,
+owner controls and recovery behavior.
 
 ## Cloud access
 

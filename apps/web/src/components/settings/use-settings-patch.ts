@@ -31,7 +31,6 @@ export function useSettingsPatch() {
           network: { ...previous.network, ...patch.network },
           history: { ...previous.history, ...patch.history },
           agents: { ...previous.agents, ...patch.agents },
-          sharing: { ...previous.sharing, ...patch.sharing },
         })
       }
     },

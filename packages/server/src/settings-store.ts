@@ -100,14 +100,6 @@ export interface ServerSettings {
      */
     previewTools: boolean;
   };
-  sharing: {
-    /**
-     * Run the sharing features that aren't released yet. MACHINE-LOCAL;
-     * ignored on Cloud. Read it through sharingPreviewEnabled(), which applies
-     * WORKTABLE_SHARING_PREVIEW.
-     */
-    preview: boolean;
-  };
   files: {
     /**
      * Run the file features that aren't released yet: any file in a Space's
@@ -127,7 +119,6 @@ export const SETTINGS_DEFAULTS: ServerSettings = {
   // policy reads as the longest one offered, so nothing is pruned early.
   history: { retention: RETENTION_CARRIED_OVER, retentionNotice: null },
   agents: { previewTools: false },
-  sharing: { preview: false },
   files: { preview: false },
 };
 
@@ -264,9 +255,6 @@ function coerce(parsed: unknown): ServerSettings {
   const agents = (obj["agents"] && typeof obj["agents"] === "object"
     ? obj["agents"]
     : {}) as Record<string, unknown>;
-  const sharing = (obj["sharing"] && typeof obj["sharing"] === "object"
-    ? obj["sharing"]
-    : {}) as Record<string, unknown>;
   const files = (obj["files"] && typeof obj["files"] === "object"
     ? obj["files"]
     : {}) as Record<string, unknown>;
@@ -287,9 +275,6 @@ function coerce(parsed: unknown): ServerSettings {
     },
     agents: {
       previewTools: boolOr(agents["previewTools"], SETTINGS_DEFAULTS.agents.previewTools),
-    },
-    sharing: {
-      preview: boolOr(sharing["preview"], SETTINGS_DEFAULTS.sharing.preview),
     },
     files: {
       preview: boolOr(files["preview"], SETTINGS_DEFAULTS.files.preview),
@@ -476,7 +461,6 @@ export interface ServerSettingsPatch {
   network?: { publicUrl?: unknown };
   history?: { retention?: unknown };
   agents?: { previewTools?: unknown };
-  sharing?: { preview?: unknown };
   files?: { preview?: unknown };
 }
 
@@ -609,13 +593,12 @@ async function applyPatchWithResult(
     network: { ...current.network },
     history: { ...current.history },
     agents: { ...current.agents },
-    sharing: { ...current.sharing },
     files: { ...current.files },
   };
 
   const patchObj = patch as Record<string, unknown>;
   for (const key of Object.keys(patchObj)) {
-    if (key !== "updates" && key !== "editor" && key !== "network" && key !== "history" && key !== "agents" && key !== "sharing" && key !== "files") {
+    if (key !== "updates" && key !== "editor" && key !== "network" && key !== "history" && key !== "agents" && key !== "files") {
       throw new SettingsValidationError(`Unknown settings group: ${key}`);
     }
   }
@@ -674,25 +657,6 @@ async function applyPatchWithResult(
     }
     if (group["previewTools"] !== undefined) {
       next.agents.previewTools = assertBool(group["previewTools"], "agents.previewTools");
-    }
-  }
-
-  if (patch.sharing !== undefined) {
-    if (
-      !patch.sharing ||
-      typeof patch.sharing !== "object" ||
-      Array.isArray(patch.sharing)
-    ) {
-      throw new SettingsValidationError("sharing must be an object");
-    }
-    const group = patch.sharing as Record<string, unknown>;
-    for (const key of Object.keys(group)) {
-      if (key !== "preview") {
-        throw new SettingsValidationError(`Unknown sharing field: ${key}`);
-      }
-    }
-    if (group["preview"] !== undefined) {
-      next.sharing.preview = assertBool(group["preview"], "sharing.preview");
     }
   }
 

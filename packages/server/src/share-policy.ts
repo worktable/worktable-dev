@@ -1,6 +1,4 @@
 import {
-  defaultSharingPolicy,
-  SHARING_PREVIEW_POLICY_KEYS,
   type ShareLinkBlockedBy,
   type ShareLinkLevel,
   type SharingPolicy,
@@ -11,7 +9,6 @@ import {
   ShareLinksStoreError,
   type StoredShareLink,
 } from "./share-links-store.ts"
-import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import {
   accessSnapshot,
   levelAtLeast,
@@ -76,46 +73,15 @@ const SPACE_NOT_ALLOWED: ShareDecision = {
   blockedBy: "space",
 }
 
-/** Comment links are held behind the same sharing preview; use comes later. */
 const AVAILABLE_LEVELS: ReadonlySet<string> = new Set<ShareLinkLevel>(["view", "comment"])
 
 const DAY_MS = 86_400_000
 
 // ── The policy in force ──────────────────────────────────────
 
-let released: { stored: SharingPolicy; policy: SharingPolicy } | null = null
-
-/**
- * The policy as it applies now. Settings for sharing features that aren't
- * released yet count only while the sharing preview is on; turned off, they
- * act as their defaults and keep their saved values for when it is on again.
- */
-export function effectiveSharingPolicy(stored: SharingPolicy): SharingPolicy {
-  if (sharingPreviewEnabled()) return stored
-  if (released?.stored === stored) return released.policy
-  const defaults = defaultSharingPolicy()
-  const policy: SharingPolicy = { ...stored }
-  for (const key of SHARING_PREVIEW_POLICY_KEYS) {
-    Object.assign(policy, { [key]: defaults[key] })
-  }
-  released = { stored, policy }
-  return policy
-}
-
 /** The owner policy in force, read again only when it changed. */
 export function currentSharingPolicy(): SharingPolicy {
-  return effectiveSharingPolicy(readSharingPolicy().policy)
-}
-
-/**
- * Whether a policy keeps a preview-only setting away from its default. Only
- * while the sharing preview is on may an owner save one.
- */
-export function usesPreviewPolicy(policy: SharingPolicy): boolean {
-  const defaults = defaultSharingPolicy()
-  return SHARING_PREVIEW_POLICY_KEYS.some(
-    (key) => JSON.stringify(policy[key]) !== JSON.stringify(defaults[key])
-  )
+  return readSharingPolicy().policy
 }
 
 function spaceAllowed(policy: SharingPolicy, spaceId: string): boolean {
@@ -312,7 +278,6 @@ export function authorizeShareAction(
   if (
     level !== undefined &&
     (!AVAILABLE_LEVELS.has(level) ||
-      (level === "comment" && !sharingPreviewEnabled()) ||
       !policy().levels.some((allowed) => allowed === level))
   ) {
     return { allowed: false, status: 400, code: "LEVEL_NOT_AVAILABLE" }

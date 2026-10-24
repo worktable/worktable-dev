@@ -890,7 +890,6 @@ describe("team foundation", () => {
       agent: "codex",
       principal: { id: "agent:codex", type: "agent", displayName: "Codex" },
     }
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
     setLinkedSharing({
       workspaceId: "ws_synthetic",
       shareOrigin: "https://share.example.test",
@@ -1042,7 +1041,6 @@ describe("team foundation", () => {
     } finally {
       setLinkedSharing(null)
       closeShareLinkStores()
-      delete process.env["WORKTABLE_SHARING_PREVIEW"]
     }
   })
 

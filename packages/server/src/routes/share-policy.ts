@@ -1,7 +1,5 @@
 import {
-  SHARING_PREVIEW_POLICY_KEYS,
   SharingPolicyInputSchema,
-  type SharingPolicy,
   type SharingPolicyResponse,
 } from "@worktable/types"
 import { Hono, type Context } from "hono"
@@ -13,12 +11,7 @@ import {
   ShareLinksStoreError,
   type StoredSharingPolicy,
 } from "../share-links-store.ts"
-import {
-  effectiveSharingPolicy,
-  sharerOf,
-  usesPreviewPolicy,
-} from "../share-policy.ts"
-import { sharingPreviewEnabled } from "../sharing-preview.ts"
+import { sharerOf } from "../share-policy.ts"
 
 // The owner policy for share links. Mounted inside the shares router, which
 // admits only people; this router admits only owners: in Teams the Worktable
@@ -46,7 +39,7 @@ sharePolicyRouter.onError((error, c) => {
 
 function body(stored: StoredSharingPolicy): SharingPolicyResponse {
   return {
-    policy: effectiveSharingPolicy(stored.policy),
+    policy: stored.policy,
     canEdit: true,
     revision: stored.revision,
   }
@@ -76,27 +69,8 @@ sharePolicyRouter.put("/", async (c) => {
       400
     )
   }
-  let policy: SharingPolicy = input.data
-  if (!sharingPreviewEnabled()) {
-    if (usesPreviewPolicy(policy)) {
-      return c.json(
-        {
-          error: "That setting needs the sharing preview",
-          code: "PREVIEW_POLICY_NOT_AVAILABLE",
-        },
-        400
-      )
-    }
-    // Settings saved while the preview was on keep their values for when it
-    // is on again; until then they act as their defaults.
-    const saved = readSharingPolicy().policy
-    policy = { ...policy }
-    for (const key of SHARING_PREVIEW_POLICY_KEYS) {
-      Object.assign(policy, { [key]: saved[key] })
-    }
-  }
   const saved = saveSharingPolicy(
-    policy,
+    input.data,
     sharerOf(c.get("identity")).id,
     expected
   )

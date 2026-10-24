@@ -1,5 +1,4 @@
 import type { SharingPolicy } from "@worktable/types"
-import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import {
   shareTicketLinkId,
   validShareTicket,
@@ -30,11 +29,7 @@ import {
   ShareLinksStoreError,
   type StoredShareLink,
 } from "./share-links-store.ts"
-import {
-  effectiveExpiresAt,
-  effectiveSharingPolicy,
-  linkBlockedBy,
-} from "./share-policy.ts"
+import { effectiveExpiresAt, linkBlockedBy } from "./share-policy.ts"
 import { readWidgetDocument } from "./widget-store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 
@@ -82,13 +77,11 @@ export async function resolveShareLinkView(
 ): Promise<
   ShareLinkView | "unavailable" | "expired" | "password-required" | null
 > {
-  const preview = sharingPreviewEnabled()
   const frameId = options.content
     ? shareTicketLinkId(capability, "frame")
     : null
-  // With the preview, every HTML frame takes a ticket, never the bearer link.
-  // Without it, a frame may also open with the link and any unlock ticket.
-  if (options.content && preview && !frameId) return "unavailable"
+  // Every HTML frame takes a ticket, never the bearer link.
+  if (options.content && !frameId) return "unavailable"
   const found = frameId
     ? findShareLinkWithPolicy(frameId)
     : findShareLinkForView(capability)
@@ -102,7 +95,7 @@ export async function resolveShareLinkView(
       !validShareTicket(capability, found.unlockSecret, link, "frame", now))
   )
     return "unavailable"
-  const policy = effectiveSharingPolicy(found.policy)
+  const { policy } = found
   const blocked = linkBlockedBy(link, policy, now)
   if (
     link.revokedAt !== null ||
@@ -112,7 +105,7 @@ export async function resolveShareLinkView(
     return "unavailable"
   const expiresAt = effectiveExpiresAt(link, policy)
   if (expiresAt !== null && expiresAt <= now)
-    return preview ? "expired" : "unavailable"
+    return "expired"
   if (!frameId && link.hasPassword && !options.allowLocked) {
     if (
       !found.unlockSecret ||
@@ -174,8 +167,7 @@ export function shareLinkStillOpens(
     found.link.grantRevision === link.grantRevision &&
     (policyRevision === undefined || found.policyRevision === policyRevision) &&
     !(found.link.expiresAt !== null && found.link.expiresAt <= now) &&
-    linkBlockedBy(found.link, effectiveSharingPolicy(found.policy), now) ===
-      null
+    linkBlockedBy(found.link, found.policy, now) === null
   )
 }
 

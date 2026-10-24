@@ -266,15 +266,6 @@ export function defaultSharingPolicy(): SharingPolicy {
   return SharingPolicySchema.parse({})
 }
 
-/** Policy fields that keep their defaults unless the sharing preview is on. */
-export const SHARING_PREVIEW_POLICY_KEYS = [
-  "levels",
-  "liveLinks",
-  "records",
-  "recordsDefaultExpiryDays",
-  "allowComments",
-] as const satisfies readonly (keyof SharingPolicy)[]
-
 /**
  * What the share dialog needs from the owner policy; sharers who aren't
  * owners see only this. Pause, Spaces and who may share reach the dialog as

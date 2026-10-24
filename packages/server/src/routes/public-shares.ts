@@ -12,7 +12,6 @@ import {
   SHARE_UNLOCK_HEADER,
   ShareUnlockRequest,
 } from "@worktable/hosted-contract"
-import { sharingPreviewEnabled } from "../sharing-preview.ts"
 import {
   mintShareTicket,
   mintLegacyFrameTicket,
@@ -539,17 +538,10 @@ export function createPublicSharesRouter(
     if (page === "busy") return busy(c.req.raw, content, shareOrigin)
     if (!page) return unavailable(c.req.raw, content, shareOrigin)
     let response: Response
-    const preview = sharingPreviewEnabled()
-    // A password link's frame can't carry the unlock cookie to the HTML
-    // origin, so it takes a frame ticket even without the preview.
-    const frameTicket =
-      view.link.kind === "html" && (preview || view.link.hasPassword)
-    if (
-      !content &&
-      (frameTicket || (preview && view.link.level === "comment"))
-    ) {
+    const frameTicket = view.link.kind === "html"
+    if (!content && (frameTicket || view.link.level === "comment")) {
       const projection = JSON.parse(page.body)
-      if (preview && view.link.level === "comment") {
+      if (view.link.level === "comment") {
         const context = await visitorCommentNamespace()
         if (context.epoch !== view.link.workspaceEpoch)
           return unavailable(c.req.raw)
@@ -644,7 +636,7 @@ export function createPublicSharesRouter(
     )
     if (!page) return unavailable(c.req.raw)
     let response: Response
-    if (artifact.kind === "html" && sharingPreviewEnabled()) {
+    if (artifact.kind === "html") {
       const secret = shareUnlockSecret()
       if (!secret) return busy(c.req.raw, false, shareOrigin)
       const share = await resolveDocumentShare(resolved.token)
@@ -675,7 +667,7 @@ export function createPublicSharesRouter(
     if (!shareOrigin) return unavailable(c.req.raw, true)
     const capability = c.req.header(SHARE_CAPABILITY_HEADER) ?? ""
     let request = c.req.raw
-    if (sharingPreviewEnabled() && capability.startsWith("lf1.")) {
+    if (capability.startsWith("lf1.")) {
       const secret = shareUnlockSecret()
       const token = secret ? legacyFrameToken(secret, capability) : null
       if (!token) return unavailable(c.req.raw, true, shareOrigin)

@@ -119,16 +119,12 @@ function patched(link: ShareLink, body: Record<string, unknown>): ShareLink {
 
 type Mutation = { method: string; path: string; body: Record<string, unknown> }
 
-/**
- * A Cloud Worktable's link routes. Without the preview, pages carry their
- * links as they do in production.
- */
+/** A Cloud Worktable's link routes. */
 async function mockSharing(
   page: Page,
   options: {
     createGate?: Promise<void>
     sharingEnabled?: () => boolean
-    preview?: boolean
     policy?: () => Partial<ReturnType<typeof defaultSharingPolicy>>
     links?: ShareLink[]
   } = {}
@@ -144,7 +140,6 @@ async function mockSharing(
           ...cloudDeployment.capabilities,
           documentSharing: options.sharingEnabled?.() ?? true,
           shareLinks: true,
-          sharingPreview: options.preview ?? false,
         },
       },
     })
@@ -249,7 +244,6 @@ test("keeps confirmed policy saves cached and recovers a newer owner update duri
         ...cloudDeployment,
         capabilities: {
           ...cloudDeployment.capabilities,
-          sharingPreview: true,
           shareLinks: true,
         },
       },
@@ -433,15 +427,15 @@ test("creates, copies, edits and revokes Doc links from the header action", asyn
   await dialog.getByRole("button", { name: "Copy", exact: true }).click()
   expect(await clipboard()).toBe(SHARED_URL)
   expect(daysFromNow(mutations[0]?.body.expiresAt)).toBe(14)
-  // Without the preview, a link carries no level or live data, and no
-  // password unless one is set.
+  // Under the default policy, a link is view-only with no live data, and has
+  // no password unless one is set.
   expect(mutations[0]?.body).toMatchObject({
     target: { kind: "doc", spaceId: "share-browser", path: "launch-plan" },
     label: "",
+    level: "view",
   })
   expect(mutations[0]?.body).not.toHaveProperty("password")
   expect(mutations[0]?.body).not.toHaveProperty("grant")
-  expect(mutations[0]?.body).not.toHaveProperty("level")
   await dialog.getByRole("button", { name: "Done", exact: true }).click()
 
   // Opened again, the link is still there to copy, from its menu too.
@@ -520,7 +514,6 @@ test("creates and edits password links without retaining a password in the form"
   page,
 }, testInfo) => {
   let requirePassword = true
-  // Passwords need no sharing preview.
   const { mutations } = await mockSharing(page, {
     policy: () => ({ requirePassword }),
   })
@@ -632,7 +625,6 @@ for (const appearance of [
     }
     const checks: Array<Record<string, unknown>> = []
     const { mutations } = await mockSharing(page, {
-      preview: true,
       policy: () => ({ liveLinks: true }),
       links: [
         mockLink(

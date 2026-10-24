@@ -20,7 +20,6 @@ import {
   hashSharePassword,
   SharePasswordBusy,
 } from "../share-link-credentials.ts"
-import { sharingPreviewEnabled } from "../sharing-preview.ts"
 import {
   visitorCommentNamespace,
   visitorNamespaceStillCurrent,
@@ -70,8 +69,7 @@ import { canAccessSpace } from "../team-policy.ts"
 import type { TokenIdentity } from "../token-store.ts"
 
 // Share links. Mounted inside the shares router, which admits only people:
-// the Worktable owner, or in Teams a member. Live data and comment links stay
-// behind the sharing preview; passwords don't.
+// the Worktable owner, or in Teams a member.
 
 export const shareLinksRouter = new Hono()
 
@@ -158,7 +156,7 @@ function publicLink(
     createdAt: iso(link.createdAt)!,
     expiresAt: iso(effectiveExpiresAt(link, policy)),
     hasPassword: link.hasPassword,
-    ...(sharingPreviewEnabled() && link.grant ? { grant: link.grant } : {}),
+    ...(link.grant ? { grant: link.grant } : {}),
     lastUsedAt: iso(link.lastUsedAt),
     status,
     ...(status === "blocked" && blockedBy ? { blockedBy } : {}),
@@ -335,7 +333,7 @@ async function checkGrant(
   kind: string,
   policy: SharingPolicy
 ): Promise<Response | null> {
-  if (!sharingPreviewEnabled() || !policy.liveLinks || kind !== "html")
+  if (!policy.liveLinks || kind !== "html")
     return invalid(c, "Live links aren't allowed here", "LIVE_NOT_AVAILABLE")
   if (Buffer.byteLength(JSON.stringify(grant)) > 256 * 1024)
     return invalid(c, "The link's access is too large", "LINK_GRANT_INVALID")
@@ -379,7 +377,6 @@ const AccessInput = z.strictObject({
 })
 
 shareLinksRouter.post("/access", async (c) => {
-  if (!sharingPreviewEnabled()) return notFound(c)
   const body: unknown = await c.req.json().catch(() => null)
   if (Buffer.byteLength(JSON.stringify(body)) > 256 * 1024)
     return invalid(c, "This access is too large")
@@ -444,7 +441,7 @@ shareLinksRouter.post("/access", async (c) => {
     ...(currentLink ? { creatorId: currentLink.createdById } : {}),
   })
   if (!allowed.allowed) return denied(c, allowed)
-  if (!sharingPreviewEnabled() || !latest.liveLinks) return notFound(c)
+  if (!latest.liveLinks) return notFound(c)
   if (
     readSharingPolicy().revision !== revision ||
     linkDocumentGeneration(target.spaceId, target.path) !== source ||
@@ -522,7 +519,7 @@ shareLinksRouter.post("/", async (c) => {
       // Policy and membership may change during document resolution. Nothing
       // asynchronous separates this final authorization from the insert.
       const latestPolicy = currentSharingPolicy()
-      if (grant && (!sharingPreviewEnabled() || !latestPolicy.liveLinks))
+      if (grant && !latestPolicy.liveLinks)
         return { grantDenied: true }
       if (latestPolicy.requirePassword && !passwordHash)
         return { passwordDenied: true }
@@ -632,8 +629,6 @@ shareLinksRouter.patch("/:linkId", async (c) => {
   if (expiresAt !== undefined && !expiryAllowed(expiresAt, policy)) {
     return expiryTooLong(c, policy)
   }
-  if (input.data.grant !== undefined && !sharingPreviewEnabled())
-    return invalid(c, "Live links aren't available", "LIVE_NOT_AVAILABLE")
   let grantCurrent: (() => boolean) | undefined
   if (input.data.grant) {
     const path = (await readDocumentIdentities(link.spaceId)).identities.current.get(link.documentId)?.path
@@ -655,10 +650,9 @@ shareLinksRouter.patch("/:linkId", async (c) => {
         ? null
         : await hashSharePassword(input.data.password)
   const commentContext =
-    sharingPreviewEnabled() &&
-    (link.level === "comment" ||
-      input.data.level === "comment" ||
-      input.data.comments?.acceptComments === true)
+    link.level === "comment" ||
+    input.data.level === "comment" ||
+    input.data.comments?.acceptComments === true
       ? await visitorCommentNamespace()
       : null
   if (commentContext && !(await visitorNamespaceStillCurrent(commentContext)))
@@ -668,10 +662,7 @@ shareLinksRouter.patch("/:linkId", async (c) => {
   if (latest.revokedAt !== null)
     return c.json({ error: "This link was revoked", code: "LINK_REVOKED" }, 409)
   const latestPolicy = currentSharingPolicy()
-  if (
-    input.data.grant !== undefined &&
-    (!sharingPreviewEnabled() || (input.data.grant && !latestPolicy.liveLinks))
-  )
+  if (input.data.grant && !latestPolicy.liveLinks)
     return invalid(c, "Live links aren't allowed here", "LIVE_NOT_AVAILABLE")
   const latestDecision = authorizeShareAction(
     identity,

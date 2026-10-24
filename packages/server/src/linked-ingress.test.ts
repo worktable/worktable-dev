@@ -24,6 +24,7 @@ import { hashSharePassword } from "./share-link-credentials.ts"
 import {
   closeShareLinkStores,
   createShareLink,
+  ensureShareUnlockSecret,
   revokeShareLink,
   saveSharingPolicy,
 } from "./share-links-store.ts"
@@ -448,16 +449,27 @@ it("serves real MCP writes and read-only shares through a separate socket, with 
     async () => true
   )
   if (!html) throw new Error("HTML share not created")
-  const htmlRequest = () =>
+  const htmlRequest = (capability: string, path: string) =>
     createLinkedRequest({
       origin: server.url.origin,
       key,
       binding: ingress.binding,
-      grant: { kind: "share", capability: html.token },
+      grant: { kind: "share", capability },
       method: "GET",
-      path: "/public/share/content",
+      path,
     })
-  const content = await fetch(await htmlRequest())
+  // The frame opens with the ticket its page carries, never the link itself.
+  // Boot makes the secret that signs it before moving legacy links.
+  ensureShareUnlockSecret()
+  const outer = await fetch(await htmlRequest(html.token, "/public/share"))
+  expect(outer.status).toBe(200)
+  const { contentTicket } = (await outer.json()) as { contentTicket: string }
+  expect(
+    (await fetch(await htmlRequest(html.token, "/public/share/content"))).status
+  ).toBe(404)
+  const content = await fetch(
+    await htmlRequest(contentTicket, "/public/share/content")
+  )
   const markup = await content.text()
   expect(content.status).toBe(200)
   expect(markup).toContain("Local HTML")
@@ -465,28 +477,7 @@ it("serves real MCP writes and read-only shares through a separate socket, with 
   expect(content.headers.get("Content-Security-Policy")).toContain(
     "script-src 'none'"
   )
-  // Without the sharing preview, live data and visitor comments stay refused.
-  const visitor = { verified: true, key: "a".repeat(64) }
-  for (const [later, method, path] of [
-    [{ capability: html.token }, "POST", "/public/share/bridge"],
-    [{ capability: html.token, visitor }, "GET", "/public/share/comments"],
-    [{ capability: html.token, visitor }, "POST", "/public/share/comments"],
-  ] as const)
-    expect(
-      (
-        await fetch(
-          await createLinkedRequest({
-            origin: server.url.origin,
-            key,
-            binding: ingress.binding,
-            grant: { kind: "share", ...later },
-            method,
-            path,
-          })
-        )
-      ).status
-    ).toBe(403)
-  const crossPurpose = await htmlRequest()
+  const crossPurpose = await htmlRequest(html.token, "/public/share/content")
   expect(
     (
       await fetch(
@@ -562,9 +553,6 @@ it("keeps agent permissions bounded and fences revoked, replaced and draining wo
 })
 
 it("carries password unlocks and frame tickets over authenticated Link requests", async () => {
-  const previous = process.env["WORKTABLE_SHARING_PREVIEW"]
-  // Passwords need no sharing preview.
-  process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
   try {
     ingress.setSharingOrigin("https://share.example.test")
     await createHtmlDocument({
@@ -639,13 +627,12 @@ it("carries password unlocks and frame tickets over authenticated Link requests"
     expect(projection.status).toBe(200)
     const { contentTicket } = await projection.json()
     expect(contentTicket).not.toContain(token)
-    expect((await request("/public/share/content")).status).toBe(401)
     const content = await request("/public/share/content", contentTicket)
     expect(content.status).toBe(200)
     expect(await content.text()).toContain("Protected report")
     expect((await request("/public/share/content", ticket)).status).toBe(404)
-    // With the preview, a frame never opens with the link itself.
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    // A frame never opens with the link itself, unlocked or not.
+    expect((await request("/public/share/content")).status).toBe(404)
     expect((await request("/public/share/content", token, ticket)).status).toBe(
       404
     )
@@ -654,15 +641,11 @@ it("carries password unlocks and frame tickets over authenticated Link requests"
       404
     )
   } finally {
-    if (previous === undefined) delete process.env["WORKTABLE_SHARING_PREVIEW"]
-    else process.env["WORKTABLE_SHARING_PREVIEW"] = previous
     closeShareLinkStores()
   }
 }, 20_000)
 
 it("carries only signed visitor authority to comments and isolates each visitor", async () => {
-  const previous = process.env["WORKTABLE_SHARING_PREVIEW"]
-  process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
   try {
     ingress.setSharingOrigin("https://share.example.test")
     saveSharingPolicy(
@@ -792,21 +775,14 @@ it("carries only signed visitor authority to comments and isolates each visitor"
     expect(
       (await fetch(await signed("POST", visitor, undefined, expanded))).status
     ).toBe(201)
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
-    expect((await fetch(await signed("GET", visitor))).status).toBe(403)
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
     revokeShareLink(link.id, "local:owner")
     expect((await fetch(await signed("GET", visitor))).status).toBe(404)
   } finally {
-    if (previous === undefined) delete process.env["WORKTABLE_SHARING_PREVIEW"]
-    else process.env["WORKTABLE_SHARING_PREVIEW"] = previous
     closeShareLinkStores()
   }
 }, 20_000)
 
 it("carries bounded live bridge calls and reserves MCP capacity while share bodies are held", async () => {
-  const previous = process.env["WORKTABLE_SHARING_PREVIEW"]
-  process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
   const closeBodies: Array<() => void> = []
   const held: Promise<Response>[] = []
   try {
@@ -932,9 +908,6 @@ it("carries bounded live bridge calls and reserves MCP capacity while share bodi
     expect(
       (await fetch(await request(new Uint8Array(16 * 1024 + 1)))).status
     ).toBe(403)
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
-    expect((await fetch(await request())).status).toBe(403)
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
     for (let index = 0; index < 6; index++) {
       const signed = await request()
       const slow = new ReadableStream<Uint8Array>({
@@ -971,8 +944,6 @@ it("carries bounded live bridge calls and reserves MCP capacity while share bodi
   } finally {
     closeBodies.forEach((close) => close())
     await Promise.allSettled(held)
-    if (previous === undefined) delete process.env["WORKTABLE_SHARING_PREVIEW"]
-    else process.env["WORKTABLE_SHARING_PREVIEW"] = previous
     closeShareLinkStores()
   }
 }, 20_000)

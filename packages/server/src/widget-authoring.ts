@@ -1,7 +1,6 @@
 import { DRAWING_FONTS, previewFontCss } from "./preview-fonts.ts"
 import { buildWidgetShareRuntimeScript, SHARE_FONT_CSS } from "./widget-share-runtime.ts"
 import type { WidgetFile } from "@worktable/types"
-import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import { parseDocument, Parser } from "htmlparser2"
 
 export type WidgetTheme = "light" | "dark"
@@ -128,8 +127,6 @@ addEventListener is supported for interaction. Buttons default to form submissio
 
 Narrative Doc writes validate Mermaid automatically. HTML cannot reliably expose Mermaid embedded in arbitrary markup or JavaScript. worktable_mermaid action "validate" accepts raw Mermaid source, while action "preview" also returns an SVG that can be embedded.`
 
-// Live share links exist only behind the sharing preview, so the guide
-// mentions them only there.
 const HTML_GUIDE_SHARE_LINKS = `## Share links
 
 Someone can share an HTML Doc by link with people outside the team, including its live data. Visitors run the same HTML with the same SDK, read-only: records create, update and delete reject with LINK_READ_ONLY, state writes last only for that visitor's browser tab, and openDocument is unavailable. Visitors can read only the collections and fields the link grants, so handle a rejected query the way you handle a missing permission. Write one tool for members and visitors; don't detect visitors or build a separate version.`
@@ -137,8 +134,7 @@ Someone can share an HTML Doc by link with people outside the team, including it
 export function getHtmlAuthoringGuide(
   _profile: HtmlGuideProfile = "runtime"
 ): string {
-  const shareLinks = sharingPreviewEnabled() ? `\n\n${HTML_GUIDE_SHARE_LINKS}` : ""
-  return `${HTML_GUIDE_SHARED}\n\n${HTML_GUIDE_RUNTIME}${shareLinks}\n\n## Visual inspection\n\nUse worktable_html_read action "render" (or worktable_documents_read action "render") to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry the read render action, not the mutation. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
+  return `${HTML_GUIDE_SHARED}\n\n${HTML_GUIDE_RUNTIME}\n\n${HTML_GUIDE_SHARE_LINKS}\n\n## Visual inspection\n\nUse worktable_html_read action "render" (or worktable_documents_read action "render") to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry the read render action, not the mutation. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
 }
 
 function hasRecordPermission(

@@ -88,12 +88,19 @@ function fieldLabel(key: string, name: string | undefined): string {
   return words.replace(/(^|\s)\p{L}/gu, (letter) => letter.toUpperCase())
 }
 
+function filePaths(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : [value]
+  return values.filter(
+    (entry): entry is string => typeof entry === "string" && entry.length > 0
+  )
+}
+
 async function readCollection(
   spaceId: string,
   collectionId: string,
   name: string,
   schema: RecordCollectionSchema | undefined,
-  fields: Array<[string, string]>
+  fields: Array<[string, string, "document" | "file"]>
 ): Promise<Map<string, RecordReferrer[]>> {
   const byDoc = new Map<string, RecordReferrer[]>()
   if (fields.length === 0) return byDoc
@@ -102,8 +109,11 @@ async function readCollection(
   })
   for (const record of records) {
     const data = record.data as Record<string, unknown>
-    for (const [key, field] of fields) {
-      for (const path of documentPaths(data[key])) {
+    for (const [key, field, kind] of fields) {
+      // A file field names the file by its whole path, extension included.
+      const paths =
+        kind === "file" ? filePaths(data[key]) : documentPaths(data[key])
+      for (const path of paths) {
         const list = byDoc.get(path) ?? []
         if (list.some((known) => known.recordId === record.id)) continue
         list.push({
@@ -286,10 +296,12 @@ async function build(
       continue
     }
     const fields = Object.entries(collection.schema?.fields ?? {}).flatMap(
-      ([key, field]) =>
-        normalizeRecordFieldType(field.type) === "document"
-          ? [[key, fieldLabel(key, field.name)] as [string, string]]
+      ([key, field]) => {
+        const type = normalizeRecordFieldType(field.type)
+        return type === "document" || type === "file"
+          ? [[key, fieldLabel(key, field.name), type] as [string, string, "document" | "file"]]
           : []
+      }
     )
     space.collections.set(
       collection.id,

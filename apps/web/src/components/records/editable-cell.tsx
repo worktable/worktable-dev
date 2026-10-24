@@ -39,7 +39,7 @@ export function EditableCell({
       expanded={expanded}
       danglingTargets={danglingTargets}
       rowHeight={rowHeight}
-      linksDisabled={editingEnabled && (column.type === "url" || column.type === "email" || column.type === "document")}
+      linksDisabled={editingEnabled && (column.type === "url" || column.type === "email" || column.type === "document" || column.type === "file")}
     />
   )
 

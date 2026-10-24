@@ -6,6 +6,7 @@ import type { RecordFile, ResolvedDocumentReference } from "@worktable/types"
 import type { RecordFieldColumn, RowHeight } from "@/lib/records"
 import { isSafeHttpUrl, optionColorClass, recordTitle, relationIds } from "@/lib/records"
 import { documentReferencesQueryOptions } from "@/lib/docs-queries"
+import { FileTypeIcon } from "@/components/document-format-icon"
 import { useRecordCollectionSchema } from "@/lib/queries"
 
 /** Merged `expanded` maps from every loaded query page, keyed collection → id. */
@@ -158,6 +159,26 @@ export function FieldValue({
     }
     case "document":
       return <DocumentValue spaceId={spaceId} value={value} linksDisabled={linksDisabled} whole={whole} className={chipRow} />
+    case "file": {
+      const entries = (Array.isArray(value) ? value : [value]).filter(
+        (entry) => entry !== null && entry !== undefined && entry !== ""
+      )
+      if (entries.length === 0) return <span className="text-muted-foreground/40">—</span>
+      const visible = whole ? entries : entries.slice(0, 2)
+      return (
+        <span className={chipRow}>
+          {visible.map((entry, index) =>
+            typeof entry === "string" ? (
+              <FileChip key={`${index}:${entry}`} spaceId={spaceId} path={entry} linksDisabled={linksDisabled} />
+            ) : (
+              // A value that isn't a path shows as it is, so it can be fixed.
+              <span key={index} className="font-mono text-xs text-muted-foreground">{safeStringify(entry)}</span>
+            )
+          )}
+          {visible.length < entries.length && <OverflowCount count={entries.length - visible.length} />}
+        </span>
+      )
+    }
     case "person":
       return <span className={whole ? "break-words" : "truncate"}>{String(value)}</span>
     case "json":
@@ -247,6 +268,27 @@ function DocumentChip({ reference, linksDisabled, spaceId }: { reference: Resolv
     <Link
       to="/spaces/$spaceId/documents/$"
       params={{ spaceId, _splat: reference.resolvedPath }}
+      onClick={(event) => event.stopPropagation()}
+      className="transition-opacity hover:opacity-80"
+    >
+      {chip}
+    </Link>
+  )
+}
+
+function FileChip({ spaceId, path, linksDisabled }: { spaceId: string; path: string; linksDisabled: boolean }) {
+  const name = path.split("/").pop() ?? path
+  const chip = (
+    <span className="inline-flex max-w-56 items-center gap-1.5 rounded-full border border-border bg-surface-inset px-2 py-0.5 text-xs text-foreground" title={path}>
+      <FileTypeIcon name={name} className="size-3 shrink-0 text-primary-text" />
+      <span className="truncate">{name}</span>
+    </span>
+  )
+  if (linksDisabled) return chip
+  return (
+    <Link
+      to="/spaces/$spaceId/documents/$"
+      params={{ spaceId, _splat: path }}
       onClick={(event) => event.stopPropagation()}
       className="transition-opacity hover:opacity-80"
     >

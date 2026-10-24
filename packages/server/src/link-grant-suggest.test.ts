@@ -15,6 +15,7 @@ const schemas = new Map<string, RecordCollectionSchema>(
       owner: { type: "person" },
       notes: { type: "text" },
       brief: { type: "document" },
+      deck: { type: "file" },
     },
     clients: { name: { type: "text" }, email: { type: "email" } },
     orders: { region: { type: "select", values: ["eu", "us"] }, channel: { type: "select", values: ["web", "shop"] }, amount: { type: "number" }, owner: { type: "person" } },
@@ -25,6 +26,8 @@ const schemas = new Map<string, RecordCollectionSchema>(
       owner: { type: "person" },
       profile: { type: "json" },
       page: { type: "document" },
+      // A file path names a file in the Space: never shown to visitors.
+      shot: { type: "file" },
       company: { type: "relation", references: "clients" },
       vault: { type: "relation", references: "secrets" },
       kind: { type: "text" },
@@ -50,7 +53,7 @@ pick("secret");
 // What a preview saw on first load, repeats included.
 const OBSERVED = [
   { collectionId: "deals", query: { where: { region: "eu", stage: "won" }, select: ["name", "amount", "client"], orderBy: "amount", expand: { client: ["name"] } } },
-  { collectionId: "deals", query: { where: { and: [{ field: "region", op: "eq", value: "eu" }, { field: "stage", op: "eq", value: "lead" }] }, select: ["name", "brief"] } },
+  { collectionId: "deals", query: { where: { and: [{ field: "region", op: "eq", value: "eu" }, { field: "stage", op: "eq", value: "lead" }] }, select: ["name", "brief", "deck"] } },
   { collectionId: "deals", query: { select: ["client", "amount", "name"], where: { stage: "won", region: "eu" }, orderBy: [{ field: "amount" }], expand: { client: ["name"] } } },
   { collectionId: "orders", query: { where: { region: "eu" }, includeArchived: true, aggregate: { groupBy: "channel", select: { n: { fn: "count" }, total: { fn: "sum", field: "amount" } } } } },
   { collectionId: "contacts", query: {} },

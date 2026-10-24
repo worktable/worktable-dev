@@ -410,7 +410,7 @@ describe("link grants against live schemas", () => {
     await writeRecordCollectionSchema("probe-a", buildRecordCollectionSchema({
       id: "notes",
       name: "notes",
-      fields: { title: { type: "text" }, page: { type: "document" }, deal: { type: "relation", references: "deals" }, kind: { type: "text" }, later: { type: "hologram" }, constructor: { type: "text" } },
+      fields: { title: { type: "text" }, page: { type: "document" }, shot: { type: "file" }, deal: { type: "relation", references: "deals" }, kind: { type: "text" }, later: { type: "hologram" }, constructor: { type: "text" } },
     }));
     // A row condition reads a data field named like the envelope ("kind"),
     // and never the envelope itself ("updatedBy"). Showing "kind" is refused:
@@ -420,7 +420,7 @@ describe("link grants against live schemas", () => {
       collections: {
         notes: {
           rows: { and: [{ field: "deal.name", op: "eq", value: "x" }, { field: "updatedBy", op: "eq", value: "y" }, { field: "kind", op: "eq", value: "z" }, { field: "constructor", op: "contains", value: "native" }] },
-          fields: ["title", "page", "deal", "gone", "kind", "later"],
+          fields: ["title", "page", "shot", "deal", "gone", "kind", "later"],
           writes: { update: true },
         },
         missing: { fields: [] },
@@ -428,6 +428,7 @@ describe("link grants against live schemas", () => {
     });
     expect(validateLinkGrant(grant, await readLinkGrantSchemas("probe-a", grant)).map((issue) => `${issue.collectionId}: ${issue.message}`)).toEqual([
       'notes: Field "page" holds document links, which links can\'t show yet.',
+      'notes: Field "shot" holds file paths, which links can\'t show yet.',
       'notes: Field "deal" points at a collection this link doesn\'t open.',
       'notes: Field "gone" doesn\'t exist.',
       'notes: Field "kind" has a name records use for themselves, so links can\'t show it.',

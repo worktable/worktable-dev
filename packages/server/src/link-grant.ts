@@ -83,6 +83,7 @@ export function validateLinkGrant(grant: LinkGrant, schemas: ReadonlyMap<string,
       if (!spec) add(`Field "${name}" doesn't exist.`);
       else if (isRecordKey(name)) add(recordKeyIssue(name));
       else if (type === "document") add(`Field "${name}" holds document links, which links can't show yet.`);
+      else if (type === "file") add(`Field "${name}" holds file paths, which links can't show yet.`);
       // A type from a newer Worktable may hold paths or ids this one can't hide.
       else if (!RecordFieldTypeSchema.safeParse(spec.type).success) add(`Field "${name}" has a type links can't show yet.`);
       else if (type === "relation" && (!spec.references || !Object.hasOwn(grant.collections, spec.references))) {
@@ -100,7 +101,7 @@ export function validateLinkGrant(grant: LinkGrant, schemas: ReadonlyMap<string,
           else if (leaf === "data" || !field(leaf)) add(`The row condition uses "${leaf}", which isn't a field of this collection.`);
           // A row without such a field would read an inherited value instead.
           else if (leaf in Object.prototype) add(`The row condition can't use the field "${leaf}".`);
-          else if (typeOf(leaf) === "document") add(`The row condition can't use the document field "${leaf}".`);
+          else if (typeOf(leaf) === "document" || typeOf(leaf) === "file") add(`The row condition can't use the ${typeOf(leaf)} field "${leaf}".`);
         });
       } catch (error) {
         if (!(error instanceof RecordQueryShapeError)) throw error;

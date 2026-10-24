@@ -451,6 +451,18 @@ export function undeclaredFieldsError(keys: Iterable<string>, schema: RecordColl
   return `${one ? "Field" : "Fields"} ${undeclared.map((key) => `"${key}"`).join(", ")} ${one ? "is" : "are"} not in the schema of collection "${collectionId}". Check the spelling, or add ${one ? "it" : "them"} with upsert_collection first. Declared fields: ${Object.keys(schema.fields).join(", ")}.`;
 }
 
+/** A Space-relative file path: no leading slash, no .., no query or fragment. */
+function isRecordFilePath(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 4096 &&
+    !value.startsWith("/") &&
+    !/[\0?#\\]/.test(value) &&
+    value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..")
+  );
+}
+
 /** Check record data against the schema. `onlyKeys` limits the check to the
  *  fields a write changes, so an update to one field is not refused over an
  *  unrelated stored value that a later schema or a hand edit made invalid. */
@@ -461,7 +473,7 @@ function validateAgainstSchema(data: Record<string, unknown>, schema: RecordColl
     const value = data[field];
     const type = normalizeRecordFieldType(spec.type);
     const emptyRequiredSelection = Array.isArray(value) && value.length === 0 && (
-      type === "multi_select" || ((type === "relation" || type === "document") && spec.many)
+      type === "multi_select" || ((type === "relation" || type === "document" || type === "file") && spec.many)
     );
     if (spec.required && (value === undefined || value === null || value === "" || emptyRequiredSelection)) return `Missing required field: ${field}`;
     if (value === undefined || value === null) continue;
@@ -511,6 +523,17 @@ function validateAgainstSchema(data: Record<string, unknown>, schema: RecordColl
         const parsed = parseDocumentReference(entry);
         if ("error" in parsed) return `Field ${field} ${parsed.error}`;
         if (parsed.path !== entry) return `Field ${field} must use canonical document path ${parsed.path}`;
+      }
+    }
+    if (type === "file") {
+      // A file in the Space, by its path with its extension, as the file's
+      // page and every link name it.
+      const values = spec.many ? value : [value];
+      if (!Array.isArray(values)) return `Field ${field} must be ${spec.many ? "an array of file paths" : "a file path"}`;
+      for (const entry of values) {
+        if (!isRecordFilePath(entry)) {
+          return `Field ${field} must be a file path in the Space, such as design/logo.png`;
+        }
       }
     }
     if (type === "json") {
@@ -1125,19 +1148,22 @@ function recordIdFromTitle(title: string | null): string {
 
 const RECORD_ID_LENGTH = 40;
 
+/** An update with `ifData` found the record changed since it was read. */
+export const RECORD_CHANGED = "Record changed since it was read";
+
 /** A short id for a record with nothing to name it by. */
 function randomRecordId(): string {
   return `rec-${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}`;
 }
 
-export async function updateRecord(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string; strictFields?: boolean }): Promise<{ data: RecordFile | null; error: string | null }> {
+export async function updateRecord(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string; strictFields?: boolean; ifData?: Record<string, unknown> }): Promise<{ data: RecordFile | null; error: string | null }> {
   assertSpaceAccess(spaceId, "edit");
   const result = await updateRecordInner(spaceId, collectionId, recordId, patch);
   if (result.data) noteRecordActivity(spaceId, collectionId, "records.updated");
   return result;
 }
 
-async function updateRecordInner(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string; strictFields?: boolean }): Promise<{ data: RecordFile | null; error: string | null }> {
+async function updateRecordInner(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string; strictFields?: boolean; ifData?: Record<string, unknown> }): Promise<{ data: RecordFile | null; error: string | null }> {
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
   if (!isCanonicalId(recordId)) return { data: null, error: invalidIdError("record", recordId) };
@@ -1147,6 +1173,10 @@ async function updateRecordInner(spaceId: string, collectionId: string, recordId
   return withUniqueLock(spaceId, collectionId, (schema) => withStoreWriteLock(recordPath(spaceId, collectionId, recordId), async () => {
     const { data: existing, error } = await readRecord(spaceId, collectionId, recordId);
     if (error || !existing) return { data: null, error: error ?? `Record not found: ${recordId}` };
+    // `ifData`: apply only while these fields still hold what the caller read.
+    if (patch.ifData && Object.entries(patch.ifData).some(([key, value]) => JSON.stringify(existing.data[key]) !== JSON.stringify(value))) {
+      return { data: null, error: RECORD_CHANGED };
+    }
     const clash = await findUniqueClash(spaceId, collectionId, schema, patch.data ?? {}, { excludeId: recordId, onlyKeys: touched });
     if (clash) return { data: null, error: `Field ${clash.field} must be unique: record ${clash.recordId} already has this value` };
     // Data and metadata both merge key by key: a patch names what changes,

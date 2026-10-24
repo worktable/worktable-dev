@@ -22,6 +22,13 @@ import {
   syncDocAfterToolWrite,
 } from "./mcp/dispatcher.ts"
 import { docExists, writeDoc } from "./store.ts"
+import { normalizeRecordFieldType } from "@worktable/types"
+import {
+  listRecordCollections,
+  listRecords,
+  RECORD_CHANGED,
+  updateRecord,
+} from "./record-store.ts"
 
 export interface PathMove {
   from: string
@@ -393,11 +400,63 @@ export function setLinkRewriteTracker(
 }
 
 /**
+ * Records naming something that moved, in file or document fields, name it
+ * where it is now. Each record that changes is one update.
+ */
+async function rewriteRecordFields(
+  spaceId: string,
+  moved: ReadonlyMap<string, string>
+): Promise<void> {
+  for (const collection of await listRecordCollections(spaceId)) {
+    const fields = Object.entries(collection.schema?.fields ?? {}).filter(
+      ([, field]) => {
+        const type = normalizeRecordFieldType(field.type)
+        return type === "file" || type === "document"
+      }
+    )
+    if (fields.length === 0) continue
+    for (const record of await listRecords(spaceId, collection.id, {
+      includeArchived: true,
+    })) {
+      const data = record.data as Record<string, unknown>
+      const changes: Record<string, unknown> = {}
+      const before: Record<string, unknown> = {}
+      for (const [key] of fields) {
+        const value = data[key]
+        const next = Array.isArray(value)
+          ? value.map((entry) =>
+              typeof entry === "string" ? (moved.get(entry) ?? entry) : entry
+            )
+          : typeof value === "string"
+            ? (moved.get(value) ?? value)
+            : value
+        if (JSON.stringify(next) !== JSON.stringify(value)) {
+          changes[key] = next
+          before[key] = value
+        }
+      }
+      if (Object.keys(changes).length === 0) continue
+      // Only while the fields still hold what was read: an edit made since
+      // stands, and an old path in it still works through aliases.
+      const updated = await updateRecord(spaceId, collection.id, record.id, {
+        data: changes,
+        ifData: before,
+        updatedBy: "system",
+      })
+      if (updated.error && updated.error !== RECORD_CHANGED) {
+        console.warn("[links] a record was not updated after a move:", updated.error)
+      }
+    }
+  }
+}
+
+/**
  * Rewrite the links a move affected. The Docs that moved are rewritten now,
  * from their own text: the move's request waits for them, and their callers
  * get them as written. Docs elsewhere that link to or embed what moved are
  * found through the Space's link graph, a read of the whole Space, so they
- * are rewritten after the request, a Space at a time. A Doc that can't be
+ * are rewritten after the request, a Space at a time, along with Records
+ * whose file and document fields name what moved. A Doc that can't be
  * updated keeps working through aliases; the move itself has already
  * happened and is never undone here.
  */
@@ -433,12 +492,20 @@ export async function rewriteLinksAfterMove(
   return { rewritten }
 }
 
-/** Rewrite the Docs, other than those that moved, that link to what moved. */
+/**
+ * Rewrite the Docs, other than those that moved, that link to what moved,
+ * and the Records that name it.
+ */
 async function rewriteLinksTo(
   spaceId: string,
   actual: readonly PathMove[],
   moved: ReadonlyMap<string, string>
 ): Promise<void> {
+  try {
+    await rewriteRecordFields(spaceId, moved)
+  } catch (error) {
+    console.warn("[links] records were not updated after a move:", logError(error))
+  }
   // Built after the move: its links resolve through the new aliases, so a
   // moved path's sources are listed under where it is now.
   const graph = await getSpaceLinkGraph(spaceId)

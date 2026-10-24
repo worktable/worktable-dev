@@ -54,7 +54,7 @@ interface ObservedRead {
 
 /** Field types a whole-record read doesn't suggest: they name people or hold
  *  paths and free-form data. */
-const NOT_SUGGESTED_FOR_WHOLE_RECORDS = new Set(["person", "email", "document", "json"]);
+const NOT_SUGGESTED_FOR_WHOLE_RECORDS = new Set(["person", "email", "document", "file", "json"]);
 const MAX_FIELDS = 200;
 
 /**
@@ -192,7 +192,8 @@ export function suggestLinkGrant(input: {
       if (!Object.hasOwn(schema.fields, name) || isRecordKey(name)) return false;
       if (!RecordFieldTypeSchema.safeParse(schema.fields[name]!.type).success) return false;
       const type = normalizeRecordFieldType(schema.fields[name]!.type);
-      if (type === "document") return false;
+      // Document and file fields hold paths in the Space, which links don't show.
+      if (type === "document" || type === "file") return false;
       // A relation shows only where its target's rows show too.
       if (type !== "relation") return true;
       const target = relationTarget(collectionId, name);

@@ -37,6 +37,7 @@ import type {
 } from "@worktable/types"
 import { normalizeRecordFieldType, TITLE_FIELD_TYPES } from "@worktable/types"
 import { queryKeys } from "@/lib/queries"
+import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { updateRecordCollection } from "@/lib/records-api"
 import { columnLabel, fieldLabel } from "@/lib/records"
 
@@ -57,8 +58,17 @@ const EDITABLE_TYPES = [
   "multi_select",
   "relation",
   "document",
+  "file",
   "json",
 ] as const
+
+/** The types to offer: file fields come with the files preview. */
+function useOfferedTypes(current?: string): readonly string[] {
+  const filesOn = useDeploymentInfo().data?.capabilities.filesPreview ?? false
+  return filesOn || current === "file"
+    ? EDITABLE_TYPES
+    : EDITABLE_TYPES.filter((type) => type !== "file")
+}
 
 const TYPE_LABELS: Record<string, string> = {
   string: "Text (short)",
@@ -74,6 +84,7 @@ const TYPE_LABELS: Record<string, string> = {
   multi_select: "Multi-select",
   relation: "Relation",
   document: "Document",
+  file: "File",
   json: "JSON",
 }
 
@@ -120,7 +131,10 @@ function clearInapplicableMetadata(spec: RecordField): RecordField {
     values:
       type === "select" || type === "multi_select" ? spec.values : undefined,
     references: type === "relation" ? spec.references : undefined,
-    many: type === "relation" || type === "document" ? spec.many : undefined,
+    many:
+      type === "relation" || type === "document" || type === "file"
+        ? spec.many
+        : undefined,
     inverse: type === "relation" ? spec.inverse : undefined,
     onDelete: type === "relation" ? spec.onDelete : undefined,
     unit: type === "number" ? spec.unit : undefined,
@@ -518,6 +532,7 @@ function FieldRow({
 }) {
   const normalized = normalizeRecordFieldType(field.spec.type)
   const knownType = (EDITABLE_TYPES as readonly string[]).includes(normalized)
+  const offeredTypes = useOfferedTypes(normalized)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   return (
@@ -638,7 +653,7 @@ function FieldRow({
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {EDITABLE_TYPES.map((type) => (
+                    {offeredTypes.map((type) => (
                       <SelectItem key={type} value={type}>
                         {TYPE_LABELS[type]}
                       </SelectItem>
@@ -715,7 +730,9 @@ function FieldRow({
             </label>
           )}
 
-          {(normalized === "relation" || normalized === "document") && (
+          {(normalized === "relation" ||
+            normalized === "document" ||
+            normalized === "file") && (
             <label className="flex items-center gap-2 text-sm">
               <Checkbox
                 checked={field.spec.many ?? false}
@@ -724,7 +741,11 @@ function FieldRow({
                 }
               />
               Allow multiple{" "}
-              {normalized === "relation" ? "records" : "documents"}
+              {normalized === "relation"
+                ? "records"
+                : normalized === "file"
+                  ? "files"
+                  : "documents"}
             </label>
           )}
           {normalized === "relation" && (
@@ -877,6 +898,7 @@ function AddFieldRow({
   const [name, setName] = useState("")
   const [type, setType] = useState<string>("string")
   const slug = slugifyFieldKey(name)
+  const offeredTypes = useOfferedTypes()
   const finalKey = slug ? dedupeFieldKey(slug, existingKeys) : ""
 
   const add = () => {
@@ -911,7 +933,7 @@ function AddFieldRow({
             <SelectValue>{TYPE_LABELS[type]}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            {EDITABLE_TYPES.map((entry) => (
+            {offeredTypes.map((entry) => (
               <SelectItem key={entry} value={entry}>
                 {TYPE_LABELS[entry]}
               </SelectItem>

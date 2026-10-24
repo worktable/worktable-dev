@@ -189,6 +189,7 @@ import {
   noteExternalFileChange,
   setExternalFileChangeTracker,
 } from "./file-change-recorder.ts";
+import { setLinkRewriteTracker } from "./link-rewrite.ts";
 import { beginPreparedWorkspaceReplacement } from "./workspace-replacement.ts";
 import {
   calculateLocalWorkspaceContentCheckpoints,
@@ -1590,6 +1591,7 @@ export function startServer(
     flushExternalFileChanges();
   };
   setExternalFileChangeTracker(trackServerTask);
+  setLinkRewriteTracker(trackServerTask);
   const discardFailedStart = (): void => {
     startupDiscarded = true;
     watcher.stop();

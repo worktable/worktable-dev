@@ -5,6 +5,7 @@ import { noteDocumentActivity } from "./document-activity.ts"
 import { buildDocumentCatalog, type DocumentCatalog } from "./document-catalog.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
 import { hasScope } from "./token-store.ts"
+import { rewriteLinksAfterMove } from "./link-rewrite.ts"
 import {
   analyzeDocumentPath,
   documentPathKeyIsAtOrBelow,
@@ -443,13 +444,16 @@ export async function moveDocumentFolder(
             withWidgetWriteLocks(spaceId, htmlPaths, runJournal)
           )
     )
-  if (docMoves.length === 0) return underDocumentLock()
+  let result: MoveDocumentFolderResult
   try {
-    return await yjsManager.withDocPathMoveTransitions(
-      spaceId,
-      docMoves,
-      underDocumentLock
-    )
+    result =
+      docMoves.length === 0
+        ? await underDocumentLock()
+        : await yjsManager.withDocPathMoveTransitions(
+            spaceId,
+            docMoves,
+            underDocumentLock
+          )
   } catch (error) {
     // The fence refused before anything moved.
     if (error instanceof DocPathMoveConflictError) {
@@ -457,4 +461,7 @@ export async function moveDocumentFolder(
     }
     throw error
   }
+  // Outside the locks: rewriting links writes the Docs that hold them.
+  if (result.ok) await rewriteLinksAfterMove(spaceId, result.renamed)
+  return result
 }

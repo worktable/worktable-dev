@@ -45,6 +45,7 @@ import {
   moveDocumentFolder,
 } from "./document-folder-move.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
+import { rewriteLinksAfterMove } from "./link-rewrite.ts"
 
 export interface RenameOutcome {
   renamed: Array<{ from: string; to: string }>
@@ -123,7 +124,7 @@ async function renameOneDoc(
   if ((await docExists(spaceId, from)) && (await docExists(spaceId, to))) {
     return { renamed: [], error: targetExistsError(to) }
   }
-  return refuseBusyMove(() =>
+  const outcome = await refuseBusyMove(() =>
     yjsManager.withDocPathMoveTransition(spaceId, from, to, () =>
       withDocPathLock(spaceId, async () => {
         if (alone) {
@@ -140,6 +141,9 @@ async function renameOneDoc(
       })
     )
   )
+  // Outside the locks: rewriting links writes the Docs that hold them.
+  if (!outcome.error) await rewriteLinksAfterMove(spaceId, outcome.renamed)
+  return outcome
 }
 
 function targetExistsError(path: string): string {
@@ -249,13 +253,16 @@ export async function renameDocsByPrefixAndSync(
       return { renamed: [], error: targetExistsError(move.to) }
     }
   }
-  return refuseBusyMove(() =>
+  const outcome = await refuseBusyMove(() =>
     yjsManager.withDocPathMoveTransitions(spaceId, planned, () =>
       withDocPathLock(spaceId, () =>
         renameDocsByPrefixAndSyncLocked(spaceId, from, to, planned)
       )
     )
   )
+  // Outside the locks: rewriting links writes the Docs that hold them.
+  if (!outcome.error) await rewriteLinksAfterMove(spaceId, outcome.renamed)
+  return outcome
 }
 
 async function renameDocsByPrefixAndSyncLocked(

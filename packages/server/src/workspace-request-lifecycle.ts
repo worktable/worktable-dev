@@ -55,6 +55,8 @@ export function classifyWorkspaceRequest(
       return "read"
     if (verb === "GET" && pathname === "/api/linked/account/callback")
       return "write"
+    // A download link reads a file's bytes outside the API's sign-in.
+    if (pathname.startsWith("/api/file-links/")) return "read"
     if (
       verb === "GET" &&
       (pathname === "/api/profile" ||
@@ -87,6 +89,7 @@ export function classifyWorkspaceRequest(
     pathname.startsWith("/api/agent-connections/") ||
     pathname === "/api/grok-bot" ||
     pathname.startsWith("/api/grok-bot/") ||
+    pathname.startsWith("/api/file-links/") ||
     pathname === "/api/pairing" ||
     pathname.startsWith("/api/pairing/") ||
     pathname === "/api/team" ||

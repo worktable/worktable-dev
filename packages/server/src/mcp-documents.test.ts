@@ -276,6 +276,294 @@ describe("files for agents on the preview surface", () => {
   })
 })
 
+describe("importing a file into Records", () => {
+  it("proposes fields, imports chosen columns once, and writes nothing when a row is wrong", async () => {
+    const manifestPath = join(root, "worktable.workspace.json")
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>
+    await writeFile(manifestPath, `${JSON.stringify({ ...manifest, version: 2 }, null, 2)}\n`)
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    try {
+      const connected = await connect(
+        ["documents:read", "documents:write", "records:read", "records:write"],
+        "preview"
+      )
+      const write = (name: string, request: Record<string, unknown>) =>
+        connected.callTool({ name, arguments: { request } })
+      const file = { id: "worktable.file", sourceVersion: 1 }
+      expect(
+        (
+          await write("worktable_files_write", {
+            action: "create",
+            lifetime: "durable",
+            spaceId,
+            path: "research/feedback.csv",
+            format: file,
+            source: "id,code,score,note\nfb-1,007,5,Loved it\nfb-2,012,3,\n",
+          })
+        ).isError
+      ).not.toBe(true)
+
+      const proposal = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "feedback",
+        path: "research/feedback.csv",
+        dryRun: true,
+      })
+      expect(proposal.isError).not.toBe(true)
+      expect(proposal.structuredContent).toMatchObject({
+        proposal: {
+          rowCount: 2,
+          idColumn: "id",
+          idColumns: ["id", "code", "score"],
+          // The text column with the most different values names a record.
+          titleColumn: "code",
+          columns: [
+            { column: "id", field: "id", type: "text" },
+            // A leading zero would be lost as a number.
+            { column: "code", field: "code", type: "text" },
+            { column: "score", field: "score", type: "number" },
+            { column: "note", field: "note", type: "text" },
+          ],
+        },
+      })
+
+      const columns = [
+        { column: "code", field: "code", type: "text" },
+        { column: "score", field: "score", type: "number" },
+      ]
+      const imported = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "feedback",
+        path: "research/feedback.csv",
+        columns,
+        idColumn: "id",
+      })
+      expect(imported.isError).not.toBe(true)
+      expect(imported.structuredContent).toMatchObject({
+        counts: { rows: 2, created: 2, skipped: 0, failed: 0 },
+        columnsLeftOut: ["note"],
+      })
+      const again = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "feedback",
+        path: "research/feedback.csv",
+        columns,
+        idColumn: "id",
+      })
+      expect(again.structuredContent).toMatchObject({
+        counts: { created: 0, skipped: 2 },
+      })
+
+      // A value that can't be a number stops the whole import.
+      await write("worktable_files_write", {
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "research/bad.csv",
+        format: file,
+        source: "id,score,extra\nfb-3,4,x\nfb-4,high,y\n",
+      })
+      const refused = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "feedback",
+        path: "research/bad.csv",
+        columns: [
+          { column: "score", field: "score", type: "number" },
+          { column: "extra", field: "extra", type: "text" },
+        ],
+        idColumn: "id",
+      })
+      expect(refused.isError).toBe(true)
+      expect(JSON.stringify(refused.content)).toContain("Nothing was imported")
+      const schema = await readFile(
+        join(root, "spaces", spaceId, "records", "feedback", "schema.yaml"),
+        "utf8"
+      )
+      expect(schema).not.toContain("extra")
+      // A new collection's records are named by the proposed column.
+      expect(schema).toContain(`titleField: "code"`)
+
+      // Names that make one key get distinct fields; a number too long to
+      // hold exactly stays text; two columns can't fill one field; and a
+      // row without its id is refused, so a second import can't duplicate it.
+      await write("worktable_files_write", {
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "research/people.csv",
+        format: file,
+        source: "id,First Name,first_name,account\np-1,Ada,ada,9007199254740993\n,Bo,bo,1\n",
+      })
+      const people = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "people",
+        path: "research/people.csv",
+        dryRun: true,
+      })
+      expect(people.structuredContent).toMatchObject({
+        proposal: {
+          columns: [
+            { column: "id", field: "id" },
+            { column: "First Name", field: "first_name" },
+            { column: "first_name", field: "first_name_2" },
+            { column: "account", type: "text" },
+          ],
+        },
+      })
+      const clash = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "people",
+        path: "research/people.csv",
+        columns: [
+          { column: "First Name", field: "name", type: "text" },
+          { column: "first_name", field: "name", type: "text" },
+        ],
+      })
+      expect(JSON.stringify(clash.content)).toContain("both fill the field name")
+      const noId = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "people",
+        path: "research/people.csv",
+        columns: [{ column: "First Name", field: "name", type: "text" }],
+        idColumn: "id",
+      })
+      expect(JSON.stringify(noId.content)).toContain("row 2: no id in id")
+
+      // A blank line is no row; a row longer than its header, an empty
+      // column choice and a file past the row limit are refused.
+      await write("worktable_files_write", {
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "research/ragged.csv",
+        format: file,
+        source: "a,b\n1,2\n\n,\n3\n",
+      })
+      const ragged = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "ragged",
+        path: "research/ragged.csv",
+        dryRun: true,
+      })
+      expect(ragged.structuredContent).toMatchObject({ proposal: { rowCount: 2 } })
+      expect(
+        (
+          await write("worktable_records_write", {
+            action: "import",
+            spaceId,
+            collectionId: "ragged",
+            path: "research/ragged.csv",
+            columns: [],
+          })
+        ).isError
+      ).toBe(true)
+      await write("worktable_files_write", {
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "research/wide.csv",
+        format: file,
+        source: "a,b\n1,2,3\n",
+      })
+      const wide = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "wide",
+        path: "research/wide.csv",
+        dryRun: true,
+      })
+      expect(JSON.stringify(wide.content)).toContain("Row 1 has 3 values for 2 columns")
+      await write("worktable_files_write", {
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "research/long.csv",
+        format: file,
+        source: `n\n${"1\n".repeat(5001)}`,
+      })
+      const long = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "long",
+        path: "research/long.csv",
+        dryRun: true,
+      })
+      expect(JSON.stringify(long.content)).toContain("import up to 5,000 at a time")
+
+      // A repeated column name is refused; a JSONL number keeps every digit.
+      await write("worktable_files_write", {
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "research/twice.csv",
+        format: file,
+        source: "name,name\nAlice,Bob\n",
+      })
+      const twice = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "twice",
+        path: "research/twice.csv",
+        dryRun: true,
+      })
+      expect(JSON.stringify(twice.content)).toContain('two columns named \\"name\\"')
+      await write("worktable_files_write", {
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "research/accounts.jsonl",
+        format: file,
+        source: '{"account":9007199254740993,"meta":{"n":9007199254740993}}\n',
+      })
+      const accounts = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "accounts",
+        path: "research/accounts.jsonl",
+        dryRun: true,
+      })
+      expect(accounts.structuredContent).toMatchObject({
+        proposal: {
+          columns: [
+            { column: "account", type: "text" },
+            { column: "meta", type: "text" },
+          ],
+          sample: [{ account: "9007199254740993", meta: '{"n":9007199254740993}' }],
+        },
+      })
+
+      // Reading a file to import it needs documents:read as well.
+      const recordsOnly = await connect(["records:read", "records:write"], "preview")
+      const unscoped = await recordsOnly.callTool({
+        name: "worktable_records_write",
+        arguments: {
+          request: {
+            action: "import",
+            spaceId,
+            collectionId: "people",
+            path: "research/people.csv",
+            dryRun: true,
+          },
+        },
+      })
+      expect(unscoped.isError).toBe(true)
+      expect(JSON.stringify(unscoped.content)).toContain("documents:read")
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
+})
+
 describe("format-neutral document access", () => {
   // The real-I/O authoring journey shares the bounded allowance below.
   it("authors a directly added V2 HTML file through the existing agent tools", async () => {

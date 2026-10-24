@@ -172,6 +172,11 @@ import {
   readableFileSource,
 } from "./file-results.ts"
 import { withResultMedia } from "./media.ts"
+import {
+  importIntoRecords,
+  proposeImport,
+  type ImportColumn,
+} from "../records-import.ts"
 import { keepEarlierImagesAfterRestore } from "../file-history.ts"
 import { BUILTIN_DOCUMENT_FORMATS } from "../document-format-registry.ts"
 import {
@@ -1802,6 +1807,34 @@ async function _dispatchOperationInner(
         results,
         counts: { created, skipped: results.length - created - failed, failed },
       }
+    }
+    case "records.import": {
+      const spaceId = args["spaceId"] as string
+      const collectionId = args["collectionId"] as string
+      const path = args["path"] as string
+      const columns = args["columns"] as ImportColumn[] | undefined
+      if (args["dryRun"] === true || !columns) {
+        return { proposal: await proposeImport(spaceId, path, collectionId) }
+      }
+      const result = await importIntoRecords({
+        spaceId,
+        path,
+        collectionId,
+        columns,
+        ...(typeof args["idColumn"] === "string"
+          ? { idColumn: args["idColumn"] }
+          : {}),
+        ...(typeof args["titleColumn"] === "string"
+          ? { titleColumn: args["titleColumn"] }
+          : {}),
+        createdBy: actorId,
+      })
+      wsManager.broadcast(spaceId, {
+        type: "record_collection_update",
+        spaceId,
+        collectionId,
+      })
+      return result
     }
     case "records.update_many": {
       const spaceId = args["spaceId"] as string

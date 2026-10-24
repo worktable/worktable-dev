@@ -514,6 +514,42 @@ const RecordCollectionSummarySchema = z.looseObject({
   schema: PortableRecordCollectionSchema.optional(),
 })
 
+const RecordsImportColumnSchema = z.looseObject({
+  column: z.string(),
+  field: z.string(),
+  type: z.enum(["text", "number", "date", "boolean"]),
+})
+
+const RecordsImportProposalSchema = z.looseObject({
+  path: z.string(),
+  rowCount: z.number().int().nonnegative(),
+  columns: z.array(RecordsImportColumnSchema),
+  idColumn: z.string().optional(),
+  idColumns: z.array(z.string()),
+  titleColumn: z.string().optional(),
+  sample: z.array(z.record(z.string(), z.string())),
+  existingFields: z.array(z.string()).optional(),
+})
+
+const RecordsImportRowSchema = z.looseObject({
+  row: z.number().int().positive(),
+  recordId: z.string().optional(),
+  skipped: z.string().optional(),
+  error: z.string().optional(),
+})
+
+const RecordsImportOutputSchema = z.looseObject({
+  collectionId: z.string(),
+  counts: z.looseObject({
+    rows: z.number().int().nonnegative(),
+    created: z.number().int().nonnegative(),
+    skipped: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+  }),
+  rows: z.array(RecordsImportRowSchema),
+  columnsLeftOut: z.array(z.string()),
+})
+
 const RecordsCreateManyOutputSchema = z.looseObject({
   results: z.array(
     z.looseObject({
@@ -920,6 +956,10 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
   ],
   "records.update": [z.looseObject({ record: PortableRecordSchema })],
   "records.create_many": [RecordsCreateManyOutputSchema],
+  "records.import": [
+    z.looseObject({ proposal: RecordsImportProposalSchema }),
+    RecordsImportOutputSchema,
+  ],
   "records.update_many": [RecordsUpdateManyOutputSchema],
   "records.delete": [z.looseObject({ ok: z.literal(true) })],
   "annotations.list": [
@@ -1728,12 +1768,26 @@ export const PREVIEW_OUTPUT_SCHEMAS: Partial<
     ),
     counts: forActions(
       z.looseObject({
+        rows: z.number().int().nonnegative().optional(),
         created: z.number().int().nonnegative().optional(),
         skipped: z.number().int().nonnegative().optional(),
         updated: z.number().int().nonnegative().optional(),
         failed: z.number().int().nonnegative(),
       }),
-      '"create_many" or "update_many"'
+      '"create_many", "update_many" or "import"'
+    ),
+    proposal: forActions(
+      RecordsImportProposalSchema,
+      '"import" with dryRun: the file\'s columns and proposed fields'
+    ),
+    collectionId: forActions(z.string(), '"import"'),
+    rows: forActions(
+      z.array(RecordsImportRowSchema),
+      '"import": rows not created, and why'
+    ),
+    columnsLeftOut: forActions(
+      z.array(z.string()),
+      '"import": columns of the file that went into no field'
     ),
   }),
 }

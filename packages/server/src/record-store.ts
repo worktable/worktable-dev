@@ -537,6 +537,15 @@ export async function checkRecordData(
 ): Promise<string | null> {
   const { data: schema, error } = await readRecordCollectionSchema(spaceId, collectionId);
   if (error) return error;
+  return checkRecordDataWithSchema(data, schema, onlyKeys);
+}
+
+/** checkRecordData against a schema in hand, such as one not yet written. */
+export function checkRecordDataWithSchema(
+  data: Record<string, unknown>,
+  schema: RecordCollectionSchema | null,
+  onlyKeys?: ReadonlySet<string>,
+): string | null {
   const normalized = normalizeDocumentFields(data, schema, onlyKeys);
   if (normalized.error || !normalized.data) return normalized.error ?? "Invalid document field";
   return validateAgainstSchema(normalized.data, schema, onlyKeys);

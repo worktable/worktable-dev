@@ -10,10 +10,11 @@ import {
   importV1ShareLink,
   markV1SharesDrained,
   settleV1ShareLinks,
-  sharingV2Active,
+  shareLinksStoreExists,
   ensureShareUnlockSecret,
 } from "./share-links-store.ts"
 import {
+  documentSharesFileExists,
   readStoredDocumentShares,
   removeMovedDocumentShares,
   type StoredDocumentShare,
@@ -22,7 +23,7 @@ import { getSpaceArchiveInfo, readSpace } from "./store.ts"
 import { runWithoutTeamIdentity } from "./team-policy.ts"
 
 // ============================================================
-// Moving today's links into links (v2), once
+// Moving the earlier version's links into the links store
 // ============================================================
 //
 // Each share in this Worktable's file of today's links (share-store.ts)
@@ -38,9 +39,10 @@ import { runWithoutTeamIdentity } from "./team-policy.ts"
 // a move cut short finishes on the next run without duplicating a link or
 // bringing back one revoked since. A copied link counts as moving until the
 // old file, read under its lock, is seen without it; if an older binary
-// stopped it there meanwhile, it is revoked here too. The move runs at boot
-// whenever links v2 is on, so a share an older binary made since is moved
-// then; and when the owner turns the sharing preview on.
+// stopped it there meanwhile, it is revoked here too. The move runs at every
+// boot, so a share an older binary made since is moved then. A moved link's
+// token is sealed in the store (see `importV1ShareLink`), so its URL can still
+// be copied.
 
 /** A share another binary may still add while the file is read. */
 const ROUNDS = 3
@@ -85,12 +87,11 @@ onWorkspaceChange((event) => {
 })
 
 /**
- * Move today's links into the links store, unless links v2 is off. Calls
- * made while a move runs wait for it. It is the Worktable's own work, whoever
- * set it off, so it reads every Space.
+ * Move the earlier version's links into the links store. Calls made while a
+ * move runs wait for it. It is the Worktable's own work, whoever set it off,
+ * so it reads every Space.
  */
 export function drainV1ShareLinks(): Promise<void> {
-  if (!sharingV2Active()) return Promise.resolve()
   running ??= runWithoutTeamIdentity(drain).finally(() => {
     running = null
   })
@@ -98,6 +99,9 @@ export function drainV1ShareLinks(): Promise<void> {
 }
 
 async function drain(): Promise<void> {
+  // A Worktable that never shared needs no store: one made now would keep a
+  // later recovery from bringing back its owner policy.
+  if (!shareLinksStoreExists() && !documentSharesFileExists()) return
   // Legacy HTML needs a frame ticket while the asynchronous move is pending.
   // Prepare its secret before yielding; visitor GETs never create it.
   ensureShareUnlockSecret()
@@ -115,8 +119,9 @@ async function drain(): Promise<void> {
         share.workspaceEpoch !== epoch || (await moveShare(share, epoch))
       )
     }
-    // The store says links v2 is on before the file stops serving them, so
-    // a stop in between never leaves a link with neither.
+    // The store is marked before the file stops serving them, so a binary
+    // from before links were for everyone, run in between, serves them from
+    // here and never finds a link in neither place.
     markV1SharesDrained()
     if (
       await removeMovedDocumentShares(

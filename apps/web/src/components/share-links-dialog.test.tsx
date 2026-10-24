@@ -38,7 +38,7 @@ function link(overrides: Partial<ShareLink>): ShareLink {
   }
 }
 
-test("a document's links say what each allows, and only the one just made shows its URL", () => {
+test("a document's links say what each allows, and the one just made shows its URL", () => {
   const expires = new Date(Date.now() + 30 * DAY).toISOString()
   const expired = new Date(Date.now() - DAY).toISOString()
   const moved = link({
@@ -52,9 +52,9 @@ test("a document's links say what each allows, and only the one just made shows 
     status: "expired",
     canManage: false,
   })
-  const made = link({ id: "lnk_cccccccccccccccccccccc", label: "Acme" })
   const url =
     "https://share.example.test/s/ws/abcdefghijklmnopqrstuvwxyzABCDEFGH123456789"
+  const made = link({ id: "lnk_cccccccccccccccccccccc", label: "Acme", url })
 
   const html = renderToStaticMarkup(
     <ShareLinkList
@@ -76,9 +76,9 @@ test("a document's links say what each allows, and only the one just made shows 
     `BoardCan view · Expired ${formatArchiveDate(expired)} · Not opened yet`
   )
   expect(text).toContain("AcmeCan view · Not opened yet")
-  // A URL exists only in the response that made the link.
+  // The new link's URL shows under it; it can be copied again from its menu.
   expect(html.split(url)).toHaveLength(2)
-  expect(text).toContain("Copy it now. It won’t be shown again.")
+  expect(text).not.toContain("shown again")
   // Only links the reader may manage have actions.
   expect(html).toContain('aria-label="Actions for Untitled link"')
   expect(html).not.toContain('aria-label="Actions for Board"')

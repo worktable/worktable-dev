@@ -53,7 +53,6 @@ import { peekDocReferrers } from "./doc-referrers.ts"
 import {
   documentShareLinkSummary,
   ShareLinksStoreError,
-  sharingV2Active,
 } from "./share-links-store.ts"
 import { creatorMayShare, currentSharingPolicy } from "./share-policy.ts"
 import { getDocMetaView, listDocVersions, readSpace } from "./store.ts"
@@ -370,7 +369,7 @@ async function pageForHandle(
 }
 
 /**
- * The page's sharing while links v2 is on, so the page needs no request of
+ * The page's sharing, so the page needs no request of
  * its own for it: a policy revision read and an indexed aggregate, and none for a document
  * that has never had a durable id, which every link needs. Only links the
  * owner policy lets open now count as active.
@@ -381,7 +380,6 @@ function sharingSummary(
   canCreate: boolean
 ): DocumentSharingSummary | undefined {
   try {
-    if (!sharingV2Active()) return undefined
     if (handle.identity !== "durable") return { activeLinks: 0, canCreate }
     const policy = currentSharingPolicy()
     const allowed =

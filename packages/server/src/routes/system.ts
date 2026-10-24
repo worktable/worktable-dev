@@ -30,7 +30,6 @@ import { noteAllSpacesChanged } from "../workspace-read-model.ts";
 import { invalidateLinkGraph } from "../link-graph.ts";
 import { notifyWorkspaceChange } from "../workspace-events.ts";
 import { listSpaces } from "../store.ts";
-import { sharingV2Active } from "../share-links-store.ts";
 import { teamMemberForIdentity } from "../team-policy.ts";
 import { memberAccess } from "../team-access.ts";
 import { normalizePublicUrl } from "../public-origin.ts";
@@ -170,11 +169,7 @@ export interface DeploymentInfo {
     updateChecks: boolean;
     previewStatus?: boolean;
     documentSharing: boolean;
-    /**
-     * Links v2 is on and this person may see and manage share links: several
-     * per document in the share dialog, and Settings → Links. Off, the share
-     * dialog keeps today's single link.
-     */
+    /** This person may see and manage share links in Settings → Links. */
     shareLinks: boolean;
     /** Sharing features that aren't released yet are on (sharingPreviewEnabled). */
     sharingPreview: boolean;
@@ -202,7 +197,7 @@ export function getDeploymentInfo(): DeploymentInfo {
       previewStatus: !cloud,
       documentSharing,
       // Without Teams the only person here is the owner.
-      shareLinks: documentSharing && sharingV2Active(),
+      shareLinks: documentSharing,
       sharingPreview: sharingPreviewEnabled(),
       filesPreview: filesPreviewEnabled(),
     },
@@ -459,7 +454,6 @@ systemRouter.put("/settings", async (c) => {
         409,
       );
     }
-    const sharingPreviewWasOn = sharingPreviewEnabled();
     const result = await updateServerSettingsWithResult(body);
     const merged = result.settings;
     // Files on or off changes what every Space lists. Refresh as soon as the
@@ -490,12 +484,6 @@ systemRouter.put("/settings", async (c) => {
           500,
         );
       }
-    }
-    if (!sharingPreviewWasOn && sharingPreviewEnabled()) {
-      const { startV1ShareLinkDrain } = await import("../share-links-drain.ts");
-      // The response does not wait for catalog discovery or migration I/O.
-      const timer = setTimeout(() => { void startV1ShareLinkDrain(); }, 0);
-      timer.unref?.();
     }
     return c.json(withEnvironmentOverrides(merged));
   } catch (err) {

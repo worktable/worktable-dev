@@ -48,9 +48,9 @@ import {
   getShareLink,
   listDocumentShareLinks,
   listShareLinks,
+  readShareLinkTokens,
   revokeShareLink,
   ShareLinksStoreError,
-  sharingV2Active,
   updateShareLink,
   type StoredShareLink,
 } from "../share-links-store.ts"
@@ -69,21 +69,14 @@ import { teamsEnabled } from "../team-database.ts"
 import { canAccessSpace } from "../team-policy.ts"
 import type { TokenIdentity } from "../token-store.ts"
 
-// Share links (v2), behind the sharing preview until the dialog moves to
-// them. Mounted inside the shares router, which admits only people: the
-// Worktable owner, or in Teams a member.
+// Share links. Mounted inside the shares router, which admits only people:
+// the Worktable owner, or in Teams a member. Passwords, live data and comment
+// links stay behind the sharing preview.
 
 export const shareLinksRouter = new Hono()
 
 const PAGE_SIZE = 100
 const SPACE_READS_AT_ONCE = 4
-
-shareLinksRouter.use("*", async (c, next) => {
-  if (!sharingV2Active()) {
-    return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
-  }
-  return next()
-})
 
 shareLinksRouter.onError((error, c) => {
   if (error instanceof SharePasswordBusy) {
@@ -106,13 +99,40 @@ function iso(time: number | null): string | null {
   return time === null ? null : new Date(time).toISOString()
 }
 
+type SharingConfig = NonNullable<ReturnType<typeof getDocumentSharingConfig>>
+
+function shareUrl(config: SharingConfig, token: string): string {
+  return `${config.shareOrigin}/s/${encodeURIComponent(config.workspaceId)}/${token}`
+}
+
+/**
+ * The URLs of the links the reader may manage, in one read. Nobody else is
+ * given one, and a revoked link has none.
+ */
+function manageableUrls(
+  links: ReadonlyArray<{ link: StoredShareLink; canManage: boolean }>
+): Map<string, string> {
+  const config = getDocumentSharingConfig()
+  const ids = links
+    .filter(({ link, canManage }) => canManage && link.revokedAt === null)
+    .map(({ link }) => link.id)
+  if (!config || ids.length === 0) return new Map()
+  return new Map(
+    [...readShareLinkTokens(ids)].map(([id, token]) => [
+      id,
+      shareUrl(config, token),
+    ])
+  )
+}
+
 function publicLink(
   link: StoredShareLink,
   place: Place,
   canManage: boolean,
   policy: SharingPolicy,
   now = Date.now(),
-  autoPaused = false
+  autoPaused = false,
+  url?: string
 ): ShareLink {
   const level = ShareLinkLevelSchema.safeParse(link.level)
   const blockedBy =
@@ -143,6 +163,7 @@ function publicLink(
     status,
     ...(status === "blocked" && blockedBy ? { blockedBy } : {}),
     tokenHint: link.tokenHint,
+    ...(canManage && url ? { url } : {}),
     canManage,
     comments: { ...link.comments, autoPaused },
   }
@@ -232,7 +253,7 @@ function expiryOf(value: string | null | undefined): number | null | string {
   return at > Date.now() ? at : "A link must expire in the future"
 }
 
-/** The paths today's share routes accept for each kind. */
+/** The document paths a link may name, for each kind. */
 function safeTarget(target: ShareTarget): boolean {
   return ShareArtifactInput.safeParse({
     kind: target.kind,
@@ -279,18 +300,24 @@ shareLinksRouter.get("/", async (c) => {
     resolution.shareable &&
     Boolean(space && !getSpaceArchiveInfo(space))
   const now = Date.now()
+  const managed = links.map((link) => ({
+    link,
+    canManage: authorizeShareAction(identity, "manage", spaceId, {
+      policy,
+      creatorId: link.createdById,
+    }).allowed,
+  }))
+  const urls = manageableUrls(managed)
   const body: DocumentShareLinks = {
-    links: links.map((link) =>
+    links: managed.map(({ link, canManage }) =>
       publicLink(
         link,
         resolution.place,
-        authorizeShareAction(identity, "manage", spaceId, {
-          policy,
-          creatorId: link.createdById,
-        }).allowed,
+        canManage,
         policy,
         now,
-        pauses.get(link.id) === "spike"
+        pauses.get(link.id) === "spike",
+        urls.get(link.id)
       )
     ),
     canCreate,
@@ -567,10 +594,18 @@ shareLinksRouter.post("/", async (c) => {
     )
     return notFound(c)
   }
-  const { config } = created
+  const url = shareUrl(created.config, created.token)
   const body: CreatedShareLink = {
-    link: publicLink(created.link, created.place, true, currentSharingPolicy()),
-    url: `${config.shareOrigin}/s/${encodeURIComponent(config.workspaceId)}/${created.token}`,
+    link: publicLink(
+      created.link,
+      created.place,
+      true,
+      currentSharingPolicy(),
+      Date.now(),
+      false,
+      url
+    ),
+    url,
   }
   if (created.link.level === "comment")
     notifyVisitorComments(
@@ -712,7 +747,8 @@ shareLinksRouter.patch("/:linkId", async (c) => {
       true,
       currentSharingPolicy(),
       Date.now(),
-      pauses.get(updated.id) === "spike"
+      pauses.get(updated.id) === "spike",
+      manageableUrls([{ link: updated, canManage: true }]).get(updated.id)
     ),
   })
 })
@@ -787,22 +823,28 @@ shareLinksRouter.get("/all", async (c) => {
   const visibleIds = new Set(stillVisible.map((space) => space.id))
   const policy = currentSharingPolicy()
   const now = Date.now()
+  const managed = page.links
+    .filter((link) => stillEverything || visibleIds.has(link.spaceId))
+    .map((link) => ({
+      link,
+      canManage: authorizeShareAction(identity, "manage", link.spaceId, {
+        policy,
+        creatorId: link.createdById,
+      }).allowed,
+    }))
+  const urls = manageableUrls(managed)
   const body: ShareLinksPage = {
-    links: page.links
-      .filter((link) => stillEverything || visibleIds.has(link.spaceId))
-      .map((link) =>
-        publicLink(
-          link,
-          places.get(link.id) ?? null,
-          authorizeShareAction(identity, "manage", link.spaceId, {
-            policy,
-            creatorId: link.createdById,
-          }).allowed,
-          policy,
-          now,
-          pauses.get(link.id) === "spike"
-        )
-      ),
+    links: managed.map(({ link, canManage }) =>
+      publicLink(
+        link,
+        places.get(link.id) ?? null,
+        canManage,
+        policy,
+        now,
+        pauses.get(link.id) === "spike",
+        urls.get(link.id)
+      )
+    ),
     nextCursor: page.nextCursor,
     spaces: stillVisible.map((space) => ({ id: space.id, name: space.name })),
   }

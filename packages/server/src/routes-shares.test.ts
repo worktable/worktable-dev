@@ -1,4 +1,3 @@
-import { writeManagedFixtureHtml as writeWidget } from "./fixtures/managed-content.ts"
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { Hono } from "hono"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
@@ -7,26 +6,21 @@ import { join } from "node:path"
 import { gunzipSync } from "node:zlib"
 import { ACTOR_HEADERS, GATEWAY_HEADER } from "@worktable/hosted-contract"
 import { JSDOM } from "jsdom"
-import {
-  drainWorkspaceChanges,
-  notifyWorkspaceChangeAndWaitOrThrow,
-} from "./workspace-events.ts"
+import type { CreatedShareLink, DocumentShareLinks } from "@worktable/types"
 import { setAppDirOverride } from "./app-storage.ts"
 import { renameDocAndSync } from "./doc-rename.ts"
+import { ownerIdentity } from "./auth.ts"
 import { gatewayAdmits } from "./hosted.ts"
 import { publicSharesRouter } from "./routes/public-shares.ts"
 import { sharesRouter } from "./routes/shares.ts"
 import { setSpaceArchived, writeDoc, writeSpace } from "./store.ts"
-import {
-  setWidgetArchived,
-  updateWidgetMetadata,
-  } from "./widget-store.ts"
+import { closeShareLinkStores } from "./share-links-store.ts"
+import { setWidgetArchived, updateWidgetMetadata } from "./widget-store.ts"
 import { createHtmlDocument } from "./html-document-create.ts"
 import {
   ensureWorkspaceManifest,
   setWorkspaceRootOverride,
 } from "./workspace.ts"
-import { WorkspaceWatcher } from "./watcher.ts"
 
 const originalEnv = { ...process.env }
 const gatewaySecret = "g".repeat(43)
@@ -39,6 +33,13 @@ function app(): Hono {
     if (!gatewayAdmits(c.req.raw)) {
       return c.json({ error: "Forbidden" }, 403)
     }
+    // As the app's auth sets it for a signed-in browser person.
+    const actor = c.req.header(ACTOR_HEADERS.ID)
+    if (actor)
+      c.set("identity", {
+        ...ownerIdentity(),
+        principal: { id: actor, type: "human", displayName: "Owner" },
+      })
     return proceed()
   })
   next.route("/api/shares", sharesRouter)
@@ -59,25 +60,55 @@ function admittedHeaders(owner = false): HeadersInit {
   }
 }
 
+type Artifact = { kind: "doc" | "html"; spaceId: string; artifactKey: string }
+
 async function ownerRequest(
   method: string,
-  artifact: { kind: "doc" | "html"; spaceId: string; artifactKey: string }
+  path: string,
+  body?: unknown,
+  owner = true
 ): Promise<Response> {
-  const query = new URLSearchParams(artifact)
-  const request =
-    method === "GET"
-      ? new Request(`http://tenant/api/shares?${query}`, {
-          headers: admittedHeaders(true),
-        })
-      : new Request("http://tenant/api/shares", {
-          method,
-          headers: {
-            ...admittedHeaders(true),
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(artifact),
-        })
-  return app().fetch(request)
+  return app().fetch(
+    new Request(`http://tenant/api/shares/links${path}`, {
+      method,
+      headers: {
+        ...admittedHeaders(owner),
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    })
+  )
+}
+
+function target(artifact: Artifact) {
+  return {
+    kind: artifact.kind,
+    spaceId: artifact.spaceId,
+    path: artifact.artifactKey,
+  }
+}
+
+async function createLink(
+  artifact: Artifact,
+  extra: Record<string, unknown> = {}
+): Promise<Response> {
+  return ownerRequest("POST", "", { target: target(artifact), ...extra })
+}
+
+async function created(
+  artifact: Artifact
+): Promise<CreatedShareLink & { token: string }> {
+  const response = await createLink(artifact)
+  expect(response.status).toBe(201)
+  const body = (await response.json()) as CreatedShareLink
+  return { ...body, token: body.url.split("/").at(-1)! }
+}
+
+async function documentLinks(artifact: Artifact): Promise<DocumentShareLinks> {
+  const query = new URLSearchParams(target(artifact))
+  return (await (
+    await ownerRequest("GET", `?${query}`)
+  ).json()) as DocumentShareLinks
 }
 
 async function publicRequest(
@@ -113,6 +144,8 @@ beforeEach(async () => {
   process.env["WORKTABLE_SHARE_BASE_URL"] = "https://share.worktable.cloud"
   process.env["WORKTABLE_HTML_SHARE_BASE_URL"] =
     "https://html.worktable-usercontent.com"
+  // Links are for everyone; Cloud leaves the sharing preview off.
+  delete process.env["WORKTABLE_SHARING_PREVIEW"]
   const now = new Date().toISOString()
   await writeSpace({
     type: "worktable.space",
@@ -127,6 +160,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  closeShareLinkStores()
   setAppDirOverride(null)
   setWorkspaceRootOverride(null)
   process.env = { ...originalEnv }
@@ -136,8 +170,9 @@ afterEach(async () => {
   ])
 })
 
+
 describe("Cloud document share HTTP boundary", () => {
-  it("creates a Doc link, serves the latest save anonymously, and permanently stops it", async () => {
+  it("creates a Doc link, serves the latest save anonymously, copies it again, and permanently stops it", async () => {
     const artifact = {
       kind: "doc" as const,
       spaceId: "space",
@@ -149,28 +184,22 @@ describe("Cloud document share HTTP boundary", () => {
       `# First\n\nPrivate notes.\n\n${"Shared detail. ".repeat(80)}`
     )
 
-    const forbidden = await app().fetch(
-      new Request("http://tenant/api/shares", {
-        method: "POST",
-        headers: {
-          ...admittedHeaders(),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(artifact),
-      })
+    const forbidden = await ownerRequest(
+      "POST",
+      "",
+      { target: target(artifact) },
+      false
     )
     expect(forbidden.status).toBe(403)
 
-    const created = await ownerRequest("POST", artifact)
-    expect(created.status).toBe(201)
-    expect(created.headers.get("Cache-Control")).toBe("no-store")
-    const createdBody = (await created.json()) as {
-      share: { url: string; createdAt: string }
-    }
-    expect(createdBody.share.url).toMatch(
+    const response = await createLink(artifact)
+    expect(response.status).toBe(201)
+    expect(response.headers.get("Cache-Control")).toBe("no-store")
+    const link = (await response.json()) as CreatedShareLink
+    expect(link.url).toMatch(
       /^https:\/\/share\.worktable\.cloud\/s\/workspace_cloud_123\/[A-Za-z0-9_-]{43}$/
     )
-    const token = createdBody.share.url.split("/").at(-1)!
+    const token = link.url.split("/").at(-1)!
 
     const first = await publicRequest(token)
     expect(first.status).toBe(200)
@@ -180,7 +209,7 @@ describe("Cloud document share HTTP boundary", () => {
       title: string
       projectionHtml: string
     }
-    expect(firstProjection.title).toBe("launch plan")
+    expect(firstProjection.title).toBe("First")
     expect(firstProjection.projectionHtml).toContain("Private notes.")
     const firstPage = new JSDOM(firstProjection.projectionHtml).window.document
     expect(
@@ -214,141 +243,77 @@ describe("Cloud document share HTTP boundary", () => {
     }
     expect(latestProjection.projectionHtml).toContain("Latest save.")
 
-    expect((await ownerRequest("DELETE", artifact)).status).toBe(200)
+    // Its URL can be copied again later, by the owner who manages it.
+    closeShareLinkStores()
+    expect((await documentLinks(artifact)).links).toEqual([
+      expect.objectContaining({ id: link.link.id, url: link.url }),
+    ])
+
+    expect(
+      (await ownerRequest("DELETE", `/${link.link.id}`)).status
+    ).toBe(200)
     const stopped = await publicRequest(token)
     expect(stopped.status).toBe(404)
     expect(await stopped.text()).toBe("")
 
-    const reshared = (await (await ownerRequest("POST", artifact)).json()) as {
-      share: { url: string }
-    }
-    expect(reshared.share.url).not.toBe(createdBody.share.url)
+    const reshared = await created(artifact)
+    expect(reshared.url).not.toBe(link.url)
     expect((await publicRequest(token)).status).toBe(404)
   })
 
-  it("invalidates a Doc path share on rename and gives malformed tokens the same page", async () => {
+  it("keeps passwords, comment links and live data behind the sharing preview", async () => {
+    const doc = { kind: "doc" as const, spaceId: "space", artifactKey: "plan" }
+    await writeDoc(doc.spaceId, doc.artifactKey, "# Plan")
+    const refused = async (extra: Record<string, unknown>, code: string) => {
+      const response = await createLink(doc, extra)
+      expect(response.status).toBe(400)
+      expect(await response.json()).toMatchObject({ code })
+    }
+    await refused({ password: "test-only password" }, "PASSWORD_NOT_AVAILABLE")
+    await refused({ level: "comment" }, "LEVEL_NOT_AVAILABLE")
+    await refused(
+      {
+        grant: {
+          version: 1,
+          collections: {},
+          limits: { rowsPerQuery: 200, queriesPerMinute: 120, rowsPerHour: 10_000 },
+          state: "visitor",
+        },
+      },
+      "LIVE_NOT_AVAILABLE"
+    )
+    const link = await created(doc)
+    expect(
+      (await ownerRequest("PATCH", `/${link.link.id}`, { password: "test-only password" }))
+        .status
+    ).toBe(400)
+    expect(
+      (await ownerRequest("POST", "/access", { target: target(doc) })).status
+    ).toBe(404)
+    expect((await publicRequest(link.token, "/public/share/comments")).status).toBe(
+      404
+    )
+    expect((await publicRequest(link.token)).status).toBe(200)
+  })
+
+  it("follows a Doc through a rename and gives malformed tokens the same page", async () => {
     const artifact = {
       kind: "doc" as const,
       spaceId: "space",
       artifactKey: "old-name",
     }
     await writeDoc(artifact.spaceId, artifact.artifactKey, "# Rename me")
-    const created = (await (await ownerRequest("POST", artifact)).json()) as {
-      share: { url: string }
-    }
-    const token = created.share.url.split("/").at(-1)!
+    const { token } = await created(artifact)
     expect(
       (await renameDocAndSync("space", "old-name", "new-name")).error
     ).toBeNull()
+    expect((await publicRequest(token)).status).toBe(200)
 
-    const renamed = await publicRequest(token)
+    const unknown = await publicRequest("A".repeat(43))
     const malformed = await publicRequest("not-a-token")
-    expect(renamed.status).toBe(404)
+    expect(unknown.status).toBe(404)
     expect(malformed.status).toBe(404)
-    expect(await renamed.text()).toBe(await malformed.text())
-  })
-
-  it("does not revive links after artifacts are removed directly on disk", async () => {
-    const doc = {
-      kind: "doc" as const,
-      spaceId: "space",
-      artifactKey: "external-doc",
-    }
-    await writeDoc(doc.spaceId, doc.artifactKey, "# Original")
-    const docShare = (await (await ownerRequest("POST", doc)).json()) as {
-      share: { url: string }
-    }
-    const docToken = docShare.share.url.split("/").at(-1)!
-
-    await rm(
-      join(workspaceDir, "spaces", "space", "docs", "external-doc.md")
-    )
-    await notifyWorkspaceChangeAndWaitOrThrow({
-      type: "doc",
-      spaceId: "space",
-      docPath: "external-doc",
-    })
-    await writeDoc(doc.spaceId, doc.artifactKey, "# Replacement")
-    expect((await publicRequest(docToken)).status).toBe(404)
-
-    const now = new Date().toISOString()
-    const html = {
-      kind: "html" as const,
-      spaceId: "space",
-      artifactKey: "external-html",
-    }
-    const written = await writeWidget(
-      html.spaceId,
-      {
-        version: 1,
-        kind: "worktable.widget",
-        id: html.artifactKey,
-        name: "Original HTML",
-        createdAt: now,
-        updatedAt: now,
-        createdBy: "test",
-        metadata: {},
-        runtime: { type: "html", entry: "index.html" },
-        permissions: { network: false, records: {}, state: {} },
-      },
-      "<h1>Original</h1>"
-    )
-    written.release?.()
-    const htmlShare = (await (await ownerRequest("POST", html)).json()) as {
-      share: { url: string }
-    }
-    const htmlToken = htmlShare.share.url.split("/").at(-1)!
-
-    const watcher = new WorkspaceWatcher(5)
-    watcher.start()
-    const watcherReady = new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        off()
-        reject(new Error("Timed out waiting for workspace watcher readiness"))
-      }, 2_000)
-      const off = watcher.on((event) => {
-        if (event.type !== "space" || event.spaceId !== "space") return
-        clearTimeout(timeout)
-        off()
-        resolve()
-      })
-    })
-    const spaceFile = join(workspaceDir, "spaces", "space", "space.json")
-    await writeFile(spaceFile, await readFile(spaceFile))
-    await watcherReady
-    const directoryMoveObserved = new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        off()
-        reject(new Error("Timed out waiting for HTML Doc directory move"))
-      }, 2_000)
-      const off = watcher.on((event) => {
-        if (
-          event.type !== "widget" ||
-          event.spaceId !== "space" ||
-          event.widgetId !== "external-html"
-        ) {
-          return
-        }
-        clearTimeout(timeout)
-        off()
-        resolve()
-      })
-    })
-    try {
-      await rm(
-        join(workspaceDir, "spaces", "space", "docs", "external-html.html"),
-        { recursive: true }
-      )
-      await directoryMoveObserved
-      await drainWorkspaceChanges()
-    } finally {
-      watcher.stop()
-    }
-    await writeFile(
-      join(workspaceDir, "spaces", "space", "docs", "external-html.html"),
-      "<h1>Replacement</h1>"
-    )
-    expect((await publicRequest(htmlToken)).status).toBe(404)
+    expect(await unknown.text()).toBe(await malformed.text())
   })
 
   it("does not revoke a link while its existing artifact is temporarily unreadable", async () => {
@@ -358,10 +323,7 @@ describe("Cloud document share HTTP boundary", () => {
       artifactKey: "external-edit",
     }
     await writeDoc(artifact.spaceId, artifact.artifactKey, [])
-    const created = (await (await ownerRequest("POST", artifact)).json()) as {
-      share: { url: string }
-    }
-    const token = created.share.url.split("/").at(-1)!
+    const link = await created(artifact)
     const path = join(
       workspaceDir,
       "spaces",
@@ -371,39 +333,32 @@ describe("Cloud document share HTTP boundary", () => {
     )
 
     await writeFile(path, "{", "utf8")
-    expect(await (await ownerRequest("GET", artifact)).json()).toEqual({
-      share: {
-        url: created.share.url,
-        createdAt: expect.any(String),
-      },
-    })
-    expect((await publicRequest(token)).status).toBe(404)
+    expect((await publicRequest(link.token)).status).toBe(404)
 
     await writeFile(path, "[]\n", "utf8")
-    expect((await publicRequest(token)).status).toBe(200)
+    expect((await publicRequest(link.token)).status).toBe(200)
+    expect((await documentLinks(artifact)).links).toEqual([
+      expect.objectContaining({ id: link.link.id, status: "active" }),
+    ])
   })
 
-  it("invalidates every link when its Space is archived", async () => {
+  it("ends every link when its Space is archived", async () => {
     const artifact = {
       kind: "doc" as const,
       spaceId: "space",
       artifactKey: "space-lifecycle",
     }
     await writeDoc(artifact.spaceId, artifact.artifactKey, "# Space lifecycle")
-    const created = (await (await ownerRequest("POST", artifact)).json()) as {
-      share: { url: string }
-    }
-    const token = created.share.url.split("/").at(-1)!
+    const link = await created(artifact)
 
     expect((await setSpaceArchived("space", true)).error).toBeNull()
-    expect((await publicRequest(token)).status).toBe(404)
-    expect((await ownerRequest("POST", artifact)).status).toBe(404)
+    expect((await publicRequest(link.token)).status).toBe(404)
+    expect((await createLink(artifact)).status).toBe(404)
 
     expect((await setSpaceArchived("space", false)).error).toBeNull()
-    const reshared = (await (await ownerRequest("POST", artifact)).json()) as {
-      share: { url: string }
-    }
-    expect(reshared.share.url).not.toBe(created.share.url)
+    expect((await publicRequest(link.token)).status).toBe(404)
+    const reshared = await created(artifact)
+    expect(reshared.url).not.toBe(link.url)
   })
 
   it("preserves an HTML link across display-name edits and serves a sanitized projection", async () => {
@@ -434,16 +389,15 @@ describe("Cloud document share HTTP boundary", () => {
     })
     expect(written.error).toBeUndefined()
 
-    const created = (await (await ownerRequest("POST", artifact)).json()) as {
-      share: { url: string }
-    }
-    const token = created.share.url.split("/").at(-1)!
+    const { token } = await created(artifact)
     const outer = await publicRequest(token)
     expect(await outer.json()).toEqual({
       kind: "html",
       title: "Status board",
     })
 
+    // Without the preview, the frame opens with the link itself, as the
+    // gateway expects today; no frame ticket is needed.
     const content = await publicRequest(token, "/public/share/content")
     const contentHtml = await content.text()
     expect(content.status).toBe(200)

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
+  Copy,
   ExternalLink,
   Link2,
   Loader2,
@@ -68,6 +69,7 @@ import { notePageLinks } from "@/lib/sharing-cache"
 import { useWorkspace } from "@/lib/queries"
 import { openSettings } from "@/lib/settings-open"
 import {
+  copyShareLink,
   allowedShareLinkExpiry,
   createBlockedMessage,
   SHARE_LINK_LEVEL_LABELS,
@@ -115,7 +117,7 @@ const NEW_LINK: LinkDraft = {
 type Editing = { kind: "new" } | { kind: "edit"; link: ShareLink } | null
 
 /**
- * The share dialog while links v2 is on: a document's links, a form for a
+ * The share dialog: a document's links, a form for a
  * new or edited one, and revoking. Loaded when the page's Share is first
  * opened.
  */
@@ -211,7 +213,7 @@ export function ShareLinksDialog({
       setCreated(result)
       setEditing(null)
       setDraft(NEW_LINK)
-      setAnnouncement("Link created. Copy it now.")
+      setAnnouncement("Link created")
     },
   })
   const update = useMutation({
@@ -688,7 +690,7 @@ export function ShareLinkList({
 }: {
   container?: HTMLElement | null
   links: readonly ShareLink[]
-  /** The link just made: its URL shows this once. */
+  /** The link just made, whose URL shows under it. */
   created: CreatedShareLink | null
   editingId: string | null
   disabled: boolean
@@ -762,6 +764,12 @@ export function ShareLinkList({
                     align="end"
                     className="min-w-40"
                   >
+                    {link.url ? (
+                      <DropdownMenuItem onClick={() => copyShareLink(link.url!)}>
+                        <Copy className="mr-2 size-4" />
+                        Copy Link
+                      </DropdownMenuItem>
+                    ) : null}
                     <DropdownMenuItem onClick={() => onEdit(link)}>
                       <Pencil className="mr-2 size-4" />
                       Edit Link
@@ -794,9 +802,6 @@ export function ShareLinkList({
                     View as visitor
                   </Button>
                 ) : null}
-                <p className="px-1 text-xs text-muted-foreground">
-                  Copy it now. It won’t be shown again.
-                </p>
               </div>
             ) : null}
           </Item>

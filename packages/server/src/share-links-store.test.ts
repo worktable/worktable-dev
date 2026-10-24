@@ -50,9 +50,6 @@ import * as views from "./share-link-views.ts"
 import { setLinkedSharing } from "./linked-sharing.ts"
 import { createPublicSharesRouter } from "./routes/public-shares.ts"
 import { sharesRouter } from "./routes/shares.ts"
-import { trustedLocalIdentity } from "./auth.ts"
-import { systemRouter } from "./routes/system.ts"
-import { invalidateServerSettingsCache } from "./settings-store.ts"
 import { drainV1ShareLinks } from "./share-links-drain.ts"
 import { settleShareLinkReconciles } from "./share-links-lifecycle.ts"
 import {
@@ -70,7 +67,6 @@ import {
   revokeShareLink,
   restoreSharingPolicy,
   sharingPolicyForBackup,
-  markV1SharesDrained,
   shareLinksDatabasePath,
   updateShareLink,
   shareUnlockSecret,
@@ -888,8 +884,8 @@ describe("share links", () => {
     expect(listed.canCreate).toBe(true)
     expect(listed.links.map((link) => link.id)).toEqual([board.link.id])
     expect(Date.parse(listed.links[0]!.lastUsedAt!) % 60_000).toBe(0)
-    // The URL is shown only when a link is made.
-    expect(JSON.stringify(listed)).not.toContain(board.token)
+    // Its URL can be copied again later.
+    expect(listed.links[0]?.url).toBe(board.url)
 
     updateShareLink(board.link.id, { expiresAt: Date.now() - 1 })
     expect((await view(board.token)).status).toBe(410)
@@ -952,17 +948,62 @@ describe("share links", () => {
     db.close()
     expect(await page()).toEqual({ activeLinks: 0, canCreate: true })
 
-    // Today's sharing keeps its own request until links v2 is on.
+    // Links need no preview: the page counts them without it too.
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     closeShareLinkStores()
-    expect(await page()).toBeUndefined()
+    await createLink("plan")
+    expect(await page()).toEqual({ activeLinks: 1, canCreate: true })
   })
 
-  it("keeps only token digests, so the store's files hold no working link", async () => {
+  it("keeps tokens only as digests and sealed, so the store's files hold none in the clear", async () => {
     await writeDoc("space", "plan", "# Plan")
-    const { token } = await createLink("plan")
+    const { token, link, url } = await createLink("plan")
+    const other = await createLink("plan")
     expect((await view(token)).status).toBe(200)
     flushShareLinkUse()
+
+    // A seal opens only for its own link: one moved onto another gives no URL.
+    closeShareLinkStores()
+    const db = new Database(shareLinksDatabasePath())
+    const seal = (id: string) =>
+      db
+        .query<{ nonce: Uint8Array; sealed: Uint8Array }, [string]>(
+          "SELECT nonce, sealed FROM share_link_tokens WHERE link_id = ?"
+        )
+        .get(id)!
+    const original = seal(other.link.id)
+    const moved = seal(link.id)
+    db.query(
+      "UPDATE share_link_tokens SET nonce = ?, sealed = ? WHERE link_id = ?"
+    ).run(moved.nonce, moved.sealed, other.link.id)
+    const urls = async () =>
+      new Map(
+        (await documentLinks("plan")).links.map((listed) => [
+          listed.id,
+          listed.url,
+        ])
+      )
+    expect(await urls()).toEqual(
+      new Map([
+        [other.link.id, undefined],
+        [link.id, url],
+      ])
+    )
+    db.query(
+      "UPDATE share_link_tokens SET nonce = ?, sealed = ? WHERE link_id = ?"
+    ).run(original.nonce, original.sealed, other.link.id)
+    db.close()
+    expect((await urls()).get(other.link.id)).toBe(other.url)
+    // A revoked link's seal goes with it.
+    await send("DELETE", `/api/shares/links/${other.link.id}`)
+    closeShareLinkStores()
+    const after = new Database(shareLinksDatabasePath())
+    expect(
+      after
+        .query("SELECT count(*) AS n FROM share_link_tokens WHERE link_id = ?")
+        .get(other.link.id)
+    ).toEqual({ n: 0 })
+    after.close()
 
     const directory = join(shareLinksDatabasePath(), "..")
     expect((await stat(shareLinksDatabasePath())).mode & 0o777).toBe(0o600)
@@ -986,19 +1027,14 @@ describe("share links", () => {
 
   it("serves nothing it does not understand, and no older link once it can't read the owner policy", async () => {
     await writeDoc("space", "plan", "# Plan")
-    // Today's links are made only while links v2 is off.
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
-    const legacy = await send("POST", "/api/shares", {
-      kind: "doc",
-      spaceId: "space",
-      artifactKey: "plan",
-    })
+    // A link an older binary made, not yet moved.
     const legacyToken = (
-      (await legacy.json()) as { share: { url: string } }
-    ).share.url
-      .split("/")
-      .at(-1)!
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+      await createDocumentShare({
+        kind: "doc",
+        spaceId: "space",
+        artifactKey: "plan",
+      })
+    ).token
     const locked = await createLink("plan")
     const open = await createLink("plan")
 
@@ -1025,19 +1061,9 @@ describe("share links", () => {
       code: "SHARE_LINKS_UNAVAILABLE",
     })
 
-    // With the preview off, that store still keeps today's routes retired,
-    // so no link is made outside its owner policy.
+    // With the preview off too.
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     closeShareLinkStores()
-    expect(
-      (
-        await send("POST", "/api/shares", {
-          kind: "doc",
-          spaceId: "space",
-          artifactKey: "plan",
-        })
-      ).status
-    ).toBe(404)
     expect((await view(legacyToken)).status).toBe(404)
   })
 
@@ -1165,40 +1191,6 @@ describe("share links", () => {
     )
   })
 
-  it("leaves today's sharing as it is while the preview is off, and still serves its links when on", async () => {
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
-    await writeDoc("space", "plan", "# Plan\n\nToday's link.")
-    expect((await send("GET", "/api/shares/links/all")).status).toBe(404)
-    expect(
-      (
-        await send("POST", "/api/shares/links", {
-          target: { kind: "doc", spaceId: "space", path: "plan" },
-        })
-      ).status
-    ).toBe(404)
-
-    const legacy = await send("POST", "/api/shares", {
-      kind: "doc",
-      spaceId: "space",
-      artifactKey: "plan",
-    })
-    expect(legacy.status).toBe(201)
-    const token = (
-      (await legacy.json()) as { share: { url: string } }
-    ).share.url
-      .split("/")
-      .at(-1)!
-    expect((await view(token)).status).toBe(200)
-    expect(existsSync(join(appDir, "sharing"))).toBe(false)
-
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
-    const page = await view(token)
-    expect(page.status).toBe(200)
-    expect(
-      ((await page.json()) as { projectionHtml: string }).projectionHtml
-    ).toContain("Today's link.")
-  })
-
   it("lets only people share, and keeps passwords behind the preview", async () => {
     await writeDoc("space", "plan", "# Plan")
     const target = { kind: "doc", spaceId: "space", path: "plan" }
@@ -1228,7 +1220,6 @@ describe("share links", () => {
     expect(comment.status).toBe(400)
     expect(await comment.json()).toMatchObject({ code: "LEVEL_NOT_AVAILABLE" })
     expect(existsSync(shareLinksDatabasePath())).toBe(false)
-    markV1SharesDrained()
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     const password = await send("POST", "/api/shares/links", {
       target,
@@ -1258,21 +1249,16 @@ describe("moving today's links into links v2", () => {
   const v1File = () =>
     join(appDir, "document-shares", `${workspaceCacheKey()}.json`)
 
-  /** A link as today's sharing makes it, while links v2 is off. */
+  // Links need no preview; the move runs at every boot without it.
+  beforeEach(() => {
+  })
+
+  /** A link as an earlier version makes it, in its file. */
   async function legacyLink(
     artifactKey: string,
     kind: "doc" | "html" = "doc"
   ): Promise<{ token: string; createdAt: string }> {
-    const response = await send("POST", "/api/shares", {
-      kind,
-      spaceId: "space",
-      artifactKey,
-    })
-    expect(response.status).toBe(201)
-    const { share } = (await response.json()) as {
-      share: { url: string; createdAt: string }
-    }
-    return { token: share.url.split("/").at(-1)!, createdAt: share.createdAt }
+    return await createDocumentShare({ kind, spaceId: "space", artifactKey })
   }
 
   /** What an older binary reads from the file: strictly parsed, or it throws. */
@@ -1286,6 +1272,7 @@ describe("moving today's links into links v2", () => {
   }
 
   it("keeps their URLs working, drops links that open nothing, and leaves an empty file older binaries read", async () => {
+    // Links need no preview; the move runs at every boot without it.
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     await useHtmlStorageV2()
     await writeDoc("space", "plan", "# Plan\n\nMoved over.")
@@ -1321,33 +1308,26 @@ describe("moving today's links into links v2", () => {
     })
     await writeFile(v1File(), JSON.stringify(file))
 
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
     await drainV1ShareLinks()
 
     expect(await v1FileAsOlderBinaryReadsIt(plan.token)).toBeNull()
     const moved = await documentLinks("plan")
     expect(moved.links).toHaveLength(1)
+    // The same URL opens it, and whoever manages it can copy that URL again.
     expect(moved.links[0]).toMatchObject({
       label: "",
       status: "active",
       createdAt: plan.createdAt,
       tokenHint: plan.token.slice(-4),
+      url: `${sharing.shareOrigin}/s/${sharing.workspaceId}/${plan.token}`,
     })
     expect(
       ((await (await view(plan.token)).json()) as { projectionHtml: string })
         .projectionHtml
     ).toContain("Moved over.")
+    expect((await view(status.token)).status).toBe(200)
     expect(
-      await (
-        await view(
-          (
-            (await (await view(status.token)).json()) as {
-              contentTicket: string
-            }
-          ).contentTicket,
-          "/public/share/content"
-        )
-      ).text()
+      await (await view(status.token, "/public/share/content")).text()
     ).toContain("Operational")
     for (const token of [retired.token, removed.token, "E".repeat(43)]) {
       expect((await view(token)).status).toBe(404)
@@ -1357,33 +1337,22 @@ describe("moving today's links into links v2", () => {
     }
     expect(all.links).toHaveLength(2)
 
-    // Moved links follow their document, and links v2 stays on without the
-    // preview. Today's routes no longer make links in the old file.
+    // Moved links follow their document.
     expect(
       (await renameDocAndSync("space", "plan", "notes/plan")).error
     ).toBeNull()
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     expect((await view(plan.token)).status).toBe(200)
     expect((await documentLinks("notes/plan")).links).toHaveLength(1)
-    expect(
-      (
-        await send("POST", "/api/shares", {
-          kind: "doc",
-          spaceId: "space",
-          artifactKey: "notes/plan",
-        })
-      ).status
-    ).toBe(404)
   })
 
   it("finishes a move cut short without copying or reviving links, and follows what an older binary does meanwhile", async () => {
+    // Links need no preview; the move runs at every boot without it.
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     const links: Record<string, { token: string; createdAt: string }> = {}
     for (const path of ["kept", "revoked", "stopped"]) {
       await writeDoc("space", path, `# ${path}`)
       links[path] = await legacyLink(path)
     }
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
 
     // A move cut short: every link copied, the old file not yet emptied.
     const epoch = await getWorkspaceCollaborationEpoch()
@@ -1437,6 +1406,7 @@ describe("moving today's links into links v2", () => {
   })
 
   it("keeps unreadable Spaces pending and never finalizes a failed legacy rewrite", async () => {
+    // Links need no preview; the move runs at every boot without it.
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     await writeDoc("space", "plan", "# Plan")
     const plan = await legacyLink("plan")
@@ -1447,7 +1417,6 @@ describe("moving today's links into links v2", () => {
     const spaceFile = join(workspaceDir, "spaces", "space", "space.json")
     const originalSpace = await readFile(spaceFile, "utf8")
     await writeFile(spaceFile, "invalid json")
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
     await drainV1ShareLinks()
     expect(JSON.parse(await readFile(v1File(), "utf8")).shares).toHaveLength(1)
     await writeFile(spaceFile, originalSpace)
@@ -1477,6 +1446,7 @@ describe("moving today's links into links v2", () => {
   })
 
   it("recovers a durable legacy removal before SQLite was settled", async () => {
+    // Links need no preview; the move runs at every boot without it.
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     await writeDoc("space", "plan", "# Plan")
     const plan = await legacyLink("plan")
@@ -1484,7 +1454,6 @@ describe("moving today's links into links v2", () => {
       { spaceId: "space", path: "plan", materializeIdentity: true },
       (handle) => handle.documentId
     )
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
     const originalRename = fsPromises.rename
     const interrupted = spyOn(fsPromises, "rename").mockImplementation(
       async (from, to) => {
@@ -1512,6 +1481,7 @@ describe("moving today's links into links v2", () => {
   })
 
   it("makes a legacy link manageable after its path conflict is resolved", async () => {
+    // Links need no preview; the move runs at every boot without it.
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     await writeDoc("space", "plan", "# Plan")
     const plan = await legacyLink("plan")
@@ -1521,7 +1491,6 @@ describe("moving today's links into links v2", () => {
       type: "docAliases",
       spaceId: "space",
     })
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
     await drainV1ShareLinks()
     expect(JSON.parse(await readFile(v1File(), "utf8")).shares).toHaveLength(1)
 
@@ -1546,41 +1515,6 @@ describe("moving today's links into links v2", () => {
       (await send("DELETE", `/api/shares/links/${moved!.id}`)).status
     ).toBe(200)
     expect((await view(plan.token)).status).toBe(404)
-  })
-
-  it("moves them when the owner turns the sharing preview on", async () => {
-    delete process.env["WORKTABLE_SHARING_PREVIEW"]
-    invalidateServerSettingsCache()
-    try {
-      await writeDoc("space", "plan", "# Plan")
-      const plan = await legacyLink("plan")
-
-      const system = new Hono()
-      system.use("/api/*", trustedLocalIdentity())
-      system.route("/api/system", systemRouter)
-      const turnedOn = await system.request("/api/system/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sharing: { preview: true } }),
-      })
-      expect(turnedOn.status).toBe(200)
-
-      // The settings response returns before the background drain. Wait on
-      // its durable outcome, without starting a second drain from the test.
-      const deadline = Date.now() + 2000
-      while (
-        JSON.parse(await readFile(v1File(), "utf8")).shares.length &&
-        Date.now() < deadline
-      ) {
-        // test-policy: external-readiness-backoff — wait for the settings-triggered drain.
-        await new Promise((resolve) => setTimeout(resolve, 10))
-      }
-      expect(await v1FileAsOlderBinaryReadsIt(plan.token)).toBeNull()
-      expect((await documentLinks("plan")).links).toHaveLength(1)
-      expect((await view(plan.token)).status).toBe(200)
-    } finally {
-      invalidateServerSettingsCache()
-    }
   })
 })
 
@@ -1688,19 +1622,14 @@ describe("owner policy", () => {
 
   it("cuts existing links at their next view when tightened, and lets them open again when loosened", async () => {
     await writeDoc("space", "plan", "# Plan")
-    // A link of today's format that views fall back to until it moves.
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
-    const legacy = await send("POST", "/api/shares", {
-      kind: "doc",
-      spaceId: "space",
-      artifactKey: "plan",
-    })
+    // A link of the earlier format that views fall back to until it moves.
     const legacyToken = (
-      (await legacy.json()) as { share: { url: string } }
-    ).share.url
-      .split("/")
-      .at(-1)!
-    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+      await createDocumentShare({
+        kind: "doc",
+        spaceId: "space",
+        artifactKey: "plan",
+      })
+    ).token
     const { token, link } = await createLink("plan")
     const dead = await (await view("not-a-token")).text()
     expect(await policyNow()).toEqual(defaultSharingPolicy())
@@ -1805,8 +1734,6 @@ describe("owner policy", () => {
   it("keeps settings for unreleased sharing features to the sharing preview", async () => {
     await writeDoc("space", "plan", "# Plan")
     const { token } = await createLink("plan")
-    // Links v2 stays on once today's links have moved, preview or not.
-    markV1SharesDrained()
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     const previewOnly: Partial<SharingPolicy>[] = [
       { requirePassword: true },
@@ -1855,6 +1782,28 @@ describe("owner policy", () => {
         paused: true,
         maxExpiryDays: 30,
       })
+      // Links stay out of backups: no token, sealed or not, and no store.
+      const store = new Database(shareLinksDatabasePath(), { readonly: true })
+      const sealed = Buffer.from(
+        store
+          .query<{ sealed: Uint8Array }, []>(
+            "SELECT sealed FROM share_link_tokens"
+          )
+          .get()!.sealed
+      )
+      store.close()
+      const names = await readdir(captured, { recursive: true })
+      expect(names.some((name) => name.includes("sharing.sqlite"))).toBe(false)
+      const captureBytes = Buffer.concat(
+        await Promise.all(
+          names.map((name) =>
+            readFile(join(captured, name)).catch(() => Buffer.alloc(0))
+          )
+        )
+      )
+      expect(captureBytes.length).toBeGreaterThan(0)
+      expect(captureBytes.includes(Buffer.from(token))).toBe(false)
+      expect(captureBytes.includes(sealed)).toBe(false)
       // The owner loosens the policy after the backup.
       expect((await savePolicy({ maxExpiryDays: 90 })).status).toBe(200)
 

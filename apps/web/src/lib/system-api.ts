@@ -146,10 +146,7 @@ export interface DeploymentInfo {
     updateChecks: boolean
     previewStatus?: boolean
     documentSharing: boolean
-    /**
-     * Links v2 is on, and this person may see and manage share links. Pages
-     * then share by several links per document instead of a single one.
-     */
+    /** This person may see and manage share links in Settings → Links. */
     shareLinks: boolean
     /** Sharing features that aren't released yet are on. */
     sharingPreview: boolean

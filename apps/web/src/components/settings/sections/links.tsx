@@ -8,7 +8,7 @@ import {
   type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query"
-import { Link2, Loader2, MoreVertical, Unlink } from "lucide-react"
+import { Copy, Link2, Loader2, MoreVertical, Unlink } from "lucide-react"
 import type {
   DocumentShareLinks,
   ShareLink,
@@ -67,6 +67,7 @@ import {
   type ShareLinksFilters,
 } from "@/lib/share-links-settings-api"
 import {
+  copyShareLink,
   SHARE_LINK_LEVEL_LABELS,
   shareLinkBlockedLabel,
   shareLinkDetails,
@@ -784,6 +785,12 @@ function LinkMenu({
         <MoreVertical className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-40">
+        {link.url ? (
+          <DropdownMenuItem onClick={() => copyShareLink(link.url!)}>
+            <Copy className="mr-2 size-4" />
+            Copy Link
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem variant="destructive" onClick={onRevoke}>
           <Unlink className="mr-2 size-4" />
           Revoke Link

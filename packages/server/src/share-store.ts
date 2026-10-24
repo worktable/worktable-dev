@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto"
+import { existsSync } from "node:fs"
 import { chmod, open, readFile, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { z } from "zod"
@@ -8,6 +9,12 @@ import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 import { assertWorkspaceAvailable } from "./workspace-safety.ts"
+
+// The earlier version's links, one per document path, in
+// <appDir>/document-shares.json. No route makes links here any more: the boot
+// move reads this file into the links store, views fall back to it for a link
+// not yet moved, and lifecycle events still stop such a link. The create
+// functions remain for tests that act as an older binary.
 
 export const ShareKind = z.enum(["doc", "html"])
 export type ShareKind = z.infer<typeof ShareKind>
@@ -430,6 +437,11 @@ export function invalidateDocumentShare(
 /** A share as this file stores it, for the one-time move into links (v2). */
 export interface StoredDocumentShare extends DocumentShare {
   workspaceEpoch: string
+}
+
+/** Whether an earlier version ever wrote the file. */
+export function documentSharesFileExists(): boolean {
+  return existsSync(shareFilePath())
 }
 
 /** Every share in the file, without taking its locks. */

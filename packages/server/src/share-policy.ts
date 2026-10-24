@@ -239,8 +239,8 @@ export function linkBlockedBy(
 
 /**
  * Whether the owner policy holds back a link of the earlier format, which
- * views still fall back to while links v2 is on: before the move at boot, or
- * while its path names more than one document. It names no creator and has
+ * views still fall back to before the move at boot, or while its path names
+ * more than one document. It names no creator and has
  * no password, so pause, Spaces, a required password and the longest expiry
  * decide. A store this version can't read holds a policy it can't check,
  * so the link stays closed.
@@ -355,7 +355,7 @@ export function authorizeShareAction(
 }
 
 /**
- * Whether a document page offers Share to this person while links v2 is on,
+ * Whether a document page offers Share to this person,
  * and whether they may make a link now. Those the policy lets share in the
  * Space see it even while it holds links back, so the dialog can say why;
  * the Space's managers see it to manage existing links. The caller has

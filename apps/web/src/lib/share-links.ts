@@ -5,9 +5,19 @@ import type {
   ShareLinkLevel,
   SharerPolicy,
 } from "@worktable/types"
+import { toast } from "@worktable/ui/components/sonner"
+import { copyText } from "./clipboard"
 import { formatArchiveDate } from "./lifetime"
 
-// What the share dialog says about links (v2), and the expiries it offers.
+// What the share dialog says about links, and the expiries it offers.
+
+/** Copy a link's URL from its menu, which closes as it copies. */
+export function copyShareLink(url: string): void {
+  void copyText(url).then(
+    () => toast.success("Link copied"),
+    () => toast.error("Couldn’t copy the link")
+  )
+}
 
 const DAY_MS = 86_400_000
 

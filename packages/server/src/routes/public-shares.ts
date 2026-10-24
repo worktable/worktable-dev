@@ -49,7 +49,6 @@ import {
   shareUnlockSecret,
   onShareLinksChanged,
   ShareLinksStoreError,
-  sharingV2Active,
 } from "../share-links-store.ts"
 import {
   readSharedArtifact,
@@ -365,8 +364,8 @@ async function resolveRequest(request: Request): Promise<ResolvedShare | null> {
   const token = request.headers.get(SHARE_CAPABILITY_HEADER) ?? ""
   // The lifecycle lock covers only the lookup; see renderedPage.
   const share = await resolveDocumentShare(token)
-  // With links v2 on, the owner policy holds back today's links too.
-  if (!share || (sharingV2Active() && legacyShareHeldBack(share))) {
+  // The owner policy holds back links not yet moved from the earlier file.
+  if (!share || legacyShareHeldBack(share)) {
     for (const key of pageKeys(token)) forgetPage(key)
     return null
   }
@@ -376,7 +375,7 @@ async function resolveRequest(request: Request): Promise<ResolvedShare | null> {
 
 async function legacyShareStillOpens(token: string): Promise<boolean> {
   const share = await resolveDocumentShare(token)
-  return Boolean(share && (!sharingV2Active() || !legacyShareHeldBack(share)))
+  return Boolean(share && !legacyShareHeldBack(share))
 }
 
 /** The page for this share and artifact revision, rendering it at most once. */
@@ -481,7 +480,6 @@ export function createPublicSharesRouter(
     surface: "projection" | "content",
     shareOrigin: string
   ): Promise<Response | null> {
-    if (!sharingV2Active()) return null
     const content = surface === "content"
     let view: Awaited<ReturnType<typeof resolveShareLinkView>>
     try {

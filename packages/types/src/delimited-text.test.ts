@@ -13,6 +13,10 @@ describe("reading CSV and TSV", () => {
     ])
     // A last record that is one quoted empty value is still a record.
     expect(parseDelimitedText('value\n""').rows).toEqual([[""]])
+    // A preview keeps only the rows it shows, and counts the rest.
+    const long = parseDelimitedText("n\n1\n2\n3\n", ",", { maxRows: 2 })
+    expect(long.rows).toEqual([["1"], ["2"]])
+    expect(long.rowCount).toBe(3)
   })
 
   it("reads TSV by its name, and keeps ragged rows as written", () => {

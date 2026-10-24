@@ -211,11 +211,14 @@ function FileContent({
       </pre>
     )
   }
-  const table = parseDelimitedText(text.data, delimiterForFilename(name))
+  // Only the rows a table can show are kept; the rest are counted.
+  const table = parseDelimitedText(text.data, delimiterForFilename(name), {
+    maxRows: TABLE_MAX_ROWS,
+  })
   // A row longer than the header keeps its values, under unnamed columns,
   // up to what the table shows; the whole file stays one Download away.
   let widest = table.header.length
-  for (const row of table.rows.slice(0, TABLE_MAX_ROWS)) {
+  for (const row of table.rows) {
     widest = Math.max(widest, row.length)
   }
   const columns = Math.min(widest, TABLE_MAX_COLUMNS)
@@ -248,9 +251,9 @@ function FileContent({
         </tbody>
       </DocTable>
       <p className="text-sm text-muted-foreground">
-        {table.rows.length > rows.length
-          ? `First ${rows.length.toLocaleString()} of ${table.rows.length.toLocaleString()} rows`
-          : `${table.rows.length.toLocaleString()} ${table.rows.length === 1 ? "row" : "rows"}`}
+        {table.rowCount > rows.length
+          ? `First ${rows.length.toLocaleString()} of ${table.rowCount.toLocaleString()} rows`
+          : `${table.rowCount.toLocaleString()} ${table.rowCount === 1 ? "row" : "rows"}`}
         {widest > columns
           ? `, first ${columns.toLocaleString()} of ${widest.toLocaleString()} columns`
           : ""}

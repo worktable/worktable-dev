@@ -10,8 +10,10 @@
 export interface DelimitedTable {
   /** The first row, as the column names. */
   header: string[]
-  /** Every other row, each as long as the file wrote it. */
+  /** Every other row, each as long as the file wrote it, up to maxRows. */
   rows: string[][]
+  /** How many rows the file has after its header, kept or not. */
+  rowCount: number
 }
 
 /** The delimiter a file uses: tab for `.tsv`, else comma. */
@@ -26,10 +28,18 @@ export function delimiterForFilename(name: string): "," | "\t" {
  */
 export function parseDelimitedText(
   text: string,
-  delimiter: "," | "\t" = ","
+  delimiter: "," | "\t" = ",",
+  /** Rows to keep after the header; the rest are only counted. */
+  options: { maxRows?: number } = {}
 ): DelimitedTable {
+  const keep = (options.maxRows ?? Infinity) + 1
   const source = text.startsWith("﻿") ? text.slice(1) : text
   const records: string[][] = []
+  let recordCount = 0
+  const finish = (record: string[]) => {
+    recordCount += 1
+    if (records.length < keep) records.push(record)
+  }
   let row: string[] = []
   let field = ""
   // A quoted field was begun, though it may hold nothing: "" is a value.
@@ -64,7 +74,7 @@ export function parseDelimitedText(
       i += 1
     } else if (character === "\n" || character === "\r") {
       row.push(field)
-      records.push(row)
+      finish(row)
       row = []
       field = ""
       fieldStarted = false
@@ -76,8 +86,8 @@ export function parseDelimitedText(
   }
   if (field !== "" || fieldStarted || row.length > 0) {
     row.push(field)
-    records.push(row)
+    finish(row)
   }
   const [header = [], ...rows] = records
-  return { header, rows }
+  return { header, rows, rowCount: Math.max(0, recordCount - 1) }
 }

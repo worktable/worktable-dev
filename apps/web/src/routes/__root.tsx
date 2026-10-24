@@ -76,7 +76,6 @@ const SettingsDialog = lazy(() =>
 import type { SettingsSectionId } from "@/components/settings/sections"
 import { onOpenSettings } from "@/lib/settings-open"
 import { UpdateNudge } from "@/components/update-nudge"
-import { insideDesktop } from "@/lib/desktop-connection"
 import { BillingRoot } from "@/components/billing/billing-root"
 import { UpdateIndicatorDot } from "@/components/update-indicator"
 import { ShareDocumentAction } from "@/components/share-document-action"
@@ -110,6 +109,8 @@ import { rendererPreloads } from "@/lib/document-renderers"
 import { preloadWhenIdle } from "@/lib/idle-preload"
 import { useUpdateWaiting } from "@/hooks/use-update-availability"
 // Only Worktable Desktop offers to move agents, so browsers never load it.
+// Desktop injects its bridge before any page script runs.
+const inDesktop = typeof window !== "undefined" && "__TAURI__" in window
 const DesktopAgentOffer = lazy(() =>
   import("@/components/desktop-agent-offer").then((module) => ({
     default: module.DesktopAgentOffer,
@@ -727,7 +728,7 @@ function RootLayout() {
         <Toaster theme={theme} />
         {/* After the login guard above, so an unauthenticated page never polls. */}
         <UpdateNudge />
-        {insideDesktop() ? (
+        {inDesktop ? (
           <Suspense fallback={null}>
             <DesktopAgentOffer />
           </Suspense>

@@ -673,6 +673,9 @@ struct OwnedLocalHost {
     endpoint: LocalHostEndpoint,
     started_at: Instant,
     restarts: u32,
+    /// Set once the host announced it is listening for this instance; only a
+    /// ready background host is shown without the normal start.
+    ready: Arc<AtomicBool>,
 }
 
 /// Where one Worktable's Desktop-owned host serves, kept to restart it.
@@ -692,6 +695,13 @@ struct DesktopHostState {
     /// The shown host's endpoint after it exited, so it can restart in the
     /// background once the window moves on, if its Link is on.
     exited_shown_host: Mutex<Option<LocalHostEndpoint>>,
+    /// Background restarts waiting out their backoff, by Worktable id. A
+    /// restart runs only while its token is still recorded here.
+    pending_restarts: Mutex<HashMap<String, u64>>,
+    next_restart_token: AtomicU64,
+    /// An agent switch to repeat on retry until its activation succeeds:
+    /// (configured Worktable id, Worktable id agents move to).
+    pending_agent_switch: Mutex<Option<(String, String)>>,
     /// A Worktable waiting for the person to say whether agents move to it.
     pending_agent_choice: Mutex<Option<PendingAgentChoice>>,
     /// (configured, opened) Worktable pairs already asked about this session.
@@ -728,6 +738,9 @@ impl Default for DesktopHostState {
             runtime: Mutex::new(None),
             local_hosts: Mutex::new(HashMap::new()),
             exited_shown_host: Mutex::new(None),
+            pending_restarts: Mutex::new(HashMap::new()),
+            next_restart_token: AtomicU64::new(0),
+            pending_agent_switch: Mutex::new(None),
             pending_agent_choice: Mutex::new(None),
             answered_agent_choices: Mutex::new(HashSet::new()),
             status: Mutex::new(DesktopBootstrapStatus::base(
@@ -757,6 +770,68 @@ impl Default for DesktopHostState {
             healthy_boot_transition: Mutex::new(()),
             remote_probe_in_progress: AtomicBool::new(false),
             shutdown_started: AtomicBool::new(false),
+        }
+    }
+}
+
+impl DesktopHostState {
+    /// Record a background restart for a Worktable; it runs only while this
+    /// token is still current.
+    fn schedule_restart(&self, workspace_id: &str) -> Option<u64> {
+        let token = self.next_restart_token.fetch_add(1, Ordering::SeqCst);
+        self.pending_restarts
+            .lock()
+            .ok()?
+            .insert(workspace_id.to_string(), token);
+        Some(token)
+    }
+
+    fn restart_pending(&self, workspace_id: &str, token: u64) -> bool {
+        self.pending_restarts
+            .lock()
+            .map(|pending| pending.get(workspace_id) == Some(&token))
+            .unwrap_or(false)
+    }
+
+    /// Settle a restart: true when it was still current.
+    fn finish_restart(&self, workspace_id: &str, token: u64) -> bool {
+        self.pending_restarts
+            .lock()
+            .map(|mut pending| {
+                let current = pending.get(workspace_id) == Some(&token);
+                if current {
+                    pending.remove(workspace_id);
+                }
+                current
+            })
+            .unwrap_or(false)
+    }
+
+    fn cancel_restart(&self, workspace_id: &str) {
+        if let Ok(mut pending) = self.pending_restarts.lock() {
+            pending.remove(workspace_id);
+        }
+    }
+
+    /// The agent switch a retry of `target_id` must repeat, if one is pending.
+    fn agent_switch_for(&self, target_id: &str) -> Option<(String, String)> {
+        self.pending_agent_switch
+            .lock()
+            .ok()?
+            .clone()
+            .filter(|(_, target)| target == target_id)
+    }
+
+    /// After the activation for an agent choice succeeded, don't ask about
+    /// this pair again in this run and stop repeating the switch on retry.
+    fn record_agent_choice_answered(&self, pair: (String, String)) {
+        if let Ok(mut pending) = self.pending_agent_switch.lock() {
+            if pending.as_ref() == Some(&pair) {
+                pending.take();
+            }
+        }
+        if let Ok(mut answered) = self.answered_agent_choices.lock() {
+            answered.insert(pair);
         }
     }
 }
@@ -2715,15 +2790,15 @@ async fn desktop_choose_agent_worktable(
             .map_err(|_| "agent choice lock is poisoned".to_string())?
             .take()
             .ok_or_else(|| "No Worktable is waiting to open.".to_string())?;
-        if let Ok(mut answered) = app
-            .state::<DesktopHostState>()
-            .answered_agent_choices
-            .lock()
-        {
-            answered.insert((
-                choice.configured_id.clone(),
-                choice.prepared.workspace.id.clone(),
-            ));
+        let pair = (
+            choice.configured_id.clone(),
+            choice.prepared.workspace.id.clone(),
+        );
+        if switch_agents {
+            // Retry repeats the switch until an activation makes it.
+            if let Ok(mut pending) = app.state::<DesktopHostState>().pending_agent_switch.lock() {
+                pending.replace(pair.clone());
+            }
         }
         let mut status = DesktopBootstrapStatus::progress(
             "preparingWorkspace",
@@ -2741,7 +2816,10 @@ async fn desktop_choose_agent_worktable(
         if switch_agents && choice.service_installed {
             stop_owned_local_host(&app, &choice.prepared.workspace.id);
         }
-        start_prepared_local_with(&app, choice.prepared, true, switch_agents).await
+        start_prepared_local_with(&app, choice.prepared, true, switch_agents).await?;
+        app.state::<DesktopHostState>()
+            .record_agent_choice_answered(pair);
+        Ok(())
     })
     .await
 }
@@ -2894,7 +2972,18 @@ async fn retry_local_connection(app: &AppHandle) -> Result<(), String> {
     match resolve_saved_workspace(inspection, &expected_id) {
         SavedWorkspaceResolution::Ready(mut prepared) => {
             prepared.created = created;
-            start_prepared_local(app, prepared, true).await
+            match app
+                .state::<DesktopHostState>()
+                .agent_switch_for(&prepared.workspace.id)
+            {
+                Some(pair) => {
+                    start_prepared_local_with(app, prepared, true, true).await?;
+                    app.state::<DesktopHostState>()
+                        .record_agent_choice_answered(pair);
+                    Ok(())
+                }
+                None => start_prepared_local(app, prepared, true).await,
+            }
         }
         SavedWorkspaceResolution::IdentityMismatch(workspace) => Err(format!(
             "The saved folder now contains a different Worktable ({}). Open it instead.",
@@ -3592,6 +3681,9 @@ fn clear_pending_workspace<R: Runtime>(app: &AppHandle<R>) {
         *pending = None;
     }
     if let Ok(mut pending) = app.state::<DesktopHostState>().pending_agent_choice.lock() {
+        *pending = None;
+    }
+    if let Ok(mut pending) = app.state::<DesktopHostState>().pending_agent_switch.lock() {
         *pending = None;
     }
 }
@@ -5518,6 +5610,8 @@ fn spawn_owned_local_host(
         &config.verification_token,
     );
     let state = app.state::<DesktopHostState>();
+    let ready = Arc::new(AtomicBool::new(false));
+    let host_ready = Arc::clone(&ready);
     let (mut events, previous) = {
         let mut hosts = state
             .local_hosts
@@ -5537,6 +5631,7 @@ fn spawn_owned_local_host(
                 endpoint: endpoint.clone(),
                 started_at: Instant::now(),
                 restarts,
+                ready,
             },
         );
         if show {
@@ -5570,6 +5665,7 @@ fn spawn_owned_local_host(
                 CommandEvent::Stdout(bytes) => {
                     let message = String::from_utf8_lossy(&bytes);
                     if local_host_ready_line(&message, &event_token, port) {
+                        host_ready.store(true, Ordering::SeqCst);
                         let _ = ready_sender.send(());
                     }
                     println!("[worktable-sidecar] {message}");
@@ -5675,19 +5771,28 @@ fn background_host_restart_delay(restarts: u32) -> Duration {
 }
 
 fn restart_background_local_host(app: AppHandle, endpoint: LocalHostEndpoint, restarts: u32) {
+    let workspace_id = endpoint.workspace.id.clone();
+    let Some(token) = app
+        .state::<DesktopHostState>()
+        .schedule_restart(&workspace_id)
+    else {
+        return;
+    };
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(background_host_restart_delay(restarts)).await;
-        let workspace_id = endpoint.workspace.id.clone();
-        let already_running = || {
-            let state = app.state::<DesktopHostState>();
-            state.shutdown_started.load(Ordering::SeqCst)
-                || state
+        // Removing the Worktable, quitting or a newer restart cancels this one.
+        let state = || app.state::<DesktopHostState>();
+        let cancelled_or_running = || {
+            state().shutdown_started.load(Ordering::SeqCst)
+                || !state().restart_pending(&workspace_id, token)
+                || state()
                     .local_hosts
                     .lock()
                     .map(|hosts| hosts.contains_key(&workspace_id))
                     .unwrap_or(true)
         };
-        if already_running() {
+        if cancelled_or_running() {
+            state().finish_restart(&workspace_id, token);
             return;
         }
         let authority = match inspect_local_authority(&app).await {
@@ -5697,22 +5802,43 @@ fn restart_background_local_host(app: AppHandle, endpoint: LocalHostEndpoint, re
                     &endpoint.logs_path,
                     &format!("Could not check the background host before restarting it: {error}"),
                 );
-                restart_background_local_host(app.clone(), endpoint, restarts.saturating_add(1));
+                if state().finish_restart(&workspace_id, token) {
+                    restart_background_local_host(
+                        app.clone(),
+                        endpoint,
+                        restarts.saturating_add(1),
+                    );
+                }
                 return;
             }
         };
+        if cancelled_or_running() {
+            state().finish_restart(&workspace_id, token);
+            return;
+        }
         match authority_workspace_link(&authority, &workspace_id) {
             Some(true) => {}
             // Link was turned off: the host stays stopped.
-            Some(false) => return,
+            Some(false) => {
+                state().finish_restart(&workspace_id, token);
+                return;
+            }
             // The authority can't tell yet; ask again later.
             None => {
-                restart_background_local_host(app.clone(), endpoint, restarts.saturating_add(1));
+                if state().finish_restart(&workspace_id, token) {
+                    restart_background_local_host(
+                        app.clone(),
+                        endpoint,
+                        restarts.saturating_add(1),
+                    );
+                }
                 return;
             }
         }
         // Another surface may have started this Worktable.
-        if authority_workspace_has_live_host(&authority, &workspace_id) {
+        if !state().finish_restart(&workspace_id, token)
+            || authority_workspace_has_live_host(&authority, &workspace_id)
+        {
             return;
         }
         // Starting only when no host for this Worktable is in the map happens
@@ -5740,7 +5866,11 @@ fn show_background_local_host(
         let Some(host) = hosts.get(&prepared.workspace.id) else {
             return Ok(false);
         };
-        if host.endpoint.workspace.path.as_deref() != Some(prepared.path.as_str()) {
+        // A host still starting, such as a background restart, takes the
+        // normal start path, which verifies the endpoint before showing it.
+        if host.endpoint.workspace.path.as_deref() != Some(prepared.path.as_str())
+            || !host.ready.load(Ordering::SeqCst)
+        {
             return Ok(false);
         }
         *state
@@ -5864,6 +5994,9 @@ async fn settle_background_hosts(app: &AppHandle, exited: Option<LocalHostEndpoi
             })
             .collect()
     };
+    if let Ok(mut pending) = app.state::<DesktopHostState>().pending_restarts.lock() {
+        pending.retain(|id, _| authority_workspace_link(&authority, id) != Some(false));
+    }
     if !stopped.is_empty() {
         thread::spawn(move || terminate_local_children(stopped));
     }
@@ -5877,6 +6010,7 @@ async fn settle_background_hosts(app: &AppHandle, exited: Option<LocalHostEndpoi
 /// Stop the Desktop-owned host of one Worktable, shown or not.
 fn stop_owned_local_host<R: Runtime>(app: &AppHandle<R>, workspace_id: &str) {
     let state = app.state::<DesktopHostState>();
+    state.cancel_restart(workspace_id);
     let removed = state
         .local_hosts
         .lock()
@@ -6661,6 +6795,9 @@ fn stop_local_host<R: Runtime>(app: &AppHandle<R>) {
 /// Stop every Desktop-owned host, as when Desktop quits.
 fn stop_all_local_hosts<R: Runtime>(app: &AppHandle<R>) {
     let state = app.state::<DesktopHostState>();
+    if let Ok(mut pending) = state.pending_restarts.lock() {
+        pending.clear();
+    }
     let children: Vec<CommandChild> = state
         .local_hosts
         .lock()
@@ -8428,6 +8565,37 @@ mod tests {
         let mut unreadable = authority.clone();
         unreadable.registry_error = Some("invalid local workspace registry".into());
         assert!(agent_worktable_question(&unreadable, "ws_beta", &HashSet::new()).is_none());
+    }
+
+    #[test]
+    fn queued_restarts_cancel_and_agent_switches_wait_for_success() {
+        let state = DesktopHostState::default();
+        let queued = state.schedule_restart("ws_beta").unwrap();
+        assert!(state.restart_pending("ws_beta", queued));
+        // Removing the Worktable, Link off or quitting cancels the queued restart.
+        state.cancel_restart("ws_beta");
+        assert!(!state.restart_pending("ws_beta", queued));
+        assert!(!state.finish_restart("ws_beta", queued));
+        // A newer restart supersedes an older one.
+        let older = state.schedule_restart("ws_beta").unwrap();
+        let newer = state.schedule_restart("ws_beta").unwrap();
+        assert!(!state.finish_restart("ws_beta", older));
+        assert!(state.finish_restart("ws_beta", newer));
+
+        // Switch agents is retried until an activation succeeds, and only then
+        // counts as answered.
+        let pair = ("ws_alpha".to_string(), "ws_beta".to_string());
+        state
+            .pending_agent_switch
+            .lock()
+            .unwrap()
+            .replace(pair.clone());
+        assert_eq!(state.agent_switch_for("ws_beta"), Some(pair.clone()));
+        assert_eq!(state.agent_switch_for("ws_gamma"), None);
+        assert!(state.answered_agent_choices.lock().unwrap().is_empty());
+        state.record_agent_choice_answered(pair.clone());
+        assert_eq!(state.agent_switch_for("ws_beta"), None);
+        assert!(state.answered_agent_choices.lock().unwrap().contains(&pair));
     }
 
     #[test]

@@ -24,6 +24,7 @@ import {
   AgentSetupCategory,
   AgentSetupTabs,
 } from "@/components/agents/agent-setup-category"
+import { ChatAppWays } from "@/components/agents/chat-app-ways"
 import { GrokBotSetupPanel } from "@/components/agents/grok-bot-setup"
 import {
   agentConnectionPlatform,
@@ -463,7 +464,7 @@ function TokenPanel({
         : "In ChatGPT desktop, open Settings, then MCP servers, and add Worktable with Streamable HTTP. Paste this address and the access token."
       : "Add Worktable to your agent as an MCP server with this address and an access token."
 
-  return (
+  const steps = (
     <>
       <Instruction>{instruction}</Instruction>
       <div className="space-y-2">
@@ -509,6 +510,12 @@ function TokenPanel({
       ) : token ? (
         <StatusLine waiting>Waiting for {waitingFor(option)}</StatusLine>
       ) : null}
+    </>
+  )
+  if (option.kind !== "chat") return steps
+  return (
+    <>
+      <ChatAppWays app={option.app} local={<div>{steps}</div>} />
     </>
   )
 }

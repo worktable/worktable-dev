@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { CLOUD_PLANS } from "@worktable/hosted-contract/plans"
+import { Badge } from "@worktable/ui/components/badge"
 import { Button } from "@worktable/ui/components/button"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { CopyField } from "@worktable/ui/components/copy-field"
+import { Disclosure } from "@worktable/ui/components/disclosure"
+import { InfoTip } from "@worktable/ui/components/info-tip"
 import { Switch } from "@worktable/ui/components/switch"
+import { cn } from "@worktable/ui/lib/utils"
 import {
   Select,
   SelectContent,
@@ -33,15 +38,62 @@ type Status = {
     error?: string
   }
 }
-const STATES: Record<string, string> = {
-  connecting: "Connecting…",
-  online: "Connected",
-  offline: "Offline",
-  locked: "Subscription required",
-  paused: "Paused",
-  revoked: "Device unlinked",
-  unlinking: "Unlinking…",
-  error: "Could not connect",
+type Tone = "success" | "warning" | "danger" | "neutral"
+const STATES: Record<string, { label: string; tone: Tone; busy?: boolean }> = {
+  connecting: { label: "Connecting", tone: "neutral", busy: true },
+  online: { label: "Online", tone: "success" },
+  offline: { label: "Offline", tone: "warning" },
+  locked: { label: "Subscription required", tone: "danger" },
+  paused: { label: "Paused", tone: "neutral" },
+  revoked: { label: "Unlinked", tone: "neutral" },
+  unlinking: { label: "Unlinking", tone: "neutral", busy: true },
+  error: { label: "Can’t connect", tone: "danger" },
+}
+const DOTS: Record<Tone, string> = {
+  success: "bg-success",
+  warning: "bg-warning",
+  danger: "bg-destructive",
+  neutral: "bg-muted-foreground",
+}
+
+/** The link's state beside its switch: a dot and a word. */
+function LinkStatus({ state }: { state: string }) {
+  const status = STATES[state]
+  if (!status) return null
+  return (
+    <Badge variant="outline" role="status" className="text-muted-foreground">
+      <span
+        aria-hidden
+        className={cn(
+          "size-1.5 rounded-full",
+          DOTS[status.tone],
+          status.busy && "animate-pulse motion-reduce:animate-none"
+        )}
+      />
+      {status.label}
+    </Badge>
+  )
+}
+
+const { solo, team, business } = CLOUD_PLANS
+/** Devices each plan links, from the plan definitions. */
+const DEVICE_LIMITS = `${solo.name} links ${solo.linkedDevices} ${solo.linkedDevices === 1 ? "device" : "devices"}, ${team.name} ${team.linkedDevices} and ${business.name} ${business.linkedDevices}, per subscription.`
+
+function LinkDetails() {
+  return (
+    <InfoTip label="About Worktable Link">
+      <p>
+        Worktable Link connects this Worktable to your Cloud account. AI apps
+        you approve reach it through Cloud, and share links open for anyone you
+        send them to. Nothing is copied to Cloud.
+      </p>
+      <p>{DEVICE_LIMITS}</p>
+      <p>
+        Turning it off pauses AI apps and share links until you turn it on
+        again. Unlink removes this device from your account.
+      </p>
+    </InfoTip>
+  )
 }
 
 export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
@@ -264,9 +316,7 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-sm text-muted-foreground">
-                Up to three linked devices across your Cloud account.
-              </p>
+              <p className="text-sm text-muted-foreground">{DEVICE_LIMITS}</p>
               {subscriptions.isError && (
                 <Button
                   variant="outline"
@@ -289,17 +339,22 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
           )}
           <div className="flex items-start justify-between gap-6">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="worktable-link" className="text-sm font-medium">
-                Worktable Link
-              </label>
+              <div className="flex items-center gap-1.5">
+                <label htmlFor="worktable-link" className="text-sm font-medium">
+                  Worktable Link
+                </label>
+                <LinkDetails />
+              </div>
               <p
                 id="worktable-link-description"
                 className="text-sm text-muted-foreground"
               >
-                Connect approved AI apps and share documents from this device.
+                Use this Worktable from AI apps on your phone or any device.
+                Files stay on this device.
               </p>
             </div>
-            <div className="flex min-h-11 shrink-0 items-center">
+            <div className="flex min-h-11 shrink-0 items-center gap-3">
+              {data.enabled !== null && <LinkStatus state={data.state} />}
               {data.enabled === null ? (
                 <span role="status" className="text-sm text-muted-foreground">
                   {["offline", "error"].includes(data.state)
@@ -334,12 +389,17 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
               )}
             </div>
           </div>
-          {data.enabled !== null && STATES[data.state] && (
-            <p role="status" className="text-sm text-muted-foreground">
-              {STATES[data.state]}
-            </p>
+          {data.mcpUrl && (
+            <Disclosure title="Connect another app">
+              <div className="flex flex-col gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Apps with a Worktable app or plugin don’t need this. For any
+                  other app, add this address as a custom connector and sign in.
+                </p>
+                <CopyField label="MCP URL" value={data.mcpUrl} />
+              </div>
+            </Disclosure>
           )}
-          {data.mcpUrl && <CopyField label="MCP URL" value={data.mcpUrl} />}
           {subscriptionRequired && (
             <a
               className="text-sm text-primary-text underline underline-offset-4"

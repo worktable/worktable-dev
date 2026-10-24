@@ -184,6 +184,17 @@ test("keeps confirmed policy saves cached and recovers a newer owner update duri
       },
     })
   )
+  // The page's link summary, as a server that can share sends it.
+  await page.route(
+    "**/api/spaces/share-browser/documents/page?*",
+    async (route) => {
+      const response = await route.fetch()
+      const body = await response.json()
+      body.page.sharing = { activeLinks: 0, canCreate: true }
+      body.page.capabilities.sharing = true
+      await route.fulfill({ response, json: body })
+    }
+  )
   await page.route("**/api/shares/links/all**", (route) => {
     linkReads++
     return route.fulfill({ json: { links: [], spaces: [], nextCursor: null } })

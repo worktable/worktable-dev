@@ -383,6 +383,10 @@ function withSettingsFileLock<T>(operation: () => Promise<T>): Promise<T> {
 let _retentionGeneration = 0;
 
 export function getRetentionPolicyGeneration(): number {
+  // Sweeps authorize each deletion on this counter. Refresh it first (the
+  // throttled stat in getServerSettings) so a policy another host relaxed
+  // stops destructive work here too.
+  getServerSettings();
   return _retentionGeneration;
 }
 

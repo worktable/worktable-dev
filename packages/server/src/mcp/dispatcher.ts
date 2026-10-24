@@ -1357,6 +1357,7 @@ async function _dispatchOperationInner(
         ...(await deleteRegisteredDocument({
           spaceId: args["spaceId"] as string,
           path: args["path"] as string,
+          ...(Array.isArray(args["keep"]) ? { keep: args["keep"] as string[] } : {}),
         })),
       }
     }

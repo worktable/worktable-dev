@@ -15,7 +15,10 @@ export interface DocumentUses {
   path: string
   title: string
   formatId: string
-  /** Documents outside the deleted set that link to or embed this one. */
+  /**
+   * Documents that link to or embed this one and stay: those outside the
+   * folder, and those in it that are kept because something uses them.
+   */
   usedBy: string[]
 }
 
@@ -34,13 +37,26 @@ export async function usesAtOrBelow(
   })
   const set = new Set(inside.map((entry) => entry.descriptor.path))
   const graph = await getSpaceLinkGraph(spaceId)
+  // What stays: anything a document outside uses, then anything those use,
+  // until nothing more is needed. The Doc being deleted never stays.
+  const kept = new Set<string>()
+  const stays = (source: string) => !set.has(source) || kept.has(source)
+  for (let changed = true; changed; ) {
+    changed = false
+    for (const entry of inside) {
+      const entryPath = entry.descriptor.path
+      if (entryPath === path || kept.has(entryPath)) continue
+      if ((graph.inbound.get(entryPath) ?? []).some(stays)) {
+        kept.add(entryPath)
+        changed = true
+      }
+    }
+  }
   return inside.map((entry) => ({
     documentId: entry.descriptor.documentId,
     path: entry.descriptor.path,
     title: entry.descriptor.title,
     formatId: entry.descriptor.format.id,
-    usedBy: (graph.inbound.get(entry.descriptor.path) ?? []).filter(
-      (source) => !set.has(source)
-    ),
+    usedBy: (graph.inbound.get(entry.descriptor.path) ?? []).filter(stays),
   }))
 }

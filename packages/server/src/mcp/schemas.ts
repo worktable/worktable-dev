@@ -1243,6 +1243,33 @@ export const DeleteInput = z.strictObject({
   ]),
 })
 
+/**
+ * Preview: deleting a Doc deletes its folder, keeping by default what other
+ * documents use; `keep` names exactly what in the folder stays instead.
+ */
+export const DeleteInputPreview = z.strictObject({
+  request: z.discriminatedUnion("action", [
+    actionSchema("document", {
+      spaceId: ReadDocInput.shape.spaceId,
+      path: z.string().min(1).max(4096),
+      keep: z
+        .array(z.string().min(1).max(4096))
+        .max(1000)
+        .optional()
+        .describe(
+          "Paths in the Doc's folder that stay. Without it, what other documents use stays and the rest is deleted."
+        ),
+    }),
+    actionSchema("doc", DeleteDocInput.shape),
+    actionSchema("html", {
+      spaceId: DeleteWidgetInput.shape.spaceId,
+      htmlId: HtmlIdInput,
+    }),
+    actionSchema("document_folder", DeleteDocumentFolderInput.shape),
+    actionSchema("record", DeleteRecordInput.shape),
+  ]),
+})
+
 export const GuidanceInput = z.strictObject({
   request: z.discriminatedUnion("action", [
     actionSchema("format_spec", {}),

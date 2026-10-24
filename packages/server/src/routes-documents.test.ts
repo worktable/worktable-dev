@@ -25,7 +25,7 @@ import { createAnnotation } from "./annotation-store.ts"
 import { HOSTED_BROWSER_RUNTIME_SCOPES } from "./hosted-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { renameDocAndSync } from "./doc-rename.ts"
-import { resolveDocAlias } from "./doc-aliases.ts"
+import { recordDocAlias, resolveDocAlias } from "./doc-aliases.ts"
 import { moveHtmlDocument } from "./html-document-move.ts"
 import { getSpaceLinkGraph } from "./link-graph.ts"
 import {
@@ -1354,11 +1354,26 @@ describe("format-neutral document route", () => {
       const instance = app()
       const docs = join(root, "spaces", spaceId, "docs")
       const options = { updatedBy: "test", source: "rest-api" as const }
-      await writeDoc(spaceId, "notes/readme/details", "# Details", options)
+      // details is kept because elsewhere links to it, and so is what it
+      // embeds; elsewhere embeds shared.png through an old path's alias.
+      await writeDoc(
+        spaceId,
+        "notes/readme/details",
+        "# Details\n\n![Inner](/notes/readme/inner.png)",
+        options
+      )
       await mkdir(join(docs, "notes", "readme"), { recursive: true })
       await writeFile(join(docs, "notes", "readme", "shared.png"), "shared")
       await writeFile(join(docs, "notes", "readme", "own.png"), "own")
-      await writeDoc(spaceId, "elsewhere", "# Elsewhere\n\n![Shot](/notes/readme/shared.png)", options)
+      await writeFile(join(docs, "notes", "readme", "inner.png"), "inner")
+      noteSpaceChanged(spaceId)
+      await recordDocAlias(spaceId, "old-shot.png", "notes/readme/shared.png", "exact")
+      await writeDoc(
+        spaceId,
+        "elsewhere",
+        "# Elsewhere\n\n![Shot](/old-shot.png) and [details](/notes/readme/details)",
+        options
+      )
       noteSpaceChanged(spaceId)
       await getSpaceLinkGraph(spaceId)
       const post = (action: string, body: unknown) =>
@@ -1392,7 +1407,8 @@ describe("format-neutral document route", () => {
           .sort()
       ).toEqual([
         ["notes/readme", []],
-        ["notes/readme/details", []],
+        ["notes/readme/details", ["elsewhere"]],
+        ["notes/readme/inner.png", ["notes/readme/details"]],
         ["notes/readme/own.png", []],
         ["notes/readme/shared.png", ["elsewhere"]],
       ])
@@ -1405,12 +1421,18 @@ describe("format-neutral document route", () => {
 
       // Deleting it takes its folder too, except what another Doc uses.
       expect((await post("delete", { path: "notes/readme" })).status).toBe(200)
-      expect((await listed()).map(([path]) => path)).toEqual([
+      expect((await listed()).map(([path]) => path).sort()).toEqual([
+        "notes/readme/details",
+        "notes/readme/inner.png",
         "notes/readme/shared.png",
       ])
       expect(
         await readFile(join(docs, "notes", "readme", "shared.png"), "utf8")
       ).toBe("shared")
+      // The alias that leads to a kept file still does.
+      expect((await resolveDocAlias(spaceId, "old-shot.png")).path).toBe(
+        "notes/readme/shared.png"
+      )
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
       else process.env["WORKTABLE_FILES_PREVIEW"] = previous

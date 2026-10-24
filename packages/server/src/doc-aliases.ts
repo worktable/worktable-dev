@@ -934,7 +934,9 @@ export function prepareDocAliasRetirement(
  */
 export function prepareDocAliasPrefixRetirement(
   aliases: DocAliases,
-  prefix: string
+  prefix: string,
+  /** Paths below the prefix that stay; aliases leading to them stay too. */
+  keep: ReadonlySet<string> = new Set()
 ): string | null {
   const prefixKey = analyzeDocumentPath(prefix).comparisonKey
   if (!isStoreCanonicalPath(prefix) || !prefixKey) {
@@ -946,7 +948,7 @@ export function prepareDocAliasPrefixRetirement(
     const resolved = resolveDocAliasInMode(aliases, from, true, index)
     const key = resolved ? analyzeDocumentPath(resolved).comparisonKey : null
     if (!key) throw new Error("Document alias retirement would be unsafe")
-    return documentPathKeyIsAtOrBelow(key, prefixKey)
+    return documentPathKeyIsAtOrBelow(key, prefixKey) && !keep.has(resolved!)
   })
   const retiredPrefixes: string[] = []
   for (const from of Object.keys(aliases.prefixes)) {
@@ -973,7 +975,20 @@ export function prepareDocAliasPrefixRetirement(
     prefixes: Object.assign(Object.create(null), aliases.prefixes),
   }
   for (const from of retiredExact) delete next.exact[from]
-  for (const from of retiredPrefixes) delete next.prefixes[from]
+  for (const from of retiredPrefixes) {
+    // A folder alias into the deleted folder still leads to what stays in
+    // it: those paths keep exact aliases of their own.
+    const target = compactPrefixTarget(aliases, aliases.prefixes[from]!, index)
+    if (target) {
+      for (const kept of keep) {
+        if (kept.startsWith(`${target}/`)) {
+          const source = `${from}${kept.slice(target.length)}`
+          if (!(source in next.exact)) next.exact[source] = kept
+        }
+      }
+    }
+    delete next.prefixes[from]
+  }
   const compacted = compactAliases(next)
   if (!compacted) throw new Error("Document alias retirement would be unsafe")
   return serializeDocAliases(compacted)

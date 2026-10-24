@@ -2510,7 +2510,8 @@ async function prepareInventoryBatchDeleteEdit(
 function preparePrefixDeleteAliasesEdit(
   blobs: Map<string, Buffer>,
   spaceRoot: string,
-  prefix: string
+  prefix: string,
+  keep: ReadonlySet<string>
 ): ArtifactEdit | null {
   const path = join(spaceRoot, "doc-aliases.json")
   const before = readOptionalRegularFile(path, DOC_ALIASES_MAX_BYTES)
@@ -2522,7 +2523,7 @@ function preparePrefixDeleteAliasesEdit(
   }
   let afterText: string | null
   try {
-    afterText = prepareDocAliasPrefixRetirement(result.aliases, prefix)
+    afterText = prepareDocAliasPrefixRetirement(result.aliases, prefix, keep)
   } catch (error) {
     throw new DocumentLifecyclePreconditionError(
       error instanceof Error
@@ -3968,7 +3969,7 @@ async function preparePrefixDelete(
       : null,
     prepareSpaceOrderBatchDeleteEdit(blobs, spaceRoot, spaceId, prefix),
     await prepareInventoryBatchDeleteEdit(blobs, spaceRoot, spaceId, deletions),
-    preparePrefixDeleteAliasesEdit(blobs, spaceRoot, prefix),
+    preparePrefixDeleteAliasesEdit(blobs, spaceRoot, prefix, keep),
   ].filter((edit): edit is ArtifactEdit => Boolean(edit))
   const totalBytes = [...blobs.values()].reduce(
     (total, bytes) => total + bytes.byteLength,

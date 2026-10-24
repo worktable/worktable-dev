@@ -123,14 +123,7 @@ export function proposedType(values: readonly string[]): ImportFieldType {
   if (present.length === 0) return "text"
   if (present.every((value) => /^(?:true|false)$/i.test(value))) return "boolean"
   if (present.every((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))) return "date"
-  if (
-    present.every(
-      (value) =>
-        /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value) && Number.isFinite(Number(value))
-    )
-  ) {
-    return "number"
-  }
+  if (present.every(numberKeepsValue)) return "number"
   return "text"
 }
 
@@ -198,11 +191,19 @@ export async function proposeImport(
   const existing = (await readRecordCollectionSchema(spaceId, collectionId)).data
   const idColumns = idColumnsOf(table)
   const idColumn = idColumns[0]
-  const columns = table.columns.map((column) => ({
-    column,
-    field: fieldKeyFor(column),
-    type: proposedType(table.rows.map((row) => row[column] ?? "")),
-  }))
+  // Columns whose names make one key, such as First Name and first_name,
+  // are proposed distinct fields.
+  const taken = new Set<string>()
+  const columns = table.columns.map((column) => {
+    let field = fieldKeyFor(column)
+    for (let n = 2; taken.has(field); n++) field = `${fieldKeyFor(column)}_${n}`
+    taken.add(field)
+    return {
+      column,
+      field,
+      type: proposedType(table.rows.map((row) => row[column] ?? "")),
+    }
+  })
   const titleColumn = proposedTitleColumn(
     table,
     columns.filter((column) => column.column !== idColumn)
@@ -219,8 +220,20 @@ export async function proposeImport(
   }
 }
 
+/**
+ * Whether a value reads as a number without changing: an id such as
+ * 9007199254740993, past what a number holds exactly, stays text.
+ */
+function numberKeepsValue(value: string): boolean {
+  if (!/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)) return false
+  if (!value.includes(".")) return Number.isSafeInteger(Number(value))
+  return value.replace(/[-.]/g, "").replace(/^0+/, "").length <= 15
+}
+
 function fieldValue(raw: string, type: ImportFieldType): unknown {
-  if (type === "number" && /^-?\d+(?:\.\d+)?$/.test(raw)) return Number(raw)
+  // A value a number can't hold exactly stays as written, so the row is
+  // refused rather than changed.
+  if (type === "number" && numberKeepsValue(raw)) return Number(raw)
   if (type === "boolean" && /^(?:true|false)$/i.test(raw)) {
     return raw.toLowerCase() === "true"
   }
@@ -270,6 +283,16 @@ export async function importIntoRecords(options: {
   if (options.idColumn !== undefined && !table.columns.includes(options.idColumn)) {
     throw new Error(`The file has no column named ${options.idColumn}`)
   }
+  const filled = new Map<string, string>()
+  for (const column of options.columns) {
+    const other = filled.get(column.field)
+    if (other !== undefined) {
+      throw new Error(
+        `${other} and ${column.column} both fill the field ${column.field}; give each its own field`
+      )
+    }
+    filled.set(column.field, column.column)
+  }
 
   if (
     options.titleColumn !== undefined &&
@@ -298,8 +321,10 @@ export async function importIntoRecords(options: {
       const raw = row[column.column] ?? ""
       if (raw !== "") data[column.field] = fieldValue(raw, column.type)
     }
-    const recordId = options.idColumn ? row[options.idColumn] : undefined
-    return { row: index + 1, data, ...(recordId ? { recordId } : {}) }
+    // With an id column, every row needs its id, so importing again skips it.
+    const recordId =
+      options.idColumn !== undefined ? (row[options.idColumn] ?? "") : undefined
+    return { row: index + 1, data, ...(recordId !== undefined ? { recordId } : {}) }
   })
 
   // Check every row against the fields it will have before writing anything.
@@ -312,7 +337,12 @@ export async function importIntoRecords(options: {
   })
   const problems: string[] = []
   for (const row of rows) {
-    if (row.recordId !== undefined && !CanonicalIdSchema.safeParse(row.recordId).success) {
+    if (row.recordId === "") {
+      problems.push(`row ${row.row}: no id in ${options.idColumn}`)
+    } else if (
+      row.recordId !== undefined &&
+      !CanonicalIdSchema.safeParse(row.recordId).success
+    ) {
       problems.push(`row ${row.row}: the id must use lowercase letters, digits and hyphens`)
     }
   }

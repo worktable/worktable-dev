@@ -108,6 +108,8 @@ export function missingMcpScope(
   // A where filter reads record contents to choose the records it updates.
   if (id === "records.update_many" && request.where !== undefined)
     required.push("records:read")
+  // An import reads a file in the Space: its proposal shows sample rows.
+  if (id === "records.import") required.push("documents:read")
   return required.find((scope) => !hasScope(scopes, scope)) ?? null
 }
 

@@ -387,6 +387,72 @@ describe("importing a file into Records", () => {
       expect(schema).not.toContain("extra")
       // A new collection's records are named by the proposed column.
       expect(schema).toContain(`titleField: "code"`)
+
+      // Names that make one key get distinct fields; a number too long to
+      // hold exactly stays text; two columns can't fill one field; and a
+      // row without its id is refused, so a second import can't duplicate it.
+      await write("worktable_files_write", {
+        action: "create",
+        lifetime: "durable",
+        spaceId,
+        path: "research/people.csv",
+        format: file,
+        source: "id,First Name,first_name,account\np-1,Ada,ada,9007199254740993\n,Bo,bo,1\n",
+      })
+      const people = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "people",
+        path: "research/people.csv",
+        dryRun: true,
+      })
+      expect(people.structuredContent).toMatchObject({
+        proposal: {
+          columns: [
+            { column: "id", field: "id" },
+            { column: "First Name", field: "first_name" },
+            { column: "first_name", field: "first_name_2" },
+            { column: "account", type: "text" },
+          ],
+        },
+      })
+      const clash = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "people",
+        path: "research/people.csv",
+        columns: [
+          { column: "First Name", field: "name", type: "text" },
+          { column: "first_name", field: "name", type: "text" },
+        ],
+      })
+      expect(JSON.stringify(clash.content)).toContain("both fill the field name")
+      const noId = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "people",
+        path: "research/people.csv",
+        columns: [{ column: "First Name", field: "name", type: "text" }],
+        idColumn: "id",
+      })
+      expect(JSON.stringify(noId.content)).toContain("row 2: no id in id")
+
+      // Reading a file to import it needs documents:read as well.
+      const recordsOnly = await connect(["records:read", "records:write"], "preview")
+      const unscoped = await recordsOnly.callTool({
+        name: "worktable_records_write",
+        arguments: {
+          request: {
+            action: "import",
+            spaceId,
+            collectionId: "people",
+            path: "research/people.csv",
+            dryRun: true,
+          },
+        },
+      })
+      expect(unscoped.isError).toBe(true)
+      expect(JSON.stringify(unscoped.content)).toContain("documents:read")
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
       else process.env["WORKTABLE_FILES_PREVIEW"] = previous

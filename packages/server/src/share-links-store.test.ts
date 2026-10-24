@@ -62,6 +62,9 @@ import {
 } from "./share-store.ts"
 import {
   closeShareLinkStores,
+  documentShareLinkSummary,
+  getShareLink,
+  refreshShareLinkGrantProofs,
   flushShareLinkUse,
   importV1ShareLink,
   revokeShareLink,
@@ -654,8 +657,17 @@ describe("share links", () => {
       [scoped, { mode: "scoped" }],
       [totals, { mode: "summaries", fields: [], summaries: { groupBy: ["stage"], measures: [], fns: ["count"], minGroupSize: 5 } }],
       [saved, { mode: "fixed", fixed: [{ id: "read-1", query: {}, params: {} }] }],
-    ] as const) db.query("UPDATE share_links SET grant_json = ? WHERE id = ?").run(stored(collection), link.link.id)
+    ] as const) {
+      db.query("UPDATE share_links SET grant_json = ? WHERE id = ?").run(stored(collection), link.link.id)
+      // The proof an earlier reader wrote for that grant.
+      db.query("INSERT OR REPLACE INTO share_link_grants (link_id, grant_json, reader_version) VALUES (?, ?, 1)").run(link.link.id, stored(collection))
+    }
     db.close()
+    // The boot refresh keeps the proof of a grant this version reads and drops
+    // the others, so the document's summary counts only links that open.
+    expect(refreshShareLinkGrantProofs()).toEqual({ kept: 1, dropped: 2 })
+    const board = getShareLink(scoped.link.id)!
+    expect(documentShareLinkSummary(board.spaceId, board.documentId, Date.now(), null, () => true, false, true).activeLinks).toBe(1)
     const bridge = async (token: string) => {
       let response = await app().request("/public/share/bridge", { method: "POST", headers: { "Content-Type": "application/json", "x-worktable-share-capability": token }, body: JSON.stringify({ v: 1, op: "records.query", collection: "deals", query: {} }) })
       for (let attempt = 0; response.status === 429 && attempt < 10; attempt++) {

@@ -80,7 +80,7 @@ import { pairingRouter } from "./routes/pairing.ts"
 import { agentConnectionsRouter } from "./routes/agent-connections.ts"
 import { sharesRouter } from "./routes/shares.ts"
 import { publicSharesRouter } from "./routes/public-shares.ts"
-import { flushShareLinkUse, sweepRevokedShareLinks } from "./share-links-store.ts"
+import { flushShareLinkUse, refreshShareLinkGrantProofs, sweepRevokedShareLinks } from "./share-links-store.ts"
 import { sweepVisitorComments, closeVisitorCommentStores, prepareVisitorCommentStore } from "./visitor-comment-store.ts"
 import { notifyRetainedVisitorComments } from "./visitor-comment-access.ts"
 import { settleShareLinkReconciles } from "./share-links-lifecycle.ts"
@@ -1797,6 +1797,11 @@ export function startServer(
     // settled the documents they point at. Later boots move any an older
     // binary made since. Views keep serving the old links meanwhile.
     const recovery = recoveredDocumentTask;
+    try {
+      refreshShareLinkGrantProofs();
+    } catch (err) {
+      console.error("[share-links] grant proof refresh failed:", logError(err));
+    }
     trackServerTask(
       Promise.resolve(recovery).then(() =>
         startupDiscarded ? undefined : startV1ShareLinkDrain()

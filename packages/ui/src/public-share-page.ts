@@ -250,8 +250,6 @@ body::before {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.source-link { display: inline-flex; align-items: center; flex: none; min-height: 2.75rem; margin: -.375rem 0; color: var(--primary-text); font-size: .8125rem; white-space: nowrap; text-underline-offset: .2em; }
-.source-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
 .view-only {
   min-height: 1.5rem;
   display: inline-flex;
@@ -390,21 +388,9 @@ const commentToggle =
 function header(
   iconSvg: string,
   title?: string,
-  sourceUrl?: string,
   comments?: PublicShareCommentsPage
 ): string {
-  let sourceLink = ""
-  if (sourceUrl) {
-    try {
-      const url = new URL(sourceUrl)
-      if (url.protocol === "https:" && !url.username && !url.password) {
-        sourceLink = `<a class="source-link" href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer">Source code</a>`
-      }
-    } catch {
-      // Omit invalid links from callers outside the validated share contract.
-    }
-  }
-  return `<header class="app-header"><div class="header-inner"><span class="brand-mark" aria-hidden="true">${iconSvg}</span><span class="brand-name">Worktable</span>${title ? `<span class="header-separator" aria-hidden="true"></span><span class="document-name">${escapeHtml(title)}</span>` : ""}${comments ? commentToggle : title ? '<span class="view-only">View only</span>' : ""}${sourceLink}</div></header>`
+  return `<header class="app-header"><div class="header-inner"><span class="brand-mark" aria-hidden="true">${iconSvg}</span><span class="brand-name">Worktable</span>${title ? `<span class="header-separator" aria-hidden="true"></span><span class="document-name">${escapeHtml(title)}</span>` : ""}${comments ? commentToggle : title ? '<span class="view-only">View only</span>' : ""}</div></header>`
 }
 
 function pageDocument(title: string, body: string): string {
@@ -473,13 +459,13 @@ export function renderPublicDocumentPage(
   if (document.kind === "doc") {
     return pageDocument(
       "Shared document",
-      `<body>${header(iconSvg, document.title, document.sourceUrl, comments)}<main class="document-shell"><article class="shared-document worktable-markdown ${document.format}">${document.projectionHtml}</article></main>${diagramScripts(document.projectionHtml)}${commentScripts(comments)}</body>`
+      `<body>${header(iconSvg, document.title, comments)}<main class="document-shell"><article class="shared-document worktable-markdown ${document.format}">${document.projectionHtml}</article></main>${diagramScripts(document.projectionHtml)}${commentScripts(comments)}</body>`
     )
   }
 
   return pageDocument(
     "Shared HTML document",
-    `<body class="html-page">${header(iconSvg, document.title, document.sourceUrl, comments)}<main class="html-shell"><iframe title="${escapeHtml(document.title)}" src="${escapeHtml(document.contentUrl)}" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe></main>${commentScripts(comments)}</body>`
+    `<body class="html-page">${header(iconSvg, document.title, comments)}<main class="html-shell"><iframe title="${escapeHtml(document.title)}" src="${escapeHtml(document.contentUrl)}" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe></main>${commentScripts(comments)}</body>`
   )
 }
 
@@ -503,7 +489,7 @@ export function renderPublicLivePage(
 ): string {
   return pageDocument(
     "Shared HTML document",
-    `<body class="html-page">${header(iconSvg, document.title, document.sourceUrl, comments)}<main class="html-shell"><noscript><div class="unavailable-shell"><section class="unavailable"><h1>This tool needs JavaScript</h1></section></div></noscript></main>${liveScripts({ frame: { url: frame.url, title: document.title }, poll: frame.poll })}${commentScripts(comments)}</body>`
+    `<body class="html-page">${header(iconSvg, document.title, comments)}<main class="html-shell"><noscript><div class="unavailable-shell"><section class="unavailable"><h1>This tool needs JavaScript</h1></section></div></noscript></main>${liveScripts({ frame: { url: frame.url, title: document.title }, poll: frame.poll })}${commentScripts(comments)}</body>`
   )
 }
 

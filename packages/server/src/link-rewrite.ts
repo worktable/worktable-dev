@@ -332,6 +332,9 @@ async function rewriteDoc(
   return true
 }
 
+/** Docs elsewhere one move rewrites; aliases cover links in any more. */
+const REWRITES_PER_MOVE_MAX = 200
+
 let track: (task: Promise<unknown>) => void = () => {}
 const queues = new Map<string, Promise<void>>()
 
@@ -399,7 +402,9 @@ async function rewriteLinksTo(
       if (!movedDocs.has(source)) docs.add(source)
     }
   }
-  for (const docPath of docs) {
+  // A move rewrites a bounded number of Docs; links in any more keep working
+  // through aliases, so one move can't turn into unbounded writes.
+  for (const docPath of [...docs].slice(0, REWRITES_PER_MOVE_MAX)) {
     try {
       if (await docExists(spaceId, docPath)) {
         await rewriteDoc(spaceId, docPath, docPath, moved)

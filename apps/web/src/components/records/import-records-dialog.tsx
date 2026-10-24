@@ -129,8 +129,14 @@ export function ImportRecordsDialog({
         ...(title ? { titleColumn: title } : {}),
         ...(name.trim() ? { name: name.trim() } : {}),
       })
+      // The collection list and the imported collection, as the server's
+      // record_collection_update refreshes them; other collections stay.
       void queryClient.invalidateQueries({
         queryKey: queryKeys.recordCollections(spaceId),
+        exact: true,
+      })
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.records(spaceId, collectionId),
       })
       onClose()
       void navigate({

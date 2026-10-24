@@ -181,10 +181,6 @@ struct DesktopBootstrapStatus {
     saved_connections: Vec<DesktopSavedConnectionSummary>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     cloud_worktables: Vec<cloud_auth::CloudWorktableChoice>,
-    /// The configured Worktable agents on this Mac use, while Desktop asks
-    /// whether they should move to `workspace`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    agent_worktable: Option<String>,
     workspace_native_commands: &'static str,
 }
 
@@ -209,18 +205,8 @@ impl DesktopBootstrapStatus {
             connection_profile_id: None,
             saved_connections: Vec::new(),
             cloud_worktables: Vec::new(),
-            agent_worktable: None,
             workspace_native_commands: "pending",
         }
-    }
-
-    fn agent_choice(workspace: DesktopWorkspaceSummary, agent_worktable: String) -> Self {
-        let mut status = Self::base("choosingAgentWorktable", "");
-        status.provider = Some("local");
-        status.selected_path = workspace.path.clone();
-        status.workspace = Some(workspace);
-        status.agent_worktable = Some(agent_worktable);
-        status
     }
 
     fn selection(inspection: WorkspaceInspection) -> Self {
@@ -650,10 +636,21 @@ struct LocalRestartEnvelope {
     error: Option<LocalActivationError>,
 }
 
-struct PendingAgentChoice {
+/// An opened Worktable whose page offers to move agents on this Mac to it.
+struct AgentOffer {
     prepared: WorkspacePrepared,
     configured_id: String,
+    configured_name: String,
     service_installed: bool,
+}
+
+impl AgentOffer {
+    fn pair(&self) -> (String, String) {
+        (
+            self.configured_id.clone(),
+            self.prepared.workspace.id.clone(),
+        )
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -702,9 +699,9 @@ struct DesktopHostState {
     /// An agent switch to repeat on retry until its activation succeeds:
     /// (configured Worktable id, Worktable id agents move to).
     pending_agent_switch: Mutex<Option<(String, String)>>,
-    /// A Worktable waiting for the person to say whether agents move to it.
-    pending_agent_choice: Mutex<Option<PendingAgentChoice>>,
-    /// (configured, opened) Worktable pairs already asked about this session.
+    /// The opened Worktable whose page offers to move agents to it.
+    agent_offer: Mutex<Option<AgentOffer>>,
+    /// (configured, opened) Worktable pairs already answered this session.
     answered_agent_choices: Mutex<HashSet<(String, String)>>,
     status: Mutex<DesktopBootstrapStatus>,
     connections: Mutex<DesktopConnections>,
@@ -741,7 +738,7 @@ impl Default for DesktopHostState {
             pending_restarts: Mutex::new(HashMap::new()),
             next_restart_token: AtomicU64::new(0),
             pending_agent_switch: Mutex::new(None),
-            pending_agent_choice: Mutex::new(None),
+            agent_offer: Mutex::new(None),
             answered_agent_choices: Mutex::new(HashSet::new()),
             status: Mutex::new(DesktopBootstrapStatus::base(
                 "initializing",
@@ -2731,97 +2728,187 @@ async fn desktop_start_local_connection(
             .lock()
             .map_err(|_| "pending workspace lock is poisoned".to_string())?
             .replace(prepared.clone());
-        if let Some(status) = ask_about_agent_worktable(&app, &prepared).await {
-            set_status(&app, status);
-            return Ok(());
+        let offer = agent_offer_for(&app, &prepared).await;
+        if let Ok(mut current) = app.state::<DesktopHostState>().agent_offer.lock() {
+            *current = offer;
         }
         start_prepared_local(&app, prepared, true).await
     })
     .await
 }
 
-/// When the person opens a Worktable other than the configured one, ask
-/// whether agents on this Mac should move to it. Returns the question to
-/// show, after remembering what to open; None opens it without asking.
-async fn ask_about_agent_worktable(
-    app: &AppHandle,
-    prepared: &WorkspacePrepared,
-) -> Option<DesktopBootstrapStatus> {
+/// When the person opens a Worktable other than the configured one, its page
+/// offers to move agents on this Mac to it. None when there is nothing to offer.
+async fn agent_offer_for(app: &AppHandle, prepared: &WorkspacePrepared) -> Option<AgentOffer> {
     let authority = inspect_local_authority(app).await.ok()?;
     let state = app.state::<DesktopHostState>();
     let configured = {
         let answered = state.answered_agent_choices.lock().ok()?;
         agent_worktable_question(&authority, &prepared.workspace.id, &answered)?.clone()
     };
-    state
-        .pending_agent_choice
-        .lock()
-        .ok()?
-        .replace(PendingAgentChoice {
-            prepared: prepared.clone(),
-            configured_id: configured.workspace_id.clone(),
-            service_installed: authority
-                .service
-                .as_ref()
-                .is_some_and(|service| service.installed),
-        });
-    Some(DesktopBootstrapStatus::agent_choice(
-        DesktopWorkspaceSummary {
-            id: prepared.workspace.id.clone(),
-            name: prepared.workspace.name.clone(),
-            path: Some(prepared.path.clone()),
-        },
-        configured.name,
-    ))
+    Some(AgentOffer {
+        prepared: prepared.clone(),
+        configured_id: configured.workspace_id,
+        configured_name: configured.name,
+        service_installed: authority
+            .service
+            .as_ref()
+            .is_some_and(|service| service.installed),
+    })
 }
 
+/// Whether `offer` belongs to the Worktable this status shows.
+fn agent_offer_is_shown(offer: &AgentOffer, status: &DesktopBootstrapStatus) -> bool {
+    status.state == "ready"
+        && status.provider == Some("local")
+        && status
+            .workspace
+            .as_ref()
+            .is_some_and(|workspace| workspace.id == offer.prepared.workspace.id)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceAgentOffer {
+    schema_version: u8,
+    /// The Worktable agents on this Mac use now.
+    agent_worktable: String,
+    /// The Worktable this page shows, which agents can move to.
+    worktable: String,
+}
+
+/// The offer to move agents to the Worktable this page shows, if one waits.
 #[tauri::command]
-async fn desktop_choose_agent_worktable(
+fn desktop_workspace_agent_offer(
+    webview: Webview,
+    state: State<'_, DesktopHostState>,
+) -> Result<Option<WorkspaceAgentOffer>, String> {
+    require_local_workspace_surface(&webview, &state, "agent")?;
+    let status = state
+        .status
+        .lock()
+        .map_err(|_| "desktop status lock is poisoned".to_string())?
+        .clone();
+    let offer = state
+        .agent_offer
+        .lock()
+        .map_err(|_| "agent offer lock is poisoned".to_string())?;
+    Ok(offer
+        .as_ref()
+        .filter(|offer| agent_offer_is_shown(offer, &status))
+        .map(|offer| WorkspaceAgentOffer {
+            schema_version: 1,
+            agent_worktable: offer.configured_name.clone(),
+            worktable: offer.prepared.workspace.name.clone(),
+        }))
+}
+
+/// Answers the offer: keep agents where they are, or move them to the shown
+/// Worktable. Without the background service the running host stays and only
+/// the configuration moves; with it, the service takes the Worktable over, so
+/// the page reopens.
+#[tauri::command]
+async fn desktop_workspace_answer_agent_offer(
     webview: Webview,
     app: AppHandle,
     switch_agents: bool,
 ) -> Result<(), String> {
-    require_trusted_surface(&webview)?;
-    run_guarded_operation(&app, async {
-        let choice = app
-            .state::<DesktopHostState>()
-            .pending_agent_choice
+    let state = app.state::<DesktopHostState>();
+    require_local_workspace_surface(&webview, &state, "agent")?;
+    let status = state
+        .status
+        .lock()
+        .map_err(|_| "desktop status lock is poisoned".to_string())?
+        .clone();
+    let offer = {
+        let mut current = state
+            .agent_offer
             .lock()
-            .map_err(|_| "agent choice lock is poisoned".to_string())?
-            .take()
-            .ok_or_else(|| "No Worktable is waiting to open.".to_string())?;
-        let pair = (
-            choice.configured_id.clone(),
-            choice.prepared.workspace.id.clone(),
-        );
-        if switch_agents {
-            // Retry repeats the switch until an activation makes it.
-            if let Ok(mut pending) = app.state::<DesktopHostState>().pending_agent_switch.lock() {
-                pending.replace(pair.clone());
+            .map_err(|_| "agent offer lock is poisoned".to_string())?;
+        if !current
+            .as_ref()
+            .is_some_and(|offer| agent_offer_is_shown(offer, &status))
+        {
+            return Err("No agent switch is waiting.".into());
+        }
+        current.take().expect("checked above")
+    };
+    if !switch_agents {
+        state.record_agent_choice_answered(offer.pair());
+        return Ok(());
+    }
+    if !offer.service_installed {
+        match switch_agents_in_place(&app, &offer).await {
+            Ok(true) => {
+                state.record_agent_choice_answered(offer.pair());
+                return Ok(());
+            }
+            Ok(false) => {}
+            Err(error) => {
+                if let Ok(mut current) = state.agent_offer.lock() {
+                    current.get_or_insert(offer);
+                }
+                return Err(error);
             }
         }
-        let mut status = DesktopBootstrapStatus::progress(
-            "preparingWorkspace",
-            "Opening Worktable…",
-            &choice.prepared.path,
-        );
-        status.workspace = Some(DesktopWorkspaceSummary {
-            id: choice.prepared.workspace.id.clone(),
-            name: choice.prepared.workspace.name.clone(),
-            path: Some(choice.prepared.path.clone()),
-        });
-        set_status(&app, status);
-        // The background service moves to the Worktable only when no other
-        // host holds it, so Desktop's own background host gives way.
-        if switch_agents && choice.service_installed {
-            stop_owned_local_host(&app, &choice.prepared.workspace.id);
+    }
+    run_guarded_operation(&app, reopen_with_agents(&app, offer)).await
+}
+
+/// Moves the configuration to the shown Worktable while its host keeps
+/// running. False when the authority wants the host started again.
+async fn switch_agents_in_place(app: &AppHandle, offer: &AgentOffer) -> Result<bool, String> {
+    let state = app.state::<DesktopHostState>();
+    {
+        let mut running = state
+            .operation_in_progress
+            .lock()
+            .map_err(|_| "desktop operation lock is poisoned".to_string())?;
+        if *running {
+            return Err("another desktop connection operation is already running".into());
         }
-        start_prepared_local_with(&app, choice.prepared, true, switch_agents).await?;
-        app.state::<DesktopHostState>()
-            .record_agent_choice_answered(pair);
-        Ok(())
-    })
-    .await
+        *running = true;
+    }
+    let preferred = profile_preferred_port(app, &offer.prepared.workspace.id);
+    let result = match preferred {
+        Ok(preferred) => activate_local_workspace(app, &offer.prepared, preferred, true)
+            .await
+            .map(|activation| activation.action.as_deref() == Some("attach")),
+        Err(error) => Err(error),
+    };
+    if let Ok(mut running) = state.operation_in_progress.lock() {
+        *running = false;
+    }
+    result
+}
+
+/// Reopens the shown Worktable as the configured one.
+async fn reopen_with_agents(app: &AppHandle, offer: AgentOffer) -> Result<(), String> {
+    let pair = offer.pair();
+    // Retry repeats the switch until an activation makes it.
+    if let Ok(mut pending) = app.state::<DesktopHostState>().pending_agent_switch.lock() {
+        pending.replace(pair.clone());
+    }
+    let mut status = DesktopBootstrapStatus::progress(
+        "preparingWorkspace",
+        "Switching agents…",
+        &offer.prepared.path,
+    );
+    status.workspace = Some(DesktopWorkspaceSummary {
+        id: offer.prepared.workspace.id.clone(),
+        name: offer.prepared.workspace.name.clone(),
+        path: Some(offer.prepared.path.clone()),
+    });
+    set_status(app, status);
+    // The background service moves to the Worktable only when no other host
+    // holds it, so Desktop's own host gives way.
+    if offer.service_installed {
+        stop_owned_local_host(app, &offer.prepared.workspace.id);
+    }
+    start_prepared_local_with(app, offer.prepared, true, true).await?;
+    app.state::<DesktopHostState>()
+        .record_agent_choice_answered(pair);
+    Ok(())
 }
 
 #[tauri::command]
@@ -3678,9 +3765,6 @@ fn runtime_for<R: Runtime>(app: &AppHandle<R>) -> Result<DesktopRuntime, String>
 
 fn clear_pending_workspace<R: Runtime>(app: &AppHandle<R>) {
     if let Ok(mut pending) = app.state::<DesktopHostState>().pending_local.lock() {
-        *pending = None;
-    }
-    if let Ok(mut pending) = app.state::<DesktopHostState>().pending_agent_choice.lock() {
         *pending = None;
     }
     if let Ok(mut pending) = app.state::<DesktopHostState>().pending_agent_switch.lock() {
@@ -7938,6 +8022,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             desktop_shell_identity,
             desktop_workspace_show_chooser,
+            desktop_workspace_agent_offer,
+            desktop_workspace_answer_agent_offer,
             desktop_agent_skills_status,
             desktop_agent_skills_preview,
             desktop_agent_skills_apply,
@@ -7960,7 +8046,6 @@ fn main() {
             desktop_choose_workspace_folder,
             desktop_inspect_workspace,
             desktop_start_local_connection,
-            desktop_choose_agent_worktable,
             desktop_use_existing_installation,
             desktop_retry_connection,
             desktop_restart_local_host,
@@ -8565,6 +8650,37 @@ mod tests {
         let mut unreadable = authority.clone();
         unreadable.registry_error = Some("invalid local workspace registry".into());
         assert!(agent_worktable_question(&unreadable, "ws_beta", &HashSet::new()).is_none());
+
+        // The offer belongs to the page only while that Worktable is shown.
+        let offer = AgentOffer {
+            prepared: WorkspacePrepared {
+                path: "/tmp/Beta".into(),
+                created: false,
+                workspace: connections::WorkspaceIdentity {
+                    id: "ws_beta".into(),
+                    name: "Beta".into(),
+                    created_at: "2026-01-01T00:00:00.000Z".into(),
+                },
+            },
+            configured_id: "ws_alpha".into(),
+            configured_name: "Alpha".into(),
+            service_installed: false,
+        };
+        let shown = |id: &str| {
+            DesktopBootstrapStatus::ready(
+                "http://127.0.0.1:43111".into(),
+                DesktopWorkspaceSummary {
+                    id: id.into(),
+                    name: "Shown".into(),
+                    path: None,
+                },
+            )
+        };
+        assert!(agent_offer_is_shown(&offer, &shown("ws_beta")));
+        assert!(!agent_offer_is_shown(&offer, &shown("ws_gamma")));
+        let mut opening = shown("ws_beta");
+        opening.state = "preparingWorkspace";
+        assert!(!agent_offer_is_shown(&offer, &opening));
     }
 
     #[test]

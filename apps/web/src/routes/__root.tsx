@@ -110,6 +110,14 @@ import { onBrowserLogout } from "@/lib/auth-events"
 import { rendererPreloads } from "@/lib/document-renderers"
 import { preloadWhenIdle } from "@/lib/idle-preload"
 import { useUpdateWaiting } from "@/hooks/use-update-availability"
+// Only Worktable Desktop offers to move agents, so browsers never load it.
+// Desktop injects its bridge before any page script runs.
+const inDesktop = typeof window !== "undefined" && "__TAURI__" in window
+const DesktopAgentOffer = lazy(() =>
+  import("@/components/desktop-agent-offer").then((module) => ({
+    default: module.DesktopAgentOffer,
+  }))
+)
 const Onboarding = lazy(() =>
   import("@/components/onboarding/onboarding").then((module) => ({
     default: module.Onboarding,
@@ -722,6 +730,11 @@ function RootLayout() {
         <Toaster theme={theme} />
         {/* After the login guard above, so an unauthenticated page never polls. */}
         <UpdateNudge />
+        {inDesktop ? (
+          <Suspense fallback={null}>
+            <DesktopAgentOffer />
+          </Suspense>
+        ) : null}
         {workspace ? <PreloadScreensWhenIdle /> : null}
         {/* Last, so a socket the page opens on mount counts as reconnecting. */}
         <DiscardRecoveryOverlay discarded={discarded} />
@@ -740,9 +753,8 @@ function PreloadScreensWhenIdle() {
   const router = useRouter()
   useEffect(() => {
     const { queryClient } = router.options.context
-    const route =
-      (id: keyof typeof router.routesById) => () =>
-        router.loadRouteChunk(router.routesById[id])
+    const route = (id: keyof typeof router.routesById) => () =>
+      router.loadRouteChunk(router.routesById[id])
     return preloadWhenIdle(
       [
         route("/spaces/$spaceId"),

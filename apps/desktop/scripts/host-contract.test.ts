@@ -114,6 +114,12 @@ const workspaceSwitchCapability = JSON.parse(
     "utf8"
   )
 ) as Capability
+const workspaceAgentOfferCapability = JSON.parse(
+  readFileSync(
+    join(nativeRoot, "capabilities", "workspace-agent-offer.json"),
+    "utf8"
+  )
+) as Capability
 const desktopPackage = JSON.parse(
   readFileSync(join(appRoot, "package.json"), "utf8")
 ) as DesktopPackage
@@ -148,6 +154,7 @@ describe("desktop package contracts", () => {
       "workspace-agent-skills",
       "workspace-desktop-updates",
       "workspace-switch-worktable",
+      "workspace-agent-offer",
     ])
     expect(trustedShellCapability.identifier).toBe("trusted-shell")
     expect(trustedShellCapability.webviews).toEqual(["trusted-shell"])
@@ -171,7 +178,6 @@ describe("desktop package contracts", () => {
         "allow-desktop-choose-workspace-folder",
         "allow-desktop-inspect-workspace",
         "allow-desktop-start-local-connection",
-        "allow-desktop-choose-agent-worktable",
         "allow-desktop-use-existing-installation",
         "allow-desktop-retry-connection",
         "allow-desktop-restart-local-host",
@@ -234,8 +240,22 @@ describe("desktop package contracts", () => {
     expect(trustedShellCapability.permissions).not.toContain(
       "allow-desktop-workspace-show-chooser"
     )
+    // Only the active local workspace page answers the agent offer.
+    expect(workspaceAgentOfferCapability).toMatchObject({
+      identifier: "workspace-agent-offer",
+      local: false,
+      remote: workspaceAgentSkillsCapability.remote,
+      webviews: ["workspace"],
+      permissions: [
+        "allow-desktop-workspace-agent-offer",
+        "allow-desktop-workspace-answer-agent-offer",
+      ],
+    })
     // Remote workspace pages and the shell never get the workspace commands.
-    for (const permission of workspaceUpdatesCapability.permissions) {
+    for (const permission of [
+      ...workspaceUpdatesCapability.permissions,
+      ...workspaceAgentOfferCapability.permissions,
+    ]) {
       expect(trustedShellCapability.permissions).not.toContain(permission)
       expect(workspaceChromeCapability.permissions).not.toContain(permission)
     }

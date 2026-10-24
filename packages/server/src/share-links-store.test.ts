@@ -2382,6 +2382,36 @@ describe("owner policy", () => {
     // Where the preview was on, the policy applies as saved.
     upgrade("1")
     expect(await policyNow()).toMatchObject(opened)
+
+    // A policy saved by an earlier version is read as today's first.
+    const store = () => new Database(shareLinksDatabasePath())
+    closeShareLinkStores()
+    let db = store()
+    db.query("UPDATE share_policy SET policy = ? WHERE id = 1").run(
+      JSON.stringify({
+        ...defaultSharingPolicy(),
+        ...opened,
+        records: "summaries",
+        allowVisitorsSeeAll: true,
+      })
+    )
+    db.close()
+    upgrade("0")
+    expect(await policyNow()).toMatchObject({
+      liveLinks: false,
+      levels: ["view"],
+      maxExpiryDays: 30,
+    })
+
+    // A damaged policy stays paused, and the owner can still replace it.
+    closeShareLinkStores()
+    db = store()
+    db.query("UPDATE share_policy SET policy = '{' WHERE id = 1").run()
+    db.close()
+    upgrade("0")
+    expect(await policyNow()).toMatchObject({ paused: true })
+    expect((await savePolicy({})).status).toBe(200)
+    expect(await policyNow()).toMatchObject({ paused: false })
   })
 
   it("applies policy tightened during a legacy render and tells other human sessions", async () => {

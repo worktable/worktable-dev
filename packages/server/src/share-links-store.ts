@@ -381,10 +381,10 @@ function settleSharingPreviewPolicy(db: Database): void {
         []
       >("SELECT policy FROM share_policy WHERE id = 1")
       .get()
-    // A policy this binary can't read is left for its own version.
-    const saved = row && SharingPolicySchema.safeParse(JSON.parse(row.policy))
-    if (saved?.success && !previewOn) {
-      const policy = parsePolicy(row!.policy)
+    // A policy this binary can't read already stops every link, and is left
+    // for its own version or for the owner to save again.
+    const policy = row && !previewOn ? readablePolicy(row.policy) : null
+    if (policy) {
       const held = { ...policy }
       for (const key of PREVIEW_POLICY_KEYS)
         Object.assign(held, { [key]: DEFAULT_POLICY[key] })
@@ -1433,6 +1433,11 @@ const REMOVED_POLICY_KEYS = ["allowVisitorsSeeAll"] as const
  * policy again here.
  */
 function parsePolicy(text: string): SharingPolicy {
+  return readablePolicy(text) ?? { ...DEFAULT_POLICY, paused: true }
+}
+
+/** A saved policy with earlier versions' settings read as today's, or null. */
+function readablePolicy(text: string): SharingPolicy | null {
   try {
     const saved: unknown = JSON.parse(text)
     if (saved !== null && typeof saved === "object" && !Array.isArray(saved)) {
@@ -1442,7 +1447,7 @@ function parsePolicy(text: string): SharingPolicy {
     }
     return SharingPolicySchema.parse(saved)
   } catch {
-    return { ...DEFAULT_POLICY, paused: true }
+    return null
   }
 }
 

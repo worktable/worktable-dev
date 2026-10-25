@@ -23,6 +23,7 @@ import {
   defaultAgentNameForLabel,
   platformForAdapter,
   platformForClient,
+  platformForName,
   scopesForAccess,
 } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
@@ -38,8 +39,10 @@ import {
   revokeToken,
   rotateAgentToken,
   setTokenScopes,
+  type TokenIdentity,
   type TokenMetadata,
 } from "./token-store.ts"
+import { linkedManagementUrl } from "./linked-runtime.ts"
 import { listSpaces } from "./store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
@@ -83,11 +86,26 @@ interface StoredSignInPresentation {
   threads?: boolean
 }
 
+/**
+ * An app that reached this Worktable through Worktable Link, recorded on its
+ * first request. Cloud holds its sign-in and access, so it is managed there.
+ */
+interface StoredLinkedApp {
+  workspace: string
+  principalId: string
+  displayName: string
+  /** Its thread participant's key, so it shows under its thread name. */
+  participantKey: string
+  platform: AgentPlatformId
+  connectedAt: string
+}
+
 interface AgentConnectionFile {
   type: "worktable.agent-connections"
   version: 1
   connections: StoredAgentConnection[]
   signIns?: StoredSignInPresentation[]
+  linkedApps?: StoredLinkedApp[]
 }
 
 let mutationQueue: Promise<unknown> = Promise.resolve()
@@ -473,6 +491,101 @@ export async function agentNamesByPrincipal(): Promise<Map<string, string>> {
   return names
 }
 
+/** When each linked app was last seen by this process, by Worktable and principal. */
+const linkedAppsSeen = new Map<string, string>()
+
+/**
+ * A request from an app through Worktable Link. Its first request in this
+ * process checks it is recorded; later ones only note the time, in memory.
+ * Never rejects, so a failure to record never fails the request.
+ */
+export async function noteLinkedApp(identity: TokenIdentity): Promise<void> {
+  const workspace = getWorkspaceRoot()
+  const principalId = identity.principal.id
+  const key = `${workspace}\0${principalId}`
+  const known = linkedAppsSeen.has(key)
+  linkedAppsSeen.set(key, new Date().toISOString())
+  if (known) return
+  try {
+    await serialized(async () => {
+      const file = await loadFile()
+      const apps = (file.linkedApps ??= [])
+      if (
+        apps.some(
+          (app) =>
+            app.workspace === workspace && app.principalId === principalId
+        )
+      )
+        return
+      const displayName = identity.principal.displayName
+      apps.push({
+        workspace,
+        principalId,
+        displayName,
+        participantKey: participantKey(identity),
+        platform: platformForName(displayName),
+        connectedAt: new Date().toISOString(),
+      })
+      await saveFile(file)
+    })
+  } catch (error) {
+    // Its next request tries again.
+    linkedAppsSeen.delete(key)
+    console.warn(
+      "[agent-connections] could not record a linked app:",
+      logError(error)
+    )
+  }
+}
+
+/** Unlinking ends every app's way in, so none of them is listed after. */
+export async function forgetLinkedApps(): Promise<void> {
+  const workspace = getWorkspaceRoot()
+  for (const key of linkedAppsSeen.keys())
+    if (key.startsWith(`${workspace}\0`)) linkedAppsSeen.delete(key)
+  await serialized(async () => {
+    const file = await loadFile()
+    const kept = (file.linkedApps ?? []).filter(
+      (app) => app.workspace !== workspace
+    )
+    if (kept.length === (file.linkedApps ?? []).length) return
+    file.linkedApps = kept
+    await saveFile(file)
+  })
+}
+
+function linkedAppConnection(
+  app: StoredLinkedApp,
+  participants: Map<string, ParticipantRef>,
+  manageUrl: string
+): AgentConnection {
+  const participant = participants.get(app.participantKey) ?? null
+  return {
+    id: `acn_link_${createHash("sha256")
+      .update(`${app.workspace}\0${app.principalId}`)
+      .digest("base64url")
+      .slice(0, 20)}`,
+    authKind: "oauth",
+    displayName: participant?.name ?? app.displayName,
+    platform: app.platform,
+    icon: null,
+    access: null,
+    target: { kind: "mcp-client", clientId: null },
+    mode: "on-demand",
+    participant,
+    machine: null,
+    scopes: [],
+    connectedAt: app.connectedAt,
+    lastSeenAt:
+      linkedAppsSeen.get(`${app.workspace}\0${app.principalId}`) ??
+      app.connectedAt,
+    permissionGroups: null,
+    // No access to change here (`access` is null), but a Grok Bot's local
+    // routine stays editable.
+    link: { manageUrl },
+  }
+}
+
 export async function listAgentConnections(): Promise<AgentConnection[]> {
   const connections = teamsEnabled()
     ? await listTeamAgentConnections()
@@ -506,12 +619,18 @@ async function listLocalAgentConnections(): Promise<AgentConnection[]> {
       )
       .map((token) => [token.id, token])
   )
-  return allConnections(file, tokens, workspace)
-    .flatMap((connection) => {
+  // Apps that reach it through Link; unlinking forgets them.
+  const manageUrl = linkedManagementUrl()
+  const linked = (file.linkedApps ?? [])
+    .filter((app) => app.workspace === workspace)
+    .map((app) => linkedAppConnection(app, participants, manageUrl))
+  return [
+    ...allConnections(file, tokens, workspace).flatMap((connection) => {
       const token = activeById.get(connection.credentialId)
       return token ? [publicConnection(connection, token, participants)] : []
-    })
-    .sort((a, b) => (b.connectedAt ?? "").localeCompare(a.connectedAt ?? ""))
+    }),
+    ...linked,
+  ].sort((a, b) => (b.connectedAt ?? "").localeCompare(a.connectedAt ?? ""))
 }
 
 /** The agent an app connected with a credential made here is, if any. */

@@ -179,7 +179,13 @@ For native setup and webhook behavior, see
 ## Chat apps
 
 For local or self-hosted Worktable, open **Settings → Agents → Chat apps**.
-Claude Desktop on macOS uses the downloadable `.mcpb` extension. Open it in
+On any device, turn on [Worktable Link](/guides/remote-access/#worktable-link)
+with **Set Up** in the app's steps, then add the official Worktable app in
+ChatGPT or Claude. Turning Link on there makes the app work in this Worktable:
+one already connected moves here, and the next one added starts here. If Link
+was already on, or to move an app later, use **Apps** in Cloud.
+
+On this computer, Claude Desktop on macOS uses the downloadable `.mcpb` extension. Open it in
 Claude, approve installation, and enter the endpoint and any token shown by
 Worktable. Worktable Cloud uses a remote OAuth connection instead of this
 extension.
@@ -229,8 +235,9 @@ token it holds. Select **Edit** on a connected agent to rename it, choose its ic
 change its access. Its name is also its name in threads.
 
 To disconnect, remove the client configuration and revoke its token or approved
-connection in **Settings → Agents**. Removing configuration alone does not
-revoke access. Signing out of Cloud in the browser does not disconnect agents.
+connection in **Settings → Agents**. An app connected through Worktable Link is
+disconnected in Cloud: choose **Manage** beside it. Removing configuration alone
+does not revoke access. Signing out of Cloud in the browser does not disconnect agents.
 
 Install optional [skills](/agents/skills/) after verifying the connection.
 For failures, see [Troubleshooting](/guides/troubleshooting/).

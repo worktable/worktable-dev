@@ -30,6 +30,8 @@ import {
 } from "./share-links-store.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { createLinkedIngress } from "./linked-ingress.ts"
+import { listAgentConnections } from "./agent-connection-store.ts"
+import { disconnectLink } from "./linked-runtime.ts"
 import {
   readGrokBotCandidates,
   readGrokBots,
@@ -352,6 +354,18 @@ it("serves real MCP writes and read-only shares through a separate socket, with 
   )
   const document = (await read.json()).result.structuredContent
   expect(document.content).toContain("Local document")
+  // The connector shows once among this Worktable's agents, managed on
+  // Cloud, which holds its sign-in.
+  expect(
+    (await listAgentConnections()).filter((connection) => connection.link)
+  ).toMatchObject([
+    {
+      displayName: "Test connector",
+      authKind: "oauth",
+      access: null,
+      link: { manageUrl: expect.stringMatching(/^https:\/\/.+\/linked/) },
+    },
+  ])
   const citation = new URL(document.urlToSendInChat)
   expect(citation.pathname).toBe(
     `/linked/open/${ingress.binding.destinationId}`
@@ -489,6 +503,11 @@ it("serves real MCP writes and read-only shares through a separate socket, with 
       )
     ).status
   ).toBe(403)
+  // Unlinking ends its way in, so it is no longer listed.
+  await disconnectLink()
+  expect(
+    (await listAgentConnections()).filter((connection) => connection.link)
+  ).toEqual([])
 }, 20_000)
 
 it("rejects any changed destination binding and altered request body before filesystem mutation", async () => {

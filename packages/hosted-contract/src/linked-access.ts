@@ -37,6 +37,34 @@ export const LinkedEnrollment = z
   })
   .strict()
 
+/** Chat apps a person can set up from a linked Worktable. */
+export const APP_FAMILIES = ["chatgpt", "claude", "grok"] as const
+export type AppFamily = (typeof APP_FAMILIES)[number]
+
+/**
+ * The chat app an OAuth client's name names, read as the Apps page reads it.
+ * The same makers' coding agents (Codex, Claude Code) are not those apps.
+ */
+export function appFamily(name: string): AppFamily | null {
+  if (/codex|claude[\s-]*code/i.test(name)) return null
+  if (/chatgpt|openai/i.test(name)) return "chatgpt"
+  if (/claude/i.test(name)) return "claude"
+  if (/grok/i.test(name)) return "grok"
+  return null
+}
+
+/**
+ * The person turned on Link from a chat app's setup steps in this linked
+ * Worktable, so the app works in it: sent once per such action by the device
+ * with its owner's Cloud session. Viewing the steps sends nothing. Cloud
+ * versions without it answer 404.
+ */
+export const LOCAL_APP_INTENT_PATH = "/gateway/local/app-intent"
+export const LocalAppIntent = z
+  .object({ app: z.enum(APP_FAMILIES), enrollment: LinkedEnrollment })
+  .strict()
+export type LocalAppIntent = z.infer<typeof LocalAppIntent>
+
 /**
  * Share requests a device serves beyond the original contract. Each request
  * that needs one goes only to a device whose current boot named it in its

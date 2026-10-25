@@ -1,6 +1,7 @@
 import {
   setLinkEnabled,
   disconnectLink,
+  noteAppSetup,
   startLinkedRuntime,
   linkedStatus,
   linkedOpenUrl,
@@ -33,7 +34,12 @@ const realFetch = globalThis.fetch
 let exchanges = 0
 let refreshes = 0
 let linkActions = 0
-let linkRequests: { enrollment?: { localWorkspaceId?: string } }[] = []
+let linkRequests: {
+  enrollment?: { localWorkspaceId?: string; controlHash?: string }
+}[] = []
+let intents: { app: string; enrollment: { controlHash: string } }[] = []
+let intentStatus = 200
+let namesWorktable = true
 let expiry = new Date(Date.now() + 300_000).toISOString()
 let refreshStatus = 200
 let exchangeStatus = 200
@@ -50,6 +56,9 @@ beforeEach(async () => {
   setWorkspaceRootOverride(join(root, "workspace"))
   exchanges = refreshes = linkActions = 0
   linkRequests = []
+  intents = []
+  intentStatus = 200
+  namesWorktable = true
   expiry = new Date(Date.now() + 300_000).toISOString()
   refreshStatus = 200
   exchangeStatus = 200
@@ -112,6 +121,13 @@ beforeEach(async () => {
         { status: refreshStatus }
       )
     }
+    if (url.endsWith("/app-intent")) {
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer private-access",
+      })
+      intents.push(body)
+      return Response.json({}, { status: intentStatus })
+    }
     if (url.endsWith("/link")) {
       linkActions++
       linkRequests.push(body)
@@ -120,7 +136,7 @@ beforeEach(async () => {
       if (body.action === "pause") paused = body.paused
       return Response.json({
         destinationId: "a".repeat(32),
-        worktableId: `wl_${"b".repeat(32)}`,
+        ...(namesWorktable ? { worktableId: `wl_${"b".repeat(32)}` } : {}),
         workspaceId: "subscription_one",
         ownerSubject: "owner",
         state: paused ? "paused" : "online",
@@ -310,4 +326,36 @@ test("the Settings toggle preserves the MCP URL and share capability, while Unli
   expect(await resolveDocumentShare(share.token)).not.toBeNull()
   await disconnectLink()
   expect(await resolveDocumentShare(share.token)).toBeNull()
+})
+
+test("turning on Link from a chat app's steps tells Cloud once per action, and tolerates a Cloud without it", async () => {
+  await startCloudSignIn(origin)
+  await completeCloudSignIn(callback())
+  // Before Link is on there is nothing to send the app to.
+  await noteAppSetup("chatgpt")
+  expect(intents).toEqual([])
+  // A Cloud that names no Worktable still gets the device's /w/ address.
+  namesWorktable = false
+  expect((await setLinkEnabled(true, "subscription_one")).mcpUrl).toBe(
+    `${cloud}/api/mcp/w/wl_${"a".repeat(32)}`
+  )
+  await noteAppSetup("chatgpt")
+  // It names this device as enabling Link did.
+  expect(intents).toMatchObject([
+    {
+      app: "chatgpt",
+      enrollment: { controlHash: linkRequests[0]?.enrollment?.controlHash },
+    },
+  ])
+  // A Cloud without it, or one that can't take it now, changes nothing
+  // and fails nothing; each action is one attempt.
+  for (const status of [404, 503]) {
+    intentStatus = status
+    await noteAppSetup("claude")
+  }
+  expect(intents.map((intent) => intent.app)).toEqual([
+    "chatgpt",
+    "claude",
+    "claude",
+  ])
 })

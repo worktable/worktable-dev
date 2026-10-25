@@ -140,6 +140,11 @@ export interface AgentConnection {
    * OAuth clients). Hosted managed agents expose editable permission groups.
    */
   permissionGroups: AgentPermissionGroup[] | null
+  /**
+   * An app that reaches this Worktable through Worktable Link. Cloud holds
+   * its sign-in and access, and manages it at `manageUrl`.
+   */
+  link?: { manageUrl: string }
 }
 
 export interface AgentConnectionInventory {

@@ -31,6 +31,56 @@ test("connected identity and disconnect remain available when OAuth inventory is
           lastSeenAt: null,
           permissionGroups: null,
         },
+        // An app through Worktable Link is managed on Cloud, which holds
+        // its sign-in.
+        {
+          id: "acn_link_chatgpt",
+          authKind: "oauth",
+          displayName: "ChatGPT",
+          platform: "chatgpt",
+          icon: null,
+          access: null,
+          target: { kind: "mcp-client", clientId: null },
+          mode: "on-demand",
+          participant: null,
+          machine: null,
+          scopes: [],
+          connectedAt: "2026-10-24T10:00:00Z",
+          lastSeenAt: "2026-10-24T10:00:00Z",
+          permissionGroups: null,
+          link: {
+            manageUrl: "https://cloud.example/linked/agents?destinationId=d",
+          },
+        },
+        // A Grok Bot through Link keeps its local routine's Edit.
+        {
+          id: "acn_link_grok",
+          authKind: "oauth",
+          displayName: "Grok",
+          platform: "other",
+          icon: null,
+          access: null,
+          target: { kind: "mcp-client", clientId: null },
+          mode: "on-demand",
+          participant: { id: "grok-bot", kind: "agent", name: "Grok Bot" },
+          machine: null,
+          scopes: [],
+          connectedAt: "2026-10-24T09:00:00Z",
+          lastSeenAt: "2026-10-24T09:00:00Z",
+          permissionGroups: null,
+          link: {
+            manageUrl: "https://cloud.example/linked/agents?destinationId=d",
+          },
+        },
+      ],
+      grokBots: [
+        {
+          connectionId: "principal:grok",
+          participantId: "grok-bot",
+          enabled: true,
+          executionMinutes: 30,
+          status: "ready",
+        },
       ],
     })
     try {
@@ -50,6 +100,13 @@ test("connected identity and disconnect remain available when OAuth inventory is
       expect(html.includes("Some details are unavailable")).toBe(
         unavailableAuthKinds.length > 0
       )
+      expect(html).toContain("Worktable Link")
+      expect(html).toContain(
+        'href="https://cloud.example/linked/agents?destinationId=d"'
+      )
+      expect(html.split(">Disconnect<").length - 1).toBe(1)
+      expect(html.split(">Manage<").length - 1).toBe(2)
+      expect(html.split(">Edit<").length - 1).toBe(1)
     } finally {
       client.clear()
     }

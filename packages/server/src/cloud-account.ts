@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { z } from "zod"
+import {
+  LOCAL_APP_INTENT_PATH,
+  type LocalAppIntent,
+} from "@worktable/hosted-contract"
 import { ensureAppDir } from "./app-storage.ts"
 import { resolveWorkspaceOriginForRequest } from "./workspace-origin.ts"
 import { workspaceCacheKey } from "./workspace.ts"
@@ -333,6 +337,34 @@ export async function cloudLinkRequest(origin: string, body: unknown) {
         )
       }
       return data
+    }
+  )
+}
+/**
+ * Tells Cloud the person is setting up a chat app from this linked
+ * Worktable. True once Cloud took it, null when this Cloud doesn't take it,
+ * false when it couldn't now.
+ */
+export async function cloudAppIntent(
+  origin: string,
+  body: LocalAppIntent
+): Promise<boolean | null> {
+  const file = accountPath()
+  return withCrossProcessLock(
+    `${file}.lock`,
+    { label: "Cloud account" },
+    async () => {
+      const account = await refresh(file)
+      if (account.cloudOrigin !== origin) return false
+      const response = await request(
+        origin,
+        LOCAL_APP_INTENT_PATH.slice("/gateway/local/".length),
+        body,
+        account.accessToken
+      )
+      await response.body?.cancel()
+      if (response.status === 401) await rm(file, { force: true })
+      return response.status === 404 ? null : response.ok
     }
   )
 }

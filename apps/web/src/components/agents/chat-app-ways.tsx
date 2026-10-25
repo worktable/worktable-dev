@@ -1,4 +1,11 @@
-import { lazy, Suspense, useState, type ReactNode } from "react"
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@worktable/ui/components/button"
 import { fetchJSON } from "@/lib/http"
@@ -54,8 +61,8 @@ export function LocalChatSteps({
 /**
  * The two ways to use a chat app with this Worktable: on any device through
  * Worktable Link and the app's official Worktable app, or on this computer
- * with the local address. Link comes first: an app added before it is bound
- * to another Worktable. `local` holds the steps for this computer.
+ * with the local address. Turning Link on from these steps tells Cloud the
+ * app works in this Worktable. `local` holds the steps for this computer.
  */
 export function ChatAppWays({
   app,
@@ -80,6 +87,21 @@ export function ChatAppWays({
   const linkOn =
     link.data?.enabled === true &&
     !["locked", "error"].includes(link.data.state)
+  // Turning Link on through Set Up here sends this app here on Cloud: the
+  // one already connected and the next one added. Only a Set Up started
+  // while Link was known to be off counts; viewing the steps, or opening
+  // Set Up with Link already on, never does. Cloud's Apps page moves an
+  // app otherwise.
+  const setUpFor = useRef<ChatApp | null>(null)
+  useEffect(() => {
+    const setUp = setUpFor.current
+    if (!setUp || !linkOn) return
+    setUpFor.current = null
+    void fetchJSON("/api/linked/app-intent", {
+      method: "POST",
+      body: JSON.stringify({ app: setUp }),
+    }).catch(() => undefined)
+  }, [linkSetup, linkOn])
   return (
     <div className="flex flex-col gap-5">
       <section
@@ -119,7 +141,14 @@ export function ChatAppWays({
               </Suspense>
             ) : (
               <div>
-                <Button onClick={() => setLinkSetup(true)}>Set Up</Button>
+                <Button
+                  onClick={() => {
+                    if (link.data && !linkOn) setUpFor.current = app
+                    setLinkSetup(true)
+                  }}
+                >
+                  Set Up
+                </Button>
               </div>
             )}
           </SetupStep>

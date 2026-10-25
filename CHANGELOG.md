@@ -9,6 +9,14 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Linked apps in Agents:** ChatGPT, Claude and other apps that reach a local Worktable through Worktable Link appear under Connected agents, with Manage opening their page in Cloud.
+
+### Changed
+
+- **Chat apps work where you set them up:** Turning on Worktable Link from the ChatGPT or Claude setup steps makes that app work in this Worktable, including one already connected to another.
+
 ## [0.1.28] - 2026-10-24
 
 ### Added

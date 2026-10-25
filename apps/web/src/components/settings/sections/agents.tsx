@@ -1390,6 +1390,7 @@ export function ConnectedAgentsGroup() {
                           ? `${platformName} · `
                           : ""}
                         {connection?.machine ? `${connection.machine} · ` : ""}
+                        {connection?.link ? "Worktable Link · " : ""}
                         {grok
                           ? GROK_BOT_STATUS_LABELS[grok.status]
                           : connection?.lastSeenAt
@@ -1425,7 +1426,21 @@ export function ConnectedAgentsGroup() {
                         Reconnect
                       </Button>
                     )}
-                    {connection && (
+                    {connection?.link ? (
+                      // Cloud holds its sign-in, so it disconnects there.
+                      <a
+                        href={connection.link.manageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={buttonVariants({
+                          variant: "ghost",
+                          size: "sm",
+                        })}
+                        aria-label={`Manage ${name} in Worktable Cloud`}
+                      >
+                        Manage
+                      </a>
+                    ) : connection ? (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1436,7 +1451,7 @@ export function ConnectedAgentsGroup() {
                       >
                         Disconnect
                       </Button>
-                    )}
+                    ) : null}
                   </li>
                 )
               })}

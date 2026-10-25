@@ -221,9 +221,10 @@ function media(block: Props, props: Props, budget: Budget): ReactNode {
   let body: ReactNode
   if (block.type === "image") {
     const src = imageSource(url, budget)
-    if (src === null)
-      return h("div", { className: "worktable-preview-media-empty" })
-    body = h("img", { src, alt: caption ?? text(props.name) ?? "" })
+    body =
+      src === null
+        ? h("div", { className: "worktable-preview-media-empty" })
+        : h("img", { src, alt: caption ?? text(props.name) ?? "" })
   } else if (block.type === "file")
     return h(
       "div",
@@ -578,12 +579,18 @@ export function DocumentReadingPreview({
             void node
             const source =
               typeof src === "string" ? imageSource(src, budget) : null
-            return source === null
-              ? h("span", {
-                  "aria-hidden": true,
-                  className: "worktable-image-pending",
-                })
-              : h("img", { ...props, src: source, alt: alt ?? "" })
+            if (source !== null)
+              return h("img", { ...props, src: source, alt: alt ?? "" })
+            return h(
+              "span",
+              alt
+                ? {
+                    role: "img",
+                    "aria-label": alt,
+                    className: "worktable-image-pending",
+                  }
+                : { "aria-hidden": true, className: "worktable-image-pending" }
+            )
           },
           ol: ({
             node,

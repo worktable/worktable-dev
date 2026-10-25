@@ -128,7 +128,7 @@ describe("saved document preview", () => {
       renderToStaticMarkup(
         <DocumentPreview
           content={[
-            { id: "a", type: "image", props: { url: "readme/shot.png" }, children: [] },
+            { id: "a", type: "image", props: { url: "readme/shot.png", caption: "Signup error" }, children: [] },
           ]}
         />
       ),
@@ -136,8 +136,11 @@ describe("saved document preview", () => {
         <DocumentPreview content={"![Shot](readme/shot.png) ![Logo](https://example.com/logo.png)"} />
       ),
     ]
+    // What the image is still reads: its caption, and its description.
     expect(unresolved[0]).not.toContain("<img")
+    expect(unresolved[0]).toContain("<figcaption>Signup error</figcaption>")
     expect(unresolved[1]).not.toContain("readme/shot.png")
+    expect(unresolved[1]).toContain('aria-label="Shot"')
     expect(unresolved[1]).toContain('src="https://example.com/logo.png"')
   })
 })

@@ -2526,7 +2526,7 @@ async function startProxy(
 \t}
 }
 https://localhost:${port} {
-\ttls ${tls.cert} ${tls.key}
+\ttls ${JSON.stringify(tls.cert)} ${JSON.stringify(tls.key)}
 \treverse_proxy ${new URL(upstream).host}
 }
 `

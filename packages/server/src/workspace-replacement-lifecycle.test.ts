@@ -267,9 +267,11 @@ describe("live workspace replacement", () => {
     const restarted = startServer(0, "127.0.0.1")
     expect((await fetch(`http://127.0.0.1:${restarted.port}/api/spaces`)).status).toBe(200)
     expect(await getWorkspaceCollaborationEpoch()).toBe(epoch)
-    expect(await resolveDocumentShare(after.token)).toEqual(after)
+    // Boot moves earlier links into the links store in the background.
+    await drainV1ShareLinks()
+    expect(findShareLinkByToken(after.token)).toMatchObject({ spaceId: "notes", kind: "doc" })
     expect(getShareLink(current.link.id)?.revokedAt).toBeNull()
-    expect(await resolveDocumentShare(before.token)).toBeNull()
+    expect(findShareLinkByToken(before.token)).toBeNull()
     const publicApp = new Hono().route("/public/share", createPublicSharesRouter(() => "https://share.example.test"))
     const visitor = await publicApp.fetch(
       new Request("http://tenant/public/share", {

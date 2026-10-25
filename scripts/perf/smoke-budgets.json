@@ -83,6 +83,22 @@
       "max": 30,
       "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
     },
+    "requests, cold, open a file page": {
+      "max": 12,
+      "why": "New journey (Plan 21): a deep link to an image's file page. The page check, the app's boot reads and the image."
+    },
+    "cold js, open a file page": {
+      "max": 33,
+      "why": "New journey (Plan 21): a file's page loads the Doc renderer's code and its own, 2 files more than a Markdown doc."
+    },
+    "requests, cold, open a Doc with images": {
+      "max": 16,
+      "why": "New journey (Plan 21): a deep link to a Markdown Doc that embeds two images. The Markdown doc's requests plus one per image."
+    },
+    "cold js, open a Doc with images": {
+      "max": 31,
+      "why": "New journey (Plan 21): the same code as a Markdown doc."
+    },
     "requests, cold, open Threads": {
       "max": 9
     },
@@ -114,7 +130,8 @@
       "max": 0
     },
     "dom, first, open a Space in the sidebar": {
-      "max": 1829
+      "max": 2015,
+      "why": "The fixture gained a Doc and two image files under perf/ (Plan 21 journeys), which add rows to the lists this screen shows."
     },
     "requests, first, open Space": {
       "max": 7
@@ -165,6 +182,30 @@
       "max": 1510,
       "why": "The sidebar shows each Space row's pin button (hover-revealed on desktop) and the person's group labels."
     },
+    "requests, first, open a file page": {
+      "max": 2,
+      "why": "New journey (Plan 21): the page check and the image."
+    },
+    "chain, first, open a file page": {
+      "max": 1,
+      "why": "New journey (Plan 21): the image waits on the page check, which a hover starts early, so one step after the click."
+    },
+    "dom, first, open a file page": {
+      "max": 1544,
+      "why": "New journey (Plan 21): an image's file page."
+    },
+    "requests, first, open a Doc with images": {
+      "max": 4,
+      "why": "New journey (Plan 21): the Doc's content, page check and annotations, and the image the file page did not already load."
+    },
+    "chain, first, open a Doc with images": {
+      "max": 1,
+      "why": "New journey (Plan 21): the images wait on the Doc's content, which a hover starts early, so one step after the click."
+    },
+    "dom, first, open a Doc with images": {
+      "max": 1547,
+      "why": "New journey (Plan 21): a Markdown Doc with two images."
+    },
     "requests, first, back to Home": {
       "max": 4
     },
@@ -192,7 +233,8 @@
       "max": 0
     },
     "dom, first, open a thread": {
-      "max": 1948
+      "max": 2175,
+      "why": "The fixture gained a Doc and two image files under perf/ (Plan 21 journeys). The journeys before this one open perf/ and perf/files/, so the sidebar shows their rows."
     },
     "requests, first, search": {
       "max": 1
@@ -293,6 +335,22 @@
     "chain, revisit, open HTML doc": {
       "max": 1
     },
+    "requests, revisit, open a file page": {
+      "max": 2,
+      "why": "New journey (Plan 21): the page check, and the image downloaded again although its versioned address is served as immutable. Lower to 1 once the browser keeps it."
+    },
+    "chain, revisit, open a file page": {
+      "max": 1,
+      "why": "New journey (Plan 21): the image download on a revisit."
+    },
+    "requests, revisit, open a Doc with images": {
+      "max": 3,
+      "why": "New journey (Plan 21): the page check, annotations and one image downloaded again although its versioned address is served as immutable. Lower to 2 once the browser keeps it."
+    },
+    "chain, revisit, open a Doc with images": {
+      "max": 1,
+      "why": "New journey (Plan 21): the image download on a revisit."
+    },
     "requests, revisit, back to Home": {
       "max": 4
     },
@@ -364,8 +422,8 @@
       "max": 0
     },
     "io stat, documents/page": {
-      "max": 14,
-      "why": "Worktable Teams checks the selected Worktable's team state once per request: one stat each of the team marker, the workspace manifest and the team database (Plan 16 gate D4 allows exactly these 3 on solo)."
+      "max": 18,
+      "why": "Perf servers now run with the files preview on. With it on, a Doc's page looks up the versions of the files it links to or embeds from the catalog snapshot, which checks the Space's catalog files again: 4 more stats for a Doc with links, as perf/markdown has."
     },
     "io read, documents/page": {
       "max": 3

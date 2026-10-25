@@ -37,7 +37,9 @@ Documents are 70% Markdown, 25% rich text (mostly short, a few up to 5,000
 blocks) and 5% HTML, spread over 2 to 20 spaces with the first space largest.
 The "Dashboards" space holds the extra HTML documents. Every profile includes
 probe documents in the first space: `perf/rich-2000`, `perf/rich-5000`,
-`perf/markdown` and `perf/html`.
+`perf/markdown` and `perf/html`, and for files two small images uploaded to
+`perf/files/` and `perf/with-images`, a Markdown Doc that embeds both. Perf
+servers run with the files preview on (`WORKTABLE_FILES_PREVIEW=1`).
 
 Documents are written through the managed write path that REST and MCP use,
 so the workspace has real identities, provenance, version history and
@@ -164,8 +166,9 @@ context), then one tab that clicks through the journeys four times: first
 visit in the tab, warm with new targets, revisit, and revisit after
 `--idle-seconds` (default 20) of idle; and reopens the app with a warm cache.
 The journeys are opening a Space from the sidebar, a Markdown, a rich (60 and
-2,000 blocks) and an HTML document, going back to Home, the Threads list, a
-thread, and a search. Desktop clicks hover 150 ms first; the phone taps.
+2,000 blocks) and an HTML document, an image's file page, a Doc with images
+(content once its images have loaded), going back to Home, the Threads list,
+a thread, and a search. Desktop clicks hover 150 ms first; the phone taps.
 
 For each click it records:
 

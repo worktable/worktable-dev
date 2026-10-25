@@ -410,9 +410,11 @@ interface DocTarget {
   spaceId: string
   spaceName: string
   path: string
-  kind: "md" | "rich" | "html"
+  kind: "md" | "rich" | "html" | "file"
   /** First heading (Markdown and rich text). */
   heading: string
+  /** Files the document embeds, which its content waits for. */
+  images?: string[]
 }
 
 interface ThreadTarget {
@@ -430,6 +432,8 @@ export interface Targets {
   richLarge: DocTarget
   htmlA: DocTarget
   htmlB: DocTarget
+  file: DocTarget
+  withImages: DocTarget
   threadsHref: string
   threadA: ThreadTarget
   threadB: ThreadTarget
@@ -1317,6 +1321,11 @@ function htmlSrcPart(doc: DocTarget): string {
   return `/widgets/__document/${Buffer.from(doc.path).toString("base64url")}/content`
 }
 
+/** What an image of a file in a Space loads from (fileSourceUrl). */
+function fileSrcPart(path: string): string {
+  return `/documents/file?path=${encodeURIComponent(path)}`
+}
+
 function docExpectations(
   doc: DocTarget,
   pageLoad = false
@@ -1329,9 +1338,40 @@ function docExpectations(
   const encodedPath = doc.path.split("/").map(encodeURIComponent).join("/")
   // A deep link's page HTML can carry a display-only snapshot.
   const opening: Expectation[] =
-    pageLoad && doc.kind !== "html"
+    pageLoad && (doc.kind === "md" || doc.kind === "rich")
       ? [{ name: "opening", key: "opening", args: { heading: doc.heading } }]
       : []
+  // Content waits for its images to load, so their requests are its gate.
+  const fileGate = /\/documents\/file\?/
+  if (doc.kind === "file")
+    return {
+      expect: [
+        {
+          name: "images",
+          key: "content",
+          args: { srcParts: [fileSrcPart(doc.path)] },
+        },
+      ],
+      contentKey: "content",
+      gate: fileGate,
+    }
+  if (doc.kind === "md" && doc.images?.length)
+    return {
+      expect: [
+        ...opening,
+        { name: "markdown", key: "text", args: { heading: doc.heading } },
+        {
+          name: "images",
+          key: "content",
+          args: {
+            heading: doc.heading,
+            srcParts: doc.images.map(fileSrcPart),
+          },
+        },
+      ],
+      contentKey: "content",
+      gate: fileGate,
+    }
   if (doc.kind === "md")
     return {
       expect: [
@@ -1549,6 +1589,12 @@ function clickJourney(pass: Pass, targets: Targets, second: boolean): Action[] {
           openDocument(pass, "open rich doc (2,000 blocks)", targets.richLarge),
         ]),
     openDocument(pass, "open HTML doc", pick(targets.htmlA, targets.htmlB)),
+    ...(second
+      ? []
+      : [
+          openDocument(pass, "open a file page", targets.file),
+          openDocument(pass, "open a Doc with images", targets.withImages),
+        ]),
     goHome(pass),
     openThreads(pass, targets),
     openThread(pass, pick(targets.threadA, targets.threadB)),
@@ -1600,6 +1646,8 @@ function coldLoads(targets: Targets): ColdLoad[] {
     doc("open rich doc", targets.richA),
     doc("open rich doc (2,000 blocks)", targets.richLarge),
     doc("open HTML doc", targets.htmlA),
+    doc("open a file page", targets.file),
+    doc("open a Doc with images", targets.withImages),
     {
       journey: "open Threads",
       target: targets.threadsHref,
@@ -2321,6 +2369,11 @@ async function setup(
     richLarge: await docTarget(fixture.probes.rich2000.path, "rich"),
     htmlA: await docTarget(fixture.probes.html.path, "html"),
     htmlB: await docTarget(htmlB.path, "html", htmlB.spaceId),
+    file: await docTarget(fixture.probes.file.path, "file"),
+    withImages: {
+      ...(await docTarget(fixture.probes.withImages.path, "md")),
+      images: fixture.probes.withImages.images,
+    },
   }
 
   // Threads: the sidebar link and the first two rows of the list.

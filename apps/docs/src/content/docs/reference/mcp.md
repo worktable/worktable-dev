@@ -58,8 +58,8 @@ Its `document` action deletes one registered document, while `document_folder`
 permanently deletes a folder containing Docs, HTML Docs, or both as one
 all-or-nothing change. Both require `documents:write`. If any document format
 does not support deletion, the action fails before removing anything. One
-folder deletion can contain up to 128 documents, and it revokes their share
-links.
+folder deletion can contain up to 1,000 Docs and files, and it revokes their
+share links.
 
 `worktable_spaces` creates, updates, archives, and restores Spaces with
 `docs:write`. Setting a Space's pins also requires `documents:write`.

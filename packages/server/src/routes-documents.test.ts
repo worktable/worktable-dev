@@ -12,6 +12,7 @@ import {
   writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
+import { FOLDER_OPERATION_MAX_ENTRIES } from "./folder-operation-limit.ts"
 import { join } from "node:path"
 import { Hono } from "hono"
 import {
@@ -731,12 +732,14 @@ describe("format-neutral document route", () => {
   }, 10_000)
 
   it("refuses a folder over the limit with how many it holds, and moves nothing", async () => {
-    for (let i = 0; i < 129; i++) {
-      await writeDoc(spaceId, `big/doc-${i}`, `# Doc ${i}`, {
-        updatedBy: "test",
-        source: "rest-api",
-      })
-    }
+    // Written on disk, as an agent might: one more than a folder operation takes.
+    const big = join(root, "spaces", spaceId, "docs", "big")
+    await mkdir(big, { recursive: true })
+    await Promise.all(
+      Array.from({ length: FOLDER_OPERATION_MAX_ENTRIES + 1 }, (_, i) =>
+        writeFile(join(big, `doc-${i}.md`), `# Doc ${i}`)
+      )
+    )
     const refused = await app().request(
       `/api/spaces/${spaceId}/documents/move-folder`,
       {
@@ -750,7 +753,7 @@ describe("format-neutral document route", () => {
     )
     expect(refused.status).toBe(409)
     expect((await refused.json()).error).toBe(
-      "129 Docs and files are inside. Worktable can move up to 128 at a time, so move some of them out first."
+      "1,001 Docs and files are inside. Worktable can move up to 1,000 at a time, so move some of them out first."
     )
     expect((await readDoc(spaceId, "big/doc-0")).data).toBe("# Doc 0")
   }, 30_000)

@@ -1122,6 +1122,45 @@ describe("recoverable document lifecycle", () => {
     expect(await docExists("space", "new")).toBe(false)
   })
 
+  it("rolls back a folder move past its last saved cursor after a crash", async () => {
+    const workspace = join(root, "strided-folder-move", "workspace")
+    const app = join(root, "strided-folder-move", "app")
+    mkdirSync(workspace, { recursive: true })
+    setWorkspaceRootOverride(workspace)
+    setAppDirOverride(app)
+    ensureWorkspaceManifest()
+    await writeSpace(makeSpace("space"))
+    // More Docs than one stride, so the crash lands between saved cursors.
+    const count = 40
+    for (let i = 0; i < count; i += 1) {
+      await writeDoc("space", `folder/doc-${i}`, `# Doc ${i}\n`)
+    }
+
+    let moved = 0
+    setDocumentLifecycleStepHookForTests((step) => {
+      if (step === "source-moved" && ++moved === count) {
+        throw new SimulatedDocumentLifecycleCrash(step)
+      }
+    })
+    try {
+      await expect(
+        moveDocumentFolder("space", "folder", "moved")
+      ).rejects.toThrow("source-moved")
+    } finally {
+      setDocumentLifecycleStepHookForTests(null)
+    }
+    const recovered = recoverInterruptedDocumentLifecycles()
+    expect(recovered).toHaveLength(1)
+    await reconcileRecoveredDocumentLifecycles(recovered)
+    expect(recoverInterruptedDocumentLifecycles()).toEqual([])
+    for (let i = 0; i < count; i += 1) {
+      expect((await readDoc("space", `folder/doc-${i}`)).data).toBe(
+        `# Doc ${i}\n`
+      )
+      expect(await docExists("space", `moved/doc-${i}`)).toBe(false)
+    }
+  }, 60_000)
+
   for (const boundary of ["source-moved", "committed"] as const) {
     it(`recovers one all-or-nothing mixed folder generation at ${boundary}`, async () => {
       const workspace = join(root, `prefix-${boundary}`, "workspace")

@@ -26,6 +26,7 @@ import {
   readWorkspaceStorageLayoutAt,
   requireRealDocumentStorageDirectory,
 } from "./workspace-storage-v2.ts"
+import { FOLDER_OPERATION_MAX_ENTRIES } from "./folder-operation-limit.ts"
 import { requireWorkspaceRecovery } from "./workspace-safety.ts"
 
 const JOB_ID_PATTERN = /^dsv2_[A-Za-z0-9_-]{22}$/
@@ -59,7 +60,7 @@ const JobSchema = z.discriminatedUnion("operation", [
       operation: z.literal("move"),
       spaceId: CanonicalIdSchema,
       createdAt: z.iso.datetime(),
-      documents: z.array(MoveDocumentSchema).min(1).max(128),
+      documents: z.array(MoveDocumentSchema).min(1).max(FOLDER_OPERATION_MAX_ENTRIES),
     })
     .strict(),
   z
@@ -71,7 +72,7 @@ const JobSchema = z.discriminatedUnion("operation", [
       operation: z.literal("delete"),
       spaceId: CanonicalIdSchema,
       createdAt: z.iso.datetime(),
-      documents: z.array(DeleteDocumentSchema).min(1).max(128),
+      documents: z.array(DeleteDocumentSchema).min(1).max(FOLDER_OPERATION_MAX_ENTRIES),
     })
     .strict(),
 ])

@@ -201,7 +201,7 @@ for (const mobile of [true, false]) {
       await mkdir(dirname(file), { recursive: true })
       await writeFile(
         file,
-        "# Reading\n\nKeep this line.\n\nThe **launch date** moves to May.\n"
+        "# Reading\n\nKeep this line.\n\nThe **launch date** moves to May.\n\n<details>\n<summary>Background</summary>\n\nThe plan from April.\n\n</details>\n"
       )
       const annotationUrl = `${harness.apiUrl}/api/spaces/annotations/annotations?docPath=${docPath}`
       const savedAnnotations = async () =>
@@ -214,6 +214,15 @@ for (const mobile of [true, false]) {
       const article = page.locator("article.worktable-markdown")
       await expect(article).toContainText("moves to May.", { timeout: 60_000 })
       await expect(page.locator('[contenteditable="true"]')).toHaveCount(0)
+
+      // A section opened before commenting stays open, and stays the same
+      // element, through the re-renders a new comment brings.
+      const section = article.locator(".worktable-details")
+      await section.getByText("Background").click()
+      await expect(section.getByText("The plan from April.")).toBeVisible()
+      await section.evaluate((element) => {
+        element.setAttribute("data-test-kept", "")
+      })
 
       // From inside the bold words to the plain text after them.
       await article.locator("p", { hasText: "moves to May" }).evaluate((paragraph) => {
@@ -252,6 +261,8 @@ for (const mobile of [true, false]) {
       await expect
         .poll(() => highlighted(page, "worktable-comment"))
         .toEqual(["launch date moves"])
+      await expect(article.locator(".worktable-details[data-test-kept]")).toHaveCount(1)
+      await expect(section.getByText("The plan from April.")).toBeVisible()
 
       // An agent rewrites the file around the passage.
       await writeFile(

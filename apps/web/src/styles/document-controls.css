@@ -105,3 +105,20 @@
     transition: none;
   }
 }
+
+/* Passages with comments. Highlights paint over the text without changing
+   the page; bronze is the annotation material. The draft mark keeps the
+   selection in view while its comment is written. */
+::highlight(worktable-comment) {
+  background-color: color-mix(in oklch, var(--accent-bronze) 14%, transparent);
+  text-decoration: underline 2px
+    color-mix(in oklch, var(--accent-bronze) 55%, transparent);
+  text-underline-offset: 0.2em;
+}
+
+::highlight(worktable-comment-active),
+::highlight(worktable-comment-draft) {
+  background-color: color-mix(in oklch, var(--accent-bronze) 28%, transparent);
+  text-decoration: underline 2px var(--accent-bronze);
+  text-underline-offset: 0.2em;
+}

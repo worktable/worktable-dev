@@ -37,10 +37,12 @@ export interface AnnotationPanelContentProps {
   onClose?: () => void
   /** When provided, renders a compose button under the header (used where there
    *  is no editor to attach annotations from — e.g. the HTML doc route). */
-  onCompose?: () => void;
+  onCompose?: (trigger: HTMLElement) => void;
   composeLabel?: string;
   /** Overrides the empty-state hint for surfaces without a block editor. */
   emptyHint?: string;
+  /** Comments whose passage is no longer in the Doc. */
+  detachedIds?: ReadonlySet<string>;
   className?: string;
 }
 
@@ -57,6 +59,7 @@ export function AnnotationPanelContent({
   onCompose,
   composeLabel,
   emptyHint,
+  detachedIds,
   className,
 }: AnnotationPanelContentProps) {
   const [showResolved, setShowResolved] = useState(false);
@@ -96,7 +99,7 @@ export function AnnotationPanelContent({
           {showResolved ? "Hide resolved" : "Show resolved"}
         </Button>
         {onCompose && !readOnly && (
-          <Button size="xs" variant="outline" onClick={onCompose}>
+          <Button size="xs" variant="outline" onClick={(event) => onCompose(event.currentTarget)}>
             <MessageSquareText className="size-3.5" />
             {composeLabel ?? "Add comment"}
           </Button>
@@ -108,7 +111,7 @@ export function AnnotationPanelContent({
           <div className="flex h-full min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border p-6 text-center">
             <MessageSquareText className="mb-3 h-8 w-8 text-muted-foreground/50" />
             <p className="text-sm font-medium text-foreground">No open annotations</p>
-            <p className="mt-1 text-xs text-muted-foreground">{emptyHint ?? "Use /comment or /instruction in the editor to attach context to a block."}</p>
+            {emptyHint !== "" && <p className="mt-1 text-xs text-muted-foreground">{emptyHint ?? "Use /comment or /instruction in the editor to attach context to a block."}</p>}
           </div>
         ) : (
           <div className="space-y-1">
@@ -117,6 +120,7 @@ export function AnnotationPanelContent({
                 key={annotation.id}
                 readOnly={readOnly}
                 annotation={annotation}
+                detached={detachedIds?.has(annotation.id) ?? false}
                 active={annotation.id === activeAnnotationId}
                 onSelect={() => onSelectAnnotation(annotation)}
                 onResolve={() => onResolve(annotation.id)}
@@ -134,6 +138,7 @@ export function AnnotationPanelContent({
 function AnnotationCard({
   readOnly,
   annotation,
+  detached,
   active,
   onSelect,
   onResolve,
@@ -142,6 +147,7 @@ function AnnotationCard({
 }: {
   readOnly?: boolean
   annotation: Annotation
+  detached: boolean
   active: boolean
   onSelect: () => void
   onResolve: () => void
@@ -183,7 +189,7 @@ function AnnotationCard({
         {"quote" in annotation.target && annotation.target.quote && (
           <div className="mb-1.5 border-l-2 border-border pl-2">
             <span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-              Commenting on
+              {detached ? "Text changed" : "Commenting on"}
             </span>
             <p className="line-clamp-3 text-xs text-muted-foreground italic">
               {annotation.target.quote}

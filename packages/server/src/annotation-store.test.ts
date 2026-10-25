@@ -118,6 +118,41 @@ describe("annotation store", () => {
     expect(context.selectorMatch).toBe("missing");
   });
 
+  it("finds a Markdown passage after the file is rewritten around it, and reports it stale once it's gone", async () => {
+    await writeDoc("space", "notes", "# Notes\n\nIntro.\n\nThe **launch date** moves to May.\n");
+    const created = await createAnnotation("space", {
+      target: { type: "doc", docPath: "notes", quote: "launch date moves", prefix: "The ", suffix: " to May." },
+      category: "comment",
+      body: "Confirm with finance.",
+    });
+
+    await writeDoc(
+      "space",
+      "notes",
+      "# Notes\n\nA new opening paragraph.\n\nIntro, rewritten.\n\n- The **launch date** moves to May.\n"
+    );
+    const moved = await getAnnotationContext("space", created.annotation.id);
+    expect(moved).toMatchObject({ targetExists: true, selectorMatch: "exact", startLine: 7, endLine: 7 });
+    expect(moved.excerpt).toBe("- The **launch date** moves to May.");
+
+    await writeDoc("space", "notes", "# Notes\n\nNothing about dates here.\n");
+    const gone = await getAnnotationContext("space", created.annotation.id);
+    expect(gone).toMatchObject({ targetExists: false, selectorMatch: "stale" });
+  });
+
+  it("places a passage in a rich Doc by the text around a repeated quote", async () => {
+    const paragraph = (id: string, text: string) => ({ ...block, id, content: [{ type: "text", text, styles: {} }] });
+    await writeDoc("space", "doc", [paragraph("first", "Ship it on Monday."), paragraph("second", "Review it on Monday.")]);
+    const created = await createAnnotation("space", {
+      target: { type: "doc", docPath: "doc", quote: "it on Monday", prefix: "Ship it on Monday.\nReview " },
+      category: "comment",
+      body: "Which Monday?",
+    });
+    const context = await getAnnotationContext("space", created.annotation.id);
+    expect(context).toMatchObject({ targetExists: true, selectorMatch: "exact" });
+    expect((context.block as { id: string }).id).toBe("second");
+  });
+
   it("moves annotation sidecars when a doc is renamed", async () => {
     await createAnnotation("space", {
       target: { type: "block", docPath: "old", blockId: "block-a" },

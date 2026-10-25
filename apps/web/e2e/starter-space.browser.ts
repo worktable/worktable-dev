@@ -230,7 +230,7 @@ test("rich-doc block handles remain usable after annotation composer closes", as
       response.url().endsWith("/api/spaces/welcome/annotations")
   )
   await page
-    .getByRole("button", { name: "Add Annotation", exact: true })
+    .getByRole("button", { name: "Add Comment", exact: true })
     .click()
   const secondResponse = await secondCreate
   expect(secondResponse.status()).toBe(200)
@@ -248,7 +248,7 @@ test("rich-doc block handles remain usable after annotation composer closes", as
       response.url().endsWith("/api/spaces/welcome/annotations")
   )
   await page
-    .getByRole("button", { name: "Add Annotation", exact: true })
+    .getByRole("button", { name: "Add Comment", exact: true })
     .click()
   const thirdResponse = await thirdCreate
   expect(thirdResponse.status()).toBe(200)

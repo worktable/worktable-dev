@@ -44,9 +44,11 @@ import {
 } from "@/lib/annotations-queries"
 import type {
   Annotation,
+  AnnotationCategory,
   DocumentPage,
   DocumentPageResult,
   DocumentSharingSummary,
+  PassageSelector,
 } from "@worktable/types"
 import {
   convertDoc,
@@ -87,6 +89,9 @@ import {
   AnnotationComposer,
   type AnnotationDraft,
 } from "@/components/annotations/annotation-composer"
+import { SelectionComment } from "@/components/annotations/selection-comment"
+import { usePassageComments } from "@/components/annotations/use-passage-comments"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { Button } from "@worktable/ui/components/button"
 import {
   DocumentStatus,
@@ -854,6 +859,26 @@ function MarkdownDocPage({
     return () => mql.removeEventListener("change", update)
   }, [])
 
+  // Comments on a passage: select text in the Doc as it reads, no Edit needed.
+  const isMobile = useIsMobile()
+  const canComment = validated && !readOnly
+  const [composerDraft, setComposerDraft] = useState<PassageDraft | null>(
+    null
+  )
+  const [composerOpen, setComposerOpen] = useState(false)
+  const passages = usePassageComments({
+    rootRef: readingRef,
+    ready: typeof content === "string",
+    annotations,
+    activeAnnotationId,
+    onSelectAnnotation: selectAnnotation,
+  })
+  const focusAnnotation = (annotation: Annotation) => {
+    selectAnnotation(annotation)
+    passages.reveal(annotation.id)
+  }
+  const emptyHint = canComment ? "Select text to comment on it." : ""
+
   if (typeof content !== "string") {
     return contentQuery.isError ? (
       <DocUnavailable docPath={docPath} />
@@ -971,7 +996,9 @@ function MarkdownDocPage({
             readOnly={readOnly}
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
-            onSelectAnnotation={selectAnnotation}
+            onSelectAnnotation={focusAnnotation}
+            detachedIds={passages.detached}
+            emptyHint={emptyHint}
             onResolve={(annotationId) =>
               annotationMutations.resolve.mutate({ annotationId })
             }
@@ -1046,7 +1073,9 @@ function MarkdownDocPage({
                 readOnly={readOnly}
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}
-                onSelectAnnotation={selectAnnotation}
+                onSelectAnnotation={focusAnnotation}
+                detachedIds={passages.detached}
+                emptyHint={emptyHint}
                 onResolve={(annotationId) =>
                   annotationMutations.resolve.mutate({ annotationId })
                 }
@@ -1063,8 +1092,44 @@ function MarkdownDocPage({
           </Drawer>
         </>
       )}
+
+      {canComment && !previewVersionId && (
+        <SelectionComment
+          rootRef={readingRef}
+          paused={composerOpen}
+          onComment={({ range, selector }) => {
+            setComposerDraft({ ...selector, anchor: range, category: "comment" })
+            setComposerOpen(true)
+          }}
+        />
+      )}
+      <AnnotationComposer
+        draft={composerDraft}
+        open={composerOpen && canComment}
+        onOpenChange={setComposerOpen}
+        onSubmit={(category, body) => {
+          if (!composerDraft) return
+          const { quote, prefix, suffix } = composerDraft
+          annotationMutations.create.mutate({
+            target: { type: "doc", docPath, quote, prefix, suffix },
+            category,
+            body,
+          })
+          // On a phone the highlight confirms it; the next passage is a tap away.
+          if (!isMobile) {
+            setAnnotationsOpen(true)
+            setVersionsOpen(false)
+          }
+        }}
+      />
     </div>
   )
+}
+
+/** A comment being written about text selected in a Markdown Doc. */
+interface PassageDraft extends PassageSelector {
+  category: AnnotationCategory
+  anchor: Range
 }
 
 // Custom Yjs message (mirrors the server's MESSAGE_INTENT = 43): tells the
@@ -1266,6 +1331,7 @@ function BlockNoteDocPage({
     null
   )
   const [composerOpen, setComposerOpen] = useState(false)
+  const isMobile = useIsMobile()
   const [belowXl, setBelowXl] = useState(false)
   useEffect(() => {
     const mql = window.matchMedia("(max-width: 1279px)")
@@ -1730,19 +1796,20 @@ function BlockNoteDocPage({
         draft={composerDraft}
         open={composerOpen && !readOnly}
         onOpenChange={setComposerOpen}
-        onSubmit={(draft, body) => {
+        onSubmit={(category, body) => {
+          if (!composerDraft) return
           annotationMutations.create.mutate({
             target: {
               type: "block",
               docPath,
-              blockId: draft.blockId,
-              blockType: draft.blockType,
-              quote: draft.quote,
+              blockId: composerDraft.blockId,
+              blockType: composerDraft.blockType,
+              quote: composerDraft.quote,
             },
-            category: draft.category,
+            category,
             body,
           })
-          setAnnotationsOpen(true)
+          if (!isMobile) setAnnotationsOpen(true)
         }}
       />
 

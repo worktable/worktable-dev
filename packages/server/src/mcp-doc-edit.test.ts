@@ -12,6 +12,7 @@ import * as decoding from "lib0/decoding"
 import * as encoding from "lib0/encoding"
 import * as syncProtocol from "y-protocols/sync"
 import * as Y from "yjs"
+import { createAnnotation } from "./annotation-store.ts"
 import { getServerEditor } from "./blocknote.ts"
 import { readDoc, writeSpace } from "./store.ts"
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
@@ -245,6 +246,35 @@ describe("worktable_docs_write action edit", () => {
     })) as { context: { selectorMatch: string } }
     expect(context.context.selectorMatch).toBe("exact")
     expect((await storedBlocks("review")).map((block) => block.id)).toEqual([kept.id, rewritten.id])
+  }, 20_000)
+
+  it("reports passage comments on a Markdown Doc whose text an edit changed", async () => {
+    await write("plan", "# Plan\n\nThe **launch date** moves to May.\n\nBudget stays flat.\n", {
+      lifetime: "durable",
+    })
+    const comment = async (quote: string) =>
+      (
+        await createAnnotation(spaceId, {
+          target: { type: "doc", docPath: "plan", quote },
+          category: "comment",
+          body: `About ${quote}`,
+        })
+      ).annotation.id
+    const edited = await comment("launch date moves")
+    await comment("Budget stays flat")
+
+    const result = await edit("plan", [
+      { oldText: "The **launch date** moves to May.", newText: "Launch slips to June." },
+    ])
+    expect(result.data.annotationsAffected).toEqual([{ annotationId: edited, quoteStillPresent: false }])
+
+    const listed = await tool("worktable_annotations_read", { action: "list", spaceId, docPath: "plan" })
+    expect(listed.ok).toBe(true)
+    expect(listed.data.annotations.map((annotation: { target: unknown }) => annotation.target)).toContainEqual({
+      type: "doc",
+      docPath: "plan",
+      quote: "Budget stays flat",
+    })
   }, 20_000)
 
   it("numbers the snippet by the stored text, even when Worktable normalizes the edit", async () => {

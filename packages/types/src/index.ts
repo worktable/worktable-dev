@@ -9,6 +9,7 @@ export * from "./mermaid";
 export * from "./markdown";
 export * from "./delimited-text";
 export * from "./annotations";
+export * from "./passage";
 export * from "./widgets";
 export * from "./records";
 export * from "./link-grants";

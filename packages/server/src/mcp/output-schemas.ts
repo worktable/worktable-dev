@@ -29,6 +29,7 @@ import {
 } from "@worktable/types"
 import { z } from "zod"
 import { type OperationId, type WorktableToolName } from "./operations.ts"
+import { ReleasedDocAnnotationTarget } from "./schemas.ts"
 
 type OutputVariant = z.ZodObject
 
@@ -593,7 +594,7 @@ const RecordQueryOutputSchema = z.looseObject({
 })
 
 const PublicAnnotationTargetSchema = z.discriminatedUnion("type", [
-  AnnotationTargetSchema.options[0].loose(),
+  ReleasedDocAnnotationTarget.loose(),
   AnnotationTargetSchema.options[1].loose(),
   AnnotationTargetSchema.options[2].loose(),
   z.looseObject({ type: z.literal("html"), htmlId: PortableHtmlIdSchema }),

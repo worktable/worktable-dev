@@ -149,9 +149,10 @@ function lineAt(source: string, offset: number): number {
 /** Where in a Markdown file's source a passage selected on the page is now. */
 export function locateMarkdownPassage(
   source: string,
-  selector: PassageSelector
+  selector: PassageSelector,
+  /** The source's reading text, when the caller looks up several passages. */
+  reading = markdownReadingText(source)
 ): MarkdownPassage | null {
-  const reading = markdownReadingText(source)
   const found = findPassage(reading.text, selector)
   if (!found) return null
   let start = reading.from[found.start]!

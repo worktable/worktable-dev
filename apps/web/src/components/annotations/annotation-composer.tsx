@@ -64,6 +64,12 @@ export function AnnotationComposer({
   const [wasOpen, setWasOpen] = useState(open);
   const isMobile = useIsMobile();
   const anchor = useMemo(() => anchorFor(draft?.anchor), [draft?.anchor]);
+  // Opened from a drawer, the box goes inside it: the drawer keeps focus
+  // within itself and would take it back from a box outside.
+  const container =
+    draft?.anchor instanceof Element
+      ? draft.anchor.closest<HTMLElement>("[data-vaul-drawer]")
+      : null;
   const noteRef = useRef<HTMLTextAreaElement>(null);
 
   // Reset each time the composer opens so a prior draft never lingers.
@@ -155,6 +161,7 @@ export function AnnotationComposer({
     >
       <PopoverContent
         anchor={anchor}
+        container={container}
         side="bottom"
         align="start"
         sideOffset={8}

@@ -165,7 +165,10 @@ import {
   repairEscapedMermaidFences,
 } from "../mermaid-document.ts"
 import type { MermaidDocumentRepair, PassageSelector } from "@worktable/types"
-import { locateMarkdownPassage } from "../markdown-passage.ts"
+import {
+  locateMarkdownPassage,
+  markdownReadingText,
+} from "../markdown-passage.ts"
 import type { McpSurface } from "./surface.ts"
 import {
   DELIMITED_NAME,
@@ -2838,8 +2841,12 @@ async function _dispatchOperationInner(
         if (!written.ok) throw await docWriteFailure(spaceId, docPath, written)
         await syncDocAfterToolWrite(spaceId, docPath)
         // Quotes are text as the page shows it, without the Markdown around it.
+        // Each version is read once, however many comments it has.
+        let before: ReturnType<typeof markdownReadingText> | undefined
+        let after: ReturnType<typeof markdownReadingText> | undefined
         const passageEdited = (selector: PassageSelector): boolean => {
-          const passage = locateMarkdownPassage(stored, selector)
+          before ??= markdownReadingText(stored)
+          const passage = locateMarkdownPassage(stored, selector, before)
           return (
             passage !== null &&
             edit.originalRanges.some(
@@ -2859,8 +2866,11 @@ async function _dispatchOperationInner(
             docPath,
             ({ quote, prefix, suffix }) =>
               quote && passageEdited({ quote, prefix, suffix })
-                ? locateMarkdownPassage(edit.text, { quote, prefix, suffix })
-                    ?.match === "exact"
+                ? locateMarkdownPassage(
+                    edit.text,
+                    { quote, prefix, suffix },
+                    (after ??= markdownReadingText(edit.text))
+                  )?.match === "exact"
                 : null
           ),
           repairs: [...repairs, ...(written.repairs ?? [])],

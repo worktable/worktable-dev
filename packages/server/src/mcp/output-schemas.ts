@@ -844,6 +844,13 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
       maxBytes: z.number().int().positive(),
       command: z.string(),
     }),
+    // With a file attached in ChatGPT: the file as saved.
+    z.looseObject({
+      path: z.string(),
+      sourceRevision: z.string(),
+      byteLength: z.number().int().nonnegative(),
+      contentHash: z.string(),
+    }),
   ],
   "documents.create": [
     GenericDocumentMutationOutputSchema.extend(LifetimeOutputFields),
@@ -1737,6 +1744,14 @@ export const PREVIEW_OUTPUT_SCHEMAS: Partial<
       expiresAt: forActions(z.string(), '"upload": when the link stops working'),
       maxBytes: forActions(z.number().int().positive(), '"upload"'),
       command: forActions(z.string(), '"upload": the curl command to send the file with'),
+      byteLength: forActions(
+        z.number().int().nonnegative(),
+        '"upload" with file: the size of the file saved'
+      ),
+      contentHash: forActions(
+        z.string(),
+        '"upload" with file: the SHA-256 of the file saved, base64url'
+      ),
     }),
   worktable_threads_write:
     WORKTABLE_OUTPUT_SCHEMAS.worktable_threads_write.extend({

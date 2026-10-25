@@ -1037,8 +1037,24 @@ export const DocumentsWriteInput = z.strictObject({
 })
 
 /**
+ * A file ChatGPT passes a tool. ChatGPT requires all four fields declared;
+ * it always sends download_url and file_id.
+ */
+export const ChatGptFileInput = z
+  .object({
+    download_url: z.string().min(1).max(8192),
+    file_id: z.string().min(1).max(256),
+    mime_type: z.string().max(256).optional(),
+    file_name: z.string().max(1024).optional(),
+  })
+  .describe(
+    "In ChatGPT: a file the user attached, with action upload. Worktable fetches it from ChatGPT and saves it at path."
+  )
+
+/**
  * On the preview surface, files_write also makes a one-time upload link, so
- * an agent with a shell sends a file's bytes outside the tool call.
+ * an agent with a shell sends a file's bytes outside the tool call. In
+ * ChatGPT, upload takes a file the user attached instead.
  */
 export const DocumentsWriteInputPreview = z.strictObject({
   request: z.discriminatedUnion("action", [
@@ -1065,6 +1081,7 @@ export const DocumentsWriteInputPreview = z.strictObject({
         .describe("With ifExists replace: replace only while the file is still at this revision"),
     }),
   ]),
+  file: ChatGptFileInput.optional(),
 })
 
 export const DocsWriteInput = z.strictObject({

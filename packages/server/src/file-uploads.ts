@@ -26,16 +26,16 @@ const FILE_KEEP_BOTH_TRIES = 100
 const fileRegistry = createBuiltinDocumentFormatRegistry()
 
 /**
- * A request body up to `max` bytes, counted as it arrives, or null past it:
- * a sender that leaves out Content-Length, as curl does from stdin, can't
- * make the server hold more.
+ * A request's or response's body up to `max` bytes, counted as it arrives,
+ * or null past it: a sender that leaves out Content-Length, as curl does
+ * from stdin, can't make the server hold more.
  */
 export async function readLimitedBody(
-  request: Request,
+  message: Request | Response,
   max: number
 ): Promise<Uint8Array | null> {
-  if (!request.body) return new Uint8Array(0)
-  const reader = request.body.getReader()
+  if (!message.body) return new Uint8Array(0)
+  const reader = message.body.getReader()
   const chunks: Uint8Array[] = []
   let total = 0
   for (;;) {

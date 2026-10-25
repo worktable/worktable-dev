@@ -11,18 +11,22 @@ infrastructure and personal context out of release notes.
 
 ### Added
 
+- **Live share links:** Shared HTML tools can show live Records, and visitors can comment, when the owner allows them in Settings → Links.
 - **Linked apps in Agents:** ChatGPT, Claude and other apps that reach a local Worktable through Worktable Link appear under Connected agents, with Manage opening their page in Cloud.
 
 ### Changed
 
 - **Chat apps work where you set them up:** Turning on Worktable Link from the ChatGPT or Claude setup steps makes that app work in this Worktable, including one already connected to another.
 
+### Fixed
+
+- **Shared tools without live data:** A shared HTML tool shown without live data no longer repeats its title at the top of the page.
+
 ## [0.1.28] - 2026-10-24
 
 ### Added
 
 - **Link passwords:** A share link can have a password that readers enter before the document opens, and owners can require one for every link in Settings → Links.
-- **Live share links:** Shared HTML tools can show live Records, and visitors can comment, when the owner allows them in Settings → Links.
 - **Grok Bot conversations:** Connect Grok Bot from Getting Started or Settings and let it answer Worktable threads using Email or Webhook routines.
 
 ### Changed

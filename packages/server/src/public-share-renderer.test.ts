@@ -107,6 +107,7 @@ describe("public HTML-doc projection", () => {
   it("keeps safe links and layout while removing executable, private, and remote surfaces", () => {
     const html = renderPublicHtmlProjection(`<!doctype html>
       <html data-theme="dark"><head>
+        <title>Report title</title>
         <meta http-equiv="refresh" content="0;url=https://network.attacker.test">
         <link rel="stylesheet" href="https://network.attacker.test/style.css">
         <style>
@@ -147,6 +148,8 @@ describe("public HTML-doc projection", () => {
       </body></html>`)
 
     const document = new JSDOM(html).window.document
+    // The tool's own title isn't shown as page text.
+    expect(document.body.textContent).not.toContain("Report title")
     const external = document.querySelector('[data-kind="external"]')
     const email = document.querySelector('[data-kind="email"]')
     const fragment = document.querySelector('[data-kind="fragment"]')

@@ -418,13 +418,16 @@ export function registerTools(
   if (options?.urlOrigin && !configuredUrlOrigin) {
     throw new Error("urlOrigin must be an absolute HTTP(S) URL")
   }
-  // File links reach this Worktable only where the agent reaches it
-  // directly: Worktable Link forwards its own few paths, and Cloud keeps
-  // files off.
+  // File links work where the tools run in this HTTP server, which keeps
+  // their tickets, and the agent reaches it directly: not from a stdio
+  // server in its own process, nor through Worktable Link, which forwards
+  // its own few paths; Cloud keeps files off.
   const fileLinkOrigin =
-    isHosted() || configuredUrlOrigin?.includes("/api/mcp/d/")
+    !configuredUrlOrigin ||
+    isHosted() ||
+    configuredUrlOrigin.includes("/api/mcp/d/")
       ? null
-      : (configuredUrlOrigin ?? resolveLocalWorkspaceOrigin())
+      : configuredUrlOrigin
   const restoreRequestHandlerRegistration =
     installOpenAiToolDescriptorCompatibility(server)
 

@@ -15,6 +15,7 @@ import { readDocument } from "./document-query.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
 import { fileLinksRouter } from "./routes/file-links.ts"
 import { readLimitedBody } from "./file-uploads.ts"
+import { notifyWorkspaceChange } from "./workspace-events.ts"
 import { invalidateSearchIndex, search } from "./search-index.ts"
 import { setDocArchived, writeDoc, writeSpace } from "./store.ts"
 import { withWidgetWriteLock} from "./widget-store.ts"
@@ -70,12 +71,14 @@ function widget(id: string, name: string, archived = false): WidgetFile {
 
 async function connect(
   scopes = ["documents:read"],
-  surface: "released" | "preview" = "released"
+  surface: "released" | "preview" = "released",
+  urlOrigin?: string
 ): Promise<Client> {
   const server = createWorktableMcpServer({
     version: "test",
     scopes,
     surface,
+    ...(urlOrigin ? { urlOrigin } : {}),
   })
   client = new Client({ name: "documents-test", version: "1" })
   const [clientTransport, serverTransport] =
@@ -286,7 +289,12 @@ describe("file links for agents", () => {
     const previous = process.env["WORKTABLE_FILES_PREVIEW"]
     process.env["WORKTABLE_FILES_PREVIEW"] = "1"
     try {
-      const connected = await connect(["documents:read", "documents:write"], "preview")
+      // The tools run in this Worktable's HTTP server, reached directly.
+      const connected = await connect(
+        ["documents:read", "documents:write"],
+        "preview",
+        "http://127.0.0.1:7480"
+      )
       const write = (request: Record<string, unknown>) =>
         connected.callTool({ name: "worktable_files_write", arguments: { request } })
       const read = (request: Record<string, unknown>) =>
@@ -342,6 +350,14 @@ describe("file links for agents", () => {
         await readLimitedBody(new Request("http://x", { method: "PUT", body: chunked }), 10)
       ).toBeNull()
 
+      // Replaced content ends every link made before it.
+      const before = await read({ action: "read_source", spaceId, path: "design/shot.png" })
+      notifyWorkspaceChange({ type: "workspaceReset" })
+      expect(
+        (await fileLinksRouter.request(`/${token((before.structuredContent as { downloadUrl: string }).downloadUrl)}`))
+          .status
+      ).toBe(410)
+
       // Docs aren't uploaded, and an unknown token reads as an expired link.
       expect((await write({ action: "upload", spaceId, path: "notes/plan.md" })).isError).toBe(true)
       expect((await fileLinksRouter.request(`/${"x".repeat(43)}`)).status).toBe(410)
@@ -368,6 +384,16 @@ describe("file links for agents", () => {
       })
       expect(linkedRead.structuredContent).not.toHaveProperty("downloadUrl")
       await linkedClient.close()
+
+      // Nor from tools running in an agent's own process over stdio, which
+      // keeps no links a server could redeem: large files still come inline.
+      const stdio = await connect(["documents:read", "documents:write"], "preview")
+      const local = await stdio.callTool({
+        name: "worktable_files_read",
+        arguments: { request: { action: "read_source", spaceId, path: "data/archive.bin" } },
+      })
+      expect(local.structuredContent).toMatchObject({ encoding: "base64" })
+      expect(local.structuredContent).not.toHaveProperty("downloadUrl")
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
       else process.env["WORKTABLE_FILES_PREVIEW"] = previous

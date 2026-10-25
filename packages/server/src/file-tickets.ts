@@ -12,6 +12,7 @@
 import { createHash, randomBytes } from "node:crypto"
 import type { RequestPrincipal, TokenIdentity } from "./token-store.ts"
 import type { FileUploadMode } from "./file-uploads.ts"
+import { onWorkspaceChange } from "./workspace-events.ts"
 
 /** How long a link works after it is made. */
 export const FILE_TICKET_TTL_MS = 10 * 60_000
@@ -90,7 +91,13 @@ export function redeemFileTicket(
   return ticket
 }
 
-/** Forget every link; tests use this. */
+/** Forget every link. */
 export function clearFileTickets(): void {
   tickets.clear()
 }
+
+// Replaced content ends every link, as it does share links: a link made
+// before must not read or write what took its place.
+onWorkspaceChange((event) => {
+  if (event.type === "workspaceReset") clearFileTickets()
+})

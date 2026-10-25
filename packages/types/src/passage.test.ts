@@ -14,9 +14,15 @@ describe("findPassage", () => {
     })
   })
 
-  it("matches across changed whitespace and line breaks", () => {
+  it("matches across changed whitespace, line breaks and capitals", () => {
     const found = findPassage("one  two\n\nthree four", { quote: "two three" })
     expect(found).toEqual({ start: 5, end: 15, match: "exact" })
+    const joined = "In short, they do not need it yet."
+    expect(findPassage(joined, { quote: "They do not need" })).toEqual({
+      start: joined.indexOf("they"),
+      end: joined.indexOf("they") + "they do not need".length,
+      match: "exact",
+    })
   })
 
   it("follows a lightly reworded passage, and lets go of a rewritten one", () => {

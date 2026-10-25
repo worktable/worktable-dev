@@ -83,6 +83,37 @@ function sharedStart(a: string, b: string): number {
   return length
 }
 
+/** Lower case that keeps every character at its offset. */
+function lowerInPlace(text: string): string {
+  return Array.from(text, (char) => {
+    const lower = char.toLowerCase()
+    return lower.length === char.length ? lower : char
+  }).join("")
+}
+
+/** The occurrence of `quote` whose surroundings best match the context. */
+function bestOccurrence(
+  text: string,
+  quote: string,
+  prefix: string,
+  suffix: string
+): number {
+  let best = -1
+  let bestScore = -1
+  for (let at = text.indexOf(quote); at !== -1; at = text.indexOf(quote, at + 1)) {
+    const before = text.slice(Math.max(0, at - prefix.length - 1), at).trimEnd()
+    const after = text
+      .slice(at + quote.length, at + quote.length + suffix.length + 1)
+      .trimStart()
+    const score = sharedEnd(before, prefix) + sharedStart(after, suffix)
+    if (score > bestScore) {
+      best = at
+      bestScore = score
+    }
+  }
+  return best
+}
+
 /**
  * Where a passage is in `text` now. A quote that appears more than once goes
  * to the place whose surrounding text matches best. A quote that is gone
@@ -98,29 +129,19 @@ export function findPassage(
   const haystack = collapse(text)
   const prefix = normalizePassageText(selector.prefix ?? "")
   const suffix = normalizePassageText(selector.suffix ?? "")
-  let best = -1
-  let bestScore = -1
-  for (
-    let at = haystack.text.indexOf(quote);
-    at !== -1;
-    at = haystack.text.indexOf(quote, at + 1)
-  ) {
-    const before = haystack.text
-      .slice(Math.max(0, at - prefix.length - 1), at)
-      .trimEnd()
-    const after = haystack.text
-      .slice(at + quote.length, at + quote.length + suffix.length + 1)
-      .trimStart()
-    const score = sharedEnd(before, prefix) + sharedStart(after, suffix)
-    if (score > bestScore) {
-      best = at
-      bestScore = score
-    }
-  }
-  if (best >= 0) {
+  let at = bestOccurrence(haystack.text, quote, prefix, suffix)
+  // A rewrite often only changes capitals, as when sentences are joined.
+  if (at < 0)
+    at = bestOccurrence(
+      lowerInPlace(haystack.text),
+      lowerInPlace(quote),
+      lowerInPlace(prefix),
+      lowerInPlace(suffix)
+    )
+  if (at >= 0) {
     return {
-      start: haystack.from[best]!,
-      end: haystack.from[best + quote.length - 1]! + 1,
+      start: haystack.from[at]!,
+      end: haystack.from[at + quote.length - 1]! + 1,
       match: "exact",
     }
   }
@@ -186,5 +207,10 @@ function findReworded(
     }
   }
   if (bestAt < 0 || bestShared / size < FUZZY_MIN_SHARE) return null
-  return { start: all[bestAt]!.start, end: all[bestAt + size - 1]!.end }
+  // Leave out words at either end that aren't the quote's.
+  let first = bestAt
+  let last = bestAt + size - 1
+  while (first < last && !need.has(all[first]!.value)) first++
+  while (last > first && !need.has(all[last]!.value)) last--
+  return { start: all[first]!.start, end: all[last]!.end }
 }

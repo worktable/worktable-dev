@@ -149,6 +149,8 @@ interface AnnotationCreateRequest {
   blockType?: string
   quote?: string
   category: AnnotationCategory
+  /** What the comment box opens next to: the selection, or the block. */
+  anchor?: Range | Element
 }
 
 interface AnnotationBlock {
@@ -158,6 +160,7 @@ interface AnnotationBlock {
 
 interface AnnotationCapableEditor {
   isEditable: boolean
+  domElement?: HTMLElement
   getTextCursorPosition: () => { block: AnnotationBlock }
   getSelectedText?: () => string
   getSelection?: () => { blocks: AnnotationBlock[] } | undefined
@@ -531,6 +534,7 @@ function EditorInner({
                     blockType: block.type,
                     quote: selectedText,
                     category: "comment",
+                    anchor: annotationAnchor(editor, block.id, false),
                   })
                 },
               },
@@ -548,6 +552,7 @@ function EditorInner({
                     blockType: block.type,
                     quote: selectedText,
                     category: "instruction",
+                    anchor: annotationAnchor(editor, block.id, false),
                   })
                 },
               },
@@ -882,12 +887,21 @@ function AnnotationBadges({
 
   useEffect(() => {
     // No badges means no model traversal, forced layout, timer, or resize work.
+    // A passage comment (no block id, as made on Markdown) sits on the
+    // block that holds its quote.
+    const blockIdOf = (annotation: Annotation) =>
+      "blockId" in annotation.target && annotation.target.blockId
+        ? annotation.target.blockId
+        : annotation.target.type === "doc"
+          ? resolveBlockIdByQuote(editor.document, annotation.target.quote)
+          : undefined
     if (
       !annotations.some(
         (annotation) =>
           annotation.status !== "resolved" &&
-          "blockId" in annotation.target &&
-          annotation.target.blockId
+          ("blockId" in annotation.target
+            ? Boolean(annotation.target.blockId)
+            : annotation.target.type === "doc" && Boolean(annotation.target.quote))
       )
     ) {
       setPositions((previous) => (previous.length ? [] : previous))
@@ -900,9 +914,8 @@ function AnnotationBadges({
       const grouped = new Map<string, Annotation[]>()
       for (const annotation of annotations) {
         if (annotation.status === "resolved") continue
-        if (!("blockId" in annotation.target) || !annotation.target.blockId)
-          continue
-        const blockId = annotation.target.blockId
+        const blockId = blockIdOf(annotation)
+        if (!blockId) continue
         const list = grouped.get(blockId) ?? []
         list.push(annotation)
         grouped.set(blockId, list)
@@ -1013,7 +1026,28 @@ function createAnnotationFromEditor(
     editor.getSelection?.()?.blocks[0] ??
     editor.getTextCursorPosition().block
   const quote = editor.getSelectedText?.() || undefined
-  onAnnotate({ blockId: target.id, blockType: target.type, quote, category })
+  onAnnotate({
+    blockId: target.id,
+    blockType: target.type,
+    quote,
+    category,
+    anchor: annotationAnchor(editor, target.id, Boolean(quote && !block)),
+  })
+}
+
+/** The selection when the comment is about it, else the block's element. */
+function annotationAnchor(
+  editor: AnnotationCapableEditor,
+  blockId: string,
+  aboutSelection: boolean
+): Range | Element | undefined {
+  const selection = window.getSelection()
+  if (aboutSelection && selection?.rangeCount && !selection.isCollapsed)
+    return selection.getRangeAt(0).cloneRange()
+  return (
+    editor.domElement?.querySelector(`[data-id="${CSS.escape(blockId)}"]`) ??
+    undefined
+  )
 }
 
 function AnnotationToolbarButton({

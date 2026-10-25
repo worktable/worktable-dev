@@ -76,15 +76,8 @@ import {
   DrawerTitle,
 } from "@worktable/ui/components/drawer"
 import { Input } from "@worktable/ui/components/input"
-import { Textarea } from "@worktable/ui/components/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@worktable/ui/components/select"
 import { AnnotationPanel } from "@/components/annotations/annotation-panel"
+import { AnnotationComposer } from "@/components/annotations/annotation-composer"
 import { DesktopContextPanel } from "@/components/desktop-context-panel"
 import {
   useWidgetAnnotations,
@@ -92,7 +85,6 @@ import {
 } from "@/lib/annotations-queries"
 import type {
   Annotation,
-  AnnotationCategory,
   DocumentPage,
   DocumentSharingSummary,
   WidgetFile,
@@ -282,6 +274,7 @@ function WidgetDetailPage({
     null
   )
   const [composerOpen, setComposerOpen] = useState(false)
+  const [composerAnchor, setComposerAnchor] = useState<Element | undefined>()
   const annotationsQuery = useWidgetAnnotations(spaceId, widgetId)
   const annotationMutations = useWidgetAnnotationMutations(spaceId, widgetId)
   const annotations = annotationsQuery.data?.annotations ?? []
@@ -903,7 +896,10 @@ function WidgetDetailPage({
               annotationMutations.reply.mutate({ annotationId, body })
             }
             onClose={() => setAnnotationsOpen(false)}
-            onCompose={() => setComposerOpen(true)}
+            onCompose={(trigger) => {
+              setComposerAnchor(trigger)
+              setComposerOpen(true)
+            }}
             composeLabel="Comment on this HTML doc"
             emptyHint="Leave a comment or instruction for this HTML doc."
             className="bg-transparent"
@@ -981,7 +977,10 @@ function WidgetDetailPage({
                   annotationMutations.reply.mutate({ annotationId, body })
                 }
                 onClose={() => setAnnotationsOpen(false)}
-                onCompose={() => setComposerOpen(true)}
+                onCompose={(trigger) => {
+              setComposerAnchor(trigger)
+              setComposerOpen(true)
+            }}
                 composeLabel="Comment on this HTML doc"
                 emptyHint="Leave a comment or instruction for this HTML doc."
                 className="max-h-[calc(86dvh-1.5rem)]"
@@ -991,7 +990,9 @@ function WidgetDetailPage({
         </>
       )}
 
-      <WidgetAnnotationComposer
+      <AnnotationComposer
+        draft={{ category: "comment", anchor: composerAnchor }}
+        label="Comment on this HTML doc"
         open={composerOpen && !readOnly}
         onOpenChange={setComposerOpen}
         onSubmit={(category, body) => {
@@ -1019,94 +1020,6 @@ function WidgetDetailPage({
         onConfirm={handleDelete}
       />
     </div>
-  )
-}
-
-function WidgetAnnotationComposer({
-  open,
-  onOpenChange,
-  onSubmit,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onSubmit: (category: AnnotationCategory, body: string) => void
-}) {
-  const [category, setCategory] = useState<AnnotationCategory>("comment")
-  const [body, setBody] = useState("")
-
-  // Reset each time the composer opens so a prior draft never lingers.
-  useEffect(() => {
-    if (open) {
-      setCategory("comment")
-      setBody("")
-    }
-  }, [open])
-
-  const categoryLabel: Record<AnnotationCategory, string> = {
-    comment: "Comment",
-    instruction: "Instruction",
-  }
-
-  return (
-    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent>
-        <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>
-            Comment on this HTML doc
-          </ResponsiveDialogTitle>
-          <ResponsiveDialogDescription>
-            Attach a comment or instruction to the whole HTML doc.
-          </ResponsiveDialogDescription>
-        </ResponsiveDialogHeader>
-        <ResponsiveDialogBody className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">Type</label>
-            <Select
-              value={category}
-              onValueChange={(value) =>
-                setCategory(value as AnnotationCategory)
-              }
-            >
-              <SelectTrigger>
-                <SelectValue>{categoryLabel[category]}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="comment">Comment</SelectItem>
-                <SelectItem value="instruction">Instruction</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">Note</label>
-            <Textarea
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              placeholder={
-                category === "instruction"
-                  ? "Write an instruction..."
-                  : "Write a comment..."
-              }
-              className="min-h-32"
-            />
-          </div>
-        </ResponsiveDialogBody>
-        <ResponsiveDialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              if (!body.trim()) return
-              onSubmit(category, body.trim())
-              onOpenChange(false)
-            }}
-            disabled={!body.trim()}
-          >
-            Add
-          </Button>
-        </ResponsiveDialogFooter>
-      </ResponsiveDialogContent>
-    </ResponsiveDialog>
   )
 }
 

@@ -21,6 +21,7 @@ import { cn } from "@worktable/ui/lib/utils"
 
 import {
   AGENT_SETUP_CATEGORIES,
+  AgentRuntimeTips,
   AgentSetupCategory,
   AgentSetupTabs,
 } from "@/components/agents/agent-setup-category"
@@ -830,6 +831,7 @@ export function AgentConnectOptions({
         ))}
         <RowItem {...rowProps(ALWAYS_ON)} />
       </div>
+      <AgentRuntimeTips />
       <Collapsible
         open={open === "mcp"}
         onOpenChange={(next) => openRow("mcp", next, sourceOf("mcp", ANY_MCP))}

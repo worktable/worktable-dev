@@ -97,8 +97,17 @@ it("completes the owner's first task from their agent's work, not their own", as
   expect(hidden.hidden).toBe(true)
   expect(hidden.items["first-task"]).toBeDefined()
 
-  // Progress is the server's to record.
+  // Progress is the server's to record, except skipping an invite and
+  // copying the instructions, which only the person's browser sees.
   expect((await choose({ items: {} })).status).toBe(400)
+  expect((await choose({ done: "first-task" })).status).toBe(400)
+  expect((await choose({ skip: "connect-agent" })).status).toBe(400)
+  expect((await choose({ skip: "invite-team" })).status).toBe(200)
+  expect((await choose({ done: "agent-instructions" })).status).toBe(200)
+  const chosen = await setup()
+  expect(chosen.items["invite-team"]).toMatchObject({ skipped: true })
+  expect(chosen.items["agent-instructions"]).toBeDefined()
+  expect(chosen.items["first-task"]).toMatchObject({ path: "atlas-brief" })
 })
 
 it("keeps stored progress when an earlier version listed other items", () => {

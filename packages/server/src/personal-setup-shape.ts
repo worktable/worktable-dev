@@ -5,6 +5,7 @@ const EvidenceSchema = z.object({
   at: z.string().min(1).max(40),
   spaceId: z.string().min(1).max(200).optional(),
   path: z.string().min(1).max(1000).optional(),
+  skipped: z.boolean().optional(),
 })
 
 const ITEM_IDS = new Set<string>(SETUP_ITEM_IDS)

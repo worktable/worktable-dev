@@ -28,11 +28,29 @@ export function canInvite(
   return person?.role === "owner" && person.signOut !== null
 }
 
-/** Each person's own steps, in the order they're worth doing. */
+const AGENT_INSTRUCTIONS: ChecklistItem = {
+  id: "agent-instructions",
+  title: "Tell your agent to use Worktable",
+  description: "So you don't have to say “in Worktable” every time.",
+}
+
+/**
+ * Each person's own steps, in the order they're worth doing. The
+ * instructions come before the first task; once an agent has done one
+ * without them, the step isn't added to a list that was further along.
+ */
 export function checklistFor(
   role: "owner" | "member",
-  options: { canInvite: boolean; joinedSpaceName?: string }
+  options: {
+    canInvite: boolean
+    joinedSpaceName?: string
+    items: PersonalSetup["items"]
+  }
 ): ChecklistItem[] {
+  const instructions =
+    options.items["first-task"] && !options.items["agent-instructions"]
+      ? []
+      : [AGENT_INSTRUCTIONS]
   if (role === "member") {
     return [
       {
@@ -40,6 +58,7 @@ export function checklistFor(
         title: "Connect your agent",
         description: "So it can work here too.",
       },
+      ...instructions,
       {
         id: "first-task",
         title: "Give your agent a task",
@@ -55,6 +74,7 @@ export function checklistFor(
       title: "Connect your agent",
       description: "So it can read and write here.",
     },
+    ...instructions,
     {
       id: "first-task",
       title: "Give your agent a task",
@@ -117,6 +137,10 @@ export function usePersonalSetup() {
 export interface SetupChoices {
   hidden?: boolean
   welcomed?: boolean
+  /** Pass over a step that needs someone else, such as inviting. */
+  skip?: "invite-team"
+  /** A step only the browser sees happen, such as copying the instructions. */
+  done?: "agent-instructions"
 }
 
 /** Save the person's own choices; the summary carries the result. */
@@ -161,7 +185,10 @@ export function useGettingStartedShortcut(
   const { person, setup } = usePersonalSetup()
   const space = gettingStartedSpace(spaces)
   if (!space || !person || setup.hidden) return null
-  const items = checklistFor(person.role, { canInvite: canInvite(person) })
+  const items = checklistFor(person.role, {
+    canInvite: canInvite(person),
+    items: setup.items,
+  })
   return { space, progress: checklistProgress(items, setup.items) }
 }
 

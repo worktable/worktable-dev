@@ -31,6 +31,36 @@ export const AGENT_SETUP_CATEGORIES = {
   { title: string; description: string; platforms: AgentPlatformId[] }
 >
 
+/** How an agent comes to work, named the same wherever it's shown. */
+export const AGENT_RUNTIMES = {
+  "on-demand": {
+    label: "On demand",
+    description:
+      "Coding agents and chat apps work when you start them, in your terminal, your editor or a chat.",
+  },
+  "always-on": {
+    label: "Always on",
+    description:
+      "An always-on agent runs on a server. Send it a message in Threads and it picks it up straight away, without you starting it.",
+  },
+} as const
+
+/** The two ways agents work, under the ways to connect them. */
+export function AgentRuntimeTips() {
+  return (
+    <dl className="mt-4 space-y-1.5 text-xs leading-5 text-muted-foreground">
+      {Object.values(AGENT_RUNTIMES).map((runtime) => (
+        <div key={runtime.label}>
+          <dt className="inline font-medium text-foreground/80">
+            {runtime.label}.
+          </dt>{" "}
+          <dd className="inline">{runtime.description}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
 export function AgentSetupCategory({
   title,
   description,

@@ -117,6 +117,17 @@ function evidence(details: Omit<SetupEvidence, "at"> = {}): SetupEvidence {
   return { at: new Date().toISOString(), ...details }
 }
 
+/** The setup with an item completed, unless it already was. */
+export function withSetupItem(
+  setup: PersonalSetup,
+  item: SetupItemId,
+  details?: Omit<SetupEvidence, "at">
+): PersonalSetup {
+  return setup.items[item]
+    ? setup
+    : { ...setup, items: { ...setup.items, [item]: evidence(details) } }
+}
+
 /**
  * Complete an item the first time it happens. Checked in memory first, so a
  * finished item costs nothing on the write path it observes. Never rejects:
@@ -129,9 +140,7 @@ export async function completeSetupItem(
 ): Promise<void> {
   if (!key || storedSetup(key)?.items[item]) return
   await changeSetup(key, (setup) =>
-    setup.items[item]
-      ? null
-      : { ...setup, items: { ...setup.items, [item]: evidence(details) } }
+    setup.items[item] ? null : withSetupItem(setup, item, details)
   ).catch((error) => {
     console.warn("[setup] could not save progress:", logError(error))
   })

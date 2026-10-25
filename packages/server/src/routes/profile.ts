@@ -3,6 +3,10 @@ import { requireTeamDatabase, currentTeamWorktable } from "../team-database.ts";
 import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts";
 import { Hono } from "hono"
 import { z } from "zod"
+import {
+  SELF_REPORTED_SETUP_ITEM_IDS,
+  SKIPPABLE_SETUP_ITEM_IDS,
+} from "@worktable/types/setup"
 import { canManageUserSettings } from "../auth.ts"
 import { resolveParticipant } from "../participant-store.ts"
 import { teamsEnabled } from "../team-database.ts"
@@ -17,7 +21,11 @@ import {
   savePersonalNavigation,
 } from "../personal-navigation-store.ts"
 import { occupiedSpaceIds } from "../store.ts"
-import { changeSetup, setupKeyForPerson } from "../personal-setup.ts"
+import {
+  changeSetup,
+  setupKeyForPerson,
+  withSetupItem,
+} from "../personal-setup.ts"
 import { wsManager } from "../ws.ts"
 
 export const profileRouter = new Hono()
@@ -128,12 +136,14 @@ const SaveSetupSchema = z
   .object({
     hidden: z.boolean().optional(),
     welcomed: z.boolean().optional(),
+    skip: z.enum(SKIPPABLE_SETUP_ITEM_IDS).optional(),
+    done: z.enum(SELF_REPORTED_SETUP_ITEM_IDS).optional(),
   })
   .strict()
 
-// The person's own choices about their first steps. Progress itself is
-// recorded by the server as things happen; reads arrive with the workspace
-// summary.
+// The person's own choices about their first steps, and the steps only their
+// browser sees. Other progress is recorded by the server as things happen;
+// reads arrive with the workspace summary.
 profileRouter.put("/setup", async (c) => {
   const person = personalPreferencesKey(c)
   if (!person) return c.json(forbidden(), 403)
@@ -142,10 +152,13 @@ profileRouter.put("/setup", async (c) => {
   )
   if (!parsed.success) return c.json({ error: "Invalid setup" }, 400)
   try {
-    const saved = await changeSetup(setupKeyForPerson(person), (current) => ({
-      ...current,
-      ...parsed.data,
-    }))
+    const { skip, done, ...choices } = parsed.data
+    const saved = await changeSetup(setupKeyForPerson(person), (current) => {
+      let next = { ...current, ...choices }
+      if (skip) next = withSetupItem(next, skip, { skipped: true })
+      if (done) next = withSetupItem(next, done)
+      return next
+    })
     return c.json({ setup: saved })
   } catch (error) {
     if (error instanceof PreferencesUnreadableError)

@@ -94,8 +94,8 @@ function taskPrompts(joinedSpaceName: string | undefined): string[] {
   ]
 }
 
-function Prompt({ text }: { text: string }) {
-  const copy = useCopy()
+function Prompt({ text, onCopied }: { text: string; onCopied?: () => void }) {
+  const copy = useCopy(onCopied)
   return (
     <li className="flex items-start gap-3 rounded-lg border border-border bg-surface-inset py-2 pr-2 pl-3 text-sm leading-6 text-foreground">
       <span className="min-w-0 flex-1">{text}</span>
@@ -131,12 +131,81 @@ function TaskBody({ joinedSpaceName }: { joinedSpaceName?: string }) {
   )
 }
 
+/** A line for the agent's own instructions, read in every conversation. */
+const AGENT_INSTRUCTIONS =
+  "I keep my work in Worktable. When I ask you to write, plan, research or track something, save it in Worktable without me saying so, and look there for context before asking me."
+
+/** Where each agent keeps the instructions it always reads. */
+const INSTRUCTION_PLACES: { agent: string; file?: string; place?: string }[] = [
+  { agent: "Claude Code", file: "~/.claude/CLAUDE.md" },
+  { agent: "Codex", file: "~/.codex/AGENTS.md" },
+  { agent: "Cursor", place: "Settings, then Rules" },
+  { agent: "Claude", place: "Settings, then personal preferences" },
+  { agent: "ChatGPT", place: "Settings, then Personalization" },
+]
+
+function InstructionsBody({ onCopied }: { onCopied: () => void }) {
+  return (
+    <>
+      <p className="mb-2 text-sm text-foreground/80">
+        Add this to your agent's instructions:
+      </p>
+      <ul>
+        <Prompt text={AGENT_INSTRUCTIONS} onCopied={onCopied} />
+      </ul>
+      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
+        {INSTRUCTION_PLACES.map(({ agent, file, place }) => (
+          <div key={agent} className="contents">
+            <dt className="text-muted-foreground">{agent}</dt>
+            <dd className="text-foreground/80">
+              {file ? (
+                <code className="inline-code-accent font-mono">{file}</code>
+              ) : (
+                place
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </>
+  )
+}
+
 function ConnectBody() {
   const [setups, setSetups] = useState<SetupRecord[]>([])
   return <AgentConnectOptions setups={setups} onSetupsChange={setSetups} />
 }
 
-function InviteBody({ cloud, teams }: { cloud: boolean; teams: boolean }) {
+function SkipButton({
+  onSkip,
+  skipping,
+}: {
+  onSkip: () => void
+  skipping: boolean
+}) {
+  return (
+    <button
+      type="button"
+      disabled={skipping}
+      onClick={onSkip}
+      className="shrink-0 text-sm text-primary-text hover:underline disabled:opacity-50"
+    >
+      Skip for now
+    </button>
+  )
+}
+
+function InviteBody({
+  cloud,
+  teams,
+  onSkip,
+  skipping,
+}: {
+  cloud: boolean
+  teams: boolean
+  onSkip: () => void
+  skipping: boolean
+}) {
   const queryClient = useQueryClient()
   const [emails, setEmails] = useState<string[]>([])
   const [invited, setInvited] = useState<Invited[]>([])
@@ -165,9 +234,12 @@ function InviteBody({ cloud, teams }: { cloud: boolean; teams: boolean }) {
         <p className="mb-3 text-sm text-foreground/80">
           Each person needs their own account. Turn on Teams to invite them.
         </p>
-        <Button size="sm" onClick={() => openSettings("team")}>
-          Turn on Teams
-        </Button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button size="sm" onClick={() => openSettings("team")}>
+            Turn on Teams
+          </Button>
+          <SkipButton onSkip={onSkip} skipping={skipping} />
+        </div>
       </>
     )
   }
@@ -237,7 +309,12 @@ function InviteBody({ cloud, teams }: { cloud: boolean; teams: boolean }) {
           ))}
         </ul>
       ) : null}
-      <DoneWhen>Done when someone joins.</DoneWhen>
+      <div className="mt-3 flex flex-wrap items-baseline justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          Done when someone joins.
+        </p>
+        <SkipButton onSkip={onSkip} skipping={skipping} />
+      </div>
     </form>
   )
 }
@@ -261,6 +338,7 @@ function StepRow({
   number,
   evidence,
   open,
+  kept = false,
   onOpenChange,
   children,
 }: {
@@ -268,21 +346,23 @@ function StepRow({
   number: number
   evidence: SetupEvidence | undefined
   open: boolean
+  /** Finished here just now, so it stays open until the person moves on. */
+  kept?: boolean
   onOpenChange: (open: boolean) => void
   children: React.ReactNode
 }) {
   const done = Boolean(evidence)
   return (
     <Collapsible
-      open={open && !done}
+      open={open && (!done || kept)}
       onOpenChange={onOpenChange}
-      disabled={done}
+      disabled={done && !kept}
       className="border-border not-first:border-t"
     >
       <CollapsibleTrigger
         className={cn(
           "flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors focus-visible:bg-surface-hover focus-visible:outline-none",
-          !done && "hover:bg-surface-hover"
+          (!done || kept) && "hover:bg-surface-hover"
         )}
       >
         <span
@@ -312,7 +392,9 @@ function StepRow({
             </span>
           )}
         </span>
-        {done ? (
+        {evidence?.skipped ? (
+          <span className="text-sm text-muted-foreground">Skipped</span>
+        ) : done && !kept ? (
           evidence && <Evidence evidence={evidence} />
         ) : (
           <ChevronRight
@@ -343,18 +425,30 @@ export function GettingStartedHome() {
   const items = checklistFor(role, {
     canInvite: canInvite(person),
     joinedSpaceName,
+    items: setup.items,
   })
   const progress = checklistProgress(items, setup.items)
   // Null follows the next step; "none" means the person closed it.
   const [chosen, setChosen] = useState<SetupItemId | "none" | null>(null)
+  // Copying the instructions finishes that step, but where to paste them
+  // stays on show until the person moves on.
+  const [kept, setKept] = useState<SetupItemId | null>(null)
   const openId =
     chosen === "none"
       ? null
-      : chosen && !setup.items[chosen]
+      : chosen && (!setup.items[chosen] || chosen === kept)
         ? chosen
         : (progress.next?.id ?? null)
   const unpin = useMutation({
     mutationFn: () => saveSetup(queryClient, { hidden: true }),
+    onError: () => toast.error("Couldn’t save. Try again."),
+  })
+  const copied = useMutation({
+    mutationFn: () => saveSetup(queryClient, { done: "agent-instructions" }),
+    onError: () => toast.error("Couldn’t save. Try again."),
+  })
+  const skip = useMutation({
+    mutationFn: () => saveSetup(queryClient, { skip: "invite-team" }),
     onError: () => toast.error("Couldn’t save. Try again."),
   })
   const worktableName = workspace?.name ?? "this Worktable"
@@ -364,11 +458,26 @@ export function GettingStartedHome() {
     switch (id) {
       case "connect-agent":
         return <ConnectBody />
+      case "agent-instructions":
+        return (
+          <InstructionsBody
+            onCopied={() => {
+              setChosen("agent-instructions")
+              setKept("agent-instructions")
+              if (!setup.items["agent-instructions"]) copied.mutate()
+            }}
+          />
+        )
       case "first-task":
         return <TaskBody joinedSpaceName={joinedSpaceName} />
       case "invite-team":
         return (
-          <InviteBody cloud={cloud} teams={person?.signOut !== "password"} />
+          <InviteBody
+            cloud={cloud}
+            teams={person?.signOut !== "password"}
+            onSkip={() => skip.mutate()}
+            skipping={skip.isPending}
+          />
         )
       default:
         return null
@@ -409,7 +518,11 @@ export function GettingStartedHome() {
               number={index + 1}
               evidence={setup.items[item.id]}
               open={openId === item.id}
-              onOpenChange={(next) => setChosen(next ? item.id : "none")}
+              kept={kept === item.id}
+              onOpenChange={(next) => {
+                setChosen(next ? item.id : "none")
+                if (kept !== item.id || !next) setKept(null)
+              }}
             >
               {body(item.id)}
             </StepRow>

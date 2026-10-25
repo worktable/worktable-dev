@@ -11,6 +11,7 @@ import { queryKeys, useSpaces } from "@/lib/queries"
 import {
   gettingStartedSpace,
   noteSetupChanged,
+  saveSetup,
   usePersonalSetup,
 } from "@/lib/setup"
 import { activateTeams } from "@/lib/team-api"
@@ -232,7 +233,7 @@ function InviteStep({
   pendingEmails: string[] | undefined
   onInvited: (invited: Invited[]) => void
   onKeepEmails: (emails: string[] | undefined) => void
-  onFinish: () => void
+  onFinish: (skipped: boolean) => void
   finishing: boolean
   onBack: () => void
 }) {
@@ -345,7 +346,11 @@ function InviteStep({
                   {action}
                 </Button>
               ) : null}
-              <Button type="button" disabled={finishing} onClick={onFinish}>
+              <Button
+                type="button"
+                disabled={finishing}
+                onClick={() => onFinish(false)}
+              >
                 {finishing ? "Opening…" : "Done"}
               </Button>
             </>
@@ -355,9 +360,9 @@ function InviteStep({
                 type="button"
                 variant="ghost"
                 disabled={finishing}
-                onClick={onFinish}
+                onClick={() => onFinish(true)}
               >
-                It's just me for now
+                Skip for now
               </Button>
               <Button
                 type="submit"
@@ -394,7 +399,12 @@ export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
   const step = steps.includes(draft.step) ? draft.step : steps[0]!
 
   const finish = useMutation({
-    mutationFn: () => updateWorkspace({ onboarding: { status: "complete" } }),
+    mutationFn: async (options: { skippedInvite?: boolean } = {}) => {
+      // Skipping here skips it in Getting Started too.
+      if (options.skippedInvite)
+        await saveSetup(queryClient, { skip: "invite-team" })
+      return updateWorkspace({ onboarding: { status: "complete" } })
+    },
     onSuccess: (updated) => {
       try {
         localStorage.removeItem(draftKey(workspace.id))
@@ -472,7 +482,7 @@ export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
             onContinue={() => {
               const next = after("connect")
               if (next) go(next)
-              else finish.mutate()
+              else finish.mutate({})
             }}
             onBack={back("connect")}
           />
@@ -491,7 +501,7 @@ export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
               writeDraft(workspace.id, next)
               setDraft(next)
             }}
-            onFinish={() => finish.mutate()}
+            onFinish={(skippedInvite) => finish.mutate({ skippedInvite })}
             finishing={finish.isPending}
             onBack={() => go("connect")}
           />

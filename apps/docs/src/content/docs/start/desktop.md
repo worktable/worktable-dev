@@ -43,7 +43,8 @@ The Worktable menu at the top of the sidebar lists every Worktable you can
 reach. **On this Mac** opens a local Worktable in this window; **Link** marks
 one with Worktable Link on. When you're signed in to Worktable Cloud,
 **Other devices** lists Worktables you linked on other computers, which open at
-their own address in your browser while their device is online, and
+their own address in your browser while their device is online; one with only
+a local address, such as `localhost`, opens on its own device only.
 **Worktable Cloud** lists hosted ones, which open in this window. **New
 Worktable** and **Open Folder** add another. A self-hosted server's page keeps
 **Switch Worktable**, which opens the connection chooser.

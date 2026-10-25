@@ -22,6 +22,8 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Switch agents names the new Worktable:** Right after you create a Worktable, the offer to switch agents to it uses the name you gave it, not "Local Workspace".
+- **Other devices with a local address:** A Worktable on another device that has only a local address, such as `localhost`, shows its device in the Worktable menu instead of opening an address that works only there.
 - **Shared tools without live data:** A shared HTML tool shown without live data no longer repeats its title at the top of the page.
 
 ## [0.1.28] - 2026-10-24

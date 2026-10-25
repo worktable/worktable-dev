@@ -16,6 +16,7 @@ import {
 import { switchDesktopWorktable } from "@/lib/desktop-connection"
 import { openInDesktop } from "@/lib/desktop-worktables"
 import {
+  isLoopbackHost,
   worktableMenuGroups,
   type MenuRow,
   type MenuSurface,
@@ -76,7 +77,8 @@ function MenuRowItem({
   if (row.kind === "device") {
     // Another device's Worktable opens at its own address, in the browser.
     // Desktop's web view opens no new windows; it sends a page that leaves
-    // its own address to the browser instead.
+    // its own address to the browser instead. Without an address that works
+    // here, the row shows where it is and does nothing.
     const href = row.href
     return (
       <DropdownMenuItem
@@ -156,6 +158,7 @@ export default function WorktableMenuList({
       data.thisMac?.map((worktable) => worktable.id) ??
       (workspaceId ? [workspaceId] : []),
     currentHostedId,
+    onDevice: surface === "desktop" || isLoopbackHost(window.location.hostname),
   })
   // Desktop lists this Mac's Worktables, elsewhere Cloud lists the rest.
   const listed =

@@ -69,13 +69,15 @@ interface OfferToasts {
 /**
  * Shows the offer as a toast. Its action switches agents; closing it keeps
  * them. A second answer waits for the first, and a failed switch shows the
- * offer again so the person can retry.
+ * offer again so the person can retry. `rename` follows this Worktable's
+ * name, which setup may change while the offer shows.
  */
 export function presentAgentOffer(
   offer: AgentOffer,
   answer: (switchAgents: boolean) => Promise<void> = answerDesktopAgentOffer,
   toasts: OfferToasts = toast
-): void {
+): { rename: (worktable: string) => void } {
+  let { worktable } = offer
   let answering = false
   const show = () =>
     toasts.info(`Your agents still use ${offer.agentWorktable}.`, {
@@ -83,13 +85,13 @@ export function presentAgentOffer(
       duration: Number.POSITIVE_INFINITY,
       closeButton: true,
       action: {
-        label: `Switch them to ${offer.worktable}`,
+        label: `Switch them to ${worktable}`,
         onClick: () => {
           if (answering) return
           answering = true
           answer(true).then(
             () => {
-              toasts.success(`Agents now use ${offer.worktable}.`)
+              toasts.success(`Agents now use ${worktable}.`)
             },
             (error: unknown) => {
               console.error("[desktop] Switching agents failed:", error)
@@ -109,4 +111,12 @@ export function presentAgentOffer(
       },
     })
   show()
+  return {
+    rename: (name) => {
+      if (name === worktable) return
+      worktable = name
+      // Only an offer still waiting for an answer is shown again.
+      if (!answering) show()
+    },
+  }
 }

@@ -37,6 +37,12 @@ const directory = (device?: string): CloudDirectory => ({
     linked("home", { device: "home-server" }),
     linked("office", { state: "offline" }),
     linked("unsafe", { openUrl: "javascript:alert(1)" }),
+    // Loopback addresses: another device's, and another folder on this Mac.
+    linked("laptop", { device: "laptop", openUrl: "http://127.0.0.1:7480/" }),
+    linked("scratch", {
+      device: "this-mac",
+      openUrl: "http://localhost:7481/",
+    }),
   ],
 })
 
@@ -66,6 +72,7 @@ test("Desktop lists this Mac, then other devices, then Cloud, each only when it 
         data: { thisMac, directory: directory("this-mac") },
         localIds: thisMac.map((worktable) => worktable.id),
         currentHostedId: null,
+        onDevice: true,
       })
     )
   ).toEqual([
@@ -75,9 +82,12 @@ test("Desktop lists this Mac, then other devices, then Cloud, each only when it 
       [
         "copy · office-mac → https://copy.example/",
         "home · home-server → https://home.example/",
-        // Offline rows, and addresses that aren't web pages, don't open.
+        // Offline rows, addresses that aren't web pages, and another
+        // device's loopback address don't open; this Mac's own does.
         "office · Offline → -",
         "unsafe · office-mac → -",
+        "laptop · laptop → -",
+        "scratch · this-mac → http://localhost:7481/",
       ],
     ],
     [
@@ -97,6 +107,7 @@ test("Desktop lists this Mac, then other devices, then Cloud, each only when it 
         data: { thisMac, directory: null },
         localIds: ["ws_studio", "ws_client"],
         currentHostedId: null,
+        onDevice: true,
       })
     )
   ).toEqual([["On this Mac", ["Studio [Link] ✓", "Client Work"]]])
@@ -127,12 +138,13 @@ test("Desktop showing a Cloud Worktable tells this Mac's linked rows by its devi
           data,
           localIds: thisMac.map((worktable) => worktable.id),
           currentHostedId: "hosted_team",
+          onDevice: true,
         })
       ).map(([label, rows]) => [label, rows.length])
     ).toEqual([
       ["On this Mac", 2],
       // The copy on office-mac stays; this Mac's own Studio row doesn't.
-      ["Other devices", 4],
+      ["Other devices", 6],
       ["Worktable Cloud", 1],
     ])
     // Without a device name nothing counts as this Mac's own.
@@ -142,8 +154,9 @@ test("Desktop showing a Cloud Worktable tells this Mac's linked rows by its devi
         data: { ...data, directory: { ...data.directory!, device: undefined } },
         localIds: ["ws_studio"],
         currentHostedId: null,
+        onDevice: true,
       })[1]!.rows.length
-    ).toBe(5)
+    ).toBe(7)
   } finally {
     delete tauri.__TAURI__
     delete tauri.window
@@ -151,14 +164,16 @@ test("Desktop showing a Cloud Worktable tells this Mac's linked rows by its devi
 })
 
 test("a Cloud tab lists Cloud first with this Worktable checked, then every device", () => {
+  const { linked } = directory()
   const groups = worktableMenuGroups({
     surface: "cloud",
     data: {
       thisMac: null,
-      directory: { ...directory(), linked: directory().linked.slice(0, 1) },
+      directory: { ...directory(), linked: [linked[0]!, linked.at(-1)!] },
     },
     localIds: ["ws_studio"],
     currentHostedId: "hosted_lab",
+    onDevice: false,
   })
   expect(shown(groups)).toEqual([
     [
@@ -168,7 +183,15 @@ test("a Cloud tab lists Cloud first with this Worktable checked, then every devi
         "Lab ✓ → https://cloud.example/t/hosted_lab/",
       ],
     ],
-    ["Your devices", ["studio · this-mac → https://studio.example/"]],
+    [
+      "Your devices",
+      [
+        "studio · this-mac → https://studio.example/",
+        // A loopback address works only on its device, which a Cloud tab
+        // can't tell it's on.
+        "scratch · this-mac → -",
+      ],
+    ],
   ])
 })
 
@@ -185,20 +208,26 @@ test("a local page asks once through its Cloud sign-in, and keeps today's menu w
   expect(asked).toEqual(["/api/linked/worktables"])
   expect(listed.thisMac).toBeNull()
   // A page in a browser lists itself above the groups, so its own linked
-  // row isn't another device.
-  expect(
+  // row isn't another device. This device's loopback address opens only
+  // from a page on this device, not from one reached over the network.
+  const local = (onDevice: boolean) =>
     shown(
       worktableMenuGroups({
         surface: "local",
         data: listed,
         localIds: ["ws_studio"],
         currentHostedId: null,
+        onDevice,
       })
-    ).map(([label, rows]) => [label, rows.length])
-  ).toEqual([
-    ["Other devices", 4],
+    )
+  expect(local(true).map(([label, rows]) => [label, rows.length])).toEqual([
+    ["Other devices", 6],
     ["Worktable Cloud", 2],
   ])
+  expect(local(true)[0]![1].at(-1)).toBe(
+    "scratch · this-mac → http://localhost:7481/"
+  )
+  expect(local(false)[0]![1].at(-1)).toBe("scratch · this-mac → -")
 
   // Signed out, refused to a team member, an older server, or Cloud
   // unavailable: no groups, so the menu stays as it was.

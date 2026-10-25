@@ -7308,7 +7308,6 @@ fn create_workspace_webview(
     };
     let navigation_origin = expected_origin.clone();
     let download_origin = expected_origin.clone();
-    let navigation_app = app.clone();
     let new_window_app = app.clone();
     let page_load_app = app.clone();
     let page_load_origin = expected_origin.clone();
@@ -7417,12 +7416,10 @@ fn create_workspace_webview(
             .initialization_script(&probe_script)
             .devtools(cfg!(debug_assertions))
             .on_navigation(move |url| {
-                if url.as_str() == "about:blank" || same_workspace_origin(url, &navigation_origin) {
-                    true
-                } else {
-                    open_external_url(&navigation_app, url);
-                    false
-                }
+                // WebKit also calls this for sandboxed subframes. Never turn
+                // a frame's self-navigation into a native browser launch.
+                // Deliberate external links use on_new_window below.
+                url.as_str() == "about:blank" || same_workspace_origin(url, &navigation_origin)
             })
             .on_download(move |_webview, event| match event {
                 DownloadEvent::Requested { url, .. } => {

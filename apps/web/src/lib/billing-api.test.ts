@@ -27,67 +27,81 @@ afterEach(() => {
 })
 
 describe("Cloud billing API", () => {
-  it("opens checkout through the authenticated CSRF-protected gateway route", async () => {
-    const requests: Request[] = []
-    const assign = mock(() => {})
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: { location: { assign } },
-    })
-    globalThis.fetch = (async (input, init) => {
-      const request = new Request(
-        input instanceof Request
-          ? input
-          : new URL(String(input), "https://app.worktable.cloud"),
-        init
-      )
-      requests.push(request)
-      if (new URL(request.url).pathname === "/gateway/session") {
-        return Response.json({
-          authenticated: true,
-          csrfToken: "csrf-billing",
-        })
-      }
-      if (request.headers.get("X-Worktable-CSRF") !== "csrf-billing") {
-        return Response.json(
-          { error: "CSRF validation failed", code: "CSRF_REQUIRED" },
-          { status: 403 }
-        )
-      }
-      return Response.json({
-        url: "https://sandbox.polar.sh/checkout/checkout_123",
+  for (const desktop of [false, true]) {
+    it(`opens checkout through the authenticated gateway in ${desktop ? "Desktop" : "the browser"}`, async () => {
+      const requests: Request[] = []
+      const assign = mock(() => {})
+      const open = mock(() => {})
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: { location: { assign }, open },
       })
-    }) as typeof fetch
+      globalThis.fetch = (async (input, init) => {
+        const request = new Request(
+          input instanceof Request
+            ? input
+            : new URL(String(input), "https://app.worktable.cloud"),
+          init
+        )
+        requests.push(request)
+        if (new URL(request.url).pathname === "/gateway/session") {
+          return Response.json({
+            authenticated: true,
+            csrfToken: "csrf-billing",
+          })
+        }
+        if (request.headers.get("X-Worktable-CSRF") !== "csrf-billing") {
+          return Response.json(
+            { error: "CSRF validation failed", code: "CSRF_REQUIRED" },
+            { status: 403 }
+          )
+        }
+        return Response.json({
+          url: "https://sandbox.polar.sh/checkout/checkout_123",
+        })
+      }) as typeof fetch
 
-    Object.defineProperty(globalThis, "document", {
-      configurable: true,
-      value: {
-        documentElement: {
-          classList: { contains: (name: string) => name === "light" },
+      Object.defineProperty(globalThis, "document", {
+        configurable: true,
+        value: {
+          documentElement: {
+            classList: { contains: (name: string) => name === "light" },
+            hasAttribute: (name: string) =>
+              desktop && name === "data-worktable-desktop",
+          },
         },
-      },
-    })
-    try {
-      await openCloudBillingCheckout("business")
-    } finally {
-      Reflect.deleteProperty(globalThis, "document")
-    }
+      })
+      try {
+        await openCloudBillingCheckout("business")
+      } finally {
+        Reflect.deleteProperty(globalThis, "document")
+      }
 
-    // Checkout opens in the theme on screen.
-    expect(await requests[2]?.json()).toEqual({
-      plan: "business",
-      theme: "light",
+      // Checkout opens in the theme on screen.
+      expect(await requests[2]?.json()).toEqual({
+        plan: "business",
+        theme: "light",
+      })
+      expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
+        "/api/billing/checkout",
+        "/gateway/session",
+        "/api/billing/checkout",
+      ])
+      expect(requests[2]?.headers.get("X-Worktable-CSRF")).toBe("csrf-billing")
+      const destination = "https://sandbox.polar.sh/checkout/checkout_123"
+      if (desktop) {
+        expect(open).toHaveBeenCalledWith(
+          destination,
+          "_blank",
+          "noopener,noreferrer"
+        )
+        expect(assign).not.toHaveBeenCalled()
+      } else {
+        expect(assign).toHaveBeenCalledWith(destination)
+        expect(open).not.toHaveBeenCalled()
+      }
     })
-    expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
-      "/api/billing/checkout",
-      "/gateway/session",
-      "/api/billing/checkout",
-    ])
-    expect(requests[2]?.headers.get("X-Worktable-CSRF")).toBe("csrf-billing")
-    expect(assign).toHaveBeenCalledWith(
-      "https://sandbox.polar.sh/checkout/checkout_123"
-    )
-  })
+  }
 
   it("returns an expired billing session to sign-in", async () => {
     const assign = mock(() => {})

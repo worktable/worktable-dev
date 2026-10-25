@@ -58,7 +58,11 @@ async function openCloudBillingDestination(
       typeof body?.error === "string" ? body.error : fallbackError
     )
   }
-  window.location.assign(body.url)
+  if (document.documentElement.hasAttribute("data-worktable-desktop")) {
+    window.open(body.url, "_blank", "noopener,noreferrer")
+  } else {
+    window.location.assign(body.url)
+  }
 }
 
 /** The theme on screen, so checkout opens in it too. */

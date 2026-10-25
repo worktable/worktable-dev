@@ -1,6 +1,6 @@
 import { writeWidget } from "./widget-store.ts"
 import { writeWorkspaceManifest } from "./workspace.ts"
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import type { SpaceFile, WidgetFile } from "@worktable/types"
@@ -395,6 +395,104 @@ describe("file links for agents", () => {
       expect(local.structuredContent).toMatchObject({ encoding: "base64" })
       expect(local.structuredContent).not.toHaveProperty("downloadUrl")
     } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
+
+  it("saves a file attached in ChatGPT, fetching it only from ChatGPT's file hosts", async () => {
+    const manifestPath = join(root, "worktable.workspace.json")
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>
+    await writeFile(manifestPath, `${JSON.stringify({ ...manifest, version: 2 }, null, 2)}\n`)
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const csv = new TextEncoder().encode("name,stage\nAcme,won\n")
+    const fetched: string[] = []
+    const realFetch = globalThis.fetch
+    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
+      input: string | URL | Request,
+      init?: RequestInit
+    ) => {
+      const url = String(input instanceof Request ? input.url : input)
+      if (!url.includes("oaiusercontent.com")) return realFetch(input, init)
+      fetched.push(url)
+      return url.includes("expired")
+        ? new Response("gone", { status: 403 })
+        : new Response(csv)
+    }) as typeof fetch)
+    try {
+      // ChatGPT reads which inputs are files from the tool's _meta.
+      const connected = await connect(["documents:read", "documents:write"], "preview")
+      const { tools } = await connected.listTools()
+      const filesWrite = tools.find((tool) => tool.name === "worktable_files_write")
+      expect(filesWrite?._meta?.["openai/fileParams"]).toEqual(["file"])
+      expect(
+        Object.keys(
+          (filesWrite?.inputSchema.properties?.["file"] as { properties: object }).properties
+        ).sort()
+      ).toEqual(["download_url", "file_id", "file_name", "mime_type"])
+
+      const upload = (file: Record<string, unknown>, path = "imports/leads.csv") =>
+        connected.callTool({
+          name: "worktable_files_write",
+          arguments: { request: { action: "upload", spaceId, path }, file },
+        })
+      // Saved straight away, with no link to send it to, over any connection.
+      const saved = await upload({
+        download_url: "https://sdmntprwestus.oaiusercontent.com/files/abc?sig=1",
+        file_id: "file-abc",
+        file_name: "leads.csv",
+      })
+      expect(saved.isError).not.toBe(true)
+      expect(saved.structuredContent).toMatchObject({
+        ok: true,
+        path: "imports/leads.csv",
+        byteLength: csv.byteLength,
+      })
+      const read = await connected.callTool({
+        name: "worktable_files_read",
+        arguments: { request: { action: "read_source", spaceId, path: "imports/leads.csv" } },
+      })
+      expect(read.structuredContent).toMatchObject({ source: "name,stage\nAcme,won\n" })
+
+      // Any other address is refused without being fetched: the link comes
+      // from the caller.
+      for (const download_url of [
+        "http://127.0.0.1:7480/api/spaces",
+        "https://files.oaiusercontent.com.example.com/x",
+        "http://files.oaiusercontent.com/x",
+        "https://user@files.oaiusercontent.com/x",
+      ]) {
+        const refused = await upload({ download_url, file_id: "file-x" }, "imports/other.csv")
+        expect(refused.isError).toBe(true)
+        expect(JSON.stringify(refused.content)).toContain("ChatGPT file link")
+      }
+      expect(fetched).toHaveLength(1)
+
+      // An expired link says to attach the file again, and saves nothing.
+      const expired = await upload(
+        { download_url: "https://files.oaiusercontent.com/expired", file_id: "file-y" },
+        "imports/late.csv"
+      )
+      expect(expired.isError).toBe(true)
+      expect(JSON.stringify(expired.content)).toContain("Attach the file again")
+
+      // file goes only with upload, and the released surface has no such input.
+      const misplaced = await connected.callTool({
+        name: "worktable_files_write",
+        arguments: {
+          request: { action: "archive", spaceId, path: "imports/leads.csv" },
+          file: { download_url: "https://files.oaiusercontent.com/x", file_id: "file-z" },
+        },
+      })
+      expect(misplaced.isError).toBe(true)
+      const released = await connect(["documents:read", "documents:write"])
+      const releasedTools = (await released.listTools()).tools
+      const documentsWrite = releasedTools.find((tool) => tool.name === "worktable_documents_write")
+      expect(documentsWrite?._meta?.["openai/fileParams"]).toBeUndefined()
+      expect(documentsWrite?.inputSchema.properties).not.toHaveProperty("file")
+    } finally {
+      fetchSpy.mockRestore()
       if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
       else process.env["WORKTABLE_FILES_PREVIEW"] = previous
     }

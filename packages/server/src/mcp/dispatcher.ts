@@ -174,7 +174,13 @@ import {
 import { withResultMedia } from "./media.ts"
 import { filesPreviewEnabled } from "../files-preview.ts"
 import { fileDownloadLink, fileUploadLink } from "./file-links.ts"
-import { FILE_UPLOAD_MAX_BYTES, namesAFile } from "../file-uploads.ts"
+import {
+  FILE_UPLOAD_MAX_BYTES,
+  namesAFile,
+  writeUploadedFile,
+  type FileUploadMode,
+} from "../file-uploads.ts"
+import { fetchChatGptFile, type ChatGptFile } from "./chatgpt-files.ts"
 import { analyzeDocumentPath } from "../document-path.ts"
 import {
   importIntoRecords,
@@ -1306,11 +1312,7 @@ async function _dispatchOperationInner(
       if (!filesPreviewEnabled()) {
         throw new Error("Uploads need the files preview, in Settings → System.")
       }
-      if (!context.fileLinkOrigin) {
-        throw new Error(
-          "Upload links reach this Worktable only when you connect to it directly, not through Worktable Link. Write text files with create, or send small files as base64."
-        )
-      }
+      const file = args["file"] as ChatGptFile | undefined
       if (!analyzeDocumentPath(path).safe || !namesAFile(path)) {
         throw new Error(
           "Upload a file by its path with its extension, such as design/logo.png. Docs are created with create."
@@ -1321,14 +1323,40 @@ async function _dispatchOperationInner(
       if (expectedRevision !== undefined && ifExists !== "replace") {
         throw new Error("expectedRevision applies with ifExists replace.")
       }
+      const mode: FileUploadMode =
+        ifExists === "replace"
+          ? { kind: "replace", ...(expectedRevision ? { expectedRevision } : {}) }
+          : { kind: "create", keepBoth: ifExists === "keep_both" }
+      // A file attached in ChatGPT: fetch it and save it now.
+      if (file) {
+        const bytes = await fetchChatGptFile(file, context.signal)
+        const written = await writeUploadedFile({
+          spaceId,
+          path,
+          bytes,
+          mode,
+          actor: actorId,
+          source: "mcp",
+        })
+        return {
+          ok: true as const,
+          path: written.result.path,
+          sourceRevision: written.result.sourceRevision,
+          byteLength: bytes.byteLength,
+          contentHash: written.contentHash,
+        }
+      }
+      if (!context.fileLinkOrigin) {
+        throw new Error(
+          "Upload links reach this Worktable only when you connect to it directly, not through Worktable Link. Write text files with create, or send small files as base64."
+        )
+      }
       const link = fileUploadLink(
         context.fileLinkOrigin,
         principal,
         spaceId,
         path,
-        ifExists === "replace"
-          ? { kind: "replace", ...(expectedRevision ? { expectedRevision } : {}) }
-          : { kind: "create", keepBoth: ifExists === "keep_both" }
+        mode
       )
       return {
         ok: true as const,

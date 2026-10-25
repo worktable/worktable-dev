@@ -2589,7 +2589,7 @@
   {
     "name": "worktable_files_write",
     "title": "Write Worktable files",
-    "description": "Create, replace, checkpoint, restore, move, archive, or restore files, Docs included, and mixed-format folders. A file is created with format worktable.file from utf8 or base64 source; for an image or other binary file, if you have a shell, use upload instead: it returns a one-time link that takes the file with curl -T within 10 minutes, up to 64 MiB. Replacing a CSV or TSV reports what changed row by row, so check it for rows you didn't mean to drop. Archiving, moving or deleting a Doc takes its folder with it. Every create chooses a lifetime (durable or temporary); set_lifetime and set_folder_lifetime change it later.",
+    "description": "Create, replace, checkpoint, restore, move, archive, or restore files, Docs included, and mixed-format folders. A file is created with format worktable.file from utf8 or base64 source; for an image or other binary file, if you have a shell, use upload instead: it returns a one-time link that takes the file with curl -T within 10 minutes, up to 64 MiB. In ChatGPT, when the user attaches a file, call upload with the attachment as file and the path to save it at; Worktable fetches and saves it. Replacing a CSV or TSV reports what changed row by row, so check it for rows you didn't mean to drop. Archiving, moving or deleting a Doc takes its folder with it. Every create chooses a lifetime (durable or temporary); set_lifetime and set_folder_lifetime change it later.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3078,6 +3078,34 @@
               "additionalProperties": false
             }
           ]
+        },
+        "file": {
+          "type": "object",
+          "properties": {
+            "download_url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8192
+            },
+            "file_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "mime_type": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "file_name": {
+              "type": "string",
+              "maxLength": 1024
+            }
+          },
+          "required": [
+            "download_url",
+            "file_id"
+          ],
+          "description": "In ChatGPT: a file the user attached, with action upload. Worktable fetches it from ChatGPT and saves it at path."
         }
       },
       "required": [
@@ -3272,6 +3300,16 @@
         "command": {
           "description": "Returned by action \"upload\": the curl command to send the file with.",
           "type": "string"
+        },
+        "byteLength": {
+          "description": "Returned by action \"upload\" with file: the size of the file saved.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "contentHash": {
+          "description": "Returned by action \"upload\" with file: the SHA-256 of the file saved, base64url.",
+          "type": "string"
         }
       },
       "required": [
@@ -3299,6 +3337,9 @@
           "type": "oauth2",
           "scopes": []
         }
+      ],
+      "openai/fileParams": [
+        "file"
       ]
     }
   },

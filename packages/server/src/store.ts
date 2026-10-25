@@ -1282,9 +1282,10 @@ async function writeDocMetaFileUnlocked(spaceId: string, meta: DocMetaFile): Pro
 
 async function mutateDocMetaFile<T>(
   spaceId: string,
-  mutate: (meta: DocMetaFile) => T | Promise<T>
+  mutate: (meta: DocMetaFile) => T | Promise<T>,
+  access: "read" | "edit" = "edit"
 ): Promise<T> {
-  return withWriteLock(docMetaPath(spaceId), async () => {
+  return withStoreWriteLock(docMetaPath(spaceId), async () => {
     const meta = structuredClone(await readDocMetaFile(spaceId));
     const before = JSON.stringify(meta);
     const result = await mutate(meta);
@@ -1294,7 +1295,7 @@ async function mutateDocMetaFile<T>(
       await writeDocMetaFileUnlocked(spaceId, meta);
     }
     return result;
-  });
+  }, access);
 }
 
 function clearLifetime(entry: DocMetaEntry): void {
@@ -1397,12 +1398,14 @@ export async function setDocsArchiveOn(
 
 /**
  * Push temporary documents' dates to at least `until`. Durable documents are
- * untouched. Returns the paths whose date moved.
+ * untouched. Returns the paths whose date moved. `access` is what the activity
+ * behind it needed: a comment needs only read access.
  */
 export async function extendDocsArchiveOn(
   spaceId: string,
   docPaths: readonly string[],
-  until: string
+  until: string,
+  access: "read" | "edit" = "edit"
 ): Promise<string[]> {
   return mutateDocMetaFile(spaceId, (meta) => {
     const extended: string[] = [];
@@ -1415,7 +1418,7 @@ export async function extendDocsArchiveOn(
       extended.push(rawPath);
     }
     return extended;
-  });
+  }, access);
 }
 
 /**

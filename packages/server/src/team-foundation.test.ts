@@ -41,7 +41,8 @@ import { createPublicSharesRouter } from "./routes/public-shares.ts"
 import { sharesRouter } from "./routes/shares.ts"
 import { closeShareLinkStores } from "./share-links-store.ts"
 import { tokensRouter } from "./routes/tokens.ts"
-import { TeamAccessError } from "./team-policy.ts"
+import { commentAccess, TeamAccessError } from "./team-policy.ts"
+import { annotationsRouter } from "./routes/annotations.ts"
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test"
 import {
   mkdtemp,
@@ -1044,6 +1045,61 @@ describe("team foundation", () => {
     }
   })
 
+
+  test("a member who can only read a Space comments and replies, and leaves resolving to editors", async () => {
+    const { owner, member } = await setup()
+    await writeDoc("original", "brief", "# Brief\n\nShip in May.\n")
+    const request = (identity: TokenIdentity, method: string, path: string, body?: unknown) => {
+      const app = new Hono()
+      app.onError((error, c) =>
+        error instanceof TeamAccessError ? c.json({ code: error.code }, 403) : c.json({ error: String(error) }, 500)
+      )
+      app.use("*", async (c, next) => {
+        c.set("identity", identity)
+        await runWithTeamIdentity(identity, next)
+      })
+      app.route("/api/spaces/:spaceId/annotations", annotationsRouter)
+      app.route("/api/spaces/:spaceId/documents", documentsRouter)
+      return app.request(path, {
+        method,
+        ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+      })
+    }
+    const grantBob = (access: "read" | null) =>
+      setSpaceAccessPolicy(
+        {
+          spaceId: "original",
+          visibility: "restricted",
+          grants: access ? [{ subjectType: "member", subjectId: member.team!.memberId!, access }] : [],
+        },
+        owner
+      )
+    const comment = (identity: TokenIdentity) =>
+      request(identity, "POST", "/api/spaces/original/annotations", {
+        target: { type: "doc", docPath: "brief", quote: "Ship in May" },
+        category: "comment",
+        body: "Which May?",
+      })
+    const capabilities = async () =>
+      ((await (await request(member, "GET", "/api/spaces/original/documents/page?path=brief")).json()) as {
+        page: { capabilities: { edit?: boolean; comment?: boolean } }
+      }).page.capabilities
+
+    grantBob("read")
+    expect(await capabilities()).toMatchObject({ edit: false, comment: true })
+    const created = await comment(member)
+    expect(created.status).toBe(200)
+    const { annotationId } = (await created.json()) as { annotationId: string }
+    expect((await request(member, "POST", `/api/spaces/original/annotations/${annotationId}/replies`, { body: "Early May." })).status).toBe(200)
+    expect((await request(member, "POST", `/api/spaces/original/annotations/${annotationId}/resolve`, {})).status).toBe(403)
+    expect((await request(member, "PATCH", `/api/spaces/original/annotations/${annotationId}`, { body: "Changed" })).status).toBe(403)
+
+    // Without read access there is nothing to comment on.
+    grantBob(null)
+    expect((await comment(member)).status).toBe(403)
+    // An agent's comment is a write like any other.
+    expect(commentAccess({ ...owner, principal: { id: "agent:codex", type: "agent", displayName: "Codex" } })).toBe("edit")
+  })
 
   test("each member arranges their own Spaces, and an arrangement never names a Space they cannot read", async () => {
     const { owner, member } = await setup()

@@ -1,4 +1,4 @@
-import { assertSpaceAccess } from "./team-policy.ts";
+import { assertSpaceAccess, commentAccess } from "./team-policy.ts";
 import type { AnnotationWriteGuard } from "./annotation-origin.ts";
 import { noteCommentActivity } from "./activity-log.ts"
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -57,7 +57,8 @@ async function usesDocumentDataV2(): Promise<boolean> {
 /** Serialize annotation read-modify-write work for one Space. */
 export async function withAnnotationStoreLock<T>(
   spaceId: string,
-  operation: () => Promise<T>
+  operation: () => Promise<T>,
+  access: "read" | "edit" = "edit"
 ): Promise<T> {
   const previous = annotationLocks.get(spaceId) ?? Promise.resolve()
   let release!: () => void
@@ -69,7 +70,7 @@ export async function withAnnotationStoreLock<T>(
   await previous
   try {
     assertWorkspaceAvailable()
-    assertSpaceAccess(spaceId, "edit");
+    assertSpaceAccess(spaceId, access);
     if (await usesDocumentDataV2()) return await operation()
     return await withLegacyAnnotationStoreLock(
       { workspaceRoot: getWorkspaceRoot(), spaceId },
@@ -360,8 +361,8 @@ async function createAnnotationRecord(spaceId: string, input: CreateAnnotationIn
     await writeAnnotationFile(spaceId, key, file, beforeWrite);
     return { annotation, created: true };
   };
-  return key.root === "docs" ? withDocPathLock(spaceId, () => withAnnotationStoreLock(spaceId, create))
-    : withAnnotationStoreLock(spaceId, create);
+  return key.root === "docs" ? withDocPathLock(spaceId, () => withAnnotationStoreLock(spaceId, create, commentAccess()))
+    : withAnnotationStoreLock(spaceId, create, commentAccess());
 }
 
 async function replyAnnotationRecord(spaceId: string, annotationId: string, body: string, author: AnnotationAuthor): Promise<{ annotation: Annotation; replyId: string }> {
@@ -386,7 +387,7 @@ async function replyAnnotationRecord(spaceId: string, annotationId: string, body
   found.file.annotations[found.index] = annotation;
   await writeAnnotationFile(spaceId, found.key, found.file);
   return { annotation, replyId };
-})
+}, commentAccess())
 }
 
 export async function updateAnnotation(spaceId: string, annotationId: string, patch: UpdateAnnotationPatch, updatedBy = "worktable"): Promise<Annotation> {
@@ -451,16 +452,16 @@ function annotatedDocumentPath(annotation: Annotation): string | null {
   return "docPath" in target ? target.docPath : null
 }
 
-async function noteAnnotationActivity(spaceId: string, annotation: Annotation): Promise<void> {
+async function noteAnnotationActivity(spaceId: string, annotation: Annotation, access: "read" | "edit" = "edit"): Promise<void> {
   const path = annotatedDocumentPath(annotation)
-  if (path) await noteDocumentActivity(spaceId, [path])
+  if (path) await noteDocumentActivity(spaceId, [path], { access })
 }
 
 export async function createAnnotation(spaceId: string, input: CreateAnnotationInput, beforeWrite?: AnnotationWriteGuard): Promise<{ annotation: Annotation; created: boolean }> {
-  assertSpaceAccess(spaceId, "edit");
+  assertSpaceAccess(spaceId, commentAccess());
   const result = await createAnnotationRecord(spaceId, input, beforeWrite)
   if (result.created && (input.author ?? DEFAULT_AUTHOR).type !== "system") {
-    await noteAnnotationActivity(spaceId, result.annotation)
+    await noteAnnotationActivity(spaceId, result.annotation, commentAccess())
     const path = annotatedDocumentPath(result.annotation)
     if (path) {
       noteCommentActivity({
@@ -477,10 +478,10 @@ export async function createAnnotation(spaceId: string, input: CreateAnnotationI
 }
 
 export async function replyAnnotation(spaceId: string, annotationId: string, body: string, author: AnnotationAuthor = DEFAULT_AUTHOR): Promise<{ annotation: Annotation; replyId: string }> {
-  assertSpaceAccess(spaceId, "edit");
+  assertSpaceAccess(spaceId, commentAccess());
   const result = await replyAnnotationRecord(spaceId, annotationId, body, author)
   if (author.type !== "system" && !(await usesDocumentDataV2())) {
-    await noteAnnotationActivity(spaceId, result.annotation)
+    await noteAnnotationActivity(spaceId, result.annotation, commentAccess())
     const path = annotatedDocumentPath(result.annotation)
     if (path) {
       noteCommentActivity({

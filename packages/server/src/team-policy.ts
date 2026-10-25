@@ -401,6 +401,16 @@ export function assertWorktableThreadAccess(
   if (!canAccessWorktableThreads(access, identity)) throw new TeamAccessError()
 }
 
+/**
+ * The Space access writing a comment or a reply needs. A person may comment
+ * on what they can read; an agent's comments are writes like any other.
+ */
+export function commentAccess(
+  identity = currentRequestIdentity()
+): "read" | "edit" {
+  return identity && teamMemberForIdentity(identity) ? "read" : "edit"
+}
+
 export function assertSpaceAccess(
   spaceId: string,
   access: SpaceAccessLevel = "read",

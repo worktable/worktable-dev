@@ -13,6 +13,7 @@ import {
   updateAnnotation,
 } from "../annotation-store.ts";
 import { wsManager } from "../ws.ts";
+import { commentAccess } from "../team-policy.ts";
 import {
   isHtmlDocumentPath,
   usesHtmlDocumentStorageV2,
@@ -113,7 +114,9 @@ annotationsRouter.get("/", requireScope("annotations:read"), async (c) => {
   return c.json(result);
 });
 
-annotationsRouter.post("/", requireScope("annotations:write"), async (c) => {
+// People comment and reply on what they can read; changing or resolving a
+// comment needs edit access.
+annotationsRouter.post("/", requireScope("annotations:write", commentAccess), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
   const body = await c.req.json().catch(() => null);
   const parsed = CreateAnnotationSchema.safeParse(body);
@@ -158,7 +161,7 @@ annotationsRouter.patch("/:annotationId", requireScope("annotations:write"), asy
   return c.json({ ok: true, annotation });
 });
 
-annotationsRouter.post("/:annotationId/replies", requireScope("annotations:write"), async (c) => {
+annotationsRouter.post("/:annotationId/replies", requireScope("annotations:write", commentAccess), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
   const annotationId = c.req.param("annotationId") ?? "";
   const body = await c.req.json().catch(() => null);

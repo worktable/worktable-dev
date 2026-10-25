@@ -28,6 +28,7 @@ import {
   verifyHostedBrowserAssertion,
   verifyHostedResourceToken,
 } from "./hosted-auth.ts"
+import type { SpaceAccessLevel } from "@worktable/types"
 import { teamsEnabled } from "./team-database.ts"
 import { verifyTeamSession } from "./team-session.ts"
 import { hasTeamOperatorAuthority } from "./team-members.ts"
@@ -634,8 +635,17 @@ export function trustedLocalIdentity() {
   }
 }
 
-/** Guard a route on a scope. Use after an identity middleware. */
-export function requireScope(scope: string) {
+/**
+ * Guard a route on a scope. Use after an identity middleware. With Teams, a
+ * write scope needs edit access to the Space unless `spaceAccess` says what
+ * this route needs instead.
+ */
+export function requireScope(
+  scope: string,
+  spaceAccess?: (identity: TokenIdentity) => SpaceAccessLevel
+) {
+  const access = (identity: TokenIdentity): SpaceAccessLevel =>
+    spaceAccess?.(identity) ?? (scope.endsWith(":write") ? "edit" : "read")
   return async (c: Context, next: Next) => {
     const identity = c.get("identity")
     if (!identity || !hasScope(identity.scopes, scope)) {
@@ -644,18 +654,13 @@ export function requireScope(scope: string) {
     if (teamsEnabled()) {
       assertCurrentTeamIdentity(identity)
       const spaceId = c.req.param("spaceId") || c.req.query("spaceId")
-      if (spaceId) assertSpaceAccess(spaceId, scope.endsWith(":write") ? "edit" : "read", identity)
+      if (spaceId) assertSpaceAccess(spaceId, access(identity), identity)
     }
     await next()
     if (teamsEnabled()) {
       assertCurrentTeamIdentity(identity)
       const spaceId = c.req.param("spaceId") || c.req.query("spaceId")
-      if (spaceId)
-        assertSpaceAccess(
-          spaceId,
-          scope.endsWith(":write") ? "edit" : "read",
-          identity
-        )
+      if (spaceId) assertSpaceAccess(spaceId, access(identity), identity)
     }
   }
 }

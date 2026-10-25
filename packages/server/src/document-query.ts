@@ -1128,6 +1128,11 @@ export async function useResolvedDocumentHandle<T>(
      * reads keep newly discovered filesystem documents provisional.
      */
     materializeIdentity?: boolean
+    /**
+     * Space access assigning that ID needs: edit, unless the mutation needs
+     * less, as a comment does.
+     */
+    identityAccess?: "read" | "edit"
     /** Internal callers already serializing a namespace mutation must not relock it. */
     namespaceLockHeld?: boolean
     /**
@@ -1167,16 +1172,20 @@ export async function useResolvedDocumentHandle<T>(
               return use(resolution.handle)
             }
             const documentId = mintDocumentId()
-            await updateDocumentInventory(options.spaceId, {
-              upsert: [
-                {
-                  documentId,
-                  path: resolution.handle.document.path,
-                  format: resolution.handle.document.format,
-                  source: resolution.handle.source,
-                },
-              ],
-            })
+            await updateDocumentInventory(
+              options.spaceId,
+              {
+                upsert: [
+                  {
+                    documentId,
+                    path: resolution.handle.document.path,
+                    format: resolution.handle.document.format,
+                    source: resolution.handle.source,
+                  },
+                ],
+              },
+              { access: options.identityAccess }
+            )
             return use({
               ...resolution.handle,
               documentId,

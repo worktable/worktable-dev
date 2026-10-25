@@ -77,6 +77,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs"
+import { createHash, X509Certificate } from "node:crypto"
 import { cpus, loadavg, totalmem } from "node:os"
 import { join, resolve } from "node:path"
 import { execFileSync, spawn } from "node:child_process"
@@ -529,7 +530,6 @@ async function newContext(
   const context = await browser.newContext({
     ...options,
     baseURL: base,
-    ignoreHTTPSErrors: true,
   })
   const cookies = sessionCookies.get(base) ?? []
   if (cookies.length > 0)
@@ -2456,6 +2456,51 @@ function gitCommit(checkout: string): string {
 }
 
 /**
+ * A certificate for localhost, made for this run, and the hash of its key.
+ * Chromium trusts the proxy by that hash: told to ignore certificate errors
+ * instead, it keeps nothing in its HTTP cache, so a revisit or reopen would
+ * download again what a browser keeps.
+ */
+function proxyCertificate(outDir: string): {
+  cert: string
+  key: string
+  spki: string
+} {
+  const dir = join(outDir, "proxy-tls")
+  mkdirSync(dir, { recursive: true })
+  const cert = join(dir, "cert.pem")
+  const key = join(dir, "key.pem")
+  execFileSync(
+    "openssl",
+    [
+      "req",
+      "-x509",
+      "-newkey",
+      "ec",
+      "-pkeyopt",
+      "ec_paramgen_curve:prime256v1",
+      "-nodes",
+      "-keyout",
+      key,
+      "-out",
+      cert,
+      "-days",
+      "2",
+      "-subj",
+      "/CN=localhost",
+      "-addext",
+      "subjectAltName=DNS:localhost",
+    ],
+    { stdio: "ignore" }
+  )
+  const publicKey = new X509Certificate(readFileSync(cert)).publicKey
+  const spki = createHash("sha256")
+    .update(publicKey.export({ type: "spki", format: "der" }))
+    .digest("base64")
+  return { cert, key, spki }
+}
+
+/**
  * A local HTTP/2 TLS reverse proxy in front of the server, standing in for
  * Cloudflare: one multiplexed connection, forwarded host and protocol, the
  * server's own compression passed through. HTTP/3 is off so Chromium's
@@ -2464,7 +2509,8 @@ function gitCommit(checkout: string): string {
 async function startProxy(
   caddy: string,
   upstream: string,
-  outDir: string
+  outDir: string,
+  tls: { cert: string; key: string }
 ): Promise<{ base: string; stop: () => Promise<void> }> {
   const port = await freePort()
   const httpPort = await freePort()
@@ -2473,8 +2519,6 @@ async function startProxy(
     config,
     `{
 \tadmin off
-\tlocal_certs
-\tskip_install_trust
 \tauto_https disable_redirects
 \thttp_port ${httpPort}
 \tservers {
@@ -2482,7 +2526,7 @@ async function startProxy(
 \t}
 }
 https://localhost:${port} {
-\ttls internal
+\ttls ${tls.cert} ${tls.key}
 \treverse_proxy ${new URL(upstream).host}
 }
 `
@@ -2608,6 +2652,9 @@ async function main() {
   const { workspace, app } = restoreFixture(dir)
   const booted = performance.now()
   let server: ServerProcess | null = null
+  const proxyTls = networks.some((network) => network.via === "proxy")
+    ? proxyCertificate(outDir)
+    : null
   const browser = await chromium.launch({
     headless: true,
     args: [
@@ -2615,8 +2662,10 @@ async function main() {
       // network and CPU emulation applies to them too.
       "--disable-features=IsolateSandboxedIframes",
       "--disable-site-isolation-trials",
-      // The HTTP/2 proxy uses Caddy's internal certificate; stay on TCP.
-      "--ignore-certificate-errors",
+      // Trust the HTTP/2 proxy's certificate; stay on TCP.
+      ...(proxyTls
+        ? [`--ignore-certificate-errors-spki-list=${proxyTls.spki}`]
+        : []),
       "--disable-quic",
     ],
   })
@@ -2634,8 +2683,13 @@ async function main() {
     if (idle === "busy") throw new Error("server still busy after 5 minutes")
     console.log(`[clicks] server ${server.url} listening, idle: ${idle}`)
     const soloOwner = await signInSoloOwner(server.url)
-    if (networks.some((network) => network.via === "proxy"))
-      proxy = await startProxy(args.get("caddy") ?? "caddy", server.url, outDir)
+    if (proxyTls)
+      proxy = await startProxy(
+        args.get("caddy") ?? "caddy",
+        server.url,
+        outDir,
+        proxyTls
+      )
     const bases = [server.url, ...(proxy ? [proxy.base] : [])]
     const allSpaces = await populate(
       server.url,

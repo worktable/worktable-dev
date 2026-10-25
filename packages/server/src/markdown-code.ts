@@ -45,9 +45,9 @@ const REFERENCE_DEFINITION =
 
 /**
  * A reference-style image, not escaped: `![text][label]`, `![label][]` or
- * `![label]`, but not an inline image, whose label is followed by `(`.
+ * `![label]`, but not an inline image: a shortcut `![label]` followed by `(`.
  */
-const IMAGE_REFERENCE = /(?<!\\)!\[([^[\]\n]*)\](?:\[([^[\]\n]*)\])?(?!\()/g
+const IMAGE_REFERENCE = /(?<!\\)!\[([^[\]\n]*)\](?:\[([^[\]\n]*)\]|(?!\())/g
 
 /** A reference label as Markdown matches it: case and spacing aside. */
 function referenceKey(label: string): string {
@@ -66,6 +66,35 @@ export interface MarkdownLayout {
   destinations: Range[]
   /** Which of the destinations are images' rather than links'. */
   images: boolean[]
+  /**
+   * How many images show each destination: one for an inline one, and for
+   * a definition, every image that refers to it.
+   */
+  imageUses: number[]
+}
+
+/** A reference definition's destination, and the images that use it. */
+export interface ReferenceDestination {
+  range: Range
+  label: string
+  imageUses: number
+}
+
+/** The reference definitions in text whose code is already blanked. */
+export function referenceDestinations(scanned: string): ReferenceDestination[] {
+  const imageUses = new Map<string, number>()
+  for (const match of scanned.matchAll(IMAGE_REFERENCE)) {
+    const key = referenceKey(match[2] || match[1]!)
+    imageUses.set(key, (imageUses.get(key) ?? 0) + 1)
+  }
+  return [...scanned.matchAll(REFERENCE_DEFINITION)].map((match) => {
+    const start = match[0].indexOf(match[2]!, match[0].indexOf("]:") + 2)
+    return {
+      range: [match.index + start, match.index + start + match[2]!.length],
+      label: match[1]!,
+      imageUses: imageUses.get(referenceKey(match[1]!)) ?? 0,
+    }
+  })
 }
 
 function matchRanges(pattern: RegExp, text: string): Range[] {
@@ -110,22 +139,20 @@ export function markdownLayout(markdown: string): MarkdownLayout {
   const scanned = blankRanges(markdown, [...blocks, ...inline])
   const destinations: Range[] = []
   const images: boolean[] = []
+  const imageUses: number[] = []
   for (const match of scanned.matchAll(MARKDOWN_LINK_PATTERN)) {
     const start = match[0].indexOf(match[3]!, match[0].indexOf("](") + 2)
     destinations.push([match.index + start, match.index + start + match[3]!.length])
     images.push(match[1] === "!")
+    imageUses.push(match[1] === "!" ? 1 : 0)
   }
   // A definition's destination is an image's when an image refers to it.
-  const imageLabels = new Set<string>()
-  for (const match of scanned.matchAll(IMAGE_REFERENCE)) {
-    imageLabels.add(referenceKey(match[2] || match[1]!))
+  for (const definition of referenceDestinations(scanned)) {
+    destinations.push(definition.range)
+    images.push(definition.imageUses > 0)
+    imageUses.push(definition.imageUses)
   }
-  for (const match of scanned.matchAll(REFERENCE_DEFINITION)) {
-    const start = match[0].indexOf(match[2]!, match[0].indexOf("]:") + 2)
-    destinations.push([match.index + start, match.index + start + match[2]!.length])
-    images.push(imageLabels.has(referenceKey(match[1]!)))
-  }
-  return { blocks, inline, destinations, images }
+  return { blocks, inline, destinations, images, imageUses }
 }
 
 /** Where a Markdown text's code blocks and inline code sit. */

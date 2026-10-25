@@ -19,6 +19,7 @@ import {
   blankRanges,
   MARKDOWN_LINK_PATTERN,
   markdownCodeRanges,
+  referenceDestinations,
 } from "./markdown-code.ts";
 import { docStat, listDocs, readDoc } from "./store.ts";
 import { onDocContentChanged } from "./content-events.ts";
@@ -223,6 +224,18 @@ function extractMarkdownLinks(markdown: string): ExtractedDocLink[] {
       .map(markdownLineText)
       .join(" ");
     links.push(linkWithContext(target, lines));
+  }
+  // Reference definitions, `[shot]: spec/shot.png`: one an image refers to
+  // is an embed, another a link.
+  for (const definition of referenceDestinations(scanned)) {
+    const target = scanned
+      .slice(definition.range[0], definition.range[1])
+      .replace(/^<([\s\S]*)>$/, "$1");
+    links.push(
+      definition.imageUses > 0
+        ? embedWithContext(target, definition.label)
+        : { target, context: "" }
+    );
   }
   links.push(...htmlMediaEmbeds(scanned));
   return links;

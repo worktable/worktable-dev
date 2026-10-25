@@ -27,6 +27,20 @@ import {
 const LEGACY_WIDGET_METADATA_MAX_BYTES = 1024 * 1024
 const LEGACY_CATALOG_MAX_ENTRIES = 100_000
 
+/**
+ * A Space holding more entries than its catalog lists. It says so plainly,
+ * and how to bring the Space back under the limit.
+ */
+export class SpaceTooLargeError extends Error {
+  readonly code = "SPACE_TOO_LARGE"
+  constructor() {
+    super(
+      "This Space holds more than 100,000 files and folders, more than Worktable can list. Move some into another Space, or into a folder whose name starts with a dot, which Worktable leaves out."
+    )
+    this.name = "SpaceTooLargeError"
+  }
+}
+
 function compareStrings(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
 }
@@ -110,7 +124,7 @@ async function readLegacyDirectory(
     for await (const entry of await opendir(directory)) {
       budget.entries += 1
       if (budget.entries > LEGACY_CATALOG_MAX_ENTRIES) {
-        throw new Error("document catalog exceeds its entry limit")
+        throw new SpaceTooLargeError()
       }
       entries.push(entry)
     }

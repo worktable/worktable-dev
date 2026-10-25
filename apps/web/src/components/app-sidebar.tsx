@@ -761,8 +761,15 @@ const SpaceContent = memo(function SpaceContent({
     data: documents,
     isLoading: documentsLoading,
     isError: documentsError,
+    error: documentsFailure,
     refetch: refetchDocuments,
   } = useDocuments(spaceId)
+  // A Space too large to list says so, and how to fix it.
+  const tooLargeMessage =
+    documentsFailure instanceof HttpError &&
+    (documentsFailure.body as { code?: unknown } | null)?.code === "SPACE_TOO_LARGE"
+      ? documentsFailure.message
+      : undefined
   const queryClient = useQueryClient()
   useLiveSpaceCatalog(spaceId)
 
@@ -810,6 +817,7 @@ const SpaceContent = memo(function SpaceContent({
             docs={docs ?? NO_DOCS}
             isLoading={documentsLoading}
             loadFailed={documentsError}
+            loadFailedMessage={tooLargeMessage}
             onNavigate={onNavigate}
             onRefresh={handleRefresh}
             onWidgetRefresh={refreshWidgets}
@@ -1526,6 +1534,7 @@ function SpaceTreeSection({
   docs,
   isLoading,
   loadFailed,
+  loadFailedMessage,
   onNavigate,
   onRefresh,
   onWidgetRefresh,
@@ -1535,6 +1544,7 @@ function SpaceTreeSection({
   docs: DocListEntry[]
   isLoading: boolean
   loadFailed: boolean
+  loadFailedMessage?: string | undefined
   onNavigate: () => void
   onRefresh: () => Promise<void>
   onWidgetRefresh: (widgetId?: string) => Promise<void>
@@ -1750,7 +1760,9 @@ function SpaceTreeSection({
     <RevealCurrent.Provider value={revealCurrent}>
       {loadFailed ? (
         <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
-          <p className="text-sidebar-foreground/40">Couldn’t load docs</p>
+          <p className="text-sidebar-foreground/40">
+            {loadFailedMessage ?? "Couldn’t load docs"}
+          </p>
           <button
             type="button"
             className="shrink-0 text-sidebar-item-foreground hover:text-sidebar-foreground"

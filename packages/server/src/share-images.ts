@@ -91,8 +91,9 @@ export async function inlineSharedImages<T extends string | unknown[]>(
   if (!filesPreviewEnabled()) return { content, stamps: [] }
   // Each image's occurrences, as every one carries its own data URL.
   const targets = new Map<string, number>()
-  const collect = (target: string) => {
-    targets.set(target, (targets.get(target) ?? 0) + 1)
+  const collect = (target: string, imageUses = 1) => {
+    // A definition many images refer to shows its bytes in each of them.
+    targets.set(target, (targets.get(target) ?? 0) + Math.max(1, imageUses))
     return null
   }
   if (typeof content === "string") {

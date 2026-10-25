@@ -170,6 +170,12 @@ export async function noteAppSetup(app: AppFamily): Promise<void> {
   }
 }
 
+/** The name Cloud knows this device by: its link's label, else the one a link would take. */
+export function linkedDeviceLabel(): string {
+  return status.label ?? newDeviceLabel()
+}
+const newDeviceLabel = () => hostname().slice(0, 80) || "My device"
+
 /** Uses this device's existing host credential; Cloud binds it to its live link. */
 export async function sendLinkedGrokEmailWake(
   wake: GrokEmailWake,
@@ -227,7 +233,7 @@ async function prepareLink(): Promise<StoredLink> {
       cloudOrigin: cloudOrigin(),
       controlSecret: randomBytes(32).toString("hex"),
       workspaceEpoch: epoch,
-      label: hostname().slice(0, 80) || "My device",
+      label: newDeviceLabel(),
       bootSequence: 0,
       disabled: false,
     }

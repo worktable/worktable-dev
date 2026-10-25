@@ -368,6 +368,54 @@ export async function cloudAppIntent(
     }
   )
 }
+
+const Directory = z.object({
+  worktables: z
+    .array(
+      z.object({ id: z.string().min(1).max(200), name: z.string().max(200) })
+    )
+    .max(1000),
+  linked: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(200),
+        name: z.string().max(200),
+        device: z.string().max(200),
+        state: z.string().max(40),
+        openUrl: z.string().max(2048).optional(),
+        localWorkspaceId: z.string().max(200).optional(),
+      })
+    )
+    .max(1000)
+    .default([]),
+})
+export type CloudDirectory = z.infer<typeof Directory> & { cloudOrigin: string }
+
+/**
+ * The account's Worktables for the Worktable menu: hosted ones and the linked
+ * ones on the person's devices. Null when this Worktable isn't signed in.
+ */
+export async function cloudWorktables(): Promise<CloudDirectory | null> {
+  if (!(await cloudAccountStatus()).user) return null
+  const origin = linkedCloudOrigin()
+  const data = await cloudLinkRequest(origin, { action: "worktables" })
+  const { worktables, linked } = Directory.parse(data)
+  // Only the fields the menu shows, whatever a newer Cloud adds.
+  return {
+    cloudOrigin: origin,
+    worktables: worktables.map(({ id, name }) => ({ id, name })),
+    linked: linked.map(
+      ({ id, name, device, state, openUrl, localWorkspaceId }) => ({
+        id,
+        name,
+        device,
+        state,
+        ...(openUrl ? { openUrl } : {}),
+        ...(localWorkspaceId ? { localWorkspaceId } : {}),
+      })
+    ),
+  }
+}
 export async function signOutCloudAccount() {
   ++attempt
   pending = null

@@ -18,6 +18,7 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **Chat apps work where you set them up:** Turning on Worktable Link from the ChatGPT or Claude setup steps makes that app work in this Worktable, including one already connected to another.
+- **One Worktable list:** The Worktable menu lists the Worktables on this Mac, your linked Worktables on other devices with their status, and your Worktable Cloud Worktables, and opens any of them; in Desktop it replaces the Cloud Worktable dropdown.
 
 ### Fixed
 

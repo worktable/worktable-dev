@@ -24,6 +24,7 @@ import {
 import {
   cloudAccountStatus,
   cloudLinkRequest,
+  cloudWorktables,
   completeCloudSignIn,
   signOutCloudAccount,
   startCloudSignIn,
@@ -134,6 +135,21 @@ beforeEach(async () => {
       if (body.action === "enable")
         expect(body.workspaceId).toBe("subscription_one")
       if (body.action === "pause") paused = body.paused
+      if (body.action === "worktables")
+        return Response.json({
+          worktables: [{ id: "hosted_one", name: "Studio", role: "owner" }],
+          linked: [
+            {
+              id: `wl_${"c".repeat(32)}`,
+              name: "Notes",
+              device: "office-mac",
+              state: "online",
+              openUrl: "https://notes.example",
+              localWorkspaceId: "ws_notes",
+              extra: "ignored",
+            },
+          ],
+        })
       return Response.json({
         destinationId: "a".repeat(32),
         ...(namesWorktable ? { worktableId: `wl_${"b".repeat(32)}` } : {}),
@@ -156,6 +172,8 @@ const callback = (s = state) =>
   new URL(`${origin}/api/linked/account/callback?state=${s}&code=one-use-code`)
 
 test("local sign-in consumes only the matching callback and does not enable Link", async () => {
+  // Signed out, the Worktable menu lists nothing from Cloud and asks it nothing.
+  expect(await cloudWorktables()).toBeNull()
   await startCloudSignIn(origin)
   await fc.assert(
     fc.asyncProperty(
@@ -180,6 +198,21 @@ test("local sign-in consumes only the matching callback and does not enable Link
   ).toEqual([true, false])
   expect(exchanges).toBe(1)
   expect(linkActions).toBe(0)
+  expect(await cloudWorktables()).toEqual({
+    cloudOrigin: cloud,
+    worktables: [{ id: "hosted_one", name: "Studio" }],
+    linked: [
+      {
+        id: `wl_${"c".repeat(32)}`,
+        name: "Notes",
+        device: "office-mac",
+        state: "online",
+        openUrl: "https://notes.example",
+        localWorkspaceId: "ws_notes",
+      },
+    ],
+  })
+  linkActions = 0
   const visible = await cloudAccountStatus()
   expect(visible.user?.email).toBe("owner@example.com")
   expect(JSON.stringify(visible)).not.toContain("private-")

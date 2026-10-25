@@ -179,8 +179,6 @@ struct DesktopBootstrapStatus {
     can_remove_connection: bool,
     connection_profile_id: Option<String>,
     saved_connections: Vec<DesktopSavedConnectionSummary>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    cloud_worktables: Vec<cloud_auth::CloudWorktableChoice>,
     workspace_native_commands: &'static str,
 }
 
@@ -204,7 +202,6 @@ impl DesktopBootstrapStatus {
             can_remove_connection: false,
             connection_profile_id: None,
             saved_connections: Vec::new(),
-            cloud_worktables: Vec::new(),
             workspace_native_commands: "pending",
         }
     }
@@ -1804,7 +1801,10 @@ async fn connect_cloud(
             retry_after: None,
         });
     }
-    if interactive && selected_workspace_id.is_none() {
+    // A first sign-in opens the account's first Worktable; the Worktable
+    // menu switches to the others. Signing in again reopens the saved one.
+    let mut selected_workspace_id = selected_workspace_id;
+    if interactive && selected_workspace_id.is_none() && expected_hosted_id.is_none() {
         let worktables = app
             .state::<CloudAuthController>()
             .list_worktables(&desktop_version)
@@ -1812,19 +1812,18 @@ async fn connect_cloud(
         if !connection_generation_is_active(app, generation) {
             return Ok(());
         }
-        let mut status = DesktopBootstrapStatus::cloud_selection(
-            "Choose a Worktable to open.",
-            profile_id.clone(),
-        );
-        status.cloud_worktables = worktables;
-        if status.cloud_worktables.is_empty() {
-            status.message =
-                "Create a Worktable or accept an invitation in your browser, then sign in again."
-                    .into();
-        }
-        set_status(app, status);
-        size_current_window(app);
-        return Ok(());
+        let Some(first) = worktables.into_iter().next() else {
+            set_status(
+                app,
+                DesktopBootstrapStatus::cloud_selection(
+                    "Create a Worktable or accept an invitation in your browser, then sign in again.",
+                    profile_id.clone(),
+                ),
+            );
+            size_current_window(app);
+            return Ok(());
+        };
+        selected_workspace_id = Some(first.id);
     }
     let switching_worktable = selected_workspace_id
         .as_deref()
@@ -2695,6 +2694,15 @@ async fn desktop_start_local_connection(
     path: String,
 ) -> Result<(), String> {
     require_trusted_surface(&webview)?;
+    start_local_connection(&app, intent, path).await
+}
+
+async fn start_local_connection(
+    app: &AppHandle,
+    intent: String,
+    path: String,
+) -> Result<(), String> {
+    let app = app.clone();
     if intent != "create" && intent != "open" {
         return Err("workspace intent must be create or open".into());
     }
@@ -3291,6 +3299,202 @@ async fn desktop_workspace_show_chooser(webview: Webview, app: AppHandle) -> Res
     change_connection(&app)
         .await
         .map_err(|error| format!("{SWITCH_FAILED}{error}"))
+}
+
+/// The Worktable menu runs on the active local page or a Worktable Cloud
+/// page. A self-hosted page is someone else's server, so it learns nothing
+/// about this Mac's Worktables and keeps Switch Worktable.
+fn require_worktable_menu_surface(
+    webview: &Webview,
+    state: &DesktopHostState,
+) -> Result<(), String> {
+    require_active_workspace_surface(webview, state)?;
+    let provider = state
+        .status
+        .lock()
+        .map_err(|_| "desktop status lock is poisoned".to_string())?
+        .provider;
+    if matches!(provider, Some("local") | Some("cloud")) {
+        Ok(())
+    } else {
+        Err("the Worktable menu needs a local or Worktable Cloud page".into())
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceMenuWorktable {
+    id: String,
+    name: String,
+    /// Whether Worktable Link is on for it.
+    linked: bool,
+    /// Whether this window shows it.
+    current: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceMenuWorktables {
+    schema_version: u8,
+    worktables: Vec<WorkspaceMenuWorktable>,
+}
+
+/// The Worktables on this Mac whose folders are still there, without paths.
+fn menu_worktables(
+    authority: &LocalAuthorityInspection,
+    current_id: Option<&str>,
+) -> Vec<WorkspaceMenuWorktable> {
+    authority
+        .workspaces
+        .iter()
+        .filter(|workspace| !workspace.path.is_empty() && Path::new(&workspace.path).is_dir())
+        .map(|workspace| WorkspaceMenuWorktable {
+            id: workspace.workspace_id.clone(),
+            name: if workspace.name.trim().is_empty() {
+                Path::new(&workspace.path)
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "Worktable".into())
+            } else {
+                workspace.name.clone()
+            },
+            linked: workspace.linked == Some(true),
+            current: current_id == Some(workspace.workspace_id.as_str()),
+        })
+        .collect()
+}
+
+/// The Worktable menu's On this Mac group, asked for when the menu first opens.
+#[tauri::command]
+async fn desktop_workspace_worktables(
+    webview: Webview,
+    app: AppHandle,
+) -> Result<WorkspaceMenuWorktables, String> {
+    let state = app.state::<DesktopHostState>();
+    require_worktable_menu_surface(&webview, &state)?;
+    let current_id = state
+        .status
+        .lock()
+        .map_err(|_| "desktop status lock is poisoned".to_string())?
+        .clone();
+    let current_id = (current_id.provider == Some("local"))
+        .then(|| current_id.workspace.map(|workspace| workspace.id))
+        .flatten();
+    let authority = inspect_local_authority(&app).await?;
+    Ok(WorkspaceMenuWorktables {
+        schema_version: 1,
+        worktables: menu_worktables(&authority, current_id.as_deref()),
+    })
+}
+
+/// Opens a Worktable on this Mac in this window, as Switch Worktable and the
+/// chooser would. Agents stay where they are; its page offers to move them.
+#[tauri::command]
+async fn desktop_workspace_open_local(
+    webview: Webview,
+    app: AppHandle,
+    workspace_id: String,
+) -> Result<(), String> {
+    require_worktable_menu_surface(&webview, &app.state::<DesktopHostState>())?;
+    let authority = inspect_local_authority(&app)
+        .await
+        .map_err(|error| format!("{SWITCH_FAILED}{error}"))?;
+    let path = menu_worktables(&authority, None)
+        .into_iter()
+        .find(|workspace| workspace.id == workspace_id)
+        .and_then(|_| {
+            authority
+                .workspaces
+                .iter()
+                .find(|workspace| workspace.workspace_id == workspace_id)
+                .map(|workspace| workspace.path.clone())
+        })
+        .ok_or_else(|| format!("{SWITCH_FAILED}that Worktable is no longer on this Mac"))?;
+    switch_then(&app, start_local_connection(&app, "open".into(), path)).await
+}
+
+/// Opens a hosted Worktable in this window, signing in first when this Mac
+/// has no Worktable Cloud session.
+#[tauri::command]
+async fn desktop_workspace_open_cloud(
+    webview: Webview,
+    app: AppHandle,
+    workspace_id: String,
+) -> Result<(), String> {
+    require_worktable_menu_surface(&webview, &app.state::<DesktopHostState>())?;
+    if workspace_id.is_empty()
+        || workspace_id.len() > 200
+        || !workspace_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+    {
+        return Err("Worktable id is invalid".into());
+    }
+    let interactive = saved_cloud_profile(&app)
+        .map_err(|error| format!("{SWITCH_FAILED}{error}"))?
+        .is_none();
+    switch_then(
+        &app,
+        run_selected_cloud_connection_operation(&app, interactive, Some(workspace_id)),
+    )
+    .await
+}
+
+/// Marks a folder that holds no Worktable, for the menu's Open Folder.
+const NOT_A_WORKTABLE: &str = "not a worktable: ";
+
+/// The menu's Open Folder: choose a folder and open its Worktable here.
+/// Ok(false) when the person closed the picker.
+#[tauri::command]
+async fn desktop_workspace_open_folder(webview: Webview, app: AppHandle) -> Result<bool, String> {
+    require_worktable_menu_surface(&webview, &app.state::<DesktopHostState>())?;
+    let hint = app
+        .state::<DesktopHostState>()
+        .picker_directory_hint
+        .lock()
+        .map_err(|_| "desktop picker hint lock is poisoned".to_string())?
+        .clone();
+    let mut picker = app.dialog().file();
+    if let Some(directory) = picker_start_directory(hint.as_deref(), None) {
+        picker = picker.set_directory(directory);
+    }
+    let Some(selected) = picker.blocking_pick_folder() else {
+        return Ok(false);
+    };
+    let path = selected
+        .into_path()
+        .map_err(|error| format!("selected folder is not a filesystem path: {error}"))?
+        .to_string_lossy()
+        .into_owned();
+    if let Ok(mut picker_hint) = app.state::<DesktopHostState>().picker_directory_hint.lock() {
+        update_picker_hint_after_selection(&mut picker_hint, true);
+    }
+    match inspect_workspace(&app, Some(path.clone())).await? {
+        WorkspaceInspection::Valid { .. } => {}
+        WorkspaceInspection::Reject { message, .. } => {
+            return Err(format!("{NOT_A_WORKTABLE}{message}"))
+        }
+        WorkspaceInspection::Missing { .. } | WorkspaceInspection::Empty { .. } => {
+            return Err(format!("{NOT_A_WORKTABLE}That folder isn’t a Worktable."))
+        }
+    }
+    switch_then(&app, start_local_connection(&app, "open".into(), path)).await?;
+    Ok(true)
+}
+
+/// Leaves the shown Worktable as the chooser does, keeping linked hosts
+/// running, then opens the next one. The shell shows progress and recovery.
+async fn switch_then<F>(app: &AppHandle, open: F) -> Result<(), String>
+where
+    F: std::future::Future<Output = Result<(), String>>,
+{
+    show_main_window(app).map_err(|error| format!("{SWITCH_FAILED}{error}"))?;
+    change_connection(app)
+        .await
+        .map_err(|error| format!("{SWITCH_FAILED}{error}"))?;
+    // A failure to open is shown in the window's recovery page.
+    let _ = open.await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -8022,6 +8226,10 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             desktop_shell_identity,
             desktop_workspace_show_chooser,
+            desktop_workspace_worktables,
+            desktop_workspace_open_local,
+            desktop_workspace_open_cloud,
+            desktop_workspace_open_folder,
             desktop_workspace_agent_offer,
             desktop_workspace_answer_agent_offer,
             desktop_agent_skills_status,
@@ -8607,6 +8815,45 @@ mod tests {
             .map(|restarts| background_host_restart_delay(restarts).as_secs())
             .collect();
         assert_eq!(delays, vec![1, 1, 2, 4, 8, 16, 32, 60, 60]);
+    }
+
+    #[test]
+    fn worktable_menu_lists_this_macs_folders_without_paths() {
+        let root = env::temp_dir().join(format!(
+            "worktable-desktop-menu-{}-{}",
+            process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let studio = root.join("Studio");
+        let unnamed = root.join("Client Work");
+        std::fs::create_dir_all(&studio).unwrap();
+        std::fs::create_dir_all(&unnamed).unwrap();
+        let authority: LocalAuthorityInspection = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 1,
+            "ok": true,
+            "configured": true,
+            "workspaces": [
+                { "workspaceId": "ws_studio", "name": "Studio", "path": studio, "linked": true },
+                { "workspaceId": "ws_client", "name": " ", "path": unnamed, "linked": null },
+                { "workspaceId": "ws_gone", "name": "Gone", "path": root.join("Gone"), "linked": false }
+            ],
+            "runtime": null
+        }))
+        .unwrap();
+        let listed = serde_json::to_value(menu_worktables(&authority, Some("ws_studio"))).unwrap();
+        // A folder that's gone isn't offered, one without a name shows its
+        // folder's, and the page never learns where any of them are.
+        assert_eq!(
+            listed,
+            serde_json::json!([
+                { "id": "ws_studio", "name": "Studio", "linked": true, "current": true },
+                { "id": "ws_client", "name": "Client Work", "linked": false, "current": false }
+            ])
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

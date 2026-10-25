@@ -357,9 +357,10 @@ export function renderPublicHtmlProjection(source: string): string {
   })
   document.documentElement.removeAttribute("data-theme")
 
-  document.head
-    .querySelectorAll(":scope > :not(style)")
-    .forEach((node) => node.remove())
+  // Text too: sanitizing leaves an unwrapped title's text in the head, which
+  // browsers show at the top of the page.
+  for (const node of [...document.head.childNodes])
+    if (node.nodeName !== "STYLE") node.remove()
   appendSystemThemeCompatibility(document)
   const charset = document.createElement("meta")
   charset.setAttribute("charset", "utf-8")

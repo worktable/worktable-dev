@@ -38,6 +38,7 @@ import { ySyncPluginKey } from "y-prosemirror"
 import { TextSelection } from "@tiptap/pm/state"
 import type { Awareness } from "y-protocols/awareness"
 import type { Annotation, AnnotationCategory } from "@worktable/types"
+import { findPassageBlock } from "@worktable/types"
 import { MessageSquarePlus, Sparkles } from "lucide-react"
 import {
   useCallback,
@@ -888,13 +889,19 @@ function AnnotationBadges({
   useEffect(() => {
     // No badges means no model traversal, forced layout, timer, or resize work.
     // A passage comment (no block id, as made on Markdown) sits on the
-    // block that holds its quote.
-    const blockIdOf = (annotation: Annotation) =>
-      "blockId" in annotation.target && annotation.target.blockId
-        ? annotation.target.blockId
-        : annotation.target.type === "doc"
-          ? resolveBlockIdByQuote(editor.document, annotation.target.quote)
-          : undefined
+    // block that holds its passage, found as the server finds it.
+    const blockIdOf = (annotation: Annotation, blocks: Block[]) => {
+      const target = annotation.target
+      if ("blockId" in target) return target.blockId || undefined
+      if (target.type !== "doc" || !target.quote) return undefined
+      const found = findPassageBlock(
+        blocks.map((block) =>
+          blockToPlainText((block as { content?: unknown }).content)
+        ),
+        { quote: target.quote, prefix: target.prefix, suffix: target.suffix }
+      )
+      return found ? blocks[found.index]!.id : undefined
+    }
     if (
       !annotations.some(
         (annotation) =>
@@ -912,9 +919,10 @@ function AnnotationBadges({
       if (!container) return
       const containerRect = container.getBoundingClientRect()
       const grouped = new Map<string, Annotation[]>()
+      const blocks = flattenEditorBlocks(editor.document)
       for (const annotation of annotations) {
         if (annotation.status === "resolved") continue
-        const blockId = blockIdOf(annotation)
+        const blockId = blockIdOf(annotation, blocks)
         if (!blockId) continue
         const list = grouped.get(blockId) ?? []
         list.push(annotation)
@@ -922,9 +930,7 @@ function AnnotationBadges({
       }
       // Block IDs actually present in the document. Used to tell genuine ID drift
       // apart from a block whose DOM node is only transiently missing mid-render.
-      const liveBlockIds = new Set(
-        flattenEditorBlocks(editor.document).map((block) => block.id)
-      )
+      const liveBlockIds = new Set(blocks.map((block) => block.id))
       const next: Array<{
         blockId: string
         top: number

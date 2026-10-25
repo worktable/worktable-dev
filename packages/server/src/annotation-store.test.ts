@@ -140,6 +140,19 @@ describe("annotation store", () => {
     expect(gone).toMatchObject({ targetExists: false, selectorMatch: "stale" });
   });
 
+  it("places a passage in a rich Doc by the text around a repeated quote", async () => {
+    const paragraph = (id: string, text: string) => ({ ...block, id, content: [{ type: "text", text, styles: {} }] });
+    await writeDoc("space", "doc", [paragraph("first", "Ship it on Monday."), paragraph("second", "Review it on Monday.")]);
+    const created = await createAnnotation("space", {
+      target: { type: "doc", docPath: "doc", quote: "it on Monday", prefix: "Ship it on Monday.\nReview " },
+      category: "comment",
+      body: "Which Monday?",
+    });
+    const context = await getAnnotationContext("space", created.annotation.id);
+    expect(context).toMatchObject({ targetExists: true, selectorMatch: "exact" });
+    expect((context.block as { id: string }).id).toBe("second");
+  });
+
   it("moves annotation sidecars when a doc is renamed", async () => {
     await createAnnotation("space", {
       target: { type: "block", docPath: "old", blockId: "block-a" },

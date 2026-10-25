@@ -16,7 +16,7 @@ import type {
   AnnotationStatus,
   AnnotationTarget,
 } from "@worktable/types";
-import { AnnotationFileSchema, WidgetIdSchema } from "@worktable/types";
+import { AnnotationFileSchema, WidgetIdSchema, findPassageBlock } from "@worktable/types";
 import { getSpacesBaseDir, readDoc } from "./store.ts";
 import { readWidget, readWidgetHtml } from "./widget-store.ts";
 import { locateMarkdownPassage, markdownPassageLines } from "./markdown-passage.ts";
@@ -613,19 +613,26 @@ export async function getAnnotationContext(spaceId: string, annotationOrTarget: 
     };
   }
   const flattened = flattenBlocks(Array.isArray(doc.data) ? doc.data : []);
-  if (target.type === "doc" && !quote) {
-    return { targetExists: true, selectorMatch: "exact", docPath: target.docPath, excerpt: flattened.map((b) => b.text).filter(Boolean).join("\n").slice(0, 2000) };
+  if (target.type === "doc") {
+    if (!quote) {
+      return { targetExists: true, selectorMatch: "exact", docPath: target.docPath, excerpt: flattened.map((b) => b.text).filter(Boolean).join("\n").slice(0, 2000) };
+    }
+    const passage = findPassageBlock(
+      flattened.map((entry) => entry.text),
+      { quote, prefix: target.prefix, suffix: target.suffix }
+    );
+    if (!passage) return { targetExists: false, selectorMatch: "stale", docPath: target.docPath };
+    return blockContext(flattened, passage.index, target.docPath, passage.match);
   }
-  const idx = "blockId" in target ? flattened.findIndex((entry) => entry.block.id === target.blockId) : -1;
+  const idx = flattened.findIndex((entry) => entry.block.id === target.blockId);
   if (idx >= 0) {
     return blockContext(flattened, idx, target.docPath, "exact");
   }
-  // blockId drifted, or a passage has none: locate the block by its stored quote.
+  // blockId drifted — fall back to locating the block by its stored quote.
   if (quote) {
     const fuzzyIdx = findBlockIndexByQuote(flattened, quote);
     if (fuzzyIdx >= 0) {
-      // A passage is found by its quote; only a block whose id drifted is fuzzy.
-      return blockContext(flattened, fuzzyIdx, target.docPath, target.type === "doc" ? "exact" : "fuzzy");
+      return blockContext(flattened, fuzzyIdx, target.docPath, "fuzzy");
     }
     // The quote no longer appears anywhere — the anchored text is gone.
     return { targetExists: false, selectorMatch: "stale", docPath: target.docPath };

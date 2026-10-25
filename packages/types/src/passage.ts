@@ -214,3 +214,25 @@ function findReworded(
   while (last > first && !need.has(all[last]!.value)) last--
   return { start: all[first]!.start, end: all[last]!.end }
 }
+
+/**
+ * Which block holds a passage, for a Doc stored as blocks: the blocks' text
+ * in reading order, matched by findPassage so the text around the quote
+ * still tells repeated quotes apart.
+ */
+export function findPassageBlock(
+  texts: readonly string[],
+  selector: PassageSelector
+): { index: number; match: PassageMatch["match"] } | null {
+  const starts: number[] = []
+  let length = 0
+  for (const text of texts) {
+    starts.push(length)
+    length += text.length + 1
+  }
+  const found = findPassage(texts.join("\n"), selector)
+  if (!found) return null
+  let index = 0
+  while (index + 1 < starts.length && starts[index + 1]! <= found.start) index++
+  return { index, match: found.match }
+}

@@ -750,7 +750,7 @@ describe("format-neutral document route", () => {
     )
     expect(refused.status).toBe(409)
     expect((await refused.json()).error).toBe(
-      "129 Docs and files are inside. Worktable can move up to 128 at a time, so move some of them first."
+      "129 Docs and files are inside. Worktable can move up to 128 at a time, so move some of them out first."
     )
     expect((await readDoc(spaceId, "big/doc-0")).data).toBe("# Doc 0")
   }, 30_000)

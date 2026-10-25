@@ -3578,7 +3578,10 @@ async function preparePrefixArchive(
   }
   if (sources.length > PREFIX_RENAME_MAX_DOCUMENTS) {
     throw new DocumentLifecyclePreconditionError(
-      folderTooLargeMessage("archive", sources.length)
+      folderTooLargeMessage(
+        archived ? "archive" : "restore",
+        sources.length
+      )
     )
   }
   if (

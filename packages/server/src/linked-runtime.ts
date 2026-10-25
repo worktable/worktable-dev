@@ -34,6 +34,7 @@ import { setLinkedSharing } from "./linked-sharing.ts"
 import { invalidateAllDocumentShares } from "./share-store.ts"
 import { revokeAllLinks } from "./share-links-lifecycle.ts"
 import { forgetLinkedApps } from "./agent-connection-store.ts"
+import { logError } from "./debug-log.ts"
 import { isHosted } from "./hosted.ts"
 import {
   localServiceOrigin,
@@ -445,7 +446,6 @@ export async function disconnectLink(): Promise<void> {
     const link = await readLink(file)
     await invalidateAllDocumentShares()
     await revokeAllLinks("link-disconnected")
-    await forgetLinkedApps()
     if (link) {
       await saveLink(file, { ...link, disabled: true })
       status = {
@@ -456,6 +456,13 @@ export async function disconnectLink(): Promise<void> {
       }
     } else
       status = { state: "unlinked", enabled: false, cloudOrigin: cloudOrigin() }
+    // Only the Agents list: unlinking stands even if this fails.
+    await forgetLinkedApps().catch((error: unknown) => {
+      console.warn(
+        "[linked] could not forget apps connected through Link:",
+        logError(error)
+      )
+    })
   })
 }
 

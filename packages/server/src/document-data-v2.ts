@@ -67,6 +67,8 @@ import { noteSpaceChanged } from "./workspace-read-model.ts"
 export const LEGACY_DOCUMENT_SELECTOR_TYPES = {
   richTextBlock: "worktable.rich-text-block",
   richTextRange: "worktable.rich-text-range",
+  /** A passage found by its quote and the text either side; see findPassage. */
+  passage: "worktable.passage",
 } as const
 
 export const DOCUMENT_ANNOTATIONS_V2_MAX_BYTES = 16 * 1024 * 1024
@@ -222,7 +224,15 @@ export function translateLegacyDocumentAnnotationTarget(
   }
   if (target.type === "doc") {
     if (target.docPath !== input.logicalPath) return null
-    return base
+    if (target.quote === undefined) return base
+    return DocumentAnnotationTargetV2Schema.parse({
+      ...base,
+      selector: {
+        type: LEGACY_DOCUMENT_SELECTOR_TYPES.passage,
+        version: 1,
+        data: optionalStrings(target, ["quote", "prefix", "suffix"]),
+      },
+    })
   }
   if (target.type === "widget") {
     if (target.widgetId !== input.logicalPath) return null
@@ -279,6 +289,14 @@ const BlockSelectorDataSchema = z
     prefix: z.string().optional(),
     suffix: z.string().optional(),
     blockTextHash: z.string().optional(),
+  })
+  .passthrough()
+
+const PassageSelectorDataSchema = z
+  .object({
+    quote: z.string().min(1),
+    prefix: z.string().optional(),
+    suffix: z.string().optional(),
   })
   .passthrough()
 
@@ -352,6 +370,25 @@ export function translateDocumentAnnotationTargetV2ToLegacy(
           ...(start !== undefined ? { start } : {}),
           ...(end !== undefined ? { end } : {}),
           ...(quote !== undefined ? { quote } : {}),
+          ...(prefix !== undefined ? { prefix } : {}),
+          ...(suffix !== undefined ? { suffix } : {}),
+        },
+      }
+    }
+  }
+  if (
+    target.selector.type === LEGACY_DOCUMENT_SELECTOR_TYPES.passage &&
+    target.selector.version === 1
+  ) {
+    const data = PassageSelectorDataSchema.safeParse(target.selector.data)
+    if (data.success) {
+      const { quote, prefix, suffix } = data.data
+      return {
+        kind: "resolved",
+        target: {
+          type: "doc",
+          docPath: target.path,
+          quote,
           ...(prefix !== undefined ? { prefix } : {}),
           ...(suffix !== undefined ? { suffix } : {}),
         },

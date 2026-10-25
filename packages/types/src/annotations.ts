@@ -14,6 +14,12 @@ export const AnnotationTargetSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("doc"),
     docPath: z.string().min(1),
+    // A passage of a Doc without block ids, such as a Markdown file, found
+    // again by findPassage. Readers that don't know passages still show the
+    // comment as one on the whole Doc.
+    quote: z.string().min(1).optional(),
+    prefix: z.string().optional(),
+    suffix: z.string().optional(),
   }),
   z.object({
     type: z.literal("block"),
@@ -115,4 +121,7 @@ export interface AnnotationContext {
   beforeBlocks?: unknown[];
   afterBlocks?: unknown[];
   excerpt?: string;
+  /** For a passage in a Markdown file: the source lines it spans, from 1. */
+  startLine?: number;
+  endLine?: number;
 }

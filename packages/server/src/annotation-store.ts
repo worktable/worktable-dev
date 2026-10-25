@@ -19,6 +19,7 @@ import type {
 import { AnnotationFileSchema, WidgetIdSchema } from "@worktable/types";
 import { getSpacesBaseDir, readDoc } from "./store.ts";
 import { readWidget, readWidgetHtml } from "./widget-store.ts";
+import { locateMarkdownPassage, markdownPassageLines } from "./markdown-passage.ts";
 import { withDocPathLock } from "./doc-path-lock.ts";
 import { assertWorkspaceAvailable } from "./workspace-safety.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
@@ -591,23 +592,40 @@ export async function getAnnotationContext(spaceId: string, annotationOrTarget: 
   if (!("docPath" in target)) return { targetExists: true, selectorMatch: "exact" };
   const doc = await readDoc(spaceId, target.docPath);
   if (doc.error || doc.data === null) return { targetExists: false, selectorMatch: "missing", docPath: target.docPath };
+  const quote = "quote" in target ? target.quote : undefined;
   if (typeof doc.data === "string") {
-    return { targetExists: true, selectorMatch: "exact", docPath: target.docPath, excerpt: doc.data.slice(0, 2000) };
+    if (!quote) {
+      return { targetExists: true, selectorMatch: "exact", docPath: target.docPath, excerpt: doc.data.slice(0, 2000) };
+    }
+    const passage = locateMarkdownPassage(doc.data, {
+      quote,
+      prefix: "prefix" in target ? target.prefix : undefined,
+      suffix: "suffix" in target ? target.suffix : undefined,
+    });
+    if (!passage) return { targetExists: false, selectorMatch: "stale", docPath: target.docPath };
+    return {
+      targetExists: true,
+      selectorMatch: passage.match,
+      docPath: target.docPath,
+      excerpt: markdownPassageLines(doc.data, passage),
+      startLine: passage.startLine,
+      endLine: passage.endLine,
+    };
   }
   const flattened = flattenBlocks(Array.isArray(doc.data) ? doc.data : []);
-  if (target.type === "doc") {
+  if (target.type === "doc" && !quote) {
     return { targetExists: true, selectorMatch: "exact", docPath: target.docPath, excerpt: flattened.map((b) => b.text).filter(Boolean).join("\n").slice(0, 2000) };
   }
-  const idx = flattened.findIndex((entry) => entry.block.id === target.blockId);
+  const idx = "blockId" in target ? flattened.findIndex((entry) => entry.block.id === target.blockId) : -1;
   if (idx >= 0) {
     return blockContext(flattened, idx, target.docPath, "exact");
   }
-  // blockId drifted — fall back to locating the block by its stored quote.
-  const quote = "quote" in target ? target.quote : undefined;
+  // blockId drifted, or a passage has none: locate the block by its stored quote.
   if (quote) {
     const fuzzyIdx = findBlockIndexByQuote(flattened, quote);
     if (fuzzyIdx >= 0) {
-      return blockContext(flattened, fuzzyIdx, target.docPath, "fuzzy");
+      // A passage is found by its quote; only a block whose id drifted is fuzzy.
+      return blockContext(flattened, fuzzyIdx, target.docPath, target.type === "doc" ? "exact" : "fuzzy");
     }
     // The quote no longer appears anywhere — the anchored text is gone.
     return { targetExists: false, selectorMatch: "stale", docPath: target.docPath };

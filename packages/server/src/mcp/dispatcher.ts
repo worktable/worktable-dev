@@ -164,7 +164,8 @@ import {
   extractMarkdownMermaid,
   repairEscapedMermaidFences,
 } from "../mermaid-document.ts"
-import type { MermaidDocumentRepair } from "@worktable/types"
+import type { MermaidDocumentRepair, PassageSelector } from "@worktable/types"
+import { locateMarkdownPassage } from "../markdown-passage.ts"
 import type { McpSurface } from "./surface.ts"
 import {
   DELIMITED_NAME,
@@ -663,7 +664,12 @@ function repairEditTexts(edits: TextEdit[]): {
 async function annotationsAffectedByEdit(
   spaceId: string,
   docPath: string,
-  affected: (target: { blockId?: string; quote?: string }) => boolean | null
+  affected: (target: {
+    blockId?: string
+    quote?: string
+    prefix?: string
+    suffix?: string
+  }) => boolean | null
 ): Promise<Array<{ annotationId: string; quoteStillPresent: boolean }>> {
   try {
     const annotations = []
@@ -677,7 +683,12 @@ async function annotationsAffectedByEdit(
       offset = page.nextOffset
     }
     return annotations.flatMap((annotation) => {
-      const target = annotation.target as { blockId?: string; quote?: string }
+      const target = annotation.target as {
+        blockId?: string
+        quote?: string
+        prefix?: string
+        suffix?: string
+      }
       const quoteStillPresent = affected(target)
       return quoteStillPresent === null
         ? []
@@ -2826,22 +2837,15 @@ async function _dispatchOperationInner(
         })
         if (!written.ok) throw await docWriteFailure(spaceId, docPath, written)
         await syncDocAfterToolWrite(spaceId, docPath)
-        const quoteEdited = (quote: string): boolean => {
-          for (
-            let at = stored.indexOf(quote);
-            at !== -1;
-            at = stored.indexOf(quote, at + 1)
-          ) {
-            const end = at + quote.length
-            if (
-              edit.originalRanges.some(
-                (range) => range.start < end && range.end > at
-              )
-            ) {
-              return true
-            }
-          }
-          return false
+        // Quotes are text as the page shows it, without the Markdown around it.
+        const passageEdited = (selector: PassageSelector): boolean => {
+          const passage = locateMarkdownPassage(stored, selector)
+          return (
+            passage !== null &&
+            edit.originalRanges.some(
+              (range) => range.start < passage.end && range.end > passage.start
+            )
+          )
         }
         return {
           ok: true,
@@ -2853,8 +2857,11 @@ async function _dispatchOperationInner(
           annotationsAffected: await annotationsAffectedByEdit(
             spaceId,
             docPath,
-            ({ quote }) =>
-              quote && quoteEdited(quote) ? edit.text.includes(quote) : null
+            ({ quote, prefix, suffix }) =>
+              quote && passageEdited({ quote, prefix, suffix })
+                ? locateMarkdownPassage(edit.text, { quote, prefix, suffix })
+                    ?.match === "exact"
+                : null
           ),
           repairs: [...repairs, ...(written.repairs ?? [])],
           warnings: await docWriteWarnings(spaceId, docPath),

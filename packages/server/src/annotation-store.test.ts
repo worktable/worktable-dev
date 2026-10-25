@@ -118,6 +118,28 @@ describe("annotation store", () => {
     expect(context.selectorMatch).toBe("missing");
   });
 
+  it("finds a Markdown passage after the file is rewritten around it, and reports it stale once it's gone", async () => {
+    await writeDoc("space", "notes", "# Notes\n\nIntro.\n\nThe **launch date** moves to May.\n");
+    const created = await createAnnotation("space", {
+      target: { type: "doc", docPath: "notes", quote: "launch date moves", prefix: "The ", suffix: " to May." },
+      category: "comment",
+      body: "Confirm with finance.",
+    });
+
+    await writeDoc(
+      "space",
+      "notes",
+      "# Notes\n\nA new opening paragraph.\n\nIntro, rewritten.\n\n- The **launch date** moves to May.\n"
+    );
+    const moved = await getAnnotationContext("space", created.annotation.id);
+    expect(moved).toMatchObject({ targetExists: true, selectorMatch: "exact", startLine: 7, endLine: 7 });
+    expect(moved.excerpt).toBe("- The **launch date** moves to May.");
+
+    await writeDoc("space", "notes", "# Notes\n\nNothing about dates here.\n");
+    const gone = await getAnnotationContext("space", created.annotation.id);
+    expect(gone).toMatchObject({ targetExists: false, selectorMatch: "stale" });
+  });
+
   it("moves annotation sidecars when a doc is renamed", async () => {
     await createAnnotation("space", {
       target: { type: "block", docPath: "old", blockId: "block-a" },

@@ -1238,8 +1238,17 @@ export const RecordsWriteInputPreview = z.strictObject({
   ]),
 })
 
+/**
+ * The released Doc target. Passage fields (quote, prefix, suffix) come back in
+ * reads; agents can't create them through the released tools yet.
+ */
+export const ReleasedDocAnnotationTarget = z.object({
+  type: z.literal("doc"),
+  docPath: z.string().min(1),
+})
+
 const PublicAnnotationTargetInput = z.discriminatedUnion("type", [
-  AnnotationTargetSchema.options[0],
+  ReleasedDocAnnotationTarget,
   AnnotationTargetSchema.options[1],
   AnnotationTargetSchema.options[2],
   z.strictObject({

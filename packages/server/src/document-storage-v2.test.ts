@@ -734,6 +734,16 @@ describe("document storage V2", () => {
       { target: { type: "doc", docPath: logicalPath }, kind: "docs" },
       {
         target: {
+          type: "doc",
+          docPath: logicalPath,
+          quote: "a passage",
+          prefix: "before ",
+          suffix: " after",
+        },
+        kind: "docs",
+      },
+      {
+        target: {
           type: "block",
           docPath: logicalPath,
           blockId: "block-1",

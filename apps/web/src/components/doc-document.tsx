@@ -892,6 +892,10 @@ function MarkdownDocPage({
             spaceId={spaceId}
             docPath={docPath}
             fileVersions={fileVersions}
+            // Before the page check lands, with no versions from a page read
+            // earlier, an image would load once without its version and
+            // again with it: it waits for the check instead.
+            fileVersionsPending={!page && fileVersions === undefined}
             afterTitle={
               <DocumentByline
                 spaceId={spaceId}

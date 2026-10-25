@@ -46,6 +46,7 @@ import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { externalLinkProps, worktableLinkOrigins } from "@/lib/external-links"
 import { BASE_URL } from "@/lib/http"
 import { useTheme } from "@/components/theme-provider"
+import { resolveDocLink } from "@worktable/types"
 
 const MermaidRenderer = lazy(() =>
   import("./worktable-mermaid-renderer").then((module) => ({
@@ -175,6 +176,8 @@ interface MarkdownViewerProps {
   afterTitle?: ReactNode
   /** The versions of the Doc's files, from its page. */
   fileVersions?: Readonly<Record<string, string>>
+  /** The versions are on their way: the Space's images wait for them. */
+  fileVersionsPending?: boolean
   /** For an old version: show its files as they were at this time. */
   filesAt?: string
 }
@@ -185,6 +188,7 @@ export function MarkdownViewer({
   docPath,
   afterTitle,
   fileVersions,
+  fileVersionsPending = false,
   filesAt,
 }: MarkdownViewerProps) {
   const router = useRouter()
@@ -300,6 +304,16 @@ export function MarkdownViewer({
                   },
                   img: ({ node, title, src, ...props }) => {
                     void node
+                    // A Space's image waits for its version, so it loads once.
+                    if (
+                      filesOn &&
+                      fileVersionsPending &&
+                      !filesAt &&
+                      typeof src === "string" &&
+                      resolveDocLink(docPath, src) !== null
+                    ) {
+                      return <span aria-hidden className="worktable-image-pending" />
+                    }
                     const source =
                       filesOn && typeof src === "string"
                         ? embedSourceUrl(spaceId, docPath, src, {

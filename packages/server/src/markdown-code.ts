@@ -35,12 +35,34 @@ const INDENTED = /^(?: {4}|\t)/
 export const MARKDOWN_LINK_PATTERN =
   /(?<!\\)(!?)(?<!\\)\[([^[\]]*)\]\(\s*(<[^<>\n]*>|(?:[^()\s]|\([^()\s]*\))+)(?:\s+"[^"\n]*")?\s*\)/g
 
+/**
+ * A link reference definition on its own line, `[label]: destination` with
+ * an optional title, as a reference-style link or image uses. A footnote's
+ * `[^1]: text` is not one.
+ */
+const REFERENCE_DEFINITION =
+  /^ {0,3}\[(?!\^)([^[\]\n]+)\]:[ \t]*(<[^<>\n]*>|[^\s<]\S*)(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?[ \t]*$/gm
+
+/**
+ * A reference-style image, not escaped: `![text][label]`, `![label][]` or
+ * `![label]`, but not an inline image, whose label is followed by `(`.
+ */
+const IMAGE_REFERENCE = /(?<!\\)!\[([^[\]\n]*)\](?:\[([^[\]\n]*)\])?(?!\()/g
+
+/** A reference label as Markdown matches it: case and spacing aside. */
+function referenceKey(label: string): string {
+  return label.trim().replace(/\s+/g, " ").toLowerCase()
+}
+
 export interface MarkdownLayout {
   /** Code blocks, fenced or indented. */
   blocks: Range[]
   /** Inline code. */
   inline: Range[]
-  /** Inline link and image destinations as written, outside code. */
+  /**
+   * Link and image destinations as written, outside code: inline ones, and
+   * those of reference definitions.
+   */
   destinations: Range[]
   /** Which of the destinations are images' rather than links'. */
   images: boolean[]
@@ -92,6 +114,16 @@ export function markdownLayout(markdown: string): MarkdownLayout {
     const start = match[0].indexOf(match[3]!, match[0].indexOf("](") + 2)
     destinations.push([match.index + start, match.index + start + match[3]!.length])
     images.push(match[1] === "!")
+  }
+  // A definition's destination is an image's when an image refers to it.
+  const imageLabels = new Set<string>()
+  for (const match of scanned.matchAll(IMAGE_REFERENCE)) {
+    imageLabels.add(referenceKey(match[2] || match[1]!))
+  }
+  for (const match of scanned.matchAll(REFERENCE_DEFINITION)) {
+    const start = match[0].indexOf(match[2]!, match[0].indexOf("]:") + 2)
+    destinations.push([match.index + start, match.index + start + match[2]!.length])
+    images.push(imageLabels.has(referenceKey(match[1]!)))
   }
   return { blocks, inline, destinations, images }
 }

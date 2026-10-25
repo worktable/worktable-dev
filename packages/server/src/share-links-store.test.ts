@@ -1788,10 +1788,11 @@ describe("share links", () => {
       await mkdir(join(docs, "spec"), { recursive: true })
       await writeFile(join(docs, "spec", "shot.png"), "first image")
       await writeFile(join(docs, "secret.png"), "not embedded")
+      await writeFile(join(docs, "spec", "flow.png"), "reference image")
       await writeDoc(
         "space",
         "spec",
-        "# Spec\n\n![Signup error](spec/shot.png)\n\n[Other](secret.png)"
+        "# Spec\n\n![Signup error](spec/shot.png)\n\n![The flow][flow]\n\n[Other](secret.png)\n\n[flow]: spec/flow.png"
       )
       const { token } = await createLink("spec")
       const projection = async () =>
@@ -1802,6 +1803,8 @@ describe("share links", () => {
       expect(first).toContain(
         `data:image/png;base64,${Buffer.from("first image").toString("base64")}`
       )
+      // A reference-style image shows too.
+      expect(first).toContain(Buffer.from("reference image").toString("base64"))
       // Only what the Doc embeds: a linked file is not placed in the page.
       expect(first).not.toContain(
         Buffer.from("not embedded").toString("base64")

@@ -122,6 +122,45 @@ describe("rewriting links after a move", () => {
     )
   })
 
+  it("rewrites reference-style links and images where they are defined", () => {
+    const rewrite = (target: string) => (target === "old.png" ? "new.png" : null)
+    const markdown = [
+      "![Shot][shot] and [the file][file], and a footnote[^1].",
+      "",
+      '[shot]: old.png "The screen"',
+      "[File]: <old.png>",
+      "[^1]: old.png",
+      "",
+      "```",
+      "[code]: old.png",
+      "```",
+    ].join("\n")
+    expect(rewriteMarkdownLinks(markdown, rewrite)).toBe(
+      [
+        "![Shot][shot] and [the file][file], and a footnote[^1].",
+        "",
+        '[shot]: new.png "The screen"',
+        "[File]: <new.png>",
+        "[^1]: old.png",
+        "",
+        "```",
+        "[code]: old.png",
+        "```",
+      ].join("\n")
+    )
+    // Only the definition an image uses counts as an image's.
+    const seen: string[] = []
+    rewriteMarkdownLinks(
+      "![Shot][shot] [doc][spec]\n\n[shot]: a.png\n[spec]: b.md\n",
+      (target) => {
+        seen.push(target)
+        return null
+      },
+      { imagesOnly: true }
+    )
+    expect(seen).toEqual(["a.png"])
+  })
+
   it("skips fenced code in a very large Doc", () => {
     const filler = "Words.\n\n".repeat(40_000)
     const markdown = `${filler}~~~\n[a](old.png)\n~~~\n[b](old.png)\n`

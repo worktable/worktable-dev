@@ -2754,10 +2754,12 @@ async fn agent_offer_for(app: &AppHandle, prepared: &WorkspacePrepared) -> Optio
         let answered = state.answered_agent_choices.lock().ok()?;
         agent_worktable_question(&authority, &prepared.workspace.id, &answered)?.clone()
     };
+    let configured_name =
+        manifest_name(&configured.path, &configured.workspace_id).unwrap_or(configured.name);
     Some(AgentOffer {
         prepared: prepared.clone(),
         configured_id: configured.workspace_id,
-        configured_name: configured.name,
+        configured_name,
         service_installed: authority
             .service
             .as_ref()
@@ -3373,18 +3375,34 @@ fn menu_worktables(
         .filter(|workspace| !workspace.path.is_empty() && Path::new(&workspace.path).is_dir())
         .map(|workspace| WorkspaceMenuWorktable {
             id: workspace.workspace_id.clone(),
-            name: if workspace.name.trim().is_empty() {
-                Path::new(&workspace.path)
-                    .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "Worktable".into())
-            } else {
-                workspace.name.clone()
-            },
+            // The registry keeps the name a Worktable had when it was first
+            // opened; its manifest has the current one.
+            name: manifest_name(&workspace.path, &workspace.workspace_id)
+                .or_else(|| (!workspace.name.trim().is_empty()).then(|| workspace.name.clone()))
+                .unwrap_or_else(|| {
+                    Path::new(&workspace.path)
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "Worktable".into())
+                }),
             linked: workspace.linked == Some(true),
             current: current_id == Some(workspace.workspace_id.as_str()),
         })
         .collect()
+}
+
+/// The name in a Worktable folder's manifest, when it is the expected Worktable.
+fn manifest_name(path: &str, workspace_id: &str) -> Option<String> {
+    let manifest = Path::new(path).join("worktable.workspace.json");
+    if std::fs::metadata(&manifest).ok()?.len() > 1_048_576 {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_slice(&std::fs::read(manifest).ok()?).ok()?;
+    if value.get("id")?.as_str()? != workspace_id {
+        return None;
+    }
+    let name = value.get("name")?.as_str()?.trim();
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 /// The Worktable menu's On this Mac group, asked for when the menu first opens.
@@ -8883,12 +8901,18 @@ mod tests {
         let unnamed = root.join("Client Work");
         std::fs::create_dir_all(&studio).unwrap();
         std::fs::create_dir_all(&unnamed).unwrap();
+        // Renamed since it was first opened: the manifest's name wins.
+        std::fs::write(
+            studio.join("worktable.workspace.json"),
+            r#"{"version":2,"id":"ws_studio","name":"Studio Notes"}"#,
+        )
+        .unwrap();
         let authority: LocalAuthorityInspection = serde_json::from_value(serde_json::json!({
             "schemaVersion": 1,
             "ok": true,
             "configured": true,
             "workspaces": [
-                { "workspaceId": "ws_studio", "name": "Studio", "path": studio, "linked": true },
+                { "workspaceId": "ws_studio", "name": "Local Workspace", "path": studio, "linked": true },
                 { "workspaceId": "ws_client", "name": " ", "path": unnamed, "linked": null },
                 { "workspaceId": "ws_gone", "name": "Gone", "path": root.join("Gone"), "linked": false }
             ],
@@ -8896,12 +8920,12 @@ mod tests {
         }))
         .unwrap();
         let listed = serde_json::to_value(menu_worktables(&authority, Some("ws_studio"))).unwrap();
-        // A folder that's gone isn't offered, one without a name shows its
+        // A folder that's gone isn't offered, one without any name shows its
         // folder's, and the page never learns where any of them are.
         assert_eq!(
             listed,
             serde_json::json!([
-                { "id": "ws_studio", "name": "Studio", "linked": true, "current": true },
+                { "id": "ws_studio", "name": "Studio Notes", "linked": true, "current": true },
                 { "id": "ws_client", "name": "Client Work", "linked": false, "current": false }
             ])
         );

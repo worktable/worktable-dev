@@ -11,6 +11,7 @@ infrastructure and personal context out of release notes.
 
 ### Added
 
+- **Records visitors won't see:** When a shared HTML tool reads Records its link doesn't show, the Share dialog tells the sharer how many collections, with a way to turn on live data.
 - **Live share links:** Shared HTML tools can show live Records, and visitors can comment, when the owner allows them in Settings → Links.
 - **Linked apps in Agents:** ChatGPT, Claude and other apps that reach a local Worktable through Worktable Link appear under Connected agents, with Manage opening their page in Cloud.
 

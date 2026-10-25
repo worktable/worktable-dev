@@ -6,7 +6,12 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { LinkGrantSchema, type ShareLink } from "@worktable/types"
 import { formatArchiveDate } from "@/lib/lifetime"
 import { LiveDataPanel } from "./share-link-access"
-import { DefaultLink, OtherLinkList } from "./share-links-dialog"
+import {
+  DefaultLink,
+  OtherLinkList,
+  UnsharedRecordsNote,
+} from "./share-links-dialog"
+import { unsharedCollections } from "@/lib/share-links"
 
 const DAY = 86_400_000
 
@@ -171,4 +176,37 @@ test("live data offers to remove a collection deleted since the link was saved",
     />
   )
   expect(text(html)).toContain("This collection is gone.Remove")
+})
+
+test("tells the sharer how many collections the tool reads that visitors won't see", () => {
+  const one = text(renderToStaticMarkup(<UnsharedRecordsNote count={1} />))
+  expect(one).toBe("Visitors won’t see 1 collection this tool reads.")
+  const several = text(
+    renderToStaticMarkup(
+      <UnsharedRecordsNote
+        count={3}
+        action={{ label: "Show", onClick: () => {} }}
+      />
+    )
+  )
+  expect(several).toBe("Visitors won’t see 3 collections this tool reads.Show")
+})
+
+test("counts what visitors won't see under the link and the owner policy", () => {
+  const reads = ["deals", "contacts", "tasks"]
+  // A link made with live data, or one naming every collection, shows them all.
+  expect(unsharedCollections(reads, { recordsOpen: true, shared: null })).toBe(
+    0
+  )
+  expect(unsharedCollections(reads, { recordsOpen: true, shared: reads })).toBe(
+    0
+  )
+  // Collections the link leaves out, such as ones a tool started reading later.
+  expect(
+    unsharedCollections(reads, { recordsOpen: true, shared: ["deals"] })
+  ).toBe(2)
+  // An owner policy that keeps Records out hides every one, whatever the link names.
+  expect(
+    unsharedCollections(reads, { recordsOpen: false, shared: reads })
+  ).toBe(3)
 })

@@ -127,6 +127,7 @@ async function mockSharing(
     sharingEnabled?: () => boolean
     policy?: () => Partial<ReturnType<typeof defaultSharingPolicy>>
     links?: ShareLink[]
+    toolReads?: string[]
   } = {}
 ) {
   const state = { links: options.links ?? [], made: 0 }
@@ -169,6 +170,7 @@ async function mockSharing(
             links: state.links,
             canCreate: true,
             policy: { ...defaultSharingPolicy(), ...options.policy?.() },
+            ...(options.toolReads ? { toolReads: options.toolReads } : {}),
           },
         })
         return
@@ -508,6 +510,32 @@ test("explains the inert shared-HTML boundary before creating a link", async ({
       spaceId: "share-browser",
       path: "status-card",
     })
+})
+
+test("tells the sharer when visitors won't see the Records a tool reads", async ({
+  page,
+}) => {
+  await mockSharing(page, {
+    policy: () => ({ liveLinks: true }),
+    toolReads: ["deals", "contacts"],
+  })
+  await page.goto(appUrl("/spaces/share-browser/documents/status-card"), {
+    waitUntil: "domcontentloaded",
+  })
+  const share = page.getByRole("button", { name: "Share document" })
+  await expect(share).toBeVisible({ timeout: 30_000 })
+  await share.click()
+  const dialog = page.getByRole("dialog", { name: "Share “Status card”" })
+  const note = dialog.getByText(
+    "Visitors won’t see 2 collections this tool reads."
+  )
+  await expect(note).toBeVisible()
+  // Show turns live data on for the link about to be made.
+  await dialog.getByRole("button", { name: "Show", exact: true }).click()
+  await expect(note).toBeHidden()
+  await expect(
+    dialog.getByRole("switch", { name: "Show live data", exact: true })
+  ).toBeChecked()
 })
 
 test("creates and edits password links without retaining a password in the form", async ({

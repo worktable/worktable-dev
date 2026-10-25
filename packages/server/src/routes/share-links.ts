@@ -27,7 +27,10 @@ import {
   commentPausesForLinks,
 } from "../visitor-comment-access.ts"
 import { pauseVisitorComments } from "../visitor-comment-store.ts"
-import { prepareShareLinkAccess } from "../link-sharing-access.ts"
+import {
+  prepareShareLinkAccess,
+  toolReadCollections,
+} from "../link-sharing-access.ts"
 import {
   linkDocumentGeneration,
   linkSpaceSchemaGeneration,
@@ -305,6 +308,10 @@ shareLinksRouter.get("/", async (c) => {
     }).allowed,
   }))
   const urls = manageableUrls(managed)
+  const toolReads =
+    kind === "html" && resolution.shareable
+      ? await toolReadCollections(spaceId, path).catch(() => [])
+      : []
   const body: DocumentShareLinks = {
     links: managed.map(({ link, canManage }) =>
       publicLink(
@@ -322,6 +329,7 @@ shareLinksRouter.get("/", async (c) => {
       ? { createBlockedBy: create.blockedBy }
       : {}),
     policy: sharerPolicy(policy),
+    ...(toolReads.length ? { toolReads } : {}),
   }
   return c.json(body)
 })

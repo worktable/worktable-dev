@@ -22,6 +22,31 @@ import type { ObservedRecordQuery } from "./html-preview.ts"
 
 class CountsPending extends Error {}
 
+/**
+ * The collections an HTML tool reads, as its source and permissions name
+ * them, without running it. Read when the share dialog opens.
+ */
+export async function toolReadCollections(
+  spaceId: string,
+  path: string
+): Promise<string[]> {
+  const { data } = await readWidgetDocument(spaceId, path)
+  if (!data || data.widget.archive) return []
+  const { permissions } = data.widget
+  return [
+    ...new Set([
+      ...Object.keys(inferWidgetRecordPermissions(data.html)),
+      ...Object.keys(permissions.records),
+    ]),
+  ]
+    .filter(
+      (id) =>
+        CanonicalIdSchema.safeParse(id).success &&
+        canWidgetRecord({ permissions }, id, "read")
+    )
+    .slice(0, LINK_GRANT_MAX_COLLECTIONS)
+}
+
 /** One explicit sharer action, outside the visitor and member-page hot paths. */
 export async function prepareShareLinkAccess(input: {
   spaceId: string

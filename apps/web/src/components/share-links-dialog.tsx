@@ -173,10 +173,15 @@ export function ShareLinksDialog({
     (policy?.liveLinks === true || defaultLink.grant !== undefined)
   const commentsAllowed = policy?.levels.includes("comment") === true
   const commentsShown =
-    defaultLink !== null &&
-    (commentsAllowed || defaultLink.level === "comment")
+    defaultLink !== null && (commentsAllowed || defaultLink.level === "comment")
   const checked =
     defaultLink && access?.linkId === defaultLink.id ? access.access : null
+  // Collections the tool reads that the link leaves out, for the sharer.
+  const unshared = (list.data?.toolReads ?? []).filter((id) =>
+    defaultLink
+      ? !defaultLink.grant || !Object.hasOwn(defaultLink.grant.collections, id)
+      : !(draft.live && liveAllowed)
+  ).length
 
   useEffect(() => {
     if (links) notePageLinks(queryClient, spaceId, path, links)
@@ -455,6 +460,37 @@ export function ShareLinksDialog({
     )
   }
 
+  const recordsNote =
+    unshared > 0 ? (
+      <UnsharedRecordsNote
+        count={unshared}
+        action={
+          liveAllowed && !defaultLink?.grant
+            ? {
+                label: "Show",
+                onClick: () => {
+                  setLiveOpen(true)
+                  if (!defaultLink) setDraft({ ...draft, live: true })
+                  else
+                    turnOn.mutate({
+                      link: defaultLink,
+                      session: session.current,
+                    })
+                },
+              }
+            : !liveAllowed && owner
+              ? {
+                  label: "Settings",
+                  onClick: () => {
+                    handleOpenChange(false)
+                    openSettings("links")
+                  },
+                }
+              : undefined
+        }
+      />
+    ) : null
+
   const moreShown =
     links !== undefined &&
     (others.length > 0 || (canCreate && defaultLink !== null))
@@ -523,11 +559,14 @@ export function ShareLinksDialog({
           ) : !links ? (
             <DefaultLinkSkeleton />
           ) : defaultLink ? (
-            <DefaultLink
-              link={defaultLink}
-              menu={menu(defaultLink, "Link actions")}
-              onCopied={() => setAnnouncement("Link copied")}
-            />
+            <>
+              <DefaultLink
+                link={defaultLink}
+                menu={menu(defaultLink, "Link actions")}
+                onCopied={() => setAnnouncement("Link copied")}
+              />
+              {recordsNote}
+            </>
           ) : canCreate && editing === null ? (
             <form
               className="space-y-3"
@@ -536,6 +575,7 @@ export function ShareLinksDialog({
                 createDefault()
               }}
             >
+              {recordsNote}
               <div className="grid gap-1.5">
                 <ExpiryRow
                   value={allowedShareLinkExpiry(draft.expiry, choices)}
@@ -586,6 +626,8 @@ export function ShareLinksDialog({
                     variant="row"
                     title="Live data"
                     status={draft.live ? "On" : "Off"}
+                    open={liveOpen}
+                    onOpenChange={setLiveOpen}
                   >
                     <LiveSwitch
                       checked={draft.live}
@@ -767,7 +809,7 @@ export function ShareLinksDialog({
             </div>
           ) : null}
 
-          {target.kind === "html" && list.data && !liveAllowed ? (
+          {target.kind === "html" && list.data && !liveAllowed && !unshared ? (
             <HtmlSafetyNote />
           ) : null}
 
@@ -870,6 +912,40 @@ function commentsOn(link: ShareLink): boolean {
 function commentsStatus(link: ShareLink): string {
   if (link.level === "comment" && link.comments.autoPaused) return "Paused"
   return commentsOn(link) ? "On" : "Off"
+}
+
+/**
+ * Collections an HTML tool reads that visitors on the link won't see. Only
+ * the sharer sees this, in the dialog.
+ */
+export function UnsharedRecordsNote({
+  count,
+  action,
+}: {
+  count: number
+  action?: { label: string; onClick: () => void }
+}) {
+  return (
+    <Callout>
+      <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span>
+          Visitors won’t see {count}{" "}
+          {count === 1 ? "collection" : "collections"} this tool reads.
+        </span>
+        {action ? (
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="h-auto p-0"
+            onClick={action.onClick}
+          >
+            {action.label}
+          </Button>
+        ) : null}
+      </span>
+    </Callout>
+  )
 }
 
 /** One switch for the default link: its comment level and whether it takes comments. */

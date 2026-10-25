@@ -159,6 +159,8 @@ export interface DocumentShareLinks {
   createBlockedBy?: Extract<ShareLinkBlockedBy, "paused" | "space" | "sharer">
   /** The owner policy as it limits the share dialog. */
   policy: SharerPolicy
+  /** For an HTML tool, the collections it reads, by id, as its source names them. */
+  toolReads?: string[]
 }
 
 /** Private, human-only preparation of the access a live link would open. */

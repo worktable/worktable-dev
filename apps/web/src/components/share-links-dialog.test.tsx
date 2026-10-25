@@ -6,7 +6,11 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { LinkGrantSchema, type ShareLink } from "@worktable/types"
 import { formatArchiveDate } from "@/lib/lifetime"
 import { LiveDataPanel } from "./share-link-access"
-import { DefaultLink, OtherLinkList } from "./share-links-dialog"
+import {
+  DefaultLink,
+  OtherLinkList,
+  UnsharedRecordsNote,
+} from "./share-links-dialog"
 
 const DAY = 86_400_000
 
@@ -171,4 +175,18 @@ test("live data offers to remove a collection deleted since the link was saved",
     />
   )
   expect(text(html)).toContain("This collection is gone.Remove")
+})
+
+test("tells the sharer how many collections the tool reads that visitors won't see", () => {
+  const one = text(renderToStaticMarkup(<UnsharedRecordsNote count={1} />))
+  expect(one).toBe("Visitors won’t see 1 collection this tool reads.")
+  const several = text(
+    renderToStaticMarkup(
+      <UnsharedRecordsNote
+        count={3}
+        action={{ label: "Show", onClick: () => {} }}
+      />
+    )
+  )
+  expect(several).toBe("Visitors won’t see 3 collections this tool reads.Show")
 })

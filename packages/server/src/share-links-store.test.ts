@@ -300,6 +300,14 @@ describe("share links", () => {
     expect((await send("POST", "/api/shares/links/access", input)).status).toBe(
       400
     )
+    // The dialog still learns what the tool reads, to tell the sharer.
+    const listed = await send(
+      "GET",
+      "/api/shares/links?kind=html&spaceId=space&path=access"
+    )
+    expect(
+      ((await listed.json()) as { toolReads?: string[] }).toolReads
+    ).toEqual(["deals"])
     saveSharingPolicy(
       { ...defaultSharingPolicy(), liveLinks: true },
       "local:owner"

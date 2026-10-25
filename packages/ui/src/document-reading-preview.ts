@@ -195,6 +195,16 @@ function table(block: Props): ReactNode {
   )
 }
 
+/**
+ * Where an image loads from: a URL as written, or a stored path through
+ * `resolveUrl`. Without it, a stored path has nowhere to load from (the
+ * page's own URL would answer with the app), so the image waits for the Doc.
+ */
+function imageSource(url: string, budget: Budget): string | null {
+  if (budget.resolveUrl) return budget.resolveUrl(url)
+  return /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(url) ? url : null
+}
+
 function media(block: Props, props: Props, budget: Budget): ReactNode {
   const url = text(props.url)
   const caption = text(props.caption)
@@ -209,12 +219,12 @@ function media(block: Props, props: Props, budget: Budget): ReactNode {
         : undefined
   if (!url) return h("div", { className: "worktable-preview-media-empty" })
   let body: ReactNode
-  if (block.type === "image")
-    body = h("img", {
-      src: budget.resolveUrl ? budget.resolveUrl(url) : url,
-      alt: caption ?? text(props.name) ?? "",
-    })
-  else if (block.type === "file")
+  if (block.type === "image") {
+    const src = imageSource(url, budget)
+    if (src === null)
+      return h("div", { className: "worktable-preview-media-empty" })
+    body = h("img", { src, alt: caption ?? text(props.name) ?? "" })
+  } else if (block.type === "file")
     return h(
       "div",
       { className: "worktable-preview-file" },
@@ -559,6 +569,22 @@ export function DocumentReadingPreview({
           table: ({ children }: { children?: ReactNode }) =>
             scrollableTable(children),
           pre: markdownPre,
+          img: ({
+            node,
+            src,
+            alt,
+            ...props
+          }: ComponentProps<"img"> & { node?: unknown }) => {
+            void node
+            const source =
+              typeof src === "string" ? imageSource(src, budget) : null
+            return source === null
+              ? h("span", {
+                  "aria-hidden": true,
+                  className: "worktable-image-pending",
+                })
+              : h("img", { ...props, src: source, alt: alt ?? "" })
+          },
           ol: ({
             node,
             ...props

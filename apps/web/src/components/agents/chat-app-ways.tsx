@@ -88,17 +88,20 @@ export function ChatAppWays({
     link.data?.enabled === true &&
     !["locked", "error"].includes(link.data.state)
   // Turning Link on through Set Up here sends this app here on Cloud: the
-  // one already connected and the next one added. Viewing the steps never
-  // does; Cloud's Apps page moves an app otherwise.
-  const intentSent = useRef(false)
+  // one already connected and the next one added. Only a Set Up started
+  // while Link was known to be off counts; viewing the steps, or opening
+  // Set Up with Link already on, never does. Cloud's Apps page moves an
+  // app otherwise.
+  const setUpFor = useRef<ChatApp | null>(null)
   useEffect(() => {
-    if (!linkSetup || !linkOn || intentSent.current) return
-    intentSent.current = true
+    const setUp = setUpFor.current
+    if (!setUp || !linkOn) return
+    setUpFor.current = null
     void fetchJSON("/api/linked/app-intent", {
       method: "POST",
-      body: JSON.stringify({ app }),
+      body: JSON.stringify({ app: setUp }),
     }).catch(() => undefined)
-  }, [linkSetup, linkOn, app])
+  }, [linkSetup, linkOn])
   return (
     <div className="flex flex-col gap-5">
       <section
@@ -138,7 +141,14 @@ export function ChatAppWays({
               </Suspense>
             ) : (
               <div>
-                <Button onClick={() => setLinkSetup(true)}>Set Up</Button>
+                <Button
+                  onClick={() => {
+                    if (link.data && !linkOn) setUpFor.current = app
+                    setLinkSetup(true)
+                  }}
+                >
+                  Set Up
+                </Button>
               </div>
             )}
           </SetupStep>

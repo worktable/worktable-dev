@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import type { DocListEntry, DocumentListItem } from "@worktable/types"
 import {
   buildSpaceDocumentIndex,
+  fileDisplayLabels,
   spaceDocumentTrees,
 } from "./space-document-tree"
 
@@ -131,5 +132,25 @@ describe("space document trees", () => {
         order: ["b", "a"],
       })
     ).not.toBe(sidebar)
+  })
+})
+
+describe("file names in the sidebar", () => {
+  it("reads a file by its name without the extension, unless a neighbour would read the same", () => {
+    const file = { id: "worktable.file", sourceVersion: 1 } as const
+    const labels = fileDisplayLabels([
+      document("research/feedback-export.csv", { format: file }),
+      document("design/funnel.png", { format: file }),
+      document("design/funnel.csv", { format: file }),
+      document("design/README", { format: file }),
+      document("design/brief"),
+    ])
+    expect(Object.fromEntries(labels)).toEqual({
+      "research/feedback-export.csv": "Feedback Export",
+      // Two files that would both read "Funnel" keep their whole names.
+      "design/funnel.png": "funnel.png",
+      "design/funnel.csv": "funnel.csv",
+      "design/README": "README",
+    })
   })
 })

@@ -10,7 +10,7 @@ import {
   supportsManagedFolderDelete,
   supportsManagedFolderMove,
 } from "./document-views"
-import { buildTree } from "./tree"
+import { buildTree, humanizeSegment } from "./tree"
 import type { DocSortMode, TreeInput, TreeNode } from "./tree"
 
 /** Manual sidebar doc order from space settings (untrusted on-disk data). */
@@ -94,6 +94,39 @@ export function documentTreeInputResolver(
   }
 }
 
+/**
+ * How the sidebar names files: by their name without the extension, read
+ * the way an untitled Doc's slug is (feedback-export.csv reads "Feedback
+ * Export"); the icon shows the type. Files in one folder that would read the
+ * same keep their whole names, so none is mistaken for another.
+ */
+export function fileDisplayLabels(
+  documents: readonly DocumentListItem[]
+): Map<string, string> {
+  const labels = new Map<string, string>()
+  const byFolder = new Map<string, Map<string, string[]>>()
+  for (const item of documents) {
+    if (item.kind !== "document" || item.format.id !== "worktable.file") continue
+    const slash = item.path.lastIndexOf("/")
+    const folder = item.path.slice(0, slash + 1)
+    const leaf = item.path.slice(slash + 1)
+    const dot = leaf.lastIndexOf(".")
+    const label = humanizeSegment(dot > 0 ? leaf.slice(0, dot) : leaf)
+    labels.set(item.path, label)
+    const names = byFolder.get(folder) ?? new Map<string, string[]>()
+    byFolder.set(folder, names)
+    const key = label.toLowerCase()
+    names.set(key, [...(names.get(key) ?? []), item.path])
+  }
+  for (const names of byFolder.values()) {
+    for (const paths of names.values()) {
+      if (paths.length < 2) continue
+      for (const path of paths) labels.set(path, path.slice(path.lastIndexOf("/") + 1))
+    }
+  }
+  return labels
+}
+
 /** Temporary documents are supporting work the sidebar lists on their own. */
 export function isTemporaryDocument(item: DocumentListItem): boolean {
   return item.kind === "document" && item.lifetime === "temporary"
@@ -121,7 +154,13 @@ export function buildSpaceDocumentTrees({
   order?: string[]
   separateTemporary?: boolean
 }): SpaceDocumentTrees {
-  const toTreeInput = documentTreeInputResolver(docs)
+  const resolve = documentTreeInputResolver(docs)
+  const fileLabels = fileDisplayLabels(documents)
+  const toTreeInput = (item: DocumentListItem): TreeInput => {
+    const input = resolve(item)
+    const label = fileLabels.get(input.path)
+    return label === undefined ? input : { ...input, title: label }
+  }
   const options = { folderPaths: documentFolderPaths(documents) }
   const treeSort = { mode: sort, order }
   const build = (items: DocumentListItem[]) =>

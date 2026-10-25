@@ -581,7 +581,7 @@ function SignInPanel({
       ? option.client === "cursor"
         ? "Run this in your terminal, then open Cursor and sign in."
         : option.client
-          ? "Run this in your terminal, then sign in when your browser opens."
+          ? "Run this in your terminal, then choose Allow access when your browser opens."
           : "Run this in your terminal and sign in when asked. It adds Worktable to the coding agents it finds, such as OpenCode and VS Code."
       : option.kind === "chat"
         ? option.app === "claude"

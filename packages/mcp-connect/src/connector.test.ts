@@ -134,7 +134,7 @@ describe("connector transaction model", () => {
     expect(
       await runConnector(cloud, first.io, {
         ...host.dependencies,
-        signInClient: (id, onStart) => {
+        signInClient: async (id, onStart) => {
           onStart?.()
           signIns.push(id)
           return "signed-in"
@@ -157,7 +157,7 @@ describe("connector transaction model", () => {
     expect(
       await runConnector(cloud, again.io, {
         ...host.dependencies,
-        signInClient: () => "no-terminal",
+        signInClient: async () => "no-terminal",
       })
     ).toBe(0)
     expect(readFileSync(configPath, "utf8")).toBe(config)
@@ -165,14 +165,30 @@ describe("connector transaction model", () => {
     expect(again.stdout.join("\n")).toContain("To finish, sign in:")
     expect(again.stderr).toEqual([])
 
-    const failed = captureIo()
-    expect(
-      await runConnector(cloud, failed.io, {
-        ...host.dependencies,
-        signInClient: () => "failed",
-      })
-    ).toBe(1)
-    expect(failed.stdout.join("\n")).toContain("Signing in didn't finish.")
+    // With several agents, sign-ins run one at a time. Ctrl+C in one stops
+    // the rest, and each still gets the step that finishes it.
+    process.env["WORKTABLE_OPENCODE_CONFIG"] = join(root, "opencode.json")
+    const attempted: string[] = []
+    const stopped = captureIo()
+    try {
+      expect(
+        await runConnector(cloud.slice(0, 3), stopped.io, {
+          ...host.dependencies,
+          detectClient: (id) => id === "codex" || id === "opencode",
+          signInClient: async (id) => {
+            attempted.push(id)
+            return "cancelled"
+          },
+        })
+      ).toBe(1)
+    } finally {
+      delete process.env["WORKTABLE_OPENCODE_CONFIG"]
+    }
+    expect(attempted).toEqual(["codex"])
+    const steps = stopped.stdout.join("\n")
+    expect(steps).toContain("Signing in didn't finish.")
+    expect(steps).toContain("ChatGPT / Codex: ")
+    expect(steps).toContain("opencode: ")
   })
 
   it("asks before pointing a client at a different Worktable", async () => {
@@ -191,7 +207,7 @@ describe("connector transaction model", () => {
           "codex",
         ],
         output.io,
-        { ...fakeHost().dependencies, signInClient: () => "no-terminal" }
+        { ...fakeHost().dependencies, signInClient: async () => "no-terminal" }
       )
     ).toBe(1)
     expect(output.stderr.join("\n")).toContain(
@@ -215,7 +231,7 @@ describe("connector transaction model", () => {
           "codex",
         ],
         output.io,
-        { ...host.dependencies, signInClient: () => "no-terminal" }
+        { ...host.dependencies, signInClient: async () => "no-terminal" }
       )
     ).toBe(0)
     const config = readFileSync(configPath, "utf8")

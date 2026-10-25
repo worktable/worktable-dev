@@ -436,7 +436,7 @@ test("Cloud coding agents are recognized on their own tab when they sign in", as
   await page.getByRole("button", { name: /^Coding agents/ }).click()
   await expect(
     page.getByText(
-      "Run this in your terminal, then sign in when your browser opens."
+      "Run this in your terminal, then choose Allow access when your browser opens."
     )
   ).toBeVisible()
   await expect(page.getByText(`--client claude-code`)).toBeVisible()

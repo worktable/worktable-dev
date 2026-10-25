@@ -962,14 +962,19 @@ export function signInInstruction(id: ConnectorInstallableMcpClientId): string {
   }
 }
 
-export type SignInResult = "signed-in" | "failed" | "no-terminal" | "no-command";
+export type SignInResult = "signed-in" | "failed" | "cancelled" | "no-terminal" | "no-command";
 
 /**
  * Run the client's own OAuth sign-in on the person's terminal. Under
  * `curl … | sh` stdin is the script, so the sign-in reads from /dev/tty;
  * without one (an agent ran the command) the person signs in themselves.
+ * Ctrl+C reaches the sign-in as well; the connector keeps running so it can
+ * say how to finish.
  */
-export function signInClient(id: ConnectorInstallableMcpClientId, onStart: () => void = () => {}): SignInResult {
+export async function signInClient(
+  id: ConnectorInstallableMcpClientId,
+  onStart: () => void = () => {}
+): Promise<SignInResult> {
   const command = signInCommand(id);
   if (!command) return "no-command";
   let tty: number;
@@ -978,14 +983,23 @@ export function signInClient(id: ConnectorInstallableMcpClientId, onStart: () =>
   } catch {
     return "no-terminal";
   }
+  let interrupted = false;
+  const interrupt = () => {
+    interrupted = true;
+  };
+  process.on("SIGINT", interrupt);
   try {
     onStart();
     const result = spawnSync(command[0]!, command.slice(1), {
       stdio: [tty, "inherit", "inherit"],
       env: spawnEnv(),
     });
+    // A Ctrl+C during the blocking sign-in is delivered once the loop runs.
+    await new Promise((resolve) => setImmediate(resolve));
+    if (interrupted || result.signal === "SIGINT" || result.status === 130) return "cancelled";
     return result.status === 0 ? "signed-in" : "failed";
   } finally {
+    process.off("SIGINT", interrupt);
     closeSync(tty);
   }
 }

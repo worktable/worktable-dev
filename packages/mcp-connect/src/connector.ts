@@ -464,14 +464,25 @@ async function runOAuthConnector(
   }
   // The client holds no token yet. Each signs in with its own OAuth flow,
   // started here so the browser opens while the person is still watching.
+  // Sign-ins run one after another, each waiting for its browser approval.
+  // Ctrl+C stops the rest; each still gets the step that finishes it.
   let status = 0
+  let cancelled = false
   const pending: string[] = []
   for (const outcome of configured.outcomes) {
     const label = MCP_CLIENTS[outcome.id].label
-    const result = dependencies.signInClient(outcome.id, () => {
-      io.log("")
-      io.log(`Signing ${label} in to Worktable. Finish in your browser.`)
-    })
+    const result = cancelled
+      ? "cancelled"
+      : await dependencies.signInClient(outcome.id, () => {
+          io.log("")
+          io.log(
+            `Signing ${label} in to Worktable. In your browser, choose Allow access.`
+          )
+          io.log(
+            `The page warns about an app on this computer: that is ${label}, waiting here for you.`
+          )
+        })
+    if (result === "cancelled") cancelled = true
     if (result === "signed-in") {
       if (await dependencies.connectClientOnce(outcome.id)) {
         io.log(`${label} is connected to Worktable.`)
@@ -481,7 +492,7 @@ async function runOAuthConnector(
       if (outcome.restartHint) io.log(`  Note: ${outcome.restartHint}`)
       continue
     }
-    if (result === "failed") status = 1
+    if (result === "failed" || result === "cancelled") status = 1
     pending.push(`  ${label}: ${signInInstruction(outcome.id)}`)
   }
   if (pending.length > 0) {

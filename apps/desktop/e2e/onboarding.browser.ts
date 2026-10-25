@@ -10,7 +10,6 @@ interface BootstrapStatus {
   defaultPath?: string
   workspace?: { id: string; name: string; path: string }
   savedConnections?: unknown[]
-  cloudWorktables?: Array<{ id: string; name: string }>
   canRepair?: boolean
   canRetry?: boolean
   canRestart?: boolean
@@ -246,35 +245,6 @@ test("starts native Cloud sign-in only through the trusted Tauri boundary", asyn
   await expect(
     page.getByText("Finish signing in through your system browser.")
   ).toBeVisible()
-})
-
-test("opens the selected Cloud Worktable after repeated native status updates", async ({
-  page,
-}) => {
-  await installTauriBoundary(page, {
-    state: "needsSelection",
-    provider: "cloud",
-    cloudWorktables: [
-      { id: "worktable_one", name: "First Worktable" },
-      { id: "worktable_two", name: "Second Worktable" },
-    ],
-    savedConnections: [],
-  })
-  await page.goto("/")
-  const picker = page.getByRole("combobox", { name: "Worktable", exact: true })
-  await picker.selectOption("worktable_two")
-  const polls = (await desktopCalls(page)).filter(
-    ({ command }) => command === "desktop_bootstrap_state"
-  ).length
-  await expect.poll(async () => (await desktopCalls(page)).filter(
-    ({ command }) => command === "desktop_bootstrap_state"
-  ).length).toBeGreaterThan(polls + 1)
-  await expect(picker).toHaveValue("worktable_two")
-  await page.getByRole("button", { name: "Open Worktable", exact: true }).click()
-  expect(await desktopCalls(page)).toContainEqual({
-    command: "desktop_start_cloud_connection",
-    args: { workspaceId: "worktable_two" },
-  })
 })
 
 test("can cancel an active native Cloud connection without leaving the trusted shell", async ({

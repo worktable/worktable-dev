@@ -25,8 +25,8 @@ Desktop asks where your Worktable runs on first launch.
   HTTPS is strongly recommended. Plain HTTP requires an explicit warning
   acknowledgement.
 - **Worktable Cloud:** choose **Sign in**. Desktop opens the system browser for
-  authentication. Choose a Worktable and select **Open Worktable**. Desktop
-  remembers that destination for your next connection.
+  authentication, then opens your first Worktable. Switch to another from the
+  Worktable menu. Desktop remembers the last one for your next connection.
 
 Desktop remembers saved workspaces and servers. It does not store a
 self-hosted password. Cloud credentials remain in macOS Keychain rather than
@@ -38,6 +38,15 @@ missing, outdated, locally changed, or conflicting files. Installing skills and
 connecting the agent are separate steps; see [Skills](/agents/skills/).
 
 ## Switch or remove a connection
+
+The Worktable menu at the top of the sidebar lists every Worktable you can
+reach. **On this Mac** opens a local Worktable in this window; **Link** marks
+one with Worktable Link on. When you're signed in to Worktable Cloud,
+**Other devices** lists Worktables you linked on other computers, which open at
+their own address in your browser while their device is online, and
+**Worktable Cloud** lists hosted ones, which open in this window. **New
+Worktable** and **Open Folder** add another. A self-hosted server's page keeps
+**Switch Worktable**, which opens the connection chooser.
 
 Use the Worktable application menu to change the selected workspace or server.
 Returning to the same local workspace restores its stable agent endpoint.

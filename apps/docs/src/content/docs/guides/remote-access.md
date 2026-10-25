@@ -134,7 +134,8 @@ does not copy its workspace into the hosted workspace, synchronize the two, or
 expose the full local interface remotely.
 Each device follows its selected subscription: Solo links one device, Team
 three and Business five. If a Worktable's devices are all linked, unlink one in
-Cloud to connect another. **Your Worktables** in Cloud lists each linked
+Cloud to connect another. **Your Worktables** in Cloud, and the Worktable menu
+in Cloud, Desktop and a Worktable signed in to Cloud, list each linked
 Worktable with its device and whether it is online. On a team installation, an operator enables Link and its
 AI apps follow that member's Space permissions as personal agents.
 

@@ -229,17 +229,24 @@ describe("desktop package contracts", () => {
       ],
     })
     // Any active workspace page may ask for the chooser; Rust checks it is the
-    // active connection's origin, and the command returns nothing.
+    // active connection's origin, and the command returns nothing. Listing
+    // and opening this Mac's Worktables Rust allows only a local or Cloud page.
     expect(workspaceSwitchCapability).toMatchObject({
       identifier: "workspace-switch-worktable",
       local: false,
       remote: workspaceChromeCapability.remote,
       webviews: ["workspace"],
-      permissions: ["allow-desktop-workspace-show-chooser"],
+      permissions: [
+        "allow-desktop-workspace-show-chooser",
+        "allow-desktop-workspace-worktables",
+        "allow-desktop-workspace-open-local",
+        "allow-desktop-workspace-open-cloud",
+        "allow-desktop-workspace-open-folder",
+      ],
     })
-    expect(trustedShellCapability.permissions).not.toContain(
-      "allow-desktop-workspace-show-chooser"
-    )
+    for (const permission of workspaceSwitchCapability.permissions) {
+      expect(trustedShellCapability.permissions).not.toContain(permission)
+    }
     // Only the active local workspace page answers the agent offer.
     expect(workspaceAgentOfferCapability).toMatchObject({
       identifier: "workspace-agent-offer",

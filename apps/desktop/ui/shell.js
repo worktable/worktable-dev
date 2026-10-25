@@ -26,8 +26,6 @@ const elements = {
   cloudProviderBack: document.querySelector("#cloud-provider-back"),
   cloudStatusMessage: document.querySelector("#cloud-status-message"),
   connectCloud: document.querySelector("#connect-cloud"),
-  cloudWorktablePicker: document.querySelector("#cloud-worktable-picker"),
-  cloudWorktable: document.querySelector("#cloud-worktable"),
   removeCloudConnection: document.querySelector("#remove-cloud-connection"),
   savedConnectionsSection: document.querySelector("#saved-connections-section"),
   savedConnections: document.querySelector("#saved-connections"),
@@ -82,7 +80,6 @@ let openFeedback = { message: "", tone: "neutral" }
 let recoveryFeedback = ""
 let scrollFadeFrame = 0
 let savedConnectionsSignature = ""
-let cloudWorktablesSignature = ""
 
 const prefersDark = window.matchMedia("(prefers-color-scheme: dark)")
 const prefersReducedMotion = window.matchMedia(
@@ -673,23 +670,7 @@ function render(status) {
     if (status.provider === "cloud") {
       elements.cloudStatusMessage.textContent =
         status.message || "Continue in your browser."
-      const choices = status.cloudWorktables ?? []
-      elements.cloudWorktablePicker.hidden = choices.length === 0
-      const signature = JSON.stringify(choices.map(({ id, name }) => [id, name]))
-      if (signature !== cloudWorktablesSignature) {
-        const selected = elements.cloudWorktable.value
-        elements.cloudWorktable.replaceChildren(...choices.map(worktable => {
-          const option = document.createElement("option")
-          option.value = worktable.id
-          option.textContent = worktable.name
-          return option
-        }))
-        if (choices.some(worktable => worktable.id === selected)) {
-          elements.cloudWorktable.value = selected
-        }
-        cloudWorktablesSignature = signature
-      }
-      elements.connectCloud.textContent = choices.length ? "Open Worktable" : status.connectionProfileId
+      elements.connectCloud.textContent = status.connectionProfileId
         ? "Sign in again"
         : "Sign in"
       elements.removeCloudConnection.hidden =
@@ -950,7 +931,7 @@ elements.cloudProviderBack.addEventListener("click", () =>
 )
 
 elements.connectCloud.addEventListener("click", () =>
-  runAction(() => invoke("desktop_start_cloud_connection", {workspaceId: elements.cloudWorktablePicker.hidden ? null : elements.cloudWorktable.value}))
+  runAction(() => invoke("desktop_start_cloud_connection", { workspaceId: null }))
 )
 
 elements.removeCloudConnection.addEventListener("click", () =>

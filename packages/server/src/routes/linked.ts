@@ -5,6 +5,7 @@ import { isHosted } from "../hosted.ts"
 import {
   beginLink,
   disconnectLink,
+  linkedDeviceLabel,
   linkedStatus,
   noteAppSetup,
   setLinkEnabled,
@@ -17,6 +18,7 @@ import {
   startCloudSignIn,
   linkedCloudOrigin,
   cloudLinkRequest,
+  cloudWorktables,
 } from "../cloud-account.ts"
 
 export const cloudCallbackRouter = new Hono()
@@ -65,6 +67,20 @@ linkedRouter.post("/app-intent", async (c) => {
     return c.json({ error: "Invalid request" }, 400)
   await noteAppSetup(body!.app as AppFamily)
   return c.json({ ok: true })
+})
+// The Worktable menu's list, asked for when it first opens. This device's
+// name tells its own linked Worktables from those on other devices.
+linkedRouter.get("/worktables", async (c) => {
+  try {
+    const directory = await cloudWorktables()
+    return c.json(
+      directory
+        ? { signedIn: true, device: linkedDeviceLabel(), ...directory }
+        : { signedIn: false }
+    )
+  } catch {
+    return c.json({ error: "Could not load Worktables" }, 503)
+  }
 })
 linkedRouter.post("/account", async (c) => {
   try {

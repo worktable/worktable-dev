@@ -2,7 +2,8 @@ import { saveOpenDrawing } from "./drawing-drafts"
 
 type NativeInvoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>
 
-function invoke(): NativeInvoke | null {
+/** Desktop's native command bridge, when this page runs inside Desktop. */
+export function invoke(): NativeInvoke | null {
   return (
     (globalThis as typeof globalThis & {
       __TAURI__?: { core?: { invoke?: NativeInvoke } }
@@ -49,3 +50,4 @@ export async function switchDesktopWorktable(): Promise<
     return "unavailable"
   }
 }
+

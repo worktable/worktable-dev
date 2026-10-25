@@ -290,6 +290,9 @@ describe("live workspace replacement", () => {
     expect(classifyWorkspaceRequest("POST", "/mcp")).toBe("write")
     for (const [method, path] of [["GET", "/public/share"], ["HEAD", "/public/share/content"], ["POST", "/public/share/bridge"], ["POST", "/public/share/unlock"]]) expect(classifyWorkspaceRequest(method!, path!)).toBe("read")
     expect(classifyWorkspaceRequest("POST", "/api/grok-bot/grok/check")).toBe("write")
+    // File links move a file's bytes outside the sign-in: an upload is a write, a download a read.
+    expect(classifyWorkspaceRequest("PUT", "/api/file-links/token")).toBe("write")
+    expect(classifyWorkspaceRequest("GET", "/api/file-links/token")).toBe("read")
 
     const heldWrite = admitWorkspaceRequest("write")!
     const poll = waitForThreadSignal("thread-held", 25_000)

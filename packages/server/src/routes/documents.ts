@@ -2,12 +2,10 @@ import { teamsEnabled } from "../team-database.ts";
 import { reservedAnnotationInput } from "../annotation-origin.ts"
 import { visitorCommentPageSummary, visitorCommentReader } from "../visitor-comment-access.ts"
 import { documentSourceDisposition } from "../content-disposition.ts"
-import { createHash } from "node:crypto"
 import { Hono, type Context } from "hono"
 import { z } from "zod"
 import {
   DOCUMENT_ARCHIVE_REASON_MAX_LENGTH,
-  DOCUMENT_GENERATION_MAX_ENTRY_BYTES,
   DocumentAnnotationSelectorSchema,
   DocumentContentRevisionSchema,
   DocumentFormatClaimSchema,
@@ -65,12 +63,16 @@ import {
   updateDocumentAnnotation,
 } from "../document-annotation-service.ts"
 import { wsManager } from "../ws.ts"
-import {
-  BUILTIN_DOCUMENT_FORMATS,
-  createBuiltinDocumentFormatRegistry,
-} from "../document-format-registry.ts"
+import { BUILTIN_DOCUMENT_FORMATS } from "../document-format-registry.ts"
 import { filesPreviewEnabled } from "../files-preview.ts"
-import { fileMediaType, fileShownInline } from "../file-media.ts"
+import { serveFileBytes } from "../file-response.ts"
+import {
+  FILE_UPLOAD_MAX_BYTES,
+  FILE_UPLOAD_TOO_LARGE,
+  namesAFile,
+  readLimitedBody,
+  writeUploadedFile,
+} from "../file-uploads.ts"
 import { usesAtOrBelow } from "../document-uses.ts"
 import {
   keepEarlierImagesAfterRestore,
@@ -491,91 +493,6 @@ documentsRouter.get(
 // who can edit it. Both exist only with the files preview on, and only for
 // files: Docs keep their own routes.
 
-const FILE_UPLOAD_MAX_BYTES = DOCUMENT_GENERATION_MAX_ENTRY_BYTES
-const FILE_KEEP_BOTH_TRIES = 100
-const fileRegistry = createBuiltinDocumentFormatRegistry()
-
-function fileContentHash(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("base64url")
-}
-
-/** Whether a new file at this path would be a file rather than a Doc. */
-function namesAFile(path: string): boolean {
-  const leaf = path.split("/").at(-1) ?? ""
-  return (
-    fileRegistry.fileSourceForFilename(leaf, { anyFile: true })?.registration
-      .id === BUILTIN_DOCUMENT_FORMATS.file
-  )
-}
-
-/** A file's current revision, to replace it with whatever it holds now. */
-async function currentFileRevision(
-  spaceId: string,
-  path: string
-): Promise<string> {
-  const current = await readRegisteredDocumentSource({ spaceId, path })
-  if (current.format.id !== BUILTIN_DOCUMENT_FORMATS.file) {
-    throw new DocumentWriteError("unsupported", "This document is not a file")
-  }
-  return current.sourceRevision
-}
-
-/** `name-2.ext`, `name-3.ext`… for keeping both when a name is taken. */
-function numberedFilePath(path: string, n: number): string {
-  const slash = path.lastIndexOf("/")
-  const folder = path.slice(0, slash + 1)
-  const leaf = path.slice(slash + 1)
-  const dot = leaf.lastIndexOf(".")
-  return dot > 0
-    ? `${folder}${leaf.slice(0, dot)}-${n}${leaf.slice(dot)}`
-    : `${folder}${leaf}-${n}`
-}
-
-/**
- * A file's bytes, shown inline only when an image. Every response is
- * sandboxed and unsniffed. A request naming the current content, by its
- * hash or by the version a Doc's page gave for it, may keep it for good, as
- * may bytes from a moment past: a file's bytes at any of these never change.
- * Others revalidate by ETag.
- */
-function serveFileBytes(
-  c: Context,
-  bytes: Uint8Array,
-  fileName: string,
-  options: { cacheForGood: boolean; version?: string }
-): Response {
-  const hash = fileContentHash(bytes)
-  const etag = `"${hash}"`
-  const v = c.req.query("v")
-  const cacheControl =
-    options.cacheForGood ||
-    v === hash ||
-    (options.version !== undefined && v === options.version)
-      ? "private, max-age=31536000, immutable"
-      : "private, no-cache"
-  const headers: Record<string, string> = {
-    "Cache-Control": cacheControl,
-    ETag: etag,
-    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
-    "Cross-Origin-Resource-Policy": "same-origin",
-    "X-Content-Type-Options": "nosniff",
-  }
-  if (c.req.header("if-none-match") === etag) {
-    return new Response(null, { status: 304, headers })
-  }
-  const inline = fileShownInline(fileName) && c.req.query("download") !== "1"
-  return new Response(new Uint8Array(bytes).buffer, {
-    headers: {
-      ...headers,
-      "Content-Type": fileMediaType(fileName),
-      "Content-Disposition": documentSourceDisposition(
-        fileName,
-        inline ? "inline" : "attachment"
-      ),
-    },
-  })
-}
-
 documentsRouter.get("/file", requireScope("documents:read"), async (c) => {
   if (!filesPreviewEnabled()) {
     return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
@@ -674,65 +591,38 @@ documentsRouter.put("/file", requireScope("documents:write"), async (c) => {
   const declared = Number(c.req.header("content-length") ?? "0")
   if (declared > FILE_UPLOAD_MAX_BYTES) {
     return c.json(
-      { error: "Files can be up to 64 MiB.", code: "PAYLOAD_TOO_LARGE" },
+      { error: FILE_UPLOAD_TOO_LARGE, code: "PAYLOAD_TOO_LARGE" },
       413
     )
   }
-  const bytes = new Uint8Array(await c.req.arrayBuffer())
-  if (bytes.byteLength > FILE_UPLOAD_MAX_BYTES) {
+  const bytes = await readLimitedBody(c.req.raw, FILE_UPLOAD_MAX_BYTES)
+  if (!bytes) {
     return c.json(
-      { error: "Files can be up to 64 MiB.", code: "PAYLOAD_TOO_LARGE" },
+      { error: FILE_UPLOAD_TOO_LARGE, code: "PAYLOAD_TOO_LARGE" },
       413
     )
   }
   const attribution = documentWriteAttribution(c.get("identity").principal)
   try {
-    const expectedRevision =
-      c.req.header("if-match")?.replace(/^"|"$/g, "") ??
-      (c.req.query("replace") === "1"
-        ? await currentFileRevision(spaceId, path)
-        : undefined)
-    if (expectedRevision) {
-      const result = await replaceRegisteredDocument({
-        spaceId,
-        path,
-        bytes,
-        expectedRevision,
-        updatedBy: attribution.actor,
-        source: attribution.source,
-        reason: "Uploaded a new version",
-        expectedFormatId: BUILTIN_DOCUMENT_FORMATS.file,
-        separateVersion: true,
-      })
-      return c.json({ ok: true, ...result, contentHash: fileContentHash(bytes) })
-    }
-    const keepBoth = c.req.query("keepBoth") === "1"
-    for (let n = 1; ; n++) {
-      const candidate = n === 1 ? path : numberedFilePath(path, n)
-      try {
-        const result = await createRegisteredDocument({
-          spaceId,
-          path: candidate,
-          format: { id: BUILTIN_DOCUMENT_FORMATS.file, sourceVersion: 1 },
-          bytes,
-          createdBy: attribution.actor,
-          source: attribution.source,
-          reason: "Uploaded",
-        })
-        return c.json(
-          { ok: true, ...result, contentHash: fileContentHash(bytes) },
-          201
-        )
-      } catch (error) {
-        if (
-          !keepBoth ||
-          n >= FILE_KEEP_BOTH_TRIES ||
-          !(error instanceof DocumentWriteError) ||
-          error.reason !== "conflict"
-        )
-          throw error
-      }
-    }
+    const expectedRevision = c.req.header("if-match")?.replace(/^"|"$/g, "")
+    const written = await writeUploadedFile({
+      spaceId,
+      path,
+      bytes,
+      mode:
+        expectedRevision !== undefined || c.req.query("replace") === "1"
+          ? {
+              kind: "replace",
+              ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+            }
+          : { kind: "create", keepBoth: c.req.query("keepBoth") === "1" },
+      actor: attribution.actor,
+      source: attribution.source,
+    })
+    return c.json(
+      { ok: true, ...written.result, contentHash: written.contentHash },
+      written.status
+    )
   } catch (error) {
     if (error instanceof DocumentWriteError) {
       return c.json(

@@ -796,6 +796,16 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
       byteLength: z.number().int().nonnegative(),
       sourceRevision: z.string(),
     }),
+    // Preview: a binary file over 1 MiB, whose bytes come by its download link.
+    z.looseObject({
+      documentId: z.string(),
+      path: z.string(),
+      format: DocumentFormatClaimSchema,
+      encoding: z.literal("download"),
+      downloadUrl: z.string(),
+      byteLength: z.number().int().nonnegative(),
+      sourceRevision: z.string(),
+    }),
     // Preview: an image file, whose bytes travel as MCP image content.
     z.looseObject({
       documentId: z.string(),
@@ -823,6 +833,16 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
         removed: z.number().int().nonnegative(),
       }),
       truncated: z.boolean(),
+    }),
+  ],
+  "documents.upload": [
+    z.looseObject({
+      path: z.string(),
+      uploadUrl: z.string(),
+      method: z.literal("PUT"),
+      expiresAt: z.string(),
+      maxBytes: z.number().int().positive(),
+      command: z.string(),
     }),
   ],
   "documents.create": [
@@ -1686,10 +1706,15 @@ export const PREVIEW_OUTPUT_SCHEMAS: Partial<
         '"read_source", except for an image, which comes as image content'
       ),
       encoding: forActions(
-        z.enum(["base64", "utf8", "image"]),
-        '"read_source": utf8 for a text file, image for an image file, else base64'
+        z.enum(["base64", "utf8", "image", "download"]),
+        '"read_source": utf8 for a text file, image for an image file, download for a binary file over 1 MiB (fetch downloadUrl), else base64'
       ),
       mediaType: forActions(z.string(), '"read_source" of an image file'),
+      downloadUrl: forActions(
+        z.string(),
+        '"read_source" of a file, over a direct connection: a short-lived link to its bytes, for curl or a browser'
+      ),
+      downloadExpiresAt: forActions(z.string(), '"read_source" with downloadUrl'),
     }),
   worktable_documents_write:
     WORKTABLE_OUTPUT_SCHEMAS.worktable_documents_write.extend({
@@ -1704,6 +1729,14 @@ export const PREVIEW_OUTPUT_SCHEMAS: Partial<
         }),
         '"replace" of a CSV or TSV file: what changed, row by row'
       ),
+      uploadUrl: forActions(
+        z.string(),
+        '"upload": a one-time link that takes the file\'s bytes with PUT, such as curl -T'
+      ),
+      method: forActions(z.literal("PUT"), '"upload"'),
+      expiresAt: forActions(z.string(), '"upload": when the link stops working'),
+      maxBytes: forActions(z.number().int().positive(), '"upload"'),
+      command: forActions(z.string(), '"upload": the curl command to send the file with'),
     }),
   worktable_threads_write:
     WORKTABLE_OUTPUT_SCHEMAS.worktable_threads_write.extend({

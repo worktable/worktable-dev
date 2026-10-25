@@ -57,6 +57,7 @@ export const OPERATION_DEFINITIONS = {
   "documents.versions": tool("documents:read", "none"),
   "documents.diff": tool("documents:read", "none"),
   "documents.create": tool("documents:write", "workspace"),
+  "documents.upload": tool("documents:write", "workspace"),
   "documents.replace": tool("documents:write", "workspace"),
   "documents.checkpoint": tool("documents:write", "workspace"),
   "documents.restore_version": tool("documents:write", "workspace"),
@@ -141,6 +142,7 @@ export const PREVIEW_OPERATIONS: ReadonlySet<OperationId> =
     "records.create_many",
     "records.update_many",
     "records.import",
+    "documents.upload",
   ])
 
 function tool(
@@ -215,6 +217,7 @@ export const WORKTABLE_TOOL_ROUTES: Record<
   },
   worktable_documents_write: {
     create: "documents.create",
+    upload: "documents.upload",
     replace: "documents.replace",
     checkpoint: "documents.checkpoint",
     restore_version: "documents.restore_version",

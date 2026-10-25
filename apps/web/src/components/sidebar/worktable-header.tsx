@@ -19,6 +19,9 @@ import { toast } from "@worktable/ui/components/sonner"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import type { MenuSurface } from "@/lib/worktable-menu"
 
+/** The menu's list; Settings refreshes it when the Cloud account or Link changes. */
+export const WORKTABLE_MENU_QUERY_KEY = ["worktable-menu"] as const
+
 // The list and its data load when the menu first opens.
 const loadList = () => import("./worktable-menu-list")
 const WorktableMenuList = lazy(loadList)
@@ -69,7 +72,7 @@ export function WorktableHeader() {
   // One list request when the menu first opens, kept for the tab.
   const [opened, setOpened] = useState(false)
   const { data: listed } = useQuery({
-    queryKey: ["worktable-menu", surface, cloudPage],
+    queryKey: WORKTABLE_MENU_QUERY_KEY,
     queryFn: async () => (await import("@/lib/worktable-menu")).loadWorktableMenu(surface, cloudPage),
     enabled: opened,
     staleTime: Infinity,

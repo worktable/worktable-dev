@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@worktable/ui/components/badge"
 import { Button } from "@worktable/ui/components/button"
@@ -21,6 +21,7 @@ import {
   TooltipTrigger,
 } from "@worktable/ui/components/tooltip"
 import { fetchJSON, HttpError } from "@/lib/http"
+import { WORKTABLE_MENU_QUERY_KEY } from "@/components/sidebar/worktable-header"
 import { SettingsGroup } from "../settings-group"
 import { useSettingsSectionActive } from "../settings-dialog"
 
@@ -129,6 +130,21 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
   useEffect(() => {
     void client.invalidateQueries({ queryKey: ["system", "deployment"] })
   }, [client, query.data?.state])
+  // The Worktable menu lists this account's Worktables and this one's Link,
+  // so it asks again once either changes.
+  const menuFacts = query.data
+    ? `${query.data.account.user?.id ?? ""}:${query.data.enabled}`
+    : null
+  const shownMenuFacts = useRef<string | null>(null)
+  useEffect(() => {
+    if (menuFacts === null) return
+    if (shownMenuFacts.current !== null && shownMenuFacts.current !== menuFacts)
+      void client.invalidateQueries({
+        queryKey: WORKTABLE_MENU_QUERY_KEY,
+        exact: true,
+      })
+    shownMenuFacts.current = menuFacts
+  }, [client, menuFacts])
   const signIn = useMutation({
     mutationFn: () =>
       fetchJSON<{ url: string }>("/api/linked/account", { method: "POST" }),

@@ -54,8 +54,9 @@ export function appFamily(name: string): AppFamily | null {
 }
 
 /**
- * The person is setting up a chat app from this linked Worktable, so the app
- * works in it: sent by the device with its owner's Cloud session. Cloud
+ * The person turned on Link from a chat app's setup steps in this linked
+ * Worktable, so the app works in it: sent once per such action by the device
+ * with its owner's Cloud session. Viewing the steps sends nothing. Cloud
  * versions without it answer 404.
  */
 export const LOCAL_APP_INTENT_PATH = "/gateway/local/app-intent"

@@ -1,4 +1,11 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react"
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@worktable/ui/components/button"
 import { fetchJSON } from "@/lib/http"
@@ -54,8 +61,8 @@ export function LocalChatSteps({
 /**
  * The two ways to use a chat app with this Worktable: on any device through
  * Worktable Link and the app's official Worktable app, or on this computer
- * with the local address. With Link on, following the steps here tells Cloud
- * the app works in this Worktable. `local` holds the steps for this computer.
+ * with the local address. Turning Link on from these steps tells Cloud the
+ * app works in this Worktable. `local` holds the steps for this computer.
  */
 export function ChatAppWays({
   app,
@@ -63,7 +70,7 @@ export function ChatAppWays({
   local,
 }: {
   app: ChatApp
-  /** Whether the steps are showing, so Worktable Link checks its status. */
+  /** Whether the surface is showing, so Worktable Link checks its status. */
   active?: boolean
   local: ReactNode
 }) {
@@ -80,15 +87,18 @@ export function ChatAppWays({
   const linkOn =
     link.data?.enabled === true &&
     !["locked", "error"].includes(link.data.state)
-  // Once Link is on, Cloud sends this app here: the one already connected
-  // and the next one added. The server asks Cloud at most every few minutes.
+  // Turning Link on through Set Up here sends this app here on Cloud: the
+  // one already connected and the next one added. Viewing the steps never
+  // does; Cloud's Apps page moves an app otherwise.
+  const intentSent = useRef(false)
   useEffect(() => {
-    if (!active || !linkOn) return
+    if (!linkSetup || !linkOn || intentSent.current) return
+    intentSent.current = true
     void fetchJSON("/api/linked/app-intent", {
       method: "POST",
       body: JSON.stringify({ app }),
     }).catch(() => undefined)
-  }, [active, linkOn, app])
+  }, [linkSetup, linkOn, app])
   return (
     <div className="flex flex-col gap-5">
       <section

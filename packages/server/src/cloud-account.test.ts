@@ -328,7 +328,7 @@ test("the Settings toggle preserves the MCP URL and share capability, while Unli
   expect(await resolveDocumentShare(share.token)).toBeNull()
 })
 
-test("following a chat app's steps with Link on tells Cloud once, and tolerates a Cloud without it", async () => {
+test("turning on Link from a chat app's steps tells Cloud once per action, and tolerates a Cloud without it", async () => {
   await startCloudSignIn(origin)
   await completeCloudSignIn(callback())
   // Before Link is on there is nothing to send the app to.
@@ -347,21 +347,15 @@ test("following a chat app's steps with Link on tells Cloud once, and tolerates 
       enrollment: { controlHash: linkRequests[0]?.enrollment?.controlHash },
     },
   ])
-  // Showing the steps again doesn't ask again; another app does.
-  await noteAppSetup("chatgpt")
-  intentStatus = 404
-  await noteAppSetup("claude")
-  await noteAppSetup("claude")
-  expect(intents.map((intent) => intent.app)).toEqual(["chatgpt", "claude"])
-  // A Cloud that couldn't take it now is asked on the next visit.
-  intentStatus = 503
-  await noteAppSetup("grok")
-  intentStatus = 200
-  await noteAppSetup("grok")
+  // A Cloud without it, or one that can't take it now, changes nothing
+  // and fails nothing; each action is one attempt.
+  for (const status of [404, 503]) {
+    intentStatus = status
+    await noteAppSetup("claude")
+  }
   expect(intents.map((intent) => intent.app)).toEqual([
     "chatgpt",
     "claude",
-    "grok",
-    "grok",
+    "claude",
   ])
 })

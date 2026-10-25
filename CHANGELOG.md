@@ -15,7 +15,7 @@ infrastructure and personal context out of release notes.
 
 ### Changed
 
-- **Chat apps work where you set them up:** Following the ChatGPT or Claude steps in a Worktable with Worktable Link on makes that app work in this Worktable, including one already connected to another.
+- **Chat apps work where you set them up:** Turning on Worktable Link from the ChatGPT or Claude setup steps makes that app work in this Worktable, including one already connected to another.
 
 ## [0.1.28] - 2026-10-24
 

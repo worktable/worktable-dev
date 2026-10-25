@@ -339,10 +339,7 @@ function AgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
           {cloud ? (
             <CloudNativeAppsPanel connection={connection} />
           ) : (
-            <DesktopAppsPanel
-              connection={connection}
-              open={active && open === "chat"}
-            />
+            <DesktopAppsPanel connection={connection} />
           )}
         </AgentSetupCategory>
         <AgentSetupCategory {...categoryProps("always")}>
@@ -895,14 +892,8 @@ function AlwaysOnPairingStatus({
 
 type DesktopAppChoice = "claude-desktop" | "chatgpt-desktop"
 
-function DesktopAppsPanel({
-  connection,
-  open,
-}: {
-  connection: ConnectionInfo
-  /** Whether its steps are showing. */
-  open: boolean
-}) {
+function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
+  const sectionActive = useSettingsSectionActive()
   const queryClient = useQueryClient()
   const [app, setApp] = useState<DesktopAppChoice>("claude-desktop")
   const [claudeToken, setClaudeToken] = useState<string | null>(null)
@@ -970,7 +961,7 @@ function DesktopAppsPanel({
 
       <ChatAppWays
         app={app === "claude-desktop" ? "claude" : "chatgpt"}
-        active={open}
+        active={sectionActive}
         local={
           app === "claude-desktop" ? (
             <article className="flex flex-col gap-4">

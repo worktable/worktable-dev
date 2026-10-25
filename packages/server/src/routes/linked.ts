@@ -56,7 +56,7 @@ linkedRouter.get("/subscriptions", async (c) => {
     return c.json({ error: "Could not load Cloud subscriptions" }, 503)
   }
 })
-// The person is following a chat app's steps here with Link on.
+// The person turned on Link from a chat app's setup steps here.
 linkedRouter.post("/app-intent", async (c) => {
   const body = (await c.req.json().catch(() => null)) as {
     app?: unknown

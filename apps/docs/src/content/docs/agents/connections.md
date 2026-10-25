@@ -180,10 +180,10 @@ For native setup and webhook behavior, see
 
 For local or self-hosted Worktable, open **Settings → Agents → Chat apps**.
 On any device, turn on [Worktable Link](/guides/remote-access/#worktable-link)
-from the steps, then add the official Worktable app in ChatGPT or Claude. With
-Link on, following the steps makes the app work in this Worktable: one already
-connected moves here, and the next one added starts here. Change it later under
-**Apps** in Cloud.
+with **Set Up** in the app's steps, then add the official Worktable app in
+ChatGPT or Claude. Turning Link on there makes the app work in this Worktable:
+one already connected moves here, and the next one added starts here. If Link
+was already on, or to move an app later, use **Apps** in Cloud.
 
 On this computer, Claude Desktop on macOS uses the downloadable `.mcpb` extension. Open it in
 Claude, approve installation, and enter the endpoint and any token shown by

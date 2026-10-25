@@ -142,15 +142,12 @@ export function linkedManagementUrl(): string {
     : `${status.cloudOrigin}/linked`
 }
 
-/** When each chat app was last said to be set up here, by link file. */
-const appIntentsSent = new Map<string, number>()
-const APP_INTENT_REPEAT_MS = 10 * 60_000
-
 /**
- * The person is following the steps for a chat app here with Link on, so
- * Cloud sends that app here: the ones they already connected and the next
- * new one. Best effort and asked at most every ten minutes per app. A team
- * Worktable's apps belong to its members, so it says nothing.
+ * The person turned on Link from a chat app's setup steps here, so Cloud
+ * sends that app here: the ones they already connected and the next new
+ * one. One best-effort attempt per action; a Cloud without it answers 404,
+ * which changes nothing. A team Worktable's apps belong to its members, so
+ * it says nothing.
  */
 export async function noteAppSetup(app: AppFamily): Promise<void> {
   if (
@@ -160,20 +157,15 @@ export async function noteAppSetup(app: AppFamily): Promise<void> {
     ["locked", "error"].includes(status.state)
   )
     return
-  const file = path()
-  const key = `${file}\0${app}`
-  if (Date.now() - (appIntentsSent.get(key) ?? 0) < APP_INTENT_REPEAT_MS) return
   try {
-    const link = await readLink(file)
+    const link = await readLink(path())
     if (!link || link.disabled) return
-    const taken = await cloudAppIntent(link.cloudOrigin, {
+    await cloudAppIntent(link.cloudOrigin, {
       app,
       enrollment: enrollment(link),
     })
-    // A Cloud that doesn't take it won't soon either.
-    if (taken !== false) appIntentsSent.set(key, Date.now())
   } catch {
-    // Signed out or offline: the next visit asks again.
+    // Signed out or offline: Cloud's Apps page still changes it.
   }
 }
 

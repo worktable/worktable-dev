@@ -9,6 +9,8 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.29] - 2026-10-25
+
 ### Added
 
 - **Records visitors won't see:** When a shared HTML tool reads Records its link doesn't show, the Share dialog tells the sharer how many collections, with a way to turn on live data.

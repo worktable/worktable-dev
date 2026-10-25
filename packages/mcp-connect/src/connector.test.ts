@@ -120,10 +120,67 @@ function captureIo(): {
 }
 
 describe("connector transaction model", () => {
-  it("writes a tokenless Cloud config without calling pairing or verification", async () => {
+  it("writes a tokenless Cloud config, signs the client in, and runs again as already set up", async () => {
     const host = fakeHost()
-    const output = captureIo()
+    const signIns: string[] = []
+    const cloud = [
+      "--oauth",
+      "--server",
+      "https://app.worktable.cloud",
+      "--client",
+      "codex",
+    ]
+    const first = captureIo()
+    expect(
+      await runConnector(cloud, first.io, {
+        ...host.dependencies,
+        signInClient: (id, onStart) => {
+          onStart?.()
+          signIns.push(id)
+          return "signed-in"
+        },
+        connectClientOnce: async () => true,
+      })
+    ).toBe(0)
+    const config = readFileSync(configPath, "utf8")
+    expect(config).toContain('url = "https://app.worktable.cloud/api/mcp"')
+    expect(config).not.toContain("Authorization")
+    expect(host.requests).toEqual([])
+    expect(signIns).toEqual(["codex"])
+    expect(first.stdout.join("\n")).toContain(
+      "ChatGPT / Codex is connected to Worktable."
+    )
 
+    // Run again, as someone does when they aren't sure it worked. Without a
+    // terminal to sign in on, it says how to finish.
+    const again = captureIo()
+    expect(
+      await runConnector(cloud, again.io, {
+        ...host.dependencies,
+        signInClient: () => "no-terminal",
+      })
+    ).toBe(0)
+    expect(readFileSync(configPath, "utf8")).toBe(config)
+    expect(again.stdout.join("\n")).toContain("already set up")
+    expect(again.stdout.join("\n")).toContain("To finish, sign in:")
+    expect(again.stderr).toEqual([])
+
+    const failed = captureIo()
+    expect(
+      await runConnector(cloud, failed.io, {
+        ...host.dependencies,
+        signInClient: () => "failed",
+      })
+    ).toBe(1)
+    expect(failed.stdout.join("\n")).toContain("Signing in didn't finish.")
+  })
+
+  it("asks before pointing a client at a different Worktable", async () => {
+    writeFileSync(
+      configPath,
+      '[mcp_servers.worktable]\nurl = "https://other.example/mcp"\n'
+    )
+    const output = captureIo()
     expect(
       await runConnector(
         [
@@ -134,14 +191,13 @@ describe("connector transaction model", () => {
           "codex",
         ],
         output.io,
-        host.dependencies
+        { ...fakeHost().dependencies, signInClient: () => "no-terminal" }
       )
-    ).toBe(0)
-    const config = readFileSync(configPath, "utf8")
-    expect(config).toContain('url = "https://app.worktable.cloud/api/mcp"')
-    expect(config).not.toContain("Authorization")
-    expect(host.requests).toEqual([])
-    expect(output.stdout.join("\n")).toContain("sign in with OAuth")
+    ).toBe(1)
+    expect(output.stderr.join("\n")).toContain(
+      "already connects to Worktable at https://other.example/mcp"
+    )
+    expect(readFileSync(configPath, "utf8")).toContain("other.example")
   })
 
   it("preserves a selected Cloud Worktable and rejects a resource on another server before touching configs", async () => {
@@ -159,7 +215,7 @@ describe("connector transaction model", () => {
           "codex",
         ],
         output.io,
-        host.dependencies
+        { ...host.dependencies, signInClient: () => "no-terminal" }
       )
     ).toBe(0)
     const config = readFileSync(configPath, "utf8")

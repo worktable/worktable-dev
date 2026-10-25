@@ -379,6 +379,86 @@ for (const wakeMethod of ["webhook", "email"] as const)
     ).toBeEnabled()
   })
 
+test("Cloud coding agents are recognized on their own tab when they sign in", async ({
+  page,
+}) => {
+  const mcpUrl = "https://cloud.example.test/api/mcp/w/wt_fixture"
+  // As Cloud lists sign-in agents: by app name, with no known platform.
+  const agent = (id: string, displayName: string) => ({
+    id,
+    authKind: "oauth",
+    displayName,
+    platform: "other",
+    ownership: "personal",
+    icon: null,
+    access: { threads: true, read: true, edit: true },
+    target: { kind: "mcp-client", clientId: null },
+    mode: "on-demand",
+    participant: null,
+    machine: null,
+    scopes: [],
+    connectedAt: null,
+    lastSeenAt: null,
+    permissionGroups: null,
+  })
+  const connections = [agent("agt_chatgpt", "ChatGPT")]
+  await page.route("**/api/workspace", async (route) => {
+    if (route.request().method() !== "GET") return route.continue()
+    const response = await route.fetch()
+    await route.fulfill({
+      response,
+      json: { ...(await response.json()), onboarding: { status: "pending" } },
+    })
+  })
+  await page.route("**/api/system/connection", async (route) => {
+    const response = await route.fetch()
+    await route.fulfill({
+      response,
+      json: {
+        ...(await response.json()),
+        mcpAuthMode: "oauth",
+        agentPairing: false,
+        remoteMcpUrl: mcpUrl,
+      },
+    })
+  })
+  await page.route(
+    (url) => url.pathname.endsWith("/api/agent-connections"),
+    (route) => route.fulfill({ json: { connections } })
+  )
+
+  await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
+  await page.getByLabel("Your name").fill("Cloud owner")
+  await page.getByLabel("Worktable name").fill("Cloud workspace")
+  await page
+    .getByRole("button", { name: "Create Worktable", exact: true })
+    .click()
+  await page.getByRole("button", { name: /^Coding agents/ }).click()
+  await expect(
+    page.getByText(
+      "Run this in your terminal, then sign in when your browser opens."
+    )
+  ).toBeVisible()
+  await expect(page.getByText(`--client claude-code`)).toBeVisible()
+
+  // Codex signs in while Claude Code's tab is on show: it isn't Claude Code.
+  const poll = page.waitForRequest((request) =>
+    new URL(request.url()).pathname.endsWith("/api/agent-connections")
+  )
+  connections.push(agent("agt_codex", "Codex"))
+  await (await poll).response()
+  await expect(page.getByText("Waiting for Claude Code")).toBeVisible()
+  await expect(page.getByText(/is connected\./)).toHaveCount(0)
+
+  // An agent already connected when the step opened isn't new, while one
+  // that signed in since is recognized when its tab opens.
+  await page.getByRole("tab", { name: "Codex", exact: true }).click()
+  await expect(page.getByText("Codex is connected.")).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "Continue", exact: true })
+  ).toBeEnabled()
+})
+
 test("a new owner creates their Worktable, connects agents and finishes their first steps in Getting Started", async ({
   page,
 }) => {

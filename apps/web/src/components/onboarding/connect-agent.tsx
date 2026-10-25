@@ -578,9 +578,11 @@ function SignInPanel({
 
   const instruction =
     option.kind === "cli"
-      ? option.client
-        ? `Run this in your terminal, then open ${option.tab} and sign in.`
-        : "Run this in your terminal, then open your agent and sign in. It adds Worktable to the coding agents it finds, such as OpenCode and VS Code."
+      ? option.client === "cursor"
+        ? "Run this in your terminal, then open Cursor and sign in."
+        : option.client
+          ? "Run this in your terminal, then sign in when your browser opens."
+          : "Run this in your terminal and sign in when asked. It adds Worktable to the coding agents it finds, such as OpenCode and VS Code."
       : option.kind === "chat"
         ? option.app === "claude"
           ? "In Claude, open Settings, then Connectors, and add a custom connector. Paste this address and sign in."
@@ -732,8 +734,10 @@ export function AgentConnectOptions({
   const [open, setOpen] = useState<RowId | null>(null)
   // The tab on show in the open row, which is what the page waits for.
   const [active, setActive] = useState<string | null>(null)
-  // Cloud agents already signed in when a row or tab opened aren't new.
-  const [baseline, setBaseline] = useState<Set<string>>(new Set())
+  // Cloud agents already signed in when this step loaded aren't new. Each
+  // tab matches its own platform, so one that connects while another tab is
+  // on show still counts when its tab opens.
+  const [baseline, setBaseline] = useState<Set<string> | null>(null)
   const [pairings, setPairings] = useState<Record<string, PairingCreated>>({})
   const connection = useQuery({
     queryKey: ["system", "connection"],
@@ -753,6 +757,9 @@ export function AgentConnectOptions({
       cloud && openWaiting && active !== "always:Grok Bot" ? 3_000 : false,
   })
 
+  const loaded = connections.data?.connections
+  if (loaded && !baseline) setBaseline(new Set(loaded.map((item) => item.id)))
+
   function addSetup(setup: SetupRecord) {
     onSetupsChange([...setups.filter((item) => item.id !== setup.id), setup])
   }
@@ -768,16 +775,10 @@ export function AgentConnectOptions({
         else delete next[key]
         return next
       }),
-    cloudConnections: connections.data?.connections,
-    baseline,
-  }
-  function snapshot() {
-    setBaseline(
-      new Set((connections.data?.connections ?? []).map((item) => item.id))
-    )
+    cloudConnections: baseline ? loaded : undefined,
+    baseline: baseline ?? new Set<string>(),
   }
   function openRow(row: RowId, next: boolean, source: string) {
-    if (next) snapshot()
     setOpen(next ? row : null)
     setActive(next ? source : null)
   }
@@ -788,10 +789,7 @@ export function AgentConnectOptions({
     open: open === row.id,
     onOpenChange: (next: boolean, source: string) =>
       openRow(row.id, next, source),
-    onTabChange: (source: string) => {
-      snapshot()
-      setActive(source)
-    },
+    onTabChange: (source: string) => setActive(source),
   })
 
   if (connection.isPending || (cloud && connections.isPending)) {

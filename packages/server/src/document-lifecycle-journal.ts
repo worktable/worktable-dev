@@ -142,6 +142,10 @@ import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { requireWorkspaceRecovery } from "./workspace-safety.ts"
 import { yjsManager } from "./yjs-manager.ts"
 import { logDocument, logError } from "./debug-log.ts"
+import {
+  FOLDER_OPERATION_MAX_ENTRIES,
+  folderTooLargeMessage,
+} from "./folder-operation-limit.ts"
 
 const JOURNAL_SCHEMA_VERSION = 1 as const
 const LEGACY_JOURNAL_PLAN_VERSION = 1 as const
@@ -153,7 +157,7 @@ const SOURCE_MAX_BYTES = 2 * 1024 * 1024 * 1024
 const SOURCE_BUNDLE_MAX_ENTRIES = 100_000
 const HISTORY_MAX_FILES = 100_000
 const RECOVERY_CATALOG_MAX_ENTRIES = 100_000
-const PREFIX_RENAME_MAX_DOCUMENTS = 128
+const PREFIX_RENAME_MAX_DOCUMENTS = FOLDER_OPERATION_MAX_ENTRIES
 const OPERATION_ID_PATTERN = /^dlc_[A-Za-z0-9_-]{22}$/
 const RECONCILIATION_PREFIX = ".reconcile-"
 const lifecycleFormatRegistry = createBuiltinDocumentFormatRegistry()
@@ -3067,7 +3071,7 @@ async function preparePrefixRename(
     })
   if (sources.length > PREFIX_RENAME_MAX_DOCUMENTS) {
     throw new DocumentLifecyclePreconditionError(
-      `Move a folder with ${PREFIX_RENAME_MAX_DOCUMENTS} or fewer documents`
+      folderTooLargeMessage("move", sources.length)
     )
   }
   if (
@@ -3574,7 +3578,7 @@ async function preparePrefixArchive(
   }
   if (sources.length > PREFIX_RENAME_MAX_DOCUMENTS) {
     throw new DocumentLifecyclePreconditionError(
-      `Archive a folder with ${PREFIX_RENAME_MAX_DOCUMENTS} or fewer documents`
+      folderTooLargeMessage("archive", sources.length)
     )
   }
   if (
@@ -3795,7 +3799,7 @@ async function preparePrefixDelete(
   if (!sources.some((entry) => belowPrefix(entry.descriptor.path))) return null
   if (sources.length > PREFIX_RENAME_MAX_DOCUMENTS) {
     throw new DocumentLifecyclePreconditionError(
-      `Delete a folder with ${PREFIX_RENAME_MAX_DOCUMENTS} or fewer documents`
+      folderTooLargeMessage("delete", sources.length)
     )
   }
   if (

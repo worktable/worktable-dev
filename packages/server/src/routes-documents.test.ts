@@ -730,6 +730,31 @@ describe("format-neutral document route", () => {
     )
   }, 10_000)
 
+  it("refuses a folder over the limit with how many it holds, and moves nothing", async () => {
+    for (let i = 0; i < 129; i++) {
+      await writeDoc(spaceId, `big/doc-${i}`, `# Doc ${i}`, {
+        updatedBy: "test",
+        source: "rest-api",
+      })
+    }
+    const refused = await app().request(
+      `/api/spaces/${spaceId}/documents/move-folder`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-test-scopes": "documents:write",
+        },
+        body: JSON.stringify({ oldPath: "big", newPath: "huge" }),
+      }
+    )
+    expect(refused.status).toBe(409)
+    expect((await refused.json()).error).toBe(
+      "129 Docs and files are inside. Worktable can move up to 128 at a time, so move some of them first."
+    )
+    expect((await readDoc(spaceId, "big/doc-0")).data).toBe("# Doc 0")
+  }, 30_000)
+
   it("archives and restores mixed folders with common write authority", async () => {
     const instance = app()
     const originalOldArchive = await getDocArchiveInfo(spaceId, "notes/old")

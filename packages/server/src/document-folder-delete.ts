@@ -35,6 +35,10 @@ import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { wsManager } from "./ws.ts"
 import { DocFormatTransitionConflictError, yjsManager } from "./yjs-manager.ts"
 import { logDocument, logError } from "./debug-log.ts"
+import {
+  FOLDER_OPERATION_MAX_ENTRIES,
+  folderTooLargeMessage,
+} from "./folder-operation-limit.ts"
 
 export type DeleteDocumentFolderResult =
   | { ok: true; path: string; paths: string[] }
@@ -120,11 +124,11 @@ async function planDocumentFolderDelete(
         right.descriptor.path.split("/").length
       return depth || left.descriptor.path.localeCompare(right.descriptor.path)
     })
-  if (entries.length > 128) {
+  if (entries.length > FOLDER_OPERATION_MAX_ENTRIES) {
     return {
       ok: false,
       kind: "conflict",
-      error: "Delete a folder with 128 or fewer documents",
+      error: folderTooLargeMessage("delete", entries.length),
     }
   }
 

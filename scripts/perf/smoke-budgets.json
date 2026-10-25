@@ -330,26 +330,28 @@
       "max": 0
     },
     "requests, revisit, open HTML doc": {
-      "max": 3
+      "max": 2,
+      "why": "The perf browser now trusts the proxy's certificate, so its HTTP cache works as a browser's does. The HTML doc's frame comes from it: the page check and annotations."
     },
     "chain, revisit, open HTML doc": {
-      "max": 1
+      "max": 0,
+      "why": "The perf browser now trusts the proxy's certificate, so its HTTP cache works as a browser's does. Nothing waits on a download."
     },
     "requests, revisit, open a file page": {
-      "max": 2,
-      "why": "New journey (Plan 21): the page check, and the image downloaded again although its versioned address is served as immutable. Lower to 1 once the browser keeps it."
+      "max": 1,
+      "why": "New journey (Plan 21): the page check. The image comes from the browser's cache at its versioned address."
     },
     "chain, revisit, open a file page": {
-      "max": 1,
-      "why": "New journey (Plan 21): the image download on a revisit."
+      "max": 0,
+      "why": "New journey (Plan 21): the image comes from the browser's cache, so nothing waits on the page check."
     },
     "requests, revisit, open a Doc with images": {
-      "max": 3,
-      "why": "New journey (Plan 21): the page check, annotations and one image downloaded again although its versioned address is served as immutable. Lower to 2 once the browser keeps it."
+      "max": 2,
+      "why": "New journey (Plan 21): the page check and annotations. The images come from the browser's cache at their versioned addresses."
     },
     "chain, revisit, open a Doc with images": {
-      "max": 1,
-      "why": "New journey (Plan 21): the image download on a revisit."
+      "max": 0,
+      "why": "New journey (Plan 21): the images come from the browser's cache, so nothing waits on the page check."
     },
     "requests, revisit, back to Home": {
       "max": 4

@@ -21,7 +21,7 @@ import {
   TooltipTrigger,
 } from "@worktable/ui/components/tooltip"
 import { fetchJSON, HttpError } from "@/lib/http"
-import { WORKTABLE_MENU_QUERY_KEY } from "@/components/sidebar/worktable-header"
+import { queryKeys } from "@/lib/queries"
 import { SettingsGroup } from "../settings-group"
 import { useSettingsSectionActive } from "../settings-dialog"
 
@@ -140,7 +140,7 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
     if (menuFacts === null) return
     if (shownMenuFacts.current !== null && shownMenuFacts.current !== menuFacts)
       void client.invalidateQueries({
-        queryKey: WORKTABLE_MENU_QUERY_KEY,
+        queryKey: queryKeys.worktableMenu,
         exact: true,
       })
     shownMenuFacts.current = menuFacts

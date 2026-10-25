@@ -11,16 +11,13 @@ import {
 import { recognitionColor, type RecognitionColor } from "@worktable/types/recognition"
 import { ProvenanceChip } from "@/components/provenance-chip"
 import { recognitionSolid } from "@/lib/recognition"
-import { useWorkspace } from "@/lib/queries"
+import { queryKeys, useWorkspace } from "@/lib/queries"
 import { openSettings } from "@/lib/settings-open"
 import { RUNTIME_BASE_PATH } from "@/lib/runtime-path"
 import { insideDesktop, switchDesktopWorktable } from "@/lib/desktop-connection"
 import { toast } from "@worktable/ui/components/sonner"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import type { MenuSurface } from "@/lib/worktable-menu"
-
-/** The menu's list; Settings refreshes it when the Cloud account or Link changes. */
-export const WORKTABLE_MENU_QUERY_KEY = ["worktable-menu"] as const
 
 // The list and its data load when the menu first opens.
 const loadList = () => import("./worktable-menu-list")
@@ -72,7 +69,7 @@ export function WorktableHeader() {
   // One list request when the menu first opens, kept for the tab.
   const [opened, setOpened] = useState(false)
   const { data: listed } = useQuery({
-    queryKey: WORKTABLE_MENU_QUERY_KEY,
+    queryKey: queryKeys.worktableMenu,
     queryFn: async () => (await import("@/lib/worktable-menu")).loadWorktableMenu(surface, cloudPage),
     enabled: opened,
     staleTime: Infinity,

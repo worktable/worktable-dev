@@ -75,11 +75,21 @@ function MenuRowItem({
   )
   if (row.kind === "device") {
     // Another device's Worktable opens at its own address, in the browser.
+    // Desktop's web view opens no new windows; it sends a page that leaves
+    // its own address to the browser instead.
+    const href = row.href
     return (
       <DropdownMenuItem
-        disabled={!row.href}
-        {...(row.href
-          ? { render: <a href={row.href} target="_blank" rel="noreferrer" /> }
+        disabled={!href}
+        {...(href
+          ? {
+              render: <a href={href} target="_blank" rel="noreferrer" />,
+              onClick: (event: { preventDefault: () => void }) => {
+                if (surface !== "desktop") return
+                event.preventDefault()
+                window.location.assign(href)
+              },
+            }
           : {})}
       >
         {label}

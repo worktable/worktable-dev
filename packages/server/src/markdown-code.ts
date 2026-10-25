@@ -80,14 +80,23 @@ export interface ReferenceDestination {
   imageUses: number
 }
 
-/** The reference definitions in text whose code is already blanked. */
+/**
+ * The reference definitions in text whose code is already blanked. Only
+ * images whose label has a definition are counted, so no text, however many
+ * labels it holds, keeps more than its definitions in memory.
+ */
 export function referenceDestinations(scanned: string): ReferenceDestination[] {
-  const imageUses = new Map<string, number>()
+  const definitions = [...scanned.matchAll(REFERENCE_DEFINITION)]
+  if (definitions.length === 0) return []
+  const imageUses = new Map<string, number>(
+    definitions.map((match) => [referenceKey(match[1]!), 0])
+  )
   for (const match of scanned.matchAll(IMAGE_REFERENCE)) {
     const key = referenceKey(match[2] || match[1]!)
-    imageUses.set(key, (imageUses.get(key) ?? 0) + 1)
+    const uses = imageUses.get(key)
+    if (uses !== undefined) imageUses.set(key, uses + 1)
   }
-  return [...scanned.matchAll(REFERENCE_DEFINITION)].map((match) => {
+  return definitions.map((match) => {
     const start = match[0].indexOf(match[2]!, match[0].indexOf("]:") + 2)
     return {
       range: [match.index + start, match.index + start + match[2]!.length],
@@ -126,8 +135,8 @@ function indentedCode(text: string): Range[] {
   return ranges
 }
 
-/** Where a Markdown text's code and link destinations sit. */
-export function markdownLayout(markdown: string): MarkdownLayout {
+/** Where a Markdown text's code blocks and inline code sit. */
+function codeLayout(markdown: string): { blocks: Range[]; inline: Range[] } {
   const mayHoldCode = MAY_HOLD_CODE.test(markdown)
   const fenced = mayHoldCode ? matchRanges(FENCED_CODE, markdown) : []
   const blocks = mayHoldCode
@@ -136,6 +145,12 @@ export function markdownLayout(markdown: string): MarkdownLayout {
   const inline = mayHoldCode
     ? matchRanges(INLINE_CODE, blankRanges(markdown, blocks))
     : []
+  return { blocks, inline }
+}
+
+/** Where a Markdown text's code and link destinations sit. */
+export function markdownLayout(markdown: string): MarkdownLayout {
+  const { blocks, inline } = codeLayout(markdown)
   const scanned = blankRanges(markdown, [...blocks, ...inline])
   const destinations: Range[] = []
   const images: boolean[] = []
@@ -160,8 +175,7 @@ export function markdownCodeRanges(markdown: string): {
   blocks: Range[]
   inline: Range[]
 } {
-  const { blocks, inline } = markdownLayout(markdown)
-  return { blocks, inline }
+  return codeLayout(markdown)
 }
 
 /** The text with the given ranges blanked, line breaks kept. */

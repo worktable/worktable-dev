@@ -40,6 +40,10 @@ import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { wsManager } from "./ws.ts"
 import { DocPathMoveConflictError, yjsManager } from "./yjs-manager.ts"
 import { logDocument, logError } from "./debug-log.ts"
+import {
+  FOLDER_OPERATION_MAX_ENTRIES,
+  folderTooLargeMessage,
+} from "./folder-operation-limit.ts"
 
 export type MoveDocumentFolderResult =
   | {
@@ -138,11 +142,11 @@ async function planDocumentFolderMove(
         right.descriptor.path.split("/").length
       return depth || left.descriptor.path.localeCompare(right.descriptor.path)
     })
-  if (documents.length > 128) {
+  if (documents.length > FOLDER_OPERATION_MAX_ENTRIES) {
     return {
       ok: false,
       kind: "conflict",
-      error: "Move a folder with 128 or fewer documents",
+      error: folderTooLargeMessage("move", documents.length),
     }
   }
 

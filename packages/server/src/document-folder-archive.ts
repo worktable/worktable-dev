@@ -26,6 +26,10 @@ import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { wsManager } from "./ws.ts"
 import { logDocument, logError } from "./debug-log.ts"
+import {
+  FOLDER_OPERATION_MAX_ENTRIES,
+  folderTooLargeMessage,
+} from "./folder-operation-limit.ts"
 
 export type SetDocumentFolderArchivedResult =
   | {
@@ -51,7 +55,8 @@ interface PlannedFolderArchiveDocument extends DurablePrefixArchiveDocument {
 
 async function planDocumentFolderArchive(
   spaceId: string,
-  prefix: string
+  prefix: string,
+  archived: boolean
 ): Promise<PlannedFolderArchive | SetDocumentFolderArchivedResult> {
   if (!CanonicalIdSchema.safeParse(spaceId).success) {
     return {
@@ -120,11 +125,14 @@ async function planDocumentFolderArchive(
         right.descriptor.path.split("/").length
       return depth || left.descriptor.path.localeCompare(right.descriptor.path)
     })
-  if (entries.length > 128) {
+  if (entries.length > FOLDER_OPERATION_MAX_ENTRIES) {
     return {
       ok: false,
       kind: "conflict",
-      error: "Archive or restore a folder with 128 or fewer documents",
+      error: folderTooLargeMessage(
+        archived ? "archive" : "restore",
+        entries.length
+      ),
     }
   }
 
@@ -242,7 +250,11 @@ export async function setDocumentFolderArchived(options: {
 }): Promise<SetDocumentFolderArchivedResult> {
   let planned: PlannedFolderArchive | SetDocumentFolderArchivedResult
   try {
-    planned = await planDocumentFolderArchive(options.spaceId, options.path)
+    planned = await planDocumentFolderArchive(
+      options.spaceId,
+      options.path,
+      options.archived
+    )
   } catch (error) {
     if (error instanceof DocumentInventorySpaceNotFoundError) {
       return {

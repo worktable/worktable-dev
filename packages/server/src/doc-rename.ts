@@ -46,6 +46,10 @@ import {
 } from "./document-folder-move.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
 import { rewriteLinksAfterMove } from "./link-rewrite.ts"
+import {
+  FOLDER_OPERATION_MAX_ENTRIES,
+  folderTooLargeMessage,
+} from "./folder-operation-limit.ts"
 
 export interface RenameOutcome {
   renamed: Array<{ from: string; to: string }>
@@ -253,10 +257,10 @@ export async function renameDocsByPrefixAndSync(
         "This folder holds files as well as Docs. Move it as a folder with move_folder, which needs documents:write.",
     }
   }
-  if (sourcePaths.length > 128) {
+  if (sourcePaths.length > FOLDER_OPERATION_MAX_ENTRIES) {
     return {
       renamed: [],
-      error: "Move a folder with 128 or fewer documents",
+      error: folderTooLargeMessage("move", sourcePaths.length),
     }
   }
   const planned = sourcePaths.map((path) => ({

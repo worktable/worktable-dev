@@ -271,3 +271,18 @@ export function shareLinkExpiresAt(
   if (choice === "never") return null
   return new Date(now + Number(choice) * DAY_MS).toISOString()
 }
+
+/**
+ * How many collections a tool reads that visitors won't see: those the link
+ * doesn't name, or all of them while the owner policy keeps Records out.
+ * `shared` null stands for a link about to be made with live data, which
+ * names everything the tool reads.
+ */
+export function unsharedCollections(
+  reads: readonly string[],
+  { recordsOpen, shared }: { recordsOpen: boolean; shared: string[] | null }
+): number {
+  if (!recordsOpen) return reads.length
+  if (shared === null) return 0
+  return reads.filter((id) => !shared.includes(id)).length
+}

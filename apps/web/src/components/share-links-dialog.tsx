@@ -66,6 +66,7 @@ import {
   shareLinkSummary,
   type ShareLinkDetail,
   type ShareLinkExpiry,
+  unsharedCollections,
 } from "@/lib/share-links"
 import {
   createShareLink,
@@ -176,12 +177,15 @@ export function ShareLinksDialog({
     defaultLink !== null && (commentsAllowed || defaultLink.level === "comment")
   const checked =
     defaultLink && access?.linkId === defaultLink.id ? access.access : null
-  // Collections the tool reads that the link leaves out, for the sharer.
-  const unshared = (list.data?.toolReads ?? []).filter((id) =>
-    defaultLink
-      ? !defaultLink.grant || !Object.hasOwn(defaultLink.grant.collections, id)
-      : !(draft.live && liveAllowed)
-  ).length
+  const recordsOpen = policy?.records === "scoped"
+  const unshared = unsharedCollections(list.data?.toolReads ?? [], {
+    recordsOpen,
+    shared: defaultLink
+      ? Object.keys(defaultLink.grant?.collections ?? {})
+      : draft.live && liveAllowed
+        ? null
+        : [],
+  })
 
   useEffect(() => {
     if (links) notePageLinks(queryClient, spaceId, path, links)
@@ -465,7 +469,7 @@ export function ShareLinksDialog({
       <UnsharedRecordsNote
         count={unshared}
         action={
-          liveAllowed && !defaultLink?.grant
+          liveAllowed && recordsOpen && !defaultLink?.grant
             ? {
                 label: "Show",
                 onClick: () => {
@@ -478,7 +482,7 @@ export function ShareLinksDialog({
                     })
                 },
               }
-            : !liveAllowed && owner
+            : (!liveAllowed || !recordsOpen) && owner
               ? {
                   label: "Settings",
                   onClick: () => {

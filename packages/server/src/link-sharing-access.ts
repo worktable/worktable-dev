@@ -38,13 +38,11 @@ export async function toolReadCollections(
       ...Object.keys(inferWidgetRecordPermissions(data.html)),
       ...Object.keys(permissions.records),
     ]),
-  ]
-    .filter(
-      (id) =>
-        CanonicalIdSchema.safeParse(id).success &&
-        canWidgetRecord({ permissions }, id, "read")
-    )
-    .slice(0, LINK_GRANT_MAX_COLLECTIONS)
+  ].filter(
+    (id) =>
+      CanonicalIdSchema.safeParse(id).success &&
+      canWidgetRecord({ permissions }, id, "read")
+  )
 }
 
 /** One explicit sharer action, outside the visitor and member-page hot paths. */

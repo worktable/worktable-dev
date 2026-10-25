@@ -11,6 +11,7 @@ import {
   OtherLinkList,
   UnsharedRecordsNote,
 } from "./share-links-dialog"
+import { unsharedCollections } from "@/lib/share-links"
 
 const DAY = 86_400_000
 
@@ -189,4 +190,23 @@ test("tells the sharer how many collections the tool reads that visitors won't s
     )
   )
   expect(several).toBe("Visitors won’t see 3 collections this tool reads.Show")
+})
+
+test("counts what visitors won't see under the link and the owner policy", () => {
+  const reads = ["deals", "contacts", "tasks"]
+  // A link made with live data, or one naming every collection, shows them all.
+  expect(unsharedCollections(reads, { recordsOpen: true, shared: null })).toBe(
+    0
+  )
+  expect(unsharedCollections(reads, { recordsOpen: true, shared: reads })).toBe(
+    0
+  )
+  // Collections the link leaves out, such as ones a tool started reading later.
+  expect(
+    unsharedCollections(reads, { recordsOpen: true, shared: ["deals"] })
+  ).toBe(2)
+  // An owner policy that keeps Records out hides every one, whatever the link names.
+  expect(
+    unsharedCollections(reads, { recordsOpen: false, shared: reads })
+  ).toBe(3)
 })

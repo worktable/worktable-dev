@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react"
+import { useEffect, useEffectEvent, useRef, useState, type RefObject } from "react"
 import { createPortal } from "react-dom"
 import { MessageSquarePlus } from "lucide-react"
 import type { PassageSelector } from "@worktable/types"
@@ -39,9 +39,8 @@ export function SelectionComment({
   const [shown, setShown] = useState<Shown>(null)
   // The selection as last seen: a tap can clear it before the click lands.
   const selected = useRef<Range | null>(null)
-  const comment = useRef<() => void>(() => {})
 
-  comment.current = () => {
+  const comment = () => {
     const root = rootRef.current
     const range = selected.current
     if (!root || !range) return
@@ -50,12 +49,10 @@ export function SelectionComment({
     setShown(null)
     onComment({ range, selector })
   }
+  const commentFromKey = useEffectEvent(comment)
 
   useEffect(() => {
-    if (paused) {
-      setShown(null)
-      return
-    }
+    if (paused) return
     let timer = 0
     let pressed = false
     const read = (): Range | null => {
@@ -108,7 +105,7 @@ export function SelectionComment({
       ) {
         event.preventDefault()
         selected.current = read()!.cloneRange()
-        comment.current()
+        commentFromKey()
       }
     }
     document.addEventListener("selectionchange", later)
@@ -128,7 +125,7 @@ export function SelectionComment({
     }
   }, [rootRef, paused])
 
-  if (!shown) return null
+  if (!shown || paused) return null
   return createPortal(
     <div
       className={cn(
@@ -148,7 +145,7 @@ export function SelectionComment({
         size={shown.kind === "bar" ? "default" : "sm"}
         variant="ghost"
         className={shown.kind === "bar" ? "rounded-full px-5" : undefined}
-        onClick={() => comment.current()}
+        onClick={comment}
       >
         <MessageSquarePlus />
         Comment

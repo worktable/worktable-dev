@@ -32,6 +32,7 @@ import { docContentRevision } from "./document-content-revision.ts";
 import { timeOperation } from "./perf-diagnostics.ts";
 import { debugLogging, logDocument, logError } from "./debug-log.ts";
 import { rebaseRegions, type BlockRegion } from "./block-regions.ts";
+import { FOLDER_OPERATION_MAX_ENTRIES } from "./folder-operation-limit.ts";
 import {
   requireWorkspaceRecovery,
   workspaceRecoveryRequired,
@@ -76,7 +77,9 @@ const DEFAULT_ROOM_TIMING: YjsRoomTiming = {
 };
 const MAX_PENDING_CONNECTION_FRAMES = 64;
 const MAX_PENDING_CONNECTION_BYTES = 8 * 1024 * 1024;
-const MAX_DOC_PATH_MOVE_TRANSITIONS = 128;
+// A folder moves its live rooms in one batch, as many as a folder operation
+// takes.
+const MAX_DOC_PATH_MOVE_TRANSITIONS = FOLDER_OPERATION_MAX_ENTRIES;
 const ORIGIN_FILE_WATCHER = "file-watcher"; // Skip persist for disk-originated updates
 const ORIGIN_INITIAL_LOAD = "initial-load";
 // An agent write already committed to disk, applied by block. Not persisted again.

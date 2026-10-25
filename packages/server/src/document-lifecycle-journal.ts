@@ -150,7 +150,8 @@ import {
 const JOURNAL_SCHEMA_VERSION = 1 as const
 const LEGACY_JOURNAL_PLAN_VERSION = 1 as const
 const JOURNAL_PLAN_VERSION = 2 as const
-const JOURNAL_MAX_BYTES = 256 * 1024
+// A folder journal holds about 1 KB per document, more with long paths.
+const JOURNAL_MAX_BYTES = 4 * 1024 * 1024
 const ARTIFACT_MAX_BYTES = 16 * 1024 * 1024
 const ARTIFACT_TOTAL_MAX_BYTES = 64 * 1024 * 1024
 const SOURCE_MAX_BYTES = 2 * 1024 * 1024 * 1024
@@ -158,6 +159,13 @@ const SOURCE_BUNDLE_MAX_ENTRIES = 100_000
 const HISTORY_MAX_FILES = 100_000
 const RECOVERY_CATALOG_MAX_ENTRIES = 100_000
 const PREFIX_RENAME_MAX_DOCUMENTS = FOLDER_OPERATION_MAX_ENTRIES
+/**
+ * A folder operation saves its cursor after this many documents, not after
+ * each: rewriting the whole journal per document costs O(n²) bytes. Recovery
+ * then compensates every document up to this far past the saved cursor; each
+ * step checks the disk, so one never touched is left alone.
+ */
+const PREFIX_PROGRESS_STRIDE = 32
 const OPERATION_ID_PATTERN = /^dlc_[A-Za-z0-9_-]{22}$/
 const RECONCILIATION_PREFIX = ".reconcile-"
 const lifecycleFormatRegistry = createBuiltinDocumentFormatRegistry()
@@ -372,6 +380,12 @@ const PrefixRenameJournalSchema = JournalBaseSchema.extend({
     .min(1)
     .max(PREFIX_RENAME_MAX_DOCUMENTS),
   completedDocuments: z.number().int().min(0).max(PREFIX_RENAME_MAX_DOCUMENTS),
+  /**
+   * Documents the cursor may trail by. Omitted by journals that saved it
+   * after every document. Older builds refuse a journal that sets it, so
+   * they never undo only the last of a stride.
+   */
+  progressStride: z.number().int().min(1).max(PREFIX_PROGRESS_STRIDE).optional(),
   edits: z.array(ArtifactEditSchema).max(SIMPLE_ARTIFACT_ROLES.length),
   completed: z.array(z.enum(DURABLE_STEPS)).max(DURABLE_STEPS.length),
 }).strict()
@@ -428,6 +442,12 @@ const PrefixArchiveJournalSchema = JournalBaseSchema.extend({
     .array(PrefixArchiveMutationSchema)
     .max(PREFIX_RENAME_MAX_DOCUMENTS),
   completedMutations: z.number().int().min(0).max(PREFIX_RENAME_MAX_DOCUMENTS),
+  /**
+   * Documents the cursor may trail by. Omitted by journals that saved it
+   * after every document. Older builds refuse a journal that sets it, so
+   * they never undo only the last of a stride.
+   */
+  progressStride: z.number().int().min(1).max(PREFIX_PROGRESS_STRIDE).optional(),
   edits: z.tuple([]),
   annotation: z.null(),
   completed: z.array(z.enum(DURABLE_STEPS)).max(DURABLE_STEPS.length),
@@ -526,6 +546,12 @@ const PrefixDeleteJournalSchema = JournalBaseSchema.extend({
     .min(1)
     .max(PREFIX_RENAME_MAX_DOCUMENTS),
   completedDocuments: z.number().int().min(0).max(PREFIX_RENAME_MAX_DOCUMENTS),
+  /**
+   * Documents the cursor may trail by. Omitted by journals that saved it
+   * after every document. Older builds refuse a journal that sets it, so
+   * they never undo only the last of a stride.
+   */
+  progressStride: z.number().int().min(1).max(PREFIX_PROGRESS_STRIDE).optional(),
   edits: z.array(ArtifactEditSchema).max(SIMPLE_ARTIFACT_ROLES.length),
   completed: z.array(z.enum(DURABLE_STEPS)).max(DURABLE_STEPS.length),
 }).strict()
@@ -3258,6 +3284,15 @@ async function preparePrefixRename(
       "Document folder contents changed before the move"
     )
   }
+  // Each entry's key once, not once per move: a folder holds up to
+  // FOLDER_OPERATION_MAX_ENTRIES documents.
+  const occupiedKeys = new Set(
+    catalog.entries.map((entry) =>
+      entry.kind === "conflict"
+        ? entry.pathKey
+        : analyzeDocumentPath(entry.descriptor.path).comparisonKey
+    )
+  )
   for (const move of moves) {
     const targetKey = analyzeDocumentPath(move.to).comparisonKey
     if (!targetKey) {
@@ -3265,14 +3300,7 @@ async function preparePrefixRename(
         `Target document path is not portable: ${move.to}`
       )
     }
-    const occupied = catalog.entries.find((entry) => {
-      const candidate =
-        entry.kind === "conflict"
-          ? entry.pathKey
-          : analyzeDocumentPath(entry.descriptor.path).comparisonKey
-      return candidate === targetKey
-    })
-    if (occupied && !sourceComparisonKeys.has(targetKey)) {
+    if (occupiedKeys.has(targetKey) && !sourceComparisonKeys.has(targetKey)) {
       throw new DocumentLifecyclePreconditionError(
         `Target path already exists: ${move.to}`
       )
@@ -3427,6 +3455,7 @@ async function preparePrefixRename(
     to: { spaceId, logicalPath: toPrefix },
     documents,
     completedDocuments: 0,
+    progressStride: PREFIX_PROGRESS_STRIDE,
     edits,
     completed: [],
   }
@@ -3727,6 +3756,7 @@ async function preparePrefixArchive(
     documents,
     mutations,
     completedMutations: 0,
+    progressStride: PREFIX_PROGRESS_STRIDE,
     edits: [],
     annotation: null,
     completed: [],
@@ -4010,6 +4040,7 @@ async function preparePrefixDelete(
     to: { spaceId, logicalPath: prefix },
     documents,
     completedDocuments: 0,
+    progressStride: PREFIX_PROGRESS_STRIDE,
     edits,
     completed: [],
   }
@@ -6889,12 +6920,14 @@ function applyPrefixDocumentsRecovery(
     }
     return
   }
-  if (journal.completedDocuments < journal.documents.length) {
-    // The cursor is persisted after the member move, so this destination can
-    // already be operation-owned even though the member is not checkpointed.
-    applyPrefixDocument(journal, journal.completedDocuments, "compensate", true)
-  }
-  for (let index = journal.completedDocuments - 1; index >= 0; index -= 1) {
+  // The cursor is saved after member moves, so destinations past it, up to
+  // the journal's stride, can already be operation-owned.
+  const end = prefixCompensationEnd(
+    journal,
+    journal.completedDocuments,
+    journal.documents.length
+  )
+  for (let index = end - 1; index >= 0; index -= 1) {
     applyPrefixDocument(journal, index, "compensate", true)
   }
 }
@@ -6994,10 +7027,12 @@ function applyPrefixDeleteRecovery(
     }
     return
   }
-  if (journal.completedDocuments < journal.documents.length) {
-    applyPrefixDeleteDocument(journal, journal.completedDocuments, direction)
-  }
-  for (let index = journal.completedDocuments - 1; index >= 0; index -= 1) {
+  const end = prefixCompensationEnd(
+    journal,
+    journal.completedDocuments,
+    journal.documents.length
+  )
+  for (let index = end - 1; index >= 0; index -= 1) {
     applyPrefixDeleteDocument(journal, index, direction)
   }
 }
@@ -7116,12 +7151,14 @@ function applyPrefixArchiveRecovery(
     }
     return
   }
-  if (journal.completedMutations < journal.mutations.length) {
-    // The metadata write is durable before its cursor is fsynced. This member
-    // may therefore be operation-owned even though it is not checkpointed.
-    applyPrefixArchiveMutation(journal, journal.completedMutations, direction)
-  }
-  for (let index = journal.completedMutations - 1; index >= 0; index -= 1) {
+  // Metadata writes are durable before their cursor is saved, so mutations
+  // past it, up to the journal's stride, may be operation-owned.
+  const end = prefixCompensationEnd(
+    journal,
+    journal.completedMutations,
+    journal.mutations.length
+  )
+  for (let index = end - 1; index >= 0; index -= 1) {
     applyPrefixArchiveMutation(journal, index, direction)
   }
 }
@@ -7150,6 +7187,29 @@ function markCompleted(
   writeJournal(journal)
 }
 
+/** Save a folder journal's cursor at each stride, and once all are done. */
+function checkpointPrefixCursor(
+  journal: PrefixRenameJournal | PrefixDeleteJournal | PrefixArchiveJournal,
+  done: number,
+  total: number
+): void {
+  if (done % (journal.progressStride ?? 1) === 0 || done === total) {
+    writeJournal(journal)
+  }
+}
+
+/**
+ * Where compensation starts: past the saved cursor by the journal's stride,
+ * since any document in it may have been applied.
+ */
+function prefixCompensationEnd(
+  journal: PrefixRenameJournal | PrefixDeleteJournal | PrefixArchiveJournal,
+  cursor: number,
+  total: number
+): number {
+  return Math.min(total, cursor + (journal.progressStride ?? 1))
+}
+
 async function applyPortableRuntime(
   journal: DocumentLifecycleJournal,
   targetBytes?: Buffer
@@ -7163,7 +7223,7 @@ async function applyPortableRuntime(
       applyPrefixArchiveMutation(journal, index, "forward")
       await stepHookForTests?.("archive-mutation-written")
       journal.completedMutations = index + 1
-      writeJournal(journal)
+      checkpointPrefixCursor(journal, index + 1, journal.mutations.length)
     }
     markCompleted(journal, "archive-state")
     await stepHookForTests?.("archive-state")
@@ -7226,7 +7286,7 @@ async function applyPortableRuntime(
       await stepHookForTests?.("source-moved")
       if (annotationMoved) await stepHookForTests?.("annotation-moved")
       journal.completedDocuments = index + 1
-      writeJournal(journal)
+      checkpointPrefixCursor(journal, index + 1, journal.documents.length)
     }
     markCompleted(journal, "source")
     await stepHookForTests?.("source")
@@ -7247,7 +7307,7 @@ async function applyPortableRuntime(
       applyPrefixDeleteDocument(journal, index, "forward")
       await stepHookForTests?.("source-moved")
       journal.completedDocuments = index + 1
-      writeJournal(journal)
+      checkpointPrefixCursor(journal, index + 1, journal.documents.length)
     }
     markCompleted(journal, "source")
     await stepHookForTests?.("source")

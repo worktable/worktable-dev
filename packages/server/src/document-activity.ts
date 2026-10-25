@@ -23,11 +23,20 @@ export const NON_ENGAGING_ACTORS: ReadonlySet<string> = new Set(["worktable-lint
 export async function noteDocumentActivity(
   spaceId: string,
   paths: readonly string[],
-  now: number = Date.now()
+  options: {
+    now?: number
+    /** What the activity needed; a comment needs only read access. */
+    access?: "read" | "edit"
+  } = {}
 ): Promise<void> {
   if (paths.length === 0) return
   try {
-    const extended = await extendDocsArchiveOn(spaceId, paths, graceEndsAt(now))
+    const extended = await extendDocsArchiveOn(
+      spaceId,
+      paths,
+      graceEndsAt(options.now ?? Date.now()),
+      options.access
+    )
     if (extended.length > 0) {
       notifyWorkspaceChange({ type: "documentCorpus", spaceId })
     }

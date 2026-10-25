@@ -44,11 +44,9 @@ import {
 } from "@/lib/annotations-queries"
 import type {
   Annotation,
-  AnnotationCategory,
   DocumentPage,
   DocumentPageResult,
   DocumentSharingSummary,
-  PassageSelector,
 } from "@worktable/types"
 import {
   convertDoc,
@@ -89,7 +87,7 @@ import {
   AnnotationComposer,
   type AnnotationDraft,
 } from "@/components/annotations/annotation-composer"
-import { SelectionComment } from "@/components/annotations/selection-comment"
+import { PassageCommenting } from "@/components/annotations/passage-commenting"
 import { usePassageComments } from "@/components/annotations/use-passage-comments"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { Button } from "@worktable/ui/components/button"
@@ -861,11 +859,7 @@ function MarkdownDocPage({
 
   // Comments on a passage: select text in the Doc as it reads, no Edit needed.
   const isMobile = useIsMobile()
-  const canComment = validated && !readOnly
-  const [composerDraft, setComposerDraft] = useState<PassageDraft | null>(
-    null
-  )
-  const [composerOpen, setComposerOpen] = useState(false)
+  const canComment = validated && canCommentOn(page, readOnly)
   const passages = usePassageComments({
     rootRef: readingRef,
     ready: typeof content === "string",
@@ -994,6 +988,7 @@ function MarkdownDocPage({
           <AnnotationPanel
             visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
             readOnly={readOnly}
+            canReply={canComment}
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
             onSelectAnnotation={focusAnnotation}
@@ -1071,6 +1066,7 @@ function MarkdownDocPage({
               <AnnotationPanel
             visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
                 readOnly={readOnly}
+                canReply={canComment}
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}
                 onSelectAnnotation={focusAnnotation}
@@ -1094,42 +1090,29 @@ function MarkdownDocPage({
       )}
 
       {canComment && !previewVersionId && (
-        <SelectionComment
+        <PassageCommenting
           rootRef={readingRef}
-          paused={composerOpen}
-          onComment={({ range, selector }) => {
-            setComposerDraft({ ...selector, anchor: range, category: "comment" })
-            setComposerOpen(true)
+          docPath={docPath}
+          onCreate={(input) => {
+            annotationMutations.create.mutate(input)
+            // On a phone the highlight confirms it; the next passage is a tap away.
+            if (!isMobile) {
+              setAnnotationsOpen(true)
+              setVersionsOpen(false)
+            }
           }}
         />
       )}
-      <AnnotationComposer
-        draft={composerDraft}
-        open={composerOpen && canComment}
-        onOpenChange={setComposerOpen}
-        onSubmit={(category, body) => {
-          if (!composerDraft) return
-          const { quote, prefix, suffix } = composerDraft
-          annotationMutations.create.mutate({
-            target: { type: "doc", docPath, quote, prefix, suffix },
-            category,
-            body,
-          })
-          // On a phone the highlight confirms it; the next passage is a tap away.
-          if (!isMobile) {
-            setAnnotationsOpen(true)
-            setVersionsOpen(false)
-          }
-        }}
-      />
     </div>
   )
 }
 
-/** A comment being written about text selected in a Markdown Doc. */
-interface PassageDraft extends PassageSelector {
-  category: AnnotationCategory
-  anchor: Range
+/**
+ * Whether this person may comment on the Doc. With Teams the page says, as
+ * a viewer may comment; without, whoever may edit may comment.
+ */
+function canCommentOn(page: DocumentPage | null, readOnly = false): boolean {
+  return page?.capabilities.comment ?? !readOnly
 }
 
 // Custom Yjs message (mirrors the server's MESSAGE_INTENT = 43): tells the
@@ -1506,6 +1489,27 @@ function BlockNoteDocPage({
     }
   }, [])
 
+  // Without edit access the saved Doc stays on screen, and a viewer comments
+  // on text selected there, as in a Markdown Doc.
+  const canComment = validated && canCommentOn(page, readOnly)
+  const passages = usePassageComments({
+    rootRef: standInRef,
+    ready: readOnly && Boolean(previewContent),
+    annotations: readOnly ? annotations : [],
+    activeAnnotationId,
+    onSelectAnnotation: selectAnnotation,
+  })
+  const focusAnnotation = (annotation: Annotation) => {
+    selectAnnotation(annotation)
+    passages.reveal(annotation.id)
+  }
+  // An editor gets the panel's own hint about the editor's commands.
+  const readerHint = !readOnly
+    ? undefined
+    : canComment
+      ? "Select text to comment on it."
+      : ""
+
   // A genuine local edit: tell the server so its next persist is attributed to
   // a human. Idempotent — safe to fire on every keystroke; the server just
   // re-marks the same flag. Pending until a persist consumes the signal (see
@@ -1697,9 +1701,11 @@ function BlockNoteDocPage({
           <AnnotationPanel
             visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
             readOnly={readOnly}
+            canReply={canComment}
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
-            onSelectAnnotation={selectAnnotation}
+            onSelectAnnotation={focusAnnotation}
+            emptyHint={readerHint}
             onResolve={(annotationId) =>
               annotationMutations.resolve.mutate({ annotationId })
             }
@@ -1772,9 +1778,11 @@ function BlockNoteDocPage({
               <AnnotationPanel
             visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
                 readOnly={readOnly}
+                canReply={canComment}
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}
-                onSelectAnnotation={selectAnnotation}
+                onSelectAnnotation={focusAnnotation}
+                emptyHint={readerHint}
                 onResolve={(annotationId) =>
                   annotationMutations.resolve.mutate({ annotationId })
                 }
@@ -1812,6 +1820,17 @@ function BlockNoteDocPage({
           if (!isMobile) setAnnotationsOpen(true)
         }}
       />
+
+      {readOnly && canComment && !previewVersionId && (
+        <PassageCommenting
+          rootRef={standInRef}
+          docPath={docPath}
+          onCreate={(input) => {
+            annotationMutations.create.mutate(input)
+            if (!isMobile) setAnnotationsOpen(true)
+          }}
+        />
+      )}
 
       {!readOnly && !previewVersionId && (
         <SyncStatusPill provider={provider} ready={editorReadable} />

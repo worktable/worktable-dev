@@ -723,6 +723,8 @@ async function applyDocumentInventoryMutationAt(
   mutation: DocumentInventoryMutation,
   options: {
     expectedSpaceRootIdentity?: InventorySpaceRootIdentity
+    /** Space access the change needs; edit unless the caller says less. */
+    access?: "read" | "edit"
   } = {}
 ): Promise<{ inventory: DocumentInventory; changed: boolean }> {
   const inventoryPath = resolve(spaceRoot, "documents.meta.json")
@@ -747,17 +749,19 @@ async function applyDocumentInventoryMutationAt(
       inventory: await readDocumentInventoryAt(inventoryPath, spaceRoot),
       changed: true,
     }
-  })
+  }, options.access)
 }
 
 export async function updateDocumentInventory(
   spaceId: string,
-  mutation: DocumentInventoryMutation
+  mutation: DocumentInventoryMutation,
+  options: { access?: "read" | "edit" } = {}
 ): Promise<DocumentInventory> {
   const spaceRoot = await requireRealInventorySpaceRoot(spaceId)
   const { inventory, changed } = await applyDocumentInventoryMutationAt(
     spaceRoot,
-    mutation
+    mutation,
+    options
   )
   if (changed) notifyWorkspaceChange({ type: "documentCorpus", spaceId })
   return inventory

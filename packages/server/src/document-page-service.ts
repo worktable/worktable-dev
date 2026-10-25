@@ -1,5 +1,5 @@
 import { teamsEnabled } from "./team-database.ts"
-import { canAccessSpace } from "./team-policy.ts"
+import { canAccessSpace, commentAccess } from "./team-policy.ts"
 import { extname, resolve } from "node:path"
 import type {
   Annotation,
@@ -374,7 +374,12 @@ async function pageForHandle(
     ...(handle.resolvedFrom ? { resolvedFrom: handle.resolvedFrom } : {}),
     renderer,
     capabilities: {
-      ...(teamsEnabled() ? { edit: canAccessSpace(spaceId, "edit") } : {}),
+      ...(teamsEnabled()
+        ? {
+            edit: canAccessSpace(spaceId, "edit"),
+            comment: canAccessSpace(spaceId, commentAccess()),
+          }
+        : {}),
       rawSource: rawSourceAuthorized && handle.document.health !== "invalid",
       versions:
         (storageV2 && handle.identity === "durable") || Boolean(integration),

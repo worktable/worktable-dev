@@ -1,3 +1,4 @@
+import { commentAccess } from "./team-policy.ts"
 import { noteCommentActivity } from "./activity-log.ts"
 import type { AnnotationWriteGuard } from "./annotation-origin.ts"
 import { nanoid } from "nanoid"
@@ -104,7 +105,11 @@ async function useDurableDocument<T>(
   spaceId: string,
   path: string,
   use: (document: AnnotationDocument) => Promise<T>,
-  options: { materializeIdentity?: boolean; snapshot?: boolean } = {}
+  options: {
+    materializeIdentity?: boolean
+    identityAccess?: "read" | "edit"
+    snapshot?: boolean
+  } = {}
 ): Promise<T> {
   const resolution = await useResolvedDocumentHandle(
     {
@@ -112,6 +117,7 @@ async function useDurableDocument<T>(
       path,
       includeArchived: true,
       materializeIdentity: options.materializeIdentity,
+      identityAccess: options.identityAccess,
       snapshot: options.snapshot,
     },
     (handle) => {
@@ -540,7 +546,7 @@ export async function replyDocumentAnnotation(options: {
     return { annotation, replyId, path: found.owner.document.path }
   })
   if (author.type !== "system") {
-    await noteDocumentActivity(options.spaceId, [result.path])
+    await noteDocumentActivity(options.spaceId, [result.path], { access: commentAccess() })
     noteCommentActivity({
       spaceId: options.spaceId,
       action: "comment.replied",
@@ -716,7 +722,8 @@ export async function createLegacyCompatibleAnnotationV2(
       throw new Error("Annotation selector requires the common API")
     }
     return { annotation: projected, created: true }
-  }, { materializeIdentity: true })
+    // The first comment on a Doc gives it its ID; commenting needs no more.
+  }, { materializeIdentity: true, identityAccess: commentAccess() })
 }
 
 export async function readLegacyCompatibleAnnotationV2(

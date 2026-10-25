@@ -211,9 +211,10 @@ const SCOPE_EXPORTS = {
     "bindTeamAgentCredential", "requireTeamAgentAdministrator", "updateTeamAgent", "teamAgentForCredentialAdministration", "reconnectCloudPersonalAgent",
   ],
   // Grant no access: the scope itself, trusted work that keeps the scope,
-  // and lifecycle maintenance no request identity reaches.
+  // lifecycle maintenance no request identity reaches, and commentAccess,
+  // which only names the level assertSpaceAccess then checks.
   other: [
-    "TeamAccessError", "runAsLinkVisitor", "withLinkGrantRead", "runWithoutTeamIdentity", "noteVerifiedTeamSession",
+    "TeamAccessError", "commentAccess", "runAsLinkVisitor", "withLinkGrantRead", "runWithoutTeamIdentity", "noteVerifiedTeamSession",
     "resetTeamSpacePoliciesAfterContentReplacement", "prepareTeamSpacePolicyResetForMissingRootRecovery",
     "finalizePendingTeamSpacePolicyReset", "retireTeamSpacePolicy",
   ],

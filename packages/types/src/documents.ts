@@ -216,6 +216,8 @@ export const DocumentRendererSchema = z.object({
 
 export const DocumentPageCapabilitiesSchema = z.object({
   edit: z.boolean().optional(),
+  /** Comment and reply. Set with Teams, where a viewer may comment. */
+  comment: z.boolean().optional(),
   rawSource: z.boolean(),
   versions: z.boolean(),
   annotations: z.boolean(),

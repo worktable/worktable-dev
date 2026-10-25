@@ -27,7 +27,10 @@ function categoryVariant(category: AnnotationCategory): "default" | "secondary" 
 
 export interface AnnotationPanelContentProps {
   header?: ReactNode
+  /** Can't resolve, reopen or add comments from the panel. */
   readOnly?: boolean
+  /** May reply; with Teams a viewer may. Defaults to not readOnly. */
+  canReply?: boolean
   annotations: Annotation[]
   activeAnnotationId?: string | null
   onSelectAnnotation: (annotation: Annotation) => void
@@ -49,6 +52,7 @@ export interface AnnotationPanelContentProps {
 export function AnnotationPanelContent({
   header,
   readOnly = false,
+  canReply = !readOnly,
   annotations,
   activeAnnotationId,
   onSelectAnnotation,
@@ -119,6 +123,7 @@ export function AnnotationPanelContent({
               <AnnotationCard
                 key={annotation.id}
                 readOnly={readOnly}
+                canReply={canReply}
                 annotation={annotation}
                 detached={detachedIds?.has(annotation.id) ?? false}
                 active={annotation.id === activeAnnotationId}
@@ -137,6 +142,7 @@ export function AnnotationPanelContent({
 
 function AnnotationCard({
   readOnly,
+  canReply,
   annotation,
   detached,
   active,
@@ -146,6 +152,7 @@ function AnnotationCard({
   onReply,
 }: {
   readOnly?: boolean
+  canReply: boolean
   annotation: Annotation
   detached: boolean
   active: boolean
@@ -235,7 +242,7 @@ function AnnotationCard({
         </div>
       )}
 
-      {!isResolved && !readOnly && (
+      {!isResolved && canReply && (
         <form
           className="mt-3 flex gap-2"
           onSubmit={(event) => {

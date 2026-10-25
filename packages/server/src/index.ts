@@ -249,6 +249,7 @@ import {
 import { runAsActivityActor, setActivityObserver } from "./activity-log.ts";
 import { TeamAccessError } from "./team-policy.ts";
 import { fileLinksRouter } from "./routes/file-links.ts";
+import { SpaceTooLargeError } from "./document-adapters.ts";
 import { TeamStateError } from "./team-database.ts";
 
 // ============================================================
@@ -406,6 +407,9 @@ app.onError((err, c) => {
     return c.json({ error: err.message, code: err.code }, 503)
   if (err instanceof WorkspaceUnavailableError) {
     return c.json({ error: err.message, code: err.code }, 503)
+  }
+  if (err instanceof SpaceTooLargeError) {
+    return c.json({ error: err.message, code: err.code }, 413)
   }
   return unexpectedErrorResponse(c, err);
 });

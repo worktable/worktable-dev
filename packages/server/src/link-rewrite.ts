@@ -35,7 +35,11 @@ export interface PathMove {
   to: string
 }
 
-type Rewrite = (target: string) => string | null
+/**
+ * A target's new text, or null to leave it. `imageUses` says how many images
+ * show it: one for an inline image, every referring image for a definition.
+ */
+type Rewrite = (target: string, imageUses?: number) => string | null
 
 const SUFFIX = /[?#].*$/
 const DOC_EXTENSION = /\.(?:md|json)$/i
@@ -184,7 +188,7 @@ export function rewriteMarkdownLinks(
     const angled = markdown[start] === "<" && markdown[end - 1] === ">"
     const at = angled ? start + 1 : start
     const target = markdown.slice(at, angled ? end - 1 : end)
-    const text = rewrite(target)
+    const text = rewrite(target, layout.imageUses[index])
     if (text !== null) edits.push({ at, length: target.length, text })
   }
   for (const source of htmlMediaSources(scanned)) {

@@ -122,6 +122,46 @@ describe("rewriting links after a move", () => {
     )
   })
 
+  it("rewrites reference-style links and images where they are defined", () => {
+    const rewrite = (target: string) => (target === "old.png" ? "new.png" : null)
+    const markdown = [
+      "![Shot][shot] and [the file][file], and a footnote[^1].",
+      "",
+      '[shot]: old.png "The screen"',
+      "[File]: <old.png>",
+      "[^1]: old.png",
+      "",
+      "```",
+      "[code]: old.png",
+      "```",
+    ].join("\n")
+    expect(rewriteMarkdownLinks(markdown, rewrite)).toBe(
+      [
+        "![Shot][shot] and [the file][file], and a footnote[^1].",
+        "",
+        '[shot]: new.png "The screen"',
+        "[File]: <new.png>",
+        "[^1]: old.png",
+        "",
+        "```",
+        "[code]: old.png",
+        "```",
+      ].join("\n")
+    )
+    // Only the definition an image uses counts as an image's, a full
+    // reference followed by parentheses included.
+    const seen: string[] = []
+    rewriteMarkdownLinks(
+      "![Shot][shot](enlarge) [doc][spec]\n\n[shot]: a.png\n[spec]: b.md\n",
+      (target) => {
+        seen.push(target)
+        return null
+      },
+      { imagesOnly: true }
+    )
+    expect(seen).toEqual(["a.png"])
+  })
+
   it("skips fenced code in a very large Doc", () => {
     const filler = "Words.\n\n".repeat(40_000)
     const markdown = `${filler}~~~\n[a](old.png)\n~~~\n[b](old.png)\n`
@@ -205,6 +245,14 @@ describe("rewriting links after a move", () => {
     it("keeps the links in every affected Doc true on disk, once files are on", async () => {
       process.env["WORKTABLE_FILES_PREVIEW"] = "1"
       await seed()
+      // A reference-style image is found through its definition too.
+      await writeDoc(
+        SPACE,
+        "research/shots",
+        "# Shots\n\n![Shot][s]\n\n[s]: ../onboarding/spec/error.png\n",
+        { updatedBy: "test", source: "rest-api" }
+      )
+      noteSpaceChanged(SPACE)
       expect(
         (await renameDocAndSync(SPACE, "onboarding/spec", "flows/signup")).error
       ).toBeNull()
@@ -215,6 +263,9 @@ describe("rewriting links after a move", () => {
       )
       expect((await readDoc(SPACE, "research/bug")).data).toBe(
         "# Bug\n\nSee [the spec](../flows/signup) and ![it](/flows/signup/error.png).\n"
+      )
+      expect((await readDoc(SPACE, "research/shots")).data).toBe(
+        "# Shots\n\n![Shot][s]\n\n[s]: ../flows/signup/error.png\n"
       )
     })
 

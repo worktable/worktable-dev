@@ -1788,10 +1788,11 @@ describe("share links", () => {
       await mkdir(join(docs, "spec"), { recursive: true })
       await writeFile(join(docs, "spec", "shot.png"), "first image")
       await writeFile(join(docs, "secret.png"), "not embedded")
+      await writeFile(join(docs, "spec", "flow.png"), "reference image")
       await writeDoc(
         "space",
         "spec",
-        "# Spec\n\n![Signup error](spec/shot.png)\n\n[Other](secret.png)"
+        "# Spec\n\n![Signup error](spec/shot.png)\n\n![The flow][flow]\n\n[Other](secret.png)\n\n[flow]: spec/flow.png"
       )
       const { token } = await createLink("spec")
       const projection = async () =>
@@ -1802,6 +1803,8 @@ describe("share links", () => {
       expect(first).toContain(
         `data:image/png;base64,${Buffer.from("first image").toString("base64")}`
       )
+      // A reference-style image shows too.
+      expect(first).toContain(Buffer.from("reference image").toString("base64"))
       // Only what the Doc embeds: a linked file is not placed in the page.
       expect(first).not.toContain(
         Buffer.from("not embedded").toString("base64")
@@ -1833,10 +1836,12 @@ describe("share links", () => {
       // shows once its file arrives; an image repeated past the page's budget
       // keeps the placeholder at every occurrence.
       await writeFile(join(docs, "big.png"), Buffer.alloc(1536 * 1024, 7))
+      await writeFile(join(docs, "big2.png"), Buffer.alloc(1536 * 1024, 8))
+      // Three images using one definition count three times.
       await writeDoc(
         "space",
         "notes",
-        "# Notes\n\n~~~md\n![Example](secret.png)\n~~~\n\n![Later](later.png)\n\n![a](big.png) ![b](big.png) ![c](big.png)\n"
+        "# Notes\n\n~~~md\n![Example](secret.png)\n~~~\n\n![Later](later.png)\n\n![a](big.png) ![b](big.png) ![c](big.png)\n\n![d][big2] ![e][big2] ![f][big2]\n\n[big2]: big2.png\n"
       )
       noteSpaceChanged("space")
       const notes = await createLink("notes")

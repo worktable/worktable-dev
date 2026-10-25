@@ -35,15 +35,75 @@ const INDENTED = /^(?: {4}|\t)/
 export const MARKDOWN_LINK_PATTERN =
   /(?<!\\)(!?)(?<!\\)\[([^[\]]*)\]\(\s*(<[^<>\n]*>|(?:[^()\s]|\([^()\s]*\))+)(?:\s+"[^"\n]*")?\s*\)/g
 
+/**
+ * A link reference definition on its own line, `[label]: destination` with
+ * an optional title, as a reference-style link or image uses. A footnote's
+ * `[^1]: text` is not one.
+ */
+const REFERENCE_DEFINITION =
+  /^ {0,3}\[(?!\^)([^[\]\n]+)\]:[ \t]*(<[^<>\n]*>|[^\s<]\S*)(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?[ \t]*$/gm
+
+/**
+ * A reference-style image, not escaped: `![text][label]`, `![label][]` or
+ * `![label]`, but not an inline image: a shortcut `![label]` followed by `(`.
+ */
+const IMAGE_REFERENCE = /(?<!\\)!\[([^[\]\n]*)\](?:\[([^[\]\n]*)\]|(?!\())/g
+
+/** A reference label as Markdown matches it: case and spacing aside. */
+function referenceKey(label: string): string {
+  return label.trim().replace(/\s+/g, " ").toLowerCase()
+}
+
 export interface MarkdownLayout {
   /** Code blocks, fenced or indented. */
   blocks: Range[]
   /** Inline code. */
   inline: Range[]
-  /** Inline link and image destinations as written, outside code. */
+  /**
+   * Link and image destinations as written, outside code: inline ones, and
+   * those of reference definitions.
+   */
   destinations: Range[]
   /** Which of the destinations are images' rather than links'. */
   images: boolean[]
+  /**
+   * How many images show each destination: one for an inline one, and for
+   * a definition, every image that refers to it.
+   */
+  imageUses: number[]
+}
+
+/** A reference definition's destination, and the images that use it. */
+export interface ReferenceDestination {
+  range: Range
+  label: string
+  imageUses: number
+}
+
+/**
+ * The reference definitions in text whose code is already blanked. Only
+ * images whose label has a definition are counted, so no text, however many
+ * labels it holds, keeps more than its definitions in memory.
+ */
+export function referenceDestinations(scanned: string): ReferenceDestination[] {
+  const definitions = [...scanned.matchAll(REFERENCE_DEFINITION)]
+  if (definitions.length === 0) return []
+  const imageUses = new Map<string, number>(
+    definitions.map((match) => [referenceKey(match[1]!), 0])
+  )
+  for (const match of scanned.matchAll(IMAGE_REFERENCE)) {
+    const key = referenceKey(match[2] || match[1]!)
+    const uses = imageUses.get(key)
+    if (uses !== undefined) imageUses.set(key, uses + 1)
+  }
+  return definitions.map((match) => {
+    const start = match[0].indexOf(match[2]!, match[0].indexOf("]:") + 2)
+    return {
+      range: [match.index + start, match.index + start + match[2]!.length],
+      label: match[1]!,
+      imageUses: imageUses.get(referenceKey(match[1]!)) ?? 0,
+    }
+  })
 }
 
 function matchRanges(pattern: RegExp, text: string): Range[] {
@@ -75,8 +135,8 @@ function indentedCode(text: string): Range[] {
   return ranges
 }
 
-/** Where a Markdown text's code and link destinations sit. */
-export function markdownLayout(markdown: string): MarkdownLayout {
+/** Where a Markdown text's code blocks and inline code sit. */
+function codeLayout(markdown: string): { blocks: Range[]; inline: Range[] } {
   const mayHoldCode = MAY_HOLD_CODE.test(markdown)
   const fenced = mayHoldCode ? matchRanges(FENCED_CODE, markdown) : []
   const blocks = mayHoldCode
@@ -85,15 +145,29 @@ export function markdownLayout(markdown: string): MarkdownLayout {
   const inline = mayHoldCode
     ? matchRanges(INLINE_CODE, blankRanges(markdown, blocks))
     : []
+  return { blocks, inline }
+}
+
+/** Where a Markdown text's code and link destinations sit. */
+export function markdownLayout(markdown: string): MarkdownLayout {
+  const { blocks, inline } = codeLayout(markdown)
   const scanned = blankRanges(markdown, [...blocks, ...inline])
   const destinations: Range[] = []
   const images: boolean[] = []
+  const imageUses: number[] = []
   for (const match of scanned.matchAll(MARKDOWN_LINK_PATTERN)) {
     const start = match[0].indexOf(match[3]!, match[0].indexOf("](") + 2)
     destinations.push([match.index + start, match.index + start + match[3]!.length])
     images.push(match[1] === "!")
+    imageUses.push(match[1] === "!" ? 1 : 0)
   }
-  return { blocks, inline, destinations, images }
+  // A definition's destination is an image's when an image refers to it.
+  for (const definition of referenceDestinations(scanned)) {
+    destinations.push(definition.range)
+    images.push(definition.imageUses > 0)
+    imageUses.push(definition.imageUses)
+  }
+  return { blocks, inline, destinations, images, imageUses }
 }
 
 /** Where a Markdown text's code blocks and inline code sit. */
@@ -101,8 +175,7 @@ export function markdownCodeRanges(markdown: string): {
   blocks: Range[]
   inline: Range[]
 } {
-  const { blocks, inline } = markdownLayout(markdown)
-  return { blocks, inline }
+  return codeLayout(markdown)
 }
 
 /** The text with the given ranges blanked, line breaks kept. */

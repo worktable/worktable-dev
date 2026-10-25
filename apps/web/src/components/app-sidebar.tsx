@@ -2461,7 +2461,10 @@ function DocTreeItem({
             node={node}
             className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
           />
-          <span className="truncate">{node.label}</span>
+          {/* A file reads by its name; its whole name, extension included, on hover. */}
+          <span className="truncate" title={isFile ? node.name : undefined}>
+            {node.label}
+          </span>
         </Link>
         <div className="shrink-0 pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100">
           <DocContextMenuButton

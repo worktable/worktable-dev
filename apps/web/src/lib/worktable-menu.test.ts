@@ -102,6 +102,54 @@ test("Desktop lists this Mac, then other devices, then Cloud, each only when it 
   ).toEqual([["On this Mac", ["Studio [Link] ✓", "Client Work"]]])
 })
 
+test("Desktop showing a Cloud Worktable tells this Mac's linked rows by its device name", async () => {
+  const tauri = globalThis as { __TAURI__?: unknown; window?: unknown }
+  tauri.__TAURI__ = {
+    core: {
+      invoke: async (command: string) => {
+        expect(command).toBe("desktop_workspace_worktables")
+        return { schemaVersion: 1, worktables: thisMac, device: "this-mac" }
+      },
+    },
+  }
+  tauri.window = { location: { origin: "https://cloud.example" } }
+  globalThis.fetch = (async () =>
+    Response.json({
+      ...directory(),
+      worktables: [{ id: "hosted_team", name: "Team", status: "active" }],
+    })) as unknown as typeof fetch
+  try {
+    const data = await loadWorktableMenu("desktop", true)
+    expect(
+      shown(
+        worktableMenuGroups({
+          surface: "desktop",
+          data,
+          localIds: thisMac.map((worktable) => worktable.id),
+          currentHostedId: "hosted_team",
+        })
+      ).map(([label, rows]) => [label, rows.length])
+    ).toEqual([
+      ["On this Mac", 2],
+      // The copy on office-mac stays; this Mac's own Studio row doesn't.
+      ["Other devices", 4],
+      ["Worktable Cloud", 1],
+    ])
+    // Without a device name nothing counts as this Mac's own.
+    expect(
+      worktableMenuGroups({
+        surface: "desktop",
+        data: { ...data, directory: { ...data.directory!, device: undefined } },
+        localIds: ["ws_studio"],
+        currentHostedId: null,
+      })[1]!.rows.length
+    ).toBe(5)
+  } finally {
+    delete tauri.__TAURI__
+    delete tauri.window
+  }
+})
+
 test("a Cloud tab lists Cloud first with this Worktable checked, then every device", () => {
   const groups = worktableMenuGroups({
     surface: "cloud",

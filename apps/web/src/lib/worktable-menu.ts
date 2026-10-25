@@ -1,4 +1,4 @@
-import { desktopWorktables, type DesktopWorktable } from "./desktop-connection"
+import { desktopWorktables, type DesktopWorktable } from "./desktop-worktables"
 import { fetchJSON, HttpError } from "./http"
 
 /** A hosted Worktable in Worktable Cloud. */
@@ -97,9 +97,17 @@ export async function loadWorktableMenu(
       return null
     }
   )
-  const thisMac =
+  const desktop =
     surface === "desktop" ? desktopWorktables() : Promise.resolve(null)
-  return { thisMac: await thisMac, directory: await directory }
+  const [thisMac, listed] = await Promise.all([desktop, directory])
+  return {
+    thisMac: thisMac?.worktables ?? null,
+    // A Cloud page doesn't know this device's name; Desktop does.
+    directory:
+      listed && !listed.device && thisMac?.device
+        ? { ...listed, device: thisMac.device }
+        : listed,
+  }
 }
 
 export type MenuRow =
@@ -174,7 +182,8 @@ export function worktableMenuGroups({
     surface !== "cloud" &&
     !!row.localWorkspaceId &&
     localIds.includes(row.localWorkspaceId) &&
-    (!directory.device || row.device === directory.device)
+    // Only a known device name settles that a row is this device's own.
+    row.device === directory.device
   const devices: MenuRow[] = directory.linked
     .filter((row) => !own(row))
     .map((row) => {

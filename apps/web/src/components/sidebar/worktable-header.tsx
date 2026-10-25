@@ -1,45 +1,27 @@
-import { useState } from "react"
+import { lazy, Suspense, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import {
-  ArrowLeftRight,
-  Check,
-  ChevronsUpDown,
-  Cloud,
-  Folder,
-  Laptop,
-  Plus,
-  Settings,
-} from "lucide-react"
-import { Badge } from "@worktable/ui/components/badge"
+import { ArrowLeftRight, Check, ChevronsUpDown, Cloud, Laptop, Settings } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@worktable/ui/components/dropdown-menu"
-import { cn } from "@worktable/ui/lib/utils"
 import { recognitionColor, type RecognitionColor } from "@worktable/types/recognition"
 import { ProvenanceChip } from "@/components/provenance-chip"
 import { recognitionSolid } from "@/lib/recognition"
 import { useWorkspace } from "@/lib/queries"
 import { openSettings } from "@/lib/settings-open"
 import { RUNTIME_BASE_PATH } from "@/lib/runtime-path"
-import {
-  insideDesktop,
-  openInDesktop,
-  switchDesktopWorktable,
-} from "@/lib/desktop-connection"
-import {
-  loadWorktableMenu,
-  worktableMenuGroups,
-  type MenuRow,
-  type MenuSurface,
-} from "@/lib/worktable-menu"
+import { insideDesktop, switchDesktopWorktable } from "@/lib/desktop-connection"
 import { toast } from "@worktable/ui/components/sonner"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
+import type { MenuSurface } from "@/lib/worktable-menu"
+
+// The list and its data load when the menu first opens.
+const loadList = () => import("./worktable-menu-list")
+const WorktableMenuList = lazy(loadList)
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"])
 
@@ -54,7 +36,7 @@ function WorktableLocation() {
   return <span className="min-w-0 truncate">{window.location.host}</span>
 }
 
-function WorktableTile({ name, color }: { name: string; color: RecognitionColor }) {
+export function WorktableTile({ name, color }: { name: string; color: RecognitionColor }) {
   return (
     <span
       aria-hidden
@@ -63,93 +45,6 @@ function WorktableTile({ name, color }: { name: string; color: RecognitionColor 
     >
       {name.trim().charAt(0).toUpperCase() || "W"}
     </span>
-  )
-}
-
-/** A Worktable's state beside its name: a dot, and its device or Offline. */
-function DeviceState({ device, online }: { device: string; online: boolean }) {
-  return (
-    <span className="flex min-w-0 max-w-32 items-center gap-1.5 text-xs text-muted-foreground">
-      <span
-        aria-hidden
-        className={cn("size-1.5 shrink-0 rounded-full", online ? "bg-success" : "bg-warning")}
-      />
-      <span className="min-w-0 truncate">{online ? device : "Offline"}</span>
-    </span>
-  )
-}
-
-const CurrentCheck = () => <Check className="size-3.5 shrink-0 text-primary" />
-
-function reportOpen(outcome: Awaited<ReturnType<typeof openInDesktop>>) {
-  if (outcome === "unsaved") toast.error("Couldn’t save the drawing. Try again.")
-  else if (outcome === "not-worktable") toast.error("That folder isn’t a Worktable.")
-  else if (outcome === "failed") toast.error("Couldn’t switch Worktables. Try again.")
-}
-
-function MenuRowItem({
-  row,
-  surface,
-  current,
-}: {
-  row: MenuRow
-  surface: MenuSurface
-  current: { name: string; color: RecognitionColor }
-}) {
-  const shownCurrent = row.kind !== "device" && row.current
-  const tile = (
-    <WorktableTile
-      name={shownCurrent ? current.name : row.name}
-      color={shownCurrent ? current.color : recognitionColor(undefined, row.id)}
-    />
-  )
-  const name = (
-    <span className="min-w-0 flex-1 truncate">{shownCurrent ? current.name : row.name}</span>
-  )
-  if (row.kind === "device") {
-    return (
-      <DropdownMenuItem
-        disabled={!row.href}
-        {...(row.href
-          ? { render: <a href={row.href} target="_blank" rel="noreferrer" /> }
-          : {})}
-      >
-        {tile}
-        {name}
-        <DeviceState device={row.device} online={row.online} />
-      </DropdownMenuItem>
-    )
-  }
-  if (shownCurrent) {
-    return (
-      <DropdownMenuItem>
-        {tile}
-        {name}
-        {row.kind === "this-mac" && row.linked && <Badge variant="outline">Link</Badge>}
-        <CurrentCheck />
-      </DropdownMenuItem>
-    )
-  }
-  if (row.kind === "this-mac" || surface === "desktop") {
-    return (
-      <DropdownMenuItem
-        onClick={() =>
-          void openInDesktop(
-            row.kind === "this-mac" ? { kind: "local", id: row.id } : { kind: "cloud", id: row.id }
-          ).then(reportOpen)
-        }
-      >
-        {tile}
-        {name}
-        {row.kind === "this-mac" && row.linked && <Badge variant="outline">Link</Badge>}
-      </DropdownMenuItem>
-    )
-  }
-  return (
-    <DropdownMenuItem render={<a href={row.href} />}>
-      {tile}
-      {name}
-    </DropdownMenuItem>
   )
 }
 
@@ -171,31 +66,16 @@ export function WorktableHeader() {
   const surface: MenuSurface =
     desktop && insideDesktop() ? "desktop" : cloud ? "cloud" : "local"
   const cloudPage = Boolean(RUNTIME_BASE_PATH)
-  // The list is asked for when the menu first opens, then kept for the tab.
+  // One list request when the menu first opens, kept for the tab.
   const [opened, setOpened] = useState(false)
-  const menu = useQuery({
+  const { data: listed } = useQuery({
     queryKey: ["worktable-menu", surface, cloudPage],
-    queryFn: () => loadWorktableMenu(surface, cloudPage),
+    queryFn: async () => (await import("@/lib/worktable-menu")).loadWorktableMenu(surface, cloudPage),
     enabled: opened,
     staleTime: Infinity,
     gcTime: Infinity,
     retry: false,
   })
-  const data = menu.data
-  const groups = data
-    ? worktableMenuGroups({
-        surface,
-        data,
-        localIds: data.thisMac?.map((worktable) => worktable.id) ?? (workspace?.id ? [workspace.id] : []),
-        currentHostedId: cloudPage ? RUNTIME_BASE_PATH.slice("/t/".length) : null,
-      })
-    : []
-  // Desktop lists this Mac's Worktables, elsewhere Cloud lists the rest.
-  // Before that, or without it, the menu is as it was.
-  const listed =
-    groups.length > 0 && (surface === "desktop" ? !!data?.thisMac : !!data?.directory)
-  // A local or self-hosted page lists the others below itself.
-  const currentFirst = listed && surface === "local"
   const currentRow = (
     <DropdownMenuItem>
       <WorktableTile name={name} color={color} />
@@ -203,13 +83,59 @@ export function WorktableHeader() {
       <span className="flex min-w-0 max-w-32 items-center text-xs text-muted-foreground">
         <WorktableLocation />
       </span>
-      <CurrentCheck />
+      <Check className="size-3.5 shrink-0 text-primary" />
     </DropdownMenuItem>
+  )
+  const settings = (
+    <DropdownMenuItem onClick={() => openSettings("general")}>
+      <Settings className="mr-2 size-4" />
+      Worktable Settings
+    </DropdownMenuItem>
+  )
+  // As the menu was before the list, and while it loads.
+  const fallback = (
+    <>
+      {currentRow}
+      <DropdownMenuSeparator />
+      {surface === "desktop" && (
+        <DropdownMenuItem
+          onClick={() =>
+            void switchDesktopWorktable().then((outcome) => {
+              if (outcome === "unsaved") {
+                toast.error("Couldn’t save the drawing. Try again.")
+              } else if (outcome === "unavailable") {
+                toast.error(
+                  "Choose Change Connection from the Workspace menu to switch."
+                )
+              } else if (outcome === "failed") {
+                toast.error("Couldn’t switch Worktables. Try again.")
+              }
+            })
+          }
+        >
+          <ArrowLeftRight className="mr-2 size-4" />
+          Switch Worktable
+        </DropdownMenuItem>
+      )}
+      {surface === "cloud" && (
+        <DropdownMenuItem render={<a href="/" />}>
+          <ArrowLeftRight className="mr-2 size-4" />
+          Switch Worktable
+        </DropdownMenuItem>
+      )}
+      {settings}
+    </>
   )
 
   const switcher = (
     <div className="flex h-12 shrink-0 items-center gap-1 px-2">
-      <DropdownMenu onOpenChange={(open) => open && setOpened(true)}>
+      <DropdownMenu
+        onOpenChange={(open) => {
+          if (!open || opened) return
+          setOpened(true)
+          void loadList()
+        }}
+      >
         <DropdownMenuTrigger
           render={
             <button
@@ -226,78 +152,22 @@ export function WorktableHeader() {
           <ChevronsUpDown className="size-3.5 shrink-0 text-sidebar-foreground/40" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" sideOffset={4} className="min-w-64">
-          {(!listed || currentFirst) && currentRow}
-          {listed &&
-            groups.map((group) => (
-              <DropdownMenuGroup key={group.label}>
-                <DropdownMenuLabel>{group.label}</DropdownMenuLabel>
-                {group.rows.map((row) => (
-                  <MenuRowItem
-                    key={`${row.kind}:${row.id}`}
-                    row={row}
-                    surface={surface}
-                    current={{ name, color }}
-                  />
-                ))}
-              </DropdownMenuGroup>
-            ))}
-          <DropdownMenuSeparator />
-          {surface === "desktop" && !listed && (
-            <DropdownMenuItem
-              onClick={() =>
-                void switchDesktopWorktable().then((outcome) => {
-                  if (outcome === "unsaved") {
-                    toast.error("Couldn’t save the drawing. Try again.")
-                  } else if (outcome === "unavailable") {
-                    toast.error(
-                      "Choose Change Connection from the Workspace menu to switch."
-                    )
-                  } else if (outcome === "failed") {
-                    toast.error("Couldn’t switch Worktables. Try again.")
-                  }
-                })
-              }
-            >
-              <ArrowLeftRight className="mr-2 size-4" />
-              Switch Worktable
-            </DropdownMenuItem>
+          {listed ? (
+            <Suspense fallback={fallback}>
+              <WorktableMenuList
+                surface={surface}
+                data={listed}
+                workspaceId={workspace?.id}
+                currentHostedId={cloudPage ? RUNTIME_BASE_PATH.slice("/t/".length) : null}
+                current={{ name, color }}
+                currentRow={currentRow}
+                settings={settings}
+                fallback={fallback}
+              />
+            </Suspense>
+          ) : (
+            fallback
           )}
-          {surface === "desktop" && listed && (
-            <>
-              <DropdownMenuItem
-                onClick={() =>
-                  void switchDesktopWorktable().then((outcome) =>
-                    reportOpen(outcome === "unavailable" ? "failed" : outcome)
-                  )
-                }
-              >
-                <Plus className="mr-2 size-4" />
-                New Worktable
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => void openInDesktop({ kind: "folder" }).then(reportOpen)}
-              >
-                <Folder className="mr-2 size-4" />
-                Open Folder
-              </DropdownMenuItem>
-            </>
-          )}
-          {surface === "cloud" && !listed && (
-            <DropdownMenuItem render={<a href="/" />}>
-              <ArrowLeftRight className="mr-2 size-4" />
-              Switch Worktable
-            </DropdownMenuItem>
-          )}
-          {surface === "cloud" && listed && (
-            <DropdownMenuItem render={<a href="/gateway/worktables/new" />}>
-              <Plus className="mr-2 size-4" />
-              New Worktable
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuItem onClick={() => openSettings("general")}>
-            <Settings className="mr-2 size-4" />
-            Worktable Settings
-          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       <ProvenanceChip />

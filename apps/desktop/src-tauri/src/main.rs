@@ -3337,6 +3337,29 @@ struct WorkspaceMenuWorktable {
 struct WorkspaceMenuWorktables {
     schema_version: u8,
     worktables: Vec<WorkspaceMenuWorktable>,
+    /// The name Worktable Link gives this Mac, so the menu can tell this
+    /// Mac's linked Worktables from other devices'. None when unknown.
+    device: Option<String>,
+}
+
+/// The device name a Worktable on this Mac links under: the host name, as
+/// the local server reads it, cut to 80 characters.
+fn this_device_label() -> Option<String> {
+    let mut buffer = [0u8; 256];
+    // SAFETY: gethostname writes at most `buffer.len()` bytes into the buffer.
+    let result = unsafe { libc::gethostname(buffer.as_mut_ptr().cast(), buffer.len()) };
+    if result != 0 {
+        return None;
+    }
+    let end = buffer
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(buffer.len());
+    let name: String = String::from_utf8_lossy(&buffer[..end])
+        .chars()
+        .take(80)
+        .collect();
+    (!name.is_empty()).then_some(name)
 }
 
 /// The Worktables on this Mac whose folders are still there, without paths.
@@ -3384,6 +3407,7 @@ async fn desktop_workspace_worktables(
     Ok(WorkspaceMenuWorktables {
         schema_version: 1,
         worktables: menu_worktables(&authority, current_id.as_deref()),
+        device: this_device_label(),
     })
 }
 
@@ -3430,14 +3454,42 @@ async fn desktop_workspace_open_cloud(
     {
         return Err("Worktable id is invalid".into());
     }
-    let interactive = saved_cloud_profile(&app)
-        .map_err(|error| format!("{SWITCH_FAILED}{error}"))?
-        .is_none();
-    switch_then(
-        &app,
-        run_selected_cloud_connection_operation(&app, interactive, Some(workspace_id)),
-    )
+    // Restore the saved session when this Mac still holds its credential;
+    // after Sign Out, or without a saved account, sign in first.
+    let signed_in =
+        match saved_cloud_profile(&app).map_err(|error| format!("{SWITCH_FAILED}{error}"))? {
+            Some(DesktopConnectionProfile::Cloud { workos_user_id, .. }) => app
+                .state::<CloudAuthController>()
+                .has_stored_credential(&workos_user_id)
+                .unwrap_or(false),
+            _ => false,
+        };
+    switch_then(&app, async {
+        run_selected_cloud_connection_operation(&app, !signed_in, Some(workspace_id.clone()))
+            .await?;
+        // A session Cloud no longer accepts asks for sign-in, keeping the
+        // Worktable the person chose rather than the saved one.
+        if signed_in && cloud_status_needs_sign_in(&app) {
+            run_selected_cloud_connection_operation(&app, true, Some(workspace_id)).await?;
+        }
+        Ok(())
+    })
     .await
+}
+
+/// Whether the shell shows a Cloud failure that only signing in again fixes.
+fn cloud_status_needs_sign_in(app: &AppHandle) -> bool {
+    app.state::<DesktopHostState>()
+        .status
+        .lock()
+        .map(|status| {
+            status.provider == Some("cloud")
+                && matches!(
+                    status.error_code.as_deref(),
+                    Some("AUTHENTICATION_REQUIRED" | "AUTH_REFRESH_FAILED" | "UNAUTHORIZED")
+                )
+        })
+        .unwrap_or(false)
 }
 
 /// Marks a folder that holds no Worktable, for the menu's Open Folder.

@@ -236,6 +236,23 @@ export async function renameDocsByPrefixAndSync(
     return { renamed: [], error: `Doc not found: ${from}` }
   }
   if (from === to) return { renamed: [], error: null }
+  // This route moves Docs only. A folder that also holds files moves as a
+  // folder, through the documents tools.
+  const catalog = await readDocumentCatalogSnapshot(spaceId)
+  if (
+    catalog.entries.some(
+      (entry) =>
+        entry.kind === "document" &&
+        entry.descriptor.path.startsWith(`${from}/`) &&
+        entry.descriptor.format.id === "worktable.file"
+    )
+  ) {
+    return {
+      renamed: [],
+      error:
+        "This folder holds files as well as Docs. Move it as a folder with move_folder, which needs documents:write.",
+    }
+  }
   if (sourcePaths.length > 128) {
     return {
       renamed: [],

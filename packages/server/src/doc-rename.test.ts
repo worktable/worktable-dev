@@ -235,6 +235,22 @@ describe("document rename lifecycle", () => {
     expect(await docExists("space", "ambiguous-target")).toBe(false)
   })
 
+  it("tells a Docs-only folder rename that the folder holds files", async () => {
+    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    try {
+      await writeDoc("space", "spec", "# Spec")
+      await writeDoc("space", "spec/notes", "# Notes")
+      writeFileSync(join(testDir, "spaces", "space", "docs", "spec", "shot.png"), "png")
+      expect((await renameDocsByPrefixAndSync("space", "spec", "flows")).error).toBe(
+        "This folder holds files as well as Docs. Move it as a folder with move_folder, which needs documents:write."
+      )
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+    }
+  })
+
   it("rejects a noncanonical spelling of a durable or provisional source path", async () => {
     await writeDoc("space", "folder/Source", "# Source")
     await claimMarkdown("folder/Source")

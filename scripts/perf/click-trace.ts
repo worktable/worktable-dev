@@ -77,6 +77,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs"
+import { createHash, X509Certificate } from "node:crypto"
 import { cpus, loadavg, totalmem } from "node:os"
 import { join, resolve } from "node:path"
 import { execFileSync, spawn } from "node:child_process"
@@ -410,9 +411,11 @@ interface DocTarget {
   spaceId: string
   spaceName: string
   path: string
-  kind: "md" | "rich" | "html"
+  kind: "md" | "rich" | "html" | "file"
   /** First heading (Markdown and rich text). */
   heading: string
+  /** Files the document embeds, which its content waits for. */
+  images?: string[]
 }
 
 interface ThreadTarget {
@@ -430,6 +433,8 @@ export interface Targets {
   richLarge: DocTarget
   htmlA: DocTarget
   htmlB: DocTarget
+  file: DocTarget
+  withImages: DocTarget
   threadsHref: string
   threadA: ThreadTarget
   threadB: ThreadTarget
@@ -525,7 +530,6 @@ async function newContext(
   const context = await browser.newContext({
     ...options,
     baseURL: base,
-    ignoreHTTPSErrors: true,
   })
   const cookies = sessionCookies.get(base) ?? []
   if (cookies.length > 0)
@@ -1317,6 +1321,11 @@ function htmlSrcPart(doc: DocTarget): string {
   return `/widgets/__document/${Buffer.from(doc.path).toString("base64url")}/content`
 }
 
+/** What an image of a file in a Space loads from (fileSourceUrl). */
+function fileSrcPart(path: string): string {
+  return `/documents/file?path=${encodeURIComponent(path)}`
+}
+
 function docExpectations(
   doc: DocTarget,
   pageLoad = false
@@ -1329,9 +1338,40 @@ function docExpectations(
   const encodedPath = doc.path.split("/").map(encodeURIComponent).join("/")
   // A deep link's page HTML can carry a display-only snapshot.
   const opening: Expectation[] =
-    pageLoad && doc.kind !== "html"
+    pageLoad && (doc.kind === "md" || doc.kind === "rich")
       ? [{ name: "opening", key: "opening", args: { heading: doc.heading } }]
       : []
+  // Content waits for its images to load, so their requests are its gate.
+  const fileGate = /\/documents\/file\?/
+  if (doc.kind === "file")
+    return {
+      expect: [
+        {
+          name: "images",
+          key: "content",
+          args: { srcParts: [fileSrcPart(doc.path)] },
+        },
+      ],
+      contentKey: "content",
+      gate: fileGate,
+    }
+  if (doc.kind === "md" && doc.images?.length)
+    return {
+      expect: [
+        ...opening,
+        { name: "markdown", key: "text", args: { heading: doc.heading } },
+        {
+          name: "images",
+          key: "content",
+          args: {
+            heading: doc.heading,
+            srcParts: doc.images.map(fileSrcPart),
+          },
+        },
+      ],
+      contentKey: "content",
+      gate: fileGate,
+    }
   if (doc.kind === "md")
     return {
       expect: [
@@ -1549,6 +1589,12 @@ function clickJourney(pass: Pass, targets: Targets, second: boolean): Action[] {
           openDocument(pass, "open rich doc (2,000 blocks)", targets.richLarge),
         ]),
     openDocument(pass, "open HTML doc", pick(targets.htmlA, targets.htmlB)),
+    ...(second
+      ? []
+      : [
+          openDocument(pass, "open a file page", targets.file),
+          openDocument(pass, "open a Doc with images", targets.withImages),
+        ]),
     goHome(pass),
     openThreads(pass, targets),
     openThread(pass, pick(targets.threadA, targets.threadB)),
@@ -1600,6 +1646,8 @@ function coldLoads(targets: Targets): ColdLoad[] {
     doc("open rich doc", targets.richA),
     doc("open rich doc (2,000 blocks)", targets.richLarge),
     doc("open HTML doc", targets.htmlA),
+    doc("open a file page", targets.file),
+    doc("open a Doc with images", targets.withImages),
     {
       journey: "open Threads",
       target: targets.threadsHref,
@@ -2321,6 +2369,11 @@ async function setup(
     richLarge: await docTarget(fixture.probes.rich2000.path, "rich"),
     htmlA: await docTarget(fixture.probes.html.path, "html"),
     htmlB: await docTarget(htmlB.path, "html", htmlB.spaceId),
+    file: await docTarget(fixture.probes.file.path, "file"),
+    withImages: {
+      ...(await docTarget(fixture.probes.withImages.path, "md")),
+      images: fixture.probes.withImages.images,
+    },
   }
 
   // Threads: the sidebar link and the first two rows of the list.
@@ -2403,6 +2456,51 @@ function gitCommit(checkout: string): string {
 }
 
 /**
+ * A certificate for localhost, made for this run, and the hash of its key.
+ * Chromium trusts the proxy by that hash: told to ignore certificate errors
+ * instead, it keeps nothing in its HTTP cache, so a revisit or reopen would
+ * download again what a browser keeps.
+ */
+function proxyCertificate(outDir: string): {
+  cert: string
+  key: string
+  spki: string
+} {
+  const dir = join(outDir, "proxy-tls")
+  mkdirSync(dir, { recursive: true })
+  const cert = join(dir, "cert.pem")
+  const key = join(dir, "key.pem")
+  execFileSync(
+    "openssl",
+    [
+      "req",
+      "-x509",
+      "-newkey",
+      "ec",
+      "-pkeyopt",
+      "ec_paramgen_curve:prime256v1",
+      "-nodes",
+      "-keyout",
+      key,
+      "-out",
+      cert,
+      "-days",
+      "2",
+      "-subj",
+      "/CN=localhost",
+      "-addext",
+      "subjectAltName=DNS:localhost",
+    ],
+    { stdio: "ignore" }
+  )
+  const publicKey = new X509Certificate(readFileSync(cert)).publicKey
+  const spki = createHash("sha256")
+    .update(publicKey.export({ type: "spki", format: "der" }))
+    .digest("base64")
+  return { cert, key, spki }
+}
+
+/**
  * A local HTTP/2 TLS reverse proxy in front of the server, standing in for
  * Cloudflare: one multiplexed connection, forwarded host and protocol, the
  * server's own compression passed through. HTTP/3 is off so Chromium's
@@ -2411,7 +2509,8 @@ function gitCommit(checkout: string): string {
 async function startProxy(
   caddy: string,
   upstream: string,
-  outDir: string
+  outDir: string,
+  tls: { cert: string; key: string }
 ): Promise<{ base: string; stop: () => Promise<void> }> {
   const port = await freePort()
   const httpPort = await freePort()
@@ -2420,8 +2519,6 @@ async function startProxy(
     config,
     `{
 \tadmin off
-\tlocal_certs
-\tskip_install_trust
 \tauto_https disable_redirects
 \thttp_port ${httpPort}
 \tservers {
@@ -2429,7 +2526,7 @@ async function startProxy(
 \t}
 }
 https://localhost:${port} {
-\ttls internal
+\ttls ${JSON.stringify(tls.cert)} ${JSON.stringify(tls.key)}
 \treverse_proxy ${new URL(upstream).host}
 }
 `
@@ -2555,6 +2652,9 @@ async function main() {
   const { workspace, app } = restoreFixture(dir)
   const booted = performance.now()
   let server: ServerProcess | null = null
+  const proxyTls = networks.some((network) => network.via === "proxy")
+    ? proxyCertificate(outDir)
+    : null
   const browser = await chromium.launch({
     headless: true,
     args: [
@@ -2562,8 +2662,10 @@ async function main() {
       // network and CPU emulation applies to them too.
       "--disable-features=IsolateSandboxedIframes",
       "--disable-site-isolation-trials",
-      // The HTTP/2 proxy uses Caddy's internal certificate; stay on TCP.
-      "--ignore-certificate-errors",
+      // Trust the HTTP/2 proxy's certificate; stay on TCP.
+      ...(proxyTls
+        ? [`--ignore-certificate-errors-spki-list=${proxyTls.spki}`]
+        : []),
       "--disable-quic",
     ],
   })
@@ -2581,8 +2683,13 @@ async function main() {
     if (idle === "busy") throw new Error("server still busy after 5 minutes")
     console.log(`[clicks] server ${server.url} listening, idle: ${idle}`)
     const soloOwner = await signInSoloOwner(server.url)
-    if (networks.some((network) => network.via === "proxy"))
-      proxy = await startProxy(args.get("caddy") ?? "caddy", server.url, outDir)
+    if (proxyTls)
+      proxy = await startProxy(
+        args.get("caddy") ?? "caddy",
+        server.url,
+        outDir,
+        proxyTls
+      )
     const bases = [server.url, ...(proxy ? [proxy.base] : [])]
     const allSpaces = await populate(
       server.url,

@@ -26,6 +26,8 @@ const JOURNEYS = [
   "open rich doc",
   "open rich doc (2,000 blocks)",
   "open HTML doc",
+  "open a file page",
+  "open a Doc with images",
   "back to Home",
   "open Threads",
   "open a thread",

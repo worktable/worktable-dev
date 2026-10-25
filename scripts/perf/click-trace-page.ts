@@ -225,6 +225,29 @@ export function installInstrumentation(): void {
         (heading) =>
           outsideOpening(heading) && text(heading) === args["heading"]
       ),
+    // Images of files, on a file's page or in a Doc: every one has loaded,
+    // and the Doc's first heading shows when one is given.
+    images: (args) => {
+      const loaded = all("article.worktable-markdown img")
+        .filter(outsideOpening)
+        .filter((image) => {
+          const element = image as HTMLImageElement
+          return element.complete && element.naturalWidth > 0
+        })
+        .map((image) => image.getAttribute("src") ?? "")
+      return (
+        (args["heading"] === undefined ||
+          all(
+            "article.worktable-markdown h1, article.worktable-markdown h2"
+          ).some(
+            (heading) =>
+              outsideOpening(heading) && text(heading) === args["heading"]
+          )) &&
+        (args["srcParts"] as string[]).every((part) =>
+          loaded.some((src) => src.includes(part))
+        )
+      )
+    },
     // Rich text, readable: the static preview or the editor shows the
     // document's first heading.
     rich: (args) =>

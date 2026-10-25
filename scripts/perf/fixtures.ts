@@ -14,6 +14,7 @@
 import { createHash } from "node:crypto"
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { crc32, deflateSync } from "node:zlib"
 import type {
   ActivityAction,
   ActivityActor,
@@ -24,6 +25,7 @@ import {
   drainActivity,
 } from "../../packages/server/src/activity-log.ts"
 import { setAppDirOverride } from "../../packages/server/src/app-storage.ts"
+import { writeUploadedFile } from "../../packages/server/src/file-uploads.ts"
 import { recordIndex } from "../../packages/server/src/record-index.ts"
 import {
   blockDoc,
@@ -95,7 +97,16 @@ export interface FixtureManifest {
   counts: Record<string, number>
   spaces: string[]
   htmlSpace: string
-  probes: { rich2000: DocRef; rich5000: DocRef; markdown: DocRef; html: DocRef }
+  probes: {
+    rich2000: DocRef
+    rich5000: DocRef
+    markdown: DocRef
+    html: DocRef
+    /** An image file, shown on its own page. */
+    file: DocRef
+    /** A Markdown Doc that embeds `images`, files in the same Space. */
+    withImages: DocRef & { images: string[] }
+  }
   searchTerms: string[]
 }
 
@@ -463,6 +474,126 @@ async function writeDocument(
   if (!result.ok) throw new Error(`${doc.spaceId}/${doc.path}: ${result.error}`)
 }
 
+/** A truecolor PNG, the same bytes every time. */
+function png(
+  width: number,
+  height: number,
+  pixel: (x: number, y: number) => [number, number, number]
+): Uint8Array {
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data])
+    const length = Buffer.alloc(4)
+    length.writeUInt32BE(data.length)
+    const crc = Buffer.alloc(4)
+    crc.writeUInt32BE(crc32(body))
+    return Buffer.concat([length, body, crc])
+  }
+  const header = Buffer.alloc(13)
+  header.writeUInt32BE(width, 0)
+  header.writeUInt32BE(height, 4)
+  header.set([8, 2, 0, 0, 0], 8) // 8-bit RGB, no interlace
+  const rows = Buffer.alloc(height * (1 + width * 3))
+  for (let y = 0; y < height; y += 1) {
+    const row = y * (1 + width * 3)
+    for (let x = 0; x < width; x += 1)
+      rows.set(pixel(x, y), row + 1 + x * 3)
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", header),
+    chunk("IDAT", deflateSync(rows)),
+    chunk("IEND", Buffer.alloc(0)),
+  ])
+}
+
+/** A screenshot-like image: a top bar, a sidebar and lines of text. */
+function screenshotPng(): Uint8Array {
+  return png(480, 300, (x, y) => {
+    if (y < 28) return [36, 41, 47]
+    if (x < 120)
+      return y % 24 > 8 && y % 24 < 16 && x > 12 && x < 96
+        ? [140, 149, 159]
+        : [246, 248, 250]
+    const line = (y - 28) % 18
+    const width = 200 + ((((y - 28) / 18) | 0) * 47) % 140
+    return line > 5 && line < 11 && x > 140 && x < 140 + width
+      ? [87, 96, 106]
+      : [255, 255, 255]
+  })
+}
+
+/** A bar chart. */
+function chartPng(): Uint8Array {
+  const heights = [120, 180, 90, 210, 150, 240, 170, 130]
+  return png(480, 280, (x, y) => {
+    const bar = Math.floor((x - 20) / 56)
+    const inBar = x >= 20 && (x - 20) % 56 < 40 && bar < heights.length
+    if (y === 260 && x >= 12) return [140, 149, 159]
+    if (inBar && y < 260 && y >= 260 - heights[bar]!)
+      return bar % 2 ? [9, 105, 218] : [31, 136, 61]
+    return y % 40 === 0 ? [234, 238, 242] : [255, 255, 255]
+  })
+}
+
+/**
+ * Probes for files, which need the files preview: two images, uploaded as
+ * the app uploads them, and a Markdown Doc that embeds both. Fixed content,
+ * so the other documents stay as they were.
+ */
+async function writeFileProbes(spaceId: string): Promise<void> {
+  const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+  process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+  try {
+    for (const [path, bytes] of [
+      [FILE_PROBE, screenshotPng()],
+      [CHART_PROBE, chartPng()],
+    ] as const)
+      await writeUploadedFile({
+        spaceId,
+        path,
+        bytes,
+        mode: { kind: "create", keepBoth: false },
+        actor: HUMAN.updatedBy,
+        source: HUMAN.source,
+      })
+    const content = [
+      "# With images",
+      "",
+      "A Doc that shows two images kept in this Space.",
+      "",
+      `![Screenshot](${relativeTo(WITH_IMAGES_PROBE, FILE_PROBE)})`,
+      "",
+      "The release plan shipped in three steps, each behind its own flag.",
+      "",
+      `![Chart](${relativeTo(WITH_IMAGES_PROBE, CHART_PROBE)})`,
+      "",
+      "Weekly usage grew in every region after the second step.",
+      "",
+    ].join("\n")
+    const result = await writeManagedFixtureDoc(
+      spaceId,
+      WITH_IMAGES_PROBE,
+      content,
+      HUMAN
+    )
+    if (!result.ok)
+      throw new Error(`${spaceId}/${WITH_IMAGES_PROBE}: ${result.error}`)
+  } finally {
+    if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
+    else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+  }
+}
+
+const FILE_PROBE = "perf/files/shot.png"
+const CHART_PROBE = "perf/files/chart.png"
+const WITH_IMAGES_PROBE = "perf/with-images"
+
+/** `target` as a Doc at `from` embeds it: relative to the Doc's folder. */
+function relativeTo(from: string, target: string): string {
+  const folder = from.split("/").slice(0, -1).join("/")
+  return folder ? target.slice(folder.length + 1) : target
+}
+
 interface ThreadRef {
   id: string
   spaceId: string | null
@@ -675,6 +806,8 @@ async function generate(
       console.log(`[perf-fixtures] documents ${index + 1}/${docs.length}`)
   }
   phase("documents")
+  await writeFileProbes(spaces[0]!)
+  phase("files")
 
   for (let index = 0; index < shape.htmlSpaceDocs; index += 1) {
     const title = text.title()
@@ -728,6 +861,7 @@ async function generate(
     counts: {
       spaces: spaces.length + 1,
       documents: docs.length,
+      files: 2,
       markdown: count("md"),
       richText: count("rich"),
       richTextBlocks: docs.reduce((sum, doc) => sum + (doc.blocks ?? 0), 0),
@@ -746,6 +880,11 @@ async function generate(
       rich5000: probe("perf/rich-5000"),
       markdown: probe("perf/markdown"),
       html: probe("perf/html"),
+      file: probe(FILE_PROBE),
+      withImages: {
+        ...probe(WITH_IMAGES_PROBE),
+        images: [FILE_PROBE, CHART_PROBE],
+      },
     },
     searchTerms: SEARCH_TERMS,
   }

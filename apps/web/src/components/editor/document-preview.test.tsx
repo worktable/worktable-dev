@@ -113,5 +113,34 @@ describe("saved document preview", () => {
       />
     )
     expect(html).toContain('src="/files/readme/shot.png"')
+    const markdown = renderToStaticMarkup(
+      <DocumentPreview
+        content={"![Shot](readme/shot.png)"}
+        resolveUrl={(url) => `/files/${url}`}
+      />
+    )
+    expect(markdown).toContain('src="/files/readme/shot.png"')
+
+    // Without a place to load from, as the server's first paint has none, a
+    // stored path asks for nothing: the page's own URL would answer with the
+    // app. A URL as written still loads.
+    const unresolved = [
+      renderToStaticMarkup(
+        <DocumentPreview
+          content={[
+            { id: "a", type: "image", props: { url: "readme/shot.png", caption: "Signup error" }, children: [] },
+          ]}
+        />
+      ),
+      renderToStaticMarkup(
+        <DocumentPreview content={"![Shot](readme/shot.png) ![Logo](https://example.com/logo.png)"} />
+      ),
+    ]
+    // What the image is still reads: its caption, and its description.
+    expect(unresolved[0]).not.toContain("<img")
+    expect(unresolved[0]).toContain("<figcaption>Signup error</figcaption>")
+    expect(unresolved[1]).not.toContain("readme/shot.png")
+    expect(unresolved[1]).toContain('aria-label="Shot"')
+    expect(unresolved[1]).toContain('src="https://example.com/logo.png"')
   })
 })

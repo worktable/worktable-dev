@@ -153,21 +153,35 @@ function webAddress(value: string | undefined): string | undefined {
   }
 }
 
+/** Whether an address reaches only the device it's on. */
+export function isLoopbackHost(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname === "[::1]" ||
+    hostname === "0.0.0.0" ||
+    /^127\./.test(hostname)
+  )
+}
+
 /**
  * The menu's groups, each only when it has entries. `localIds` are the
  * folders on this device: a linked row for one of them is listed as this
- * device's own, not as another device.
+ * device's own, not as another device. `onDevice` says this page runs on the
+ * device the list came through, so that device's loopback addresses open.
  */
 export function worktableMenuGroups({
   surface,
   data,
   localIds,
   currentHostedId,
+  onDevice,
 }: {
   surface: MenuSurface
   data: WorktableMenuData
   localIds: readonly string[]
   currentHostedId: string | null
+  onDevice: boolean
 }): MenuGroup[] {
   const { thisMac, directory } = data
   const groups: MenuGroup[] = []
@@ -188,7 +202,14 @@ export function worktableMenuGroups({
     .filter((row) => !own(row))
     .map((row) => {
       const online = row.state === "online"
-      const href = online ? webAddress(row.openUrl) : undefined
+      const address = online ? webAddress(row.openUrl) : undefined
+      // A loopback address opens only on its own device.
+      const href =
+        address &&
+        isLoopbackHost(new URL(address).hostname) &&
+        !(onDevice && !!directory.device && row.device === directory.device)
+          ? undefined
+          : address
       return {
         kind: "device",
         id: row.id,

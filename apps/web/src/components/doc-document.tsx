@@ -88,6 +88,7 @@ import {
   type AnnotationDraft,
 } from "@/components/annotations/annotation-composer"
 import { PassageCommenting } from "@/components/annotations/passage-commenting"
+import { docContributors } from "@/lib/comment-recipients"
 import { usePassageComments } from "@/components/annotations/use-passage-comments"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { Button } from "@worktable/ui/components/button"
@@ -821,8 +822,8 @@ function MarkdownDocPage({
   const annotationsQuery = useDocAnnotations(spaceId, docPath, true)
   const annotationMutations = useAnnotationMutations(spaceId, docPath)
   const commentContext = useMemo(
-    () => ({ spaceId, contributors: page?.contributors?.recent }),
-    [spaceId, page?.contributors?.recent]
+    () => ({ spaceId, contributors: docContributors(page) }),
+    [spaceId, page]
   )
   const annotations = annotationsQuery.data?.annotations ?? []
   const openAnnotationCount = annotations.filter(
@@ -1332,8 +1333,8 @@ function BlockNoteDocPage({
   const annotationsQuery = useDocAnnotations(spaceId, docPath, true)
   const annotationMutations = useAnnotationMutations(spaceId, docPath)
   const commentContext = useMemo(
-    () => ({ spaceId, contributors: page?.contributors?.recent }),
-    [spaceId, page?.contributors?.recent]
+    () => ({ spaceId, contributors: docContributors(page) }),
+    [spaceId, page]
   )
   const annotations = annotationsQuery.data?.annotations ?? []
   const openAnnotationCount = annotations.filter(

@@ -79,6 +79,7 @@ import {
 import { Input } from "@worktable/ui/components/input"
 import { AnnotationPanel } from "@/components/annotations/annotation-panel"
 import { AnnotationComposer } from "@/components/annotations/annotation-composer"
+import { docContributors } from "@/lib/comment-recipients"
 import { DesktopContextPanel } from "@/components/desktop-context-panel"
 import {
   useWidgetAnnotations,
@@ -1032,7 +1033,7 @@ function WidgetDetailPage({
         label="Comment on this HTML doc"
         open={composerOpen && !readOnly}
         onOpenChange={setComposerOpen}
-        context={{ spaceId, contributors: page?.contributors?.recent }}
+        context={{ spaceId, contributors: docContributors(page) }}
         onSubmit={(body, to) => {
           annotationMutations.create.mutate({
             target: { type: "widget", widgetId },

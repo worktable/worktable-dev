@@ -1,11 +1,30 @@
 import { useMemo } from "react"
-import type { ActivityActor } from "@worktable/types"
+import type { ActivityActor, DocumentPage } from "@worktable/types"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { useWorkspace } from "@/lib/queries"
 import { useSpaceParticipants } from "@/lib/threads-queries"
 import type { ThreadParticipant } from "@/lib/threads-api"
 
 export const NO_RECIPIENT = "none"
+
+/**
+ * Who has changed a Doc, newest first. Until the Space's activity summary is
+ * built (after a restart) the page has none, so the last writer stands in.
+ */
+export function docContributors(
+  page: Pick<DocumentPage, "contributors" | "provenance"> | null | undefined
+): readonly ActivityActor[] | undefined {
+  if (page?.contributors) return page.contributors.recent
+  const provenance = page?.provenance
+  const writer = provenance?.updatedBy
+  if (!writer) return undefined
+  // REST writes name an agent "agent:<principal>"; MCP writes record the
+  // principal itself, with source "mcp".
+  if (writer.startsWith("agent:")) {
+    return [{ kind: "agent", id: writer.slice("agent:".length) }]
+  }
+  return provenance.source === "mcp" ? [{ kind: "agent", id: writer }] : undefined
+}
 
 /** Who a comment in this Space can go to, and who it goes to unless changed. */
 export interface CommentRecipients {

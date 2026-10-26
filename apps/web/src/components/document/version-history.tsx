@@ -4,7 +4,6 @@ import {
   Bookmark,
   ChevronDown,
   ChevronUp,
-  ChevronsLeft,
   ChevronsRight,
   History,
   RotateCcw,
@@ -24,7 +23,9 @@ import {
 import { toast } from "@worktable/ui/components/sonner"
 import { cn } from "@worktable/ui/lib/utils"
 import {
+  CONTEXT_PANEL_RAIL_WIDTH,
   ContextPanelHeader,
+  ContextPanelRail,
   DesktopContextPanel,
 } from "@/components/desktop-context-panel"
 import { RelativeTime } from "@/lib/time"
@@ -403,26 +404,15 @@ export function VersionHistoryPanel({
       ) : (
         <DesktopContextPanel
           open={open}
-          width={collapsed && selectedVersionId ? 48 : 384}
+          width={
+            collapsed && selectedVersionId ? CONTEXT_PANEL_RAIL_WIDTH : 384
+          }
         >
           {collapsed && selectedVersionId ? (
-            <aside
-              aria-label="Version history"
-              className="flex h-full flex-col items-center gap-2 py-4"
+            <ContextPanelRail
+              label="Version history"
+              onExpand={() => setCollapsed(false)}
             >
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Expand version history"
-                onClick={() => setCollapsed(false)}
-              >
-                <ChevronsLeft className="size-4" />
-              </Button>
-              <div className="flex flex-1 items-center [writing-mode:vertical-rl]">
-                <span className="text-xs text-muted-foreground">
-                  Version history
-                </span>
-              </div>
               <Button
                 size="icon-sm"
                 variant="ghost"
@@ -451,7 +441,7 @@ export function VersionHistoryPanel({
               >
                 <X className="size-4" />
               </Button>
-            </aside>
+            </ContextPanelRail>
           ) : (
             content
           )}

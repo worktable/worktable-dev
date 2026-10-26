@@ -1,10 +1,12 @@
 import { Link } from "@tanstack/react-router"
 import { useId, type ReactNode } from "react"
+import { ChevronsRight } from "lucide-react"
 import type {
   ActivityActor,
   ActivityEntry,
   ThreadListItem,
 } from "@worktable/types"
+import { Button } from "@worktable/ui/components/button"
 import { cn } from "@worktable/ui/lib/utils"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useActivity } from "@/lib/activity"
@@ -418,12 +420,15 @@ export function ActivityPanel({
   spaceId,
   limit,
   enabled = true,
+  onCollapse,
   className,
 }: {
   spaceId?: string
   limit: number
   /** Whether this placement is on screen and should load. */
   enabled?: boolean
+  /** Shows a collapse button for a placement that can fold to a rail. */
+  onCollapse?: () => void
   className?: string
 }) {
   const { data, isPending, isError, refetch } = useActivity(
@@ -443,19 +448,32 @@ export function ActivityPanel({
       aria-labelledby={headingId}
       className={cn("flex min-h-0 min-w-0 flex-col", className)}
     >
-      <div className="flex items-baseline justify-between gap-3 pb-4">
+      <div className="flex items-center justify-between gap-3 pb-4">
         <h2 id={headingId} className="text-sm font-semibold text-foreground">
           Activity
         </h2>
-        {entries.length > 0 && (
-          <Link
-            to="/activity"
-            search={spaceId ? { spaceId } : {}}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            Show all
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          {entries.length > 0 && (
+            <Link
+              to="/activity"
+              search={spaceId ? { spaceId } : {}}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Show all
+            </Link>
+          )}
+          {onCollapse && (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Collapse activity"
+              className="-my-2"
+              onClick={onCollapse}
+            >
+              <ChevronsRight className="size-4" />
+            </Button>
+          )}
+        </div>
       </div>
       <div
         ref={scrollRef}

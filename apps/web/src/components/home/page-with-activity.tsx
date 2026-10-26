@@ -1,6 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { cn } from "@worktable/ui/lib/utils"
-import { DesktopContextPanel } from "@/components/desktop-context-panel"
+import {
+  CONTEXT_PANEL_RAIL_WIDTH,
+  ContextPanelRail,
+  DesktopContextPanel,
+} from "@/components/desktop-context-panel"
 import { ActivityPanel } from "@/components/home/activity-feed"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 
@@ -17,9 +21,32 @@ function useMediaQuery(media: string): boolean | null {
   return matches
 }
 
+// The side panel starts collapsed; opening it holds on this device.
+const ACTIVITY_OPEN_KEY = "worktable-home-activity-open"
+
+function useActivityOpen(): [boolean, (open: boolean) => void] {
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem(ACTIVITY_OPEN_KEY) === "true"
+    } catch {
+      return false
+    }
+  })
+  const remember = (value: boolean) => {
+    setOpen(value)
+    try {
+      localStorage.setItem(ACTIVITY_OPEN_KEY, String(value))
+    } catch {
+      // The choice still holds until the page reloads.
+    }
+  }
+  return [open, remember]
+}
+
 /**
  * Home and Space Home: the page scrolls on its own beside a full-height
- * Activity panel. Narrower windows show recent Activity under the page.
+ * Activity panel, collapsed to a rail until opened. Narrower windows show
+ * recent Activity under the page.
  */
 export function PageWithActivity({
   spaceId,
@@ -35,6 +62,7 @@ export function PageWithActivity({
   const panelWidth = useMediaQuery("(min-width: 1600px)") ? 448 : 384
   // Both placements stay in the layout; only the visible one loads.
   const wide = useMediaQuery("(min-width: 1280px)")
+  const [activityOpen, setActivityOpen] = useActivityOpen()
   return (
     <div className={cn("xl:flex xl:h-full", className)}>
       <div
@@ -51,13 +79,24 @@ export function PageWithActivity({
           />
         </div>
       </div>
-      <DesktopContextPanel open width={panelWidth}>
-        <ActivityPanel
-          spaceId={spaceId}
-          limit={40}
-          enabled={wide === true}
-          className="h-full p-5 pr-4"
-        />
+      <DesktopContextPanel
+        open
+        width={activityOpen ? panelWidth : CONTEXT_PANEL_RAIL_WIDTH}
+      >
+        {activityOpen ? (
+          <ActivityPanel
+            spaceId={spaceId}
+            limit={40}
+            enabled={wide === true}
+            onCollapse={() => setActivityOpen(false)}
+            className="h-full p-5 pr-4"
+          />
+        ) : (
+          <ContextPanelRail
+            label="Activity"
+            onExpand={() => setActivityOpen(true)}
+          />
+        )}
       </DesktopContextPanel>
     </div>
   )

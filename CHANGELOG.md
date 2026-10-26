@@ -9,6 +9,12 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.31] - 2026-10-26
+
+### Changed
+
+- **Activity starts folded:** On wide windows, the Activity panel beside Home and Space Home starts as a narrow rail, and stays open on this device once you open it.
+
 ## [0.1.30] - 2026-10-26
 
 ### Fixed

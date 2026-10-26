@@ -820,6 +820,12 @@ export const PendingInput = z.object({
     .describe(
       "count (default) returns how many and changes nothing; notices returns the items and marks them shown"
     ),
+  wait: z
+    .boolean()
+    .optional()
+    .describe(
+      "Wait until something new arrives in scope, then return it as notices. Clients that run MCP tasks wait in the background; others wait up to 25 seconds. After you handle what it returns, call pending with wait again to keep listening"
+    ),
 })
 
 export const DiscoverInput = z.strictObject({

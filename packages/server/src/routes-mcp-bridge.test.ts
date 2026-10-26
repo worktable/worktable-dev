@@ -11,8 +11,15 @@ import { setAppDirOverride } from "./app-storage.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
 import { resolveParticipant } from "./participant-store.ts"
 import { mcpRouter } from "./routes/mcp.ts"
-import { writeSpace } from "./store.ts"
-import type { RequestPrincipal } from "./token-store.ts"
+import { drainActivity } from "./activity-log.ts"
+import { createAnnotation } from "./annotation-store.ts"
+import { pendingList } from "./pending-list.ts"
+import { writeDoc, writeSpace } from "./store.ts"
+import {
+  createToken,
+  verifyToken,
+  type RequestPrincipal,
+} from "./token-store.ts"
 import { setWorkspaceRootOverride } from "./workspace.ts"
 
 // The local MCP bridge (stdio forwarding, Claude Desktop) reaches this
@@ -157,6 +164,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   delete process.env["WORKTABLE_MCP_MODERN"]
+  delete process.env["WORKTABLE_MCP_PREVIEW"]
   await Promise.all(clients.splice(0).map((client) => client.close()))
   setWorkspaceRootOverride(null)
   setAppDirOverride(null)
@@ -286,7 +294,17 @@ interface JsonRpcReply {
 async function modernPost(
   method: string,
   params: Record<string, unknown> = {},
-  { version = "2026-07-28", mcpName = params.name } = {}
+  {
+    version = "2026-07-28",
+    mcpName = params.name ?? params.taskId,
+    token,
+    capabilities = {},
+  }: {
+    version?: string
+    mcpName?: unknown
+    token?: string
+    capabilities?: Record<string, unknown>
+  } = {}
 ): Promise<{ status: number; reply: JsonRpcReply }> {
   const app = new Hono()
   app.route("/mcp", mcpRouter)
@@ -299,6 +317,7 @@ async function modernPost(
         "mcp-protocol-version": version,
         "mcp-method": method,
         ...(typeof mcpName === "string" ? { "mcp-name": mcpName } : {}),
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({
         jsonrpc: "2.0",
@@ -309,12 +328,16 @@ async function modernPost(
           _meta: {
             ...MODERN_META,
             "io.modelcontextprotocol/protocolVersion": version,
+            "io.modelcontextprotocol/clientCapabilities": capabilities,
           },
         },
       }),
     })
   )
-  return { status: response.status, reply: (await response.json()) as JsonRpcReply }
+  return {
+    status: response.status,
+    reply: (await response.json()) as JsonRpcReply,
+  }
 }
 
 /** A legacy (initialize) client over HTTP; `replies` gets each JSON reply. */
@@ -396,12 +419,115 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
     expect(mismatch.status).toBe(400)
     expect(mismatch.reply.error?.code).toBe(-32020)
 
-    const unsupported = await modernPost("tools/list", {}, {
-      version: "2099-01-01",
-    })
+    const unsupported = await modernPost(
+      "tools/list",
+      {},
+      {
+        version: "2099-01-01",
+      }
+    )
     expect(unsupported.status).toBe(400)
     expect(unsupported.reply.error?.code).toBe(-32022)
     expect(unsupported.reply.error?.data?.supported).toEqual(["2026-07-28"])
+  })
+
+  it("wakes a task-capable client with what arrives after it starts waiting", async () => {
+    process.env["WORKTABLE_MCP_MODERN"] = "1"
+    process.env["WORKTABLE_MCP_PREVIEW"] = "1"
+    const { token } = await createToken({ scopes: ["*"], agent: "claude-code" })
+    const { participant } = await resolveParticipant(
+      (await verifyToken(token))!
+    )
+    await writeDoc("connected-agents", "plan", "# Plan\n\nShip it.\n")
+    const comment = (body: string, docPath = "plan") =>
+      createAnnotation("connected-agents", {
+        target: { type: "doc", docPath },
+        category: "comment",
+        body,
+        author: { type: "user", id: "user", name: "Karo" },
+        to: [{ id: participant.id, kind: "agent", name: participant.name }],
+      })
+    await pendingList()
+    await comment("Seen before the wait started.")
+    const tasks = { extensions: { "io.modelcontextprotocol/tasks": {} } }
+    const wait = (request: Record<string, unknown>) =>
+      modernPost(
+        "tools/call",
+        {
+          name: "worktable_discover",
+          arguments: { request: { action: "pending", wait: true, ...request } },
+        },
+        { token, capabilities: tasks }
+      )
+    const poll = (taskId: string) =>
+      modernPost("tasks/get", { taskId }, { token, capabilities: tasks })
+
+    const discover = await modernPost("server/discover", {}, { token })
+    expect(discover.reply.result?.capabilities).toMatchObject({
+      extensions: { "io.modelcontextprotocol/tasks": {} },
+    })
+    const started = await wait({ scope: { spaceId: "connected-agents" } })
+    expect(started.reply.result).toMatchObject({
+      resultType: "task",
+      status: "working",
+      ttlMs: null,
+    })
+    const taskId = started.reply.result?.taskId as string
+    expect((await poll(taskId)).reply.result).toMatchObject({
+      status: "working",
+    })
+
+    await comment("Arrived while waiting.")
+    type Read = {
+      revision: number
+      items: Array<{ excerpt: string }>
+    }
+    const done = (await poll(taskId)).reply.result as {
+      status: string
+      result: { structuredContent: Read }
+    }
+    expect(done.status).toBe("completed")
+    const read = done.result.structuredContent
+    expect(read.items.map((item) => item.excerpt)).toEqual([
+      "Arrived while waiting.",
+    ])
+
+    // Without the tasks extension the same call waits in place, bounded.
+    const held = modernPost(
+      "tools/call",
+      {
+        name: "worktable_discover",
+        arguments: {
+          request: { action: "pending", wait: true, since: read.revision },
+        },
+      },
+      { token }
+    )
+    await comment("Arrived during a held wait.")
+    const heldRead = (await held).reply.result?.structuredContent as Read
+    expect(heldRead.items.map((item) => item.excerpt)).toEqual([
+      "Arrived during a held wait.",
+    ])
+
+    // A wait from before lost state names a revision the list never gave:
+    // it gets everything not yet shown, never silence. That includes the
+    // comment from before the first wait, which no read has shown.
+    await comment("Arrived after the list forgot.")
+    const forgotten = Buffer.from(
+      JSON.stringify({ v: 1, at: new Date().toISOString(), since: 999 })
+    ).toString("base64url")
+    const recovered = (await poll(forgotten)).reply.result as {
+      status: string
+      result: { structuredContent: Read }
+    }
+    expect(recovered.status).toBe("completed")
+    expect(
+      recovered.result.structuredContent.items.map((item) => item.excerpt)
+    ).toEqual([
+      "Seen before the wait started.",
+      "Arrived after the list forgot.",
+    ])
+    await drainActivity()
   })
 
   it("answers modern requests as a legacy-only server while the era is off", async () => {

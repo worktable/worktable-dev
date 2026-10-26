@@ -220,6 +220,10 @@
                     "count",
                     "notices"
                   ]
+                },
+                "wait": {
+                  "description": "Wait until something new arrives in scope, then return it as notices. Clients that run MCP tasks wait in the background; others wait up to 25 seconds. After you handle what it returns, call pending with wait again to keep listening",
+                  "type": "boolean"
                 }
               },
               "required": [

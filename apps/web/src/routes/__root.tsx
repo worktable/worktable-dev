@@ -1,3 +1,4 @@
+import { openExternalLinksAsWindows } from "@/lib/desktop-external-links"
 import { RUNTIME_BASE_PATH, runtimePath } from "@/lib/runtime-path"
 /// <reference types="vite/client" />
 import {
@@ -464,6 +465,8 @@ function RootLayout() {
   useEffect(() => {
     document.body.classList.add("loaded")
   }, [])
+
+  useEffect(() => openExternalLinksAsWindows(document), [])
 
   useEffect(
     () =>

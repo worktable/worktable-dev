@@ -491,6 +491,12 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
     expect(read.items.map((item) => item.excerpt)).toEqual([
       "Arrived while waiting.",
     ])
+    // A poll repeated after a lost answer gets the same items again, though
+    // the first answer marked them shown.
+    expect((await poll(taskId)).reply.result).toMatchObject({
+      status: "completed",
+      result: { structuredContent: { items: read.items } },
+    })
 
     // Without the tasks extension the same call waits in place, bounded.
     const held = modernPost(
@@ -510,8 +516,7 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
     ])
 
     // A wait from before lost state names a revision the list never gave:
-    // it gets everything not yet shown, never silence. That includes the
-    // comment from before the first wait, which no read has shown.
+    // it reads from the start, every open item in scope, never silence.
     await comment("Arrived after the list forgot.")
     const forgotten = Buffer.from(
       JSON.stringify({ v: 1, at: new Date().toISOString(), since: 999 })
@@ -525,8 +530,17 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
       recovered.result.structuredContent.items.map((item) => item.excerpt)
     ).toEqual([
       "Seen before the wait started.",
+      "Arrived while waiting.",
+      "Arrived during a held wait.",
       "Arrived after the list forgot.",
     ])
+    // That answer marked all four shown; a repeated poll still gets them.
+    expect((await poll(forgotten)).reply.result).toMatchObject({
+      status: "completed",
+      result: {
+        structuredContent: { items: recovered.result.structuredContent.items },
+      },
+    })
     await drainActivity()
   })
 

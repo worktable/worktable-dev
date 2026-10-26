@@ -3168,7 +3168,11 @@ async function _dispatchOperationInner(
         full && full.principal.id === identity.principal.id ? full : identity
       const { wait, mode, ...input } = PendingInput.parse(args)
       return wait
-        ? await waitForPending(reader, input, { signal: context.signal })
+        ? await waitForPending(
+            reader,
+            { scope: input.scope, since: input.since },
+            { signal: context.signal }
+          )
         : await readPending(reader, { ...input, mode })
     }
     case "workspace.space_index": {

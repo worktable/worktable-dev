@@ -14,6 +14,7 @@ import type {
 import { z } from "zod"
 import { resolveParticipant } from "../participant-store.ts"
 import { pendingRevision } from "../pending-list.ts"
+import { waitSince } from "../pending-wait.ts"
 import {
   createWorktableMcpServer,
   serverIdentity,
@@ -137,6 +138,8 @@ function createModernServer(exchange: ModernMcpExchange): Server {
 // with items completes the task with exactly what that read returned, and
 // marks those items delivered. The task id carries the whole wait (scope and
 // revision), so the server keeps no task state and a restart loses nothing.
+// As with every wait (pending-wait.ts), polls select by revision only, so a
+// poll repeated after a lost answer gets the same items again.
 // Whoever asks reads only their own pending items, so a copied id reveals
 // nothing.
 
@@ -157,7 +160,6 @@ const WaitTask = z.object({
       threadId: z.string().optional(),
     })
     .optional(),
-  undelivered: z.boolean().optional(),
 })
 type WaitTask = z.infer<typeof WaitTask>
 type WaitArgs = Omit<WaitTask, "v" | "at" | "since"> & { since?: number }
@@ -237,7 +239,6 @@ async function startPendingWait(
     at,
     since,
     ...(wait.scope ? { scope: wait.scope } : {}),
-    ...(wait.undelivered ? { undelivered: true } : {}),
   }
   const taskId = Buffer.from(JSON.stringify(task)).toString("base64url")
   return {
@@ -245,6 +246,27 @@ async function startPendingWait(
     status: "working",
     ...taskStatus(task, taskId, at),
   }
+}
+
+/** The caller's pending revision, without a read where the caller is known. */
+async function currentRevision(
+  exchange: ModernMcpExchange,
+  ctx: ServerContext
+): Promise<number> {
+  const identity = exchange.server.identity
+  if (identity) {
+    const { participant } = await resolveParticipant(identity)
+    return pendingRevision(participant.id)
+  }
+  const counted = await relay<CallToolResult>(
+    exchange,
+    pendingCall({ mode: "count" }),
+    ctx
+  )
+  return Number(
+    (counted.structuredContent as { revision?: unknown } | undefined)
+      ?.revision ?? 0
+  )
 }
 
 async function pendingWaitTask(
@@ -261,23 +283,17 @@ async function pendingWaitTask(
     throw new ProtocolError(-32602, "Unknown task")
   }
   const now = new Date().toISOString()
-  // Nothing new since the wait started: answer without building a read. A
-  // revision the list never gave (state lost) still goes to the read, which
-  // treats it as everything not yet shown.
-  const identity = exchange.server.identity
-  if (identity) {
-    const { participant } = await resolveParticipant(identity)
-    if ((await pendingRevision(participant.id)) === task.since) {
-      return { status: "working", ...taskStatus(task, taskId, now) }
-    }
+  // Nothing new since the wait started: answer without building a read.
+  const revision = await currentRevision(exchange, ctx)
+  if (revision === task.since) {
+    return { status: "working", ...taskStatus(task, taskId, now) }
   }
   const read = await relay<CallToolResult>(
     exchange,
     pendingCall({
       mode: "notices",
-      since: task.since,
+      since: waitSince(task.since, revision),
       ...(task.scope ? { scope: task.scope } : {}),
-      ...(task.undelivered ? { undelivered: true } : {}),
     }),
     ctx
   )

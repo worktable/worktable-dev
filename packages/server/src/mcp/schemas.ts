@@ -824,7 +824,7 @@ export const PendingInput = z.object({
     .boolean()
     .optional()
     .describe(
-      "Wait until something new arrives in scope, then return it as notices. Clients that run MCP tasks wait in the background; others wait up to 25 seconds. After you handle what it returns, call pending with wait again to keep listening"
+      "Wait until something new arrives in scope, then return everything after since as notices, shown before or not. Clients that run MCP tasks wait in the background; others wait up to 25 seconds. After you handle what it returns, call pending with wait again, passing the returned revision as since, to keep listening"
     ),
 })
 

@@ -7,6 +7,10 @@
 // background (mcp/modern.ts); others hold one call for a bounded time, as a
 // thread wait does. Either way the answer is the pending read in notices mode,
 // so a wait shows and marks exactly what that read would.
+//
+// A wait selects by revision only, never by what was already shown. Marking
+// is what completes a wait, so a wait that skipped shown items would lose
+// them if its answer were lost on the way: asked again, it would find nothing.
 
 import { resolveParticipant } from "./participant-store.ts"
 import { onPendingChange } from "./pending-list.ts"
@@ -24,13 +28,22 @@ type Reader = Pick<TokenIdentity, "agent" | "principal" | "scopes"> &
   Partial<TokenIdentity>
 
 /**
+ * The revision a wait reads after. Without one, what arrives from now on. A
+ * revision the list never gave (state lost, or from elsewhere) reads from the
+ * start: every open item in scope, shown or not, beats one missed.
+ */
+export function waitSince(since: number | undefined, revision: number): number {
+  if (since === undefined) return revision
+  return since > revision ? 0 : since
+}
+
+/**
  * The pending read once something after `since` arrives in scope, or the
- * count (0) when nothing does within `seconds`. Without `since`, it waits for
- * what arrives after the call starts.
+ * count (0) when nothing does within `seconds`.
  */
 export async function waitForPending(
   reader: Reader,
-  input: Omit<PendingReadInput, "mode">,
+  input: Pick<PendingReadInput, "scope" | "since">,
   options: { seconds?: number; signal?: AbortSignal } = {}
 ): Promise<PendingReadResult> {
   const { participant } = await resolveParticipant(reader)
@@ -43,8 +56,10 @@ export async function waitForPending(
       changed.resolve()
   })
   try {
-    const since =
-      input.since ?? (await readPending(reader, { mode: "count" })).revision
+    const since = waitSince(
+      input.since,
+      (await readPending(reader, { mode: "count" })).revision
+    )
     const seconds = Math.min(
       Math.max(options.seconds ?? PENDING_WAIT_SECONDS, 0),
       PENDING_WAIT_SECONDS
@@ -64,7 +79,7 @@ export async function waitForPending(
     })
     while (true) {
       const waiting = changed.promise
-      const ready = await readyPending(reader, { ...input, since })
+      const ready = await readyPending(reader, { scope: input.scope, since })
       if (ready) return ready
       if (Date.now() >= deadline || options.signal?.aborted)
         return { revision: since, count: 0 }
@@ -82,7 +97,7 @@ export async function waitForPending(
  */
 async function readyPending(
   reader: Reader,
-  input: Omit<PendingReadInput, "mode"> & { since: number }
+  input: Pick<PendingReadInput, "scope"> & { since: number }
 ): Promise<PendingReadResult | null> {
   const result = await readPending(reader, { ...input, mode: "notices" })
   return result.items?.length ? result : null

@@ -1,4 +1,5 @@
 import { takeResultMedia } from "./media.ts"
+import { ambientNotices } from "../pending-ambient.ts"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { z } from "zod"
 import type { McpSurface } from "./surface.ts"
@@ -520,7 +521,24 @@ export function registerTools(
         const publicResult = publicizeResult(operation.id, linked)
         assertPublicOperationOutput(operation.id, publicResult)
         const response = ok(publicResult)
-        return { ...response, content: [...response.content, ...content] }
+        // What waits on the agent rides after the result, outside the
+        // structured content its schema describes (preview only).
+        const notices =
+          surface === "preview" && identity
+            ? await ambientNotices(
+                { ...identity, scopes },
+                operation.id,
+                operation.args
+              )
+            : null
+        return {
+          ...response,
+          content: [
+            ...response.content,
+            ...content,
+            ...(notices ? [{ type: "text" as const, text: notices }] : []),
+          ],
+        }
       } catch (error) {
         if (error instanceof PublicOperationOutputError) {
           console.error(

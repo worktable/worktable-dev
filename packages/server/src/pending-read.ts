@@ -55,7 +55,7 @@ function inScope(notice: PendingNotice, scope: NoticeTarget): boolean {
 }
 
 /** Tell a Doc's open pages that one of its comments was seen. */
-function announceSeen(entries: readonly PendingEntry[]): void {
+export function announceSeen(entries: readonly PendingEntry[]): void {
   for (const entry of entries) {
     if (entry.source.kind !== "comment") continue
     wsManager.broadcast(entry.source.spaceId, {

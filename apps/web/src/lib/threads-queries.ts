@@ -13,9 +13,9 @@ import type {
 import { threadLocationKey } from "@worktable/types"
 import { abandonableRead } from "./http"
 import { isSpaceLive, THREAD_STREAM } from "./space-observation"
-import { listCommentRecipients } from "./annotations-api"
 import {
   assignThreadMessage,
+  listCommentRecipients,
   createThread,
   listThreadParticipants,
   listThreads,

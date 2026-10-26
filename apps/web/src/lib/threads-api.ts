@@ -57,6 +57,15 @@ export function listThreadParticipants(
   return fetchJSON(`${threadBase(location)}/participants`)
 }
 
+/** Who comments in a Space can be sent to: everyone who may read it. */
+export function listCommentRecipients(
+  spaceId: string
+): Promise<{ participants: ThreadParticipant[] }> {
+  return fetchJSON(
+    `/api/spaces/${encodeURIComponent(spaceId)}/annotations/recipients`
+  )
+}
+
 export function listThreads(
   scope: ThreadListScope,
   options?: ReadOptions

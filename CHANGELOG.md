@@ -9,6 +9,8 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.30] - 2026-10-26
+
 ### Fixed
 
 - **Cloud connect command signs you in:** The Worktable Cloud command for Claude Code, Codex and OpenCode now opens the agent's sign-in and connects it, so Getting Started notices it without opening the agent first. Running the command again no longer asks for `--replace`, and when it can't sign in, it says how to finish.

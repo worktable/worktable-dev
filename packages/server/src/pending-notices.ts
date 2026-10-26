@@ -18,7 +18,11 @@ import { readDocumentIdentities } from "./document-query.ts"
 import { cachedParticipantForKey } from "./participant-store.ts"
 import type { PendingEntry } from "./pending-list.ts"
 import { getSpaceArchiveInfo, getSpacesBaseDir, readSpace } from "./store.ts"
-import { canAccessSpace, canAccessWorktableThreads } from "./team-policy.ts"
+import {
+  canAccessSpace,
+  canAccessWorktableThreads,
+  runWithoutTeamIdentity,
+} from "./team-policy.ts"
 import { hasScope, type TokenIdentity } from "./token-store.ts"
 
 /** What a call is about, for telling on-topic notices from the rest. */
@@ -69,7 +73,9 @@ async function spaceInfo(spaceId: string): Promise<SpaceInfo | null> {
   if (!fingerprint) return null
   const cached = spaceInfos.get(path, fingerprint.key)
   if (cached !== undefined) return cached
-  const { data } = await readSpace(spaceId)
+  // Shared by every reader, so read as trusted work: access is checked per
+  // reader afterwards, never baked into the cache.
+  const { data } = await runWithoutTeamIdentity(() => readSpace(spaceId))
   const info =
     data && data.id === spaceId
       ? { name: data.name, archived: Boolean(getSpaceArchiveInfo(data)) }

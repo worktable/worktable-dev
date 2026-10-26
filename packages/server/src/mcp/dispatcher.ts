@@ -3151,7 +3151,11 @@ async function _dispatchOperationInner(
       return { docs }
     }
     case "workspace.pending": {
-      return await readPending(identity, PendingInput.parse(args))
+      // The request's whole identity: Teams access needs its team binding.
+      return await readPending(
+        currentRequestIdentity() ?? identity,
+        PendingInput.parse(args)
+      )
     }
     case "workspace.space_index": {
       const parsed = SpaceIndexInput.parse(args)

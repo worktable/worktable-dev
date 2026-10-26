@@ -741,6 +741,36 @@ const MermaidPreviewOutputSchema = MermaidValidationOutputSchema.extend({
   height: z.string().nullable().optional(),
 })
 
+const PendingNoticeSchema = z.looseObject({
+  itemId: z.string(),
+  kind: z.enum(["comment", "threadRequest"]),
+  revision: z.number().int().positive(),
+  at: z.string(),
+  spaceId: z.string().nullable(),
+  spaceName: z.string().optional(),
+  docPath: z.string().optional(),
+  docTitle: z.string().optional(),
+  annotationId: z.string().optional(),
+  threadId: z.string().optional(),
+  threadTitle: z.string().optional(),
+  messageId: z.string().optional(),
+  from: z.looseObject({ kind: z.string(), name: z.string() }),
+  excerpt: z.string(),
+  quote: z.string().optional(),
+  onTopic: z.boolean(),
+  open: z.looseObject({
+    tool: z.string(),
+    request: z.record(z.string(), z.unknown()),
+  }),
+})
+
+const PendingOutputSchema = z.looseObject({
+  revision: z.number().int().nonnegative(),
+  count: z.number().int().nonnegative(),
+  items: z.array(PendingNoticeSchema).optional(),
+  more: z.number().int().positive().optional(),
+})
+
 export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
   "workspace.state": [WorkspaceOverviewSchema, SpaceDetailSchema],
   "workspace.search": [
@@ -751,6 +781,7 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
     }),
   ],
   "workspace.space_index": [z.looseObject({ index: SpaceIndexSchema })],
+  "workspace.pending": [PendingOutputSchema],
   "spaces.create": [z.looseObject({ spaceId: PortableCanonicalIdSchema })],
   "spaces.update": [
     z.looseObject({
@@ -1707,6 +1738,15 @@ export function assertPublicOperationOutput(
 export const PREVIEW_OUTPUT_SCHEMAS: Partial<
   Record<keyof typeof WORKTABLE_OUTPUT_SCHEMAS, z.ZodType>
 > = {
+  worktable_discover: WORKTABLE_OUTPUT_SCHEMAS.worktable_discover.extend({
+    revision: forActions(
+      z.number().int().nonnegative(),
+      '"pending": your latest revision; pass it as since to see only newer items'
+    ),
+    count: forActions(z.number().int().nonnegative(), '"pending": how many items wait on you'),
+    items: forActions(z.array(PendingNoticeSchema), '"pending" with mode notices'),
+    more: forActions(z.number().int().positive(), '"pending": items left out of this page'),
+  }),
   worktable_documents_read:
     WORKTABLE_OUTPUT_SCHEMAS.worktable_documents_read.extend({
       source: forActions(

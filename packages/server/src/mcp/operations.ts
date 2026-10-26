@@ -45,6 +45,8 @@ export const OPERATION_DEFINITIONS = {
   "workspace.state": tool("search:read", "none"),
   "workspace.search": tool("search:read", "none"),
   "workspace.space_index": tool("docs:read", "none"),
+  // Each kind of item is shown only with the scope that reads its source.
+  "workspace.pending": tool(null, "none"),
   "spaces.create": tool("docs:write", "workspace"),
   // Setting a Space's pins also requires documents:write (see tools.ts).
   "spaces.update": tool("docs:write", "workspace"),
@@ -143,6 +145,7 @@ export const PREVIEW_OPERATIONS: ReadonlySet<OperationId> =
     "records.update_many",
     "records.import",
     "documents.upload",
+    "workspace.pending",
   ])
 
 function tool(
@@ -200,6 +203,7 @@ export const WORKTABLE_TOOL_ROUTES: Record<
     state: "workspace.state",
     search: "workspace.search",
     space_index: "workspace.space_index",
+    pending: "workspace.pending",
   },
   worktable_spaces: {
     create: "spaces.create",

@@ -13,19 +13,37 @@ import { Textarea } from "@worktable/ui/components/textarea"
 import { cn } from "@worktable/ui/lib/utils"
 import { ContextPanelHeader } from "@/components/desktop-context-panel"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
+import { useWorkspace } from "@/lib/queries"
 
-/** Who the comment went to, and who of them has replied since they were last asked. */
-function recipientsLine(annotation: Annotation): string | null {
-  const latest = new Map<string, NonNullable<Annotation["requests"]>[number]>();
+type CommentRequest = NonNullable<Annotation["requests"]>[number];
+
+/** Where each recipient is with the comment, as far as Worktable knows. */
+function requestState(request: CommentRequest): "sent" | "delivered" | "read" | "replied" {
+  if (request.status === "replied") return "replied";
+  if (request.readAt) return "read";
+  return request.deliveredAt ? "delivered" : "sent";
+}
+
+const STATE_LABEL = {
+  sent: (names: string) => `To ${names}`,
+  delivered: (names: string) => `Delivered to ${names}`,
+  read: (names: string) => `Read by ${names}`,
+  replied: (names: string) => `Replied by ${names}`,
+};
+
+/** Who the comment went to, and how far each of them has got with it. */
+function recipientsLine(annotation: Annotation, selfId?: string): string | null {
+  const latest = new Map<string, CommentRequest>();
   for (const request of annotation.requests ?? []) latest.set(request.to.id, request);
   const requests = [...latest.values()].filter((request) => request.status !== "withdrawn");
   if (requests.length === 0) return null;
-  const waiting = requests.filter((request) => request.status === "open").map((request) => request.to.name);
-  const replied = requests.filter((request) => request.status === "replied").map((request) => request.to.name);
-  return [
-    waiting.length ? `To ${waiting.join(", ")}` : null,
-    replied.length ? `Replied by ${replied.join(", ")}` : null,
-  ]
+  return (["sent", "delivered", "read", "replied"] as const)
+    .map((state) => {
+      const names = requests
+        .filter((request) => requestState(request) === state)
+        .map((request) => (request.to.id === selfId ? "you" : request.to.name));
+      return names.length ? STATE_LABEL[state](names.join(", ")) : null;
+    })
     .filter(Boolean)
     .join(" · ");
 }
@@ -168,7 +186,8 @@ function AnnotationCard({
 }) {
   const [reply, setReply] = useState("");
   const isResolved = annotation.status === "resolved";
-  const recipients = recipientsLine(annotation);
+  const selfId = useWorkspace().data?.person?.id;
+  const recipients = recipientsLine(annotation, selfId);
   const blockLabel =
     "blockId" in annotation.target && annotation.target.blockId
       ? annotation.target.blockId.slice(0, 8)

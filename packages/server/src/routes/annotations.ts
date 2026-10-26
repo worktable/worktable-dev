@@ -2,7 +2,7 @@ import { requireScope, restWriteActor } from "../auth.ts";
 import { reservedAnnotationInput } from "../annotation-origin.ts";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import { AnnotationTargetSchema, WidgetIdSchema, type AnnotationAuthor, type AnnotationTarget } from "@worktable/types";
+import { AnnotationTargetSchema, WidgetIdSchema, type Annotation, type AnnotationAuthor, type AnnotationTarget } from "@worktable/types";
 import {
   createAnnotation,
   getAnnotationContext,
@@ -14,6 +14,7 @@ import {
 } from "../annotation-store.ts";
 import { wsManager } from "../ws.ts";
 import { listThreadParticipantsForDisplay } from "../thread-service.ts";
+import { pendingMarks } from "../pending-list.ts";
 import {
   CommentRecipientError,
   MAX_COMMENT_RECIPIENTS,
@@ -98,6 +99,19 @@ async function recipientsFor(c: Context, spaceId: string, names: string[] | unde
   }
 }
 
+/** Open requests with when their recipient was shown and opened them. */
+function withMarks<T extends Annotation>(annotation: T): T {
+  if (!annotation.requests?.some((request) => request.status === "open")) return annotation;
+  return {
+    ...annotation,
+    requests: annotation.requests.map((request) =>
+      request.status === "open"
+        ? { ...request, ...pendingMarks(`cmt:${annotation.id}:${request.id}`) }
+        : request
+    ),
+  };
+}
+
 function parseCsv(value: string | undefined): string[] | undefined {
   if (!value) return undefined;
   return value.split(",").map((item) => item.trim()).filter(Boolean);
@@ -152,7 +166,7 @@ annotationsRouter.get("/", requireScope("annotations:read"), async (c) => {
     limit: Number.isFinite(limit) ? limit : 100,
     offset: Number.isFinite(offset) ? offset : 0,
   });
-  return c.json(result);
+  return c.json({ ...result, annotations: result.annotations.map(withMarks) });
 });
 
 // People comment and reply on what they can read; changing or resolving a
@@ -190,7 +204,7 @@ annotationsRouter.get("/:annotationId", requireScope("annotations:read"), async 
   const annotation = await readAnnotation(spaceId, annotationId);
   const includeTargetContext = c.req.query("includeTargetContext") === "true";
   const context = includeTargetContext ? await getAnnotationContext(spaceId, annotationId) : undefined;
-  return c.json({ annotation, context });
+  return c.json({ annotation: withMarks(annotation), context });
 });
 
 annotationsRouter.patch("/:annotationId", requireScope("annotations:write"), async (c) => {

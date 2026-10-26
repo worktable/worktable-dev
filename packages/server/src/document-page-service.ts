@@ -85,6 +85,8 @@ interface DocumentPageMetadata {
   contributors?: DocumentContributors
   embeds?: Record<string, string>
   version?: string
+  networkRequested?: true
+  networkRequestedBy?: string
 }
 
 /**
@@ -197,6 +199,12 @@ const PAGE_INTEGRATIONS: readonly DocumentPageIntegration[] = [
       return {
         ...(provenance ? { provenance } : {}),
         revision: htmlContentRevisionOf(document),
+        ...(document.widget.requests?.network
+          ? {
+              networkRequested: true as const,
+              ...(document.widget.requests.by ? { networkRequestedBy: document.widget.requests.by } : {}),
+            }
+          : {}),
       }
     },
     listVersions: (spaceId, path) => listWidgetVersions(spaceId, path),
@@ -408,6 +416,12 @@ async function pageForHandle(
     ...(metadata?.contributors ? { contributors: metadata.contributors } : {}),
     ...(metadata?.embeds ? { embeds: metadata.embeds } : {}),
     ...(metadata?.version ? { version: metadata.version } : {}),
+    ...(metadata?.networkRequested
+      ? {
+          networkRequested: true as const,
+          ...(metadata.networkRequestedBy ? { networkRequestedBy: metadata.networkRequestedBy } : {}),
+        }
+      : {}),
     ...(links || visitorSummary ? { sharing: {...(links ?? {activeLinks: 0, canCreate: false}), ...(visitorSummary ? {visitorComments: visitorSummary} : {})} } : {}),
   }
 }

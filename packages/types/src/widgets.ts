@@ -89,6 +89,17 @@ export const WidgetFileSchema = z.object({
     records: {},
     state: { read: true, write: true },
   }),
+  /**
+   * Permissions an agent asked for that wait on a person. Network access an
+   * agent requests stays off until someone allows it in Worktable.
+   */
+  requests: z
+    .object({
+      network: z.literal(true).optional(),
+      /** The name of the agent that asked. */
+      by: z.string().min(1).max(200).optional(),
+    })
+    .optional(),
 });
 
 export type WidgetFile = z.infer<typeof WidgetFileSchema>;

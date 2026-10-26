@@ -10,6 +10,7 @@ import {
   Archive,
   Code,
   ExternalLink,
+  Globe,
   History,
   Info,
   Loader2,
@@ -605,6 +606,7 @@ function WidgetDetailPage({
   )
 
   const [restoring, setRestoring] = useState(false)
+  const [allowingNetwork, setAllowingNetwork] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
@@ -675,6 +677,27 @@ function WidgetDetailPage({
       setRestoring(false)
     }
   }, [recheckPage, spaceId, widgetId])
+
+  const handleAllowNetwork = useCallback(async () => {
+    setAllowingNetwork(true)
+    try {
+      await patchWidget(spaceId, widgetId, {
+        allowNetwork: true,
+        revision: page?.revision,
+      })
+      await recheckPage()
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 409) {
+        await recheckPage()
+        toast.error("This HTML doc changed. Check it before allowing.")
+        return
+      }
+      console.error("Failed to allow HTML doc network access:", err)
+      toast.error("Failed to allow network access")
+    } finally {
+      setAllowingNetwork(false)
+    }
+  }, [page?.revision, recheckPage, spaceId, widgetId])
 
   const handleRename = useCallback(
     async (name: string, description?: string | null) => {
@@ -804,6 +827,13 @@ function WidgetDetailPage({
           onRestore={handleRestore}
           restoring={restoring}
           disabled={!validated}
+        />
+      ) : null}
+      {page?.networkRequested && !readOnly ? (
+        <NetworkRequestBanner
+          requestedBy={page.networkRequestedBy}
+          onAllow={handleAllowNetwork}
+          allowing={allowingNetwork}
         />
       ) : null}
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -1110,6 +1140,38 @@ function ArchivedWidgetBanner({
           {restoring ? "Restoring..." : "Restore"}
         </Button>
       </div>
+    </div>
+  )
+}
+
+function NetworkRequestBanner({
+  requestedBy,
+  onAllow,
+  allowing,
+}: {
+  requestedBy?: string
+  onAllow: () => void
+  allowing: boolean
+}) {
+  return (
+    <div
+      role="status"
+      className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-warning/30 bg-warning/10 px-4 py-2 text-sm text-foreground print:hidden"
+    >
+      <Globe className="size-4 shrink-0 text-warning" aria-hidden />
+      <span className="min-w-0 flex-1">
+        {requestedBy ?? "An agent"} asked to let this HTML doc exchange data
+        with other websites.
+      </span>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7"
+        disabled={allowing}
+        onClick={() => void onAllow()}
+      >
+        {allowing ? "Allowing…" : "Allow"}
+      </Button>
     </div>
   )
 }

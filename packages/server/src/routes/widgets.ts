@@ -20,6 +20,9 @@ import { htmlContentRevisionOf } from "../document-content-revision.ts";
 import { deleteHtmlDocument } from "../html-document-delete.ts";
 import { moveHtmlDocument } from "../html-document-move.ts";
 import { createHtmlDocument } from "../html-document-create.ts";
+import { authorizeHtmlPermissions, HtmlPermissionError, isPersonWriter, NETWORK_REQUEST_WARNING } from "../html-permission-authority.ts";
+import { configuredMcpSurface } from "../mcp/surface.ts";
+import type { TokenIdentity } from "../token-store.ts";
 import { ManagedDocumentAdmissionError } from "../document-identity-admission.ts";
 import {
   HtmlDocumentPathConflictError,
@@ -60,6 +63,25 @@ function normalizeWidgetPermissions(input: z.infer<typeof WidgetPermissionsInput
   };
 }
 
+/**
+ * What this caller's write may grant, with preview agent tools on; null keeps
+ * today's behavior. A grant beyond the caller's own access answers 403.
+ */
+function grantedPermissions(
+  c: Context,
+  requested: WidgetFile["permissions"] | undefined,
+  existing?: Pick<WidgetFile, "permissions" | "requests">,
+): { permissions: WidgetFile["permissions"] | undefined; requests: WidgetFile["requests"] } | Response | null {
+  if (configuredMcpSurface() !== "preview") return null;
+  const identity = c.get("identity") as TokenIdentity | undefined;
+  try {
+    return authorizeHtmlPermissions({ requested, existing, person: isPersonWriter(identity), identity, scopes: identity?.scopes ?? [] });
+  } catch (error) {
+    if (!(error instanceof HtmlPermissionError)) throw error;
+    return c.json({ error: error.message, code: "FORBIDDEN", missingScope: error.missingScope }, 403);
+  }
+}
+
 const CreateWidgetSchema = z.object({
   id: z.string().optional(),
   folder: z.string().optional(),
@@ -84,6 +106,9 @@ const PutWidgetSchema = z.object({
 });
 
 const PatchWidgetSchema = z.object({
+  /** A person allows the network access an agent asked for, for the revision they saw. */
+  allowNetwork: z.literal(true).optional(),
+  revision: z.string().min(1).optional(),
   name: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
   updatedBy: z.string().optional(),
@@ -307,10 +332,13 @@ widgetsRouter.post("/", async (c) => {
       code: "VALIDATION_ERROR",
     }, 400);
   }
-  const permissions = normalizeWidgetPermissions(parsed.data.permissions);
+  const granted = grantedPermissions(c, normalizeWidgetPermissions(parsed.data.permissions));
+  if (granted instanceof Response) return granted;
+  const permissions = granted ? granted.permissions : normalizeWidgetPermissions(parsed.data.permissions);
   const warnings = validateWidgetHtml(parsed.data.html, permissions);
   const blockingIssue = getBlockingWidgetIssue(warnings);
   if (blockingIssue) return c.json({ error: blockingIssue.message, code: blockingIssue.code, warnings }, 400);
+  if (granted?.requests?.network) warnings.push(NETWORK_REQUEST_WARNING);
   let outcome: { data?: WidgetFile; error?: string };
   try {
     outcome = await createHtmlDocument({
@@ -323,6 +351,7 @@ widgetsRouter.post("/", async (c) => {
       createdBy: restWriteActor(c, parsed.data.createdBy),
       metadata: parsed.data.metadata,
       permissions,
+      requests: granted?.requests,
       versionSource: "rest-api",
       versionUpdatedBy: restWriteActor(c, parsed.data.createdBy),
     });
@@ -504,12 +533,15 @@ async function handlePutWidget(c: Context, spaceId: string, widgetId: string) {
     if (error || !existing) {
       return { kind: "not-found" as const, error: error ?? "Widget not found" };
     }
-    const permissions = normalizeWidgetPermissions(parsed.data.permissions) ?? existing.permissions;
+    const granted = grantedPermissions(c, normalizeWidgetPermissions(parsed.data.permissions), existing);
+    if (granted instanceof Response) return { kind: "denied" as const, response: granted };
+    const permissions = (granted ? granted.permissions : normalizeWidgetPermissions(parsed.data.permissions)) ?? existing.permissions;
     const warnings = validateWidgetHtml(parsed.data.html, permissions);
     const blockingIssue = getBlockingWidgetIssue(warnings);
     if (blockingIssue) {
       return { kind: "invalid" as const, issue: blockingIssue, warnings };
     }
+    if (granted?.requests?.network) warnings.push(NETWORK_REQUEST_WARNING);
     const widget = buildWidgetFile({
       id: widgetId,
       name: parsed.data.name,
@@ -517,6 +549,7 @@ async function handlePutWidget(c: Context, spaceId: string, widgetId: string) {
       updatedBy: restWriteActor(c, parsed.data.updatedBy),
       metadata: parsed.data.metadata,
       permissions,
+      ...(granted ? { requests: granted.requests ?? null } : {}),
       existing,
     });
     const beforeContent = await captureWidgetVersionContent(spaceId, widgetId);
@@ -531,6 +564,7 @@ async function handlePutWidget(c: Context, spaceId: string, widgetId: string) {
   if (outcome.kind === "not-found") {
     return c.json({ error: outcome.error, code: "NOT_FOUND" }, 404);
   }
+  if (outcome.kind === "denied") return outcome.response;
   if (outcome.kind === "invalid") {
     return c.json({
       error: outcome.issue?.message ?? outcome.error ?? "Write failed",
@@ -551,12 +585,26 @@ async function handlePatchWidget(c: Context, spaceId: string, widgetId: string) 
   const body = await c.req.json().catch(() => null);
   const parsed = PatchWidgetSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
+  if (parsed.data.allowNetwork && !isPersonWriter(c.get("identity") as TokenIdentity | undefined)) {
+    return c.json({ error: "Only a person can allow an HTML doc network access", code: "FORBIDDEN" }, 403);
+  }
+  if (parsed.data.allowNetwork && !parsed.data.revision) {
+    return c.json({ error: "Allowing network access needs the revision that was checked", code: "VALIDATION_ERROR" }, 400);
+  }
   const outcome = await withWidgetWriteLock(spaceId, widgetId, async () => {
     const beforeContent = await captureWidgetVersionContent(spaceId, widgetId);
+    let current: WidgetFile | null = null;
+    if (parsed.data.allowNetwork) {
+      // The person allowed the code they saw, not whatever an agent wrote since.
+      const document = (await readWidgetDocument(spaceId, widgetId)).data;
+      if (!document || htmlContentRevisionOf(document) !== parsed.data.revision) return { changed: true as const };
+      current = document.widget;
+    }
     const result = await updateWidgetMetadata(spaceId, widgetId, {
       name: parsed.data.name,
       description: parsed.data.description,
       metadata: parsed.data.metadata,
+      ...(current ? { permissions: { ...current.permissions, network: true } } : {}),
       updatedBy: restWriteActor(c, parsed.data.updatedBy),
     });
     if (result.error || !result.data) return { error: result.error ?? "Update failed" };
@@ -564,6 +612,7 @@ async function handlePatchWidget(c: Context, spaceId: string, widgetId: string) 
     result.release?.();
     return { data: result.data };
   });
+  if ("changed" in outcome) return c.json({ error: "The HTML doc changed since it was checked", code: "CONFLICT" }, 409);
   if (!outcome.data) return c.json({ error: outcome.error ?? "Update failed", code: "VALIDATION_ERROR" }, 400);
   invalidateSearchIndex({ spaceId, path: widgetId });
   wsManager.broadcast(spaceId, { type: "widget_update", spaceId, widgetId, data: outcome.data });
@@ -724,6 +773,8 @@ async function handleRestoreVersion(c: Context, spaceId: string, widgetId: strin
       return { kind: "not-found" as const, error: "Version not found" };
     }
     const restored = snapshot.after.content;
+    const granted = grantedPermissions(c, restored.widget.permissions);
+    if (granted instanceof Response) return { kind: "denied" as const, response: granted };
     // Restore bypasses validateWidgetHtml's blocking gate on purpose: the
     // content was valid when persisted, and tightened rules must never lock
     // the user out of reverting. Archive state and creation provenance stay as
@@ -742,11 +793,13 @@ async function handleRestoreVersion(c: Context, spaceId: string, widgetId: strin
     };
     const existingWithoutDescription = { ...base };
     delete existingWithoutDescription.description;
+    if (granted) delete existingWithoutDescription.requests;
     const widget = {
       ...existingWithoutDescription,
       name: restored.widget.name,
       ...(restored.widget.description !== undefined ? { description: restored.widget.description } : {}),
-      permissions: restored.widget.permissions,
+      permissions: granted?.permissions ?? restored.widget.permissions,
+      ...(granted?.requests ? { requests: granted.requests } : {}),
       metadata: restored.widget.metadata,
       runtime: restored.widget.runtime,
       updatedAt: new Date().toISOString(),
@@ -771,6 +824,7 @@ async function handleRestoreVersion(c: Context, spaceId: string, widgetId: strin
   if (outcome.kind === "not-found") {
     return c.json({ error: outcome.error, code: "NOT_FOUND" }, 404);
   }
+  if (outcome.kind === "denied") return outcome.response;
   if (outcome.kind === "invalid") {
     return c.json({ error: outcome.error, code: "VALIDATION_ERROR" }, 400);
   }

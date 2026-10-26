@@ -8845,7 +8845,7 @@
                   "additionalProperties": {}
                 },
                 "permissions": {
-                  "description": "Optional HTML doc bridge permissions. Include per-collection record access for every worktable.records call the HTML doc makes.",
+                  "description": "Optional HTML doc bridge permissions. Include per-collection record access for every worktable.records call the HTML doc makes; you can grant only Record access this connection has. network=true asks for outbound https requests, which stay blocked until a person allows them in Worktable.",
                   "type": "object",
                   "properties": {
                     "records": {
@@ -9063,7 +9063,7 @@
                   "additionalProperties": {}
                 },
                 "permissions": {
-                  "description": "Optional HTML doc bridge permissions. Omit to keep current permissions. Include per-collection record access for every worktable.records call the HTML doc makes.",
+                  "description": "Optional HTML doc bridge permissions. Omit to keep current permissions; either way they must stay within the Record access this connection has. Every update turns network access off until a person allows it again.",
                   "type": "object",
                   "properties": {
                     "records": {

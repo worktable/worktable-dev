@@ -18,12 +18,12 @@ export function docContributors(
   const provenance = page?.provenance
   const writer = provenance?.updatedBy
   if (!writer) return undefined
-  // REST writes name an agent "agent:<principal>"; MCP writes record the
-  // principal itself, with source "mcp".
-  if (writer.startsWith("agent:")) {
-    return [{ kind: "agent", id: writer.slice("agent:".length) }]
-  }
-  return provenance.source === "mcp" ? [{ kind: "agent", id: writer }] : undefined
+  // MCP writes record the principal itself, which for a Teams agent starts
+  // with "agent:"; REST writes add that prefix to the principal.
+  if (provenance.source === "mcp") return [{ kind: "agent", id: writer }]
+  return writer.startsWith("agent:")
+    ? [{ kind: "agent", id: writer.slice("agent:".length) }]
+    : undefined
 }
 
 /** Who a comment in this Space can go to, and who it goes to unless changed. */

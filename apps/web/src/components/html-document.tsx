@@ -393,11 +393,6 @@ function WidgetDetailPage({
       const iframeWindow = iframeRef.current?.contentWindow
       if (event.source !== iframeWindow || event.origin !== "null") return
       const requestGeneration = navigationGeneration
-      const isCurrentFrame = () =>
-        !disposed &&
-        navigationToken !== null &&
-        requestGeneration === navigationGeneration &&
-        event.source === iframeRef.current?.contentWindow
       const data = event.data as {
         type?: string
         id?: string
@@ -409,6 +404,15 @@ function WidgetDetailPage({
         collection?: string
         navigationToken?: string
       }
+      // Every bridge message carries the token the runtime announced. A page
+      // the frame navigated to can't know it, even if it kept the old page
+      // from saying it was leaving.
+      const isCurrentFrame = () =>
+        !disposed &&
+        navigationToken !== null &&
+        data?.navigationToken === navigationToken &&
+        requestGeneration === navigationGeneration &&
+        event.source === iframeRef.current?.contentWindow
       if (data?.type === "worktable.navigation.handshake") {
         if (!acceptingNavigationHandshake) return
         acceptingNavigationHandshake = false

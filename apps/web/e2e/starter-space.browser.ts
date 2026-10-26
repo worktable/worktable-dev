@@ -367,6 +367,30 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
       ).worktable.state.get()
     )
   ).toEqual({})
+  // A message without the runtime's token gets no reply, so a page the frame
+  // navigates to can't use the bridge however the navigation is timed.
+  expect(
+    await originalFrame!.evaluate(
+      (path) =>
+        new Promise<unknown>((resolve) => {
+          window.addEventListener("message", (event) => {
+            if (event.data?.id === "untokened-request") resolve(event.data)
+          })
+          parent.postMessage(
+            {
+              type: "worktable.api.request",
+              id: "untokened-request",
+              widgetId: "plans/live-status",
+              spaceId: "welcome",
+              path,
+            },
+            "*"
+          )
+          setTimeout(() => resolve(null), 1_500)
+        }),
+      statePath
+    )
+  ).toBeNull()
   let releaseState = () => {}
   const stateHeld = new Promise<void>((resolve) => {
     releaseState = resolve

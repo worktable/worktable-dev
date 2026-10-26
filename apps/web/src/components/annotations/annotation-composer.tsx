@@ -94,6 +94,8 @@ export function AnnotationComposer({
   // Until the writer picks, the comment goes to whoever is suggested.
   const [picked, setPicked] = useState<string | null>(null);
   const recipient = picked ?? recipients?.suggested ?? NO_RECIPIENT;
+  // A suggestion waits for who wrote the selection; a choice doesn't.
+  const awaitingRecipient = picked === null && Boolean(recipients?.settling);
   const [wasOpen, setWasOpen] = useState(open);
   const isMobile = useIsMobile();
   const anchor = useMemo(() => anchorFor(draft?.anchor), [draft?.anchor]);
@@ -126,7 +128,7 @@ export function AnnotationComposer({
 
   const submit = () => {
     const trimmed = body.trim();
-    if (!trimmed) return;
+    if (!trimmed || awaitingRecipient) return;
     onSubmit(trimmed, recipients && recipient !== NO_RECIPIENT ? [recipient] : []);
     onOpenChange(false);
   };
@@ -175,7 +177,7 @@ export function AnnotationComposer({
           </ResponsiveDialogBody>
           <ResponsiveDialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={submit} disabled={!draft || !body.trim()}>
+            <Button onClick={submit} disabled={!draft || !body.trim() || awaitingRecipient}>
               {action}
             </Button>
           </ResponsiveDialogFooter>
@@ -214,7 +216,7 @@ export function AnnotationComposer({
           <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button size="sm" onClick={submit} disabled={!draft || !body.trim()}>
+          <Button size="sm" onClick={submit} disabled={!draft || !body.trim() || awaitingRecipient}>
             {action}
           </Button>
         </div>

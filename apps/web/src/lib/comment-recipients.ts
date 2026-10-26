@@ -39,6 +39,8 @@ export interface CommentPassage {
 
 /** Who a comment in this Space can go to, and who it goes to unless changed. */
 export interface CommentRecipients {
+  /** Who wrote the selected text is still being looked up. */
+  settling: boolean
   options: ThreadParticipant[]
   /** The agent that most recently changed the Doc, when it can be sent to. */
   suggested: string
@@ -101,6 +103,6 @@ export function useCommentRecipients(
             .filter((actor) => actor.kind === "agent")
             .map((actor) => participantOf(actor.id))
             .find((id) => offered.has(id)) ?? NO_RECIPIENT)
-    return { options, suggested }
-  }, [enabled, participants.data, presentations, contributors, author.data, workspace?.person])
+    return { options, suggested, settling: author.isLoading }
+  }, [enabled, participants.data, presentations, contributors, author.data, author.isLoading, workspace?.person])
 }

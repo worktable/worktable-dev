@@ -100,6 +100,29 @@ describe("who wrote a passage", () => {
     })
   })
 
+  it("tells the same words in another place apart, and trusts no near match", async () => {
+    await writeDoc("pricing", "status", "# Status\n\nSection A: Approved.\n\nSection B: Pending.\n", {
+      updatedBy: "token:finn",
+      source: "mcp",
+      managedIdentity: true,
+    })
+    await writeDoc("pricing", "status", "# Status\n\nSection A: Approved.\n\nSection B: Approved.\n", {
+      updatedBy: "token:atlas",
+      source: "mcp",
+      managedIdentity: true,
+    })
+    expect(
+      await passageAuthor("pricing", "status", { quote: "Approved.", prefix: "Section B: " })
+    ).toMatchObject({ by: "token:atlas" })
+    expect(
+      await passageAuthor("pricing", "status", { quote: "Approved.", prefix: "Section A: " })
+    ).toMatchObject({ by: "token:finn" })
+    // Words that are not in the Doc are nobody's, however close.
+    expect(
+      await passageAuthor("pricing", "explorer", { quote: "Team is $49 a month for everyone." })
+    ).toBeNull()
+  })
+
   it("names no writer when the passage is older than the history it reads", async () => {
     for (let index = 0; index < 20; index++) {
       await writeDoc(

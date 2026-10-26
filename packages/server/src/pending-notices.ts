@@ -283,13 +283,18 @@ function day(at: string): string {
 
 function line(notice: PendingNotice, mode: "ambient" | "requested"): string {
   if (notice.kind === "comment") {
+    // An agent chose the passage it quotes too; unasked, that waits as well.
+    const passage =
+      mode === "requested" || notice.from.kind === "person"
+        ? notice.quote
+        : undefined
     const place = notice.onTopic
       ? "this Doc"
       : `${notice.docTitle ?? label(notice.docPath ?? "a Doc", TITLE_LIMIT)}${notice.spaceName ? ` (${notice.spaceName})` : ""}`
     const on = notice.yourTextAt
-      ? `on text you wrote${notice.onTopic ? "" : ` in ${place}`} on ${day(notice.yourTextAt)}${notice.quote ? `, ${quoted(notice.quote)}` : ""}`
-      : notice.onTopic && notice.quote
-        ? `on ${quoted(notice.quote)}`
+      ? `on text you wrote${notice.onTopic ? "" : ` in ${place}`} on ${day(notice.yourTextAt)}${passage ? `, ${quoted(passage)}` : ""}`
+      : notice.onTopic && passage
+        ? `on ${quoted(passage)}`
         : `on ${place}`
     return `- ${notice.from.name} sent you a comment ${on}${said(notice, mode)} Comment ${notice.annotationId}.`
   }

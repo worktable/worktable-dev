@@ -9,7 +9,7 @@
 // The walk is bounded, and runs only for a comment on selected text.
 
 import {
-  findPassage,
+  normalizePassageText,
   sourceCategory,
   type AnnotationTarget,
   type PassageSelector,
@@ -76,6 +76,28 @@ function readingText(content: unknown): string | null {
   return lines.join("\n")
 }
 
+/**
+ * Whether the selected words are in `text` word for word, with the text the
+ * selection had either side of them; without that context, only when they
+ * appear once.
+ */
+function stillHere(text: string, selector: PassageSelector): boolean {
+  const flat = normalizePassageText(text)
+  const quote = normalizePassageText(selector.quote)
+  const prefix = normalizePassageText(selector.prefix ?? "")
+  const suffix = normalizePassageText(selector.suffix ?? "")
+  const places: number[] = []
+  for (let at = flat.indexOf(quote); at !== -1; at = flat.indexOf(quote, at + 1)) {
+    places.push(at)
+  }
+  if (!prefix && !suffix) return places.length === 1
+  return places.some(
+    (at) =>
+      (!prefix || flat.slice(0, at).trimEnd().endsWith(prefix)) &&
+      (!suffix || flat.slice(at + quote.length).trimStart().startsWith(suffix))
+  )
+}
+
 /** A Doc's versions newest first, and a reader for each, resolved once. */
 async function docHistory(spaceId: string, docPath: string): Promise<{
   versions: Array<{ id: string; createdAt: string; createdBy: string; source: string }>
@@ -127,10 +149,10 @@ export async function passageAuthor(
     const snapshot = await history.read(entry.id)
     const text = readingText(snapshot?.after.content)
     if (text === null) return null
-    // Further back only the same words count: a reworded passage was
-    // written by whoever reworded it.
-    const found = findPassage(text, selector)
-    if (!found || (index > 0 && found.match !== "exact")) return author
+    // Only the same words in the same place count, now and further back: a
+    // reworded passage was written by whoever reworded it, and the same
+    // words elsewhere in the Doc are another passage.
+    if (!stillHere(text, selector)) return author
     const who = authorOf(entry.createdBy, entry.source)
     // A restore or tidy-up carries text forward; the writer is further back.
     if (who) author = { ...who, versionId: entry.id, at: entry.createdAt }

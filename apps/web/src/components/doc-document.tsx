@@ -820,6 +820,10 @@ function MarkdownDocPage({
   const [belowXl, setBelowXl] = useState(false)
   const annotationsQuery = useDocAnnotations(spaceId, docPath, true)
   const annotationMutations = useAnnotationMutations(spaceId, docPath)
+  const commentContext = useMemo(
+    () => ({ spaceId, contributors: page?.contributors?.recent }),
+    [spaceId, page?.contributors?.recent]
+  )
   const annotations = annotationsQuery.data?.annotations ?? []
   const openAnnotationCount = annotations.filter(
     (annotation) => annotation.status !== "resolved"
@@ -1093,8 +1097,9 @@ function MarkdownDocPage({
         <PassageCommenting
           rootRef={readingRef}
           docPath={docPath}
+          context={commentContext}
           onCreate={(input) => {
-            annotationMutations.create.mutate(input)
+            annotationMutations.create.mutate({ ...input, category: "comment" })
             // On a phone the highlight confirms it; the next passage is a tap away.
             if (!isMobile) {
               setAnnotationsOpen(true)
@@ -1326,6 +1331,10 @@ function BlockNoteDocPage({
   const queryClient = useQueryClient()
   const annotationsQuery = useDocAnnotations(spaceId, docPath, true)
   const annotationMutations = useAnnotationMutations(spaceId, docPath)
+  const commentContext = useMemo(
+    () => ({ spaceId, contributors: page?.contributors?.recent }),
+    [spaceId, page?.contributors?.recent]
+  )
   const annotations = annotationsQuery.data?.annotations ?? []
   const openAnnotationCount = annotations.filter(
     (annotation) => annotation.status !== "resolved"
@@ -1804,7 +1813,8 @@ function BlockNoteDocPage({
         draft={composerDraft}
         open={composerOpen && !readOnly}
         onOpenChange={setComposerOpen}
-        onSubmit={(category, body) => {
+        context={commentContext}
+        onSubmit={(body, to) => {
           if (!composerDraft) return
           annotationMutations.create.mutate({
             target: {
@@ -1814,8 +1824,9 @@ function BlockNoteDocPage({
               blockType: composerDraft.blockType,
               quote: composerDraft.quote,
             },
-            category,
+            category: "comment",
             body,
+            to,
           })
           if (!isMobile) setAnnotationsOpen(true)
         }}
@@ -1825,8 +1836,9 @@ function BlockNoteDocPage({
         <PassageCommenting
           rootRef={standInRef}
           docPath={docPath}
+          context={commentContext}
           onCreate={(input) => {
-            annotationMutations.create.mutate(input)
+            annotationMutations.create.mutate({ ...input, category: "comment" })
             if (!isMobile) setAnnotationsOpen(true)
           }}
         />

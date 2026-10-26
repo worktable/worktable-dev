@@ -10,6 +10,7 @@ import { nanoid } from "nanoid";
 import type {
   Annotation,
   AnnotationAuthor,
+  AnnotationRecipient,
   AnnotationCategory,
   AnnotationContext,
   AnnotationFile,
@@ -38,6 +39,7 @@ import {
 } from "./document-annotation-service.ts"
 import { readWorkspaceStorageLayoutAt } from "./workspace-storage-v2.ts"
 import { BoundedFileReadError } from "./bounded-file.ts"
+import { addRequests, requestsAfterReply, type CommentReplier } from "./annotation-requests.ts"
 
 const ANNOTATION_FILE_TYPE = "worktable.annotations" as const;
 const DEFAULT_AUTHOR: AnnotationAuthor = { type: "agent", id: "worktable", name: "Worktable" }
@@ -108,6 +110,14 @@ export interface CreateAnnotationInput {
   labels?: string[];
   idempotencyKey?: string;
   metadata?: Record<string, unknown>;
+  /** People and agents the comment is sent to, already checked. */
+  to?: AnnotationRecipient[];
+}
+
+/** Who is replying, and who else the reply is sent to. */
+export interface AnnotationReplyOptions {
+  replier?: CommentReplier;
+  to?: AnnotationRecipient[];
 }
 
 export interface UpdateAnnotationPatch {
@@ -356,6 +366,7 @@ async function createAnnotationRecord(spaceId: string, input: CreateAnnotationIn
       updatedAt: now,
       idempotencyKey: input.idempotencyKey,
       metadata: input.metadata ?? {},
+      ...(input.to?.length ? { requests: addRequests([], input.to, now) } : {}),
     };
     file.annotations.push(annotation);
     await writeAnnotationFile(spaceId, key, file, beforeWrite);
@@ -365,24 +376,27 @@ async function createAnnotationRecord(spaceId: string, input: CreateAnnotationIn
     : withAnnotationStoreLock(spaceId, create, commentAccess());
 }
 
-async function replyAnnotationRecord(spaceId: string, annotationId: string, body: string, author: AnnotationAuthor): Promise<{ annotation: Annotation; replyId: string }> {
+async function replyAnnotationRecord(spaceId: string, annotationId: string, body: string, author: AnnotationAuthor, options: AnnotationReplyOptions = {}): Promise<{ annotation: Annotation; replyId: string }> {
   if (await usesDocumentDataV2()) {
     return replyLegacyCompatibleAnnotationV2(
       spaceId,
       annotationId,
       body,
-      author
+      author,
+      options
     )
   }
   return withAnnotationStoreLock(spaceId, async () => {
     const found = await findAnnotation(spaceId, annotationId);
   const now = new Date().toISOString();
   const replyId = `msg_${nanoid(12)}`;
+  const requests = requestsAfterReply(found.annotation.requests ?? [], options.replier, replyId, now, options.to);
   const annotation: Annotation = {
     ...found.annotation,
     thread: [...found.annotation.thread, { id: replyId, author, body, createdAt: now }],
     updatedAt: now,
     updatedBy: author.id,
+    ...(requests.length ? { requests } : {}),
   };
   found.file.annotations[found.index] = annotation;
   await writeAnnotationFile(spaceId, found.key, found.file);
@@ -477,9 +491,9 @@ export async function createAnnotation(spaceId: string, input: CreateAnnotationI
   return result
 }
 
-export async function replyAnnotation(spaceId: string, annotationId: string, body: string, author: AnnotationAuthor = DEFAULT_AUTHOR): Promise<{ annotation: Annotation; replyId: string }> {
+export async function replyAnnotation(spaceId: string, annotationId: string, body: string, author: AnnotationAuthor = DEFAULT_AUTHOR, options: AnnotationReplyOptions = {}): Promise<{ annotation: Annotation; replyId: string }> {
   assertSpaceAccess(spaceId, commentAccess());
-  const result = await replyAnnotationRecord(spaceId, annotationId, body, author)
+  const result = await replyAnnotationRecord(spaceId, annotationId, body, author, options)
   if (author.type !== "system" && !(await usesDocumentDataV2())) {
     await noteAnnotationActivity(spaceId, result.annotation, commentAccess())
     const path = annotatedDocumentPath(result.annotation)

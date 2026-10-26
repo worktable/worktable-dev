@@ -39,7 +39,12 @@ function threadBase(location: ThreadLocation): string {
 /** Current identities, keyed by participant or activity principal id. */
 export type ParticipantPresentations = Record<
   string,
-  Pick<ThreadParticipant, "platform" | "icon"> & { id?: string; name?: string }
+  Pick<ThreadParticipant, "platform" | "icon"> & {
+    id?: string
+    /** The Threads participant this identity is. */
+    participantId?: string
+    name?: string
+  }
 >
 
 export function listThreadParticipants(

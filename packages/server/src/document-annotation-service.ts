@@ -10,6 +10,7 @@ import { DocumentIdSchema } from "@worktable/types"
 import type {
   Annotation,
   AnnotationAuthor,
+  AnnotationRecipient,
   AnnotationCategory,
   AnnotationStatus,
   AnnotationTarget,
@@ -18,6 +19,7 @@ import type {
   DocumentId,
 } from "@worktable/types"
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
+import { addRequests, requestsAfterReply, type CommentReplier } from "./annotation-requests.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import {
   readDocumentAnnotationsV2,
@@ -65,6 +67,8 @@ export interface DocumentAnnotationCreateInput {
   labels?: string[]
   idempotencyKey?: string
   metadata?: Record<string, unknown>
+  /** People and agents the comment is sent to, already checked. */
+  to?: AnnotationRecipient[]
 }
 
 export interface DocumentAnnotationUpdatePatch {
@@ -236,6 +240,7 @@ function newAnnotation(
     updatedAt: now,
     ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
     metadata: input.metadata ?? {},
+    ...(input.to?.length ? { requests: addRequests([], input.to, now) } : {}),
   }
 }
 
@@ -525,6 +530,8 @@ export async function replyDocumentAnnotation(options: {
   annotationId: string
   body: string
   author?: AnnotationAuthor
+  replier?: CommentReplier
+  to?: AnnotationRecipient[]
 }): Promise<{ annotation: DocumentAnnotationV2; replyId: string }> {
   await requireV2AnnotationWrites()
   const author = options.author ?? DEFAULT_AUTHOR
@@ -532,6 +539,13 @@ export async function replyDocumentAnnotation(options: {
     const found = await findAnnotation(options.spaceId, options.annotationId)
     const now = new Date().toISOString()
     const replyId = `msg_${nanoid(12)}`
+    const requests = requestsAfterReply(
+      found.annotation.requests ?? [],
+      options.replier,
+      replyId,
+      now,
+      options.to
+    )
     const annotation: DocumentAnnotationV2 = {
       ...found.annotation,
       thread: [
@@ -540,6 +554,7 @@ export async function replyDocumentAnnotation(options: {
       ],
       updatedAt: now,
       updatedBy: author.id,
+      ...(requests.length ? { requests } : {}),
     }
     found.owner.annotations[found.index] = annotation
     await writeOwner(options.spaceId, found.owner)
@@ -678,6 +693,7 @@ export async function createLegacyCompatibleAnnotationV2(
     labels?: string[]
     idempotencyKey?: string
     metadata?: Record<string, unknown>
+    to?: AnnotationRecipient[]
   },
   beforeWrite?: AnnotationWriteGuard
 ): Promise<{ annotation: Annotation; created: boolean }> {
@@ -753,7 +769,8 @@ export async function replyLegacyCompatibleAnnotationV2(
   spaceId: string,
   annotationId: string,
   body: string,
-  author?: AnnotationAuthor
+  author?: AnnotationAuthor,
+  options: { replier?: CommentReplier; to?: AnnotationRecipient[] } = {}
 ): Promise<{ annotation: Annotation; replyId: string }> {
   await readLegacyCompatibleAnnotationV2(spaceId, annotationId)
   const result = await replyDocumentAnnotation({
@@ -761,6 +778,7 @@ export async function replyLegacyCompatibleAnnotationV2(
     annotationId,
     body,
     author,
+    ...options,
   })
   return {
     annotation: await readLegacyCompatibleAnnotationV2(spaceId, annotationId),

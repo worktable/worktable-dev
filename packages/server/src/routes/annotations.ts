@@ -13,6 +13,12 @@ import {
   updateAnnotation,
 } from "../annotation-store.ts";
 import { wsManager } from "../ws.ts";
+import {
+  CommentRecipientError,
+  MAX_COMMENT_RECIPIENTS,
+  commentRecipients,
+  commentReplier,
+} from "../comment-recipients.ts";
 import { commentAccess } from "../team-policy.ts";
 import {
   isHtmlDocumentPath,
@@ -47,6 +53,8 @@ const CreateAnnotationSchema = z.object({
   labels: z.array(z.string()).optional(),
   idempotencyKey: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  /** Participant IDs or names of the people and agents it is sent to. */
+  to: z.array(z.string().min(1)).max(MAX_COMMENT_RECIPIENTS).optional(),
 });
 
 const UpdateAnnotationSchema = z.object({
@@ -61,6 +69,7 @@ const UpdateAnnotationSchema = z.object({
 const ReplySchema = z.object({
   body: z.string().min(1),
   author: AnnotationAuthorSchema.optional(),
+  to: z.array(z.string().min(1)).max(MAX_COMMENT_RECIPIENTS).optional(),
 });
 
 const ResolveSchema = z.object({
@@ -75,6 +84,16 @@ function annotationAuthor(c: Context, requested?: AnnotationAuthor): AnnotationA
   if (c.get("identity").team) return { type: principal.type === "human" ? "user" : principal.type, id: principal.id, name: principal.displayName };
   if (principal.type === "human") return requested ?? { type: "user", id: "user", name: "User" };
   return { type: principal.type, id: principal.id };
+}
+
+/** The comment's recipients, or the response saying why one can't be sent to. */
+async function recipientsFor(c: Context, spaceId: string, names: string[] | undefined) {
+  try {
+    return await commentRecipients(c.get("identity"), spaceId, names);
+  } catch (error) {
+    if (error instanceof CommentRecipientError) return c.json({ error: error.message, code: error.code }, 400);
+    throw error;
+  }
 }
 
 function parseCsv(value: string | undefined): string[] | undefined {
@@ -130,10 +149,13 @@ annotationsRouter.post("/", requireScope("annotations:write", commentAccess), as
       return c.json({ error: `Invalid widget id "${parsed.data.target.widgetId}" in annotation target`, code: "VALIDATION_ERROR" }, 400);
     }
   }
+  const to = await recipientsFor(c, spaceId, parsed.data.to);
+  if (to instanceof Response) return to;
   const result = await createAnnotation(spaceId, {
     ...parsed.data,
     target: parsed.data.target as AnnotationTarget,
     author: annotationAuthor(c, parsed.data.author),
+    to,
   });
   broadcast(spaceId, result.annotation.id, { annotation: result.annotation, event: "created" });
   return c.json({ ok: true, annotationId: result.annotation.id, annotation: result.annotation, created: result.created });
@@ -167,7 +189,12 @@ annotationsRouter.post("/:annotationId/replies", requireScope("annotations:write
   const body = await c.req.json().catch(() => null);
   const parsed = ReplySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
-  const result = await replyAnnotation(spaceId, annotationId, parsed.data.body, annotationAuthor(c, parsed.data.author));
+  const to = await recipientsFor(c, spaceId, parsed.data.to);
+  if (to instanceof Response) return to;
+  const result = await replyAnnotation(spaceId, annotationId, parsed.data.body, annotationAuthor(c, parsed.data.author), {
+    replier: await commentReplier(c.get("identity")),
+    to,
+  });
   broadcast(spaceId, result.annotation.id, { annotation: result.annotation, event: "replied" });
   return c.json({ ok: true, replyId: result.replyId, annotation: result.annotation });
 });

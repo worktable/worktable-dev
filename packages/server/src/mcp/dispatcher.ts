@@ -1,4 +1,5 @@
 import { runAsActivityActor } from "../activity-log.ts"
+import { commentReplier, commentRecipients } from "../comment-recipients.ts"
 import { reservedAnnotationInput } from "../annotation-origin.ts"
 import { assertCurrentTeamIdentity, assertSpaceAccess, currentRequestIdentity } from "../team-policy.ts"
 import {
@@ -272,7 +273,9 @@ import {
   ListAnnotationsInput,
   ReadAnnotationInput,
   CreateAnnotationInput,
+  CreateAnnotationInputPreview,
   ReplyAnnotationInput,
+  ReplyAnnotationInputPreview,
   UpdateAnnotationInput,
   ResolveAnnotationInput,
   GetAnnotationContextInput,
@@ -2497,11 +2500,26 @@ async function _dispatchOperationInner(
       return { annotation, context }
     }
     case "annotations.create": {
-      const parsed = CreateAnnotationInput.parse(args)
+      if (args.to !== undefined && context.surface !== "preview") {
+        throw new Error(
+          "Sending comments requires Preview agent tools in Settings → Agents."
+        )
+      }
+      const parsed = (
+        context.surface === "preview"
+          ? CreateAnnotationInputPreview
+          : CreateAnnotationInput
+      ).parse(args)
       if (reservedAnnotationInput(parsed)) throw new Error("Source metadata is set by Worktable")
+      const to = await commentRecipients(
+        identity,
+        parsed.spaceId,
+        (parsed as { to?: string[] }).to
+      )
       const result = await createAnnotation(parsed.spaceId, {
         target: parsed.target as never,
-        category: parsed.category,
+        category: parsed.category ?? "comment",
+        to,
         body: parsed.body,
         title: parsed.title,
         author: annotationAuthor,
@@ -2526,12 +2544,29 @@ async function _dispatchOperationInner(
       }
     }
     case "annotations.reply": {
-      const parsed = ReplyAnnotationInput.parse(args)
+      if (args.to !== undefined && context.surface !== "preview") {
+        throw new Error(
+          "Sending comments requires Preview agent tools in Settings → Agents."
+        )
+      }
+      const parsed = (
+        context.surface === "preview"
+          ? ReplyAnnotationInputPreview
+          : ReplyAnnotationInput
+      ).parse(args)
       const result = await replyAnnotation(
         parsed.spaceId,
         parsed.annotationId,
         parsed.body,
-        annotationAuthor
+        annotationAuthor,
+        {
+          replier: await commentReplier(identity),
+          to: await commentRecipients(
+            identity,
+            parsed.spaceId,
+            (parsed as { to?: string[] }).to
+          ),
+        }
       )
       wsManager.broadcast(parsed.spaceId, {
         type: "annotation_update",

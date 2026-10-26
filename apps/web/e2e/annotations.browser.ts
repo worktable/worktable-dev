@@ -147,23 +147,14 @@ for (const mobile of [true, false]) {
       await selectQuote()
       await expectQuote()
       await expect(composer.getByRole("textbox")).toBeFocused()
-      if (mobile) {
-        await page.keyboard.insertText("Please clarify the wording.")
-        await composer
-          .getByRole("button", { name: "Instruction", exact: true })
-          .tap()
-      } else {
-        await composer.getByRole("textbox").fill("Please clarify the wording.")
-      }
+      if (mobile) await page.keyboard.insertText("Please clarify the wording.")
+      else await composer.getByRole("textbox").fill("Please clarify the wording.")
       await composer
-        .getByRole("button", {
-          name: mobile ? "Add Instruction" : "Add Comment",
-          exact: true,
-        })
+        .getByRole("button", { name: "Add Comment", exact: true })
         .click()
       await expect.poll(savedAnnotations).toMatchObject([
         {
-          category: mobile ? "instruction" : "comment",
+          category: "comment",
           body: "Please clarify the wording.",
           target: { type: "block", blockId: "selected-block", quote },
         },
@@ -182,9 +173,6 @@ for (const mobile of [true, false]) {
       // A second annotation on the same block starts from a blank draft.
       await selectQuote()
       await expect(composer.getByRole("textbox")).toHaveValue("")
-      await expect(
-        composer.getByRole("button", { name: "Comment", exact: true })
-      ).toHaveAttribute("aria-pressed", "true")
     })
 
     test("a Markdown Doc takes a comment on selected text without Edit, and keeps it on its passage through a rewrite", async ({

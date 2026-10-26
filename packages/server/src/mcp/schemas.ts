@@ -612,6 +612,28 @@ export const ReplyAnnotationInput = z.object({
   body: z.string().min(1),
 })
 
+const CommentRecipientsInput = z
+  .array(z.string().min(1))
+  .max(10)
+  .optional()
+
+/** Preview: comments are sent to people and agents, and have no type. */
+export const CreateAnnotationInputPreview = CreateAnnotationInput.extend({
+  category: z
+    .enum(["comment", "instruction"])
+    .optional()
+    .describe("Omit. Comments no longer have a type."),
+  to: CommentRecipientsInput.describe(
+    "People or agents to send the comment to, by participant ID or name (worktable_threads_read participants). It waits on each of them until they reply on it."
+  ),
+})
+
+export const ReplyAnnotationInputPreview = ReplyAnnotationInput.extend({
+  to: CommentRecipientsInput.describe(
+    "Also send the comment to these people or agents, by participant ID or name."
+  ),
+})
+
 export const UpdateAnnotationInput = z.object({
   spaceId: z.string(),
   annotationId: z.string(),
@@ -1295,6 +1317,18 @@ export const AnnotationsWriteInput = z.strictObject({
       target: PublicAnnotationTargetInput,
     }),
     actionSchema("reply", ReplyAnnotationInput.shape),
+    actionSchema("update", UpdateAnnotationInput.shape),
+    actionSchema("resolve", ResolveAnnotationInput.shape),
+  ]),
+})
+
+export const AnnotationsWriteInputPreview = z.strictObject({
+  request: z.discriminatedUnion("action", [
+    actionSchema("create", {
+      ...CreateAnnotationInputPreview.omit({ target: true }).shape,
+      target: PublicAnnotationTargetInput,
+    }),
+    actionSchema("reply", ReplyAnnotationInputPreview.shape),
     actionSchema("update", UpdateAnnotationInput.shape),
     actionSchema("resolve", ResolveAnnotationInput.shape),
   ]),

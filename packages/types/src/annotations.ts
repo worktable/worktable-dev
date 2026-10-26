@@ -70,6 +70,33 @@ export const AnnotationMessageSchema = z.object({
   createdAt: z.string(),
 });
 
+export const AnnotationRequestStatusSchema = z.enum(["open", "replied", "withdrawn"]);
+
+/**
+ * Someone a comment is sent to, as a Threads participant: the same person or
+ * agent whichever credential it uses.
+ */
+export const AnnotationRecipientSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(["human", "agent"]),
+  name: z.string(),
+});
+
+/**
+ * A comment waiting on one person or agent. A reply from them closes it as
+ * replied; the comment itself stays open until someone resolves it. A later
+ * reply from someone else asks again, as a new request.
+ */
+export const AnnotationRequestSchema = z.object({
+  id: z.string().min(1),
+  to: AnnotationRecipientSchema,
+  status: AnnotationRequestStatusSchema,
+  createdAt: z.string(),
+  closedAt: z.string().optional(),
+  /** The reply that closed it. */
+  replyId: z.string().optional(),
+});
+
 export const AnnotationSchema = z.object({
   id: z.string(),
   spaceId: z.string(),
@@ -94,6 +121,8 @@ export const AnnotationSchema = z.object({
   updatedBy: z.string().optional(),
   idempotencyKey: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).default({}),
+  /** Who the comment is sent to; absent when it is sent to nobody. */
+  requests: z.array(AnnotationRequestSchema).optional(),
 });
 
 export const AnnotationFileSchema = z.object({
@@ -110,6 +139,9 @@ export type AnnotationStatus = z.infer<typeof AnnotationStatusSchema>;
 export type AnnotationAuthor = z.infer<typeof AnnotationAuthorSchema>;
 export type AnnotationTarget = z.infer<typeof AnnotationTargetSchema>;
 export type AnnotationMessage = z.infer<typeof AnnotationMessageSchema>;
+export type AnnotationRecipient = z.infer<typeof AnnotationRecipientSchema>;
+export type AnnotationRequest = z.infer<typeof AnnotationRequestSchema>;
+export type AnnotationRequestStatus = z.infer<typeof AnnotationRequestStatusSchema>;
 export type Annotation = z.infer<typeof AnnotationSchema>;
 export type AnnotationFile = z.infer<typeof AnnotationFileSchema>;
 

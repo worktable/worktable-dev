@@ -354,7 +354,10 @@ export type VisitorCommentReplyInput = z.input<
 
 /** The member's own words lead; the visitor's text follows as quoted outside input. */
 export const PassVisitorCommentInputSchema = z.strictObject({
-  category: AnnotationCategorySchema,
+  /** Comments no longer have a type; older clients still send one. */
+  category: AnnotationCategorySchema.default("comment"),
+  /** Participants the passed comment is sent to. */
+  to: z.array(z.string().min(1)).max(10).optional(),
   /** What should happen. */
   note: z.string().trim().min(1).max(10_000),
   /** Starts as the visitor's text; the member may trim it. */

@@ -4,10 +4,9 @@ import {
   CheckCircle2,
   Circle,
   MessageSquareText,
-  Sparkles,
   X,
 } from "lucide-react"
-import type { Annotation, AnnotationCategory } from "@worktable/types"
+import type { Annotation } from "@worktable/types"
 import { Badge } from "@worktable/ui/components/badge"
 import { Button } from "@worktable/ui/components/button"
 import { Textarea } from "@worktable/ui/components/textarea"
@@ -15,14 +14,20 @@ import { cn } from "@worktable/ui/lib/utils"
 import { ContextPanelHeader } from "@/components/desktop-context-panel"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 
-const categoryLabel: Record<AnnotationCategory, string> = {
-  comment: "Comment",
-  instruction: "Instruction",
-};
-
-function categoryVariant(category: AnnotationCategory): "default" | "secondary" | "outline" | "destructive" {
-  if (category === "instruction") return "default";
-  return "outline";
+/** Who the comment went to, and who of them has replied since they were last asked. */
+function recipientsLine(annotation: Annotation): string | null {
+  const latest = new Map<string, NonNullable<Annotation["requests"]>[number]>();
+  for (const request of annotation.requests ?? []) latest.set(request.to.id, request);
+  const requests = [...latest.values()].filter((request) => request.status !== "withdrawn");
+  if (requests.length === 0) return null;
+  const waiting = requests.filter((request) => request.status === "open").map((request) => request.to.name);
+  const replied = requests.filter((request) => request.status === "replied").map((request) => request.to.name);
+  return [
+    waiting.length ? `To ${waiting.join(", ")}` : null,
+    replied.length ? `Replied by ${replied.join(", ")}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export interface AnnotationPanelContentProps {
@@ -115,7 +120,7 @@ export function AnnotationPanelContent({
           <div className="flex h-full min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border p-6 text-center">
             <MessageSquareText className="mb-3 h-8 w-8 text-muted-foreground/50" />
             <p className="text-sm font-medium text-foreground">No open annotations</p>
-            {emptyHint !== "" && <p className="mt-1 text-xs text-muted-foreground">{emptyHint ?? "Use /comment or /instruction in the editor to attach context to a block."}</p>}
+            {emptyHint !== "" && <p className="mt-1 text-xs text-muted-foreground">{emptyHint ?? "Use /comment in the editor to attach context to a block."}</p>}
           </div>
         ) : (
           <div className="space-y-1">
@@ -163,6 +168,7 @@ function AnnotationCard({
 }) {
   const [reply, setReply] = useState("");
   const isResolved = annotation.status === "resolved";
+  const recipients = recipientsLine(annotation);
   const blockLabel =
     "blockId" in annotation.target && annotation.target.blockId
       ? annotation.target.blockId.slice(0, 8)
@@ -179,13 +185,10 @@ function AnnotationCard({
     >
       <button type="button" onClick={onSelect} className="w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <div className="mb-2 flex flex-wrap items-center gap-1.5">
-          <Badge variant={categoryVariant(annotation.category)}>
-            {annotation.category === "instruction" && (
-              <Sparkles className="h-3 w-3" />
-            )}
-            {categoryLabel[annotation.category]}
-          </Badge>
           <Badge variant="outline">{annotation.status}</Badge>
+          {recipients && (
+            <span className="min-w-0 truncate text-xs text-muted-foreground">{recipients}</span>
+          )}
           <span className="ml-auto text-[11px] text-muted-foreground">{blockLabel}</span>
         </div>
         {annotation.title && (

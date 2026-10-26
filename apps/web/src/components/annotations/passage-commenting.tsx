@@ -1,14 +1,9 @@
 import { useState, type RefObject } from "react"
-import type {
-  AnnotationCategory,
-  AnnotationTarget,
-  PassageSelector,
-} from "@worktable/types"
-import { AnnotationComposer } from "./annotation-composer"
+import type { AnnotationTarget, PassageSelector } from "@worktable/types"
+import { AnnotationComposer, type CommentContext } from "./annotation-composer"
 import { SelectionComment } from "./selection-comment"
 
 interface PassageDraft extends PassageSelector {
-  category: AnnotationCategory
   anchor: Range
 }
 
@@ -20,15 +15,13 @@ interface PassageDraft extends PassageSelector {
 export function PassageCommenting({
   rootRef,
   docPath,
+  context,
   onCreate,
 }: {
   rootRef: RefObject<HTMLElement | null>
   docPath: string
-  onCreate: (input: {
-    target: AnnotationTarget
-    category: AnnotationCategory
-    body: string
-  }) => void
+  context?: CommentContext
+  onCreate: (input: { target: AnnotationTarget; body: string; to: string[] }) => void
 }) {
   const [draft, setDraft] = useState<PassageDraft | null>(null)
   const [open, setOpen] = useState(false)
@@ -38,7 +31,7 @@ export function PassageCommenting({
         rootRef={rootRef}
         paused={open}
         onComment={({ range, selector }) => {
-          setDraft({ ...selector, anchor: range, category: "comment" })
+          setDraft({ ...selector, anchor: range })
           setOpen(true)
         }}
       />
@@ -46,13 +39,14 @@ export function PassageCommenting({
         draft={draft}
         open={open}
         onOpenChange={setOpen}
-        onSubmit={(category, body) => {
+        context={context}
+        onSubmit={(body, to) => {
           if (!draft) return
           const { quote, prefix, suffix } = draft
           onCreate({
             target: { type: "doc", docPath, quote, prefix, suffix },
-            category,
             body,
+            to,
           })
         }}
       />

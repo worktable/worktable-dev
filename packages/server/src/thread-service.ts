@@ -1006,6 +1006,8 @@ export async function listThreadParticipants(
 
 export interface ParticipantPresentation {
   id?: string
+  /** The Threads participant, also under the principal IDs it writes with. */
+  participantId?: string
   name?: string
   platform?: AgentPlatformId
   icon?: string | null
@@ -1114,8 +1116,14 @@ async function buildParticipantPresentations(): Promise<Record<string, Participa
         id: participant.id,
         name: participant.name,
       }
+    } else if (participant.kind === "agent" && key.startsWith("principal:")) {
+      // A Teams agent writes as its actor, which no connection lists.
+      presentations[participant.id] ??= { name: participant.name }
     }
     const presentation = presentations[participant.id]
+    if (presentation && participant.kind !== "system") {
+      presentation.participantId = participant.id
+    }
     if (key.startsWith("principal:") && presentation) {
       presentations[key.slice("principal:".length)] = presentation
     }

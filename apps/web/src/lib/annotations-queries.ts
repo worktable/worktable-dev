@@ -116,7 +116,7 @@ function useAnnotationMutationsForKey(spaceId: string, invalidateKey: readonly u
 
   return {
     create: useMutation({
-      mutationFn: (input: { target: AnnotationTarget; category: AnnotationCategory; body: string }) => createAnnotation(spaceId, input),
+      mutationFn: (input: { target: AnnotationTarget; category: AnnotationCategory; body: string; to?: string[] }) => createAnnotation(spaceId, input),
       onSuccess: invalidate,
     }),
     reply: useMutation({

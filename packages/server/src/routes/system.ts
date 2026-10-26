@@ -1,4 +1,5 @@
 import { teamsEnabled } from "../team-database.ts";
+import { configuredMcpSurface } from "../mcp/surface.ts";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import {
@@ -172,6 +173,8 @@ export interface DeploymentInfo {
     shareLinks: boolean;
     /** File features that aren't released yet are on (filesPreviewEnabled). */
     filesPreview: boolean;
+    /** Comments can be sent to people and agents (Preview agent tools). */
+    commentRecipients: boolean;
   };
 }
 
@@ -196,6 +199,7 @@ export function getDeploymentInfo(): DeploymentInfo {
       // Without Teams the only person here is the owner.
       shareLinks: documentSharing,
       filesPreview: filesPreviewEnabled(),
+      commentRecipients: configuredMcpSurface() === "preview",
     },
   };
 }

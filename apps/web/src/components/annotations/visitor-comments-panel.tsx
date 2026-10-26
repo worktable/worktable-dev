@@ -36,11 +36,8 @@ import {
 } from "@/lib/visitor-comments-api"
 import { updateShareLink } from "@/lib/share-link-management-api"
 import type { AnnotationPanelProps } from "./annotation-panel"
-import {
-  CommentRecipientSelect,
-  NO_RECIPIENT,
-  useCommentRecipients,
-} from "./comment-recipient"
+import { CommentRecipientSelect } from "./comment-recipient"
+import { NO_RECIPIENT, useCommentRecipients } from "@/lib/comment-recipients"
 
 type Context = NonNullable<AnnotationPanelProps["visitorComments"]>
 

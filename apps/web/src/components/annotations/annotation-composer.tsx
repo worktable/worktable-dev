@@ -12,11 +12,8 @@ import {
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog";
 import { Textarea } from "@worktable/ui/components/textarea";
-import {
-  CommentRecipientSelect,
-  NO_RECIPIENT,
-  useCommentRecipients,
-} from "./comment-recipient";
+import { CommentRecipientSelect } from "./comment-recipient";
+import { NO_RECIPIENT, useCommentRecipients } from "@/lib/comment-recipients";
 import { setHighlight } from "./passage-text";
 import { useIsMobile } from "@/hooks/use-mobile";
 

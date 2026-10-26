@@ -1,5 +1,6 @@
 import { takeResultMedia } from "./media.ts"
 import { ambientNotices } from "../pending-ambient.ts"
+import { currentRequestIdentity } from "../team-policy.ts"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { z } from "zod"
 import type { McpSurface } from "./surface.ts"
@@ -526,7 +527,8 @@ export function registerTools(
         const notices =
           surface === "preview" && identity
             ? await ambientNotices(
-                { ...identity, scopes },
+                // The request's whole identity: Teams access needs its binding.
+                { ...identity, ...currentRequestIdentity(), scopes },
                 operation.id,
                 operation.args,
                 publicResult

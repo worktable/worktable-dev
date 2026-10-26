@@ -256,19 +256,30 @@ function quoted(text: string): string {
   return `“${label(text, 400)}”`
 }
 
-function line(notice: PendingNotice): string {
+/**
+ * What was written, quoted. On a call nobody asked about, only people's
+ * words are quoted: an agent's words wait until the agent chooses to open
+ * them, so one agent can't put text in another's context unasked.
+ */
+function said(notice: PendingNotice, mode: "ambient" | "requested"): string {
+  return mode === "requested" || notice.from.kind === "person"
+    ? `: ${quoted(notice.excerpt)}`
+    : "."
+}
+
+function line(notice: PendingNotice, mode: "ambient" | "requested"): string {
   if (notice.kind === "comment") {
     const on = notice.onTopic
       ? notice.quote
         ? `on ${quoted(notice.quote)}`
         : "on this Doc"
       : `on ${notice.docTitle ?? label(notice.docPath ?? "a Doc", TITLE_LIMIT)}${notice.spaceName ? ` (${notice.spaceName})` : ""}`
-    return `- ${notice.from.name} sent you a comment ${on}: ${quoted(notice.excerpt)} Comment ${notice.annotationId}.`
+    return `- ${notice.from.name} sent you a comment ${on}${said(notice, mode)} Comment ${notice.annotationId}.`
   }
   const where = notice.onTopic
     ? "here"
     : `in ${quoted(notice.threadTitle ?? "a thread")}${notice.spaceName ? ` (${notice.spaceName})` : ""}`
-  return `- ${notice.from.name} asked you ${where}: ${quoted(notice.excerpt)} Message ${notice.messageId}.`
+  return `- ${notice.from.name} asked you ${where}${said(notice, mode)} Message ${notice.messageId}.`
 }
 
 /** A shown, unopened item about what the call is working on, in brief. */
@@ -308,7 +319,7 @@ export function renderNotices(
     lines.push(
       "",
       "About what you are working on. Consider these before you change it, and reply on a comment where it was left:",
-      ...onTopic.map(line),
+      ...onTopic.map((notice) => line(notice, options.mode)),
       ...reminders.map(reminder)
     )
   }
@@ -318,7 +329,7 @@ export function renderNotices(
       options.mode === "ambient" || onTopic.length > 0
         ? "Elsewhere. Mention these to your user; don't switch tasks for them:"
         : "Mention these to your user; don't switch tasks for them unless your user asks:",
-      ...elsewhere.map(line)
+      ...elsewhere.map((notice) => line(notice, options.mode))
     )
   }
   const waiting = (options.more ?? 0) + (options.older ?? 0)

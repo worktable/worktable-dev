@@ -83,6 +83,27 @@ describe("who wrote a passage", () => {
     ).toBeNull()
   })
 
+  it("names no writer when the passage is older than the history it reads", async () => {
+    for (let index = 0; index < 20; index++) {
+      await writeDoc(
+        "pricing",
+        "explorer",
+        `# Explorer\n\nTeam is **$49** a month.\n\nRevision ${index}.\n`,
+        {
+          updatedBy: index % 2 ? "token:atlas" : "token:nova",
+          source: "mcp",
+          managedIdentity: true,
+        }
+      )
+    }
+    expect(
+      await passageAuthor("pricing", "explorer", { quote: "Team is $49 a month." })
+    ).toBeNull()
+    expect(
+      await passageAuthor("pricing", "explorer", { quote: "Revision 19." })
+    ).toMatchObject({ by: "token:atlas" })
+  })
+
   it("tells the agent that wrote the text, when a comment on it is sent to it", async () => {
     const { participant } = await resolveParticipant(finn)
     await pendingList()

@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { readPassageAuthor } from "@/lib/documents-api"
+import { browserTeamMemberId } from "@/lib/team-context"
 import type { ActivityActor, DocumentPage } from "@worktable/types"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { useWorkspace } from "@/lib/queries"
@@ -84,9 +85,13 @@ export function useCommentRecipients(
       presentations?.[id]?.participantId ?? presentations?.[id]?.id ?? id
     const writer = author.data?.author
     const writerId = writer ? participantOf(writer.by) : null
+    // Without Teams the owner's own writes are recorded as "user".
+    const localOwner =
+      !browserTeamMemberId() && ["user", "human"].includes(writer?.by ?? "")
     const self =
       writer &&
-      (writerId === workspace?.person?.id ||
+      (localOwner ||
+        writerId === workspace?.person?.id ||
         writer.by === workspace?.person?.activityId)
     const suggested = self
       ? NO_RECIPIENT

@@ -47,7 +47,7 @@ import { logError } from "./debug-log.ts"
 
 type LegacyKind = "docs" | "widgets"
 
-interface CompatibleOwner {
+export interface CompatibleOwner {
   documentId: DocumentId
   path: string
   format: DocumentFormatClaim
@@ -119,14 +119,18 @@ function comparisonKey(path: string): string | null {
 async function resolveOwner(
   spaceId: string,
   path: string,
-  expectedFormats: readonly string[]
+  expectedFormats: readonly string[],
+  options: { snapshot?: boolean } = {}
 ): Promise<CompatibleOwner | null> {
   const requestedKey = comparisonKey(path)
   if (!requestedKey) return null
-  const catalog = await buildDocumentCatalog({
-    workspaceRoot: getWorkspaceRoot(),
-    spaceId,
-  })
+  const catalog = options.snapshot
+    ? // document-query reads this module too; import it when first used.
+      await (await import("./document-query.ts")).readDocumentCatalogSnapshot(spaceId)
+    : await buildDocumentCatalog({
+        workspaceRoot: getWorkspaceRoot(),
+        spaceId,
+      })
   const entry = catalog.entries.find(
     (candidate) =>
       candidate.kind === "document" &&
@@ -752,6 +756,22 @@ function docRepresentation(format: DocumentFormatClaim): {
   throw new Error("V2 generation is not compatible with the Doc API")
 }
 
+/**
+ * A Doc's owner from the Space's read-model snapshot, for reading several of
+ * its versions without building the catalog for each.
+ */
+export function resolveDocOwnerV2(
+  spaceId: string,
+  path: string
+): Promise<CompatibleOwner | null> {
+  return resolveOwner(
+    spaceId,
+    path,
+    [BUILTIN_DOCUMENT_FORMATS.markdown, BUILTIN_DOCUMENT_FORMATS.richText],
+    { snapshot: true }
+  )
+}
+
 export async function listLegacyDocVersionsV2(
   spaceId: string,
   path: string,
@@ -762,6 +782,15 @@ export async function listLegacyDocVersionsV2(
     BUILTIN_DOCUMENT_FORMATS.richText,
   ])
   if (!owner) return []
+  return listOwnedDocVersionsV2(spaceId, owner, options)
+}
+
+/** Versions of a Doc already resolved to its owner, newest first. */
+export async function listOwnedDocVersionsV2(
+  spaceId: string,
+  owner: CompatibleOwner,
+  options?: { checkpointsOnly?: boolean }
+): Promise<VersionEntry[]> {
   const [current, legacy] = await Promise.all([
     listDocumentGenerationsV2({
       workspaceRoot: getWorkspaceRoot(),
@@ -789,6 +818,15 @@ export async function readLegacyDocVersionV2(
     BUILTIN_DOCUMENT_FORMATS.richText,
   ])
   if (!owner) return null
+  return readOwnedDocVersionV2(spaceId, owner, versionId)
+}
+
+/** One version of a Doc already resolved to its owner. */
+export async function readOwnedDocVersionV2(
+  spaceId: string,
+  owner: CompatibleOwner,
+  versionId: string
+): Promise<LegacyDocSnapshotCompatibility | null> {
   const generation = await readDocumentGenerationV2({
     workspaceRoot: getWorkspaceRoot(),
     spaceId,

@@ -15,6 +15,12 @@ import {
   type PassageSelector,
 } from "@worktable/types"
 import { markdownReadingText } from "./markdown-passage.ts"
+import {
+  listOwnedDocVersionsV2,
+  readOwnedDocVersionV2,
+  resolveDocOwnerV2,
+  usesDocumentVersionStoreV2,
+} from "./document-version-compatibility-v2.ts"
 import { getDocVersion, listDocVersions } from "./store.ts"
 
 /** Versions read at most, newest first. */
@@ -28,6 +34,30 @@ export interface PassageAuthor {
   at: string
 }
 
+/**
+ * A rich block's own text: styled text, link labels inside their links, and
+ * a table's cells, one row per line.
+ */
+function inlineText(content: unknown): string {
+  if (typeof content === "string") return content
+  if (Array.isArray(content)) return content.map(inlineText).join("")
+  if (!content || typeof content !== "object") return ""
+  const value = content as {
+    text?: unknown
+    content?: unknown
+    rows?: unknown
+    cells?: unknown
+  }
+  if (typeof value.text === "string") return value.text
+  if (Array.isArray(value.rows)) {
+    return value.rows.map((row) => inlineText(row)).join("\n")
+  }
+  if (Array.isArray(value.cells)) {
+    return value.cells.map((cell) => inlineText(cell)).join("\n")
+  }
+  return inlineText(value.content)
+}
+
 /** The text a reader sees in one version of a Doc, Markdown or rich. */
 function readingText(content: unknown): string | null {
   if (typeof content === "string") return markdownReadingText(content).text
@@ -37,21 +67,31 @@ function readingText(content: unknown): string | null {
     for (const block of blocks) {
       if (!block || typeof block !== "object") continue
       const value = block as { content?: unknown; children?: unknown }
-      const inline = Array.isArray(value.content) ? value.content : []
-      lines.push(
-        inline
-          .map((part) =>
-            part && typeof part === "object" && "text" in part
-              ? String((part as { text: unknown }).text ?? "")
-              : ""
-          )
-          .join("")
-      )
+      lines.push(inlineText(value.content))
       if (Array.isArray(value.children)) walk(value.children)
     }
   }
   walk(content)
   return lines.join("\n")
+}
+
+/** A Doc's versions newest first, and a reader for each, resolved once. */
+async function docHistory(spaceId: string, docPath: string): Promise<{
+  versions: Array<{ id: string; createdAt: string; createdBy: string; source: string }>
+  read: (versionId: string) => Promise<{ after: { content: unknown } } | null>
+} | null> {
+  if (await usesDocumentVersionStoreV2()) {
+    const owner = await resolveDocOwnerV2(spaceId, docPath)
+    if (!owner) return null
+    return {
+      versions: await listOwnedDocVersionsV2(spaceId, owner),
+      read: (versionId) => readOwnedDocVersionV2(spaceId, owner, versionId),
+    }
+  }
+  return {
+    versions: await listDocVersions(spaceId, docPath),
+    read: (versionId) => getDocVersion(spaceId, docPath, versionId),
+  }
 }
 
 /** A version's author as a principal, or null for work no one did. */
@@ -74,19 +114,24 @@ export async function passageAuthor(
   selector: PassageSelector
 ): Promise<PassageAuthor | null> {
   if (!selector.quote.trim()) return null
-  const versions = (await listDocVersions(spaceId, docPath))
+  const history = await docHistory(spaceId, docPath)
+  if (!history) return null
+  const versions = history.versions
     .slice()
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, PASSAGE_WALK_LIMIT)
   let author: PassageAuthor | null = null
-  for (const entry of versions) {
-    const snapshot = await getDocVersion(spaceId, docPath, entry.id)
+  for (const [index, entry] of versions.entries()) {
+    // Past the limit the passage may be older still: its writer is unknown.
+    if (index === PASSAGE_WALK_LIMIT) return null
+    const snapshot = await history.read(entry.id)
     const text = readingText(snapshot?.after.content)
-    if (text === null || !findPassage(text, selector)) break
+    if (text === null) return null
+    if (!findPassage(text, selector)) return author
     const who = authorOf(entry.createdBy, entry.source)
     // A restore or tidy-up carries text forward; the writer is further back.
     if (who) author = { ...who, versionId: entry.id, at: entry.createdAt }
   }
+  // The first version had it: whoever created the Doc wrote it.
   return author
 }
 

@@ -167,10 +167,17 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
         body: "I saw this. Should I lower it?",
         to: [owner.id],
       })
-      // An agent's reply asks only whom it names.
+      // An agent's reply asks only whom it names, and the ask is Finn's.
       expect(statuses(answered.json.annotation)).toEqual([
         ["Finn", "replied"],
         [owner.name, "open"],
+      ])
+      expect((await listPending(ownerIdentity())).items).toMatchObject([
+        {
+          kind: "commentRequest",
+          from: { kind: "agent", id: "token:finn" },
+          excerpt: "I saw this. Should I lower it?",
+        },
       ])
       expect(answered.json.annotation.requests?.[0]?.replyId).toBe(
         answered.json.annotation.thread[0]?.id

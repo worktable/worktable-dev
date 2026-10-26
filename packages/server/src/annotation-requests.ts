@@ -23,15 +23,22 @@ export function askingTextHash(text: string): string {
   return createHash("sha256").update(text).digest("base64url").slice(0, 16)
 }
 
+/** What asked: one of the comment's replies, and whether a person wrote it in the app. */
+export interface AskedBy {
+  /** The reply that asked; absent when the comment itself did. */
+  requestedIn?: string
+  /** The asking text, when a person wrote it in the app. */
+  personText?: string
+}
+
 /**
- * Requests for each recipient that has no open one yet. `personText` is the
- * asking text when a person wrote it in the app.
+ * Requests for each recipient that has no open one yet.
  */
 export function addRequests(
   requests: readonly AnnotationRequest[],
   to: readonly AnnotationRecipient[],
   now: string,
-  personText?: string
+  asked: AskedBy = {}
 ): AnnotationRequest[] {
   const next = [...requests]
   for (const recipient of to) {
@@ -44,7 +51,10 @@ export function addRequests(
         to: recipient,
         status: "open",
         createdAt: now,
-        ...(personText !== undefined ? { textHash: askingTextHash(personText) } : {}),
+        ...(asked.requestedIn ? { requestedIn: asked.requestedIn } : {}),
+        ...(asked.personText !== undefined
+          ? { textHash: askingTextHash(asked.personText) }
+          : {}),
       })
     }
   }
@@ -73,7 +83,8 @@ export function requestsAfterReply(
       : existing
   )
   const named = to.filter((recipient) => recipient.id !== replier?.participantId)
-  if (replier?.kind !== "human") return addRequests(closed, named, now, personText)
+  if (replier?.kind !== "human")
+    return addRequests(closed, named, now, { requestedIn: replyId, personText })
   const latest = new Map<string, AnnotationRequest>()
   for (const existing of closed) latest.set(existing.to.id, existing)
   const again = [...latest.values()]
@@ -83,5 +94,8 @@ export function requestsAfterReply(
         existing.to.id !== replier.participantId
     )
     .map((existing) => existing.to)
-  return addRequests(closed, [...again, ...named], now, personText)
+  return addRequests(closed, [...again, ...named], now, {
+    requestedIn: replyId,
+    personText,
+  })
 }

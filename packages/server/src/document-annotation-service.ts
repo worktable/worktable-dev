@@ -244,7 +244,7 @@ function newAnnotation(
     ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
     metadata: input.metadata ?? {},
     ...(input.to?.length
-      ? { requests: addRequests([], input.to, now, input.byPerson ? input.body : undefined) }
+      ? { requests: addRequests([], input.to, now, { personText: input.byPerson ? input.body : undefined }) }
       : {}),
   }
 }

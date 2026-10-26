@@ -378,7 +378,7 @@ async function createAnnotationRecord(spaceId: string, input: CreateAnnotationIn
       idempotencyKey: input.idempotencyKey,
       metadata: input.metadata ?? {},
       ...(input.to?.length
-        ? { requests: addRequests([], input.to, now, input.byPerson ? input.body : undefined) }
+        ? { requests: addRequests([], input.to, now, { personText: input.byPerson ? input.body : undefined }) }
         : {}),
     };
     file.annotations.push(annotation);

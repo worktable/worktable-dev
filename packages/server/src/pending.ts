@@ -60,11 +60,19 @@ export async function listPending(
     canReadAnnotations ? commentReplies(spaces, spaceId, identity) : [],
     canReadAnnotations ? commentRequests(spaces, spaceId, identity) : [],
   ])
+  // A reply that asks the reader is already a request; one row says both.
+  const asked = new Set(
+    comments.flatMap((item) =>
+      item.kind === "commentRequest" && !item.agent ? [item.annotationId] : []
+    )
+  )
   const items = [
     ...threadRequests(threadWork.requests),
     ...failedDeliveries(threadWork.failures),
     ...comments,
-    ...replies,
+    ...replies.filter(
+      (item) => item.kind !== "commentReply" || !asked.has(item.annotationId)
+    ),
     // The private inbox is auxiliary to ordinary team work on Home.
     ...(visitorAccess
       ? await pendingVisitorComments(identity, spaces, spaceId, visitorAccess).catch(() => [])

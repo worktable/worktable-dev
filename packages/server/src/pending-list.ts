@@ -288,6 +288,7 @@ export interface IndexedComment {
   author: AnnotationAuthor
   body: string
   requests?: AnnotationRequest[]
+  thread?: Array<{ id: string; author: AnnotationAuthor; body: string }>
 }
 
 /** Where a comment is: its Doc's path, durable id, and quoted passage. */
@@ -304,6 +305,19 @@ function commentItems(
   { path, documentId, quote }: CommentPlace
 ): Derived[] {
   if (annotation.status === "resolved") return []
+  /** Who asked, and what they wrote: the comment, or the reply that asked. */
+  const asker = (request: AnnotationRequest) => {
+    const reply = request.requestedIn
+      ? annotation.thread?.find((message) => message.id === request.requestedIn)
+      : undefined
+    const { author, body } = reply ?? annotation
+    const from: PendingActor = {
+      kind: author.type === "user" ? "person" : author.type,
+      id: author.id,
+      ...(author.name ? { name: author.name } : {}),
+    }
+    return { from, body }
+  }
   return (annotation.requests ?? []).flatMap((request) =>
     request.status === "open"
       ? [
@@ -320,18 +334,9 @@ function commentItems(
               requestId: request.id,
               ...(documentId ? { documentId } : {}),
               path,
-              from: {
-                kind:
-                  annotation.author.type === "user"
-                    ? ("person" as const)
-                    : annotation.author.type,
-                id: annotation.author.id,
-                ...(annotation.author.name
-                  ? { name: annotation.author.name }
-                  : {}),
-              },
+              from: asker(request).from,
               to: { kind: request.to.kind, name: request.to.name },
-              excerpt: excerpt(annotation.body),
+              excerpt: excerpt(asker(request).body),
               ...(quote ? { quote: excerpt(quote) } : {}),
             },
           },

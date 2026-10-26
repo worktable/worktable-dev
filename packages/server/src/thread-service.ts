@@ -1116,10 +1116,8 @@ async function buildParticipantPresentations(): Promise<Record<string, Participa
         id: participant.id,
         name: participant.name,
       }
-    } else if (participant.kind === "agent" && key.startsWith("principal:")) {
-      // A Teams agent writes as its actor, which no connection lists.
-      presentations[participant.id] ??= { name: participant.name }
     }
+    // Only identities this reader may see have a presentation to extend.
     const presentation = presentations[participant.id]
     if (presentation && participant.kind !== "system") {
       presentation.participantId = participant.id

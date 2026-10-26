@@ -1741,7 +1741,7 @@ export const PREVIEW_OUTPUT_SCHEMAS: Partial<
   worktable_discover: WORKTABLE_OUTPUT_SCHEMAS.worktable_discover.extend({
     revision: forActions(
       z.number().int().nonnegative(),
-      '"pending": your latest revision; pass it as since to see only newer items'
+      '"pending": pass it as since to read on: past the items returned when more remain, else past everything'
     ),
     count: forActions(z.number().int().nonnegative(), '"pending": how many items wait on you'),
     items: forActions(z.array(PendingNoticeSchema), '"pending" with mode notices'),

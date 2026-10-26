@@ -971,7 +971,12 @@ async function _dispatchOperationInner(
         after: parsed.after,
         before: parsed.before,
       })
-      await markOpened(identity, { kind: "thread", threadId: parsed.threadId })
+      // Only the messages this page returned were read.
+      await markOpened(identity, {
+        kind: "thread",
+        threadId: parsed.threadId,
+        messageIds: result.messages.map((message) => message.id),
+      })
       return result
     }
     case "threads.message": {
@@ -984,7 +989,7 @@ async function _dispatchOperationInner(
       await markOpened(identity, {
         kind: "thread",
         threadId: parsed.threadId,
-        messageId: parsed.messageId,
+        messageIds: [parsed.messageId],
       })
       return result
     }

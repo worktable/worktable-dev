@@ -87,15 +87,16 @@ export async function readPending(
     inScope(notice, scope)
   )
   if (input.mode !== "notices") return { revision, count: notices.length }
-  const items = notices.slice(0, PENDING_READ_LIMIT)
+  // Oldest first, so passing the returned revision as since reads the rest.
+  const ordered = notices.slice().sort((a, b) => a.revision - b.revision)
+  const items = ordered.slice(0, PENDING_READ_LIMIT)
   announceSeen(markPendingDelivered(items.map((item) => item.itemId)))
+  const more = ordered.length - items.length
   return {
-    revision,
+    revision: more > 0 ? items.at(-1)!.revision : revision,
     count: notices.length,
     items,
-    ...(notices.length > items.length
-      ? { more: notices.length - items.length }
-      : {}),
+    ...(more > 0 ? { more } : {}),
   }
 }
 
@@ -107,7 +108,7 @@ export async function markOpened(
   reader: Reader,
   opened:
     | { kind: "comment"; annotationId: string }
-    | { kind: "thread"; threadId: string; messageId?: string }
+    | { kind: "thread"; threadId: string; messageIds: readonly string[] }
 ): Promise<void> {
   try {
     const { participant } = await resolveParticipant(reader)
@@ -122,7 +123,7 @@ export async function markOpened(
       }
       return source.kind === "threadRequest" &&
         source.threadId === opened.threadId &&
-        (!opened.messageId || source.messageId === opened.messageId)
+        opened.messageIds.includes(source.messageId)
         ? [entry.itemId]
         : []
     })

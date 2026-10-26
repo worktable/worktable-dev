@@ -21,6 +21,7 @@ import {
 import { notifyWorkspaceChange } from "./workspace-events.ts"
 import { markOpened, readPending } from "./pending-read.ts"
 import { annotationsRouter } from "./routes/annotations.ts"
+import { createAnnotation } from "./annotation-store.ts"
 import { writeDoc, writeSpace } from "./store.ts"
 import type { TokenIdentity } from "./token-store.ts"
 import {
@@ -370,6 +371,28 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
       const newer = await readPending(finn, { mode: "notices", since: read.revision })
       expect(newer.items?.map((item) => item.excerpt)).toEqual(["And the Business tier?"])
       expect(await readPending(finn, { since: 999 })).toMatchObject({ count: 0 })
+    })
+
+    it("reads every waiting comment in pages, following the revision it returns", async () => {
+      await pendingList()
+      const finnId = (await resolveParticipant(finn)).participant.id
+      for (let index = 1; index <= 22; index++) {
+        await createAnnotation("pricing", {
+          target: { type: "doc", docPath: "explorer" },
+          category: "comment",
+          body: `Point ${index}`,
+          author: { type: "user", id: "user", name: "Karo" },
+          to: [{ id: finnId, kind: "agent", name: "Finn" }],
+        })
+      }
+      const first = await readPending(finn, { mode: "notices" })
+      expect(first.items).toHaveLength(20)
+      expect(first.more).toBe(2)
+      const rest = await readPending(finn, { mode: "notices", since: first.revision })
+      expect(rest.more).toBeUndefined()
+      expect([...first.items!, ...rest.items!].map((item) => item.excerpt)).toEqual(
+        Array.from({ length: 22 }, (_, index) => `Point ${index + 1}`)
+      )
     })
   })
 }

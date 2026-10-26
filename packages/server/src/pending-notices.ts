@@ -10,12 +10,14 @@
 // about anything else only asks the agent to mention it to its user, so it
 // never pulls a session away from the task it was given.
 
+import { join } from "node:path"
 import type { ThreadLocation } from "@worktable/types"
+import { FingerprintCache, readFileFingerprint } from "./file-fingerprint.ts"
 import { agentNamesByPrincipal } from "./agent-connection-store.ts"
 import { readDocumentIdentities } from "./document-query.ts"
 import { cachedParticipantForKey } from "./participant-store.ts"
 import type { PendingEntry } from "./pending-list.ts"
-import { getSpaceArchiveInfo, listSpaces } from "./store.ts"
+import { getSpaceArchiveInfo, getSpacesBaseDir, readSpace } from "./store.ts"
 import { canAccessSpace, canAccessWorktableThreads } from "./team-policy.ts"
 import { hasScope, type TokenIdentity } from "./token-store.ts"
 
@@ -52,6 +54,31 @@ export interface PendingNotice {
 type Reader = Pick<TokenIdentity, "scopes" | "principal" | "agent"> &
   Partial<TokenIdentity>
 
+interface SpaceInfo {
+  name: string
+  archived: boolean
+}
+
+// One stat per Space a notice names, and a read only when it changed: never
+// a listing of every Space.
+const spaceInfos = new FingerprintCache<SpaceInfo | null>(1_024)
+
+async function spaceInfo(spaceId: string): Promise<SpaceInfo | null> {
+  const path = join(getSpacesBaseDir(), spaceId, "space.json")
+  const fingerprint = await readFileFingerprint(path).catch(() => null)
+  if (!fingerprint) return null
+  const cached = spaceInfos.get(path, fingerprint.key)
+  if (cached !== undefined) return cached
+  const { data } = await readSpace(spaceId)
+  const info =
+    data && data.id === spaceId
+      ? { name: data.name, archived: Boolean(getSpaceArchiveInfo(data)) }
+      : null
+  if (fingerprint.racy) spaceInfos.delete(path)
+  else spaceInfos.set(path, fingerprint.key, info)
+  return info
+}
+
 function threadVisible(location: ThreadLocation, reader: Reader): boolean {
   return location.kind === "space"
     ? canAccessSpace(location.spaceId, "read", reader as TokenIdentity)
@@ -69,8 +96,19 @@ export async function noticesFor(
   target: NoticeTarget = {}
 ): Promise<PendingNotice[]> {
   if (entries.length === 0) return []
+  const spaceIds = new Set(
+    entries.flatMap((entry) =>
+      entry.source.kind === "comment"
+        ? [entry.source.spaceId]
+        : entry.source.location.kind === "space"
+          ? [entry.source.location.spaceId]
+          : []
+    )
+  )
   const spaces = new Map(
-    (await listSpaces()).map((space) => [space.id, space] as const)
+    await Promise.all(
+      [...spaceIds].map(async (id) => [id, await spaceInfo(id)] as const)
+    )
   )
   const commentSpaces = new Set(
     entries.flatMap((entry) =>
@@ -108,7 +146,7 @@ export async function noticesFor(
       if (
         !readsComments ||
         !space ||
-        getSpaceArchiveInfo(space) ||
+        space.archived ||
         !canAccessSpace(source.spaceId, "read", reader as TokenIdentity)
       )
         return []
@@ -149,7 +187,7 @@ export async function noticesFor(
     const spaceId =
       source.location.kind === "space" ? source.location.spaceId : null
     const space = spaceId ? spaces.get(spaceId) : undefined
-    if (spaceId && (!space || getSpaceArchiveInfo(space))) return []
+    if (spaceId && (!space || space.archived)) return []
     return [
       {
         itemId: entry.itemId,

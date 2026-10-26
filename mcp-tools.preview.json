@@ -657,7 +657,7 @@
           "additionalProperties": {}
         },
         "revision": {
-          "description": "Returned by action \"pending\": your latest revision; pass it as since to see only newer items.",
+          "description": "Returned by action \"pending\": pass it as since to read on: past the items returned when more remain, else past everything.",
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991

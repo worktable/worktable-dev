@@ -13,13 +13,14 @@ import {
   updateAnnotation,
 } from "../annotation-store.ts";
 import { wsManager } from "../ws.ts";
+import { listThreadParticipantsForDisplay } from "../thread-service.ts";
 import {
   CommentRecipientError,
   MAX_COMMENT_RECIPIENTS,
   commentRecipients,
   commentReplier,
 } from "../comment-recipients.ts";
-import { commentAccess } from "../team-policy.ts";
+import { assertSpaceAccess, commentAccess } from "../team-policy.ts";
 import {
   isHtmlDocumentPath,
   usesHtmlDocumentStorageV2,
@@ -104,6 +105,15 @@ function parseCsv(value: string | undefined): string[] | undefined {
 function broadcast(spaceId: string, annotationId: string, data: unknown) {
   wsManager.broadcast(spaceId, { type: "annotation_update", spaceId, data: { annotationId, ...(data as Record<string, unknown>) } });
 }
+
+// Who a comment in this Space can be sent to: everyone who may read it.
+annotationsRouter.get("/recipients", requireScope("annotations:read"), async (c) => {
+  const spaceId = c.req.param("spaceId") ?? "";
+  assertSpaceAccess(spaceId, "read", c.get("identity"));
+  return c.json(
+    await listThreadParticipantsForDisplay(c.get("identity"), { kind: "space", spaceId }, false)
+  );
+});
 
 annotationsRouter.get("/", requireScope("annotations:read"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";

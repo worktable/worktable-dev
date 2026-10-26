@@ -31,6 +31,13 @@ function query(params: AnnotationListParams): string {
   return value ? `?${value}` : "";
 }
 
+/** Who comments in a Space can be sent to: everyone who may read it. */
+export function listCommentRecipients(spaceId: string) {
+  return fetchJSON<{ participants: import("./threads-api").ThreadParticipant[] }>(
+    `/api/spaces/${encodeURIComponent(spaceId)}/annotations/recipients`
+  );
+}
+
 export function listAnnotations(spaceId: string, params: AnnotationListParams = {}) {
   return fetchJSON<{ annotations: Annotation[]; total: number; nextOffset?: number }>(
     `/api/spaces/${spaceId}/annotations${query(params)}`

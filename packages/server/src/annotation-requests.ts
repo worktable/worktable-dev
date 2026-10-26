@@ -39,8 +39,8 @@ export function addRequests(
 
 /**
  * Requests after a reply. The replier's own open requests are replied. A
- * person's reply asks again everyone who has replied before, as do recipients
- * the reply names; an agent's reply asks nobody.
+ * person's reply asks again everyone who has replied before; an agent's reply
+ * asks nobody again by itself. Recipients a reply names are asked either way.
  */
 export function requestsAfterReply(
   requests: readonly AnnotationRequest[],
@@ -56,7 +56,8 @@ export function requestsAfterReply(
       ? { ...existing, status: "replied" as const, closedAt: now, replyId }
       : existing
   )
-  if (replier?.kind !== "human") return closed
+  const named = to.filter((recipient) => recipient.id !== replier?.participantId)
+  if (replier?.kind !== "human") return addRequests(closed, named, now)
   const latest = new Map<string, AnnotationRequest>()
   for (const existing of closed) latest.set(existing.to.id, existing)
   const again = [...latest.values()]
@@ -66,9 +67,5 @@ export function requestsAfterReply(
         existing.to.id !== replier.participantId
     )
     .map((existing) => existing.to)
-  return addRequests(
-    closed,
-    [...again, ...to.filter((recipient) => recipient.id !== replier.participantId)],
-    now
-  )
+  return addRequests(closed, [...again, ...named], now)
 }

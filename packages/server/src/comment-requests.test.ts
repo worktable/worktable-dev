@@ -118,22 +118,32 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
       const id = created.json.annotation.id
 
       caller = finn
+      const owner = (await resolveParticipant(ownerIdentity())).participant
       const answered = await post(`/${id}/replies`, {
         body: "I saw this. Should I lower it?",
+        to: [owner.id],
       })
-      expect(statuses(answered.json.annotation)).toEqual([["Finn", "replied"]])
+      // An agent's reply asks only whom it names.
+      expect(statuses(answered.json.annotation)).toEqual([
+        ["Finn", "replied"],
+        [owner.name, "open"],
+      ])
       expect(answered.json.annotation.requests?.[0]?.replyId).toBe(
         answered.json.annotation.thread[0]?.id
       )
 
       // Another reply from Finn asks nobody: agents don't wake each other.
       const again = await post(`/${id}/replies`, { body: "Waiting on you." })
-      expect(statuses(again.json.annotation)).toEqual([["Finn", "replied"]])
+      expect(statuses(again.json.annotation)).toEqual([
+        ["Finn", "replied"],
+        [owner.name, "open"],
+      ])
 
       caller = ownerIdentity()
       const followUp = await post(`/${id}/replies`, { body: "Yes, try $39." })
       expect(statuses(followUp.json.annotation)).toEqual([
         ["Finn", "replied"],
+        [owner.name, "replied"],
         ["Finn", "open"],
       ])
     })

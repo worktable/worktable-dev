@@ -13,6 +13,7 @@ import type {
 import { threadLocationKey } from "@worktable/types"
 import { abandonableRead } from "./http"
 import { isSpaceLive, THREAD_STREAM } from "./space-observation"
+import { listCommentRecipients } from "./annotations-api"
 import {
   assignThreadMessage,
   createThread,
@@ -103,7 +104,7 @@ export function useThread(location: ThreadLocation, threadId: string) {
 export function useSpaceParticipants(spaceId: string, enabled: boolean) {
   return useQuery({
     queryKey: threadQueryKeys.spaceParticipants(spaceId),
-    queryFn: () => listThreadParticipants({ kind: "space", spaceId }),
+    queryFn: () => listCommentRecipients(spaceId),
     staleTime: 30_000,
     enabled,
   })

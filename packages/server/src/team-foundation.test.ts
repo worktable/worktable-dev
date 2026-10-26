@@ -28,10 +28,12 @@ import { listDocumentGenerationsV2 } from "./document-version-store-v2.ts"
 import {
   createTeamAgentConnection,
   disconnectTeamAgentConnection,
+  disconnectedSignIns,
   listTeamAgentConnections,
   updateTeamAgentConnection,
 } from "./team-agent-connections.ts"
 import { updateTeamAgent } from "./team-policy.ts"
+import { resolveCloudTeamAgentCredential } from "./team-cloud.ts"
 import { spacesRouter } from "./routes/spaces.ts"
 import { profileRouter } from "./routes/profile.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
@@ -1294,6 +1296,68 @@ describe("team foundation", () => {
       clock.mockRestore()
     }
   })
+})
+
+test("a member's Cloud sign-in that they disconnected reconnects only after the gateway saw it approved again", async () => {
+  const { member, owner } = await setup()
+  const issuer = "https://identity.example.test"
+  const worktable = currentTeamWorktable()!
+  requireTeamDatabase()
+    .query(
+      "INSERT INTO wt_identity_bindings(worktable_id, issuer, subject, user_id, company_id) VALUES (?, ?, ?, ?, NULL)"
+    )
+    .run(worktable.id, issuer, "user_bob", member.team!.userId!)
+  advanceTeamPolicy(worktable.id)
+  // As a verified Cloud token for Bob's Claude Code reaches the runtime.
+  const signIn = (credentialIssuedAt: number): TokenIdentity => ({
+    ...owner,
+    team: undefined,
+    agent: "https://claude.ai/oauth/claude-code-client-metadata",
+    scopes: ["docs:read"],
+    credentialIssuedAt,
+    principal: {
+      id: "oauth:claude-code:user_bob",
+      type: "agent",
+      displayName: "Claude Code",
+      authorizedBy: "workos:user_bob",
+    },
+  })
+  const second = (offset: number) =>
+    Math.floor(Date.now() / 1000) * 1000 + offset * 1000
+  const first = await resolveCloudTeamAgentCredential(signIn(second(-60)), issuer)
+  const agentId = first!.team!.agentId!
+  await runWithTeamIdentity(member, () =>
+    disconnectTeamAgentConnection(agentId)
+  )
+  expect(disconnectedSignIns(agentId)).toEqual(["oauth:claude-code:user_bob"])
+
+  const previous = process.env["WORKTABLE_AGENT_AUTO_RECONNECT"]
+  const clock = spyOn(Date, "now").mockReturnValue(second(5))
+  try {
+    const later = second(5)
+    // Off by default: even an approved sign-in waits for Reconnect.
+    expect(await resolveCloudTeamAgentCredential(signIn(later), issuer, later)).toBeNull()
+    process.env["WORKTABLE_AGENT_AUTO_RECONNECT"] = "1"
+    // A new token alone isn't an approval: refresh mints one too.
+    expect(await resolveCloudTeamAgentCredential(signIn(later), issuer)).toBeNull()
+    // Neither is a fence the gateway crossed before this disconnect.
+    expect(
+      await resolveCloudTeamAgentCredential(signIn(later), issuer, second(-120))
+    ).toBeNull()
+    // A token from before the disconnect never comes back.
+    expect(
+      await resolveCloudTeamAgentCredential(signIn(second(-60)), issuer, later)
+    ).toBeNull()
+    const back = await resolveCloudTeamAgentCredential(signIn(later), issuer, later)
+    expect(back?.team?.agentId).toBe(agentId)
+    expect(disconnectedSignIns(agentId)).toEqual([])
+    // Its tokens from before the disconnect stay out.
+    expect(resolveTeamAgentCredential(signIn(second(-60)))).toBeNull()
+  } finally {
+    clock.mockRestore()
+    if (previous === undefined) delete process.env["WORKTABLE_AGENT_AUTO_RECONNECT"]
+    else process.env["WORKTABLE_AGENT_AUTO_RECONNECT"] = previous
+  }
 })
 
 test("an HTML Doc reads Records for members with read access and writes only for editors", async () => {

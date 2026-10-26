@@ -177,7 +177,8 @@ export function openTeamDatabase(create = false): Database | null {
       );
       CREATE TABLE IF NOT EXISTS wt_agent_credentials (
         credential_key TEXT PRIMARY KEY, agent_id TEXT NOT NULL,
-        sponsor_member_id TEXT, minimum_issued_at INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1
+        sponsor_member_id TEXT, minimum_issued_at INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1,
+        disconnected_at INTEGER
       );
       CREATE TABLE IF NOT EXISTS wt_operators (
         worktable_id TEXT NOT NULL, user_id TEXT NOT NULL,
@@ -231,6 +232,11 @@ export function openTeamDatabase(create = false): Database | null {
       if (!credentialColumns.has("minimum_issued_at"))
         db.exec(
           "ALTER TABLE wt_agent_credentials ADD COLUMN minimum_issued_at INTEGER NOT NULL DEFAULT 0"
+        )
+      // When its member disconnected a Cloud sign-in; cleared on reconnect.
+      if (!credentialColumns.has("disconnected_at"))
+        db.exec(
+          "ALTER TABLE wt_agent_credentials ADD COLUMN disconnected_at INTEGER"
         )
       // Every change to who may access what advances policy_revision, whichever
       // connection or process makes it, so a revision read is a complete check.

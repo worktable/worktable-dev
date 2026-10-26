@@ -916,7 +916,7 @@ export function reconnectCloudPersonalAgent(
       db.query("UPDATE wt_agents SET active = 1 WHERE id = ?").run(agentId)
     }
     db.query(
-      "UPDATE wt_agent_credentials SET agent_id = ?, active = 1, minimum_issued_at = ?, sponsor_member_id = ? WHERE agent_id = ? AND (credential_key LIKE 'oauth:%' OR credential_key LIKE 'workos-agent:%')"
+      "UPDATE wt_agent_credentials SET agent_id = ?, active = 1, minimum_issued_at = ?, sponsor_member_id = ?, disconnected_at = NULL WHERE agent_id = ? AND (credential_key LIKE 'oauth:%' OR credential_key LIKE 'workos-agent:%')"
     ).run(destination, Math.ceil(Date.now() / 1000) * 1000, member.id, agentId)
     advanceTeamPolicy(worktable.id)
   })()

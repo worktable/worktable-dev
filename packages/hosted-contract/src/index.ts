@@ -396,6 +396,12 @@ export const ACTOR_HEADERS = {
   AUTHORIZED_BY: "x-worktable-actor-authorized-by",
   /** JSON array of exact scopes, applied only as a ceiling to the bearer. */
   SCOPES: "x-worktable-actor-scopes",
+  /**
+   * When this agent's sign-in crossed a disconnect fence with a new
+   * authorization, the fence's time in milliseconds. A disconnected agent
+   * reconnects on its own only after a fence set after its disconnect.
+   */
+  REAUTHORIZED_AT: "x-worktable-actor-reauthorized-at",
 } as const
 
 /**

@@ -181,6 +181,17 @@ export function trustedGatewayScopeCeiling(req: Request): string[] | null {
 }
 
 /**
+ * When the gateway saw this agent authorized again after a disconnect, or
+ * null. Only an admitted hosted request carries it.
+ */
+export function trustedGatewayReauthorizedAt(req: Request): number | null {
+  if (!isHosted() || !gatewaySecret() || !gatewayAdmits(req)) return null
+  const raw = req.headers.get(ACTOR_HEADERS.REAUTHORIZED_AT)
+  if (raw === null || !/^\d{1,16}$/.test(raw)) return null
+  return Number(raw)
+}
+
+/**
  * This workspace's agent address, from the gateway. Present only when the
  * gateway routes agents by workspace, so pairing on Cloud depends on it.
  */

@@ -9,6 +9,7 @@ import { dispatchOperation } from "./mcp/dispatcher.ts";
 import { documentsRouter } from "./routes/documents.ts";
 import { spacesRouter } from "./routes/spaces.ts";
 import { widgetsRouter } from "./routes/widgets.ts";
+import { isPersonWriter } from "./html-permission-authority.ts";
 import type { TokenIdentity } from "./token-store.ts";
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts";
 
@@ -119,6 +120,17 @@ describe("who may grant an HTML Doc its permissions", () => {
     expect(await opened("feed")).toEqual({ networkRequested: true, network: false });
     // The notice names who asked.
     expect((await req("GET", "/api/spaces/meta/documents/page?path=feed")).json.page.networkRequestedBy).toBe("Claude Code");
+  });
+
+  it("counts people by how they signed in, not by a token's label", () => {
+    const human = { agent: null, principal: { id: "member:sam", type: "human" as const, displayName: "Sam" } };
+    expect(isPersonWriter(ownerIdentity())).toBe(true);
+    expect(isPersonWriter({ ...human, credentialClass: "browser" })).toBe(true);
+    expect(isPersonWriter({ ...human, credentialClass: "local", team: { worktableId: "w", memberId: "m" } })).toBe(true);
+    expect(isPersonWriter({ ...human, credentialClass: "local", team: { worktableId: "w", memberId: "m", agentId: "a" } })).toBe(false);
+    expect(isPersonWriter({ ...human, credentialClass: "local", principal: { ...human.principal, id: "local-token:abc" } })).toBe(false);
+    expect(isPersonWriter({ ...human, credentialClass: "resource" })).toBe(false);
+    expect(isPersonWriter(agent(["*"]))).toBe(false);
   });
 
   it("lets a write grant only the Record access its writer holds", async () => {

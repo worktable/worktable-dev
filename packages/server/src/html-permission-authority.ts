@@ -20,15 +20,16 @@ type Requests = WidgetFile["requests"]
 const RECORD_ACTIONS = ["read", "create", "update", "delete"] as const
 
 /**
- * A person signed in to Worktable: a browser session, or the local owner. A
- * token is never a person, whatever its label, so an agent can't present one
- * to allow network access. On a local Worktable without sign-in, anything on
- * the machine is the owner.
+ * A person signed in to Worktable: a browser session, a team member, or the
+ * local owner. A token is never a person, whatever its label, so an agent
+ * can't present one to allow network access. On a local Worktable without
+ * sign-in, anything on the machine is the owner.
  */
 export function isPersonWriter(
-  identity: Pick<TokenIdentity, "agent" | "principal" | "credentialClass"> | undefined
+  identity: Pick<TokenIdentity, "agent" | "principal" | "credentialClass" | "team"> | undefined
 ): boolean {
   if (!identity || identity.agent !== null || identity.principal.type !== "human") return false
+  if (identity.team) return Boolean(identity.team.memberId && !identity.team.agentId)
   return identity.credentialClass === "browser" || identity.principal.id === "local:owner"
 }
 

@@ -14,6 +14,7 @@ import { asHttpOrigin } from "./public-origin.ts"
 import { hostedWorktableCredential, isHosted } from "./hosted.ts"
 import {
   trustedGatewayPrincipal,
+  trustedGatewayReauthorizedAt,
   trustedGatewayScopeCeiling,
 } from "./hosted.ts"
 import { HOSTED_AGENT_SCOPES } from "@worktable/hosted-contract"
@@ -238,7 +239,11 @@ async function verifyLocalBearer(raw: string): Promise<TokenIdentity | null> {
  * same realtime doc traffic the MCP tools expose and has no privileged
  * routes, so the OAuth credential is valid there too.
  */
-export async function verifyBearer(raw: string): Promise<TokenIdentity | null> {
+export async function verifyBearer(
+  raw: string,
+  /** The admitted request, so a Cloud agent's gateway context applies. */
+  request?: Request
+): Promise<TokenIdentity | null> {
   // A hosted tenant has exactly one routable credential model: an AS-issued
   // bearer admitted through the Cloud gateway. Local wt_ and legacy env
   // credentials may exist only as residue in reused app storage; accepting
@@ -254,7 +259,13 @@ export async function verifyBearer(raw: string): Promise<TokenIdentity | null> {
     assertCurrentTeamIdentity(identity)
     return identity
   }
-  return isHosted() ? resolveCloudTeamAgentCredential(identity) : resolveTeamAgentCredential(identity)
+  return isHosted()
+    ? resolveCloudTeamAgentCredential(
+        identity,
+        undefined,
+        request ? trustedGatewayReauthorizedAt(request) : null
+      )
+    : resolveTeamAgentCredential(identity)
 }
 
 /** Hosted realtime accepts the route's explicit human or agent credential class. */
@@ -273,7 +284,7 @@ export async function verifyRealtimeCredential(
     const legacy = await verifyHostedResourceToken(raw)
     return legacy ? withTrustedGatewayPrincipal(request, legacy) : null
   }
-  const resource = await verifyBearer(raw)
+  const resource = await verifyBearer(raw, request)
   return resource ? withTrustedGatewayPrincipal(request, resource) : null
 }
 
@@ -442,7 +453,7 @@ export function requireIdentity() {
         assertCurrentTeamIdentity(identity)
         return runWithTeamIdentity(identity, next)
       }
-      const identity = await verifyBearer(bearer)
+      const identity = await verifyBearer(bearer, c.req.raw)
       if (!identity) return unauthorized(c)
       if (isHosted() && trustedGatewayPrincipal(c.req.raw)?.type !== "agent") {
         return unauthorized(c)

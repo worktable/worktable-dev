@@ -18,6 +18,7 @@ import {
   updateSignInAgent,
 } from "../agent-connection-store.ts"
 import { isHosted } from "../hosted.ts"
+import { disconnectedSignIns } from "../team-agent-connections.ts"
 import { getOwnerSubject } from "../oauth-jwt.ts"
 import { grokBotInventory } from "../grok-bot-connections.ts"
 import {
@@ -53,7 +54,11 @@ agentConnectionsRouter.delete("/:id", async (c) => {
     ])
     for (const id of ids) await removeGrokBot(id, { forgetIdentity: true })
   }
-  return c.json({ ok: true })
+  // On Cloud the gateway revokes these sign-ins, so only a new approval
+  // brings the agent back.
+  const signIns =
+    disconnected && isHosted() ? disconnectedSignIns(c.req.param("id")) : []
+  return c.json({ ok: true, ...(signIns.length ? { signIns } : {}) })
 })
 
 const ICON_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/

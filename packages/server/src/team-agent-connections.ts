@@ -304,5 +304,23 @@ export async function updateTeamAgentConnection(
 
 export function disconnectTeamAgentConnection(id: string): boolean {
   updateTeamAgent(id, { active: false }, currentRequestIdentity()!)
+  // A member's own Cloud sign-in remembers when it was disconnected, so
+  // signing in again afterwards can reconnect it (see team-cloud.ts).
+  requireTeamDatabase()
+    .query(
+      "UPDATE wt_agent_credentials SET disconnected_at = ? WHERE agent_id = ? AND credential_key LIKE 'oauth:%' AND agent_id IN (SELECT id FROM wt_agents WHERE ownership = 'personal')"
+    )
+    .run(Math.floor(Date.now() / 1000) * 1000, id)
   return true
+}
+
+/** The Cloud sign-ins a disconnect ended, for the gateway to revoke. */
+export function disconnectedSignIns(id: string): string[] {
+  if (!currentTeamWorktable()) return []
+  return requireTeamDatabase()
+    .query<{ credential_key: string }, [string]>(
+      "SELECT credential_key FROM wt_agent_credentials WHERE agent_id = ? AND disconnected_at IS NOT NULL AND credential_key LIKE 'oauth:%'"
+    )
+    .all(id)
+    .map((row) => row.credential_key)
 }

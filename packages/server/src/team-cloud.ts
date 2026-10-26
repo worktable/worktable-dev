@@ -21,6 +21,7 @@ import {
 } from "./team-auth.ts"
 import {
   currentTeamWorktable,
+  advanceTeamPolicy,
   currentWorktableId,
   openTeamDatabase,
   refreshTeamStateForWrite,
@@ -286,7 +287,9 @@ export function cloudTeamMemberForSubject(issuer: string, subject: string) {
 /** Called only after resource-token signature, issuer and exact audience verification. */
 export async function resolveCloudTeamAgentCredential(
   identity: TokenIdentity,
-  issuer = process.env[ENV.AUTH_SERVER_URL]?.trim()
+  issuer = process.env[ENV.AUTH_SERVER_URL]?.trim(),
+  /** When the gateway saw this sign-in authorized again after a disconnect. */
+  reauthorizedAt: number | null = null
 ): Promise<TokenIdentity | null> {
   const existing = resolveTeamAgentCredential(identity)
   if (
@@ -308,14 +311,20 @@ export async function resolveCloudTeamAgentCredential(
     async () => {
       const current = resolveTeamAgentCredential(identity)
       if (current) return current
-      if (
-        requireTeamDatabase()
-          .query(
-            "SELECT credential_key FROM wt_agent_credentials WHERE credential_key = ?"
-          )
-          .get(identity.principal.id)
-      )
-        return null
+      const known = requireTeamDatabase()
+        .query<
+          {
+            agent_id: string
+            sponsor_member_id: string | null
+            disconnected_at: number | null
+          },
+          [string]
+        >(
+          "SELECT agent_id, sponsor_member_id, disconnected_at FROM wt_agent_credentials WHERE credential_key = ?"
+        )
+        .get(identity.principal.id)
+      if (known)
+        return reconnectedAfterSignIn(identity, member.id, known, reauthorizedAt)
       const sponsor = identityForTeamMember(member)
       const agent = createTeamAgent(
         {
@@ -332,4 +341,59 @@ export async function resolveCloudTeamAgentCredential(
       return resolveTeamAgentCredential(identity)
     }
   )
+}
+
+/**
+ * Whether a member's own sign-in, disconnected earlier, may reconnect by
+ * signing in again. Off unless WORKTABLE_AGENT_AUTO_RECONNECT is 1.
+ */
+export function agentAutoReconnectEnabled(): boolean {
+  return process.env["WORKTABLE_AGENT_AUTO_RECONNECT"]?.trim() === "1"
+}
+
+/**
+ * A member who disconnected their own agent and approved it again in the
+ * browser gets it back on its next request. The gateway's fence proves the
+ * approval: it revoked the old authorization at disconnect and reopens only
+ * for a new one, so a refreshed old token never passes.
+ */
+function reconnectedAfterSignIn(
+  identity: TokenIdentity,
+  memberId: string,
+  known: {
+    agent_id: string
+    sponsor_member_id: string | null
+    disconnected_at: number | null
+  },
+  reauthorizedAt: number | null
+): TokenIdentity | null {
+  const disconnectedAt = known.disconnected_at
+  if (
+    !agentAutoReconnectEnabled() ||
+    disconnectedAt === null ||
+    reauthorizedAt === null ||
+    reauthorizedAt < disconnectedAt ||
+    (identity.credentialIssuedAt ?? 0) < disconnectedAt ||
+    known.sponsor_member_id !== memberId
+  )
+    return null
+  const db = requireTeamDatabase()
+  const worktable = currentTeamWorktable()!
+  // Only the member's own agent, still theirs.
+  if (
+    !db
+      .query(
+        "SELECT 1 FROM wt_agents WHERE id = ? AND worktable_id = ? AND ownership = 'personal' AND member_id = ?"
+      )
+      .get(known.agent_id, worktable.id, memberId)
+  )
+    return null
+  db.transaction(() => {
+    db.query("UPDATE wt_agents SET active = 1 WHERE id = ?").run(known.agent_id)
+    db.query(
+      "UPDATE wt_agent_credentials SET active = 1, minimum_issued_at = ?, disconnected_at = NULL WHERE credential_key = ?"
+    ).run(disconnectedAt, identity.principal.id)
+    advanceTeamPolicy(worktable.id)
+  })()
+  return resolveTeamAgentCredential(identity)
 }

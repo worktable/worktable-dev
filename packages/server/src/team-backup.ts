@@ -67,6 +67,15 @@ function invalidateConnections(db: Database): void {
     db.exec(
       "DELETE FROM session; DELETE FROM wt_cloud_sessions; DELETE FROM wt_pairings; UPDATE wt_agent_credentials SET active = 0;"
     )
+    // A restored disconnect must not let a later sign-in reconnect it.
+    if (
+      db
+        .query(
+          "SELECT 1 FROM pragma_table_info('wt_agent_credentials') WHERE name = 'disconnected_at'"
+        )
+        .get()
+    )
+      db.exec("UPDATE wt_agent_credentials SET disconnected_at = NULL")
     if (hasTable(db, "wt_pairing_authorizations"))
       db.exec("DELETE FROM wt_pairing_authorizations")
     // An invitation link authorizes joining, so a restored one must not

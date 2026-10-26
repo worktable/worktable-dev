@@ -109,7 +109,7 @@ export function retireTeamEnrollment(
       "UPDATE wt_agents SET active = 0 WHERE member_id = ? AND worktable_id = ? AND ownership = 'personal'"
     ).run(memberId, worktable.id)
     db.query(
-      "UPDATE wt_agent_credentials SET active = 0 WHERE sponsor_member_id = ? OR agent_id IN (SELECT id FROM wt_agents WHERE member_id = ? AND worktable_id = ?)"
+      "UPDATE wt_agent_credentials SET active = 0, disconnected_at = NULL WHERE sponsor_member_id = ? OR agent_id IN (SELECT id FROM wt_agents WHERE member_id = ? AND worktable_id = ?)"
     ).run(memberId, memberId, worktable.id)
     db.query(
       "DELETE FROM wt_space_grants WHERE worktable_id = ? AND subject_type = 'member' AND subject_id = ?"

@@ -466,7 +466,7 @@ function RootLayout() {
     document.body.classList.add("loaded")
   }, [])
 
-  useEffect(() => openExternalLinksThroughDesktop(document), [])
+  useEffect(() => openExternalLinksThroughDesktop(window), [])
 
   useEffect(
     () =>

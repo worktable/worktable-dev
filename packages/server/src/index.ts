@@ -295,6 +295,8 @@ const wildcardCors = cors({
     "mcp-session-id",
     "Last-Event-ID",
     "mcp-protocol-version",
+    "mcp-method",
+    "mcp-name",
   ],
   exposeHeaders: ["mcp-session-id", "mcp-protocol-version"],
 });

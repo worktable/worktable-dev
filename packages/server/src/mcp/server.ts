@@ -66,16 +66,24 @@ export function serverInstructions(surface: McpSurface = "released"): string {
     .join("\n\n")
 }
 
+/** The name, version and instructions the server gives agents in either era. */
+export function serverIdentity(
+  options: Pick<WorktableMcpServerOptions, "version" | "surface">
+) {
+  return {
+    info: { name: "worktable", version: options.version },
+    instructions: serverInstructions(options.surface),
+  }
+}
+
 export function createWorktableMcpServer(
   options: WorktableMcpServerOptions
 ): McpServer {
-  const server = new McpServer(
-    { name: "worktable", version: options.version },
-    {
-      capabilities: { tools: {} },
-      instructions: serverInstructions(options.surface),
-    }
-  )
+  const { info, instructions } = serverIdentity(options)
+  const server = new McpServer(info, {
+    capabilities: { tools: {} },
+    instructions,
+  })
   registerTools(server, {
     scopes: options.scopes,
     urlOrigin: options.urlOrigin,

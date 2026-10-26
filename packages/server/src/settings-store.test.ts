@@ -19,7 +19,7 @@ import { systemRouter, type DeploymentInfo } from "./routes/system.ts";
 import { mcpBearerRequired, publicSurfaceAuthRequired, trustedLocalIdentity } from "./auth.ts";
 import { createToken } from "./token-store.ts";
 import { setOwnerPassword } from "./session-store.ts";
-import { configuredMcpSurface } from "./mcp/surface.ts";
+import { configuredMcpSurface, mcpModernEraEnabled } from "./mcp/surface.ts";
 import { filesPreviewEnabled } from "./files-preview.ts";
 
 let appDir: string;
@@ -153,17 +153,20 @@ describe("settings-store", () => {
 describe("preview agent tools", () => {
   afterEach(() => {
     delete process.env["WORKTABLE_MCP_PREVIEW"];
+    delete process.env["WORKTABLE_MCP_MODERN"];
     delete process.env["WORKTABLE_HOSTED"];
   });
 
-  it("are off until the owner turns them on, and decide the MCP surface", async () => {
+  it("are off until the owner turns them on, and decide the MCP surface and era", async () => {
     expect(getServerSettings().agents.previewTools).toBe(false);
     expect(configuredMcpSurface()).toBe("released");
+    expect(mcpModernEraEnabled()).toBe(false);
 
     await updateServerSettings({ agents: { previewTools: true } });
     invalidateServerSettingsCache();
     expect(getServerSettings().agents.previewTools).toBe(true);
     expect(configuredMcpSurface()).toBe("preview");
+    expect(mcpModernEraEnabled()).toBe(true);
 
     await expect(updateServerSettings({ agents: { previewTools: "yes" } })).rejects.toThrow("agents.previewTools must be a boolean");
     await expect(updateServerSettings({ agents: { other: true } } as never)).rejects.toThrow("Unknown agents field: other");
@@ -173,12 +176,19 @@ describe("preview agent tools", () => {
     await updateServerSettings({ agents: { previewTools: true } });
     process.env["WORKTABLE_MCP_PREVIEW"] = "0";
     expect(configuredMcpSurface()).toBe("released");
+    expect(mcpModernEraEnabled()).toBe(false);
+    process.env["WORKTABLE_MCP_MODERN"] = "1";
+    expect(mcpModernEraEnabled()).toBe(true);
+    delete process.env["WORKTABLE_MCP_MODERN"];
     delete process.env["WORKTABLE_MCP_PREVIEW"];
 
     process.env["WORKTABLE_HOSTED"] = "1";
     expect(configuredMcpSurface()).toBe("released");
+    expect(mcpModernEraEnabled()).toBe(false);
     process.env["WORKTABLE_MCP_PREVIEW"] = "1";
     expect(configuredMcpSurface()).toBe("preview");
+    process.env["WORKTABLE_MCP_MODERN"] = "0";
+    expect(mcpModernEraEnabled()).toBe(false);
   });
 
   it("tell the Settings switch when the environment overrides it", async () => {

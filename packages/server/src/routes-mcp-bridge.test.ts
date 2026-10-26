@@ -156,6 +156,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  delete process.env["WORKTABLE_MCP_MODERN"]
   await Promise.all(clients.splice(0).map((client) => client.close()))
   setWorkspaceRootOverride(null)
   setAppDirOverride(null)
@@ -264,5 +265,152 @@ describe("MCP bridge over HTTP", () => {
     // The wait's own stream must end well before its 20 s would have.
     await callResponse.text()
     expect(Date.now() - startedAt).toBeLessThan(5_000)
+  })
+})
+
+// A 2026-07-28 client carries its version and capabilities in every request's
+// _meta, mirrored in headers, instead of opening with initialize. The same
+// endpoint serves both eras while the modern one is on.
+
+const MODERN_META = {
+  "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+  "io.modelcontextprotocol/clientInfo": { name: "modern", version: "1" },
+  "io.modelcontextprotocol/clientCapabilities": {},
+}
+
+interface JsonRpcReply {
+  result?: Record<string, unknown>
+  error?: { code: number; data?: Record<string, unknown> }
+}
+
+async function modernPost(
+  method: string,
+  params: Record<string, unknown> = {},
+  { version = "2026-07-28", mcpName = params.name } = {}
+): Promise<{ status: number; reply: JsonRpcReply }> {
+  const app = new Hono()
+  app.route("/mcp", mcpRouter)
+  const response = await app.fetch(
+    new Request("http://127.0.0.1/mcp", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        "mcp-protocol-version": version,
+        "mcp-method": method,
+        ...(typeof mcpName === "string" ? { "mcp-name": mcpName } : {}),
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method,
+        params: {
+          ...params,
+          _meta: {
+            ...MODERN_META,
+            "io.modelcontextprotocol/protocolVersion": version,
+          },
+        },
+      }),
+    })
+  )
+  return { status: response.status, reply: (await response.json()) as JsonRpcReply }
+}
+
+/** A legacy (initialize) client over HTTP; `replies` gets each JSON reply. */
+async function legacyClient(replies: JsonRpcReply[]): Promise<Client> {
+  const app = new Hono()
+  app.route("/mcp", mcpRouter)
+  const transport = new StreamableHTTPClientTransport(
+    new URL("http://127.0.0.1/mcp"),
+    {
+      fetch: async (input, init) => {
+        const response = await app.fetch(new Request(input, init))
+        if (response.headers.get("content-type")?.includes("application/json"))
+          replies.push((await response.clone().json()) as JsonRpcReply)
+        return response
+      },
+    }
+  )
+  const client = new Client({ name: "legacy", version: "1" })
+  clients.push(client)
+  await client.connect(transport)
+  return client
+}
+
+const formatSpec = {
+  name: "worktable_guidance",
+  arguments: { request: { action: "format_spec" } },
+}
+
+describe("MCP 2026-07-28 beside the legacy revisions", () => {
+  it("serves legacy and modern clients the same tools and results", async () => {
+    process.env["WORKTABLE_MCP_MODERN"] = "1"
+    const replies: JsonRpcReply[] = []
+    const legacy = await legacyClient(replies)
+    await legacy.listTools()
+    const legacyTools = replies.find((reply) => reply.result?.tools)?.result
+    const legacyCall = await legacy.callTool(formatSpec)
+    expect(JSON.stringify(legacyCall.structuredContent)).toContain(
+      "Worktable format"
+    )
+
+    const discover = await modernPost("server/discover")
+    expect(discover.status).toBe(200)
+    expect(discover.reply.result).toMatchObject({
+      supportedVersions: ["2026-07-28"],
+      capabilities: { tools: {} },
+      instructions: legacy.getInstructions(),
+      resultType: "complete",
+    })
+    // The same tools; only execution.taskSupport, which 2026-07-28 deleted
+    // (its tasks extension declares no per-tool support), stays legacy.
+    const tools = await modernPost("tools/list")
+    expect(tools.reply.result?.tools).toEqual(
+      (legacyTools?.tools as Array<Record<string, unknown>>).map(
+        ({ execution, ...tool }) => {
+          expect(execution).toEqual({ taskSupport: "forbidden" })
+          return tool
+        }
+      )
+    )
+    const modernCall = await modernPost("tools/call", formatSpec)
+    expect(modernCall.status).toBe(200)
+    expect(modernCall.reply.result).toEqual({
+      ...legacyCall,
+      resultType: "complete",
+      _meta: {
+        "io.modelcontextprotocol/serverInfo": {
+          name: "worktable",
+          version: "0.0.1",
+        },
+      },
+    })
+  })
+
+  it("answers with modern errors a modern client can act on", async () => {
+    process.env["WORKTABLE_MCP_MODERN"] = "1"
+    const mismatch = await modernPost("tools/call", formatSpec, {
+      mcpName: "worktable_delete",
+    })
+    expect(mismatch.status).toBe(400)
+    expect(mismatch.reply.error?.code).toBe(-32020)
+
+    const unsupported = await modernPost("tools/list", {}, {
+      version: "2099-01-01",
+    })
+    expect(unsupported.status).toBe(400)
+    expect(unsupported.reply.error?.code).toBe(-32022)
+    expect(unsupported.reply.error?.data?.supported).toEqual(["2026-07-28"])
+  })
+
+  it("answers modern requests as a legacy-only server while the era is off", async () => {
+    // A 400 without a modern error code: a dual-era client falls back to
+    // initialize, as against any server from before this revision.
+    for (const method of ["server/discover", "tools/list"]) {
+      const { status, reply } = await modernPost(method)
+      expect(status).toBe(400)
+      expect(reply.error?.code).toBe(-32000)
+    }
   })
 })

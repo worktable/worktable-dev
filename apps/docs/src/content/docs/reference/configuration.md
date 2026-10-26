@@ -26,6 +26,7 @@ These environment variables and the Workspace URL control apply to local and sel
 | `WORKTABLE_PUBLIC_URL` | The origin agents and links should use when a tunnel or reverse proxy fronts a local or self-hosted install (an absolute `http(s)://host` origin, no path). Requires an owner password, same as reachable mode. Same setting as Settings → General → Workspace URL in the web app; the env var wins when both are set | unset |
 | `WORKTABLE_BOOT_TIMING` | Set to `1` to log how long each server startup phase takes | unset |
 | `WORKTABLE_MCP_PREVIEW` | Set to `1` to give agents [tool changes that aren't released yet](/reference/mcp/#preview-tools), or `0` to keep the released tools. Overrides Settings → Agents → Preview agent tools | unset |
+| `WORKTABLE_MCP_MODERN` | Set to `1` to also serve MCP revision 2026-07-28 over HTTP, or `0` to serve only the earlier revisions. Unset, it follows preview agent tools | unset |
 | `WORKTABLE_FILES_PREVIEW` | Set to `1` to turn on file features that aren't released yet, or `0` to keep them off. With them on, every visible file in a Space's folder becomes part of the Space. Overrides Settings → System → Preview file features | unset |
 
 `WORKTABLE_REQUIRE_AUTH` is an internal launch-policy flag. Do not use it to

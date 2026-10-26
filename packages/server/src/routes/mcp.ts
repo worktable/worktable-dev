@@ -4,8 +4,15 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { implicitLoopbackRequestAllowed, requireIdentity } from "../auth.ts"
 import { isHosted } from "../hosted.ts"
-import { createWorktableMcpServer } from "../mcp/server.ts"
-import { configuredMcpSurface } from "../mcp/surface.ts"
+import {
+  handleModernMcpRequest,
+  modernMcpRequestBody,
+} from "../mcp/modern.ts"
+import {
+  createWorktableMcpServer,
+  type WorktableMcpServerOptions,
+} from "../mcp/server.ts"
+import { configuredMcpSurface, mcpModernEraEnabled } from "../mcp/surface.ts"
 import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts"
 import type { TokenIdentity } from "../token-store.ts"
 import { runWithTeamIdentity } from "../team-policy.ts"
@@ -14,8 +21,11 @@ import { runWithTeamIdentity } from "../team-policy.ts"
 // Server factory — creates a fresh server per request (stateless)
 // ============================================================
 
-function createRemoteMcpServer(identity: TokenIdentity, urlOrigin: string) {
-  return createWorktableMcpServer({
+function remoteMcpServerOptions(
+  identity: TokenIdentity,
+  urlOrigin: string
+): WorktableMcpServerOptions {
+  return {
     version: "0.0.1",
     scopes: identity.scopes,
     urlOrigin,
@@ -34,7 +44,7 @@ function createRemoteMcpServer(identity: TokenIdentity, urlOrigin: string) {
             credentialClass: identity.credentialClass,
             principal: identity.principal,
           },
-  })
+  }
 }
 
 // ============================================================
@@ -55,6 +65,8 @@ mcpRouter.use(
       "mcp-session-id",
       "Last-Event-ID",
       "mcp-protocol-version",
+      "mcp-method",
+      "mcp-name",
     ],
     exposeHeaders: ["mcp-session-id", "mcp-protocol-version"],
   })
@@ -111,6 +123,8 @@ export interface RemoteMcpRequestOptions {
    * proxies in front of Cloud break streamed POST responses.
    */
   stream?: boolean
+  /** Also serve MCP 2026-07-28 requests; without it they get the legacy answer. */
+  modernEra?: boolean
 }
 
 // MCP endpoint — stateless: new server + transport per request
@@ -120,6 +134,18 @@ export async function handleRemoteMcpRequest(
   origin: string,
   options: RemoteMcpRequestOptions = {}
 ): Promise<Response> {
+  const modern = options.modernEra
+    ? await modernMcpRequestBody(request)
+    : undefined
+  if (modern) {
+    return runWithTeamIdentity(identity, () =>
+      handleModernMcpRequest(request, modern.body, {
+        server: remoteMcpServerOptions(identity, origin),
+        stream: options.stream ?? false,
+      })
+    )
+  }
+
   const { bridgeId } = options
   const callKeys: string[] = []
   if (bridgeId && request.method === "POST") {
@@ -156,7 +182,9 @@ export async function handleRemoteMcpRequest(
     // unreachable.
     enableJsonResponse: !options.stream,
   })
-  const server = createRemoteMcpServer(identity, origin)
+  const server = createWorktableMcpServer(
+    remoteMcpServerOptions(identity, origin)
+  )
   await server.connect(transport)
   for (const key of callKeys) bridgeCalls.set(key, server)
   const release = () => {
@@ -216,5 +244,6 @@ mcpRouter.all("/", async (c) => {
     bridgeId,
     stream:
       Boolean(bridgeId) && !isHosted() && implicitLoopbackRequestAllowed(c.req.raw),
+    modernEra: mcpModernEraEnabled(),
   })
 })

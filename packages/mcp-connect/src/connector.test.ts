@@ -214,6 +214,29 @@ describe("connector transaction model", () => {
       "already connects to Worktable at https://other.example/mcp"
     )
     expect(readFileSync(configPath, "utf8")).toContain("other.example")
+
+    // The same address set up differently, here turned off, isn't done:
+    // it asks too, and --replace writes the entry the command makes.
+    writeFileSync(
+      configPath,
+      '[mcp_servers.worktable]\nurl = "https://app.worktable.cloud/api/mcp"\nenabled = false\n'
+    )
+    const cloud = [
+      "--oauth",
+      "--server",
+      "https://app.worktable.cloud",
+      "--client",
+      "codex",
+    ]
+    const dependencies = {
+      ...fakeHost().dependencies,
+      signInClient: async () => "no-terminal" as const,
+    }
+    expect(await runConnector(cloud, captureIo().io, dependencies)).toBe(1)
+    expect(
+      await runConnector([...cloud, "--replace"], captureIo().io, dependencies)
+    ).toBe(0)
+    expect(readFileSync(configPath, "utf8")).not.toContain("enabled")
   })
 
   it("preserves a selected Cloud Worktable and rejects a resource on another server before touching configs", async () => {

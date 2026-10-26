@@ -668,17 +668,50 @@ function configSurface(id: ConnectorInstallableMcpClientId): {
   }
 }
 
-function configuredEntry(surface: { path: string; kind: "codex" | "json"; parentKey?: string }): { url?: string; auth: boolean } {
-  return surface.kind === "codex"
-    ? { url: readCodexUrl(surface.path), auth: readCodexAuth(surface.path) }
-    : {
-        url: readJsonUrl(surface.path, surface.parentKey!),
-        auth: readJsonAuth(surface.path, surface.parentKey!),
-      };
+function configuredUrl(surface: { path: string; kind: "codex" | "json"; parentKey?: string }): string | undefined {
+  return surface.kind === "codex" ? readCodexUrl(surface.path) : readJsonUrl(surface.path, surface.parentKey!);
 }
 
-function sameEndpoint(left: string | undefined, right: string): boolean {
-  return left !== undefined && left.replace(/\/+$/, "") === right.replace(/\/+$/, "");
+/** The entry the connector writes for a tokenless target. */
+function tokenlessEntry(id: ConnectorInstallableMcpClientId, endpoint: string): Record<string, unknown> {
+  switch (id) {
+    case "claude-code":
+      return { type: "http", url: endpoint };
+    case "codex":
+      return { url: endpoint };
+    case "cursor":
+      return cursorEntry(endpoint);
+    case "opencode":
+      return opencodeEntry(endpoint);
+    case "vscode":
+      return vscodeEntry(endpoint);
+  }
+}
+
+function storedEntry(surface: { path: string; kind: "codex" | "json"; parentKey?: string }): unknown {
+  if (surface.kind === "codex") {
+    try {
+      return codexWorktableConfig(readFileSync(surface.path, "utf8"));
+    } catch {
+      return undefined;
+    }
+  }
+  const parent = readJsonObject(surface.path)[surface.parentKey!];
+  return parent && typeof parent === "object" ? (parent as Record<string, unknown>)["worktable"] : undefined;
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") return false;
+  if (Array.isArray(left) !== Array.isArray(right)) return false;
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key) =>
+      sameValue((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key])
+    )
+  );
 }
 
 /**
@@ -738,12 +771,18 @@ export function preflightClient(
       }
     }
 
-    // Running the same tokenless command again finds its own entry: that is
-    // already done, not a conflict to replace.
-    const current = existing ? configuredEntry(surface) : undefined;
-    if (current && options.target && !options.target.token && !current.auth && sameEndpoint(current.url, options.target.endpoint)) {
+    // Running the same tokenless command again finds exactly the entry it
+    // writes: that is already done, not a conflict. --replace still rewrites.
+    if (
+      existing &&
+      !options.replace &&
+      options.target &&
+      !options.target.token &&
+      sameValue(storedEntry(surface), tokenlessEntry(id, options.target.endpoint))
+    ) {
       return { id, ok: true, configPath: surface.path, existing: true, unchanged: true };
     }
+    const currentUrl = existing ? configuredUrl(surface) : undefined;
     if (existing && !options.replace) {
       return {
         id,
@@ -751,7 +790,7 @@ export function preflightClient(
         configPath: surface.path,
         existing: true,
         message:
-          `${MCP_CLIENTS[id].label} already connects to ${current?.url ? `Worktable at ${current.url}` : "a Worktable"}. ` +
+          `${MCP_CLIENTS[id].label} already connects to ${currentUrl ? `Worktable at ${currentUrl}` : "a Worktable"}. ` +
           "To connect it here instead, rerun this same command with --replace.",
       };
     }

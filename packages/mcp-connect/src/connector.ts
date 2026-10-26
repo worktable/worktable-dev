@@ -494,6 +494,7 @@ async function runOAuthConnector(
     }
     if (result === "failed" || result === "cancelled") status = 1
     pending.push(`  ${label}: ${signInInstruction(outcome.id)}`)
+    if (outcome.restartHint) pending.push(`    Note: ${outcome.restartHint}`)
   }
   if (pending.length > 0) {
     io.log("")

@@ -534,10 +534,11 @@ function signedInHere(option: Option, connection: AgentConnection): boolean {
     )
   }
   if (connection.authKind !== "oauth") return false
-  // An agent another tab started signing in isn't this tab's agent.
+  // A named tab waits for its own agent; Other takes any that signs in.
   const expected = platformOf(option)
-  const actual = agentConnectionPlatform(connection)
-  return expected === "other" || actual === "other" || actual === expected
+  return (
+    expected === "other" || agentConnectionPlatform(connection) === expected
+  )
 }
 
 /** On Cloud, agents sign in with the Worktable's address. */
@@ -758,7 +759,9 @@ export function AgentConnectOptions({
   })
 
   const loaded = connections.data?.connections
-  if (loaded && !baseline) setBaseline(new Set(loaded.map((item) => item.id)))
+  // A list cached from an earlier visit may predate agents signed in since.
+  if (loaded && connections.isFetchedAfterMount && !baseline)
+    setBaseline(new Set(loaded.map((item) => item.id)))
 
   function addSetup(setup: SetupRecord) {
     onSetupsChange([...setups.filter((item) => item.id !== setup.id), setup])
@@ -775,7 +778,10 @@ export function AgentConnectOptions({
         else delete next[key]
         return next
       }),
-    cloudConnections: baseline ? loaded : undefined,
+    // An agent one tab accepted isn't another tab's arrival.
+    cloudConnections: baseline
+      ? loaded?.filter((item) => !setups.some((setup) => setup.id === item.id))
+      : undefined,
     baseline: baseline ?? new Set<string>(),
   }
   function openRow(row: RowId, next: boolean, source: string) {

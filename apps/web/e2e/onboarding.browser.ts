@@ -457,6 +457,10 @@ test("Cloud coding agents are recognized on their own tab when they sign in", as
   await expect(
     page.getByRole("button", { name: "Continue", exact: true })
   ).toBeEnabled()
+
+  // Other takes any agent that signs in, but not Codex again.
+  await page.getByRole("tab", { name: "Other", exact: true }).click()
+  await expect(page.getByText("Waiting for your agent")).toBeVisible()
 })
 
 test("a new owner creates their Worktable, connects agents and finishes their first steps in Getting Started", async ({

@@ -19,11 +19,17 @@ type Requests = WidgetFile["requests"]
 
 const RECORD_ACTIONS = ["read", "create", "update", "delete"] as const
 
-/** A person using Worktable, not an agent acting for one. */
+/**
+ * A person signed in to Worktable: a browser session, or the local owner. A
+ * token is never a person, whatever its label, so an agent can't present one
+ * to allow network access. On a local Worktable without sign-in, anything on
+ * the machine is the owner.
+ */
 export function isPersonWriter(
-  identity: Pick<TokenIdentity, "agent" | "principal"> | undefined
+  identity: Pick<TokenIdentity, "agent" | "principal" | "credentialClass"> | undefined
 ): boolean {
-  return identity?.agent === null && identity.principal.type === "human"
+  if (!identity || identity.agent !== null || identity.principal.type !== "human") return false
+  return identity.credentialClass === "browser" || identity.principal.id === "local:owner"
 }
 
 /** A write whose permissions go beyond its writer's own access. */
@@ -43,10 +49,12 @@ export class HtmlPermissionError extends Error {
 export function authorizeHtmlPermissions(input: {
   requested: Permissions | undefined
   existing?: Pick<WidgetFile, "permissions" | "requests">
-  identity: Pick<TokenIdentity, "agent" | "principal"> | undefined
+  /** Whether a person is writing; see isPersonWriter. */
+  person: boolean
+  identity: Pick<TokenIdentity, "principal"> | undefined
   scopes: string[]
 }): { permissions: Permissions | undefined; requests: Requests } {
-  const { requested, existing, identity, scopes } = input
+  const { requested, existing, person, identity, scopes } = input
   const permissions = requested ?? existing?.permissions
   for (const [collectionId, grant] of Object.entries(permissions?.records ?? {})) {
     for (const action of RECORD_ACTIONS) {
@@ -60,7 +68,7 @@ export function authorizeHtmlPermissions(input: {
       )
     }
   }
-  if (isPersonWriter(identity)) {
+  if (person) {
     // A person's own choice settles any open request.
     return {
       permissions,

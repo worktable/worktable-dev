@@ -75,7 +75,7 @@ function grantedPermissions(
   if (configuredMcpSurface() !== "preview") return null;
   const identity = c.get("identity") as TokenIdentity | undefined;
   try {
-    return authorizeHtmlPermissions({ requested, existing, identity, scopes: identity?.scopes ?? [] });
+    return authorizeHtmlPermissions({ requested, existing, person: isPersonWriter(identity), identity, scopes: identity?.scopes ?? [] });
   } catch (error) {
     if (!(error instanceof HtmlPermissionError)) throw error;
     return c.json({ error: error.message, code: "FORBIDDEN", missingScope: error.missingScope }, 403);
@@ -106,8 +106,9 @@ const PutWidgetSchema = z.object({
 });
 
 const PatchWidgetSchema = z.object({
-  /** A person allows the network access an agent asked for. */
+  /** A person allows the network access an agent asked for, for the revision they saw. */
   allowNetwork: z.literal(true).optional(),
+  revision: z.string().min(1).optional(),
   name: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
   updatedBy: z.string().optional(),
@@ -587,9 +588,18 @@ async function handlePatchWidget(c: Context, spaceId: string, widgetId: string) 
   if (parsed.data.allowNetwork && !isPersonWriter(c.get("identity") as TokenIdentity | undefined)) {
     return c.json({ error: "Only a person can allow an HTML doc network access", code: "FORBIDDEN" }, 403);
   }
+  if (parsed.data.allowNetwork && !parsed.data.revision) {
+    return c.json({ error: "Allowing network access needs the revision that was checked", code: "VALIDATION_ERROR" }, 400);
+  }
   const outcome = await withWidgetWriteLock(spaceId, widgetId, async () => {
     const beforeContent = await captureWidgetVersionContent(spaceId, widgetId);
-    const current = parsed.data.allowNetwork ? (await readWidget(spaceId, widgetId)).data : null;
+    let current: WidgetFile | null = null;
+    if (parsed.data.allowNetwork) {
+      // The person allowed the code they saw, not whatever an agent wrote since.
+      const document = (await readWidgetDocument(spaceId, widgetId)).data;
+      if (!document || htmlContentRevisionOf(document) !== parsed.data.revision) return { changed: true as const };
+      current = document.widget;
+    }
     const result = await updateWidgetMetadata(spaceId, widgetId, {
       name: parsed.data.name,
       description: parsed.data.description,
@@ -602,6 +612,7 @@ async function handlePatchWidget(c: Context, spaceId: string, widgetId: string) 
     result.release?.();
     return { data: result.data };
   });
+  if ("changed" in outcome) return c.json({ error: "The HTML doc changed since it was checked", code: "CONFLICT" }, 409);
   if (!outcome.data) return c.json({ error: outcome.error ?? "Update failed", code: "VALIDATION_ERROR" }, 400);
   invalidateSearchIndex({ spaceId, path: widgetId });
   wsManager.broadcast(spaceId, { type: "widget_update", spaceId, widgetId, data: outcome.data });

@@ -2046,6 +2046,8 @@ async function _dispatchOperationInner(
         context.surface === "preview"
           ? authorizeHtmlPermissions({
               requested: args["permissions"] as WidgetFile["permissions"],
+              // Everything over MCP is an agent's write.
+              person: false,
               identity,
               scopes: identity.scopes,
             })
@@ -2164,6 +2166,7 @@ async function _dispatchOperationInner(
                 ? authorizeHtmlPermissions({
                     requested: args["permissions"] as WidgetFile["permissions"],
                     existing,
+                    person: false,
                     identity,
                     scopes: identity.scopes,
                   })

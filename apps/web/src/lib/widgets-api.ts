@@ -65,7 +65,7 @@ export function createWidget(spaceId: string, data: { id?: string; folder?: stri
   });
 }
 
-export function patchWidget(spaceId: string, widgetId: string, data: { name?: string; description?: string | null; metadata?: Record<string, unknown>; allowNetwork?: true }) {
+export function patchWidget(spaceId: string, widgetId: string, data: { name?: string; description?: string | null; metadata?: Record<string, unknown>; allowNetwork?: true; revision?: string }) {
   return fetchJSON<{ widget: WidgetFile }>(
     htmlDocumentApiPath(spaceId, widgetId), {
     method: "PATCH",

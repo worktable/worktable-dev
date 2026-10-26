@@ -89,12 +89,21 @@ describe("who may grant an HTML Doc its permissions", () => {
     expect(created.warnings.map((warning) => warning.code)).toContain("network_requested");
     expect(await opened("feed")).toEqual({ networkRequested: true, network: false });
 
+    const revision = async () => (await req("GET", "/api/spaces/meta/documents/page?path=feed")).json.page.revision as string;
+    const allow = async (checked: string) => (await req("PATCH", "/api/spaces/meta/widgets/feed", { allowNetwork: true, revision: checked })).status;
+    const seen = await revision();
     caller = agent(["*"]);
-    expect((await req("PATCH", "/api/spaces/meta/widgets/feed", { allowNetwork: true })).status).toBe(403);
+    expect(await allow(seen)).toBe(403);
+    // A token is never a person, even without an agent label.
+    caller = { ...agent(["*"]), agent: null, principal: { id: "local-token:abc", type: "human", displayName: "owner" } };
+    expect(await allow(seen)).toBe(403);
     expect((await opened("feed")).network).toBe(false);
 
+    // A person allows the code they saw, not code an agent wrote since.
     caller = ownerIdentity();
-    expect((await req("PATCH", "/api/spaces/meta/widgets/feed", { allowNetwork: true })).status).toBe(200);
+    await dispatchOperation("html.update", { spaceId: "meta", widgetId: "feed", html: `${html}<!-- newer -->` }, { surface: "preview" });
+    expect(await allow(seen)).toBe(409);
+    expect(await allow(await revision())).toBe(200);
     expect(await opened("feed")).toEqual({ networkRequested: false, network: true });
 
     // A rename keeps the code the person allowed.

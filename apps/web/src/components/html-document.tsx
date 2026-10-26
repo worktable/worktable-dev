@@ -681,15 +681,23 @@ function WidgetDetailPage({
   const handleAllowNetwork = useCallback(async () => {
     setAllowingNetwork(true)
     try {
-      await patchWidget(spaceId, widgetId, { allowNetwork: true })
+      await patchWidget(spaceId, widgetId, {
+        allowNetwork: true,
+        revision: page?.revision,
+      })
       await recheckPage()
     } catch (err) {
+      if (err instanceof HttpError && err.status === 409) {
+        await recheckPage()
+        toast.error("This HTML doc changed. Check it before allowing.")
+        return
+      }
       console.error("Failed to allow HTML doc network access:", err)
       toast.error("Failed to allow network access")
     } finally {
       setAllowingNetwork(false)
     }
-  }, [recheckPage, spaceId, widgetId])
+  }, [page?.revision, recheckPage, spaceId, widgetId])
 
   const handleRename = useCallback(
     async (name: string, description?: string | null) => {

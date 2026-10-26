@@ -10,6 +10,7 @@
 // the person allowed the code they saw.
 
 import type { WidgetFile } from "@worktable/types"
+import { DEFAULT_AGENT_PRINCIPAL } from "./mcp/helpers.ts"
 import { hasScope, type TokenIdentity } from "./token-store.ts"
 import type { WidgetValidationIssue } from "./widget-authoring.ts"
 
@@ -71,8 +72,14 @@ export function authorizeHtmlPermissions(input: {
   )
   return {
     permissions: permissions && { ...permissions, network: false },
-    requests: wantsNetwork ? { network: true } : undefined,
+    requests: wantsNetwork ? { network: true, ...requester(identity) } : undefined,
   }
+}
+
+/** The asking agent's name, unless it connected without one. */
+function requester(identity: Pick<TokenIdentity, "principal"> | undefined): { by?: string } {
+  const name = identity?.principal.displayName.trim()
+  return name && name !== DEFAULT_AGENT_PRINCIPAL.displayName ? { by: name.slice(0, 200) } : {}
 }
 
 /** What an agent is told when its network request waits for a person. */

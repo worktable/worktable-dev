@@ -108,6 +108,8 @@ describe("who may grant an HTML Doc its permissions", () => {
     caller = agent(["*"]);
     expect((await req("PUT", "/api/spaces/meta/widgets/feed", { name: "Feed", html, permissions: { network: true } })).status).toBe(200);
     expect(await opened("feed")).toEqual({ networkRequested: true, network: false });
+    // The notice names who asked.
+    expect((await req("GET", "/api/spaces/meta/documents/page?path=feed")).json.page.networkRequestedBy).toBe("Claude Code");
   });
 
   it("lets a write grant only the Record access its writer holds", async () => {

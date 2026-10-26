@@ -823,6 +823,7 @@ function WidgetDetailPage({
       ) : null}
       {page?.networkRequested && !readOnly ? (
         <NetworkRequestBanner
+          requestedBy={page.networkRequestedBy}
           onAllow={handleAllowNetwork}
           allowing={allowingNetwork}
         />
@@ -1136,9 +1137,11 @@ function ArchivedWidgetBanner({
 }
 
 function NetworkRequestBanner({
+  requestedBy,
   onAllow,
   allowing,
 }: {
+  requestedBy?: string
   onAllow: () => void
   allowing: boolean
 }) {
@@ -1149,8 +1152,8 @@ function NetworkRequestBanner({
     >
       <Globe className="size-4 shrink-0 text-warning" aria-hidden />
       <span className="min-w-0 flex-1">
-        An agent asked for this HTML doc to connect to the internet. Once
-        allowed, it can send what it shows to other sites.
+        {requestedBy ?? "An agent"} asked to let this HTML doc exchange data
+        with other websites.
       </span>
       <Button
         size="sm"

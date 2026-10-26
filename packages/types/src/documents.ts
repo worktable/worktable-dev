@@ -324,6 +324,8 @@ export const DocumentPageSchema = z.object({
   sharing: DocumentSharingSummarySchema.optional(),
   /** An HTML Doc whose network access an agent asked for and a person has not allowed. */
   networkRequested: z.literal(true).optional(),
+  /** The name of the agent that asked, when known. */
+  networkRequestedBy: z.string().optional(),
 })
 
 export const DocumentPageResultSchema = z.discriminatedUnion("kind", [

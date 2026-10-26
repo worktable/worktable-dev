@@ -2543,7 +2543,11 @@ async function _dispatchOperationInner(
         category: parsed.category ?? "comment",
         to,
         passageAuthor: to.length
-          ? await passageAuthorForTarget(parsed.spaceId, parsed.target as never)
+          ? await passageAuthorForTarget(
+              parsed.spaceId,
+              parsed.target as never,
+              context.scopes ?? []
+            )
           : null,
         body: parsed.body,
         title: parsed.title,

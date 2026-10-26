@@ -83,6 +83,23 @@ describe("who wrote a passage", () => {
     ).toBeNull()
   })
 
+  it("credits a reworded passage to whoever reworded it, and tells no one who can't read Docs", async () => {
+    await writeDoc(
+      "pricing",
+      "explorer",
+      "# Explorer\n\nTeam is **$99** a month.\n\nBusiness is $199 a month.\n\nCheck with sales.\n",
+      { updatedBy: "token:nova", source: "mcp", managedIdentity: true }
+    )
+    expect(
+      await passageAuthor("pricing", "explorer", { quote: "Team is $99 a month." })
+    ).toMatchObject({ by: "token:nova" })
+    const target = { type: "doc" as const, docPath: "explorer", quote: "Team is $99 a month." }
+    expect(await passageAuthorForTarget("pricing", target, ["annotations:write"])).toBeNull()
+    expect(await passageAuthorForTarget("pricing", target, ["documents:read"])).toMatchObject({
+      by: "token:nova",
+    })
+  })
+
   it("names no writer when the passage is older than the history it reads", async () => {
     for (let index = 0; index < 20; index++) {
       await writeDoc(
@@ -118,7 +135,7 @@ describe("who wrote a passage", () => {
       body: "Feels high for three people.",
       author: { type: "user", id: "user", name: "Karo" },
       to: [{ id: participant.id, kind: "agent", name: "Finn" }],
-      passageAuthor: await passageAuthorForTarget("pricing", target),
+      passageAuthor: await passageAuthorForTarget("pricing", target, ["*"]),
     })
     const notices = await noticesFor(await pendingFor(participant.id), finn, {
       spaceId: "pricing",

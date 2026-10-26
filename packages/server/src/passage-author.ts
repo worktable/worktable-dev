@@ -22,6 +22,7 @@ import {
   usesDocumentVersionStoreV2,
 } from "./document-version-compatibility-v2.ts"
 import { getDocVersion, listDocVersions } from "./store.ts"
+import { hasScope } from "./token-store.ts"
 
 /** Versions read at most, newest first. */
 const PASSAGE_WALK_LIMIT = 20
@@ -126,7 +127,10 @@ export async function passageAuthor(
     const snapshot = await history.read(entry.id)
     const text = readingText(snapshot?.after.content)
     if (text === null) return null
-    if (!findPassage(text, selector)) return author
+    // Further back only the same words count: a reworded passage was
+    // written by whoever reworded it.
+    const found = findPassage(text, selector)
+    if (!found || (index > 0 && found.match !== "exact")) return author
     const who = authorOf(entry.createdBy, entry.source)
     // A restore or tidy-up carries text forward; the writer is further back.
     if (who) author = { ...who, versionId: entry.id, at: entry.createdAt }
@@ -135,11 +139,19 @@ export async function passageAuthor(
   return author
 }
 
-/** Who wrote the text a new comment is about; null for a whole-Doc comment. */
+/**
+ * Who wrote the text a new comment is about; null for a whole-Doc comment,
+ * or when the commenter can't read Docs, since the answer says whether the
+ * quoted words are in the Doc.
+ */
 export async function passageAuthorForTarget(
   spaceId: string,
-  target: AnnotationTarget
+  target: AnnotationTarget,
+  scopes: readonly string[]
 ): Promise<PassageAuthor | null> {
+  if (!hasScope([...scopes], "documents:read") && !hasScope([...scopes], "docs:read")) {
+    return null
+  }
   if (!("docPath" in target) || !("quote" in target) || !target.quote) return null
   return passageAuthor(spaceId, target.docPath, {
     quote: target.quote,

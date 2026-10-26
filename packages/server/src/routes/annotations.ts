@@ -195,7 +195,9 @@ annotationsRouter.post("/", requireScope("annotations:write", commentAccess), as
     author: annotationAuthor(c, parsed.data.author),
     to,
     byPerson: byPerson(c),
-    passageAuthor: to.length ? await passageAuthorForTarget(spaceId, target) : null,
+    passageAuthor: to.length
+      ? await passageAuthorForTarget(spaceId, target, c.get("identity").scopes)
+      : null,
   });
   broadcast(spaceId, result.annotation.id, { annotation: result.annotation, event: "created" });
   return c.json({ ok: true, annotationId: result.annotation.id, annotation: result.annotation, created: result.created });

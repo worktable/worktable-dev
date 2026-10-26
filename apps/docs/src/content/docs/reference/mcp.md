@@ -233,6 +233,9 @@ the environment. Worktable Cloud serves the released tools.
 With preview tools on, the server instructions also name the Worktable, so an
 agent connected to several can tell them apart. Team Worktables leave the name
 out.
+Preview tools also serve MCP revision 2026-07-28 over HTTP, beside the earlier
+revisions, on the same endpoint. `WORKTABLE_MCP_MODERN=1` or `0` turns that on
+or off by itself.
 `mcp-tools.preview.json` lists the preview tools next to the released
 `mcp-tools.json`.
 

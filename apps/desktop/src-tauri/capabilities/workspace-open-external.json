@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "workspace-open-external",
+  "description": "Open a web, mail or phone link from the active workspace page in the browser or mail app. Rust checks the page is the active connection's origin and the link's scheme.",
+  "local": false,
+  "remote": {
+    "urls": ["http://*:*/*", "https://*:*/*"]
+  },
+  "webviews": ["workspace"],
+  "permissions": ["allow-desktop-workspace-open-external"]
+}

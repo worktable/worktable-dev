@@ -120,6 +120,12 @@ const workspaceAgentOfferCapability = JSON.parse(
     "utf8"
   )
 ) as Capability
+const workspaceOpenExternalCapability = JSON.parse(
+  readFileSync(
+    join(nativeRoot, "capabilities", "workspace-open-external.json"),
+    "utf8"
+  )
+) as Capability
 const desktopPackage = JSON.parse(
   readFileSync(join(appRoot, "package.json"), "utf8")
 ) as DesktopPackage
@@ -155,6 +161,7 @@ describe("desktop package contracts", () => {
       "workspace-desktop-updates",
       "workspace-switch-worktable",
       "workspace-agent-offer",
+      "workspace-open-external",
     ])
     expect(trustedShellCapability.identifier).toBe("trusted-shell")
     expect(trustedShellCapability.webviews).toEqual(["trusted-shell"])
@@ -258,6 +265,18 @@ describe("desktop package contracts", () => {
         "allow-desktop-workspace-answer-agent-offer",
       ],
     })
+    // Any active workspace page may open its own links; Rust checks it is the
+    // active connection's origin and allows only web, mail and phone links.
+    expect(workspaceOpenExternalCapability).toMatchObject({
+      identifier: "workspace-open-external",
+      local: false,
+      remote: workspaceChromeCapability.remote,
+      webviews: ["workspace"],
+      permissions: ["allow-desktop-workspace-open-external"],
+    })
+    expect(trustedShellCapability.permissions).not.toContain(
+      "allow-desktop-workspace-open-external"
+    )
     // Remote workspace pages and the shell never get the workspace commands.
     for (const permission of [
       ...workspaceUpdatesCapability.permissions,

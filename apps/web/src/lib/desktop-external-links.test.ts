@@ -1,28 +1,38 @@
 import { describe, expect, it } from "bun:test"
-import { openExternalLinksAsWindows } from "./desktop-external-links"
+import { openExternalLinksThroughDesktop } from "./desktop-external-links"
 
 const LINKS: Record<string, Record<string, string>> = {
   web: { href: "https://example.com/a" },
   mail: { href: "mailto:help@example.com" },
-  doc: { href: "/spaces/s/documents/d" },
   tab: { href: "https://example.com/b", target: "_blank" },
+  doc: { href: "/spaces/s/documents/d" },
 }
 
-/** A page with the links above, inside Desktop or a browser. */
-function page(desktop: boolean) {
+/** A Worktable page inside Desktop, or in a browser. */
+function page({ desktop = true, command = true } = {}) {
   let listener: ((event: MouseEvent) => void) | null = null
-  const opened: string[] = []
+  const desktopOpened: string[] = []
+  const windowOpened: string[] = []
+  const win = {
+    open: (url: string) => {
+      windowOpened.push(url)
+      return null
+    },
+  }
   const doc = {
     baseURI: "http://127.0.0.1:7481/spaces/s",
     location: { origin: "http://127.0.0.1:7481" },
     documentElement: { hasAttribute: () => desktop },
-    defaultView: { open: (url: string) => void opened.push(url) },
+    defaultView: win,
     addEventListener: (_type: string, handler: (event: MouseEvent) => void) => {
       listener = handler
     },
     removeEventListener: () => {},
   } as unknown as Document
-  openExternalLinksAsWindows(doc)
+  openExternalLinksThroughDesktop(doc, async (_name, args) => {
+    if (!command) throw new Error("command not found")
+    desktopOpened.push(String(args?.url))
+  })
   const click = (id: string) => {
     const attributes = LINKS[id]!
     const anchor = {
@@ -30,7 +40,7 @@ function page(desktop: boolean) {
       hasAttribute: (name: string) => name in attributes,
     }
     let prevented = false
-    listener!({
+    listener?.({
       button: 0,
       defaultPrevented: false,
       target: { closest: () => anchor },
@@ -40,24 +50,39 @@ function page(desktop: boolean) {
     } as unknown as MouseEvent)
     return prevented
   }
-  return { click, opened }
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+  return { click, open: (url: string) => win.open(url), desktopOpened, windowOpened, settle }
 }
 
 describe("links that leave Worktable inside Desktop", () => {
-  it("open as new windows, which Desktop sends to the browser or mail app", () => {
-    const { click, opened } = page(true)
-    expect(click("web")).toBe(true)
-    expect(click("mail")).toBe(true)
-    expect(opened).toEqual(["https://example.com/a", "mailto:help@example.com"])
+  it("go to Desktop, whether clicked or opened by code", async () => {
+    const desktop = page()
+    expect(desktop.click("web")).toBe(true)
+    expect(desktop.click("mail")).toBe(true)
+    expect(desktop.click("tab")).toBe(true)
+    expect(desktop.open("https://checkout.example.com/s")).toBeNull()
+    await desktop.settle()
+    expect(desktop.desktopOpened).toEqual([
+      "https://example.com/a",
+      "mailto:help@example.com",
+      "https://example.com/b",
+      "https://checkout.example.com/s",
+    ])
+    expect(desktop.windowOpened).toEqual([])
   })
 
-  it("leave Worktable links, new-window links and the browser alone", () => {
-    const desktop = page(true)
+  it("leave Worktable links and the browser alone, and fall back without the command", async () => {
+    const desktop = page()
     expect(desktop.click("doc")).toBe(false)
-    expect(desktop.click("tab")).toBe(false)
-    expect(desktop.opened).toEqual([])
-    const browser = page(false)
+    desktop.open("http://127.0.0.1:7481/spaces/s/documents/d")
+    expect(desktop.windowOpened).toEqual(["http://127.0.0.1:7481/spaces/s/documents/d"])
+
+    const browser = page({ desktop: false })
     expect(browser.click("web")).toBe(false)
-    expect(browser.opened).toEqual([])
+
+    const older = page({ command: false })
+    older.click("web")
+    await older.settle()
+    expect(older.windowOpened).toEqual(["https://example.com/a"])
   })
 })

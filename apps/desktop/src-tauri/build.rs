@@ -44,6 +44,7 @@ fn main() {
             "desktop_workspace_restart_to_update",
             "desktop_workspace_set_update_channel",
             "desktop_workspace_show_chooser",
+            "desktop_workspace_open_external",
             "desktop_workspace_worktables",
             "desktop_workspace_open_local",
             "desktop_workspace_open_cloud",

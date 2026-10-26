@@ -3303,6 +3303,27 @@ async fn desktop_workspace_show_chooser(webview: Webview, app: AppHandle) -> Res
         .map_err(|error| format!("{SWITCH_FAILED}{error}"))
 }
 
+/// Opens a web, mail or phone link from the active workspace page in the
+/// browser or mail app. Desktop cancels every navigation away from Worktable,
+/// because WebKit asks about an HTML Doc frame navigating itself and about a
+/// deliberate link in the same way, so the page asks for its own links here.
+#[tauri::command]
+fn desktop_workspace_open_external(
+    webview: Webview,
+    app: AppHandle,
+    url: String,
+) -> Result<(), String> {
+    require_active_workspace_surface(&webview, &app.state::<DesktopHostState>())?;
+    let url = url
+        .parse::<tauri::Url>()
+        .map_err(|_| "the link is not a valid URL".to_string())?;
+    if !can_open_external_url(&url) {
+        return Err(format!("Desktop doesn't open {} links", url.scheme()));
+    }
+    open_external_url(&app, &url);
+    Ok(())
+}
+
 /// The Worktable menu runs on the active local page or a Worktable Cloud
 /// page. A self-hosted page is someone else's server, so it learns nothing
 /// about this Mac's Worktables and keeps Switch Worktable.
@@ -8293,6 +8314,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             desktop_shell_identity,
             desktop_workspace_show_chooser,
+            desktop_workspace_open_external,
             desktop_workspace_worktables,
             desktop_workspace_open_local,
             desktop_workspace_open_cloud,

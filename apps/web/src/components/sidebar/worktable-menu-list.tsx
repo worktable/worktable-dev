@@ -76,9 +76,8 @@ function MenuRowItem({
   )
   if (row.kind === "device") {
     // Another device's Worktable opens at its own address, in the browser.
-    // Desktop sends a new window that leaves its own address to the browser.
-    // Without an address that works here, the row shows where it is and does
-    // nothing.
+    // Desktop opens an address outside its own in the browser. Without an
+    // address that works here, the row shows where it is and does nothing.
     const href = row.href
     return (
       <DropdownMenuItem

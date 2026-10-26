@@ -28,7 +28,7 @@ import type {
 import { threadLocationKey } from "@worktable/types"
 import { getAppDir } from "./app-storage.ts"
 import { logError } from "./debug-log.ts"
-import { getSpaceArchiveInfo, listSpaces } from "./store.ts"
+import { listSpaces } from "./store.ts"
 import { runWithoutTeamIdentity } from "./team-policy.ts"
 import {
   scanAllThreadDigests,
@@ -371,15 +371,22 @@ export function noteCommentChanged(
   })
 }
 
+const commentRebuilds = new Map<string, Promise<void>>()
+
 /** Comments in a Space moved or went away: index them again. */
 export function noteCommentsMoved(spaceId: string): void {
   const current = state
   if (!current || current.root !== getWorkspaceRoot()) return
-  void current.ready
+  const previous = commentRebuilds.get(spaceId) ?? current.ready
+  const next = previous
     .then(() => (state === current ? rebuildSpaceComments(current, spaceId) : undefined))
     .catch((error: unknown) => {
       console.error("[pending] could not follow moved comments:", logError(error))
     })
+  commentRebuilds.set(spaceId, next)
+  void next.then(() => {
+    if (commentRebuilds.get(spaceId) === next) commentRebuilds.delete(spaceId)
+  })
 }
 
 /** Index every comment in a Space that waits on someone. */
@@ -487,9 +494,20 @@ async function rescanThreadLocation(
   location: ThreadLocation
 ): Promise<void> {
   const scan = await runWithoutTeamIdentity(() => scanThreadDigests(location))
-  // A file that couldn't be read keeps what the list had for it.
-  if (!scan.complete) return
-  applyThreadDigests(current, `thr:${threadLocationKey(location)}:`, scan.threads)
+  if (scan.complete) {
+    applyThreadDigests(current, `thr:${threadLocationKey(location)}:`, scan.threads)
+    return
+  }
+  // A file that couldn't be read keeps what the list had for it; the threads
+  // that could be read still update.
+  for (const digest of scan.threads) {
+    replaceGroup(
+      current,
+      threadGroup(digest.summary.location, digest.summary.id),
+      threadItems(digest),
+      threadCloseReason(digest)
+    )
+  }
 }
 
 // ── Building and following ─────────────────────────────────
@@ -508,8 +526,8 @@ async function build(current: ListState): Promise<void> {
       )
     )
   }
+  // Archived Spaces too: readers leave them out, and a restore needs no rebuild.
   for (const space of spaces) {
-    if (getSpaceArchiveInfo(space)) continue
     await rebuildSpaceComments(current, space.id).catch((error: unknown) => {
       console.error(`[pending] skipped comments in ${space.id}:`, logError(error))
     })
@@ -547,9 +565,15 @@ export function pendingList(): Promise<void> {
   return current.ready
 }
 
+/** The list with every change this server has already queued applied. */
+async function settled(): Promise<void> {
+  await pendingList()
+  await Promise.all([...rescans.values(), ...commentRebuilds.values()])
+}
+
 /** Open items for one participant, newest first. */
 export async function pendingFor(participantId: string): Promise<PendingEntry[]> {
-  await pendingList()
+  await settled()
   const current = state!
   return [...(current.byRecipient.get(participantId) ?? [])]
     .map((itemId) => current.entries.get(itemId)!)
@@ -559,7 +583,7 @@ export async function pendingFor(participantId: string): Promise<PendingEntry[]>
 
 /** Open items a participant asked of others, newest first. */
 export async function pendingFrom(participantId: string): Promise<PendingEntry[]> {
-  await pendingList()
+  await settled()
   return [...state!.entries.values()]
     .filter((entry) => entry.source.from.id === participantId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -567,7 +591,7 @@ export async function pendingFrom(participantId: string): Promise<PendingEntry[]
 
 /** The highest revision a participant's items have reached. */
 export async function pendingRevision(participantId: string): Promise<number> {
-  await pendingList()
+  await settled()
   return state!.marks.revisions[participantId] ?? 0
 }
 
@@ -622,5 +646,9 @@ onWorkspaceChange((event) => {
   }
   if (event.type === "thread" || event.type === "threadCollectionReconcile") {
     queueThreadRescan(threadEventLocation(event))
+  }
+  // Moves, deletes and folder changes; a change to file contents names paths.
+  if (event.type === "documentCorpus" && !event.paths) {
+    noteCommentsMoved(event.spaceId)
   }
 })

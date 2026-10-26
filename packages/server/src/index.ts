@@ -29,7 +29,7 @@ import { Hono } from "hono"
 import { cloudCallbackRouter, linkedRouter } from "./routes/linked.ts"
 import { startLinkedRuntime } from "./linked-runtime.ts"
 import { startGrokBotRuntime } from "./grok-bot-runtime.ts"
-import { pendingList } from "./pending-list.ts"
+import { pendingList, savePendingList } from "./pending-list.ts"
 import { grokBotRouter } from "./routes/grok-bot.ts"
 import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts"
 import {
@@ -2440,6 +2440,8 @@ export function startServer(
           await drainServerTasks();
         });
         await settle(() => yjsManager.shutdown());
+        // Revisions only go up across restarts if the last ones are kept.
+        await settle(() => savePendingList());
         await settle(async () => {
           await drainWorkspaceChanges();
           await drainServerTasks();

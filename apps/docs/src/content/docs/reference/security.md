@@ -92,6 +92,41 @@ access where applicable. An agent authorized to write HTML can set the doc's
 permissions; these are not necessarily grants made by a human. See
 [HTML runtime](/reference/html-doc-runtime/) for the sandbox and bridge contract.
 
+## How HTML Docs are isolated
+
+HTML Docs support JavaScript. In the web app and Desktop they run inside a
+sandboxed iframe with an opaque origin, separate from the app's origin. They
+cannot read the parent page, its cookies, browser storage or session credentials.
+The server also applies a sandbox policy when a document's content URL is opened
+directly. Forms, popups, downloads and navigation of the parent page are blocked.
+
+A content security policy blocks external scripts, styles, images and embedded
+pages. Fonts are limited to embedded data and Worktable's font assets. By default,
+direct data requests are limited to the Worktable server, whose authentication
+rejects the frame's opaque origin. The document's network permission additionally
+allows HTTPS and WebSocket connections. An authorized agent can currently grant
+that permission without a separate human approval.
+
+Records and document state use a narrow message bridge. It accepts requests from
+the active document frame only, and stops when that frame leaves the document.
+It reaches only that document's state and permission-checked Records in its own
+Space. Record queries also check permission on related collections. Calls run
+with the viewer's current access, so the document's declared permissions are not
+a guarantee of what its writing agent could access. The bridge gives no general
+access to the Worktable API or other Spaces.
+
+Agent previews run in a separate browser context with no signed-in session.
+They allow permitted state and Record reads within the caller's access, block
+persistent writes and external network requests, and return an image. Saved
+versions are displayed with scripts and live data disabled.
+
+Isolation does not make a document trustworthy. It can display misleading forms
+or imitate a sign-in screen inside its frame. Browser policies also do not
+guarantee that data cannot leave: a frame can navigate itself, and scripts may
+signal through DNS or WebRTC. Network permission allows direct transmission of
+anything the document can read. Review generated content and its data access
+before using it or sharing it.
+
 ## Live tools and visitor comments
 
 Live tools read data only through explicit, human-chosen access, and only when
@@ -104,8 +139,11 @@ Record rules constrain Records API reads. The complete tool program, including
 any text or data embedded in it, is shared with every reader of the link.
 Review that content before sharing; a Record rule does not hide it.
 
-A live tool runs in a sandboxed frame on a separate origin for each Worktable,
-with no network access, cookies or persistent browser storage. The frame is not
+A live tool supports JavaScript in a sandboxed frame on a separate origin for
+each Worktable. Its policy blocks external data requests, assets and forms even
+if the document has network permission in the member app. It cannot read member
+cookies or persistent browser storage. Static share views disable scripts and
+remove interactive content. The frame is not
 the data boundary: browsers still let a script signal out through DNS lookups
 or WebRTC. Worktable therefore limits what a link exposes on the server, and
 treats everything a link can read as visible to its readers.

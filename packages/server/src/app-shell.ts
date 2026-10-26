@@ -15,6 +15,13 @@ import {
 } from "./document-preloads.ts"
 import { preferredEncoding, type ContentEncoding } from "./http-compression.ts"
 
+// The member interface carries ambient authority. It must never be embedded,
+// including by a document that navigates its own sandboxed frame to the app.
+export const APP_SHELL_SECURITY_HEADERS = {
+  "Content-Security-Policy": "frame-ancestors 'none'",
+  "X-Frame-Options": "DENY",
+}
+
 type Page = { html: string; etag: string } & Partial<
   Record<ContentEncoding, Uint8Array<ArrayBuffer>>
 >
@@ -120,6 +127,7 @@ export function createAppShell(
         ? `${rendered.etag.slice(0, -1)}-${encoding}"`
         : rendered.etag
       const headers = new Headers({
+        ...APP_SHELL_SECURITY_HEADERS,
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-cache",
         Vary: "Accept-Encoding",

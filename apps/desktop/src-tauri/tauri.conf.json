@@ -20,7 +20,8 @@
         "workspace-agent-skills",
         "workspace-desktop-updates",
         "workspace-switch-worktable",
-        "workspace-agent-offer"
+        "workspace-agent-offer",
+        "workspace-open-external"
       ],
       "devCsp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self' https://api.fontshare.com; script-src 'self'; font-src 'self' https://cdn.fontshare.com"
     }

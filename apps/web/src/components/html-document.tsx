@@ -367,26 +367,32 @@ function WidgetDetailPage({
     const iframeElement = iframeRef.current
     // The injected runtime announces a closure-held token, with the document
     // it was served for, before authored code runs. Only that first
-    // announcement counts: raw authored postMessages never receive navigation
-    // authority.
+    // announcement counts: later pages cannot acquire this document's bridge
+    // or navigation authority by announcing themselves again.
     let navigationToken: string | null = null
     let navigationGeneration = 0
     let acceptingNavigationHandshake = true
     let observedInitialLoad = false
     let disposed = false
-    const handleIframeLoad = () => {
+    const revokeFrameAuthority = () => {
+      navigationToken = null
+      acceptingNavigationHandshake = false
       navigationGeneration += 1
+      subscribedCollections.current.clear()
+    }
+    const handleIframeLoad = () => {
       acceptingNavigationHandshake = false
       // The runtime announces itself before its frame finishes loading. A
       // first load without this document's announcement was served for
       // another path, after a move, or not at all: check this one again.
       if (!observedInitialLoad && navigationToken === null) void recheckPage()
-      if (observedInitialLoad) navigationToken = null
+      if (observedInitialLoad) revokeFrameAuthority()
       observedInitialLoad = true
     }
     const handleApiRequest = async (event: MessageEvent) => {
       const iframeWindow = iframeRef.current?.contentWindow
-      if (event.source !== iframeWindow) return
+      if (event.source !== iframeWindow || event.origin !== "null") return
+      const requestGeneration = navigationGeneration
       const data = event.data as {
         type?: string
         id?: string
@@ -398,6 +404,15 @@ function WidgetDetailPage({
         collection?: string
         navigationToken?: string
       }
+      // Every bridge message carries the token the runtime announced. A page
+      // the frame navigated to can't know it, even if it kept the old page
+      // from saying it was leaving.
+      const isCurrentFrame = () =>
+        !disposed &&
+        navigationToken !== null &&
+        data?.navigationToken === navigationToken &&
+        requestGeneration === navigationGeneration &&
+        event.source === iframeRef.current?.contentWindow
       if (data?.type === "worktable.navigation.handshake") {
         if (!acceptingNavigationHandshake) return
         acceptingNavigationHandshake = false
@@ -429,12 +444,13 @@ function WidgetDetailPage({
           data.spaceId === spaceId &&
           data.widgetId === widgetId
         ) {
-          navigationToken = null
-          acceptingNavigationHandshake = false
-          navigationGeneration += 1
+          revokeFrameAuthority()
         }
         return
       }
+      // WindowProxy survives navigation. A replacement page must not inherit
+      // the original document's broker, including requests waiting for validation.
+      if (!isCurrentFrame()) return
       // Track the widget's record subscriptions so the parent's space socket can
       // relay change events back to it (see the space events above).
       if (
@@ -457,9 +473,7 @@ function WidgetDetailPage({
       ) {
         // Brokered for this path only once the route has checked it.
         await validation
-        if (disposed || event.source !== iframeRef.current?.contentWindow) {
-          return
-        }
+        if (!isCurrentFrame()) return
       }
       if (data?.type === "worktable.navigation.open-document") {
         if (typeof data.id !== "string") return
@@ -489,27 +503,16 @@ function WidgetDetailPage({
           })
           return
         }
-        const requestGeneration = navigationGeneration
         try {
           const target = await resolveDocumentNavigation(spaceId, data.path)
-          if (
-            disposed ||
-            requestGeneration !== navigationGeneration ||
-            event.source !== iframeRef.current?.contentWindow
-          )
-            return
+          if (!isCurrentFrame()) return
           reply({ ok: true, status: 200, body: { target } })
           // A self-link is already satisfied. Keeping it in place also prevents
           // an authored on-load request from creating a reload loop.
           if (target.path === widgetId) return
           void navigate(documentRoute(spaceId, target.path))
         } catch (error) {
-          if (
-            disposed ||
-            requestGeneration !== navigationGeneration ||
-            event.source !== iframeRef.current?.contentWindow
-          )
-            return
+          if (!isCurrentFrame()) return
           const body =
             error instanceof HttpError &&
             error.body &&
@@ -537,11 +540,13 @@ function WidgetDetailPage({
         typeof data.path !== "string"
       )
         return
-      const reply = (payload: { ok: boolean; status: number; body: unknown }) =>
+      const reply = (payload: { ok: boolean; status: number; body: unknown }) => {
+        if (!isCurrentFrame()) return
         iframeWindow?.postMessage(
           { type: "worktable.api.response", id: data.id, ...payload },
           "*"
         )
+      }
       const target = resolveWidgetApiTarget(
         data.path,
         spaceId,
@@ -566,6 +571,7 @@ function WidgetDetailPage({
           body: data.body ?? undefined,
         })
         const body = await res.json().catch(() => ({}))
+        if (!isCurrentFrame()) return
         reply({ ok: res.ok, status: res.status, body })
         // A 401 on a brokered call means the session expired — bounce the whole
         // app to /login like the shared REST client does, instead of leaving the
@@ -583,6 +589,7 @@ function WidgetDetailPage({
     iframeElement?.addEventListener("load", handleIframeLoad)
     return () => {
       disposed = true
+      revokeFrameAuthority()
       window.removeEventListener("message", handleApiRequest)
       iframeElement?.removeEventListener("load", handleIframeLoad)
     }

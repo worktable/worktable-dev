@@ -465,6 +465,20 @@ function RootLayout() {
     document.body.classList.add("loaded")
   }, [])
 
+  // Only Desktop needs its link handling, so only Desktop loads it.
+  useEffect(() => {
+    if (!("__TAURI__" in globalThis)) return
+    let stop: (() => void) | undefined
+    let unmounted = false
+    void import("@/lib/desktop-external-links").then(({ openExternalLinksThroughDesktop }) => {
+      if (!unmounted) stop = openExternalLinksThroughDesktop(window)
+    })
+    return () => {
+      unmounted = true
+      stop?.()
+    }
+  }, [])
+
   useEffect(
     () =>
       onBrowserLogout(() => {

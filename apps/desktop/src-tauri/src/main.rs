@@ -3303,6 +3303,27 @@ async fn desktop_workspace_show_chooser(webview: Webview, app: AppHandle) -> Res
         .map_err(|error| format!("{SWITCH_FAILED}{error}"))
 }
 
+/// Opens a web, mail or phone link from the active workspace page in the
+/// browser or mail app. Desktop cancels every navigation away from Worktable,
+/// because WebKit asks about an HTML Doc frame navigating itself and about a
+/// deliberate link in the same way, so the page asks for its own links here.
+#[tauri::command]
+fn desktop_workspace_open_external(
+    webview: Webview,
+    app: AppHandle,
+    url: String,
+) -> Result<(), String> {
+    require_active_workspace_surface(&webview, &app.state::<DesktopHostState>())?;
+    let url = url
+        .parse::<tauri::Url>()
+        .map_err(|_| "the link is not a valid URL".to_string())?;
+    if !can_open_external_url(&url) {
+        return Err(format!("Desktop doesn't open {} links", url.scheme()));
+    }
+    open_external_url(&app, &url);
+    Ok(())
+}
+
 /// The Worktable menu runs on the active local page or a Worktable Cloud
 /// page. A self-hosted page is someone else's server, so it learns nothing
 /// about this Mac's Worktables and keeps Switch Worktable.
@@ -7308,7 +7329,6 @@ fn create_workspace_webview(
     };
     let navigation_origin = expected_origin.clone();
     let download_origin = expected_origin.clone();
-    let navigation_app = app.clone();
     let new_window_app = app.clone();
     let page_load_app = app.clone();
     let page_load_origin = expected_origin.clone();
@@ -7417,12 +7437,10 @@ fn create_workspace_webview(
             .initialization_script(&probe_script)
             .devtools(cfg!(debug_assertions))
             .on_navigation(move |url| {
-                if url.as_str() == "about:blank" || same_workspace_origin(url, &navigation_origin) {
-                    true
-                } else {
-                    open_external_url(&navigation_app, url);
-                    false
-                }
+                // WebKit also calls this for sandboxed subframes. Never turn
+                // a frame's self-navigation into a native browser launch.
+                // Deliberate external links use on_new_window below.
+                url.as_str() == "about:blank" || same_workspace_origin(url, &navigation_origin)
             })
             .on_download(move |_webview, event| match event {
                 DownloadEvent::Requested { url, .. } => {
@@ -8296,6 +8314,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             desktop_shell_identity,
             desktop_workspace_show_chooser,
+            desktop_workspace_open_external,
             desktop_workspace_worktables,
             desktop_workspace_open_local,
             desktop_workspace_open_cloud,

@@ -496,7 +496,7 @@ function brokerParent(type,payload){
     const id='wapi-'+(++__wtSeq)+'-'+Math.random().toString(36).slice(2);
     const timer=setTimeout(function(){if(__wtPending[id]){delete __wtPending[id];reject(new Error('Worktable request timed out'))}},30000);
     __wtPending[id]=function(res){clearTimeout(timer);resolve(res)};
-    try{postToParent({type:type,id:id,widgetId:cfg.widgetId,spaceId:cfg.spaceId,...payload},'*')}
+    try{postToParent({type:type,id:id,widgetId:cfg.widgetId,spaceId:cfg.spaceId,navigationToken:navigationToken,...payload},'*')}
     catch(e){clearTimeout(timer);delete __wtPending[id];reject(e)}
   });
 }
@@ -549,8 +549,8 @@ function subscribeWith(collection,query,callback,fetcher){let closed=false;async
   // holds a working same-origin space subscription) forwards record-change events.
   function onChange(event){if(event.source!==window.parent)return;const d=event.data;if(d&&d.type==='worktable.records.changed'&&d.collection===collection&&!closed){load().catch(err=>emitDiagnostic('error','record_subscribe_reload_failed',err.message,'Check record read permissions.',{collection}))}}
   window.addEventListener('message',onChange);
-  try{window.parent.postMessage({type:'worktable.subscribe',widgetId:cfg.widgetId,spaceId:cfg.spaceId,collection:collection},'*')}catch(e){}
-  return()=>{closed=true;window.removeEventListener('message',onChange);try{window.parent.postMessage({type:'worktable.unsubscribe',widgetId:cfg.widgetId,spaceId:cfg.spaceId,collection:collection},'*')}catch(e){}}}
+  try{postToParent({type:'worktable.subscribe',widgetId:cfg.widgetId,spaceId:cfg.spaceId,collection:collection,navigationToken:navigationToken},'*')}catch(e){}
+  return()=>{closed=true;window.removeEventListener('message',onChange);try{postToParent({type:'worktable.unsubscribe',widgetId:cfg.widgetId,spaceId:cfg.spaceId,collection:collection,navigationToken:navigationToken},'*')}catch(e){}}}
 const state={
   get:async(key)=>{const r=await req(cfg.apiBase+'/state',undefined,{api:'state',action:'read'});return key?r.state[key]:r.state},
   set:async(key,value)=>{const args=normalizeStateSetArgs(key,value);const r=await req(cfg.apiBase+'/state',undefined,{api:'state',action:'read'});const next=args.mode==='key'?{...r.state,[args.key]:args.value}:args.mode==='patch'?{...r.state,...args.patch}:args.state;await req(cfg.apiBase+'/state',{method:'PUT',body:JSON.stringify({state:next})},{api:'state',action:'write'});return args.mode==='key'?args.value:next},

@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { mkdir, writeFile } from "node:fs/promises"
+import { htmlDocumentApiPath } from "../src/lib/html-document-api-path"
 import { startWebHarness, type WebHarness } from "./harness"
 
 let harness: WebHarness
@@ -105,16 +106,21 @@ test("every discovered document opens through the common page", async ({
     new URL("/spaces/welcome/docs/what-agents-can-make", harness.webUrl).href,
     { waitUntil: "domcontentloaded" }
   )
-  await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/what-agents-can-make$/)
+  await expect(page).toHaveURL(
+    /\/spaces\/welcome\/documents\/what-agents-can-make$/
+  )
   await expect(
     page.getByRole("heading", { name: "What Agents Can Make", exact: true })
   ).toBeVisible({ timeout: 30_000 })
 
   await page.goto(
-    new URL("/spaces/welcome/documents/WHAT-AGENTS-CAN-MAKE", harness.webUrl).href,
+    new URL("/spaces/welcome/documents/WHAT-AGENTS-CAN-MAKE", harness.webUrl)
+      .href,
     { waitUntil: "domcontentloaded" }
   )
-  await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/what-agents-can-make$/)
+  await expect(page).toHaveURL(
+    /\/spaces\/welcome\/documents\/what-agents-can-make$/
+  )
 
   await page.route("**/api/spaces/welcome/documents/page?*", async (route) => {
     const url = new URL(route.request().url())
@@ -132,7 +138,8 @@ test("every discovered document opens through the common page", async ({
     })
   })
   await page.goto(
-    new URL("/spaces/welcome/documents/what-agents-can-make", harness.webUrl).href,
+    new URL("/spaces/welcome/documents/what-agents-can-make", harness.webUrl)
+      .href,
     { waitUntil: "domcontentloaded" }
   )
   await expect(
@@ -189,7 +196,8 @@ test("rich-doc block handles remain usable after annotation composer closes", as
 }) => {
   await page.setViewportSize({ width: 1100, height: 800 })
   await page.goto(
-    new URL("/spaces/welcome/documents/what-agents-can-make", harness.webUrl).href,
+    new URL("/spaces/welcome/documents/what-agents-can-make", harness.webUrl)
+      .href,
     { waitUntil: "domcontentloaded" }
   )
 
@@ -276,7 +284,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
       data: {
         id: "plans/live-status",
         name: "Live Status",
-        html: `<!doctype html><!-- mention <head> here --><head><script>const forgedNavigationToken="forged-navigation-token";const rawNavigationId="raw-navigation-attempt";try{Object.defineProperty(Navigator.prototype,"userActivation",{configurable:true,get:()=>({isActive:true})})}catch{}const originalFunctionCall=Function.prototype.call;Function.prototype.call=function(thisArg,...args){if(thisArg===navigator.userActivation)return true;return Reflect.apply(originalFunctionCall,this,args)};document.addEventListener("DOMContentLoaded",()=>{parent.postMessage({type:"worktable.navigation.handshake",widgetId:"plans/live-status",spaceId:"welcome",navigationToken:forgedNavigationToken},"*");parent.postMessage({type:"worktable.navigation.open-document",id:rawNavigationId,widgetId:"plans/live-status",spaceId:"welcome",path:"plans/move-note",navigationToken:forgedNavigationToken},"*");void worktable.navigation.openDocument("plans/move-note").catch(()=>{});document.querySelector("#automatic-navigation-result").textContent="Automatic navigation attempted"},{once:true})</script></head><body><main><h1>Ready now</h1><p>The heliograph beacon is online.</p><p id="automatic-navigation-result">Checking automatic navigation…</p><button type="button">Open move note</button><button type="button">Open then leave</button></main><script>const buttons=document.querySelectorAll("button");buttons[0].addEventListener("click",()=>{void worktable.navigation.openDocument("plans/move-note")});buttons[1].addEventListener("click",()=>{void worktable.navigation.openDocument("plans/move-note");location.href="/iframe-navigation"})</script></body>`,
+        html: `<!doctype html><!-- mention <head> here --><head><script>const forgedNavigationToken="forged-navigation-token";const rawNavigationId="raw-navigation-attempt";try{Object.defineProperty(Navigator.prototype,"userActivation",{configurable:true,get:()=>({isActive:true})})}catch{}const originalFunctionCall=Function.prototype.call;Function.prototype.call=function(thisArg,...args){if(thisArg===navigator.userActivation)return true;return Reflect.apply(originalFunctionCall,this,args)};document.addEventListener("DOMContentLoaded",()=>{parent.postMessage({type:"worktable.navigation.handshake",widgetId:"plans/live-status",spaceId:"welcome",navigationToken:forgedNavigationToken},"*");parent.postMessage({type:"worktable.navigation.open-document",id:rawNavigationId,widgetId:"plans/live-status",spaceId:"welcome",path:"plans/move-note",navigationToken:forgedNavigationToken},"*");void worktable.navigation.openDocument("plans/move-note").catch(()=>{});document.querySelector("#automatic-navigation-result").textContent="Automatic navigation attempted"},{once:true})</script></head><body><main><h1>Ready now</h1><p>The heliograph beacon is online.</p><p id="automatic-navigation-result">Checking automatic navigation…</p><button type="button">Open move note</button><button type="button">Open then leave</button></main><script>const buttons=document.querySelectorAll("button");buttons[0].addEventListener("click",()=>{void worktable.navigation.openDocument("plans/move-note")});buttons[1].addEventListener("click",()=>{void worktable.state.get();void worktable.navigation.openDocument("plans/move-note");location.href="/iframe-navigation"})</script></body>`,
       },
     }
   )
@@ -312,7 +320,8 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   const htmlCheckHeld = new Promise<void>((resolve) => {
     releaseHtmlCheck = resolve
   })
-  const htmlCheckPattern = "**/api/spaces/welcome/documents/page?path=plans%2Flive-status"
+  const htmlCheckPattern =
+    "**/api/spaces/welcome/documents/page?path=plans%2Flive-status"
   await page.route(htmlCheckPattern, async (route) => {
     await htmlCheckHeld
     await route.continue()
@@ -344,6 +353,61 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     /\/spaces\/welcome\/documents\/plans\/live-status$/
   )
 
+  // A normal state request succeeds before navigation.
+  const statePath = `${htmlDocumentApiPath("welcome", "plans/live-status")}/state`
+  const frameElement = page.locator('iframe[title="Live Status"]')
+  const originalFrame =
+    await (await frameElement.elementHandle())!.contentFrame()
+  expect(
+    await originalFrame!.evaluate(() =>
+      (
+        window as unknown as {
+          worktable: { state: { get(): Promise<unknown> } }
+        }
+      ).worktable.state.get()
+    )
+  ).toEqual({})
+  // A message without the runtime's token gets no reply, so a page the frame
+  // navigates to can't use the bridge however the navigation is timed.
+  expect(
+    await originalFrame!.evaluate(
+      (path) =>
+        new Promise<unknown>((resolve) => {
+          window.addEventListener("message", (event) => {
+            if (event.data?.id === "untokened-request") resolve(event.data)
+          })
+          parent.postMessage(
+            {
+              type: "worktable.api.request",
+              id: "untokened-request",
+              widgetId: "plans/live-status",
+              spaceId: "welcome",
+              path,
+            },
+            "*"
+          )
+          setTimeout(() => resolve(null), 1_500)
+        }),
+      statePath
+    )
+  ).toBeNull()
+  let releaseState = () => {}
+  const stateHeld = new Promise<void>((resolve) => {
+    releaseState = resolve
+  })
+  let stateRequests = 0
+  await page.route(`**${statePath}`, async (route) => {
+    stateRequests += 1
+    await stateHeld
+    await route.fulfill({ json: { state: { secret: "member-only-value" } } })
+  })
+  const stateStarted = page.waitForRequest(
+    (request) => new URL(request.url()).pathname === statePath
+  )
+  const stateFinished = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === statePath
+  )
+
   let releaseFrameResolution = () => {}
   const frameResolutionHeld = new Promise<void>((resolve) => {
     releaseFrameResolution = resolve
@@ -363,7 +427,10 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     await frameNavigationHeld
     await route.fulfill({
       contentType: "text/html",
-      body: "<!doctype html><h1>Replacement frame</h1>",
+      body: `<!doctype html><h1>Replacement frame</h1><p id="reply">No member data</p><button>Request member data</button><script>
+        window.addEventListener('message',event=>{if(event.data?.type==='worktable.api.response')document.querySelector('#reply').textContent=JSON.stringify(event.data.body)});
+        document.querySelector('button').onclick=()=>parent.postMessage({type:'worktable.api.request',id:'replacement-request',path:${JSON.stringify(statePath)}},'*');
+      </script>`,
     })
   })
   const frameResolution = page.waitForResponse((response) =>
@@ -376,7 +443,11 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     (request) => new URL(request.url()).pathname === "/iframe-navigation"
   )
   await frame.getByRole("button", { name: "Open then leave" }).click()
-  await Promise.all([frameResolutionStarted, frameNavigationStarted])
+  await Promise.all([
+    stateStarted,
+    frameResolutionStarted,
+    frameNavigationStarted,
+  ])
   releaseFrameResolution()
   expect((await frameResolution).status()).toBe(200)
   await page.evaluate(
@@ -392,12 +463,38 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await expect(
     frame.getByRole("heading", { name: "Replacement frame" })
   ).toBeVisible()
+  // An in-flight reply belongs to the old document. The replacement also
+  // retains the same WindowProxy but must not start a fresh member request.
+  releaseState()
+  expect((await stateFinished).status()).toBe(200)
+  await frame.getByRole("button", { name: "Request member data" }).click()
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
+  )
+  expect(stateRequests).toBe(1)
+  await expect(frame.locator("#reply")).toHaveText("No member data")
+  await page.unroute(`**${statePath}`)
   await page.unroute("**/iframe-navigation")
   await page.unroute("**/api/spaces/welcome/documents/resolve?*")
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(frame.getByRole("heading", { name: "Ready now" })).toBeVisible({
     timeout: 30_000,
   })
+
+  const restoredFrame =
+    await (await frameElement.elementHandle())!.contentFrame()
+  expect(
+    await restoredFrame!.evaluate(() =>
+      (
+        window as unknown as {
+          worktable: { state: { get(): Promise<unknown> } }
+        }
+      ).worktable.state.get()
+    )
+  ).toEqual({})
 
   let releaseResolution = () => {}
   const resolutionHeld = new Promise<void>((resolve) => {
@@ -418,8 +515,12 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   )
   await frame.getByRole("button", { name: "Open move note" }).click()
   await resolutionStarted
-  await page.getByRole("link", { name: "What Agents Can Make", exact: true }).click()
-  await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/what-agents-can-make$/)
+  await page
+    .getByRole("link", { name: "What Agents Can Make", exact: true })
+    .click()
+  await expect(page).toHaveURL(
+    /\/spaces\/welcome\/documents\/what-agents-can-make$/
+  )
   releaseResolution()
   expect((await delayedResolution).status()).toBe(200)
   await page.evaluate(
@@ -428,7 +529,9 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
       )
   )
-  await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/what-agents-can-make$/)
+  await expect(page).toHaveURL(
+    /\/spaces\/welcome\/documents\/what-agents-can-make$/
+  )
   await page.unroute("**/api/spaces/welcome/documents/resolve?*")
   await treeLink.click()
   await expect(page).toHaveURL(
@@ -459,7 +562,8 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   let racePage = await page.context().newPage()
   await racePage.routeWebSocket(/\/ws(?:\?|$)/, (socket) => socket.close())
   await racePage.goto(
-    new URL("/spaces/welcome/documents/what-agents-can-make", harness.webUrl).href,
+    new URL("/spaces/welcome/documents/what-agents-can-make", harness.webUrl)
+      .href,
     { waitUntil: "domcontentloaded" }
   )
   await expect(
@@ -765,8 +869,12 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await expect(
     archivedDocuments.getByRole("link", { name: "Move Note", exact: true })
   ).toHaveCount(0)
-  await page.getByRole("link", { name: "What Agents Can Make", exact: true }).click()
-  await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/what-agents-can-make$/)
+  await page
+    .getByRole("link", { name: "What Agents Can Make", exact: true })
+    .click()
+  await expect(page).toHaveURL(
+    /\/spaces\/welcome\/documents\/what-agents-can-make$/
+  )
 
   await page
     .getByRole("textbox", { name: "Search workspace" })

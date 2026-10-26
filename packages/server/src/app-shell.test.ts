@@ -53,6 +53,10 @@ it("serves each route's shell with the installed body font, compressed and reval
       request({ "accept-encoding": "gzip, br" })
     )
     expect(brotli.headers.get("content-encoding")).toBe("br")
+    expect(brotli.headers.get("content-security-policy")).toBe(
+      "frame-ancestors 'none'"
+    )
+    expect(brotli.headers.get("x-frame-options")).toBe("DENY")
     expect(brotli.headers.get("cache-control")).toBe("no-cache")
     expect(brotli.headers.get("vary")).toBe("Accept-Encoding")
     const expected = shell.html("/spaces/team")

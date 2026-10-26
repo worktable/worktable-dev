@@ -56,7 +56,7 @@ import {
 } from "./http-compression.ts"
 import { injectDocumentOpening } from "./document-opening.ts"
 import { readBootFacts, withBootFacts } from "./boot-facts.ts"
-import { createAppShell } from "./app-shell.ts"
+import { APP_SHELL_SECURITY_HEADERS, createAppShell } from "./app-shell.ts"
 import { productFontAssets } from "./product-fonts.ts"
 import { gzipSync } from "node:zlib"
 import { existsSync, lstatSync, statSync } from "node:fs"
@@ -706,6 +706,7 @@ if (HAS_STATIC) {
         !isLocalBrowserRequest(c.req.raw);
       return new Response(compressed ? await gzipAsync(page) : page, {
         headers: {
+          ...APP_SHELL_SECURITY_HEADERS,
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "private, no-store",
           Vary: "Cookie, Authorization, Accept-Encoding",

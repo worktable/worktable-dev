@@ -16,6 +16,7 @@
 // and the Delivered and Read marks are kept in a small private file in the
 // app directory, never in the workspace.
 
+import { existsSync } from "node:fs"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type {
@@ -33,6 +34,7 @@ import { runWithoutTeamIdentity } from "./team-policy.ts"
 import {
   scanAllThreadDigests,
   scanThreadDigests,
+  threadPath,
   type ThreadDigest,
 } from "./thread-store.ts"
 import {
@@ -504,14 +506,19 @@ async function rescanThreadLocation(
     return
   }
   // A file that couldn't be read keeps what the list had for it; the threads
-  // that could be read still update.
+  // that could be read still update, and threads whose files are gone close.
+  const prefix = `thr:${threadLocationKey(location)}:`
+  const read = new Set<string>()
   for (const digest of scan.threads) {
-    replaceGroup(
-      current,
-      threadGroup(digest.summary.location, digest.summary.id),
-      threadItems(digest),
-      threadCloseReason(digest)
-    )
+    const group = threadGroup(digest.summary.location, digest.summary.id)
+    read.add(group)
+    replaceGroup(current, group, threadItems(digest), threadCloseReason(digest))
+  }
+  for (const group of [...current.groups.keys()]) {
+    if (!group.startsWith(prefix) || read.has(group)) continue
+    const threadId = group.slice(prefix.length)
+    const path = runWithoutTeamIdentity(() => threadPath(location, threadId))
+    if (!existsSync(path)) replaceGroup(current, group, [], () => "withdrawn")
   }
 }
 

@@ -59,7 +59,10 @@ export function useCommentRecipients(
       (contributors ?? [])
         .filter((actor) => actor.kind === "agent")
         .map(
-          (actor) => presentations?.[actor.id]?.participantId ?? actor.id
+          (actor) =>
+            presentations?.[actor.id]?.participantId ??
+            presentations?.[actor.id]?.id ??
+            actor.id
         )
         .find((id) => offered.has(id)) ?? NO_RECIPIENT
     return { options, suggested }

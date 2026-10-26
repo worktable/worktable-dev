@@ -41,7 +41,7 @@ export type ParticipantPresentations = Record<
   string,
   Pick<ThreadParticipant, "platform" | "icon"> & {
     id?: string
-    /** The Threads participant this identity is. */
+    /** An agent's Threads participant; a person's is id. */
     participantId?: string
     name?: string
   }

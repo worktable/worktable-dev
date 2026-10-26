@@ -1006,7 +1006,7 @@ export async function listThreadParticipants(
 
 export interface ParticipantPresentation {
   id?: string
-  /** The Threads participant, also under the principal IDs it writes with. */
+  /** An agent's Threads participant, also under the principal IDs it writes with. */
   participantId?: string
   name?: string
   platform?: AgentPlatformId
@@ -1119,7 +1119,8 @@ async function buildParticipantPresentations(): Promise<Record<string, Participa
     }
     // Only identities this reader may see have a presentation to extend.
     const presentation = presentations[participant.id]
-    if (presentation && participant.kind !== "system") {
+    // A person's entry names its participant as id already.
+    if (presentation && participant.kind === "agent") {
       presentation.participantId = participant.id
     }
     if (key.startsWith("principal:") && presentation) {

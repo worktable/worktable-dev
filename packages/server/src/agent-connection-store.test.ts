@@ -299,6 +299,7 @@ describe("semantic agent connections", () => {
       name: "Desk Codex",
       platform: "codex",
       icon: "terminal",
+      participantId: renamed!.participant!.id,
     } as const
     const directory = await listThreadParticipantsForDisplay()
     expect(directory.presentations[renamed!.participant!.id]).toEqual(
@@ -410,7 +411,7 @@ describe("semantic agent connections", () => {
       (await cachedParticipantPresentations("principal:local:owner"))[
         `local-token:${credential.metadata.id}`
       ]
-    ).toEqual({ name: "Desk Codex", platform: "codex", icon: "terminal" })
+    ).toMatchObject({ name: "Desk Codex", platform: "codex", icon: "terminal" })
   })
 
   it("keeps the same installation distinct across registered Worktables", async () => {

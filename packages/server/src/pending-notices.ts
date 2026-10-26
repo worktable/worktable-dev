@@ -54,6 +54,8 @@ export interface PendingNotice {
    * be shown to an agent that didn't ask for them.
    */
   personWords: boolean
+  /** When the agent reading it wrote the commented text, if it did. */
+  yourTextAt?: string
   /** Whether it is about what the call that showed it is working on. */
   onTopic: boolean
   /** The call that opens it. */
@@ -182,6 +184,9 @@ export async function noticesFor(
           personWords: source.personWords,
           excerpt: source.excerpt,
           ...(source.quote ? { quote: source.quote } : {}),
+          ...(source.passageBy && source.passageBy === reader.principal.id && source.passageAt
+            ? { yourTextAt: source.passageAt }
+            : {}),
           onTopic:
             target.spaceId === source.spaceId && target.docPath === docPath,
           open: {
@@ -268,13 +273,24 @@ function said(notice: PendingNotice, mode: "ambient" | "requested"): string {
     : "."
 }
 
+function day(at: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(at))
+}
+
 function line(notice: PendingNotice, mode: "ambient" | "requested"): string {
   if (notice.kind === "comment") {
-    const on = notice.onTopic
-      ? notice.quote
+    const place = notice.onTopic
+      ? "this Doc"
+      : `${notice.docTitle ?? label(notice.docPath ?? "a Doc", TITLE_LIMIT)}${notice.spaceName ? ` (${notice.spaceName})` : ""}`
+    const on = notice.yourTextAt
+      ? `on text you wrote${notice.onTopic ? "" : ` in ${place}`} on ${day(notice.yourTextAt)}${notice.quote ? `, ${quoted(notice.quote)}` : ""}`
+      : notice.onTopic && notice.quote
         ? `on ${quoted(notice.quote)}`
-        : "on this Doc"
-      : `on ${notice.docTitle ?? label(notice.docPath ?? "a Doc", TITLE_LIMIT)}${notice.spaceName ? ` (${notice.spaceName})` : ""}`
+        : `on ${place}`
     return `- ${notice.from.name} sent you a comment ${on}${said(notice, mode)} Comment ${notice.annotationId}.`
   }
   const where = notice.onTopic

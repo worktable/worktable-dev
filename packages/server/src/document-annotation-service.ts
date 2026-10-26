@@ -20,6 +20,7 @@ import type {
 } from "@worktable/types"
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
 import { noteCommentChanged, type CommentPlace } from "./pending-list.ts"
+import type { PassageAuthor } from "./passage-author.ts"
 import { addRequests, requestsAfterReply, type CommentReplier } from "./annotation-requests.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import {
@@ -72,6 +73,8 @@ export interface DocumentAnnotationCreateInput {
   to?: AnnotationRecipient[]
   /** A person wrote it in the app, so agents may be shown its words. */
   byPerson?: boolean
+  /** Who wrote the text it is about. */
+  passageAuthor?: PassageAuthor | null
 }
 
 export interface DocumentAnnotationUpdatePatch {
@@ -246,6 +249,7 @@ function newAnnotation(
     ...(input.to?.length
       ? { requests: addRequests([], input.to, now, { personText: input.byPerson ? input.body : undefined }) }
       : {}),
+    ...(input.passageAuthor ? { passageAuthor: input.passageAuthor } : {}),
   }
 }
 
@@ -745,6 +749,7 @@ export async function createLegacyCompatibleAnnotationV2(
     metadata?: Record<string, unknown>
     to?: AnnotationRecipient[]
     byPerson?: boolean
+    passageAuthor?: PassageAuthor | null
   },
   beforeWrite?: AnnotationWriteGuard
 ): Promise<{ annotation: Annotation; created: boolean }> {

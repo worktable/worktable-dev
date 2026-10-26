@@ -71,6 +71,9 @@ export interface PendingCommentSource {
    * asked, so they may be shown to an agent that didn't ask to see them.
    */
   personWords: boolean
+  /** Who wrote the commented text, and when, as its versions record it. */
+  passageBy?: string
+  passageAt?: string
 }
 
 export interface PendingThreadRequestSource {
@@ -299,6 +302,7 @@ export interface IndexedComment {
   body: string
   requests?: AnnotationRequest[]
   thread?: Array<{ id: string; author: AnnotationAuthor; body: string }>
+  passageAuthor?: { by: string; at: string }
 }
 
 /** Where a comment is: its Doc's path, durable id, and quoted passage. */
@@ -353,6 +357,12 @@ function commentItems(
               excerpt: excerpt(asker(request).body),
               personWords: asker(request).personWords,
               ...(quote ? { quote: excerpt(quote) } : {}),
+              ...(annotation.passageAuthor
+                ? {
+                    passageBy: annotation.passageAuthor.by,
+                    passageAt: annotation.passageAuthor.at,
+                  }
+                : {}),
             },
           },
         ]

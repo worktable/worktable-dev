@@ -110,6 +110,14 @@ export const AnnotationRequestSchema = z.object({
   readAt: z.string().optional(),
 });
 
+/** The version that put a commented passage in the Doc, and its author. */
+export const AnnotationPassageAuthorSchema = z.object({
+  by: z.string().min(1),
+  kind: z.enum(["person", "agent"]),
+  versionId: z.string().min(1),
+  at: z.string(),
+});
+
 export const AnnotationSchema = z.object({
   id: z.string(),
   spaceId: z.string(),
@@ -136,6 +144,8 @@ export const AnnotationSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).default({}),
   /** Who the comment is sent to; absent when it is sent to nobody. */
   requests: z.array(AnnotationRequestSchema).optional(),
+  /** Who wrote the text it is about, when it was sent to someone. */
+  passageAuthor: AnnotationPassageAuthorSchema.optional(),
 });
 
 export const AnnotationFileSchema = z.object({

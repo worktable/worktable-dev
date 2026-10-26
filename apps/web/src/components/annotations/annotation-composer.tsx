@@ -50,6 +50,8 @@ function anchorFor(anchor: Range | Element | undefined) {
 /** Where a comment is written, so it can be sent to whoever changed the Doc. */
 export interface CommentContext {
   spaceId: string;
+  /** The Doc, for finding who wrote selected text. */
+  docPath?: string;
   contributors?: readonly ActivityActor[];
 }
 
@@ -66,7 +68,12 @@ export function AnnotationComposer({
   context,
   label = "Add Comment",
 }: {
-  draft: Pick<AnnotationDraft, "quote" | "anchor"> | null;
+  draft:
+    | (Pick<AnnotationDraft, "quote" | "anchor"> & {
+        prefix?: string;
+        suffix?: string;
+      })
+    | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** `to` holds the participant it is sent to, or is empty. */
@@ -76,7 +83,14 @@ export function AnnotationComposer({
   label?: string;
 }) {
   const [body, setBody] = useState("");
-  const recipients = useCommentRecipients(context?.spaceId, context?.contributors, open);
+  const recipients = useCommentRecipients(
+    context?.spaceId,
+    context?.contributors,
+    open,
+    context?.docPath && draft?.quote
+      ? { docPath: context.docPath, quote: draft.quote, prefix: draft.prefix, suffix: draft.suffix }
+      : undefined
+  );
   // Until the writer picks, the comment goes to whoever is suggested.
   const [picked, setPicked] = useState<string | null>(null);
   const recipient = picked ?? recipients?.suggested ?? NO_RECIPIENT;

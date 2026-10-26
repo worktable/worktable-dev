@@ -1,6 +1,7 @@
 import { runAsActivityActor } from "../activity-log.ts"
 import { commentReplier, commentRecipients } from "../comment-recipients.ts"
 import { markOpened, readPending } from "../pending-read.ts"
+import { passageAuthorForTarget } from "../passage-author.ts"
 import { reservedAnnotationInput } from "../annotation-origin.ts"
 import { assertCurrentTeamIdentity, assertSpaceAccess, currentRequestIdentity } from "../team-policy.ts"
 import {
@@ -2541,6 +2542,9 @@ async function _dispatchOperationInner(
         target: parsed.target as never,
         category: parsed.category ?? "comment",
         to,
+        passageAuthor: to.length
+          ? await passageAuthorForTarget(parsed.spaceId, parsed.target as never)
+          : null,
         body: parsed.body,
         title: parsed.title,
         author: annotationAuthor,

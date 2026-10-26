@@ -1,0 +1,111 @@
+import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { setAppDirOverride } from "./app-storage.ts"
+import { createAnnotation } from "./annotation-store.ts"
+import { resolveParticipant } from "./participant-store.ts"
+import { passageAuthor, passageAuthorForTarget } from "./passage-author.ts"
+import { pendingFor, pendingList } from "./pending-list.ts"
+import { noticesFor, renderNotices } from "./pending-notices.ts"
+import { writeDoc, writeSpace } from "./store.ts"
+import type { TokenIdentity } from "./token-store.ts"
+import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
+
+let root: string
+let appDir: string
+
+const finn: TokenIdentity = {
+  user: "owner",
+  workspace: "test",
+  scopes: ["*"],
+  agent: "claude-code",
+  principal: { id: "token:finn", type: "agent", displayName: "Finn" },
+}
+
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), "worktable-passage-author-"))
+  appDir = await mkdtemp(join(tmpdir(), "worktable-passage-author-app-"))
+  setWorkspaceRootOverride(root)
+  setAppDirOverride(appDir)
+  ensureWorkspaceManifest()
+  const now = new Date().toISOString()
+  await writeSpace({
+    type: "worktable.space",
+    version: 1,
+    id: "pricing",
+    name: "Pricing",
+    createdAt: now,
+    updatedAt: now,
+    createdBy: "test",
+    settings: {},
+  })
+  // Finn drafts the tiers; Atlas adds a line; a person adds a note.
+  await writeDoc("pricing", "explorer", "# Explorer\n\nTeam is **$49** a month.\n", {
+    updatedBy: "token:finn",
+    source: "mcp",
+    managedIdentity: true,
+  })
+  await writeDoc(
+    "pricing",
+    "explorer",
+    "# Explorer\n\nTeam is **$49** a month.\n\nBusiness is $199 a month.\n",
+    { updatedBy: "token:atlas", source: "mcp", managedIdentity: true }
+  )
+  await writeDoc(
+    "pricing",
+    "explorer",
+    "# Explorer\n\nTeam is **$49** a month.\n\nBusiness is $199 a month.\n\nCheck with sales.\n",
+    { updatedBy: "user", source: "rest-api", managedIdentity: true }
+  )
+})
+
+afterEach(async () => {
+  setWorkspaceRootOverride(null)
+  setAppDirOverride(null)
+  await rm(root, { recursive: true, force: true })
+  await rm(appDir, { recursive: true, force: true })
+})
+
+describe("who wrote a passage", () => {
+  it("finds the version that put each passage in the Doc, through formatting", async () => {
+    expect(
+      await passageAuthor("pricing", "explorer", { quote: "Team is $49 a month." })
+    ).toMatchObject({ by: "token:finn", kind: "agent" })
+    expect(
+      await passageAuthor("pricing", "explorer", { quote: "Business is $199" })
+    ).toMatchObject({ by: "token:atlas", kind: "agent" })
+    expect(
+      await passageAuthor("pricing", "explorer", { quote: "Check with sales." })
+    ).toMatchObject({ by: "user", kind: "person" })
+    expect(
+      await passageAuthor("pricing", "explorer", { quote: "Not in the Doc" })
+    ).toBeNull()
+  })
+
+  it("tells the agent that wrote the text, when a comment on it is sent to it", async () => {
+    const { participant } = await resolveParticipant(finn)
+    await pendingList()
+    const target = {
+      type: "doc" as const,
+      docPath: "explorer",
+      quote: "Team is $49 a month.",
+    }
+    await createAnnotation("pricing", {
+      target,
+      category: "comment",
+      body: "Feels high for three people.",
+      author: { type: "user", id: "user", name: "Karo" },
+      to: [{ id: participant.id, kind: "agent", name: "Finn" }],
+      passageAuthor: await passageAuthorForTarget("pricing", target),
+    })
+    const notices = await noticesFor(await pendingFor(participant.id), finn, {
+      spaceId: "pricing",
+      docPath: "explorer",
+    })
+    const { text } = renderNotices(notices, { mode: "ambient" })
+    expect(text).toMatch(
+      /Karo sent you a comment on text you wrote on \d+ \w+, “Team is \$49 a month\.”: “Feels high for three people\.”/
+    )
+  })
+})

@@ -116,7 +116,8 @@ export function updateSignInAgent(
 export function agentConnectionPlatform(
   connection: AgentConnection
 ): AgentPlatformId {
-  if (isAgentPlatformId(connection.platform)) return connection.platform
+  if (isAgentPlatformId(connection.platform) && connection.platform !== "other")
+    return connection.platform
   if (connection.target.kind === "agent-adapter") {
     return platformForAdapter(connection.target.adapter)
   }

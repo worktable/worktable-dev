@@ -6,10 +6,13 @@ import {
 } from "@worktable/types/mcp-clients"
 import {
   captureClientConfigMutation,
+  connectClientOnce,
   detectClient,
   installClient,
   preflightClient,
   restoreClientConfig,
+  signInClient,
+  signInInstruction,
   validateClientConfigSnapshot,
   type ClientConfigSnapshot,
   type InstallOutcome,
@@ -25,7 +28,9 @@ import { verifyMcpEndpoint } from "./verify.ts"
 // host. Redeems a pairing code against the Worktable instance, writes the
 // local client config with the endpoint + minted bearer, verifies the real
 // MCP path end to end, and reports progress back to the pairing session so
-// the Settings flow shows live status. Must run under plain Node 18+ or Bun.
+// the Settings flow shows live status. On Cloud (--oauth) it writes a
+// tokenless entry and starts the client's own OAuth sign-in instead.
+// Must run under plain Node 18+ or Bun.
 //
 // Usage:
 //   connect.mjs <code-or-pairing-url> [--client <id>] [--all] [--replace]
@@ -194,6 +199,8 @@ export interface ConnectorDependencies {
   captureClientConfigMutation: typeof captureClientConfigMutation
   restoreClientConfig: typeof restoreClientConfig
   verifyMcpEndpoint: typeof verifyMcpEndpoint
+  signInClient: typeof signInClient
+  connectClientOnce: typeof connectClientOnce
 }
 
 const DEFAULT_CONNECTOR_DEPENDENCIES: ConnectorDependencies = {
@@ -210,6 +217,8 @@ const DEFAULT_CONNECTOR_DEPENDENCIES: ConnectorDependencies = {
   captureClientConfigMutation,
   restoreClientConfig,
   verifyMcpEndpoint,
+  signInClient,
+  connectClientOnce,
 }
 
 /** Commit verified rotation with retries. */
@@ -293,10 +302,11 @@ function runPreflight(
   clients: ConnectorInstallableMcpClientId[],
   replace: boolean,
   io: ConnectorIo,
-  dependencies: ConnectorDependencies
+  dependencies: ConnectorDependencies,
+  target?: { endpoint: string }
 ): Map<ConnectorInstallableMcpClientId, PreflightOutcome> | null {
   const outcomes = clients.map((id) =>
-    dependencies.preflightClient(id, { replace })
+    dependencies.preflightClient(id, { replace, ...(target ? { target } : {}) })
   )
   const failed = outcomes.filter((outcome) => !outcome.ok)
   for (const outcome of failed) {
@@ -344,6 +354,13 @@ function configureClients(
   const attemptedSnapshots: ClientConfigSnapshot[] = []
   for (const id of clients) {
     const checked = preflight.get(id)!
+    if (checked.unchanged) {
+      outcomes.push({ id, ok: true, configPath: checked.configPath })
+      io.log(
+        `  ${MCP_CLIENTS[id].label}: already set up${checked.configPath ? ` (${checked.configPath})` : ""}`
+      )
+      continue
+    }
     const stillCurrent = dependencies.validateClientConfigSnapshot(
       checked.snapshot!
     )
@@ -408,7 +425,14 @@ async function runOAuthConnector(
     return 1
   }
   const selected = args.all ? detected : clients
-  const preflight = runPreflight(selected, args.replace, io, dependencies)
+  const target = { endpoint: args.mcpUrl ?? `${args.origin}/api/mcp` }
+  const preflight = runPreflight(
+    selected,
+    args.replace,
+    io,
+    dependencies,
+    target
+  )
   if (!preflight) {
     io.error("No configs were changed.")
     return 1
@@ -416,7 +440,7 @@ async function runOAuthConnector(
   const configured = configureClients(
     selected,
     preflight,
-    { endpoint: args.mcpUrl ?? `${args.origin}/api/mcp` },
+    target,
     args.replace,
     io,
     dependencies
@@ -438,14 +462,50 @@ async function runOAuthConnector(
     }
     return 1
   }
-  io.log("")
-  io.log(
-    "Worktable Cloud is configured without a stored token. Restart or open the client to sign in with OAuth."
-  )
+  // The client holds no token yet. Each signs in with its own OAuth flow,
+  // started here so the browser opens while the person is still watching.
+  // Sign-ins run one after another, each waiting for its browser approval.
+  // Ctrl+C stops the rest; each still gets the step that finishes it.
+  let status = 0
+  let cancelled = false
+  const pending: string[] = []
   for (const outcome of configured.outcomes) {
-    if (outcome.restartHint) io.log(`  Note: ${outcome.restartHint}`)
+    const label = MCP_CLIENTS[outcome.id].label
+    const result = cancelled
+      ? "cancelled"
+      : await dependencies.signInClient(outcome.id, () => {
+          io.log("")
+          io.log(
+            `Signing ${label} in to Worktable. In your browser, choose Allow access.`
+          )
+          io.log(
+            `The page warns about an app on this computer: that is ${label}, waiting here for you.`
+          )
+        })
+    if (result === "cancelled") cancelled = true
+    if (result === "signed-in") {
+      if (await dependencies.connectClientOnce(outcome.id)) {
+        io.log(`${label} is connected to Worktable.`)
+      } else {
+        io.log(`${label} is signed in. Open it to finish connecting.`)
+      }
+      if (outcome.restartHint) io.log(`  Note: ${outcome.restartHint}`)
+      continue
+    }
+    if (result === "failed" || result === "cancelled") status = 1
+    pending.push(`  ${label}: ${signInInstruction(outcome.id)}`)
+    if (outcome.restartHint) pending.push(`    Note: ${outcome.restartHint}`)
   }
-  return 0
+  if (pending.length > 0) {
+    io.log("")
+    io.log(
+      status === 0
+        ? "Worktable is set up. To finish, sign in:"
+        : "Signing in didn't finish. Worktable is set up; to sign in:"
+    )
+    for (const line of pending) io.log(line)
+  }
+  return status
 }
 
 export async function runConnector(

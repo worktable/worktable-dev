@@ -1,12 +1,14 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
   accessSync,
   chmodSync,
+  closeSync,
   constants,
   existsSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readlinkSync,
   renameSync,
@@ -517,6 +519,8 @@ export interface PreflightOutcome {
   existing: boolean;
   snapshot?: ClientConfigSnapshot;
   message?: string;
+  /** The client already has exactly this tokenless entry; nothing to write. */
+  unchanged?: boolean;
 }
 
 export interface RestoreOutcome {
@@ -664,12 +668,61 @@ function configSurface(id: ConnectorInstallableMcpClientId): {
   }
 }
 
+function configuredUrl(surface: { path: string; kind: "codex" | "json"; parentKey?: string }): string | undefined {
+  return surface.kind === "codex" ? readCodexUrl(surface.path) : readJsonUrl(surface.path, surface.parentKey!);
+}
+
+/** The entry the connector writes for a tokenless target. */
+function tokenlessEntry(id: ConnectorInstallableMcpClientId, endpoint: string): Record<string, unknown> {
+  switch (id) {
+    case "claude-code":
+      return { type: "http", url: endpoint };
+    case "codex":
+      return { url: endpoint };
+    case "cursor":
+      return cursorEntry(endpoint);
+    case "opencode":
+      return opencodeEntry(endpoint);
+    case "vscode":
+      return vscodeEntry(endpoint);
+  }
+}
+
+function storedEntry(surface: { path: string; kind: "codex" | "json"; parentKey?: string }): unknown {
+  if (surface.kind === "codex") {
+    try {
+      return codexWorktableConfig(readFileSync(surface.path, "utf8"));
+    } catch {
+      return undefined;
+    }
+  }
+  const parent = readJsonObject(surface.path)[surface.parentKey!];
+  return parent && typeof parent === "object" ? (parent as Record<string, unknown>)["worktable"] : undefined;
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") return false;
+  if (Array.isArray(left) !== Array.isArray(right)) return false;
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key) =>
+      sameValue((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key])
+    )
+  );
+}
+
 /**
  * Prove a connector mutation is viable and snapshot its rollback point before
  * the one-use pairing code is redeemed. Existing Worktable entries require an
  * explicit --replace so an automatic multi-client run cannot overwrite them.
  */
-export function preflightClient(id: ConnectorInstallableMcpClientId, options: { replace: boolean }): PreflightOutcome {
+export function preflightClient(
+  id: ConnectorInstallableMcpClientId,
+  options: { replace: boolean; target?: ConnectTarget }
+): PreflightOutcome {
   const surface = configSurface(id);
   if (!surface) {
     return {
@@ -718,6 +771,18 @@ export function preflightClient(id: ConnectorInstallableMcpClientId, options: { 
       }
     }
 
+    // Running the same tokenless command again finds exactly the entry it
+    // writes: that is already done, not a conflict. --replace still rewrites.
+    if (
+      existing &&
+      !options.replace &&
+      options.target &&
+      !options.target.token &&
+      sameValue(storedEntry(surface), tokenlessEntry(id, options.target.endpoint))
+    ) {
+      return { id, ok: true, configPath: surface.path, existing: true, unchanged: true };
+    }
+    const currentUrl = existing ? configuredUrl(surface) : undefined;
     if (existing && !options.replace) {
       return {
         id,
@@ -725,8 +790,8 @@ export function preflightClient(id: ConnectorInstallableMcpClientId, options: { 
         configPath: surface.path,
         existing: true,
         message:
-          `${MCP_CLIENTS[id].label} already has a Worktable MCP server. ` +
-          "Rerun this same command with --replace to replace it intentionally.",
+          `${MCP_CLIENTS[id].label} already connects to ${currentUrl ? `Worktable at ${currentUrl}` : "a Worktable"}. ` +
+          "To connect it here instead, rerun this same command with --replace.",
       };
     }
     return {
@@ -899,4 +964,162 @@ function installClientUnsafe(
       };
     }
   }
+}
+
+// ---- OAuth sign-in -------------------------------------------------------------
+
+/** The client's own command that signs it in to the `worktable` server. */
+function signInCommand(id: ConnectorInstallableMcpClientId): string[] | null {
+  switch (id) {
+    case "claude-code":
+      return claudeCodeAvailable() ? [claudeCodeCommand(), "mcp", "login", "worktable"] : null;
+    case "codex":
+      return commandExists("codex") ? ["codex", "mcp", "login", "worktable"] : null;
+    case "opencode":
+      return commandExists("opencode") ? ["opencode", "mcp", "auth", "worktable"] : null;
+    case "cursor":
+    case "vscode":
+      return null;
+  }
+}
+
+/** How a person signs the client in themselves, when it can't happen here. */
+export function signInInstruction(id: ConnectorInstallableMcpClientId): string {
+  switch (id) {
+    case "claude-code":
+      return "Open Claude Code, type /mcp, choose worktable and sign in.";
+    case "codex":
+      return commandExists("codex")
+        ? "Run: codex mcp login worktable"
+        : "Open Codex, then sign in to worktable from its MCP settings.";
+    case "opencode":
+      return "Run: opencode mcp auth worktable";
+    case "cursor":
+      return "Open Cursor and sign in to worktable from its MCP settings.";
+    case "vscode":
+      return "In VS Code, start worktable from the MCP servers list and sign in.";
+  }
+}
+
+export type SignInResult = "signed-in" | "failed" | "cancelled" | "no-terminal" | "no-command";
+
+/**
+ * Run the client's own OAuth sign-in on the person's terminal. Under
+ * `curl … | sh` stdin is the script, so the sign-in reads from /dev/tty;
+ * without one (an agent ran the command) the person signs in themselves.
+ * Ctrl+C reaches the sign-in as well; the connector keeps running so it can
+ * say how to finish.
+ */
+export async function signInClient(
+  id: ConnectorInstallableMcpClientId,
+  onStart: () => void = () => {}
+): Promise<SignInResult> {
+  const command = signInCommand(id);
+  if (!command) return "no-command";
+  let tty: number;
+  try {
+    tty = openSync("/dev/tty", "r");
+  } catch {
+    return "no-terminal";
+  }
+  let interrupted = false;
+  const interrupt = () => {
+    interrupted = true;
+  };
+  process.on("SIGINT", interrupt);
+  try {
+    onStart();
+    const result = spawnSync(command[0]!, command.slice(1), {
+      stdio: [tty, "inherit", "inherit"],
+      env: spawnEnv(),
+    });
+    // A Ctrl+C during the blocking sign-in is delivered once the loop runs.
+    await new Promise((resolve) => setImmediate(resolve));
+    if (interrupted || result.signal === "SIGINT" || result.status === 130) return "cancelled";
+    return result.status === 0 ? "signed-in" : "failed";
+  } finally {
+    process.off("SIGINT", interrupt);
+    closeSync(tty);
+  }
+}
+
+/**
+ * Have a signed-in client connect to Worktable once. Cloud lists an agent
+ * from its first MCP request, so this is what lets Worktable notice it
+ * without the person opening the client first. False when it couldn't.
+ */
+export async function connectClientOnce(id: ConnectorInstallableMcpClientId): Promise<boolean> {
+  switch (id) {
+    case "claude-code": {
+      // `mcp get` health-checks the server, which connects with the new sign-in.
+      const result = spawnSync(claudeCodeCommand(), ["mcp", "get", "worktable"], {
+        stdio: ["ignore", "pipe", "pipe"],
+        encoding: "utf8",
+        env: spawnEnv(),
+        timeout: 60_000,
+      });
+      return result.status === 0 && /Status:.*Connected/i.test(result.stdout ?? "");
+    }
+    case "codex":
+      return codexConnectOnce();
+    case "cursor":
+    case "opencode":
+    case "vscode":
+      return false;
+  }
+}
+
+/** Codex's app server starts its MCP servers to report their status. */
+function codexConnectOnce(): Promise<boolean> {
+  return new Promise((resolve) => {
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn("codex", ["app-server"], { stdio: ["pipe", "pipe", "ignore"], env: spawnEnv() });
+    } catch {
+      resolve(false);
+      return;
+    }
+    let settled = false;
+    let buffered = "";
+    const finish = (connected: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.kill();
+      resolve(connected);
+    };
+    const timer = setTimeout(() => finish(false), 60_000);
+    child.on("error", () => finish(false));
+    child.on("exit", () => finish(false));
+    child.stdout!.setEncoding("utf8");
+    child.stdout!.on("data", (chunk: string) => {
+      buffered += chunk;
+      let newline: number;
+      while ((newline = buffered.indexOf("\n")) >= 0) {
+        const line = buffered.slice(0, newline);
+        buffered = buffered.slice(newline + 1);
+        let message: { id?: unknown; result?: { data?: unknown } };
+        try {
+          message = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (message.id !== 1) continue;
+        const servers = Array.isArray(message.result?.data) ? (message.result.data as Array<Record<string, unknown>>) : [];
+        const worktable = servers.find((server) => server["name"] === "worktable");
+        const tools = worktable?.["tools"];
+        finish(Boolean(tools && typeof tools === "object" && Object.keys(tools).length > 0));
+      }
+    });
+    child.stdin!.on("error", () => finish(false));
+    child.stdin!.write(
+      [
+        { method: "initialize", id: 0, params: { clientInfo: { name: "worktable-connect", version: "1" } } },
+        { method: "initialized" },
+        { method: "mcpServerStatus/list", id: 1, params: {} },
+      ]
+        .map((message) => JSON.stringify(message))
+        .join("\n") + "\n"
+    );
+  });
 }

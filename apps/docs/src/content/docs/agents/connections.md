@@ -25,8 +25,10 @@ redeems a single-use pairing code and configures the client. The host must be
 reachable from that computer; see [Remote access](/guides/remote-access/).
 
 For **Worktable Cloud**, use the command under **Coding agents**. It configures
-the hosted MCP endpoint without downloading a Worktable token. Open or restart
-the client and complete its browser-based OAuth approval.
+the hosted MCP endpoint without downloading a Worktable token, then starts the
+client's sign-in: approve it in the browser that opens. Cursor and VS Code sign
+in from the app instead. When the command can't sign in, such as when an agent
+runs it, it prints the step that finishes the connection.
 
 For any other MCP agent, choose **Connect any MCP agent**. Add the MCP endpoint
 to your agent and sign in on Cloud. On local or self-hosted Worktable, choose

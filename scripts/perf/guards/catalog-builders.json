@@ -222,16 +222,6 @@
       "why": "Thread lists: stats every thread file and parses only changed ones (digest cache)."
     },
     {
-      "site": "packages/server/src/thread-service.ts#listPendingThreadWork",
-      "kind": "scanAllThreadDigests",
-      "why": "Pending thread work: stats every thread file and parses only changed ones."
-    },
-    {
-      "site": "packages/server/src/thread-service.ts#listPendingThreadWork",
-      "kind": "scanThreadDigests",
-      "why": "Pending thread work in one location: stats its thread files."
-    },
-    {
       "site": "packages/server/src/thread-service.ts#reconcileParticipantDeliveries.scan",
       "kind": "scanAllThreadDigests",
       "why": "Thread read, wait and post: stats every thread file to reconcile deliveries. Should use derived data."

@@ -29,6 +29,7 @@ import { Hono } from "hono"
 import { cloudCallbackRouter, linkedRouter } from "./routes/linked.ts"
 import { startLinkedRuntime } from "./linked-runtime.ts"
 import { startGrokBotRuntime } from "./grok-bot-runtime.ts"
+import { pendingList } from "./pending-list.ts"
 import { grokBotRouter } from "./routes/grok-bot.ts"
 import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts"
 import {
@@ -2301,6 +2302,8 @@ export function startServer(
   const endServicesPhase = startBootPhase("background services start");
   const stopLinked = startLinkedRuntime();
   const stopGrokBot = workspaceRejected ? () => Promise.resolve() : startGrokBotRuntime();
+  // Index what waits on each person and agent before anyone asks.
+  if (!workspaceRejected) timeBootTask("pending list build", pendingList());
   const stopBackupNotifier = startWorkspaceBackupNotifier();
   if (options.resumeWorkspaceRequests !== false) {
     resumeWorkspaceRequestAdmission();

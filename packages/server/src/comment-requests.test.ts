@@ -10,6 +10,15 @@ import { setAppDirOverride } from "./app-storage.ts"
 import { ownerIdentity } from "./auth.ts"
 import { resolveParticipant } from "./participant-store.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
+import { listPending } from "./pending.ts"
+import {
+  onPendingChange,
+  pendingFor,
+  pendingList,
+  savePendingList,
+  type PendingChange,
+} from "./pending-list.ts"
+import { notifyWorkspaceChange } from "./workspace-events.ts"
 import { annotationsRouter } from "./routes/annotations.ts"
 import { writeDoc, writeSpace } from "./store.ts"
 import type { TokenIdentity } from "./token-store.ts"
@@ -210,6 +219,79 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
       })
       expect(plain.status).toBe(200)
       expect(plain.json.annotation.requests).toBeUndefined()
+    })
+
+    it("waits in the recipient's pending list, and keeps its place across a restart", async () => {
+      // As at boot: the list is built before anything is sent.
+      await pendingList()
+      const changes: PendingChange[] = []
+      const stop = onPendingChange((change) => changes.push(change))
+      try {
+        const finnId = (await resolveParticipant(finn)).participant.id
+        const created = await post("", {
+          target: { type: "block", docPath: "explorer", blockId: "tiers" },
+          category: "comment",
+          body: "Feels high for three people.",
+          to: ["Finn"],
+        })
+        const id = created.json.annotation.id
+        const first = await pendingFor(finnId)
+        expect(first.map((entry) => [entry.kind, entry.revision])).toEqual([
+          ["comment", 1],
+        ])
+        expect(first[0]?.source).toMatchObject({
+          kind: "comment",
+          annotationId: id,
+          path: "explorer",
+          excerpt: "Feels high for three people.",
+        })
+
+        caller = finn
+        await post(`/${id}/replies`, { body: "Should I lower it?" })
+        expect(await pendingFor(finnId)).toEqual([])
+        caller = ownerIdentity()
+        await post(`/${id}/replies`, { body: "Yes, try $39." })
+        const second = await pendingFor(finnId)
+        expect(second.map((entry) => entry.revision)).toEqual([2])
+        expect(changes.map((change) => change.type === "closed" ? `closed:${change.reason}` : "added")).toEqual([
+          "added",
+          "closed:replied",
+          "added",
+        ])
+
+        // A restart rebuilds the list from the comments; the open item keeps
+        // its revision and is not announced again.
+        await savePendingList()
+        notifyWorkspaceChange({ type: "workspaceReset" })
+        const rebuilt = await pendingFor(finnId)
+        expect(rebuilt.map((entry) => [entry.itemId, entry.revision])).toEqual([
+          [second[0]!.itemId, 2],
+        ])
+        expect(changes).toHaveLength(3)
+      } finally {
+        stop()
+      }
+    })
+
+    it("shows a person the comments an agent sends them", async () => {
+      caller = finn
+      await post("", {
+        target: { type: "doc", docPath: "explorer" },
+        category: "comment",
+        body: "Which price should I use?",
+        to: [(await resolveParticipant(ownerIdentity())).participant.id],
+      })
+      const items = (await listPending(ownerIdentity())).items
+      expect(items).toMatchObject([
+        {
+          kind: "commentRequest",
+          spaceId: "pricing",
+          docPath: "explorer",
+          from: { kind: "agent", id: "token:finn" },
+          excerpt: "Which price should I use?",
+        },
+      ])
+      expect(items[0]).not.toHaveProperty("agent")
     })
   })
 }

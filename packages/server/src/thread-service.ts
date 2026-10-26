@@ -9,7 +9,6 @@ import type {
   AgentPlatformId,
   ParticipantRef,
   SpaceFile,
-  Thread,
   ThreadActivity,
   ThreadDeliveryState,
   ThreadLocation,
@@ -63,9 +62,7 @@ import {
   readThread,
   renameThread,
   scanAllThreadDigests,
-  scanThreadDigests,
   ThreadError,
-  type ThreadDigest,
   type ThreadDigestScan,
   type ThreadRequestDigest,
 } from "./thread-store.ts"
@@ -77,6 +74,7 @@ import {
   resolveParticipant,
 } from "./participant-store.ts"
 import { getSpaceArchiveInfo, listSpaces, readSpace } from "./store.ts"
+import { pendingFor, pendingFrom } from "./pending-list.ts"
 import {
   listAgentConnections,
   signInPresentations,
@@ -1204,7 +1202,9 @@ export interface ViewerThreadRequest {
   location: ThreadLocation
   threadId: string
   threadTitle: string
-  message: Thread["messages"][number]
+  messageId: string
+  createdAt: string
+  excerpt: string
   author: { kind: ParticipantRef["kind"]; id: string; name: string }
 }
 
@@ -1217,10 +1217,10 @@ export interface ViewerDeliveryFailure {
 }
 
 /**
- * What in the threads waits on the reader, from one scan: reply requests
- * addressed to them that are still open, and their messages whose delivery
- * failed while the reply request is still open. Every failed request counts,
- * not only each thread's latest.
+ * What in the threads waits on the reader, from the pending list: reply
+ * requests addressed to them that are still open, and their messages whose
+ * delivery failed while the reply request is still open. Every failed request
+ * counts, not only each thread's latest.
  *
  * Covers everything outside archived Spaces, or exactly the named Space,
  * archived or not. `spaces` is the current Space list.
@@ -1239,103 +1239,66 @@ export async function listPendingThreadWork(
       .filter((space) => !getSpaceArchiveInfo(space))
       .map((space) => space.id)
   )
-  const inScope = (location: ThreadLocation) =>
-    spaceId
-      ? location.kind === "space" && location.spaceId === spaceId
-      : location.kind !== "space" || activeSpaceIds.has(location.spaceId)
-  const { threads } = !spaceId
-    ? await scanAllThreadDigests(spaces)
-    : spaces.some((space) => space.id === spaceId)
-      ? await scanThreadDigests(spaceId)
-      : { threads: [] }
-  const scoped = threads.filter(({ summary }) => inScope(summary.location))
-  const requests = scoped.flatMap((thread) =>
-    openRequestsForViewer(thread, viewer.id)
+  const knownSpaceIds = new Set(spaces.map((space) => space.id))
+  const reader = identity as TokenIdentity
+  const visible = (location: ThreadLocation) =>
+    location.kind === "space"
+      ? (spaceId
+          ? location.spaceId === spaceId && knownSpaceIds.has(spaceId)
+          : activeSpaceIds.has(location.spaceId)) &&
+        canAccessSpace(location.spaceId, "read", reader)
+      : !spaceId && canAccessWorktableThreads("read", reader)
+  const requests = (await pendingFor(viewer.id)).flatMap(
+    ({ source }): ViewerThreadRequest[] =>
+      source.kind === "threadRequest" && visible(source.location)
+        ? [
+            {
+              location: source.location,
+              threadId: source.threadId,
+              threadTitle: source.threadTitle,
+              messageId: source.messageId,
+              createdAt: source.createdAt,
+              excerpt: source.excerpt,
+              author: {
+                kind: source.from.kind === "person" ? "human" : source.from.kind,
+                id: source.from.id,
+                name: source.from.name ?? "Someone",
+              },
+            },
+          ]
+        : []
   )
-  const awaitingReply = scoped.flatMap(({ summary, requests }) => {
-    const open = new Map(
-      requests.flatMap((request) =>
-        request.authorMemberId === viewer.id &&
-        request.responseRequest.status === "open"
-          ? [[request.messageId, request.responseRequest.identityId] as const]
-          : []
-      )
-    )
-    return open.size > 0 ? [{ thread: summary, open }] : []
-  })
-  if (awaitingReply.length === 0) return { requests, failures: [] }
+  const awaiting = (await pendingFrom(viewer.id)).flatMap(
+    ({ source, recipient }) =>
+      source.kind === "threadRequest" &&
+      recipient.identityId &&
+      visible(source.location)
+        ? [{ request: source, identityId: recipient.identityId }]
+        : []
+  )
+  if (awaiting.length === 0) return { requests, failures: [] }
   const activities = await readThreadActivities()
-  const failures = awaitingReply.flatMap(({ thread, open }) =>
-    failedDeliveries(thread, open, activities(thread.location, thread.id))
+  const failures = awaiting.flatMap(({ request, identityId }) =>
+    activities(request.location, request.threadId).flatMap(
+      (activity): ViewerDeliveryFailure[] =>
+        activity.state === "failed" &&
+        activity.messageId === request.messageId &&
+        activity.identityId === identityId
+          ? [
+              {
+                location: request.location,
+                threadId: request.threadId,
+                threadTitle: request.threadTitle,
+                activity,
+                recipientName: request.recipientName,
+              },
+            ]
+          : []
+    )
   )
   return { requests, failures }
 }
 
-function openRequestsForViewer(
-  { summary: thread, requests }: ThreadDigest,
-  viewerId: string
-): ViewerThreadRequest[] {
-  const location = thread.location
-  const mine = new Set(
-    thread.identities
-      .filter((candidate) => candidate.memberId === viewerId)
-      .map((candidate) => candidate.id)
-  )
-  return requests.flatMap(({ openMessage: message, responseRequest }) => {
-    if (!message || !mine.has(responseRequest.identityId)) return []
-    const member = thread.members.find(
-      (candidate) => candidate.id === message.authorMemberId
-    )
-    const authorIdentity = thread.identities.find(
-      (candidate) => candidate.id === message.authorIdentityId
-    )
-    return [
-      {
-        location,
-        threadId: thread.id,
-        threadTitle: thread.title,
-        message,
-        author: {
-          kind: member?.kind ?? "agent",
-          id: message.authorMemberId,
-          name: authorIdentity?.name ?? member?.name ?? "Someone",
-        },
-      },
-    ]
-  })
-}
-
-/** Failed deliveries of the viewer's messages whose reply request is open. */
-function failedDeliveries(
-  thread: ThreadSummary,
-  openRequests: Map<string, string>,
-  activities: ThreadActivity[]
-): ViewerDeliveryFailure[] {
-  const location = thread.location
-  return activities.flatMap((activity) => {
-    if (
-      activity.state !== "failed" ||
-      openRequests.get(activity.messageId) !== activity.identityId
-    ) {
-      return []
-    }
-    const recipientName =
-      thread.identities.find(
-        (candidate) => candidate.id === activity.identityId
-      )?.name ??
-      thread.members.find((member) => member.id === activity.participantId)
-        ?.name
-    return [
-      {
-        location,
-        threadId: thread.id,
-        threadTitle: thread.title,
-        activity,
-        ...(recipientName ? { recipientName } : {}),
-      },
-    ]
-  })
-}
 
 export async function readThreadMessages(
   identity: ThreadIdentity,

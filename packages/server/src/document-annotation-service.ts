@@ -19,6 +19,7 @@ import type {
   DocumentId,
 } from "@worktable/types"
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
+import { noteCommentChanged, type CommentPlace } from "./pending-list.ts"
 import { addRequests, requestsAfterReply, type CommentReplier } from "./annotation-requests.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import {
@@ -328,6 +329,7 @@ export async function createDocumentAnnotationForPath(options: {
     const annotation = newAnnotation(options.spaceId, owner, options.input)
     owner.annotations.push(annotation)
     await writeOwner(options.spaceId, owner)
+    noteChanged(options.spaceId, owner, annotation)
     return { annotation, created: true, path: owner.document.path }
   }, { materializeIdentity: true })
   if (result.created && options.input.author?.type !== "system") {
@@ -468,6 +470,45 @@ async function allAnnotationOwners(
   )
 }
 
+/** Open comments in a Space that wait on someone, with where they are. */
+export async function listWaitingCommentsV2(spaceId: string): Promise<
+  Array<{ annotation: DocumentAnnotationV2; place: CommentPlace }>
+> {
+  const owners = await allAnnotationOwners(spaceId, { snapshot: true })
+  return owners.flatMap((owner) =>
+    owner.annotations.flatMap((annotation) =>
+      annotation.status !== "resolved" &&
+      annotation.requests?.some((request) => request.status === "open")
+        ? [{ annotation, place: commentPlace(owner, annotation) }]
+        : []
+    )
+  )
+}
+
+/** Where a comment is, for the pending list. */
+function commentPlace(
+  owner: AnnotationOwner,
+  annotation: DocumentAnnotationV2
+): CommentPlace {
+  const legacy = legacyAnnotation(owner, annotation)
+  const quote =
+    legacy && "quote" in legacy.target ? legacy.target.quote : undefined
+  return {
+    path: owner.document.path,
+    documentId: owner.document.documentId,
+    ...(quote ? { quote } : {}),
+  }
+}
+
+/** The pending list follows each comment write. */
+function noteChanged(
+  spaceId: string,
+  owner: AnnotationOwner,
+  annotation: DocumentAnnotationV2
+): void {
+  noteCommentChanged(spaceId, annotation, commentPlace(owner, annotation))
+}
+
 async function findAnnotation(
   spaceId: string,
   annotationId: string
@@ -525,6 +566,7 @@ export async function updateDocumentAnnotation(options: {
     }
     found.owner.annotations[found.index] = annotation
     await writeOwner(options.spaceId, found.owner)
+    noteChanged(options.spaceId, found.owner, annotation)
     return annotation
   })
 }
@@ -564,6 +606,7 @@ export async function replyDocumentAnnotation(options: {
     }
     found.owner.annotations[found.index] = annotation
     await writeOwner(options.spaceId, found.owner)
+    noteChanged(options.spaceId, found.owner, annotation)
     return { annotation, replyId, path: found.owner.document.path }
   })
   if (author.type !== "system") {
@@ -604,6 +647,7 @@ export async function resolveDocumentAnnotation(options: {
     }
     found.owner.annotations[found.index] = annotation
     await writeOwner(options.spaceId, found.owner)
+    noteChanged(options.spaceId, found.owner, annotation)
     return { annotation, path: found.owner.document.path }
   })
   if (!NON_ENGAGING_ACTORS.has(options.resolvedBy)) {
@@ -740,6 +784,7 @@ export async function createLegacyCompatibleAnnotationV2(
     annotation.target = target
     owner.annotations.push(annotation)
     await writeOwner(spaceId, owner, beforeWrite)
+    noteChanged(spaceId, owner, annotation)
     const projected = legacyAnnotation(owner, annotation)
     if (!projected) {
       throw new Error("Annotation selector requires the common API")

@@ -1,8 +1,13 @@
 import type { ReactNode } from "react"
+import { ChevronsLeft } from "lucide-react"
+import { Button } from "@worktable/ui/components/button"
 import { cn } from "@worktable/ui/lib/utils"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 
 const PANEL_GUTTER = 12
+
+/** Width of a context panel collapsed to its rail. */
+export const CONTEXT_PANEL_RAIL_WIDTH = 48
 
 export function ContextPanelHeader({
   title,
@@ -24,6 +29,37 @@ export function ContextPanelHeader({
       </div>
       <div className="flex shrink-0 items-center gap-1">{actions}</div>
     </div>
+  )
+}
+
+/** A collapsed context panel: expand, its name, and any quick actions. */
+export function ContextPanelRail({
+  label,
+  onExpand,
+  children,
+}: {
+  label: string
+  onExpand: () => void
+  children?: ReactNode
+}) {
+  return (
+    <aside
+      aria-label={label}
+      className="flex h-full flex-col items-center gap-2 py-4"
+    >
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label={`Expand ${label.toLowerCase()}`}
+        onClick={onExpand}
+      >
+        <ChevronsLeft className="size-4" />
+      </Button>
+      <div className="flex flex-1 items-center [writing-mode:vertical-rl]">
+        <span className="text-xs text-muted-foreground">{label}</span>
+      </div>
+      {children}
+    </aside>
   )
 }
 

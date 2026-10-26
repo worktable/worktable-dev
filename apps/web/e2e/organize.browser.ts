@@ -218,6 +218,9 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
   await temporary.getByRole("button", { name: "Keep", exact: true }).click()
   await expect(recent.getByRole("link", { name: /^Untitled/ })).toBeVisible()
   await expect(temporary).toHaveCount(0)
+  // Activity starts collapsed beside Home; once opened it stays open.
+  await expect(page.getByRole("region", { name: "Activity" })).toHaveCount(0)
+  await page.getByRole("button", { name: "Expand activity" }).click()
   await expect(page.getByRole("region", { name: "Activity" })).toContainText(
     "You kept Untitled"
   )

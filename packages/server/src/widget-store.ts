@@ -459,6 +459,8 @@ export async function updateWidgetMetadata(
     name?: string;
     description?: string | null;
     metadata?: Record<string, unknown>;
+    /** Replaces the permissions; requests are dropped with them. */
+    permissions?: WidgetFile["permissions"];
     updatedBy?: string;
     now?: string;
   }
@@ -468,6 +470,7 @@ export async function updateWidgetMetadata(
   if (error || !existing) return { data: null, error: error ?? `Widget not found: ${widgetId}` };
   const next: WidgetFile = {
     ...existing,
+    ...(patch.permissions !== undefined ? { permissions: patch.permissions, requests: undefined } : {}),
     ...(patch.name !== undefined ? { name: patch.name } : {}),
     ...(patch.description !== undefined ? { description: patch.description ?? undefined } : {}),
     ...(patch.metadata !== undefined ? { metadata: patch.metadata } : {}),

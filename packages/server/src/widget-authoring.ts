@@ -65,6 +65,8 @@ export type BuildWidgetFileInput = {
   updatedBy?: string
   metadata?: Record<string, unknown>
   permissions?: WidgetFile["permissions"]
+  /** Omit to keep the existing requests; null drops them. */
+  requests?: WidgetFile["requests"] | null
   existing?: WidgetFile
   now?: string
 }
@@ -328,12 +330,16 @@ export function buildWidgetFile({
   updatedBy = "agent",
   metadata,
   permissions,
+  requests,
   existing,
   now = new Date().toISOString(),
 }: BuildWidgetFileInput): WidgetFile {
   if (existing) {
+    const { requests: existingRequests, ...rest } = existing
+    const nextRequests = requests === undefined ? existingRequests : (requests ?? undefined)
     return {
-      ...existing,
+      ...rest,
+      ...(nextRequests ? { requests: nextRequests } : {}),
       name,
       description,
       updatedAt: now,
@@ -360,6 +366,7 @@ export function buildWidgetFile({
       records: {},
       state: { read: true, write: true },
     },
+    ...(requests ? { requests } : {}),
   }
 }
 

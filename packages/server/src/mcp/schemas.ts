@@ -1153,6 +1153,26 @@ export const HtmlWriteInput = z.strictObject({
   ]),
 })
 
+const [HtmlCreateAction, HtmlUpdateAction, ...HtmlLifecycleActions] =
+  HtmlWriteInput.shape.request.options
+
+/** Preview surface: grants stay within the caller's access, and network access waits for a person. */
+export const HtmlWriteInputPreview = z.strictObject({
+  request: z.discriminatedUnion("action", [
+    HtmlCreateAction.extend({
+      permissions: WidgetPermissionsInput.optional().describe(
+        "Optional HTML doc bridge permissions. Include per-collection record access for every worktable.records call the HTML doc makes; you can grant only Record access this connection has. network=true asks for outbound https requests, which stay blocked until a person allows them in Worktable."
+      ),
+    }),
+    HtmlUpdateAction.extend({
+      permissions: WidgetPermissionsInput.optional().describe(
+        "Optional HTML doc bridge permissions. Omit to keep current permissions; either way they must stay within the Record access this connection has. Every update turns network access off until a person allows it again."
+      ),
+    }),
+    ...HtmlLifecycleActions,
+  ]),
+})
+
 export const RecordsReadInput = z.strictObject({
   request: z.discriminatedUnion("action", [
     actionSchema("list_collections", ListRecordCollectionsInput.shape),

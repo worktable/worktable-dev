@@ -98,6 +98,10 @@ import {
   WIDGET_STYLE_TOKENS,
 } from "../widget-authoring.ts"
 import {
+  authorizeHtmlPermissions,
+  NETWORK_REQUEST_WARNING,
+} from "../html-permission-authority.ts"
+import {
   CanonicalIdSchema,
   DOCUMENT_LIFETIME_REQUIRED_MESSAGE,
   WidgetIdSchema,
@@ -2038,7 +2042,17 @@ async function _dispatchOperationInner(
       const description = args["description"] as string | undefined
       const html = args["html"] as string
       const metadata = args["metadata"] as Record<string, unknown> | undefined
-      const permissions = args["permissions"] as WidgetFile["permissions"]
+      const granted =
+        context.surface === "preview"
+          ? authorizeHtmlPermissions({
+              requested: args["permissions"] as WidgetFile["permissions"],
+              identity,
+              scopes: identity.scopes,
+            })
+          : null
+      const permissions = granted
+        ? granted.permissions
+        : (args["permissions"] as WidgetFile["permissions"])
       const explicitId = args["id"] as string | undefined
       const storageV2 = await usesHtmlDocumentStorageV2()
       if (
@@ -2057,6 +2071,7 @@ async function _dispatchOperationInner(
       const blockingIssue = getBlockingWidgetIssue(warnings)
       if (blockingIssue)
         throw new Error(`${blockingIssue.code}: ${blockingIssue.message}`)
+      if (granted?.requests?.network) warnings.push(NETWORK_REQUEST_WARNING)
       let previewSnapshot: HtmlPreviewSnapshot | undefined
       let previewError: unknown
       const captureSaved = async (saved: {
@@ -2090,6 +2105,7 @@ async function _dispatchOperationInner(
         createdBy: actorId,
         metadata,
         permissions,
+        requests: granted?.requests,
         versionSource: "mcp",
         versionUpdatedBy: actorId,
       })
@@ -2143,13 +2159,26 @@ async function _dispatchOperationInner(
               widgetId
             )
             if (error || !existing) throw new Error(error ?? "Widget not found")
+            const granted =
+              context.surface === "preview"
+                ? authorizeHtmlPermissions({
+                    requested: args["permissions"] as WidgetFile["permissions"],
+                    existing,
+                    identity,
+                    scopes: identity.scopes,
+                  })
+                : null
             const permissions =
-              (args["permissions"] as WidgetFile["permissions"]) ??
+              (granted
+                ? granted.permissions
+                : (args["permissions"] as WidgetFile["permissions"])) ??
               existing.permissions
             const warnings = validateWidgetHtml(html, permissions)
             const blockingIssue = getBlockingWidgetIssue(warnings)
             if (blockingIssue)
               throw new Error(`${blockingIssue.code}: ${blockingIssue.message}`)
+            if (granted?.requests?.network)
+              warnings.push(NETWORK_REQUEST_WARNING)
             const beforeContent = await captureWidgetVersionContent(
               spaceId,
               widgetId
@@ -2167,6 +2196,7 @@ async function _dispatchOperationInner(
                   | Record<string, unknown>
                   | undefined,
                 permissions,
+                ...(granted ? { requests: granted.requests ?? null } : {}),
                 existing,
               }),
               html

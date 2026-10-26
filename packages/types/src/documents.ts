@@ -322,6 +322,8 @@ export const DocumentPageSchema = z.object({
    * is on. Absent otherwise; the page then shares through today's single link.
    */
   sharing: DocumentSharingSummarySchema.optional(),
+  /** An HTML Doc whose network access an agent asked for and a person has not allowed. */
+  networkRequested: z.literal(true).optional(),
 })
 
 export const DocumentPageResultSchema = z.discriminatedUnion("kind", [

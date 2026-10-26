@@ -30,6 +30,7 @@ export interface CreateHtmlDocumentInput {
   createdBy?: string
   metadata?: Record<string, unknown>
   permissions?: WidgetFile["permissions"]
+  requests?: WidgetFile["requests"]
   versionSource: string
   versionUpdatedBy: string
   /** Private initial content can be published without an edit-history entry. */
@@ -120,6 +121,7 @@ export async function createHtmlDocument(
               createdBy: input.createdBy,
               metadata: input.metadata,
               permissions: input.permissions,
+              requests: input.requests,
             }),
             input.html,
             admission ? { documentId: admission.documentId } : undefined

@@ -33,6 +33,7 @@ import {
   RecordsWriteInputPreview,
   DeleteInputPreview,
   DocumentsWriteInputPreview,
+  HtmlWriteInputPreview,
   AnnotationsReadInput,
   AnnotationsWriteInput,
   ThreadsReadInput,
@@ -224,6 +225,7 @@ export const PREVIEW_INPUT_SCHEMAS: Partial<
   worktable_records_write: RecordsWriteInputPreview,
   worktable_delete: DeleteInputPreview,
   worktable_documents_write: DocumentsWriteInputPreview,
+  worktable_html_write: HtmlWriteInputPreview,
 }
 
 export const TOOL_TITLES: Record<WorktableToolName, string> = {

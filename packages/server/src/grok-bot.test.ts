@@ -813,6 +813,32 @@ describe("Grok Bot", () => {
     expect(wakes).toBe(0)
   })
 
+  it("stops ringing and asks for a check when the routine rejects the wake", async () => {
+    await verified()
+    await assign("Queued for a routine whose key was rotated")
+    const flagged = Promise.withResolvers<void>()
+    const off = onWorkspaceChange((event) => {
+      if (event.type === "participants") flagged.resolve()
+    })
+    stop = startGrokBotRuntime({ fetch: fakeFetch(() => undefined, 401) })
+    await flagged.promise
+    off()
+    await stop()
+    stop = undefined
+    expect((await readGrokBots())[0]?.error).toBe(
+      "Grok Bot rejected the wake (HTTP 401). Check the routine URL and key."
+    )
+    let wakes = 0
+    stop = startGrokBotRuntime({
+      fetch: fakeFetch(() => {
+        wakes++
+      }),
+    })
+    await stop()
+    stop = undefined
+    expect(wakes).toBe(0)
+  })
+
   it("rejects unobserved identities and unsafe destinations, and clears private bindings on replacement", async () => {
     expect(
       (

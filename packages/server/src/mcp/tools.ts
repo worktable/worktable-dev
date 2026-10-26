@@ -528,7 +528,8 @@ export function registerTools(
             ? await ambientNotices(
                 { ...identity, scopes },
                 operation.id,
-                operation.args
+                operation.args,
+                publicResult
               )
             : null
         return {

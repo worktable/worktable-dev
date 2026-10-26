@@ -88,11 +88,31 @@ function inSpace(entry: PendingEntry, target: NoticeTarget): boolean {
         source.location.spaceId === target.spaceId
 }
 
+/**
+ * The path a result says it read, which follows an old path's alias to the
+ * Doc's current one.
+ */
+function resolvedPath(result: unknown): { docPath?: string } {
+  if (!result || typeof result !== "object") return {}
+  const value = result as Record<string, unknown>
+  const path = text(value.docPath) ?? text(value.path)
+  return path ? { docPath: path } : {}
+}
+
+/** Whether an item could be about this call, before looking anything up. */
+function maybeOnTopic(entry: PendingEntry, target: NoticeTarget): boolean {
+  const source = entry.source
+  return source.kind === "comment"
+    ? Boolean(target.docPath) && source.path === target.docPath
+    : Boolean(target.threadId) && source.threadId === target.threadId
+}
+
 /** The notices to add to one tool result, or null for none. */
 export async function ambientNotices(
   reader: Reader,
   operationId: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  result?: unknown
 ): Promise<string | null> {
   try {
     if (QUIET_OPERATIONS.has(operationId)) return null
@@ -100,24 +120,31 @@ export async function ambientNotices(
     if (!participant) return null
     const entries = pendingIfReady(participant.id)
     if (!entries?.length) return null
-    const target = noticeTargetFor(args)
+    const target = noticeTargetFor({ ...args, ...resolvedPath(result) })
     // The comment the call opens or answers is the thing itself, not news.
     const opened = text(args.annotationId)
-    const candidates = entries.filter(
-      (entry) =>
-        inSpace(entry, target) &&
-        !(entry.source.kind === "comment" && entry.source.annotationId === opened)
-    )
+    // Only items that could print need looking up: unopened, and new or
+    // about this call. Items shown before elsewhere are only counted.
+    const now = Date.now()
+    let older = 0
+    const candidates = entries.filter((entry) => {
+      if (!inSpace(entry, target)) return false
+      if (entry.source.kind === "comment" && entry.source.annotationId === opened) {
+        return false
+      }
+      const marks = pendingMarks(entry.itemId) ?? {}
+      // Opened means the agent knows it; the comment itself is the record.
+      if (marks.readAt) return false
+      if (!marks.deliveredAt || maybeOnTopic(entry, target)) return true
+      if (now - Date.parse(marks.deliveredAt) < OLDER_FOR_MS) older += 1
+      return false
+    })
     if (candidates.length === 0) return null
     const notices = await noticesFor(candidates, reader, target)
-    const now = Date.now()
     const fresh: PendingNotice[] = []
     const reminders: PendingNotice[] = []
-    let older = 0
     for (const notice of notices) {
       const marks = pendingMarks(notice.itemId) ?? {}
-      // Opened means the agent knows it; the comment itself is the record.
-      if (marks.readAt) continue
       if (notice.onTopic) {
         if (!marks.onTopicAt) fresh.push(notice)
         else reminders.push(notice)

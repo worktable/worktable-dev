@@ -4,6 +4,7 @@ import { dirname, join } from "node:path"
 import { z } from "zod"
 import { GROK_BOT_SHORTCUT_MESSAGE, isGrokBotShortcut } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
+import { GROK_BOT_ROUTINE, validateWebhookDestination } from "./agent-wake.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { readFileFingerprint } from "./file-fingerprint.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
@@ -349,27 +350,7 @@ export async function grokBotPolicy(
 /** Only the provider's routine endpoint can receive its bearer secret. No redirects. */
 export function validateGrokWebhook(value: string): string {
   if (isGrokBotShortcut(value)) throw new Error(GROK_BOT_SHORTCUT_MESSAGE)
-  let url: URL
-  try {
-    url = new URL(value)
-  } catch {
-    throw new Error("Enter the routine's webhook URL")
-  }
-  if (
-    url.protocol !== "https:" ||
-    url.hostname !== "api2.cursor.sh" ||
-    url.port ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash ||
-    !/^\/automations\/webhook\/[A-Za-z0-9_-]+$/.test(url.pathname)
-  ) {
-    throw new Error(
-      "Use the Grok Bot routine URL at https://api2.cursor.sh/automations/webhook/…"
-    )
-  }
-  return url.href
+  return validateWebhookDestination(GROK_BOT_ROUTINE, value)
 }
 
 onWorkspaceChange((event) => {

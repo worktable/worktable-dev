@@ -8,8 +8,13 @@ import {
   readGrokBots,
   reserveGrokBotWake,
   updateGrokBot,
-  validateGrokWebhook,
 } from "./grok-bot-store.ts"
+import {
+  GROK_BOT_ROUTINE,
+  ringOutcome,
+  ringWebhook,
+  WAKE_RETRIES,
+} from "./agent-wake.ts"
 import { notifyWorkspaceChange, onWorkspaceChange } from "./workspace-events.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 import { reconcileParticipantDeliveries } from "./thread-service.ts"
@@ -24,7 +29,6 @@ import { hasScope } from "./token-store.ts"
 import { sendGrokEmailWake } from "./grok-bot-email.ts"
 import { scanAllThreadDigests } from "./thread-store.ts"
 
-const RETRIES = [15_000, 30_000, 60_000, 120_000, 300_000, 600_000]
 const isActive = (state: string) =>
   !["queued", "failed", "replied"].includes(state)
 
@@ -135,7 +139,7 @@ export function startGrokBotRuntime(
         schedule(wake.nextAt)
         continue
       }
-      if (wake.attempts >= RETRIES.length) {
+      if (wake.attempts >= WAKE_RETRIES.length) {
         await updateGrokBot(connection, {
           error:
             "Grok Bot has not claimed the queued work. Check the routine, its approvals, and the Worktable sign-in, then retry the wake.",
@@ -145,7 +149,7 @@ export function startGrokBotRuntime(
       }
       // Persist BEFORE sending: a crash or ambiguous network result retries this wake,
       // never an execution. The inbox claim is the deduplication boundary.
-      const next = await reserveGrokBotWake(connection, RETRIES)
+      const next = await reserveGrokBotWake(connection, WAKE_RETRIES)
       if (!live()) return
       if (!next) {
         // Another server may have reserved the wake. Keep a recovery timer in
@@ -164,40 +168,25 @@ export function startGrokBotRuntime(
           abort.signal,
           AbortSignal.timeout(10_000),
         ])
-        const response =
+        const context = { fetch: options.fetch ?? fetch, signal }
+        const outcome =
           connection.wakeMethod === "email"
-            ? await sendGrokEmailWake(connection, next, {
-                fetch: options.fetch ?? fetch,
-                signal,
-              })
-            : await (options.fetch ?? fetch)(
-                validateGrokWebhook(connection.webhookUrl),
-                {
-                  method: "POST",
-                  redirect: "error",
-                  headers: {
-                    "content-type": "application/json",
-                    authorization: `Bearer ${connection.webhookKey}`,
-                  },
-                  body: JSON.stringify({
-                    version: 1,
-                    event: "worktable.inbox.ready",
-                    wakeId: next.id,
-                  }),
-                  signal,
-                }
+            ? await ringOutcome(
+                await sendGrokEmailWake(connection, next, context)
               )
-        await response.body?.cancel()
+            : await ringWebhook(
+                GROK_BOT_ROUTINE,
+                { url: connection.webhookUrl, secret: connection.webhookKey },
+                next,
+                context
+              )
         if (!live()) return
-        if (
-          [400, 401, 403, 404, 410].includes(response.status) ||
-          (response.status >= 300 && response.status < 400)
-        ) {
+        if (outcome.kind === "rejected") {
           await updateGrokBot(connection, {
             error:
               connection.wakeMethod === "email"
-                ? `Email notification failed (HTTP ${response.status}). Check the Bot address and Worktable connection.`
-                : `Grok Bot rejected the wake (HTTP ${response.status}). Check the routine URL and key.`,
+                ? `Email notification failed (HTTP ${outcome.status}). Check the Bot address and Worktable connection.`
+                : `Grok Bot rejected the wake (HTTP ${outcome.status}). Check the routine URL and key.`,
           })
           notifyWorkspaceChange({ type: "participants" })
         }
@@ -232,7 +221,7 @@ export function startGrokBotRuntime(
           "[Worktable] Grok Bot connection state could not be processed"
         )
         if (live()) {
-          timer = setTimeout(nudge, RETRIES[0])
+          timer = setTimeout(nudge, WAKE_RETRIES[0])
           timer.unref?.()
         }
       })

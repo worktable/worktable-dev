@@ -1,4 +1,4 @@
-import { useCallback, useId, useState } from "react"
+import { Suspense, lazy, useCallback, useId, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { MoreVertical } from "lucide-react"
 import type {
@@ -36,8 +36,14 @@ import {
 } from "@/lib/visitor-comments-api"
 import { updateShareLink } from "@/lib/share-link-management-api"
 import type { AnnotationPanelProps } from "./annotation-panel"
-import { CommentRecipientSelect } from "./comment-recipient"
 import { NO_RECIPIENT, useCommentRecipients } from "@/lib/comment-recipients"
+
+// Only loads where comments can be sent to someone (Preview agent tools).
+const CommentRecipientSelect = lazy(() =>
+  import("./comment-recipient").then((module) => ({
+    default: module.CommentRecipientSelect,
+  }))
+)
 
 type Context = NonNullable<AnnotationPanelProps["visitorComments"]>
 
@@ -510,11 +516,13 @@ function PassForm({
         )}
         {recipients && (
           <div className="-my-1 flex">
-            <CommentRecipientSelect
-              recipients={recipients}
-              value={recipient}
-              onChange={setRecipient}
-            />
+            <Suspense fallback={null}>
+              <CommentRecipientSelect
+                recipients={recipients}
+                value={recipient}
+                onChange={setRecipient}
+              />
+            </Suspense>
           </div>
         )}
         <div className="flex justify-end gap-2">

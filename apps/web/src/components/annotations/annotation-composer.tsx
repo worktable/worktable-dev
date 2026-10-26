@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityActor } from "@worktable/types";
 import { Button } from "@worktable/ui/components/button";
 import { Popover, PopoverContent, PopoverTitle } from "@worktable/ui/components/popover";
@@ -12,10 +12,16 @@ import {
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog";
 import { Textarea } from "@worktable/ui/components/textarea";
-import { CommentRecipientSelect } from "./comment-recipient";
 import { NO_RECIPIENT, useCommentRecipients } from "@/lib/comment-recipients";
 import { setHighlight } from "./passage-text";
 import { useIsMobile } from "@/hooks/use-mobile";
+
+// Only loads where comments can be sent to someone (Preview agent tools).
+const CommentRecipientSelect = lazy(() =>
+  import("./comment-recipient").then((module) => ({
+    default: module.CommentRecipientSelect,
+  }))
+);
 
 export interface AnnotationDraft {
   blockId: string;
@@ -112,7 +118,9 @@ export function AnnotationComposer({
   };
   const action = "Add Comment";
   const recipientSelect = recipients && (
-    <CommentRecipientSelect recipients={recipients} value={recipient} onChange={setPicked} />
+    <Suspense fallback={null}>
+      <CommentRecipientSelect recipients={recipients} value={recipient} onChange={setPicked} />
+    </Suspense>
   );
   const note = (
     <Textarea

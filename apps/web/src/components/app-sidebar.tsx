@@ -814,15 +814,6 @@ const SpaceContent = memo(function SpaceContent({
       <SpaceOverviewLink spaceId={spaceId} onNavigate={onNavigate} />
       {revealed && (
         <>
-          <PinnedSidebarSection
-            spaceId={spaceId}
-            documents={documents ?? NO_DOCUMENTS}
-            docs={docs ?? NO_DOCS}
-            onNavigate={onNavigate}
-            onRefresh={handleRefresh}
-            onWidgetRefresh={refreshWidgets}
-            canEdit={space.permissions?.edit !== false}
-          />
           <SpaceTreeSection
             space={space}
             documents={documents ?? NO_DOCUMENTS}
@@ -867,76 +858,6 @@ function SpaceOverviewLink({
       />
       <span className="min-w-0 truncate">Space Home</span>
     </Link>
-  )
-}
-
-/** A Space's pinned docs, above its tree, with a label separating the two. */
-function PinnedSidebarSection({
-  spaceId,
-  documents,
-  docs,
-  onNavigate,
-  onRefresh,
-  onWidgetRefresh,
-  canEdit,
-}: {
-  spaceId: string
-  documents: DocumentListItem[]
-  docs: DocListEntry[]
-  onNavigate: () => void
-  onRefresh: () => Promise<void>
-  onWidgetRefresh: (widgetId?: string) => Promise<void>
-  canEdit: boolean
-}) {
-  const { data } = useSpace(spaceId)
-  const pins = (data?.pins ?? []).filter((pin) => pin.status === "active")
-  if (pins.length === 0) return null
-  const index = spaceDocumentIndex({ documents, docs })
-  return (
-    <div className="mb-2">
-      <p className="px-3 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">
-        Pinned
-      </p>
-      <nav aria-label="Pinned" className="space-y-0.5">
-        {pins.map((pin) => (
-          <TreeItem
-            key={pin.path}
-            spaceId={spaceId}
-            node={{
-              kind: "document",
-              path: pin.path,
-              name: pin.path.split("/").at(-1) ?? pin.path,
-              label: pin.title ?? pin.path,
-              format: pin.format,
-              health: documents.find(
-                (item) => item.kind === "document" && item.path === pin.path
-              )?.health,
-              // Pins open the document itself, without unfolding its children.
-              isFolder: false,
-              children: [],
-            }}
-            index={index}
-            onNavigate={onNavigate}
-            onRefresh={onRefresh}
-            onWidgetRefresh={onWidgetRefresh}
-            folderArchived={false}
-            canEdit={canEdit}
-            rowActions={
-              <DeferredMount active>
-                <UnpinDocumentButton
-                  spaceId={spaceId}
-                  path={pin.path}
-                  title={pin.title ?? pin.path}
-                />
-              </DeferredMount>
-            }
-          />
-        ))}
-      </nav>
-      <p className="mt-2 px-3 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">
-        Docs
-      </p>
-    </div>
   )
 }
 
@@ -1762,17 +1683,57 @@ function SpaceTreeSection({
     canEdit: space.permissions?.edit !== false,
   }
   const { data: detail } = useSpace(spaceId)
+  const pins = (detail?.pins ?? []).filter((pin) => pin.status === "active")
   const currentPath = useRouterState({
     select: (state) => routeDocumentPath(state.location.pathname, spaceId),
   })
   const revealCurrent =
     !currentPath ||
-    !(detail?.pins ?? []).some(
-      (pin) => pin.status === "active" && pin.path === currentPath
-    )
+    !pins.some((pin) => pin.path === currentPath)
 
   return (
     <RevealCurrent.Provider value={revealCurrent}>
+      {pins.length > 0 && (
+        <div className="mb-2">
+          <p className="px-3 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">
+            Pinned
+          </p>
+          <nav aria-label="Pinned" className="space-y-0.5">
+            {pins.map((pin) => (
+              <TreeItem
+                key={pin.path}
+                {...rowProps}
+                node={{
+                  kind: "document",
+                  path: pin.path,
+                  name: pin.path.split("/").at(-1) ?? pin.path,
+                  label: pin.title ?? pin.path,
+                  format: pin.format,
+                  health: documents.find(
+                    (item) => item.kind === "document" && item.path === pin.path
+                  )?.health,
+                  // Pins open the document itself, without unfolding its children.
+                  isFolder: false,
+                  children: [],
+                }}
+                folderArchived={false}
+                rowActions={
+                  <DeferredMount active>
+                    <UnpinDocumentButton
+                      spaceId={spaceId}
+                      path={pin.path}
+                      title={pin.title ?? pin.path}
+                    />
+                  </DeferredMount>
+                }
+              />
+            ))}
+          </nav>
+          <p className="mt-2 px-3 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">
+            Docs
+          </p>
+        </div>
+      )}
       {loadFailed ? (
         <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
           <p className="text-sidebar-foreground/40">

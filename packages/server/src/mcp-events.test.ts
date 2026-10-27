@@ -25,7 +25,13 @@ import {
 import { resolveParticipant } from "./participant-store.ts"
 import { pendingList, pendingMarks } from "./pending-list.ts"
 import { writeDoc, writeSpace } from "./store.ts"
-import type { RequestPrincipal } from "./token-store.ts"
+import {
+  createToken,
+  revokeToken,
+  setTokenScopes,
+  verifyToken,
+  type RequestPrincipal,
+} from "./token-store.ts"
 import {
   ensureWorkspaceManifest,
   setWorkspaceRootOverride,
@@ -198,8 +204,9 @@ describe("MCP Events", () => {
     const sent: Sent[] = []
     const first = await subscribe(caller, params(), callback(sent))
     expect(first.id).toMatch(/^sub_/)
+    // Worktable can't check this sign-in itself, so it must renew hourly.
     expect(Date.parse(first.refreshBefore)).toBeLessThanOrEqual(
-      Date.now() + 24 * 60 * 60_000
+      Date.now() + 60 * 60_000
     )
     expect(sent).toHaveLength(1)
     expect(sent[0]!.body.type).toBe("verification")
@@ -359,5 +366,37 @@ describe("MCP Events", () => {
     // gets 410: the second must not be sent after it.
     await pastRetryDelay(() => start(transport))
     expect(events(sent)).toHaveLength(3)
+  })
+
+  it("follows a local token: narrowed scopes and revocation apply to the next event", async () => {
+    const { token, metadata } = await createToken({
+      scopes: ["*"],
+      agent: "chatgpt",
+    })
+    const identity = (await verifyToken(token))!
+    const local: EventsCaller = { identity, origin: caller.origin }
+    participantId = (await resolveParticipant(identity)).participant.id
+    const sent: Sent[] = []
+    const transport = callback(sent)
+    const subscribed = await subscribe(local, params(), transport)
+    // Checked before every event, so it may last a day.
+    expect(Date.parse(subscribed.refreshBefore)).toBeGreaterThan(
+      Date.now() + 60 * 60_000
+    )
+    await start(transport)
+    await after(() => comment("pricing", "Seen with full access."))
+    expect(events(sent)).toHaveLength(1)
+
+    await setTokenScopes(metadata.id, ["threads:read"])
+    await after(() => comment("pricing", "Not readable with threads only."))
+    expect(events(sent)).toHaveLength(1)
+
+    await revokeToken(metadata.id)
+    await after(() => comment("pricing", "After the token was revoked."))
+    expect(events(sent)).toHaveLength(1)
+    // The subscription ended: subscribing again checks the callback anew.
+    const checks = sent.length
+    await subscribe(local, params(), transport)
+    expect(sent.length).toBe(checks + 1)
   })
 })

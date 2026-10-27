@@ -41,16 +41,56 @@ import {
   type NoticeTarget,
   type PendingNotice,
 } from "./pending-notices.ts"
+import { currentTeamWorktable } from "./team-database.ts"
 import { runWithTeamIdentity } from "./team-policy.ts"
-import type { RequestPrincipal, TokenIdentity } from "./token-store.ts"
+import {
+  listTokens,
+  type RequestPrincipal,
+  type TokenIdentity,
+} from "./token-store.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 
 /** The one event: an item was sent to the subscriber. */
 export const ITEM_SENT_EVENT = "item.sent_to_you"
 
-/** The longest a subscription lives before its client must renew it. */
+/**
+ * The longest a subscription lives before its client must renew it. Renewing
+ * goes through the client's live sign-in, so a revoked sign-in stops delivery
+ * by then. Where Worktable checks the credential itself before every event
+ * (a local token, or a team agent's binding), a day; otherwise, as for a Link
+ * app whose grant Cloud holds, an hour.
+ */
 const MAX_TTL_MS = 24 * 60 * 60_000
+const UNCHECKED_TTL_MS = 60 * 60_000
+
+const LOCAL_TOKEN = "local-token:"
+
+/** Whether Worktable can check this subscriber's credential at send time. */
+function checkedAtSend(reader: Pick<Reader, "principal" | "team">): boolean {
+  return (
+    reader.principal.id.startsWith(LOCAL_TOKEN) ||
+    (reader.team !== undefined && currentTeamWorktable() !== null)
+  )
+}
+
+/**
+ * The subscriber's authority now, or null once its credential is gone. A
+ * local token is read again, so revoking or narrowing it applies to the next
+ * event; a team agent's binding is checked inside the access check.
+ */
+async function currentAuthority(reader: Reader): Promise<Reader | null> {
+  if (!reader.principal.id.startsWith(LOCAL_TOKEN)) return reader
+  const id = reader.principal.id.slice(LOCAL_TOKEN.length)
+  const token = (await listTokens()).find((candidate) => candidate.id === id)
+  if (
+    !token ||
+    token.revokedAt ||
+    (reader.workspace !== undefined && token.workspace !== reader.workspace)
+  )
+    return null
+  return { ...reader, scopes: token.scopes }
+}
 /** How long a renewed secret's predecessor still signs, for in-flight checks. */
 const ROTATION_MS = 60 * 60_000
 const MAX_BODY_BYTES = 262_144
@@ -564,7 +604,13 @@ export async function subscribe(
   if (!existing || existing.secret !== secret)
     await verifyCallback(url, secret, id, transport)
   const { participant } = await resolveParticipant(caller.identity)
-  const refreshBefore = Date.now() + Math.min(ttlMs ?? MAX_TTL_MS, MAX_TTL_MS)
+  const maxTtl = checkedAtSend({
+    principal: caller.identity.principal,
+    team: caller.identity.team,
+  })
+    ? MAX_TTL_MS
+    : UNCHECKED_TTL_MS
+  const refreshBefore = Date.now() + Math.min(ttlMs ?? maxTtl, maxTtl)
   await mutate((file) => {
     const previous = file.subscriptions.find((s) => s.id === id)
     file.subscriptions = file.subscriptions.filter((s) => s.id !== id)
@@ -695,6 +741,7 @@ async function eventBody(
     : { body, itemId: notice.itemId }
 }
 
+/** `gone` ends the subscription: its receiver or its credential is gone. */
 type Outcome = "delivered" | "drop" | "gone" | "retry"
 
 async function deliver(
@@ -703,7 +750,9 @@ async function deliver(
   transport: EventsTransport,
   signal: AbortSignal
 ): Promise<Outcome> {
-  const event = await eventBody(subscription, entry)
+  const reader = await currentAuthority(subscription.reader)
+  if (!reader) return "gone"
+  const event = await eventBody({ ...subscription, reader }, entry)
   if (!event) return "drop"
   const secrets = [
     subscription.secret,

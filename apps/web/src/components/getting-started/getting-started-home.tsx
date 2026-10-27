@@ -152,17 +152,10 @@ const INSTRUCTION_PLACES: { agent: string; file?: string; place?: string }[] = [
 function InstructionsBody({ onCopied }: { onCopied: () => void }) {
   return (
     <>
-      <p className="mb-2 text-sm text-foreground/80">
-        Copy this into your agent's global rules, so it uses Worktable in
-        every chat and project:
-      </p>
       <ul>
         <Prompt text={AGENT_INSTRUCTIONS} onCopied={onCopied} />
       </ul>
-      <p className="mt-4 mb-2 text-sm text-foreground/80">
-        Where to find your agent's global rules:
-      </p>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
+      <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
         {INSTRUCTION_PLACES.map(({ agent, file, place }) => (
           <div key={agent} className="contents">
             <dt className="text-muted-foreground">{agent}</dt>

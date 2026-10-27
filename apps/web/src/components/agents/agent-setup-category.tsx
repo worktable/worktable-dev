@@ -23,43 +23,14 @@ export const AGENT_SETUP_CATEGORIES = {
   },
   always: {
     title: "Always-on agents",
-    description: "Assign work and get replies in Threads",
+    description:
+      "Always running. Worktable calls them, and they reply in Threads",
     platforms: ["openclaw", "hermes", "grok-bot"],
   },
 } satisfies Record<
   string,
   { title: string; description: string; platforms: AgentPlatformId[] }
 >
-
-/** How an agent comes to work, named the same wherever it's shown. */
-export const AGENT_RUNTIMES = {
-  "on-demand": {
-    label: "On demand",
-    description:
-      "You start it. When you open a chat or session, your agent calls Worktable for what it needs.",
-  },
-  "always-on": {
-    label: "Always on",
-    description:
-      "Worktable calls it. It keeps running, so it can answer a message in Threads without you starting it.",
-  },
-} as const
-
-/** The two ways agents work, under the ways to connect them. */
-export function AgentRuntimeTips() {
-  return (
-    <dl className="mt-4 space-y-1.5 text-xs leading-5 text-muted-foreground">
-      {Object.values(AGENT_RUNTIMES).map((runtime) => (
-        <div key={runtime.label}>
-          <dt className="inline font-medium text-foreground/80">
-            {runtime.label}.
-          </dt>{" "}
-          <dd className="inline">{runtime.description}</dd>
-        </div>
-      ))}
-    </dl>
-  )
-}
 
 export function AgentSetupCategory({
   title,

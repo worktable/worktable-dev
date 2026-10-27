@@ -473,6 +473,47 @@ async function post(
   })
 }
 
+/** The most a callback's answer to its challenge may be, decompressed. */
+const CHALLENGE_BYTES = 4096
+
+/**
+ * A response body up to `limit` bytes as decompressed, or null when it is
+ * larger. Stops reading at the limit, so an oversized or compressed answer
+ * can't exhaust memory.
+ */
+async function boundedText(
+  response: Response,
+  limit: number
+): Promise<string | null> {
+  if (Number(response.headers.get("content-length") ?? 0) > limit) {
+    await response.body?.cancel()
+    return null
+  }
+  const reader = response.body?.getReader()
+  if (!reader) return ""
+  const chunks: Uint8Array[] = []
+  let size = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > limit) {
+      await reader.cancel()
+      return null
+    }
+    chunks.push(value)
+  }
+  return Buffer.concat(chunks).toString("utf8")
+}
+
+function parseChallenge(text: string | null): { challenge?: unknown } | null {
+  try {
+    return text === null ? null : (JSON.parse(text) as { challenge?: unknown })
+  } catch {
+    return null
+  }
+}
+
 /** The callback answers a fresh challenge, or subscribing fails. */
 async function verifyCallback(
   url: string,
@@ -497,9 +538,7 @@ async function verifyCallback(
       reason: "unreachable",
     })
   }
-  const answer = (await response.json().catch(() => null)) as {
-    challenge?: unknown
-  } | null
+  const answer = parseChallenge(await boundedText(response, CHALLENGE_BYTES))
   const expected = Buffer.from(challenge)
   const received = Buffer.from(String(answer?.challenge ?? ""))
   if (

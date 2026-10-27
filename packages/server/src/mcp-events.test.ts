@@ -74,10 +74,13 @@ function callback(
     status = () => 200,
     addresses = ["93.184.216.34"],
     challenge = (value: string) => value,
+    padding = 0,
   }: {
     status?: () => number
     addresses?: string[]
     challenge?: (value: string) => string
+    /** Extra bytes in the answer to the challenge. */
+    padding?: number
   } = {}
 ): EventsTransport {
   return {
@@ -93,7 +96,10 @@ function callback(
         raw,
       })
       if (body.type === "verification")
-        return Response.json({ challenge: challenge(String(body.challenge)) })
+        return Response.json({
+          challenge: challenge(String(body.challenge)),
+          ...(padding ? { padding: "x".repeat(padding) } : {}),
+        })
       return new Response(null, { status: status() })
     },
   }
@@ -239,6 +245,10 @@ describe("MCP Events", () => {
         subscribe(caller, other, callback([], { addresses: ["10.1.2.3"] }))
       )
     ).toEqual({ code: -32015, reason: "blocked_address" })
+    // A right answer in an oversized body is refused, not read whole.
+    expect(
+      await refusal(subscribe(caller, other, callback([], { padding: 8192 })))
+    ).toEqual({ code: -32015, reason: "invalid_challenge" })
     expect(
       await refusal(
         subscribe(

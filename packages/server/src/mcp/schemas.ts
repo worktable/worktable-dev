@@ -794,9 +794,46 @@ function actionSchema<const Action extends string, Shape extends z.ZodRawShape>(
   return z.strictObject({ action: z.literal(action), ...shape })
 }
 
+/** Preview: what waits on the caller, from the pending list. */
+export const PendingInput = z.object({
+  scope: z
+    .object({
+      spaceId: z.string().min(1).optional(),
+      docPath: z.string().min(1).optional(),
+      threadId: z.string().min(1).optional(),
+    })
+    .optional()
+    .describe("Only items in this Space, Doc (with spaceId) or thread"),
+  since: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe("Only items after this revision, from an earlier pending result"),
+  undelivered: z
+    .boolean()
+    .optional()
+    .describe("Only items not yet shown to you"),
+  mode: z
+    .enum(["count", "notices"])
+    .optional()
+    .describe(
+      "count (default) returns how many and changes nothing; notices returns the items and marks them shown"
+    ),
+})
+
 export const DiscoverInput = z.strictObject({
   request: z.discriminatedUnion("action", [
     actionSchema("state", GetStateInput.shape),
+    actionSchema("search", SearchInput.shape),
+    actionSchema("space_index", SpaceIndexInput.shape),
+  ]),
+})
+
+export const DiscoverInputPreview = z.strictObject({
+  request: z.discriminatedUnion("action", [
+    actionSchema("state", GetStateInput.shape),
+    actionSchema("pending", PendingInput.shape),
     actionSchema("search", SearchInput.shape),
     actionSchema("space_index", SpaceIndexInput.shape),
   ]),

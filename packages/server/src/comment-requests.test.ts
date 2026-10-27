@@ -19,7 +19,9 @@ import {
   type PendingChange,
 } from "./pending-list.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
+import { markOpened, readPending } from "./pending-read.ts"
 import { annotationsRouter } from "./routes/annotations.ts"
+import { createAnnotation } from "./annotation-store.ts"
 import { writeDoc, writeSpace } from "./store.ts"
 import type { TokenIdentity } from "./token-store.ts"
 import {
@@ -52,6 +54,13 @@ app.use("*", async (c, next) => {
   await next()
 })
 app.route("/api/spaces/:spaceId/annotations", annotationsRouter)
+
+async function list() {
+  const response = await app.fetch(
+    new Request("http://localhost/api/spaces/pricing/annotations?docPath=explorer")
+  )
+  return ((await response.json()) as { annotations: Annotation[] }).annotations
+}
 
 async function post(path: string, body: unknown) {
   const response = await app.fetch(
@@ -317,6 +326,89 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
         },
       ])
       expect(items[0]).not.toHaveProperty("agent")
+    })
+
+    it("lets the agent count, read and open what waits on it, and tells the commenter how far it got", async () => {
+      await pendingList()
+      const sent = await post("", {
+        target: { type: "doc", docPath: "explorer" },
+        category: "comment",
+        body: "Feels high for three people.",
+        to: ["Finn"],
+      })
+      const id = sent.json.annotation.id
+
+      // Counting changes nothing.
+      expect(await readPending(finn)).toEqual({ revision: 1, count: 1 })
+      expect((await list())[0]?.requests?.[0]?.deliveredAt).toBeUndefined()
+
+      const read = await readPending(finn, { mode: "notices", scope: { spaceId: "pricing", docPath: "explorer" } })
+      expect(read.items).toMatchObject([
+        {
+          kind: "comment",
+          annotationId: id,
+          docPath: "explorer",
+          excerpt: "Feels high for three people.",
+          onTopic: true,
+          open: { tool: "worktable_annotations_read", request: { action: "read", annotationId: id } },
+        },
+      ])
+      const delivered = (await list())[0]?.requests?.[0]
+      expect(delivered?.deliveredAt).toBeString()
+      expect(delivered?.readAt).toBeUndefined()
+
+      await markOpened(finn, { kind: "comment", annotationId: id })
+      expect((await list())[0]?.requests?.[0]?.readAt).toBeString()
+
+      // Only newer items after a revision; an unknown revision reads as
+      // everything not yet shown.
+      await post("", {
+        target: { type: "doc", docPath: "explorer" },
+        category: "comment",
+        body: "And the Business tier?",
+        to: ["Finn"],
+      })
+      const newer = await readPending(finn, { mode: "notices", since: read.revision })
+      expect(newer.items?.map((item) => item.excerpt)).toEqual(["And the Business tier?"])
+      expect(await readPending(finn, { since: 999 })).toMatchObject({ count: 0 })
+    })
+
+    it("reads every waiting comment in pages, following the revision it returns", async () => {
+      await pendingList()
+      const finnId = (await resolveParticipant(finn)).participant.id
+      for (let index = 1; index <= 22; index++) {
+        await createAnnotation("pricing", {
+          target: { type: "doc", docPath: "explorer" },
+          category: "comment",
+          body: `Point ${index}`,
+          author: { type: "user", id: "user", name: "Karo" },
+          to: [{ id: finnId, kind: "agent", name: "Finn" }],
+        })
+      }
+      const first = await readPending(finn, { mode: "notices" })
+      expect(first.items).toHaveLength(20)
+      expect(first.more).toBe(2)
+      const rest = await readPending(finn, { mode: "notices", since: first.revision })
+      expect(rest.more).toBeUndefined()
+      expect([...first.items!, ...rest.items!].map((item) => item.excerpt)).toEqual(
+        Array.from({ length: 22 }, (_, index) => `Point ${index + 1}`)
+      )
+    })
+
+    it("finds a comment by its Doc's full path, however long", async () => {
+      await pendingList()
+      const finnId = (await resolveParticipant(finn)).participant.id
+      const docPath = `plans/${"quarterly-pricing-review-".repeat(8)}final`
+      await writeDoc("pricing", docPath, "# Plan\n\nShip it.\n")
+      await createAnnotation("pricing", {
+        target: { type: "doc", docPath },
+        category: "comment",
+        body: "Which quarter?",
+        author: { type: "user", id: "user", name: "Karo" },
+        to: [{ id: finnId, kind: "agent", name: "Finn" }],
+      })
+      const read = await readPending(finn, { mode: "notices", scope: { spaceId: "pricing", docPath } })
+      expect(read.items?.map((item) => item.docPath)).toEqual([docPath])
     })
   })
 }

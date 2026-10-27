@@ -636,6 +636,39 @@ export function pendingMarks(
     : null
 }
 
+/**
+ * Mark items as shown to their recipient's model. Returns the items this
+ * newly marked; items already marked keep their first time.
+ */
+export function markPendingDelivered(itemIds: readonly string[]): PendingEntry[] {
+  return mark(itemIds, "deliveredAt")
+}
+
+/** Mark items as opened by their recipient; opening also delivers. */
+export function markPendingRead(itemIds: readonly string[]): PendingEntry[] {
+  mark(itemIds, "deliveredAt")
+  return mark(itemIds, "readAt")
+}
+
+function mark(
+  itemIds: readonly string[],
+  field: "deliveredAt" | "readAt"
+): PendingEntry[] {
+  const current = state
+  if (!current) return []
+  const at = new Date().toISOString()
+  const marked: PendingEntry[] = []
+  for (const itemId of itemIds) {
+    const marks = current.marks.items[itemId]
+    const entry = current.entries.get(itemId)
+    if (!marks || !entry || marks[field]) continue
+    marks[field] = at
+    marked.push(entry)
+  }
+  if (marked.length > 0) scheduleSave(current)
+  return marked
+}
+
 /** Write the revisions and marks now, as at shutdown. */
 export async function savePendingList(): Promise<void> {
   const current = state

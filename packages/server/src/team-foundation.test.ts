@@ -105,6 +105,7 @@ import {
 import { createDocumentAnnotationForPath } from "./document-annotation-service.ts"
 import { replyAnnotation } from "./annotation-store.ts"
 import { listPending } from "./pending.ts"
+import { createAnnotation } from "./annotation-store.ts"
 import type { TokenIdentity } from "./token-store.ts"
 import {
   claimNextThreadDelivery,
@@ -1047,6 +1048,49 @@ describe("team foundation", () => {
     }
   })
 
+
+  test("a team agent reads the comments sent to it through its own credential", async () => {
+    const { owner } = await setup()
+    const agent = createTeamAgent(
+      { name: "Finn", platform: "claude-code", ownership: "personal" },
+      owner
+    )
+    bindTeamAgentCredential(agent.id, "local-token:finn", owner)
+    const finn = resolveTeamAgentCredential({
+      ...owner,
+      team: undefined,
+      agent: "claude-code",
+      principal: { id: "local-token:finn", type: "agent", displayName: "Finn" },
+    })!
+    const { resolveParticipant } = await import("./participant-store.ts")
+    const { pendingList } = await import("./pending-list.ts")
+    const { participant } = await resolveParticipant(finn)
+    await writeDoc("original", "brief", "# Brief\n\nShip in May.\n")
+    await pendingList()
+    await runWithTeamIdentity(owner, () =>
+      createAnnotation("original", {
+        target: { type: "doc", docPath: "brief" },
+        category: "comment",
+        body: "Can we ship in April?",
+        author: { type: "user", id: owner.principal.id },
+        to: [{ id: participant.id, kind: "agent", name: "Finn" }],
+      })
+    )
+    // MCP hands the dispatcher only part of the identity; the read must
+    // still see the team binding the request was authenticated with.
+    const pending = await runWithTeamIdentity(finn, () =>
+      dispatchOperation(
+        "workspace.pending",
+        { mode: "count" },
+        {
+          identity: { agent: finn.agent, principal: finn.principal },
+          scopes: finn.scopes,
+          surface: "preview",
+        }
+      )
+    )
+    expect(pending).toMatchObject({ count: 1 })
+  })
 
   test("a member who can only read a Space comments and replies, and leaves resolving to editors", async () => {
     const { owner, member } = await setup()

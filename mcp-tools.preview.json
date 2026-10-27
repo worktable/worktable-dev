@@ -151,7 +151,7 @@
   {
     "name": "worktable_discover",
     "title": "Discover Worktable context",
-    "description": "Orient to the workspace or a Space, search scoped context, or inspect a Space index. A Space's state starts with its pinned docs: read those first.",
+    "description": "Orient to the workspace or a Space, search scoped context, inspect a Space index, or see what waits on you. A Space's state starts with its pinned docs: read those first. pending lists comments sent to you and thread messages assigned to you; the default count changes nothing, mode notices returns them. Reply on a comment with worktable_annotations_write reply; answer a thread message with worktable_threads_write post and responseTo. Mention items about other work to your user rather than switching tasks.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -171,6 +171,55 @@
                 "includeArchived": {
                   "description": "When true, include archived spaces and docs in the response.",
                   "type": "boolean"
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "pending"
+                },
+                "scope": {
+                  "description": "Only items in this Space, Doc (with spaceId) or thread",
+                  "type": "object",
+                  "properties": {
+                    "spaceId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "docPath": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "threadId": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "since": {
+                  "description": "Only items after this revision, from an earlier pending result",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "undelivered": {
+                  "description": "Only items not yet shown to you",
+                  "type": "boolean"
+                },
+                "mode": {
+                  "description": "count (default) returns how many and changes nothing; notices returns the items and marks them shown",
+                  "type": "string",
+                  "enum": [
+                    "count",
+                    "notices"
+                  ]
                 }
               },
               "required": [
@@ -606,11 +655,143 @@
             "groups"
           ],
           "additionalProperties": {}
+        },
+        "revision": {
+          "description": "Returned by action \"pending\": pass it as since to read on: past the items returned when more remain, else past everything.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "count": {
+          "description": "Returned by action \"pending\": how many items wait on you.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "items": {
+          "description": "Returned by action \"pending\" with mode notices.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "itemId": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "comment",
+                  "threadRequest"
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "at": {
+                "type": "string"
+              },
+              "spaceId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "spaceName": {
+                "type": "string"
+              },
+              "docPath": {
+                "type": "string"
+              },
+              "docTitle": {
+                "type": "string"
+              },
+              "annotationId": {
+                "type": "string"
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "threadTitle": {
+                "type": "string"
+              },
+              "messageId": {
+                "type": "string"
+              },
+              "from": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "additionalProperties": {}
+              },
+              "excerpt": {
+                "type": "string"
+              },
+              "quote": {
+                "type": "string"
+              },
+              "onTopic": {
+                "type": "boolean"
+              },
+              "open": {
+                "type": "object",
+                "properties": {
+                  "tool": {
+                    "type": "string"
+                  },
+                  "request": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "tool",
+                  "request"
+                ],
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "itemId",
+              "kind",
+              "revision",
+              "at",
+              "spaceId",
+              "from",
+              "excerpt",
+              "onTopic",
+              "open"
+            ],
+            "additionalProperties": {}
+          }
+        },
+        "more": {
+          "description": "Returned by action \"pending\": items left out of this page.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
-      "description": "Structured result from worktable_discover. Fields vary by request.action.",
       "definitions": {
         "SpaceSummary": {
           "type": "object",

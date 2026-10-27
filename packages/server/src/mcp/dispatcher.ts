@@ -1,5 +1,6 @@
 import { runAsActivityActor } from "../activity-log.ts"
 import { commentReplier, commentRecipients } from "../comment-recipients.ts"
+import { markOpened, readPending } from "../pending-read.ts"
 import { reservedAnnotationInput } from "../annotation-origin.ts"
 import { assertCurrentTeamIdentity, assertSpaceAccess, currentRequestIdentity } from "../team-policy.ts"
 import {
@@ -274,6 +275,7 @@ import {
   ReadAnnotationInput,
   CreateAnnotationInput,
   CreateAnnotationInputPreview,
+  PendingInput,
   ReplyAnnotationInput,
   ReplyAnnotationInputPreview,
   UpdateAnnotationInput,
@@ -964,19 +966,32 @@ async function _dispatchOperationInner(
       if (parsed.after !== undefined && parsed.before !== undefined) {
         throw new Error("Use after or before, not both")
       }
-      return await readThreadMessages(identity, parsed.threadId, {
+      const result = await readThreadMessages(identity, parsed.threadId, {
         location: threadLocationInput(parsed.location, parsed.spaceId),
         after: parsed.after,
         before: parsed.before,
       })
+      // Only the messages this page returned were read.
+      await markOpened(identity, {
+        kind: "thread",
+        threadId: parsed.threadId,
+        messageIds: result.messages.map((message) => message.id),
+      })
+      return result
     }
     case "threads.message": {
       const parsed = ReadThreadMessageInput.parse(args)
-      return await readThreadMessage(identity, {
+      const result = await readThreadMessage(identity, {
         threadId: parsed.threadId,
         messageId: parsed.messageId,
         location: threadLocationInput(parsed.location, parsed.spaceId),
       })
+      await markOpened(identity, {
+        kind: "thread",
+        threadId: parsed.threadId,
+        messageIds: [parsed.messageId],
+      })
+      return result
     }
     case "threads.wait": {
       const parsed = WaitThreadInput.parse(args)
@@ -2502,6 +2517,7 @@ async function _dispatchOperationInner(
       const context = parsed.includeTargetContext
         ? await getAnnotationContext(parsed.spaceId, parsed.annotationId)
         : undefined
+      await markOpened(identity, { kind: "comment", annotationId: annotation.id })
       return { annotation, context }
     }
     case "annotations.create": {
@@ -2621,12 +2637,15 @@ async function _dispatchOperationInner(
     }
     case "annotations.context": {
       const parsed = GetAnnotationContextInput.parse(args)
-      return {
-        context: await getAnnotationContext(
-          parsed.spaceId,
-          parsed.annotationId
-        ),
-      }
+      const context = await getAnnotationContext(
+        parsed.spaceId,
+        parsed.annotationId
+      )
+      await markOpened(identity, {
+        kind: "comment",
+        annotationId: parsed.annotationId,
+      })
+      return { context }
     }
     case "docs.read": {
       const spaceId = args["spaceId"] as string
@@ -3130,6 +3149,16 @@ async function _dispatchOperationInner(
         await listDocsDetailed(spaceId, { includeArchived })
       )
       return { docs }
+    }
+    case "workspace.pending": {
+      // The request's whole identity: Teams access needs its team binding.
+      // Only when it is this caller: a local connection's request runs as
+      // the owner while the tools act as its agent.
+      const full = currentRequestIdentity()
+      return await readPending(
+        full && full.principal.id === identity.principal.id ? full : identity,
+        PendingInput.parse(args)
+      )
     }
     case "workspace.space_index": {
       const parsed = SpaceIndexInput.parse(args)

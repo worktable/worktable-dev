@@ -140,11 +140,11 @@ const INSTRUCTION_PLACES: { agent: string; file?: string; place?: string }[] = [
   { agent: "Claude Code", file: "~/.claude/CLAUDE.md" },
   { agent: "Codex", file: "~/.codex/AGENTS.md" },
   { agent: "OpenCode", file: "~/.config/opencode/AGENTS.md" },
-  { agent: "Cursor", place: "Cursor Settings, then Rules, User Rules" },
-  { agent: "Claude", place: "Settings, then General, personal preferences" },
+  { agent: "Cursor", place: "Cursor Settings → Rules → User Rules" },
+  { agent: "Claude", place: "Settings → General → Personal preferences" },
   {
     agent: "ChatGPT",
-    place: "Settings, then Personalization, custom instructions",
+    place: "Settings → Personalization → Custom instructions",
   },
   { agent: "Other agents", place: "Their global rules or custom instructions" },
 ]

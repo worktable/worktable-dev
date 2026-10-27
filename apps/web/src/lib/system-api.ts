@@ -238,7 +238,6 @@ export interface ServerSettingsPatch {
   network?: Partial<ServerSettings["network"]>
   history?: Partial<ServerSettings["history"]>
   agents?: Partial<ServerSettings["agents"]>
-  files?: Partial<ServerSettings["files"]>
 }
 
 export async function getSystemVersion() {

@@ -712,6 +712,15 @@ async function inventoryClaims(
       })
       continue
     }
+    // Any file shows as a file unless the inventory registers it as
+    // something else, such as a Doc in a format this server can't read:
+    // that registration stands.
+    if (
+      claim.format.id === BUILTIN_DOCUMENT_FORMATS.file &&
+      inventoryEntry.format.id !== BUILTIN_DOCUMENT_FORMATS.file
+    ) {
+      continue
+    }
     consumed.add(inventoryEntry.documentId)
     const diagnostics = [...claim.diagnostics]
     if (

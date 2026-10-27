@@ -398,7 +398,7 @@ function StepRow({
         )}
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="px-4 pt-0.5 pb-5 sm:pl-[3.375rem]">{children}</div>
+        <div className="px-4 pt-3 pb-5 sm:pl-[3.375rem]">{children}</div>
       </CollapsibleContent>
     </Collapsible>
   )

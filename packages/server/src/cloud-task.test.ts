@@ -297,7 +297,11 @@ describe("Claude's cloud task", () => {
     await until(async () => Boolean((await task()).verifiedAt))
     expect((await listed()).autoReply).toEqual({ kind: "task", state: "on" })
 
-    // A burst gathers into one fire.
+    // A burst gathers into one fire. Turned away, it still owes that burst.
+    answers.push(
+      () =>
+        new Response(null, { status: 429, headers: { "retry-after": "60" } })
+    )
     await comment("Team at 49 feels high.")
     await comment("Try 39?")
     await comment("Or 45.")
@@ -305,17 +309,20 @@ describe("Claude's cloud task", () => {
     expect(calls).toHaveLength(1)
     await later(11_000)
     expect(calls).toHaveLength(2)
+    await until(async () => (await task()).attempts === 1)
+    await later(61_000)
+    expect(calls).toHaveLength(3)
 
     // Nothing more fires until that run checks in.
     await comment("One more while it runs.")
     await later(11_000)
-    expect(calls).toHaveLength(2)
+    expect(calls).toHaveLength(3)
 
     // It checks in having seen only a count: what came after its fire fires again.
     await readPending(claude)
     await until(async () => (await task()).nextAt !== undefined)
     await later(11_000)
-    expect(calls).toHaveLength(3)
+    expect(calls).toHaveLength(4)
 
     // A run that never checks in stops it until the owner looks.
     await later(15 * 60_000)
@@ -326,7 +333,7 @@ describe("Claude's cloud task", () => {
     })
     await comment("Still there?")
     await later(11_000)
-    expect(calls).toHaveLength(3)
+    expect(calls).toHaveLength(4)
   })
 
   it("never fires twice for one batch, waits when told to, and stops when refused", async () => {

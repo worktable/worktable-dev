@@ -139,7 +139,6 @@ export function startCloudTaskRuntime(
       }
       t.hourFires = (t.hourFires ?? 0) + 1
       t.firedAt = now
-      t.firedRevision = revision
       t.nextAt = undefined
       t.sessionUrl = undefined
       return { firedAt: now, attempts: t.attempts ?? 0 }
@@ -171,6 +170,9 @@ export function startCloudTaskRuntime(
     await updateCloudTask(participantId, generation, (t) => {
       if (t.firedAt !== firedAt) return
       if (outcome.kind === "sent") {
+        // Only an accepted fire moves the boundary: a refused one still owes
+        // the items it was for, and its retry looks for them again.
+        t.firedRevision = revision
         t.attempts = undefined
         if (outcome.session) t.sessionUrl = outcome.session
         return

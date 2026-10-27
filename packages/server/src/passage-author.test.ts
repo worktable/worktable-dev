@@ -81,6 +81,8 @@ describe("who wrote a passage", () => {
     expect(
       await passageAuthor("pricing", "explorer", { quote: "Not in the Doc" })
     ).toBeNull()
+    // A selection of a letter or two says too little to find a writer by.
+    expect(await passageAuthor("pricing", "explorer", { quote: "a" })).toBeNull()
   })
 
   it("credits a reworded passage to whoever reworded it, and tells no one who can't read Docs", async () => {

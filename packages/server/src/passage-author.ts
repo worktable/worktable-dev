@@ -78,6 +78,10 @@ function readingText(content: unknown): string | null {
 
 /** Characters of context that must still match on one side. */
 const CONTEXT_MATCH = 12
+/** Shorter selections say too little to find a writer by. */
+const MIN_QUOTE_LENGTH = 3
+/** Places looked at in one version; more and the writer is unknown. */
+const MAX_PLACES = 200
 
 function sharedEnd(a: string, b: string): number {
   let length = 0
@@ -102,25 +106,32 @@ function stillHere(text: string, selector: PassageSelector): boolean {
   const quote = normalizePassageText(selector.quote)
   const prefix = normalizePassageText(selector.prefix ?? "")
   const suffix = normalizePassageText(selector.suffix ?? "")
-  const places: number[] = []
+  const withoutContext =
+    selector.prefix === undefined && selector.suffix === undefined
+  // No context on a side means the selection reached the Doc's edge there.
+  const sideMatches = (atEdge: boolean, expected: string, shared: number) =>
+    expected ? shared >= Math.min(expected.length, CONTEXT_MATCH) : atEdge
+  // Bounded: stop at the answer, and give up past a few hundred places.
+  let found = 0
   for (let at = flat.indexOf(quote); at !== -1; at = flat.indexOf(quote, at + 1)) {
-    places.push(at)
+    found += 1
+    if (found > MAX_PLACES) return false
+    if (withoutContext) {
+      if (found > 1) return false
+      continue
+    }
+    const before = flat.slice(Math.max(0, at - prefix.length - 1), at).trimEnd()
+    const after = flat
+      .slice(at + quote.length, at + quote.length + suffix.length + 1)
+      .trimStart()
+    if (
+      sideMatches(at === 0, prefix, sharedEnd(before, prefix)) ||
+      sideMatches(at + quote.length === flat.length, suffix, sharedStart(after, suffix))
+    ) {
+      return true
+    }
   }
-  if (selector.prefix === undefined && selector.suffix === undefined) {
-    return places.length === 1
-  }
-  const sideMatches = (actual: string, expected: string, shared: number) =>
-    expected
-      ? shared >= Math.min(expected.length, CONTEXT_MATCH)
-      : actual === ""
-  return places.some((at) => {
-    const before = flat.slice(0, at).trimEnd()
-    const after = flat.slice(at + quote.length).trimStart()
-    return (
-      sideMatches(before, prefix, sharedEnd(before, prefix)) ||
-      sideMatches(after, suffix, sharedStart(after, suffix))
-    )
-  })
+  return withoutContext && found === 1
 }
 
 /** A Doc's versions newest first, and a reader for each, resolved once. */
@@ -164,7 +175,7 @@ export async function passageAuthor(
   docPath: string,
   selector: PassageSelector
 ): Promise<PassageAuthor | null> {
-  if (!selector.quote.trim()) return null
+  if (normalizePassageText(selector.quote).length < MIN_QUOTE_LENGTH) return null
   const history = await docHistory(spaceId, docPath)
   if (!history) return null
   const versions = history.versions

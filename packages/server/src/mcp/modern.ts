@@ -14,7 +14,11 @@ import type {
 import { z } from "zod"
 import { resolveParticipant } from "../participant-store.ts"
 import { currentRequestIdentity } from "../team-policy.ts"
-import { pendingRevision } from "../pending-list.ts"
+import {
+  pendingIfReady,
+  pendingRevision,
+  type PendingEntry,
+} from "../pending-list.ts"
 import { waitSince } from "../pending-wait.ts"
 import {
   createWorktableMcpServer,
@@ -263,25 +267,34 @@ function callerIdentity(exchange: ModernMcpExchange) {
     : partial
 }
 
-/** The caller's pending revision, without a read where the caller is known. */
-async function currentRevision(
+/**
+ * The caller's pending revision, and its open items when the list is ready,
+ * without a read where the caller is known.
+ */
+async function callerPending(
   exchange: ModernMcpExchange,
   ctx: ServerContext
-): Promise<number> {
+): Promise<{ revision: number; entries: PendingEntry[] | null }> {
   const identity = callerIdentity(exchange)
   if (identity) {
     const { participant } = await resolveParticipant(identity)
-    return pendingRevision(participant.id)
+    return {
+      revision: await pendingRevision(participant.id),
+      entries: pendingIfReady(participant.id),
+    }
   }
   const counted = await relay<CallToolResult>(
     exchange,
     pendingCall({ mode: "count" }),
     ctx
   )
-  return Number(
-    (counted.structuredContent as { revision?: unknown } | undefined)
-      ?.revision ?? 0
-  )
+  return {
+    revision: Number(
+      (counted.structuredContent as { revision?: unknown } | undefined)
+        ?.revision ?? 0
+    ),
+    entries: null,
+  }
 }
 
 async function pendingWaitTask(
@@ -298,16 +311,31 @@ async function pendingWaitTask(
     throw new ProtocolError(-32602, "Unknown task")
   }
   const now = new Date().toISOString()
-  // Nothing new since the wait started: answer without building a read.
-  const revision = await currentRevision(exchange, ctx)
+  // Nothing new in scope since the wait started: answer without building a
+  // read. Items elsewhere move the revision, so they are filtered here too,
+  // or every later poll would run a full read.
+  const { revision, entries } = await callerPending(exchange, ctx)
   if (revision === task.since) {
+    return { status: "working", ...taskStatus(task, taskId, now) }
+  }
+  const since = waitSince(task.since, revision)
+  const scope = task.scope ?? {}
+  if (
+    entries &&
+    !entries.some(
+      (entry) =>
+        entry.revision > since &&
+        (!scope.spaceId || entry.scope.spaceId === scope.spaceId) &&
+        (!scope.threadId || entry.scope.threadId === scope.threadId)
+    )
+  ) {
     return { status: "working", ...taskStatus(task, taskId, now) }
   }
   const read = await relay<CallToolResult>(
     exchange,
     pendingCall({
       mode: "notices",
-      since: waitSince(task.since, revision),
+      since,
       ...(task.scope ? { scope: task.scope } : {}),
     }),
     ctx

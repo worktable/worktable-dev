@@ -818,6 +818,8 @@ function MarkdownDocPage({
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(
     null
   )
+  // The selected comment belongs to the open panel: closing it lets go.
+  if (!annotationsOpen && activeAnnotationId !== null) setActiveAnnotationId(null)
   const [belowXl, setBelowXl] = useState(false)
   const annotationsQuery = useDocAnnotations(spaceId, docPath, true)
   const annotationMutations = useAnnotationMutations(spaceId, docPath)
@@ -847,6 +849,7 @@ function MarkdownDocPage({
     setVersionsOpen(true)
     setAnnotationsOpen(false)
   }, [])
+  const clearActiveAnnotation = useCallback(() => setActiveAnnotationId(null), [])
   const selectAnnotation = useCallback((annotation: Annotation) => {
     setActiveAnnotationId(annotation.id)
     setAnnotationsOpen(true)
@@ -871,6 +874,7 @@ function MarkdownDocPage({
     annotations,
     activeAnnotationId,
     onSelectAnnotation: selectAnnotation,
+    onDeselect: clearActiveAnnotation,
   })
   const focusAnnotation = (annotation: Annotation) => {
     selectAnnotation(annotation)
@@ -1064,7 +1068,7 @@ function MarkdownDocPage({
             repositionInputs={false}
           >
             <DrawerContent className="data-[vaul-drawer-direction=bottom]:max-h-[86dvh]">
-              <DrawerTitle className="sr-only">Annotations</DrawerTitle>
+              <DrawerTitle className="sr-only">Comments</DrawerTitle>
               <DrawerDescription className="sr-only">
                 Annotations for this doc.
               </DrawerDescription>
@@ -1316,6 +1320,8 @@ function BlockNoteDocPage({
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(
     null
   )
+  // The selected comment belongs to the open panel: closing it lets go.
+  if (!annotationsOpen && activeAnnotationId !== null) setActiveAnnotationId(null)
   const [composerDraft, setComposerDraft] = useState<AnnotationDraft | null>(
     null
   )
@@ -1486,6 +1492,7 @@ function BlockNoteDocPage({
     readOnly,
   ])
 
+  const clearActiveAnnotation = useCallback(() => setActiveAnnotationId(null), [])
   const selectAnnotation = useCallback((annotation: Annotation) => {
     setActiveAnnotationId(annotation.id)
     setAnnotationsOpen(true)
@@ -1508,6 +1515,7 @@ function BlockNoteDocPage({
     annotations: readOnly ? annotations : [],
     activeAnnotationId,
     onSelectAnnotation: selectAnnotation,
+    onDeselect: clearActiveAnnotation,
   })
   const focusAnnotation = (annotation: Annotation) => {
     selectAnnotation(annotation)
@@ -1781,7 +1789,7 @@ function BlockNoteDocPage({
             repositionInputs={false}
           >
             <DrawerContent className="data-[vaul-drawer-direction=bottom]:max-h-[86dvh]">
-              <DrawerTitle className="sr-only">Annotations</DrawerTitle>
+              <DrawerTitle className="sr-only">Comments</DrawerTitle>
               <DrawerDescription className="sr-only">
                 Annotations for this doc.
               </DrawerDescription>

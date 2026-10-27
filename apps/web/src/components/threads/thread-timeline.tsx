@@ -933,7 +933,7 @@ function ReplyContext({
         disabled={!onLoadTarget}
         className={
           own
-            ? "thread-quote mb-2 block w-full border-s-2 ps-2.5 text-left text-sm text-muted-foreground transition-colors enabled:hover:text-foreground"
+            ? "quoted mb-2 block w-full text-left text-sm transition-colors enabled:hover:text-foreground"
             : "mb-1.5 flex items-center gap-1.5 text-left text-sm text-muted-foreground/80 transition-colors enabled:hover:text-foreground"
         }
         onClick={() =>
@@ -988,8 +988,8 @@ function ReplyContextButton({
             aria-label={`Replying to ${authorName}: ${excerpt}`}
             className={
               own
-                ? "thread-quote mb-2 block w-full border-s-2 ps-2.5 text-left text-sm leading-5 text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-                : "thread-quote mb-2 block max-w-full border-s-2 ps-2.5 text-left text-sm leading-5 text-muted-foreground/80 transition-colors outline-none hover:text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                ? "quoted mb-2 block w-full text-left text-sm leading-5 transition-colors outline-none hover:text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                : "quoted mb-2 block max-w-full text-left text-sm leading-5 transition-colors outline-none hover:text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
             }
             onClick={() =>
               jumpToMessage(targetId, {
@@ -1000,7 +1000,7 @@ function ReplyContextButton({
           />
         }
       >
-        <span className="block truncate font-medium text-foreground/75">
+        <span className="block truncate font-medium text-foreground/75 not-italic">
           {authorName}
         </span>
         <span className="block truncate">{excerpt}</span>

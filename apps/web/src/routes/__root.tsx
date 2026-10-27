@@ -854,7 +854,7 @@ const PageHeaderActions = memo(function PageHeaderActions({
           variant={pageMeta.annotations.open ? "secondary" : "ghost"}
           size="sm"
           onClick={pageMeta.annotations.onToggle}
-          aria-label={`${pageMeta.annotations.count} open annotations`}
+          aria-label={`${pageMeta.annotations.count} open comments`}
           aria-pressed={pageMeta.annotations.open}
           className="h-8 shrink-0 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
         >

@@ -48,3 +48,10 @@
     display: none;
   }
 }
+
+/* The comment card chosen in the panel, in the bronze of its passage's highlight. */
+.comment-selected {
+  background-color: color-mix(in oklch, var(--accent-bronze) 7%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklch, var(--accent-bronze) 45%, transparent);
+}

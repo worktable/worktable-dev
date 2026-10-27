@@ -114,7 +114,7 @@ export function PageMenu() {
   if (annotations) {
     pageActions.push({
       id: "annotations",
-      label: "Annotations",
+      label: "Comments",
       detail: String(annotations.count),
       icon: MessageSquareText,
       onSelect: annotations.onToggle,

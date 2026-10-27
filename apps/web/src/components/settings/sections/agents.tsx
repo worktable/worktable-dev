@@ -1884,7 +1884,7 @@ const SCOPE_RESOURCES = [
   { key: "docs", label: "Documents" },
   { key: "widgets", label: "Widgets" },
   { key: "records", label: "Records" },
-  { key: "annotations", label: "Annotations" },
+  { key: "annotations", label: "Comments" },
   { key: "threads", label: "Threads" },
 ] as const
 

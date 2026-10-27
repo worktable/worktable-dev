@@ -36,6 +36,7 @@ import {
 } from "@/lib/visitor-comments-api"
 import { updateShareLink } from "@/lib/share-link-management-api"
 import type { AnnotationPanelProps } from "./annotation-panel"
+import { Quote } from "@/components/quote"
 import { NO_RECIPIENT, useCommentRecipients } from "@/lib/comment-recipients"
 
 // Only loads where comments can be sent to someone (Preview agent tools).
@@ -500,9 +501,7 @@ function PassForm({
               maxLength={VISITOR_COMMENT_MAX_LENGTH}
             />
           ) : (
-            <blockquote className="border-l-2 border-border pl-3 text-sm break-words whitespace-pre-wrap text-muted-foreground">
-              {quote}
-            </blockquote>
+            <Quote className="whitespace-pre-wrap">{quote}</Quote>
           )}
         </div>
         {comment.visitorName && (

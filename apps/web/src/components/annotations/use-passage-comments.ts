@@ -25,7 +25,7 @@ function sameIds(a: ReadonlySet<string>, b: ReadonlySet<string>) {
 /**
  * Marks the passages open comments are about in a read-only Doc, keeps the
  * marks in place as the content renders, and opens a comment when its
- * passage is clicked. Returns a way to show a comment's passage, and the
+ * passage is clicked; a click elsewhere in the Doc lets go of it. Returns a way to show a comment's passage, and the
  * comments whose passage is gone.
  */
 export function usePassageComments({
@@ -34,6 +34,7 @@ export function usePassageComments({
   annotations,
   activeAnnotationId,
   onSelectAnnotation,
+  onDeselect,
 }: {
   rootRef: RefObject<HTMLElement | null>
   /** The content is on the page. */
@@ -41,6 +42,7 @@ export function usePassageComments({
   annotations: Annotation[]
   activeAnnotationId: string | null
   onSelectAnnotation: (annotation: Annotation) => void
+  onDeselect: () => void
 }) {
   const ranges = useRef(new Map<string, Range>())
   const [detached, setDetached] = useState<ReadonlySet<string>>(new Set())
@@ -104,17 +106,17 @@ export function usePassageComments({
     []
   )
 
-  // A click on a marked passage, not the end of a selection, opens its comment.
+  // A click on a marked passage, not the end of a selection, opens its
+  // comment; a click anywhere else lets go of the one open.
   useEffect(() => {
     const root = rootRef.current
     if (!root) return
     const open = (event: MouseEvent) => {
       if (!window.getSelection()?.isCollapsed) return
       const caret = caretAt(event.clientX, event.clientY)
-      if (!caret) return
       let hit: [string, Range] | null = null
       for (const entry of ranges.current) {
-        if (!entry[1].isPointInRange(caret.node, caret.offset)) continue
+        if (!caret || !entry[1].isPointInRange(caret.node, caret.offset)) continue
         // The innermost passage wins where comments overlap.
         if (!hit || entry[1].toString().length < hit[1].toString().length)
           hit = entry
@@ -122,10 +124,11 @@ export function usePassageComments({
       const annotation =
         hit && annotations.find((candidate) => candidate.id === hit[0])
       if (annotation) onSelectAnnotation(annotation)
+      else onDeselect()
     }
     root.addEventListener("click", open)
     return () => root.removeEventListener("click", open)
-  }, [rootRef, ready, annotations, onSelectAnnotation])
+  }, [rootRef, ready, annotations, onSelectAnnotation, onDeselect])
 
   /** Scroll a comment's passage into view. */
   const reveal = useCallback((annotationId: string) => {

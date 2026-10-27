@@ -28,6 +28,7 @@ import type {
 } from "@worktable/types"
 import { threadLocationKey } from "@worktable/types"
 import { getAppDir } from "./app-storage.ts"
+import { askingTextHash } from "./annotation-requests.ts"
 import { logError } from "./debug-log.ts"
 import { listSpaces } from "./store.ts"
 import { runWithoutTeamIdentity } from "./team-policy.ts"
@@ -65,6 +66,11 @@ export interface PendingCommentSource {
   to: { kind: "human" | "agent"; name: string }
   excerpt: string
   quote?: string
+  /**
+   * The words are a person's, written in the app and unchanged since they
+   * asked, so they may be shown to an agent that didn't ask to see them.
+   */
+  personWords: boolean
 }
 
 export interface PendingThreadRequestSource {
@@ -318,7 +324,11 @@ function commentItems(
       id: author.id,
       ...(author.name ? { name: author.name } : {}),
     }
-    return { from, body }
+    const personWords =
+      author.type === "user" &&
+      request.textHash !== undefined &&
+      request.textHash === askingTextHash(body)
+    return { from, body, personWords }
   }
   return (annotation.requests ?? []).flatMap((request) =>
     request.status === "open"
@@ -339,6 +349,7 @@ function commentItems(
               from: asker(request).from,
               to: { kind: request.to.kind, name: request.to.name },
               excerpt: excerpt(asker(request).body),
+              personWords: asker(request).personWords,
               ...(quote ? { quote: excerpt(quote) } : {}),
             },
           },

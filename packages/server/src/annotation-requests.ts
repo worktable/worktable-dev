@@ -8,6 +8,7 @@
 // comment keeps reaching them. Agents never ask again by replying, which keeps
 // two agents from answering each other without end.
 
+import { createHash } from "node:crypto"
 import { nanoid } from "nanoid"
 import type { AnnotationRecipient, AnnotationRequest } from "@worktable/types"
 
@@ -17,22 +18,35 @@ export interface CommentReplier {
   kind: "human" | "agent" | "system"
 }
 
-function request(to: AnnotationRecipient, now: string): AnnotationRequest {
-  return { id: `req_${nanoid(12)}`, to, status: "open", createdAt: now }
+/** A short hash of the words that asked, to tell later edits apart. */
+export function askingTextHash(text: string): string {
+  return createHash("sha256").update(text).digest("base64url").slice(0, 16)
 }
 
-/** Requests for each recipient that has no open one yet. */
+/**
+ * Requests for each recipient that has no open one yet. `personText` is the
+ * asking text when a person wrote it in the app.
+ */
 export function addRequests(
   requests: readonly AnnotationRequest[],
   to: readonly AnnotationRecipient[],
-  now: string
+  now: string,
+  personText?: string
 ): AnnotationRequest[] {
   const next = [...requests]
   for (const recipient of to) {
     const waiting = next.some(
       (existing) => existing.to.id === recipient.id && existing.status === "open"
     )
-    if (!waiting) next.push(request(recipient, now))
+    if (!waiting) {
+      next.push({
+        id: `req_${nanoid(12)}`,
+        to: recipient,
+        status: "open",
+        createdAt: now,
+        ...(personText !== undefined ? { textHash: askingTextHash(personText) } : {}),
+      })
+    }
   }
   return next
 }
@@ -47,7 +61,9 @@ export function requestsAfterReply(
   replier: CommentReplier | undefined,
   replyId: string,
   now: string,
-  to: readonly AnnotationRecipient[] = []
+  to: readonly AnnotationRecipient[] = [],
+  /** The reply's text, when a person wrote it in the app. */
+  personText?: string
 ): AnnotationRequest[] {
   const closed = requests.map((existing) =>
     replier &&
@@ -57,7 +73,7 @@ export function requestsAfterReply(
       : existing
   )
   const named = to.filter((recipient) => recipient.id !== replier?.participantId)
-  if (replier?.kind !== "human") return addRequests(closed, named, now)
+  if (replier?.kind !== "human") return addRequests(closed, named, now, personText)
   const latest = new Map<string, AnnotationRequest>()
   for (const existing of closed) latest.set(existing.to.id, existing)
   const again = [...latest.values()]
@@ -67,5 +83,5 @@ export function requestsAfterReply(
         existing.to.id !== replier.participantId
     )
     .map((existing) => existing.to)
-  return addRequests(closed, [...again, ...named], now)
+  return addRequests(closed, [...again, ...named], now, personText)
 }

@@ -69,6 +69,8 @@ export interface DocumentAnnotationCreateInput {
   metadata?: Record<string, unknown>
   /** People and agents the comment is sent to, already checked. */
   to?: AnnotationRecipient[]
+  /** A person wrote it in the app, so agents may be shown its words. */
+  byPerson?: boolean
 }
 
 export interface DocumentAnnotationUpdatePatch {
@@ -240,7 +242,9 @@ function newAnnotation(
     updatedAt: now,
     ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
     metadata: input.metadata ?? {},
-    ...(input.to?.length ? { requests: addRequests([], input.to, now) } : {}),
+    ...(input.to?.length
+      ? { requests: addRequests([], input.to, now, input.byPerson ? input.body : undefined) }
+      : {}),
   }
 }
 
@@ -532,6 +536,7 @@ export async function replyDocumentAnnotation(options: {
   author?: AnnotationAuthor
   replier?: CommentReplier
   to?: AnnotationRecipient[]
+  byPerson?: boolean
 }): Promise<{ annotation: DocumentAnnotationV2; replyId: string }> {
   await requireV2AnnotationWrites()
   const author = options.author ?? DEFAULT_AUTHOR
@@ -544,7 +549,8 @@ export async function replyDocumentAnnotation(options: {
       options.replier,
       replyId,
       now,
-      options.to
+      options.to,
+      options.byPerson ? options.body : undefined
     )
     const annotation: DocumentAnnotationV2 = {
       ...found.annotation,
@@ -694,6 +700,7 @@ export async function createLegacyCompatibleAnnotationV2(
     idempotencyKey?: string
     metadata?: Record<string, unknown>
     to?: AnnotationRecipient[]
+    byPerson?: boolean
   },
   beforeWrite?: AnnotationWriteGuard
 ): Promise<{ annotation: Annotation; created: boolean }> {
@@ -770,7 +777,7 @@ export async function replyLegacyCompatibleAnnotationV2(
   annotationId: string,
   body: string,
   author?: AnnotationAuthor,
-  options: { replier?: CommentReplier; to?: AnnotationRecipient[] } = {}
+  options: { replier?: CommentReplier; to?: AnnotationRecipient[]; byPerson?: boolean } = {}
 ): Promise<{ annotation: Annotation; replyId: string }> {
   await readLegacyCompatibleAnnotationV2(spaceId, annotationId)
   const result = await replyDocumentAnnotation({

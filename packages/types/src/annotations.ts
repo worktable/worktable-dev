@@ -95,6 +95,11 @@ export const AnnotationRequestSchema = z.object({
   closedAt: z.string().optional(),
   /** The reply that closed it. */
   replyId: z.string().optional(),
+  /**
+   * Set when a person wrote the asking text in the app: a short hash of it,
+   * so agents are shown those words only while they are unchanged.
+   */
+  textHash: z.string().optional(),
 });
 
 export const AnnotationSchema = z.object({

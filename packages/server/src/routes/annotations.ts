@@ -21,6 +21,7 @@ import {
   commentReplier,
 } from "../comment-recipients.ts";
 import { assertSpaceAccess, commentAccess } from "../team-policy.ts";
+import { configuredMcpSurface } from "../mcp/surface.ts";
 import {
   isHtmlDocumentPath,
   usesHtmlDocumentStorageV2,
@@ -110,10 +111,21 @@ function broadcast(spaceId: string, annotationId: string, data: unknown) {
 annotationsRouter.get("/recipients", requireScope("annotations:read"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
   assertSpaceAccess(spaceId, "read", c.get("identity"));
-  return c.json(
-    await listThreadParticipantsForDisplay(c.get("identity"), { kind: "space", spaceId }, false)
+  if (configuredMcpSurface() !== "preview") return c.json({ participants: [] });
+  // Only this Space's people and agents, never the workspace's directory.
+  const { participants } = await listThreadParticipantsForDisplay(
+    c.get("identity"),
+    { kind: "space", spaceId },
+    false
   );
+  return c.json({ participants });
 });
+
+/** A person wrote this in the app, not an agent or a connected app. */
+function byPerson(c: Context): boolean {
+  const identity = c.get("identity");
+  return identity.principal.type === "human" && !identity.agent && identity.credentialClass !== "resource";
+}
 
 annotationsRouter.get("/", requireScope("annotations:read"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
@@ -166,6 +178,7 @@ annotationsRouter.post("/", requireScope("annotations:write", commentAccess), as
     target: parsed.data.target as AnnotationTarget,
     author: annotationAuthor(c, parsed.data.author),
     to,
+    byPerson: byPerson(c),
   });
   broadcast(spaceId, result.annotation.id, { annotation: result.annotation, event: "created" });
   return c.json({ ok: true, annotationId: result.annotation.id, annotation: result.annotation, created: result.created });
@@ -204,6 +217,7 @@ annotationsRouter.post("/:annotationId/replies", requireScope("annotations:write
   const result = await replyAnnotation(spaceId, annotationId, parsed.data.body, annotationAuthor(c, parsed.data.author), {
     replier: await commentReplier(c.get("identity")),
     to,
+    byPerson: byPerson(c),
   });
   broadcast(spaceId, result.annotation.id, { annotation: result.annotation, event: "replied" });
   return c.json({ ok: true, replyId: result.replyId, annotation: result.annotation });

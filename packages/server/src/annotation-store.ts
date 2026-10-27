@@ -112,12 +112,16 @@ export interface CreateAnnotationInput {
   metadata?: Record<string, unknown>;
   /** People and agents the comment is sent to, already checked. */
   to?: AnnotationRecipient[];
+  /** A person wrote it in the app, so agents may be shown its words. */
+  byPerson?: boolean;
 }
 
 /** Who is replying, and who else the reply is sent to. */
 export interface AnnotationReplyOptions {
   replier?: CommentReplier;
   to?: AnnotationRecipient[];
+  /** A person wrote the reply in the app. */
+  byPerson?: boolean;
 }
 
 export interface UpdateAnnotationPatch {
@@ -366,7 +370,9 @@ async function createAnnotationRecord(spaceId: string, input: CreateAnnotationIn
       updatedAt: now,
       idempotencyKey: input.idempotencyKey,
       metadata: input.metadata ?? {},
-      ...(input.to?.length ? { requests: addRequests([], input.to, now) } : {}),
+      ...(input.to?.length
+        ? { requests: addRequests([], input.to, now, input.byPerson ? input.body : undefined) }
+        : {}),
     };
     file.annotations.push(annotation);
     await writeAnnotationFile(spaceId, key, file, beforeWrite);
@@ -390,7 +396,7 @@ async function replyAnnotationRecord(spaceId: string, annotationId: string, body
     const found = await findAnnotation(spaceId, annotationId);
   const now = new Date().toISOString();
   const replyId = `msg_${nanoid(12)}`;
-  const requests = requestsAfterReply(found.annotation.requests ?? [], options.replier, replyId, now, options.to);
+  const requests = requestsAfterReply(found.annotation.requests ?? [], options.replier, replyId, now, options.to, options.byPerson ? body : undefined);
   const annotation: Annotation = {
     ...found.annotation,
     thread: [...found.annotation.thread, { id: replyId, author, body, createdAt: now }],

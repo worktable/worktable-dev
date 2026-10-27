@@ -50,6 +50,8 @@ function anchorFor(anchor: Range | Element | undefined) {
 /** Where a comment is written, so it can be sent to whoever changed the Doc. */
 export interface CommentContext {
   spaceId: string;
+  /** The Doc, for finding who wrote selected text. */
+  docPath?: string;
   contributors?: readonly ActivityActor[];
 }
 
@@ -66,7 +68,12 @@ export function AnnotationComposer({
   context,
   label = "Add Comment",
 }: {
-  draft: Pick<AnnotationDraft, "quote" | "anchor"> | null;
+  draft:
+    | (Pick<AnnotationDraft, "quote" | "anchor"> & {
+        prefix?: string;
+        suffix?: string;
+      })
+    | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** `to` holds the participant it is sent to, or is empty. */
@@ -76,10 +83,19 @@ export function AnnotationComposer({
   label?: string;
 }) {
   const [body, setBody] = useState("");
-  const recipients = useCommentRecipients(context?.spaceId, context?.contributors, open);
+  const recipients = useCommentRecipients(
+    context?.spaceId,
+    context?.contributors,
+    open,
+    context?.docPath && draft?.quote
+      ? { docPath: context.docPath, quote: draft.quote, prefix: draft.prefix, suffix: draft.suffix }
+      : undefined
+  );
   // Until the writer picks, the comment goes to whoever is suggested.
   const [picked, setPicked] = useState<string | null>(null);
   const recipient = picked ?? recipients?.suggested ?? NO_RECIPIENT;
+  // A suggestion waits for who wrote the selection; a choice doesn't.
+  const awaitingRecipient = picked === null && Boolean(recipients?.settling);
   const [wasOpen, setWasOpen] = useState(open);
   const isMobile = useIsMobile();
   const anchor = useMemo(() => anchorFor(draft?.anchor), [draft?.anchor]);
@@ -112,7 +128,7 @@ export function AnnotationComposer({
 
   const submit = () => {
     const trimmed = body.trim();
-    if (!trimmed) return;
+    if (!trimmed || awaitingRecipient) return;
     onSubmit(trimmed, recipients && recipient !== NO_RECIPIENT ? [recipient] : []);
     onOpenChange(false);
   };
@@ -161,7 +177,7 @@ export function AnnotationComposer({
           </ResponsiveDialogBody>
           <ResponsiveDialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={submit} disabled={!draft || !body.trim()}>
+            <Button onClick={submit} disabled={!draft || !body.trim() || awaitingRecipient}>
               {action}
             </Button>
           </ResponsiveDialogFooter>
@@ -200,7 +216,7 @@ export function AnnotationComposer({
           <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button size="sm" onClick={submit} disabled={!draft || !body.trim()}>
+          <Button size="sm" onClick={submit} disabled={!draft || !body.trim() || awaitingRecipient}>
             {action}
           </Button>
         </div>

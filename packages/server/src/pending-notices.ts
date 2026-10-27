@@ -54,6 +54,13 @@ export interface PendingNotice {
    * be shown to an agent that didn't ask for them.
    */
   personWords: boolean
+  /**
+   * The commented text is a person's, or the reading agent's own, so it may
+   * be shown unasked like a person's words.
+   */
+  personPassage: boolean
+  /** When the agent reading it wrote the commented text, if it did. */
+  yourTextAt?: string
   /** Whether it is about what the call that showed it is working on. */
   onTopic: boolean
   /** The call that opens it. */
@@ -166,6 +173,8 @@ export async function noticesFor(
         : undefined
       if (source.documentId && !current) return []
       const docPath = current?.path ?? source.path
+      const yours =
+        source.passageBy === reader.principal.id && source.passageAt
       return [
         {
           itemId: entry.itemId,
@@ -182,6 +191,8 @@ export async function noticesFor(
           personWords: source.personWords,
           excerpt: source.excerpt,
           ...(source.quote ? { quote: source.quote } : {}),
+          ...(yours ? { yourTextAt: source.passageAt } : {}),
+          personPassage: source.passageByPerson === true || Boolean(yours),
           onTopic:
             target.spaceId === source.spaceId && target.docPath === docPath,
           open: {
@@ -214,6 +225,7 @@ export async function noticesFor(
         messageId: source.messageId,
         from,
         personWords: source.from.kind === "person",
+        personPassage: false,
         excerpt: source.excerpt,
         onTopic: target.threadId === source.threadId,
         open: {
@@ -268,26 +280,53 @@ function said(notice: PendingNotice, mode: "ambient" | "requested"): string {
     : "."
 }
 
+function day(at: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(at))
+}
+
+/**
+ * Names and titles are quoted too: anyone with access can set them, so
+ * none reads as Worktable's own words. Ambient notices come from the Space
+ * being worked in and leave its name out.
+ */
+function where(notice: PendingNotice, mode: "ambient" | "requested"): string {
+  const title =
+    notice.kind === "comment"
+      ? (notice.docTitle ?? label(notice.docPath ?? "a Doc", TITLE_LIMIT))
+      : (notice.threadTitle ?? "a thread")
+  return `${quoted(title)}${mode === "requested" && notice.spaceName ? ` in ${quoted(notice.spaceName)}` : ""}`
+}
+
 function line(notice: PendingNotice, mode: "ambient" | "requested"): string {
+  const from = quoted(notice.from.name)
   if (notice.kind === "comment") {
-    const on = notice.onTopic
-      ? notice.quote
-        ? `on ${quoted(notice.quote)}`
-        : "on this Doc"
-      : `on ${notice.docTitle ?? label(notice.docPath ?? "a Doc", TITLE_LIMIT)}${notice.spaceName ? ` (${notice.spaceName})` : ""}`
-    return `- ${notice.from.name} sent you a comment ${on}${said(notice, mode)} Comment ${notice.annotationId}.`
+    // Unasked, the passage too is quoted only when a person wrote it, or
+    // the reading agent did, and the comment is a person's own words.
+    const passage =
+      mode === "requested" || (notice.personWords && notice.personPassage)
+        ? notice.quote
+        : undefined
+    const place = notice.onTopic ? "this Doc" : where(notice, mode)
+    const on = notice.yourTextAt
+      ? `on text you wrote${notice.onTopic ? "" : ` in ${place}`} on ${day(notice.yourTextAt)}${passage ? `, ${quoted(passage)}` : ""}`
+      : notice.onTopic && passage
+        ? `on ${quoted(passage)}`
+        : `on ${place}`
+    return `- ${from} sent you a comment ${on}${said(notice, mode)} Comment ${notice.annotationId}.`
   }
-  const where = notice.onTopic
-    ? "here"
-    : `in ${quoted(notice.threadTitle ?? "a thread")}${notice.spaceName ? ` (${notice.spaceName})` : ""}`
-  return `- ${notice.from.name} asked you ${where}${said(notice, mode)} Message ${notice.messageId}.`
+  const at = notice.onTopic ? "here" : `in ${where(notice, mode)}`
+  return `- ${from} asked you ${at}${said(notice, mode)} Message ${notice.messageId}.`
 }
 
 /** A shown, unopened item about what the call is working on, in brief. */
 function reminder(notice: PendingNotice): string {
   return notice.kind === "comment"
-    ? `- ${notice.from.name}'s comment here is still open: Comment ${notice.annotationId}.`
-    : `- ${notice.from.name}'s message here still waits on you: Message ${notice.messageId}.`
+    ? `- A comment from ${quoted(notice.from.name)} here is still open: Comment ${notice.annotationId}.`
+    : `- A message from ${quoted(notice.from.name)} here still waits on you: Message ${notice.messageId}.`
 }
 
 /**

@@ -47,6 +47,7 @@ import {
   type IndexedComment,
 } from "./pending-list.ts"
 import { listWaitingCommentsV2 } from "./document-annotation-service.ts"
+import type { PassageAuthor } from "./passage-author.ts"
 
 const ANNOTATION_FILE_TYPE = "worktable.annotations" as const;
 const DEFAULT_AUTHOR: AnnotationAuthor = { type: "agent", id: "worktable", name: "Worktable" }
@@ -121,6 +122,8 @@ export interface CreateAnnotationInput {
   to?: AnnotationRecipient[];
   /** A person wrote it in the app, so agents may be shown its words. */
   byPerson?: boolean;
+  /** Who wrote the text it is about. */
+  passageAuthor?: PassageAuthor | null;
 }
 
 /** Who is replying, and who else the reply is sent to. */
@@ -380,6 +383,7 @@ async function createAnnotationRecord(spaceId: string, input: CreateAnnotationIn
       ...(input.to?.length
         ? { requests: addRequests([], input.to, now, { personText: input.byPerson ? input.body : undefined }) }
         : {}),
+      ...(input.passageAuthor ? { passageAuthor: input.passageAuthor } : {}),
     };
     file.annotations.push(annotation);
     await writeAnnotationFile(spaceId, key, file, beforeWrite);

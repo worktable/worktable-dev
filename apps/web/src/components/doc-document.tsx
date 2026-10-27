@@ -822,8 +822,8 @@ function MarkdownDocPage({
   const annotationsQuery = useDocAnnotations(spaceId, docPath, true)
   const annotationMutations = useAnnotationMutations(spaceId, docPath)
   const commentContext = useMemo(
-    () => ({ spaceId, contributors: docContributors(page) }),
-    [spaceId, page]
+    () => ({ spaceId, docPath, contributors: docContributors(page) }),
+    [spaceId, docPath, page]
   )
   const annotations = annotationsQuery.data?.annotations ?? []
   const openAnnotationCount = annotations.filter(
@@ -1333,8 +1333,8 @@ function BlockNoteDocPage({
   const annotationsQuery = useDocAnnotations(spaceId, docPath, true)
   const annotationMutations = useAnnotationMutations(spaceId, docPath)
   const commentContext = useMemo(
-    () => ({ spaceId, contributors: docContributors(page) }),
-    [spaceId, page]
+    () => ({ spaceId, docPath, contributors: docContributors(page) }),
+    [spaceId, docPath, page]
   )
   const annotations = annotationsQuery.data?.annotations ?? []
   const openAnnotationCount = annotations.filter(

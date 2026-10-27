@@ -85,6 +85,23 @@ export function readDocumentPage(
   ).then((result) => result.page)
 }
 
+/** Who wrote a passage of a Doc, as its versions record it. */
+export function readPassageAuthor(
+  spaceId: string,
+  path: string,
+  passage: { quote: string; prefix?: string; suffix?: string }
+): Promise<{ author: { by: string; kind: "person" | "agent" } | null }> {
+  const query = new URLSearchParams({
+    path,
+    quote: passage.quote,
+    ...(passage.prefix ? { prefix: passage.prefix } : {}),
+    ...(passage.suffix ? { suffix: passage.suffix } : {}),
+  })
+  return fetchJSON(
+    `/api/spaces/${encodeURIComponent(spaceId)}/documents/passage-author?${query}`
+  )
+}
+
 function downloadFileName(disposition: string | null, path: string): string {
   const encoded = disposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
   if (encoded) {

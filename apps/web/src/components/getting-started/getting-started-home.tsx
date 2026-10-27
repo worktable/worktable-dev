@@ -79,7 +79,11 @@ const GUIDES = [
   },
 ] as const
 
-/** Requests that end with a doc saved, which completes the task step. */
+/**
+ * Requests that start a Space with named docs, which completes the task step.
+ * A first request must make its own Space, or the work lands in Getting
+ * Started, whose Home shows only the guides.
+ */
 function taskPrompts(joinedSpaceName: string | undefined): string[] {
   if (joinedSpaceName) {
     return [
@@ -88,9 +92,11 @@ function taskPrompts(joinedSpaceName: string | undefined): string[] {
     ]
   }
   return [
-    "Write a one-page brief for [project] in Worktable: goals, timeline and open questions.",
-    "Turn these notes into a doc in Worktable: [paste notes]",
-    "Research [topic] and save a summary with sources in Worktable.",
+    "Set up a Space in Worktable for the project we're working on, with these docs: Overview, Architecture, Current Work and Open Questions. Where you're unsure, make your best guess and add it to Open Questions.",
+    "Create a personal Space for me in Worktable from what you know about me, with these docs: About Me, Current Work, Working Style and Notes for Agents. If you don't know me yet, ask me first.",
+    "Set up a Space in Worktable for what I'm working on this week, with these docs: Plan, Task Board and Notes. Put my tasks on the board and what we've discussed recently in Notes.",
+    "Start a Space in Worktable for [project]. In it, help me decide [decision]: the question, the options with their trade-offs, and your recommendation.",
+    "Research [topic] and set up a Space in Worktable with these docs: Summary, Sources and Open Questions.",
   ]
 }
 

@@ -543,7 +543,7 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
   await expect(page.getByText("~/.codex/AGENTS.md")).toBeVisible()
   await page.getByRole("button", { name: /Give your agent a task/ }).click()
   await expect(
-    page.getByText("Turn these notes into a doc in Worktable: [paste notes]")
+    page.getByText(/^Research \[topic\] and set up a Space in Worktable/)
   ).toBeVisible()
 
   // The agent's first doc finishes the list, pushed to the page.

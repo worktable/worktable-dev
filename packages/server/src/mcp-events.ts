@@ -29,6 +29,7 @@ import { ensureAppDir } from "./app-storage.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { docUrlToSendInChat } from "./mcp/chat-links.ts"
 import { resolveParticipant } from "./participant-store.ts"
+import { readSpace } from "./store.ts"
 import {
   markPendingDelivered,
   onPendingChange,
@@ -44,6 +45,7 @@ import {
 import { currentTeamWorktable } from "./team-database.ts"
 import { runWithTeamIdentity } from "./team-policy.ts"
 import {
+  hasScope,
   listTokens,
   type RequestPrincipal,
   type TokenIdentity,
@@ -98,11 +100,26 @@ const SEND_TIMEOUT_MS = 10_000
 
 const Scope = z
   .object({
-    spaceId: z.string().min(1).optional(),
-    docPath: z.string().min(1).optional(),
-    threadId: z.string().min(1).optional(),
+    spaceId: z.string().min(1).max(128).optional(),
+    docPath: z.string().min(1).max(1024).optional(),
+    threadId: z.string().min(1).max(128).optional(),
   })
   .strict()
+
+/** Subscriptions one subscriber, and one Worktable, may hold at once. */
+const MAX_SUBSCRIPTIONS_PER_SUBSCRIBER = 20
+const MAX_SUBSCRIPTIONS = 500
+const MAX_URL_LENGTH = 2048
+const INVALID_REQUEST = -32600
+
+function overQuota(file: EventsFile, principalId: string, id: string): boolean {
+  if (file.subscriptions.some((s) => s.id === id)) return false
+  return (
+    file.subscriptions.filter((s) => s.principalId === principalId).length >=
+      MAX_SUBSCRIPTIONS_PER_SUBSCRIBER ||
+    file.subscriptions.length >= MAX_SUBSCRIPTIONS
+  )
+}
 
 /** As events/list describes the event. */
 export const ITEM_SENT_DEFINITION = {
@@ -630,11 +647,29 @@ export async function subscribe(
   if (!params.success)
     throw new EventsError(INVALID_PARAMS, "Invalid subscription")
   const { name, delivery, ttlMs } = params.data
+  // What can be asked for is bounded before anything is sent: a subscriber
+  // must read comments or threads, filter to what exists, and stay within
+  // its share of subscriptions.
+  if (
+    !hasScope(caller.identity.scopes, "annotations:read") &&
+    !hasScope(caller.identity.scopes, "threads:read")
+  )
+    throw new EventsError(
+      INVALID_REQUEST,
+      "Subscribing needs access to comments or threads"
+    )
+  if (delivery.url.length > MAX_URL_LENGTH)
+    throw new EventsError(INVALID_PARAMS, "delivery.url is too long")
   const url = (await publicDestination(delivery.url, transport)).href
   const { args } = parseIdentity(name, params.data.arguments, url)
+  if (args.spaceId && !(await readSpace(args.spaceId)).data)
+    throw new EventsError(INVALID_PARAMS, "No such Space")
   const principalId = caller.identity.principal.id
   const id = subscriptionId(principalId, url, name, args)
-  const existing = (await load(path())).subscriptions.find((s) => s.id === id)
+  const stored = await load(path())
+  if (overQuota(stored, principalId, id))
+    throw new EventsError(INVALID_REQUEST, "Too many subscriptions")
+  const existing = stored.subscriptions.find((s) => s.id === id)
   const secret = delivery.secret ?? existing?.secret
   if (!secret)
     throw new EventsError(INVALID_PARAMS, "delivery.secret is required")
@@ -651,6 +686,9 @@ export async function subscribe(
     : UNCHECKED_TTL_MS
   const refreshBefore = Date.now() + Math.min(ttlMs ?? maxTtl, maxTtl)
   await mutate((file) => {
+    // Checked again under the lock, so parallel subscribes can't pass it.
+    if (overQuota(file, principalId, id))
+      throw new EventsError(INVALID_REQUEST, "Too many subscriptions")
     const previous = file.subscriptions.find((s) => s.id === id)
     file.subscriptions = file.subscriptions.filter((s) => s.id !== id)
     file.subscriptions.push({

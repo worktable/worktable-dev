@@ -432,4 +432,50 @@ describe("MCP Events", () => {
     expect(delivered[0]!.docPath).toBe(docPath)
     expect(decodeURIComponent(delivered[0]!.url)).toContain(docPath)
   })
+
+  it("bounds what a subscriber can ask for", async () => {
+    const code = (run: Promise<unknown>) =>
+      run.then(
+        () => 0,
+        (error: EventsError) => error.code
+      )
+    const searchOnly: EventsCaller = {
+      ...caller,
+      identity: { ...caller.identity, scopes: ["search:read"] },
+    }
+    expect(await code(subscribe(searchOnly, params(), callback([])))).toBe(
+      -32600
+    )
+    const longUrl = `${CALLBACK}/${"x".repeat(2100)}`
+    expect(
+      await code(
+        subscribe(
+          caller,
+          params({
+            delivery: { mode: "webhook", url: longUrl, secret: SECRET },
+          }),
+          callback([])
+        )
+      )
+    ).toBe(-32602)
+    expect(
+      await code(
+        subscribe(
+          caller,
+          params({ arguments: { spaceId: "nowhere" } }),
+          callback([])
+        )
+      )
+    ).toBe(-32602)
+
+    // Twenty subscriptions each; renewing one doesn't count again.
+    const filtered = (n: number) =>
+      params({ arguments: { spaceId: "pricing", threadId: `thread-${n}` } })
+    for (let n = 0; n < 20; n++)
+      await subscribe(caller, filtered(n), callback([]))
+    expect(await code(subscribe(caller, filtered(20), callback([])))).toBe(
+      -32600
+    )
+    expect(await code(subscribe(caller, filtered(0), callback([])))).toBe(0)
+  })
 })

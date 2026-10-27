@@ -172,7 +172,7 @@ test("folder creation keeps Docs, drawings, and HTML docs in the chosen folder",
 // kept, Activity records what happened, and a pinned document leads its Space.
 test("temporary documents stay aside until kept, and pinned documents lead the Space", async ({
   page,
-}) => {
+}, testInfo) => {
   const space = await page.request.post(`${harness.apiUrl}/api/spaces`, {
     data: { name: "Organize", id: "organize" },
   })
@@ -269,6 +269,31 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
       .getByRole("navigation", { name: "Pinned" })
       .getByRole("link", { name: "Untitled" })
   ).toBeVisible()
+  const pinnedDocs = page.getByRole("navigation", { name: "Pinned" })
+  const unpin = pinnedDocs.getByRole("button", { name: "Unpin Untitled" })
+  const pinnedActions = pinnedDocs.getByRole("button", {
+    name: "Actions for Untitled",
+  })
+  const actionCluster = unpin.locator("..")
+  await page.mouse.move(1000, 0)
+  await expect(actionCluster).toHaveCSS("opacity", "0")
+  await pinnedDocs.getByRole("link", { name: "Untitled" }).hover()
+  await expect(actionCluster).toHaveCSS("opacity", "1")
+  await pinnedActions.click()
+  await page.mouse.move(1000, 0)
+  await expect(actionCluster).toHaveCSS("opacity", "1")
+  await expect(page.getByRole("menuitem", { name: "Rename", exact: true })).toBeVisible()
+  const pinnedMenu = await page.getByRole("menuitem").allTextContents()
+  await page.screenshot({ path: testInfo.outputPath("pinned-doc-menu-desktop.png") })
+  await page.keyboard.press("Escape")
+  await unpin.focus()
+  await expect(actionCluster).toHaveCSS("opacity", "1")
+  const treeActions = page
+    .getByRole("navigation", { name: "Active documents" })
+    .getByRole("button", { name: "Actions for Untitled" })
+  await treeActions.click()
+  await expect(page.getByRole("menuitem")).toHaveText(pinnedMenu)
+  await page.keyboard.press("Escape")
   await page
     .getByRole("navigation", { name: "Breadcrumb" })
     .getByRole("link", { name: "Organize", exact: true })
@@ -344,6 +369,36 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
   await pinnedEntry.getByRole("link", { name: "Untitled" }).focus()
   await page.keyboard.press("Enter")
   await expect(page).toHaveURL(/\/spaces\/organize\/documents\/untitled$/)
+
+  // Mobile keeps both actions visible. A failed unpin leaves the shortcut
+  // available to retry; succeeding removes only the pin, without navigating.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole("button", { name: "Toggle sidebar", exact: true }).click()
+  await expect(unpin).toBeVisible()
+  await expect(actionCluster).toHaveCSS("opacity", "1")
+  await pinnedActions.click()
+  await expect(page.getByRole("menuitem")).toHaveText(pinnedMenu)
+  await page.screenshot({ path: testInfo.outputPath("pinned-doc-menu-mobile.png") })
+  await page.keyboard.press("Escape")
+  const pinsRoute = "**/api/spaces/organize/pins"
+  await page.route(pinsRoute, (route) =>
+    route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } })
+  )
+  await unpin.click()
+  await expect(page.getByText("Couldn’t unpin.", { exact: true })).toBeVisible()
+  await expect(unpin).toBeVisible()
+  await page.unroute(pinsRoute)
+  await unpin.click()
+  await expect(pinnedDocs).toHaveCount(0)
+  await expect(page).toHaveURL(/\/spaces\/organize\/documents\/untitled$/)
+  await expect(
+    page
+      .getByRole("navigation", { name: "Active documents" })
+      .getByRole("link", { name: "Untitled" })
+  ).toBeVisible()
+  await page.reload()
+  await page.getByRole("button", { name: "Toggle sidebar", exact: true }).click()
+  await expect(pinnedDocs).toHaveCount(0)
 })
 
 test.describe("archive date editing", () => {

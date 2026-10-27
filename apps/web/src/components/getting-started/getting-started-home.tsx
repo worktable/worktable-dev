@@ -111,23 +111,13 @@ function Prompt({ text, onCopied }: { text: string; onCopied?: () => void }) {
   )
 }
 
-function DoneWhen({ children }: { children: React.ReactNode }) {
-  return <p className="mt-3 text-xs text-muted-foreground">{children}</p>
-}
-
 function TaskBody({ joinedSpaceName }: { joinedSpaceName?: string }) {
   return (
-    <>
-      <p className="mb-2 text-sm text-foreground/80">
-        Copy one into your agent, or ask in your own words:
-      </p>
-      <ul className="space-y-2">
-        {taskPrompts(joinedSpaceName).map((text) => (
-          <Prompt key={text} text={text} />
-        ))}
-      </ul>
-      <DoneWhen>Done when your agent saves its first doc.</DoneWhen>
-    </>
+    <ul className="space-y-2">
+      {taskPrompts(joinedSpaceName).map((text) => (
+        <Prompt key={text} text={text} />
+      ))}
+    </ul>
   )
 }
 

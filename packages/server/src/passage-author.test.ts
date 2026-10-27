@@ -117,6 +117,15 @@ describe("who wrote a passage", () => {
     expect(
       await passageAuthor("pricing", "status", { quote: "Approved.", prefix: "Section A: " })
     ).toMatchObject({ by: "token:finn" })
+    // Text added beside a passage doesn't make it new: Atlas's line follows
+    // Finn's sentence, and the selection carries it as context.
+    expect(
+      await passageAuthor("pricing", "explorer", {
+        quote: "Team is $49 a month.",
+        prefix: "Explorer ",
+        suffix: " Business is $199 a month.",
+      })
+    ).toMatchObject({ by: "token:finn" })
     // Words that are not in the Doc are nobody's, however close.
     expect(
       await passageAuthor("pricing", "explorer", { quote: "Team is $49 a month for everyone." })

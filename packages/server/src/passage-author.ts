@@ -76,10 +76,26 @@ function readingText(content: unknown): string | null {
   return lines.join("\n")
 }
 
+/** Characters of context that must still match on one side. */
+const CONTEXT_MATCH = 12
+
+function sharedEnd(a: string, b: string): number {
+  let length = 0
+  while (length < a.length && length < b.length && a[a.length - 1 - length] === b[b.length - 1 - length]) length++
+  return length
+}
+
+function sharedStart(a: string, b: string): number {
+  let length = 0
+  while (length < a.length && length < b.length && a[length] === b[length]) length++
+  return length
+}
+
 /**
- * Whether the selected words are in `text` word for word, with the text the
- * selection had either side of them; without that context, only when they
- * appear once.
+ * Whether the selected words are in `text` word for word, in the same place:
+ * the text on at least one side is still what the selection had there, so
+ * an edit next to the passage doesn't move its origin, while the same words
+ * elsewhere don't count. Without that context, only when they appear once.
  */
 function stillHere(text: string, selector: PassageSelector): boolean {
   const flat = normalizePassageText(text)
@@ -90,12 +106,21 @@ function stillHere(text: string, selector: PassageSelector): boolean {
   for (let at = flat.indexOf(quote); at !== -1; at = flat.indexOf(quote, at + 1)) {
     places.push(at)
   }
-  if (!prefix && !suffix) return places.length === 1
-  return places.some(
-    (at) =>
-      (!prefix || flat.slice(0, at).trimEnd().endsWith(prefix)) &&
-      (!suffix || flat.slice(at + quote.length).trimStart().startsWith(suffix))
-  )
+  if (selector.prefix === undefined && selector.suffix === undefined) {
+    return places.length === 1
+  }
+  const sideMatches = (actual: string, expected: string, shared: number) =>
+    expected
+      ? shared >= Math.min(expected.length, CONTEXT_MATCH)
+      : actual === ""
+  return places.some((at) => {
+    const before = flat.slice(0, at).trimEnd()
+    const after = flat.slice(at + quote.length).trimStart()
+    return (
+      sideMatches(before, prefix, sharedEnd(before, prefix)) ||
+      sideMatches(after, suffix, sharedStart(after, suffix))
+    )
+  })
 }
 
 /** A Doc's versions newest first, and a reader for each, resolved once. */
@@ -124,9 +149,12 @@ function authorOf(
 ): Pick<PassageAuthor, "by" | "kind"> | null {
   const category = sourceCategory(source, createdBy)
   if (category !== "agent" && category !== "human") return null
-  const by = createdBy.startsWith("agent:")
-    ? createdBy.slice("agent:".length)
-    : createdBy
+  // MCP records the principal whole ("agent:<uuid>" for a Teams agent);
+  // only REST writes add an agent: prefix to it.
+  const by =
+    source !== "mcp" && createdBy.startsWith("agent:")
+      ? createdBy.slice("agent:".length)
+      : createdBy
   return { by, kind: category === "agent" ? "agent" : "person" }
 }
 

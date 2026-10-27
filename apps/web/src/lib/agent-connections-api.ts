@@ -66,6 +66,37 @@ export function disconnectAgentConnection(
   })
 }
 
+function cloudTaskPath(connection: ListedAgentConnection, action = ""): string {
+  return `/api/agent-connections/${encodeURIComponent(connection.id)}/cloud-task${action}${connection.requestScope ? "?scope=workspace" : ""}`
+}
+
+/**
+ * Save the API trigger of Claude's scheduled task and test it. A field left
+ * out keeps the saved one; the server never sends either back.
+ */
+export function saveCloudTask(
+  connection: ListedAgentConnection,
+  trigger: { url?: string; token?: string }
+): Promise<{ ok: true }> {
+  return fetchJSON(cloudTaskPath(connection), {
+    method: "PUT",
+    body: JSON.stringify(trigger),
+  })
+}
+
+/** Test the saved trigger again. */
+export function testCloudTask(
+  connection: ListedAgentConnection
+): Promise<{ ok: true }> {
+  return fetchJSON(cloudTaskPath(connection, "/test"), { method: "POST" })
+}
+
+export function removeCloudTask(
+  connection: ListedAgentConnection
+): Promise<{ ok: true }> {
+  return fetchJSON(cloudTaskPath(connection), { method: "DELETE" })
+}
+
 export function renameAgentConnection(
   connectionId: string,
   displayName: string

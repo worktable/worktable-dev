@@ -109,15 +109,19 @@ export function accessFromScopes(scopes: readonly string[]): AgentAccess {
 
 /**
  * Whether an agent answers what's sent to it on its own. `kind` is how its app
- * does it: a chat that watches Worktable, a session waiting for it, or an
- * agent Worktable calls. Absent when the agent picks things up only the next
- * time someone uses it.
+ * does it: a chat that watches Worktable, a session waiting for it, an
+ * agent Worktable calls, or a cloud task Worktable fires. Absent when the
+ * agent picks things up only the next time someone uses it.
  */
 export interface AutoReply {
-  kind: "chat" | "session" | "called"
+  kind: "chat" | "session" | "called" | "task"
   state: "on" | "off" | "attention"
   /** What a watching chat covers; absent means every Space. */
   spaceIds?: string[]
+  /** A task's test fire is out, waiting for the agent to check in. */
+  testing?: boolean
+  /** What needs attention, in a line for the owner. */
+  error?: string
 }
 
 export interface AgentConnection {

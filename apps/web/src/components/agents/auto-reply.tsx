@@ -1,6 +1,8 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { AgentConnection, AutoReply } from "@worktable/types"
 import { AGENT_PLATFORMS } from "@worktable/types"
 import { Button, buttonVariants } from "@worktable/ui/components/button"
+import { toast } from "@worktable/ui/components/sonner"
 import { InfoTip } from "@worktable/ui/components/info-tip"
 import {
   Popover,
@@ -14,6 +16,7 @@ import {
 } from "@worktable/ui/components/tooltip"
 import { useCopy } from "@worktable/ui/hooks/use-copy"
 import { cn } from "@worktable/ui/lib/utils"
+import { removeCloudTask } from "@/lib/agent-connections-api"
 
 /** What a person pastes into their agent to turn auto-reply on. */
 export const AUTO_REPLY_PROMPT =
@@ -55,7 +58,9 @@ export function AutoReplyDot({
 }
 
 function stateLine(autoReply: AutoReply): string {
-  if (autoReply.state === "attention") return "Needs attention"
+  if (autoReply.state === "attention")
+    return autoReply.error ?? "Needs attention"
+  if (autoReply.testing) return "Testing…"
   if (autoReply.state === "off") return "Off"
   const spaces = autoReply.spaceIds?.length
   return spaces ? `On · ${spaces === 1 ? "1 Space" : `${spaces} Spaces`}` : "On"
@@ -78,6 +83,23 @@ function About({ connection }: { connection: AgentConnection }) {
           rel="noreferrer"
         >
           How ChatGPT tasks work ↗
+        </a>
+      </>
+    )
+  if (kind === "task")
+    return (
+      <>
+        <p>
+          Claude answers from the cloud, even when your computer is off. Each
+          answer uses your Claude plan.
+        </p>
+        <a
+          className="text-primary-text hover:underline"
+          href="https://code.claude.com/docs/en/routines"
+          target="_blank"
+          rel="noreferrer"
+        >
+          About scheduled tasks ↗
         </a>
       </>
     )
@@ -106,8 +128,25 @@ function About({ connection }: { connection: AgentConnection }) {
   )
 }
 
-function TurnOn({ connection }: { connection: AgentConnection }) {
+/** A line to paste into an agent, with its Copy button. */
+export function CopyLine({ text }: { text: string }) {
   const copy = useCopy()
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-inset py-2.5 pr-2 pl-3">
+      <p className="flex-1 text-sm leading-5">{text}</p>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 px-2.5 text-xs"
+        onClick={() => void copy.copy(text)}
+      >
+        {copy.copied ? "Copied" : "Copy"}
+      </Button>
+    </div>
+  )
+}
+
+function TurnOn({ connection }: { connection: AgentConnection }) {
   const chatgpt = connection.platform === "chatgpt"
   const where =
     connection.autoReply?.kind === "chat"
@@ -122,17 +161,7 @@ function TurnOn({ connection }: { connection: AgentConnection }) {
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 gap-3 p-3">
         <p className="text-sm">Paste this into {where}.</p>
-        <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-inset py-2.5 pr-2 pl-3">
-          <p className="flex-1 text-sm leading-5">{AUTO_REPLY_PROMPT}</p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 px-2.5 text-xs"
-            onClick={() => void copy.copy(AUTO_REPLY_PROMPT)}
-          >
-            {copy.copied ? "Copied" : "Copy"}
-          </Button>
-        </div>
+        <CopyLine text={AUTO_REPLY_PROMPT} />
         {chatgpt && (
           <a
             href="https://chatgpt.com/"
@@ -148,11 +177,56 @@ function TurnOn({ connection }: { connection: AgentConnection }) {
   )
 }
 
+/** A cloud task's actions: set it up or fix it, and remove it. */
+function TaskActions({
+  connection,
+  onSetUp,
+}: {
+  connection: AgentConnection
+  onSetUp?: () => void
+}) {
+  const queryClient = useQueryClient()
+  const remove = useMutation({
+    mutationFn: () => removeCloudTask(connection),
+    onSuccess: () =>
+      void queryClient.invalidateQueries({ queryKey: ["agent-connections"] }),
+    onError: (error) =>
+      toast.error(
+        error instanceof Error ? error.message : "Couldn’t remove the task."
+      ),
+  })
+  const autoReply = connection.autoReply
+  if (!autoReply || connection.canManage === false) return null
+  const saved = autoReply.state !== "off" || autoReply.testing
+  return (
+    <>
+      {saved && (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={remove.isPending}
+          onClick={() => remove.mutate()}
+        >
+          Remove
+        </Button>
+      )}
+      {(!saved || autoReply.state === "attention") && onSetUp && (
+        <Button variant="outline" size="sm" onClick={onSetUp}>
+          {saved ? "Fix" : "Set up"}
+        </Button>
+      )}
+    </>
+  )
+}
+
 /** The agent's auto-reply setting: its state, and how to turn it on. */
 export function AutoReplySetting({
   connection,
+  onSetUp,
 }: {
   connection: AgentConnection
+  /** Opens a cloud task's setup steps. */
+  onSetUp?: () => void
 }) {
   const autoReply = connection.autoReply
   if (!autoReply) return null
@@ -180,6 +254,9 @@ export function AutoReplySetting({
         </p>
       </div>
       {canTurnOn && <TurnOn connection={connection} />}
+      {autoReply.kind === "task" && (
+        <TaskActions connection={connection} onSetUp={onSetUp} />
+      )}
     </div>
   )
 }

@@ -1,12 +1,14 @@
+import { randomUUID } from "node:crypto"
 import { hostedOAuthPrincipalId } from "@worktable/hosted-contract"
 import {
   DEFAULT_AGENT_ACCESS,
   isAgentPlatformId,
   isDirectAgentLabel,
   type AgentAccess,
+  type AgentConnection,
   type AgentPlatformId,
 } from "@worktable/types"
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import { requireAgentManager } from "../auth.ts"
 import {
   createAgentCredential,
@@ -27,6 +29,16 @@ import {
   readGrokBots,
   removeGrokBot,
 } from "../grok-bot-store.ts"
+import { CLAUDE_CODE_TASK, validateWebhookDestination } from "../agent-wake.ts"
+import {
+  cloudTaskFor,
+  removeCloudTask,
+  saveCloudTask,
+  signalCloudTaskChange,
+  updateCloudTask,
+} from "../cloud-task-store.ts"
+import { configuredMcpSurface } from "../mcp/surface.ts"
+import { postThreadMessageWithStored } from "../thread-service.ts"
 
 export const agentConnectionsRouter = new Hono()
 
@@ -57,6 +69,8 @@ agentConnectionsRouter.delete("/:id", async (c) => {
         .map((candidate) => candidate.id),
     ])
     for (const id of ids) await removeGrokBot(id, { forgetIdentity: true })
+    await removeCloudTask(connection.participant.id)
+    signalCloudTaskChange()
   }
   // On Cloud the gateway revokes these sign-ins, so only a new approval
   // brings the agent back.
@@ -281,5 +295,131 @@ agentConnectionsRouter.put("/sign-ins/:clientId", async (c) => {
       return c.json(badRequest(error.message), 400)
     throw error
   }
+  return c.json({ ok: true as const })
+})
+
+// Claude's cloud task, with the MCP preview: Worktable fires the owner's
+// Claude Code scheduled task when something is sent to Claude
+// (cloud-task-runtime.ts). Its URL and token never come back from here.
+
+const CLAUDE_TOKEN = /^sk-ant-\S+$/
+
+/** The Claude agent a task route names, or the answer refusing it. */
+async function claudeAgent(
+  c: Context,
+  id: string,
+  { removing = false } = {}
+): Promise<{ connection: AgentConnection; participantId: string } | Response> {
+  const connection =
+    configuredMcpSurface() === "preview"
+      ? (await listAgentConnections()).find((entry) => entry.id === id)
+      : undefined
+  if (
+    !connection ||
+    connection.platform !== "claude" ||
+    connection.canManage === false
+  )
+    return c.json(
+      { error: "Agent connection not found", code: "NOT_FOUND" },
+      404
+    )
+  if (!connection.participant)
+    return c.json(badRequest("Use Worktable from Claude once first."), 400)
+  // The test is a thread, and so is most of what Claude answers.
+  if (!removing && connection.access?.threads === false)
+    return c.json(badRequest("Turn on Threads access for Claude first."), 400)
+  return { connection, participantId: connection.participant.id }
+}
+
+/** Something for Claude to answer: one thread for every test of a URL and token. */
+async function postTestThread(
+  c: Context,
+  connection: AgentConnection,
+  participantId: string,
+  generation: string
+): Promise<void> {
+  const spaceId = connection.spaceIds?.[0]
+  await postThreadMessageWithStored(c.get("identity"), {
+    location: spaceId ? { kind: "space", spaceId } : { kind: "worktable" },
+    title: "Auto-reply test",
+    to: participantId,
+    body: "Worktable is testing Auto-reply. Reply on this thread with: Auto-reply works.",
+    idempotencyKey: `cloud-task-test:${generation}`,
+    expectsReply: true,
+  })
+}
+
+// Save the URL and token Claude shows, then test them. Either may be left out
+// to keep the saved one.
+agentConnectionsRouter.put("/:id/cloud-task", async (c) => {
+  const agent = await claudeAgent(c, c.req.param("id"))
+  if (agent instanceof Response) return agent
+  const body = (await c.req.json().catch(() => null)) as {
+    url?: unknown
+    token?: unknown
+  } | null
+  if (!body || typeof body !== "object")
+    return c.json(badRequest("Expected a JSON object"), 400)
+  const text = (value: unknown) =>
+    typeof value === "string" ? value.trim() : ""
+  const saved = await cloudTaskFor(agent.participantId)
+  let url: string
+  try {
+    url = validateWebhookDestination(
+      CLAUDE_CODE_TASK,
+      text(body.url) || saved?.url || ""
+    )
+  } catch (error) {
+    return c.json(badRequest((error as Error).message), 400)
+  }
+  const token = text(body.token) || saved?.token || ""
+  if (token.length > 4096 || !CLAUDE_TOKEN.test(token))
+    return c.json(
+      badRequest("Paste the token Claude shows. It starts with sk-ant-"),
+      400
+    )
+  const generation = randomUUID()
+  await postTestThread(c, agent.connection, agent.participantId, generation)
+  await saveCloudTask({
+    participantId: agent.participantId,
+    url,
+    token,
+    generation,
+  })
+  signalCloudTaskChange()
+  return c.json({ ok: true as const })
+})
+
+agentConnectionsRouter.post("/:id/cloud-task/test", async (c) => {
+  const agent = await claudeAgent(c, c.req.param("id"))
+  if (agent instanceof Response) return agent
+  const task = await cloudTaskFor(agent.participantId)
+  if (!task) return c.json(badRequest("Set up the task first."), 400)
+  await postTestThread(
+    c,
+    agent.connection,
+    agent.participantId,
+    task.generation
+  )
+  await updateCloudTask(agent.participantId, task.generation, (t) => {
+    const now = Date.now()
+    Object.assign(t, {
+      testingSince: now,
+      nextAt: now,
+      verifiedAt: undefined,
+      error: undefined,
+      firedAt: undefined,
+      attempts: undefined,
+    })
+  })
+  signalCloudTaskChange()
+  return c.json({ ok: true as const })
+})
+
+agentConnectionsRouter.delete("/:id/cloud-task", async (c) => {
+  const agent = await claudeAgent(c, c.req.param("id"), { removing: true })
+  if (agent instanceof Response) return agent
+  await removeCloudTask(agent.participantId)
+  signalCloudTaskChange()
   return c.json({ ok: true as const })
 })

@@ -26,6 +26,7 @@ import { threadQueryKeys } from "@/lib/threads-queries"
 import { AgentAvatar } from "./agent-avatar"
 import { AgentFields } from "./agent-fields"
 import { AutoReplySetting } from "./auto-reply"
+import { CloudTaskSetup } from "./cloud-task-setup"
 
 function sameAccess(a: AgentAccess | null, b: AgentAccess | null): boolean {
   return a?.threads === b?.threads && a?.read === b?.read && a?.edit === b?.edit
@@ -53,6 +54,8 @@ export function AgentEditDialog({
   const [name, setName] = useState("")
   const [icon, setIcon] = useState<string | null>(null)
   const [access, setAccess] = useState<AgentAccess | null>(null)
+  // The dialog shows a cloud task's setup steps in place of the agent's fields.
+  const [settingUp, setSettingUp] = useState(false)
 
   useEffect(() => {
     if (!connection) return
@@ -60,7 +63,11 @@ export function AgentEditDialog({
     setName(connection.displayName)
     setIcon(connection.icon ?? null)
     setAccess(connection.access ?? null)
+    setSettingUp(false)
   }, [connection])
+
+  // Back to the agent once the test reaches it.
+  if (settingUp && autoReply?.state === "on") setSettingUp(false)
 
   const save = useMutation({
     mutationFn: async () => {
@@ -96,27 +103,49 @@ export function AgentEditDialog({
   const canSave =
     trimmed.length > 0 && trimmed.length <= 100 && changed && !save.isPending
 
+  const header = (
+    <ResponsiveDialogHeader>
+      <AgentAvatar
+        name={trimmed || connection.displayName}
+        platform={connection.platform}
+        icon={icon}
+        className="mb-1 size-10"
+      />
+      <ResponsiveDialogTitle>{connection.displayName}</ResponsiveDialogTitle>
+      <ResponsiveDialogDescription>
+        {[platform.name, connection.machine].filter(Boolean).join(" · ")}
+      </ResponsiveDialogDescription>
+    </ResponsiveDialogHeader>
+  )
+
+  if (settingUp && autoReply)
+    return (
+      <ResponsiveDialog open onOpenChange={onOpenChange}>
+        <ResponsiveDialogContent>
+          {header}
+          <ResponsiveDialogBody>
+            <CloudTaskSetup connection={{ ...connection, autoReply }} />
+          </ResponsiveDialogBody>
+          <ResponsiveDialogFooter>
+            <Button variant="outline" onClick={() => setSettingUp(false)}>
+              Back
+            </Button>
+          </ResponsiveDialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+    )
+
   return (
     <ResponsiveDialog open onOpenChange={onOpenChange}>
       <ResponsiveDialogContent>
-        <ResponsiveDialogHeader>
-          <AgentAvatar
-            name={trimmed || connection.displayName}
-            platform={connection.platform}
-            icon={icon}
-            className="mb-1 size-10"
-          />
-          <ResponsiveDialogTitle>
-            {connection.displayName}
-          </ResponsiveDialogTitle>
-          <ResponsiveDialogDescription>
-            {[platform.name, connection.machine].filter(Boolean).join(" · ")}
-          </ResponsiveDialogDescription>
-        </ResponsiveDialogHeader>
+        {header}
         <ResponsiveDialogBody>
           {autoReply && (
             <div className="mb-5">
-              <AutoReplySetting connection={{ ...connection, autoReply }} />
+              <AutoReplySetting
+                connection={{ ...connection, autoReply }}
+                onSetUp={() => setSettingUp(true)}
+              />
             </div>
           )}
           <AgentFields

@@ -155,7 +155,7 @@ describe("who wrote a passage", () => {
     ).toMatchObject({ by: "token:atlas" })
   })
 
-  it("tells the agent that wrote the text, when a comment on it is sent to it", async () => {
+  it("tells the agent that wrote the text, and quotes only its own or a person's text unasked", async () => {
     const { participant } = await resolveParticipant(finn)
     await pendingList()
     const target = {
@@ -176,9 +176,26 @@ describe("who wrote a passage", () => {
       spaceId: "pricing",
       docPath: "explorer",
     })
-    const { text } = renderNotices(notices, { mode: "ambient" })
+    // Karo also comments on the line Atlas wrote: her words, not Atlas's.
+    const atlasLine = { type: "doc" as const, docPath: "explorer", quote: "Business is $199 a month." }
+    await createAnnotation("pricing", {
+      target: atlasLine,
+      category: "comment",
+      body: "Too close to Team.",
+      author: { type: "user", id: "user", name: "Karo" },
+      to: [{ id: participant.id, kind: "agent", name: "Finn" }],
+      byPerson: true,
+      passageAuthor: await passageAuthorForTarget("pricing", atlasLine, ["*"]),
+    })
+    const { text } = renderNotices(
+      await noticesFor(await pendingFor(participant.id), finn, { spaceId: "pricing", docPath: "explorer" }),
+      { mode: "ambient" }
+    )
+    expect(text).toContain("“Karo” sent you a comment on this Doc: “Too close to Team.”")
+    expect(text).not.toContain("Business is $199")
+    expect(notices).toHaveLength(1)
     expect(text).toMatch(
-      /Karo sent you a comment on text you wrote on \d+ \w+, “Team is \$49 a month\.”: “Feels high for three people\.”/
+      /“Karo” sent you a comment on text you wrote on \d+ \w+, “Team is \$49 a month\.”: “Feels high for three people\.”/
     )
   })
 })

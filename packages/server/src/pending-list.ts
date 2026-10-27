@@ -73,6 +73,7 @@ export interface PendingCommentSource {
   personWords: boolean
   /** Who wrote the commented text, and when, as its versions record it. */
   passageBy?: string
+  passageByPerson?: boolean
   passageAt?: string
 }
 
@@ -302,7 +303,7 @@ export interface IndexedComment {
   body: string
   requests?: AnnotationRequest[]
   thread?: Array<{ id: string; author: AnnotationAuthor; body: string }>
-  passageAuthor?: { by: string; at: string }
+  passageAuthor?: { by: string; kind: "person" | "agent"; at: string }
 }
 
 /** Where a comment is: its Doc's path, durable id, and quoted passage. */
@@ -360,6 +361,7 @@ function commentItems(
               ...(annotation.passageAuthor
                 ? {
                     passageBy: annotation.passageAuthor.by,
+                    passageByPerson: annotation.passageAuthor.kind === "person",
                     passageAt: annotation.passageAuthor.at,
                   }
                 : {}),

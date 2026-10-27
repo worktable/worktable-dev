@@ -174,7 +174,7 @@ async function eventsCall<T>(
   const identity =
     full && full.principal.id === partial.principal.id
       ? full
-      : { ...partial, scopes: exchange.server.scopes ?? ["*"] }
+      : { ...partial, scopes: exchange.server.scopes ?? [] }
   try {
     return await run({ identity, origin: exchange.server.urlOrigin ?? "" })
   } catch (error) {

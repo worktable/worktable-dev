@@ -177,7 +177,7 @@ describe("agent connection routes", () => {
       const chat = await connect("chatgpt-desktop")
       const session = await connect("claude-code")
       // Like a sign-in on Cloud: no recorded app, so its name says which.
-      await connect(null, "Claude")
+      const named = await connect(null, "Claude")
       const autoReplies = async () => {
         const listed = (await (
           await app.fetch(request("GET", "/api/agent-connections", cookie))
@@ -228,6 +228,13 @@ describe("agent connection routes", () => {
         ChatGPT: { kind: "chat", state: "on" },
         "Claude Code": { kind: "session", state: "on" },
         Claude: { kind: "task", state: "off" },
+      })
+
+      // What an agent does outweighs what its name suggests.
+      await waitForPending(named, {}, { seconds: 0 })
+      expect((await autoReplies())["Claude"]).toEqual({
+        kind: "session",
+        state: "on",
       })
     } finally {
       delete process.env["WORKTABLE_MCP_MODERN"]

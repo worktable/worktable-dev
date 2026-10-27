@@ -1,5 +1,11 @@
 import { Link } from "@tanstack/react-router"
-import { AtSign, CircleAlert, Clock3, Reply } from "lucide-react"
+import {
+  AtSign,
+  CircleAlert,
+  Clock3,
+  MessageSquareText,
+  Reply,
+} from "lucide-react"
 import { useState } from "react"
 import type { DocumentSummary, PendingItem } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
@@ -12,6 +18,7 @@ import { ThreadLink } from "@/components/home/activity-feed"
 import { useLifetimeActions } from "@/hooks/use-document-organize"
 import { usePending } from "@/lib/activity"
 import { shortWhen } from "@/lib/activity-format"
+import { useActorName } from "@/lib/use-actor-name"
 import { formatArchiveDate } from "@/lib/lifetime"
 import { useSpaces } from "@/lib/queries"
 import { ProgressRing } from "@/components/getting-started/progress-ring"
@@ -29,6 +36,7 @@ function PendingRow({
   item: PendingItem
   spaceName?: string
 }) {
+  const nameOf = useActorName()
   const where = spaceName ? (
     <span className="shrink-0 text-muted-foreground/70">{spaceName}</span>
   ) : null
@@ -37,7 +45,9 @@ function PendingRow({
       ? AtSign
       : item.kind === "deliveryFailed"
         ? CircleAlert
-        : Reply
+        : item.kind === "commentRequest"
+          ? MessageSquareText
+          : Reply
   const text =
     item.kind === "threadRequest"
       ? `${item.from.name ?? "Someone"} asked you in ${item.threadTitle}`
@@ -47,7 +57,9 @@ function PendingRow({
           ? `Comments paused on ${item.linkLabel || "Untitled link"}`
           : item.kind === "visitorComments"
             ? `${item.count} visitor comment${item.count === 1 ? "" : "s"} on ${item.docTitle ?? item.docPath}`
-            : `Reply to your comment on ${item.docTitle ?? item.docPath}`
+            : item.kind === "commentRequest"
+              ? `${nameOf(item.from)} sent ${item.agent ? item.agent.name : "you"} a comment on ${item.docTitle ?? item.docPath}`
+              : `Reply to your comment on ${item.docTitle ?? item.docPath}`
   const children = (
     <>
       <Icon
@@ -86,7 +98,11 @@ function PendingRow({
     <Link
       to="/spaces/$spaceId/documents/$"
       params={{ spaceId: item.spaceId, _splat: item.docPath }}
-      hash={item.kind === "commentReply" ? undefined : "visitors"}
+      hash={
+        item.kind === "commentReply" || item.kind === "commentRequest"
+          ? undefined
+          : "visitors"
+      }
       className={rowClass}
     >
       {children}

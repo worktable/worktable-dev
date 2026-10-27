@@ -4052,6 +4052,8 @@ async function deleteDocLocked(
   if (durable.error) return { error: durable.error };
   if (durable.handled) {
     notifyDocContentChanged(spaceId, sanitized);
+    // Comments go with the Doc; what waited on them no longer does.
+    void import("./pending-list.ts").then((list) => list.noteCommentsMoved(spaceId));
     return { error: null };
   }
 

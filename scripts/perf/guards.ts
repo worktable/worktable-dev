@@ -393,6 +393,11 @@ export const BACKGROUND_FUNCTIONS = [
   // Keeps a version of a file changed on disk, from the watcher after the
   // change settles (file-change-recorder.ts). No request waits on it.
   "packages/server/src/document-write-service.ts#recordExternalFileChanges",
+  // Indexes open comment requests and thread requests once per workspace,
+  // from boot; writes then update it without reading the sources again.
+  "packages/server/src/pending-list.ts#build",
+  // Follows one changed thread location after its event; no request waits.
+  "packages/server/src/pending-list.ts#rescanThreadLocation",
 ]
 
 const inBackground = (site: string) =>

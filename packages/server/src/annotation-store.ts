@@ -40,6 +40,13 @@ import {
 import { readWorkspaceStorageLayoutAt } from "./workspace-storage-v2.ts"
 import { BoundedFileReadError } from "./bounded-file.ts"
 import { addRequests, requestsAfterReply, type CommentReplier } from "./annotation-requests.ts"
+import {
+  noteCommentChanged,
+  noteCommentsMoved,
+  type CommentPlace,
+  type IndexedComment,
+} from "./pending-list.ts"
+import { listWaitingCommentsV2 } from "./document-annotation-service.ts"
 
 const ANNOTATION_FILE_TYPE = "worktable.annotations" as const;
 const DEFAULT_AUTHOR: AnnotationAuthor = { type: "agent", id: "worktable", name: "Worktable" }
@@ -371,11 +378,12 @@ async function createAnnotationRecord(spaceId: string, input: CreateAnnotationIn
       idempotencyKey: input.idempotencyKey,
       metadata: input.metadata ?? {},
       ...(input.to?.length
-        ? { requests: addRequests([], input.to, now, input.byPerson ? input.body : undefined) }
+        ? { requests: addRequests([], input.to, now, { personText: input.byPerson ? input.body : undefined }) }
         : {}),
     };
     file.annotations.push(annotation);
     await writeAnnotationFile(spaceId, key, file, beforeWrite);
+    noteLegacyComment(spaceId, annotation);
     return { annotation, created: true };
   };
   return key.root === "docs" ? withDocPathLock(spaceId, () => withAnnotationStoreLock(spaceId, create, commentAccess()))
@@ -406,6 +414,7 @@ async function replyAnnotationRecord(spaceId: string, annotationId: string, body
   };
   found.file.annotations[found.index] = annotation;
   await writeAnnotationFile(spaceId, found.key, found.file);
+  noteLegacyComment(spaceId, annotation);
   return { annotation, replyId };
 }, commentAccess())
 }
@@ -432,6 +441,7 @@ export async function updateAnnotation(spaceId: string, annotationId: string, pa
   };
   found.file.annotations[found.index] = annotation;
   await writeAnnotationFile(spaceId, found.key, found.file);
+  noteLegacyComment(spaceId, annotation);
   return annotation;
 })
 }
@@ -458,8 +468,42 @@ async function resolveAnnotationRecord(spaceId: string, annotationId: string, re
   }
     found.file.annotations[found.index] = annotation;
     await writeAnnotationFile(spaceId, found.key, found.file);
+    noteLegacyComment(spaceId, annotation);
     return annotation;
   });
+}
+
+/** Where a comment in the original layout is, for the pending list. */
+function legacyPlace(annotation: Annotation): CommentPlace | null {
+  const path = annotatedDocumentPath(annotation)
+  if (!path) return null
+  const quote = "quote" in annotation.target ? annotation.target.quote : undefined
+  return { path, ...(quote ? { quote } : {}) }
+}
+
+function noteLegacyComment(spaceId: string, annotation: Annotation): void {
+  const place = legacyPlace(annotation)
+  if (place) noteCommentChanged(spaceId, annotation, place)
+}
+
+/** Open comments in a Space that wait on someone, for the pending list. */
+export async function openCommentsWithRequests(
+  spaceId: string
+): Promise<Array<{ annotation: IndexedComment; place: CommentPlace }>> {
+  if (await usesDocumentDataV2()) return listWaitingCommentsV2(spaceId)
+  const waiting: Array<{ annotation: IndexedComment; place: CommentPlace }> = []
+  let offset: number | undefined = 0
+  while (offset !== undefined) {
+    const page = await listAnnotations(spaceId, { status: ["open"], limit: 500, offset })
+    for (const annotation of page.annotations) {
+      const place = legacyPlace(annotation)
+      if (place && annotation.requests?.some((request) => request.status === "open")) {
+        waiting.push({ annotation, place })
+      }
+    }
+    offset = page.nextOffset
+  }
+  return waiting
 }
 
 // Commenting on a temporary document keeps it active, like editing it. In
@@ -743,6 +787,7 @@ export async function renameAnnotationDocPath(
   await withAnnotationStoreLock(spaceId, () =>
     renameAnnotationDocPathLocked(spaceId, oldPath, newPath)
   );
+  noteCommentsMoved(spaceId);
 }
 
 export async function deleteAnnotationDocPath(
@@ -757,6 +802,7 @@ export async function deleteAnnotationDocPath(
     });
     if (existsSync(path)) await rm(path, { force: true });
   });
+  noteCommentsMoved(spaceId);
 }
 
 // Widget ids are immutable (rename only changes display metadata), so unlike
@@ -774,4 +820,5 @@ export async function deleteAnnotationWidgetId(
     });
     if (existsSync(path)) await rm(path, { force: true });
   });
+  noteCommentsMoved(spaceId);
 }

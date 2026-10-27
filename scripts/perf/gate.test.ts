@@ -124,6 +124,25 @@ describe("paired speed gate", () => {
     expect(
       compare([old, run("bbbb", 1, QUIET[0]!)], "aaaa", "bbbb").headOnly
     ).toEqual(["click phone:cold:thread"])
+
+    // A journey the base runs but can't show (it predates the screen) is
+    // new in the head too, and the rest are still judged.
+    const predates = QUIET.map((jitter) => run("aaaa", 1, jitter))
+    for (const item of predates) item.clicks[5]!.contentMs = null
+    const newScreen = compare(
+      [...predates, ...QUIET.map((jitter) => run("bbbb", 1, jitter))],
+      "aaaa",
+      "bbbb"
+    )
+    expect(newScreen.incomplete).toEqual([])
+    expect(newScreen.headOnly).toEqual(["click phone:cold:thread"])
+    expect(newScreen.comparisons.length).toBeGreaterThan(0)
+    // If the head can't always show it either, the sides still can't be judged.
+    const lost = QUIET.map((jitter) => run("bbbb", 1, jitter))
+    lost[0]!.clicks[5]!.contentMs = null
+    expect(compare([...predates, ...lost], "aaaa", "bbbb").incomplete).toEqual([
+      "click phone:cold:thread: the base never showed its content",
+    ])
   })
 
   test("only a regression both independent stages found counts, and the plan re-times its pass", () => {

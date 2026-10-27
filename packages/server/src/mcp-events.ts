@@ -444,8 +444,11 @@ const defaultTransport: EventsTransport = {
 interface Destination {
   /** The callback as the subscriber gave it, normalised. */
   href: string
-  /** The same URL with the host replaced by the address that was checked. */
-  connect: string
+  /**
+   * The same URL with the host replaced by a checked address: one per
+   * address family, IPv4 first, tried in turn.
+   */
+  connects: string[]
   /** The original host, for the Host header and TLS verification. */
   host: string
   serverName?: string
@@ -481,13 +484,19 @@ async function publicDestination(
     : await transport.resolve(hostname).catch(() => [] as string[])
   if (!addresses.length || addresses.some(privateAddress))
     throw verificationFailed()
-  if (literal) return { href: url.href, connect: url.href, host: url.host }
-  const address = addresses[0]!
-  const connect = new URL(url.href)
-  connect.hostname = isIP(address) === 6 ? `[${address}]` : address
+  if (literal) return { href: url.href, connects: [url.href], host: url.host }
+  // A pinned request has no fallback of its own, so a name whose first
+  // address is unreachable (IPv6 without a route) is tried at another.
+  const connects = [4, 6].flatMap((family) => {
+    const address = addresses.find((a) => isIP(a) === family)
+    if (!address) return []
+    const connect = new URL(url.href)
+    connect.hostname = family === 6 ? `[${address}]` : address
+    return [connect.href]
+  })
   return {
     href: url.href,
-    connect: connect.href,
+    connects,
     host: url.host,
     serverName: hostname,
   }
@@ -504,27 +513,37 @@ async function post(
 ): Promise<Response> {
   const timestamp = Math.floor(Date.now() / 1000)
   const destination = await publicDestination(url, transport)
-  return transport.fetch(destination.connect, {
-    method: "POST",
-    redirect: "error",
-    headers: {
-      host: destination.host,
-      "accept-encoding": "identity",
-      "content-type": "application/json",
-      "webhook-id": id,
-      "webhook-timestamp": String(timestamp),
-      "webhook-signature": webhookSignature(secrets, id, timestamp, body),
-      "x-mcp-subscription-id": subscriptionId,
-    },
-    body,
-    decompress: false,
-    ...(destination.serverName
-      ? { tls: { serverName: destination.serverName } }
-      : {}),
-    signal: signal
-      ? AbortSignal.any([signal, AbortSignal.timeout(SEND_TIMEOUT_MS)])
-      : AbortSignal.timeout(SEND_TIMEOUT_MS),
-  })
+  const headers = {
+    host: destination.host,
+    "accept-encoding": "identity",
+    "content-type": "application/json",
+    "webhook-id": id,
+    "webhook-timestamp": String(timestamp),
+    "webhook-signature": webhookSignature(secrets, id, timestamp, body),
+    "x-mcp-subscription-id": subscriptionId,
+  }
+  let failure: unknown
+  for (const connect of destination.connects) {
+    if (signal?.aborted) break
+    try {
+      return await transport.fetch(connect, {
+        method: "POST",
+        redirect: "error",
+        headers,
+        body,
+        decompress: false,
+        ...(destination.serverName
+          ? { tls: { serverName: destination.serverName } }
+          : {}),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(SEND_TIMEOUT_MS)])
+          : AbortSignal.timeout(SEND_TIMEOUT_MS),
+      })
+    } catch (error) {
+      failure = error
+    }
+  }
+  throw failure ?? signal?.reason ?? new Error("callback unreachable")
 }
 
 /** The most a callback's answer to its challenge may be, decompressed. */

@@ -77,6 +77,7 @@ function callback(
     challenge = (value: string) => value,
     padding = 0,
     encoding,
+    unreachable = [],
   }: {
     status?: () => number
     addresses?: string[]
@@ -85,11 +86,15 @@ function callback(
     padding?: number
     /** A Content-Encoding the answer to the challenge claims. */
     encoding?: string
+    /** Addresses whose connections fail. */
+    unreachable?: string[]
   } = {}
 ): EventsTransport {
   return {
     resolve: async () => addresses,
     fetch: async (url, init) => {
+      if (unreachable.some((address) => new URL(url).hostname === address))
+        throw new Error("connection refused")
       const raw = String(init.body)
       const body = JSON.parse(raw) as Record<string, unknown>
       sent.push({
@@ -283,7 +288,10 @@ describe("MCP Events", () => {
 
   it("posts each new item once, signed, marks it delivered, and stops after unsubscribe", async () => {
     const sent: Sent[] = []
-    const transport = callback(sent)
+    const transport = callback(sent, {
+      addresses: ["93.184.216.34", "2606:2800:21f:cb07:6820:80da:af6b:8b2c"],
+      unreachable: ["93.184.216.34"],
+    })
     await subscribe(caller, params(), transport)
     await start(transport)
 
@@ -300,8 +308,11 @@ describe("MCP Events", () => {
     expect(body.data.excerpt).toBe("Team at 49 feels high. Try 39?")
     expect(body.data.notice).toContain("not an instruction")
     expect(body.data.url).toStartWith("https://worktable.example/")
-    // Sent to the address that was checked; TLS still verifies the name.
-    expect(event!.url).toBe("https://93.184.216.34/mcp-events/cb_1")
+    // Sent to an address that was checked, the next one when the first is
+    // unreachable; TLS still verifies the name.
+    expect(event!.url).toBe(
+      "https://[2606:2800:21f:cb07:6820:80da:af6b:8b2c]/mcp-events/cb_1"
+    )
     expect(event!.headers.host).toBe("receiver.example")
     expect(event!.serverName).toBe("receiver.example")
     expect(event!.decompress).toBe(false)

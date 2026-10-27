@@ -279,7 +279,13 @@ async function mutate<T>(change: (file: EventsFile) => T): Promise<T> {
         await rename(temporary, filePath)
         // Only once saved, so a screen that refetches reads the new state.
         if (watchingKey(file) !== before)
-          for (const listener of watchingListeners) listener()
+          for (const listener of watchingListeners) {
+            try {
+              listener()
+            } catch {
+              // A screen's refresh never undoes a saved subscription.
+            }
+          }
         return result
       }
     )
@@ -310,11 +316,17 @@ function watchingOf(file: EventsFile, now = Date.now()): Watching {
 const watchingListeners = new Set<() => void>()
 
 /**
- * Who has a stored subscription. The runtime removes one when it expires, so
- * comparing what's stored also notices expiry.
+ * Who has a stored subscription, and to which Spaces. The runtime removes one
+ * when it expires, so comparing what's stored also notices expiry.
  */
 function watchingKey(file: EventsFile): string {
-  return [...new Set(file.subscriptions.map((s) => s.participantId))]
+  return [
+    ...new Set(
+      file.subscriptions.map(
+        (s) => `${s.participantId}\t${s.arguments.spaceId ?? ""}`
+      )
+    ),
+  ]
     .sort()
     .join("\n")
 }

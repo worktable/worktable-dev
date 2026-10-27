@@ -22,7 +22,13 @@ export async function withAutoReply(
 ): Promise<AgentConnection[]> {
   // Chats and sessions answer through MCP 2026-07-28, served with the preview.
   const modern = mcpModernEraEnabled()
-  const watching = modern ? await watchingParticipants() : new Map()
+  // Unreadable subscriptions leave chats unknown, never the list unloaded.
+  const watching = modern
+    ? await watchingParticipants().catch(() => {
+        console.error("[Worktable] MCP event subscriptions could not be read")
+        return null
+      })
+    : new Map()
   return connections.map((connection) => {
     const autoReply = autoReplyFor(connection, { modern, watching })
     return autoReply ? { ...connection, autoReply } : connection
@@ -33,7 +39,7 @@ function autoReplyFor(
   connection: AgentConnection,
   known: {
     modern: boolean
-    watching: Awaited<ReturnType<typeof watchingParticipants>>
+    watching: Awaited<ReturnType<typeof watchingParticipants>> | null
   }
 ): AutoReply | undefined {
   if (connection.platform === "grok-bot") return undefined
@@ -41,8 +47,9 @@ function autoReplyFor(
   if (!known.modern) return undefined
   // An agent not used yet has no participant, and so nothing on.
   const id = connection.participant?.id
-  const watched = id ? known.watching.get(id) : undefined
+  const watched = id ? known.watching?.get(id) : undefined
   const waiting = id ? isWaiting(id) : false
+  if (connection.platform === "chatgpt" && !known.watching) return undefined
   if (connection.platform === "chatgpt" || watched)
     return watched
       ? {

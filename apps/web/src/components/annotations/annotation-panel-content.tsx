@@ -40,7 +40,7 @@ function openRequests(annotation: Annotation): CommentRequest[] {
 
 /**
  * Agents that haven't been shown the comment yet. One that answers on its own
- * is shown it at once, so these see it the next time they use Worktable.
+ * is shown it at once, so these see it when they next work in its Space.
  */
 function agentsNotShown(annotation: Annotation): string[] {
   return openRequests(annotation)
@@ -227,8 +227,8 @@ function AnnotationCard({
             <InfoTip label="When they see it" className="size-6">
               <p>
                 {notShown.length === 1
-                  ? `${notShown[0]} sees this the next time it uses Worktable.`
-                  : `${notShown.join(", ")} see this the next time they use Worktable.`}
+                  ? `${notShown[0]} sees this when it next works in this Space.`
+                  : `${notShown.join(", ")} see this when they next work in this Space.`}
               </p>
             </InfoTip>
           )}

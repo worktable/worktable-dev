@@ -53,9 +53,22 @@ import type {
 } from "@worktable/types"
 import { threadLocationKey } from "@worktable/types"
 
+/** Delivery activity changes only a Grok Bot's status. */
+function refreshGrokConnections(queryClient: QueryClient): void {
+  for (const cloud of [true, false]) {
+    const queryKey = ["agent-connections", cloud] as const
+    if (
+      queryClient.getQueryData<AgentConnectionInventory>(queryKey)?.grokBots
+        ?.length
+    ) {
+      refreshLive(queryClient, [{ queryKey, exact: true }])
+    }
+  }
+}
+
 /**
- * Agents' live state: a Grok Bot's status, or whether one answers on its own,
- * which any agent can start doing. Only a list on screen refetches.
+ * A participant change can be any agent starting or stopping answering on
+ * its own, as well as a Grok Bot's status. Only a list on screen refetches.
  */
 function refreshAgentConnections(queryClient: QueryClient): void {
   for (const cloud of [true, false]) {
@@ -388,7 +401,7 @@ export function applyThreadEvent(
     // Progress while an agent works leaves Pending as it was; a delivery
     // that ends, fails or starts over can change it.
     if (update?.state !== "working" && update?.state !== "receiving") {
-      refreshAgentConnections(queryClient)
+      refreshGrokConnections(queryClient)
       refreshLive(queryClient, [pending])
     }
     return

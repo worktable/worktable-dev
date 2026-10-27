@@ -550,14 +550,19 @@ async function build(current: ListState): Promise<void> {
     )
   }
   // Archived Spaces too: readers leave them out, and a restore needs no rebuild.
+  let complete = scan.complete
   for (const space of spaces) {
     await rebuildSpaceComments(current, space.id).catch((error: unknown) => {
+      complete = false
       console.error(`[pending] skipped comments in ${space.id}:`, logError(error))
     })
   }
-  // Marks for items that are no longer open don't come back.
-  for (const itemId of Object.keys(current.marks.items)) {
-    if (!current.entries.has(itemId)) delete current.marks.items[itemId]
+  // Marks for items that are no longer open don't come back. After a build
+  // that couldn't read everything, an item missing may only be unreadable.
+  if (complete) {
+    for (const itemId of Object.keys(current.marks.items)) {
+      if (!current.entries.has(itemId)) delete current.marks.items[itemId]
+    }
   }
   scheduleSave(current)
 }

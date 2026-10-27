@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
@@ -272,6 +272,24 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
         notifyWorkspaceChange({ type: "workspaceReset" })
         const rebuilt = await pendingFor(finnId)
         expect(rebuilt.map((entry) => [entry.itemId, entry.revision])).toEqual([
+          [second[0]!.itemId, 2],
+        ])
+        expect(changes).toHaveLength(3)
+
+        // A restart that can't read the comments forgets nothing: once they
+        // read again, the item keeps its place and isn't announced again.
+        const files = (await readdir(root, { recursive: true }))
+          .map(String)
+          .filter((file) => file.endsWith("annotations.json"))
+        const saved = await Promise.all(files.map((file) => readFile(join(root, file), "utf8")))
+        await Promise.all(files.map((file) => writeFile(join(root, file), "{")))
+        notifyWorkspaceChange({ type: "workspaceReset" })
+        expect(await pendingFor(finnId)).toEqual([])
+        await savePendingList()
+        await Promise.all(files.map((file, index) => writeFile(join(root, file), saved[index]!)))
+        notifyWorkspaceChange({ type: "workspaceReset" })
+        const recovered = await pendingFor(finnId)
+        expect(recovered.map((entry) => [entry.itemId, entry.revision])).toEqual([
           [second[0]!.itemId, 2],
         ])
         expect(changes).toHaveLength(3)

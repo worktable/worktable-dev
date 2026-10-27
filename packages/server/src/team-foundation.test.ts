@@ -1155,6 +1155,7 @@ describe("team foundation", () => {
             category: "comment",
             body,
             author: { type: "user", id: owner.principal.id },
+            byPerson: true,
             to: [{ id: participant.id, kind: "agent", name: "ChatGPT" }],
           })
         )

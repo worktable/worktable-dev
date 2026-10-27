@@ -91,7 +91,11 @@ export const ITEM_SENT_DEFINITION = {
       docPath: { type: "string" },
       threadId: { type: "string" },
       from: { type: "string" },
-      excerpt: { type: "string" },
+      excerpt: {
+        type: "string",
+        description:
+          "What a person wrote, present only when they wrote it unchanged in Worktable",
+      },
       url: { type: "string" },
       notice: {
         type: "string",
@@ -100,15 +104,7 @@ export const ITEM_SENT_DEFINITION = {
       },
       open: { type: "object", description: "The Worktable call that opens it" },
     },
-    required: [
-      "itemId",
-      "kind",
-      "spaceId",
-      "from",
-      "excerpt",
-      "notice",
-      "open",
-    ],
+    required: ["itemId", "kind", "spaceId", "from", "notice", "open"],
     additionalProperties: false,
   },
 }
@@ -668,7 +664,10 @@ async function eventBody(
     noticesFor([item], reader, subscription.arguments)
   )
   if (!notice || !inScope(notice, subscription.arguments)) return null
-  const { text } = renderNotices([notice], { mode: "requested" })
+  // An event reaches the chat unasked, so it renders as ambient: only words a
+  // person wrote unchanged in Worktable are quoted, everything else is named
+  // and located for the agent to open.
+  const { text } = renderNotices([notice], { mode: "ambient" })
   const url =
     notice.spaceId && notice.docPath
       ? docUrlToSendInChat(subscription.origin, notice.spaceId, notice.docPath)
@@ -684,7 +683,7 @@ async function eventBody(
       ...(notice.docPath ? { docPath: notice.docPath } : {}),
       ...(notice.threadId ? { threadId: notice.threadId } : {}),
       from: notice.from.name,
-      excerpt: notice.excerpt,
+      ...(notice.personWords ? { excerpt: notice.excerpt } : {}),
       ...(url ? { url } : {}),
       notice: text,
       open: notice.open,

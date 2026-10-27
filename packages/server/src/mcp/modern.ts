@@ -168,12 +168,13 @@ async function eventsCall<T>(
   if (!partial) {
     throw new ProtocolError(-32600, "Subscribe with an agent's sign-in")
   }
-  // The request's whole identity: on Teams, deliveries check access with
-  // its team binding.
-  const identity = currentRequestIdentity() ?? {
-    ...partial,
-    scopes: exchange.server.scopes ?? ["*"],
-  }
+  // The request's whole identity when it is this caller's: on Teams,
+  // deliveries check access with its team binding.
+  const full = currentRequestIdentity()
+  const identity =
+    full && full.principal.id === partial.principal.id
+      ? full
+      : { ...partial, scopes: exchange.server.scopes ?? ["*"] }
   try {
     return await run({ identity, origin: exchange.server.urlOrigin ?? "" })
   } catch (error) {

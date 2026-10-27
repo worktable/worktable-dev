@@ -28,6 +28,13 @@ export function canInvite(
   return person?.role === "owner" && person.signOut !== null
 }
 
+/** Without a Space to start from, the first task is setting one up. */
+const FIRST_SPACE: ChecklistItem = {
+  id: "first-task",
+  title: "Set up your first Space",
+  description: "Your agent builds it from what it already knows.",
+}
+
 const AGENT_INSTRUCTIONS: ChecklistItem = {
   id: "agent-instructions",
   title: "Add Worktable to your agent's global rules",
@@ -59,13 +66,13 @@ export function checklistFor(
         description: "So it can work here too.",
       },
       ...instructions,
-      {
-        id: "first-task",
-        title: "Give your agent a task",
-        description: options.joinedSpaceName
-          ? `Start with the work already in ${options.joinedSpaceName}.`
-          : "Ask for something you need. It saves the result in Worktable.",
-      },
+      options.joinedSpaceName
+        ? {
+            id: "first-task",
+            title: "Give your agent a task",
+            description: `Start with the work already in ${options.joinedSpaceName}.`,
+          }
+        : FIRST_SPACE,
     ]
   }
   return [
@@ -75,11 +82,7 @@ export function checklistFor(
       description: "So it can read and write here.",
     },
     ...instructions,
-    {
-      id: "first-task",
-      title: "Give your agent a task",
-      description: "Ask for something you need. It saves the result in Worktable.",
-    },
+    FIRST_SPACE,
     ...(options.canInvite
       ? [
           {

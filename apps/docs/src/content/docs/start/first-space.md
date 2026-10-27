@@ -14,11 +14,13 @@ Started** Space.
 
 Getting Started sits at the top of the sidebar until you remove it. Its home
 lists your first steps: connect your agent, add Worktable to its global rules,
-give it a task and, for the owner, invite the team. Each step ticks off when it
-happens, such as when your agent saves its first doc. The global rules step
-gives you a line to copy into the rules your agent reads in every chat and
-project, so you don't have to say "in Worktable" every time. Inviting can be skipped. Each person has
-their own list. The guides below it stay in the Space.
+set up your first Space and, for the owner, invite the team. Each step ticks
+off when it happens, such as when your agent saves its first doc. The global
+rules step gives you a line to copy into the rules your agent reads in every
+chat and project, so you don't have to say "in Worktable" every time. The first
+Space step has prompts to copy, such as one that sets up a Space for the
+project you're working on. Inviting can be skipped. Each person has their own
+list. The guides below it stay in the Space.
 
 ## Create a brief
 

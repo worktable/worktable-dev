@@ -541,7 +541,7 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     "I keep my work in Worktable."
   )
   await expect(page.getByText("~/.codex/AGENTS.md")).toBeVisible()
-  await page.getByRole("button", { name: /Give your agent a task/ }).click()
+  await page.getByRole("button", { name: /Set up your first Space/ }).click()
   await expect(
     page.getByText(/^Research \[topic\] and set up a Space in Worktable/)
   ).toBeVisible()

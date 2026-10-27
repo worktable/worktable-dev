@@ -28,11 +28,36 @@ export function canInvite(
   return person?.role === "owner" && person.signOut !== null
 }
 
-/** Each person's own steps, in the order they're worth doing. */
+/** Without a Space to start from, the first task is setting one up. */
+const FIRST_SPACE: ChecklistItem = {
+  id: "first-task",
+  title: "Set up your first Space",
+  description: "Your agent builds it from what it already knows.",
+}
+
+const AGENT_INSTRUCTIONS: ChecklistItem = {
+  id: "agent-instructions",
+  title: "Add Worktable to your agent's global rules",
+  description: "So you don't have to say “in Worktable” every time.",
+}
+
+/**
+ * Each person's own steps, in the order they're worth doing. The
+ * instructions come before the first task; once an agent has done one
+ * without them, the step isn't added to a list that was further along.
+ */
 export function checklistFor(
   role: "owner" | "member",
-  options: { canInvite: boolean; joinedSpaceName?: string }
+  options: {
+    canInvite: boolean
+    joinedSpaceName?: string
+    items: PersonalSetup["items"]
+  }
 ): ChecklistItem[] {
+  const instructions =
+    options.items["first-task"] && !options.items["agent-instructions"]
+      ? []
+      : [AGENT_INSTRUCTIONS]
   if (role === "member") {
     return [
       {
@@ -40,13 +65,14 @@ export function checklistFor(
         title: "Connect your agent",
         description: "So it can work here too.",
       },
-      {
-        id: "first-task",
-        title: "Give your agent a task",
-        description: options.joinedSpaceName
-          ? `Start with the work already in ${options.joinedSpaceName}.`
-          : "Ask for something you need. It saves the result in Worktable.",
-      },
+      ...instructions,
+      options.joinedSpaceName
+        ? {
+            id: "first-task",
+            title: "Give your agent a task",
+            description: `Start with the work already in ${options.joinedSpaceName}.`,
+          }
+        : FIRST_SPACE,
     ]
   }
   return [
@@ -55,11 +81,8 @@ export function checklistFor(
       title: "Connect your agent",
       description: "So it can read and write here.",
     },
-    {
-      id: "first-task",
-      title: "Give your agent a task",
-      description: "Ask for something you need. It saves the result in Worktable.",
-    },
+    ...instructions,
+    FIRST_SPACE,
     ...(options.canInvite
       ? [
           {
@@ -117,6 +140,10 @@ export function usePersonalSetup() {
 export interface SetupChoices {
   hidden?: boolean
   welcomed?: boolean
+  /** Pass over a step that needs someone else, such as inviting. */
+  skip?: "invite-team"
+  /** A step only the browser sees happen, such as copying the instructions. */
+  done?: "agent-instructions"
 }
 
 /** Save the person's own choices; the summary carries the result. */
@@ -161,7 +188,10 @@ export function useGettingStartedShortcut(
   const { person, setup } = usePersonalSetup()
   const space = gettingStartedSpace(spaces)
   if (!space || !person || setup.hidden) return null
-  const items = checklistFor(person.role, { canInvite: canInvite(person) })
+  const items = checklistFor(person.role, {
+    canInvite: canInvite(person),
+    items: setup.items,
+  })
   return { space, progress: checklistProgress(items, setup.items) }
 }
 

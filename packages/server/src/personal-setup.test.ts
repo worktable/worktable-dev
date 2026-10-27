@@ -7,7 +7,11 @@ import type { PersonalSetup } from "@worktable/types/setup"
 import { recordActivity, setActivityObserver } from "./activity-log.ts"
 import { setAppDirOverride } from "./app-storage.ts"
 import { trustedLocalIdentity } from "./auth.ts"
-import { observeActivityForSetup } from "./personal-setup.ts"
+import {
+  completeSetupItem,
+  observeActivityForSetup,
+  OWNER_SETUP_KEY,
+} from "./personal-setup.ts"
 import { parsePersonalSetup } from "./personal-setup-shape.ts"
 import { profileRouter } from "./routes/profile.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
@@ -97,8 +101,21 @@ it("completes the owner's first task from their agent's work, not their own", as
   expect(hidden.hidden).toBe(true)
   expect(hidden.items["first-task"]).toBeDefined()
 
-  // Progress is the server's to record.
+  // Progress is the server's to record, except skipping an invite and
+  // copying the instructions, which only the person's browser sees.
   expect((await choose({ items: {} })).status).toBe(400)
+  expect((await choose({ done: "first-task" })).status).toBe(400)
+  expect((await choose({ skip: "connect-agent" })).status).toBe(400)
+  expect((await choose({ skip: "invite-team" })).status).toBe(200)
+  expect((await choose({ done: "agent-instructions" })).status).toBe(200)
+  const chosen = await setup()
+  expect(chosen.items["invite-team"]).toMatchObject({ skipped: true })
+  expect(chosen.items["agent-instructions"]).toBeDefined()
+  expect(chosen.items["first-task"]).toMatchObject({ path: "atlas-brief" })
+
+  // Someone joining later completes the skipped step for real.
+  await completeSetupItem(OWNER_SETUP_KEY, "invite-team")
+  expect((await setup()).items["invite-team"]?.skipped).toBeUndefined()
 })
 
 it("keeps stored progress when an earlier version listed other items", () => {

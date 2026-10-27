@@ -9,9 +9,19 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Add Worktable to your agent's global rules:** Getting Started has a line to copy into your agent's global rules, and says where each agent keeps them, so it saves work in Worktable without being told each time.
+
 ### Changed
 
+- **First tasks that set up a Space:** Getting Started's prompts ask your agent to set up a Space with named docs, such as one for your project, one about you, or one for this week, with placeholders where you fill in a topic or decision.
+- **Clearer agent kinds:** Where you connect agents, each kind says what it is: agents that work in your terminal or editor, Claude and ChatGPT on desktop, phone and the web, and agents that are always running in the background.
 - **Agents pin fewer docs:** An agent that sets up a Space pins only the one or two docs to read first, usually an overview, instead of every doc it made.
+
+### Fixed
+
+- **Skip inviting:** Skipping the invite step in setup, or choosing Skip for now in Getting Started, finishes that step instead of leaving it open.
 
 ## [0.1.31] - 2026-10-26
 

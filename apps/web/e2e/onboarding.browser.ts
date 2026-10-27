@@ -525,10 +525,25 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     page.getByRole("heading", { name: "Getting Started" })
   ).toBeVisible()
   await expect(
-    page.getByRole("link", { name: /Getting Started\s*1\/2/ })
+    page.getByRole("link", { name: /Getting Started\s*1\/3/ })
   ).toBeVisible()
+
+  // Copying the instructions finishes that step, and where to paste them
+  // stays on show until the owner moves on.
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: new URL(page.url()).origin,
+  })
+  await page.getByRole("button", { name: "Copy", exact: true }).click()
   await expect(
-    page.getByText("Done when your agent saves its first doc.")
+    page.getByRole("link", { name: /Getting Started\s*2\/3/ })
+  ).toBeVisible()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
+    "I keep my work in Worktable."
+  )
+  await expect(page.getByText("~/.codex/AGENTS.md")).toBeVisible()
+  await page.getByRole("button", { name: /Set up your first Space/ }).click()
+  await expect(
+    page.getByText(/^Research \[topic\] and set up a Space in Worktable/)
   ).toBeVisible()
 
   // The agent's first doc finishes the list, pushed to the page.

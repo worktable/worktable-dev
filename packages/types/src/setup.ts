@@ -1,6 +1,7 @@
 /**
  * Each person's own first steps in a Worktable. Items complete from things
- * Worktable sees happen, so the list never asks anyone to tick a box.
+ * Worktable sees happen, so the list never asks anyone to tick a box. The
+ * person can skip inviting, which needs someone else.
  */
 
 /**
@@ -14,17 +15,26 @@ export const GETTING_STARTED_SETTING = "gettingStarted"
 export const SETUP_ITEM_IDS = [
   "join-space",
   "connect-agent",
+  "agent-instructions",
   "first-task",
   "invite-team",
 ] as const
 
 export type SetupItemId = (typeof SETUP_ITEM_IDS)[number]
 
+/** Steps a person can pass over without doing them. */
+export const SKIPPABLE_SETUP_ITEM_IDS = ["invite-team"] as const
+
+/** Steps that complete in the person's own browser, such as copying a line. */
+export const SELF_REPORTED_SETUP_ITEM_IDS = ["agent-instructions"] as const
+
 /** When an item completed, and where, when there is a place to go back to. */
 export interface SetupEvidence {
   at: string
   spaceId?: string
   path?: string
+  /** The person chose to skip it. */
+  skipped?: boolean
 }
 
 export interface PersonalSetup {

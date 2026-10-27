@@ -308,9 +308,14 @@ export function compare(
   for (const [group, groupKeys] of groups) {
     const keys: string[] = []
     for (const key of groupKeys) {
-      if (finite(logs(baseClicks, key)).length === 0)
-        incomplete.push(`click ${key}: the base never showed its content`)
-      else keys.push(key)
+      if (finite(logs(baseClicks, key)).length > 0) keys.push(key)
+      // A screen the base can't show yet (it predates the screen) while the
+      // head shows it every run is new, not slower: noted, not judged.
+      else if (
+        finite(logs(headClicks, key)).length === logs(headClicks, key).length
+      )
+        headOnly.push(`click ${key}`)
+      else incomplete.push(`click ${key}: the base never showed its content`)
     }
     if (keys.length === 0) continue
     const sigma = pooledSpread(

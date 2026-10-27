@@ -422,6 +422,13 @@ export const AGENT_ROUTE_HEADERS = {
    * workspace can limit each sender on its own. Set only by the gateway.
    */
   CLIENT_ADDRESS: "x-worktable-client-address",
+  /**
+   * Where this workspace's file links are reached, such as
+   * `https://app.worktable.cloud/w/<id>`: the gateway forwards
+   * `<base>/api/file-links/<token>` to the workspace without sign-in, since
+   * the token is the credential. Set on every admitted request.
+   */
+  FILE_LINK_BASE: "x-worktable-file-link-base",
 } as const
 
 /** The workspace segment of the gateway's agent route: `/w/<id>/…`. */

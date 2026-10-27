@@ -10,6 +10,8 @@ import {
   hostedOAuthPrincipalId,
 } from "@worktable/hosted-contract"
 import { setAppDirOverride } from "./app-storage.ts"
+import { issueFileTicket } from "./file-tickets.ts"
+import { hostedFileLinkBase } from "./hosted.ts"
 import { startServer } from "./index.ts"
 import { listThreadParticipantsForDisplay } from "./thread-service.ts"
 import { setWorkspaceRootOverride } from "./workspace.ts"
@@ -234,5 +236,36 @@ describe("a sign-in agent on a Cloud workspace", () => {
         hostedOAuthPrincipalId("client_chatgpt", owner)
       ]
     ).toEqual(withoutThreads.presentations[participant!.id])
+  })
+})
+
+describe("file links on a Cloud workspace", () => {
+  it("trusts the address they're reached at only from the gateway", () => {
+    const request = (secret: string) =>
+      new Request("http://tenant.internal/api/mcp", {
+        headers: {
+          [GATEWAY_HEADER]: secret,
+          [AGENT_ROUTE_HEADERS.FILE_LINK_BASE]: `${agentBase}/`,
+        },
+      })
+    expect(hostedFileLinkBase(request(admission))).toBe(agentBase)
+    expect(hostedFileLinkBase(request("not-the-secret"))).toBeNull()
+  })
+
+  it("redeem only through the gateway, with the link's token as the only credential", async () => {
+    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const { token } = issueFileTicket({
+      kind: "download",
+      spaceId: "welcome",
+      path: "missing.png",
+      identity: null,
+      principal: { id: "agent:test", type: "agent", displayName: "Test" },
+      actor: "agent:test",
+    })
+    const redeem = (headers: Record<string, string>) =>
+      fetch(`${origin}/api/file-links/${token}`, { headers })
+    expect((await redeem({})).status).toBe(403)
+    // Admitted, the link is redeemed: here it names no file.
+    expect((await redeem({ [GATEWAY_HEADER]: admission })).status).toBe(404)
   })
 })

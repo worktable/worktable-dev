@@ -45,8 +45,9 @@ function retryAfter(value: string | null): number | undefined {
   const ms = /^\d+$/.test(text)
     ? Number(text) * 1000
     : Date.parse(text) - Date.now()
-  return Number.isFinite(ms)
-    ? Math.min(Math.max(ms, 0), MAX_RETRY_AFTER)
+  // Zero or past asks for no wait in particular: the usual backoff applies.
+  return Number.isFinite(ms) && ms > 0
+    ? Math.min(ms, MAX_RETRY_AFTER)
     : undefined
 }
 

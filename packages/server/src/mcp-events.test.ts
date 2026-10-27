@@ -4,7 +4,6 @@ import {
   describe,
   expect,
   it,
-  jest,
   setSystemTime,
 } from "bun:test"
 import { createHmac } from "node:crypto"
@@ -107,9 +106,39 @@ async function comment(spaceId: string, body: string): Promise<void> {
   })
 }
 
-async function until(check: () => boolean): Promise<void> {
-  for (let i = 0; i < 200 && !check(); i++) await Bun.sleep(10)
-  expect(check()).toBe(true)
+let waiters: Array<() => void> = []
+
+/**
+ * Start delivery and wait for its first pass. Then `settled` resolves when
+ * nothing is being queued or sent.
+ */
+async function start(transport: EventsTransport): Promise<void> {
+  const done = settled()
+  stop = startMcpEventsRuntime({
+    transport,
+    onSettled: () => {
+      for (const resolve of waiters.splice(0)) resolve()
+    },
+  })
+  await done
+}
+const settled = () => new Promise<void>((resolve) => waiters.push(resolve))
+
+/** Run `restart` a minute later, once queued retries are due. */
+async function pastRetryDelay(restart: () => Promise<void>): Promise<void> {
+  setSystemTime(new Date(Date.now() + 60_000))
+  try {
+    await restart()
+  } finally {
+    setSystemTime()
+  }
+}
+
+/** Run `action`, then wait until delivery has dealt with what it caused. */
+async function after(action: () => Promise<unknown>): Promise<void> {
+  const done = settled()
+  await action()
+  await done
 }
 
 async function space(id: string, name: string): Promise<void> {
@@ -142,7 +171,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await stop?.()
   stop = undefined
-  jest.useRealTimers()
+  waiters = []
   await drainActivity()
   setWorkspaceRootOverride(null)
   setAppDirOverride(null)
@@ -218,11 +247,11 @@ describe("MCP Events", () => {
     const sent: Sent[] = []
     const transport = callback(sent)
     await subscribe(caller, params(), transport)
-    stop = startMcpEventsRuntime({ transport })
+    await start(transport)
 
-    await comment("pricing", "Team at 49 feels high. Try 39?")
-    await comment("launch", "Out of this subscription's Space.")
-    await until(() => events(sent).length === 1)
+    await after(() => comment("pricing", "Team at 49 feels high. Try 39?"))
+    await after(() => comment("launch", "Out of this subscription's Space."))
+    expect(events(sent)).toHaveLength(1)
     const [event] = events(sent)
     const body = event!.body as {
       eventId: string
@@ -250,43 +279,26 @@ describe("MCP Events", () => {
       arguments: { spaceId: "pricing" },
       delivery: { mode: "webhook", url: CALLBACK },
     })
-    await comment("pricing", "After unsubscribing.")
-    await Bun.sleep(100)
+    await after(() => comment("pricing", "After unsubscribing."))
     expect(events(sent)).toHaveLength(1)
   })
 
   it("retries with the same event id, and ends the subscription on 410", async () => {
     const sent: Sent[] = []
     const statuses = [503, 200, 410]
-    const arrivals = [1, 2, 3].map(() => Promise.withResolvers<void>())
-    const recording = callback(sent, { status: () => statuses.shift() ?? 200 })
-    const transport: EventsTransport = {
-      ...recording,
-      fetch: async (url, init) => {
-        const response = await recording.fetch(url, init)
-        arrivals[events(sent).length - 1]?.resolve()
-        return response
-      },
-    }
+    const transport = callback(sent, { status: () => statuses.shift() ?? 200 })
     await subscribe(caller, params(), transport)
-    stop = startMcpEventsRuntime({ transport })
-
-    jest.useFakeTimers({ now: Date.now() })
-    await comment("pricing", "Delivered on the second try.")
-    await arrivals[0]!.promise
-    await stop()
+    await start(transport)
+    await after(() => comment("pricing", "Delivered on the second try."))
+    await stop?.()
     // The failed attempt waits its retry delay, even across a restart.
-    stop = startMcpEventsRuntime({ transport })
-    jest.advanceTimersByTime(15_000)
-    await arrivals[1]!.promise
+    await pastRetryDelay(() => start(transport))
     const [first, second] = events(sent)
     expect(second!.body.eventId).toBe(first!.body.eventId)
 
-    await comment("pricing", "The receiver is gone.")
-    await arrivals[2]!.promise
-    jest.useRealTimers()
-    await comment("pricing", "Never sent: the subscription ended.")
-    await Bun.sleep(100)
+    await after(() => comment("pricing", "The receiver is gone."))
+    expect(events(sent)).toHaveLength(3)
+    await after(() => comment("pricing", "Never sent: the subscription ended."))
     expect(events(sent)).toHaveLength(3)
   })
 
@@ -321,21 +333,14 @@ describe("MCP Events", () => {
     const statuses = [503, 503, 410, 200]
     const transport = callback(sent, { status: () => statuses.shift() ?? 200 })
     await subscribe(caller, params(), transport)
-    stop = startMcpEventsRuntime({ transport })
-    await comment("pricing", "First.")
-    await comment("pricing", "Second.")
-    await until(() => events(sent).length === 2)
-    await stop()
-    // Both wait in the outbox. Past their retry delay, one drain finds both.
-    setSystemTime(new Date(Date.now() + 60_000))
-    try {
-      stop = startMcpEventsRuntime({ transport })
-      await until(() => events(sent).length >= 3)
-      await Bun.sleep(200)
-    } finally {
-      setSystemTime()
-    }
-    // The first retry got 410: the second must not be sent after it.
+    await start(transport)
+    await after(() => comment("pricing", "First."))
+    await after(() => comment("pricing", "Second."))
+    expect(events(sent)).toHaveLength(2)
+    await stop?.()
+    // Both wait in the outbox, and one drain finds both. The first retry
+    // gets 410: the second must not be sent after it.
+    await pastRetryDelay(() => start(transport))
     expect(events(sent)).toHaveLength(3)
   })
 })

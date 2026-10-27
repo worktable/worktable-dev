@@ -743,7 +743,11 @@ async function deliver(
  * one timer for the next retry or expiry.
  */
 export function startMcpEventsRuntime(
-  options: { transport?: EventsTransport } = {}
+  options: {
+    transport?: EventsTransport
+    /** Called whenever nothing is being queued or sent, for tests. */
+    onSettled?: () => void
+  } = {}
 ): () => Promise<void> {
   const transport = options.transport ?? defaultTransport
   let stopped = false
@@ -864,7 +868,12 @@ export function startMcpEventsRuntime(
       .finally(() => {
         running = undefined
         if (dirty && live()) nudge()
+        else settled()
       })
+  }
+
+  function settled(): void {
+    if (!running && queuing.size === 0) options.onSettled?.()
   }
 
   // Queuing in progress. Stopping waits for it, so an item announced just
@@ -881,7 +890,10 @@ export function startMcpEventsRuntime(
       .catch(() => {
         console.error("[Worktable] MCP event could not be queued")
       })
-      .finally(() => queuing.delete(queued))
+      .finally(() => {
+        queuing.delete(queued)
+        settled()
+      })
     queuing.add(queued)
   })
   changeListeners.add(nudge)

@@ -1135,10 +1135,21 @@ describe("team foundation", () => {
       },
       transport
     )
-    const stop = startMcpEventsRuntime({ transport })
+    const waiters: Array<() => void> = []
+    const settled = () => new Promise<void>((resolve) => waiters.push(resolve))
+    const started = settled()
+    const stop = startMcpEventsRuntime({
+      transport,
+      onSettled: () => {
+        for (const resolve of waiters.splice(0)) resolve()
+      },
+    })
     try {
-      const comment = (body: string) =>
-        runWithTeamIdentity(owner, () =>
+      await started
+      // Comment, then wait until delivery has dealt with it.
+      const comment = async (body: string) => {
+        const done = settled()
+        await runWithTeamIdentity(owner, () =>
           createAnnotation("original", {
             target: { type: "doc", docPath: "brief" },
             category: "comment",
@@ -1147,15 +1158,15 @@ describe("team foundation", () => {
             to: [{ id: participant.id, kind: "agent", name: "ChatGPT" }],
           })
         )
+        await done
+      }
       await comment("Can we ship in April?")
-      for (let i = 0; i < 200 && delivered.length === 0; i++) await Bun.sleep(10)
       expect(delivered).toEqual(["Can we ship in April?"])
 
       await runWithTeamIdentity(owner, () =>
         disconnectTeamAgentConnection(agent.id)
       )
       await comment("Sent after the agent was disconnected.")
-      await Bun.sleep(200)
       expect(delivered).toEqual(["Can we ship in April?"])
     } finally {
       await stop()

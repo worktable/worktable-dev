@@ -30,7 +30,7 @@ export function canInvite(
 
 const AGENT_INSTRUCTIONS: ChecklistItem = {
   id: "agent-instructions",
-  title: "Tell your agent to use Worktable",
+  title: "Add Worktable to your agent's global rules",
   description: "So you don't have to say “in Worktable” every time.",
 }
 

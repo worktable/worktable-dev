@@ -135,25 +135,34 @@ function TaskBody({ joinedSpaceName }: { joinedSpaceName?: string }) {
 const AGENT_INSTRUCTIONS =
   "I keep my work in Worktable. When I ask you to write, plan, research or track something, save it in Worktable without me saying so, and look there for context before asking me."
 
-/** Where each agent keeps the instructions it always reads. */
+/** Where each agent keeps the rules it reads in every chat and project. */
 const INSTRUCTION_PLACES: { agent: string; file?: string; place?: string }[] = [
   { agent: "Claude Code", file: "~/.claude/CLAUDE.md" },
   { agent: "Codex", file: "~/.codex/AGENTS.md" },
-  { agent: "Cursor", place: "Settings, then Rules" },
-  { agent: "Claude", place: "Settings, then personal preferences" },
-  { agent: "ChatGPT", place: "Settings, then Personalization" },
+  { agent: "OpenCode", file: "~/.config/opencode/AGENTS.md" },
+  { agent: "Cursor", place: "Cursor Settings, then Rules, User Rules" },
+  { agent: "Claude", place: "Settings, then General, personal preferences" },
+  {
+    agent: "ChatGPT",
+    place: "Settings, then Personalization, custom instructions",
+  },
+  { agent: "Other agents", place: "Their global rules or custom instructions" },
 ]
 
 function InstructionsBody({ onCopied }: { onCopied: () => void }) {
   return (
     <>
       <p className="mb-2 text-sm text-foreground/80">
-        Add this to your agent's instructions:
+        Copy this into your agent's global rules, so it uses Worktable in
+        every chat and project:
       </p>
       <ul>
         <Prompt text={AGENT_INSTRUCTIONS} onCopied={onCopied} />
       </ul>
-      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
+      <p className="mt-4 mb-2 text-sm text-foreground/80">
+        Where to find your agent's global rules:
+      </p>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
         {INSTRUCTION_PLACES.map(({ agent, file, place }) => (
           <div key={agent} className="contents">
             <dt className="text-muted-foreground">{agent}</dt>

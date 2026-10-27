@@ -36,12 +36,12 @@ export const AGENT_RUNTIMES = {
   "on-demand": {
     label: "On demand",
     description:
-      "Coding agents and chat apps work when you start them, in your terminal, your editor or a chat.",
+      "You start it. When you open a chat or session, your agent calls Worktable for what it needs.",
   },
   "always-on": {
     label: "Always on",
     description:
-      "An always-on agent runs on a server. Send it a message in Threads and it picks it up straight away, without you starting it.",
+      "Worktable calls it. It keeps running, so it can answer a message in Threads without you starting it.",
   },
 } as const
 

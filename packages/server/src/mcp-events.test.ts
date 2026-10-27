@@ -112,10 +112,11 @@ const events = (sent: Sent[]) =>
 async function comment(
   spaceId: string,
   body: string,
-  byPerson = true
+  byPerson = true,
+  docPath = "explorer"
 ): Promise<void> {
   await createAnnotation(spaceId, {
-    target: { type: "doc", docPath: "explorer" },
+    target: { type: "doc", docPath },
     category: "comment",
     body,
     author: { type: "user", id: "user", name: "Karo" },
@@ -408,5 +409,27 @@ describe("MCP Events", () => {
     const checks = sent.length
     await subscribe(local, params(), transport)
     expect(sent.length).toBe(checks + 1)
+  })
+
+  it("filters and links a Doc by its full path, however long", async () => {
+    const docPath = `plans/${"pricing-explorer-".repeat(10)}notes`
+    expect(docPath.length).toBeGreaterThan(120)
+    await writeDoc("pricing", docPath, "# Notes\n\nLong path.\n")
+    const sent: Sent[] = []
+    const transport = callback(sent)
+    await subscribe(
+      caller,
+      params({ arguments: { spaceId: "pricing", docPath } }),
+      transport
+    )
+    await start(transport)
+    await after(() => comment("pricing", "On the long Doc.", true, docPath))
+    await after(() => comment("pricing", "On another Doc."))
+    const delivered = events(sent).map(
+      (event) => event.body.data as { docPath: string; url: string }
+    )
+    expect(delivered).toHaveLength(1)
+    expect(delivered[0]!.docPath).toBe(docPath)
+    expect(decodeURIComponent(delivered[0]!.url)).toContain(docPath)
   })
 })

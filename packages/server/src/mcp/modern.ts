@@ -1,4 +1,5 @@
 import {
+  CLIENT_CAPABILITIES_META_KEY,
   createMcpHandler,
   isLegacyRequest,
   ProtocolError,
@@ -6,7 +7,19 @@ import {
   type ServerContext,
 } from "@modelcontextprotocol/server"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
-import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js"
+import type {
+  CallToolResult,
+  JSONRPCMessage,
+} from "@modelcontextprotocol/sdk/types.js"
+import { z } from "zod"
+import { resolveParticipant } from "../participant-store.ts"
+import { currentRequestIdentity } from "../team-policy.ts"
+import {
+  pendingIfReady,
+  pendingRevision,
+  type PendingEntry,
+} from "../pending-list.ts"
+import { waitSince } from "../pending-wait.ts"
 import {
   createWorktableMcpServer,
   serverIdentity,
@@ -87,14 +100,252 @@ export async function handleModernMcpRequest(
 
 function createModernServer(exchange: ModernMcpExchange): Server {
   const { info, instructions } = serverIdentity(exchange.server)
-  const server = new Server(info, { capabilities: { tools: {} }, instructions })
+  // Waits run as MCP tasks only with the preview tools, which have the
+  // pending action they wait on.
+  const tasks = exchange.server.surface === "preview"
+  const server = new Server(info, {
+    capabilities: {
+      tools: {},
+      ...(tasks ? { extensions: { [TASKS_EXTENSION]: {} } } : {}),
+    },
+    instructions,
+  })
   server.setRequestHandler("tools/list", (request, ctx) =>
     relay(exchange, request, ctx)
   )
-  server.setRequestHandler("tools/call", (request, ctx) =>
-    relay(exchange, request, ctx)
-  )
+  server.setRequestHandler("tools/call", (request, ctx) => {
+    const wait = tasks && runsTasks(ctx) ? pendingWait(request) : undefined
+    return wait
+      ? (startPendingWait(exchange, request, wait, ctx) as never)
+      : relay(exchange, request, ctx)
+  })
+  if (tasks) {
+    server.setRequestHandler(
+      "tasks/get",
+      { params: TaskParams },
+      (params, ctx) => pendingWaitTask(exchange, params.taskId, ctx)
+    )
+    // A wait holds nothing on the server, so there is nothing to stop or
+    // answer: the client just stops asking.
+    server.setRequestHandler("tasks/cancel", { params: TaskParams }, () => ({}))
+    server.setRequestHandler("tasks/update", { params: TaskParams }, () => ({}))
+  }
   return server
+}
+
+// ============================================================
+// Waiting for pending items as an MCP task
+// ============================================================
+//
+// worktable_discover action pending with wait: true answers a task-capable
+// client at once with a task. Each tasks/get asks the pending read, as the
+// caller, for items after the revision the wait started from; the first answer
+// with items completes the task with exactly what that read returned, and
+// marks those items delivered. The task id carries the whole wait (scope and
+// revision), so the server keeps no task state and a restart loses nothing.
+// As with every wait (pending-wait.ts), polls select by revision only, so a
+// poll repeated after a lost answer gets the same items again.
+// Whoever asks reads only their own pending items, so a copied id reveals
+// nothing.
+
+const TASKS_EXTENSION = "io.modelcontextprotocol/tasks"
+/** How often a waiting client should ask; also how long items batch. */
+const WAIT_POLL_MS = 5_000
+
+const TaskParams = z.object({ taskId: z.string().min(1) })
+
+const WaitTask = z.object({
+  v: z.literal(1),
+  at: z.string(),
+  since: z.number().int().nonnegative(),
+  scope: z
+    .object({
+      spaceId: z.string().optional(),
+      docPath: z.string().optional(),
+      threadId: z.string().optional(),
+    })
+    .optional(),
+})
+type WaitTask = z.infer<typeof WaitTask>
+type WaitArgs = Omit<WaitTask, "v" | "at" | "since"> & { since?: number }
+
+/** Whether this request's client declared the tasks extension. */
+function runsTasks(ctx: ServerContext): boolean {
+  const envelope = ctx.mcpReq.envelope as Record<string, unknown> | undefined
+  const capabilities = envelope?.[CLIENT_CAPABILITIES_META_KEY] as
+    | { extensions?: Record<string, unknown> }
+    | undefined
+  return Boolean(capabilities?.extensions?.[TASKS_EXTENSION])
+}
+
+/** The wait a tools/call asks for, when it is a pending read with wait. */
+function pendingWait(request: {
+  params?: Record<string, unknown>
+}): WaitArgs | undefined {
+  const args = request.params?.["arguments"] as
+    | { request?: Record<string, unknown> }
+    | undefined
+  const read = args?.request
+  if (
+    request.params?.["name"] !== "worktable_discover" ||
+    read?.["action"] !== "pending" ||
+    read["wait"] !== true
+  )
+    return undefined
+  const parsed = WaitTask.omit({ v: true, at: true, since: true })
+    .extend({ since: z.number().int().nonnegative().optional() })
+    .safeParse(read)
+  return parsed.success ? parsed.data : undefined
+}
+
+function pendingCall(read: Record<string, unknown>) {
+  return {
+    method: "tools/call",
+    params: {
+      name: "worktable_discover",
+      arguments: { request: { action: "pending", ...read } },
+    },
+  }
+}
+
+function taskStatus(task: WaitTask, taskId: string, now: string) {
+  return {
+    taskId,
+    createdAt: task.at,
+    lastUpdatedAt: now,
+    ttlMs: null,
+    pollIntervalMs: WAIT_POLL_MS,
+  }
+}
+
+async function startPendingWait(
+  exchange: ModernMcpExchange,
+  request: { method: string; params?: Record<string, unknown> },
+  wait: WaitArgs,
+  ctx: ServerContext
+) {
+  let since = wait.since
+  if (since === undefined) {
+    // Wait for what arrives from now on: the count read gives the revision.
+    const counted = await relay<CallToolResult>(
+      exchange,
+      pendingCall({ mode: "count" }),
+      ctx
+    )
+    if (counted.isError) return counted
+    since = Number(
+      (counted.structuredContent as { revision?: unknown } | undefined)
+        ?.revision ?? 0
+    )
+  }
+  const at = new Date().toISOString()
+  const task: WaitTask = {
+    v: 1,
+    at,
+    since,
+    ...(wait.scope ? { scope: wait.scope } : {}),
+  }
+  const taskId = Buffer.from(JSON.stringify(task)).toString("base64url")
+  return {
+    resultType: "task",
+    status: "working",
+    ...taskStatus(task, taskId, at),
+  }
+}
+
+/**
+ * The caller's identity, as the pending read uses it: the request's whole
+ * identity when it is this caller's (on Teams it carries the team binding),
+ * else the partial one the server is built with. A local connection's
+ * request runs as the owner while its tools act as its agent.
+ */
+function callerIdentity(exchange: ModernMcpExchange) {
+  const partial = exchange.server.identity
+  const full = currentRequestIdentity()
+  return full && partial && full.principal.id === partial.principal.id
+    ? full
+    : partial
+}
+
+/**
+ * The caller's pending revision, and its open items when the list is ready,
+ * without a read where the caller is known.
+ */
+async function callerPending(
+  exchange: ModernMcpExchange,
+  ctx: ServerContext
+): Promise<{ revision: number; entries: PendingEntry[] | null }> {
+  const identity = callerIdentity(exchange)
+  if (identity) {
+    const { participant } = await resolveParticipant(identity)
+    return {
+      revision: await pendingRevision(participant.id),
+      entries: pendingIfReady(participant.id),
+    }
+  }
+  const counted = await relay<CallToolResult>(
+    exchange,
+    pendingCall({ mode: "count" }),
+    ctx
+  )
+  return {
+    revision: Number(
+      (counted.structuredContent as { revision?: unknown } | undefined)
+        ?.revision ?? 0
+    ),
+    entries: null,
+  }
+}
+
+async function pendingWaitTask(
+  exchange: ModernMcpExchange,
+  taskId: string,
+  ctx: ServerContext
+) {
+  let task: WaitTask
+  try {
+    task = WaitTask.parse(
+      JSON.parse(Buffer.from(taskId, "base64url").toString("utf8"))
+    )
+  } catch {
+    throw new ProtocolError(-32602, "Unknown task")
+  }
+  const now = new Date().toISOString()
+  // Nothing new in scope since the wait started: answer without building a
+  // read. Items elsewhere move the revision, so they are filtered here too,
+  // or every later poll would run a full read.
+  const { revision, entries } = await callerPending(exchange, ctx)
+  if (revision === task.since) {
+    return { status: "working", ...taskStatus(task, taskId, now) }
+  }
+  const since = waitSince(task.since, revision)
+  const scope = task.scope ?? {}
+  if (
+    entries &&
+    !entries.some(
+      (entry) =>
+        entry.revision > since &&
+        (!scope.spaceId || entry.scope.spaceId === scope.spaceId) &&
+        (!scope.threadId || entry.scope.threadId === scope.threadId)
+    )
+  ) {
+    return { status: "working", ...taskStatus(task, taskId, now) }
+  }
+  const read = await relay<CallToolResult>(
+    exchange,
+    pendingCall({
+      mode: "notices",
+      since,
+      ...(task.scope ? { scope: task.scope } : {}),
+    }),
+    ctx
+  )
+  const items = (read.structuredContent as { items?: unknown[] } | undefined)
+    ?.items
+  if (!read.isError && !items?.length) {
+    return { status: "working", ...taskStatus(task, taskId, now) }
+  }
+  return { status: "completed", ...taskStatus(task, taskId, now), result: read }
 }
 
 /**
@@ -117,7 +368,11 @@ async function relay<T>(
       async send(message) {
         if ("id" in message && message.id === id) {
           if ("result" in message || "error" in message) resolve(message)
-        } else if (exchange.stream && "method" in message && !("id" in message)) {
+        } else if (
+          exchange.stream &&
+          "method" in message &&
+          !("id" in message)
+        ) {
           await ctx.mcpReq.notify(message)
         }
       },

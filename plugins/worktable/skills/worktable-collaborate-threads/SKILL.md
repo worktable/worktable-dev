@@ -1,6 +1,6 @@
 ---
 name: worktable-collaborate-threads
-description: Read, answer, and hand off messages through durable Worktable threads with users or other authenticated participants. Use when the user asks to check addressed messages, reply to a participant, continue a thread, request another agent's help, or wait briefly for a response.
+description: Read, answer, and hand off messages through durable Worktable threads with users or other authenticated participants. Use when the user asks to check addressed messages, reply to a participant, continue a thread, request another agent's help, wait briefly for a response, or watch for comments and messages sent to the agent.
 ---
 
 # Use threads
@@ -43,6 +43,10 @@ An authenticated agent owns delivery only while its adapter or skill is running;
 3. Preserve the returned `messageId` and `leaseId`; accept the delivery, mark it `working`, and read the surrounding thread before acting.
 4. Do the requested work in the appropriate durable artifact. Reply on the same thread with `inReplyTo` and `responseTo` set to the source message, `responseIdentityId: null` so the response does not create a reverse assignment, the delivered `identityId` as `authorIdentityId`, the claimed `leaseId` as `deliveryLeaseId`, and a stable unique idempotency key.
 5. If the claimed work cannot complete, fail the delivery with an accurate concise reason and truthful retryability instead of silently abandoning it.
+
+## Watch for what is sent to you (preview)
+
+When your user asks you to watch for comments or messages, and `worktable_discover` offers action `pending`, call it with `wait: true`. Add a `scope` when the work is one Space, Doc or thread. It returns once something new arrives. Reply on a comment with `worktable_annotations_write` action `reply`; answer a thread message with `worktable_threads_write` action `post` and `responseTo`. Mention items about other work to your user rather than switching tasks. Then call `pending` with `wait: true` again, passing the returned `revision` as `since`, until your user tells you to stop.
 
 ## Protect the communication boundary
 

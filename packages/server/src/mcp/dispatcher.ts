@@ -2,6 +2,7 @@ import { runAsActivityActor } from "../activity-log.ts"
 import { commentReplier, commentRecipients } from "../comment-recipients.ts"
 import { markOpened, readPending } from "../pending-read.ts"
 import { passageAuthorForTarget } from "../passage-author.ts"
+import { waitForPending } from "../pending-wait.ts"
 import { reservedAnnotationInput } from "../annotation-origin.ts"
 import { assertCurrentTeamIdentity, assertSpaceAccess, currentRequestIdentity } from "../team-policy.ts"
 import {
@@ -3163,10 +3164,16 @@ async function _dispatchOperationInner(
       // Only when it is this caller: a local connection's request runs as
       // the owner while the tools act as its agent.
       const full = currentRequestIdentity()
-      return await readPending(
-        full && full.principal.id === identity.principal.id ? full : identity,
-        PendingInput.parse(args)
-      )
+      const reader =
+        full && full.principal.id === identity.principal.id ? full : identity
+      const { wait, mode, ...input } = PendingInput.parse(args)
+      return wait
+        ? await waitForPending(
+            reader,
+            { scope: input.scope, since: input.since },
+            { signal: context.signal }
+          )
+        : await readPending(reader, { ...input, mode })
     }
     case "workspace.space_index": {
       const parsed = SpaceIndexInput.parse(args)

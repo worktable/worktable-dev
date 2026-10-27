@@ -299,7 +299,7 @@ import {
   RECORD_BATCH_LIMIT,
 } from "./schemas.ts"
 
-import { resolveParticipant } from "../participant-store.ts"
+import { ensureParticipant, resolveParticipant } from "../participant-store.ts"
 import {
   acceptDelivery,
   assignResponseRequest,
@@ -884,7 +884,12 @@ export async function dispatchOperation(
   }
   authorize()
   const principal = context.principal ?? DEFAULT_AGENT_PRINCIPAL
-  if (principal.type === "agent") noteAgentCallForSetup(caller)
+  if (principal.type === "agent") {
+    noteAgentCallForSetup(caller)
+    await ensureParticipant(
+      context.identity ?? { agent: principal.displayName, principal }
+    )
+  }
   const result = await runAsActivityActor(principal, () =>
     _dispatchOperationInner(operationId, args, { ...context, principal })
   )

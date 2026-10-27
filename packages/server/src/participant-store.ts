@@ -401,6 +401,19 @@ export function cachedParticipantForKey(key: string): ParticipantRef | null {
   return namesCache.names.get(key) ?? null
 }
 
+/**
+ * An agent working in Worktable can be sent comments and messages: give it a
+ * participant the first time it acts. After that this is a cached lookup.
+ */
+export async function ensureParticipant(
+  identity: Pick<TokenIdentity, "agent" | "principal">
+): Promise<void> {
+  if (cachedParticipantForKey(participantKey(identity))) return
+  await resolveParticipant(identity).catch((error: unknown) => {
+    console.error("[participants] could not record an agent:", logError(error))
+  })
+}
+
 /** Each identity's current participant, keyed like `participantKey`. */
 export async function participantsByKey(): Promise<
   Map<string, ParticipantRef>

@@ -3,10 +3,13 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import type { Annotation } from "@worktable/types"
 import { setAppDirOverride } from "./app-storage.ts"
 import { ownerIdentity } from "./auth.ts"
 import { resolveParticipant } from "./participant-store.ts"
+import { createWorktableMcpServer } from "./mcp/server.ts"
 import { annotationsRouter } from "./routes/annotations.ts"
 import { writeDoc, writeSpace } from "./store.ts"
 import type { TokenIdentity } from "./token-store.ts"
@@ -104,6 +107,38 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
       setAppDirOverride(null)
       await rm(root, { recursive: true, force: true })
       await rm(appDir, { recursive: true, force: true })
+    })
+
+    it("offers an agent from its first call to Worktable", async () => {
+      const atlas = {
+        id: "token:atlas",
+        type: "agent" as const,
+        displayName: "Atlas",
+        authorizedBy: "local:owner",
+      }
+      const server = createWorktableMcpServer({
+        version: "test",
+        surface: "preview",
+        scopes: ["*"],
+        identity: { agent: "codex", principal: atlas },
+        principal: atlas,
+      })
+      const client = new Client({ name: "codex", version: "1" })
+      const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
+      await Promise.all([server.connect(serverSide), client.connect(clientSide)])
+      await client.callTool({
+        name: "worktable_docs_read",
+        arguments: { request: { action: "read", spaceId: "pricing", docPath: "explorer" } },
+      })
+      await client.close()
+
+      const response = await app.fetch(
+        new Request("http://localhost/api/spaces/pricing/annotations/recipients")
+      )
+      const { participants } = (await response.json()) as {
+        participants: Array<{ name: string }>
+      }
+      expect(participants.map((participant) => participant.name)).toContain("Codex")
     })
 
     it("waits on its recipient until they reply, and asks again when the commenter answers", async () => {

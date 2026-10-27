@@ -267,8 +267,8 @@ async function mutate<T>(change: (file: EventsFile) => T): Promise<T> {
       { label: "MCP event subscriptions" },
       async () => {
         const file = await load(filePath)
+        const before = watchingKey(file)
         const result = change(file)
-        noteWatching(file)
         await mkdir(dirname(filePath), { recursive: true, mode: 0o700 })
         const temporary = `${filePath}.${randomUUID()}.tmp`
         await writeFile(temporary, JSON.stringify(file), {
@@ -277,6 +277,9 @@ async function mutate<T>(change: (file: EventsFile) => T): Promise<T> {
         })
         await chmod(temporary, 0o600)
         await rename(temporary, filePath)
+        // Only once saved, so a screen that refetches reads the new state.
+        if (watchingKey(file) !== before)
+          for (const listener of watchingListeners) listener()
         return result
       }
     )
@@ -304,14 +307,16 @@ function watchingOf(file: EventsFile, now = Date.now()): Watching {
   return watching
 }
 
-let watchingKey: string | undefined
 const watchingListeners = new Set<() => void>()
 
-function noteWatching(file: EventsFile): void {
-  const key = [...watchingOf(file).keys()].sort().join("\n")
-  if (watchingKey !== undefined && key !== watchingKey)
-    for (const listener of watchingListeners) listener()
-  watchingKey = key
+/**
+ * Who has a stored subscription. The runtime removes one when it expires, so
+ * comparing what's stored also notices expiry.
+ */
+function watchingKey(file: EventsFile): string {
+  return [...new Set(file.subscriptions.map((s) => s.participantId))]
+    .sort()
+    .join("\n")
 }
 
 /** The agents with a live subscription, so they answer on their own. */

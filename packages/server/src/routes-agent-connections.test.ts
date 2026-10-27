@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { Hono } from "hono"
 import { setAppDirOverride } from "./app-storage.ts"
 import { upsertAgentConnection } from "./agent-connection-store.ts"
-import { subscribe } from "./mcp-events.ts"
+import { onWatchingChange, subscribe } from "./mcp-events.ts"
 import { waitForPending } from "./pending-wait.ts"
 import { resolveParticipant } from "./participant-store.ts"
 import { agentConnectionsRouter } from "./routes/agent-connections.ts"
@@ -188,6 +188,13 @@ describe("agent connection routes", () => {
       })
 
       // ChatGPT subscribes from a chat; Claude Code waits in its session.
+      // Open screens hear of it once it's saved, so a refetch then sees it.
+      const heard = new Promise<Record<string, unknown>>((resolve) => {
+        const off = onWatchingChange(() => {
+          off()
+          resolve(autoReplies())
+        })
+      })
       await subscribe(
         { identity: chat, origin: "https://worktable.example" },
         {
@@ -208,6 +215,7 @@ describe("agent connection routes", () => {
             }),
         }
       )
+      expect((await heard)["chatgpt"]).toEqual({ kind: "chat", state: "on" })
       await waitForPending(session, {}, { seconds: 0 })
       expect(await autoReplies()).toEqual({
         chatgpt: { kind: "chat", state: "on" },

@@ -53,18 +53,15 @@ import type {
 } from "@worktable/types"
 import { threadLocationKey } from "@worktable/types"
 
-/** Agents whose state shows on screen: a Grok Bot's status, or auto-reply. */
+/**
+ * Agents' live state: a Grok Bot's status, or whether one answers on its own,
+ * which any agent can start doing. Only a list on screen refetches.
+ */
 function refreshAgentConnections(queryClient: QueryClient): void {
   for (const cloud of [true, false]) {
     const queryKey = ["agent-connections", cloud] as const
-    const inventory =
-      queryClient.getQueryData<AgentConnectionInventory>(queryKey)
-    if (
-      inventory?.grokBots?.length ||
-      inventory?.connections.some((connection) => connection.autoReply)
-    ) {
+    if (queryClient.getQueryData<AgentConnectionInventory>(queryKey))
       refreshLive(queryClient, [{ queryKey, exact: true }])
-    }
   }
 }
 

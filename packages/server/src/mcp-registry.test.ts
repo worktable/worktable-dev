@@ -436,7 +436,19 @@ describe("preview tool surface", () => {
     expect(preview.map((tool) => tool.name)).toEqual(
       released.map((tool) => previewName(tool.name))
     )
-    const changed = preview
+    // Every Worktable tool's preview result has room for notices; past
+    // that, only held changes differ.
+    const withoutNotices = preview.map((tool) => {
+      if (!tool.name.startsWith("worktable_")) return tool
+      const properties = tool.outputSchema?.properties as
+        | Record<string, unknown>
+        | undefined
+      expect(properties?.notices).toBeDefined()
+      const rest = { ...properties }
+      delete rest.notices
+      return { ...tool, outputSchema: { ...tool.outputSchema!, properties: rest } }
+    })
+    const changed = withoutNotices
       .filter(
         (tool, index) =>
           JSON.stringify(tool) !== JSON.stringify(released[index])

@@ -1474,6 +1474,7 @@
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
+      "description": "Structured result from worktable_spaces. Fields vary by request.action.",
       "definitions": {
         "CanonicalId": {
           "type": "string",
@@ -3948,6 +3949,7 @@
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
+      "description": "Structured result from worktable_docs_read. Fields vary by request.action.",
       "definitions": {
         "DocListEntry": {
           "type": "object",
@@ -4471,7 +4473,8 @@
         "urlToSendInChat"
       ],
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": {}
+      "additionalProperties": {},
+      "description": "Structured result from worktable_docs_write. Fields vary by request.action."
     },
     "annotations": {
       "title": "Write Worktable Docs",
@@ -8871,6 +8874,7 @@
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
+      "description": "Structured result from worktable_html_read. Fields vary by request.action.",
       "definitions": {
         "HtmlDocReadSummary": {
           "type": "object",
@@ -9792,6 +9796,7 @@
       ],
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
+      "description": "Structured result from worktable_html_write. Fields vary by request.action.",
       "definitions": {
         "HtmlId": {
           "type": "string",
@@ -10221,6 +10226,7 @@
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
+      "description": "Structured result from worktable_records_read. Fields vary by request.action.",
       "definitions": {
         "RecordCollectionSummary": {
           "type": "object",
@@ -11032,6 +11038,7 @@
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
+      "description": "Structured result from worktable_records_write. Fields vary by request.action.",
       "definitions": {
         "RecordCollectionSummary": {
           "type": "object",
@@ -11381,6 +11388,7 @@
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
+      "description": "Structured result from worktable_annotations_read. Fields vary by request.action.",
       "definitions": {
         "AnnotationSummary": {
           "type": "object",
@@ -11827,6 +11835,7 @@
       ],
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
+      "description": "Structured result from worktable_annotations_write. Fields vary by request.action.",
       "definitions": {
         "AnnotationSummary": {
           "type": "object",
@@ -12337,6 +12346,7 @@
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
+      "description": "Structured result from worktable_threads_read. Fields vary by request.action.",
       "definitions": {
         "ParticipantSummary": {
           "type": "object",
@@ -13529,6 +13539,7 @@
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
+      "description": "Structured result from worktable_thread_delivery. Fields vary by request.action.",
       "definitions": {
         "ParticipantSummary": {
           "type": "object",
@@ -14228,6 +14239,7 @@
       ],
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
+      "description": "Structured result from worktable_delete. Fields vary by request.action.",
       "definitions": {
         "HtmlId": {
           "type": "string",
@@ -14319,7 +14331,8 @@
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": {}
+      "additionalProperties": {},
+      "description": "Structured result from worktable_guidance. Fields vary by request.action."
     },
     "annotations": {
       "title": "Read Worktable format specification",
@@ -14473,7 +14486,8 @@
         "diagramType"
       ],
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": {}
+      "additionalProperties": {},
+      "description": "Structured result from worktable_mermaid. Fields vary by request.action."
     },
     "annotations": {
       "title": "Validate Worktable diagrams",

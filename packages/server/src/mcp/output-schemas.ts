@@ -1883,14 +1883,15 @@ export const PREVIEW_OUTPUT_SCHEMAS: Partial<
 
 /** A preview result, with room for what waits on the caller beside it. */
 export function withNotices(schema: z.ZodType): z.ZodType {
-  return schema instanceof z.ZodObject
-    ? schema.extend({
-        notices: z
-          .string()
-          .optional()
-          .describe(
-            "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks."
-          ),
-      })
-    : schema
+  if (!(schema instanceof z.ZodObject)) return schema
+  const extended = schema.extend({
+    notices: z
+      .string()
+      .optional()
+      .describe(
+        "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks."
+      ),
+  })
+  // Extending drops the description; the result keeps the one it had.
+  return schema.description ? extended.describe(schema.description) : extended
 }

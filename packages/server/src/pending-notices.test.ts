@@ -42,7 +42,10 @@ async function session(
   return client
 }
 
-/** The notices a call came back with, if any. */
+/**
+ * The notices a call came back with, if any: the same for a client that
+ * shows its model the text and one that shows only the structured result.
+ */
 async function notices(
   client: Client,
   name: string,
@@ -51,11 +54,17 @@ async function notices(
   const result = (await client.callTool({
     name,
     arguments: { request },
-  })) as { content: Array<{ type: string; text?: string }>; isError?: boolean }
+  })) as {
+    content: Array<{ type: string; text?: string }>
+    structuredContent?: { notices?: string }
+    isError?: boolean
+  }
   expect(result.isError).toBeFalsy()
-  return result.content.find((part) =>
+  const text = result.content.find((part) =>
     part.text?.startsWith("Worktable notices")
   )?.text
+  expect(result.structuredContent?.notices).toBe(text)
+  return text
 }
 
 const readDoc = (client: Client, spaceId: string, docPath: string) =>
@@ -149,6 +158,18 @@ describe("notices on an agent's tool calls", () => {
       })
     ).toBeUndefined()
     expect(await readDoc(back, "pricing", "explorer")).toBeUndefined()
+  })
+
+  it("counts a pending read as telling in full", async () => {
+    const back = await session()
+    const read = await back.callTool({
+      name: "worktable_discover",
+      arguments: { request: { action: "pending", mode: "notices" } },
+    })
+    expect(JSON.stringify(read.structuredContent)).toContain("Feels high")
+    const reminder = await readDoc(back, "pricing", "explorer")
+    expect(reminder).toContain("Karo's comment here is still open")
+    expect(reminder).not.toContain("Feels high")
   })
 
   it("names an agent's comment without quoting it, until the agent opens it", async () => {

@@ -55,6 +55,7 @@ import {
   assertPublicOperationOutput,
   PublicOperationOutputError,
   PREVIEW_OUTPUT_SCHEMAS,
+  withNotices,
   WORKTABLE_OUTPUT_SCHEMAS,
 } from "./output-schemas.ts"
 import {
@@ -416,10 +417,13 @@ export function registerTools(
   const outputSchemaFor = <T extends z.ZodType>(
     toolName: WorktableToolName,
     released: T
-  ): T =>
-    ((surface === "preview"
-      ? PREVIEW_OUTPUT_SCHEMAS[toolName as keyof typeof PREVIEW_OUTPUT_SCHEMAS]
-      : undefined) ?? released) as T
+  ): T => {
+    if (surface !== "preview") return released
+    const schema =
+      PREVIEW_OUTPUT_SCHEMAS[toolName as keyof typeof PREVIEW_OUTPUT_SCHEMAS] ??
+      released
+    return withNotices(schema) as unknown as T
+  }
   const inputSchemaFor = <T extends z.ZodType>(
     toolName: WorktableToolName,
     released: T
@@ -534,8 +538,7 @@ export function registerTools(
         const publicResult = publicizeResult(operation.id, linked)
         assertPublicOperationOutput(operation.id, publicResult)
         const response = ok(publicResult)
-        // What waits on the agent rides after the result, outside the
-        // structured content its schema describes (preview only).
+        // What waits on the agent rides beside the result (preview only).
         const notices =
           surface === "preview" && identity
             ? await ambientNotices(
@@ -546,8 +549,13 @@ export function registerTools(
                 publicResult
               )
             : null
+        // Some clients show the model only the structured content, others
+        // only the text, so the notices go in both.
         return {
           ...response,
+          ...(notices && response.structuredContent
+            ? { structuredContent: { ...response.structuredContent, notices } }
+            : {}),
           content: [
             ...response.content,
             ...content,

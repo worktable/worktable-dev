@@ -788,6 +788,10 @@
           "type": "integer",
           "exclusiveMinimum": 0,
           "maximum": 9007199254740991
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -1462,11 +1466,14 @@
             ],
             "additionalProperties": false
           }
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
-      "description": "Structured result from worktable_spaces. Fields vary by request.action.",
       "definitions": {
         "CanonicalId": {
           "type": "string",
@@ -2180,6 +2187,10 @@
         },
         "downloadExpiresAt": {
           "description": "Returned by action \"read_source\" with downloadUrl.",
+          "type": "string"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
           "type": "string"
         }
       },
@@ -3491,6 +3502,10 @@
         "contentHash": {
           "description": "Returned by action \"upload\" with file: the SHA-256 of the file saved, base64url.",
           "type": "string"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "required": [
@@ -3925,11 +3940,14 @@
           "description": "Returned by action \"read\".",
           "type": "string",
           "format": "uri"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
-      "description": "Structured result from worktable_docs_read. Fields vary by request.action.",
       "definitions": {
         "DocListEntry": {
           "type": "object",
@@ -4442,6 +4460,10 @@
           "type": "string",
           "format": "uri",
           "description": "Current-install URL suitable for sending in chat."
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "required": [
@@ -4449,8 +4471,7 @@
         "urlToSendInChat"
       ],
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": {},
-      "description": "Structured result from worktable_docs_write. Fields vary by request.action."
+      "additionalProperties": {}
     },
     "annotations": {
       "title": "Write Worktable Docs",
@@ -5732,6 +5753,10 @@
         },
         "createdAt": {
           "description": "Returned by action \"inspect\" when the drawing was created through Worktable.",
+          "type": "string"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
           "type": "string"
         }
       },
@@ -8303,6 +8328,10 @@
         "archiveOn": {
           "description": "Returned by action \"create\" for temporary drawings.",
           "type": "string"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "required": [
@@ -8834,11 +8863,14 @@
           "description": "Returned by action \"read\".",
           "type": "string",
           "format": "uri"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
-      "description": "Structured result from worktable_html_read. Fields vary by request.action.",
       "definitions": {
         "HtmlDocReadSummary": {
           "type": "object",
@@ -9748,6 +9780,10 @@
           "type": "string",
           "format": "uri",
           "description": "Current-install URL suitable for sending in chat."
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "required": [
@@ -9756,7 +9792,6 @@
       ],
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
-      "description": "Structured result from worktable_html_write. Fields vary by request.action.",
       "definitions": {
         "HtmlId": {
           "type": "string",
@@ -10178,11 +10213,14 @@
               "$ref": "#/definitions/RecordSummary"
             }
           ]
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
-      "description": "Structured result from worktable_records_read. Fields vary by request.action.",
       "definitions": {
         "RecordCollectionSummary": {
           "type": "object",
@@ -10986,11 +11024,14 @@
           "items": {
             "type": "string"
           }
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
-      "description": "Structured result from worktable_records_write. Fields vary by request.action.",
       "definitions": {
         "RecordCollectionSummary": {
           "type": "object",
@@ -11332,11 +11373,14 @@
             "selectorMatch"
           ],
           "additionalProperties": {}
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
-      "description": "Structured result from worktable_annotations_read. Fields vary by request.action.",
       "definitions": {
         "AnnotationSummary": {
           "type": "object",
@@ -11771,6 +11815,10 @@
         "created": {
           "description": "Returned by action \"create\".",
           "type": "boolean"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "required": [
@@ -11779,7 +11827,6 @@
       ],
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
-      "description": "Structured result from worktable_annotations_write. Fields vary by request.action.",
       "definitions": {
         "AnnotationSummary": {
           "type": "object",
@@ -12282,11 +12329,14 @@
         "timedOut": {
           "description": "Returned by action \"wait\".",
           "type": "boolean"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
-      "description": "Structured result from worktable_threads_read. Fields vary by request.action.",
       "definitions": {
         "ParticipantSummary": {
           "type": "object",
@@ -13028,6 +13078,10 @@
         "updatedAt": {
           "description": "Returned by action \"rename\".",
           "type": "string"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -13467,11 +13521,14 @@
               "$ref": "#/definitions/ThreadActivitySummary"
             }
           ]
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
-      "description": "Structured result from worktable_thread_delivery. Fields vary by request.action.",
       "definitions": {
         "ParticipantSummary": {
           "type": "object",
@@ -14160,6 +14217,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "required": [
@@ -14167,7 +14228,6 @@
       ],
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
-      "description": "Structured result from worktable_delete. Fields vary by request.action.",
       "definitions": {
         "HtmlId": {
           "type": "string",
@@ -14252,11 +14312,14 @@
         "guide": {
           "description": "Returned by action \"drawings\".",
           "type": "string"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": {},
-      "description": "Structured result from worktable_guidance. Fields vary by request.action."
+      "additionalProperties": {}
     },
     "annotations": {
       "title": "Read Worktable format specification",
@@ -14399,6 +14462,10 @@
               "type": "null"
             }
           ]
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "required": [
@@ -14406,8 +14473,7 @@
         "diagramType"
       ],
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": {},
-      "description": "Structured result from worktable_mermaid. Fields vary by request.action."
+      "additionalProperties": {}
     },
     "annotations": {
       "title": "Validate Worktable diagrams",

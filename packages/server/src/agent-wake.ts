@@ -20,25 +20,68 @@ export interface Ring {
 
 /**
  * `sent` covers both acceptance and ambiguous failures: the retry schedule
- * continues until the agent answers. `rejected` means the destination refused
- * the ring, so retrying cannot help and a person must check the setup.
+ * continues until the agent answers. `session` is the run an accepted ring
+ * started, when the profile reads one. `rejected` means the destination
+ * refused the ring, so retrying cannot help and a person must check the
+ * setup. `retry` means it was turned away for now (429 or 5xx), so nothing
+ * started; `after` is how long it asked to wait, in milliseconds.
  */
 export type RingOutcome =
-  | { kind: "sent" }
+  | { kind: "sent"; session?: string }
   | { kind: "rejected"; status: number }
+  | { kind: "retry"; status: number; after?: number }
 
 export interface RingContext {
   fetch: typeof fetch
   signal: AbortSignal
 }
 
-/** Read a destination's answer without keeping its body or headers. */
-export async function ringOutcome(response: Response): Promise<RingOutcome> {
+/** The longest Retry-After a ring honours. */
+const MAX_RETRY_AFTER = 60 * 60_000
+
+function retryAfter(value: string | null): number | undefined {
+  const text = value?.trim()
+  if (!text) return undefined
+  const ms = /^\d+$/.test(text)
+    ? Number(text) * 1000
+    : Date.parse(text) - Date.now()
+  // Zero or past asks for no wait in particular: the usual backoff applies.
+  return Number.isFinite(ms) && ms > 0
+    ? Math.min(ms, MAX_RETRY_AFTER)
+    : undefined
+}
+
+/**
+ * Read a destination's answer without keeping its headers. The body is read
+ * only from an accepted answer, and only for the run it started.
+ */
+export async function ringOutcome(
+  response: Response,
+  profile?: Pick<WebhookProfile, "session">
+): Promise<RingOutcome> {
+  const { status } = response
+  if (response.ok && profile?.session) {
+    let session: string | undefined
+    try {
+      session = profile.session(JSON.parse(await response.text()))
+    } catch {
+      session = undefined
+    }
+    return session ? { kind: "sent", session } : { kind: "sent" }
+  }
   await response.body?.cancel()
-  return [400, 401, 403, 404, 410].includes(response.status) ||
-    (response.status >= 300 && response.status < 400)
-    ? { kind: "rejected", status: response.status }
-    : { kind: "sent" }
+  if (
+    [400, 401, 403, 404, 410].includes(status) ||
+    (status >= 300 && status < 400)
+  )
+    return { kind: "rejected", status }
+  if (status === 429 || status >= 500) {
+    const after = retryAfter(response.headers.get("retry-after"))
+    return after === undefined
+      ? { kind: "retry", status }
+      : { kind: "retry", status, after }
+  }
+  return { kind: "sent" }
 }
 
 export interface WebhookProfile {
@@ -50,6 +93,8 @@ export interface WebhookProfile {
   allows(url: URL): boolean
   headers(secret: string): Record<string, string>
   body(ring: Ring): string
+  /** The run an accepted ring started, read from the answer's body. */
+  session?(body: unknown): string | undefined
 }
 
 /** A Grok Bot routine's webhook trigger, which Cursor Automations serves. */
@@ -70,6 +115,39 @@ export const GROK_BOT_ROUTINE: WebhookProfile = {
       event: "worktable.inbox.ready",
       wakeId: ring.id,
     }),
+}
+
+/**
+ * A Claude Code scheduled task's API trigger. Every accepted ring starts a new
+ * run on the person's Claude plan, with no way to deduplicate, and its text
+ * reaches the run as untrusted data. So it carries only the signal: never
+ * content, names, ids or secrets.
+ */
+export const CLAUDE_CODE_TASK: WebhookProfile = {
+  urlHint: "Paste the URL Claude shows for the API trigger",
+  destinationHint:
+    "Use the URL Claude shows: https://api.anthropic.com/v1/claude_code/routines/trig_…/fire",
+  allows: (url) =>
+    url.hostname === "api.anthropic.com" &&
+    /^\/v1\/claude_code\/routines\/trig_[A-Za-z0-9_-]+\/fire$/.test(
+      url.pathname
+    ),
+  headers: (secret) => ({
+    "content-type": "application/json",
+    authorization: `Bearer ${secret}`,
+    "anthropic-version": "2023-06-01",
+  }),
+  body: () =>
+    JSON.stringify({ text: "Something was sent to you in Worktable." }),
+  session: (body) => {
+    const url = (body as { claude_code_session_url?: unknown } | null)
+      ?.claude_code_session_url
+    return typeof url === "string" &&
+      url.startsWith("https://") &&
+      url.length <= 2048
+      ? url
+      : undefined
+  },
 }
 
 /** Only an exact profile destination can receive its secret. No redirects. */
@@ -113,5 +191,5 @@ export async function ringWebhook(
       signal: context.signal,
     }
   )
-  return ringOutcome(response)
+  return ringOutcome(response, profile)
 }

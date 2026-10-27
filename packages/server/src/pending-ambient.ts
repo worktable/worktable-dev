@@ -32,7 +32,7 @@ import {
   type NoticeTarget,
   type PendingNotice,
 } from "./pending-notices.ts"
-import { announceSeen } from "./pending-read.ts"
+import { announceSeen, noteCheckIn } from "./pending-read.ts"
 import type { TokenIdentity } from "./token-store.ts"
 
 /** At most this many items in full on one call, about this work and else. */
@@ -178,6 +178,7 @@ export async function ambientNotices(
       shown.filter((notice) => notice.onTopic).map((notice) => notice.itemId)
     )
     announceSeen(markPendingDelivered(renderedItemIds))
+    if (rendered) noteCheckIn(participant.id)
     return rendered || null
   } catch (error) {
     console.error("[pending] could not add notices:", logError(error))

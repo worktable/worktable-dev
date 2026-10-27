@@ -67,6 +67,30 @@ export function announceSeen(entries: readonly PendingEntry[]): void {
   }
 }
 
+const checkInListeners = new Set<(participantId: string) => void>()
+
+/**
+ * Hear an agent check what waits on it: a pending read, or notices shown on
+ * another call. For wakes that wait for the woken agent to look.
+ */
+export function onCheckIn(
+  listener: (participantId: string) => void
+): () => void {
+  checkInListeners.add(listener)
+  return () => checkInListeners.delete(listener)
+}
+
+/** Call after marking what the agent was shown, so what's left is unshown. */
+export function noteCheckIn(participantId: string): void {
+  for (const listener of checkInListeners) {
+    try {
+      listener(participantId)
+    } catch {
+      // A wake's bookkeeping never fails the agent's read.
+    }
+  }
+}
+
 export async function readPending(
   reader: Reader,
   input: PendingReadInput = {}
@@ -87,7 +111,10 @@ export async function readPending(
   const notices = (await noticesFor(entries, reader, scope)).filter((notice) =>
     inScope(notice, scope)
   )
-  if (input.mode !== "notices") return { revision, count: notices.length }
+  if (input.mode !== "notices") {
+    noteCheckIn(participant.id)
+    return { revision, count: notices.length }
+  }
   // Oldest first, so passing the returned revision as since reads the rest.
   const ordered = notices.slice().sort((a, b) => a.revision - b.revision)
   const items = ordered.slice(0, PENDING_READ_LIMIT)
@@ -95,6 +122,7 @@ export async function readPending(
   const itemIds = items.map((item) => item.itemId)
   markPendingOnTopic(itemIds)
   announceSeen(markPendingDelivered(itemIds))
+  noteCheckIn(participant.id)
   const more = ordered.length - items.length
   return {
     revision: more > 0 ? items.at(-1)!.revision : revision,

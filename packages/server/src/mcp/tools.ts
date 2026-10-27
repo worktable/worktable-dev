@@ -1,4 +1,6 @@
 import { takeResultMedia } from "./media.ts"
+import { ambientNotices } from "../pending-ambient.ts"
+import { currentRequestIdentity } from "../team-policy.ts"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { z } from "zod"
 import type { McpSurface } from "./surface.ts"
@@ -53,6 +55,7 @@ import {
   assertPublicOperationOutput,
   PublicOperationOutputError,
   PREVIEW_OUTPUT_SCHEMAS,
+  withNotices,
   WORKTABLE_OUTPUT_SCHEMAS,
 } from "./output-schemas.ts"
 import {
@@ -128,6 +131,18 @@ export function mcpToolAuthorized(
   scopes: string[]
 ): boolean {
   return missingMcpScope(toolName, request, scopes) === null
+}
+
+/**
+ * The request's full identity when it is this caller: Teams access needs
+ * its binding, while a local connection's request runs as the owner and
+ * its tools act as an agent.
+ */
+function sameCaller(
+  identity: { principal: { id: string } }
+): ReturnType<typeof currentRequestIdentity> | undefined {
+  const full = currentRequestIdentity()
+  return full?.principal.id === identity.principal.id ? full : undefined
 }
 
 export const TOOL_DESCRIPTIONS: Record<WorktableToolName, string> = {
@@ -402,10 +417,13 @@ export function registerTools(
   const outputSchemaFor = <T extends z.ZodType>(
     toolName: WorktableToolName,
     released: T
-  ): T =>
-    ((surface === "preview"
-      ? PREVIEW_OUTPUT_SCHEMAS[toolName as keyof typeof PREVIEW_OUTPUT_SCHEMAS]
-      : undefined) ?? released) as T
+  ): T => {
+    if (surface !== "preview") return released
+    const schema =
+      PREVIEW_OUTPUT_SCHEMAS[toolName as keyof typeof PREVIEW_OUTPUT_SCHEMAS] ??
+      released
+    return withNotices(schema) as unknown as T
+  }
   const inputSchemaFor = <T extends z.ZodType>(
     toolName: WorktableToolName,
     released: T
@@ -520,7 +538,30 @@ export function registerTools(
         const publicResult = publicizeResult(operation.id, linked)
         assertPublicOperationOutput(operation.id, publicResult)
         const response = ok(publicResult)
-        return { ...response, content: [...response.content, ...content] }
+        // What waits on the agent rides beside the result (preview only).
+        const notices =
+          surface === "preview" && identity
+            ? await ambientNotices(
+                // The request's whole identity: Teams access needs its binding.
+                { ...identity, ...sameCaller(identity), scopes },
+                operation.id,
+                operation.args,
+                publicResult
+              )
+            : null
+        // Some clients show the model only the structured content, others
+        // only the text, so the notices go in both.
+        return {
+          ...response,
+          ...(notices && response.structuredContent
+            ? { structuredContent: { ...response.structuredContent, notices } }
+            : {}),
+          content: [
+            ...response.content,
+            ...content,
+            ...(notices ? [{ type: "text" as const, text: notices }] : []),
+          ],
+        }
       } catch (error) {
         if (error instanceof PublicOperationOutputError) {
           console.error(

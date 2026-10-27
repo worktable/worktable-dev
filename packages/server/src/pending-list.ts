@@ -111,6 +111,8 @@ interface Marks {
   revision: number
   deliveredAt?: string
   readAt?: string
+  /** When a call about its Doc or thread first showed it in full. */
+  onTopicAt?: string
 }
 
 interface MarksFile {
@@ -593,6 +595,24 @@ export function pendingList(): Promise<void> {
   return current.ready
 }
 
+/**
+ * Open items for one participant, newest first, without waiting: null while
+ * the list is still being built. For work that must never hold a request.
+ */
+export function pendingIfReady(participantId: string): PendingEntry[] | null {
+  const current = state
+  if (!current || current.building || current.root !== getWorkspaceRoot()) {
+    if (!current || current.root !== getWorkspaceRoot()) void pendingList()
+    return null
+  }
+  const ids = current.byRecipient.get(participantId)
+  if (!ids || ids.size === 0) return []
+  return [...ids]
+    .map((itemId) => current.entries.get(itemId)!)
+    .filter(Boolean)
+    .sort((a, b) => b.revision - a.revision)
+}
+
 /** The list with every change this server has already queued applied. */
 async function settled(): Promise<void> {
   await pendingList()
@@ -626,12 +646,13 @@ export async function pendingRevision(participantId: string): Promise<number> {
 /** Delivered and Read marks for one item, when it is open. */
 export function pendingMarks(
   itemId: string
-): { deliveredAt?: string; readAt?: string } | null {
+): { deliveredAt?: string; readAt?: string; onTopicAt?: string } | null {
   const marks = state?.marks.items[itemId]
   return marks
     ? {
         ...(marks.deliveredAt ? { deliveredAt: marks.deliveredAt } : {}),
         ...(marks.readAt ? { readAt: marks.readAt } : {}),
+        ...(marks.onTopicAt ? { onTopicAt: marks.onTopicAt } : {}),
       }
     : null
 }
@@ -650,9 +671,14 @@ export function markPendingRead(itemIds: readonly string[]): PendingEntry[] {
   return mark(itemIds, "readAt")
 }
 
+/** Mark items as shown in full on a call about their Doc or thread. */
+export function markPendingOnTopic(itemIds: readonly string[]): void {
+  mark(itemIds, "onTopicAt")
+}
+
 function mark(
   itemIds: readonly string[],
-  field: "deliveredAt" | "readAt"
+  field: "deliveredAt" | "readAt" | "onTopicAt"
 ): PendingEntry[] {
   const current = state
   if (!current) return []

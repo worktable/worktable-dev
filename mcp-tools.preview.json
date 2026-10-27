@@ -788,6 +788,10 @@
           "type": "integer",
           "exclusiveMinimum": 0,
           "maximum": 9007199254740991
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -1462,6 +1466,10 @@
             ],
             "additionalProperties": false
           }
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -2180,6 +2188,10 @@
         },
         "downloadExpiresAt": {
           "description": "Returned by action \"read_source\" with downloadUrl.",
+          "type": "string"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
           "type": "string"
         }
       },
@@ -3491,6 +3503,10 @@
         "contentHash": {
           "description": "Returned by action \"upload\" with file: the SHA-256 of the file saved, base64url.",
           "type": "string"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "required": [
@@ -3925,6 +3941,10 @@
           "description": "Returned by action \"read\".",
           "type": "string",
           "format": "uri"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -4442,6 +4462,10 @@
           "type": "string",
           "format": "uri",
           "description": "Current-install URL suitable for sending in chat."
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "required": [
@@ -5732,6 +5756,10 @@
         },
         "createdAt": {
           "description": "Returned by action \"inspect\" when the drawing was created through Worktable.",
+          "type": "string"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
           "type": "string"
         }
       },
@@ -8303,6 +8331,10 @@
         "archiveOn": {
           "description": "Returned by action \"create\" for temporary drawings.",
           "type": "string"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "required": [
@@ -8834,6 +8866,10 @@
           "description": "Returned by action \"read\".",
           "type": "string",
           "format": "uri"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -9748,6 +9784,10 @@
           "type": "string",
           "format": "uri",
           "description": "Current-install URL suitable for sending in chat."
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "required": [
@@ -10178,6 +10218,10 @@
               "$ref": "#/definitions/RecordSummary"
             }
           ]
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -10986,6 +11030,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -11332,6 +11380,10 @@
             "selectorMatch"
           ],
           "additionalProperties": {}
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -11771,6 +11823,10 @@
         "created": {
           "description": "Returned by action \"create\".",
           "type": "boolean"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "required": [
@@ -12282,6 +12338,10 @@
         "timedOut": {
           "description": "Returned by action \"wait\".",
           "type": "boolean"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -13028,6 +13088,10 @@
         "updatedAt": {
           "description": "Returned by action \"rename\".",
           "type": "string"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -13467,6 +13531,10 @@
               "$ref": "#/definitions/ThreadActivitySummary"
             }
           ]
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -14160,6 +14228,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "required": [
@@ -14251,6 +14323,10 @@
         },
         "guide": {
           "description": "Returned by action \"drawings\".",
+          "type": "string"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
           "type": "string"
         }
       },
@@ -14399,6 +14475,10 @@
               "type": "null"
             }
           ]
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
         }
       },
       "required": [

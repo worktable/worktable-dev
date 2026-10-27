@@ -9,6 +9,7 @@
 import { resolveParticipant } from "./participant-store.ts"
 import {
   markPendingDelivered,
+  markPendingOnTopic,
   markPendingRead,
   pendingFor,
   pendingMarks,
@@ -55,7 +56,7 @@ function inScope(notice: PendingNotice, scope: NoticeTarget): boolean {
 }
 
 /** Tell a Doc's open pages that one of its comments was seen. */
-function announceSeen(entries: readonly PendingEntry[]): void {
+export function announceSeen(entries: readonly PendingEntry[]): void {
   for (const entry of entries) {
     if (entry.source.kind !== "comment") continue
     wsManager.broadcast(entry.source.spaceId, {
@@ -90,7 +91,10 @@ export async function readPending(
   // Oldest first, so passing the returned revision as since reads the rest.
   const ordered = notices.slice().sort((a, b) => a.revision - b.revision)
   const items = ordered.slice(0, PENDING_READ_LIMIT)
-  announceSeen(markPendingDelivered(items.map((item) => item.itemId)))
+  // Told in full here, so a call on their Doc reminds in a line.
+  const itemIds = items.map((item) => item.itemId)
+  markPendingOnTopic(itemIds)
+  announceSeen(markPendingDelivered(itemIds))
   const more = ordered.length - items.length
   return {
     revision: more > 0 ? items.at(-1)!.revision : revision,

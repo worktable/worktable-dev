@@ -174,7 +174,8 @@ export async function noticesFor(
           at: entry.createdAt,
           spaceId: source.spaceId,
           spaceName: label(space.name, TITLE_LIMIT),
-          docPath: label(docPath, TITLE_LIMIT),
+          // The path itself, for matching and links; prose shortens it.
+          docPath,
           ...(current?.title ? { docTitle: label(current.title, TITLE_LIMIT) } : {}),
           annotationId: source.annotationId,
           from,
@@ -261,7 +262,7 @@ function line(notice: PendingNotice): string {
       ? notice.quote
         ? `on ${quoted(notice.quote)}`
         : "on this Doc"
-      : `on ${notice.docTitle ?? notice.docPath}${notice.spaceName ? ` (${notice.spaceName})` : ""}`
+      : `on ${notice.docTitle ?? label(notice.docPath ?? "a Doc", TITLE_LIMIT)}${notice.spaceName ? ` (${notice.spaceName})` : ""}`
     return `- ${notice.from.name} sent you a comment ${on}: ${quoted(notice.excerpt)} Comment ${notice.annotationId}.`
   }
   const where = notice.onTopic

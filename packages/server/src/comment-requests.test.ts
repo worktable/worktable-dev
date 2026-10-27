@@ -394,5 +394,21 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
         Array.from({ length: 22 }, (_, index) => `Point ${index + 1}`)
       )
     })
+
+    it("finds a comment by its Doc's full path, however long", async () => {
+      await pendingList()
+      const finnId = (await resolveParticipant(finn)).participant.id
+      const docPath = `plans/${"quarterly-pricing-review-".repeat(8)}final`
+      await writeDoc("pricing", docPath, "# Plan\n\nShip it.\n")
+      await createAnnotation("pricing", {
+        target: { type: "doc", docPath },
+        category: "comment",
+        body: "Which quarter?",
+        author: { type: "user", id: "user", name: "Karo" },
+        to: [{ id: finnId, kind: "agent", name: "Finn" }],
+      })
+      const read = await readPending(finn, { mode: "notices", scope: { spaceId: "pricing", docPath } })
+      expect(read.items?.map((item) => item.docPath)).toEqual([docPath])
+    })
   })
 }

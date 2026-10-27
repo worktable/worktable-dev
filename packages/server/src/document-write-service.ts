@@ -78,7 +78,7 @@ import {
 import { setDocumentFolderArchived } from "./document-folder-archive.ts"
 import { deleteDocumentFolder } from "./document-folder-delete.ts"
 import { usesAtOrBelow } from "./document-uses.ts"
-import { filesPreviewEnabled } from "./files-preview.ts"
+import { filesEnabled } from "./files-enabled.ts"
 import { rewriteLinksAfterMove } from "./link-rewrite.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import {
@@ -2119,7 +2119,7 @@ export async function setRegisteredDocumentArchived(
 ): Promise<ArchiveResult> {
   const withFolder =
     !options.alone &&
-    filesPreviewEnabled() &&
+    filesEnabled() &&
     (await hasDocumentsBelow(options.spaceId, options.path))
   // A lifetime archive checks it is due under the Doc's own lock first.
   const result =
@@ -2272,7 +2272,7 @@ export async function deleteRegisteredDocument(options: {
 }): Promise<{ documentId: DocumentId; path: string }> {
   if (
     !options.alone &&
-    filesPreviewEnabled() &&
+    filesEnabled() &&
     (await hasDocumentsBelow(options.spaceId, options.path))
   ) {
     const uses = await usesAtOrBelow(options.spaceId, options.path)

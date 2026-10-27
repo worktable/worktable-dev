@@ -16,7 +16,7 @@ import { resolveDocLink } from "@worktable/types"
 import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts"
 import { readDocumentSource } from "./document-source-reader.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
-import { filesPreviewEnabled } from "./files-preview.ts"
+import { filesEnabled } from "./files-enabled.ts"
 import { rewriteBlockLinks, rewriteMarkdownLinks } from "./link-rewrite.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 
@@ -88,7 +88,7 @@ export async function inlineSharedImages<T extends string | unknown[]>(
   docPath: string,
   content: T
 ): Promise<{ content: T; stamps: FileStamp[] }> {
-  if (!filesPreviewEnabled()) return { content, stamps: [] }
+  if (!filesEnabled()) return { content, stamps: [] }
   // Each image's occurrences, as every one carries its own data URL.
   const targets = new Map<string, number>()
   const collect = (target: string, imageUses = 1) => {

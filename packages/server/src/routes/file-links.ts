@@ -1,7 +1,7 @@
 // File links for agents: PUT sends a file to a one-time upload link, GET
 // reads one from a download link. The link's token is the credential, so
 // these routes sit outside the API's sign-in; each runs as whoever made the
-// link, with their access checked again now. Part of the files preview.
+// link, with their access checked again now.
 
 import { Hono } from "hono"
 import { runAsActivityActor } from "../activity-log.ts"
@@ -17,7 +17,7 @@ import {
   readLimitedBody,
   writeUploadedFile,
 } from "../file-uploads.ts"
-import { filesPreviewEnabled } from "../files-preview.ts"
+import { filesEnabled } from "../files-enabled.ts"
 import {
   assertSpaceAccess,
   runWithTeamIdentity,
@@ -50,7 +50,7 @@ function writeFailure(error: unknown) {
 }
 
 fileLinksRouter.put("/:token", async (c) => {
-  if (!filesPreviewEnabled()) return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
+  if (!filesEnabled()) return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
   const declared = Number(c.req.header("content-length") ?? "0")
   if (declared > FILE_UPLOAD_MAX_BYTES) {
     return c.json({ error: FILE_UPLOAD_TOO_LARGE, code: "PAYLOAD_TOO_LARGE" }, 413)
@@ -90,7 +90,7 @@ fileLinksRouter.put("/:token", async (c) => {
 })
 
 fileLinksRouter.get("/:token", async (c) => {
-  if (!filesPreviewEnabled()) return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
+  if (!filesEnabled()) return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
   const ticket = redeemFileTicket(c.req.param("token"), "download")
   if (!ticket) return c.json(GONE, 410)
   try {

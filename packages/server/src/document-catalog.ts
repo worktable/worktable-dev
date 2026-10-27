@@ -48,7 +48,7 @@ import {
   type DocumentFormatRegistry,
 } from "./document-format-registry.ts"
 import { storedDocTitle } from "./doc-title-text.ts"
-import { filesPreviewEnabled } from "./files-preview.ts"
+import { filesEnabled } from "./files-enabled.ts"
 import {
   DOCUMENT_STORAGE_PROFILE_IDS,
   documentStorageProfiles,
@@ -1012,7 +1012,7 @@ async function buildDocumentCatalogFromFiles(
   )
   // With files off, files that gained an identity while they were on take no
   // part in the Space: not listed, and in no conflict with a Doc's path.
-  const merged = filesPreviewEnabled()
+  const merged = filesEnabled()
     ? inventoried
     : {
         ...inventoried,

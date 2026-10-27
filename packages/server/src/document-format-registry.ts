@@ -305,7 +305,7 @@ export class DocumentFormatRegistry {
       }
     }
     // Any other file, once files are on: callers decide, because discovery
-    // follows the files preview and the registry reads no settings.
+    // follows WORKTABLE_FILES and the registry reads no environment.
     if (options.anyFile && this.#anyFile && !isHiddenName(filename)) {
       return { registration: this.#anyFile, source: this.#anyFile.fileSource! }
     }

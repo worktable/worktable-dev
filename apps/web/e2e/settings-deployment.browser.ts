@@ -306,19 +306,6 @@ test("self-managed Settings retain local controls and normalize Account requests
     settings.getByText("Check for updates automatically", { exact: true })
   ).toBeVisible()
 
-  // The owner turns on file previews, and the capability follows.
-  const filesPreview = settings.getByRole("switch", {
-    name: "Preview file features",
-  })
-  await expect(filesPreview).not.toBeChecked()
-  const capabilityOn = page.waitForResponse(
-    async (response) =>
-      new URL(response.url()).pathname === "/api/system/deployment" &&
-      (await response.json()).capabilities.filesPreview === true
-  )
-  await filesPreview.click()
-  await expect(filesPreview).toBeChecked()
-  await capabilityOn
 })
 
 test("Cloud mobile settings keeps the Subscription section reachable", async ({

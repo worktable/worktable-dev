@@ -18,7 +18,7 @@ export function useEditorFiles(
     at?: string
   }
 ): EditorFiles | undefined {
-  const filesOn = useDeploymentInfo().data?.capabilities.filesPreview ?? false
+  const filesOn = useDeploymentInfo().data?.capabilities.files ?? false
   return useMemo(
     () =>
       filesOn

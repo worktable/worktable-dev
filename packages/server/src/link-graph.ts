@@ -35,7 +35,7 @@ import {
 import { onWorkspaceChange } from "./workspace-events.ts";
 import { canReuseDerived, type DerivedRevision } from "./derived-revision.ts";
 import { readDocumentCatalogSnapshot } from "./document-query.ts";
-import { filesPreviewEnabled } from "./files-preview.ts";
+import { filesEnabled } from "./files-enabled.ts";
 
 export { resolveDocLink } from "@worktable/types";
 
@@ -514,7 +514,7 @@ async function buildSpaceLinks(spaceId: string, space: SpaceLinks): Promise<void
       docPaths,
       docs,
       aliases,
-      filesPreviewEnabled() ? await spaceFilePaths(spaceId) : null,
+      filesEnabled() ? await spaceFilePaths(spaceId) : null,
     );
     await rebuildHookForTests?.();
     space.docs = docs;

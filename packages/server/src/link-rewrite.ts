@@ -13,7 +13,7 @@ import { posix } from "node:path"
 import { Parser } from "htmlparser2"
 import { resolveDocLink } from "@worktable/types"
 import { logError } from "./debug-log.ts"
-import { filesPreviewEnabled } from "./files-preview.ts"
+import { filesEnabled } from "./files-enabled.ts"
 import { getSpaceLinkGraph } from "./link-graph.ts"
 import { blankRanges, markdownLayout } from "./markdown-code.ts"
 import {
@@ -469,7 +469,7 @@ export async function rewriteLinksAfterMove(
   moves: readonly PathMove[]
 ): Promise<{ rewritten: string[] }> {
   const rewritten: string[] = []
-  if (!filesPreviewEnabled()) return { rewritten }
+  if (!filesEnabled()) return { rewritten }
   const actual = moves.filter((move) => move.from !== move.to)
   if (actual.length === 0) return { rewritten }
   const moved = new Map(actual.map((move) => [move.from, move.to]))

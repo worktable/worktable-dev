@@ -68,7 +68,7 @@ import {
 } from "../document-annotation-service.ts"
 import { wsManager } from "../ws.ts"
 import { BUILTIN_DOCUMENT_FORMATS } from "../document-format-registry.ts"
-import { filesPreviewEnabled } from "../files-preview.ts"
+import { filesEnabled } from "../files-enabled.ts"
 import { serveFileBytes } from "../file-response.ts"
 import {
   FILE_UPLOAD_MAX_BYTES,
@@ -514,11 +514,11 @@ documentsRouter.get(
 
 // ── Files ────────────────────────────────────────────────────────────────────
 // A file's bytes, for anyone who can read its Space, and uploads for anyone
-// who can edit it. Both exist only with the files preview on, and only for
-// files: Docs keep their own routes.
+// who can edit it. Both exist only while files are on, and only for files:
+// Docs keep their own routes.
 
 documentsRouter.get("/file", requireScope("documents:read"), async (c) => {
-  if (!filesPreviewEnabled()) {
+  if (!filesEnabled()) {
     return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
   }
   const path = exactDocumentPath(c.req.query("path"))
@@ -592,7 +592,7 @@ documentsRouter.get("/file", requireScope("documents:read"), async (c) => {
 // version in its history; replace=1 replaces whatever is current, as Upload
 // New Version does, since nothing replaced is lost from history.
 documentsRouter.put("/file", requireScope("documents:write"), async (c) => {
-  if (!filesPreviewEnabled()) {
+  if (!filesEnabled()) {
     return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
   }
   const spaceId = c.req.param("spaceId") ?? ""
@@ -1100,7 +1100,7 @@ documentsRouter.get("/uses", requireScope("documents:read"), async (c) => {
   }
   const spaceId = c.req.param("spaceId") ?? ""
   const all = await usesAtOrBelow(spaceId, path)
-  const items = filesPreviewEnabled()
+  const items = filesEnabled()
     ? all
     : all.filter((entry) => entry.path === path)
   return c.json({ items })

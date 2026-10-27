@@ -184,7 +184,7 @@ import {
   readableFileSource,
 } from "./file-results.ts"
 import { withResultMedia } from "./media.ts"
-import { filesPreviewEnabled } from "../files-preview.ts"
+import { filesEnabled } from "../files-enabled.ts"
 import { fileDownloadLink, fileUploadLink } from "./file-links.ts"
 import {
   FILE_UPLOAD_MAX_BYTES,
@@ -1352,8 +1352,8 @@ async function _dispatchOperationInner(
     case "documents.upload": {
       const spaceId = args["spaceId"] as string
       const path = args["path"] as string
-      if (!filesPreviewEnabled()) {
-        throw new Error("Uploads need the files preview, in Settings → System.")
+      if (!filesEnabled()) {
+        throw new Error("File features are turned off on this Worktable.")
       }
       const file = args["file"] as ChatGptFile | undefined
       if (!analyzeDocumentPath(path).safe || !namesAFile(path)) {

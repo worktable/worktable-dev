@@ -15,7 +15,7 @@ import {
   withoutSuffix,
   type DocumentFormatRegistry,
 } from "./document-format-registry.ts"
-import { filesPreviewEnabled } from "./files-preview.ts"
+import { filesEnabled } from "./files-enabled.ts"
 import { inspectDocumentSource } from "./document-inventory.ts"
 import { parseCanonicalYaml } from "./yaml.ts"
 import {
@@ -242,7 +242,7 @@ export async function listLegacyDocClaims(
     { entries: 0 },
     registry,
     createConcurrencyLimit(LEGACY_SCAN_CONCURRENCY),
-    filesPreviewEnabled()
+    filesEnabled()
   )
 }
 

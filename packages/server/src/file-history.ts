@@ -15,7 +15,7 @@ import {
   DocumentWriteError,
   readRegisteredDocumentSource,
 } from "./document-write-service.ts"
-import { filesPreviewEnabled } from "./files-preview.ts"
+import { filesEnabled } from "./files-enabled.ts"
 import {
   encodeTargetPath,
   rewriteBlockLinks,
@@ -113,7 +113,7 @@ export async function keepEarlierImagesForRestoredDoc(
   at: number,
   createdBy: string
 ): Promise<string[]> {
-  if (!filesPreviewEnabled()) return []
+  if (!filesEnabled()) return []
   const current = await agentChangeBase(spaceId, docPath, undefined, false)
   const targets = new Set<string>()
   const collect = (target: string) => {

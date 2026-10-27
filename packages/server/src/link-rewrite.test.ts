@@ -206,7 +206,7 @@ describe("rewriting links after a move", () => {
         settings: {},
       }
     }
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    const previous = process.env["WORKTABLE_FILES"]
 
     beforeEach(async () => {
       root = mkdtempSync(join(tmpdir(), "worktable-link-rewrite-"))
@@ -220,8 +220,8 @@ describe("rewriting links after a move", () => {
 
     afterEach(async () => {
       await settleLinkRewrites()
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
       setWorkspaceRootOverride(null)
       setAppDirOverride(null)
       rmSync(root, { recursive: true, force: true })
@@ -243,7 +243,7 @@ describe("rewriting links after a move", () => {
     }
 
     it("keeps the links in every affected Doc true on disk, once files are on", async () => {
-      process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+      process.env["WORKTABLE_FILES"] = "1"
       await seed()
       // A reference-style image is found through its definition too.
       await writeDoc(
@@ -270,7 +270,7 @@ describe("rewriting links after a move", () => {
     })
 
     it("rewrites links when a folder is renamed as a folder", async () => {
-      process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+      process.env["WORKTABLE_FILES"] = "1"
       await seed()
       expect(
         (await renameDocsByPrefixAndSync(SPACE, "research", "archive/research")).error
@@ -282,7 +282,7 @@ describe("rewriting links after a move", () => {
     })
 
     it("answers a move with the revision the moved Doc has once its links are rewritten", async () => {
-      process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+      process.env["WORKTABLE_FILES"] = "1"
       await seed()
       const moved = await moveRegisteredDocument({
         spaceId: SPACE,
@@ -298,7 +298,7 @@ describe("rewriting links after a move", () => {
     })
 
     it("keeps records' file fields pointing at a file that moved, and lists them as its uses", async () => {
-      process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+      process.env["WORKTABLE_FILES"] = "1"
       await seed()
       await writeRecordCollectionSchema(
         SPACE,
@@ -348,7 +348,7 @@ describe("rewriting links after a move", () => {
     })
 
     it("leaves Docs' text alone with files off, as aliases keep links working", async () => {
-      process.env["WORKTABLE_FILES_PREVIEW"] = "0"
+      process.env["WORKTABLE_FILES"] = "0"
       await seed()
       expect(
         (await renameDocAndSync(SPACE, "onboarding/spec", "flows/signup")).error

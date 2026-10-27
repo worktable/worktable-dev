@@ -49,7 +49,7 @@ import {
 } from "./document-source-reader.ts"
 import { peekDocActivity } from "./activity-log.ts"
 import { peekDocBacklinks, peekDocOutbound } from "./link-graph.ts"
-import { filesPreviewEnabled } from "./files-preview.ts"
+import { filesEnabled } from "./files-enabled.ts"
 import { peekDocReferrers } from "./doc-referrers.ts"
 import {
   documentShareLinkSummary,
@@ -98,7 +98,7 @@ async function embedVersions(
   spaceId: string,
   docPath: string
 ): Promise<Record<string, string> | undefined> {
-  if (!filesPreviewEnabled()) return undefined
+  if (!filesEnabled()) return undefined
   const targets = peekDocOutbound(spaceId, docPath)
   if (!targets || targets.length === 0) return undefined
   // A page reads under the Space's lock, which this read must not take again.

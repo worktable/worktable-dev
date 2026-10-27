@@ -20,7 +20,7 @@ import { mcpBearerRequired, publicSurfaceAuthRequired, trustedLocalIdentity } fr
 import { createToken } from "./token-store.ts";
 import { setOwnerPassword } from "./session-store.ts";
 import { configuredMcpSurface, mcpModernEraEnabled } from "./mcp/surface.ts";
-import { filesPreviewEnabled } from "./files-preview.ts";
+import { filesEnabled } from "./files-enabled.ts";
 
 let appDir: string;
 let workspaceDir: string;
@@ -199,32 +199,25 @@ describe("preview agent tools", () => {
   });
 });
 
-describe("preview file features", () => {
+describe("file features", () => {
   afterEach(() => {
-    delete process.env["WORKTABLE_FILES_PREVIEW"];
+    delete process.env["WORKTABLE_FILES"];
     delete process.env["WORKTABLE_HOSTED"];
   });
 
-  it("are off until the owner turns them on, follow the environment, and stay off on Cloud", async () => {
-    const capability = async () => ((await (await app().request("/api/system/deployment")).json()) as DeploymentInfo).capabilities.filesPreview;
-    expect(filesPreviewEnabled()).toBe(false);
+  it("are on everywhere, Cloud included, until WORKTABLE_FILES=0 turns them off", async () => {
+    const capability = async () => ((await (await app().request("/api/system/deployment")).json()) as DeploymentInfo).capabilities.files;
+    expect(filesEnabled()).toBe(true);
+    expect(await capability()).toBe(true);
+    process.env["WORKTABLE_FILES"] = "0";
+    expect(filesEnabled()).toBe(false);
     expect(await capability()).toBe(false);
 
-    const turnOn = await app().request("/api/system/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ files: { preview: true } }),
-    });
-    expect(turnOn.status).toBe(200);
-    invalidateServerSettingsCache();
-    expect(await capability()).toBe(true);
-    await expect(updateServerSettings({ files: { other: true } } as never)).rejects.toThrow("Unknown files field: other");
-
-    process.env["WORKTABLE_FILES_PREVIEW"] = "0";
-    expect(filesPreviewEnabled()).toBe(false);
-    delete process.env["WORKTABLE_FILES_PREVIEW"];
+    delete process.env["WORKTABLE_FILES"];
     process.env["WORKTABLE_HOSTED"] = "1";
-    expect(filesPreviewEnabled()).toBe(false);
+    expect(filesEnabled()).toBe(true);
+    // The switch that used to turn them on is gone.
+    await expect(updateServerSettings({ files: { preview: true } } as never)).rejects.toThrow();
   });
 });
 
@@ -235,7 +228,6 @@ describe("GET /api/system/settings", () => {
     expect(await res.json()).toEqual({
       ...SETTINGS_DEFAULTS,
       agents: { ...SETTINGS_DEFAULTS.agents, previewToolsOverride: null },
-      files: { ...SETTINGS_DEFAULTS.files, previewOverride: null },
     });
   });
 });

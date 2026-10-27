@@ -157,7 +157,7 @@ export function SpaceNewActions({
   const [widgetOpen, setWidgetOpen] = useState(false)
   const [collectionOpen, setCollectionOpen] = useState(false)
   const newDoc = useNewDoc(spaceId, onCreated)
-  const filesOn = useDeploymentInfo().data?.capabilities.filesPreview ?? false
+  const filesOn = useDeploymentInfo().data?.capabilities.files ?? false
   const picker = useRef<HTMLInputElement>(null)
 
   const uploadFiles = async (files: File[]) => {

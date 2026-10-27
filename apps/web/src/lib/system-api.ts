@@ -148,8 +148,8 @@ export interface DeploymentInfo {
     documentSharing: boolean
     /** This person may see and manage share links in Settings → Links. */
     shareLinks: boolean
-    /** File features that aren't released yet are on. */
-    filesPreview: boolean
+    /** File features are on: off only where WORKTABLE_FILES=0. */
+    files: boolean
     /** Comments can be sent to people and agents. */
     commentRecipients?: boolean
   }
@@ -225,12 +225,6 @@ export interface ServerSettings {
     previewTools: boolean
     /** Set when WORKTABLE_MCP_PREVIEW overrides the setting on this server. */
     previewToolsOverride?: boolean | null
-  }
-  /** Machine-local: run the file features not yet released. */
-  files: {
-    preview: boolean
-    /** Set when WORKTABLE_FILES_PREVIEW overrides the setting on this server. */
-    previewOverride?: boolean | null
   }
 }
 

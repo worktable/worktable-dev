@@ -32,7 +32,6 @@ import {
   LayoutDashboard,
   Plus,
   Pin,
-  PinOff,
   Archive,
   Clock3,
   AppWindow,
@@ -118,6 +117,11 @@ const DeleteDialog = lazy(() =>
     default: module.DeleteDialog,
   }))
 )
+const UnpinDocumentButton = lazy(() =>
+  import("@/components/sidebar/unpin-document-button").then((module) => ({
+    default: module.UnpinDocumentButton,
+  }))
+)
 import {
   SidebarSearchInput,
   SidebarSearchResults,
@@ -133,7 +137,6 @@ import {
   SpaceNewActions,
 } from "@/components/spaces/space-new-menu"
 import { DocContextMenuButton } from "@/components/docs/doc-context-menu"
-import { useDocumentOrganizeActions } from "@/hooks/use-document-organize"
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -919,11 +922,13 @@ function PinnedSidebarSection({
             folderArchived={false}
             canEdit={canEdit}
             rowActions={
-              <UnpinDocumentButton
-                spaceId={spaceId}
-                path={pin.path}
-                title={pin.title ?? pin.path}
-              />
+              <DeferredMount active>
+                <UnpinDocumentButton
+                  spaceId={spaceId}
+                  path={pin.path}
+                  title={pin.title ?? pin.path}
+                />
+              </DeferredMount>
             }
           />
         ))}
@@ -932,32 +937,6 @@ function PinnedSidebarSection({
         Docs
       </p>
     </div>
-  )
-}
-
-function UnpinDocumentButton({
-  spaceId,
-  path,
-  title,
-}: {
-  spaceId: string
-  path: string
-  title: string
-}) {
-  const unpin = useDocumentOrganizeActions(spaceId, path).find(
-    (action) => action.id === "unpin"
-  )
-  if (!unpin) return null
-  return (
-    <button
-      type="button"
-      aria-label={`Unpin ${title}`}
-      title="Unpin"
-      onClick={unpin.onSelect}
-      className="flex size-9 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/30 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground sm:size-6"
-    >
-      <PinOff className="size-3.5" />
-    </button>
   )
 }
 

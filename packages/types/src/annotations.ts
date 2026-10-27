@@ -102,6 +102,7 @@ export const AnnotationRequestSchema = z.object({
    * so agents are shown those words only while they are unchanged.
    */
   textHash: z.string().optional(),
+  /**
    * When the recipient was shown it and when it opened it, as this server
    * knows. Added to responses; never kept in the comment's file.
    */

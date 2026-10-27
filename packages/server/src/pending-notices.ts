@@ -49,6 +49,11 @@ export interface PendingNotice {
   from: { kind: "person" | "agent" | "system"; name: string }
   excerpt: string
   quote?: string
+  /**
+   * The words are a person's, written in the app and unchanged, so they may
+   * be shown to an agent that didn't ask for them.
+   */
+  personWords: boolean
   /** Whether it is about what the call that showed it is working on. */
   onTopic: boolean
   /** The call that opens it. */
@@ -146,7 +151,7 @@ export async function noticesFor(
   const readsThreads = hasScope(reader.scopes, "threads:read")
   return entries.flatMap((entry): PendingNotice[] => {
     const source = entry.source
-    const from = { kind: source.from.kind, name: nameOf(source.from) }
+    const from = { kind: source.from.kind, name: label(nameOf(source.from), NAME_LIMIT) }
     if (source.kind === "comment") {
       const space = spaces.get(source.spaceId)
       if (
@@ -168,11 +173,12 @@ export async function noticesFor(
           revision: entry.revision,
           at: entry.createdAt,
           spaceId: source.spaceId,
-          spaceName: space.name,
-          docPath,
-          ...(current?.title ? { docTitle: current.title } : {}),
+          spaceName: label(space.name, TITLE_LIMIT),
+          docPath: label(docPath, TITLE_LIMIT),
+          ...(current?.title ? { docTitle: label(current.title, TITLE_LIMIT) } : {}),
           annotationId: source.annotationId,
           from,
+          personWords: source.personWords,
           excerpt: source.excerpt,
           ...(source.quote ? { quote: source.quote } : {}),
           onTopic:
@@ -201,11 +207,12 @@ export async function noticesFor(
         revision: entry.revision,
         at: entry.createdAt,
         spaceId,
-        ...(space ? { spaceName: space.name } : {}),
+        ...(space ? { spaceName: label(space.name, TITLE_LIMIT) } : {}),
         threadId: source.threadId,
-        threadTitle: source.threadTitle,
+        threadTitle: label(source.threadTitle, TITLE_LIMIT),
         messageId: source.messageId,
         from,
+        personWords: source.from.kind === "person",
         excerpt: source.excerpt,
         onTopic: target.threadId === source.threadId,
         open: {
@@ -222,8 +229,30 @@ export async function noticesFor(
   })
 }
 
+const NAME_LIMIT = 60
+const TITLE_LIMIT = 120
+
+/**
+ * A name or title anyone could set, as one plain line: no line breaks or
+ * control characters to start a line of its own, no quote marks to close
+ * a quotation, and not too long.
+ */
+function label(text: string, limit: number): string {
+  const flat = Array.from(text, (char) => {
+    const code = char.codePointAt(0)!
+    return code < 0x20 || code === 0x7f || code === 0x2028 || code === 0x2029
+      ? " "
+      : char
+  })
+    .join("")
+    .replace(/[“”"]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim()
+  return flat.length <= limit ? flat : `${flat.slice(0, limit - 1).trimEnd()}…`
+}
+
 function quoted(text: string): string {
-  return `“${text}”`
+  return `“${label(text, 400)}”`
 }
 
 function line(notice: PendingNotice): string {

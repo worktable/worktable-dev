@@ -3152,8 +3152,11 @@ async function _dispatchOperationInner(
     }
     case "workspace.pending": {
       // The request's whole identity: Teams access needs its team binding.
+      // Only when it is this caller: a local connection's request runs as
+      // the owner while the tools act as its agent.
+      const full = currentRequestIdentity()
       return await readPending(
-        currentRequestIdentity() ?? identity,
+        full && full.principal.id === identity.principal.id ? full : identity,
         PendingInput.parse(args)
       )
     }

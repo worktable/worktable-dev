@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { hostedOAuthPrincipalId } from "@worktable/hosted-contract"
 import {
+  agentConnectionPlatform,
   DEFAULT_AGENT_ACCESS,
   isAgentPlatformId,
   isDirectAgentLabel,
@@ -316,7 +317,7 @@ async function claudeAgent(
       : undefined
   if (
     !connection ||
-    connection.platform !== "claude" ||
+    agentConnectionPlatform(connection) !== "claude" ||
     connection.canManage === false
   )
     return c.json(

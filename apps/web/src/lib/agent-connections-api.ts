@@ -1,9 +1,6 @@
 import { browserTeamMemberId } from "./team-context"
 import {
-  isAgentPlatformId,
-  platformForAdapter,
-  platformForClient,
-  platformForName,
+  agentConnectionPlatform,
   type AgentAccess,
   type AgentConnection,
   type DirectAgentLabel,
@@ -11,6 +8,8 @@ import {
   type AgentConnectionInventory,
 } from "@worktable/types"
 import { fetchJSON } from "./http"
+
+export { agentConnectionPlatform }
 
 type ListedAgentConnection = AgentConnection & {
   requestScope?: "workspace"
@@ -141,22 +140,6 @@ export function updateSignInAgent(
     `/api/agent-connections/sign-ins/${encodeURIComponent(clientId)}`,
     { method: "PUT", body: JSON.stringify(changes) }
   )
-}
-
-/** The platform an agent is shown with: recorded, else inferred. */
-export function agentConnectionPlatform(
-  connection: AgentConnection
-): AgentPlatformId {
-  if (isAgentPlatformId(connection.platform) && connection.platform !== "other")
-    return connection.platform
-  if (connection.target.kind === "agent-adapter") {
-    return platformForAdapter(connection.target.adapter)
-  }
-  const fromClient = platformForClient(connection.target.clientId)
-  // Cloud's sign-ins carry an opaque client id, so their name decides.
-  return fromClient === "other"
-    ? platformForName(connection.displayName)
-    : fromClient
 }
 
 /** The agent an app already is here, if it was connected before. */

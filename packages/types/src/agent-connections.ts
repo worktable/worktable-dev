@@ -1,4 +1,10 @@
-import type { AgentPlatformId } from "./agent-platforms"
+import {
+  isAgentPlatformId,
+  platformForAdapter,
+  platformForClient,
+  platformForName,
+  type AgentPlatformId,
+} from "./agent-platforms"
 import type { ParticipantRef } from "./threads"
 import type { GrokBotCandidate, GrokBotConnection } from "./grok-bot"
 
@@ -176,4 +182,21 @@ export interface AgentConnectionInventory {
    * auth kinds remain complete and actionable.
    */
   unavailableAuthKinds?: AgentConnectionAuthKind[]
+}
+
+/**
+ * The platform an agent is: recorded, else inferred. Cloud's sign-ins carry
+ * an opaque client id and no recorded platform, so their name decides.
+ */
+export function agentConnectionPlatform(
+  connection: Pick<AgentConnection, "platform" | "target" | "displayName">
+): AgentPlatformId {
+  if (isAgentPlatformId(connection.platform) && connection.platform !== "other")
+    return connection.platform
+  if (connection.target.kind === "agent-adapter")
+    return platformForAdapter(connection.target.adapter)
+  const fromClient = platformForClient(connection.target.clientId)
+  return fromClient === "other"
+    ? platformForName(connection.displayName)
+    : fromClient
 }

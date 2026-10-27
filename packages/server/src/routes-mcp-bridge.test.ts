@@ -544,6 +544,32 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
     await drainActivity()
   })
 
+  it("offers events to subscribe to with the released tools", async () => {
+    process.env["WORKTABLE_MCP_MODERN"] = "1"
+    const { token } = await createToken({ scopes: ["*"], agent: "chatgpt" })
+    const discover = await modernPost("server/discover", {}, { token })
+    expect(discover.reply.result?.capabilities).toMatchObject({ events: {} })
+    const listed = await modernPost("events/list", {}, { token })
+    expect(listed.reply.result?.events).toMatchObject([
+      { name: "item.sent_to_you", delivery: ["webhook"] },
+    ])
+    // Only a public HTTPS callback is accepted; nothing is sent to this one.
+    const refused = await modernPost(
+      "events/subscribe",
+      {
+        name: "item.sent_to_you",
+        arguments: {},
+        delivery: {
+          mode: "webhook",
+          url: "http://receiver.example/cb",
+          secret: `whsec_${Buffer.alloc(32).toString("base64")}`,
+        },
+      },
+      { token }
+    )
+    expect(refused.reply.error?.code).toBe(-32602)
+  })
+
   it("answers modern requests as a legacy-only server while the era is off", async () => {
     // A 400 without a modern error code: a dual-era client falls back to
     // initialize, as against any server from before this revision.

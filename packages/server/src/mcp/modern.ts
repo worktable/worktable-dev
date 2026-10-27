@@ -4,6 +4,7 @@ import {
   isLegacyRequest,
   ProtocolError,
   Server,
+  type ServerCapabilities,
   type ServerContext,
 } from "@modelcontextprotocol/server"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
@@ -20,6 +21,13 @@ import {
   type PendingEntry,
 } from "../pending-list.ts"
 import { waitSince } from "../pending-wait.ts"
+import {
+  EventsError,
+  listEvents,
+  subscribe,
+  unsubscribe,
+  type EventsCaller,
+} from "../mcp-events.ts"
 import {
   createWorktableMcpServer,
   serverIdentity,
@@ -101,13 +109,15 @@ export async function handleModernMcpRequest(
 function createModernServer(exchange: ModernMcpExchange): Server {
   const { info, instructions } = serverIdentity(exchange.server)
   // Waits run as MCP tasks only with the preview tools, which have the
-  // pending action they wait on.
+  // pending action they wait on. Events need no preview tool: the subscriber
+  // answers with the released annotation and thread tools.
   const tasks = exchange.server.surface === "preview"
   const server = new Server(info, {
     capabilities: {
       tools: {},
+      events: {},
       ...(tasks ? { extensions: { [TASKS_EXTENSION]: {} } } : {}),
-    },
+    } as ServerCapabilities,
     instructions,
   })
   server.setRequestHandler("tools/list", (request, ctx) =>
@@ -130,7 +140,47 @@ function createModernServer(exchange: ModernMcpExchange): Server {
     server.setRequestHandler("tasks/cancel", { params: TaskParams }, () => ({}))
     server.setRequestHandler("tasks/update", { params: TaskParams }, () => ({}))
   }
+  server.setRequestHandler("events/list", { params: z.unknown() }, () =>
+    listEvents()
+  )
+  server.setRequestHandler(
+    "events/subscribe",
+    { params: z.unknown() },
+    (params) => eventsCall(exchange, (caller) => subscribe(caller, params))
+  )
+  server.setRequestHandler(
+    "events/unsubscribe",
+    { params: z.unknown() },
+    (params) => eventsCall(exchange, (caller) => unsubscribe(caller, params))
+  )
   return server
+}
+
+/**
+ * Run an events method as the calling agent. Subscriptions belong to an agent's
+ * sign-in, so the local owner, who has none, cannot subscribe.
+ */
+async function eventsCall<T>(
+  exchange: ModernMcpExchange,
+  run: (caller: EventsCaller) => Promise<T>
+): Promise<T> {
+  const partial = exchange.server.identity
+  if (!partial) {
+    throw new ProtocolError(-32600, "Subscribe with an agent's sign-in")
+  }
+  // The request's whole identity: on Teams, deliveries check access with
+  // its team binding.
+  const identity = currentRequestIdentity() ?? {
+    ...partial,
+    scopes: exchange.server.scopes ?? ["*"],
+  }
+  try {
+    return await run({ identity, origin: exchange.server.urlOrigin ?? "" })
+  } catch (error) {
+    if (error instanceof EventsError)
+      throw new ProtocolError(error.code, error.message, error.data)
+    throw error
+  }
 }
 
 // ============================================================

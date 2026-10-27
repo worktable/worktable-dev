@@ -1092,6 +1092,76 @@ describe("team foundation", () => {
     expect(pending).toMatchObject({ count: 1 })
   })
 
+  test("a team agent's event subscription delivers through its credential and stops once it is disconnected", async () => {
+    const { owner } = await setup()
+    const agent = createTeamAgent(
+      { name: "ChatGPT", platform: "chatgpt", ownership: "personal" },
+      owner
+    )
+    bindTeamAgentCredential(agent.id, "oauth:chatgpt", owner)
+    const chatgpt = resolveTeamAgentCredential({
+      ...owner,
+      team: undefined,
+      agent: "chatgpt",
+      principal: { id: "oauth:chatgpt", type: "agent", displayName: "ChatGPT" },
+    })!
+    const { resolveParticipant } = await import("./participant-store.ts")
+    const { pendingList } = await import("./pending-list.ts")
+    const { subscribe, startMcpEventsRuntime } = await import("./mcp-events.ts")
+    const { participant } = await resolveParticipant(chatgpt)
+    await writeDoc("original", "brief", "# Brief\n\nShip in May.\n")
+    await pendingList()
+    const delivered: string[] = []
+    const transport = {
+      resolve: async () => ["93.184.216.34"],
+      fetch: async (_url: string, init: RequestInit) => {
+        const body = JSON.parse(String(init.body))
+        if (body.type === "verification")
+          return Response.json({ challenge: body.challenge })
+        delivered.push(body.data.excerpt)
+        return new Response(null, { status: 200 })
+      },
+    }
+    await subscribe(
+      { identity: chatgpt, origin: "https://worktable.example" },
+      {
+        name: "item.sent_to_you",
+        arguments: { spaceId: "original" },
+        delivery: {
+          mode: "webhook",
+          url: "https://receiver.example/cb",
+          secret: `whsec_${Buffer.alloc(32, 1).toString("base64")}`,
+        },
+      },
+      transport
+    )
+    const stop = startMcpEventsRuntime({ transport })
+    try {
+      const comment = (body: string) =>
+        runWithTeamIdentity(owner, () =>
+          createAnnotation("original", {
+            target: { type: "doc", docPath: "brief" },
+            category: "comment",
+            body,
+            author: { type: "user", id: owner.principal.id },
+            to: [{ id: participant.id, kind: "agent", name: "ChatGPT" }],
+          })
+        )
+      await comment("Can we ship in April?")
+      for (let i = 0; i < 200 && delivered.length === 0; i++) await Bun.sleep(10)
+      expect(delivered).toEqual(["Can we ship in April?"])
+
+      await runWithTeamIdentity(owner, () =>
+        disconnectTeamAgentConnection(agent.id)
+      )
+      await comment("Sent after the agent was disconnected.")
+      await Bun.sleep(200)
+      expect(delivered).toEqual(["Can we ship in April?"])
+    } finally {
+      await stop()
+    }
+  })
+
   test("a member who can only read a Space comments and replies, and leaves resolving to editors", async () => {
     const { owner, member } = await setup()
     await writeDoc("original", "brief", "# Brief\n\nShip in May.\n")

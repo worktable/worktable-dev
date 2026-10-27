@@ -235,7 +235,10 @@ agent connected to several can tell them apart. Team Worktables leave the name
 out.
 Preview tools also serve MCP revision 2026-07-28 over HTTP, beside the earlier
 revisions, on the same endpoint. `WORKTABLE_MCP_MODERN=1` or `0` turns that on
-or off by itself.
+or off by itself. Over 2026-07-28, an agent such as ChatGPT can subscribe to
+the event `item.sent_to_you`: Worktable posts each comment or thread message
+sent to it to the agent's callback, signed, and the subscription lasts a day
+unless the agent renews it.
 `mcp-tools.preview.json` lists the preview tools next to the released
 `mcp-tools.json`.
 

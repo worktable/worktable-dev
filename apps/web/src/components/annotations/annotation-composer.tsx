@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { AnnotationCategory } from "@worktable/types";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import type { ActivityActor } from "@worktable/types";
 import { Button } from "@worktable/ui/components/button";
 import { Popover, PopoverContent, PopoverTitle } from "@worktable/ui/components/popover";
 import {
@@ -12,15 +12,21 @@ import {
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog";
 import { Textarea } from "@worktable/ui/components/textarea";
-import { AnnotationCategoryChoice } from "./annotation-category-choice";
+import { NO_RECIPIENT, useCommentRecipients } from "@/lib/comment-recipients";
 import { setHighlight } from "./passage-text";
 import { useIsMobile } from "@/hooks/use-mobile";
+
+// Only loads where comments can be sent to someone (Preview agent tools).
+const CommentRecipientSelect = lazy(() =>
+  import("./comment-recipient").then((module) => ({
+    default: module.CommentRecipientSelect,
+  }))
+);
 
 export interface AnnotationDraft {
   blockId: string;
   blockType?: string;
   quote?: string;
-  category: AnnotationCategory;
   /** What the comment box opens next to: the selection, or what was pressed. */
   anchor?: Range | Element;
 }
@@ -41,26 +47,39 @@ function anchorFor(anchor: Range | Element | undefined) {
   };
 }
 
+/** Where a comment is written, so it can be sent to whoever changed the Doc. */
+export interface CommentContext {
+  spaceId: string;
+  contributors?: readonly ActivityActor[];
+}
+
 /**
- * Writes a comment or instruction. On a wide screen it opens beside what it's
- * about and leaves the Doc in view; on a phone it's a sheet from the bottom.
+ * Writes a comment, sent to the agent that last changed the Doc unless the
+ * writer picks someone else. On a wide screen it opens beside what it's about
+ * and leaves the Doc in view; on a phone it's a sheet from the bottom.
  */
 export function AnnotationComposer({
   draft,
   open,
   onOpenChange,
   onSubmit,
+  context,
   label = "Add Comment",
 }: {
-  draft: Pick<AnnotationDraft, "quote" | "category" | "anchor"> | null;
+  draft: Pick<AnnotationDraft, "quote" | "anchor"> | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (category: AnnotationCategory, body: string) => void;
+  /** `to` holds the participant it is sent to, or is empty. */
+  onSubmit: (body: string, to: string[]) => void;
+  context?: CommentContext;
   /** Names the box for assistive technology, and on a phone, its sheet. */
   label?: string;
 }) {
-  const [category, setCategory] = useState<AnnotationCategory>(draft?.category ?? "comment");
   const [body, setBody] = useState("");
+  const recipients = useCommentRecipients(context?.spaceId, context?.contributors, open);
+  // Until the writer picks, the comment goes to whoever is suggested.
+  const [picked, setPicked] = useState<string | null>(null);
+  const recipient = picked ?? recipients?.suggested ?? NO_RECIPIENT;
   const [wasOpen, setWasOpen] = useState(open);
   const isMobile = useIsMobile();
   const anchor = useMemo(() => anchorFor(draft?.anchor), [draft?.anchor]);
@@ -77,8 +96,8 @@ export function AnnotationComposer({
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open) {
-      setCategory(draft?.category ?? "comment");
       setBody("");
+      setPicked(null);
     }
   }
 
@@ -94,15 +113,20 @@ export function AnnotationComposer({
   const submit = () => {
     const trimmed = body.trim();
     if (!trimmed) return;
-    onSubmit(category, trimmed);
+    onSubmit(trimmed, recipients && recipient !== NO_RECIPIENT ? [recipient] : []);
     onOpenChange(false);
   };
-  const action = category === "instruction" ? "Add Instruction" : "Add Comment";
+  const action = "Add Comment";
+  const recipientSelect = recipients && (
+    <Suspense fallback={null}>
+      <CommentRecipientSelect recipients={recipients} value={recipient} onChange={setPicked} />
+    </Suspense>
+  );
   const note = (
     <Textarea
       ref={noteRef}
       autoFocus
-      aria-label={category === "instruction" ? "Instruction" : "Comment"}
+      aria-label="Comment"
       value={body}
       onChange={(event) => setBody(event.target.value)}
       onKeyDown={(event) => {
@@ -111,7 +135,7 @@ export function AnnotationComposer({
           submit();
         }
       }}
-      placeholder={category === "instruction" ? "Write an instruction..." : "Write a comment..."}
+      placeholder="Write a comment..."
       className={isMobile ? "min-h-32" : "min-h-24"}
     />
   );
@@ -132,8 +156,8 @@ export function AnnotationComposer({
                 {draft.quote}
               </blockquote>
             )}
-            <AnnotationCategoryChoice value={category} onChange={setCategory} />
             {note}
+            {recipientSelect}
           </ResponsiveDialogBody>
           <ResponsiveDialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
@@ -170,8 +194,8 @@ export function AnnotationComposer({
         className="w-80 gap-3 p-3"
       >
         <PopoverTitle className="sr-only">{label}</PopoverTitle>
-        <AnnotationCategoryChoice compact value={category} onChange={setCategory} />
         {note}
+        {recipientSelect && <div className="-my-1 flex">{recipientSelect}</div>}
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel

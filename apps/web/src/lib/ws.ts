@@ -701,6 +701,7 @@ export function applySpaceEvent(
   if (type === "participants_update") {
     refreshGrokConnections(queryClient)
     refresh.push({ queryKey: threadQueryKeys.participants, exact: true })
+    refresh.push({ queryKey: threadQueryKeys.allSpaceParticipants })
     refresh.push({ queryKey: queryKeys.workspace, exact: true })
   }
 
@@ -794,6 +795,7 @@ function applyMessage(
       refreshGrokConnections(queryClient)
       refreshLive(queryClient, [
         { queryKey: threadQueryKeys.participants, exact: true },
+        { queryKey: threadQueryKeys.allSpaceParticipants },
         { queryKey: queryKeys.workspace, exact: true },
       ])
     } else if (message.type === "spaces_changed") {

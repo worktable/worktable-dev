@@ -15,6 +15,7 @@ import { abandonableRead } from "./http"
 import { isSpaceLive, THREAD_STREAM } from "./space-observation"
 import {
   assignThreadMessage,
+  listCommentRecipients,
   createThread,
   listThreadParticipants,
   listThreads,
@@ -35,6 +36,10 @@ export const threadQueryKeys = {
   detail: (location: ThreadLocation, threadId: string) =>
     ["threads", "detail", threadLocationKey(location), threadId] as const,
   participants: ["threads", "participants"] as const,
+  /** Who a Space's comments and threads can be sent to. */
+  spaceParticipants: (spaceId: string) =>
+    ["threads", "participants", "space", spaceId] as const,
+  allSpaceParticipants: ["threads", "participants", "space"] as const,
 }
 
 export const threadsQueryOptions = (scope: ThreadListScope) =>
@@ -92,6 +97,16 @@ export function useThread(location: ThreadLocation, threadId: string) {
             )
         )
       ),
+  })
+}
+
+/** Who comments in a Space can be sent to, read when a comment is written. */
+export function useSpaceParticipants(spaceId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: threadQueryKeys.spaceParticipants(spaceId),
+    queryFn: () => listCommentRecipients(spaceId),
+    staleTime: 30_000,
+    enabled,
   })
 }
 

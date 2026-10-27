@@ -21,6 +21,7 @@ import {
   type StoredVisitorComment,
 } from "./visitor-comment-store.ts"
 import { wsManager } from "./ws.ts"
+import { CommentRecipientError, commentRecipients } from "./comment-recipients.ts"
 
 export class VisitorCommentPassError extends Error {
   readonly status: 403 | 404 | 409 | 503
@@ -52,6 +53,13 @@ export async function passVisitorComment(
   const quote = cleanVisitorText(input.quote)
   if (!note || !quote)
     throw new VisitorCommentPassError("Enter a note and quote", 409)
+  const to = await commentRecipients(c.get("identity"), spaceId, input.to).catch(
+    (error: unknown) => {
+      if (error instanceof CommentRecipientError)
+        throw new VisitorCommentPassError(error.message, 409)
+      throw error
+    }
+  )
   const name = input.includeName ? row.visitor_name : null
   const origin = VisitorCommentOriginSchema.parse({
     kind: "visitorComment",
@@ -84,8 +92,9 @@ export async function passVisitorComment(
         row.kind === "html"
           ? { type: "widget", widgetId: document.path }
           : { type: "doc", docPath: document.path },
-      category: input.category,
+      category: input.category ?? "comment",
       body,
+      to,
       author: {
         type: "user",
         id: teamsEnabled() ? actor.id : "user",

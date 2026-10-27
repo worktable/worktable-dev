@@ -1,4 +1,5 @@
 import { refreshThreadNamingCapabilities } from "@/lib/thread-naming-cache"
+import { DEPLOYMENT_QUERY_KEY } from "@/hooks/use-deployment-info"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "@worktable/ui/components/sonner"
 import {
@@ -43,7 +44,14 @@ export function useSettingsPatch() {
     onSuccess: async (settings, patch) => {
       queryClient.setQueryData(SETTINGS_QUERY_KEY, settings)
       if (patch.agents?.previewTools !== undefined) {
-        await refreshThreadNamingCapabilities(queryClient)
+        await Promise.all([
+          refreshThreadNamingCapabilities(queryClient),
+          // Sending comments follows the same setting.
+          queryClient.invalidateQueries({
+            queryKey: DEPLOYMENT_QUERY_KEY,
+            exact: true,
+          }),
+        ])
       }
     },
   })

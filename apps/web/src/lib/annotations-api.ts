@@ -48,6 +48,8 @@ export async function createAnnotation(spaceId: string, input: {
   body: string;
   title?: string;
   labels?: string[];
+  /** Participants the comment is sent to. */
+  to?: string[];
 }) {
   const author = await canonicalUserAuthor();
   return fetchJSON<{ ok: true; annotationId: string; annotation: Annotation; created: boolean }>(

@@ -150,6 +150,8 @@ export interface DeploymentInfo {
     shareLinks: boolean
     /** File features that aren't released yet are on. */
     filesPreview: boolean
+    /** Comments can be sent to people and agents. */
+    commentRecipients?: boolean
   }
 }
 

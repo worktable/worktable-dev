@@ -37,9 +37,9 @@ import type * as Y from "yjs"
 import { ySyncPluginKey } from "y-prosemirror"
 import { TextSelection } from "@tiptap/pm/state"
 import type { Awareness } from "y-protocols/awareness"
-import type { Annotation, AnnotationCategory } from "@worktable/types"
+import type { Annotation } from "@worktable/types"
 import { findPassageBlock } from "@worktable/types"
-import { MessageSquarePlus, Sparkles } from "lucide-react"
+import { MessageSquarePlus } from "lucide-react"
 import {
   useCallback,
   useEffect,
@@ -149,7 +149,6 @@ interface AnnotationCreateRequest {
   blockId: string
   blockType?: string
   quote?: string
-  category: AnnotationCategory
   /** What the comment box opens next to: the selection, or the block. */
   anchor?: Range | Element
 }
@@ -534,25 +533,6 @@ function EditorInner({
                     blockId: block.id,
                     blockType: block.type,
                     quote: selectedText,
-                    category: "comment",
-                    anchor: annotationAnchor(editor, block.id, false),
-                  })
-                },
-              },
-              {
-                title: "Instruction",
-                group: "Collaboration",
-                aliases: ["instruct", "agent", "todo"],
-                subtext: "Attach an agent-visible instruction",
-                icon: <Sparkles className="size-4.5" />,
-                onItemClick: () => {
-                  const block = editor.getTextCursorPosition().block
-                  const selectedText = editor.getSelectedText?.() ?? undefined
-                  onCreateAnnotation({
-                    blockId: block.id,
-                    blockType: block.type,
-                    quote: selectedText,
-                    category: "instruction",
                     anchor: annotationAnchor(editor, block.id, false),
                   })
                 },
@@ -985,9 +965,6 @@ function AnnotationBadges({
           (annotation) => annotation.id === activeAnnotationId
         )
         const primary = blockAnnotations[0]!
-        const hasInstruction = blockAnnotations.some(
-          (annotation) => annotation.category === "instruction"
-        )
         return (
           <button
             key={blockId}
@@ -997,17 +974,11 @@ function AnnotationBadges({
             className={`pointer-events-auto absolute right-0 flex h-7 min-w-7 items-center justify-center rounded-full border px-2 text-xs font-medium transition-colors ${
               active
                 ? "border-primary bg-surface-selected text-primary"
-                : hasInstruction
-                  ? "border-primary/30 bg-surface-tint text-primary hover:bg-surface-selected"
-                  : "border-border bg-popover text-muted-foreground hover:bg-muted hover:text-foreground"
+                : "border-border bg-popover text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
             style={{ top }}
           >
-            {hasInstruction ? (
-              <Sparkles className="mr-1 h-3 w-3" />
-            ) : (
-              <MessageSquarePlus className="mr-1 h-3 w-3" />
-            )}
+            <MessageSquarePlus className="mr-1 h-3 w-3" />
             {blockAnnotations.length}
           </button>
         )
@@ -1019,7 +990,6 @@ function AnnotationBadges({
 function createAnnotationFromEditor(
   editor: AnnotationCapableEditor,
   onAnnotate: ((request: AnnotationCreateRequest) => void) | undefined,
-  category: AnnotationCategory = "comment",
   block?: AnnotationBlock
 ) {
   if (!onAnnotate) return
@@ -1036,7 +1006,6 @@ function createAnnotationFromEditor(
     blockId: target.id,
     blockType: target.type,
     quote,
-    category,
     anchor: annotationAnchor(editor, target.id, Boolean(quote && !block)),
   })
 }
@@ -1125,7 +1094,7 @@ function AnnotationDragHandleMenu({
           onClick={() => {
             const block = sideMenu.store?.state?.block
             sideMenu.unfreezeMenu()
-            createAnnotationFromEditor(editor, onAnnotate, "comment", block)
+            createAnnotationFromEditor(editor, onAnnotate, block)
           }}
         >
           Annotate

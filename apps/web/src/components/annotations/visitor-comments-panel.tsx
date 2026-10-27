@@ -1,4 +1,4 @@
-import { useCallback, useId, useState } from "react"
+import { Suspense, lazy, useCallback, useId, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { MoreVertical } from "lucide-react"
 import type {
@@ -36,7 +36,14 @@ import {
 } from "@/lib/visitor-comments-api"
 import { updateShareLink } from "@/lib/share-link-management-api"
 import type { AnnotationPanelProps } from "./annotation-panel"
-import { AnnotationCategoryChoice } from "./annotation-category-choice"
+import { NO_RECIPIENT, useCommentRecipients } from "@/lib/comment-recipients"
+
+// Only loads where comments can be sent to someone (Preview agent tools).
+const CommentRecipientSelect = lazy(() =>
+  import("./comment-recipient").then((module) => ({
+    default: module.CommentRecipientSelect,
+  }))
+)
 
 type Context = NonNullable<AnnotationPanelProps["visitorComments"]>
 
@@ -319,6 +326,7 @@ function VisitorRow({
       )}
       {form === "pass" && comment.body && (
         <PassForm
+          spaceId={context.spaceId}
           comment={comment}
           busy={busy}
           onCancel={() => setForm(null)}
@@ -423,18 +431,20 @@ function ReplyForm({
 }
 
 function PassForm({
+  spaceId,
   comment,
   busy,
   onSubmit,
   onCancel,
 }: {
+  spaceId: string
   comment: VisitorComment
   busy: boolean
   onSubmit: (input: PassVisitorCommentInput) => Promise<boolean>
   onCancel: () => void
 }) {
-  const [category, setCategory] =
-    useState<PassVisitorCommentInput["category"]>("comment")
+  const recipients = useCommentRecipients(spaceId, undefined, true)
+  const [recipient, setRecipient] = useState(NO_RECIPIENT)
   const [note, setNote] = useState("")
   const [quote, setQuote] = useState(comment.body ?? "")
   const [editingQuote, setEditingQuote] = useState(false)
@@ -447,7 +457,9 @@ function PassForm({
         event.preventDefault()
         if (note.trim() && quote.trim())
           void onSubmit({
-            category,
+            ...(recipients && recipient !== NO_RECIPIENT
+              ? { to: [recipient] }
+              : {}),
             note: note.trim(),
             quote: quote.trim(),
             includeName,
@@ -455,7 +467,6 @@ function PassForm({
       }}
     >
       <fieldset disabled={busy} className="space-y-3">
-        <AnnotationCategoryChoice value={category} onChange={setCategory} />
         <div className="space-y-2">
           <label htmlFor={`${id}-note`} className="text-sm font-medium">
             What should happen?
@@ -502,6 +513,17 @@ function PassForm({
             />
             Include visitor’s name
           </label>
+        )}
+        {recipients && (
+          <div className="-my-1 flex">
+            <Suspense fallback={null}>
+              <CommentRecipientSelect
+                recipients={recipients}
+                value={recipient}
+                onChange={setRecipient}
+              />
+            </Suspense>
+          </div>
         )}
         <div className="flex justify-end gap-2">
           <Button type="button" size="sm" variant="outline" onClick={onCancel}>

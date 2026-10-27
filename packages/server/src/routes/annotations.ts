@@ -13,7 +13,15 @@ import {
   updateAnnotation,
 } from "../annotation-store.ts";
 import { wsManager } from "../ws.ts";
-import { commentAccess } from "../team-policy.ts";
+import { listThreadParticipantsForDisplay } from "../thread-service.ts";
+import {
+  CommentRecipientError,
+  MAX_COMMENT_RECIPIENTS,
+  commentRecipients,
+  commentReplier,
+} from "../comment-recipients.ts";
+import { assertSpaceAccess, commentAccess } from "../team-policy.ts";
+import { configuredMcpSurface } from "../mcp/surface.ts";
 import {
   isHtmlDocumentPath,
   usesHtmlDocumentStorageV2,
@@ -47,6 +55,8 @@ const CreateAnnotationSchema = z.object({
   labels: z.array(z.string()).optional(),
   idempotencyKey: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  /** Participant IDs or names of the people and agents it is sent to. */
+  to: z.array(z.string().min(1)).max(MAX_COMMENT_RECIPIENTS).optional(),
 });
 
 const UpdateAnnotationSchema = z.object({
@@ -61,6 +71,7 @@ const UpdateAnnotationSchema = z.object({
 const ReplySchema = z.object({
   body: z.string().min(1),
   author: AnnotationAuthorSchema.optional(),
+  to: z.array(z.string().min(1)).max(MAX_COMMENT_RECIPIENTS).optional(),
 });
 
 const ResolveSchema = z.object({
@@ -77,6 +88,16 @@ function annotationAuthor(c: Context, requested?: AnnotationAuthor): AnnotationA
   return { type: principal.type, id: principal.id };
 }
 
+/** The comment's recipients, or the response saying why one can't be sent to. */
+async function recipientsFor(c: Context, spaceId: string, names: string[] | undefined) {
+  try {
+    return await commentRecipients(c.get("identity"), spaceId, names);
+  } catch (error) {
+    if (error instanceof CommentRecipientError) return c.json({ error: error.message, code: error.code }, 400);
+    throw error;
+  }
+}
+
 function parseCsv(value: string | undefined): string[] | undefined {
   if (!value) return undefined;
   return value.split(",").map((item) => item.trim()).filter(Boolean);
@@ -84,6 +105,26 @@ function parseCsv(value: string | undefined): string[] | undefined {
 
 function broadcast(spaceId: string, annotationId: string, data: unknown) {
   wsManager.broadcast(spaceId, { type: "annotation_update", spaceId, data: { annotationId, ...(data as Record<string, unknown>) } });
+}
+
+// Who a comment in this Space can be sent to: everyone who may read it.
+annotationsRouter.get("/recipients", requireScope("annotations:read"), async (c) => {
+  const spaceId = c.req.param("spaceId") ?? "";
+  assertSpaceAccess(spaceId, "read", c.get("identity"));
+  if (configuredMcpSurface() !== "preview") return c.json({ participants: [] });
+  // Only this Space's people and agents, never the workspace's directory.
+  const { participants } = await listThreadParticipantsForDisplay(
+    c.get("identity"),
+    { kind: "space", spaceId },
+    false
+  );
+  return c.json({ participants });
+});
+
+/** A person wrote this in the app, not an agent or a connected app. */
+function byPerson(c: Context): boolean {
+  const identity = c.get("identity");
+  return identity.principal.type === "human" && !identity.agent && identity.credentialClass !== "resource";
 }
 
 annotationsRouter.get("/", requireScope("annotations:read"), async (c) => {
@@ -130,10 +171,14 @@ annotationsRouter.post("/", requireScope("annotations:write", commentAccess), as
       return c.json({ error: `Invalid widget id "${parsed.data.target.widgetId}" in annotation target`, code: "VALIDATION_ERROR" }, 400);
     }
   }
+  const to = await recipientsFor(c, spaceId, parsed.data.to);
+  if (to instanceof Response) return to;
   const result = await createAnnotation(spaceId, {
     ...parsed.data,
     target: parsed.data.target as AnnotationTarget,
     author: annotationAuthor(c, parsed.data.author),
+    to,
+    byPerson: byPerson(c),
   });
   broadcast(spaceId, result.annotation.id, { annotation: result.annotation, event: "created" });
   return c.json({ ok: true, annotationId: result.annotation.id, annotation: result.annotation, created: result.created });
@@ -167,7 +212,13 @@ annotationsRouter.post("/:annotationId/replies", requireScope("annotations:write
   const body = await c.req.json().catch(() => null);
   const parsed = ReplySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
-  const result = await replyAnnotation(spaceId, annotationId, parsed.data.body, annotationAuthor(c, parsed.data.author));
+  const to = await recipientsFor(c, spaceId, parsed.data.to);
+  if (to instanceof Response) return to;
+  const result = await replyAnnotation(spaceId, annotationId, parsed.data.body, annotationAuthor(c, parsed.data.author), {
+    replier: await commentReplier(c.get("identity")),
+    to,
+    byPerson: byPerson(c),
+  });
   broadcast(spaceId, result.annotation.id, { annotation: result.annotation, event: "replied" });
   return c.json({ ok: true, replyId: result.replyId, annotation: result.annotation });
 });

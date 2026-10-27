@@ -79,6 +79,7 @@ import {
 import { Input } from "@worktable/ui/components/input"
 import { AnnotationPanel } from "@/components/annotations/annotation-panel"
 import { AnnotationComposer } from "@/components/annotations/annotation-composer"
+import { docContributors } from "@/lib/comment-recipients"
 import { DesktopContextPanel } from "@/components/desktop-context-panel"
 import {
   useWidgetAnnotations,
@@ -938,7 +939,7 @@ function WidgetDetailPage({
               setComposerOpen(true)
             }}
             composeLabel="Comment on this HTML doc"
-            emptyHint="Leave a comment or instruction for this HTML doc."
+            emptyHint="Leave a comment for this HTML doc."
             className="bg-transparent"
           />
         </DesktopContextPanel>
@@ -1019,7 +1020,7 @@ function WidgetDetailPage({
               setComposerOpen(true)
             }}
                 composeLabel="Comment on this HTML doc"
-                emptyHint="Leave a comment or instruction for this HTML doc."
+                emptyHint="Leave a comment for this HTML doc."
                 className="max-h-[calc(86dvh-1.5rem)]"
               />
             </DrawerContent>
@@ -1028,15 +1029,17 @@ function WidgetDetailPage({
       )}
 
       <AnnotationComposer
-        draft={{ category: "comment", anchor: composerAnchor }}
+        draft={{ anchor: composerAnchor }}
         label="Comment on this HTML doc"
         open={composerOpen && !readOnly}
         onOpenChange={setComposerOpen}
-        onSubmit={(category, body) => {
+        context={{ spaceId, contributors: docContributors(page) }}
+        onSubmit={(body, to) => {
           annotationMutations.create.mutate({
             target: { type: "widget", widgetId },
-            category,
+            category: "comment",
             body,
+            to,
           })
           setAnnotationsOpen(true)
           setVersionsOpen(false)

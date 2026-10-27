@@ -11283,6 +11283,7 @@
                   "type": "string"
                 },
                 "category": {
+                  "description": "Omit. Comments no longer have a type.",
                   "type": "string",
                   "enum": [
                     "comment",
@@ -11311,6 +11312,15 @@
                     "type": "string"
                   },
                   "additionalProperties": {}
+                },
+                "to": {
+                  "description": "People or agents to send the comment to, by participant ID or name (worktable_threads_read participants). It waits on each of them until they reply on it.",
+                  "maxItems": 10,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
                 },
                 "target": {
                   "oneOf": [
@@ -11433,7 +11443,6 @@
               "required": [
                 "action",
                 "spaceId",
-                "category",
                 "body",
                 "target"
               ],
@@ -11455,6 +11464,15 @@
                 "body": {
                   "type": "string",
                   "minLength": 1
+                },
+                "to": {
+                  "description": "Also send the comment to these people or agents, by participant ID or name.",
+                  "maxItems": 10,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
                 }
               },
               "required": [

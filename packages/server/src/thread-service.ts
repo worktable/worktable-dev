@@ -3,7 +3,7 @@ import { grokBotPolicy, observeGrokBotCandidate, readGrokBots } from "./grok-bot
 import { currentTeamWorktable, requireTeamDatabase } from "./team-database.ts"
 import { findTeamMemberById, listTeamMembers } from "./team-members.ts"
 import { identityForTeamMember } from "./team-identity.ts"
-import { agentWorktableThreadAccess, canAccessSpace, canAccessWorktableThreads, resolveTeamAgentCredential, TeamAccessError, teamAgentHasSpaceAccess } from "./team-policy.ts"
+import { agentWorktableThreadAccess, canAccessSpace, canAccessWorktableThreads, resolveTeamAgentCredential, TeamAccessError, teamAgentForParticipantKey, teamAgentHasSpaceAccess } from "./team-policy.ts"
 import { currentActivityActor, recordActivity } from "./activity-log.ts"
 import type {
   AgentPlatformId,
@@ -1006,6 +1006,8 @@ export async function listThreadParticipants(
 
 export interface ParticipantPresentation {
   id?: string
+  /** An agent's Threads participant, also under the principal IDs it writes with. */
+  participantId?: string
   name?: string
   platform?: AgentPlatformId
   icon?: string | null
@@ -1018,7 +1020,9 @@ export interface ParticipantPresentation {
  */
 export async function listThreadParticipantsForDisplay(
   identity?: ThreadIdentity,
-  location?: ThreadLocation
+  location?: ThreadLocation,
+  /** False lists who may read there too, as comments allow. */
+  replyRequired = true
 ): Promise<{
   participants: Array<
     ParticipantRef & {
@@ -1028,7 +1032,7 @@ export async function listThreadParticipantsForDisplay(
   >
   presentations: Record<string, ParticipantPresentation>
 }> {
-  const participants = await listThreadParticipants(identity, location)
+  const participants = await listThreadParticipants(identity, location, replyRequired)
   const presentations = await buildParticipantPresentations()
   return {
     participants: participants.map((participant) => ({
@@ -1115,10 +1119,18 @@ async function buildParticipantPresentations(): Promise<Record<string, Participa
         name: participant.name,
       }
     }
+    // Only identities this reader may see have a presentation to extend.
     const presentation = presentations[participant.id]
+    // A person's entry names its participant as id already.
+    if (presentation && participant.kind === "agent") {
+      presentation.participantId = participant.id
+    }
     if (key.startsWith("principal:") && presentation) {
       presentations[key.slice("principal:".length)] = presentation
     }
+    // A Teams agent writes as its actor, which a migrated agent's key doesn't name.
+    const teamAgent = presentation && participant.kind === "agent" ? teamAgentForParticipantKey(key) : null
+    if (teamAgent && presentation) presentations[teamAgent.actorId] = presentation
   }
   // Activity records credential principals, while Threads use participant IDs.
   // Include rotated credentials so earlier edits retain the agent's avatar.

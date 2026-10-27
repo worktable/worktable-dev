@@ -1,4 +1,5 @@
 import { teamsEnabled } from "../team-database.ts";
+import { commentReplier } from "../comment-recipients.ts"
 import { reservedAnnotationInput } from "../annotation-origin.ts"
 import { visitorCommentPageSummary, visitorCommentReader } from "../visitor-comment-access.ts"
 import { documentSourceDisposition } from "../content-disposition.ts"
@@ -1226,6 +1227,7 @@ documentsRouter.post(
           id: principal.id,
           ...(principal.displayName ? { name: principal.displayName } : {}),
         },
+        replier: await commentReplier(c.get("identity")),
       })
       broadcastAnnotation(
         spaceId,

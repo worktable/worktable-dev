@@ -39,7 +39,12 @@ function threadBase(location: ThreadLocation): string {
 /** Current identities, keyed by participant or activity principal id. */
 export type ParticipantPresentations = Record<
   string,
-  Pick<ThreadParticipant, "platform" | "icon"> & { id?: string; name?: string }
+  Pick<ThreadParticipant, "platform" | "icon"> & {
+    id?: string
+    /** An agent's Threads participant; a person's is id. */
+    participantId?: string
+    name?: string
+  }
 >
 
 export function listThreadParticipants(
@@ -50,6 +55,15 @@ export function listThreadParticipants(
   presentations?: ParticipantPresentations
 }> {
   return fetchJSON(`${threadBase(location)}/participants`)
+}
+
+/** Who comments in a Space can be sent to: everyone who may read it. */
+export function listCommentRecipients(
+  spaceId: string
+): Promise<{ participants: ThreadParticipant[] }> {
+  return fetchJSON(
+    `/api/spaces/${encodeURIComponent(spaceId)}/annotations/recipients`
+  )
 }
 
 export function listThreads(

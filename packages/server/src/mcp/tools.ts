@@ -39,6 +39,7 @@ import {
   ThreadsReadInput,
   ThreadsWriteInput,
   ThreadsWriteInputPreview,
+  AnnotationsWriteInputPreview,
   ThreadDeliveryInput,
   DeleteInput,
   GuidanceInput,
@@ -222,6 +223,7 @@ export const PREVIEW_INPUT_SCHEMAS: Partial<
   Record<WorktableToolName, z.ZodType>
 > = {
   worktable_threads_write: ThreadsWriteInputPreview,
+  worktable_annotations_write: AnnotationsWriteInputPreview,
   worktable_records_write: RecordsWriteInputPreview,
   worktable_delete: DeleteInputPreview,
   worktable_documents_write: DocumentsWriteInputPreview,

@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Agents pin fewer docs:** An agent that sets up a Space pins only the one or two docs to read first, usually an overview, instead of every doc it made.
+
 ## [0.1.31] - 2026-10-26
 
 ### Changed

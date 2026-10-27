@@ -845,51 +845,64 @@ export const DiscoverInputPreview = z.strictObject({
   ]),
 })
 
-export const SpacesInput = z.strictObject({
-  request: z.discriminatedUnion("action", [
-    actionSchema("create", CreateSpaceInput.shape),
-    actionSchema("update", {
-      spaceId: z.string().describe("ID of the space to update"),
-      name: z.string().min(1).optional().describe("New name in Title Case"),
-      description: z.string().optional().describe("New description"),
-      icon: CreateSpaceInput.shape.icon,
-      group: z
-        .string()
-        .optional()
-        .describe('Workspace group name; "" clears it'),
-      pins: z
-        .array(StartHerePinSchema)
-        .max(START_HERE_LIMIT)
-        .optional()
-        .describe(
-          `Replace the Space's pinned docs (at most ${START_HERE_LIMIT}), in reading order. Pin the few active documents to read first, each with an optional one-line note on its role. Requires documents:write.`
-        ),
-      startHere: z
-        .array(StartHerePinSchema)
-        .max(START_HERE_LIMIT)
-        .optional()
-        .describe(
-          "Compatibility alias for pins. Requires documents:write. If both fields are provided, they must match."
-        ),
-    }).refine(
-      ({ pins, startHere }) =>
-        pins === undefined ||
-        startHere === undefined ||
-        isDeepStrictEqual(pins, startHere),
-      {
-        message: "pins and startHere must match when both are provided",
-        path: ["startHere"],
-      }
-    ),
-    actionSchema("archive", {
-      spaceId: z.string().describe("ID of the space to archive"),
-      reason: z.string().max(DOCUMENT_ARCHIVE_REASON_MAX_LENGTH).optional(),
-    }),
-    actionSchema("restore", {
-      spaceId: z.string().describe("ID of the archived space to restore"),
-    }),
-  ]),
-})
+function spacesInput(pinsDescription: string) {
+  return z.strictObject({
+    request: z.discriminatedUnion("action", [
+      actionSchema("create", CreateSpaceInput.shape),
+      actionSchema("update", {
+        spaceId: z.string().describe("ID of the space to update"),
+        name: z.string().min(1).optional().describe("New name in Title Case"),
+        description: z.string().optional().describe("New description"),
+        icon: CreateSpaceInput.shape.icon,
+        group: z
+          .string()
+          .optional()
+          .describe('Workspace group name; "" clears it'),
+        pins: z
+          .array(StartHerePinSchema)
+          .max(START_HERE_LIMIT)
+          .optional()
+          .describe(pinsDescription),
+        startHere: z
+          .array(StartHerePinSchema)
+          .max(START_HERE_LIMIT)
+          .optional()
+          .describe(
+            "Compatibility alias for pins. Requires documents:write. If both fields are provided, they must match."
+          ),
+      }).refine(
+        ({ pins, startHere }) =>
+          pins === undefined ||
+          startHere === undefined ||
+          isDeepStrictEqual(pins, startHere),
+        {
+          message: "pins and startHere must match when both are provided",
+          path: ["startHere"],
+        }
+      ),
+      actionSchema("archive", {
+        spaceId: z.string().describe("ID of the space to archive"),
+        reason: z.string().max(DOCUMENT_ARCHIVE_REASON_MAX_LENGTH).optional(),
+      }),
+      actionSchema("restore", {
+        spaceId: z.string().describe("ID of the archived space to restore"),
+      }),
+    ]),
+  })
+}
+
+export const SpacesInput = spacesInput(
+  `Replace the Space's pinned docs (at most ${START_HERE_LIMIT}), in reading order. Pin the few active documents to read first, each with an optional one-line note on its role. Requires documents:write.`
+)
+
+/**
+ * Agents setting up a Space pinned every doc they made, which repeats the
+ * Space Home's own list. The preview surface asks for the one or two to
+ * read first.
+ */
+export const SpacesInputPreview = spacesInput(
+  `Replace the Space's pinned docs (at most ${START_HERE_LIMIT}), in reading order. Pin only the one or two docs to read first, usually an overview, each with an optional one-line note on its role. Space Home already lists every doc, so don't pin them all. Requires documents:write.`
+)
 
 export const GrepDocsInput = z.object({
   pattern: z

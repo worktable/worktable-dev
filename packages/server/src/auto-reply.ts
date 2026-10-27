@@ -9,7 +9,11 @@
 // status, which the list already carries. Agents with none of these see
 // what's waiting the next time someone uses them.
 
-import type { AgentConnection, AutoReply } from "@worktable/types"
+import {
+  agentConnectionPlatform,
+  type AgentConnection,
+  type AutoReply,
+} from "@worktable/types"
 import { readCloudTasks, type CloudTask } from "./cloud-task-store.ts"
 import { configuredMcpSurface, mcpModernEraEnabled } from "./mcp/surface.ts"
 import { onWatchingChange, watchingParticipants } from "./mcp-events.ts"
@@ -33,7 +37,9 @@ export async function withAutoReply(
     : new Map()
   const tasks =
     configuredMcpSurface() === "preview" &&
-    connections.some((connection) => connection.platform === "claude")
+    connections.some(
+      (connection) => agentConnectionPlatform(connection) === "claude"
+    )
       ? await readCloudTasks()
           .then((all) => new Map(all.map((t) => [t.participantId, t])))
           .catch(() => {
@@ -64,28 +70,28 @@ function autoReplyFor(
     tasks: Map<string, CloudTask> | null
   }
 ): AutoReply | undefined {
-  if (connection.platform === "grok-bot") return undefined
-  if (CALLED.has(connection.platform)) return { kind: "called", state: "on" }
-  if (connection.platform === "claude" && known.tasks) {
-    const id = connection.participant?.id
-    return taskAutoReply(id ? known.tasks.get(id) : undefined)
-  }
-  if (!known.modern) return undefined
+  // Cloud sign-ins record no platform; their name says which app they are.
+  const platform = agentConnectionPlatform(connection)
+  if (platform === "grok-bot") return undefined
+  if (CALLED.has(platform)) return { kind: "called", state: "on" }
   // An agent not used yet has no participant, and so nothing on.
   const id = connection.participant?.id
-  const watched = id ? known.watching?.get(id) : undefined
-  const waiting = id ? isWaiting(id) : false
-  if (connection.platform === "chatgpt" && !known.watching) return undefined
-  if (connection.platform === "chatgpt" || watched)
-    return watched
-      ? {
-          kind: "chat",
-          state: "on",
-          ...(watched.all ? {} : { spaceIds: watched.spaceIds }),
-        }
-      : { kind: "chat", state: "off" }
-  if (connection.platform === "claude-code" || waiting)
-    return { kind: "session", state: waiting ? "on" : "off" }
+  // What an agent is doing now outweighs what its name suggests.
+  const watched = known.modern && id ? known.watching?.get(id) : undefined
+  if (watched)
+    return {
+      kind: "chat",
+      state: "on",
+      ...(watched.all ? {} : { spaceIds: watched.spaceIds }),
+    }
+  if (known.modern && id && isWaiting(id))
+    return { kind: "session", state: "on" }
+  if (platform === "claude" && known.tasks)
+    return taskAutoReply(id ? known.tasks.get(id) : undefined)
+  if (!known.modern) return undefined
+  if (platform === "chatgpt")
+    return known.watching ? { kind: "chat", state: "off" } : undefined
+  if (platform === "claude-code") return { kind: "session", state: "off" }
   return undefined
 }
 

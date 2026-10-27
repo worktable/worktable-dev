@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { hostedOAuthPrincipalId } from "@worktable/hosted-contract"
 import {
+  agentConnectionPlatform,
   DEFAULT_AGENT_ACCESS,
   isAgentPlatformId,
   isDirectAgentLabel,
@@ -314,9 +315,10 @@ async function claudeAgent(
     configuredMcpSurface() === "preview"
       ? (await listAgentConnections()).find((entry) => entry.id === id)
       : undefined
+  // Removing goes by the agent, so a renamed one can still let go of its task.
   if (
     !connection ||
-    connection.platform !== "claude" ||
+    (!removing && agentConnectionPlatform(connection) !== "claude") ||
     connection.canManage === false
   )
     return c.json(

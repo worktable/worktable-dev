@@ -159,11 +159,15 @@ describe("agent connection routes", () => {
     const cookie = await loginCookie(password)
     process.env["WORKTABLE_REQUIRE_AUTH"] = "1"
     process.env["WORKTABLE_MCP_MODERN"] = "1"
+    process.env["WORKTABLE_MCP_PREVIEW"] = "1"
     try {
-      const connect = async (client: string) => {
+      const connect = async (client: string | null, displayName?: string) => {
         const created = (await (
           await app.fetch(
-            request("POST", "/api/agent-connections", cookie, { client })
+            request("POST", "/api/agent-connections", cookie, {
+              client,
+              displayName,
+            })
           )
         ).json()) as { token: string }
         const identity = (await verifyToken(created.token))!
@@ -172,19 +176,22 @@ describe("agent connection routes", () => {
       }
       const chat = await connect("chatgpt-desktop")
       const session = await connect("claude-code")
+      // Like a sign-in on Cloud: no recorded app, so its name says which.
+      const named = await connect(null, "Claude")
       const autoReplies = async () => {
         const listed = (await (
           await app.fetch(request("GET", "/api/agent-connections", cookie))
         ).json()) as {
-          connections: Array<{ platform: string; autoReply?: unknown }>
+          connections: Array<{ displayName: string; autoReply?: unknown }>
         }
         return Object.fromEntries(
-          listed.connections.map((c) => [c.platform, c.autoReply])
+          listed.connections.map((c) => [c.displayName, c.autoReply])
         )
       }
       expect(await autoReplies()).toEqual({
-        chatgpt: { kind: "chat", state: "off" },
-        "claude-code": { kind: "session", state: "off" },
+        ChatGPT: { kind: "chat", state: "off" },
+        "Claude Code": { kind: "session", state: "off" },
+        Claude: { kind: "task", state: "off" },
       })
 
       // ChatGPT subscribes from a chat; Claude Code waits in its session.
@@ -215,14 +222,23 @@ describe("agent connection routes", () => {
             }),
         }
       )
-      expect((await heard)["chatgpt"]).toEqual({ kind: "chat", state: "on" })
+      expect((await heard)["ChatGPT"]).toEqual({ kind: "chat", state: "on" })
       await waitForPending(session, {}, { seconds: 0 })
       expect(await autoReplies()).toEqual({
-        chatgpt: { kind: "chat", state: "on" },
-        "claude-code": { kind: "session", state: "on" },
+        ChatGPT: { kind: "chat", state: "on" },
+        "Claude Code": { kind: "session", state: "on" },
+        Claude: { kind: "task", state: "off" },
+      })
+
+      // What an agent does outweighs what its name suggests.
+      await waitForPending(named, {}, { seconds: 0 })
+      expect((await autoReplies())["Claude"]).toEqual({
+        kind: "session",
+        state: "on",
       })
     } finally {
       delete process.env["WORKTABLE_MCP_MODERN"]
+      delete process.env["WORKTABLE_MCP_PREVIEW"]
     }
   })
 

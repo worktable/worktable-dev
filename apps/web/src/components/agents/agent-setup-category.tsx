@@ -24,7 +24,7 @@ export const AGENT_SETUP_CATEGORIES = {
   always: {
     title: "Always-on agents",
     description:
-      "Always running. Worktable calls them, and they reply in Threads",
+      "Worktable calls them, even when you're away, and they reply in Threads",
     platforms: ["openclaw", "hermes", "grok-bot"],
   },
 } satisfies Record<

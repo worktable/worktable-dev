@@ -227,18 +227,19 @@ test("rich-doc block handles remain usable after annotation composer closes", as
 
   await openBlockMenu(page, firstBlock)
   await page.getByRole("menuitem", { name: "Annotate" }).click()
-  await page.getByRole("button", { name: "Cancel" }).click()
+  await page.getByPlaceholder("Write a comment…").waitFor()
+  await page.keyboard.press("Escape")
 
   await openBlockMenu(page, secondBlock)
   await page.getByRole("menuitem", { name: "Annotate" }).click()
-  await page.getByPlaceholder("Write a comment...").fill("Second block note")
+  await page.getByPlaceholder("Write a comment…").fill("Second block note")
   const secondCreate = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
       response.url().endsWith("/api/spaces/welcome/annotations")
   )
   await page
-    .getByRole("button", { name: "Add Comment", exact: true })
+    .getByRole("button", { name: "Send comment", exact: true })
     .click()
   const secondResponse = await secondCreate
   expect(secondResponse.status()).toBe(200)
@@ -249,14 +250,14 @@ test("rich-doc block handles remain usable after annotation composer closes", as
 
   await openBlockMenu(page, thirdBlock)
   await page.getByRole("menuitem", { name: "Annotate" }).click()
-  await page.getByPlaceholder("Write a comment...").fill("Third block note")
+  await page.getByPlaceholder("Write a comment…").fill("Third block note")
   const thirdCreate = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
       response.url().endsWith("/api/spaces/welcome/annotations")
   )
   await page
-    .getByRole("button", { name: "Add Comment", exact: true })
+    .getByRole("button", { name: "Send comment", exact: true })
     .click()
   const thirdResponse = await thirdCreate
   expect(thirdResponse.status()).toBe(200)

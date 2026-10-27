@@ -1,12 +1,15 @@
 import {
   THREAD_IDENTITY_NAME_MAX_LENGTH,
   threadBodyMentionsIdentity,
+  type ParticipantRef,
 } from "@worktable/types"
 
 export interface ThreadMentionTarget {
   id: string
   name: string
   description?: string
+  /** Whose picture the list shows. */
+  participant?: ParticipantRef
 }
 
 export interface ThreadMentionQuery {

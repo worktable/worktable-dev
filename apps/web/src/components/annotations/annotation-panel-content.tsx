@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
-  ArrowUp,
   CheckCircle2,
   Circle,
   MessageSquareText,
@@ -9,8 +8,8 @@ import {
 import type { Annotation } from "@worktable/types"
 import { Badge } from "@worktable/ui/components/badge"
 import { Button } from "@worktable/ui/components/button"
-import { Textarea } from "@worktable/ui/components/textarea"
 import { cn } from "@worktable/ui/lib/utils"
+import { Composer } from "@/components/composer"
 import { ContextPanelHeader } from "@/components/desktop-context-panel"
 import { Quote } from "@/components/quote"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
@@ -186,6 +185,7 @@ function AnnotationCard({
   onReply: (body: string) => void
 }) {
   const [reply, setReply] = useState("");
+  const replyRef = useRef<HTMLTextAreaElement>(null);
   const isResolved = annotation.status === "resolved";
   const selfId = useWorkspace().data?.person?.id;
   const recipients = recipientsLine(annotation, selfId);
@@ -259,26 +259,25 @@ function AnnotationCard({
       )}
 
       {!isResolved && canReply && (
-        <form
-          className="mt-3 flex gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const trimmed = reply.trim();
-            if (!trimmed) return;
-            onReply(trimmed);
-            setReply("");
-          }}
-        >
-          <Textarea
+        <div className="mt-3">
+          <Composer
+            ref={replyRef}
             value={reply}
-            onChange={(event) => setReply(event.target.value)}
-            placeholder="Reply..."
-            className="min-h-9 flex-1 resize-none text-xs"
+            onChange={setReply}
+            onSubmit={() => {
+              const trimmed = reply.trim();
+              if (!trimmed) return;
+              onReply(trimmed);
+              setReply("");
+            }}
+            pending={false}
+            placeholder="Reply…"
+            label="Reply"
+            sendLabel="Send reply"
+            size="inline"
+            placement="inline"
           />
-          <Button size="icon" type="submit" className="shrink-0 rounded-full" aria-label="Send reply">
-            <ArrowUp className="h-4 w-4" />
-          </Button>
-        </form>
+        </div>
       )}
     </article>
   );

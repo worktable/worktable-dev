@@ -10,19 +10,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@worktable/ui/components/empty"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@worktable/ui/components/select"
 import { Spinner } from "@worktable/ui/components/spinner"
 
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { openSettings } from "@/lib/settings-open"
-import { ThreadComposer, ThreadComposerSeparator } from "./thread-composer"
-import { ThreadParticipantAvatar } from "./thread-participant-avatar"
+import { Composer, ComposerSeparator } from "@/components/composer"
+import { ParticipantSelect } from "@/components/participant-select"
 
 interface NewThreadPanelProps {
   participants: ParticipantRef[]
@@ -136,7 +129,7 @@ export function NewThreadPanel({
               </h2>
 
               <div className="mt-7">
-                <ThreadComposer
+                <Composer
                   ref={composerRef}
                   value={draft}
                   onChange={onDraftChange}
@@ -155,37 +148,19 @@ export function NewThreadPanel({
                           </span>
                         </span>
                       )}
-                      <ThreadComposerSeparator />
-                      <Select
+                      <ComposerSeparator />
+                      <ParticipantSelect
+                        label="Thread participant"
+                        placeholder="Choose a participant"
+                        choices={participants.map((participant) => ({
+                          id: participant.id,
+                          name: participant.name,
+                          participant,
+                        }))}
                         value={recipient}
-                        onValueChange={(value) => {
-                          if (value) onRecipientChange(value)
-                        }}
-                      >
-                        <SelectTrigger
-                          aria-label="Thread participant"
-                          className="h-8 w-auto max-w-36 shrink-0 rounded-full border-transparent bg-transparent px-2.5 text-xs shadow-none hover:bg-muted max-sm:h-11"
-                        >
-                          <ThreadParticipantAvatar
-                            participant={selectedParticipant}
-                            className="size-5"
-                          />
-                          <SelectValue>
-                            {selectedParticipant?.name ??
-                              "Choose a participant"}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          {participants.map((participant) => (
-                            <SelectItem
-                              key={participant.id}
-                              value={participant.id}
-                            >
-                              {participant.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={onRecipientChange}
+                        className="max-w-36"
+                      />
                     </>
                   }
                 />

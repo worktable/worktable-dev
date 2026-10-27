@@ -44,6 +44,10 @@ export interface CommentRecipients {
   options: ThreadParticipant[]
   /** The agent that most recently changed the Doc, when it can be sent to. */
   suggested: string
+  /** Who wrote the selected text, when they can be sent to. */
+  writer?: string
+  /** The person commenting. */
+  self?: string
 }
 
 /**
@@ -77,6 +81,7 @@ export function useCommentRecipients(
   })
   const workspace = useWorkspace().data
   const presentations = workspace?.presentations
+  const person = workspace?.person
   return useMemo(() => {
     if (!enabled || !participants.data) return null
     const options = participants.data.participants.filter(
@@ -93,8 +98,8 @@ export function useCommentRecipients(
     const self =
       writer &&
       (localOwner ||
-        writerId === workspace?.person?.id ||
-        writer.by === workspace?.person?.activityId)
+        writerId === person?.id ||
+        writer.by === person?.activityId)
     const suggested = self
       ? NO_RECIPIENT
       : writerId && offered.has(writerId)
@@ -103,6 +108,12 @@ export function useCommentRecipients(
             .filter((actor) => actor.kind === "agent")
             .map((actor) => participantOf(actor.id))
             .find((id) => offered.has(id)) ?? NO_RECIPIENT)
-    return { options, suggested, settling: author.isLoading }
-  }, [enabled, participants.data, presentations, contributors, author.data, author.isLoading, workspace?.person])
+    return {
+      options,
+      suggested,
+      settling: author.isLoading,
+      ...(writerId && offered.has(writerId) ? { writer: writerId } : {}),
+      ...(person?.id ? { self: person.id } : {}),
+    }
+  }, [enabled, participants.data, presentations, contributors, author.data, author.isLoading, person])
 }

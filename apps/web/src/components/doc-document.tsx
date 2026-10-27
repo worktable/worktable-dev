@@ -83,10 +83,8 @@ import {
 } from "@/components/editor/reading-place"
 import { AnnotationPanel } from "@/components/annotations/annotation-panel"
 import { DesktopContextPanel } from "@/components/desktop-context-panel"
-import {
-  AnnotationComposer,
-  type AnnotationDraft,
-} from "@/components/annotations/annotation-composer"
+import type { AnnotationDraft } from "@/components/annotations/annotation-composer"
+import { CommentBox } from "@/components/annotations/comment-box"
 import { PassageCommenting } from "@/components/annotations/passage-commenting"
 import { docContributors } from "@/lib/comment-recipients"
 import { usePassageComments } from "@/components/annotations/use-passage-comments"
@@ -1818,7 +1816,7 @@ function BlockNoteDocPage({
         </>
       )}
 
-      <AnnotationComposer
+      <CommentBox
         draft={composerDraft}
         open={composerOpen && !readOnly}
         onOpenChange={setComposerOpen}

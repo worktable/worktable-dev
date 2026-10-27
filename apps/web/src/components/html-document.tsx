@@ -78,7 +78,7 @@ import {
 } from "@worktable/ui/components/drawer"
 import { Input } from "@worktable/ui/components/input"
 import { AnnotationPanel } from "@/components/annotations/annotation-panel"
-import { AnnotationComposer } from "@/components/annotations/annotation-composer"
+import { CommentBox } from "@/components/annotations/comment-box"
 import { docContributors } from "@/lib/comment-recipients"
 import { DesktopContextPanel } from "@/components/desktop-context-panel"
 import {
@@ -1030,7 +1030,7 @@ function WidgetDetailPage({
         </>
       )}
 
-      <AnnotationComposer
+      <CommentBox
         draft={{ anchor: composerAnchor }}
         label="Comment on this HTML doc"
         open={composerOpen && !readOnly}

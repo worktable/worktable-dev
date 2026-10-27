@@ -23,6 +23,7 @@ import {
   DiscoverInput,
   DiscoverInputPreview,
   SpacesInput,
+  SpacesInputPreview,
   DocumentsReadInput,
   DocumentsWriteInput,
   DocsReadInput,
@@ -247,6 +248,7 @@ export const PREVIEW_INPUT_SCHEMAS: Partial<
   worktable_delete: DeleteInputPreview,
   worktable_documents_write: DocumentsWriteInputPreview,
   worktable_html_write: HtmlWriteInputPreview,
+  worktable_spaces: SpacesInputPreview,
 }
 
 export const TOOL_TITLES: Record<WorktableToolName, string> = {

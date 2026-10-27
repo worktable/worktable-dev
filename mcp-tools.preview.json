@@ -1238,7 +1238,7 @@
                   "type": "string"
                 },
                 "pins": {
-                  "description": "Replace the Space's pinned docs (at most 7), in reading order. Pin the few active documents to read first, each with an optional one-line note on its role. Requires documents:write.",
+                  "description": "Replace the Space's pinned docs (at most 7), in reading order. Pin only the one or two docs to read first, usually an overview, each with an optional one-line note on its role. Space Home already lists every doc, so don't pin them all. Requires documents:write.",
                   "maxItems": 7,
                   "type": "array",
                   "items": {

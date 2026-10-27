@@ -32,9 +32,11 @@ content only when that follows from the requested task. Do not clean up unrelate
 work as a side effect of an edit. Archived documents remain searchable with
 `includeArchived` and can be restored.
 
-Use pins for a Space's entry points when the task includes organizing that
-Space. Preserve existing useful pins. A linked narrative overview can still
-be useful; avoid duplicating the automatically generated document listing.
+When you set up or organize a Space, pin only the one or two docs to read
+first, usually an overview. Space Home already lists every doc, so pinning
+all of them repeats that list. Preserve existing useful pins. A linked
+narrative overview can still be useful; avoid duplicating the automatically
+generated document listing.
 
 ## Verify and report
 

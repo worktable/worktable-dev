@@ -4,6 +4,7 @@ import {
   AGENT_PLATFORMS,
   type AgentAccess,
   type AgentConnection,
+  type AutoReply,
 } from "@worktable/types"
 import { Checkbox } from "@worktable/ui/components/checkbox"
 import { getSpaces } from "@/lib/api"
@@ -24,6 +25,7 @@ import { saveAgentChanges } from "@/lib/agent-connections-api"
 import { threadQueryKeys } from "@/lib/threads-queries"
 import { AgentAvatar } from "./agent-avatar"
 import { AgentFields } from "./agent-fields"
+import { AutoReplySetting } from "./auto-reply"
 
 function sameAccess(a: AgentAccess | null, b: AgentAccess | null): boolean {
   return a?.threads === b?.threads && a?.read === b?.read && a?.edit === b?.edit
@@ -32,9 +34,12 @@ function sameAccess(a: AgentAccess | null, b: AgentAccess | null): boolean {
 /** Rename an agent, change its picture, or change what it may do. */
 export function AgentEditDialog({
   connection,
+  autoReply,
   onOpenChange,
 }: {
   connection: AgentConnection | null
+  /** Its latest auto-reply, which changes while the dialog is open. */
+  autoReply?: AutoReply
   onOpenChange: (open: boolean) => void
 }) {
   const { isMobile } = useResponsiveDialog()
@@ -109,6 +114,11 @@ export function AgentEditDialog({
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody>
+          {autoReply && (
+            <div className="mb-5">
+              <AutoReplySetting connection={{ ...connection, autoReply }} />
+            </div>
+          )}
           <AgentFields
             platform={connection.platform}
             name={name}

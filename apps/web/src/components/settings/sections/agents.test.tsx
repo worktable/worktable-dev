@@ -30,6 +30,7 @@ test("connected identity and disconnect remain available when OAuth inventory is
           connectedAt: null,
           lastSeenAt: null,
           permissionGroups: null,
+          autoReply: { kind: "called", state: "on" },
         },
         // An app through Worktable Link is managed on Cloud, which holds
         // its sign-in.
@@ -89,14 +90,10 @@ test("connected identity and disconnect remain available when OAuth inventory is
           <ConnectedAgentsGroup />
         </QueryClientProvider>
       )
-      for (const label of [
-        "OpenClaw",
-        "Atlas",
-        "studio-mac",
-        "Always-on",
-        "Disconnect",
-      ])
+      for (const label of ["OpenClaw", "Atlas", "studio-mac", "Disconnect"])
         expect(html).toContain(label)
+      // OpenClaw and the ready Grok Bot answer on their own; ChatGPT doesn't.
+      expect(html.split('aria-label="Auto-reply on"').length - 1).toBe(2)
       expect(html.includes("Some details are unavailable")).toBe(
         unavailableAuthKinds.length > 0
       )

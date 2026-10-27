@@ -24,6 +24,58 @@ import type { TokenIdentity } from "./token-store.ts"
 /** The longest one held call waits, the same as a thread wait. */
 export const PENDING_WAIT_SECONDS = 25
 
+/**
+ * How long after its last check an agent still counts as waiting: longer than
+ * a held call, and than a task's poll interval, with room for the call after.
+ */
+const WAITING_FOR_MS = 35_000
+
+const waitingAt = new Map<string, number>()
+const waitingListeners = new Set<() => void>()
+let waitingTimer: ReturnType<typeof setTimeout> | undefined
+
+/** That an agent is waiting for what's sent to it now. Kept in memory only. */
+export function noteWaiting(participantId: string): void {
+  const started = !isWaiting(participantId)
+  waitingAt.set(participantId, Date.now())
+  if (started) for (const listener of waitingListeners) listener()
+  scheduleWaitingExpiry()
+}
+
+/** Whether an agent has waited, or polled its wait, within the last moments. */
+export function isWaiting(participantId: string): boolean {
+  const at = waitingAt.get(participantId)
+  return at !== undefined && Date.now() - at < WAITING_FOR_MS
+}
+
+/** Called when an agent starts or stops waiting. */
+export function onWaitingChange(listener: () => void): () => void {
+  waitingListeners.add(listener)
+  return () => waitingListeners.delete(listener)
+}
+
+function scheduleWaitingExpiry(): void {
+  if (waitingTimer) clearTimeout(waitingTimer)
+  waitingTimer = undefined
+  if (!waitingAt.size) return
+  const next = Math.min(...waitingAt.values()) + WAITING_FOR_MS
+  waitingTimer = setTimeout(
+    () => {
+      waitingTimer = undefined
+      let stopped = false
+      for (const [id, at] of waitingAt)
+        if (Date.now() - at >= WAITING_FOR_MS) {
+          waitingAt.delete(id)
+          stopped = true
+        }
+      if (stopped) for (const listener of waitingListeners) listener()
+      scheduleWaitingExpiry()
+    },
+    Math.max(next - Date.now(), 0)
+  )
+  waitingTimer.unref?.()
+}
+
 type Reader = Pick<TokenIdentity, "agent" | "principal" | "scopes"> &
   Partial<TokenIdentity>
 
@@ -78,6 +130,7 @@ export async function waitForPending(
       )
     })
     while (true) {
+      noteWaiting(participant.id)
       const waiting = changed.promise
       const ready = await readyPending(reader, { scope: input.scope, since })
       if (ready) return ready

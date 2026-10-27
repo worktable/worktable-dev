@@ -286,7 +286,7 @@ describe("Space WebSocket reconnect backoff", () => {
 })
 
 describe("Space events in the query cache", () => {
-  it("updates an observed Grok inventory on delivery activity without fetching unrelated inventories", async () => {
+  it("refreshes Grok inventories on delivery activity, and any agent list when participants change", async () => {
     const client = new QueryClient()
     const key = ["agent-connections", false] as const
     const grok = watched(
@@ -328,6 +328,10 @@ describe("Space events in the query cache", () => {
       })
       expect(grok.reads).toBe(1)
       expect(other.reads).toBe(0)
+      // An agent that starts answering on its own changes any agent list.
+      applySpaceEvent(client, "space-a", { type: "participants_update" })
+      await settle(client)
+      expect(other.reads).toBe(1)
     } finally {
       grok.unsubscribe()
       other.unsubscribe()

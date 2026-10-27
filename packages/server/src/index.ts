@@ -30,6 +30,7 @@ import { cloudCallbackRouter, linkedRouter } from "./routes/linked.ts"
 import { startLinkedRuntime } from "./linked-runtime.ts"
 import { startGrokBotRuntime } from "./grok-bot-runtime.ts"
 import { startMcpEventsRuntime } from "./mcp-events.ts"
+import { startAutoReplyNotices } from "./auto-reply.ts"
 import { pendingList, savePendingList } from "./pending-list.ts"
 import { grokBotRouter } from "./routes/grok-bot.ts"
 import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts"
@@ -2304,6 +2305,7 @@ export function startServer(
   const stopLinked = startLinkedRuntime();
   const stopGrokBot = workspaceRejected ? () => Promise.resolve() : startGrokBotRuntime();
   const stopMcpEvents = workspaceRejected ? () => Promise.resolve() : startMcpEventsRuntime();
+  const stopAutoReplyNotices = startAutoReplyNotices();
   // Index what waits on each person and agent before anyone asks.
   if (!workspaceRejected) timeBootTask("pending list build", pendingList());
   const stopBackupNotifier = startWorkspaceBackupNotifier();
@@ -2381,6 +2383,7 @@ export function startServer(
     credentialTimer = null;
     const searchWarmupStopping = stopSearchWarmup();
     const grokBotStopping = stopGrokBot();
+    stopAutoReplyNotices();
     const mcpEventsStopping = stopMcpEvents();
     watcher.stop({ flushPending: true });
     const documentFilesystemStopping = documentFilesystemCoordinator

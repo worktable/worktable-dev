@@ -53,6 +53,7 @@ import type {
 } from "@worktable/types"
 import { threadLocationKey } from "@worktable/types"
 
+/** Delivery activity changes only a Grok Bot's status. */
 function refreshGrokConnections(queryClient: QueryClient): void {
   for (const cloud of [true, false]) {
     const queryKey = ["agent-connections", cloud] as const
@@ -62,6 +63,18 @@ function refreshGrokConnections(queryClient: QueryClient): void {
     ) {
       refreshLive(queryClient, [{ queryKey, exact: true }])
     }
+  }
+}
+
+/**
+ * A participant change can be any agent starting or stopping answering on
+ * its own, as well as a Grok Bot's status. Only a list on screen refetches.
+ */
+function refreshAgentConnections(queryClient: QueryClient): void {
+  for (const cloud of [true, false]) {
+    const queryKey = ["agent-connections", cloud] as const
+    if (queryClient.getQueryData<AgentConnectionInventory>(queryKey))
+      refreshLive(queryClient, [{ queryKey, exact: true }])
   }
 }
 
@@ -699,7 +712,7 @@ export function applySpaceEvent(
     applyThreadEvent(queryClient, message, { kind: "space", spaceId })
   }
   if (type === "participants_update") {
-    refreshGrokConnections(queryClient)
+    refreshAgentConnections(queryClient)
     refresh.push({ queryKey: threadQueryKeys.participants, exact: true })
     refresh.push({ queryKey: threadQueryKeys.allSpaceParticipants })
     refresh.push({ queryKey: queryKeys.workspace, exact: true })
@@ -792,7 +805,7 @@ function applyMessage(
     if (THREAD_EVENTS.has(message.type)) {
       applyThreadEvent(queryClient, message, null)
     } else if (message.type === "participants_update") {
-      refreshGrokConnections(queryClient)
+      refreshAgentConnections(queryClient)
       refreshLive(queryClient, [
         { queryKey: threadQueryKeys.participants, exact: true },
         { queryKey: threadQueryKeys.allSpaceParticipants },

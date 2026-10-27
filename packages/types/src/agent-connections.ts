@@ -107,6 +107,19 @@ export function accessFromScopes(scopes: readonly string[]): AgentAccess {
   }
 }
 
+/**
+ * Whether an agent answers what's sent to it on its own. `kind` is how its app
+ * does it: a chat that watches Worktable, a session waiting for it, or an
+ * agent Worktable calls. Absent when the agent picks things up only the next
+ * time someone uses it.
+ */
+export interface AutoReply {
+  kind: "chat" | "session" | "called"
+  state: "on" | "off" | "attention"
+  /** What a watching chat covers; absent means every Space. */
+  spaceIds?: string[]
+}
+
 export interface AgentConnection {
   ownership?: "personal" | "team"
   memberId?: string | null
@@ -145,6 +158,7 @@ export interface AgentConnection {
    * its sign-in and access, and manages it at `manageUrl`.
    */
   link?: { manageUrl: string }
+  autoReply?: AutoReply
 }
 
 export interface AgentConnectionInventory {

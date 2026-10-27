@@ -267,6 +267,7 @@ async function mutate<T>(change: (file: EventsFile) => T): Promise<T> {
       { label: "MCP event subscriptions" },
       async () => {
         const file = await load(filePath)
+        const before = watchingKey(file)
         const result = change(file)
         await mkdir(dirname(filePath), { recursive: true, mode: 0o700 })
         const temporary = `${filePath}.${randomUUID()}.tmp`
@@ -276,6 +277,15 @@ async function mutate<T>(change: (file: EventsFile) => T): Promise<T> {
         })
         await chmod(temporary, 0o600)
         await rename(temporary, filePath)
+        // Only once saved, so a screen that refetches reads the new state.
+        if (watchingKey(file) !== before)
+          for (const listener of watchingListeners) {
+            try {
+              listener()
+            } catch {
+              // A screen's refresh never undoes a saved subscription.
+            }
+          }
         return result
       }
     )
@@ -286,6 +296,50 @@ async function mutate<T>(change: (file: EventsFile) => T): Promise<T> {
 
 function signalChange(): void {
   for (const listener of changeListeners) listener()
+}
+
+/** Each subscriber, and the Spaces it watches (none: every Space). */
+export type Watching = Map<string, { all: boolean; spaceIds: string[] }>
+
+function watchingOf(file: EventsFile, now = Date.now()): Watching {
+  const watching: Watching = new Map()
+  for (const s of file.subscriptions) {
+    if (s.refreshBefore <= now) continue
+    const entry = watching.get(s.participantId) ?? { all: false, spaceIds: [] }
+    if (s.arguments.spaceId) entry.spaceIds.push(s.arguments.spaceId)
+    else entry.all = true
+    watching.set(s.participantId, entry)
+  }
+  return watching
+}
+
+const watchingListeners = new Set<() => void>()
+
+/**
+ * Who has a stored subscription, and to which Spaces. The runtime removes one
+ * when it expires, so comparing what's stored also notices expiry.
+ */
+function watchingKey(file: EventsFile): string {
+  return [
+    ...new Set(
+      file.subscriptions.map(
+        (s) => `${s.participantId}\t${s.arguments.spaceId ?? ""}`
+      )
+    ),
+  ]
+    .sort()
+    .join("\n")
+}
+
+/** The agents with a live subscription, so they answer on their own. */
+export async function watchingParticipants(): Promise<Watching> {
+  return watchingOf(await load(path()))
+}
+
+/** Called when an agent starts or stops being subscribed. */
+export function onWatchingChange(listener: () => void): () => void {
+  watchingListeners.add(listener)
+  return () => watchingListeners.delete(listener)
 }
 
 // ------------------------------------------------------------

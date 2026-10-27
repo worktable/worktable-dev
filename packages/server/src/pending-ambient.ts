@@ -37,6 +37,8 @@ import type { TokenIdentity } from "./token-store.ts"
 
 /** At most this many items in full on one call, about this work and else. */
 const FULL_LIMIT = 3
+/** At most this many items looked up on one call. */
+const LOOKUP_LIMIT = 20
 const OLDER_FOR_MS = 7 * 24 * 60 * 60 * 1000
 
 /** Calls that already carry, or never should carry, what waits. */
@@ -140,7 +142,11 @@ export async function ambientNotices(
       return false
     })
     if (candidates.length === 0) return null
-    const notices = await noticesFor(candidates, reader, target)
+    // Newest first, and only as many as a call can show: what waits beyond
+    // that is counted, not looked up.
+    const looked = candidates.slice(0, LOOKUP_LIMIT)
+    older += candidates.length - looked.length
+    const notices = await noticesFor(looked, reader, target)
     const fresh: PendingNotice[] = []
     const reminders: PendingNotice[] = []
     for (const notice of notices) {

@@ -132,6 +132,18 @@ export function mcpToolAuthorized(
   return missingMcpScope(toolName, request, scopes) === null
 }
 
+/**
+ * The request's full identity when it is this caller: Teams access needs
+ * its binding, while a local connection's request runs as the owner and
+ * its tools act as an agent.
+ */
+function sameCaller(
+  identity: { principal: { id: string } }
+): ReturnType<typeof currentRequestIdentity> | undefined {
+  const full = currentRequestIdentity()
+  return full?.principal.id === identity.principal.id ? full : undefined
+}
+
 export const TOOL_DESCRIPTIONS: Record<WorktableToolName, string> = {
   worktable_discover:
     "Orient to the workspace or a Space, search scoped context, or inspect a Space index. A Space's state starts with its pinned docs: read those first.",
@@ -528,7 +540,7 @@ export function registerTools(
           surface === "preview" && identity
             ? await ambientNotices(
                 // The request's whole identity: Teams access needs its binding.
-                { ...identity, ...currentRequestIdentity(), scopes },
+                { ...identity, ...sameCaller(identity), scopes },
                 operation.id,
                 operation.args,
                 publicResult

@@ -257,12 +257,13 @@ function quoted(text: string): string {
 }
 
 /**
- * What was written, quoted. On a call nobody asked about, only people's
- * words are quoted: an agent's words wait until the agent chooses to open
- * them, so one agent can't put text in another's context unasked.
+ * What was written, quoted. On a call nobody asked about, only words a
+ * person wrote in the app, unchanged since, are quoted: anything an agent or
+ * connected app wrote or edited waits until the agent chooses to open it, so
+ * one agent can't put text in another's context unasked.
  */
 function said(notice: PendingNotice, mode: "ambient" | "requested"): string {
-  return mode === "requested" || notice.from.kind === "person"
+  return mode === "requested" || notice.personWords
     ? `: ${quoted(notice.excerpt)}`
     : "."
 }

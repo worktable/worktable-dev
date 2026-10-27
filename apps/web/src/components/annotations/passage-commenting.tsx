@@ -1,6 +1,7 @@
 import { useState, type RefObject } from "react"
 import type { AnnotationTarget, PassageSelector } from "@worktable/types"
-import { AnnotationComposer, type CommentContext } from "./annotation-composer"
+import type { CommentContext } from "./annotation-composer"
+import { CommentBox } from "./comment-box"
 import { SelectionComment } from "./selection-comment"
 
 interface PassageDraft extends PassageSelector {
@@ -35,7 +36,7 @@ export function PassageCommenting({
           setOpen(true)
         }}
       />
-      <AnnotationComposer
+      <CommentBox
         draft={draft}
         open={open}
         onOpenChange={setOpen}

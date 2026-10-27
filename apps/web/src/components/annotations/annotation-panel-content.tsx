@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
   ArrowUp,
   CheckCircle2,
@@ -12,6 +12,7 @@ import { Button } from "@worktable/ui/components/button"
 import { Textarea } from "@worktable/ui/components/textarea"
 import { cn } from "@worktable/ui/lib/utils"
 import { ContextPanelHeader } from "@/components/desktop-context-panel"
+import { Quote } from "@/components/quote"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useWorkspace } from "@/lib/queries"
 
@@ -100,7 +101,7 @@ export function AnnotationPanelContent({
   return (
     <aside className={cn("flex h-full min-h-0 w-full flex-col bg-transparent", className)}>
       {header !== undefined ? header : <ContextPanelHeader
-        title="Annotations"
+        title="Comments"
         icon={<MessageSquareText className="size-4 shrink-0 text-primary" />}
         meta={<Badge variant="secondary">{openCount} open</Badge>}
         actions={
@@ -109,7 +110,7 @@ export function AnnotationPanelContent({
               size="icon-sm"
               variant="ghost"
               onClick={onClose}
-              aria-label="Close annotations"
+              aria-label="Close comments"
             >
               <X className="size-4" />
             </Button>
@@ -137,7 +138,7 @@ export function AnnotationPanelContent({
         {visible.length === 0 ? (
           <div className="flex h-full min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border p-6 text-center">
             <MessageSquareText className="mb-3 h-8 w-8 text-muted-foreground/50" />
-            <p className="text-sm font-medium text-foreground">No open annotations</p>
+            <p className="text-sm font-medium text-foreground">No open comments</p>
             {emptyHint !== "" && <p className="mt-1 text-xs text-muted-foreground">{emptyHint ?? "Use /comment in the editor to attach context to a block."}</p>}
           </div>
         ) : (
@@ -188,41 +189,34 @@ function AnnotationCard({
   const isResolved = annotation.status === "resolved";
   const selfId = useWorkspace().data?.person?.id;
   const recipients = recipientsLine(annotation, selfId);
-  const blockLabel =
-    "blockId" in annotation.target && annotation.target.blockId
-      ? annotation.target.blockId.slice(0, 8)
-      : annotation.target.type === "widget"
-        ? "html doc"
-        : "doc";
+  const meta = [isResolved ? "Resolved" : null, recipients].filter(Boolean).join(" · ");
+  // A comment chosen from its passage comes into view in the panel.
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (active) ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [active]);
 
   return (
     <article
+      ref={ref}
       className={cn(
         "rounded-lg px-3 py-3 transition-colors",
-        active ? "bg-surface-selected" : "hover:bg-surface-hover"
+        active ? "comment-selected" : "hover:bg-surface-hover"
       )}
     >
       <button type="button" onClick={onSelect} className="w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <div className="mb-2 flex flex-wrap items-center gap-1.5">
-          <Badge variant="outline">{annotation.status}</Badge>
-          {recipients && (
-            <span className="min-w-0 truncate text-xs text-muted-foreground">{recipients}</span>
-          )}
-          <span className="ml-auto text-[11px] text-muted-foreground">{blockLabel}</span>
-        </div>
+        {meta && <p className="mb-2 text-xs text-muted-foreground">{meta}</p>}
         {annotation.title && (
           <h3 className="mb-1 text-sm font-medium text-foreground">
             {annotation.title}
           </h3>
         )}
         {"quote" in annotation.target && annotation.target.quote && (
-          <div className="mb-1.5 border-l-2 border-border pl-2">
-            <span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-              {detached ? "Text changed" : "Commenting on"}
-            </span>
-            <p className="line-clamp-3 text-xs text-muted-foreground italic">
-              {annotation.target.quote}
-            </p>
+          <div className="mb-1.5">
+            <Quote className="line-clamp-3 text-xs">{annotation.target.quote}</Quote>
+            {detached && (
+              <p className="mt-1 text-[11px] text-muted-foreground">This text has changed since.</p>
+            )}
           </div>
         )}
         <p className="text-sm whitespace-pre-wrap text-foreground/90">

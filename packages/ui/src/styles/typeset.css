@@ -502,7 +502,12 @@
     }
   }
 
-  .thread-quote {
-    border-inline-start-color: var(--doc-quote-rule);
+  /* Quoted text outside a Doc, in the look of a Markdown quote: comment
+     passages and replies quoted in Threads. */
+  .quoted {
+    border-inline-start: 3px solid var(--doc-quote-rule);
+    padding-inline-start: 0.75rem;
+    color: var(--muted-foreground);
+    font-style: italic;
   }
 }

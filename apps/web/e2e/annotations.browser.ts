@@ -164,7 +164,7 @@ for (const mobile of [true, false]) {
       await expect(
         page
           .getByRole("complementary")
-          .filter({ has: page.getByRole("heading", { name: "Annotations", exact: true }) })
+          .filter({ has: page.getByRole("heading", { name: "Comments", exact: true }) })
           .getByText("Please clarify the wording.", { exact: true })
       ).toBeVisible({ visible: !mobile })
       await expect(paragraph).toHaveText(`${quote} before publishing.`)

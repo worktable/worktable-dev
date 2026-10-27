@@ -14,6 +14,7 @@ import {
 import { Textarea } from "@worktable/ui/components/textarea";
 import { NO_RECIPIENT, useCommentRecipients } from "@/lib/comment-recipients";
 import { setHighlight } from "./passage-text";
+import { Quote } from "@/components/quote";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 // Only loads where comments can be sent to someone (Preview agent tools).
@@ -168,9 +169,7 @@ export function AnnotationComposer({
           </ResponsiveDialogHeader>
           <ResponsiveDialogBody className="space-y-4">
             {draft?.quote && (
-              <blockquote className="line-clamp-3 border-l-2 border-border pl-3 text-sm italic text-muted-foreground">
-                {draft.quote}
-              </blockquote>
+              <Quote className="line-clamp-3">{draft.quote}</Quote>
             )}
             {note}
             {recipientSelect}

@@ -78,7 +78,7 @@ import {
 } from "@worktable/ui/components/drawer"
 import { Input } from "@worktable/ui/components/input"
 import { AnnotationPanel } from "@/components/annotations/annotation-panel"
-import { AnnotationComposer } from "@/components/annotations/annotation-composer"
+import { CommentBox } from "@/components/annotations/comment-box"
 import { docContributors } from "@/lib/comment-recipients"
 import { DesktopContextPanel } from "@/components/desktop-context-panel"
 import {
@@ -275,6 +275,8 @@ function WidgetDetailPage({
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(
     null
   )
+  // The selected comment belongs to the open panel: closing it lets go.
+  if (!annotationsOpen && activeAnnotationId !== null) setActiveAnnotationId(null)
   const [composerOpen, setComposerOpen] = useState(false)
   const [composerAnchor, setComposerAnchor] = useState<Element | undefined>()
   const annotationsQuery = useWidgetAnnotations(spaceId, widgetId)
@@ -995,7 +997,7 @@ function WidgetDetailPage({
             repositionInputs={false}
           >
             <DrawerContent className="data-[vaul-drawer-direction=bottom]:max-h-[86dvh]">
-              <DrawerTitle className="sr-only">Annotations</DrawerTitle>
+              <DrawerTitle className="sr-only">Comments</DrawerTitle>
               <DrawerDescription className="sr-only">
                 Annotations for this HTML doc.
               </DrawerDescription>
@@ -1028,7 +1030,7 @@ function WidgetDetailPage({
         </>
       )}
 
-      <AnnotationComposer
+      <CommentBox
         draft={{ anchor: composerAnchor }}
         label="Comment on this HTML doc"
         open={composerOpen && !readOnly}

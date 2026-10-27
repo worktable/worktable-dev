@@ -12,7 +12,7 @@
   .worktable-document-content,
   .shared-document,
   .typeset-thread,
-  .thread-quote
+  .quoted
 ) {
   --doc-quote-rule: color-mix(in oklch, var(--primary), transparent 60%);
 }

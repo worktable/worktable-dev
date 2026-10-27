@@ -20,6 +20,7 @@ import {
 import { isHosted } from "../hosted.ts"
 import { disconnectedSignIns } from "../team-agent-connections.ts"
 import { getOwnerSubject } from "../oauth-jwt.ts"
+import { withAutoReply } from "../auto-reply.ts"
 import { grokBotInventory } from "../grok-bot-connections.ts"
 import {
   readGrokBotCandidates,
@@ -33,7 +34,10 @@ agentConnectionsRouter.use("*", requireAgentManager())
 
 agentConnectionsRouter.get("/", async (c) => {
   const connections = await listAgentConnections()
-  return c.json({ connections, ...(await grokBotInventory(connections)) })
+  return c.json({
+    connections: await withAutoReply(connections),
+    ...(await grokBotInventory(connections)),
+  })
 })
 
 agentConnectionsRouter.delete("/:id", async (c) => {

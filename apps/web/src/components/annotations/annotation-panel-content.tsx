@@ -8,6 +8,7 @@ import {
 import type { Annotation } from "@worktable/types"
 import { Badge } from "@worktable/ui/components/badge"
 import { Button } from "@worktable/ui/components/button"
+import { InfoTip } from "@worktable/ui/components/info-tip"
 import { cn } from "@worktable/ui/lib/utils"
 import { Composer } from "@/components/composer"
 import { ContextPanelHeader } from "@/components/desktop-context-panel"
@@ -31,11 +32,25 @@ const STATE_LABEL = {
   replied: (names: string) => `Replied by ${names}`,
 };
 
-/** Who the comment went to, and how far each of them has got with it. */
-function recipientsLine(annotation: Annotation, selfId?: string): string | null {
+function openRequests(annotation: Annotation): CommentRequest[] {
   const latest = new Map<string, CommentRequest>();
   for (const request of annotation.requests ?? []) latest.set(request.to.id, request);
-  const requests = [...latest.values()].filter((request) => request.status !== "withdrawn");
+  return [...latest.values()].filter((request) => request.status !== "withdrawn");
+}
+
+/**
+ * Agents that haven't been shown the comment yet. One that answers on its own
+ * is shown it at once, so these see it the next time they use Worktable.
+ */
+function agentsNotShown(annotation: Annotation): string[] {
+  return openRequests(annotation)
+    .filter((request) => request.to.kind === "agent" && requestState(request) === "sent")
+    .map((request) => request.to.name);
+}
+
+/** Who the comment went to, and how far each of them has got with it. */
+function recipientsLine(annotation: Annotation, selfId?: string): string | null {
+  const requests = openRequests(annotation);
   if (requests.length === 0) return null;
   return (["sent", "delivered", "read", "replied"] as const)
     .map((state) => {
@@ -190,6 +205,7 @@ function AnnotationCard({
   const selfId = useWorkspace().data?.person?.id;
   const recipients = recipientsLine(annotation, selfId);
   const meta = [isResolved ? "Resolved" : null, recipients].filter(Boolean).join(" · ");
+  const notShown = isResolved ? [] : agentsNotShown(annotation);
   // A comment chosen from its passage comes into view in the panel.
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -204,8 +220,21 @@ function AnnotationCard({
         active ? "comment-selected" : "hover:bg-surface-hover"
       )}
     >
+      {meta && (
+        <p className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
+          {meta}
+          {notShown.length > 0 && (
+            <InfoTip label="When they see it" className="size-6">
+              <p>
+                {notShown.length === 1
+                  ? `${notShown[0]} sees this the next time it uses Worktable.`
+                  : `${notShown.join(", ")} see this the next time they use Worktable.`}
+              </p>
+            </InfoTip>
+          )}
+        </p>
+      )}
       <button type="button" onClick={onSelect} className="w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        {meta && <p className="mb-2 text-xs text-muted-foreground">{meta}</p>}
         {annotation.title && (
           <h3 className="mb-1 text-sm font-medium text-foreground">
             {annotation.title}

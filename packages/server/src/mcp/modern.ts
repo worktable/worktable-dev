@@ -20,7 +20,7 @@ import {
   pendingRevision,
   type PendingEntry,
 } from "../pending-list.ts"
-import { waitSince } from "../pending-wait.ts"
+import { noteWaiting, waitSince } from "../pending-wait.ts"
 import {
   EventsError,
   listEvents,
@@ -329,6 +329,7 @@ async function callerPending(
   const identity = callerIdentity(exchange)
   if (identity) {
     const { participant } = await resolveParticipant(identity)
+    noteWaiting(participant.id)
     return {
       revision: await pendingRevision(participant.id),
       entries: pendingIfReady(participant.id),

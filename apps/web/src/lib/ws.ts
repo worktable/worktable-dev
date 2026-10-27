@@ -53,12 +53,15 @@ import type {
 } from "@worktable/types"
 import { threadLocationKey } from "@worktable/types"
 
-function refreshGrokConnections(queryClient: QueryClient): void {
+/** Agents whose state shows on screen: a Grok Bot's status, or auto-reply. */
+function refreshAgentConnections(queryClient: QueryClient): void {
   for (const cloud of [true, false]) {
     const queryKey = ["agent-connections", cloud] as const
+    const inventory =
+      queryClient.getQueryData<AgentConnectionInventory>(queryKey)
     if (
-      queryClient.getQueryData<AgentConnectionInventory>(queryKey)?.grokBots
-        ?.length
+      inventory?.grokBots?.length ||
+      inventory?.connections.some((connection) => connection.autoReply)
     ) {
       refreshLive(queryClient, [{ queryKey, exact: true }])
     }
@@ -388,7 +391,7 @@ export function applyThreadEvent(
     // Progress while an agent works leaves Pending as it was; a delivery
     // that ends, fails or starts over can change it.
     if (update?.state !== "working" && update?.state !== "receiving") {
-      refreshGrokConnections(queryClient)
+      refreshAgentConnections(queryClient)
       refreshLive(queryClient, [pending])
     }
     return
@@ -699,7 +702,7 @@ export function applySpaceEvent(
     applyThreadEvent(queryClient, message, { kind: "space", spaceId })
   }
   if (type === "participants_update") {
-    refreshGrokConnections(queryClient)
+    refreshAgentConnections(queryClient)
     refresh.push({ queryKey: threadQueryKeys.participants, exact: true })
     refresh.push({ queryKey: threadQueryKeys.allSpaceParticipants })
     refresh.push({ queryKey: queryKeys.workspace, exact: true })
@@ -792,7 +795,7 @@ function applyMessage(
     if (THREAD_EVENTS.has(message.type)) {
       applyThreadEvent(queryClient, message, null)
     } else if (message.type === "participants_update") {
-      refreshGrokConnections(queryClient)
+      refreshAgentConnections(queryClient)
       refreshLive(queryClient, [
         { queryKey: threadQueryKeys.participants, exact: true },
         { queryKey: threadQueryKeys.allSpaceParticipants },

@@ -268,6 +268,7 @@ async function mutate<T>(change: (file: EventsFile) => T): Promise<T> {
       async () => {
         const file = await load(filePath)
         const result = change(file)
+        noteWatching(file)
         await mkdir(dirname(filePath), { recursive: true, mode: 0o700 })
         const temporary = `${filePath}.${randomUUID()}.tmp`
         await writeFile(temporary, JSON.stringify(file), {
@@ -286,6 +287,42 @@ async function mutate<T>(change: (file: EventsFile) => T): Promise<T> {
 
 function signalChange(): void {
   for (const listener of changeListeners) listener()
+}
+
+/** Each subscriber, and the Spaces it watches (none: every Space). */
+export type Watching = Map<string, { all: boolean; spaceIds: string[] }>
+
+function watchingOf(file: EventsFile, now = Date.now()): Watching {
+  const watching: Watching = new Map()
+  for (const s of file.subscriptions) {
+    if (s.refreshBefore <= now) continue
+    const entry = watching.get(s.participantId) ?? { all: false, spaceIds: [] }
+    if (s.arguments.spaceId) entry.spaceIds.push(s.arguments.spaceId)
+    else entry.all = true
+    watching.set(s.participantId, entry)
+  }
+  return watching
+}
+
+let watchingKey: string | undefined
+const watchingListeners = new Set<() => void>()
+
+function noteWatching(file: EventsFile): void {
+  const key = [...watchingOf(file).keys()].sort().join("\n")
+  if (watchingKey !== undefined && key !== watchingKey)
+    for (const listener of watchingListeners) listener()
+  watchingKey = key
+}
+
+/** The agents with a live subscription, so they answer on their own. */
+export async function watchingParticipants(): Promise<Watching> {
+  return watchingOf(await load(path()))
+}
+
+/** Called when an agent starts or stops being subscribed. */
+export function onWatchingChange(listener: () => void): () => void {
+  watchingListeners.add(listener)
+  return () => watchingListeners.delete(listener)
 }
 
 // ------------------------------------------------------------

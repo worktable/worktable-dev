@@ -5,6 +5,8 @@ import { join } from "node:path"
 import { Hono } from "hono"
 import { setAppDirOverride } from "./app-storage.ts"
 import { upsertAgentConnection } from "./agent-connection-store.ts"
+import { subscribe } from "./mcp-events.ts"
+import { waitForPending } from "./pending-wait.ts"
 import { resolveParticipant } from "./participant-store.ts"
 import { agentConnectionsRouter } from "./routes/agent-connections.ts"
 import { authSessionRouter } from "./routes/auth-session.ts"
@@ -148,6 +150,71 @@ describe("agent connection routes", () => {
     expect(again.connection).toMatchObject({ displayName: "Research GPT" })
     for (const token of [first.token, again.token]) {
       expect((await verifyToken(token))?.scopes).not.toContain("docs:read")
+    }
+  })
+
+  it("shows which agents answer what's sent to them on their own", async () => {
+    const password = "correct-horse-battery"
+    await setOwnerPassword(password)
+    const cookie = await loginCookie(password)
+    process.env["WORKTABLE_REQUIRE_AUTH"] = "1"
+    process.env["WORKTABLE_MCP_MODERN"] = "1"
+    try {
+      const connect = async (client: string) => {
+        const created = (await (
+          await app.fetch(
+            request("POST", "/api/agent-connections", cookie, { client })
+          )
+        ).json()) as { token: string }
+        const identity = (await verifyToken(created.token))!
+        await resolveParticipant(identity)
+        return identity
+      }
+      const chat = await connect("chatgpt-desktop")
+      const session = await connect("claude-code")
+      const autoReplies = async () => {
+        const listed = (await (
+          await app.fetch(request("GET", "/api/agent-connections", cookie))
+        ).json()) as {
+          connections: Array<{ platform: string; autoReply?: unknown }>
+        }
+        return Object.fromEntries(
+          listed.connections.map((c) => [c.platform, c.autoReply])
+        )
+      }
+      expect(await autoReplies()).toEqual({
+        chatgpt: { kind: "chat", state: "off" },
+        "claude-code": { kind: "session", state: "off" },
+      })
+
+      // ChatGPT subscribes from a chat; Claude Code waits in its session.
+      await subscribe(
+        { identity: chat, origin: "https://worktable.example" },
+        {
+          name: "item.sent_to_you",
+          delivery: {
+            mode: "webhook",
+            url: "https://receiver.example/cb",
+            secret: `whsec_${Buffer.alloc(32, 7).toString("base64")}`,
+          },
+        },
+        {
+          resolve: async () => ["93.184.216.34"],
+          fetch: async (_url, init) =>
+            Response.json({
+              challenge: (
+                JSON.parse(String(init.body)) as { challenge: string }
+              ).challenge,
+            }),
+        }
+      )
+      await waitForPending(session, {}, { seconds: 0 })
+      expect(await autoReplies()).toEqual({
+        chatgpt: { kind: "chat", state: "on" },
+        "claude-code": { kind: "session", state: "on" },
+      })
+    } finally {
+      delete process.env["WORKTABLE_MCP_MODERN"]
     }
   })
 

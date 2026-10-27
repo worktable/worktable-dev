@@ -97,10 +97,11 @@ import { timeAgo } from "@/lib/time"
 import { AgentAccessFields } from "@/components/agents/agent-access-fields"
 import { AgentAvatar } from "@/components/agents/agent-avatar"
 import { AgentEditDialog } from "@/components/agents/agent-edit-dialog"
+import { AutoReplyDot } from "@/components/agents/auto-reply"
 import { DesktopAgentSkillsGroup } from "./desktop-agent-skills"
 import { GrokBotSetupPanel } from "@/components/agents/grok-bot-setup"
 import { ChatAppWays, LocalChatSteps } from "@/components/agents/chat-app-ways"
-import { GROK_BOT_STATUS_LABELS } from "@/lib/grok-bot-status"
+import { GROK_BOT_STATUS_LABELS, grokAutoReply } from "@/lib/grok-bot-status"
 import {
   AGENT_SETUP_CATEGORIES,
   AgentSetupCategory,
@@ -1369,22 +1370,22 @@ export function ConnectedAgentsGroup() {
                     key={connection?.id ?? grok!.connectionId}
                     className="flex min-h-14 items-center gap-3 rounded-xl bg-surface-inset px-3 py-2"
                   >
-                    <AgentAvatar
-                      name={name}
-                      platform={platform}
-                      icon={connection?.icon}
-                    />
+                    <span className="relative shrink-0">
+                      <AgentAvatar
+                        name={name}
+                        platform={platform}
+                        icon={connection?.icon}
+                      />
+                      <AutoReplyDot
+                        autoReply={
+                          grok ? grokAutoReply(grok) : connection?.autoReply
+                        }
+                      />
+                    </span>
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium text-foreground">
-                          {name}
-                        </span>
-                        <Badge variant="secondary">
-                          {grok || connection?.mode === "always-on"
-                            ? "Always-on"
-                            : "On-demand"}
-                        </Badge>
-                      </div>
+                      <span className="text-sm font-medium text-foreground">
+                        {name}
+                      </span>
                       <p className="truncate text-xs text-muted-foreground">
                         {platform !== "other" && platformName !== name
                           ? `${platformName} · `
@@ -1461,6 +1462,10 @@ export function ConnectedAgentsGroup() {
       </Card>
       <AgentEditDialog
         connection={editing}
+        autoReply={
+          (connections.find((entry) => entry.id === editing?.id) ?? editing)
+            ?.autoReply
+        }
         onOpenChange={(open) => {
           if (!open) setEditing(null)
         }}

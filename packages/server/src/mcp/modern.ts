@@ -13,6 +13,7 @@ import type {
 } from "@modelcontextprotocol/sdk/types.js"
 import { z } from "zod"
 import { resolveParticipant } from "../participant-store.ts"
+import { currentRequestIdentity } from "../team-policy.ts"
 import { pendingRevision } from "../pending-list.ts"
 import { waitSince } from "../pending-wait.ts"
 import {
@@ -248,12 +249,26 @@ async function startPendingWait(
   }
 }
 
+/**
+ * The caller's identity, as the pending read uses it: the request's whole
+ * identity when it is this caller's (on Teams it carries the team binding),
+ * else the partial one the server is built with. A local connection's
+ * request runs as the owner while its tools act as its agent.
+ */
+function callerIdentity(exchange: ModernMcpExchange) {
+  const partial = exchange.server.identity
+  const full = currentRequestIdentity()
+  return full && partial && full.principal.id === partial.principal.id
+    ? full
+    : partial
+}
+
 /** The caller's pending revision, without a read where the caller is known. */
 async function currentRevision(
   exchange: ModernMcpExchange,
   ctx: ServerContext
 ): Promise<number> {
-  const identity = exchange.server.identity
+  const identity = callerIdentity(exchange)
   if (identity) {
     const { participant } = await resolveParticipant(identity)
     return pendingRevision(participant.id)

@@ -285,7 +285,7 @@ function line(notice: PendingNotice, mode: "ambient" | "requested"): string {
   if (notice.kind === "comment") {
     // An agent chose the passage it quotes too; unasked, that waits as well.
     const passage =
-      mode === "requested" || notice.from.kind === "person"
+      mode === "requested" || notice.personWords
         ? notice.quote
         : undefined
     const place = notice.onTopic

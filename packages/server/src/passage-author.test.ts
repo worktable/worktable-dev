@@ -169,6 +169,7 @@ describe("who wrote a passage", () => {
       body: "Feels high for three people.",
       author: { type: "user", id: "user", name: "Karo" },
       to: [{ id: participant.id, kind: "agent", name: "Finn" }],
+      byPerson: true,
       passageAuthor: await passageAuthorForTarget("pricing", target, ["*"]),
     })
     const notices = await noticesFor(await pendingFor(participant.id), finn, {

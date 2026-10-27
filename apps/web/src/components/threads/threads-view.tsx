@@ -89,7 +89,8 @@ import { THREAD_TITLE_MAX_LENGTH } from "@worktable/types/constants"
 import { useThreadRename } from "@/lib/thread-naming"
 import { RenameDialog } from "@/components/docs/rename-dialog"
 import { NewThreadPanel } from "./new-thread-panel"
-import { ThreadComposer } from "./thread-composer"
+import { Composer } from "@/components/composer"
+import { ParticipantRow } from "@/components/participant-select"
 import { ThreadList, type ThreadLink } from "./thread-list"
 import { ThreadParticipantAvatar } from "./thread-participant-avatar"
 import { ThreadTimeline } from "./thread-timeline"
@@ -782,7 +783,7 @@ function ThreadDetail({
           />
         </div>
 
-        <ThreadComposer
+        <Composer
           ref={composerRef}
           value={draft}
           onChange={setDraft}
@@ -796,6 +797,7 @@ function ThreadDetail({
           mentionTargets={otherIdentities.map((identity) => ({
             id: identity.id,
             name: identity.name,
+            participant: identityParticipant(identity, targetMembers),
             description: conversationIdentityDescription(
               identity,
               targetMembers,
@@ -897,6 +899,15 @@ function ThreadIntentToolbar({
   ) : null
 }
 
+/** An identity, drawn with the picture of the member it speaks for. */
+function identityParticipant(
+  identity: ConversationIdentityOption,
+  members: ParticipantRef[]
+): ParticipantRef | undefined {
+  const member = members.find((candidate) => candidate.id === identity.memberId)
+  return member ? { ...member, name: identity.name } : undefined
+}
+
 function ThreadResponseIdentityMenu({
   identities,
   members,
@@ -911,13 +922,9 @@ function ThreadResponseIdentityMenu({
   onClear: () => void
 }) {
   const selected = identities.find((identity) => identity.id === value)
-  const selectedMember = selected
-    ? members.find((member) => member.id === selected.memberId)
+  const selectedParticipant = selected
+    ? identityParticipant(selected, members)
     : undefined
-  const selectedParticipant =
-    selected && selectedMember
-      ? { ...selectedMember, name: selected.name }
-      : undefined
   const [open, setOpen] = useState(false)
   if (!selected) return null
 
@@ -971,14 +978,11 @@ function ThreadResponseIdentityMenu({
               )
               return (
                 <DropdownMenuRadioItem key={identity.id} value={identity.id}>
-                  <span className="min-w-0">
-                    <span className="block truncate">{identity.name}</span>
-                    {description ? (
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {description}
-                      </span>
-                    ) : null}
-                  </span>
+                  <ParticipantRow
+                    participant={identityParticipant(identity, members)}
+                    name={identity.name}
+                    hint={description}
+                  />
                 </DropdownMenuRadioItem>
               )
             })}

@@ -30,6 +30,7 @@ import {
 } from "@worktable/ui/components/tooltip"
 import { cn } from "@worktable/ui/lib/utils"
 
+import { ParticipantRow } from "@/components/participant-select"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useScrollFadeX } from "@/hooks/use-scroll-fade-x"
 import {
@@ -41,7 +42,7 @@ import {
   type ThreadMentionTarget,
 } from "@/lib/thread-mentions"
 
-interface ThreadComposerProps {
+interface ComposerProps {
   ref: Ref<HTMLTextAreaElement>
   value: string
   onChange: (value: string) => void
@@ -50,6 +51,17 @@ interface ThreadComposerProps {
   error?: string
   disabled?: boolean
   placeholder: string
+  /** Names the box for assistive tech. */
+  label?: string
+  /** What the send button does. */
+  sendLabel?: string
+  /** Sending waits, the text stays editable; e.g. while a recipient settles. */
+  canSubmit?: boolean
+  /**
+   * Compact fits a popover: a comment. Inline is one line that grows, with
+   * the send button at its end and no toolbar: a reply on a comment card.
+   */
+  size?: "regular" | "compact" | "inline"
   replyContext?: {
     authorName: string
     excerpt: string
@@ -63,10 +75,29 @@ interface ThreadComposerProps {
   placement?: "docked" | "inline"
 }
 
-const composerTextClassName =
-  "min-h-14 px-4 pt-3.5 pb-2 text-[0.9375rem] leading-6 md:text-[0.9375rem]"
+const SIZES = {
+  regular: {
+    box: "min-h-28 rounded-[1.5rem]",
+    text: "min-h-14 px-4 pt-3.5 pb-2 text-[0.9375rem] leading-6 md:text-[0.9375rem]",
+    toolbar: "min-h-12 ps-1.5 pe-4 pb-3",
+  },
+  compact: {
+    box: "min-h-24 rounded-2xl",
+    text: "min-h-12 px-3 pt-2.5 pb-1 text-sm leading-5 md:text-sm",
+    toolbar: "min-h-10 ps-1 pe-2 pb-2",
+  },
+  inline: {
+    box: "h-auto rounded-[1.25rem]",
+    text: "min-h-10 px-3.5 py-2.5 text-sm leading-5 md:text-sm",
+    toolbar: "",
+  },
+} as const
 
-export function ThreadComposer({
+/**
+ * The one box for writing to people and agents: Thread messages, comments
+ * and replies to them. Enter sends; Shift+Enter starts a new line.
+ */
+export function Composer({
   ref,
   value,
   onChange,
@@ -75,6 +106,10 @@ export function ThreadComposer({
   error,
   disabled = false,
   placeholder,
+  label: boxLabel = "Write a message",
+  sendLabel = "Send message",
+  canSubmit = true,
+  size = "regular",
   replyContext,
   onClearReply,
   toolbarActions,
@@ -83,7 +118,8 @@ export function ThreadComposer({
   onMentionIdentityIdsChange,
   onMentionSelect,
   placement = "docked",
-}: ThreadComposerProps) {
+}: ComposerProps) {
+  const sizing = SIZES[size]
   const errorId = useId()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mentionAnchorRef = useRef<HTMLSpanElement>(null)
@@ -116,11 +152,7 @@ export function ThreadComposer({
     },
     [ref, textareaFadeRef]
   )
-  const label = pending
-    ? "Sending message"
-    : error
-      ? "Try sending again"
-      : "Send message"
+  const label = pending ? "Sending" : error ? "Try sending again" : sendLabel
   const mentionOptions = mention
     ? mentionTargets
         .filter((target) =>
@@ -138,6 +170,34 @@ export function ThreadComposer({
   const mentionedNames = mentionTargets
     .filter((target) => mentionIdentityIds.includes(target.id))
     .map((target) => target.name)
+
+  const sendButton = (
+    <TooltipProvider delay={500}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              size="icon-sm"
+              className="shrink-0 rounded-full max-sm:size-11"
+              aria-label={label}
+              disabled={pending || disabled || !canSubmit || !value.trim()}
+              onClick={onSubmit}
+            />
+          }
+        >
+          {pending ? (
+            <Spinner decorative />
+          ) : error ? (
+            <RotateCwIcon aria-hidden="true" />
+          ) : (
+            <ArrowUpIcon aria-hidden="true" />
+          )}
+        </TooltipTrigger>
+        <TooltipContent>{label}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
 
   const updateMentionQuery = (nextValue: string, cursor: number) => {
     const nextMention = threadMentionQuery(nextValue, cursor)
@@ -168,8 +228,14 @@ export function ThreadComposer({
     >
       <div className={cn(placement === "docked" && "mx-auto max-w-3xl")}>
         <InputGroup
-          aria-label="Write a message"
-          className="well well-interactive min-h-28 overflow-hidden rounded-[1.5rem]"
+          aria-label={boxLabel}
+          className={cn(
+            "well well-interactive overflow-hidden",
+            // An empty box disables only its send button; the box itself
+            // looks disabled only when it is.
+            "has-disabled:bg-(--well-bg) has-disabled:opacity-100 dark:has-disabled:bg-(--well-bg) data-disabled:opacity-50",
+            sizing.box
+          )}
           data-disabled={disabled || undefined}
         >
           {replyContext ? (
@@ -211,7 +277,7 @@ export function ThreadComposer({
               <div
                 ref={mentionMirrorRef}
                 className={cn(
-                  composerTextClassName,
+                  sizing.text,
                   // Spans would otherwise take the global span letter
                   // spacing, wider than the textarea's.
                   "box-content break-words whitespace-pre-wrap text-foreground [&_span]:tracking-[inherit]"
@@ -294,7 +360,8 @@ export function ThreadComposer({
                   event.keyCode !== 229
                 ) {
                   event.preventDefault()
-                  if (!pending && !disabled && value.trim()) onSubmit()
+                  if (!pending && !disabled && canSubmit && value.trim())
+                    onSubmit()
                 }
               }}
               rows={1}
@@ -302,20 +369,22 @@ export function ThreadComposer({
               disabled={disabled}
               aria-invalid={Boolean(error)}
               aria-describedby={error ? errorId : undefined}
-              role="combobox"
-              aria-autocomplete="list"
-              aria-expanded={mentionOptions.length > 0}
-              aria-controls={
-                mentionOptions.length > 0 ? mentionListId : undefined
-              }
-              aria-activedescendant={
-                activeMentionOption
-                  ? `${mentionListId}-${activeMentionOption.id}`
-                  : undefined
-              }
+              // A list of people to mention opens only where there are any.
+              {...(mentionTargets.length > 0
+                ? {
+                    role: "combobox",
+                    "aria-autocomplete": "list" as const,
+                    "aria-expanded": mentionOptions.length > 0,
+                    "aria-controls":
+                      mentionOptions.length > 0 ? mentionListId : undefined,
+                    "aria-activedescendant": activeMentionOption
+                      ? `${mentionListId}-${activeMentionOption.id}`
+                      : undefined,
+                  }
+                : {})}
               placeholder={placeholder}
               className={cn(
-                composerTextClassName,
+                sizing.text,
                 "scroll-fade relative z-1 max-h-40 w-full overflow-y-auto text-transparent caret-foreground selection:bg-primary/20 selection:text-foreground placeholder:text-muted-foreground"
               )}
             />
@@ -351,14 +420,11 @@ export function ThreadComposer({
                         onMouseDown={(event) => event.preventDefault()}
                         onClick={() => selectMention(target)}
                       >
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate">{target.name}</span>
-                          {target.description ? (
-                            <span className="block truncate text-xs text-muted-foreground">
-                              {target.description}
-                            </span>
-                          ) : null}
-                        </span>
+                        <ParticipantRow
+                          participant={target.participant}
+                          name={target.name}
+                          hint={target.description}
+                        />
                       </button>
                     ))}
                   </div>
@@ -366,42 +432,24 @@ export function ThreadComposer({
               ) : null}
             </Popover>
           </div>
-          <InputGroupAddon
-            align="block-end"
-            className="min-h-12 justify-between gap-2 ps-1.5 pe-4 pt-0 pb-3"
-          >
-            <div
-              ref={toolbarRef}
-              className="scroll-fade-x no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+          {size === "inline" ? (
+            <InputGroupAddon align="inline-end" className="self-end py-1 pe-1">
+              {sendButton}
+            </InputGroupAddon>
+          ) : (
+            <InputGroupAddon
+              align="block-end"
+              className={cn("justify-between gap-2 pt-0", sizing.toolbar)}
             >
-              {toolbarActions}
-            </div>
-            <TooltipProvider delay={500}>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      className="shrink-0 rounded-full max-sm:size-11"
-                      aria-label={label}
-                      disabled={pending || disabled || !value.trim()}
-                      onClick={onSubmit}
-                    />
-                  }
-                >
-                  {pending ? (
-                    <Spinner decorative />
-                  ) : error ? (
-                    <RotateCwIcon aria-hidden="true" />
-                  ) : (
-                    <ArrowUpIcon aria-hidden="true" />
-                  )}
-                </TooltipTrigger>
-                <TooltipContent>{label}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </InputGroupAddon>
+              <div
+                ref={toolbarRef}
+                className="scroll-fade-x no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+              >
+                {toolbarActions}
+              </div>
+              {sendButton}
+            </InputGroupAddon>
+          )}
         </InputGroup>
         {error ? (
           <p
@@ -438,7 +486,7 @@ function MentionOverlayText({
   ))
 }
 
-export function ThreadComposerSeparator() {
+export function ComposerSeparator() {
   return (
     <span className="mx-1 flex h-4 shrink-0 items-stretch" aria-hidden="true">
       <Separator orientation="vertical" />

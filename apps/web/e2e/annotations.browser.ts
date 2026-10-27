@@ -138,9 +138,7 @@ for (const mobile of [true, false]) {
       await selectQuote()
       await expectQuote()
       await expect(composer.getByRole("textbox")).toBeFocused()
-      await composer
-        .getByRole("button", { name: "Cancel", exact: true })
-        .click()
+      await page.keyboard.press("Escape")
       await expect(composer).not.toBeVisible()
       expect(await savedAnnotations()).toEqual([])
 
@@ -150,7 +148,7 @@ for (const mobile of [true, false]) {
       if (mobile) await page.keyboard.insertText("Please clarify the wording.")
       else await composer.getByRole("textbox").fill("Please clarify the wording.")
       await composer
-        .getByRole("button", { name: "Add Comment", exact: true })
+        .getByRole("button", { name: "Send comment", exact: true })
         .click()
       await expect.poll(savedAnnotations).toMatchObject([
         {
@@ -222,7 +220,7 @@ for (const mobile of [true, false]) {
         await expect.poll(() => draftHighlight(page)).toEqual(["launch date moves"])
       await page.keyboard.insertText("Confirm with finance.")
       await composer
-        .getByRole("button", { name: "Add Comment", exact: true })
+        .getByRole("button", { name: "Send comment", exact: true })
         .click()
 
       await expect.poll(savedAnnotations).toMatchObject([

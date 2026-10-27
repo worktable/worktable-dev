@@ -1,21 +1,22 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityActor } from "@worktable/types";
-import { Button } from "@worktable/ui/components/button";
 import { Popover, PopoverContent, PopoverTitle } from "@worktable/ui/components/popover";
 import {
   ResponsiveDialog,
   ResponsiveDialogBody,
   ResponsiveDialogContent,
   ResponsiveDialogDescription,
-  ResponsiveDialogFooter,
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog";
-import { Textarea } from "@worktable/ui/components/textarea";
 import { NO_RECIPIENT, useCommentRecipients } from "@/lib/comment-recipients";
 import { setHighlight } from "./passage-text";
 import { Quote } from "@/components/quote";
 import { useIsMobile } from "@/hooks/use-mobile";
+
+const Composer = lazy(() =>
+  import("@/components/composer").then((module) => ({ default: module.Composer }))
+);
 
 // Only loads where comments can be sent to someone (Preview agent tools).
 const CommentRecipientSelect = lazy(() =>
@@ -133,28 +134,35 @@ export function AnnotationComposer({
     onSubmit(trimmed, recipients && recipient !== NO_RECIPIENT ? [recipient] : []);
     onOpenChange(false);
   };
-  const action = "Add Comment";
-  const recipientSelect = recipients && (
-    <Suspense fallback={null}>
-      <CommentRecipientSelect recipients={recipients} value={recipient} onChange={setPicked} />
-    </Suspense>
-  );
-  const note = (
-    <Textarea
-      ref={noteRef}
-      autoFocus
-      aria-label="Comment"
-      value={body}
-      onChange={(event) => setBody(event.target.value)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-          event.preventDefault();
-          submit();
+  // The box loads when it first opens; it takes focus as it arrives.
+  const focusOnArrival = useCallback((node: HTMLTextAreaElement | null) => {
+    noteRef.current = node;
+    node?.focus();
+  }, []);
+  const composer = (
+    <Suspense fallback={<div className="well min-h-24 rounded-2xl" />}>
+      <Composer
+        ref={focusOnArrival}
+        value={body}
+        onChange={setBody}
+        onSubmit={submit}
+        pending={false}
+        disabled={!draft}
+        canSubmit={!awaitingRecipient}
+        placeholder="Write a comment…"
+        label={label}
+        sendLabel="Send comment"
+        size={isMobile ? "regular" : "compact"}
+        placement="inline"
+        toolbarActions={
+          recipients && (
+            <Suspense fallback={null}>
+              <CommentRecipientSelect recipients={recipients} value={recipient} onChange={setPicked} />
+            </Suspense>
+          )
         }
-      }}
-      placeholder="Write a comment..."
-      className={isMobile ? "min-h-32" : "min-h-24"}
-    />
+      />
+    </Suspense>
   );
 
   if (isMobile || !anchor) {
@@ -167,19 +175,10 @@ export function AnnotationComposer({
               {draft?.quote ? "About the selected text." : "About this part of the Doc."}
             </ResponsiveDialogDescription>
           </ResponsiveDialogHeader>
-          <ResponsiveDialogBody className="space-y-4">
-            {draft?.quote && (
-              <Quote className="line-clamp-3">{draft.quote}</Quote>
-            )}
-            {note}
-            {recipientSelect}
+          <ResponsiveDialogBody className="space-y-4 pb-4">
+            {draft?.quote && <Quote className="line-clamp-3">{draft.quote}</Quote>}
+            {composer}
           </ResponsiveDialogBody>
-          <ResponsiveDialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={submit} disabled={!draft || !body.trim() || awaitingRecipient}>
-              {action}
-            </Button>
-          </ResponsiveDialogFooter>
         </ResponsiveDialogContent>
       </ResponsiveDialog>
     );
@@ -206,19 +205,10 @@ export function AnnotationComposer({
         align="start"
         sideOffset={8}
         initialFocus={noteRef}
-        className="w-80 gap-3 p-3"
+        className="w-80 p-2"
       >
         <PopoverTitle className="sr-only">{label}</PopoverTitle>
-        {note}
-        {recipientSelect && <div className="-my-1 flex">{recipientSelect}</div>}
-        <div className="flex justify-end gap-2">
-          <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button size="sm" onClick={submit} disabled={!draft || !body.trim() || awaitingRecipient}>
-            {action}
-          </Button>
-        </div>
+        {composer}
       </PopoverContent>
     </Popover>
   );

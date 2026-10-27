@@ -32,6 +32,7 @@ import {
   LayoutDashboard,
   Plus,
   Pin,
+  PinOff,
   Archive,
   Clock3,
   AppWindow,
@@ -131,8 +132,8 @@ import {
   NewSubmenu,
   SpaceNewActions,
 } from "@/components/spaces/space-new-menu"
-import { DocumentFormatIcon } from "@/components/document-format-icon"
 import { DocContextMenuButton } from "@/components/docs/doc-context-menu"
+import { useDocumentOrganizeActions } from "@/hooks/use-document-organize"
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -810,7 +811,15 @@ const SpaceContent = memo(function SpaceContent({
       <SpaceOverviewLink spaceId={spaceId} onNavigate={onNavigate} />
       {revealed && (
         <>
-          <PinnedSidebarSection spaceId={spaceId} onNavigate={onNavigate} />
+          <PinnedSidebarSection
+            spaceId={spaceId}
+            documents={documents ?? NO_DOCUMENTS}
+            docs={docs ?? NO_DOCS}
+            onNavigate={onNavigate}
+            onRefresh={handleRefresh}
+            onWidgetRefresh={refreshWidgets}
+            canEdit={space.permissions?.edit !== false}
+          />
           <SpaceTreeSection
             space={space}
             documents={documents ?? NO_DOCUMENTS}
@@ -861,14 +870,25 @@ function SpaceOverviewLink({
 /** A Space's pinned docs, above its tree, with a label separating the two. */
 function PinnedSidebarSection({
   spaceId,
+  documents,
+  docs,
   onNavigate,
+  onRefresh,
+  onWidgetRefresh,
+  canEdit,
 }: {
   spaceId: string
+  documents: DocumentListItem[]
+  docs: DocListEntry[]
   onNavigate: () => void
+  onRefresh: () => Promise<void>
+  onWidgetRefresh: (widgetId?: string) => Promise<void>
+  canEdit: boolean
 }) {
   const { data } = useSpace(spaceId)
   const pins = (data?.pins ?? []).filter((pin) => pin.status === "active")
   if (pins.length === 0) return null
+  const index = spaceDocumentIndex({ documents, docs })
   return (
     <div className="mb-2">
       <p className="px-3 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">
@@ -876,13 +896,35 @@ function PinnedSidebarSection({
       </p>
       <nav aria-label="Pinned" className="space-y-0.5">
         {pins.map((pin) => (
-          <PinnedLink
+          <TreeItem
             key={pin.path}
             spaceId={spaceId}
-            path={pin.path}
-            title={pin.title ?? pin.path}
-            formatId={pin.format?.id}
+            node={{
+              kind: "document",
+              path: pin.path,
+              name: pin.path.split("/").at(-1) ?? pin.path,
+              label: pin.title ?? pin.path,
+              format: pin.format,
+              health: documents.find(
+                (item) => item.kind === "document" && item.path === pin.path
+              )?.health,
+              // Pins open the document itself, without unfolding its children.
+              isFolder: false,
+              children: [],
+            }}
+            index={index}
             onNavigate={onNavigate}
+            onRefresh={onRefresh}
+            onWidgetRefresh={onWidgetRefresh}
+            folderArchived={false}
+            canEdit={canEdit}
+            rowActions={
+              <UnpinDocumentButton
+                spaceId={spaceId}
+                path={pin.path}
+                title={pin.title ?? pin.path}
+              />
+            }
           />
         ))}
       </nav>
@@ -893,40 +935,31 @@ function PinnedSidebarSection({
   )
 }
 
-const PinnedLink = memo(function PinnedLink({
+function UnpinDocumentButton({
   spaceId,
   path,
   title,
-  formatId,
-  onNavigate,
 }: {
   spaceId: string
   path: string
   title: string
-  formatId?: string
-  onNavigate: () => void
 }) {
-  const isActive = useIsCurrentRoute(`${documentRoutePrefix(spaceId)}${path}`)
-  return (
-    <Link
-      to="/spaces/$spaceId/documents/$"
-      params={{ spaceId, _splat: path }}
-      onClick={onNavigate}
-      className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-180 sm:min-h-0 ${
-        isActive
-          ? "bg-sidebar-accent font-medium text-sidebar-primary"
-          : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
-      }`}
-    >
-      <DocumentFormatIcon
-        formatId={formatId}
-        name={path}
-        className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
-      />
-      <span className="min-w-0 truncate">{title}</span>
-    </Link>
+  const unpin = useDocumentOrganizeActions(spaceId, path).find(
+    (action) => action.id === "unpin"
   )
-})
+  if (!unpin) return null
+  return (
+    <button
+      type="button"
+      aria-label={`Unpin ${title}`}
+      title="Unpin"
+      onClick={unpin.onSelect}
+      className="flex size-9 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/30 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground sm:size-6"
+    >
+      <PinOff className="size-3.5" />
+    </button>
+  )
+}
 
 function ThreadsSidebarEntry({
   spaceId,
@@ -1251,12 +1284,14 @@ function WidgetTreeItem({
   onNavigate,
   onRefresh,
   reorder,
+  rowActions,
 }: {
   node: TreeNode
   spaceId: string
   onNavigate: () => void
   onRefresh: (widgetId?: string) => Promise<void>
   reorder?: DocReorder
+  rowActions?: ReactNode
 }) {
   const isActive = useIsCurrentRoute(
     `${documentRoutePrefix(spaceId)}${node.path}`
@@ -1293,7 +1328,8 @@ function WidgetTreeItem({
           />
           <span className="truncate">{node.label}</span>
         </Link>
-        <div className="shrink-0 pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/widget:opacity-100">
+        <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/widget:opacity-100">
+          {rowActions}
           <WidgetTreeActions
             key={node.path}
             spaceId={spaceId}
@@ -1907,6 +1943,8 @@ interface TreeRowProps {
   reorder?: DocReorder
   /** Whether this person can create in the Space (false for read access). */
   canEdit: boolean
+  /** Extra actions for a shortcut, before the document's usual menu. */
+  rowActions?: ReactNode
 }
 
 /**
@@ -1914,7 +1952,15 @@ interface TreeRowProps {
  * own node, the catalog, a drag, or its relation to the route changes.
  */
 const TreeItem = memo(function TreeItem(props: TreeRowProps) {
-  const { node, spaceId, index, onNavigate, onWidgetRefresh, reorder } = props
+  const {
+    node,
+    spaceId,
+    index,
+    onNavigate,
+    onWidgetRefresh,
+    reorder,
+    rowActions,
+  } = props
   const view = specializedDocumentView(node)
   if (view === "html" && !node.isFolder) {
     return (
@@ -1924,6 +1970,7 @@ const TreeItem = memo(function TreeItem(props: TreeRowProps) {
         onNavigate={onNavigate}
         onRefresh={onWidgetRefresh}
         reorder={reorder}
+        rowActions={rowActions}
       />
     )
   }
@@ -1946,6 +1993,7 @@ const TreeItem = memo(function TreeItem(props: TreeRowProps) {
         spaceId={spaceId}
         onNavigate={onNavigate}
         reorder={reorder}
+        rowActions={rowActions}
       />
     )
   }
@@ -1957,11 +2005,13 @@ function UnavailableDocumentTreeItem({
   spaceId,
   onNavigate,
   reorder,
+  rowActions,
 }: {
   node: TreeNode
   spaceId: string
   onNavigate: () => void
   reorder?: DocReorder
+  rowActions?: ReactNode
 }) {
   const { dragProps, dropIndicator, isDragging } = treeDragPresentation(
     node,
@@ -1975,7 +2025,7 @@ function UnavailableDocumentTreeItem({
   return (
     <div
       data-tree-row
-      className={`relative rounded-md transition-colors ${
+      className={`group/doc relative flex items-center rounded-md transition-colors ${
         isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-hover"
       } ${isDragging ? "opacity-50" : ""}`}
       {...dragProps}
@@ -1986,7 +2036,7 @@ function UnavailableDocumentTreeItem({
         params={{ spaceId, _splat: node.path }}
         onClick={onNavigate}
         draggable={false}
-        className={`flex min-h-10 min-w-0 items-center gap-2 px-3 py-2 text-sm sm:min-h-0 ${
+        className={`flex min-h-10 min-w-0 flex-1 items-center gap-2 px-3 py-2 text-sm sm:min-h-0 ${
           isActive
             ? "font-medium text-sidebar-primary"
             : "text-sidebar-item-foreground"
@@ -1997,6 +2047,11 @@ function UnavailableDocumentTreeItem({
         />
         <span className="truncate">{node.label}</span>
       </Link>
+      {rowActions && (
+        <div className="shrink-0 pr-1 opacity-100 transition-opacity focus-within:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100">
+          {rowActions}
+        </div>
+      )}
     </div>
   )
 }
@@ -2014,6 +2069,7 @@ function DocTreeItem({
   folderArchived,
   reorder,
   canEdit,
+  rowActions,
 }: TreeRowProps) {
   const navigate = useNavigate()
   const router = useRouter()
@@ -2478,7 +2534,8 @@ function DocTreeItem({
             {node.label}
           </span>
         </Link>
-        <div className="shrink-0 pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100">
+        <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100">
+          {rowActions}
           <DocContextMenuButton
             documentName={node.label}
             archived={archived}

@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, jest } from "bun:test"
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+  setSystemTime,
+} from "bun:test"
 import { createHmac } from "node:crypto"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -8,6 +16,7 @@ import { setAppDirOverride } from "./app-storage.ts"
 import { createAnnotation } from "./annotation-store.ts"
 import {
   EventsError,
+  privateAddress,
   startMcpEventsRuntime,
   subscribe,
   unsubscribe,
@@ -47,6 +56,7 @@ let stop: (() => Promise<void>) | undefined
 
 interface Sent {
   url: string
+  serverName?: string
   headers: Record<string, string>
   body: Record<string, unknown>
   raw: string
@@ -72,6 +82,7 @@ function callback(
       const body = JSON.parse(raw) as Record<string, unknown>
       sent.push({
         url,
+        serverName: init.tls?.serverName,
         headers: init.headers as Record<string, string>,
         body,
         raw,
@@ -222,6 +233,10 @@ describe("MCP Events", () => {
     expect(body.data.excerpt).toBe("Team at 49 feels high. Try 39?")
     expect(body.data.notice).toContain("not instructions")
     expect(body.data.url).toStartWith("https://worktable.example/")
+    // Sent to the address that was checked; TLS still verifies the name.
+    expect(event!.url).toBe("https://93.184.216.34/mcp-events/cb_1")
+    expect(event!.headers.host).toBe("receiver.example")
+    expect(event!.serverName).toBe("receiver.example")
     expect(event!.headers["webhook-id"]).toBe(body.eventId)
     const timestamp = event!.headers["webhook-timestamp"]!
     const expected = createHmac("sha256", Buffer.alloc(32, 7))
@@ -272,6 +287,55 @@ describe("MCP Events", () => {
     jest.useRealTimers()
     await comment("pricing", "Never sent: the subscription ended.")
     await Bun.sleep(100)
+    expect(events(sent)).toHaveLength(3)
+  })
+
+  it("refuses private addresses in every spelling, IPv4 inside IPv6 included", () => {
+    for (const address of [
+      "127.0.0.1",
+      "10.1.2.3",
+      "169.254.169.254",
+      "::1",
+      "::",
+      "::ffff:127.0.0.1",
+      "::ffff:7f00:1",
+      "::ffff:a01:203",
+      "0:0:0:0:0:ffff:192.168.1.1",
+      "64:ff9b::a00:1",
+      "fe80::1",
+      "fd12:3456::1",
+      "2001:db8::1",
+      "not-an-address",
+    ])
+      expect([address, privateAddress(address)]).toEqual([address, true])
+    for (const address of [
+      "93.184.216.34",
+      "2606:4700::1111",
+      "::ffff:5db8:d822",
+    ])
+      expect([address, privateAddress(address)]).toEqual([address, false])
+  })
+
+  it("sends nothing more once the receiver answers 410, though events were queued", async () => {
+    const sent: Sent[] = []
+    const statuses = [503, 503, 410, 200]
+    const transport = callback(sent, { status: () => statuses.shift() ?? 200 })
+    await subscribe(caller, params(), transport)
+    stop = startMcpEventsRuntime({ transport })
+    await comment("pricing", "First.")
+    await comment("pricing", "Second.")
+    await until(() => events(sent).length === 2)
+    await stop()
+    // Both wait in the outbox. Past their retry delay, one drain finds both.
+    setSystemTime(new Date(Date.now() + 60_000))
+    try {
+      stop = startMcpEventsRuntime({ transport })
+      await until(() => events(sent).length >= 3)
+      await Bun.sleep(200)
+    } finally {
+      setSystemTime()
+    }
+    // The first retry got 410: the second must not be sent after it.
     expect(events(sent)).toHaveLength(3)
   })
 })

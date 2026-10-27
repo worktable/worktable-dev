@@ -34,6 +34,7 @@ import {
   onPendingChange,
   pendingFor,
 } from "./pending-list.ts"
+import { announceSeen } from "./pending-read.ts"
 import {
   noticesFor,
   renderNotices,
@@ -274,55 +275,106 @@ export function webhookSignature(
     .join(" ")
 }
 
-function privateAddress(address: string): boolean {
-  if (isIP(address) === 4) {
-    const [a, b] = address.split(".").map(Number) as [number, number]
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      a >= 224
-    )
-  }
-  const lower = address.toLowerCase()
-  if (lower.startsWith("::ffff:")) return privateAddress(lower.slice(7))
+/** IPv4 ranges a callback may never reach. */
+function blockedIpv4([a, b, c]: number[]): boolean {
   return (
-    lower === "::" ||
-    lower === "::1" ||
-    lower.startsWith("fc") ||
-    lower.startsWith("fd") ||
-    lower.startsWith("fe8") ||
-    lower.startsWith("fe9") ||
-    lower.startsWith("fea") ||
-    lower.startsWith("feb") ||
-    lower.startsWith("ff")
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b! >= 64 && b! <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b! >= 16 && b! <= 31) ||
+    (a === 192 && b === 0 && c === 0) ||
+    (a === 192 && b === 168) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    a! >= 224
   )
 }
 
+/** The eight 16-bit groups of an IPv6 address, in any of its spellings. */
+function ipv6Groups(address: string): number[] | null {
+  let text = address.toLowerCase().split("%")[0]!
+  const dotted = /(\d+\.\d+\.\d+\.\d+)$/.exec(text)?.[1]
+  if (dotted) {
+    if (isIP(dotted) !== 4) return null
+    const [a, b, c, d] = dotted.split(".").map(Number) as number[]
+    text = `${text.slice(0, -dotted.length)}${((a! << 8) | b!).toString(16)}:${((c! << 8) | d!).toString(16)}`
+  }
+  const halves = text.split("::")
+  if (halves.length > 2) return null
+  const head = halves[0] ? halves[0].split(":") : []
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : []
+  const missing = 8 - head.length - tail.length
+  if (halves.length === 1 ? missing !== 0 : missing < 1) return null
+  const groups = [
+    ...head,
+    ...Array<string>(halves.length === 2 ? missing : 0).fill("0"),
+    ...tail,
+  ].map((group) => (/^[0-9a-f]{1,4}$/.test(group) ? parseInt(group, 16) : NaN))
+  return groups.some(Number.isNaN) ? null : groups
+}
+
+/**
+ * Whether an address is private, local or otherwise not a public callback.
+ * IPv4 written inside IPv6 (mapped, compatible or NAT64) is checked as IPv4.
+ * Anything that doesn't parse is refused.
+ */
+export function privateAddress(address: string): boolean {
+  const kind = isIP(address)
+  if (kind === 4) return blockedIpv4(address.split(".").map(Number))
+  const g = kind === 6 ? ipv6Groups(address) : null
+  if (!g) return true
+  const ipv4 = () => [g[6]! >> 8, g[6]! & 255, g[7]! >> 8, g[7]! & 255]
+  if (g.slice(0, 5).every((group) => group === 0)) {
+    if (g[5] === 0xffff) return blockedIpv4(ipv4())
+    // ::, ::1 and the deprecated IPv4-compatible ::/96.
+    if (g[5] === 0) return g[6] === 0 || blockedIpv4(ipv4())
+  }
+  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0))
+    return blockedIpv4(ipv4())
+  return (
+    (g[0]! & 0xfe00) === 0xfc00 ||
+    (g[0]! & 0xffc0) === 0xfe80 ||
+    (g[0]! & 0xff00) === 0xff00 ||
+    (g[0] === 0x2001 && g[1] === 0x0db8)
+  )
+}
+
+/** A request pinned to a checked address; TLS still verifies the hostname. */
+export type PinnedInit = RequestInit & { tls?: { serverName?: string } }
+
 export interface EventsTransport {
-  fetch(url: string, init: RequestInit): Promise<Response>
+  fetch(url: string, init: PinnedInit): Promise<Response>
   /** Every address a host resolves to. */
   resolve(host: string): Promise<string[]>
 }
 
 const defaultTransport: EventsTransport = {
-  fetch: (input, init) => fetch(input, init),
+  fetch: (input, init) => fetch(input, init as RequestInit),
   resolve: async (host) =>
     (await lookup(host, { all: true })).map((entry) => entry.address),
 }
 
+interface Destination {
+  /** The callback as the subscriber gave it, normalised. */
+  href: string
+  /** The same URL with the host replaced by the address that was checked. */
+  connect: string
+  /** The original host, for the Host header and TLS verification. */
+  host: string
+  serverName?: string
+}
+
 /**
- * The callback, when it is a public HTTPS address. Checked again before every
- * request, since a name can resolve elsewhere later.
+ * The callback, when it resolves only to public addresses. The request then
+ * connects to the address that was checked, never resolving the name again,
+ * so a name that changes its answer (DNS rebinding) can't reach a private
+ * address. Checked again before every request.
  */
 async function publicDestination(
   value: string,
   transport: EventsTransport
-): Promise<string> {
+): Promise<Destination> {
   let url: URL
   try {
     url = new URL(value)
@@ -334,13 +386,23 @@ async function publicDestination(
       INVALID_PARAMS,
       "delivery.url must be HTTPS without credentials or a fragment"
     )
-  const host = url.hostname.replace(/^\[|\]$/g, "")
-  const addresses = isIP(host) ? [host] : await transport.resolve(host)
+  const hostname = url.hostname.replace(/^\[|\]$/g, "")
+  const literal = isIP(hostname) !== 0
+  const addresses = literal ? [hostname] : await transport.resolve(hostname)
   if (!addresses.length || addresses.some(privateAddress))
     throw new EventsError(CALLBACK_ENDPOINT_ERROR, "Callback is not public", {
       reason: "blocked_address",
     })
-  return url.href
+  if (literal) return { href: url.href, connect: url.href, host: url.host }
+  const address = addresses[0]!
+  const connect = new URL(url.href)
+  connect.hostname = isIP(address) === 6 ? `[${address}]` : address
+  return {
+    href: url.href,
+    connect: connect.href,
+    host: url.host,
+    serverName: hostname,
+  }
 }
 
 async function post(
@@ -353,10 +415,12 @@ async function post(
   signal?: AbortSignal
 ): Promise<Response> {
   const timestamp = Math.floor(Date.now() / 1000)
-  return transport.fetch(await publicDestination(url, transport), {
+  const destination = await publicDestination(url, transport)
+  return transport.fetch(destination.connect, {
     method: "POST",
     redirect: "error",
     headers: {
+      host: destination.host,
       "content-type": "application/json",
       "webhook-id": id,
       "webhook-timestamp": String(timestamp),
@@ -364,6 +428,9 @@ async function post(
       "x-mcp-subscription-id": subscriptionId,
     },
     body,
+    ...(destination.serverName
+      ? { tls: { serverName: destination.serverName } }
+      : {}),
     signal: signal
       ? AbortSignal.any([signal, AbortSignal.timeout(SEND_TIMEOUT_MS)])
       : AbortSignal.timeout(SEND_TIMEOUT_MS),
@@ -488,7 +555,7 @@ export async function subscribe(
   if (!params.success)
     throw new EventsError(INVALID_PARAMS, "Invalid subscription")
   const { name, delivery, ttlMs } = params.data
-  const url = await publicDestination(delivery.url, transport)
+  const url = (await publicDestination(delivery.url, transport)).href
   const { args } = parseIdentity(name, params.data.arguments, url)
   const principalId = caller.identity.principal.id
   const id = subscriptionId(principalId, url, name, args)
@@ -658,7 +725,8 @@ async function deliver(
     )
     await response.body?.cancel()
     if (response.ok) {
-      markPendingDelivered([event.itemId])
+      // Open comment panels show it as delivered, as after a pending read.
+      announceSeen(markPendingDelivered([event.itemId]))
       return "delivered"
     }
     if (response.status === 410) return "gone"
@@ -740,8 +808,13 @@ export function startMcpEventsRuntime(
         nextAt = Math.min(nextAt, entry.nextAt)
         continue
       }
-      const subscription = file.subscriptions.find(
-        (s) => s.id === entry.subscriptionId
+      // Read again before each send: an earlier send's 410, an unsubscribe
+      // or an expiry since this drain began must stop the rest.
+      const current = await load(path())
+      if (!current.outbox.some((queued) => queued.eventId === entry.eventId))
+        continue
+      const subscription = current.subscriptions.find(
+        (s) => s.id === entry.subscriptionId && s.refreshBefore > Date.now()
       )
       const outcome = subscription
         ? await deliver(subscription, entry, transport, abort.signal)
@@ -794,15 +867,22 @@ export function startMcpEventsRuntime(
       })
   }
 
+  // Queuing in progress. Stopping waits for it, so an item announced just
+  // before shutdown is saved: rebuilding the pending list never announces it
+  // again.
+  const queuing = new Set<Promise<void>>()
   const offPending = onPendingChange((change) => {
     if (change.type !== "added" || !live()) return
-    void enqueue(
+    const queued: Promise<void> = enqueue(
       change.entry.recipient.participantId,
       change.entry.itemId,
       change.entry.createdAt
-    ).catch(() => {
-      console.error("[Worktable] MCP event could not be queued")
-    })
+    )
+      .catch(() => {
+        console.error("[Worktable] MCP event could not be queued")
+      })
+      .finally(() => queuing.delete(queued))
+    queuing.add(queued)
   })
   changeListeners.add(nudge)
   nudge()
@@ -812,7 +892,7 @@ export function startMcpEventsRuntime(
     changeListeners.delete(nudge)
     abort.abort()
     if (timer) clearTimeout(timer)
-    return running ?? Promise.resolve()
+    return Promise.allSettled([...queuing, running]).then(() => undefined)
   }
 }
 

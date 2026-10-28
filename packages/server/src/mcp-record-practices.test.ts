@@ -597,7 +597,7 @@ describe("MCP record queries", () => {
 })
 
 describe("MCP record batches", () => {
-  const preview = { surface: "released" as const }
+  const released = { surface: "released" as const }
 
   async function seedTeam(): Promise<void> {
     await createSpace()
@@ -631,7 +631,7 @@ describe("MCP record batches", () => {
           { recordId: "p-3", data: { title: "Three" } },
         ],
       },
-      preview
+      released
     )) as {
       results: Array<{ row: number; recordId: string; created: boolean }>
       counts: { created: number; skipped: number }
@@ -665,7 +665,7 @@ describe("MCP record batches", () => {
             { recordId: "https://x.test/a", data: { title: "Z" } },
           ],
         },
-        preview
+        released
       )
     ).rejects.toThrow(/Nothing was written: 3 of 4 rows.*row 2 \(bad-1\).*reveiw.*row 3 \(bad-2\).*review must be one of.*row 4 .*recordId must use/)
     const all = (await dispatchOperation("records.query", {
@@ -687,7 +687,7 @@ describe("MCP record batches", () => {
           data: { title: `Post ${id}` },
         })),
       },
-      preview
+      released
     )
     const byIds = (await dispatchOperation(
       "records.update_many",
@@ -697,7 +697,7 @@ describe("MCP record batches", () => {
         recordIds: ["a", "b", "missing"],
         data: { review: "Excluded" },
       },
-      preview
+      released
     )) as { counts: { updated: number; failed: number }; results: Array<{ error?: string }> }
     expect([byIds.counts.updated, byIds.counts.failed]).toEqual([2, 1])
     expect(byIds.results[2]!.error).toContain("Record not found")
@@ -710,7 +710,7 @@ describe("MCP record batches", () => {
         where: { review: { in: ["Excluded"] } },
         data: { review: "Verified" },
       },
-      preview
+      released
     )) as { counts: { updated: number } }
     expect(byFilter.counts.updated).toBe(2)
 
@@ -723,7 +723,7 @@ describe("MCP record batches", () => {
           recordIds: ["a"],
           data: { review: "Maybe" },
         },
-        preview
+        released
       )
     ).rejects.toThrow("Nothing was written")
   })
@@ -774,7 +774,7 @@ describe("MCP record batches", () => {
           url: { type: "url", unique: true },
         },
       },
-      preview
+      released
     )
     const result = (await dispatchOperation(
       "records.create_many",
@@ -787,7 +787,7 @@ describe("MCP record batches", () => {
           { data: { summary: "Second post", url: "https://example.com/2" } },
         ],
       },
-      preview
+      released
     )) as {
       results: Array<{ row: number; recordId: string; created: boolean; matchedBy?: string }>
     }

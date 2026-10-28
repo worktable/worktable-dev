@@ -29,7 +29,6 @@ import {
 import { ThreadError } from "../thread-store.ts"
 import { ThreadParticipantError } from "../participant-store.ts"
 import { ThreadDeliveryError } from "../thread-delivery-store.ts"
-import { configuredMcpSurface } from "../mcp/surface.ts"
 
 const PostThreadSchema = z.object({
   title: ThreadTitleSchema.optional(),
@@ -225,15 +224,6 @@ threadsRouter.post("/", async (c) => {
       400
     )
   }
-  if (parsed.data.title !== undefined && configuredMcpSurface() !== "preview") {
-    return c.json(
-      {
-        error: "Thread naming requires Preview agent tools",
-        code: "PREVIEW_REQUIRED",
-      },
-      403
-    )
-  }
   try {
     const posted = await postThreadMessageWithStored(c.get("identity"), {
       ...parsed.data,
@@ -303,7 +293,6 @@ threadsRouter.get("/:threadId", async (c) => {
         before,
       })),
       canRename:
-        configuredMcpSurface() === "preview" &&
         hasScope(c.get("identity").scopes, "threads:write") &&
         (c.req.param("spaceId")
           ? canAccessSpace(c.req.param("spaceId")!, "edit", c.get("identity"))
@@ -317,15 +306,6 @@ threadsRouter.get("/:threadId", async (c) => {
 threadsRouter.patch("/:threadId", async (c) => {
   const denied = requireThreadScope(c, "threads:write")
   if (denied) return denied
-  if (configuredMcpSurface() !== "preview") {
-    return c.json(
-      {
-        error: "Thread naming requires Preview agent tools",
-        code: "PREVIEW_REQUIRED",
-      },
-      403
-    )
-  }
   const parsed = z
     .object({
       title: ThreadTitleSchema,

@@ -1,5 +1,4 @@
 import { teamsEnabled } from "../team-database.ts";
-import { configuredMcpSurface } from "../mcp/surface.ts";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import {
@@ -199,7 +198,7 @@ export function getDeploymentInfo(): DeploymentInfo {
       // Without Teams the only person here is the owner.
       shareLinks: documentSharing,
       files: filesEnabled(),
-      commentRecipients: configuredMcpSurface() === "preview",
+      commentRecipients: true,
     },
   };
 }

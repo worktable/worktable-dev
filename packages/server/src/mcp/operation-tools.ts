@@ -102,8 +102,9 @@ function buildOperationToolContract(name: OperationToolName) {
   const variant = input.shape.request.options.find(
     (option) => option.shape.action.value === definition.action
   )!
-  const shape: z.ZodRawShape = { ...variant.shape }
-  delete shape.action
+  const shape = Object.fromEntries(
+    Object.entries(variant.shape).filter(([key]) => key !== "action")
+  )
   const operation = WORKTABLE_TOOL_ROUTES[definition.tool][definition.action]!
   const variants = PUBLIC_OPERATION_OUTPUT_VARIANTS[operation]
   // MCP output schemas have an object root. State can return either a

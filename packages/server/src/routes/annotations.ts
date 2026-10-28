@@ -23,7 +23,6 @@ import {
   commentReplier,
 } from "../comment-recipients.ts";
 import { assertSpaceAccess, commentAccess } from "../team-policy.ts";
-import { configuredMcpSurface } from "../mcp/surface.ts";
 import {
   isHtmlDocumentPath,
   usesHtmlDocumentStorageV2,
@@ -126,7 +125,6 @@ function broadcast(spaceId: string, annotationId: string, data: unknown) {
 annotationsRouter.get("/recipients", requireScope("annotations:read"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
   assertSpaceAccess(spaceId, "read", c.get("identity"));
-  if (configuredMcpSurface() !== "preview") return c.json({ participants: [] });
   // Only this Space's people and agents, never the workspace's directory.
   const { participants } = await listThreadParticipantsForDisplay(
     c.get("identity"),

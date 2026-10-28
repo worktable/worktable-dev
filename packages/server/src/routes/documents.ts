@@ -2,7 +2,6 @@ import { teamsEnabled } from "../team-database.ts";
 import { commentReplier } from "../comment-recipients.ts"
 import { passageAuthor } from "../passage-author.ts"
 import { assertSpaceAccess } from "../team-policy.ts"
-import { configuredMcpSurface } from "../mcp/surface.ts"
 import { reservedAnnotationInput } from "../annotation-origin.ts"
 import { visitorCommentPageSummary, visitorCommentReader } from "../visitor-comment-access.ts"
 import { documentSourceDisposition } from "../content-disposition.ts"
@@ -312,14 +311,13 @@ function pageSharing(
   return pageShareAccess(identity, spaceId)
 }
 
-// Who wrote a passage, so a comment on it can go to them (Preview agent tools).
+// Who wrote a passage, so a comment on it can go to them.
 documentsRouter.get("/passage-author", requireScope("documents:read"), async (c) => {
   const path = exactDocumentPath(c.req.query("path"))
   const quote = c.req.query("quote") ?? ""
   if (!path || !quote.trim() || quote.length > 4000) {
     return c.json({ error: "Enter a document path and quote.", code: "VALIDATION_ERROR" }, 400)
   }
-  if (configuredMcpSurface() !== "preview") return c.json({ author: null })
   const spaceId = c.req.param("spaceId") ?? ""
   assertSpaceAccess(spaceId, "read", c.get("identity"))
   const prefix = c.req.query("prefix")

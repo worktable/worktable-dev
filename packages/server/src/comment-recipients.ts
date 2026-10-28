@@ -11,7 +11,6 @@ import { resolveParticipant } from "./participant-store.ts"
 import { listThreadParticipants } from "./thread-service.ts"
 import type { TokenIdentity } from "./token-store.ts"
 import type { CommentReplier } from "./annotation-requests.ts"
-import { configuredMcpSurface } from "./mcp/surface.ts"
 
 /** At most this many recipients on one comment or reply. */
 export const MAX_COMMENT_RECIPIENTS = 10
@@ -32,12 +31,6 @@ export async function commentRecipients(
   names: readonly string[] | undefined
 ): Promise<AnnotationRecipient[]> {
   if (!names?.length) return []
-  // Until agents are told about what reaches them, sending stays a preview.
-  if (configuredMcpSurface() !== "preview") {
-    throw new CommentRecipientError(
-      "Sending comments requires Preview agent tools in Settings → Agents."
-    )
-  }
   if (names.length > MAX_COMMENT_RECIPIENTS) {
     throw new CommentRecipientError(
       `A comment can be sent to at most ${MAX_COMMENT_RECIPIENTS} people and agents`

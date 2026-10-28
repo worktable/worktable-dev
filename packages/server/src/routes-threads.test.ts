@@ -114,7 +114,7 @@ afterEach(async () => {
 })
 
 describe("thread REST routes", () => {
-  it("gates naming on preview and rejects stale edits without changing the conversation", async () => {
+  it("allows naming on released tools and rejects stale edits without changing the conversation", async () => {
     const previous = process.env.WORKTABLE_MCP_PREVIEW
     try {
       process.env.WORKTABLE_MCP_PREVIEW = "0"
@@ -124,10 +124,7 @@ describe("thread REST routes", () => {
         idempotencyKey: "rename-preview",
       })
       const path = `/api/threads/${created.json.threadId}`
-      expect((await request("GET", path)).json.canRename).toBe(false)
-      expect(
-        (await request("PATCH", path, { title: "New topic" })).status
-      ).toBe(403)
+      expect((await request("GET", path)).json.canRename).toBe(true)
       expect(
         (
           await request("POST", "/api/threads", {
@@ -137,8 +134,7 @@ describe("thread REST routes", () => {
             idempotencyKey: "title-disabled",
           })
         ).status
-      ).toBe(403)
-      process.env.WORKTABLE_MCP_PREVIEW = "1"
+      ).toBe(200)
       expect((await request("GET", path)).json.canRename).toBe(true)
       expect(
         (

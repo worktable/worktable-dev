@@ -5,14 +5,12 @@
 
 import {
   LINKED_FILE_LINK_MAX_BYTES,
+  LINKED_FILE_SIZE_HEADER,
   LINKED_REQUEST_MAX_BYTES,
 } from "@worktable/hosted-contract"
 import { redeemFileTicket, type FileTicket } from "./file-tickets.ts"
 import { filesEnabled } from "./files-enabled.ts"
 import { fileLinksRouter, saveFileLinkUpload } from "./routes/file-links.ts"
-
-/** The whole file's size, on every download piece. */
-export const FILE_SIZE_HEADER = "x-worktable-file-size"
 
 /** Each upload in progress holds its file in memory until its last piece. */
 const UPLOADS_AT_ONCE = 2
@@ -118,7 +116,7 @@ export async function sendDownloadPiece(
     return answer({ error: "Past the end of the file.", code: "RANGE" }, 416)
   }
   const headers = new Headers(whole.headers)
-  headers.set(FILE_SIZE_HEADER, String(bytes.byteLength))
+  headers.set(LINKED_FILE_SIZE_HEADER, String(bytes.byteLength))
   headers.set("Cache-Control", "no-store")
   headers.delete("ETag")
   headers.delete("Content-Length")

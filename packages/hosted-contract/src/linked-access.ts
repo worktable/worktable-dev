@@ -218,6 +218,9 @@ export const LINKED_FILE_LINK_MAX_BYTES = 64 * 1024 * 1024
  */
 const FileLinkOffset = z.number().int().min(0).max(LINKED_FILE_LINK_MAX_BYTES)
 
+/** The whole file's size, on every download piece. */
+export const LINKED_FILE_SIZE_HEADER = "x-worktable-file-size"
+
 export const LinkedDestinationBinding = z
   .object({
     installationId: identifier,

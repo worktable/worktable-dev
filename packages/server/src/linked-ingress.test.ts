@@ -11,6 +11,7 @@ import {
   LINKED_ASSERTION_ISSUER,
   LINKED_ASSERTION_TYPE,
   LINKED_ASSERTION_TTL_SECONDS,
+  LINKED_FILE_SIZE_HEADER,
   LINKED_REQUEST_MAX_BYTES,
   VISITOR_HEADERS,
   type ShareVisitor,
@@ -31,7 +32,6 @@ import {
 } from "./share-links-store.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { createLinkedIngress } from "./linked-ingress.ts"
-import { FILE_SIZE_HEADER } from "./linked-file-links.ts"
 import { issueFileTicket } from "./file-tickets.ts"
 import { listAgentConnections } from "./agent-connection-store.ts"
 import { disconnectLink } from "./linked-runtime.ts"
@@ -1053,7 +1053,7 @@ it("carries a file link in pieces: an upload saved after its last piece, and a d
     )
   const head = await read(0)
   expect(head.status).toBe(200)
-  expect(head.headers.get(FILE_SIZE_HEADER)).toBe(String(file.byteLength))
+  expect(head.headers.get(LINKED_FILE_SIZE_HEADER)).toBe(String(file.byteLength))
   expect(head.headers.get("Content-Security-Policy")).toContain("sandbox")
   expect(new Uint8Array(await head.arrayBuffer())).toEqual(first)
   const tail = await read(LINKED_REQUEST_MAX_BYTES)

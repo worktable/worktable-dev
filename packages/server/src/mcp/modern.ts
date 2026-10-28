@@ -278,17 +278,22 @@ async function startPendingWait(
 ) {
   let since = wait.since
   if (since === undefined) {
-    // Wait for what arrives from now on: the count read gives the revision.
-    const counted = await relay<CallToolResult>(
+    // A wait that starts answers at once with what the agent hasn't been
+    // shown; else it waits for what arrives from the revision this read gives.
+    const unshown = await relay<CallToolResult>(
       exchange,
-      pendingCall({ mode: "count" }),
+      pendingCall({
+        mode: "notices",
+        undelivered: true,
+        ...(wait.scope ? { scope: wait.scope } : {}),
+      }),
       ctx
     )
-    if (counted.isError) return counted
-    since = Number(
-      (counted.structuredContent as { revision?: unknown } | undefined)
-        ?.revision ?? 0
-    )
+    const content = unshown.structuredContent as
+      | { revision?: unknown; items?: unknown[] }
+      | undefined
+    if (unshown.isError || content?.items?.length) return unshown
+    since = Number(content?.revision ?? 0)
   }
   const at = new Date().toISOString()
   const task: WaitTask = {

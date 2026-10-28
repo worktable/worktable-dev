@@ -40,6 +40,17 @@ export const threadQueryKeys = {
   spaceParticipants: (spaceId: string) =>
     ["threads", "participants", "space", spaceId] as const,
   allSpaceParticipants: ["threads", "participants", "space"] as const,
+  /** Who a thread at this location can address, with the location's access. */
+  locationParticipants: (location: ThreadLocation) =>
+    location.kind === "space"
+      ? ([
+          "threads",
+          "participants",
+          "space",
+          location.spaceId,
+          "threads",
+        ] as const)
+      : (["threads", "participants"] as const),
 }
 
 export const threadsQueryOptions = (scope: ThreadListScope) =>
@@ -110,10 +121,12 @@ export function useSpaceParticipants(spaceId: string, enabled: boolean) {
   })
 }
 
-export function useThreadParticipants() {
+export function useThreadParticipants(
+  location: ThreadLocation = { kind: "worktable" }
+) {
   return useQuery({
-    queryKey: threadQueryKeys.participants,
-    queryFn: () => listThreadParticipants(),
+    queryKey: threadQueryKeys.locationParticipants(location),
+    queryFn: () => listThreadParticipants(location),
     staleTime: 30_000,
   })
 }

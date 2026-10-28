@@ -8,9 +8,11 @@
 // thread wait does. Either way the answer is the pending read in notices mode,
 // so a wait shows and marks exactly what that read would.
 //
-// A wait selects by revision only, never by what was already shown. Marking
-// is what completes a wait, so a wait that skipped shown items would lose
-// them if its answer were lost on the way: asked again, it would find nothing.
+// A wait that continues (with since) selects by revision only, never by what
+// was already shown. Marking is what completes a wait, so a wait that skipped
+// shown items would lose them if its answer were lost on the way: asked again,
+// it would find nothing. A wait that starts (without since) first returns
+// what the agent hasn't been shown, so nothing sent before it began is missed.
 
 import { resolveParticipant } from "./participant-store.ts"
 import { onPendingChange } from "./pending-list.ts"
@@ -112,6 +114,15 @@ export async function waitForPending(
       input.since,
       (await readPending(reader, { mode: "count" })).revision
     )
+    if (input.since === undefined) {
+      noteWaiting(participant.id)
+      const unshown = await readyPending(reader, {
+        scope: input.scope,
+        since: 0,
+        undelivered: true,
+      })
+      if (unshown) return unshown
+    }
     const seconds = Math.min(
       Math.max(options.seconds ?? PENDING_WAIT_SECONDS, 0),
       PENDING_WAIT_SECONDS
@@ -145,12 +156,12 @@ export async function waitForPending(
 }
 
 /**
- * The pending read in notices mode when something after `since` waits in
- * scope, else null. A read that returns nothing marks nothing.
+ * The pending read in notices mode when something after `since` (and not yet
+ * shown, with `undelivered`) waits in scope, else null. A read that returns nothing marks nothing.
  */
 async function readyPending(
   reader: Reader,
-  input: Pick<PendingReadInput, "scope"> & { since: number }
+  input: Pick<PendingReadInput, "scope" | "undelivered"> & { since: number }
 ): Promise<PendingReadResult | null> {
   const result = await readPending(reader, { ...input, mode: "notices" })
   return result.items?.length ? result : null

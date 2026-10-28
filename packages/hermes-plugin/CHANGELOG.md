@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Thread guidance prefers an event trigger to a timed schedule for watching comments and messages, and says a wait lasts only while the conversation runs.
 - Keep Worktable's message delivery tools away from the Hermes agent under their new names as well. Run `hermes worktable connect` again to update an existing connection.
 - Name new threads with Worktable's current thread tool, and keep naming them on older Worktables.
 

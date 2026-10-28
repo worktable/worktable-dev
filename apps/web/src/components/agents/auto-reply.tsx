@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { AgentConnection, AutoReply } from "@worktable/types"
-import { AGENT_PLATFORMS } from "@worktable/types"
+import { AGENT_PLATFORMS, agentConnectionPlatform } from "@worktable/types"
 import { Button, buttonVariants } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
 import { InfoTip } from "@worktable/ui/components/info-tip"
@@ -17,6 +17,7 @@ import {
 import { useCopy } from "@worktable/ui/hooks/use-copy"
 import { cn } from "@worktable/ui/lib/utils"
 import { removeCloudTask } from "@/lib/agent-connections-api"
+import { SetupStep } from "./setup-step"
 
 /** What a person pastes into their agent to turn auto-reply on. */
 export const AUTO_REPLY_PROMPT =
@@ -103,6 +104,15 @@ function About({ connection }: { connection: AgentConnection }) {
         </a>
       </>
     )
+  if (
+    kind === "session" &&
+    agentConnectionPlatform(connection) !== "claude-code"
+  )
+    return (
+      <p>
+        {name} answers what you send it while its conversation keeps running.
+      </p>
+    )
   if (kind === "session")
     return (
       <>
@@ -147,31 +157,42 @@ export function CopyLine({ text }: { text: string }) {
 }
 
 function TurnOn({ connection }: { connection: AgentConnection }) {
-  const chatgpt = connection.platform === "chatgpt"
-  const where =
-    connection.autoReply?.kind === "chat"
-      ? chatgpt
-        ? "a Work chat in ChatGPT"
-        : `a chat in ${AGENT_PLATFORMS[connection.platform].name}`
-      : `${AGENT_PLATFORMS[connection.platform].name} in your terminal`
+  const platform = agentConnectionPlatform(connection)
+  const chatgpt = platform === "chatgpt"
+  const app = AGENT_PLATFORMS[platform].name
   return (
     <Popover>
       <PopoverTrigger render={<Button variant="outline" size="sm" />}>
         Turn on
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 gap-3 p-3">
-        <p className="text-sm">Paste this into {where}.</p>
-        <CopyLine text={AUTO_REPLY_PROMPT} />
-        {chatgpt && (
-          <a
-            href="https://chatgpt.com/"
-            target="_blank"
-            rel="noreferrer"
-            className={cn(buttonVariants({ size: "sm" }), "self-start")}
+      <PopoverContent align="end" className="w-80 p-3">
+        <ol className="space-y-1">
+          <SetupStep number={1} title="Copy this">
+            <CopyLine text={AUTO_REPLY_PROMPT} />
+          </SetupStep>
+          <SetupStep
+            number={2}
+            title={
+              connection.autoReply?.kind === "session"
+                ? `Paste it into ${app} in your terminal`
+                : `Paste it into ${app}`
+            }
           >
-            Open ChatGPT
-          </a>
-        )}
+            {chatgpt && (
+              <a
+                href="https://chatgpt.com/"
+                target="_blank"
+                rel="noreferrer"
+                className={cn(buttonVariants({ size: "sm" }), "self-start")}
+              >
+                Open ChatGPT
+              </a>
+            )}
+          </SetupStep>
+        </ol>
+        <p className="pl-9 text-xs text-muted-foreground">
+          Replies appear in Worktable.
+        </p>
       </PopoverContent>
     </Popover>
   )

@@ -20,10 +20,14 @@ export type ConversationIdentityOption = Pick<
   "id" | "memberId" | "name" | "default"
 >
 
-export function directAlwaysOnAgentIdentity(
+/**
+ * The agent a person talks to one-to-one, whom their messages there address
+ * without saying so, as the thread's first message did.
+ */
+export function directAgentIdentity(
   members: ThreadMember[],
   identities: ConversationIdentityOption[],
-  participants: Array<Pick<ParticipantRef, "id"> & { alwaysOn?: boolean }>,
+  participants: Array<Pick<ParticipantRef, "id">>,
   viewerMemberId?: string
 ): ConversationIdentityOption | undefined {
   if (!viewerMemberId || members.length !== 2) return undefined
@@ -34,12 +38,9 @@ export function directAlwaysOnAgentIdentity(
   )
   if (
     !agent ||
-    !participants.some(
-      (participant) => participant.id === agent.id && participant.alwaysOn
-    )
-  ) {
+    !participants.some((participant) => participant.id === agent.id)
+  )
     return undefined
-  }
   return identities.find(
     (identity) => identity.memberId === agent.id && identity.default
   )

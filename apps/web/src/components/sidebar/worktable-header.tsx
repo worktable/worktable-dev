@@ -27,7 +27,6 @@ import { openSettings } from "@/lib/settings-open"
 import { RUNTIME_BASE_PATH } from "@/lib/runtime-path"
 import { insideDesktop, switchDesktopWorktable } from "@/lib/desktop-connection"
 import { Skeleton } from "@worktable/ui/components/skeleton"
-import { Badge } from "@worktable/ui/components/badge"
 import { toast } from "@worktable/ui/components/sonner"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import type { MenuSurface } from "@/lib/worktable-menu"
@@ -35,6 +34,13 @@ import type { MenuSurface } from "@/lib/worktable-menu"
 // Warm the list and its data together when the person approaches the menu.
 const loadList = () => import("./worktable-menu-list")
 const WorktableMenuList = lazy(loadList)
+// The list already warms this dependency on intent. Keep it off the startup
+// graph for pages that never open the menu.
+const Badge = lazy(() =>
+  import("@worktable/ui/components/badge").then((module) => ({
+    default: module.Badge,
+  }))
+)
 
 function WorktableMenuLoading() {
   return (
@@ -158,7 +164,11 @@ export function WorktableHeader() {
       <span className="min-w-0 flex-1 truncate">{name}</span>
       {thisMac.data?.worktables.some(
         (worktable) => worktable.current && worktable.linked
-      ) && <Badge variant="outline">Link</Badge>}
+      ) && (
+        <Suspense fallback={null}>
+          <Badge variant="outline">Link</Badge>
+        </Suspense>
+      )}
       <span className="flex max-w-32 min-w-0 items-center text-xs text-muted-foreground">
         <WorktableLocation />
       </span>

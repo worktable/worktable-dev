@@ -216,7 +216,7 @@ test("Link changes refresh Desktop badges; Cloud failures retain only the same a
         {
           id: "ws_client",
           name: "Client Work",
-          linked: enabled,
+          linked: true,
           current: false,
         },
       ],
@@ -241,13 +241,20 @@ test("Link changes refresh Desktop badges; Cloud failures retain only the same a
         state: enabled ? "online" : "paused",
         enabled,
         cloudOrigin: "https://cloud.example",
+        billingWorkspaceId: "hosted_team",
         mcpUrl: "https://cloud.example/mcp",
         account: { user, signingIn: false },
       },
     })
   })
   await page.route("**/api/linked/subscriptions", (route) =>
-    route.fulfill({ json: { worktables: [] } })
+    route.fulfill({
+      json: {
+        worktables: [
+          { id: "hosted_team", name: "Team Worktable", access: "active" },
+        ],
+      },
+    })
   )
   await page.route("**/api/linked/account", (route) => {
     user = null
@@ -270,7 +277,7 @@ test("Link changes refresh Desktop badges; Cloud failures retain only the same a
   await trigger(page).click()
   await expect(teamRow(page)).toBeVisible()
   await expect(current.getByText("Link", { exact: true })).toHaveCount(0)
-  await expect(other.getByText("Link", { exact: true })).toHaveCount(0)
+  await expect(other.getByText("Link", { exact: true })).toBeVisible()
   await expect(
     page.getByText("Couldn’t refresh Worktables.", { exact: true })
   ).toBeVisible()

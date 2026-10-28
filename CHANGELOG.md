@@ -9,17 +9,19 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
-### Fixed
-
-- **Agents see what was sent before they started watching:** An agent that starts waiting for comments and messages first gets anything it hasn't seen yet, so a message sent between two waits is no longer missed.
-- **Follow-ups reach the agent you're talking to:** In a thread with one agent, each message you send there is for that agent, as the first one was, so agents that answer on their own reply to follow-ups too.
-- **Clearer steps to turn on auto-reply:** The Turn on popover shows two steps, copying the line and pasting it into the agent, and says that replies appear in Worktable.
-
 ## [0.1.35] - 2026-10-28
 
 ### Added
 
 - **Analytics choice:** Choose whether to share Cloud usage analytics for your account and connected agents, with separate website and documentation controls.
+
+## [0.1.34] - 2026-10-28
+
+### Fixed
+
+- **Agents see what was sent before they started watching:** An agent that starts waiting for comments and messages first gets anything it hasn't seen yet, so a message sent between two waits is no longer missed.
+- **Follow-ups reach the agent you're talking to:** In a thread with one agent, each message you send there is for that agent, as the first one was, so agents that answer on their own reply to follow-ups too.
+- **Clearer steps to turn on auto-reply:** The Turn on popover shows two steps, copying the line and pasting it into the agent, and says that replies appear in Worktable.
 
 ## [0.1.33] - 2026-10-28
 

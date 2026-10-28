@@ -9,6 +9,8 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.34] - 2026-10-28
+
 ### Fixed
 
 - **Agents see what was sent before they started watching:** An agent that starts waiting for comments and messages first gets anything it hasn't seen yet, so a message sent between two waits is no longer missed.

@@ -2,10 +2,10 @@
   "schema": 1,
   "channels": {
     "stable": {
-      "version": "0.1.32",
-      "tag": "v0.1.32",
-      "commit": "119d1471be49903d8978b8cc7632e42c14ddbb4c",
-      "publishedAt": "2026-10-28T09:34:13.649Z",
+      "version": "0.1.33",
+      "tag": "v0.1.33",
+      "commit": "0267a32f3f80098de812e44fb457a6d913bb0489",
+      "publishedAt": "2026-10-28T15:56:12.540Z",
       "held": false
     },
     "beta": {

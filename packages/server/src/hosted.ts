@@ -196,8 +196,20 @@ export function trustedGatewayReauthorizedAt(req: Request): number | null {
  * gateway routes agents by workspace, so pairing on Cloud depends on it.
  */
 export function hostedAgentBase(req: Request): string | null {
+  return gatewayBase(req, AGENT_ROUTE_HEADERS.BASE)
+}
+
+/**
+ * Where agents reach this workspace's file links, from the gateway. Null
+ * until the gateway forwards them, and then Cloud makes no links.
+ */
+export function hostedFileLinkBase(req: Request): string | null {
+  return gatewayBase(req, AGENT_ROUTE_HEADERS.FILE_LINK_BASE)
+}
+
+function gatewayBase(req: Request, header: string): string | null {
   if (!isHosted() || !gatewaySecret() || !gatewayAdmits(req)) return null
-  const raw = req.headers.get(AGENT_ROUTE_HEADERS.BASE)
+  const raw = req.headers.get(header)
   if (!validHeaderText(raw, 512)) return null
   try {
     const url = new URL(raw)

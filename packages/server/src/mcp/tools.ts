@@ -412,6 +412,7 @@ export function registerTools(
     principal?: RequestPrincipal
     identity?: Pick<TokenIdentity, "agent" | "credentialClass" | "principal">
     surface?: McpSurface
+    fileLinkBase?: string | null
   }
 ): void {
   const scopes = options?.scopes ?? ["*"]
@@ -451,13 +452,13 @@ export function registerTools(
     throw new Error("urlOrigin must be an absolute HTTP(S) URL")
   }
   // File links work where the tools run in this HTTP server, which keeps
-  // their tickets, and the agent reaches it directly: not from a stdio
-  // server in its own process, nor through Worktable Link, which forwards
-  // its own few paths; Cloud keeps files off.
-  const fileLinkOrigin =
-    !configuredUrlOrigin ||
-    isHosted() ||
-    configuredUrlOrigin.includes("/api/mcp/d/")
+  // their tickets, and the agent reaches it: directly, or on Cloud where the
+  // gateway says it forwards them. Not from a stdio server in the agent's
+  // own process, nor through Worktable Link, which forwards its own few
+  // paths.
+  const fileLinkOrigin = isHosted()
+    ? (options?.fileLinkBase ?? null)
+    : !configuredUrlOrigin || configuredUrlOrigin.includes("/api/mcp/d/")
       ? null
       : configuredUrlOrigin
   const restoreRequestHandlerRegistration =

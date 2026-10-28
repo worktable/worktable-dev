@@ -15,6 +15,8 @@ export interface WorktableMcpServerOptions {
   identity?: Pick<TokenIdentity, "agent" | "credentialClass" | "principal">
   /** Defaults to the released surface; runtime callers pass configuredMcpSurface(). */
   surface?: McpSurface
+  /** On Cloud, where the gateway forwards this workspace's file links. */
+  fileLinkBase?: string | null
 }
 
 let namedWorktable: {
@@ -90,6 +92,7 @@ export function createWorktableMcpServer(
     principal: options.principal,
     identity: options.identity,
     surface: options.surface,
+    fileLinkBase: options.fileLinkBase,
   })
   return server
 }

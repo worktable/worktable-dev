@@ -385,6 +385,37 @@ describe("file links for agents", () => {
       expect(linkedRead.structuredContent).not.toHaveProperty("downloadUrl")
       await linkedClient.close()
 
+      // On Cloud, links are made on the address the gateway forwards them
+      // from, and none without it.
+      process.env["WORKTABLE_HOSTED"] = "1"
+      try {
+        const cloud = async (fileLinkBase?: string) => {
+          const hosted = createWorktableMcpServer({
+            version: "test",
+            scopes: ["documents:read", "documents:write"],
+            surface: "preview",
+            urlOrigin: "https://app.example/api/mcp",
+            fileLinkBase,
+          })
+          const client = new Client({ name: "cloud-test", version: "1" })
+          const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
+          await Promise.all([hosted.connect(serverSide), client.connect(clientSide)])
+          const result = await client.callTool({
+            name: "worktable_files_write",
+            arguments: { request: { action: "upload", spaceId, path: "design/cloud.png" } },
+          })
+          await client.close()
+          return result
+        }
+        const forwarded = await cloud("https://app.example/w/ws_123")
+        const { uploadUrl: cloudUrl } = forwarded.structuredContent as { uploadUrl: string }
+        expect(cloudUrl.startsWith("https://app.example/w/ws_123/api/file-links/")).toBe(true)
+        expect((await send(cloudUrl, shot)).status).toBe(201)
+        expect((await cloud()).isError).toBe(true)
+      } finally {
+        delete process.env["WORKTABLE_HOSTED"]
+      }
+
       // Nor from tools running in an agent's own process over stdio, which
       // keeps no links a server could redeem: large files still come inline.
       const stdio = await connect(["documents:read", "documents:write"], "preview")

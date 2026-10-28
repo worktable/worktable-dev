@@ -3,7 +3,7 @@ import { cors } from "hono/cors"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { implicitLoopbackRequestAllowed, requireIdentity } from "../auth.ts"
-import { isHosted } from "../hosted.ts"
+import { hostedFileLinkBase, isHosted } from "../hosted.ts"
 import {
   handleModernMcpRequest,
   modernMcpRequestBody,
@@ -22,6 +22,7 @@ import { runWithTeamIdentity } from "../team-policy.ts"
 // ============================================================
 
 function remoteMcpServerOptions(
+  request: Request,
   identity: TokenIdentity,
   urlOrigin: string
 ): WorktableMcpServerOptions {
@@ -29,6 +30,7 @@ function remoteMcpServerOptions(
     version: "0.0.1",
     scopes: identity.scopes,
     urlOrigin,
+    fileLinkBase: hostedFileLinkBase(request),
     surface: configuredMcpSurface(),
     // The implicit loopback bridge and legacy WORKTABLE_MCP_TOKEN both use
     // ownerIdentity() for authorization, but the caller is still an MCP agent.
@@ -140,7 +142,7 @@ export async function handleRemoteMcpRequest(
   if (modern) {
     return runWithTeamIdentity(identity, () =>
       handleModernMcpRequest(request, modern.body, {
-        server: remoteMcpServerOptions(identity, origin),
+        server: remoteMcpServerOptions(request, identity, origin),
         stream: options.stream ?? false,
       })
     )
@@ -183,7 +185,7 @@ export async function handleRemoteMcpRequest(
     enableJsonResponse: !options.stream,
   })
   const server = createWorktableMcpServer(
-    remoteMcpServerOptions(identity, origin)
+    remoteMcpServerOptions(request, identity, origin)
   )
   await server.connect(transport)
   for (const key of callKeys) bridgeCalls.set(key, server)

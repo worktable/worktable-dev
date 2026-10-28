@@ -73,9 +73,9 @@ const TOOL_GROUPS: Array<{
   },
   {
     title: "Workspace & discovery",
-    matches: (n) => ["worktable_discover", "worktable_spaces", "search", "fetch"].includes(n),
+    matches: (n) => ["worktable_discover", "worktable_spaces", "worktable_state", "worktable_search", "worktable_space_index", "worktable_pending", "search", "fetch"].includes(n) || n.startsWith("worktable_spaces_"),
   },
-  { title: "Documents", matches: (n) => n.includes("_documents_") },
+  { title: "Documents", matches: (n) => n.includes("_documents_") || n.includes("_files_") },
   { title: "Docs", matches: (n) => n.includes("_docs_") },
   { title: "Drawings", matches: (n) => n.includes("_drawings_") },
   { title: "HTML docs", matches: (n) => n.includes("_html_") },

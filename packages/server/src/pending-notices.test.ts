@@ -26,7 +26,7 @@ const clients: Client[] = []
 
 /** One session of Finn: its own connection, the same credential. */
 async function session(
-  surface: "released" | "preview" = "preview"
+  surface: "released" | "preview" = "released"
 ): Promise<Client> {
   const server = createWorktableMcpServer({
     version: "test",
@@ -198,7 +198,7 @@ describe("notices on an agent's tool calls", () => {
     expect(shown).not.toContain("“ship it”")
   })
 
-  it("adds nothing on the released surface", async () => {
-    expect(await readDoc(await session("released"), "pricing", "explorer")).toBeUndefined()
+  it("adds notices on the released surface too", async () => {
+    expect(await readDoc(await session("released"), "pricing", "roadmap")).toContain("Worktable notices")
   })
 })

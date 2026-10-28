@@ -17,7 +17,7 @@ Keep it understandable when opened outside the current conversation.
 
 ## Build the artifact
 
-1. Discover the workspace and related artifacts. Update the existing HTML Doc when it already owns the job. A new HTML Doc needs a `lifetime`: `durable` for interfaces people will return to, `temporary` for a one-off view that only supports current work. Check a document's lifetime with `worktable_documents_read`; change it later with `worktable_documents_write` action `set_lifetime`.
+1. Discover the workspace and related artifacts. Update the existing HTML Doc when it already owns the job. A new HTML Doc needs a `lifetime`: `durable` for interfaces people will return to, `temporary` for a one-off view that only supports current work. Check a document's lifetime with `worktable_files_read`; change it later with `worktable_files_write` action `set_lifetime`.
 2. Before updating an existing HTML Doc, read its complete source with `worktable_html_read` action `read`. List open annotations with `worktable_annotations_read` filtered by its `htmlId`, inspect the context of relevant instructions, and preserve user-owned content that the request does not replace.
 3. Make the purpose and primary action clear. Use the content and task to choose the layout.
 4. Read `worktable_html_read` action `guide` with the `runtime` profile for the authoritative sandbox, bridge, permission, and data contract. Do not treat visual workflow guidance as a server security boundary.
@@ -34,3 +34,5 @@ Keep it understandable when opened outside the current conversation.
 - **Continuity:** explain the artifact without relying on the transcript, link supporting durable work, preserve user-owned content, and make the next update straightforward.
 
 Return `urlToSendInChat` as the entry point and briefly name the durable sources behind the interface. The artifact is complete when its purpose is clear, its important path works with the intended data, and the user can return through one stable link.
+
+On an older connection without file tool names, use `worktable_documents_read` and `worktable_documents_write` with the same advertised actions.

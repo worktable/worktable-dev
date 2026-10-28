@@ -596,8 +596,8 @@ describe("MCP record queries", () => {
   })
 })
 
-describe("MCP record batches (preview)", () => {
-  const preview = { surface: "preview" as const }
+describe("MCP record batches", () => {
+  const preview = { surface: "released" as const }
 
   async function seedTeam(): Promise<void> {
     await createSpace()
@@ -730,7 +730,7 @@ describe("MCP record batches (preview)", () => {
 
   it("returns results that match the listed output schema for every write", async () => {
     await seedTeam()
-    const server = createWorktableMcpServer({ version: "test", surface: "preview" })
+    const server = createWorktableMcpServer({ version: "test", surface: "released" })
     const client = new Client({ name: "batch-test", version: "1" })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
@@ -798,15 +798,6 @@ describe("MCP record batches (preview)", () => {
     ])
   })
 
-  it("is refused to a caller offered the released tools", async () => {
-    await seedTeam()
-    await expect(
-      dispatchOperation("records.create_many", {
-        spaceId: "product",
-        collectionId: "posts",
-        records: [{ data: { title: "x" } }],
-      })
-    ).rejects.toThrow("preview action")
-  })
+
 })
 

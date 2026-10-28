@@ -29,6 +29,16 @@ export const WORKTABLE_TOOL_NAMES = [
 export const PUBLIC_TOOL_NAMES = [
   ...COMPANY_KNOWLEDGE_TOOL_NAMES,
   ...WORKTABLE_TOOL_NAMES,
+  "worktable_files_read",
+  "worktable_files_write",
+  "worktable_state",
+  "worktable_search",
+  "worktable_space_index",
+  "worktable_pending",
+  "worktable_spaces_create",
+  "worktable_spaces_update",
+  "worktable_spaces_archive",
+  "worktable_spaces_restore",
 ] as const
 
 export type PublicToolName = (typeof PUBLIC_TOOL_NAMES)[number]
@@ -136,17 +146,6 @@ export const OPERATION_DEFINITIONS = {
 } as const
 
 export type OperationId = keyof typeof OPERATION_DEFINITIONS
-
-/** Operations only the preview MCP surface offers (see mcp/surface.ts). */
-export const PREVIEW_OPERATIONS: ReadonlySet<OperationId> =
-  new Set<OperationId>([
-    "threads.rename",
-    "records.create_many",
-    "records.update_many",
-    "records.import",
-    "documents.upload",
-    "workspace.pending",
-  ])
 
 function tool(
   scope: string | null,

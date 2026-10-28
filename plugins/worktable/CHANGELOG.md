@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.5] - 2026-10-28
+
+### Changed
+
+- Skills use individual discovery tools and the file tool names, with fallbacks for older connections.
+- Thread guidance covers naming conversations and watching addressed comments and messages.
+- Space setup pins only the one or two Docs to read first.
+
 ## [0.1.4] - 2026-10-09
 
 ### Changed

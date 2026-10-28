@@ -29,15 +29,11 @@ export function mcpPreviewEnvOverride(): boolean | null {
 /**
  * Whether the HTTP endpoint also serves MCP 2026-07-28, the stateless
  * revision that carries its version and capabilities on every request,
- * beside the initialize-based revisions. It follows the preview surface,
- * since what the preview adds next (tasks, events) needs it;
- * WORKTABLE_MCP_MODERN=1 or 0 overrides that for the process, so either can
- * be tried without the other.
+ * beside the initialize-based revisions. Released tasks and events use it.
+ * WORKTABLE_MCP_MODERN=0 remains an off switch for the process.
  */
 export function mcpModernEraEnabled(): boolean {
-  return (
-    envSwitch("WORKTABLE_MCP_MODERN") ?? configuredMcpSurface() === "preview"
-  )
+  return envSwitch("WORKTABLE_MCP_MODERN") ?? true
 }
 
 function envSwitch(name: string): boolean | null {

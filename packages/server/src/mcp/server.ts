@@ -54,11 +54,11 @@ function worktableName(): string | null {
 }
 
 /**
- * Instructions an agent reads on connecting. The preview surface also names
- * the Worktable, so an agent connected to several can tell them apart.
+ * Instructions an agent reads on connecting, naming the Worktable so an agent
+ * connected to several can tell them apart.
  */
-export function serverInstructions(surface: McpSurface = "released"): string {
-  const name = surface === "preview" ? worktableName() : null
+export function serverInstructions(_surface: McpSurface = "released"): string {
+  const name = worktableName()
   return [
     name ? `You are connected to the Worktable ${JSON.stringify(name)}.` : null,
     SERVER_INSTRUCTIONS,

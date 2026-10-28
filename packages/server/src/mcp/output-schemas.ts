@@ -1732,10 +1732,10 @@ export function assertPublicOperationOutput(
 }
 
 /**
- * Output schemas on the preview surface, replacing the released schema for
- * that tool (see PREVIEW_INPUT_SCHEMAS in tools.ts).
+ * Output fields promoted with the released file and collaboration tools.
+ * Existing consumers can continue to read the unchanged fields.
  */
-export const PREVIEW_OUTPUT_SCHEMAS: Partial<
+export const PROMOTED_OUTPUT_SCHEMAS: Partial<
   Record<keyof typeof WORKTABLE_OUTPUT_SCHEMAS, z.ZodType>
 > = {
   worktable_discover: WORKTABLE_OUTPUT_SCHEMAS.worktable_discover.extend({
@@ -1760,7 +1760,7 @@ export const PREVIEW_OUTPUT_SCHEMAS: Partial<
       mediaType: forActions(z.string(), '"read_source" of an image file'),
       downloadUrl: forActions(
         z.string(),
-        '"read_source" of a file, over a direct connection: a short-lived link to its bytes, for curl or a browser'
+        '"read_source" of a file, over a direct, Cloud, or Worktable Link connection: a short-lived link to its bytes, for curl or a browser'
       ),
       downloadExpiresAt: forActions(z.string(), '"read_source" with downloadUrl'),
     }),
@@ -1881,7 +1881,7 @@ export const PREVIEW_OUTPUT_SCHEMAS: Partial<
   }),
 }
 
-/** A preview result, with room for what waits on the caller beside it. */
+/** A result with room for what waits on the caller beside it. */
 export function withNotices(schema: z.ZodType): z.ZodType {
   if (!(schema instanceof z.ZodObject)) return schema
   const extended = schema.extend({

@@ -13,6 +13,7 @@ import type {
   JSONRPCMessage,
 } from "@modelcontextprotocol/sdk/types.js"
 import { z } from "zod"
+import { PendingInput } from "./schemas.ts"
 import { resolveParticipant } from "../participant-store.ts"
 import { currentRequestIdentity } from "../team-policy.ts"
 import {
@@ -108,15 +109,12 @@ export async function handleModernMcpRequest(
 
 function createModernServer(exchange: ModernMcpExchange): Server {
   const { info, instructions } = serverIdentity(exchange.server)
-  // Waits run as MCP tasks only with the preview tools, which have the
-  // pending action they wait on. Events need no preview tool: the subscriber
-  // answers with the released annotation and thread tools.
-  const tasks = exchange.server.surface === "preview"
+  // Pending waits are released. Both tool surfaces use the same task path.
   const server = new Server(info, {
     capabilities: {
       tools: {},
       events: {},
-      ...(tasks ? { extensions: { [TASKS_EXTENSION]: {} } } : {}),
+      extensions: { [TASKS_EXTENSION]: {} },
     } as ServerCapabilities,
     instructions,
   })
@@ -124,22 +122,18 @@ function createModernServer(exchange: ModernMcpExchange): Server {
     relay(exchange, request, ctx)
   )
   server.setRequestHandler("tools/call", (request, ctx) => {
-    const wait = tasks && runsTasks(ctx) ? pendingWait(request) : undefined
+    const wait = runsTasks(ctx) ? pendingWait(request) : undefined
     return wait
       ? (startPendingWait(exchange, request, wait, ctx) as never)
       : relay(exchange, request, ctx)
   })
-  if (tasks) {
-    server.setRequestHandler(
-      "tasks/get",
-      { params: TaskParams },
-      (params, ctx) => pendingWaitTask(exchange, params.taskId, ctx)
-    )
-    // A wait holds nothing on the server, so there is nothing to stop or
-    // answer: the client just stops asking.
-    server.setRequestHandler("tasks/cancel", { params: TaskParams }, () => ({}))
-    server.setRequestHandler("tasks/update", { params: TaskParams }, () => ({}))
-  }
+  server.setRequestHandler("tasks/get", { params: TaskParams }, (params, ctx) =>
+    pendingWaitTask(exchange, params.taskId, ctx)
+  )
+  // A wait holds nothing on the server, so there is nothing to stop or
+  // answer: the client just stops asking.
+  server.setRequestHandler("tasks/cancel", { params: TaskParams }, () => ({}))
+  server.setRequestHandler("tasks/update", { params: TaskParams }, () => ({}))
   server.setRequestHandler("events/list", { params: z.unknown() }, () =>
     listEvents()
   )
@@ -188,7 +182,7 @@ async function eventsCall<T>(
 // Waiting for pending items as an MCP task
 // ============================================================
 //
-// worktable_discover action pending with wait: true answers a task-capable
+// worktable_pending with wait: true answers a task-capable
 // client at once with a task. Each tasks/get asks the pending read, as the
 // caller, for items after the revision the wait started from; the first answer
 // with items completes the task with exactly what that read returned, and
@@ -234,27 +228,34 @@ function pendingWait(request: {
   params?: Record<string, unknown>
 }): WaitArgs | undefined {
   const args = request.params?.["arguments"] as
-    | { request?: Record<string, unknown> }
+    | Record<string, unknown>
     | undefined
-  const read = args?.request
+  const name = request.params?.["name"]
+  const legacy = args?.request as Record<string, unknown> | undefined
+  const read = name === "worktable_pending" ? args : legacy
   if (
-    request.params?.["name"] !== "worktable_discover" ||
-    read?.["action"] !== "pending" ||
-    read["wait"] !== true
+    !(
+      name === "worktable_pending" ||
+      (name === "worktable_discover" && legacy?.["action"] === "pending")
+    ) ||
+    read?.["wait"] !== true
   )
     return undefined
-  const parsed = WaitTask.omit({ v: true, at: true, since: true })
-    .extend({ since: z.number().int().nonnegative().optional() })
-    .safeParse(read)
-  return parsed.success ? parsed.data : undefined
+  const { action: _action, ...legacyArgs } = legacy ?? {}
+  const parsed = PendingInput.strict().safeParse(
+    name === "worktable_pending" ? args : legacyArgs
+  )
+  return parsed.success
+    ? { since: parsed.data.since, scope: parsed.data.scope }
+    : undefined
 }
 
 function pendingCall(read: Record<string, unknown>) {
   return {
     method: "tools/call",
     params: {
-      name: "worktable_discover",
-      arguments: { request: { action: "pending", ...read } },
+      name: "worktable_pending",
+      arguments: read,
     },
   }
 }

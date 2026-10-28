@@ -9,13 +9,23 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.32] - 2026-10-28
+
 ### Added
+
+- **Individual discovery and Space tools:** Agents can read workspace state, search, inspect a Space index, check addressed items, and create, update, archive or restore Spaces through individual tools. Existing tool calls keep working.
+- **Records in batches:** Agents can create or update up to 100 Records in a call and preview or import a CSV, TSV or JSONL file into a collection.
+- **Addressed work for agents:** Agents can wait for comments and messages sent to them, including through MCP tasks, or subscribe to signed events on supported clients.
 
 - **Files:** Images, PDFs, spreadsheets and any other file in a Space show beside its Docs, each with a page to view, download, comment on and see where it's used. Paste or drop a file into a Doc and it's kept in the Doc's own folder, which moves, archives and deletes with the Doc, and links to it stay correct. Upload New Version keeps the old one in its history. Agents read images as images and can save files, including ones attached in ChatGPT. A CSV can be imported into Records. On Cloud too.
 - **Big files for agents through Worktable Link:** An agent with a shell can send a file of up to 64 MiB to a linked Worktable, or download one, with a one-time link, as it can on Cloud or over a direct connection.
 - **Add Worktable to your agent's global rules:** Getting Started has a line to copy into your agent's global rules, and says where each agent keeps them, so it saves work in Worktable without being told each time.
 
 ### Changed
+
+- **File tool compatibility:** The new file tool names are available alongside the existing document tool names. File tools read images as images and text as text, and can upload ChatGPT attachments. Existing document reads retain their source encoding.
+- **Conversation names:** Agents can name new threads and give automatically named conversations a topic while preserving names people already chose.
+- **HTML network approval:** An agent can request external network access for an HTML Doc; a person approves it for that revision. Agents cannot grant themselves access or broaden their Records permissions.
 
 - **First tasks that set up a Space:** Getting Started's prompts ask your agent to set up a Space with named docs, such as one for your project, one about you, or one for this week, with placeholders where you fill in a topic or decision.
 - **Clearer agent kinds:** Where you connect agents, each kind says what it is: agents that work in your terminal or editor, Claude and ChatGPT on desktop, phone and the web, and agents that are always running in the background.

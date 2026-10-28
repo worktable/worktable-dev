@@ -1211,7 +1211,7 @@
           ]
         },
         "wait": {
-          "description": "Wait until something new arrives in scope, then return everything after since as notices, shown before or not. Clients that run MCP tasks wait in the background; others wait up to 25 seconds. After you handle what it returns, call pending with wait again, passing the returned revision as since, to keep listening",
+          "description": "Without since, return at once anything in scope not yet shown to you; else wait until something new arrives, then return everything after since as notices, shown before or not. Clients that run MCP tasks wait in the background; others wait up to 25 seconds. After you handle what it returns, call pending with wait again, passing the returned revision as since, to keep listening",
           "type": "boolean"
         }
       },

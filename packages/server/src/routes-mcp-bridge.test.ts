@@ -431,7 +431,7 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
     expect(unsupported.reply.error?.data?.supported).toEqual(["2026-07-28"])
   })
 
-  it("wakes a task-capable client with what arrives after it starts waiting", async () => {
+  it("answers a wait with what the agent hasn't seen, then with what arrives", async () => {
     const { token } = await createToken({ scopes: ["*"], agent: "claude-code" })
     const { participant } = await resolveParticipant(
       (await verifyToken(token))!
@@ -446,7 +446,7 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
         to: [{ id: participant.id, kind: "agent", name: participant.name }],
       })
     await pendingList()
-    await comment("Seen before the wait started.")
+    await comment("Sent before the wait started.")
     const tasks = { extensions: { "io.modelcontextprotocol/tasks": {} } }
     const wait = (request: Record<string, unknown>) =>
       modernPost(
@@ -464,6 +464,16 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
     expect(discover.reply.result?.capabilities).toMatchObject({
       extensions: { "io.modelcontextprotocol/tasks": {} },
     })
+    type Read = {
+      revision: number
+      items: Array<{ excerpt: string }>
+    }
+    const excerpts = (read: Read) => read.items.map((item) => item.excerpt)
+    // A wait that starts answers at once with what the agent hasn't seen.
+    const first = await wait({ scope: { spaceId: "connected-agents" } })
+    expect(excerpts(first.reply.result?.structuredContent as Read)).toEqual([
+      "Sent before the wait started.",
+    ])
     const started = await wait({ scope: { spaceId: "connected-agents" } })
     expect(started.reply.result).toMatchObject({
       resultType: "task",
@@ -489,10 +499,6 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
     })
 
     await comment("Arrived while waiting.")
-    type Read = {
-      revision: number
-      items: Array<{ excerpt: string }>
-    }
     const done = (await poll(taskId)).reply.result as {
       status: string
       result: { structuredContent: Read }
@@ -509,13 +515,24 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
       result: { structuredContent: { items: read.items } },
     })
 
-    // Without the tasks extension the same call waits in place, bounded.
+    // Without the tasks extension the same call waits in place, bounded. One
+    // that starts without since, after something arrived between waits,
+    // still gets it.
+    await comment("Sent between waits.")
+    const between = (
+      await modernPost(
+        "tools/call",
+        { name: "worktable_pending", arguments: { wait: true } },
+        { token }
+      )
+    ).reply.result?.structuredContent as Read
+    expect(excerpts(between)).toEqual(["Sent between waits."])
     const held = modernPost(
       "tools/call",
       {
         name: "worktable_discover",
         arguments: {
-          request: { action: "pending", wait: true, since: read.revision },
+          request: { action: "pending", wait: true, since: between.revision },
         },
       },
       { token }
@@ -540,12 +557,13 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
     expect(
       recovered.result.structuredContent.items.map((item) => item.excerpt)
     ).toEqual([
-      "Seen before the wait started.",
+      "Sent before the wait started.",
       "Arrived while waiting.",
+      "Sent between waits.",
       "Arrived during a held wait.",
       "Arrived after the list forgot.",
     ])
-    // That answer marked all four shown; a repeated poll still gets them.
+    // That answer marked all five shown; a repeated poll still gets them.
     expect((await poll(forgotten)).reply.result).toMatchObject({
       status: "completed",
       result: {

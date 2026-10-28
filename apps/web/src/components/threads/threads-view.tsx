@@ -73,7 +73,7 @@ import { availableParticipantSelection } from "@/lib/thread-replies"
 import {
   availableConversationIdentities,
   conversationIdentityDescription,
-  directAlwaysOnAgentIdentity,
+  directAgentIdentity,
   resolveReplyTarget,
   threadExcerpt,
   threadMentionRequestsResponse,
@@ -371,7 +371,7 @@ function ThreadDetail({
   const directAgentResponseFor = (
     availableParticipants: typeof participants
   ) => {
-    const identity = directAlwaysOnAgentIdentity(
+    const identity = directAgentIdentity(
       threadMembers,
       targetIdentities,
       availableParticipants,
@@ -398,7 +398,7 @@ function ThreadDetail({
     }
   }
   const directAgentResponse = directAgentResponseFor(participants)
-  const directAgentIdentity = directAgentResponse.identity
+  const directAgent = directAgentResponse.identity
   const directAgentResponseIsImplicit = directAgentResponse.implicit
   const effectiveResponseIdentityId = directAgentResponse.responseIdentityId
   const fingerprint = buildSubmissionFingerprint({
@@ -744,7 +744,7 @@ function ThreadDetail({
             activities={threadQuery.data.activities}
             viewerMemberId={threadQuery.data.viewerMemberId}
             viewerIdentityId={threadQuery.data.viewerIdentityId}
-            implicitResponseIdentityId={directAgentIdentity?.id}
+            implicitResponseIdentityId={directAgent?.id}
             onReply={(messageId) => void selectReplyTarget(messageId, false)}
             onRespond={(messageId) => void selectReplyTarget(messageId, true)}
             onAssign={(messageId, identityId) =>

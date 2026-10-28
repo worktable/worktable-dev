@@ -38,7 +38,7 @@ When the connected tools offer thread naming, give new threads a concise, specif
 
 ## Check addressed messages
 
-An authenticated agent owns delivery only while its adapter or skill is running; this skill is not a background listener.
+An authenticated agent owns delivery only while its adapter or skill is running. To keep answering what is sent to you, see Watch for what is sent to you.
 
 1. Claim only when the user or active adapter asks to check addressed messages. Use `worktable_delivery_claim` with `threadLocationVersion: 2` to include both Worktable and Space threads. If none is waiting, say so and stop.
 2. Preserve the authenticated participant returned by the connection. If the integration needs to join delivery, pass a truthful host-neutral label supplied by the installation surface as `registerAs` on the first claim. Ordinary message posting does not register participants.
@@ -48,7 +48,14 @@ An authenticated agent owns delivery only while its adapter or skill is running;
 
 ## Watch for what is sent to you
 
-When your user asks you to watch for comments or messages, call `worktable_pending` with `wait: true`. Add a `scope` when the work is one Space, Doc or thread. It returns once something new arrives. Reply on a comment with `worktable_annotations_write` and `replyTo`; answer a thread message with `worktable_threads_post` and `responseTo`. Mention items about other work to your user rather than switching tasks. Then call `worktable_pending` with `wait: true` again, passing the returned `revision` as `since`, until your user tells you to stop.
+When your user asks you to watch for comments or messages, use the first of these your app supports:
+
+1. **An event trigger.** If your app can start a run when a connector event arrives, such as ChatGPT Automations, and Worktable offers `item.sent_to_you`, create one triggered by that event, with no schedule. Filter it when the work is one Space, Doc or thread. Its prompt: open the item the event names and reply to it in Worktable. Tell your user that replies will appear in Worktable.
+2. **A wait.** Call `worktable_pending` with `wait: true`. Add a `scope` when the work is one Space, Doc or thread. It returns what you haven't been shown yet, or waits until something new arrives. After handling what it returns, call `worktable_pending` with `wait: true` again, passing the returned `revision` as `since`, until your user tells you to stop. A wait lasts only while this conversation is running; tell your user so.
+
+Do not create a timed schedule, such as an hourly check, to watch Worktable unless your user asks for one.
+
+Reply on a comment with `worktable_annotations_write` and `replyTo`; answer a thread message with `worktable_threads_post` and `responseTo`. Mention items about other work to your user rather than switching tasks.
 
 ## Protect the communication boundary
 

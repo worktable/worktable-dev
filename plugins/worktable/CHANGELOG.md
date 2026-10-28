@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Thread guidance has agents that can run on Worktable's events, such as ChatGPT, watch with an event trigger rather than a timed schedule.
+
 ## [0.1.6] - 2026-10-28
 
 ### Changed

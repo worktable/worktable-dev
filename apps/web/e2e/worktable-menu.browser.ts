@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 import { startWebHarness, type WebHarness } from "./harness"
 
 let harness: WebHarness
@@ -18,11 +18,34 @@ function deferred() {
   return { promise, resolve }
 }
 
-const trigger = (page: import("@playwright/test").Page) =>
+const trigger = (page: Page) =>
   page.getByRole("button", { name: /Worktable menu$/ })
 
-const teamRow = (page: import("@playwright/test").Page) =>
+const teamRow = (page: Page) =>
   page.getByRole("menuitem", { name: "Team Worktable", exact: true })
+
+async function desktop(page: Page, list: () => unknown) {
+  await page.exposeFunction("listDesktopWorktables", list)
+  await page.addInitScript(() => {
+    document.addEventListener("DOMContentLoaded", () => {
+      document.documentElement.setAttribute("data-worktable-desktop", "")
+    })
+    Object.assign(window, {
+      __TAURI__: {
+        core: {
+          invoke: async (command: string) =>
+            command === "desktop_workspace_worktables"
+              ? (
+                  window as unknown as {
+                    listDesktopWorktables: () => Promise<unknown>
+                  }
+                ).listDesktopWorktables()
+              : null,
+        },
+      },
+    })
+  })
+}
 
 test.beforeAll(async () => {
   harness = await startWebHarness("worktable-menu-browser")
@@ -36,32 +59,13 @@ test("Desktop entries and Settings stay usable and focused while Cloud loads", a
   page,
 }, info) => {
   const cloud = deferred()
-  await page.addInitScript(() => {
-    document.addEventListener("DOMContentLoaded", () => {
-      document.documentElement.setAttribute("data-worktable-desktop", "")
-    })
-    Object.assign(window, {
-      __TAURI__: {
-        core: {
-          invoke: async (command: string) =>
-            command === "desktop_workspace_worktables"
-              ? {
-                  schemaVersion: 1,
-                  device: "this-mac",
-                  worktables: [
-                    {
-                      id: "ws_client",
-                      name: "Client Work",
-                      linked: false,
-                      current: false,
-                    },
-                  ],
-                }
-              : null,
-        },
-      },
-    })
-  })
+  await desktop(page, () => ({
+    schemaVersion: 1,
+    device: "this-mac",
+    worktables: [
+      { id: "ws_client", name: "Client Work", linked: false, current: false },
+    ],
+  }))
   await page.route("**/api/linked/worktables", async (route) => {
     await cloud.promise
     await route.fulfill({ json: directory })
@@ -187,7 +191,7 @@ test("initial failure offers Retry, keeps the menu open during recovery, and ret
   }
 })
 
-test("refresh failure retains entries, but signing out discards the previous account's list", async ({
+test("Link changes refresh Desktop badges; Cloud failures retain only the same account's entries", async ({
   page,
 }) => {
   let enabled = true
@@ -196,6 +200,32 @@ test("refresh failure retains entries, but signing out discards the previous acc
     email: "owner@example.test",
   }
   let requests = 0
+  let desktopRequests = 0
+  await desktop(page, () => {
+    desktopRequests++
+    return {
+      schemaVersion: 1,
+      device: "this-mac",
+      worktables: [
+        {
+          id: "ws_current",
+          name: "Local Workspace",
+          linked: enabled,
+          current: true,
+        },
+        {
+          id: "ws_client",
+          name: "Client Work",
+          linked: enabled,
+          current: false,
+        },
+      ],
+    }
+  })
+  const current = page
+    .getByRole("menuitem")
+    .filter({ hasText: "Local Workspace" })
+  const other = page.getByRole("menuitem").filter({ hasText: "Client Work" })
   await page.route("**/api/linked/worktables", (route) => {
     requests++
     return route.fulfill(
@@ -226,6 +256,8 @@ test("refresh failure retains entries, but signing out discards the previous acc
   await page.goto(harness.webUrl)
   await trigger(page).click()
   await expect(teamRow(page)).toBeVisible()
+  await expect(current.getByText("Link", { exact: true })).toBeVisible()
+  await expect(other.getByText("Link", { exact: true })).toBeVisible()
   await page.getByRole("menuitem", { name: "Worktable Settings" }).click()
   const settings = page.getByRole("dialog")
   await settings
@@ -233,12 +265,25 @@ test("refresh failure retains entries, but signing out discards the previous acc
     .click()
   await settings.getByRole("switch", { name: "Worktable Link" }).click()
   await expect.poll(() => requests).toBe(2)
+  await expect.poll(() => desktopRequests).toBe(2)
   await page.keyboard.press("Escape")
   await trigger(page).click()
   await expect(teamRow(page)).toBeVisible()
+  await expect(current.getByText("Link", { exact: true })).toHaveCount(0)
+  await expect(other.getByText("Link", { exact: true })).toHaveCount(0)
   await expect(
     page.getByText("Couldn’t refresh Worktables.", { exact: true })
   ).toBeVisible()
+  await page.getByRole("menuitem", { name: "Worktable Settings" }).click()
+  await settings
+    .getByRole("button", { name: "Remote Access", exact: true })
+    .click()
+  await settings.getByRole("switch", { name: "Worktable Link" }).click()
+  await expect.poll(() => desktopRequests).toBe(3)
+  await page.keyboard.press("Escape")
+  await trigger(page).click()
+  await expect(current.getByText("Link", { exact: true })).toBeVisible()
+  await expect(other.getByText("Link", { exact: true })).toBeVisible()
   await page.getByRole("menuitem", { name: "Worktable Settings" }).click()
   await settings
     .getByRole("button", { name: "Remote Access", exact: true })

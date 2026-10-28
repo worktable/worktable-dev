@@ -114,7 +114,7 @@ export function WorktableHeader() {
     retry: false,
   })
   const thisMac = useQuery({
-    queryKey: [...queryKeys.worktableMenu, "desktop"],
+    queryKey: queryKeys.worktableMenuDesktop,
     queryFn: async () =>
       (await import("@/lib/desktop-worktables")).desktopWorktables(),
     enabled: prepared && surface === "desktop",

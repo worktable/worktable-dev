@@ -23,9 +23,10 @@ export const queryKeys = {
   spaces: ["spaces"] as const,
   workspace: ["workspace"] as const,
   storageUpgrade: ["workspace-storage-upgrade"] as const,
-  // The Worktable menu's list; Settings refreshes it when the Cloud account
-  // or Link changes.
+  // The Worktable menu's sources; Settings refreshes both when the Cloud
+  // account or Link changes.
   worktableMenu: ["worktable-menu"] as const,
+  worktableMenuDesktop: ["worktable-menu", "desktop"] as const,
   space: (id: string) => ["spaces", id] as const,
   widget: (spaceId: string, widgetId: string) =>
     ["spaces", spaceId, "widgets", widgetId] as const,

@@ -141,15 +141,24 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
   useEffect(() => {
     if (menuEnabled === undefined) return
     const previous = shownMenuFacts.current
-    if (previous && previous.userId !== menuUserId) {
-      // A failed refresh may retain this account's list, never another account's.
-      void client.resetQueries({
-        queryKey: queryKeys.worktableMenu,
-        exact: true,
-      })
-    } else if (previous && previous.enabled !== menuEnabled) {
+    if (
+      previous &&
+      (previous.userId !== menuUserId || previous.enabled !== menuEnabled)
+    ) {
+      if (previous.userId !== menuUserId) {
+        // A failed refresh may retain this account's list, never another account's.
+        void client.resetQueries({
+          queryKey: queryKeys.worktableMenu,
+          exact: true,
+        })
+      } else {
+        void client.invalidateQueries({
+          queryKey: queryKeys.worktableMenu,
+          exact: true,
+        })
+      }
       void client.invalidateQueries({
-        queryKey: queryKeys.worktableMenu,
+        queryKey: queryKeys.worktableMenuDesktop,
         exact: true,
       })
     }

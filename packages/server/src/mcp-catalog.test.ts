@@ -118,6 +118,24 @@ describe("the listed tools", () => {
     }
   })
 
+  it("accept what any of their operations accepts", () => {
+    // Creating a drawing takes an empty batch; only edits need an operation.
+    const drawings = tool("worktable_drawings_write")
+    const created = drawings.inputSchema.parse({
+      spaceId: "s",
+      path: "flow",
+      requestId: "r",
+      title: "Flow",
+      lifetime: "durable",
+      operations: [],
+    })
+    expect(routeCatalogCall(drawings, created).operations.map(({ id }) => id)).toEqual(["drawings.create"])
+    // Renaming an HTML Doc clears its description with null.
+    const html = tool("worktable_html_write")
+    const renamed = html.inputSchema.parse({ spaceId: "s", htmlId: "app", name: "App", description: null })
+    expect(routeCatalogCall(html, renamed).operations.map(({ id }) => id)).toEqual(["html.rename"])
+  })
+
   it("explain arguments that don't describe one thing to do", () => {
     const file = { spaceId: "s", path: "notes.md" }
     expect(rejects("worktable_files_update", { ...file, newPath: "a.md", archived: true })).toContain("one change per call")

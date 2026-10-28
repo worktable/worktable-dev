@@ -14,6 +14,7 @@ import type {
 } from "@modelcontextprotocol/sdk/types.js"
 import { z } from "zod"
 import { PendingInput } from "./schemas.ts"
+import { matchLegacyCall } from "./legacy-calls.ts"
 import { resolveParticipant } from "../participant-store.ts"
 import { currentRequestIdentity } from "../team-policy.ts"
 import {
@@ -227,12 +228,23 @@ function runsTasks(ctx: ServerContext): boolean {
 function pendingWait(request: {
   params?: Record<string, unknown>
 }): WaitArgs | undefined {
-  const args = request.params?.["arguments"] as
-    | Record<string, unknown>
-    | undefined
-  if (request.params?.["name"] !== "worktable_pending" || args?.["wait"] !== true)
-    return undefined
-  const parsed = PendingInput.strict().safeParse(args)
+  const name = request.params?.["name"]
+  const args = request.params?.["arguments"]
+  // An earlier client asks through worktable_discover action pending.
+  const legacy =
+    typeof name === "string" ? matchLegacyCall(name, args) : null
+  const read =
+    name === "worktable_pending"
+      ? (args as Record<string, unknown> | undefined)
+      : legacy?.ok &&
+          legacy.call.tool === "worktable_discover" &&
+          legacy.call.request["action"] === "pending"
+        ? Object.fromEntries(
+            Object.entries(legacy.call.request).filter(([key]) => key !== "action")
+          )
+        : undefined
+  if (read?.["wait"] !== true) return undefined
+  const parsed = PendingInput.strict().safeParse(read)
   return parsed.success
     ? { since: parsed.data.since, scope: parsed.data.scope }
     : undefined

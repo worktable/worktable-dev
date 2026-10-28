@@ -1392,12 +1392,11 @@
       "type": "object",
       "properties": {
         "name": {
-          "description": "New name in Title Case",
-          "type": "string",
-          "minLength": 1
+          "description": "Space name in Title Case, e.g. 'CMS Research'",
+          "type": "string"
         },
         "description": {
-          "description": "New description",
+          "description": "Optional description",
           "type": "string"
         },
         "icon": {
@@ -1405,7 +1404,7 @@
           "type": "string"
         },
         "group": {
-          "description": "Workspace group name; \"\" clears it",
+          "description": "Optional workspace group name; reuse an existing group when appropriate",
           "type": "string"
         },
         "spaceId": {
@@ -1704,7 +1703,8 @@
       "type": "object",
       "properties": {
         "spaceId": {
-          "type": "string"
+          "type": "string",
+          "description": "ID of the space to list documents in"
         },
         "includeArchived": {
           "description": "When true, include archived documents in the results.",
@@ -4280,11 +4280,11 @@
       "properties": {
         "spaceId": {
           "type": "string",
-          "description": "ID of the space containing the document"
+          "description": "ID of the space to write the document to"
         },
         "docPath": {
           "type": "string",
-          "description": "Path of the document to edit"
+          "description": "Path of the document to create or replace"
         },
         "content": {
           "description": "Whole document content. String = Markdown; Array = BlockNote blocks. Markdown replacing a rich Doc keeps the blocks whose text is unchanged, with their formatting.",
@@ -4299,7 +4299,7 @@
           ]
         },
         "expectedRevision": {
-          "description": "Revision from your latest read. When set, the edit is refused if the Doc changed since; while the Doc is open in Worktable, only if the blocks the edit changes were changed since.",
+          "description": "The revision from your latest read. Required to replace a whole Doc; with edits, the edit is refused if the Doc changed since. While the Doc is open in Worktable, only changes to the blocks you change conflict.",
           "type": "string",
           "minLength": 1,
           "maxLength": 256
@@ -5390,14 +5390,14 @@
       "properties": {
         "spaceId": {
           "type": "string",
-          "description": "ID of the space containing the HTML doc"
+          "description": "ID of the space to create the HTML doc in"
         },
         "id": {
           "description": "Optional portable HTML doc path. Slash-separated segments nest it in sidebar folders. Omit to derive a flat path from name.",
           "type": "string"
         },
         "name": {
-          "description": "Updated display name. Omit to keep current name.",
+          "description": "Display name",
           "type": "string",
           "minLength": 1
         },
@@ -5416,8 +5416,15 @@
           "description": "Temporary documents only: ISO date or date-time when the document archives. Defaults to 7 days from now; later activity can push it out."
         },
         "description": {
-          "description": "Updated description. Omit to keep current description.",
-          "type": "string"
+          "description": "Short description shown in Worktable; null clears it.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "html": {
           "description": "Complete self-contained HTML document. Must follow the Worktable HTML Doc Authoring Contract.",
@@ -5425,7 +5432,7 @@
           "minLength": 1
         },
         "metadata": {
-          "description": "Optional YAML-safe metadata. Omit to keep current metadata.",
+          "description": "Optional YAML-safe metadata",
           "type": "object",
           "propertyNames": {
             "type": "string"
@@ -5433,7 +5440,7 @@
           "additionalProperties": {}
         },
         "permissions": {
-          "description": "Optional HTML doc bridge permissions. Omit to keep current permissions; either way they must stay within the Record access this connection has. Every update turns network access off until a person allows it again.",
+          "description": "Optional HTML doc bridge permissions. Include per-collection record access for every worktable.records call the HTML doc makes; you can grant only Record access this connection has. network=true asks for outbound https requests, which stay blocked until a person allows them in Worktable.",
           "type": "object",
           "properties": {
             "records": {
@@ -7070,7 +7077,6 @@
           "description": "Temporary documents only: ISO date or date-time when the document archives. Defaults to 7 days from now; later activity can push it out."
         },
         "operations": {
-          "minItems": 1,
           "maxItems": 500,
           "type": "array",
           "items": {
@@ -10781,7 +10787,7 @@
           "additionalProperties": {}
         },
         "to": {
-          "description": "Also send the comment to these people or agents, by participant ID or name.",
+          "description": "People or agents to send the comment to, by participant ID or name (worktable_threads_read participants). It waits on each of them until they reply on it.",
           "maxItems": 10,
           "type": "array",
           "items": {

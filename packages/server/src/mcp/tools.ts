@@ -198,6 +198,11 @@ function publicizeResult(
   return record
 }
 
+// Tool contracts are immutable, and a server is built for every request.
+const CATALOG_OUTPUT_SCHEMAS = new Map(
+  CATALOG_TOOLS.map((tool) => [tool.name, withNotices(catalogOutputSchema(tool))])
+)
+
 export function registerTools(
   server: McpServer,
   options?: {
@@ -381,7 +386,7 @@ export function registerTools(
           ...(tool.fileParams ? { "openai/fileParams": tool.fileParams } : {}),
         },
         inputSchema: tool.inputSchema,
-        outputSchema: withNotices(catalogOutputSchema(tool)),
+        outputSchema: CATALOG_OUTPUT_SCHEMAS.get(tool.name),
       },
       async (args: Record<string, unknown>, extra: CallExtra) => {
         let routed

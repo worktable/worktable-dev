@@ -187,7 +187,7 @@ test("Cloud composes relevant sections and saves human preferences", async ({
 
   const settings = await openSettings(page)
   await expect(
-    settings.getByRole("button", { name: "Subscription", exact: true })
+    settings.getByRole("button", { name: "Account", exact: true })
   ).toBeVisible()
   const about = settings.getByRole("button", { name: "About", exact: true })
   await page.evaluate(() => {
@@ -287,7 +287,7 @@ test("self-managed Settings retain local controls and normalize Account requests
   const settings = page.getByRole("dialog")
   await expect(settings.getByRole("heading", { name: "General" })).toBeVisible()
   await expect(
-    settings.getByRole("button", { name: "Subscription", exact: true })
+    settings.getByRole("button", { name: "Account", exact: true })
   ).toHaveCount(0)
   await expect(
     settings.getByText("Worktable URL", { exact: true })
@@ -308,7 +308,7 @@ test("self-managed Settings retain local controls and normalize Account requests
 
 })
 
-test("Cloud mobile settings keeps the Subscription section reachable", async ({
+test("Cloud mobile settings keeps the Account section reachable", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 })
@@ -320,10 +320,10 @@ test("Cloud mobile settings keeps the Subscription section reachable", async ({
   await page.getByRole("button", { name: /^Toggle sidebar/ }).click()
   await page.getByRole("button", { name: "Settings", exact: true }).click()
   const settings = page.getByRole("dialog")
-  const subscription = settings.getByRole("button", {
-    name: "Subscription",
+  const account = settings.getByRole("button", {
+    name: "Account",
     exact: true,
   })
-  await subscription.click()
-  await expect(subscription).toHaveAttribute("aria-pressed", "true")
+  await account.click()
+  await expect(account).toHaveAttribute("aria-pressed", "true")
 })

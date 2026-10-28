@@ -41,6 +41,7 @@ import * as decoding from "lib0/decoding"
 import { getServerEditor } from "./blocknote"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch"
 import { createRegisteredDocument } from "./document-write-service"
+import { resolveCloudTeamAgentCredential, resolveVerifiedCloudMember } from "./team-cloud"
 
 const names = [
   "WORKTABLE_HOSTED",
@@ -54,6 +55,7 @@ const names = [
   ENV.OWNER_SUBJECT,
   ENV.RESOURCE_URL,
   ENV.BROWSER_ASSERTION_KEYRING,
+  ENV.AUTH_SERVER_URL,
 ]
 let previous: Array<string | undefined>
 let root: string
@@ -147,6 +149,12 @@ afterEach(async () => {
 
 const publicOrigin = "https://app.worktable.cloud"
 const assertionSecret = base64url.encode(new Uint8Array(32).fill(7))
+const cloudProof = {
+  issuer: "https://identity.example.test",
+  subject: "user_analytics",
+  email: "analytics@example.test",
+  name: "Analytics tester",
+}
 
 async function hostedHeaders(
   path: string,
@@ -163,6 +171,7 @@ async function hostedHeaders(
   const token = await new SignJWT({
     wt: {
       credential: "browser",
+      identity: cloudProof,
       workspaceId: "worktable_test",
       requestHash: base64url.encode(new Uint8Array(digest)),
       scopes: [...HOSTED_BROWSER_SCOPES],
@@ -295,6 +304,7 @@ async function editThroughSocket(
 describe("consented committed-work analytics", () => {
   test("hosted sockets and HTML broker preserve saves across withdrawal and collector failure", async () => {
     process.env[ENV.OWNER_SUBJECT] = "user_analytics"
+    process.env[ENV.AUTH_SERVER_URL] = cloudProof.issuer
     process.env[ENV.RESOURCE_URL] = `${publicOrigin}/api/mcp`
     process.env[ENV.BROWSER_ASSERTION_KEYRING] = JSON.stringify([
       { kid: "v1", secret: assertionSecret, state: "signing" },
@@ -538,17 +548,24 @@ describe("consented committed-work analytics", () => {
     expect(JSON.stringify(events)).not.toContain("Private-->")
   })
   test("captures metadata for real MCP calls without inputs, results, or duplicate saves", async () => {
-    const identity = ownerIdentity()
-    identity.principal = {
+    process.env[ENV.OWNER_SUBJECT] = cloudProof.subject
+    process.env[ENV.AUTH_SERVER_URL] = cloudProof.issuer
+    const member = await resolveVerifiedCloudMember(publicOrigin, cloudProof)
+    expect(member?.team?.memberId).toBeDefined()
+    const credential = ownerIdentity()
+    credential.principal = {
       id: "oauth:codex:user_analytics",
       type: "agent",
       displayName: "Private agent label",
       authorizedBy: "workos:user_analytics",
     }
-    identity.agent = "managed:codex"
+    credential.agent = "managed:codex"
+    const identity = (await resolveCloudTeamAgentCredential(credential))!
+    expect(identity.team?.credentialKey).toBe(credential.principal.id)
+    expect(identity.principal.id).not.toBe(credential.principal.id)
     const agentGrant: AnalyticsGrant = {
       ...grant(),
-      distinctId: `${identity.principal.id}:worktable:worktable_test`,
+      distinctId: `${credential.principal.id}:worktable:worktable_test`,
       actorType: "agent",
       surface: "mcp",
     }
@@ -564,7 +581,7 @@ describe("consented committed-work analytics", () => {
             Accept: "application/json, text/event-stream",
             "mcp-protocol-version": "2025-06-18",
             [GATEWAY_HEADER]: "gateway_test",
-            [ACTOR_HEADERS.ID]: identity.principal.id,
+            [ACTOR_HEADERS.ID]: credential.principal.id,
             [ACTOR_HEADERS.TYPE]: "agent",
             [ACTOR_HEADERS.NAME]: "Private agent label",
             [ACTOR_HEADERS.AUTHORIZED_BY]: "workos:user_analytics",
@@ -649,6 +666,7 @@ describe("consented committed-work analytics", () => {
     expect(
       calls.filter((event) => event.properties.$mcp_error_type === "permission")
     ).toHaveLength(2)
+    expect(events.every((event) => event.distinct_id === agentGrant.distinctId)).toBe(true)
     for (const secret of [
       "Private tool argument",
       "Denied secret",
@@ -699,6 +717,15 @@ describe("consented committed-work analytics", () => {
         identity
       )
     ).not.toBeNull()
+    identity.team = { worktableId: "local-worktable", memberId: "member", userId: "local-user" }
+    identity.principal = { ...identity.principal, id: "human:local-actor" }
+    // Local provenance alone cannot establish the consenting Cloud person.
+    expect(requestAnalyticsContext(new Request("https://app.worktable.cloud/api", { headers }), identity)).toBeNull()
+    identity.cloudIdentity = cloudProof
+    expect(requestAnalyticsContext(new Request("https://app.worktable.cloud/api", { headers }), identity)).not.toBeNull()
+    identity.cloudIdentity = { ...cloudProof, subject: "user_other" }
+    expect(requestAnalyticsContext(new Request("https://app.worktable.cloud/api", { headers }), identity)).toBeNull()
+    identity.cloudIdentity = cloudProof
     headers.set(
       ANALYTICS_HEADER,
       JSON.stringify({ ...grant(), distinctId: "workos:other" })

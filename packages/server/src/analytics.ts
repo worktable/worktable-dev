@@ -50,7 +50,21 @@ export function requestAnalyticsContext(
 ): SaveAnalyticsContext | null {
   if (!configuration() || !gatewayAdmits(request)) return null
   const principal = trustedGatewayPrincipal(request)
-  if (!principal || principal.id !== identity.principal.id) return null
+  // Team authorization resolves external credentials to local actors. Bind the
+  // grant to the credential proof retained by that resolution, not provenance.
+  const credentialPrincipalId = identity.team
+    ? identity.principal.type === "human" && identity.cloudIdentity
+      ? `workos:${identity.cloudIdentity.subject}`
+      : identity.principal.type === "agent"
+        ? identity.team.credentialKey
+        : undefined
+    : identity.principal.id
+  if (
+    !principal ||
+    principal.type !== identity.principal.type ||
+    principal.id !== credentialPrincipalId
+  )
+    return null
   const value = request.headers.get(ANALYTICS_HEADER)
   if (!value || value.length > 2048) return null
   try {

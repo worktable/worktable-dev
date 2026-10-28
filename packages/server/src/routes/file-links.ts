@@ -61,6 +61,18 @@ fileLinksRouter.put("/:token", async (c) => {
   if (!bytes) {
     return c.json({ error: FILE_UPLOAD_TOO_LARGE, code: "PAYLOAD_TOO_LARGE" }, 413)
   }
+  const saved = await saveFileLinkUpload(ticket, bytes)
+  return c.json(saved.body, saved.status)
+})
+
+/**
+ * Save an upload link's bytes as whoever made the link. Its ticket is
+ * already redeemed: here, or by Worktable Link once every piece is in.
+ */
+export async function saveFileLinkUpload(
+  ticket: Extract<FileTicket, { kind: "upload" }>,
+  bytes: Uint8Array
+) {
   try {
     const written = await asMaker(ticket, () =>
       writeUploadedFile({
@@ -72,22 +84,22 @@ fileLinksRouter.put("/:token", async (c) => {
         source: "mcp",
       })
     )
-    return c.json(
-      {
+    return {
+      body: {
         ok: true,
         path: written.result.path,
         sourceRevision: written.result.sourceRevision,
         byteLength: bytes.byteLength,
         contentHash: written.contentHash,
       },
-      written.status
-    )
+      status: written.status,
+    }
   } catch (error) {
     const failure = writeFailure(error)
-    if (failure) return c.json(failure.body, failure.status)
+    if (failure) return failure
     throw error
   }
-})
+}
 
 fileLinksRouter.get("/:token", async (c) => {
   if (!filesEnabled()) return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)

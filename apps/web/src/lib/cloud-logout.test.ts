@@ -11,7 +11,7 @@ afterEach(() => {
 
 test("logout falls back to gateway confirmation when session proof cannot be acquired", async () => {
   const assign = mock(() => {})
-  const dispatchEvent = mock((_event: Event) => true)
+  const dispatchEvent = mock((event: Event) => !event.defaultPrevented)
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: { location: { assign }, dispatchEvent },

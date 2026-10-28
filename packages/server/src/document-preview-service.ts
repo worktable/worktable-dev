@@ -30,7 +30,7 @@ export function previewFailure(sourceRevision: string | null, error: unknown) {
     sourceRevision,
     error: message,
     retry:
-      "Retry the read render action. A successful write remains saved; do not repeat the mutation to retry its preview.",
+      "Retry with worktable_files_render. A successful write remains saved; do not repeat the write to retry its preview.",
   }
 }
 

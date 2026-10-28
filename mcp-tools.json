@@ -1754,7 +1754,7 @@
           "type": "boolean"
         },
         "from": {
-          "description": "Earlier point: a revision from a previous read or write (a sourceRevision rev_..., or a Doc revision md:sha256:... / json:sha256:... from worktable_docs_read), or a version id from action versions",
+          "description": "Earlier point: a revision from a previous read or write (a sourceRevision rev_..., or a Doc revision md:sha256:... / json:sha256:... from worktable_docs_read), or a version id from versions",
           "type": "string",
           "minLength": 1,
           "maxLength": 256
@@ -3832,7 +3832,7 @@
           "description": "Extensionless path, e.g. 'notes/readme'"
         },
         "format": {
-          "description": "markdown (default) returns the text that action edit matches against. blocknote returns the stored BlockNote blocks of a rich Doc instead.",
+          "description": "markdown (default) returns the text that edits match against. blocknote returns the stored BlockNote blocks of a rich Doc instead.",
           "type": "string",
           "enum": [
             "markdown",

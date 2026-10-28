@@ -132,19 +132,38 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
   }, [client, query.data?.state])
   // The Worktable menu lists this account's Worktables and this one's Link,
   // so it asks again once either changes.
-  const menuFacts = query.data
-    ? `${query.data.account.user?.id ?? ""}:${query.data.enabled}`
-    : null
-  const shownMenuFacts = useRef<string | null>(null)
+  const menuUserId = query.data?.account.user?.id ?? ""
+  const menuEnabled = query.data?.enabled
+  const shownMenuFacts = useRef<{
+    userId: string
+    enabled: boolean | null
+  } | null>(null)
   useEffect(() => {
-    if (menuFacts === null) return
-    if (shownMenuFacts.current !== null && shownMenuFacts.current !== menuFacts)
+    if (menuEnabled === undefined) return
+    const previous = shownMenuFacts.current
+    if (
+      previous &&
+      (previous.userId !== menuUserId || previous.enabled !== menuEnabled)
+    ) {
+      if (previous.userId !== menuUserId) {
+        // A failed refresh may retain this account's list, never another account's.
+        void client.resetQueries({
+          queryKey: queryKeys.worktableMenu,
+          exact: true,
+        })
+      } else {
+        void client.invalidateQueries({
+          queryKey: queryKeys.worktableMenu,
+          exact: true,
+        })
+      }
       void client.invalidateQueries({
-        queryKey: queryKeys.worktableMenu,
+        queryKey: queryKeys.worktableMenuDesktop,
         exact: true,
       })
-    shownMenuFacts.current = menuFacts
-  }, [client, menuFacts])
+    }
+    shownMenuFacts.current = { userId: menuUserId, enabled: menuEnabled }
+  }, [client, menuUserId, menuEnabled])
   const signIn = useMutation({
     mutationFn: () =>
       fetchJSON<{ url: string }>("/api/linked/account", { method: "POST" }),

@@ -12,8 +12,13 @@ import { redeemFileTicket, type FileTicket } from "./file-tickets.ts"
 import { filesEnabled } from "./files-enabled.ts"
 import { fileLinksRouter, saveFileLinkUpload } from "./routes/file-links.ts"
 
-/** Each upload in progress holds its file in memory until its last piece. */
+/** Each upload in progress holds its file in memory until it is saved. */
 const UPLOADS_AT_ONCE = 2
+/**
+ * Each download piece reads the whole file, as every file read does, so
+ * pieces take turns: at most this many files are held at once.
+ */
+const DOWNLOAD_PIECES_AT_ONCE = 2
 /** An upload whose next piece doesn't come in this long is dropped. */
 const UPLOAD_IDLE_MS = 2 * 60_000
 
@@ -25,6 +30,9 @@ interface PendingUpload {
 }
 
 const uploads = new Map<string, PendingUpload>()
+let uploadsSaving = 0
+let downloadPieces = 0
+const waitingForPiece: Array<() => void> = []
 
 function answer(body: unknown, status: number, headers?: HeadersInit) {
   return Response.json(body, {
@@ -61,7 +69,7 @@ export async function receiveUploadPiece(
   }
   let upload = uploads.get(token)
   if (!upload && offset === 0) {
-    if (uploads.size >= UPLOADS_AT_ONCE) {
+    if (uploads.size + uploadsSaving >= UPLOADS_AT_ONCE) {
       return answer(
         { error: "Another upload is under way. Try again shortly.", code: "BUSY" },
         429,
@@ -96,8 +104,13 @@ export async function receiveUploadPiece(
     return answer({ ok: true, received: upload.received }, 202)
   }
   uploads.delete(token)
-  const saved = await saveFileLinkUpload(upload.ticket, upload.bytes)
-  return answer(saved.body, saved.status)
+  uploadsSaving++
+  try {
+    const saved = await saveFileLinkUpload(upload.ticket, upload.bytes)
+    return answer(saved.body, saved.status)
+  } finally {
+    uploadsSaving--
+  }
 }
 
 /**
@@ -106,6 +119,24 @@ export async function receiveUploadPiece(
  * so the gateway can tell a file replaced partway and stop.
  */
 export async function sendDownloadPiece(
+  token: string,
+  offset: number,
+  method: "GET" | "HEAD"
+): Promise<Response> {
+  // A piece that finishes hands its turn to the next one waiting.
+  if (downloadPieces >= DOWNLOAD_PIECES_AT_ONCE)
+    await new Promise<void>((resolve) => waitingForPiece.push(resolve))
+  else downloadPieces++
+  try {
+    return await readDownloadPiece(token, offset, method)
+  } finally {
+    const next = waitingForPiece.shift()
+    if (next) next()
+    else downloadPieces--
+  }
+}
+
+async function readDownloadPiece(
   token: string,
   offset: number,
   method: "GET" | "HEAD"

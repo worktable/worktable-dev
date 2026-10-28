@@ -87,7 +87,7 @@ async function openCloudAccount(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Settings", exact: true }).click()
   const settings = page.getByRole("dialog")
   const section = settings.getByRole("button", {
-    name: "Subscription",
+    name: "Account",
     exact: true,
   })
   await section.click()

@@ -27,10 +27,7 @@ import { markUpdateVersionSeen } from "@/lib/update-notification"
 import { RelativeTime } from "@/lib/time"
 import { useWorkspace } from "@/lib/queries"
 import { useServerSettings } from "@/hooks/use-server-settings"
-import {
-  DEPLOYMENT_QUERY_KEY,
-  useDeploymentInfo,
-} from "@/hooks/use-deployment-info"
+import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import {
   DESKTOP_UPDATE_QUERY_KEY,
   noteDesktopCheckRequested,
@@ -80,7 +77,6 @@ export function SystemSection() {
   const deployment = deploymentQuery.data
   const cloud = deployment?.mode === "cloud"
   const desktopUpdate = useDesktopUpdate()
-  const owner = useWorkspace().data?.person?.role === "owner"
 
   if (cloud) {
     return <AboutGroup cloud />
@@ -94,7 +90,6 @@ export function SystemSection() {
     <div className="flex flex-col gap-6">
       <AboutGroup />
       {deployment?.capabilities.previewStatus ? <PreviewsGroup /> : null}
-      {owner ? <PreviewFeaturesGroup /> : null}
       {inDesktop && desktopUpdate.isError ? (
         <DesktopUpdateFrame>
           <StatusRow
@@ -294,46 +289,6 @@ function PreviewsGroup() {
             {withInlineCode(status.reason)}
           </p>
         ) : null}
-      </div>
-    </section>
-  )
-}
-
-// Owners only, and never on Cloud, which ignores the settings. Capabilities
-// follow the switches, so features that read them update with them.
-function PreviewFeaturesGroup() {
-  const queryClient = useQueryClient()
-  const settingsQuery = useServerSettings()
-  const patch = useSettingsPatch()
-  const settings = settingsQuery.data
-  if (settingsQuery.isError) return null
-  const refreshCapabilities = {
-    onSuccess: () =>
-      void queryClient.invalidateQueries({
-        queryKey: DEPLOYMENT_QUERY_KEY,
-        exact: true,
-      }),
-  }
-  const filesOverride = settings?.files.previewOverride ?? null
-  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-col gap-3 rounded-xl card-surface p-4">
-        <SettingRow
-          label="Preview file features"
-          description={
-            filesOverride === null
-              ? "Try file features that aren’t released yet."
-              : "Set by WORKTABLE_FILES_PREVIEW on this server."
-          }
-        >
-          <Switch
-            checked={filesOverride ?? settings?.files.preview ?? false}
-            disabled={!settings || patch.isPending || filesOverride !== null}
-            onCheckedChange={(preview) =>
-              patch.mutate({ files: { preview } }, refreshCapabilities)
-            }
-          />
-        </SettingRow>
       </div>
     </section>
   )

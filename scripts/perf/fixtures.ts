@@ -536,52 +536,45 @@ function chartPng(): Uint8Array {
 }
 
 /**
- * Probes for files, which need the files preview: two images, uploaded as
+ * Probes for files: two images, uploaded as
  * the app uploads them, and a Markdown Doc that embeds both. Fixed content,
  * so the other documents stay as they were.
  */
 async function writeFileProbes(spaceId: string): Promise<void> {
-  const previous = process.env["WORKTABLE_FILES_PREVIEW"]
-  process.env["WORKTABLE_FILES_PREVIEW"] = "1"
-  try {
-    for (const [path, bytes] of [
-      [FILE_PROBE, screenshotPng()],
-      [CHART_PROBE, chartPng()],
-    ] as const)
-      await writeUploadedFile({
-        spaceId,
-        path,
-        bytes,
-        mode: { kind: "create", keepBoth: false },
-        actor: HUMAN.updatedBy,
-        source: HUMAN.source,
-      })
-    const content = [
-      "# With images",
-      "",
-      "A Doc that shows two images kept in this Space.",
-      "",
-      `![Screenshot](${relativeTo(WITH_IMAGES_PROBE, FILE_PROBE)})`,
-      "",
-      "The release plan shipped in three steps, each behind its own flag.",
-      "",
-      `![Chart](${relativeTo(WITH_IMAGES_PROBE, CHART_PROBE)})`,
-      "",
-      "Weekly usage grew in every region after the second step.",
-      "",
-    ].join("\n")
-    const result = await writeManagedFixtureDoc(
+  for (const [path, bytes] of [
+    [FILE_PROBE, screenshotPng()],
+    [CHART_PROBE, chartPng()],
+  ] as const)
+    await writeUploadedFile({
       spaceId,
-      WITH_IMAGES_PROBE,
-      content,
-      HUMAN
-    )
-    if (!result.ok)
-      throw new Error(`${spaceId}/${WITH_IMAGES_PROBE}: ${result.error}`)
-  } finally {
-    if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-    else process.env["WORKTABLE_FILES_PREVIEW"] = previous
-  }
+      path,
+      bytes,
+      mode: { kind: "create", keepBoth: false },
+      actor: HUMAN.updatedBy,
+      source: HUMAN.source,
+    })
+  const content = [
+    "# With images",
+    "",
+    "A Doc that shows two images kept in this Space.",
+    "",
+    `![Screenshot](${relativeTo(WITH_IMAGES_PROBE, FILE_PROBE)})`,
+    "",
+    "The release plan shipped in three steps, each behind its own flag.",
+    "",
+    `![Chart](${relativeTo(WITH_IMAGES_PROBE, CHART_PROBE)})`,
+    "",
+    "Weekly usage grew in every region after the second step.",
+    "",
+  ].join("\n")
+  const result = await writeManagedFixtureDoc(
+    spaceId,
+    WITH_IMAGES_PROBE,
+    content,
+    HUMAN
+  )
+  if (!result.ok)
+    throw new Error(`${spaceId}/${WITH_IMAGES_PROBE}: ${result.error}`)
 }
 
 const FILE_PROBE = "perf/files/shot.png"

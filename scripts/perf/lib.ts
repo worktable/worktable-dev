@@ -297,8 +297,6 @@ export async function startServer(options: {
       PORT: String(port),
       WORKTABLE_WORKSPACE: options.workspace,
       WORKTABLE_APP_DIR: options.app,
-      // Fixtures hold files, which only show with the files preview on.
-      WORKTABLE_FILES_PREVIEW: "1",
       ...options.env,
     },
     stdio: ["ignore", "pipe", "pipe"],

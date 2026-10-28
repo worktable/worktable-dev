@@ -2059,7 +2059,7 @@ function DocTreeItem({
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const userCollapsedNodeRef = useRef(false)
-  const filesOn = useDeploymentInfo().data?.capabilities.filesPreview ?? false
+  const filesOn = useDeploymentInfo().data?.capabilities.files ?? false
   const isFile = node.format?.id === "worktable.file"
   // Files and drawings use the common document operations; with files on,
   // Docs do too, so a Doc's folder goes with it.

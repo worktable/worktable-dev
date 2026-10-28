@@ -38,8 +38,7 @@ blocks) and 5% HTML, spread over 2 to 20 spaces with the first space largest.
 The "Dashboards" space holds the extra HTML documents. Every profile includes
 probe documents in the first space: `perf/rich-2000`, `perf/rich-5000`,
 `perf/markdown` and `perf/html`, and for files two small images uploaded to
-`perf/files/` and `perf/with-images`, a Markdown Doc that embeds both. Perf
-servers run with the files preview on (`WORKTABLE_FILES_PREVIEW=1`).
+`perf/files/` and `perf/with-images`, a Markdown Doc that embeds both.
 
 Documents are written through the managed write path that REST and MCP use,
 so the workspace has real identities, provenance, version history and

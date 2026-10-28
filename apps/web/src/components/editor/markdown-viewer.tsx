@@ -212,7 +212,7 @@ export function MarkdownViewer({
   )
   const { theme } = useTheme()
   // With files on, an image's relative path names a file in this Space.
-  const filesOn = useDeploymentInfo().data?.capabilities.filesPreview ?? false
+  const filesOn = useDeploymentInfo().data?.capabilities.files ?? false
   const worktableOrigins = useMemo(
     () =>
       typeof window === "undefined"

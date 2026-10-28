@@ -6,7 +6,7 @@ import { buildRecordCollectionSchema, createRecord, deleteRecord, getRecordDiagn
 import { recordIndex, recordIndexEnabled } from "../record-index.ts";
 import { noteRecordMutated } from "../search-index.ts";
 import { wsManager } from "../ws.ts";
-import { filesPreviewEnabled } from "../files-preview.ts";
+import { filesEnabled } from "../files-enabled.ts";
 import { importIntoRecords, proposeImport } from "../records-import.ts";
 
 export const recordsRouter = new Hono();
@@ -141,10 +141,10 @@ const ImportBody = z.strictObject({
 
 // Import a CSV, TSV or JSONL file in the Space into a collection: with
 // dryRun, the proposed fields; with columns, those columns imported, by the
-// rules agents' imports keep. Part of the files preview.
+// rules agents' imports keep.
 // Reading the file needs documents:read, as an agent's import does.
 recordsRouter.post("/:collectionId/import", requireScope("records:write"), requireScope("documents:read"), async (c) => {
-  if (!filesPreviewEnabled()) return c.json({ error: "Not found" }, 404);
+  if (!filesEnabled()) return c.json({ error: "Not found" }, 404);
   const parsed = ImportBody.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
     return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);

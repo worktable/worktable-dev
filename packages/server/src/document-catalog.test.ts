@@ -192,9 +192,9 @@ describe("shadow document catalog", () => {
             : [entry.pathKey, "conflict"]
       )
 
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    const previous = process.env["WORKTABLE_FILES"]
     try {
-      process.env["WORKTABLE_FILES_PREVIEW"] = "0"
+      process.env["WORKTABLE_FILES"] = "0"
       expect(await listed()).toEqual([
         [
           "onboarding/signup-flow",
@@ -204,7 +204,7 @@ describe("shadow document catalog", () => {
         ],
       ])
 
-      process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+      process.env["WORKTABLE_FILES"] = "1"
       expect(await listed()).toEqual([
         ["feedback.csv", "worktable.file", "feedback.csv", "legacy-doc-file"],
         [
@@ -238,7 +238,7 @@ describe("shadow document catalog", () => {
       expect((await listed()).find(([path]) => path === "report.png")).toEqual(
         ["report.png", "conflict"]
       )
-      process.env["WORKTABLE_FILES_PREVIEW"] = "0"
+      process.env["WORKTABLE_FILES"] = "0"
       expect(await listed()).toEqual([
         [
           "onboarding/signup-flow",
@@ -249,8 +249,8 @@ describe("shadow document catalog", () => {
         ["report.png", "worktable.markdown", "Report", "legacy-doc-file"],
       ])
     } finally {
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 

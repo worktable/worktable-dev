@@ -216,7 +216,7 @@ export const PREVIEW_TOOL_DESCRIPTIONS: Partial<
 /**
  * Tools the preview surface offers under another name. In the files model a
  * Doc is a kind of file, so the document tools are the file tools. The
- * released surface keeps its names until the files preview ships.
+ * released surface keeps its names while the directories review the new ones.
  */
 export { PREVIEW_TOOL_NAMES } from "./preview-names.ts"
 

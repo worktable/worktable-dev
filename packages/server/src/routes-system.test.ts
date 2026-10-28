@@ -536,7 +536,7 @@ describe("GET /api/system/deployment", () => {
         previewStatus: true,
         documentSharing: false,
         shareLinks: false,
-        filesPreview: false,
+        files: true,
         commentRecipients: false,
       },
     };
@@ -565,7 +565,7 @@ describe("GET /api/system/deployment", () => {
         previewStatus: false,
         documentSharing: false,
         shareLinks: false,
-        filesPreview: false,
+        files: true,
         commentRecipients: false,
       },
     };

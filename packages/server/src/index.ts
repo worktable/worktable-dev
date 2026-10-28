@@ -462,7 +462,7 @@ app.route("/api/agent-connections", agentConnectionsRouter);
 app.route("/api/linked", cloudCallbackRouter);
 // File links for agents carry their own credential, a one-time or
 // short-lived token, so they mount before the general REST identity
-// middleware; each runs as whoever made the link (files preview only).
+// middleware; each runs as whoever made the link.
 app.route("/api/file-links", fileLinksRouter);
 // Public immutable application assets only; this map cannot read workspace files.
 let previewFontStyles:

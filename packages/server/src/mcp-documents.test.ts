@@ -118,8 +118,8 @@ describe("files for agents on the preview surface", () => {
       manifestPath,
       `${JSON.stringify({ ...manifest, version: 2 }, null, 2)}\n`
     )
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
-    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
     try {
       const connected = await connect(
         ["documents:read", "documents:write"],
@@ -275,8 +275,8 @@ describe("files for agents on the preview surface", () => {
       expect(latin1.isError).not.toBe(true)
       expect(latin1.structuredContent).not.toHaveProperty("changes")
     } finally {
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 })
@@ -286,8 +286,8 @@ describe("file links for agents", () => {
     const manifestPath = join(root, "worktable.workspace.json")
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>
     await writeFile(manifestPath, `${JSON.stringify({ ...manifest, version: 2 }, null, 2)}\n`)
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
-    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
     try {
       // The tools run in this Worktable's HTTP server, reached directly.
       const connected = await connect(
@@ -426,8 +426,8 @@ describe("file links for agents", () => {
       expect(local.structuredContent).toMatchObject({ encoding: "base64" })
       expect(local.structuredContent).not.toHaveProperty("downloadUrl")
     } finally {
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 
@@ -435,8 +435,8 @@ describe("file links for agents", () => {
     const manifestPath = join(root, "worktable.workspace.json")
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>
     await writeFile(manifestPath, `${JSON.stringify({ ...manifest, version: 2 }, null, 2)}\n`)
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
-    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
     const csv = new TextEncoder().encode("name,stage\nAcme,won\n")
     const fetched: string[] = []
     const realFetch = globalThis.fetch
@@ -524,8 +524,8 @@ describe("file links for agents", () => {
       expect(documentsWrite?.inputSchema.properties).not.toHaveProperty("file")
     } finally {
       fetchSpy.mockRestore()
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 })
@@ -535,8 +535,8 @@ describe("importing a file into Records", () => {
     const manifestPath = join(root, "worktable.workspace.json")
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>
     await writeFile(manifestPath, `${JSON.stringify({ ...manifest, version: 2 }, null, 2)}\n`)
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
-    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
     try {
       const connected = await connect(
         ["documents:read", "documents:write", "records:read", "records:write"],
@@ -812,8 +812,8 @@ describe("importing a file into Records", () => {
       expect(unscoped.isError).toBe(true)
       expect(JSON.stringify(unscoped.content)).toContain("documents:read")
     } finally {
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 })

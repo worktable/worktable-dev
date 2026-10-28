@@ -10,7 +10,7 @@
 // wait for it.
 
 import { recordExternalFileChanges } from "./document-write-service.ts"
-import { filesPreviewEnabled } from "./files-preview.ts"
+import { filesEnabled } from "./files-enabled.ts"
 import { logError } from "./debug-log.ts"
 
 const SETTLE_MS = 1000
@@ -36,7 +36,7 @@ export function setExternalFileChangeTracker(
 
 /** A file below docs/ changed on disk; keep its version once its Space settles. */
 export function noteExternalFileChange(spaceId: string, path: string): void {
-  if (!filesPreviewEnabled()) return
+  if (!filesEnabled()) return
   const previous = pending.get(spaceId)
   if (previous) clearTimeout(previous.timer)
   const paths = previous?.paths ?? new Set<string>()

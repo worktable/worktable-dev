@@ -64,7 +64,7 @@ const EDITABLE_TYPES = [
 
 /** The types to offer: file fields come with the files preview. */
 function useOfferedTypes(current?: string): readonly string[] {
-  const filesOn = useDeploymentInfo().data?.capabilities.filesPreview ?? false
+  const filesOn = useDeploymentInfo().data?.capabilities.files ?? false
   return filesOn || current === "file"
     ? EDITABLE_TYPES
     : EDITABLE_TYPES.filter((type) => type !== "file")

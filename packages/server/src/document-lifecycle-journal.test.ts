@@ -626,8 +626,8 @@ describe("recoverable document lifecycle", () => {
       ],
     })
 
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
-    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
     setDocumentLifecycleStepHookForTests((step) => {
       if (step === "committed") {
         throw new SimulatedDocumentLifecycleCrash(step)
@@ -642,7 +642,7 @@ describe("recoverable document lifecycle", () => {
     }
 
     // Restarting without the preview must still settle what was planned.
-    process.env["WORKTABLE_FILES_PREVIEW"] = "0"
+    process.env["WORKTABLE_FILES"] = "0"
     try {
       const recovered = recoverInterruptedDocumentLifecycles()
       expect(recovered).toHaveLength(1)
@@ -653,8 +653,8 @@ describe("recoverable document lifecycle", () => {
       )
       expect(existsSync(join(docs, "error.png"))).toBe(false)
     } finally {
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 
@@ -937,7 +937,9 @@ describe("recoverable document lifecycle", () => {
       expect((await resolveDocAlias("space", "old-folder/child")).path).toBe(
         committed ? "old-folder/child" : "folder/child"
       )
-      expect(readFileSync(unclaimed, "utf8")).toBe("Unclaimed file\n")
+      // A file in the folder goes with it, and comes back if the delete does.
+      if (committed) expect(existsSync(unclaimed)).toBe(false)
+      else expect(readFileSync(unclaimed, "utf8")).toBe("Unclaimed file\n")
 
       const catalog = await buildDocumentCatalog({
         workspaceRoot: workspace,

@@ -968,8 +968,8 @@ describe("format-neutral document route", () => {
   }, 10_000)
 
   it("moves, archives, restores and deletes a plain file once files are on", async () => {
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
-    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
     try {
       const instance = app()
       setSystemTime(new Date("2026-10-20T09:00:00.000Z"))
@@ -1026,8 +1026,8 @@ describe("format-neutral document route", () => {
       await expect(access(join(docs, "design", "error.png"))).rejects.toThrow()
       expect(await fileEntry("design/error.png")).toBeUndefined()
     } finally {
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 
@@ -1047,12 +1047,12 @@ describe("format-neutral document route", () => {
         body,
       })
 
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
+    const previous = process.env["WORKTABLE_FILES"]
     try {
-      process.env["WORKTABLE_FILES_PREVIEW"] = "0"
+      process.env["WORKTABLE_FILES"] = "0"
       expect((await upload("design/error.png", "png")).status).toBe(404)
 
-      process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+      process.env["WORKTABLE_FILES"] = "1"
       expect(
         (
           await upload("design/error.png", "png", {
@@ -1152,14 +1152,14 @@ describe("format-neutral document route", () => {
       ).toBe(409)
       expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
     } finally {
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 
   it("keeps a version when a file with history changes on disk", async () => {
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
-    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
     try {
       const instance = app()
       setSystemTime(new Date("2026-10-20T09:00:00.000Z"))
@@ -1211,14 +1211,14 @@ describe("format-neutral document route", () => {
         await recordExternalFileChanges({ spaceId, paths: ["data/dropped.csv"] })
       ).toEqual({ recorded: [] })
     } finally {
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 
   it("names the Docs that use a file on the file's page", async () => {
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
-    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
     try {
       const instance = app()
       await instance.request(
@@ -1266,14 +1266,14 @@ describe("format-neutral document route", () => {
       expect(replaced.page.embeds?.["notes/readme/error.png"]).toBeString()
       expect(replaced.page.embeds?.["notes/readme/error.png"]).not.toBe(version)
     } finally {
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 
   it("moves a Doc together with its folder of sub-Docs and files", async () => {
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
-    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
     try {
       const docs = join(root, "spaces", spaceId, "docs")
       await writeDoc(spaceId, "notes/readme/details", "# Details", {
@@ -1374,14 +1374,14 @@ describe("format-neutral document route", () => {
         "# Readme"
       )
     } finally {
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 
   it("archives and deletes a Doc with its folder, keeping files used elsewhere", async () => {
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
-    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
     try {
       const instance = app()
       setSystemTime(new Date("2026-10-20T09:00:00.000Z"))
@@ -1510,14 +1510,14 @@ describe("format-neutral document route", () => {
         "notes/readme/shared.png"
       )
     } finally {
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 
   it("serves a file as it was at an earlier moment, for an old Doc version", async () => {
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
-    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
     try {
       const instance = app()
       const url = (query: string) =>
@@ -1542,14 +1542,14 @@ describe("format-neutral document route", () => {
       ).toBe(404)
     } finally {
       setSystemTime()
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 
   it("restores a Doc with the images it showed, leaving the shared image as it is", async () => {
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
-    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
     try {
       const instance = app()
       setSystemTime(new Date("2026-10-20T09:00:00.000Z"))
@@ -1625,12 +1625,12 @@ describe("format-neutral document route", () => {
       )
     } finally {
       setSystemTime()
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 
-  it("deletes mixed folders with common write authority while preserving unclaimed files", async () => {
+  it("deletes mixed folders with common write authority, files in them included", async () => {
     const instance = app()
     const forbiddenDelete = await instance.request(
       `/api/spaces/${spaceId}/documents/delete-folder`,
@@ -1698,8 +1698,9 @@ describe("format-neutral document route", () => {
     expect(deletedBody).toMatchObject({
       ok: true,
       path: "notes",
-      count: 3,
+      count: 4,
       paths: expect.arrayContaining([
+        "notes/keep.txt",
         "notes/old",
         "notes/readme",
         "notes/status",
@@ -1707,6 +1708,7 @@ describe("format-neutral document route", () => {
     })
     expect((await readDoc(spaceId, "notes/readme")).data).toBeNull()
     expect((await readWidget(spaceId, "notes/status")).data).toBeNull()
-    expect(await readFile(unclaimed, "utf8")).toBe("Keep this file")
+    // Every file in the folder is part of it, so it goes too.
+    await expect(readFile(unclaimed, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
   }, 10_000)
 })

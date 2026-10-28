@@ -1789,8 +1789,8 @@ describe("share links", () => {
   })
 
   it("shows the images a shared Doc embeds from its Space, and a changed image at once", async () => {
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
-    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
     try {
       const docs = join(workspaceDir, "spaces", "space", "docs")
       await mkdir(join(docs, "spec"), { recursive: true })
@@ -1867,8 +1867,8 @@ describe("share links", () => {
         Buffer.from("later image").toString("base64")
       )
     } finally {
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 

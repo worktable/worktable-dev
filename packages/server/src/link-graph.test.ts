@@ -303,16 +303,16 @@ describe("link graph", () => {
       await write("spec", "# Spec\n\n![Signup error](spec/error.png)\n\n![Gone](spec/gone.png)");
       await write("bug", "# Bug\n\n![Same screen](/spec/error.png)");
 
-      const previous = process.env["WORKTABLE_FILES_PREVIEW"];
+      const previous = process.env["WORKTABLE_FILES"];
       try {
-        process.env["WORKTABLE_FILES_PREVIEW"] = "0";
+        process.env["WORKTABLE_FILES"] = "0";
         noteAllSpacesChanged();
         invalidateLinkGraph();
         let graph = await getSpaceLinkGraph(SPACE);
         expect(graph.inbound.get("spec/error.png")).toBeUndefined();
         expect(graph.broken).toEqual([]);
 
-        process.env["WORKTABLE_FILES_PREVIEW"] = "1";
+        process.env["WORKTABLE_FILES"] = "1";
         noteAllSpacesChanged();
         invalidateLinkGraph();
         graph = await getSpaceLinkGraph(SPACE);
@@ -325,8 +325,8 @@ describe("link graph", () => {
           { docPath: "spec", target: "spec/gone.png", resolvedPath: "spec/gone.png" },
         ]);
       } finally {
-        if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"];
-        else process.env["WORKTABLE_FILES_PREVIEW"] = previous;
+        if (previous === undefined) delete process.env["WORKTABLE_FILES"];
+        else process.env["WORKTABLE_FILES"] = previous;
       }
     });
 
@@ -404,12 +404,14 @@ describe("link graph", () => {
       }
     });
 
-    it("rename leaves the old target reported as broken", async () => {
+    it("a rename outside Worktable leaves the old target reported as broken", async () => {
       await write("hub", "# Hub\n\n[alpha](/alpha)");
       await write("alpha", "# Alpha");
       expect((await getDocLinks(SPACE, "hub")).links[0]?.resolved).toBe(true);
 
       await renameDoc(SPACE, "alpha", "renamed-alpha");
+      // As the watcher reports a change on disk.
+      noteAllSpacesChanged();
       const after = await getDocLinks(SPACE, "hub");
       expect(after.links[0]?.resolved).toBe(false);
       const graph = await getSpaceLinkGraph(SPACE);

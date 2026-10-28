@@ -236,8 +236,8 @@ describe("document rename lifecycle", () => {
   })
 
   it("tells a Docs-only folder rename that the folder holds files", async () => {
-    const previous = process.env["WORKTABLE_FILES_PREVIEW"]
-    process.env["WORKTABLE_FILES_PREVIEW"] = "1"
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
     try {
       await writeDoc("space", "spec", "# Spec")
       await writeDoc("space", "spec/notes", "# Notes")
@@ -246,8 +246,8 @@ describe("document rename lifecycle", () => {
         "This folder holds files as well as Docs. Move it as a folder with move_folder, which needs documents:write."
       )
     } finally {
-      if (previous === undefined) delete process.env["WORKTABLE_FILES_PREVIEW"]
-      else process.env["WORKTABLE_FILES_PREVIEW"] = previous
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
     }
   })
 

@@ -35,7 +35,7 @@ import {
 import { onWorkspaceChange } from "./workspace-events.ts";
 import { canReuseDerived, type DerivedRevision } from "./derived-revision.ts";
 import { readDocumentCatalogSnapshot } from "./document-query.ts";
-import { filesPreviewEnabled } from "./files-preview.ts";
+import { filesEnabled } from "./files-enabled.ts";
 
 export { resolveDocLink } from "@worktable/types";
 
@@ -470,7 +470,14 @@ async function spaceFilePaths(spaceId: string): Promise<Set<string>> {
   const catalog = await readDocumentCatalogSnapshot(spaceId);
   return new Set(
     catalog.entries.flatMap((entry) =>
-      entry.kind === "document" ? [entry.descriptor.path] : [],
+      // One whose source is gone, as after a rename on disk, isn't there to
+      // reach: links to it are broken.
+      entry.kind === "document" &&
+      !entry.handle.diagnostics.some(
+        (diagnostic) => diagnostic.code === "inventory-source-missing",
+      )
+        ? [entry.descriptor.path]
+        : [],
     ),
   );
 }
@@ -514,7 +521,7 @@ async function buildSpaceLinks(spaceId: string, space: SpaceLinks): Promise<void
       docPaths,
       docs,
       aliases,
-      filesPreviewEnabled() ? await spaceFilePaths(spaceId) : null,
+      filesEnabled() ? await spaceFilePaths(spaceId) : null,
     );
     await rebuildHookForTests?.();
     space.docs = docs;

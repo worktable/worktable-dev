@@ -1,7 +1,7 @@
 // Files a person attaches in ChatGPT. A tool that marks a parameter as a
 // file (`_meta["openai/fileParams"]`) receives, instead of the bytes, a
 // short-lived link to them on OpenAI's file hosts, and fetches them itself.
-// Part of the files preview, on the preview surface.
+// On the preview surface.
 
 import type { z } from "zod"
 import {

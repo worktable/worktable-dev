@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test"
 import {
-  loadWorktableMenu,
+  loadCloudDirectory,
   worktableMenuGroups,
   type CloudDirectory,
   type MenuGroup,
@@ -76,9 +76,9 @@ test("Desktop lists this Mac, then other devices, then Cloud, each only when it 
       })
     )
   ).toEqual([
-    ["On this Mac", ["Studio [Link] ✓", "Client Work"]],
+    ["On This Mac", ["Studio [Link] ✓", "Client Work"]],
     [
-      "Other devices",
+      "Other Devices",
       [
         "copy · office-mac → https://copy.example/",
         "home · home-server → https://home.example/",
@@ -110,56 +110,34 @@ test("Desktop lists this Mac, then other devices, then Cloud, each only when it 
         onDevice: true,
       })
     )
-  ).toEqual([["On this Mac", ["Studio [Link] ✓", "Client Work"]]])
+  ).toEqual([["On This Mac", ["Studio [Link] ✓", "Client Work"]]])
 })
 
-test("Desktop showing a Cloud Worktable tells this Mac's linked rows by its device name", async () => {
-  const tauri = globalThis as { __TAURI__?: unknown; window?: unknown }
-  tauri.__TAURI__ = {
-    core: {
-      invoke: async (command: string) => {
-        expect(command).toBe("desktop_workspace_worktables")
-        return { schemaVersion: 1, worktables: thisMac, device: "this-mac" }
-      },
-    },
-  }
-  tauri.window = { location: { origin: "https://cloud.example" } }
-  globalThis.fetch = (async () =>
-    Response.json({
-      ...directory(),
-      worktables: [{ id: "hosted_team", name: "Team", status: "active" }],
-    })) as unknown as typeof fetch
+test("a Cloud tab uses its own session and omits deleted Worktables", async () => {
+  const scope = globalThis as { window?: unknown }
+  scope.window = { location: { origin: "https://cloud.example" } }
+  globalThis.fetch = (async (input, init) => {
+    expect(input).toBe("/api/worktables")
+    expect(init?.credentials).toBe("same-origin")
+    return Response.json({
+      worktables: [
+        { id: "hosted_team", name: "Team", status: "active" },
+        { id: "hosted_deleted", name: "Deleted", status: "deleted" },
+      ],
+      linked: directory().linked,
+    })
+  }) as typeof fetch
   try {
-    const data = await loadWorktableMenu("desktop", true)
-    expect(
-      shown(
-        worktableMenuGroups({
-          surface: "desktop",
-          data,
-          localIds: thisMac.map((worktable) => worktable.id),
-          currentHostedId: "hosted_team",
-          onDevice: true,
-        })
-      ).map(([label, rows]) => [label, rows.length])
-    ).toEqual([
-      ["On this Mac", 2],
-      // The copy on office-mac stays; this Mac's own Studio row doesn't.
-      ["Other devices", 6],
-      ["Worktable Cloud", 1],
-    ])
-    // Without a device name nothing counts as this Mac's own.
-    expect(
-      worktableMenuGroups({
-        surface: "desktop",
-        data: { ...data, directory: { ...data.directory!, device: undefined } },
-        localIds: ["ws_studio"],
-        currentHostedId: null,
-        onDevice: true,
-      })[1]!.rows.length
-    ).toBe(7)
+    expect(await loadCloudDirectory(true)).toEqual({
+      cloudOrigin: "https://cloud.example",
+      worktables: [{ id: "hosted_team", name: "Team", status: "active" }],
+      linked: directory().linked,
+    })
+    globalThis.fetch = (async () =>
+      new Response("Unavailable", { status: 503 })) as typeof fetch
+    await expect(loadCloudDirectory(true)).rejects.toThrow("HTTP 503")
   } finally {
-    delete tauri.__TAURI__
-    delete tauri.window
+    delete scope.window
   }
 })
 
@@ -184,7 +162,7 @@ test("a Cloud tab lists Cloud first with this Worktable checked, then every devi
       ],
     ],
     [
-      "Your devices",
+      "Your Devices",
       [
         "studio · this-mac → https://studio.example/",
         // A loopback address works only on its device, which a Cloud tab
@@ -204,7 +182,7 @@ test("a local page asks once through its Cloud sign-in, and keeps today's menu w
     return answer()
   }) as typeof fetch
 
-  const listed = await loadWorktableMenu("local", false)
+  const listed = { thisMac: null, directory: await loadCloudDirectory(false) }
   expect(asked).toEqual(["/api/linked/worktables"])
   expect(listed.thisMac).toBeNull()
   // A page in a browser lists itself above the groups, so its own linked
@@ -221,7 +199,7 @@ test("a local page asks once through its Cloud sign-in, and keeps today's menu w
       })
     )
   expect(local(true).map(([label, rows]) => [label, rows.length])).toEqual([
-    ["Other devices", 6],
+    ["Other Devices", 6],
     ["Worktable Cloud", 2],
   ])
   expect(local(true)[0]![1].at(-1)).toBe(
@@ -229,8 +207,8 @@ test("a local page asks once through its Cloud sign-in, and keeps today's menu w
   )
   expect(local(false)[0]![1].at(-1)).toBe("scratch · this-mac → -")
 
-  // Signed out, refused to a team member, an older server, or Cloud
-  // unavailable: no groups, so the menu stays as it was.
+  // Signed out, refused to a team member, or an older server legitimately
+  // have no directory. A transient failure must remain retryable.
   for (const response of [
     () => Response.json({ signedIn: false }),
     () =>
@@ -239,10 +217,15 @@ test("a local page asks once through its Cloud sign-in, and keeps today's menu w
         { status: 403 }
       ),
     () => new Response("Not found", { status: 404 }),
-    () =>
-      Response.json({ error: "Could not load Worktables" }, { status: 503 }),
   ]) {
     answer = response
-    expect((await loadWorktableMenu("local", false)).directory).toBeNull()
+    expect(await loadCloudDirectory(false)).toBeNull()
   }
+  answer = () =>
+    Response.json({ error: "Could not load Worktables" }, { status: 503 })
+  await expect(loadCloudDirectory(false)).rejects.toThrow(
+    "Could not load Worktables"
+  )
+  answer = () => Response.json({ signedIn: true, ...directory("this-mac") })
+  expect(await loadCloudDirectory(false)).toMatchObject(directory("this-mac"))
 })

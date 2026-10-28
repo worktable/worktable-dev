@@ -9,6 +9,12 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.36] - 2026-10-28
+
+### Fixed
+
+- **Cloud analytics:** Consented work from team members and connected agents now contributes to usage analytics.
+
 ## [0.1.35] - 2026-10-28
 
 ### Added

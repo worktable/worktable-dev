@@ -241,7 +241,9 @@ function pendingWait(request: {
     read?.["wait"] !== true
   )
     return undefined
-  const { action: _action, ...legacyArgs } = legacy ?? {}
+  const legacyArgs = Object.fromEntries(
+    Object.entries(legacy ?? {}).filter(([key]) => key !== "action")
+  )
   const parsed = PendingInput.strict().safeParse(
     name === "worktable_pending" ? args : legacyArgs
   )

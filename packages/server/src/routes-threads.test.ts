@@ -134,7 +134,7 @@ describe("thread REST routes", () => {
             idempotencyKey: "title-disabled",
           })
         ).status
-      ).toBe(200)
+      ).toBe(201)
       expect((await request("GET", path)).json.canRename).toBe(true)
       expect(
         (

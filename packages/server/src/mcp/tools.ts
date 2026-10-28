@@ -279,13 +279,6 @@ const WRITE_ANNOTATIONS = {
   openWorldHint: false,
 } as const
 
-const ADDITIVE_WRITE_ANNOTATIONS = {
-  readOnlyHint: false,
-  destructiveHint: false,
-  idempotentHint: false,
-  openWorldHint: false,
-} as const
-
 function toolMetadata(
   toolName: WorktableToolName,
   annotations: {
@@ -293,8 +286,7 @@ function toolMetadata(
     destructiveHint: boolean
     idempotentHint: boolean
     openWorldHint: boolean
-  },
-  _surface: McpSurface = "released"
+  }
 ) {
   const title = FILE_TOOL_TITLES[toolName] ?? TOOL_TITLES[toolName]
   return {
@@ -587,20 +579,21 @@ export function registerTools(
   })
 
   for (const name of Object.keys(OPERATION_TOOLS) as OperationToolName[]) {
-    const {
-      tool,
-      title,
-      description,
-      action: _action,
-      ...annotations
-    } = OPERATION_TOOLS[name]
+    const definition = OPERATION_TOOLS[name]
+    const { tool, title, description } = definition
     const contract = operationToolContract(name)
     server.registerTool(
       name,
       {
         title,
         description,
-        annotations: { title, ...annotations, openWorldHint: false },
+        annotations: {
+          title,
+          readOnlyHint: definition.readOnlyHint,
+          destructiveHint: definition.destructiveHint,
+          idempotentHint: definition.idempotentHint,
+          openWorldHint: false,
+        },
         ...oauthToolMetadata(),
         inputSchema: contract.inputSchema,
         outputSchema: contract.outputSchema,
@@ -612,15 +605,11 @@ export function registerTools(
   server.registerTool(
     "worktable_discover",
     {
-      ...toolMetadata(
-        "worktable_discover",
-        {
-          ...READ_ONLY_ANNOTATIONS,
-          readOnlyHint: false,
-          idempotentHint: false,
-        },
-        surface
-      ),
+      ...toolMetadata("worktable_discover", {
+        ...READ_ONLY_ANNOTATIONS,
+        readOnlyHint: false,
+        idempotentHint: false,
+      }),
       inputSchema: inputSchemaFor("worktable_discover", DiscoverInput),
       outputSchema: outputSchemaFor(
         "worktable_discover",
@@ -633,7 +622,7 @@ export function registerTools(
     "worktable_spaces",
     {
       // update and archive can overwrite metadata or hide a whole Space.
-      ...toolMetadata("worktable_spaces", WRITE_ANNOTATIONS, surface),
+      ...toolMetadata("worktable_spaces", WRITE_ANNOTATIONS),
       inputSchema: inputSchemaFor("worktable_spaces", SpacesInput),
       outputSchema: outputSchemaFor(
         "worktable_spaces",
@@ -646,11 +635,7 @@ export function registerTools(
     server.registerTool(
       name,
       {
-        ...toolMetadata(
-          "worktable_documents_read",
-          READ_ONLY_ANNOTATIONS,
-          surface
-        ),
+        ...toolMetadata("worktable_documents_read", READ_ONLY_ANNOTATIONS),
         ...(name === "worktable_documents_read"
           ? {
               title: TOOL_TITLES.worktable_documents_read,
@@ -679,11 +664,7 @@ export function registerTools(
     server.registerTool(
       name,
       {
-        ...toolMetadata(
-          "worktable_documents_write",
-          WRITE_ANNOTATIONS,
-          surface
-        ),
+        ...toolMetadata("worktable_documents_write", WRITE_ANNOTATIONS),
         ...(name === "worktable_documents_write"
           ? {
               title: TOOL_TITLES.worktable_documents_write,
@@ -720,7 +701,7 @@ export function registerTools(
   server.registerTool(
     "worktable_docs_read",
     {
-      ...toolMetadata("worktable_docs_read", READ_ONLY_ANNOTATIONS, surface),
+      ...toolMetadata("worktable_docs_read", READ_ONLY_ANNOTATIONS),
       inputSchema: inputSchemaFor("worktable_docs_read", DocsReadInput),
       outputSchema: outputSchemaFor(
         "worktable_docs_read",
@@ -732,7 +713,7 @@ export function registerTools(
   server.registerTool(
     "worktable_docs_write",
     {
-      ...toolMetadata("worktable_docs_write", WRITE_ANNOTATIONS, surface),
+      ...toolMetadata("worktable_docs_write", WRITE_ANNOTATIONS),
       inputSchema: inputSchemaFor("worktable_docs_write", DocsWriteInput),
       outputSchema: outputSchemaFor(
         "worktable_docs_write",
@@ -744,11 +725,7 @@ export function registerTools(
   server.registerTool(
     "worktable_drawings_read",
     {
-      ...toolMetadata(
-        "worktable_drawings_read",
-        READ_ONLY_ANNOTATIONS,
-        surface
-      ),
+      ...toolMetadata("worktable_drawings_read", READ_ONLY_ANNOTATIONS),
       inputSchema: inputSchemaFor("worktable_drawings_read", DrawingsReadInput),
       outputSchema: outputSchemaFor(
         "worktable_drawings_read",
@@ -760,14 +737,10 @@ export function registerTools(
   server.registerTool(
     "worktable_drawings_write",
     {
-      ...toolMetadata(
-        "worktable_drawings_write",
-        {
-          ...WRITE_ANNOTATIONS,
-          idempotentHint: true,
-        },
-        surface
-      ),
+      ...toolMetadata("worktable_drawings_write", {
+        ...WRITE_ANNOTATIONS,
+        idempotentHint: true,
+      }),
       inputSchema: inputSchemaFor(
         "worktable_drawings_write",
         DrawingsWriteInput
@@ -782,7 +755,7 @@ export function registerTools(
   server.registerTool(
     "worktable_html_read",
     {
-      ...toolMetadata("worktable_html_read", READ_ONLY_ANNOTATIONS, surface),
+      ...toolMetadata("worktable_html_read", READ_ONLY_ANNOTATIONS),
       inputSchema: inputSchemaFor("worktable_html_read", HtmlReadInput),
       outputSchema: outputSchemaFor(
         "worktable_html_read",
@@ -794,7 +767,7 @@ export function registerTools(
   server.registerTool(
     "worktable_html_write",
     {
-      ...toolMetadata("worktable_html_write", WRITE_ANNOTATIONS, surface),
+      ...toolMetadata("worktable_html_write", WRITE_ANNOTATIONS),
       inputSchema: inputSchemaFor("worktable_html_write", HtmlWriteInput),
       outputSchema: outputSchemaFor(
         "worktable_html_write",
@@ -806,7 +779,7 @@ export function registerTools(
   server.registerTool(
     "worktable_records_read",
     {
-      ...toolMetadata("worktable_records_read", READ_ONLY_ANNOTATIONS, surface),
+      ...toolMetadata("worktable_records_read", READ_ONLY_ANNOTATIONS),
       inputSchema: inputSchemaFor("worktable_records_read", RecordsReadInput),
       outputSchema: outputSchemaFor(
         "worktable_records_read",
@@ -818,7 +791,7 @@ export function registerTools(
   server.registerTool(
     "worktable_records_write",
     {
-      ...toolMetadata("worktable_records_write", WRITE_ANNOTATIONS, surface),
+      ...toolMetadata("worktable_records_write", WRITE_ANNOTATIONS),
       inputSchema: inputSchemaFor("worktable_records_write", RecordsWriteInput),
       outputSchema: outputSchemaFor(
         "worktable_records_write",
@@ -830,11 +803,7 @@ export function registerTools(
   server.registerTool(
     "worktable_annotations_read",
     {
-      ...toolMetadata(
-        "worktable_annotations_read",
-        READ_ONLY_ANNOTATIONS,
-        surface
-      ),
+      ...toolMetadata("worktable_annotations_read", READ_ONLY_ANNOTATIONS),
       inputSchema: inputSchemaFor(
         "worktable_annotations_read",
         AnnotationsReadInput
@@ -849,11 +818,7 @@ export function registerTools(
   server.registerTool(
     "worktable_annotations_write",
     {
-      ...toolMetadata(
-        "worktable_annotations_write",
-        WRITE_ANNOTATIONS,
-        surface
-      ),
+      ...toolMetadata("worktable_annotations_write", WRITE_ANNOTATIONS),
       inputSchema: inputSchemaFor(
         "worktable_annotations_write",
         AnnotationsWriteInput
@@ -868,7 +833,7 @@ export function registerTools(
   server.registerTool(
     "worktable_threads_read",
     {
-      ...toolMetadata("worktable_threads_read", READ_ONLY_ANNOTATIONS, surface),
+      ...toolMetadata("worktable_threads_read", READ_ONLY_ANNOTATIONS),
       inputSchema: inputSchemaFor("worktable_threads_read", ThreadsReadInput),
       outputSchema: outputSchemaFor(
         "worktable_threads_read",
@@ -880,14 +845,10 @@ export function registerTools(
   server.registerTool(
     "worktable_threads_write",
     {
-      ...toolMetadata(
-        "worktable_threads_write",
-        {
-          ...WRITE_ANNOTATIONS,
-          openWorldHint: true,
-        },
-        surface
-      ),
+      ...toolMetadata("worktable_threads_write", {
+        ...WRITE_ANNOTATIONS,
+        openWorldHint: true,
+      }),
       inputSchema: inputSchemaFor("worktable_threads_write", ThreadsWriteInput),
       outputSchema: outputSchemaFor(
         "worktable_threads_write",
@@ -899,7 +860,7 @@ export function registerTools(
   server.registerTool(
     "worktable_thread_delivery",
     {
-      ...toolMetadata("worktable_thread_delivery", WRITE_ANNOTATIONS, surface),
+      ...toolMetadata("worktable_thread_delivery", WRITE_ANNOTATIONS),
       inputSchema: inputSchemaFor(
         "worktable_thread_delivery",
         ThreadDeliveryInput
@@ -914,7 +875,7 @@ export function registerTools(
   server.registerTool(
     "worktable_delete",
     {
-      ...toolMetadata("worktable_delete", WRITE_ANNOTATIONS, surface),
+      ...toolMetadata("worktable_delete", WRITE_ANNOTATIONS),
       inputSchema: inputSchemaFor("worktable_delete", DeleteInput),
       outputSchema: outputSchemaFor(
         "worktable_delete",
@@ -926,7 +887,7 @@ export function registerTools(
   server.registerTool(
     "worktable_guidance",
     {
-      ...toolMetadata("worktable_guidance", READ_ONLY_ANNOTATIONS, surface),
+      ...toolMetadata("worktable_guidance", READ_ONLY_ANNOTATIONS),
       inputSchema: inputSchemaFor("worktable_guidance", GuidanceInput),
       outputSchema: outputSchemaFor(
         "worktable_guidance",
@@ -938,7 +899,7 @@ export function registerTools(
   server.registerTool(
     "worktable_mermaid",
     {
-      ...toolMetadata("worktable_mermaid", READ_ONLY_ANNOTATIONS, surface),
+      ...toolMetadata("worktable_mermaid", READ_ONLY_ANNOTATIONS),
       inputSchema: inputSchemaFor("worktable_mermaid", MermaidInput),
       outputSchema: outputSchemaFor(
         "worktable_mermaid",

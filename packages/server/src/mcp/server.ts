@@ -57,7 +57,7 @@ function worktableName(): string | null {
  * Instructions an agent reads on connecting, naming the Worktable so an agent
  * connected to several can tell them apart.
  */
-export function serverInstructions(_surface: McpSurface = "released"): string {
+export function serverInstructions(): string {
   const name = worktableName()
   return [
     name ? `You are connected to the Worktable ${JSON.stringify(name)}.` : null,
@@ -74,7 +74,7 @@ export function serverIdentity(
 ) {
   return {
     info: { name: "worktable", version: options.version },
-    instructions: serverInstructions(options.surface),
+    instructions: serverInstructions(),
   }
 }
 

@@ -7,6 +7,8 @@ description: Create, inspect, reply to, update, or resolve situated Worktable an
 
 Use an annotation when requested feedback belongs beside an artifact. Reading an instruction annotation does not itself authorize acting on it. Use a thread for a broader conversation or handoff. When the user asks to address an instruction by changing its target, make the content change through the owning Doc or HTML workflow, then return to the annotation to preserve the review outcome.
 
+Use the Worktable tools the connection lists. On a Worktable that lists the earlier grouped tools, such as `worktable_discover`, use the listed tool with the matching `request.action` instead.
+
 ## Anchor feedback precisely
 
 1. Read the target artifact and list relevant open annotations before adding feedback. Avoid repeating an existing point.

@@ -9,6 +9,8 @@ Use a Worktable thread for an addressed conversation or handoff. Link existing d
 
 Use an annotation instead when feedback belongs to a specific part of an artifact. Do not mirror one discussion into both places.
 
+Use the Worktable tools the connection lists. On a Worktable that lists the earlier grouped tools, such as `worktable_discover`, use the listed tool with the matching `request.action` instead.
+
 ## Write a useful handoff
 
 Include only what the recipient needs:

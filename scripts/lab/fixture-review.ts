@@ -97,7 +97,7 @@ export const FIXTURE_REVIEWS: Record<FixtureSlug, FixtureReview> = {
         instruction:
           "Search Worktable for payment failures, read the runbook, and query the incidents and services collections for related evidence.",
         expectedEvidence: [
-          "worktable_state",
+          "worktable_search",
           "worktable_docs_read",
           "worktable_records_query",
         ],
@@ -208,7 +208,7 @@ export const FIXTURE_REVIEWS: Record<FixtureSlug, FixtureReview> = {
         instruction:
           "Search Worktable for offline mode and read prds/offline-mode. Report the problem, goals, and success metric.",
         expectedEvidence: [
-          "worktable_state",
+          "worktable_search",
           "worktable_docs_read",
           "prds/offline-mode",
         ],

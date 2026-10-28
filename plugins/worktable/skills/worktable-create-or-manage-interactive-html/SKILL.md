@@ -8,6 +8,8 @@ description: Create or improve durable visual and interactive artifacts in Workt
 Use an HTML doc for an interactive tool, visual explanation, or custom view.
 Keep it understandable when opened outside the current conversation.
 
+Use the Worktable tools the connection lists. On a Worktable that lists the earlier grouped tools, such as `worktable_discover`, use the listed tool with the matching `request.action` instead.
+
 ## Choose the composition
 
 - **Presentation or visual brief:** keep the complete high-level experience in one HTML Doc. Link a narrative Doc when deeper reasoning or source notes matter independently.

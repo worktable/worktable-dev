@@ -7,6 +7,8 @@ description: Create, edit, rename, or maintain narrative Worktable Docs. Use for
 
 Use a Doc when meaning lives in the whole narrative. Use Records for independently changing items, HTML docs for interactive tools, and drawings for editable visuals.
 
+Use the Worktable tools the connection lists. On a Worktable that lists the earlier grouped tools, such as `worktable_discover`, use the listed tool with the matching `request.action` instead.
+
 ## Choose create or update deliberately
 
 1. Resolve the intended Space and read its pinned docs from `worktable_state`, then search for the subject and inspect related Docs before writing. Reuse the artifact that already owns the job; do not create a near-duplicate because its title differs slightly.

@@ -8,6 +8,8 @@ description: Organize repeated structured information as durable Worktable Recor
 Use Records for items with their own identity and updates. A collection schema
 defines the fields that people, agents, and HTML docs share.
 
+Use the Worktable tools the connection lists. On a Worktable that lists the earlier grouped tools, such as `worktable_discover`, use the listed tool with the matching `request.action` instead.
+
 ## Choose Records
 
 Use Records when people or agents will repeatedly create, update, compare, filter, sort, group, assign, or validate individual items. Keep a plan, decision, argument, or research synthesis in a Doc when its meaning lives in the whole. Use an HTML Doc only when a task-specific view materially improves work over the canonical Records.

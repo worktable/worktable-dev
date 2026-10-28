@@ -43,7 +43,7 @@ async function rpc(
   return (await res.json()) as JsonRpcResponse;
 }
 
-/** initialize -> tools/list -> worktable_discover, reporting the first failure. */
+/** initialize -> tools/list -> a state read, reporting the first failure. */
 export async function verifyMcpEndpoint(
   mcpUrl: string,
   token?: string
@@ -65,24 +65,24 @@ export async function verifyMcpEndpoint(
     if (tools.error) {
       return { ok: false, message: `tools/list failed: ${tools.error.message}` };
     }
-    const toolCount = Array.isArray(
-      (tools.result as { tools?: unknown[] } | undefined)?.tools
-    )
-      ? (tools.result as { tools: unknown[] }).tools.length
-      : 0;
+    const listed = (tools.result as { tools?: Array<{ name?: unknown }> } | undefined)
+      ?.tools;
+    const toolCount = Array.isArray(listed) ? listed.length : 0;
+    // Worktables before 0.1.32 read state only through worktable_discover;
+    // this connector also reaches older linked Worktables.
+    const stateCall = listed?.some((tool) => tool.name === "worktable_state")
+      ? { name: "worktable_state", arguments: {} }
+      : { name: "worktable_discover", arguments: { request: { action: "state" } } };
 
     const state = await rpc(mcpUrl, token, {
       method: "tools/call",
-      params: {
-        name: "worktable_discover",
-        arguments: { request: { action: "state" } },
-      },
+      params: stateCall,
     });
     if (state.error) {
       return {
         ok: false,
         toolCount,
-        message: `worktable_discover failed: ${state.error.message}`,
+        message: `${stateCall.name} failed: ${state.error.message}`,
       };
     }
     // Tool-level failures come back as a SUCCESSFUL JSON-RPC response with
@@ -96,7 +96,7 @@ export async function verifyMcpEndpoint(
       return {
         ok: false,
         toolCount,
-        message: `worktable_discover failed: ${text ?? "tool error"}`,
+        message: `${stateCall.name} failed: ${text ?? "tool error"}`,
       };
     }
 

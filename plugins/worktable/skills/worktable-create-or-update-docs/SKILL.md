@@ -7,14 +7,16 @@ description: Create, edit, rename, or maintain narrative Worktable Docs. Use for
 
 Use a Doc when meaning lives in the whole narrative. Use Records for independently changing items, HTML docs for interactive tools, and drawings for editable visuals.
 
+Use the Worktable tools the connection lists. On a Worktable that lists the earlier grouped tools, such as `worktable_discover`, use the listed tool with the matching `request.action` instead.
+
 ## Choose create or update deliberately
 
-1. Resolve the intended Space and read its pinned docs from `worktable_state` (or `worktable_discover` action `state` on older connections), then search for the subject and inspect related Docs before writing. Reuse the artifact that already owns the job; do not create a near-duplicate because its title differs slightly.
-2. Before updating an existing Doc, read it with `worktable_docs_read`. List open annotations with `worktable_annotations_read` filtered by its `docPath`, inspect the context of relevant instructions, and preserve its format, user-owned content, and established structure. Read a long Doc in line ranges with `offset` and `limit`. To change a name or phrase wherever it appears, first find every occurrence with action `grep`, which returns exact lines and line numbers across Docs; discovery search ranks text matches instead.
-3. Read the doc, then call `worktable_docs_write` action `edit` with `oldText` copied exactly from the read content. Include enough surrounding text to match once. On `ambiguous` or `no_match`, read again; never guess. Use `write` with `expectedRevision` only to restructure a whole document.
-4. Use action `write` without a revision only for a genuinely new Doc. Never set `force` to drop formatting unless the user explicitly accepts the loss.
+1. Resolve the intended Space and read its pinned docs from `worktable_state`, then search for the subject and inspect related Docs before writing. Reuse the artifact that already owns the job; do not create a near-duplicate because its title differs slightly.
+2. Before updating an existing Doc, read it with `worktable_docs_read`. List open annotations with `worktable_annotations_read` filtered by its `docPath`, inspect the context of relevant instructions, and preserve its format, user-owned content, and established structure. Read a long Doc in line ranges with `offset` and `limit`. To change a name or phrase wherever it appears, first find every occurrence with `worktable_search` and `exact: true`, which returns exact lines and line numbers across Docs; a plain search ranks matches instead.
+3. Read the doc, then call `worktable_docs_write` with `edits`, each `oldText` copied exactly from the read content. Include enough surrounding text to match once. On `ambiguous` or `no_match`, read again; never guess. Pass `content` with `expectedRevision` only to restructure a whole document.
+4. Pass `content` without a revision only for a genuinely new Doc. Never set `force` to drop formatting unless the user explicitly accepts the loss.
 5. Every new Doc needs a `lifetime`. Choose `durable` for work people will browse, rely on, or return to: deliverables, decisions, maintained references, active plans, standing instructions. Choose `temporary` for supporting work that can leave browsing once the work moves on: handoffs, evidence and run notes, scratch research, intermediate drafts, one-off comparisons. Temporary Docs archive 7 days after their last edit, rename, or comment unless you set an explicit `archiveOn` date.
-6. Use action `rename` when the task calls for a new path; preserve and report the returned path.
+6. Use `worktable_files_update` with `newPath` when the task calls for a new path; preserve and report the returned path.
 
 ## Write for durable retrieval
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Keep Worktable's message delivery tools away from the Hermes agent under their new names as well. Run `hermes worktable connect` again to update an existing connection.
+- Name new threads with Worktable's current thread tool, and keep naming them on older Worktables.
+
 ## 0.1.0
 
 - Answer Worktable thread messages addressed to Hermes, one Hermes conversation per thread.

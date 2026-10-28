@@ -12,8 +12,7 @@ records, and conversations. People and agents work on the same saved content.
   the workspace should run before installing anything.
 - **Worktable exists:** use [Connections](/agents/connections/). Connect to that
   workspace rather than creating a second one.
-- **Already connected:** call `worktable_discover` with action `state` to find
-  the relevant Space and its pinned docs. Then find the work the user named.
+- **Already connected:** call `worktable_state` to find the relevant Space and its pinned docs. Then find the work the user named.
 
 ## Choose a workflow
 
@@ -43,9 +42,9 @@ Keep setup, content edits, and external communication within the user's task.
 
 ## Read exact contracts
 
-The connected server's tool schemas describe its supported actions.
-`worktable_guidance` provides format and drawing contracts;
-`worktable_html_read` action `guide` provides the HTML runtime contract.
+The connected server's tool schemas describe what each tool accepts.
+`worktable_guidance` provides the format, drawing, and HTML runtime contracts
+by `topic`.
 The [MCP tools](/reference/mcp-tools/) catalog publishes the current schemas.
 
 MCP does not load workspace documents as behavioral instructions. Documents

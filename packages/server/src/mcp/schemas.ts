@@ -82,7 +82,7 @@ export const ReadDocInput = z.object({
     .enum(["markdown", "blocknote"])
     .optional()
     .describe(
-      "markdown (default) returns the text that action edit matches against. blocknote returns the stored BlockNote blocks of a rich Doc instead."
+      "markdown (default) returns the text that edits match against. blocknote returns the stored BlockNote blocks of a rich Doc instead."
     ),
 })
 
@@ -1021,7 +1021,7 @@ export const DocumentsReadInput = z.strictObject({
         .min(1)
         .max(256)
         .describe(
-          "Earlier point: a revision from a previous read or write (a sourceRevision rev_..., or a Doc revision md:sha256:... / json:sha256:... from worktable_docs_read), or a version id from action versions"
+          "Earlier point: a revision from a previous read or write (a sourceRevision rev_..., or a Doc revision md:sha256:... / json:sha256:... from worktable_docs_read), or a version id from versions"
         ),
       to: z
         .string()

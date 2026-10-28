@@ -350,7 +350,7 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
           docPath: "explorer",
           excerpt: "Feels high for three people.",
           onTopic: true,
-          open: { tool: "worktable_annotations_read", request: { action: "read", annotationId: id } },
+          open: { tool: "worktable_annotations_read", arguments: { annotationId: id } },
         },
       ])
       const delivered = (await list())[0]?.requests?.[0]

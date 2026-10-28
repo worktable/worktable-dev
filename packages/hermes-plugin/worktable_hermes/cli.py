@@ -19,8 +19,13 @@ from .store import DeliveryStore
 _ALREADY_ABSENT = re.compile(r"not set|not found", re.IGNORECASE)
 
 # The agent uses Worktable's other tools through this server. The plugin claims
-# messages itself, so the agent must not take deliveries meant for the gateway.
-DELIVERY_TOOL = "worktable_thread_delivery"
+# messages itself, so the agent must not take deliveries meant for the gateway:
+# the delivery tools, by their current names and the earlier one.
+DELIVERY_TOOLS = [
+    "worktable_delivery_claim",
+    "worktable_delivery_report",
+    "worktable_thread_delivery",
+]
 
 
 def _hermes() -> list[str]:
@@ -58,7 +63,7 @@ def _save_token(token: str) -> None:
 
 
 def _mcp_server(url: str, auth: str) -> dict:
-    server: dict[str, Any] = {"url": url, "tools": {"exclude": [DELIVERY_TOOL]}}
+    server: dict[str, Any] = {"url": url, "tools": {"exclude": list(DELIVERY_TOOLS)}}
     if auth == "oauth":
         server["auth"] = "oauth"
     else:

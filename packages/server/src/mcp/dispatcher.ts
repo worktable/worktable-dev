@@ -239,7 +239,6 @@ import { deleteDocumentFolder } from "../document-folder-delete.ts"
 import { wsManager } from "../ws.ts"
 import { docSnapshotRevision } from "../document-content-revision.ts"
 import { FORMAT_SPEC } from "./format-spec.ts"
-import { withFileToolNames } from "./file-tool-names.ts"
 import {
   isMarkdownSafe,
   extractMarkdownHeadings,
@@ -337,8 +336,8 @@ function buildBlockDocMetadata(blocks: unknown[]) {
     lossyFields,
     note:
       lossyFields.length > 0
-        ? `This Doc has formatting Markdown cannot show (${lossyFields.join(", ")}). Edit it with action edit: formatting outside the text you change is kept.`
-        : "Edit it with action edit: formatting outside the text you change is kept.",
+        ? `This Doc has formatting Markdown cannot show (${lossyFields.join(", ")}). Edit it with edits: formatting outside the text you change is kept.`
+        : "Edit it with edits: formatting outside the text you change is kept.",
     richBlockTypes: getRichBlockTypes(blocks),
     containsMermaid: containsMermaidBlock(blocks),
   }
@@ -376,7 +375,7 @@ async function docSourceAtRevision(
   if (required && !expectedRevision) {
     throw new DocEditError(
       "revision_required",
-      `${docPath} already exists. Read it and pass its revision as expectedRevision to replace it, or use action edit to change part of it.`
+      `${docPath} already exists. Read it and pass its revision as expectedRevision to replace it, or pass edits to change part of it.`
     )
   }
   if (expectedRevision && expectedRevision !== revision) {
@@ -420,7 +419,7 @@ export async function agentChangeBase(
   if (required && !expectedRevision) {
     throw new DocEditError(
       "revision_required",
-      `${docPath} already exists. Read it and pass its revision as expectedRevision to replace it, or use action edit to change part of it.`
+      `${docPath} already exists. Read it and pass its revision as expectedRevision to replace it, or pass edits to change part of it.`
     )
   }
   const stored = snapshot.result.data
@@ -1159,7 +1158,7 @@ async function _dispatchOperationInner(
     case "html.guide": {
       return {
         profile: "runtime" as const,
-        guide: withFileToolNames(getHtmlAuthoringGuide()),
+        guide: getHtmlAuthoringGuide(),
         tokens: WIDGET_STYLE_TOKENS,
       }
     }
@@ -2386,10 +2385,7 @@ async function _dispatchOperationInner(
               : {}),
           },
           spaces: spacesWithDetail,
-          hint: (() => {
-            const hint = "Use worktable_documents_read action list for every document format, or worktable_search. Drawing previews and objects are available through worktable_drawings_read."
-            return withFileToolNames(hint)
-          })(),
+          hint: "List a Space's files in every format with worktable_files_read, or search with worktable_search. Drawing previews and objects are available through worktable_drawings_read.",
         }
       }
       const { data: space, error: spaceErr } = await readSpace(spaceId)
@@ -2662,7 +2658,7 @@ async function _dispatchOperationInner(
             ...metadata,
           }
         }
-        // The text action edit matches against.
+        // The text edits match against.
         const markdown = await docMarkdownProjection(spaceId, docPath, snapshot)
         if (markdown === null) throw new Error("Failed to read document")
         return {
@@ -2785,7 +2781,7 @@ async function _dispatchOperationInner(
               ]
               throw new DocEditError(
                 "formatting_dropped",
-                `This write would drop formatting Markdown cannot show from ${formattingDropped.length} changed block(s) (${fields.join(", ")}). Use action edit to change only the text you mean to, or set force=true to accept the loss.`,
+                `This write would drop formatting Markdown cannot show from ${formattingDropped.length} changed block(s) (${fields.join(", ")}). Pass edits to change only the text you mean to, or set force=true to accept the loss.`,
                 { formattingDropped }
               )
             }
@@ -3141,12 +3137,12 @@ async function _dispatchOperationInner(
     }
     case "guidance.drawings":
       return {
-        guide: withFileToolNames(DRAWING_GUIDE),
+        guide: DRAWING_GUIDE,
       }
     case "guidance.format_spec": {
       const spec = FORMAT_SPEC.trim()
       return {
-        spec: withFileToolNames(spec),
+        spec,
       }
     }
     default:

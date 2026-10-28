@@ -30,7 +30,7 @@ export function previewFailure(sourceRevision: string | null, error: unknown) {
     sourceRevision,
     error: message,
     retry:
-      "Retry the read render action. A successful write remains saved; do not repeat the mutation to retry its preview.",
+      "Retry with worktable_files_render. A successful write remains saved; do not repeat the write to retry its preview.",
   }
 }
 
@@ -168,7 +168,7 @@ export async function renderDocumentPreview(input: {
     }
   if (options.clip || options.fullPage || options.height)
     throw new Error(
-      "Drawing previews accept theme and width. Use worktable_drawings_read render for world-coordinate regions or selected objects."
+      "Drawing previews accept theme and width. Use worktable_drawings_read with region or ids for world-coordinate regions or selected objects."
     )
   try {
     const drawing = QuickdrawDocumentSchema.parse(

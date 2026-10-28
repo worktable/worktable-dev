@@ -148,10 +148,14 @@ Run `check:previews` locally when changing preview sources or their dependencies
 ordinary build and test commands do not repeat this check. Regenerate and review
 stale outputs rather than bypassing the check.
 
-The MCP tool surface in `mcp-tools.json` is frozen while directory reviews are
-pending. The `tool-surface` check fails a pull request that changes any tool's
-name, schema, description, title, annotations or security schemes, unless the
-pull request has the `tool-surface-change` label. Compare against another
+Agents' MCP tools are defined in `packages/server/src/mcp/catalog.ts`. Each
+does one thing with flat arguments and runs an operation from `operations.ts`;
+`legacy-calls.ts` still answers calls in the earlier grouped shape without
+listing them. `mcp-tools.json` records what agents see and what agent
+directories review, so it changes only deliberately: the `tool-surface` check
+fails a pull request that changes any tool's name, schema, description, title,
+annotations or security schemes, unless the pull request has the
+`tool-surface-change` label. Compare against another
 revision with `bun run check:tool-surface --base <ref>`; add `--approved` to
 accept a change outside a pull request.
 

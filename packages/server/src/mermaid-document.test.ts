@@ -251,7 +251,7 @@ describe("automatic Mermaid document pipeline", () => {
       profile: "runtime",
     })) as { guide: string }
     expect(guide.guide).toContain("worktable_mermaid")
-    expect(guide.guide).toContain('action "preview"')
+    expect(guide.guide).toContain("preview: true")
   })
 
   it("rejects an unpaired escaped fence in edit text", async () => {

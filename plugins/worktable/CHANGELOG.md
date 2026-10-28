@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.6] - Unreleased
+
+### Changed
+
+- Skills use Worktable's smaller set of tools, each of which does one thing with plain arguments.
+
 ## [0.1.5] - 2026-10-28
 
 ### Changed

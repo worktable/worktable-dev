@@ -471,6 +471,19 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
       ttlMs: null,
     })
     const taskId = started.reply.result?.taskId as string
+    // An earlier client asking through worktable_discover gets the same task.
+    const earlier = await modernPost(
+      "tools/call",
+      {
+        name: "worktable_discover",
+        arguments: { request: { action: "pending", wait: true } },
+      },
+      { token, capabilities: tasks }
+    )
+    expect(earlier.reply.result).toMatchObject({
+      resultType: "task",
+      status: "working",
+    })
     expect((await poll(taskId)).reply.result).toMatchObject({
       status: "working",
     })

@@ -8,6 +8,8 @@ description: Organize repeated structured information as durable Worktable Recor
 Use Records for items with their own identity and updates. A collection schema
 defines the fields that people, agents, and HTML docs share.
 
+Use the Worktable tools the connection lists. On a Worktable that lists the earlier grouped tools, such as `worktable_discover`, use the listed tool with the matching `request.action` instead.
+
 ## Choose Records
 
 Use Records when people or agents will repeatedly create, update, compare, filter, sort, group, assign, or validate individual items. Keep a plan, decision, argument, or research synthesis in a Doc when its meaning lives in the whole. Use an HTML Doc only when a task-specific view materially improves work over the canonical Records.
@@ -32,4 +34,4 @@ Use Records when people or agents will repeatedly create, update, compare, filte
 
 Do not invent missing values, duplicate a collection under a near-synonymous name, or replace a relation with copied display text. Treat warnings as evidence: repair duplicate identities, unrecognizable titles, schema conflicts, and invalid references when the source supports a correction.
 
-Do not delete records or remove schema fields as incidental cleanup. Permanent record deletion uses `worktable_delete` and needs an unambiguous target within the user's request. Removing a field from a schema does not purge its stored values. The result is complete when the collection remains understandable in the built-in table, contains no near-duplicate identities, and supports a real query or update without rereading the source transcript.
+Do not delete records or remove schema fields as incidental cleanup. Permanent record deletion uses `worktable_delete` with `collectionId` and `recordId`, and needs an unambiguous target within the user's request. Removing a field from a schema does not purge its stored values. The result is complete when the collection remains understandable in the built-in table, contains no near-duplicate identities, and supports a real query or update without rereading the source transcript.

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Name new threads with Worktable's current thread tool, and keep naming them on older Worktables.
+
 ## 0.0.17
 
 - Restore loading on current OpenClaw releases while keeping support for OpenClaw 2026.7.1-2 and later. Credential refresh continues to use the latest saved credentials without requiring reconnection.

@@ -9,6 +9,8 @@ Use a Worktable thread for an addressed conversation or handoff. Link existing d
 
 Use an annotation instead when feedback belongs to a specific part of an artifact. Do not mirror one discussion into both places.
 
+Use the Worktable tools the connection lists. On a Worktable that lists the earlier grouped tools, such as `worktable_discover`, use the listed tool with the matching `request.action` instead.
+
 ## Write a useful handoff
 
 Include only what the recipient needs:
@@ -21,9 +23,9 @@ Include only what the recipient needs:
 
 ## Send or continue a thread
 
-1. Call `worktable_threads_read` action `participants` and verify the intended participant. Use its participant ID for `to` and its `defaultIdentityId` when addressing that identity. Never guess between ambiguous names.
+1. Call `worktable_threads_read` with `participants: true` and verify the intended participant. Use its participant ID for `to` and its `defaultIdentityId` when addressing that identity. Never guess between ambiguous names.
 2. Reuse the existing `threadId` for the same conversation. For a new thread, choose a Worktable-wide location for general coordination or a Space location when the conversation belongs to that project.
-3. For a new direct thread, use `worktable_threads_write` action `post` with the verified member in `to` and a stable unique `idempotencyKey`.
+3. For a new direct thread, use `worktable_threads_post` with the verified member in `to` and a stable unique `idempotencyKey`.
 4. In an existing thread, use `notifyIdentityIds` only to mention identities passively, and include the visible `@Identity name` in the message body for every mentioned identity. A mention does not activate an agent or require a reply. Use `responseIdentityId` to assign the one identity that should answer, or `null` for no assignment. An assignment already directs attention, so omit that identity from `notifyIdentityIds`. Reply with `inReplyTo`; satisfy a specific assignment only with `responseTo`. Reply and response relationships remain independent.
 5. Use `authorIdentityId` when speaking through a named identity. A conversation identity is an addressable working role, not an exclusive browser session.
 6. Keep the returned thread, message, cursor, and activity identifiers for continuation. Wait only briefly when the current turn can use an immediate response; otherwise report the durable thread state and continue later.
@@ -32,21 +34,21 @@ Keep one continuing conversation in one thread. Do not create a fresh thread for
 
 ## Name the conversation
 
-When the connected tools offer thread naming, give new threads a concise, specific topic using the `title` field on `post`. Before your first answer to a human-started thread, call `worktable_threads_write` action `rename` with its location, thread ID, a short topic, and `onlyIfAutomatic: true`. This preserves any name already chosen by a person or another agent. Do this even when an adapter posts your final reply for you. Naming is conversation housekeeping; it does not authorize other workspace edits. If naming is unavailable or fails, continue answering. Use an unconditional rename only when explicitly asked.
+When the connected tools offer thread naming, give new threads a concise, specific topic using the `title` field on `worktable_threads_post`. Before your first answer to a human-started thread, call `worktable_threads_update` with its location, thread ID, a short topic as `title`, and `onlyIfAutomatic: true`. This preserves any name already chosen by a person or another agent. Do this even when an adapter posts your final reply for you. Naming is conversation housekeeping; it does not authorize other workspace edits. If naming is unavailable or fails, continue answering. Use an unconditional rename only when explicitly asked.
 
 ## Check addressed messages
 
 An authenticated agent owns delivery only while its adapter or skill is running; this skill is not a background listener.
 
-1. Claim only when the user or active adapter asks to check addressed messages. Use `worktable_thread_delivery` action `claim` with `threadLocationVersion: 2` to include both Worktable and Space threads. If none is waiting, say so and stop.
-2. Preserve the authenticated participant returned by the connection. If the integration needs to join delivery, use `worktable_thread_delivery` action `register_participant` with a truthful host-neutral label supplied by the installation surface before claiming messages. Ordinary message posting does not register participants.
-3. Preserve the returned `messageId` and `leaseId`; accept the delivery, mark it `working`, and read the surrounding thread before acting.
+1. Claim only when the user or active adapter asks to check addressed messages. Use `worktable_delivery_claim` with `threadLocationVersion: 2` to include both Worktable and Space threads. If none is waiting, say so and stop.
+2. Preserve the authenticated participant returned by the connection. If the integration needs to join delivery, pass a truthful host-neutral label supplied by the installation surface as `registerAs` on the first claim. Ordinary message posting does not register participants.
+3. Preserve the returned `messageId` and `leaseId`; report the delivery with `worktable_delivery_report` `status: "accepted"`, then `status: "progress"` with `phase: "working"`, and read the surrounding thread before acting.
 4. Do the requested work in the appropriate durable artifact. Reply on the same thread with `inReplyTo` and `responseTo` set to the source message, `responseIdentityId: null` so the response does not create a reverse assignment, the delivered `identityId` as `authorIdentityId`, the claimed `leaseId` as `deliveryLeaseId`, and a stable unique idempotency key.
-5. If the claimed work cannot complete, fail the delivery with an accurate concise reason and truthful retryability instead of silently abandoning it.
+5. If the claimed work cannot complete, report `status: "failed"` with an accurate concise reason and truthful retryability instead of silently abandoning it.
 
 ## Watch for what is sent to you
 
-When your user asks you to watch for comments or messages, call `worktable_pending` with top-level arguments including `wait: true`. On an older connection, use `worktable_discover` action `pending` only if that action is advertised. Add a `scope` when the work is one Space, Doc or thread. It returns once something new arrives. Reply on a comment with `worktable_annotations_write` action `reply`; answer a thread message with `worktable_threads_write` action `post` and `responseTo`. Mention items about other work to your user rather than switching tasks. Then call the same pending tool with `wait: true` again, passing the returned `revision` as `since`, until your user tells you to stop.
+When your user asks you to watch for comments or messages, call `worktable_pending` with `wait: true`. Add a `scope` when the work is one Space, Doc or thread. It returns once something new arrives. Reply on a comment with `worktable_annotations_write` and `replyTo`; answer a thread message with `worktable_threads_post` and `responseTo`. Mention items about other work to your user rather than switching tasks. Then call `worktable_pending` with `wait: true` again, passing the returned `revision` as `since`, until your user tells you to stop.
 
 ## Protect the communication boundary
 

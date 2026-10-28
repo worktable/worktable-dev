@@ -26,7 +26,7 @@ const FIXTURE_ROOT = join(REPO_ROOT, "fixtures", "workspaces")
 const discovery = (space: string, ...spaceIds: string[]): McpReviewCheck => ({
   title: "Discover the workspace",
   instruction: `Use Worktable tools to inspect the workspace and identify the ${space} space. Do not use shell or filesystem tools.`,
-  expectedEvidence: ["worktable_discover", space],
+  expectedEvidence: ["worktable_state", space],
   mutatesWorkspace: false,
   references: spaceIds.map((spaceId) => `spaces/${spaceId}/space.json`),
 })
@@ -97,9 +97,9 @@ export const FIXTURE_REVIEWS: Record<FixtureSlug, FixtureReview> = {
         instruction:
           "Search Worktable for payment failures, read the runbook, and query the incidents and services collections for related evidence.",
         expectedEvidence: [
-          "worktable_discover",
+          "worktable_search",
           "worktable_docs_read",
-          "worktable_records_read",
+          "worktable_records_query",
         ],
         mutatesWorkspace: false,
         references: [
@@ -153,7 +153,7 @@ export const FIXTURE_REVIEWS: Record<FixtureSlug, FixtureReview> = {
         title: "Connect strategy to operating data",
         instruction:
           "Read the Q3 operating plan and Q3 board update, then query the OKRs and hiring-pipeline collections and summarize the current priorities.",
-        expectedEvidence: ["worktable_docs_read", "worktable_records_read"],
+        expectedEvidence: ["worktable_docs_read", "worktable_records_query"],
         mutatesWorkspace: false,
         references: [
           "spaces/company/docs/okrs/q3.md",
@@ -208,7 +208,7 @@ export const FIXTURE_REVIEWS: Record<FixtureSlug, FixtureReview> = {
         instruction:
           "Search Worktable for offline mode and read prds/offline-mode. Report the problem, goals, and success metric.",
         expectedEvidence: [
-          "worktable_discover",
+          "worktable_search",
           "worktable_docs_read",
           "prds/offline-mode",
         ],
@@ -219,7 +219,7 @@ export const FIXTURE_REVIEWS: Record<FixtureSlug, FixtureReview> = {
         title: "Trace feedback to roadmap",
         instruction:
           "Query Feedback for fb-001 and Roadmap for offline-mode. Explain the reference and report quarter and status.",
-        expectedEvidence: ["worktable_records_read", "fb-001", "offline-mode"],
+        expectedEvidence: ["worktable_records_query", "fb-001", "offline-mode"],
         mutatesWorkspace: false,
         references: [
           "spaces/product/records/feedback/fb-001.yaml",
@@ -328,7 +328,7 @@ export const FIRST_RUN_REVIEW: FixtureReview = {
       instruction:
         "Use Worktable discovery and read tools to find and summarize the Welcome starter document.",
       expectedEvidence: [
-        "worktable_discover",
+        "worktable_state",
         "worktable_docs_read",
         "Welcome",
       ],

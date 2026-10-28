@@ -73,21 +73,21 @@ const TOOL_GROUPS: Array<{
   },
   {
     title: "Workspace & discovery",
-    matches: (n) => ["worktable_discover", "worktable_spaces", "worktable_state", "worktable_search", "worktable_space_index", "worktable_pending", "search", "fetch"].includes(n) || n.startsWith("worktable_spaces_"),
+    matches: (n) => ["worktable_state", "worktable_search", "worktable_pending", "search", "fetch"].includes(n) || n.startsWith("worktable_spaces_"),
   },
-  { title: "Documents", matches: (n) => n.includes("_documents_") || n.includes("_files_") },
+  { title: "Files", matches: (n) => n.includes("_files_") },
   { title: "Docs", matches: (n) => n.includes("_docs_") },
   { title: "Drawings", matches: (n) => n.includes("_drawings_") },
   { title: "HTML docs", matches: (n) => n.includes("_html_") },
   { title: "Records", matches: (n) => n.includes("record") },
   { title: "Annotations", matches: (n) => n.includes("annotation") },
-  { title: "Threads & delivery", matches: (n) => n.includes("thread") },
+  { title: "Threads & delivery", matches: (n) => n.includes("thread") || n.includes("_delivery_") },
   { title: "Destructive actions", matches: (n) => n === "worktable_delete" },
 ]
 
 const TOOL_GROUP_ORDER = [
   "Workspace & discovery",
-  "Documents",
+  "Files",
   "Docs",
   "Drawings",
   "HTML docs",
@@ -97,22 +97,6 @@ const TOOL_GROUP_ORDER = [
   "Destructive actions",
   "Guidance & validation",
 ]
-
-function collectActions(
-  value: unknown,
-  actions = new Set<string>()
-): Set<string> {
-  if (Array.isArray(value)) {
-    for (const item of value) collectActions(item, actions)
-  } else if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>
-    const properties = record.properties as Record<string, unknown> | undefined
-    const action = properties?.action as Record<string, unknown> | undefined
-    if (typeof action?.const === "string") actions.add(action.const)
-    for (const nested of Object.values(record)) collectActions(nested, actions)
-  }
-  return actions
-}
 
 export function renderMcpToolsPage(tools: ToolEntry[]): string {
   const grouped = new Map<string, ToolEntry[]>()
@@ -131,7 +115,6 @@ export function renderMcpToolsPage(tools: ToolEntry[]): string {
       const entries = grouped
         .get(group)!
         .map((tool) => {
-          const actions = [...collectActions(tool.inputSchema)]
           const hints = Object.entries(tool.annotations ?? {})
             .filter(([, enabled]) => enabled === true)
             .map(([name]) => `\`${name}\``)
@@ -139,9 +122,6 @@ export function renderMcpToolsPage(tools: ToolEntry[]): string {
           return [
             `### ${tool.name}`,
             escapeMdText(tool.description),
-            actions.length > 0
-              ? `**Actions:** ${actions.map((action) => `\`${action}\``).join(", ")}`
-              : "",
             hints ? `**MCP hints:** ${hints}` : "",
             "<details>",
             "<summary>Input schema</summary>",
@@ -327,7 +307,7 @@ export function renderHtmlRuntimePage(): string {
     "",
     generatedNote("the HTML authoring contract shipped with the server"),
     "",
-    "This contract is returned by `worktable_html_read` with action `guide`. It matches the server runtime that handles the HTML Doc.",
+    "This contract is returned by `worktable_guidance` with topic `html`. It matches the server runtime that handles the HTML Doc.",
     "",
     escapeMdText(content),
     "",
@@ -343,7 +323,7 @@ export function renderDrawingGuidePage(): string {
     "",
     generatedNote("the drawing guide shipped with the server"),
     "",
-    "Returned by `worktable_guidance` with action `drawings`. See [MCP tools](/reference/mcp-tools/#drawings) for the input schemas.",
+    "Returned by `worktable_guidance` with topic `drawings`. See [MCP tools](/reference/mcp-tools/#drawings) for the input schemas.",
     "",
     escapeMdText(DRAWING_GUIDE).trim(),
     "",

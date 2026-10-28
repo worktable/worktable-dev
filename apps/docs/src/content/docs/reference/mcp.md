@@ -19,58 +19,58 @@ The initialize response identifies the workspace content and tool surface.
 Tool schemas define supported arguments, and descriptions provide usage guidance.
 Optional skills supply broader workflows.
 
-`worktable_guidance` exposes the `format_spec` action used to
-serialize Worktable content. `worktable_html_read` action `guide` exposes the
-HTML sandbox, bridge, permission, theme, and runtime contract. The former
-skill-list and skill-read actions are retired. Workspace Docs under `skills/`
+`worktable_guidance` returns authoring guidance by `topic`: `format_spec` for
+the format used to serialize Worktable content, `drawings` for drawing
+operations, and `html` for the HTML sandbox, bridge, permission, theme, and
+runtime contract. The former skill-list and skill-read tools are retired. Workspace Docs under `skills/`
 can still be searched and read through the ordinary Doc tools, but MCP never
 promotes them to instructions.
 
-`worktable_documents_read` lists Docs, HTML Docs, and other registered document
-formats, then reads supported formats through one bounded text projection. It
-can also return the exact source and version history for formats that support
-those operations. Its `list` action filters by folder (`pathPrefix`), path
-`glob`, format, and lifetime. In a glob, `*` and `?` match within one folder
-and a `**` segment spans folders, matched against the extensionless path.
-Action `diff` returns a unified line diff of a Doc's Markdown or an HTML Doc's
-source between two points in its history. Each point is a revision returned
-by an earlier read or write (a `sourceRevision`, or the Doc `revision` that
-`worktable_docs_read` returns), or a version id from action `versions`. The
-later point defaults to the current source, reported in the same revision
-scheme as the earlier one. A revision that is no longer in
-the retained history returns an error; use a version id instead. Formats without
-a text projection, such as drawings, cannot be diffed. It requires
-`documents:read`; the specialized Doc and HTML Doc tools remain available for
-format-specific operations.
+`worktable_files_read` works across Docs, HTML Docs, drawings, and other
+registered file formats. Without `path` it lists a Space's files, filtered by
+folder (`pathPrefix`), path `glob`, format, and lifetime. In a glob, `*` and
+`?` match within one folder and a `**` segment spans folders, matched against
+the extensionless path. With `path` it reads a file through one bounded text
+projection; `source: true` returns its exact content and `versions: true` its
+version history, for formats that support them. With `from`, it returns a
+unified line diff of a Doc's Markdown or an HTML Doc's source between two
+points in its history. Each point is a revision returned by an earlier read or
+write (a `sourceRevision`, or the Doc `revision` that `worktable_docs_read`
+returns), or a version id from `versions: true`. The later point, `to`,
+defaults to the current source, reported in the same revision scheme as the
+earlier one. A revision that is no longer in the retained history returns an
+error; use a version id instead. Formats without a text projection, such as
+drawings, cannot be diffed. It requires `documents:read`; the Doc, HTML Doc,
+and drawing tools handle format-specific operations.
 
-`worktable_documents_write` performs operations that span registered document
-formats. It can create, replace, checkpoint, restore a version, move, archive,
-or restore a document when that format supports the requested operation. Its
-folder actions apply to a folder containing Docs, HTML Docs, or both as one
-change. If any document format does not support an operation, the action fails
-before changing it. It requires `documents:write`; the specialized write tools
-remain available for format-specific changes.
+`worktable_files_write` creates a file, or replaces its content when
+`expectedRevision` is given, from `source`, from an earlier version with
+`fromVersionId`, or from an upload. `worktable_files_update` moves, archives,
+restores, checkpoints, or changes the lifetime of a file, one change per call.
+With `folder: true`, the change applies to a folder containing Docs, HTML Docs,
+or both as one change. If any file format does not support an operation, the
+call fails before changing anything. Both require `documents:write`; the Doc,
+HTML Doc, and drawing write tools handle format-specific changes.
 Archiving a folder revokes its documents' share links. Restoring the folder
 does not reactivate those links.
 
-Permanent folder deletion stays on the destructive `worktable_delete` tool.
-Its `document` action deletes one registered document, while `document_folder`
-permanently deletes a folder containing Docs, HTML Docs, or both as one
-all-or-nothing change. Both require `documents:write`. If any document format
-does not support deletion, the action fails before removing anything. One
-folder deletion can contain up to 1,000 Docs and files, and it revokes their
-share links.
+Permanent deletion stays on the destructive `worktable_delete` tool. With
+`path` it deletes one file; with `path` and `folder: true` it permanently
+deletes a folder containing Docs, HTML Docs, or both as one all-or-nothing
+change. Both require `documents:write`. If any file format does not support
+deletion, the call fails before removing anything. One folder deletion can
+contain up to 1,000 Docs and files, and it revokes their share links.
 
-`worktable_spaces` creates, updates, archives, and restores Spaces with
-`docs:write`. Setting a Space's pins also requires `documents:write`.
+`worktable_spaces_write` creates a Space when `spaceId` is omitted. With
+`spaceId` it updates the Space, or archives it with `archived: true` and
+restores it with `archived: false`. It requires `docs:write`. Setting a Space's pins also requires `documents:write`.
 Older clients can send `startHere` instead of `pins`; both names use the same
 permissions and saved pins. If both are provided, their lists must match.
 Space discovery and update results include `startHere` alongside `pins`
 whenever pins are returned.
 
-With `documents:read`, the `search` action in `worktable_discover` searches
-Docs, HTML Docs, and other registered document formats, returning safe text
-where available. Unknown formats and conflicting paths appear as metadata-only
+With `documents:read`, `worktable_search` searches Docs, HTML Docs, and other
+registered document formats, returning safe text where available. Unknown formats and conflicting paths appear as metadata-only
 results and do not open in another document view. Clients without
 `documents:read` retain the earlier Docs and Records search results.
 
@@ -225,18 +225,17 @@ update client configurations if it changed.
 
 ## Tool compatibility
 
-Use `worktable_state`, `worktable_search`, `worktable_space_index` and
-`worktable_pending` for discovery and addressed work. Space mutations have
-individual tools: `worktable_spaces_create`, `worktable_spaces_update`,
-`worktable_spaces_archive` and `worktable_spaces_restore`. These tools take their
-arguments directly, without a `request` wrapper or `action` selector. The older
-`worktable_discover` and `worktable_spaces` tools remain compatible.
+Each listed tool does one thing and takes its arguments directly, without a
+`request` wrapper or `action` selector. Optional fields choose what a tool acts
+on or returns. Calls in the earlier shapes keep working for now, though they
+are no longer listed; [MCP migration](/reference/mcp-migration/) maps them to
+the current tools.
 
-Use `worktable_files_read` and `worktable_files_write` for files. Upload accepts a
-ChatGPT attachment or returns a one-time upload URL over a direct, Cloud or
-Worktable Link connection. The original `worktable_documents_read` and
-`worktable_documents_write` remain available; document source reads retain their
-existing encoding instead of switching to native image/text content.
+Use `worktable_state` to orient, `worktable_search` to find content, and
+`worktable_pending` for addressed work. `worktable_state` with `spaceId` and
+`index: true` returns a Space's full document and Record index. File uploads
+through `worktable_files_write` accept a ChatGPT attachment or return a
+one-time upload URL over a direct, Cloud or Worktable Link connection.
 
 ## Preview tools
 
@@ -262,24 +261,25 @@ surfaces. `mcp-tools.preview.json` lists the preview tools next to the released
 
 ## Prose edits
 
-`worktable_docs_read` action `grep` matches literal text or a JavaScript regular
-expression one line at a time. It returns 1-based line numbers and revisions.
-Check `truncated`, `lineTruncated`, and `skipped` before claiming a complete
-search. `read` accepts `offset` and `limit` for exact line ranges.
+`worktable_search` with `exact: true` matches literal text in Docs one line at
+a time; `regex: true` matches a JavaScript regular expression instead. It
+returns 1-based line numbers and revisions. Check `truncated`,
+`lineTruncated`, and `skipped` before claiming a complete search.
+`worktable_docs_read` accepts `offset` and `limit` for exact line ranges.
 
-`worktable_docs_write` action `edit` applies exact `oldText`/`newText` replacements.
+`worktable_docs_write` with `edits` applies exact `oldText`/`newText` replacements.
 Each match must be unique unless `replaceAll` is set. A batch applies completely
 or not at all. Copy text from a read; reread after `no_match`, `ambiguous`, or
 `revision_conflict`. Unsupported rich-block changes must be made in Worktable.
 
 An edit preserves unchanged content and formatting. With `expectedRevision`,
 concurrent edits to unrelated blocks can survive, while overlapping changes
-can produce a conflict. Whole-document `write` requires `expectedRevision` for
-an existing document and refuses formatting loss unless `force` is supplied.
+can produce a conflict. Whole-document `content` requires `expectedRevision`
+for an existing document and refuses formatting loss unless `force` is supplied.
 Do not use `force` merely to bypass a refusal.
 
 HTML previews capture the saved source with persistent writes and external
-network disabled. A failed preview does not undo a successful save: retry the
-read `render` action rather than repeating the mutation. See
+network disabled. A failed preview does not undo a successful save: retry
+`worktable_files_render` rather than repeating the write. See
 [HTML runtime](/reference/html-doc-runtime/) and [Drawings](/agents/drawings/)
 for format-specific verification.

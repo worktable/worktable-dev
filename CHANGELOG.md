@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Simpler agent tools:** Agents work with Worktable through 30 tools, each of which does one thing with plain arguments, in place of tools that combined several actions. Agents choose the right tool more easily, and the tool list they read is about half the size. Earlier tool calls keep working, so connected agents and installed plugins don't need changes.
+
 ## [0.1.32] - 2026-10-28
 
 ### Added

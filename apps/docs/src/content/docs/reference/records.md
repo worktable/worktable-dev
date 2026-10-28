@@ -73,7 +73,7 @@ External YAML edits must preserve valid envelopes and quoted timestamp strings.
 
 A write checks the fields it changes, so a value that no longer fits the schema
 doesn't block edits to other fields. MCP writes refuse fields the schema doesn't
-declare; add a field with `upsert_collection` first.
+declare; add a field with `worktable_records_upsert_collection` first.
 
 A collection's `titleField` names the field that names each record in lists,
 links and generated ids; choose it with **Use as record title** in the schema
@@ -95,20 +95,17 @@ version required by the fields and do not downgrade newer versions.
 
 ## Queries
 
-`worktable_records_read` action `query` accepts search, filters, ordering,
-projection, pagination, relation expansion, and aggregates. This request finds
-open items and returns a bounded page:
+`worktable_records_query` accepts search, filters, ordering, projection,
+pagination, relation expansion, and aggregates. These arguments find open items
+and return a bounded page:
 
 ```json
 {
-  "request": {
-    "action": "query",
-    "spaceId": "repair-event",
-    "collectionId": "requests",
-    "where": { "field": "status", "op": "eq", "value": "open" },
-    "orderBy": [{ "field": "title", "dir": "asc" }],
-    "limit": 50
-  }
+  "spaceId": "repair-event",
+  "collectionId": "requests",
+  "where": { "field": "status", "op": "eq", "value": "open" },
+  "orderBy": [{ "field": "title", "dir": "asc" }],
+  "limit": 50
 }
 ```
 
@@ -140,9 +137,9 @@ relations or expansion.
 ## Schema changes
 
 Worktable validates a proposed schema against existing records and identifies
-rows that would become invalid. Over MCP, `upsert_collection` merges fields by
-key: the fields you send are added or replaced, the rest stay, and the result
-lists them in `fieldChanges`. Remove a field in the schema editor. Removing a
+rows that would become invalid. Over MCP, `worktable_records_upsert_collection`
+merges fields by key: the fields you send are added or replaced, the rest stay,
+and the result lists them in `fieldChanges`. Remove a field in the schema editor. Removing a
 schema field does not erase its stored values.
 
 Creating a record with an `id` that already exists never overwrites it. MCP
@@ -151,6 +148,6 @@ returns the stored record with `created: false`; REST and HTML Docs answer
 add each item once. Record updates preserve unspecified data and metadata keys;
 permanent deletion uses the separate destructive tool.
 
-The generated [MCP tools](/reference/mcp-tools/) catalog defines exact request
+The generated [MCP tools](/reference/mcp-tools/) catalog defines exact argument
 shapes. See [Manage records](/agents/records-and-schemas/) for the authoring
 workflow and [Records](/guides/records/) for the built-in interface.

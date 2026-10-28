@@ -3617,7 +3617,7 @@ async function writeDocUnlocked(
         return {
           ok: false,
           storedAs: "json",
-          error: `Document contains rich formatting (${safety.lossyFields.join(", ")}) that would be lost. Use force=true to overwrite, or use worktable_docs_write action edit to change exact text.`,
+          error: `Document contains rich formatting (${safety.lossyFields.join(", ")}) that would be lost. Use force=true to overwrite, or pass edits to worktable_docs_write to change exact text.`,
           lossyFields: safety.lossyFields,
         };
       }

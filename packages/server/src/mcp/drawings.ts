@@ -148,7 +148,7 @@ export async function dispatchDrawingOperation(
       sourceRevision: result.sourceRevision,
       error: error instanceof Error ? error.message : String(error),
       retry:
-        "Call worktable_drawings_read action render with a smaller region or fewer ids. The write result, if any, is already saved unless previewOnly is true.",
+        "Call worktable_drawings_read with a smaller region or fewer ids. The write result, if any, is already saved unless previewOnly is true.",
     }
   }
   return output

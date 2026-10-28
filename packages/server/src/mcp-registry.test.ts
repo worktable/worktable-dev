@@ -9,10 +9,9 @@ import { setWorkspaceRootOverride } from "./workspace.ts"
 import {
   OPERATION_DEFINITIONS,
   type OperationId,
-  WORKTABLE_TOOL_NAMES,
-  PUBLIC_TOOL_NAMES,
   WORKTABLE_TOOL_ROUTES,
 } from "./mcp/operations.ts"
+import { PUBLIC_TOOL_NAMES } from "./mcp/catalog.ts"
 import {
   assertPublicOperationOutput,
   PUBLIC_OPERATION_OUTPUT_VARIANTS,
@@ -132,12 +131,13 @@ describe("consolidated MCP registry", () => {
         Object.keys(tool.outputSchema?.properties ?? {}).length
       ).toBeGreaterThan(0)
     }
-    for (const name of WORKTABLE_TOOL_NAMES) {
+    for (const name of PUBLIC_TOOL_NAMES) {
       const tool = byName[name]
       expect(tool).toBeDefined()
       expect(tool.inputSchema.type).toBe("object")
-      expect(tool.inputSchema.properties).toHaveProperty("request")
-      expect(actionsIn(tool.inputSchema).size).toBeGreaterThan(0)
+      // One operation per tool: no request wrapper or action selector.
+      expect(tool.inputSchema.properties ?? {}).not.toHaveProperty("request")
+      expect(actionsIn(tool.inputSchema).size).toBe(0)
     }
   })
 
@@ -217,23 +217,29 @@ describe("consolidated MCP registry", () => {
       idempotentHint: true,
       openWorldHint: false,
     })
-    expect(byName.worktable_spaces?.annotations).toEqual({
-      title: "Manage Worktable spaces",
+    expect(byName.worktable_spaces_write?.annotations).toEqual({
+      title: "Write a Worktable Space",
       readOnlyHint: false,
       destructiveHint: true,
       idempotentHint: false,
       openWorldHint: false,
     })
-    expect(byName.worktable_docs_write?.annotations?.destructiveHint).toBe(true)
-    expect(byName.worktable_threads_write?.annotations).toMatchObject({
-      destructiveHint: true,
+    for (const name of [
+      "worktable_docs_write",
+      "worktable_files_write",
+      "worktable_files_update",
+      "worktable_threads_update",
+      "worktable_delete",
+    ])
+      expect(byName[name]?.annotations?.destructiveHint).toBe(true)
+    expect(byName.worktable_threads_post?.annotations).toMatchObject({
+      destructiveHint: false,
       openWorldHint: true,
     })
-    expect(byName.worktable_thread_delivery?.annotations).toMatchObject({
-      destructiveHint: true,
-      openWorldHint: false,
+    expect(byName.worktable_pending?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: false,
     })
-    expect(byName.worktable_delete?.annotations?.destructiveHint).toBe(true)
   })
 
   it("publishes OAuth schemes in current and compatibility wire fields", async () => {
@@ -248,7 +254,7 @@ describe("consolidated MCP registry", () => {
     const client = await connectedClient(["*"])
     const result = await client.callTool({
       name: "worktable_guidance",
-      arguments: { request: { action: "format_spec" } },
+      arguments: { topic: "format_spec" },
     })
     expect(result.isError).not.toBe(true)
     expect(result.structuredContent).toBeDefined()
@@ -260,8 +266,8 @@ describe("consolidated MCP registry", () => {
   it("returns the technical HTML runtime contract", async () => {
     const client = await connectedClient(["*"])
     const result = await client.callTool({
-      name: "worktable_html_read",
-      arguments: { request: { action: "guide", profile: "runtime" } },
+      name: "worktable_guidance",
+      arguments: { topic: "html", profile: "runtime" },
     })
     expect(result.isError).not.toBe(true)
     expect(result.structuredContent).toMatchObject({
@@ -277,7 +283,7 @@ describe("consolidated MCP registry", () => {
     const client = await connectedClient(["*"])
     const guidance = await client.callTool({
       name: "worktable_guidance",
-      arguments: { request: { action: "format_spec" } },
+      arguments: { topic: "format_spec" },
     })
     expect(guidance.isError).not.toBe(true)
     expect(guidance.structuredContent).toMatchObject({
@@ -286,9 +292,7 @@ describe("consolidated MCP registry", () => {
 
     const validation = await client.callTool({
       name: "worktable_mermaid",
-      arguments: {
-        request: { action: "validate", source: "flowchart TD\nA-->B" },
-      },
+      arguments: { source: "flowchart TD\nA-->B" },
     })
     expect(validation.isError).not.toBe(true)
     expect(validation.structuredContent).toMatchObject({
@@ -298,9 +302,7 @@ describe("consolidated MCP registry", () => {
 
     const preview = await client.callTool({
       name: "worktable_mermaid",
-      arguments: {
-        request: { action: "preview", source: "flowchart TD\nA-->B" },
-      },
+      arguments: { source: "flowchart TD\nA-->B", preview: true },
     })
     expect(preview.isError).not.toBe(true)
     expect(preview.structuredContent).toMatchObject({
@@ -309,18 +311,11 @@ describe("consolidated MCP registry", () => {
     })
   })
 
-  it("enforces scope after resolving an action", async () => {
+  it("enforces the scope of the operation a call resolves to", async () => {
     const client = await connectedClient(["docs:read"])
     const denied = await client.callTool({
       name: "worktable_docs_write",
-      arguments: {
-        request: {
-          action: "write",
-          spaceId: "s",
-          docPath: "d",
-          content: "# D",
-        },
-      },
+      arguments: { spaceId: "s", docPath: "d", content: "# D" },
     })
     expect(denied.isError).toBe(true)
     expect(JSON.stringify(denied.content)).toContain("docs:write")
@@ -422,61 +417,23 @@ describe("released tool surface", () => {
     }
   })
 
-  it("releases the individual operations and file tools on both surfaces", async () => {
+  it("lists the same flat tools on both surfaces", async () => {
     const released = (await listTools()).tools
     expect((await listTools("preview")).tools).toEqual(released)
-    expect(released.map((tool) => tool.name).sort()).toEqual(
-      [...PUBLIC_TOOL_NAMES].sort()
-    )
+    expect(released.map((tool) => tool.name)).toEqual([...PUBLIC_TOOL_NAMES])
     const byName = Object.fromEntries(released.map((tool) => [tool.name, tool]))
-    for (const name of [
-      "worktable_state",
-      "worktable_search",
-      "worktable_space_index",
-      "worktable_pending",
-      "worktable_spaces_create",
-      "worktable_spaces_update",
-      "worktable_spaces_archive",
-      "worktable_spaces_restore",
-    ]) {
-      // An operation has its own arguments, without an action selector.
-      expect(byName[name]?.inputSchema.properties).not.toHaveProperty("action")
-      expect(byName[name]?.inputSchema.properties).not.toHaveProperty("request")
-    }
-    expect(byName.worktable_pending?.annotations).toMatchObject({
-      readOnlyHint: false,
-      destructiveHint: false,
-    })
-    expect(byName.worktable_spaces_create?.annotations?.destructiveHint).toBe(
-      false
-    )
-    expect(byName.worktable_spaces_archive?.annotations?.destructiveHint).toBe(
-      true
-    )
-    expect(byName.worktable_spaces_restore?.annotations?.destructiveHint).toBe(
-      false
-    )
+    // ChatGPT passes a file the user attached as a link to it.
     expect(byName.worktable_files_write?._meta?.["openai/fileParams"]).toEqual([
       "file",
     ])
     expect(byName.worktable_files_write?.inputSchema.properties).toHaveProperty(
       "file"
     )
-    // Existing document clients keep their upload-free input and base64 output contract.
-    expect(
-      byName.worktable_documents_write?.inputSchema.properties
-    ).not.toHaveProperty("file")
-    expect(
-      byName.worktable_documents_read?.outputSchema?.properties
-    ).toHaveProperty("source")
-    expect(byName.worktable_records_write?.description).toContain(
-      "create never overwrites"
+    expect(byName.worktable_files_read?.outputSchema?.properties).toHaveProperty(
+      "source"
     )
-    expect(actionsIn(byName.worktable_records_write?.inputSchema)).toContain(
-      "create_many"
-    )
-    expect(actionsIn(byName.worktable_threads_write?.inputSchema)).toContain(
-      "rename"
+    expect(byName.worktable_records_create?.description).toContain(
+      "Never overwrites"
     )
   })
 })

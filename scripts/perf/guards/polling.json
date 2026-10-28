@@ -140,6 +140,10 @@
     {
       "site": "packages/ui/src/public-share-live.js#(module)",
       "why": "One check a second after the initial frame load detects a failed SDK handshake; it does not repeat after the tool starts."
+    },
+    {
+      "site": "apps/web/src/components/product-analytics.tsx#ProductAnalytics.timer",
+      "why": "Refreshes account consent every 45 seconds only in visible Cloud tabs; the control plane has no consent socket, and this keeps the 60-second browser eligibility grant current after withdrawal or the production kill switch."
     }
   ]
 }

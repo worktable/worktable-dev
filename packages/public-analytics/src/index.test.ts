@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { runInNewContext } from "node:vm"
 import {
   approvedCampaignProperties,
-  createPublicAnalyticsEarlyCtaScript,
   publicAcquisitionProperties,
   isApprovedCta,
   isDoNotTrackEnabled,
@@ -52,8 +50,6 @@ function pageviewEvent(
       $current_url: `https://${hostname}${pathname}?email=private@example.com#secret`,
       $referrer: "https://example.com/private/path",
       $referring_domain: "Example.COM",
-      $raw_user_agent:
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
       $os: "Mac OS X",
       $os_version: "15.4.1",
       $device_type: "Desktop",
@@ -139,54 +135,6 @@ describe("public analytics collection boundary", () => {
     )
   })
 
-  test("early pageviews ignore retired preferences but keep collection boundaries", async () => {
-    const cases = [
-      { hostname: "docs.worktable.dev", expected: 1 },
-      { hostname: "docs.worktable.dev", doNotTrack: "1", expected: 0 },
-      { hostname: "preview.example.com", expected: 0 },
-      { hostname: "docs.worktable.dev", pathname: "/private", expected: 0 },
-      { hostname: "docs.worktable.dev", projectToken: "", expected: 0 },
-    ]
-
-    for (const scenario of cases) {
-      const beacons: Blob[] = []
-      const context = {
-        window: {
-          location: location(scenario.hostname, scenario.pathname ?? "/"),
-          localStorage: { getItem: () => "off" },
-          __worktablePublicAnalyticsDocumentOptOut: true,
-        },
-        navigator: {
-          doNotTrack: scenario.doNotTrack,
-          userAgent: "Test browser",
-          sendBeacon: (_url: string, body: Blob) => {
-            beacons.push(body)
-            return true
-          },
-        },
-        document: { referrer: "", addEventListener: () => {} },
-        crypto,
-        Blob,
-        URLSearchParams,
-        btoa,
-      }
-      const script = createPublicAnalyticsEarlyCtaScript({
-        ...config("worktable_docs"),
-        projectToken: scenario.projectToken ?? PROJECT_TOKEN,
-      })
-      runInNewContext(script, context)
-      runInNewContext(script, context)
-      expect(beacons.length).toBe(scenario.expected)
-      if (beacons[0]) {
-        const body = new URLSearchParams(await beacons[0].text())
-        const event = JSON.parse(atob(body.get("data")!)).batch[0]
-        expect(event.event).toBe("$pageview")
-        expect(event.properties.$cookieless_mode).toBe(true)
-        expect(event.properties.distinct_id).toBe("$posthog_cookieless")
-      }
-    }
-  })
-
   test("accepts only the contract's CTA and placement pairs", () => {
     expect(isApprovedCta("install_guide_open", "footer")).toBe(true)
     expect(isApprovedCta("cloud_signup_open", "footer_cta")).toBe(true)
@@ -243,6 +191,15 @@ describe("public analytics collection boundary", () => {
     expect(publicAcquisitionProperties("", "www.worktable.cloud")).toEqual({
       acquisition_source: "internal_unknown",
     })
+    for (const domain of [
+      "app.worktable.cloud",
+      "polar.sh",
+      "checkout.polar.sh",
+    ]) {
+      expect(publicAcquisitionProperties("", domain)).toEqual({
+        acquisition_source: "internal_unknown",
+      })
+    }
     const event = pageviewEvent("worktable_dev", "www.worktable.dev")
     event.properties!.acquisition_source = "private@example.com"
     event.properties!.traffic_type = "arbitrary"
@@ -275,16 +232,14 @@ describe("public analytics event sanitizer", () => {
     expect(event).not.toBeNull()
     expect(event?.properties).toEqual({
       token: PROJECT_TOKEN,
-      distinct_id: "$posthog_cookieless",
-      $cookieless_mode: true,
+      distinct_id: "persistent-visitor-id",
       $process_person_profile: false,
       $geoip_disable: true,
       analytics_schema_version: PUBLIC_ANALYTICS_SCHEMA_VERSION,
+      environment: "production",
       site_surface: "worktable_dev",
       $host: "www.worktable.dev",
       $pathname: "/",
-      $raw_user_agent:
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
       $referring_domain: "example.com",
       $os: "Mac OS X",
       $device_type: "Desktop",
@@ -292,18 +247,8 @@ describe("public analytics event sanitizer", () => {
     expect(event?.$set).toBeUndefined()
     expect(event?.$set_once).toBeUndefined()
 
-    const oversizedUserAgentEvent = pageviewEvent(
-      "worktable_dev",
-      "www.worktable.dev"
-    )
-    oversizedUserAgentEvent.properties!.$raw_user_agent = "x".repeat(1_001)
-    expect(
-      sanitizePublicAnalyticsEvent(
-        oversizedUserAgentEvent,
-        config("worktable_dev"),
-        location("www.worktable.dev")
-      )?.properties?.$raw_user_agent
-    ).toBe(`${"x".repeat(997)}...`)
+    expect(event?.properties).not.toHaveProperty("$raw_user_agent")
+    expect(event?.properties).not.toHaveProperty("$cookieless_mode")
   })
 
   test("accepts installer copies only at their declared acquisition surfaces", () => {
@@ -400,11 +345,11 @@ describe("public analytics event sanitizer", () => {
         location("www.worktable.dev", "/privacy")
       )
     ).toBeNull()
-    const propertiesWithoutUserAgent = { ...valid.properties }
-    delete propertiesWithoutUserAgent.$raw_user_agent
+    const propertiesWithoutIdentity = { ...valid.properties }
+    delete propertiesWithoutIdentity.distinct_id
     expect(
       sanitizePublicAnalyticsEvent(
-        { ...valid, properties: propertiesWithoutUserAgent },
+        { ...valid, properties: propertiesWithoutIdentity },
         config("worktable_dev"),
         location("www.worktable.dev")
       )

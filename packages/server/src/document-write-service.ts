@@ -1,3 +1,4 @@
+import { captureWorkSaved, currentAnalyticsContext, isAnalyticsMaintenance, hasAuthoredContent, hasAuthoredHtml } from "./analytics.ts"
 import { assertSpaceAccess } from "./team-policy.ts";
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { noteDocumentEdited, recordActivity } from "./activity-log.ts"
@@ -7,6 +8,7 @@ import {
 } from "./document-activity.ts"
 import { effectiveArchiveOn } from "./lifetime-rules.ts"
 import { createHash } from "node:crypto"
+import { isDeepStrictEqual } from "node:util"
 import { lstat, rm } from "node:fs/promises"
 import { basename, dirname, resolve } from "node:path"
 import {
@@ -22,6 +24,7 @@ import {
   atomicCreateBytes,
   atomicWriteBytesAfterValidation,
 } from "./atomic-file.ts"
+
 import {
   buildDocumentCatalog,
   type DocumentCatalog,
@@ -119,6 +122,23 @@ export type DocumentWriteFailure =
   | "invalid"
   | "unsupported"
   | "forbidden"
+
+function hasAuthoredSource(bytes: Uint8Array, registration: ServerDocumentFormatRegistration): boolean {
+  if (!currentAnalyticsContext()) return false
+  const text = new TextDecoder().decode(bytes)
+  if (registration.id === "worktable.quickdraw") return Object.values(parseQuickdrawDocument(bytes).snapshot.document.store).some((record) => record.typeName === "shape")
+  if (registration.legacyVersionKind === "widgets") return hasAuthoredHtml(text)
+  if (registration.fileSource?.extension === ".json") {
+    try { return hasAuthoredContent(JSON.parse(text)) } catch { return false }
+  }
+  return hasAuthoredContent(text)
+}
+
+function sourceContentChanged(before: Uint8Array, after: Uint8Array, registration: ServerDocumentFormatRegistration): boolean {
+  if (registration.id !== "worktable.quickdraw") return !Buffer.from(before).equals(Buffer.from(after))
+  const content = (bytes: Uint8Array) => Object.entries(parseQuickdrawDocument(bytes).snapshot.document.store).filter(([, record]) => record.typeName === "shape" || record.typeName === "asset").sort(([a], [b]) => a.localeCompare(b))
+  return !isDeepStrictEqual(content(before), content(after))
+}
 
 export class DocumentWriteError extends Error {
   readonly reason: DocumentWriteFailure
@@ -976,6 +996,7 @@ export async function createRegisteredDocument(options: {
             versionId,
             contentChanged: true,
           })
+          if (!isAnalyticsMaintenance(options.source, options.createdBy) && hasAuthoredSource(bytes, registration)) captureWorkSaved(registration.legacyVersionKind === "widgets" ? "html" : "document")
           return {
             documentId,
             path,
@@ -1513,6 +1534,7 @@ export async function replaceRegisteredDocument(options: {
           documentId,
           generationId: versionId,
         })
+      if (currentAnalyticsContext() && !isAnalyticsMaintenance(options.source, options.updatedBy) && sourceContentChanged(before, bytes, current.registration) && (hasAuthoredSource(bytes, current.registration) || hasAuthoredSource(before, current.registration))) captureWorkSaved(current.registration.legacyVersionKind === "widgets" ? "html" : "document")
       return {
         documentId,
         path: current.path,

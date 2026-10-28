@@ -1,8 +1,6 @@
+import { gunzipSync } from "node:zlib"
 import { expect, test, type Page } from "@playwright/test"
-import {
-  CLOUD_PLANS,
-  type BillingStatus,
-} from "@worktable/hosted-contract"
+import { CLOUD_PLANS, type BillingStatus } from "@worktable/hosted-contract"
 import { startWebHarness, type WebHarness } from "./harness"
 
 let harness: WebHarness
@@ -89,7 +87,7 @@ async function openCloudAccount(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Settings", exact: true }).click()
   const settings = page.getByRole("dialog")
   const section = settings.getByRole("button", {
-    name: "Subscription",
+    name: "Account",
     exact: true,
   })
   await section.click()
@@ -324,4 +322,118 @@ test("Cloud Account keeps export available while billing access is locked", asyn
     page.getByRole("heading", { name: "Workspace export ready" })
   ).toBeVisible()
   expect(exportMethod).toBe("GET")
+})
+
+test("Cloud analytics requires an account choice, filters SDK context, and remembers revocation", async ({
+  page,
+}) => {
+  await mockCloudAccount(page)
+  let preference = { version: 1, enabled: false, updatedAt: 1000 }
+  const choices: unknown[] = []
+  const events: Array<{ event: string; properties: Record<string, unknown> }> =
+    []
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "webdriver", {
+      configurable: true,
+      get: () => false,
+    })
+    Object.defineProperty(navigator, "userAgentData", {
+      configurable: true,
+      get: () => undefined,
+    })
+  })
+  await page.route("**/api/analytics/preference", async (route) => {
+    if (route.request().method() === "POST") {
+      const choice = route.request().postDataJSON()
+      choices.push(choice)
+      preference = {
+        version: 1,
+        enabled: choice.enabled,
+        updatedAt: Date.now(),
+      }
+    }
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        preference,
+        distinctId: "workos:user_analytics",
+        projectToken: "phc_browser_product_test",
+        apiHost: "https://edge.worktable.dev",
+        surface: "web",
+        worktableId: "table_test",
+        trafficType: "verification",
+      }),
+    })
+  })
+  await page.route("https://edge.worktable.dev/**", async (route) => {
+    const request = route.request()
+    if (request.method() === "POST") {
+      let bytes = request.postDataBuffer()!
+      if (bytes[0] === 0x1f && bytes[1] === 0x8b) bytes = gunzipSync(bytes)
+      const text = bytes.toString("utf8")
+      const encoded = new URLSearchParams(text).get("data")
+      let payload
+      try {
+        payload = JSON.parse(encoded ?? text)
+      } catch {
+        payload = JSON.parse(
+          Buffer.from(encoded ?? text, "base64").toString("utf8")
+        )
+      }
+      events.push(...(payload.batch ?? [payload]))
+    }
+    await route.fulfill({
+      contentType: "application/json",
+      body: "{}",
+      headers: {
+        "access-control-allow-origin": "*",
+        "access-control-allow-headers": "*",
+      },
+    })
+  })
+  await openCloudAccount(page)
+  const choice = page.getByRole("switch", { name: "Help improve Worktable" })
+  await expect(choice).not.toBeChecked()
+  expect(events).toEqual([])
+  await page.evaluate(() => {
+    history.replaceState(null, "", "?email=private%40example.com#private-doc")
+    document.title = "Private document title"
+  })
+  await choice.click()
+  await expect(choice).toBeChecked()
+  await expect
+    .poll(() => events.map((event) => event.event))
+    .toContain("product:opened")
+  await expect
+    .poll(() => events.map((event) => event.event))
+    .toContain("$identify")
+  for (const event of events) {
+    expect(event.properties).toMatchObject({
+      distinct_id: "workos:user_analytics",
+      actor_type: "human",
+      traffic_type: "verification",
+      analytics_schema_version: 3,
+    })
+    for (const key of [
+      "$current_url",
+      "$referrer",
+      "$pathname",
+      "$initial_current_url",
+      "$raw_user_agent",
+    ])
+      expect(event.properties).not.toHaveProperty(key)
+  }
+  for (const secret of [
+    "private@example.com",
+    "private-doc",
+    "Private document title",
+  ])
+    expect(JSON.stringify(events)).not.toContain(secret)
+  const count = events.length
+  await choice.click()
+  await expect(choice).not.toBeChecked()
+  expect(choices).toEqual([{ enabled: true }, { enabled: false }])
+  await openCloudAccount(page)
+  await expect(choice).not.toBeChecked()
+  expect(events).toHaveLength(count)
 })

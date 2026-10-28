@@ -9,6 +9,7 @@ import { BASE_URL, getFreshBrowserCsrfToken } from "./http"
  * real form submission instead of authenticatedFetch.
  */
 export async function submitCloudLogout(): Promise<void> {
+  window.dispatchEvent(new Event("worktable:analytics-stop"))
   let csrfToken: string | null = null
   try {
     // Another tab may have completed a new login since this SPA cached a token

@@ -1,6 +1,7 @@
 import { runAsActivityActor } from "./activity-log.ts";
 import type { RequestPrincipal } from "./token-store.ts";
 import * as Y from "yjs";
+import { withAnalyticsContext, type SaveAnalyticsContext } from "./analytics.ts";
 import * as syncProtocol from "y-protocols/sync";
 import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
@@ -156,6 +157,7 @@ interface LiveDoc {
   protectedUntilMs: number; // briefly block browser persists over agent/filesystem versions
   humanActor?: RequestPrincipal;
   humanEdited: boolean; // a connected client has signaled a genuine local edit this session
+  analyticsContributors: Map<WsClient, { generation: number; context: SaveAnalyticsContext | null }>;
   contentGeneration: number; // bumped by every applied Y.Doc content update
   // Bumped on every MESSAGE_INTENT. Consumers snapshot it before their awaits
   // and only clear/ack the edit signal if it is unchanged after — an intent
@@ -473,6 +475,7 @@ export class YjsDocManager {
   // a new doc path while its sockets stay connected, so message/disconnect
   // routing follows the room object rather than re-looking it up by that URL.
   private clientDocs: Map<WsClient, LiveDoc> = new Map();
+  private clientAnalytics = new WeakMap<WsClient, SaveAnalyticsContext | null>();
   private frozenDocs: Set<string> = new Set();
   private moveTransitionTail: Promise<void> = Promise.resolve()
   private pausedDocMutationCutoffs: Map<string, number> = new Map()
@@ -636,6 +639,7 @@ export class YjsDocManager {
       lastPersistMs: fileStat?.updatedAt ?? Date.now(),
       protectedUntilMs: protectedSource ? Date.now() + 15_000 : 0,
       humanEdited: false,
+      analyticsContributors: new Map(),
       contentGeneration,
       intentGeneration: 0,
       diskContentHash,
@@ -666,6 +670,8 @@ export class YjsDocManager {
         origin !== ORIGIN_INITIAL_LOAD &&
         origin !== ORIGIN_AGENT_WRITE
       ) {
+        const author = origin as WsClient;
+        liveDoc.analyticsContributors.set(author, { generation: liveDoc.contentGeneration, context: this.clientAnalytics.get(author) ?? null });
         this.schedulePersist(liveDoc.key, spaceId, liveDoc.docPath);
       }
 
@@ -695,12 +701,14 @@ export class YjsDocManager {
     ws: WsClient,
     spaceId: string,
     docPath: string,
-    freshness?: { baseVersionId?: string; baseContentHash?: string }
+    freshness?: { baseVersionId?: string; baseContentHash?: string },
+    analyticsContext: SaveAnalyticsContext | null = null
   ): Promise<void> {
     if (this.pendingConnections.has(ws) || this.clientDocs.has(ws)) {
       return Promise.reject(new Error("Yjs client is already connecting or connected"));
     }
 
+    this.clientAnalytics.set(ws, analyticsContext);
     const pending: PendingConnection = {
       spaceId,
       docPath,
@@ -1489,6 +1497,7 @@ export class YjsDocManager {
       fragment.delete(0, fragment.length);
       fragment.insert(0, replacement);
     }, ORIGIN_FILE_WATCHER);
+    liveDoc.analyticsContributors.clear();
 
     const protectedSource = provenance?.source && !isBrowserSource(provenance.source) && provenance.source !== "rest-api";
     // Once the transaction commits, arm every correctness guard without an
@@ -2390,7 +2399,12 @@ export class YjsDocManager {
     const hadIntent = liveDoc.humanEdited;
     const humanActor = liveDoc.humanActor;
     const intentGen = liveDoc.intentGeneration;
+    const analyticsGeneration = liveDoc.contentGeneration;
+    const contributors = [...liveDoc.analyticsContributors.values()].flatMap((entry) => entry.context?.contributors ?? [null]);
     const spendIntent = () => {
+      for (const [author, entry] of liveDoc.analyticsContributors) {
+        if (entry.generation <= analyticsGeneration) liveDoc.analyticsContributors.delete(author);
+      }
       if (hadIntent && liveDoc.intentGeneration === intentGen) {
         liveDoc.humanEdited = false;
         liveDoc.humanActor = undefined;
@@ -2537,13 +2551,13 @@ export class YjsDocManager {
     const filePath = getDocPath(spaceId, docPath);
     suppressPath(filePath);
     try {
-      const writeResult = await runAsActivityActor(hadIntent ? humanActor : undefined, () => writeDoc(spaceId, docPath, blocks, {
+      const writeResult = await withAnalyticsContext(hadIntent ? { contributors } : null, () => runAsActivityActor(hadIntent ? humanActor : undefined, () => writeDoc(spaceId, docPath, blocks, {
         updatedBy,
         source,
         managedIdentity: true,
         canonical: mermaidNormalized,
         continueSession,
-      }));
+      })));
       if (!writeResult.ok) {
         throw new Error(writeResult.error ?? "Yjs document persist failed");
       }

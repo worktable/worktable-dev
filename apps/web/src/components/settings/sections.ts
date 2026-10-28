@@ -126,8 +126,8 @@ const LINK: SettingsSection = {
 const ACCOUNT: SettingsSection = {
   id: "account",
   group: "Worktable",
-  label: "Subscription",
-  description: "Plan and billing.",
+  label: "Account",
+  description: "Plan, billing, and privacy.",
   icon: CreditCard,
   component: AccountSection.Component,
   preload: AccountSection.preload,

@@ -9,6 +9,16 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.35] - 2026-10-28
+
+### Added
+
+- **Analytics choice:** Choose whether to share Cloud usage analytics for your account and connected agents, with separate website and documentation controls.
+
+### Fixed
+
+- **Worktable switching:** See loading and retry states for Cloud Worktables, while Desktop shows local Worktables without waiting for Cloud.
+
 ## [0.1.34] - 2026-10-28
 
 ### Fixed

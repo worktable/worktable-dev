@@ -1,115 +1,129 @@
 import type { BeforeSendFn } from "posthog-js"
 import posthog from "posthog-js/dist/module.slim"
 import {
+  approvedCampaignProperties,
+  isApprovedCta,
   publicAcquisitionProperties,
-  isDoNotTrackEnabled,
   isPublicAnalyticsContextAllowed,
   normalizePublicAnalyticsPathname,
   PUBLIC_ANALYTICS_API_HOST,
+  PUBLIC_ANALYTICS_CTA_ATTRIBUTE,
+  PUBLIC_ANALYTICS_PLACEMENT_ATTRIBUTE,
   PUBLIC_ANALYTICS_SCHEMA_VERSION,
   sanitizePublicAnalyticsEvent,
   type PublicAnalyticsConfig,
   type PublicInstallCommandId,
   type PublicInstallCopyPlacement,
 } from "./index"
+import {
+  clearBrowserAnalyticsIdentity,
+  migrateLegacyAnalyticsPreference,
+  getPublicAnalyticsChoice,
+  subscribeToPublicAnalyticsChoice,
+} from "./consent"
+export {
+  getPublicAnalyticsChoice,
+  setPublicAnalyticsEnabled,
+  subscribeToPublicAnalyticsChoice,
+} from "./consent"
 
 let activeConfig: PublicAnalyticsConfig | undefined
 let initialized = false
+let installed = false
 let lastPageviewKey: string | undefined
 
 const sanitizeBeforeSend: BeforeSendFn = (event) => {
-  if (!event || !activeConfig) return null
+  if (!event || !activeConfig || !canCapture(activeConfig)) return null
   const sanitized = sanitizePublicAnalyticsEvent(
     event,
     activeConfig,
     window.location
   )
-  if (!sanitized) return null
-  return {
-    ...event,
-    event: sanitized.event,
-    properties: sanitized.properties ?? {},
-    $set: undefined,
-    $set_once: undefined,
-  }
+  return sanitized
+    ? {
+        ...event,
+        properties: sanitized.properties ?? {},
+        $set: undefined,
+        $set_once: undefined,
+      }
+    : null
 }
 
 export function initializePublicAnalytics(
   config: PublicAnalyticsConfig
 ): boolean {
   activeConfig = config
-
-  if (!config.projectToken) {
-    if (config.isDevelopment) {
-      console.error(
-        `${config.environmentVariableName} variable required by PostHog is missing or un-configured, this causes events to be silently missed. This error stops appearing once ${config.environmentVariableName} is configured`
-      )
-    }
-    return false
+  migrateLegacyAnalyticsPreference()
+  if (!installed) {
+    installed = true
+    document.addEventListener("click", captureClick, true)
+    document.addEventListener("auxclick", captureClick, true)
+    subscribeToPublicAnalyticsChoice(() => {
+      if (!getPublicAnalyticsChoice().enabled) {
+        if (initialized) {
+          posthog.reset(true)
+          posthog.opt_out_capturing()
+        }
+        if (activeConfig?.projectToken)
+          clearBrowserAnalyticsIdentity(activeConfig.projectToken)
+        lastPageviewKey = undefined
+      } else if (activeConfig && initializePublicAnalytics(activeConfig)) {
+        capturePublicPageview()
+      }
+    })
   }
-
   if (!canCapture(config)) return false
-  if (initialized) return true
-
-  posthog.init(config.projectToken, {
-    api_host: config.apiHost ?? PUBLIC_ANALYTICS_API_HOST,
-    ui_host: "https://us.posthog.com",
-    defaults: "2026-05-30",
-    autocapture: false,
-    rageclick: false,
-    capture_pageview: false,
-    capture_pageleave: false,
-    capture_exceptions: false,
-    capture_performance: false,
-    capture_heatmaps: false,
-    capture_dead_clicks: false,
-    disable_session_recording: true,
-    enable_recording_console_log: false,
-    disable_surveys: true,
-    disable_surveys_automatic_display: true,
-    disable_product_tours: true,
-    disable_scroll_properties: true,
-    disable_capture_url_hashes: true,
-    save_campaign_params: false,
-    save_referrer: false,
-    advanced_disable_flags: true,
-    advanced_disable_feature_flags: true,
-    advanced_disable_feature_flags_on_first_load: true,
-    person_profiles: "never",
-    cookieless_mode: "always",
-    respect_dnt: true,
-    persistence: "memory",
-    disable_persistence: true,
-    cross_subdomain_cookie: false,
-    internal_or_test_user_hostname: null,
-    request_batching: false,
-    before_send: sanitizeBeforeSend,
-  })
-
-  initialized = true
+  if (!initialized) {
+    posthog.init(config.projectToken!, {
+      api_host: config.apiHost ?? PUBLIC_ANALYTICS_API_HOST,
+      ui_host: "https://us.posthog.com",
+      defaults: "2026-05-30",
+      autocapture: false,
+      rageclick: false,
+      capture_pageview: false,
+      capture_pageleave: false,
+      capture_exceptions: false,
+      capture_performance: false,
+      capture_heatmaps: false,
+      capture_dead_clicks: false,
+      disable_session_recording: true,
+      enable_recording_console_log: false,
+      disable_surveys: true,
+      disable_surveys_automatic_display: true,
+      disable_product_tours: true,
+      disable_scroll_properties: true,
+      disable_capture_url_hashes: true,
+      save_campaign_params: false,
+      save_referrer: false,
+      advanced_disable_flags: true,
+      advanced_disable_feature_flags: true,
+      advanced_disable_feature_flags_on_first_load: true,
+      person_profiles: "identified_only",
+      respect_dnt: true,
+      persistence: "localStorage+cookie",
+      cross_subdomain_cookie: true,
+      internal_or_test_user_hostname: null,
+      request_batching: false,
+      before_send: sanitizeBeforeSend,
+    })
+    initialized = true
+  }
+  posthog.opt_in_capturing({ captureEventName: false })
   return true
 }
 
 export function capturePublicPageview(): void {
-  const pathname = normalizePublicAnalyticsPathname(window.location.pathname)
-  const key = `${window.location.hostname}${pathname}`
-  const windowWithEarlyPageview = window as typeof window & {
-    __worktablePublicAnalyticsEarlyPageviewKey?: string
+  const key = `${location.hostname}${normalizePublicAnalyticsPathname(location.pathname)}`
+  if (
+    activeConfig &&
+    !isPublicAnalyticsContextAllowed(activeConfig, location)
+  ) {
+    lastPageviewKey = key
+    return
   }
-  const earlyPageviewKey =
-    windowWithEarlyPageview.__worktablePublicAnalyticsEarlyPageviewKey
-  if (earlyPageviewKey !== undefined) {
-    delete windowWithEarlyPageview.__worktablePublicAnalyticsEarlyPageviewKey
-    if (earlyPageviewKey === key) {
-      lastPageviewKey = key
-      return
-    }
-  }
-
+  if (!activeConfig || !initializePublicAnalytics(activeConfig)) return
   if (key === lastPageviewKey) return
   lastPageviewKey = key
-
-  if (!canCaptureActiveConfig()) return
   capture("$pageview", {})
 }
 
@@ -118,9 +132,7 @@ export function captureInstallCommandCopy(
   commandId: PublicInstallCommandId,
   placement: PublicInstallCopyPlacement
 ): void {
-  // The copy control can hydrate before the root analytics effect. Initialize
-  // on demand so a successful early copy is not silently dropped.
-  if (!initializePublicAnalytics(config) || !canCaptureActiveConfig()) return
+  if (!initializePublicAnalytics(config)) return
   capture("marketing:install_command_copy", {
     command_id: commandId,
     placement,
@@ -128,55 +140,106 @@ export function captureInstallCommandCopy(
 }
 
 function capture(
-  event: "$pageview" | "marketing:install_command_copy",
+  event: "$pageview" | "marketing:install_command_copy" | "marketing:cta_click",
   properties: Record<string, string>
 ) {
-  if (!activeConfig) return
-  const pathname = normalizePublicAnalyticsPathname(window.location.pathname)
-
+  if (!activeConfig || !initialized || !canCapture(activeConfig)) return
+  const referrer = referringDomain()
+  const acquisition = publicAcquisitionProperties(location.search, referrer)
+  posthog.register_once({
+    initial_acquisition_source: acquisition.acquisition_source,
+  })
+  if (
+    !["direct_or_unknown", "internal_unknown"].includes(
+      acquisition.acquisition_source!
+    )
+  )
+    posthog.register({
+      latest_external_acquisition_source: acquisition.acquisition_source,
+    })
   posthog.capture(
     event,
     {
       analytics_schema_version: PUBLIC_ANALYTICS_SCHEMA_VERSION,
       site_surface: activeConfig.siteSurface,
-      $host: window.location.hostname,
-      $pathname: pathname,
-      ...referringDomainProperty(),
-      ...publicAcquisitionProperties(
-        window.location.search,
-        referringDomainProperty().$referring_domain
-      ),
+      $host: location.hostname,
+      $pathname: normalizePublicAnalyticsPathname(location.pathname),
+      ...(referrer ? { $referring_domain: referrer } : {}),
+      ...acquisition,
       ...properties,
     },
-    {
-      send_instantly: true,
-    }
+    { send_instantly: true }
   )
 }
 
-function referringDomainProperty(): Record<string, string> {
-  if (!document.referrer) return {}
-  try {
-    const hostname = new URL(document.referrer).hostname.toLowerCase()
-    return hostname.length > 0 && hostname.length <= 253
-      ? { $referring_domain: hostname }
-      : {}
-  } catch {
-    return {}
+function captureClick(event: MouseEvent): void {
+  if (event.type === "auxclick" && event.button !== 1) return
+  if (
+    !activeConfig ||
+    !canCapture(activeConfig) ||
+    !(event.target instanceof Element)
+  )
+    return
+  const anchor = event.target.closest("a[href]")
+  if (anchor instanceof HTMLAnchorElement) {
+    const destination = new URL(anchor.href, location.href)
+    const publicPage = ["www.worktable.cloud", "docs.worktable.dev"].includes(
+      destination.hostname
+    )
+    const signup =
+      destination.hostname === "app.worktable.cloud" &&
+      destination.pathname.replace(/\/+$/, "") === "/signup"
+    const samePage =
+      destination.origin === location.origin &&
+      destination.pathname === location.pathname &&
+      destination.hash
+    if (
+      destination.protocol === "https:" &&
+      !samePage &&
+      (publicPage || signup)
+    ) {
+      if (!destination.searchParams.has("utm_source")) {
+        for (const [key, value] of Object.entries(
+          approvedCampaignProperties(location.search)
+        )) {
+          if (!destination.searchParams.has(key))
+            destination.searchParams.set(key, value)
+        }
+        const acquisition = publicAcquisitionProperties(
+          location.search,
+          referringDomain()
+        )
+        destination.searchParams.set(
+          "wt_source",
+          acquisition.acquisition_source!
+        )
+        if (acquisition.traffic_type === "verification")
+          destination.searchParams.set("wt_test", "1")
+      }
+      anchor.href = destination.href
+    }
   }
+  const tracked = event.target.closest(`[${PUBLIC_ANALYTICS_CTA_ATTRIBUTE}]`)
+  const ctaId = tracked?.getAttribute(PUBLIC_ANALYTICS_CTA_ATTRIBUTE)
+  const placement = tracked?.getAttribute(PUBLIC_ANALYTICS_PLACEMENT_ATTRIBUTE)
+  if (ctaId && placement && isApprovedCta(ctaId, placement))
+    capture("marketing:cta_click", { cta_id: ctaId, placement })
 }
 
-function canCaptureActiveConfig(): boolean {
-  return activeConfig !== undefined && initialized && canCapture(activeConfig)
+function referringDomain(): string | undefined {
+  try {
+    return document.referrer
+      ? new URL(document.referrer).hostname.toLowerCase()
+      : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function canCapture(config: PublicAnalyticsConfig): boolean {
   return (
     Boolean(config.projectToken) &&
-    isPublicAnalyticsContextAllowed(config, window.location) &&
-    !isDoNotTrackEnabled(
-      navigator as Navigator & { msDoNotTrack?: string | null },
-      window as typeof window & { doNotTrack?: string | null }
-    )
+    isPublicAnalyticsContextAllowed(config, location) &&
+    getPublicAnalyticsChoice().enabled
   )
 }

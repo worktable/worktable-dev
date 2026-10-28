@@ -1466,9 +1466,18 @@ function BlockNoteDocPage({
     }
 
     document.addEventListener("visibilitychange", handleVisibility)
+    const refreshAnalyticsContext = () => {
+      const ws = wsProviderRef.current
+      if (ws && !document.hidden) {
+        ws.disconnect()
+        ws.connect()
+      }
+    }
+    window.addEventListener("worktable:analytics-enabled", refreshAnalyticsContext)
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility)
+      window.removeEventListener("worktable:analytics-enabled", refreshAnalyticsContext)
 
       if (wsProviderRef.current) {
         wsProviderRef.current.destroy()

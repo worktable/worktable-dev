@@ -1,3 +1,4 @@
+import { captureWorkSaved, currentAnalyticsContext, hasAuthoredHtml, isAnalyticsMaintenance } from "./analytics.ts";
 // ============================================================
 // Widget (HTML doc) version history.
 //
@@ -307,6 +308,11 @@ export async function recordWidgetVersion(
   const afterHash = widgetContentHash(after);
   if (!opts?.force && beforeHash && beforeHash === afterHash) return undefined;
 
+  const captureSavedHtml = () => {
+    if (currentAnalyticsContext() && !isAnalyticsMaintenance(context?.source, context?.updatedBy) && before?.html !== after.html &&
+      (hasAuthoredHtml(after.html) || (before && hasAuthoredHtml(before.html)))) captureWorkSaved("html");
+  };
+
   const currentCategory = sourceCategory(
     context?.source ?? "unknown",
     context?.updatedBy ?? "unknown"
@@ -345,6 +351,7 @@ export async function recordWidgetVersion(
     if (provenance) {
       await updateWidgetProvenance(spaceId, widgetId, provenance);
     }
+    captureSavedHtml();
     return provenance;
   }
 
@@ -434,6 +441,7 @@ export async function recordWidgetVersion(
 
   await updateWidgetProvenance(spaceId, widgetId, provenance);
   await pruneNonCheckpointVersions(spaceId, "widgets", widgetId, NON_CHECKPOINT_VERSIONS_KEPT);
+  captureSavedHtml();
   return provenance;
 }
 

@@ -1,3 +1,4 @@
+import { captureMcpCall } from "../analytics.ts"
 import { takeResultMedia } from "./media.ts"
 import { ambientNotices } from "../pending-ambient.ts"
 import { currentRequestIdentity } from "../team-policy.ts"
@@ -258,9 +259,12 @@ export function registerTools(
     extra: CallExtra,
     call: { file?: Record<string, unknown>; legacyFileRead?: boolean } = {}
   ) => {
+    const analyticsStarted = performance.now()
+    const analyticsOperation = operations.length === 1 ? operations[0]!.id : "compound"
     for (const operation of operations) {
       const missingScope = missingOperationScope(operation, scopes)
       if (missingScope) {
+        captureMcpCall(toolName, analyticsOperation, "denied", performance.now() - analyticsStarted)
         return mkAuthErr(
           `Insufficient scope: ${toolName} requires "${missingScope}" here. The workspace owner can grant it by reconnecting this agent with broader access.`,
           urlOriginFor(),
@@ -334,6 +338,7 @@ export function registerTools(
               last.result
             )
           : null
+      captureMcpCall(toolName, analyticsOperation, "success", performance.now() - analyticsStarted)
       // Some clients show the model only the structured content, others
       // only the text, so the notices go in both.
       return {
@@ -348,6 +353,7 @@ export function registerTools(
         ],
       }
     } catch (error) {
+      captureMcpCall(toolName, analyticsOperation, "error", performance.now() - analyticsStarted)
       return errorResult(error)
     }
   }

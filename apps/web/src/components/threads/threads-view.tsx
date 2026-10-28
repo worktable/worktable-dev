@@ -274,7 +274,9 @@ function ThreadDetail({
   navigateNew: (showComposer: boolean) => void
 }) {
   const threadQuery = useThread(selectedLocation, threadId)
-  const participantsQuery = useThreadParticipants()
+  const participantsQuery = useThreadParticipants(
+    threadId ? selectedLocation : createLocation
+  )
   const createMutations = useThreadMutations(createLocation)
   const replyMutations = useThreadMutations(selectedLocation)
   const renameMutation = useThreadRename(selectedLocation)

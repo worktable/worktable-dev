@@ -50,7 +50,7 @@ An authenticated agent owns delivery only while its adapter or skill is running.
 
 When your user asks you to watch for comments or messages, use the first of these your app supports:
 
-1. **An event trigger.** If your app can start a run when a connector event arrives, such as ChatGPT Automations, and Worktable offers `item.sent_to_you`, create one triggered by that event, with no schedule. Filter it when the work is one Space, Doc or thread. Its prompt: open the item the event names and reply to it in Worktable. Tell your user that replies will appear in Worktable.
+1. **An event trigger.** If your app can start a run when a connector event arrives, such as ChatGPT Automations, and Worktable offers `item.sent_to_you`, create one triggered by that event, with no schedule. Filter it when the work is one Space, Doc or thread. Its prompt: open the item the event names and reply to it in Worktable. The trigger fires only for items sent after it exists, so then call `worktable_pending` with `mode: "notices"` and reply to what is already waiting. Tell your user that replies will appear in Worktable.
 2. **A wait.** Call `worktable_pending` with `wait: true`. Add a `scope` when the work is one Space, Doc or thread. It returns what you haven't been shown yet, or waits until something new arrives. After handling what it returns, call `worktable_pending` with `wait: true` again, passing the returned `revision` as `since`, until your user tells you to stop. A wait lasts only while this conversation is running; tell your user so.
 
 Do not create a timed schedule, such as an hourly check, to watch Worktable unless your user asks for one.

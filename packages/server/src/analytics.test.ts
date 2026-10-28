@@ -434,12 +434,13 @@ describe("consented committed-work analytics", () => {
   }, 15_000) // Exercises four real save debounces and outage deadlines.
   test("counts real document and record changes once and exports no content", async () => {
     const context = { contributors: [grant()] }
+    const diagram = [{ type: "mermaid", props: { data: "flowchart TD\nPrivate-->Diagram" } }]
     await withAnalyticsContext(context, async () => {
       expect(
-        (await writeDoc("test", "private-doc", "Private authored content")).ok
+        (await writeDoc("test", "private-doc", diagram)).ok
       ).toBe(true)
       expect(
-        (await writeDoc("test", "private-doc", "Private authored content")).ok
+        (await writeDoc("test", "private-doc", diagram)).ok
       ).toBe(true)
       expect((await writeDoc("test", "empty", "")).ok).toBe(true)
       expect(
@@ -473,7 +474,7 @@ describe("consented committed-work analytics", () => {
     ).toHaveLength(3)
     const payload = JSON.stringify(events)
     for (const secret of [
-      "Private authored",
+      "Private-->Diagram",
       "private-doc",
       "Secret record",
       "Changed secret",
@@ -506,7 +507,7 @@ describe("consented committed-work analytics", () => {
     await flushAnalytics()
     expect(events).toEqual([])
   })
-  test("counts a durable Markdown-to-rich save once and suppresses its repeat", async () => {
+  test("counts durable Markdown-to-diagram edits and clearing once, suppressing repeats", async () => {
     const manifestPath = join(root, "workspace", "worktable.workspace.json")
     await Bun.write(
       manifestPath,
@@ -520,24 +521,21 @@ describe("consented committed-work analytics", () => {
       createdBy: "user",
       source: "mcp",
     })
-    const rich = [
-      {
-        id: "authored",
-        type: "paragraph",
-        content: [
-          { type: "text", text: "New rich content", styles: { bold: true } },
-        ],
-        children: [],
-      },
-    ]
+    const rich = [{ id: "authored", type: "mermaid", props: { data: "flowchart TD\nPrivate-->Diagram" }, children: [] }]
     await withAnalyticsContext({ contributors: [grant()] }, async () => {
       expect((await writeDoc("test", "durable", rich)).ok).toBe(true)
       expect((await writeDoc("test", "durable", rich)).ok).toBe(true)
+      rich[0]!.props.data = "flowchart TD\nPrivate-->Changed"
+      expect((await writeDoc("test", "durable", rich)).ok).toBe(true)
+      const empty = [{ type: "paragraph", content: [], children: [] }]
+      expect((await writeDoc("test", "durable", empty)).ok).toBe(true)
+      expect((await writeDoc("test", "durable", empty)).ok).toBe(true)
     })
     await flushAnalytics()
     expect(
       events.filter((event) => event.event === "product:work_saved")
-    ).toHaveLength(1)
+    ).toHaveLength(3)
+    expect(JSON.stringify(events)).not.toContain("Private-->")
   })
   test("captures metadata for real MCP calls without inputs, results, or duplicate saves", async () => {
     const identity = ownerIdentity()

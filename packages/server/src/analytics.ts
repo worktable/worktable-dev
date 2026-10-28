@@ -121,6 +121,10 @@ export function hasAuthoredContent(value: unknown): boolean {
         ["url", "src", "code", "rows", "cells"].includes(key) &&
         hasAuthoredContent(entry)
     ) ||
+    (block.type === "mermaid" &&
+      !!block.props &&
+      typeof block.props === "object" &&
+      hasAuthoredContent((block.props as Record<string, unknown>).data)) ||
     (typeof block.type === "string" &&
       ["image", "video", "audio", "file", "table", "mermaid"].includes(
         block.type

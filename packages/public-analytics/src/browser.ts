@@ -68,46 +68,47 @@ export function initializePublicAnalytics(
           clearBrowserAnalyticsIdentity(activeConfig.projectToken)
         lastPageviewKey = undefined
       } else if (activeConfig && initializePublicAnalytics(activeConfig)) {
-        posthog.opt_in_capturing({ captureEventName: false })
         capturePublicPageview()
       }
     })
   }
   if (!canCapture(config)) return false
-  if (initialized) return true
-  posthog.init(config.projectToken!, {
-    api_host: config.apiHost ?? PUBLIC_ANALYTICS_API_HOST,
-    ui_host: "https://us.posthog.com",
-    defaults: "2026-05-30",
-    autocapture: false,
-    rageclick: false,
-    capture_pageview: false,
-    capture_pageleave: false,
-    capture_exceptions: false,
-    capture_performance: false,
-    capture_heatmaps: false,
-    capture_dead_clicks: false,
-    disable_session_recording: true,
-    enable_recording_console_log: false,
-    disable_surveys: true,
-    disable_surveys_automatic_display: true,
-    disable_product_tours: true,
-    disable_scroll_properties: true,
-    disable_capture_url_hashes: true,
-    save_campaign_params: false,
-    save_referrer: false,
-    advanced_disable_flags: true,
-    advanced_disable_feature_flags: true,
-    advanced_disable_feature_flags_on_first_load: true,
-    person_profiles: "identified_only",
-    respect_dnt: true,
-    persistence: "localStorage+cookie",
-    cross_subdomain_cookie: true,
-    internal_or_test_user_hostname: null,
-    request_batching: false,
-    before_send: sanitizeBeforeSend,
-  })
-  initialized = true
+  if (!initialized) {
+    posthog.init(config.projectToken!, {
+      api_host: config.apiHost ?? PUBLIC_ANALYTICS_API_HOST,
+      ui_host: "https://us.posthog.com",
+      defaults: "2026-05-30",
+      autocapture: false,
+      rageclick: false,
+      capture_pageview: false,
+      capture_pageleave: false,
+      capture_exceptions: false,
+      capture_performance: false,
+      capture_heatmaps: false,
+      capture_dead_clicks: false,
+      disable_session_recording: true,
+      enable_recording_console_log: false,
+      disable_surveys: true,
+      disable_surveys_automatic_display: true,
+      disable_product_tours: true,
+      disable_scroll_properties: true,
+      disable_capture_url_hashes: true,
+      save_campaign_params: false,
+      save_referrer: false,
+      advanced_disable_flags: true,
+      advanced_disable_feature_flags: true,
+      advanced_disable_feature_flags_on_first_load: true,
+      person_profiles: "identified_only",
+      respect_dnt: true,
+      persistence: "localStorage+cookie",
+      cross_subdomain_cookie: true,
+      internal_or_test_user_hostname: null,
+      request_batching: false,
+      before_send: sanitizeBeforeSend,
+    })
+    initialized = true
+  }
+  posthog.opt_in_capturing({ captureEventName: false })
   return true
 }
 

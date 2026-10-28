@@ -1,13 +1,16 @@
 import { expect, mock, test } from "bun:test"
 
 const init = mock(() => {})
-const capture = mock(() => {})
+let sdkOptedOut = true
+let delivered = 0
+const capture = mock(() => { if (!sdkOptedOut) delivered++ })
 const reset = mock(() => {})
-const optOut = mock(() => {})
+const optOut = mock(() => { sdkOptedOut = true })
+const optIn = mock(() => { sdkOptedOut = false })
 mock.module("posthog-js/dist/module.slim", () => ({
   default: {
     init, capture, reset, opt_out_capturing: optOut,
-    opt_in_capturing: () => {}, register_once: () => {}, register: () => {},
+    opt_in_capturing: optIn, register_once: () => {}, register: () => {},
   },
 }))
 const analytics = await import("./browser")
@@ -49,12 +52,19 @@ test("SDK waits for consent, retains browser/site boundaries, and stops after wi
     expect(init).not.toHaveBeenCalled()
     expect(capture).not.toHaveBeenCalled()
 
-    analytics.setPublicAnalyticsEnabled(true)
+    const enableFromAnotherOrigin = () => {
+      globalThis.document.cookie = `wt_analytics=${encodeURIComponent(JSON.stringify({ version: 1, enabled: true, updatedAt: Date.now() }))}; Path=/`
+    }
+    // The shared preference can change while this origin is closed, leaving
+    // the SDK's separate, persisted opt-out marker behind.
+    enableFromAnotherOrigin()
+    analytics.capturePublicPageview()
     expect(init).toHaveBeenCalledWith(config.projectToken, expect.objectContaining({
       persistence: "localStorage+cookie", respect_dnt: true, autocapture: false,
       capture_pageview: false, disable_session_recording: true,
     }))
     expect(capture).toHaveBeenCalledTimes(1)
+    expect(delivered).toBe(1)
     analytics.capturePublicPageview()
     expect(capture).toHaveBeenCalledTimes(1)
     location.pathname = "/agents/connections/"
@@ -80,6 +90,10 @@ test("SDK waits for consent, retains browser/site boundaries, and stops after wi
     expect(analytics.initializePublicAnalytics(config)).toBe(false)
     analytics.capturePublicPageview()
     expect(capture).toHaveBeenCalledTimes(2)
+    expect(delivered).toBe(2)
+    enableFromAnotherOrigin()
+    analytics.capturePublicPageview()
+    expect(delivered).toBe(3)
   } finally {
     for (const [key, descriptor] of originals)
       if (descriptor) Object.defineProperty(globalThis, key, descriptor)

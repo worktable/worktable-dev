@@ -1391,7 +1391,7 @@ async function _dispatchOperationInner(
       }
       if (!context.fileLinkOrigin) {
         throw new Error(
-          "Upload links reach this Worktable only when you connect to it directly, not through Worktable Link. Write text files with create, or send small files as base64."
+          "This connection can't take upload links. Write text files with create, or send small files as base64."
         )
       }
       const link = fileUploadLink(

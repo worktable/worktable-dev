@@ -12,6 +12,7 @@ infrastructure and personal context out of release notes.
 ### Added
 
 - **Files:** Images, PDFs, spreadsheets and any other file in a Space show beside its Docs, each with a page to view, download, comment on and see where it's used. Paste or drop a file into a Doc and it's kept in the Doc's own folder, which moves, archives and deletes with the Doc, and links to it stay correct. Upload New Version keeps the old one in its history. Agents read images as images and can save files, including ones attached in ChatGPT. A CSV can be imported into Records. On Cloud too.
+- **Big files for agents through Worktable Link:** An agent with a shell can send a file of up to 64 MiB to a linked Worktable, or download one, with a one-time link, as it can on Cloud or over a direct connection.
 - **Add Worktable to your agent's global rules:** Getting Started has a line to copy into your agent's global rules, and says where each agent keeps them, so it saves work in Worktable without being told each time.
 
 ### Changed

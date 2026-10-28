@@ -32,6 +32,11 @@ import { resolveCloudTeamAgentCredential } from "./team-cloud.ts"
 import type { TokenIdentity } from "./token-store.ts"
 import { linkedGrokBotParticipantKey } from "./grok-bot-store.ts"
 import { noteLinkedApp } from "./agent-connection-store.ts"
+import {
+  clearPendingUploads,
+  receiveUploadPiece,
+  sendDownloadPiece,
+} from "./linked-file-links.ts"
 
 function validShareRequest(claims: LinkedRequestClaims): boolean {
   if (claims.grant.kind !== "share") return false
@@ -78,6 +83,18 @@ function validShareRequest(claims: LinkedRequestClaims): boolean {
     ShareLinkToken.safeParse(claims.grant.capability).success ||
     (claims.path === "/public/share/content" &&
       ShareTicket.safeParse(claims.grant.capability).success)
+  )
+}
+
+/** A file link piece: an upload piece by POST, a download piece by GET or HEAD. */
+function validFileLinkRequest(claims: LinkedRequestClaims): boolean {
+  if (claims.grant.kind !== "file-link") return false
+  if (claims.path === "/linked/file-links/upload")
+    return claims.method === "POST" && claims.grant.total !== undefined
+  return (
+    claims.path === "/linked/file-links/download" &&
+    ["GET", "HEAD"].includes(claims.method) &&
+    claims.grant.total === undefined
   )
 }
 
@@ -177,6 +194,7 @@ export async function createLinkedIngress(options: {
     const sharing =
       url.pathname === "/public/share" ||
       url.pathname.startsWith("/public/share/")
+    const download = url.pathname === "/linked/file-links/download"
     // Reserve before JWT verification or body reads. Sharing can occupy six
     // slots; two remain available for MCP even when visitors hold slow bodies.
     if (inFlight >= 8 || (sharing && shareInFlight >= 6)) {
@@ -190,8 +208,9 @@ export async function createLinkedIngress(options: {
     let release: (() => void) | null = null
     try {
       const kind =
-        sharing &&
-        classifyWorkspaceRequest(request.method, url.pathname) === "read"
+        (sharing &&
+          classifyWorkspaceRequest(request.method, url.pathname) === "read") ||
+        download
           ? "read"
           : "write"
       // Admission still fences every workspace read before asynchronous work.
@@ -243,7 +262,9 @@ export async function createLinkedIngress(options: {
             : claims.grant.kind === "mcp"
               ? claims.path !== "/api/mcp" ||
                 !["GET", "POST", "DELETE"].includes(claims.method)
-              : !validShareRequest(claims)
+              : claims.grant.kind === "file-link"
+                ? !validFileLinkRequest(claims)
+                : !validShareRequest(claims)
         )
           return denied()
         body = await readBody(
@@ -285,6 +306,21 @@ export async function createLinkedIngress(options: {
           { ready: true },
           { headers: { "Cache-Control": "no-store" } }
         )
+      if (claims.grant.kind === "file-link") {
+        const grant = claims.grant
+        return claims.path === "/linked/file-links/upload"
+          ? await receiveUploadPiece(
+              grant.capability,
+              grant.offset,
+              grant.total!,
+              body
+            )
+          : await sendDownloadPiece(
+              grant.capability,
+              grant.offset,
+              claims.method as "GET" | "HEAD"
+            )
+      }
       if (claims.grant.kind === "share") {
         headers.set(SHARE_CAPABILITY_HEADER, claims.grant.capability)
         if (claims.grant.unlock)
@@ -377,6 +413,7 @@ export async function createLinkedIngress(options: {
     },
     revoke() {
       active = false
+      clearPendingUploads()
     },
   }
 }

@@ -362,7 +362,8 @@ describe("file links for agents", () => {
       expect((await write({ action: "upload", spaceId, path: "notes/plan.md" })).isError).toBe(true)
       expect((await fileLinksRouter.request(`/${"x".repeat(43)}`)).status).toBe(410)
 
-      // Through Worktable Link the links couldn't reach this Worktable, so none are made.
+      // Through Worktable Link, links are made at the device's own file-link
+      // address, which the gateway relays in pieces.
       const linked = createWorktableMcpServer({
         version: "test",
         scopes: ["documents:read", "documents:write"],
@@ -372,17 +373,20 @@ describe("file links for agents", () => {
       const linkedClient = new Client({ name: "linked-test", version: "1" })
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
       await Promise.all([linked.connect(serverTransport), linkedClient.connect(clientTransport)])
-      const refused = await linkedClient.callTool({
+      const linkedUpload = await linkedClient.callTool({
         name: "worktable_files_write",
         arguments: { request: { action: "upload", spaceId, path: "design/other.png" } },
       })
-      expect(refused.isError).toBe(true)
-      expect(JSON.stringify(refused.content)).toContain("Worktable Link")
+      expect(
+        (linkedUpload.structuredContent as { uploadUrl: string }).uploadUrl.startsWith(
+          `https://cloud.example/d/${"a".repeat(32)}/api/file-links/`
+        )
+      ).toBe(true)
       const linkedRead = await linkedClient.callTool({
         name: "worktable_files_read",
         arguments: { request: { action: "read_source", spaceId, path: "design/shot.png" } },
       })
-      expect(linkedRead.structuredContent).not.toHaveProperty("downloadUrl")
+      expect(linkedRead.structuredContent).toHaveProperty("downloadUrl")
       await linkedClient.close()
 
       // On Cloud, links are made on the address the gateway forwards them

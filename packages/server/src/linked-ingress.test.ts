@@ -11,6 +11,8 @@ import {
   LINKED_ASSERTION_ISSUER,
   LINKED_ASSERTION_TYPE,
   LINKED_ASSERTION_TTL_SECONDS,
+  LINKED_FILE_SIZE_HEADER,
+  LINKED_REQUEST_MAX_BYTES,
   VISITOR_HEADERS,
   type ShareVisitor,
   type LinkedRequestGrant,
@@ -30,6 +32,7 @@ import {
 } from "./share-links-store.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { createLinkedIngress } from "./linked-ingress.ts"
+import { issueFileTicket } from "./file-tickets.ts"
 import { listAgentConnections } from "./agent-connection-store.ts"
 import { disconnectLink } from "./linked-runtime.ts"
 import {
@@ -966,3 +969,96 @@ it("carries bounded live bridge calls and reserves MCP capacity while share bodi
     closeShareLinkStores()
   }
 }, 20_000)
+
+it("carries a file link in pieces: an upload saved after its last piece, and a download piece by piece", async () => {
+  const principal = { id: "agent:test", type: "agent" as const, displayName: "Test" }
+  const piece = (
+    capability: string,
+    offset: number,
+    bytes: Uint8Array,
+    total: number
+  ) =>
+    createLinkedRequest({
+      origin: server.url.origin,
+      key,
+      binding: ingress.binding,
+      grant: { kind: "file-link", capability, offset, total },
+      method: "POST",
+      path: "/linked/file-links/upload",
+      body: bytes,
+    }).then((request) => ingress.fetch(request))
+  const file = new Uint8Array(LINKED_REQUEST_MAX_BYTES + 3).map((_, i) => i % 251)
+  const first = file.slice(0, LINKED_REQUEST_MAX_BYTES)
+  const rest = file.slice(LINKED_REQUEST_MAX_BYTES)
+  const upload = () =>
+    issueFileTicket({
+      kind: "upload",
+      spaceId: "space",
+      path: "design/archive.bin",
+      mode: { kind: "create", keepBoth: true },
+      identity: null,
+      principal,
+      actor: principal.id,
+    }).token
+
+  const token = upload()
+  const started = await piece(token, 0, first, file.byteLength)
+  expect(started.status).toBe(202)
+  expect(await started.json()).toMatchObject({ received: LINKED_REQUEST_MAX_BYTES })
+  const done = await piece(token, LINKED_REQUEST_MAX_BYTES, rest, file.byteLength)
+  expect(done.status).toBe(201)
+  expect(await done.json()).toMatchObject({
+    path: "design/archive.bin",
+    byteLength: file.byteLength,
+  })
+  // The link worked once.
+  expect((await piece(token, 0, first, file.byteLength)).status).toBe(410)
+
+  // A piece out of order ends the upload, and its link with it.
+  const broken = upload()
+  expect((await piece(broken, 0, first, file.byteLength)).status).toBe(202)
+  expect((await piece(broken, 5, rest, file.byteLength)).status).toBe(409)
+  expect((await piece(broken, LINKED_REQUEST_MAX_BYTES, rest, file.byteLength)).status).toBe(410)
+
+  // A piece claiming another path or method is refused before it is read.
+  const misdirected = await createLinkedRequest({
+    origin: server.url.origin,
+    key,
+    binding: ingress.binding,
+    grant: { kind: "file-link", capability: upload(), offset: 0 },
+    method: "POST",
+    path: "/linked/file-links/upload",
+    body: rest,
+  })
+  expect((await ingress.fetch(misdirected)).status).toBe(403)
+
+  const download = issueFileTicket({
+    kind: "download",
+    spaceId: "space",
+    path: "design/archive.bin",
+    identity: null,
+    principal,
+    actor: principal.id,
+  }).token
+  const read = async (offset: number) =>
+    ingress.fetch(
+      await createLinkedRequest({
+        origin: server.url.origin,
+        key,
+        binding: ingress.binding,
+        grant: { kind: "file-link", capability: download, offset },
+        method: "GET",
+        path: "/linked/file-links/download",
+      })
+    )
+  const head = await read(0)
+  expect(head.status).toBe(200)
+  expect(head.headers.get(LINKED_FILE_SIZE_HEADER)).toBe(String(file.byteLength))
+  expect(head.headers.get("Content-Security-Policy")).toContain("sandbox")
+  expect(new Uint8Array(await head.arrayBuffer())).toEqual(first)
+  const tail = await read(LINKED_REQUEST_MAX_BYTES)
+  expect(new Uint8Array(await tail.arrayBuffer())).toEqual(rest)
+  // Every piece names the same content, so a file replaced partway shows.
+  expect(head.headers.get("ETag")).toMatch(/^"/)
+  expect(tail.headers.get("ETag")).toBe(head.headers.get("ETag"))
+}, 30_000)

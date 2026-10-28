@@ -85,6 +85,11 @@ export const LINKED_CAPABILITIES = {
   SHARE_COMMENTS: "share-comments",
   /** Signed continuation markers on visitor-comment reads. */
   SHARE_COMMENT_PAGES: "share-comment-pages",
+  /**
+   * File links in pieces: `POST /linked/file-links/upload` and
+   * `GET /linked/file-links/download`, with `file-link` grants.
+   */
+  FILE_LINKS: "file-links",
 } as const
 
 export const LinkedHeartbeat = z
@@ -199,6 +204,27 @@ export const ShareVisitor = z
   .strict()
 export type ShareVisitor = z.infer<typeof ShareVisitor>
 
+/** A file link's token: 32 random bytes, base64url. */
+export const FileLinkToken = z.string().regex(/^[A-Za-z0-9_-]{43}$/)
+
+/** The most a file link carries, as the device allows: 64 MiB. */
+export const LINKED_FILE_LINK_MAX_BYTES = 64 * 1024 * 1024
+
+/**
+ * A file link's bytes cross the relay in pieces of at most
+ * LINKED_REQUEST_MAX_BYTES, each its own signed request. An upload piece
+ * says where it starts and the file's whole size; a download piece asks
+ * from where, and the device answers with up to one piece and the size.
+ */
+const FileLinkOffset = z.number().int().min(0).max(LINKED_FILE_LINK_MAX_BYTES)
+
+/**
+ * The whole file's size, on every download piece. Each piece's ETag names
+ * the file's content; a piece whose ETag differs from the first's ends the
+ * download.
+ */
+export const LINKED_FILE_SIZE_HEADER = "x-worktable-file-size"
+
 export const LinkedDestinationBinding = z
   .object({
     installationId: identifier,
@@ -242,6 +268,15 @@ export const LinkedRequestGrant = z.discriminatedUnion("kind", [
       commentCursor: ShareCommentCursor.optional(),
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal("file-link"),
+      capability: FileLinkToken,
+      offset: FileLinkOffset,
+      /** On an upload piece, the whole file's size. */
+      total: FileLinkOffset.optional(),
+    })
+    .strict(),
 ])
 export type LinkedRequestGrant = z.infer<typeof LinkedRequestGrant>
 
@@ -258,6 +293,8 @@ export const LinkedRequestClaims = z
       "/public/share/bridge",
       "/public/share/comments",
       "/linked/health",
+      "/linked/file-links/upload",
+      "/linked/file-links/download",
     ]),
     bodyDigest: z.string().regex(/^[a-f0-9]{64}$/),
   })

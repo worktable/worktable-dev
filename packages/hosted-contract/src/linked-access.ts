@@ -218,7 +218,11 @@ export const LINKED_FILE_LINK_MAX_BYTES = 64 * 1024 * 1024
  */
 const FileLinkOffset = z.number().int().min(0).max(LINKED_FILE_LINK_MAX_BYTES)
 
-/** The whole file's size, on every download piece. */
+/**
+ * The whole file's size, on every download piece. Each piece's ETag names
+ * the file's content; a piece whose ETag differs from the first's ends the
+ * download.
+ */
 export const LINKED_FILE_SIZE_HEADER = "x-worktable-file-size"
 
 export const LinkedDestinationBinding = z

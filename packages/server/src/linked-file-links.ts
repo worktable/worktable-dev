@@ -102,7 +102,8 @@ export async function receiveUploadPiece(
 
 /**
  * One piece of a download, from `offset`: the file's own headers, at most
- * one piece of its bytes, and its whole size.
+ * one piece of its bytes, and its whole size. Its ETag names the content,
+ * so the gateway can tell a file replaced partway and stop.
  */
 export async function sendDownloadPiece(
   token: string,
@@ -118,7 +119,6 @@ export async function sendDownloadPiece(
   const headers = new Headers(whole.headers)
   headers.set(LINKED_FILE_SIZE_HEADER, String(bytes.byteLength))
   headers.set("Cache-Control", "no-store")
-  headers.delete("ETag")
   headers.delete("Content-Length")
   const piece = bytes.slice(offset, offset + LINKED_REQUEST_MAX_BYTES)
   return new Response(method === "HEAD" ? null : piece, { status: 200, headers })

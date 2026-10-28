@@ -1058,4 +1058,7 @@ it("carries a file link in pieces: an upload saved after its last piece, and a d
   expect(new Uint8Array(await head.arrayBuffer())).toEqual(first)
   const tail = await read(LINKED_REQUEST_MAX_BYTES)
   expect(new Uint8Array(await tail.arrayBuffer())).toEqual(rest)
+  // Every piece names the same content, so a file replaced partway shows.
+  expect(head.headers.get("ETag")).toMatch(/^"/)
+  expect(tail.headers.get("ETag")).toBe(head.headers.get("ETag"))
 }, 30_000)

@@ -1,4 +1,4 @@
-import { desktopWorktables, type DesktopWorktable } from "./desktop-worktables"
+import type { DesktopWorktable } from "./desktop-worktables"
 import { fetchJSON, HttpError } from "./http"
 
 /** A hosted Worktable in Worktable Cloud. */
@@ -40,7 +40,7 @@ export type MenuSurface = "desktop" | "cloud" | "local"
 export interface WorktableMenuData {
   /** This Mac's Worktables; null outside Desktop or when Desktop can't say. */
   thisMac: DesktopWorktable[] | null
-  /** Null without a Cloud account, or when Cloud couldn't be asked. */
+  /** Null without an available Cloud account. Failures stay query errors. */
   directory: CloudDirectory | null
 }
 
@@ -83,31 +83,11 @@ async function localDirectory(): Promise<CloudDirectory | null> {
   }
 }
 
-/**
- * The menu's one list request. A failed Cloud list leaves this Mac's
- * Worktables, so the menu is never worse than before.
- */
-export async function loadWorktableMenu(
-  surface: MenuSurface,
+/** One Cloud request, independent of Desktop's locally available Worktables. */
+export function loadCloudDirectory(
   cloudPage: boolean
-): Promise<WorktableMenuData> {
-  const directory = (cloudPage ? cloudTabDirectory() : localDirectory()).catch(
-    (error: unknown) => {
-      console.warn("[worktable menu] Cloud list unavailable:", error)
-      return null
-    }
-  )
-  const desktop =
-    surface === "desktop" ? desktopWorktables() : Promise.resolve(null)
-  const [thisMac, listed] = await Promise.all([desktop, directory])
-  return {
-    thisMac: thisMac?.worktables ?? null,
-    // A Cloud page doesn't know this device's name; Desktop does.
-    directory:
-      listed && !listed.device && thisMac?.device
-        ? { ...listed, device: thisMac.device }
-        : listed,
-  }
+): Promise<CloudDirectory | null> {
+  return cloudPage ? cloudTabDirectory() : localDirectory()
 }
 
 export type MenuRow =
@@ -136,7 +116,7 @@ export type MenuRow =
     }
 
 export interface MenuGroup {
-  label: "On this Mac" | "Other devices" | "Your devices" | "Worktable Cloud"
+  label: "On This Mac" | "Other Devices" | "Your Devices" | "Worktable Cloud"
   rows: MenuRow[]
 }
 
@@ -187,7 +167,7 @@ export function worktableMenuGroups({
   const groups: MenuGroup[] = []
   if (thisMac?.length) {
     groups.push({
-      label: "On this Mac",
+      label: "On This Mac",
       rows: thisMac.map((worktable) => ({ kind: "this-mac", ...worktable })),
     })
   }
@@ -228,9 +208,9 @@ export function worktableMenuGroups({
   }))
   const cloud: MenuGroup = { label: "Worktable Cloud", rows: hosted }
   if (surface === "cloud") {
-    groups.push(cloud, { label: "Your devices", rows: devices })
+    groups.push(cloud, { label: "Your Devices", rows: devices })
   } else {
-    groups.push({ label: "Other devices", rows: devices }, cloud)
+    groups.push({ label: "Other Devices", rows: devices }, cloud)
   }
   return groups.filter((group) => group.rows.length > 0)
 }

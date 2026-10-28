@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { Check, Folder, Plus } from "lucide-react"
+import { Folder, Plus } from "lucide-react"
 import { Badge } from "@worktable/ui/components/badge"
 import {
   DropdownMenuGroup,
@@ -9,10 +9,7 @@ import {
 } from "@worktable/ui/components/dropdown-menu"
 import { toast } from "@worktable/ui/components/sonner"
 import { cn } from "@worktable/ui/lib/utils"
-import {
-  recognitionColor,
-  type RecognitionColor,
-} from "@worktable/types/recognition"
+import { recognitionColor } from "@worktable/types/recognition"
 import { switchDesktopWorktable } from "@/lib/desktop-connection"
 import { openInDesktop } from "@/lib/desktop-worktables"
 import {
@@ -49,25 +46,11 @@ function reportOpen(outcome: Awaited<ReturnType<typeof openInDesktop>>) {
     toast.error("Couldn’t switch Worktables. Try again.")
 }
 
-function MenuRowItem({
-  row,
-  surface,
-  current,
-}: {
-  row: MenuRow
-  surface: MenuSurface
-  current: { name: string; color: RecognitionColor }
-}) {
-  const shownCurrent = row.kind !== "device" && row.current
-  const name = shownCurrent ? current.name : row.name
+function MenuRowItem({ row, surface }: { row: MenuRow; surface: MenuSurface }) {
+  const name = row.name
   const label = (
     <>
-      <WorktableTile
-        name={name}
-        color={
-          shownCurrent ? current.color : recognitionColor(undefined, row.id)
-        }
-      />
+      <WorktableTile name={name} color={recognitionColor(undefined, row.id)} />
       <span className="min-w-0 flex-1 truncate">{name}</span>
       {row.kind === "this-mac" && row.linked && (
         <Badge variant="outline">Link</Badge>
@@ -88,14 +71,6 @@ function MenuRowItem({
       >
         {label}
         <DeviceState device={row.device} online={row.online} />
-      </DropdownMenuItem>
-    )
-  }
-  if (shownCurrent) {
-    return (
-      <DropdownMenuItem>
-        {label}
-        <Check className="size-3.5 shrink-0 text-primary" />
       </DropdownMenuItem>
     )
   }
@@ -121,27 +96,23 @@ function MenuRowItem({
 }
 
 /**
- * The Worktable menu's list, loaded with its data when the menu first opens.
- * Without anything to list it shows the menu as it was.
+ * Entries arrive independently; the current Worktable and Settings stay mounted
+ * in the header, outside this lazy region.
  */
 export default function WorktableMenuList({
   surface,
   data,
   workspaceId,
   currentHostedId,
-  current,
-  currentRow,
-  settings,
-  fallback,
+  status,
+  fallbackActions,
 }: {
   surface: MenuSurface
   data: WorktableMenuData
   workspaceId: string | undefined
   currentHostedId: string | null
-  current: { name: string; color: RecognitionColor }
-  currentRow: ReactNode
-  settings: ReactNode
-  fallback: ReactNode
+  status: ReactNode
+  fallbackActions: ReactNode
 }) {
   const groups = worktableMenuGroups({
     surface,
@@ -152,16 +123,18 @@ export default function WorktableMenuList({
     currentHostedId,
     onDevice: surface === "desktop" || isLoopbackHost(window.location.hostname),
   })
-  // Desktop lists this Mac's Worktables, elsewhere Cloud lists the rest.
-  const listed =
-    groups.length > 0 &&
-    (surface === "desktop" ? !!data.thisMac : !!data.directory)
-  if (!listed) return fallback
+  // The current Worktable has one stable row above the groups, including while
+  // Cloud is loading. Keep other rows keyed across partial list updates.
+  // Older Desktop builds keep their chooser when the list API is unavailable.
+  const others = (surface === "desktop" && data.thisMac === null ? [] : groups)
+    .map((group) => ({
+      ...group,
+      rows: group.rows.filter((row) => row.kind === "device" || !row.current),
+    }))
+    .filter((group) => group.rows.length > 0)
   return (
     <>
-      {/* A local or self-hosted page lists the others below itself. */}
-      {surface === "local" && currentRow}
-      {groups.map((group) => (
+      {others.map((group) => (
         <DropdownMenuGroup key={group.label}>
           <DropdownMenuLabel>{group.label}</DropdownMenuLabel>
           {group.rows.map((row) => (
@@ -169,14 +142,14 @@ export default function WorktableMenuList({
               key={`${row.kind}:${row.id}`}
               row={row}
               surface={surface}
-              current={current}
             />
           ))}
         </DropdownMenuGroup>
       ))}
-      <DropdownMenuSeparator />
-      {surface === "desktop" && (
+      {status}
+      {surface === "desktop" && data.thisMac !== null ? (
         <>
+          <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() =>
               void switchDesktopWorktable().then((outcome) =>
@@ -196,14 +169,9 @@ export default function WorktableMenuList({
             Open Folder
           </DropdownMenuItem>
         </>
+      ) : (
+        fallbackActions
       )}
-      {surface === "cloud" && (
-        <DropdownMenuItem render={<a href="/gateway/worktables/new" />}>
-          <Plus className="mr-2 size-4" />
-          New Worktable
-        </DropdownMenuItem>
-      )}
-      {settings}
     </>
   )
 }

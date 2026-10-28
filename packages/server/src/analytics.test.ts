@@ -320,6 +320,9 @@ describe("consented committed-work analytics", () => {
       ],
       { source: "rest-api" }
     )
+    const member = await resolveVerifiedCloudMember(publicOrigin, cloudProof)
+    expect(member?.team?.memberId).toBeDefined()
+    expect(member!.principal.id).not.toBe(`workos:${cloudProof.subject}`)
     runtime = startServer(0, "127.0.0.1")
     const request = async (path: string, method: string, body: unknown) =>
       fetch(`http://127.0.0.1:${runtime!.port}${path}`, {
@@ -330,7 +333,7 @@ describe("consented committed-work analytics", () => {
         },
         body: JSON.stringify(body),
       })
-    const socketPath = `/yjs/test/live?collaborationEpoch=${encodeURIComponent(await getWorkspaceCollaborationEpoch())}&collaborationCacheEpoch=${encodeURIComponent(await getDocCollaborationCacheEpoch("test", "live"))}`
+    const socketPath = `/yjs/test/live?memberId=${encodeURIComponent(member!.team!.memberId!)}&collaborationEpoch=${encodeURIComponent(await getWorkspaceCollaborationEpoch())}&collaborationCacheEpoch=${encodeURIComponent(await getDocCollaborationCacheEpoch("test", "live"))}`
     const connection = await editorSocket(socketPath)
     await flushAnalytics()
     expect(events).toHaveLength(0)

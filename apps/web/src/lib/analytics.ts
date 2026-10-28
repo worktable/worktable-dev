@@ -1,7 +1,7 @@
 import {
   parseAnalyticsPreference,
   type AnalyticsPreference,
-} from "@worktable/hosted-contract"
+} from "@worktable/types/analytics"
 import { authenticatedFetch, BASE_URL } from "./http"
 
 export interface CloudAnalyticsContext {

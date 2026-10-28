@@ -1,4 +1,4 @@
-import { captureWorkSaved, currentAnalyticsContext, hasAuthoredContent, hasAuthoredHtml } from "./analytics.ts"
+import { captureWorkSaved, currentAnalyticsContext, isAnalyticsMaintenance, hasAuthoredContent, hasAuthoredHtml } from "./analytics.ts"
 import { assertSpaceAccess } from "./team-policy.ts";
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { noteDocumentEdited, recordActivity } from "./activity-log.ts"
@@ -996,7 +996,7 @@ export async function createRegisteredDocument(options: {
             versionId,
             contentChanged: true,
           })
-          if (hasAuthoredSource(bytes, registration)) captureWorkSaved(registration.legacyVersionKind === "widgets" ? "html" : "document")
+          if (!isAnalyticsMaintenance(options.source, options.createdBy) && hasAuthoredSource(bytes, registration)) captureWorkSaved(registration.legacyVersionKind === "widgets" ? "html" : "document")
           return {
             documentId,
             path,
@@ -1534,7 +1534,7 @@ export async function replaceRegisteredDocument(options: {
           documentId,
           generationId: versionId,
         })
-      if (currentAnalyticsContext() && sourceContentChanged(before, bytes, current.registration) && (hasAuthoredSource(bytes, current.registration) || hasAuthoredSource(before, current.registration))) captureWorkSaved(current.registration.legacyVersionKind === "widgets" ? "html" : "document")
+      if (currentAnalyticsContext() && !isAnalyticsMaintenance(options.source, options.updatedBy) && sourceContentChanged(before, bytes, current.registration) && (hasAuthoredSource(bytes, current.registration) || hasAuthoredSource(before, current.registration))) captureWorkSaved(current.registration.legacyVersionKind === "widgets" ? "html" : "document")
       return {
         documentId,
         path: current.path,

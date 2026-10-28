@@ -431,7 +431,7 @@ describe("consented committed-work analytics", () => {
       expect(JSON.stringify(events)).not.toContain(secret)
     connection.client.destroy()
     mixed.client.destroy()
-  })
+  }, 15_000) // Exercises four real save debounces and outage deadlines.
   test("counts real document and record changes once and exports no content", async () => {
     const context = { contributors: [grant()] }
     await withAnalyticsContext(context, async () => {
@@ -458,6 +458,8 @@ describe("consented committed-work analytics", () => {
       })
       await updateRecord("test", "items", "row", { data: { title: "" } })
       expect((await writeDoc("test", "private-doc", "")).ok).toBe(true)
+      expect((await writeDoc("test", "private-doc", "Automatic reference repair", { source: "system", updatedBy: "system" })).ok).toBe(true)
+      expect((await updateRecord("test", "items", "row", { data: { title: "Automatic reference repair" }, updatedBy: "system" })).error).toBeNull()
     })
     await flushAnalytics()
     expect(

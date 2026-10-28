@@ -1,4 +1,3 @@
-import { captureWorkSaved, currentAnalyticsContext, hasAuthoredHtml } from "./analytics.ts";
 import { existsSync } from "node:fs";
 import { assertSpaceAccess } from "./team-policy.ts";
 import { mkdir, readdir, rmdir } from "node:fs/promises";
@@ -384,7 +383,6 @@ export async function writeWidget(
       error: error instanceof Error ? error.message : String(error),
     };
   }
-  const previousHtml = currentAnalyticsContext() ? await readWidgetHtml(spaceId, parsedWidget.id) : null;
   if (storageV2) {
     const existing = await resolveHtmlDocumentStorageV2(spaceId, parsedWidget.id);
     const owner: HtmlDocumentStorageV2Owner | null =
@@ -420,7 +418,6 @@ export async function writeWidget(
       throw error;
     }
     notifyHtmlContentChanged(spaceId, parsedWidget.id);
-  if (previousHtml && (hasAuthoredHtml(html) || (previousHtml.data && hasAuthoredHtml(previousHtml.data))) && previousHtml.data !== html) captureWorkSaved("html");
     return { data: parsedWidget, error: null, release };
   }
   // Leaf-only nesting: a widget directory never contains another widget. Without
@@ -452,7 +449,6 @@ export async function writeWidget(
     throw err;
   }
   notifyHtmlContentChanged(spaceId, parsedWidget.id);
-  if (previousHtml && (hasAuthoredHtml(html) || (previousHtml.data && hasAuthoredHtml(previousHtml.data))) && previousHtml.data !== html) captureWorkSaved("html");
   return { data: parsedWidget, error: null, release };
 }
 

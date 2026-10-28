@@ -102,6 +102,10 @@ export function currentAnalyticsContext(): SaveAnalyticsContext | null {
   return context.getStore() ?? null
 }
 
+export function isAnalyticsMaintenance(source?: string, actor?: string): boolean {
+  return [source, actor].some((value) => value === "system" || value?.startsWith("system:"))
+}
+
 /** Inspect locally only. Neither values nor hashes leave the runtime. */
 export function hasAuthoredContent(value: unknown): boolean {
   if (typeof value === "string") return value.trim().length > 0

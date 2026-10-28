@@ -1,4 +1,4 @@
-import { captureWorkSaved, currentAnalyticsContext } from "./analytics.ts";
+import { captureWorkSaved, currentAnalyticsContext, isAnalyticsMaintenance } from "./analytics.ts";
 import { isDeepStrictEqual } from "node:util";
 import { existsSync } from "node:fs";
 import { recordActivity } from "./activity-log.ts";
@@ -1039,13 +1039,16 @@ async function writeRecordValidated(
   }
   await ensureRecordDirs(spaceId, parsed.data.collectionId);
   const path = recordPath(spaceId, parsed.data.collectionId, parsed.data.id);
-  const before = currentAnalyticsContext() ? await readRecord(spaceId, parsed.data.collectionId, parsed.data.id) : null;
   await mkdir(dirname(path), { recursive: true });
   await atomicWriteText(path, stringifyCanonicalYaml(parsed.data));
   notifyRecordChanged({ kind: "write", spaceId, record: parsed.data });
-  const hasValues = (data: Record<string, unknown> | undefined) => data && Object.values(data).some((value) => value !== null && value !== undefined && value !== "");
-  if (before && !opts?.skipDataValidation && !(parsed.data.updatedBy ?? parsed.data.createdBy).startsWith("system:") && !isDeepStrictEqual(before.data?.data, parsed.data.data) && (hasValues(before.data?.data) || hasValues(parsed.data.data))) captureWorkSaved("record");
   return { data: parsed.data, error: null };
+}
+
+function captureRecordSaved(before: RecordFile | null, after: RecordFile): void {
+  if (!currentAnalyticsContext() || isAnalyticsMaintenance(undefined, after.updatedBy ?? after.createdBy)) return;
+  const hasValues = (data: Record<string, unknown> | undefined) => data && Object.values(data).some((value) => value !== null && value !== undefined && value !== "");
+  if (!isDeepStrictEqual(before?.data, after.data) && (hasValues(before?.data) || hasValues(after.data))) captureWorkSaved("record");
 }
 
 export async function writeRecord(spaceId: string, record: RecordFile, opts?: WriteValidationOptions): Promise<{ data: RecordFile | null; error: string | null }> {
@@ -1077,7 +1080,10 @@ export async function createRecord(spaceId: string, collectionId: string, input:
     }
     return createRecordInner(spaceId, collectionId, input);
   });
-  if (result.data && result.created) noteRecordActivity(spaceId, collectionId, "records.added");
+  if (result.data && result.created) {
+    noteRecordActivity(spaceId, collectionId, "records.added");
+    captureRecordSaved(null, result.data);
+  }
   return result;
 }
 
@@ -1188,7 +1194,9 @@ async function updateRecordInner(spaceId: string, collectionId: string, recordId
     // and keys it leaves out keep their stored values.
     const metadata = patch.metadata ? { ...existing.metadata, ...patch.metadata } : existing.metadata;
     const record = buildRecordFile({ id: recordId, collectionId, data: { ...existing.data, ...(patch.data ?? {}) }, metadata, createdBy: patch.updatedBy, existing });
-    return writeRecordInner(spaceId, record, { onlyKeys: touched, strictFields: patch.strictFields });
+    const written = await writeRecordInner(spaceId, record, { onlyKeys: touched, strictFields: patch.strictFields });
+    if (written.data) captureRecordSaved(existing, written.data);
+    return written;
   }));
 }
 

@@ -46,7 +46,7 @@ import {
   pruneDocKeyForCount,
 } from "./version-retention.ts";
 import { notifyDocContentChanged } from "./content-events.ts";
-import { captureWorkSaved, currentAnalyticsContext, hasAuthoredContent } from "./analytics.ts";
+import { captureWorkSaved, currentAnalyticsContext, isAnalyticsMaintenance, hasAuthoredContent } from "./analytics.ts";
 import {
   createDocAliasReservationLookup,
   docAliasReservationError,
@@ -3535,7 +3535,7 @@ async function writeDocUnlocked(
   content = prepared.content as unknown[] | string;
   const repairs = prepared.repairs;
   const captureSavedContent = (after: unknown): void => {
-    if (currentAnalyticsContext() && options?.recordVersion !== false && options?.source !== "browser-yjs-sync" &&
+    if (currentAnalyticsContext() && !isAnalyticsMaintenance(options?.source, options?.updatedBy) && options?.recordVersion !== false && options?.source !== "browser-yjs-sync" &&
       (!before || stableHash(before.data) !== stableHash(after)) && (hasAuthoredContent(after) || (before && hasAuthoredContent(before.data)))) captureWorkSaved("document");
   };
 

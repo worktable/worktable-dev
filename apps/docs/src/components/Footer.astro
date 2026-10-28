@@ -35,37 +35,49 @@ import DefaultFooter from "@astrojs/starlight/components/Footer.astro"
     subscribeToPublicAnalyticsChoice,
   } from "@worktable/public-analytics/browser"
 
-  const button = document.querySelector<HTMLButtonElement>(
-    "[data-public-analytics-toggle]",
-  )
-  const label = button?.querySelector<HTMLElement>(
-    "[data-public-analytics-label]",
-  )
-
-  const sync = () => {
-    if (!button || !label) return
-    const choice = getPublicAnalyticsChoice()
-    const prompt = document.querySelector<HTMLElement>("[data-analytics-consent]")
-    if (prompt) prompt.hidden = choice.decided || choice.doNotTrack
-    button.disabled = choice.doNotTrack
-    button.setAttribute("aria-pressed", String(choice.enabled))
-    label.textContent = `Analytics ${choice.enabled ? "on" : "off"}`
-    button.setAttribute(
-      "aria-label",
-      choice.doNotTrack
-        ? "Analytics are off because your browser sends Do Not Track"
-        : `Turn analytics ${choice.enabled ? "off" : "on"} for this documentation site`,
+  let dispose = () => {}
+  const connect = () => {
+    dispose()
+    const controller = new AbortController()
+    const button = document.querySelector<HTMLButtonElement>(
+      "[data-public-analytics-toggle]",
     )
-  }
+    const label = button?.querySelector<HTMLElement>(
+      "[data-public-analytics-label]",
+    )
 
-  button?.addEventListener("click", () => {
-    const choice = getPublicAnalyticsChoice()
-    if (!choice.doNotTrack) setPublicAnalyticsEnabled(!choice.enabled)
-  })
-  document.querySelector("[data-analytics-allow]")?.addEventListener("click", () => setPublicAnalyticsEnabled(true))
-  document.querySelector("[data-analytics-decline]")?.addEventListener("click", () => setPublicAnalyticsEnabled(false))
-  subscribeToPublicAnalyticsChoice(sync)
-  sync()
+    const sync = () => {
+      if (!button || !label) return
+      const choice = getPublicAnalyticsChoice()
+      const prompt = document.querySelector<HTMLElement>("[data-analytics-consent]")
+      if (prompt) prompt.hidden = choice.decided || choice.doNotTrack
+      button.disabled = choice.doNotTrack
+      button.setAttribute("aria-pressed", String(choice.enabled))
+      label.textContent = `Analytics ${choice.enabled ? "on" : "off"}`
+      button.setAttribute(
+        "aria-label",
+        choice.doNotTrack
+          ? "Analytics are off because your browser sends Do Not Track"
+          : `Turn analytics ${choice.enabled ? "off" : "on"} for this documentation site`,
+      )
+    }
+
+    button?.addEventListener("click", () => {
+      const choice = getPublicAnalyticsChoice()
+      if (!choice.doNotTrack) setPublicAnalyticsEnabled(!choice.enabled)
+    }, { signal: controller.signal })
+    document.querySelector("[data-analytics-allow]")?.addEventListener("click", () => setPublicAnalyticsEnabled(true), { signal: controller.signal })
+    document.querySelector("[data-analytics-decline]")?.addEventListener("click", () => setPublicAnalyticsEnabled(false), { signal: controller.signal })
+    const unsubscribe = subscribeToPublicAnalyticsChoice(sync)
+    sync()
+    dispose = () => {
+      controller.abort()
+      unsubscribe()
+    }
+  }
+  document.addEventListener("astro:before-swap", () => dispose())
+  document.addEventListener("astro:page-load", connect)
+  connect()
 </script>
 
 <style>

@@ -1,3 +1,4 @@
+import { measureMcpCall } from "../analytics.ts"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { CanonicalIdSchema, documentReferenceHref, recordTitleFieldKey } from "@worktable/types"
 import { z } from "zod"
@@ -196,7 +197,7 @@ export function registerCompanyKnowledgeTools(
       },
       ...oauthToolMetadata(),
     },
-    async ({ query }) => {
+    async ({ query }) => measureMcpCall("search", "search.query", async () => {
       const denied = requireScope(
         options.scopes,
         "search:read",
@@ -278,7 +279,7 @@ export function registerCompanyKnowledgeTools(
       } catch (error) {
         return mkErr(error instanceof Error ? error.message : String(error))
       }
-    }
+    })
   )
 
   server.registerTool(
@@ -298,7 +299,7 @@ export function registerCompanyKnowledgeTools(
       },
       ...oauthToolMetadata(),
     },
-    async ({ id }) => {
+    async ({ id }) => measureMcpCall("fetch", "company_knowledge.fetch", async () => {
       try {
         const target = decodeCompanyKnowledgeId(id)
         const requiredScope =
@@ -442,6 +443,6 @@ export function registerCompanyKnowledgeTools(
       } catch (error) {
         return mkErr(error instanceof Error ? error.message : String(error))
       }
-    }
+    })
   )
 }

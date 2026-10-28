@@ -1,3 +1,5 @@
+import { captureWorkSaved, currentAnalyticsContext } from "./analytics.ts";
+import { isDeepStrictEqual } from "node:util";
 import { existsSync } from "node:fs";
 import { recordActivity } from "./activity-log.ts";
 import { assertSpaceAccess } from "./team-policy.ts";
@@ -1037,9 +1039,12 @@ async function writeRecordValidated(
   }
   await ensureRecordDirs(spaceId, parsed.data.collectionId);
   const path = recordPath(spaceId, parsed.data.collectionId, parsed.data.id);
+  const before = currentAnalyticsContext() ? await readRecord(spaceId, parsed.data.collectionId, parsed.data.id) : null;
   await mkdir(dirname(path), { recursive: true });
   await atomicWriteText(path, stringifyCanonicalYaml(parsed.data));
   notifyRecordChanged({ kind: "write", spaceId, record: parsed.data });
+  const hasValues = (data: Record<string, unknown> | undefined) => data && Object.values(data).some((value) => value !== null && value !== undefined && value !== "");
+  if (before && !opts?.skipDataValidation && !(parsed.data.updatedBy ?? parsed.data.createdBy).startsWith("system:") && !isDeepStrictEqual(before.data?.data, parsed.data.data) && (hasValues(before.data?.data) || hasValues(parsed.data.data))) captureWorkSaved("record");
   return { data: parsed.data, error: null };
 }
 

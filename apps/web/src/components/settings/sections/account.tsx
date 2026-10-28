@@ -38,6 +38,7 @@ import {
 import { useCloudPlan } from "@/lib/cloud-plan"
 import { queryKeys } from "@/lib/queries"
 import { useSettingsSectionActive } from "../settings-dialog"
+import { AccountAnalyticsSettings } from "./account-analytics"
 
 export function AccountSection() {
   const sectionActive = useSettingsSectionActive()
@@ -162,6 +163,7 @@ export function AccountSection() {
             onCancel={() => cancel.mutate()}
           />
         )}
+        <AccountAnalyticsSettings />
       </section>
     </>
   )

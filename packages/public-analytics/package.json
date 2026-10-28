@@ -10,10 +10,16 @@
   "exports": {
     ".": "./src/index.ts",
     "./clipboard": "./src/clipboard.ts",
-    "./browser": "./src/browser.ts"
+    "./browser": "./src/browser.ts",
+    "./consent": "./src/consent.ts",
+    "./product": "./src/product.ts"
   },
   "dependencies": {
-    "posthog-js": "^1.409.5"
+    "posthog-js": "^1.409.5",
+    "@worktable/types": "workspace:*"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@types/react": "^19.2.10"
+  }
 }

@@ -1,4 +1,9 @@
-export const PUBLIC_ANALYTICS_SCHEMA_VERSION = 2 as const
+export const PUBLIC_ANALYTICS_PREFERENCE_KEY = "worktable.public-analytics"
+export const PUBLIC_ANALYTICS_PREFERENCE_EVENT = "worktable:public-analytics-preference"
+
+import { ANALYTICS_SCHEMA_VERSION } from "@worktable/types/analytics"
+
+export const PUBLIC_ANALYTICS_SCHEMA_VERSION = ANALYTICS_SCHEMA_VERSION
 export const PUBLIC_ANALYTICS_API_HOST = "https://edge.worktable.dev"
 
 export const PUBLIC_ANALYTICS_CTA_ATTRIBUTE = "data-public-analytics-cta"
@@ -132,18 +137,22 @@ export function publicAcquisitionProperties(
   const params = new URLSearchParams(search)
   const inherited = params.get("wt_source") ?? ""
   const domain = referringDomain?.toLowerCase().replace(/^www\./, "") ?? ""
-  const linkedJourney =
-    !domain ||
-    ["worktable.dev", "worktable.cloud", "docs.worktable.dev"].includes(domain)
+  const internal =
+    [
+      "worktable.dev",
+      "worktable.cloud",
+      "app.worktable.cloud",
+      "docs.worktable.dev",
+      "polar.sh",
+    ].includes(domain) || domain.endsWith(".polar.sh")
+  const linkedJourney = !domain || internal
   const referral =
     (Object.hasOwn(REFERRAL_SOURCES, domain)
       ? REFERRAL_SOURCES[domain]
       : undefined) ??
     (!domain
       ? "direct_or_unknown"
-      : ["worktable.dev", "worktable.cloud", "docs.worktable.dev"].includes(
-            domain
-          )
+      : internal
         ? "internal_unknown"
         : "other_referral")
   return {
@@ -194,7 +203,6 @@ export function isApprovedInstallCopy(
 }
 
 const SAFE_PATH = /^\/(?:[a-z0-9][a-z0-9/_-]*\/?)?$/
-const MAX_RAW_USER_AGENT_LENGTH = 1000
 
 export function normalizePublicAnalyticsPathname(pathname: string): string {
   return pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname
@@ -266,197 +274,6 @@ export function isApprovedCta(
   )
 }
 
-export function createPublicAnalyticsEarlyCtaScript(
-  config: Pick<
-    PublicAnalyticsConfig,
-    "projectToken" | "siteSurface" | "allowedPathnames" | "apiHost"
-  >
-): string {
-  if (!config.projectToken) return ""
-
-  const runtimeConfig = serializeForInlineScript({
-    projectToken: config.projectToken,
-    siteSurface: config.siteSurface,
-    productionHost: productionHostForSurface(config.siteSurface),
-    allowedPathnames: [...new Set(config.allowedPathnames)],
-    apiHost: (config.apiHost ?? PUBLIC_ANALYTICS_API_HOST).replace(/\/+$/, ""),
-  })
-  const ctaPlacements = serializeForInlineScript(CTA_PLACEMENTS)
-  const activeCampaignValues = serializeForInlineScript(ACTIVE_CAMPAIGN_VALUES)
-  const ctaAttribute = serializeForInlineScript(PUBLIC_ANALYTICS_CTA_ATTRIBUTE)
-  const placementAttribute = serializeForInlineScript(
-    PUBLIC_ANALYTICS_PLACEMENT_ATTRIBUTE
-  )
-
-  return `(() => {
-    "use strict";
-    if (window.__worktablePublicAnalyticsCtaInstalled) return;
-    window.__worktablePublicAnalyticsCtaInstalled = true;
-
-    const config = ${runtimeConfig};
-    const ctaPlacements = ${ctaPlacements};
-    const activeCampaignValues = ${activeCampaignValues};
-    const referralSources = ${serializeForInlineScript(REFERRAL_SOURCES)};
-    const acquisitionSources = ${serializeForInlineScript(ACQUISITION_SOURCES)};
-    const ctaAttribute = ${ctaAttribute};
-    const placementAttribute = ${placementAttribute};
-
-    function normalizedPathname() {
-      const pathname = window.location.pathname;
-      return pathname.length > 1 ? pathname.replace(/\\/+$/, "") : pathname;
-    }
-
-    function doNotTrackEnabled() {
-      return [navigator.doNotTrack, navigator.msDoNotTrack, window.doNotTrack]
-        .some((value) => value === "1" || value === "yes");
-    }
-
-    function contextAllowed() {
-      if (window.location.hostname !== config.productionHost) return false;
-      if (!config.allowedPathnames.includes(normalizedPathname())) return false;
-      if (config.siteSurface === "worktable_cloud") {
-        const search = new URLSearchParams(window.location.search);
-        if (search.get("from") === "logout") return false;
-        const environment = search.get("environment");
-        if (environment !== null && environment !== "production") return false;
-      }
-      return !doNotTrackEnabled();
-    }
-
-    function referringDomain() {
-      if (!document.referrer) return undefined;
-      try {
-        const hostname = new URL(document.referrer).hostname.toLowerCase();
-        if (hostname.length === 0 || hostname.length > 253) return undefined;
-        if (!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(hostname)) return undefined;
-        if (hostname.split(".").some((label) => label.length === 0 || label.length > 63)) {
-          return undefined;
-        }
-        return hostname;
-      } catch {
-        return undefined;
-      }
-    }
-
-    function commonProperties() {
-      const rawUserAgent = navigator.userAgent;
-      if (typeof rawUserAgent !== "string" || rawUserAgent.length === 0) return undefined;
-      const properties = {
-        token: config.projectToken,
-        distinct_id: "$posthog_cookieless",
-        $cookieless_mode: true,
-        $process_person_profile: false,
-        $geoip_disable: true,
-        analytics_schema_version: ${PUBLIC_ANALYTICS_SCHEMA_VERSION},
-        site_surface: config.siteSurface,
-        $host: window.location.hostname,
-        $pathname: normalizedPathname(),
-        // PostHog uses this transiently for its cookieless server hash and
-        // removes it before the event is retained.
-        $raw_user_agent: rawUserAgent.length > ${MAX_RAW_USER_AGENT_LENGTH}
-          ? rawUserAgent.slice(0, ${MAX_RAW_USER_AGENT_LENGTH - 3}) + "..."
-          : rawUserAgent,
-      };
-      const referrer = referringDomain();
-      if (referrer) properties.$referring_domain = referrer;
-      const search = new URLSearchParams(window.location.search);
-      for (const key of Object.keys(activeCampaignValues)) {
-        const value = search.get(key);
-        if (value && value.length <= 100 && activeCampaignValues[key].includes(value)) {
-          properties[key] = value;
-        }
-      }
-      const inherited = search.get("wt_source");
-      const domain = (referrer || "").replace(/^www\\./, "");
-      const linkedJourney = !domain ||
-        ["worktable.dev", "worktable.cloud", "docs.worktable.dev"].includes(domain);
-      const referral = (Object.hasOwn(referralSources, domain) ? referralSources[domain] : undefined) || (!domain ? "direct_or_unknown" :
-        ["worktable.dev", "worktable.cloud", "docs.worktable.dev"].includes(domain)
-          ? "internal_unknown" : "other_referral");
-      properties.acquisition_source = properties.utm_source ||
-        (linkedJourney && acquisitionSources.includes(inherited) ? inherited : referral);
-      if (linkedJourney && search.get("wt_test") === "1") properties.traffic_type = "verification";
-      return properties;
-    }
-
-    function sendEvent(event, properties) {
-      const captured = {
-        event,
-        properties,
-        timestamp: new Date().toISOString(),
-      };
-      if (typeof crypto.randomUUID === "function") captured.uuid = crypto.randomUUID();
-      const body = {
-        api_key: config.projectToken,
-        batch: [captured],
-        sent_at: new Date().toISOString(),
-      };
-
-      try {
-        const encoded = btoa(JSON.stringify(body));
-        const beaconBody = new Blob(["data=" + encodeURIComponent(encoded)], {
-          type: "application/x-www-form-urlencoded",
-        });
-        return navigator.sendBeacon(config.apiHost + "/e/?compression=base64", beaconBody);
-      } catch {
-        // Analytics must never interfere with the page or destination action.
-        return false;
-      }
-    }
-
-    if (contextAllowed()) {
-      const properties = commonProperties();
-      if (properties) {
-        const pageviewKey = window.location.hostname + normalizedPathname();
-        if (sendEvent("$pageview", properties)) {
-          window.__worktablePublicAnalyticsEarlyPageviewKey = pageviewKey;
-        }
-      }
-    }
-
-    function captureClick(event) {
-      if (event.type === "auxclick" && event.button !== 1) return;
-      if (!contextAllowed() || !(event.target instanceof Element)) return;
-      const common = commonProperties();
-      if (!common) return;
-      // Preserve only bounded, non-identifying labels through public navigation.
-      // Download artifacts and same-page anchors must retain their original URLs.
-      const anchor = event.target.closest("a[href]");
-      if (anchor instanceof HTMLAnchorElement) {
-        const destination = new URL(anchor.href, window.location.href);
-        const publicPage =
-          ["www.worktable.dev", "www.worktable.cloud", "docs.worktable.dev"].includes(destination.hostname) &&
-          !destination.pathname.startsWith("/releases/") &&
-          !["/install", "/install-skills"].includes(destination.pathname);
-        const signup = destination.hostname === "app.worktable.cloud" &&
-          destination.pathname.replace(/\\/+$/, "") === "/signup";
-        const samePage = destination.origin === window.location.origin &&
-          destination.pathname === window.location.pathname && destination.hash;
-        if (destination.protocol === "https:" && !samePage && (publicPage || signup)) {
-          // Explicit destination campaigns take precedence over inherited ones.
-          if (!destination.searchParams.has("utm_source")) {
-            for (const key of Object.keys(activeCampaignValues)) {
-              if (common[key] && !destination.searchParams.has(key)) destination.searchParams.set(key, common[key]);
-            }
-            destination.searchParams.set("wt_source", common.acquisition_source);
-          }
-          if (common.traffic_type === "verification") destination.searchParams.set("wt_test", "1");
-          anchor.href = destination.href;
-        }
-      }
-      const tracked = event.target.closest("[" + ctaAttribute + "]");
-      if (!tracked) return;
-      const ctaId = tracked.getAttribute(ctaAttribute);
-      const placement = tracked.getAttribute(placementAttribute);
-      if (!ctaId || !placement || !Object.hasOwn(ctaPlacements, ctaId) || !ctaPlacements[ctaId].includes(placement)) return;
-      const properties = { ...common, cta_id: ctaId, placement };
-      sendEvent("marketing:cta_click", properties);
-    }
-    document.addEventListener("click", captureClick, true);
-    document.addEventListener("auxclick", captureClick, true);
-  })();`
-}
-
 export function approvedCampaignProperties(
   search: string
 ): Record<string, string> {
@@ -510,26 +327,26 @@ export function sanitizePublicAnalyticsEvent(
 
   const properties: Record<string, unknown> = {
     token: config.projectToken,
-    distinct_id: "$posthog_cookieless",
-    $cookieless_mode: true,
+    distinct_id: source.distinct_id,
     $process_person_profile: false,
     $geoip_disable: true,
     analytics_schema_version: PUBLIC_ANALYTICS_SCHEMA_VERSION,
+    environment: "production",
     site_surface: config.siteSurface,
     $host: location.hostname,
     $pathname: pathname,
   }
 
-  const rawUserAgent = source.$raw_user_agent
-  if (typeof rawUserAgent !== "string" || rawUserAgent.length === 0) {
+  if (
+    typeof source.distinct_id !== "string" ||
+    !/^(?:workos:)?[a-zA-Z0-9_-]{16,200}$/.test(source.distinct_id)
+  )
     return null
+  for (const key of ["$device_id", "$session_id", "$window_id"] as const) {
+    const value = source[key]
+    if (typeof value === "string" && /^[a-zA-Z0-9_-]{1,200}$/.test(value))
+      properties[key] = value
   }
-  // This is required by PostHog's cookieless ingestion protocol. PostHog
-  // removes it before retaining the event, so it is not an analytics dimension.
-  properties.$raw_user_agent =
-    rawUserAgent.length > MAX_RAW_USER_AGENT_LENGTH
-      ? `${rawUserAgent.slice(0, MAX_RAW_USER_AGENT_LENGTH - 3)}...`
-      : rawUserAgent
 
   copyHostname(source, properties, "$referring_domain")
   const acquisitionSource = source.acquisition_source
@@ -541,6 +358,14 @@ export function sanitizePublicAnalyticsEvent(
   }
   if (source.traffic_type === "verification")
     properties.traffic_type = "verification"
+  for (const key of [
+    "initial_acquisition_source",
+    "latest_external_acquisition_source",
+  ]) {
+    const value = source[key]
+    if (typeof value === "string" && ACQUISITION_SOURCES.includes(value))
+      properties[key] = value
+  }
   copyExactString(source, properties, "$os", 64)
   copyExactString(source, properties, "$device_type", 64)
   copyExactString(source, properties, "$lib", 64)
@@ -627,11 +452,4 @@ function copyExactString(
   ) {
     target[key] = value
   }
-}
-
-function serializeForInlineScript(value: unknown): string {
-  return JSON.stringify(value)
-    .replace(/</g, "\\u003c")
-    .replace(/\u2028/g, "\\u2028")
-    .replace(/\u2029/g, "\\u2029")
 }

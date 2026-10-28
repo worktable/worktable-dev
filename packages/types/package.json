@@ -11,7 +11,8 @@
     "./mcp-clients": "./src/mcp-clients.ts",
     "./recognition": "./src/recognition.ts",
     "./doc-source": "./src/doc-source.ts",
-    "./setup": "./src/setup.ts"
+    "./setup": "./src/setup.ts",
+    "./analytics": "./src/analytics.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

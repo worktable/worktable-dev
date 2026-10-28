@@ -49,3 +49,14 @@ Then complete your [first project](/start/first-space/).
 Worktable Link connects an existing local or self-hosted installation through
 your Cloud account where available. It keeps that installation's content on its
 own device. See [Remote access](/guides/remote-access/#worktable-link).
+
+## Choose whether to share analytics
+
+Optional usage analytics is off until you opt in. Open **Settings → Account →
+Privacy** to change the choice for your Cloud account and connected agents.
+Analytics never includes your documents, record values, searches, or agent
+instructions. Local, self-hosted, and linked-device content activity does not
+send product analytics.
+
+The marketing site and these docs have their own analytics controls in the
+footer. See the [privacy policy](https://www.worktable.cloud/privacy) for details.

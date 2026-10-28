@@ -1,3 +1,4 @@
+import { requestAnalyticsContext, withAnalyticsContext } from "../analytics.ts"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
@@ -197,7 +198,9 @@ export async function handleRemoteMcpRequest(
 
   let response: Response
   try {
-    response = await runWithTeamIdentity(identity, () => transport.handleRequest(request))
+    response = await withAnalyticsContext(requestAnalyticsContext(request, identity), () =>
+      runWithTeamIdentity(identity, () => transport.handleRequest(request))
+    )
   } catch (error) {
     release()
     throw error

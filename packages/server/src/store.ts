@@ -46,6 +46,7 @@ import {
   pruneDocKeyForCount,
 } from "./version-retention.ts";
 import { notifyDocContentChanged } from "./content-events.ts";
+import { captureWorkSaved, currentAnalyticsContext, hasAuthoredContent } from "./analytics.ts";
 import {
   createDocAliasReservationLookup,
   docAliasReservationError,
@@ -3533,6 +3534,10 @@ async function writeDocUnlocked(
   });
   content = prepared.content as unknown[] | string;
   const repairs = prepared.repairs;
+  const captureSavedContent = (after: unknown): void => {
+    if (currentAnalyticsContext() && options?.recordVersion !== false && options?.source !== "browser-yjs-sync" &&
+      (!before || stableHash(before.data) !== stableHash(after)) && (hasAuthoredContent(after) || (before && hasAuthoredContent(before.data)))) captureWorkSaved("document");
+  };
 
   const finalizeWrite = async (
     storedAs: DocFileFormat,
@@ -3578,6 +3583,7 @@ async function writeDocUnlocked(
       });
     }
     notifyDocContentChanged(spaceId, docPath);
+    captureSavedContent(after.data);
     return {
       ok: true,
       storedAs,
@@ -3740,6 +3746,7 @@ async function writeDocUnlocked(
         return { ok: false, storedAs: "md", error: durable.error };
       }
       notifyDocContentChanged(spaceId, docPath);
+      captureSavedContent(after.data);
       return {
         ok: true,
         storedAs: "json",

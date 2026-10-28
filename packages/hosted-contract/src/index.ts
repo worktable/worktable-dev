@@ -1,6 +1,10 @@
 import { z } from "zod"
 import { ShareTicket } from "./linked-access.ts"
 
+export * from "@worktable/types/analytics"
+/** Gateway-owned context; it conveys no authorization to product APIs. */
+export const ANALYTICS_HEADER = "x-worktable-analytics"
+
 // ============================================================
 // Worktable Cloud billing contract
 // ============================================================
@@ -203,6 +207,11 @@ export const ENV = {
   BROWSER_ASSERTION_KEYRING: "WORKTABLE_BROWSER_ASSERTION_KEYRING",
   /** Per-tenant gateway admission secret (see GATEWAY_HEADER). */
   GATEWAY_SECRET: "WORKTABLE_GATEWAY_SECRET",
+  ANALYTICS_ENABLED: "WORKTABLE_ANALYTICS_ENABLED",
+  ANALYTICS_TOKEN: "POSTHOG_PROJECT_TOKEN",
+  ANALYTICS_HOST: "POSTHOG_API_HOST",
+  ANALYTICS_CONSENT_URL: "WORKTABLE_ANALYTICS_CONSENT_URL",
+  ANALYTICS_RUNTIME_ID: "WORKTABLE_ANALYTICS_RUNTIME_ID",
   BACKUP_REPORT_URL: "WORKTABLE_BACKUP_REPORT_URL",
   BACKUP_RUNTIME_ID: "WORKTABLE_BACKUP_RUNTIME_ID",
   BACKUP_PROVIDER_ID: "WORKTABLE_BACKUP_PROVIDER_ID",
@@ -744,6 +753,12 @@ export const TenantProvisionInput = z
     /** Both sharing origins are optional together, keeping rollout disabled by default. */
     shareBaseUrl: httpUrl.optional(),
     htmlShareBaseUrl: httpUrl.optional(),
+    analytics: z.object({
+      projectToken: z.string().min(1),
+      apiHost: z.string().url().refine((value) => new URL(value).protocol === "https:"),
+      consentUrl: z.string().url().refine((value) => new URL(value).protocol === "https:"),
+      runtimeId: z.string().min(1),
+    }).optional(),
     backupReporting: z
       .object({
         url: z
@@ -837,6 +852,13 @@ export function buildTenantEnv(
       parsed.browserAssertionKeyring
     ),
     [ENV.GATEWAY_SECRET]: parsed.gatewaySecret,
+    ...(parsed.analytics ? {
+      [ENV.ANALYTICS_ENABLED]: "true",
+      [ENV.ANALYTICS_TOKEN]: parsed.analytics.projectToken,
+      [ENV.ANALYTICS_HOST]: parsed.analytics.apiHost,
+      [ENV.ANALYTICS_CONSENT_URL]: parsed.analytics.consentUrl,
+      [ENV.ANALYTICS_RUNTIME_ID]: parsed.analytics.runtimeId,
+    } : {}),
     ...(parsed.backupReporting
       ? {
           [ENV.BACKUP_REPORT_URL]: parsed.backupReporting.url,

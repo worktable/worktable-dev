@@ -1,3 +1,4 @@
+import { requestAnalyticsContext, withAnalyticsContext, shutdownAnalytics, type SaveAnalyticsContext } from "./analytics.ts";
 import { finalizeRestoredSharingPolicy } from "./share-links-store.ts";
 import { recoverTeamInitialization } from "./team-initialization.ts";
 import { resetTeamSpacePoliciesAfterContentReplacement, finalizePendingTeamSpacePolicyReset } from "./team-policy.ts";
@@ -515,6 +516,7 @@ app.get("/worktable-preview/fonts/*", async (c) => {
 });
 
 app.use("/api/*", timedMiddleware("auth", trustedLocalIdentity()));
+app.use("/api/*", async (c, next) => withAnalyticsContext(requestAnalyticsContext(c.req.raw, c.get("identity")), next));
 app.use("/api/*", (c, next) =>
   runAsActivityActor(c.get("identity")?.principal, next)
 );
@@ -755,6 +757,7 @@ interface WsData {
   docPath?: string; // Only for yjs
   baseVersionId?: string;
   baseContentHash?: string;
+  analyticsContext?: SaveAnalyticsContext | null;
 }
 
 // ============================================================
@@ -2125,6 +2128,7 @@ export function startServer(
               baseVersionId: url.searchParams.get("baseVersionId") ?? undefined,
               baseContentHash:
                 url.searchParams.get("baseContentHash") ?? undefined,
+              analyticsContext: requestAnalyticsContext(req, identity),
             },
           })
           if (success) return undefined
@@ -2217,7 +2221,8 @@ export function startServer(
                 {
                   baseVersionId: ws.data.baseVersionId,
                   baseContentHash: ws.data.baseContentHash,
-                }
+                },
+                ws.data.analyticsContext ?? null
               )
             } catch (err) {
               console.warn(
@@ -2453,6 +2458,7 @@ export function startServer(
         await settle(() => yjsManager.shutdown());
         // Revisions only go up across restarts if the last ones are kept.
         await settle(() => savePendingList());
+        await settle(() => shutdownAnalytics());
         await settle(async () => {
           await drainWorkspaceChanges();
           await drainServerTasks();

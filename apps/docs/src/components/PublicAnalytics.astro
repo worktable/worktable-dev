@@ -1,7 +1,6 @@
 ---
 import { getCollection } from "astro:content"
 import {
-  createPublicAnalyticsEarlyCtaScript,
   type PublicAnalyticsConfig,
 } from "@worktable/public-analytics"
 
@@ -19,10 +18,8 @@ const config = {
   environmentVariableName: "PUBLIC_POSTHOG_PROJECT_TOKEN",
   isDevelopment: import.meta.env.DEV,
 } satisfies PublicAnalyticsConfig
-const earlyCtaScript = createPublicAnalyticsEarlyCtaScript(config)
 ---
 
-<script is:inline set:html={earlyCtaScript}></script>
 
 <script is:inline define:vars={{ config }}>
   window.__WORKTABLE_PUBLIC_ANALYTICS_CONFIG__ = config

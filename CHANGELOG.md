@@ -9,6 +9,12 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.34] - 2026-10-28
+
+### Added
+
+- **Analytics choice:** Choose whether to share Cloud usage analytics for your account and connected agents, with separate website and documentation controls.
+
 ## [0.1.33] - 2026-10-28
 
 ### Changed

@@ -404,12 +404,14 @@ describe("link graph", () => {
       }
     });
 
-    it("rename leaves the old target reported as broken", async () => {
+    it("a rename outside Worktable leaves the old target reported as broken", async () => {
       await write("hub", "# Hub\n\n[alpha](/alpha)");
       await write("alpha", "# Alpha");
       expect((await getDocLinks(SPACE, "hub")).links[0]?.resolved).toBe(true);
 
       await renameDoc(SPACE, "alpha", "renamed-alpha");
+      // As the watcher reports a change on disk.
+      noteAllSpacesChanged();
       const after = await getDocLinks(SPACE, "hub");
       expect(after.links[0]?.resolved).toBe(false);
       const graph = await getSpaceLinkGraph(SPACE);

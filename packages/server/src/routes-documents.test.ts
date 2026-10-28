@@ -1630,7 +1630,7 @@ describe("format-neutral document route", () => {
     }
   })
 
-  it("deletes mixed folders with common write authority while preserving unclaimed files", async () => {
+  it("deletes mixed folders with common write authority, files in them included", async () => {
     const instance = app()
     const forbiddenDelete = await instance.request(
       `/api/spaces/${spaceId}/documents/delete-folder`,
@@ -1698,8 +1698,9 @@ describe("format-neutral document route", () => {
     expect(deletedBody).toMatchObject({
       ok: true,
       path: "notes",
-      count: 3,
+      count: 4,
       paths: expect.arrayContaining([
+        "notes/keep.txt",
         "notes/old",
         "notes/readme",
         "notes/status",
@@ -1707,6 +1708,7 @@ describe("format-neutral document route", () => {
     })
     expect((await readDoc(spaceId, "notes/readme")).data).toBeNull()
     expect((await readWidget(spaceId, "notes/status")).data).toBeNull()
-    expect(await readFile(unclaimed, "utf8")).toBe("Keep this file")
+    // Every file in the folder is part of it, so it goes too.
+    await expect(readFile(unclaimed, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
   }, 10_000)
 })

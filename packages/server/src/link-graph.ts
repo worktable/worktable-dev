@@ -470,7 +470,14 @@ async function spaceFilePaths(spaceId: string): Promise<Set<string>> {
   const catalog = await readDocumentCatalogSnapshot(spaceId);
   return new Set(
     catalog.entries.flatMap((entry) =>
-      entry.kind === "document" ? [entry.descriptor.path] : [],
+      // One whose source is gone, as after a rename on disk, isn't there to
+      // reach: links to it are broken.
+      entry.kind === "document" &&
+      !entry.handle.diagnostics.some(
+        (diagnostic) => diagnostic.code === "inventory-source-missing",
+      )
+        ? [entry.descriptor.path]
+        : [],
     ),
   );
 }

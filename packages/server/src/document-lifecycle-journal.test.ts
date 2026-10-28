@@ -937,7 +937,9 @@ describe("recoverable document lifecycle", () => {
       expect((await resolveDocAlias("space", "old-folder/child")).path).toBe(
         committed ? "old-folder/child" : "folder/child"
       )
-      expect(readFileSync(unclaimed, "utf8")).toBe("Unclaimed file\n")
+      // A file in the folder goes with it, and comes back if the delete does.
+      if (committed) expect(existsSync(unclaimed)).toBe(false)
+      else expect(readFileSync(unclaimed, "utf8")).toBe("Unclaimed file\n")
 
       const catalog = await buildDocumentCatalog({
         workspaceRoot: workspace,

@@ -997,9 +997,10 @@ describe("registered file format conformance", () => {
     expect(
       await getDocArchiveInfo(spaceId, "designs/system-map")
     ).toMatchObject({ reason: "Superseded" })
+    // The Doc's folder archives with it, and comes back with it.
     expect(
       await getDocArchiveInfo(spaceId, "designs/system-map/notes")
-    ).toBeUndefined()
+    ).toMatchObject({ reason: "Superseded" })
     await setRegisteredDocumentArchived({
       spaceId,
       path: "designs/system-map",
@@ -1007,6 +1008,9 @@ describe("registered file format conformance", () => {
       archivedBy: "test",
       registry,
     })
+    expect(
+      await getDocArchiveInfo(spaceId, "designs/system-map/notes")
+    ).toBeUndefined()
     const sourcePath = join(
       workspaceRoot,
       "spaces",
@@ -1021,17 +1025,20 @@ describe("registered file format conformance", () => {
       registry,
     })
     await expect(access(sourcePath)).rejects.toMatchObject({ code: "ENOENT" })
-    await access(
-      join(
-        workspaceRoot,
-        "spaces",
-        spaceId,
-        "docs",
-        "designs",
-        "system-map",
-        "notes.excalidraw"
+    // Its folder goes with it.
+    await expect(
+      access(
+        join(
+          workspaceRoot,
+          "spaces",
+          spaceId,
+          "docs",
+          "designs",
+          "system-map",
+          "notes.excalidraw"
+        )
       )
-    )
+    ).rejects.toMatchObject({ code: "ENOENT" })
     await expect(
       access(
         documentDataV2Directory(workspaceRoot, spaceId, created.documentId)

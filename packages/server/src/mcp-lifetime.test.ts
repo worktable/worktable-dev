@@ -55,7 +55,8 @@ async function tool(
   name: string,
   request: Record<string, unknown>
 ): Promise<{ ok: boolean; data: Record<string, unknown>; text: string }> {
-  const result = await client!.callTool({ name, arguments: { request } })
+  const individual = name.startsWith("worktable_spaces_") || ["worktable_state", "worktable_search", "worktable_space_index"].includes(name)
+  const result = await client!.callTool({ name, arguments: individual ? request : { request } })
   const text = (result.content as Array<{ type: string; text?: string }>)
     .map((part) => part.text ?? "")
     .join("\n")
@@ -94,8 +95,7 @@ afterEach(async () => {
 
 describe("agent document lifetimes over MCP", () => {
   it("creates, changes, preserves, and clears workspace-defined groups", async () => {
-    const created = await tool("worktable_spaces", {
-      action: "create",
+    const created = await tool("worktable_spaces_create", {
       name: "Workshop",
       group: "Community projects",
     })
@@ -104,8 +104,7 @@ describe("agent document lifetimes over MCP", () => {
     expect((await readSpace(id)).data?.group).toBe("Community projects")
     expect(
       (
-        await tool("worktable_spaces", {
-          action: "update",
+        await tool("worktable_spaces_update", {
           spaceId: id,
           group: "Archived projects",
         })
@@ -114,8 +113,7 @@ describe("agent document lifetimes over MCP", () => {
     expect((await readSpace(id)).data?.group).toBe("Archived projects")
     expect(
       (
-        await tool("worktable_spaces", {
-          action: "update",
+        await tool("worktable_spaces_update", {
           spaceId: id,
           description: "Changed description",
         })
@@ -132,6 +130,19 @@ describe("agent document lifetimes over MCP", () => {
       ).ok
     ).toBe(true)
     expect((await readSpace(id)).data?.group).toBeUndefined()
+    expect((await tool("worktable_state", { spaceId: id })).data.space).toMatchObject({ id })
+    expect((await tool("worktable_space_index", { spaceId: id })).ok).toBe(true)
+    expect((await tool("worktable_search", { query: "Workshop", spaceId: id })).ok).toBe(true)
+    expect((await tool("worktable_spaces_archive", { spaceId: id })).ok).toBe(true)
+    expect((await tool("worktable_spaces_restore", { spaceId: id })).ok).toBe(true)
+    await connect(["docs:write"])
+    const denied = await tool("worktable_spaces_update", { spaceId: id, pins: [] })
+    expect(denied.ok).toBe(false)
+    expect(denied.text).toContain("documents:write")
+    await connect()
+    const mismatch = await tool("worktable_spaces_update", { spaceId: id, pins: [], startHere: [{ path: "missing.md" }] })
+    expect(mismatch.ok).toBe(false)
+    expect(mismatch.text).toContain("pins and startHere must match")
   })
 
   it("requires a lifetime to create a document and keeps it on later writes", async () => {

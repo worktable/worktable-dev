@@ -107,7 +107,7 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
-describe("files for agents on the preview surface", () => {
+describe("files for agents on the released surface", () => {
   it("creates, reads and replaces files through the file tools", async () => {
     const manifestPath = join(root, "worktable.workspace.json")
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
@@ -123,7 +123,7 @@ describe("files for agents on the preview surface", () => {
     try {
       const connected = await connect(
         ["documents:read", "documents:write"],
-        "preview"
+        "released"
       )
       const write = (request: Record<string, unknown>) =>
         connected.callTool({ name: "worktable_files_write", arguments: { request } })
@@ -171,6 +171,17 @@ describe("files for agents on the preview surface", () => {
         )
       ).toBe(true)
 
+      // A cached document-tool definition still receives its base64 contract.
+      const legacyImage = await connected.callTool({
+        name: "worktable_documents_read",
+        arguments: { request: { action: "read_source", spaceId, path: "design/dot.png" } },
+      })
+      expect(legacyImage.isError).not.toBe(true)
+      expect(legacyImage.structuredContent).toMatchObject({
+        encoding: "base64",
+        source: Buffer.from("\x89PNG\r\n\x1a\nfake").toString("base64"),
+      })
+
       // A byte-order mark reads back as it is, so writing it back changes nothing.
       const marked = await write({
         action: "create",
@@ -205,7 +216,7 @@ describe("files for agents on the preview surface", () => {
       expect(descriptions).not.toContain("worktable_documents_read")
       expect(descriptions).not.toContain("worktable_documents_write")
       // So do the workspace's orientation and the HTML authoring guide.
-      const everything = await connect(["*"], "preview")
+      const everything = await connect(["*"], "released")
       const instructions = JSON.stringify([
         (
           await everything.callTool({
@@ -245,7 +256,7 @@ describe("files for agents on the preview surface", () => {
       })
 
       // A credential that can't read the file isn't told what was in it.
-      const writeOnly = await connect(["documents:write"], "preview")
+      const writeOnly = await connect(["documents:write"], "released")
       const blind = await writeOnly.callTool({
         name: "worktable_files_write",
         arguments: {
@@ -292,7 +303,7 @@ describe("file links for agents", () => {
       // The tools run in this Worktable's HTTP server, reached directly.
       const connected = await connect(
         ["documents:read", "documents:write"],
-        "preview",
+        "released",
         "http://127.0.0.1:7480"
       )
       const write = (request: Record<string, unknown>) =>
@@ -367,7 +378,7 @@ describe("file links for agents", () => {
       const linked = createWorktableMcpServer({
         version: "test",
         scopes: ["documents:read", "documents:write"],
-        surface: "preview",
+        surface: "released",
         urlOrigin: `https://cloud.example/api/mcp/d/${"a".repeat(32)}`,
       })
       const linkedClient = new Client({ name: "linked-test", version: "1" })
@@ -397,7 +408,7 @@ describe("file links for agents", () => {
           const hosted = createWorktableMcpServer({
             version: "test",
             scopes: ["documents:read", "documents:write"],
-            surface: "preview",
+            surface: "released",
             urlOrigin: "https://app.example/api/mcp",
             fileLinkBase,
           })
@@ -422,7 +433,7 @@ describe("file links for agents", () => {
 
       // Nor from tools running in an agent's own process over stdio, which
       // keeps no links a server could redeem: large files still come inline.
-      const stdio = await connect(["documents:read", "documents:write"], "preview")
+      const stdio = await connect(["documents:read", "documents:write"], "released")
       const local = await stdio.callTool({
         name: "worktable_files_read",
         arguments: { request: { action: "read_source", spaceId, path: "data/archive.bin" } },
@@ -457,7 +468,7 @@ describe("file links for agents", () => {
     }) as typeof fetch)
     try {
       // ChatGPT reads which inputs are files from the tool's _meta.
-      const connected = await connect(["documents:read", "documents:write"], "preview")
+      const connected = await connect(["documents:read", "documents:write"], "released")
       const { tools } = await connected.listTools()
       const filesWrite = tools.find((tool) => tool.name === "worktable_files_write")
       expect(filesWrite?._meta?.["openai/fileParams"]).toEqual(["file"])
@@ -544,7 +555,7 @@ describe("importing a file into Records", () => {
     try {
       const connected = await connect(
         ["documents:read", "documents:write", "records:read", "records:write"],
-        "preview"
+        "released"
       )
       const write = (name: string, request: Record<string, unknown>) =>
         connected.callTool({ name, arguments: { request } })
@@ -800,7 +811,7 @@ describe("importing a file into Records", () => {
       })
 
       // Reading a file to import it needs documents:read as well.
-      const recordsOnly = await connect(["records:read", "records:write"], "preview")
+      const recordsOnly = await connect(["records:read", "records:write"], "released")
       const unscoped = await recordsOnly.callTool({
         name: "worktable_records_write",
         arguments: {

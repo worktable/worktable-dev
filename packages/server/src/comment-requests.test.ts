@@ -136,7 +136,7 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
       }
       const server = createWorktableMcpServer({
         version: "test",
-        surface: "preview",
+        surface: "released",
         scopes: ["*"],
         identity: { agent: "codex", principal: atlas },
         principal: atlas,
@@ -208,7 +208,7 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
       ])
     })
 
-    it("refuses a recipient this Space can't send comments to, or sending without previews, and keeps nothing", async () => {
+    it("refuses an unavailable recipient and allows addressed comments on released tools", async () => {
       const refused = await post("", {
         target: { type: "doc", docPath: "explorer" },
         category: "comment",
@@ -225,7 +225,7 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
         body: "For Finn.",
         to: ["Finn"],
       })
-      expect(released.status).toBe(400)
+      expect(released.status).toBe(200)
       process.env.WORKTABLE_MCP_PREVIEW = "1"
 
       const plain = await post("", {

@@ -432,8 +432,6 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
   })
 
   it("wakes a task-capable client with what arrives after it starts waiting", async () => {
-    process.env["WORKTABLE_MCP_MODERN"] = "1"
-    process.env["WORKTABLE_MCP_PREVIEW"] = "1"
     const { token } = await createToken({ scopes: ["*"], agent: "claude-code" })
     const { participant } = await resolveParticipant(
       (await verifyToken(token))!
@@ -454,8 +452,8 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
       modernPost(
         "tools/call",
         {
-          name: "worktable_discover",
-          arguments: { request: { action: "pending", wait: true, ...request } },
+          name: "worktable_pending",
+          arguments: { wait: true, ...request },
         },
         { token, capabilities: tasks }
       )
@@ -571,6 +569,7 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
   })
 
   it("answers modern requests as a legacy-only server while the era is off", async () => {
+    process.env["WORKTABLE_MCP_MODERN"] = "0"
     // A 400 without a modern error code: a dual-era client falls back to
     // initialize, as against any server from before this revision.
     for (const method of ["server/discover", "tools/list"]) {

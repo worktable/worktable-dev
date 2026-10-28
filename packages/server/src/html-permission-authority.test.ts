@@ -54,7 +54,7 @@ describe("who may grant an HTML Doc its permissions", () => {
   }
 
   beforeEach(async () => {
-    process.env["WORKTABLE_MCP_PREVIEW"] = "1";
+    process.env["WORKTABLE_MCP_PREVIEW"] = "0";
     setWorkspaceRootOverride(testDir);
     setAppDirOverride(appDir);
     ensureWorkspaceManifest();
@@ -85,7 +85,7 @@ describe("who may grant an HTML Doc its permissions", () => {
     const created = await dispatchOperation(
       "html.create",
       { spaceId: "meta", id: "feed", name: "Feed", html, permissions: { network: true } },
-      { surface: "preview" }
+      { surface: "released" }
     ) as { warnings: Array<{ code: string }> };
     expect(created.warnings.map((warning) => warning.code)).toContain("network_requested");
     expect(await opened("feed")).toEqual({ networkRequested: true, network: false });
@@ -102,16 +102,16 @@ describe("who may grant an HTML Doc its permissions", () => {
 
     // A person allows the code they saw, not code an agent wrote since.
     caller = ownerIdentity();
-    await dispatchOperation("html.update", { spaceId: "meta", widgetId: "feed", html: `${html}<!-- newer -->` }, { surface: "preview" });
+    await dispatchOperation("html.update", { spaceId: "meta", widgetId: "feed", html: `${html}<!-- newer -->` }, { surface: "released" });
     expect(await allow(seen)).toBe(409);
     expect(await allow(await revision())).toBe(200);
     expect(await opened("feed")).toEqual({ networkRequested: false, network: true });
 
     // A rename keeps the code the person allowed.
-    await dispatchOperation("html.rename", { spaceId: "meta", widgetId: "feed", name: "Feed v2" }, { surface: "preview" });
+    await dispatchOperation("html.rename", { spaceId: "meta", widgetId: "feed", name: "Feed v2" }, { surface: "released" });
     expect((await opened("feed")).network).toBe(true);
 
-    await dispatchOperation("html.update", { spaceId: "meta", widgetId: "feed", html: `${html}<!-- edit -->` }, { surface: "preview" });
+    await dispatchOperation("html.update", { spaceId: "meta", widgetId: "feed", html: `${html}<!-- edit -->` }, { surface: "released" });
     expect(await opened("feed")).toEqual({ networkRequested: true, network: false });
 
     // Over REST too, an agent's write only asks.
@@ -138,7 +138,7 @@ describe("who may grant an HTML Doc its permissions", () => {
       dispatchOperation(
         "html.create",
         { spaceId: "meta", id: "board", name: "Board", html, permissions: { records } },
-        { surface: "preview", scopes }
+        { surface: "released", scopes }
       );
     await expect(write(["widgets:write"], { "*": { read: true } })).rejects.toThrow("needs records:read");
     await expect(write(["widgets:write", "records:read"], { tasks: { read: true, update: true } })).rejects.toThrow("needs records:write");
@@ -152,13 +152,5 @@ describe("who may grant an HTML Doc its permissions", () => {
     expect(edited.json.missingScope).toBe("records:read");
   });
 
-  it("leaves agent writes as they are with preview agent tools off", async () => {
-    process.env["WORKTABLE_MCP_PREVIEW"] = "0";
-    await dispatchOperation(
-      "html.create",
-      { spaceId: "meta", id: "feed", name: "Feed", html, permissions: { network: true, records: { "*": { read: true } } } },
-      { surface: "released", scopes: ["widgets:write"] }
-    );
-    expect(await opened("feed")).toEqual({ networkRequested: false, network: true });
-  });
+
 });

@@ -10,18 +10,13 @@ import {
   OPERATION_DEFINITIONS,
   type OperationId,
   WORKTABLE_TOOL_NAMES,
+  PUBLIC_TOOL_NAMES,
   WORKTABLE_TOOL_ROUTES,
 } from "./mcp/operations.ts"
 import {
   assertPublicOperationOutput,
   PUBLIC_OPERATION_OUTPUT_VARIANTS,
 } from "./mcp/output-schemas.ts"
-import {
-  PREVIEW_INPUT_SCHEMAS,
-  PREVIEW_TOOL_DESCRIPTIONS,
-  PREVIEW_TOOL_NAMES,
-  TOOL_DESCRIPTIONS,
-} from "./mcp/tools.ts"
 import {
   AnnotationsWriteInput,
   DocsWriteInput,
@@ -386,8 +381,8 @@ describe("consolidated MCP registry", () => {
   })
 })
 
-describe("preview tool surface", () => {
-  it("names the Worktable in its instructions only on the preview surface", async () => {
+describe("released tool surface", () => {
+  it("names the Worktable on both surfaces and omits owner names on Teams", async () => {
     const root = mkdtempSync(join(tmpdir(), "worktable-mcp-name-"))
     const manifest = join(root, "worktable.workspace.json")
     setWorkspaceRootOverride(root)
@@ -408,7 +403,7 @@ describe("preview tool surface", () => {
       expect(await instructions("preview")).toStartWith(
         'You are connected to the Worktable "Studio Notes".\n\n'
       )
-      expect(await instructions()).not.toContain("Studio Notes")
+      expect(await instructions()).toContain("Studio Notes")
       // A rename shows on the next connection.
       writeFileSync(manifest, JSON.stringify({ name: "Field Notes" }))
       utimesSync(manifest, new Date(), new Date(Date.now() + 5_000))
@@ -427,58 +422,61 @@ describe("preview tool surface", () => {
     }
   })
 
-  it("changes only the tools with held changes and keeps the released surface as it is", async () => {
+  it("releases the individual operations and file tools on both surfaces", async () => {
     const released = (await listTools()).tools
-    const preview = (await listTools("preview")).tools
-    // The same tools, a few under their preview names.
-    const previewName = (name: string) =>
-      PREVIEW_TOOL_NAMES[name as keyof typeof PREVIEW_TOOL_NAMES] ?? name
-    expect(preview.map((tool) => tool.name)).toEqual(
-      released.map((tool) => previewName(tool.name))
+    expect((await listTools("preview")).tools).toEqual(released)
+    expect(released.map((tool) => tool.name).sort()).toEqual(
+      [...PUBLIC_TOOL_NAMES].sort()
     )
-    // Every Worktable tool's preview result has room for notices; past
-    // that, only held changes differ.
-    const withoutNotices = preview.map((tool) => {
-      if (!tool.name.startsWith("worktable_")) return tool
-      const properties = tool.outputSchema?.properties as
-        | Record<string, unknown>
-        | undefined
-      expect(properties?.notices).toBeDefined()
-      const rest = { ...properties }
-      delete rest.notices
-      return { ...tool, outputSchema: { ...tool.outputSchema!, properties: rest } }
+    const byName = Object.fromEntries(released.map((tool) => [tool.name, tool]))
+    for (const name of [
+      "worktable_state",
+      "worktable_search",
+      "worktable_space_index",
+      "worktable_pending",
+      "worktable_spaces_create",
+      "worktable_spaces_update",
+      "worktable_spaces_archive",
+      "worktable_spaces_restore",
+    ]) {
+      // An operation has its own arguments, without an action selector.
+      expect(byName[name]?.inputSchema.properties).not.toHaveProperty("action")
+      expect(byName[name]?.inputSchema.properties).not.toHaveProperty("request")
+    }
+    expect(byName.worktable_pending?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: false,
     })
-    const changed = withoutNotices
-      .filter(
-        (tool, index) =>
-          JSON.stringify(tool) !== JSON.stringify(released[index])
-      )
-      .map((tool) => tool.name)
-    expect(changed.sort()).toEqual(
-      Object.keys(PREVIEW_TOOL_DESCRIPTIONS)
-        .concat(Object.keys(PREVIEW_INPUT_SCHEMAS))
-        .concat(Object.keys(PREVIEW_TOOL_NAMES))
-        // Descriptions that name a renamed tool name its preview name.
-        .concat(
-          Object.entries(TOOL_DESCRIPTIONS)
-            .filter(([, description]) =>
-              Object.keys(PREVIEW_TOOL_NAMES).some((name) =>
-                description.includes(name)
-              )
-            )
-            .map(([name]) => name)
-        )
-        .filter((name, index, all) => all.indexOf(name) === index)
-        .map(previewName)
-        .sort()
+    expect(byName.worktable_spaces_create?.annotations?.destructiveHint).toBe(
+      false
     )
-    const recordsWrite = preview.find(
-      (tool) => tool.name === "worktable_records_write"
+    expect(byName.worktable_spaces_archive?.annotations?.destructiveHint).toBe(
+      true
     )
-    expect(recordsWrite?.description).toContain("create never overwrites")
+    expect(byName.worktable_spaces_restore?.annotations?.destructiveHint).toBe(
+      false
+    )
+    expect(byName.worktable_files_write?._meta?.["openai/fileParams"]).toEqual([
+      "file",
+    ])
+    expect(byName.worktable_files_write?.inputSchema.properties).toHaveProperty(
+      "file"
+    )
+    // Existing document clients keep their upload-free input and base64 output contract.
     expect(
-      released.find((tool) => tool.name === "worktable_records_write")
-        ?.description
-    ).toBe("Create or update Record collection schemas and Records.")
+      byName.worktable_documents_write?.inputSchema.properties
+    ).not.toHaveProperty("file")
+    expect(
+      byName.worktable_documents_read?.outputSchema?.properties
+    ).toHaveProperty("source")
+    expect(byName.worktable_records_write?.description).toContain(
+      "create never overwrites"
+    )
+    expect(actionsIn(byName.worktable_records_write?.inputSchema)).toContain(
+      "create_many"
+    )
+    expect(actionsIn(byName.worktable_threads_write?.inputSchema)).toContain(
+      "rename"
+    )
   })
 })

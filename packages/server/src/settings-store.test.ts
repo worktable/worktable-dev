@@ -157,10 +157,10 @@ describe("preview agent tools", () => {
     delete process.env["WORKTABLE_HOSTED"];
   });
 
-  it("are off until the owner turns them on, and decide the MCP surface and era", async () => {
+  it("are off until the owner turns them on, independently of released modern MCP", async () => {
     expect(getServerSettings().agents.previewTools).toBe(false);
     expect(configuredMcpSurface()).toBe("released");
-    expect(mcpModernEraEnabled()).toBe(false);
+    expect(mcpModernEraEnabled()).toBe(true);
 
     await updateServerSettings({ agents: { previewTools: true } });
     invalidateServerSettingsCache();
@@ -176,7 +176,7 @@ describe("preview agent tools", () => {
     await updateServerSettings({ agents: { previewTools: true } });
     process.env["WORKTABLE_MCP_PREVIEW"] = "0";
     expect(configuredMcpSurface()).toBe("released");
-    expect(mcpModernEraEnabled()).toBe(false);
+    expect(mcpModernEraEnabled()).toBe(true);
     process.env["WORKTABLE_MCP_MODERN"] = "1";
     expect(mcpModernEraEnabled()).toBe(true);
     delete process.env["WORKTABLE_MCP_MODERN"];
@@ -184,7 +184,7 @@ describe("preview agent tools", () => {
 
     process.env["WORKTABLE_HOSTED"] = "1";
     expect(configuredMcpSurface()).toBe("released");
-    expect(mcpModernEraEnabled()).toBe(false);
+    expect(mcpModernEraEnabled()).toBe(true);
     process.env["WORKTABLE_MCP_PREVIEW"] = "1";
     expect(configuredMcpSurface()).toBe("preview");
     process.env["WORKTABLE_MCP_MODERN"] = "0";

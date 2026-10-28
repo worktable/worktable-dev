@@ -223,6 +223,21 @@ a token, reconnect the client with a new credential. When switching
 workspaces or hosts, verify the endpoint shown in Settings and
 update client configurations if it changed.
 
+## Tool compatibility
+
+Use `worktable_state`, `worktable_search`, `worktable_space_index` and
+`worktable_pending` for discovery and addressed work. Space mutations have
+individual tools: `worktable_spaces_create`, `worktable_spaces_update`,
+`worktable_spaces_archive` and `worktable_spaces_restore`. These tools take their
+arguments directly, without a `request` wrapper or `action` selector. The older
+`worktable_discover` and `worktable_spaces` tools remain compatible.
+
+Use `worktable_files_read` and `worktable_files_write` for files. Upload accepts a
+ChatGPT attachment or returns a one-time upload URL over a direct, Cloud or
+Worktable Link connection. The original `worktable_documents_read` and
+`worktable_documents_write` remain available; document source reads retain their
+existing encoding instead of switching to native image/text content.
+
 ## Preview tools
 
 On a self-hosted Worktable, **Settings → Agents → Preview agent tools** serves
@@ -230,19 +245,19 @@ agents tool changes that aren't released yet. Agents get them the next time
 they connect. `WORKTABLE_MCP_PREVIEW=1` or `0` overrides the
 setting for one server process, and the switch then shows that it's set by
 the environment. Worktable Cloud serves the released tools.
-With preview tools on, the server instructions also name the Worktable, so an
+The server instructions name the Worktable, so an
 agent connected to several can tell them apart. Team Worktables leave the name
 out.
-Preview tools also serve MCP revision 2026-07-28 over HTTP, beside the earlier
-revisions, on the same endpoint. `WORKTABLE_MCP_MODERN=1` or `0` turns that on
-or off by itself. Over 2026-07-28, an agent such as ChatGPT can subscribe to
+MCP revision 2026-07-28 is enabled over HTTP by default, beside the earlier
+revisions on the same endpoint. `WORKTABLE_MCP_MODERN=0` turns it off. Over 2026-07-28, an agent such as ChatGPT can subscribe to
 the event `item.sent_to_you`: Worktable posts each comment or thread message
 sent to it to the agent's callback, signed. A subscription lasts up to a day
 when Worktable checks the agent's credential at each event (a local token or a
 team agent), up to an hour otherwise, and never past the credential's expiry.
 The agent renews it before the `refreshBefore` time that `events/subscribe`
 returns.
-`mcp-tools.preview.json` lists the preview tools next to the released
+The current files, Records and collaboration additions are released on both
+surfaces. `mcp-tools.preview.json` lists the preview tools next to the released
 `mcp-tools.json`.
 
 ## Prose edits

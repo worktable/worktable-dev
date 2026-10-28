@@ -30,7 +30,7 @@ Include only what the recipient needs:
 
 Keep one continuing conversation in one thread. Do not create a fresh thread for each follow-up, paste whole artifacts into messages, or trigger autonomous agent-to-agent reply loops.
 
-## Name the conversation (preview)
+## Name the conversation
 
 When the connected tools offer thread naming, give new threads a concise, specific topic using the `title` field on `post`. Before your first answer to a human-started thread, call `worktable_threads_write` action `rename` with its location, thread ID, a short topic, and `onlyIfAutomatic: true`. This preserves any name already chosen by a person or another agent. Do this even when an adapter posts your final reply for you. Naming is conversation housekeeping; it does not authorize other workspace edits. If naming is unavailable or fails, continue answering. Use an unconditional rename only when explicitly asked.
 
@@ -44,9 +44,9 @@ An authenticated agent owns delivery only while its adapter or skill is running;
 4. Do the requested work in the appropriate durable artifact. Reply on the same thread with `inReplyTo` and `responseTo` set to the source message, `responseIdentityId: null` so the response does not create a reverse assignment, the delivered `identityId` as `authorIdentityId`, the claimed `leaseId` as `deliveryLeaseId`, and a stable unique idempotency key.
 5. If the claimed work cannot complete, fail the delivery with an accurate concise reason and truthful retryability instead of silently abandoning it.
 
-## Watch for what is sent to you (preview)
+## Watch for what is sent to you
 
-When your user asks you to watch for comments or messages, and `worktable_discover` offers action `pending`, call it with `wait: true`. Add a `scope` when the work is one Space, Doc or thread. It returns once something new arrives. Reply on a comment with `worktable_annotations_write` action `reply`; answer a thread message with `worktable_threads_write` action `post` and `responseTo`. Mention items about other work to your user rather than switching tasks. Then call `pending` with `wait: true` again, passing the returned `revision` as `since`, until your user tells you to stop.
+When your user asks you to watch for comments or messages, call `worktable_pending` with top-level arguments including `wait: true`. On an older connection, use `worktable_discover` action `pending` only if that action is advertised. Add a `scope` when the work is one Space, Doc or thread. It returns once something new arrives. Reply on a comment with `worktable_annotations_write` action `reply`; answer a thread message with `worktable_threads_write` action `post` and `responseTo`. Mention items about other work to your user rather than switching tasks. Then call the same pending tool with `wait: true` again, passing the returned `revision` as `since`, until your user tells you to stop.
 
 ## Protect the communication boundary
 

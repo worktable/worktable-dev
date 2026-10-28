@@ -167,7 +167,7 @@ describe("thread MCP operations", () => {
     ).rejects.toThrow()
   })
 
-  it("offers creation titles and conditional rename only to preview clients", async () => {
+  it("offers creation titles and conditional rename to released clients", async () => {
     const preview = await connect(
       "claude-code@work",
       finn,
@@ -202,15 +202,11 @@ describe("thread MCP operations", () => {
     expect(
       (await call(preview, "worktable_threads_write", post)).messageId
     ).toBe(created.messageId)
-    await expect(
-      call(released, "worktable_threads_write", rename)
-    ).rejects.toThrow()
-    await expect(
-      call(released, "worktable_threads_write", {
-        ...post,
-        idempotencyKey: "released-title",
-      })
-    ).rejects.toThrow()
+    expect(await call(released, "worktable_threads_write", rename)).toMatchObject({ title: "Launch readiness" })
+    expect(await call(released, "worktable_threads_write", {
+      ...post,
+      idempotencyKey: "released-title",
+    })).toHaveProperty("messageId")
   })
 
   it("defaults new participants to Worktable and supports location filtering", async () => {

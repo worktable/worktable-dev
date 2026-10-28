@@ -210,7 +210,6 @@ import {
 } from "./record-practices.ts"
 import {
   OPERATION_DEFINITIONS,
-  PREVIEW_OPERATIONS,
   type OperationId,
 } from "./operations.ts"
 import {
@@ -240,7 +239,7 @@ import { deleteDocumentFolder } from "../document-folder-delete.ts"
 import { wsManager } from "../ws.ts"
 import { docSnapshotRevision } from "../document-content-revision.ts"
 import { FORMAT_SPEC } from "./format-spec.ts"
-import { withPreviewToolNames } from "./preview-names.ts"
+import { withFileToolNames } from "./file-tool-names.ts"
 import {
   isMarkdownSafe,
   extractMarkdownHeadings,
@@ -275,10 +274,8 @@ import {
   SpaceIndexInput,
   ListAnnotationsInput,
   ReadAnnotationInput,
-  CreateAnnotationInput,
   CreateAnnotationInputPreview,
   PendingInput,
-  ReplyAnnotationInput,
   ReplyAnnotationInputPreview,
   UpdateAnnotationInput,
   ResolveAnnotationInput,
@@ -287,7 +284,6 @@ import {
   ReadThreadInput,
   ReadThreadMessageInput,
   WaitThreadInput,
-  PostThreadInput,
   PostThreadInputPreview,
   RenameThreadInput,
   AssignResponseRequestInput,
@@ -855,11 +851,13 @@ interface ToolDispatchContext {
   identity?: Pick<TokenIdentity, "agent" | "credentialClass" | "principal">
   scopes?: string[]
   canReadRecords?: boolean
-  /** The tool surface the caller was offered; preview-only inputs need "preview". */
+  /** The tool surface the caller was offered. */
   surface?: McpSurface
+  /** Cached document-tool clients expect base64 rather than native media. */
+  legacyFileRead?: boolean
   /**
    * Where file links point: the origin the agent reached this Worktable at,
-   * or null where links can't reach it (Worktable Link, Cloud).
+   * or null where links can't reach it (stdio or an older gateway/device).
    */
   fileLinkOrigin?: string | null
   onThreadProgress?: (update: ThreadProgressUpdate) => void | Promise<void>
@@ -870,12 +868,6 @@ export async function dispatchOperation(
   args: Record<string, unknown>,
   context: ToolDispatchContext = {}
 ): Promise<unknown> {
-  if (PREVIEW_OPERATIONS.has(operationId) && context.surface !== "preview") {
-    // Defense in depth: the released input schema already rejects these.
-    throw new Error(
-      `${operationId} is a preview action. Turn on Preview agent tools in Settings → Agents to use it.`
-    )
-  }
   const caller = currentRequestIdentity()
   const definition = OPERATION_DEFINITIONS[operationId]
   const authorize = () => {
@@ -1004,14 +996,7 @@ async function _dispatchOperationInner(
       })
     }
     case "threads.post": {
-      if (args.title !== undefined && context.surface !== "preview") {
-        throw new Error(
-          "Thread titles require Preview agent tools in Settings → Agents."
-        )
-      }
-      const parsed = (
-        context.surface === "preview" ? PostThreadInputPreview : PostThreadInput
-      ).parse(args)
+      const parsed = PostThreadInputPreview.parse(args)
       return await postThreadMessage(
         identity,
         {
@@ -1174,10 +1159,7 @@ async function _dispatchOperationInner(
     case "html.guide": {
       return {
         profile: "runtime" as const,
-        guide:
-          context.surface === "preview"
-            ? withPreviewToolNames(getHtmlAuthoringGuide())
-            : getHtmlAuthoringGuide(),
+        guide: withFileToolNames(getHtmlAuthoringGuide()),
         tokens: WIDGET_STYLE_TOKENS,
       }
     }
@@ -1262,14 +1244,14 @@ async function _dispatchOperationInner(
         spaceId: args["spaceId"] as string,
         path: args["path"] as string,
       })
-      // With the preview, a file reads as what it is: an image the model can
+      // A file reads as what it is: an image the model can
       // see, or text, rather than base64.
       if (
-        context.surface === "preview" &&
+        !context.legacyFileRead &&
         result.format.id === BUILTIN_DOCUMENT_FORMATS.file
       ) {
         // Every read of a file also gives a link to download it, where the
-        // agent can reach this Worktable directly.
+        // agent can reach this Worktable directly, on Cloud or through Link.
         const fields = {
           documentId: result.documentId,
           path: result.path,
@@ -1469,12 +1451,11 @@ async function _dispatchOperationInner(
         args["source"] as string,
         (args["encoding"] as "utf8" | "base64" | undefined) ?? "utf8"
       )
-      // With the preview, overwriting a CSV or TSV says what changed, so an
+      // Overwriting a CSV or TSV says what changed, so an
       // agent sees a dropped row or a changed header at once. The summary
       // reads the old table, so it needs read access too; the old bytes come
       // from the replacement's own read.
       const summarize =
-        context.surface === "preview" &&
         DELIMITED_NAME.test(args["path"] as string) &&
         hasScope(identity.scopes, "documents:read")
       const tableBefore: { bytes?: Uint8Array; formatId?: string } = {}
@@ -2067,19 +2048,14 @@ async function _dispatchOperationInner(
       const description = args["description"] as string | undefined
       const html = args["html"] as string
       const metadata = args["metadata"] as Record<string, unknown> | undefined
-      const granted =
-        context.surface === "preview"
-          ? authorizeHtmlPermissions({
-              requested: args["permissions"] as WidgetFile["permissions"],
-              // Everything over MCP is an agent's write.
-              person: false,
-              identity,
-              scopes: identity.scopes,
-            })
-          : null
-      const permissions = granted
-        ? granted.permissions
-        : (args["permissions"] as WidgetFile["permissions"])
+      const granted = authorizeHtmlPermissions({
+        requested: args["permissions"] as WidgetFile["permissions"],
+        // Everything over MCP is an agent's write.
+        person: false,
+        identity,
+        scopes: identity.scopes,
+      })
+      const permissions = granted.permissions
       const explicitId = args["id"] as string | undefined
       const storageV2 = await usesHtmlDocumentStorageV2()
       if (
@@ -2186,21 +2162,14 @@ async function _dispatchOperationInner(
               widgetId
             )
             if (error || !existing) throw new Error(error ?? "Widget not found")
-            const granted =
-              context.surface === "preview"
-                ? authorizeHtmlPermissions({
-                    requested: args["permissions"] as WidgetFile["permissions"],
-                    existing,
-                    person: false,
-                    identity,
-                    scopes: identity.scopes,
-                  })
-                : null
-            const permissions =
-              (granted
-                ? granted.permissions
-                : (args["permissions"] as WidgetFile["permissions"])) ??
-              existing.permissions
+            const granted = authorizeHtmlPermissions({
+              requested: args["permissions"] as WidgetFile["permissions"],
+              existing,
+              person: false,
+              identity,
+              scopes: identity.scopes,
+            })
+            const permissions = granted.permissions
             const warnings = validateWidgetHtml(html, permissions)
             const blockingIssue = getBlockingWidgetIssue(warnings)
             if (blockingIssue)
@@ -2418,8 +2387,8 @@ async function _dispatchOperationInner(
           },
           spaces: spacesWithDetail,
           hint: (() => {
-            const hint = "Use worktable_documents_read action list for every document format, or worktable_discover action search. Drawing previews and objects are available through worktable_drawings_read."
-            return context.surface === "preview" ? withPreviewToolNames(hint) : hint
+            const hint = "Use worktable_documents_read action list for every document format, or worktable_search. Drawing previews and objects are available through worktable_drawings_read."
+            return withFileToolNames(hint)
           })(),
         }
       }
@@ -2523,16 +2492,7 @@ async function _dispatchOperationInner(
       return { annotation, context }
     }
     case "annotations.create": {
-      if (args.to !== undefined && context.surface !== "preview") {
-        throw new Error(
-          "Sending comments requires Preview agent tools in Settings → Agents."
-        )
-      }
-      const parsed = (
-        context.surface === "preview"
-          ? CreateAnnotationInputPreview
-          : CreateAnnotationInput
-      ).parse(args)
+      const parsed = CreateAnnotationInputPreview.parse(args)
       if (reservedAnnotationInput(parsed)) throw new Error("Source metadata is set by Worktable")
       const to = await commentRecipients(
         identity,
@@ -2574,16 +2534,7 @@ async function _dispatchOperationInner(
       }
     }
     case "annotations.reply": {
-      if (args.to !== undefined && context.surface !== "preview") {
-        throw new Error(
-          "Sending comments requires Preview agent tools in Settings → Agents."
-        )
-      }
-      const parsed = (
-        context.surface === "preview"
-          ? ReplyAnnotationInputPreview
-          : ReplyAnnotationInput
-      ).parse(args)
+      const parsed = ReplyAnnotationInputPreview.parse(args)
       const result = await replyAnnotation(
         parsed.spaceId,
         parsed.annotationId,
@@ -3190,15 +3141,12 @@ async function _dispatchOperationInner(
     }
     case "guidance.drawings":
       return {
-        guide:
-          context.surface === "preview"
-            ? withPreviewToolNames(DRAWING_GUIDE)
-            : DRAWING_GUIDE,
+        guide: withFileToolNames(DRAWING_GUIDE),
       }
     case "guidance.format_spec": {
       const spec = FORMAT_SPEC.trim()
       return {
-        spec: context.surface === "preview" ? withPreviewToolNames(spec) : spec,
+        spec: withFileToolNames(spec),
       }
     }
     default:

@@ -21,7 +21,6 @@ import { deleteHtmlDocument } from "../html-document-delete.ts";
 import { moveHtmlDocument } from "../html-document-move.ts";
 import { createHtmlDocument } from "../html-document-create.ts";
 import { authorizeHtmlPermissions, HtmlPermissionError, isPersonWriter, NETWORK_REQUEST_WARNING } from "../html-permission-authority.ts";
-import { configuredMcpSurface } from "../mcp/surface.ts";
 import type { TokenIdentity } from "../token-store.ts";
 import { ManagedDocumentAdmissionError } from "../document-identity-admission.ts";
 import {
@@ -64,15 +63,14 @@ function normalizeWidgetPermissions(input: z.infer<typeof WidgetPermissionsInput
 }
 
 /**
- * What this caller's write may grant, with preview agent tools on; null keeps
- * today's behavior. A grant beyond the caller's own access answers 403.
+ * What this caller's write may grant. A grant beyond the caller's own
+ * access answers 403; only a person can allow external network access.
  */
 function grantedPermissions(
   c: Context,
   requested: WidgetFile["permissions"] | undefined,
   existing?: Pick<WidgetFile, "permissions" | "requests">,
 ): { permissions: WidgetFile["permissions"] | undefined; requests: WidgetFile["requests"] } | Response | null {
-  if (configuredMcpSurface() !== "preview") return null;
   const identity = c.get("identity") as TokenIdentity | undefined;
   try {
     return authorizeHtmlPermissions({ requested, existing, person: isPersonWriter(identity), identity, scopes: identity?.scopes ?? [] });

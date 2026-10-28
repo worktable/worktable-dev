@@ -596,8 +596,8 @@ describe("MCP record queries", () => {
   })
 })
 
-describe("MCP record batches (preview)", () => {
-  const preview = { surface: "preview" as const }
+describe("MCP record batches", () => {
+  const released = { surface: "released" as const }
 
   async function seedTeam(): Promise<void> {
     await createSpace()
@@ -631,7 +631,7 @@ describe("MCP record batches (preview)", () => {
           { recordId: "p-3", data: { title: "Three" } },
         ],
       },
-      preview
+      released
     )) as {
       results: Array<{ row: number; recordId: string; created: boolean }>
       counts: { created: number; skipped: number }
@@ -665,7 +665,7 @@ describe("MCP record batches (preview)", () => {
             { recordId: "https://x.test/a", data: { title: "Z" } },
           ],
         },
-        preview
+        released
       )
     ).rejects.toThrow(/Nothing was written: 3 of 4 rows.*row 2 \(bad-1\).*reveiw.*row 3 \(bad-2\).*review must be one of.*row 4 .*recordId must use/)
     const all = (await dispatchOperation("records.query", {
@@ -687,7 +687,7 @@ describe("MCP record batches (preview)", () => {
           data: { title: `Post ${id}` },
         })),
       },
-      preview
+      released
     )
     const byIds = (await dispatchOperation(
       "records.update_many",
@@ -697,7 +697,7 @@ describe("MCP record batches (preview)", () => {
         recordIds: ["a", "b", "missing"],
         data: { review: "Excluded" },
       },
-      preview
+      released
     )) as { counts: { updated: number; failed: number }; results: Array<{ error?: string }> }
     expect([byIds.counts.updated, byIds.counts.failed]).toEqual([2, 1])
     expect(byIds.results[2]!.error).toContain("Record not found")
@@ -710,7 +710,7 @@ describe("MCP record batches (preview)", () => {
         where: { review: { in: ["Excluded"] } },
         data: { review: "Verified" },
       },
-      preview
+      released
     )) as { counts: { updated: number } }
     expect(byFilter.counts.updated).toBe(2)
 
@@ -723,14 +723,14 @@ describe("MCP record batches (preview)", () => {
           recordIds: ["a"],
           data: { review: "Maybe" },
         },
-        preview
+        released
       )
     ).rejects.toThrow("Nothing was written")
   })
 
   it("returns results that match the listed output schema for every write", async () => {
     await seedTeam()
-    const server = createWorktableMcpServer({ version: "test", surface: "preview" })
+    const server = createWorktableMcpServer({ version: "test", surface: "released" })
     const client = new Client({ name: "batch-test", version: "1" })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
@@ -774,7 +774,7 @@ describe("MCP record batches (preview)", () => {
           url: { type: "url", unique: true },
         },
       },
-      preview
+      released
     )
     const result = (await dispatchOperation(
       "records.create_many",
@@ -787,7 +787,7 @@ describe("MCP record batches (preview)", () => {
           { data: { summary: "Second post", url: "https://example.com/2" } },
         ],
       },
-      preview
+      released
     )) as {
       results: Array<{ row: number; recordId: string; created: boolean; matchedBy?: string }>
     }
@@ -798,15 +798,6 @@ describe("MCP record batches (preview)", () => {
     ])
   })
 
-  it("is refused to a caller offered the released tools", async () => {
-    await seedTeam()
-    await expect(
-      dispatchOperation("records.create_many", {
-        spaceId: "product",
-        collectionId: "posts",
-        records: [{ data: { title: "x" } }],
-      })
-    ).rejects.toThrow("preview action")
-  })
+
 })
 

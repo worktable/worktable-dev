@@ -14,11 +14,20 @@ afterEach(() => {
 
 type Responder = (method: string) => Record<string, unknown>;
 
+/** The tools/call requests the stub received. */
+let calls: Array<{ name?: string; arguments?: unknown }> = [];
+
 function stubMcp(respond: Responder): string {
+  calls = [];
   server = Bun.serve({
     port: 0,
     fetch: async (req) => {
-      const body = (await req.json()) as { method: string; id: number };
+      const body = (await req.json()) as {
+        method: string;
+        id: number;
+        params?: { name?: string; arguments?: unknown };
+      };
+      if (body.method === "tools/call") calls.push(body.params ?? {});
       return Response.json({ jsonrpc: "2.0", id: body.id, ...respond(body.method) });
     },
   });
@@ -27,7 +36,7 @@ function stubMcp(respond: Responder): string {
 
 const HAPPY: Record<string, Record<string, unknown>> = {
   initialize: { result: { protocolVersion: "2025-06-18", capabilities: {} } },
-  "tools/list": { result: { tools: [{ name: "worktable_discover" }] } },
+  "tools/list": { result: { tools: [{ name: "worktable_state" }] } },
   "tools/call": { result: { content: [{ type: "text", text: "{}" }] } },
 };
 
@@ -36,6 +45,19 @@ describe("verifyMcpEndpoint", () => {
     const url = stubMcp((method) => HAPPY[method]!);
     const result = await verifyMcpEndpoint(url, "token");
     expect(result).toEqual({ ok: true, toolCount: 1 });
+    expect(calls).toEqual([{ name: "worktable_state", arguments: {} }]);
+  });
+
+  it("reads state through worktable_discover on a Worktable that lists no worktable_state", async () => {
+    const url = stubMcp((method) =>
+      method === "tools/list"
+        ? { result: { tools: [{ name: "worktable_discover" }] } }
+        : HAPPY[method]!
+    );
+    expect((await verifyMcpEndpoint(url, "token")).ok).toBe(true);
+    expect(calls).toEqual([
+      { name: "worktable_discover", arguments: { request: { action: "state" } } },
+    ]);
   });
 
   it("fails when the tool returns result.isError (scope-limited token)", async () => {

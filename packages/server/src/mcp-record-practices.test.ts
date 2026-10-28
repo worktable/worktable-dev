@@ -255,14 +255,11 @@ describe("MCP record-practice advisories", () => {
       { scopes: ["records:write"], urlOrigin: "http://127.0.0.1:7480" }
     )
 
-    const response = await handlers["worktable_records_write"]!({
-      request: {
-        action: "create",
-        spaceId: "product",
-        collectionId: "tasks",
-        recordId: "probe",
-        data: { title: "Private roadmap item" },
-      },
+    const response = await handlers["worktable_records_create"]!({
+      spaceId: "product",
+      collectionId: "tasks",
+      recordId: "probe",
+      data: { title: "Private roadmap item" },
     })
     const payload = JSON.parse(response.content[0]!.text) as {
       warnings?: RecordPracticeWarning[]

@@ -3,6 +3,7 @@ export const COMPANY_KNOWLEDGE_TOOL_NAMES = ["search", "fetch"] as const
 export type CompanyKnowledgeToolName =
   (typeof COMPANY_KNOWLEDGE_TOOL_NAMES)[number]
 
+/** The grouped tools of the earlier surface, still answered unlisted (legacy-calls.ts). */
 export const WORKTABLE_TOOL_NAMES = [
   "worktable_discover",
   "worktable_spaces",
@@ -26,22 +27,6 @@ export const WORKTABLE_TOOL_NAMES = [
   "worktable_mermaid",
 ] as const
 
-export const PUBLIC_TOOL_NAMES = [
-  ...COMPANY_KNOWLEDGE_TOOL_NAMES,
-  ...WORKTABLE_TOOL_NAMES,
-  "worktable_files_read",
-  "worktable_files_write",
-  "worktable_state",
-  "worktable_search",
-  "worktable_space_index",
-  "worktable_pending",
-  "worktable_spaces_create",
-  "worktable_spaces_update",
-  "worktable_spaces_archive",
-  "worktable_spaces_restore",
-] as const
-
-export type PublicToolName = (typeof PUBLIC_TOOL_NAMES)[number]
 export type WorktableToolName = (typeof WORKTABLE_TOOL_NAMES)[number]
 export type MutationClass = "none" | "workspace" | "records"
 export type ResultLinkKind =

@@ -3,35 +3,35 @@ export const DRAWING_GUIDE = `Drawings are Worktable documents with a visual edi
 
 ## Find drawings
 
-Use \`worktable_documents_read\` action \`list\`; the drawing format ID is
+List them with \`worktable_files_read\` and \`format\` set to the drawing format ID,
 \`worktable.quickdraw\`. Use the returned extensionless path. Search finds titles
 and typed labels, but does not interpret freehand strokes.
 
-\`worktable_documents_write\` handles \`move\`, \`archive\`, \`restore\`, \`checkpoint\`,
-and \`restore_version\`. \`worktable_delete\` action \`document\` deletes a drawing.
+\`worktable_files_update\` moves, archives, restores and checkpoints a drawing;
+\`worktable_files_write\` with \`fromVersionId\` restores a version, and
+\`worktable_delete\` with \`path\` deletes it.
 
-For exact source round trips, use \`read_source\` and \`replace\`. Preserve the full
-envelope, its optional grid background, and existing records. Read
-\`worktable_guidance\` action \`format_spec\` for the raw format contract.
+For exact source round trips, read with \`worktable_files_read\` \`source: true\` and
+replace with \`worktable_files_write\`. Preserve the full envelope, its optional
+grid background, and existing records. Read \`worktable_guidance\` topic
+\`format_spec\` for the raw format contract.
 
 ## Document previews
 
-\`worktable_documents_read\` action \`render\` accepts \`spaceId\`, \`path\`, optional
-\`expectedRevision\`, and \`preview {theme,width}\`. HTML uses the same action with
+\`worktable_files_render\` accepts \`spaceId\`, \`path\`, optional
+\`expectedRevision\`, and \`preview {theme,width}\`. HTML uses the same tool with
 optional viewport height, \`fullPage\`, CSS-pixel \`clip\`, and \`timeoutMs\`.
 PNG bytes arrive as image content, not a URL or base64 text.
 
 ## Inspect drawings
 
-Use \`worktable_drawings_read\`:
+\`worktable_drawings_read\` returns \`sourceRevision\`, stable object IDs, geometry,
+text, bounds, and a PNG by default. Inspect the image before interpreting freehand
+marks, overlap, or spatial relationships.
 
-- \`inspect\` returns \`sourceRevision\`, stable object IDs, geometry, text, bounds,
-  and a PNG by default. Inspect the image before interpreting freehand marks,
-  overlap, or spatial relationships.
-- \`query\` filters by IDs, text, types, and intersecting \`region {x,y,w,h}\`.
+- Filter by \`ids\`, \`text\`, \`types\`, and intersecting \`region {x,y,w,h}\`.
   Paginate with \`offset\` and \`limit\`; \`nextOffset\` signals more results.
-  Queries omit images by default.
-- \`render\` returns an image without a structured object list. It uses the
+- \`preview.mode\` \`none\` returns objects without an image. Rendering uses the
   managed preview browser; no open user window is needed.
 
 Render options are \`preview {format:'png'|'svg',theme:'light'|'dark',region,ids,width,background,labels}\`.
@@ -45,7 +45,7 @@ client cannot display embedded resources. Preview metadata identifies the same
 
 ## Read history
 
-Supply \`versionId\` to read a retained historical version. Action \`changes\` lists
+Supply \`versionId\` to read a retained historical version. \`changes: true\` lists
 retained agent batches with readable summaries, \`changeId\`, and affected
 \`addedIds\`, \`changedIds\`, and \`removedIds\`. Summaries include short label examples
 and before/after labels for renames.
@@ -57,61 +57,58 @@ retained; later conflicting edits can still prevent undo.
 
 ## Create drawings
 
-\`worktable_drawings_write\` action \`create\` takes \`spaceId\`, \`path\`, \`title\`,
+\`worktable_drawings_write\` creates a drawing from \`spaceId\`, \`path\`, \`title\`,
 \`lifetime\`, \`requestId\`, and \`operations\`. Choose \`durable\` for retained work or
-\`temporary\` for supporting material. Each \`add\` uses a simple object. MCP arguments wrap these fields in \`request\`:
+\`temporary\` for supporting material. Each \`add\` uses a simple object:
 
 \`\`\`json
 {
-  "request": {
-    "action": "create",
-    "spaceId": "demo",
-    "path": "request-flow",
-    "title": "Request flow",
-    "requestId": "flow-create-1",
-    "operations": [
-      {
-        "op": "add",
-        "ref": "browser",
-        "object": {
-          "type": "rectangle",
-          "x": 0,
-          "y": 0,
-          "width": 180,
-          "height": 90,
-          "text": "Browser"
-        }
-      },
-      {
-        "op": "add",
-        "ref": "api",
-        "object": {
-          "type": "rectangle",
-          "x": 300,
-          "y": 0,
-          "width": 180,
-          "height": 90,
-          "text": "API",
-          "color": "blue"
-        }
-      },
-      {
-        "op": "add",
-        "object": {
-          "type": "arrow",
-          "startBinding": {
-            "shapeId": "browser",
-            "anchor": "right"
-          },
-          "endBinding": {
-            "shapeId": "api",
-            "anchor": "left"
-          }
+  "spaceId": "demo",
+  "path": "request-flow",
+  "title": "Request flow",
+  "requestId": "flow-create-1",
+  "operations": [
+    {
+      "op": "add",
+      "ref": "browser",
+      "object": {
+        "type": "rectangle",
+        "x": 0,
+        "y": 0,
+        "width": 180,
+        "height": 90,
+        "text": "Browser"
+      }
+    },
+    {
+      "op": "add",
+      "ref": "api",
+      "object": {
+        "type": "rectangle",
+        "x": 300,
+        "y": 0,
+        "width": 180,
+        "height": 90,
+        "text": "API",
+        "color": "blue"
+      }
+    },
+    {
+      "op": "add",
+      "object": {
+        "type": "arrow",
+        "startBinding": {
+          "shapeId": "browser",
+          "anchor": "right"
+        },
+        "endBinding": {
+          "shapeId": "api",
+          "anchor": "left"
         }
       }
-    ],
-    "lifetime": "durable"
-  }
+    }
+  ],
+  "lifetime": "durable"
 }
 \`\`\`
 
@@ -137,8 +134,8 @@ Agents choose placement; there is no automatic layout.
 
 ## Edit drawings
 
-Inspect first. Then use action \`edit\` with \`expectedRevision\` equal to the
-returned \`sourceRevision\`, a new \`requestId\`, and operations:
+Inspect first. Then call \`worktable_drawings_write\` with \`expectedRevision\` equal
+to the returned \`sourceRevision\`, a new \`requestId\`, and operations:
 
 - \`update {id,changes:{text,color,...}}\`
 - \`move {id,x,y}\`
@@ -200,12 +197,12 @@ Very large scenes and raster images have resource limits.
 
 ## Undo changes
 
-Use action \`undo\` with the specific \`changeId\`, latest \`expectedRevision\`, and a
-new \`requestId\`. Only the principal that authored the batch can undo or redo it.
+Call \`worktable_drawings_write\` with \`undoChangeId\` set to the specific
+\`changeId\`, the latest \`expectedRevision\`, and a new \`requestId\`. Only the principal that authored the batch can undo or redo it.
 Undo reverses that batch while preserving unrelated later changes; conflicting
 changes to affected objects or the title prevent it.
 
-Redo references the undo batch's returned \`changeId\` and uses the same conflict
+Redo (\`redo: true\`) references the undo batch's returned \`changeId\` and uses the same conflict
 checks. Creation undo removes created objects; it does not delete the document.
 
 Receipts and reversibility expire with retained document history. Use shared

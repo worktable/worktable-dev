@@ -64,7 +64,7 @@ export interface PendingNotice {
   /** Whether it is about what the call that showed it is working on. */
   onTopic: boolean
   /** The call that opens it. */
-  open: { tool: string; request: Record<string, unknown> }
+  open: { tool: string; arguments: Record<string, unknown> }
 }
 
 type Reader = Pick<TokenIdentity, "scopes" | "principal" | "agent"> &
@@ -197,8 +197,7 @@ export async function noticesFor(
             target.spaceId === source.spaceId && target.docPath === docPath,
           open: {
             tool: "worktable_annotations_read",
-            request: {
-              action: "read",
+            arguments: {
               spaceId: source.spaceId,
               annotationId: source.annotationId,
               includeTargetContext: true,
@@ -230,8 +229,7 @@ export async function noticesFor(
         onTopic: target.threadId === source.threadId,
         open: {
           tool: "worktable_threads_read",
-          request: {
-            action: "message",
+          arguments: {
             threadId: source.threadId,
             messageId: source.messageId,
             ...(spaceId ? { location: { kind: "space", spaceId } } : {}),
@@ -376,7 +374,7 @@ export function renderNotices(
   if (waiting > 0) {
     lines.push(
       "",
-      `${waiting} more waiting. List them with worktable_discover action pending.`
+      `${waiting} more waiting. List them with worktable_pending, mode notices.`
     )
   }
   return {
@@ -388,6 +386,6 @@ export function renderNotices(
 /** One line that says items wait, with no quoted text, for wakes and hooks. */
 export function renderSignal(count: number): string {
   return count === 1
-    ? "1 Worktable item is waiting on you. Read it with worktable_discover action pending, then mention it to your user."
-    : `${count} Worktable items are waiting on you. Read them with worktable_discover action pending, then mention them to your user.`
+    ? "1 Worktable item is waiting on you. Read it with worktable_pending, mode notices, then mention it to your user."
+    : `${count} Worktable items are waiting on you. Read them with worktable_pending, mode notices, then mention them to your user.`
 }

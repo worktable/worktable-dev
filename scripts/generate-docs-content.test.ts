@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { buildProgram } from "../apps/cli/src/index.ts";
-import { DrawingsWriteInput } from "../packages/server/src/mcp/schemas.ts";
+import { CATALOG_TOOLS, routeCatalogCall } from "../packages/server/src/mcp/catalog.ts";
 import {
   escapeMdText,
   renderCliCommandsPage,
@@ -107,7 +107,9 @@ describe("generate-docs-content", () => {
     }
     const example = renderDrawingGuidePage().match(/```json\n([\s\S]*?)\n```/);
     expect(example).not.toBeNull();
-    expect(() => DrawingsWriteInput.parse(JSON.parse(example![1]!))).not.toThrow();
+    const drawingsWrite = CATALOG_TOOLS.find((tool) => tool.name === "worktable_drawings_write")!;
+    const args = drawingsWrite.inputSchema.parse(JSON.parse(example![1]!));
+    expect(routeCatalogCall(drawingsWrite, args).operations.map(({ id }) => id)).toEqual(["drawings.create"]);
   });
 
   test("removes the retired generated orientation page from reused checkouts", () => {

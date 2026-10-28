@@ -70,8 +70,8 @@ and removal behavior.
 ## Verify and finish
 
 Use `worktable doctor` and `worktable mcp test` where the CLI manages the host.
-In the agent client, call `worktable_discover` action `state` and verify the
-intended workspace. For conversation-only access, use an authorized test message
+In the agent client, call `worktable_state` and verify the intended
+workspace. For conversation-only access, use an authorized test message
 instead. Report any unavailable or unverified part of setup accurately.
 
 Complete the user's first requested task if one was included. If the request

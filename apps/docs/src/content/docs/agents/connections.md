@@ -224,8 +224,7 @@ worktable mcp test
 worktable mcp repair
 ```
 
-Then ask the agent to call `worktable_discover` with action `state`. Check that
-it returns the intended workspace and Spaces. A conversation-only participant
+Then ask the agent to call `worktable_state`. Check that it returns the intended workspace and Spaces. A conversation-only participant
 may not have discovery access; verify it by sending an authorized test message.
 
 On local and self-hosted Worktable, choose what an agent may do when you connect

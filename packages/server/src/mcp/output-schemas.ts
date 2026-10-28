@@ -760,7 +760,7 @@ const PendingNoticeSchema = z.looseObject({
   onTopic: z.boolean(),
   open: z.looseObject({
     tool: z.string(),
-    request: z.record(z.string(), z.unknown()),
+    arguments: z.record(z.string(), z.unknown()),
   }),
 })
 

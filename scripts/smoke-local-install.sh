@@ -411,13 +411,13 @@ JS
 printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"smoke\",\"version\":\"0.0.0\"}}}" >&3
 await_mcp_response 1
 printf "%s\n" "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}" >&3
-printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"worktable_mermaid\",\"arguments\":{\"request\":{\"action\":\"validate\",\"source\":\"graph TD; A-->B\"}}}}" >&3
+printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"worktable_mermaid\",\"arguments\":{\"source\":\"graph TD; A-->B\"}}}" >&3
 await_mcp_response 2
-printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"worktable_spaces\",\"arguments\":{\"request\":{\"action\":\"create\",\"name\":\"Smoke MCP Space\"}}}}" >&3
+printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"worktable_spaces_write\",\"arguments\":{\"name\":\"Smoke MCP Space\"}}}" >&3
 await_mcp_response 3
-printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"worktable_docs_write\",\"arguments\":{\"request\":{\"action\":\"write\",\"spaceId\":\"smoke-mcp-space\",\"docPath\":\"json-doc\",\"lifetime\":\"temporary\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Hello from JSON\",\"styles\":{}}]},{\"type\":\"codeBlock\",\"props\":{\"language\":\"mermaid\"},\"content\":[{\"type\":\"text\",\"text\":\"graph TD; A-->B\",\"styles\":{}}]}]}}}}" >&3
+printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"worktable_docs_write\",\"arguments\":{\"spaceId\":\"smoke-mcp-space\",\"docPath\":\"json-doc\",\"lifetime\":\"temporary\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Hello from JSON\",\"styles\":{}}]},{\"type\":\"codeBlock\",\"props\":{\"language\":\"mermaid\"},\"content\":[{\"type\":\"text\",\"text\":\"graph TD; A-->B\",\"styles\":{}}]}]}}}" >&3
 await_mcp_response 4
-printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"worktable_docs_read\",\"arguments\":{\"request\":{\"action\":\"read\",\"spaceId\":\"smoke-mcp-space\",\"docPath\":\"json-doc\"}}}}" >&3
+printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"worktable_docs_read\",\"arguments\":{\"spaceId\":\"smoke-mcp-space\",\"docPath\":\"json-doc\"}}}" >&3
 await_mcp_response 5
 printf '%s\n' '{"jsonrpc":"2.0","id":6,"method":"tools/list","params":{}}' >&3
 await_mcp_response 6
@@ -428,7 +428,7 @@ grep -q '"protocolVersion"' "$SMOKE_ROOT/mcp-response-1.json"
 grep -q 'flowchart-v2' "$SMOKE_ROOT/mcp-response-2.json"
 grep -q 'graph TD; A-->B' "$SMOKE_ROOT/mcp-response-5.json"
 grep -q 'Hello from JSON' "$SMOKE_ROOT/mcp-response-5.json"
-grep -q 'worktable_discover' "$SMOKE_ROOT/mcp-response-6.json"
+grep -q 'worktable_state' "$SMOKE_ROOT/mcp-response-6.json"
 
 run_wt mcp remove cursor > "$SMOKE_ROOT/mcp-remove.out"
 run_wt mcp status --json > "$SMOKE_ROOT/mcp-status-after-remove.json"

@@ -4,9 +4,9 @@ A hub doc for the link-graph demo.
 
 Try, over MCP or REST:
 
-- `worktable_docs_read` action `read` on this doc → `links` below resolve, except the changelog
-- `worktable_docs_read` action `read` on [the API reference](/reference/api) → two `backlinks`
-- `worktable_docs_read` action `list` → `backlinkCount` per doc; the scratchpad has none
+- `worktable_docs_read` on this doc → `links` below resolve, except the changelog
+- `worktable_docs_read` on [the API reference](/reference/api) → two `backlinks`
+- `worktable_docs_read` on the scratchpad → no `backlinks`
 
 ## Contents
 

@@ -21,7 +21,7 @@ Use an annotation when requested feedback belongs beside an artifact. Reading an
 
 ## Continue or close review threads
 
-- Use `worktable_annotations_read` action `read` with target context, or action `context`, before acting on an existing annotation. Check `targetExists` and `selectorMatch`; reread the artifact when the selector is fuzzy or stale.
+- Use `worktable_annotations_read` with its `annotationId` and `includeTargetContext: true` before acting on an existing annotation. Check `targetExists` and `selectorMatch`; reread the artifact when the selector is fuzzy or stale.
 - Reply when discussion or evidence belongs in the existing annotation thread. Do not create a second annotation for the same conversation.
 - Update only annotation metadata or wording the user asked to change. For a requested content change, use the corresponding Doc or HTML workflow, verify the requested outcome, and then reply or resolve. Do not treat annotation status as proof that the underlying artifact changed.
 - Resolve only after the instruction was addressed, superseded, or deliberately declined. Give a concise reason that preserves the decision.

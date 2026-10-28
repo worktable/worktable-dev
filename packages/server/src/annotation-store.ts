@@ -649,7 +649,7 @@ export async function getAnnotationContext(spaceId: string, annotationOrTarget: 
   if (target.type === "widget") {
     // Doc-level context only (no block anchoring inside the sandboxed iframe):
     // name + description + a truncated slice of the authored HTML. Agents that
-    // need the full source, read it through worktable_html_read.
+    // need the full source, read it through worktable_html_read with includeHtml.
     const { data: widget } = await readWidget(spaceId, target.widgetId);
     if (!widget) return { targetExists: false, selectorMatch: "missing" };
     const { data: html } = await readWidgetHtml(spaceId, target.widgetId);

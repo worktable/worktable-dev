@@ -3,7 +3,7 @@
 // ============================================================
 //
 // `worktable_docs_read` returns a Doc as Markdown, numbers its lines for
-// ranged reads, and greps it line by line; `worktable_docs_write` action edit
+// ranged reads, and greps it line by line; `worktable_docs_write` edits
 // matches exact text against it. All of them must see the same text, so they
 // share this projection (`projectBlocks` for BlockNote JSON). Converting BlockNote JSON to Markdown is the
 // expensive step; results are cached by the exact source revision, so a stale

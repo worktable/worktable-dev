@@ -230,23 +230,9 @@ function pendingWait(request: {
   const args = request.params?.["arguments"] as
     | Record<string, unknown>
     | undefined
-  const name = request.params?.["name"]
-  const legacy = args?.request as Record<string, unknown> | undefined
-  const read = name === "worktable_pending" ? args : legacy
-  if (
-    !(
-      name === "worktable_pending" ||
-      (name === "worktable_discover" && legacy?.["action"] === "pending")
-    ) ||
-    read?.["wait"] !== true
-  )
+  if (request.params?.["name"] !== "worktable_pending" || args?.["wait"] !== true)
     return undefined
-  const legacyArgs = Object.fromEntries(
-    Object.entries(legacy ?? {}).filter(([key]) => key !== "action")
-  )
-  const parsed = PendingInput.strict().safeParse(
-    name === "worktable_pending" ? args : legacyArgs
-  )
+  const parsed = PendingInput.strict().safeParse(args)
   return parsed.success
     ? { since: parsed.data.since, scope: parsed.data.scope }
     : undefined

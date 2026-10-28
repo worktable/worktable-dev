@@ -22,7 +22,7 @@ export const DEFAULT_AGENT_TOKEN_SCOPES: readonly string[] = [
   "annotations:*",
   "threads:read",
   "threads:write",
-  // Agents need workspace discovery (worktable_discover).
+  // Agents need workspace discovery (worktable_state and worktable_search).
   "search:read",
 ]
 

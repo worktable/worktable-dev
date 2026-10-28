@@ -11,7 +11,7 @@ import {
   beginsLocalCalendarDate,
   conversationIdentityDescription,
   deliveryPresentation,
-  directAlwaysOnAgentIdentity,
+  directAgentIdentity,
   isCurrentAssignmentActivity,
   resolveMessageAuthor,
   resolveReplyTarget,
@@ -92,21 +92,25 @@ function activity(
 }
 
 describe("thread presentation", () => {
-  test("infers direct replies only for always-on agents", () => {
+  test("addresses a person's messages to the one agent they talk to", () => {
     expect(
-      directAlwaysOnAgentIdentity(
+      directAgentIdentity(
         members,
         identities,
-        [{ id: members[1]!.id, alwaysOn: true }],
+        [{ id: members[1]!.id }],
         members[0]!.id
       )
     ).toBe(identities[1])
+    // Not once the agent is gone, nor when the agent is the one writing.
     expect(
-      directAlwaysOnAgentIdentity(
+      directAgentIdentity(members, identities, [], members[0]!.id)
+    ).toBeUndefined()
+    expect(
+      directAgentIdentity(
         members,
         identities,
-        [{ id: members[1]!.id, alwaysOn: false }],
-        members[0]!.id
+        [{ id: members[1]!.id }],
+        members[1]!.id
       )
     ).toBeUndefined()
   })

@@ -142,6 +142,7 @@ describe("agent document lifetimes over MCP", () => {
     await connect()
     const mismatch = await tool("worktable_spaces_update", { spaceId: id, pins: [], startHere: [{ path: "missing.md" }] })
     expect(mismatch.ok).toBe(false)
+    expect(mismatch.text).toContain("pins and startHere must match")
   })
 
   it("requires a lifetime to create a document and keeps it on later writes", async () => {

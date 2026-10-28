@@ -778,7 +778,7 @@
   {
     "name": "worktable_search",
     "title": "Search Worktable context",
-    "description": "Search workspace context by meaning, optionally scoped to a Space or document path. Returns matching items with their sources.",
+    "description": "Search workspace content with fuzzy matching, prefixes and relevance ranking, optionally scoped to a Space or document path. Returns matching items with their sources.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -977,7 +977,7 @@
   {
     "name": "worktable_space_index",
     "title": "Read a Worktable Space index",
-    "description": "Read a Space's document and Record index, optionally including archived items.",
+    "description": "Read a Space's document and Record index.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1337,7 +1337,7 @@
   {
     "name": "worktable_spaces_create",
     "title": "Create a Worktable Space",
-    "description": "Create a Space with a name and optional description, icon, color or workspace group.",
+    "description": "Create a Space with a name and optional description, icon or workspace group.",
     "inputSchema": {
       "type": "object",
       "properties": {

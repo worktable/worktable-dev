@@ -24,7 +24,7 @@ export const OPERATION_TOOLS = {
     action: "search",
     title: "Search Worktable context",
     description:
-      "Search workspace context by meaning, optionally scoped to a Space or document path. Returns matching items with their sources.",
+      "Search workspace content with fuzzy matching, prefixes and relevance ranking, optionally scoped to a Space or document path. Returns matching items with their sources.",
     readOnlyHint: true,
     destructiveHint: false,
     idempotentHint: true,
@@ -34,7 +34,7 @@ export const OPERATION_TOOLS = {
     action: "space_index",
     title: "Read a Worktable Space index",
     description:
-      "Read a Space's document and Record index, optionally including archived items.",
+      "Read a Space's document and Record index.",
     readOnlyHint: true,
     destructiveHint: false,
     idempotentHint: true,
@@ -54,7 +54,7 @@ export const OPERATION_TOOLS = {
     action: "create",
     title: "Create a Worktable Space",
     description:
-      "Create a Space with a name and optional description, icon, color or workspace group.",
+      "Create a Space with a name and optional description, icon or workspace group.",
     readOnlyHint: false,
     destructiveHint: false,
     idempotentHint: false,

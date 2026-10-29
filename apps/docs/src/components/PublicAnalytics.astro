@@ -14,6 +14,8 @@ const config = {
   projectToken: import.meta.env.PUBLIC_POSTHOG_PROJECT_TOKEN,
   apiHost: import.meta.env.PUBLIC_POSTHOG_API_HOST,
   siteSurface: "worktable_docs" as const,
+  // Docs never set analytics cookies or store an ID, so they never ask.
+  cookieless: true,
   allowedPathnames,
   environmentVariableName: "PUBLIC_POSTHOG_PROJECT_TOKEN",
   isDevelopment: import.meta.env.DEV,
@@ -38,8 +40,12 @@ const config = {
     }
   }
 
-  document.addEventListener("astro:page-load", () => {
+  // Pages without the client router never fire astro:page-load. A repeated
+  // call for the same page is ignored by the collector.
+  const capture = () => {
     const config = window.__WORKTABLE_PUBLIC_ANALYTICS_CONFIG__
     if (config && initializePublicAnalytics(config)) capturePublicPageview()
-  })
+  }
+  document.addEventListener("astro:page-load", capture)
+  capture()
 </script>

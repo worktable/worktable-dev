@@ -1,10 +1,10 @@
-export const PUBLIC_ANALYTICS_PREFERENCE_KEY = "worktable.public-analytics"
-export const PUBLIC_ANALYTICS_PREFERENCE_EVENT = "worktable:public-analytics-preference"
-
 import { ANALYTICS_SCHEMA_VERSION } from "@worktable/types/analytics"
 
 export const PUBLIC_ANALYTICS_SCHEMA_VERSION = ANALYTICS_SCHEMA_VERSION
 export const PUBLIC_ANALYTICS_API_HOST = "https://edge.worktable.dev"
+export const PUBLIC_ANALYTICS_PREFERENCE_KEY = "worktable.public-analytics"
+export const PUBLIC_ANALYTICS_PREFERENCE_EVENT =
+  "worktable:public-analytics-preference"
 
 export const PUBLIC_ANALYTICS_CTA_ATTRIBUTE = "data-public-analytics-cta"
 export const PUBLIC_ANALYTICS_PLACEMENT_ATTRIBUTE =
@@ -24,6 +24,8 @@ export type PublicAnalyticsCtaId =
   | "local_site_open"
   | "documentation_open"
   | "source_code_open"
+  | "demo_book_open"
+  | "sales_contact_open"
 
 export type PublicAnalyticsPlacement =
   | "header"
@@ -43,6 +45,8 @@ type PublicAnalyticsCampaignProperty =
 export interface PublicAnalyticsConfig {
   projectToken: string | undefined
   siteSurface: PublicSiteSurface
+  /** Always count without cookies or storage; the site never asks. */
+  cookieless?: boolean
   allowedPathnames: readonly string[]
   apiHost?: string
   environmentVariableName: string
@@ -86,10 +90,18 @@ const CTA_PLACEMENTS: Readonly<
   ],
   cloud_app_open: ["hero"],
   cloud_site_open: ["hero", "deployment_card", "footer"],
-  cloud_signup_open: ["hero", "pricing_card", "footer_cta", "footer"],
+  cloud_signup_open: [
+    "hero",
+    "pricing_card",
+    "deployment_card",
+    "footer_cta",
+    "footer",
+  ],
   local_site_open: ["hero", "pricing_card", "footer"],
   documentation_open: ["hero", "faq", "footer"],
   source_code_open: ["header", "hero", "footer", "pricing_card"],
+  demo_book_open: ["hero"],
+  sales_contact_open: ["pricing_card"],
 }
 
 // A bounded starter vocabulary for public campaign links. Add new campaign
@@ -168,6 +180,25 @@ export function publicAcquisitionProperties(
   }
 }
 
+/**
+ * The labels of a visitor's first counted page. Kept in memory before a choice
+ * and registered once on the cookie identity, so attribution survives consent.
+ */
+export function publicFirstTouchProperties(
+  acquisition: Record<string, string>,
+  pathname: string,
+  referringDomain: string | undefined
+): Record<string, string> {
+  const properties: Record<string, string> = {
+    initial_acquisition_source: acquisition.acquisition_source!,
+    initial_landing_path: normalizePublicAnalyticsPathname(pathname),
+  }
+  for (const key of Object.keys(ACTIVE_CAMPAIGN_VALUES))
+    if (acquisition[key]) properties[`initial_${key}`] = acquisition[key]
+  if (referringDomain) properties.initial_referring_domain = referringDomain
+  return properties
+}
+
 export function publicAnalyticsCta(
   ctaId: PublicAnalyticsCtaId,
   placement: PublicAnalyticsPlacement
@@ -193,7 +224,7 @@ export function isApprovedInstallCopy(
   return (
     (commandId === "self_host_install" &&
       placement === "deployment_card" &&
-      surface === "worktable_dev" &&
+      (surface === "worktable_dev" || surface === "worktable_cloud") &&
       pathname === "/") ||
     (commandId === "cli_install" &&
       placement === "docs_start" &&
@@ -203,6 +234,9 @@ export function isApprovedInstallCopy(
 }
 
 const SAFE_PATH = /^\/(?:[a-z0-9][a-z0-9/_-]*\/?)?$/
+const MAX_RAW_USER_AGENT_LENGTH = 1000
+/** PostHog's placeholder ID for events it hashes into a daily visitor. */
+export const COOKIELESS_DISTINCT_ID = "$posthog_cookieless"
 
 export function normalizePublicAnalyticsPathname(pathname: string): string {
   return pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname
@@ -251,17 +285,23 @@ export function isPublicAnalyticsContextAllowed(
   return true
 }
 
-export function isDoNotTrackEnabled(
-  navigatorLike: Pick<Navigator, "doNotTrack"> & {
+/** Do Not Track or Global Privacy Control: either stops optional analytics. */
+export function isPrivacySignalEnabled(
+  navigatorLike: {
+    doNotTrack?: string | null
     msDoNotTrack?: string | null
+    globalPrivacyControl?: unknown
   },
   windowLike: { doNotTrack?: string | null }
 ): boolean {
-  return [
-    navigatorLike.doNotTrack,
-    navigatorLike.msDoNotTrack,
-    windowLike.doNotTrack,
-  ].some((value) => value === "1" || value === "yes")
+  return (
+    navigatorLike.globalPrivacyControl === true ||
+    [
+      navigatorLike.doNotTrack,
+      navigatorLike.msDoNotTrack,
+      windowLike.doNotTrack,
+    ].some((value) => value === "1" || value === "yes")
+  )
 }
 
 export function isApprovedCta(
@@ -337,18 +377,43 @@ export function sanitizePublicAnalyticsEvent(
     $pathname: pathname,
   }
 
-  if (
-    typeof source.distinct_id !== "string" ||
-    !/^(?:workos:)?[a-zA-Z0-9_-]{16,200}$/.test(source.distinct_id)
-  )
-    return null
-  for (const key of ["$device_id", "$session_id", "$window_id"] as const) {
-    const value = source[key]
-    if (typeof value === "string" && /^[a-zA-Z0-9_-]{1,200}$/.test(value))
-      properties[key] = value
+  if (source.$cookieless_mode === true) {
+    // Before a choice, PostHog derives a daily visitor hash on the server from
+    // the request and user agent. Nothing identifies the browser itself.
+    const rawUserAgent = source.$raw_user_agent
+    if (
+      source.distinct_id !== COOKIELESS_DISTINCT_ID ||
+      typeof rawUserAgent !== "string" ||
+      rawUserAgent.length === 0
+    )
+      return null
+    properties.$cookieless_mode = true
+    properties.$raw_user_agent =
+      rawUserAgent.length > MAX_RAW_USER_AGENT_LENGTH
+        ? `${rawUserAgent.slice(0, MAX_RAW_USER_AGENT_LENGTH - 3)}...`
+        : rawUserAgent
+  } else {
+    if (
+      typeof source.distinct_id !== "string" ||
+      !/^(?:workos:)?[a-zA-Z0-9_-]{16,200}$/.test(source.distinct_id)
+    )
+      return null
+    for (const key of ["$device_id", "$session_id", "$window_id"] as const) {
+      const value = source[key]
+      if (typeof value === "string" && /^[a-zA-Z0-9_-]{1,200}$/.test(value))
+        properties[key] = value
+    }
   }
 
   copyHostname(source, properties, "$referring_domain")
+  copyHostname(source, properties, "initial_referring_domain")
+  const landingPath = source.initial_landing_path
+  if (
+    typeof landingPath === "string" &&
+    isPublicAnalyticsPathAllowed(config, landingPath)
+  )
+    properties.initial_landing_path =
+      normalizePublicAnalyticsPathname(landingPath)
   const acquisitionSource = source.acquisition_source
   if (
     typeof acquisitionSource === "string" &&
@@ -375,12 +440,14 @@ export function sanitizePublicAnalyticsEvent(
   for (const key of Object.keys(ACTIVE_CAMPAIGN_VALUES) as Array<
     keyof typeof ACTIVE_CAMPAIGN_VALUES
   >) {
-    const value = source[key]
-    if (
-      typeof value === "string" &&
-      ACTIVE_CAMPAIGN_VALUES[key].includes(value)
-    ) {
-      properties[key] = value
+    for (const name of [key, `initial_${key}`]) {
+      const value = source[name]
+      if (
+        typeof value === "string" &&
+        ACTIVE_CAMPAIGN_VALUES[key].includes(value)
+      ) {
+        properties[name] = value
+      }
     }
   }
 

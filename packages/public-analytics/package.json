@@ -12,14 +12,17 @@
     "./clipboard": "./src/clipboard.ts",
     "./browser": "./src/browser.ts",
     "./consent": "./src/consent.ts",
-    "./product": "./src/product.ts"
+    "./product": "./src/product.ts",
+    "./react": "./src/react.tsx"
   },
   "dependencies": {
+    "@worktable/hosted-contract": "workspace:*",
+    "@worktable/types": "workspace:*",
     "posthog-js": "^1.409.5",
-    "@worktable/types": "workspace:*"
+    "react": "^19.2.4"
   },
-  "license": "MIT",
   "devDependencies": {
     "@types/react": "^19.2.10"
-  }
+  },
+  "license": "MIT"
 }

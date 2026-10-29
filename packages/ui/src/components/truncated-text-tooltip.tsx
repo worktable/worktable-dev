@@ -9,11 +9,13 @@ import {
 
 /** Loaded on intent so sidebar labels do not load tooltip code at startup. */
 export default function TruncatedTextTooltip({
+  open,
   text,
   children,
   triggerRef,
   onClose,
 }: {
+  open: boolean
   text: string
   children: ReactNode
   triggerRef: Ref<HTMLSpanElement>
@@ -21,7 +23,7 @@ export default function TruncatedTextTooltip({
 }) {
   return (
     <Tooltip
-      open
+      open={open}
       onOpenChange={(open) => {
         if (!open) onClose()
       }}

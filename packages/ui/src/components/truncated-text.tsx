@@ -27,15 +27,22 @@ export function TruncatedText({
   const label = useRef<HTMLSpanElement>(null)
   const trigger = useRef<HTMLSpanElement>(null)
   const timer = useRef<number | undefined>(undefined)
-  const [open, setOpen] = useState(false)
+  const [state, setState] = useState<"unmounted" | "open" | "closed">(
+    "unmounted"
+  )
+  const open = state === "open"
   const isClipped = useCallback(() => {
     const element = trigger.current ?? label.current
     return !!element && element.scrollWidth > element.clientWidth
   }, [])
-  const show = useCallback(() => setOpen(isClipped()), [isClipped])
+  const show = useCallback(() => {
+    if (isClipped()) setState("open")
+  }, [isClipped])
   const close = useCallback(() => {
     window.clearTimeout(timer.current)
-    setOpen(false)
+    // Keep the activated trigger mounted so dismissal cannot replace a link's
+    // click target between pointerdown and click.
+    setState((current) => (current === "unmounted" ? current : "closed"))
   }, [])
 
   // Keep the row's existing keyboard stop. The label itself stays a span.
@@ -67,11 +74,11 @@ export function TruncatedText({
     const element = label.current
     if (!open || !element) return
     const observer = new ResizeObserver(() => {
-      if (!isClipped()) setOpen(false)
+      if (!isClipped()) close()
     })
     observer.observe(element)
     return () => observer.disconnect()
-  }, [isClipped, open, text])
+  }, [close, isClipped, open, text])
 
   return (
     <span
@@ -86,9 +93,10 @@ export function TruncatedText({
       onPointerLeave={close}
       onPointerDown={close}
     >
-      {open ? (
+      {state !== "unmounted" ? (
         <Suspense fallback={children}>
           <TruncatedTextTooltip
+            open={open}
             text={text}
             triggerRef={trigger}
             onClose={close}

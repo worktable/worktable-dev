@@ -21,7 +21,7 @@ import { SetupStep } from "./setup-step"
 
 /** What a person pastes into their agent to turn auto-reply on. */
 export const AUTO_REPLY_PROMPT =
-  "Watch Worktable for comments and messages sent to you, and reply to each one there."
+  "Watch Worktable for comments and messages sent to you, and reply to each one there, following the Worktable skill."
 
 const DOT_LABEL = {
   on: "Auto-reply on",

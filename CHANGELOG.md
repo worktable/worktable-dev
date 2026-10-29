@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Auto-reply:** The line to paste when turning on auto-reply asks the agent to follow the Worktable skill, so it falls back to waiting when its app can't trigger on events.
+
 ## [0.1.36] - 2026-10-28
 
 ### Fixed

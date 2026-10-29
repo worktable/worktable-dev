@@ -31,6 +31,7 @@ import {
   restoreLiveWorkspaceSnapshot,
   finalizeCommittedTeamSnapshotRestore,
 } from "./workspace-snapshot-restore.ts"
+import { isWorkspaceReplacementScheduled } from "./workspace-replacement-coordinator.ts"
 import { operatorSnapshotDirectory } from "./operator-snapshot.ts"
 import {
   appendVisitorReply,
@@ -120,7 +121,11 @@ describe("server maintenance entrypoint", () => {
     const waitJob = async (path: string) => {
       for (let i = 0; i < 200; i++) {
         const job = JSON.parse(await readFile(path, "utf8"))
-        if (job.state !== "replacing") return job
+        // A durable outcome can precede cleanup and release of the restore lease.
+        if (
+          job.state !== "replacing" &&
+          !isWorkspaceReplacementScheduled()
+        ) return job
         // test-policy: external-readiness-backoff (durable restore/admission state)
         await new Promise((resolve) => setTimeout(resolve, 10))
       }
@@ -163,18 +168,10 @@ describe("server maintenance entrypoint", () => {
       )
     ).toContain("New edit")
     const latest: string[] = []
-    for (let i = 0; i < 200 && latest.length === 0; i++) {
-      try {
-        await runServerMaintenance(
-          ["workspace-snapshot", "live-safety-test"],
-          (value) => latest.push(value)
-        )
-      } catch {
-        // The durable outcome can precede recovery cleanup and admission.
-        // test-policy: external-readiness-backoff (durable restore/admission state)
-        await new Promise((resolve) => setTimeout(resolve, 10))
-      }
-    }
+    await runServerMaintenance(
+      ["workspace-snapshot", "live-safety-test"],
+      (value) => latest.push(value)
+    )
     expect(latest).toHaveLength(1)
     const completedJob = await prepare("restore-current-test")
     await restoreLiveWorkspaceSnapshot({

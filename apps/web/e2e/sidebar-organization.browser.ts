@@ -85,17 +85,15 @@ test("clipped sidebar names reveal their full text and stop showing a tooltip wh
   const spaceName = "Quarterly planning and research"
   const docName =
     "Research findings for the next quarterly planning session with the product and engineering teams"
-  expect(
-    (
-      await page.request.post(`${harness.apiUrl}/api/spaces`, {
-        data: { id: "overflow-tooltips", name: spaceName },
-      })
-    ).ok()
-  ).toBe(true)
+  const created = await page.request.post(`${harness.apiUrl}/api/spaces`, {
+    data: { name: spaceName },
+  })
+  expect(created.ok()).toBe(true)
+  const { spaceId } = (await created.json()) as { spaceId: string }
   expect(
     (
       await page.request.put(
-        `${harness.apiUrl}/api/spaces/overflow-tooltips/docs/research`,
+        `${harness.apiUrl}/api/spaces/${spaceId}/docs/research`,
         {
           data: {
             content: [
@@ -111,7 +109,7 @@ test("clipped sidebar names reveal their full text and stop showing a tooltip wh
     ).ok()
   ).toBe(true)
 
-  await page.goto(new URL("/spaces/overflow-tooltips", harness.webUrl).href)
+  await page.goto(new URL(`/spaces/${spaceId}`, harness.webUrl).href)
   const sidebar = page.locator("[data-worktable-sidebar-root]")
   const space = sidebar.getByRole("button", { name: spaceName, exact: true })
   const doc = sidebar.getByRole("link", { name: docName, exact: true })
@@ -166,8 +164,6 @@ test("clipped sidebar names reveal their full text and stop showing a tooltip wh
   await expect(tooltip).toHaveText(docName)
   await page.screenshot({ path: testInfo.outputPath("sidebar-tooltip.png") })
   await doc.click()
-  await expect(page).toHaveURL(
-    /\/spaces\/overflow-tooltips\/documents\/research$/
-  )
+  await expect(page).toHaveURL(new URL(`/spaces/${spaceId}/documents/research`, harness.webUrl).href)
   await expect(tooltip).not.toBeVisible()
 })

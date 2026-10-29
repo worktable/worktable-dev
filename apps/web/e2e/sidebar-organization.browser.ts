@@ -129,6 +129,13 @@ test("clipped sidebar names reveal their full text and stop showing a tooltip wh
 
   await page.clock.install()
   const tooltip = page.getByRole("tooltip")
+  await space.focus()
+  await expect(tooltip).toHaveText(spaceName)
+  await expect(space).toBeFocused()
+  await page.keyboard.press("Tab")
+  await expect(space).not.toBeFocused()
+  await expect(tooltip).not.toBeVisible()
+
   await spaceLabel.hover()
   await page.clock.runFor(700)
   await expect(tooltip).toHaveText(spaceName)
@@ -162,6 +169,7 @@ test("clipped sidebar names reveal their full text and stop showing a tooltip wh
   await doc.getByText(docName, { exact: true }).hover()
   await page.clock.runFor(700)
   await expect(tooltip).toHaveText(docName)
+  await expect(tooltip).toHaveCSS("opacity", "1")
   await page.screenshot({ path: testInfo.outputPath("sidebar-tooltip.png") })
   await doc.click()
   await expect(page).toHaveURL(new URL(`/spaces/${spaceId}/documents/research`, harness.webUrl).href)

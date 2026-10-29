@@ -1986,7 +1986,9 @@ function UnavailableDocumentTreeItem({
         <StateIcon
           className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
         />
-        <TruncatedText text={node.label} />
+        <TruncatedText text={node.format?.id === "worktable.file" ? node.name : node.label}>
+          {node.label}
+        </TruncatedText>
       </Link>
       {rowActions && (
         <div className="shrink-0 pr-1 opacity-100 transition-opacity focus-within:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100">

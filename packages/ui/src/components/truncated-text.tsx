@@ -1,12 +1,18 @@
 "use client"
 
-import { useEffect, useRef, useState, type ReactNode } from "react"
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@worktable/ui/components/tooltip"
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import { cn } from "@worktable/ui/lib/utils"
+
+const loadTooltip = () => import("./truncated-text-tooltip")
+const TruncatedTextTooltip = lazy(loadTooltip)
 
 /** A single-line label that reveals its full text only when it is clipped. */
 export function TruncatedText({
@@ -19,43 +25,80 @@ export function TruncatedText({
   className?: string
 }) {
   const label = useRef<HTMLSpanElement>(null)
+  const trigger = useRef<HTMLSpanElement>(null)
+  const timer = useRef<number | undefined>(undefined)
   const [open, setOpen] = useState(false)
+  const isClipped = useCallback(() => {
+    const element = trigger.current ?? label.current
+    return !!element && element.scrollWidth > element.clientWidth
+  }, [])
+  const show = useCallback(() => setOpen(isClipped()), [isClipped])
+  const close = useCallback(() => {
+    window.clearTimeout(timer.current)
+    setOpen(false)
+  }, [])
 
-  // Only an open tooltip needs to watch resizing. The next hover measures
-  // afresh, including after a rename, font load, or sidebar resize.
+  // Keep the row's existing keyboard stop. The label itself stays a span.
+  useEffect(() => {
+    const control = label.current?.closest<HTMLElement>(
+      "a[href], button, [role='menuitem']"
+    )
+    const onFocus = () => {
+      if (control?.matches(":focus-visible")) show()
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close()
+    }
+    control?.addEventListener("focus", onFocus)
+    control?.addEventListener("blur", close)
+    control?.addEventListener("click", close)
+    control?.addEventListener("keydown", onKeyDown)
+    return () => {
+      window.clearTimeout(timer.current)
+      control?.removeEventListener("focus", onFocus)
+      control?.removeEventListener("blur", close)
+      control?.removeEventListener("click", close)
+      control?.removeEventListener("keydown", onKeyDown)
+    }
+  }, [close, show])
+
+  // Only open tooltips need to observe resizing; other labels measure on intent.
   useEffect(() => {
     const element = label.current
     if (!open || !element) return
     const observer = new ResizeObserver(() => {
-      if (element.scrollWidth <= element.clientWidth) setOpen(false)
+      if (!isClipped()) setOpen(false)
     })
     observer.observe(element)
     return () => observer.disconnect()
-  }, [open, text])
+  }, [isClipped, open, text])
 
   return (
-    <Tooltip
-      open={open}
-      onOpenChange={(nextOpen) => {
-        const element = label.current
-        setOpen(
-          nextOpen && !!element && element.scrollWidth > element.clientWidth
-        )
+    <span
+      ref={label}
+      className={cn("min-w-0 truncate", className)}
+      onPointerEnter={(event) => {
+        if (event.pointerType !== "mouse" || !isClipped()) return
+        void loadTooltip().catch(() => {})
+        window.clearTimeout(timer.current)
+        timer.current = window.setTimeout(show, 500)
       }}
+      onPointerLeave={close}
+      onPointerDown={close}
     >
-      <TooltipTrigger
-        delay={500}
-        render={<span ref={label} />}
-        className={cn("min-w-0 truncate", className)}
-      >
-        {children}
-      </TooltipTrigger>
-      <TooltipContent
-        role="tooltip"
-        className="block font-normal tracking-normal break-words whitespace-normal normal-case"
-      >
-        {text}
-      </TooltipContent>
-    </Tooltip>
+      {open ? (
+        <Suspense fallback={children}>
+          <TruncatedTextTooltip
+            text={text}
+            triggerRef={trigger}
+            onClose={close}
+          >
+            {children}
+          </TruncatedTextTooltip>
+        </Suspense>
+      ) : (
+        children
+      )}
+    </span>
   )
 }

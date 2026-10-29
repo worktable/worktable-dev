@@ -294,7 +294,7 @@ test("keeps confirmed policy saves cached and recovers a newer owner update duri
     await page.evaluate(() =>
       window.dispatchEvent(
         new CustomEvent("worktable:open-settings", {
-          detail: { section: "links" },
+          detail: { section: "sharing" },
         })
       )
     )

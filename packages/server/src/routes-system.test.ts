@@ -524,6 +524,7 @@ describe("GET /api/system/deployment", () => {
       mode: "self-managed",
       capabilities: {
         cloudAccount: false,
+        analyticsChoice: false,
         workspaceName: true,
         workspacePath: true,
         workspaceUrl: true,
@@ -553,6 +554,7 @@ describe("GET /api/system/deployment", () => {
       mode: "cloud",
       capabilities: {
         cloudAccount: true,
+        analyticsChoice: false,
         workspaceName: true,
         workspacePath: false,
         workspaceUrl: false,

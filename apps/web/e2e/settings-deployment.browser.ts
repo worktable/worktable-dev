@@ -11,6 +11,7 @@ const cloudDeployment = {
   mode: "cloud",
   capabilities: {
     cloudAccount: true,
+    analyticsChoice: true,
     workspaceName: true,
     workspacePath: false,
     workspaceUrl: false,
@@ -100,7 +101,7 @@ test("Settings prepares sections on open and stays navigable while code is loadi
     }
     if (
       switching &&
-      /\/settings\/sections\/(profile|appearance|editor|history|help)\.tsx/.test(
+      /\/settings\/sections\/(profile|appearance|general|help)\.tsx/.test(
         url.pathname
       )
     ) {
@@ -131,8 +132,13 @@ test("Settings prepares sections on open and stays navigable while code is loadi
     for (const [section, content] of [
       ["Profile", settings.getByRole("textbox", { name: "Display name" })],
       ["Appearance", settings.getByRole("radiogroup", { name: "Theme" })],
-      ["Editor", settings.getByText("Spellcheck", { exact: true })],
-      ["History", settings.getByRole("combobox")],
+      ["General", settings.getByRole("switch", { name: "Spellcheck" })],
+      [
+        "Data",
+        settings
+          .getByRole("region", { name: "History" })
+          .getByText("Doc version history", { exact: true }),
+      ],
       ["Help", settings.getByText("Contact support", { exact: true })],
     ] as const) {
       await settings.getByRole("button", { name: section, exact: true }).click()
@@ -186,9 +192,10 @@ test("Cloud composes relevant sections and saves human preferences", async ({
   })
 
   const settings = await openSettings(page)
-  await expect(
-    settings.getByRole("button", { name: "Account", exact: true })
-  ).toBeVisible()
+  for (const section of ["Billing", "Privacy"])
+    await expect(
+      settings.getByRole("button", { name: section, exact: true })
+    ).toBeVisible()
   const about = settings.getByRole("button", { name: "About", exact: true })
   await page.evaluate(() => {
     window.dispatchEvent(
@@ -247,16 +254,18 @@ test("Cloud composes relevant sections and saves human preferences", async ({
     await expect(settings.getByText(text, { exact: false })).toHaveCount(0)
   }
 
-  await settings.getByRole("button", { name: "Editor", exact: true }).click()
-  await settings.locator('[data-slot="switch"]').click()
+  await settings.getByRole("switch", { name: "Spellcheck" }).click()
   await expect
     .poll(() => settingsPatches)
     .toContainEqual({
       editor: { spellcheck: true },
     })
 
-  await settings.getByRole("button", { name: "History", exact: true }).click()
-  await settings.getByRole("combobox").click()
+  await settings.getByRole("button", { name: "Data", exact: true }).click()
+  await settings
+    .getByRole("region", { name: "History" })
+    .getByRole("combobox")
+    .click()
   await page.getByRole("option", { name: "Keep last 7 per doc" }).click()
   const confirm = page.getByRole("dialog", { name: "Delete older versions?" })
   await confirm.getByRole("button", { name: "Delete older versions" }).click()
@@ -270,7 +279,7 @@ test("Cloud composes relevant sections and saves human preferences", async ({
   expect(updateStatusRequests).toBe(0)
 })
 
-test("self-managed Settings retain local controls and normalize Account requests", async ({
+test("self-managed Settings retain local controls and normalize Billing requests", async ({
   page,
 }) => {
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
@@ -280,14 +289,14 @@ test("self-managed Settings retain local controls and normalize Account requests
   await page.evaluate(() => {
     window.dispatchEvent(
       new CustomEvent("worktable:open-settings", {
-        detail: { section: "account" },
+        detail: { section: "billing" },
       })
     )
   })
   const settings = page.getByRole("dialog")
   await expect(settings.getByRole("heading", { name: "General" })).toBeVisible()
   await expect(
-    settings.getByRole("button", { name: "Account", exact: true })
+    settings.getByRole("button", { name: "Billing", exact: true })
   ).toHaveCount(0)
   await expect(
     settings.getByText("Worktable URL", { exact: true })
@@ -305,10 +314,9 @@ test("self-managed Settings retain local controls and normalize Account requests
   await expect(
     settings.getByText("Check for updates automatically", { exact: true })
   ).toBeVisible()
-
 })
 
-test("Cloud mobile settings keeps the Account section reachable", async ({
+test("Cloud mobile settings keeps the Billing section reachable", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 })
@@ -320,10 +328,10 @@ test("Cloud mobile settings keeps the Account section reachable", async ({
   await page.getByRole("button", { name: /^Toggle sidebar/ }).click()
   await page.getByRole("button", { name: "Settings", exact: true }).click()
   const settings = page.getByRole("dialog")
-  const account = settings.getByRole("button", {
-    name: "Account",
+  const billing = settings.getByRole("button", {
+    name: "Billing",
     exact: true,
   })
-  await account.click()
-  await expect(account).toHaveAttribute("aria-pressed", "true")
+  await billing.click()
+  await expect(billing).toHaveAttribute("aria-pressed", "true")
 })

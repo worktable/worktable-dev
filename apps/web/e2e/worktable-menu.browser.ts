@@ -268,7 +268,7 @@ test("Link changes refresh Desktop badges; Cloud failures retain only the same a
   await page.getByRole("menuitem", { name: "Worktable Settings" }).click()
   const settings = page.getByRole("dialog")
   await settings
-    .getByRole("button", { name: "Remote Access", exact: true })
+    .getByRole("button", { name: "Remote", exact: true })
     .click()
   await settings.getByRole("switch", { name: "Worktable Link" }).click()
   await expect.poll(() => requests).toBe(2)
@@ -283,7 +283,7 @@ test("Link changes refresh Desktop badges; Cloud failures retain only the same a
   ).toBeVisible()
   await page.getByRole("menuitem", { name: "Worktable Settings" }).click()
   await settings
-    .getByRole("button", { name: "Remote Access", exact: true })
+    .getByRole("button", { name: "Remote", exact: true })
     .click()
   await settings.getByRole("switch", { name: "Worktable Link" }).click()
   await expect.poll(() => desktopRequests).toBe(3)
@@ -293,7 +293,7 @@ test("Link changes refresh Desktop badges; Cloud failures retain only the same a
   await expect(other.getByText("Link", { exact: true })).toBeVisible()
   await page.getByRole("menuitem", { name: "Worktable Settings" }).click()
   await settings
-    .getByRole("button", { name: "Remote Access", exact: true })
+    .getByRole("button", { name: "Remote", exact: true })
     .click()
   await settings.getByRole("button", { name: "Sign out", exact: true }).click()
   await expect(

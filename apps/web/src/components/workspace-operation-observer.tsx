@@ -106,7 +106,7 @@ export function WorkspaceOperationObserver() {
       } catch {
         /* announcements still work without persistence */
       }
-      if (!document.hidden && getVisibleSettingsSection() === "portability")
+      if (!document.hidden && getVisibleSettingsSection() === "data")
         continue
       if (job.state === "failed")
         toast.error(

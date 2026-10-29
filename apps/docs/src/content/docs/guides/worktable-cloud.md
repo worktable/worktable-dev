@@ -48,4 +48,4 @@ account. Its content stays on its own device. See
 
 ## Usage analytics
 
-Usage analytics is on by default. Turn it off in **Settings → Privacy**. It covers your connected agents too and never includes your content. These docs have their own switch in the footer. See the [privacy policy](https://www.worktable.cloud/privacy).
+Usage analytics is on by default. Turn it off in **Settings → Privacy**. It covers your connected agents too and never includes your content. These docs don't use cookies. See the [privacy policy](https://www.worktable.cloud/privacy).

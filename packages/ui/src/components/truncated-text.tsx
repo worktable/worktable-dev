@@ -50,7 +50,10 @@ export function TruncatedText({
       >
         {children}
       </TooltipTrigger>
-      <TooltipContent className="block font-normal tracking-normal break-words whitespace-normal normal-case">
+      <TooltipContent
+        role="tooltip"
+        className="block font-normal tracking-normal break-words whitespace-normal normal-case"
+      >
         {text}
       </TooltipContent>
     </Tooltip>

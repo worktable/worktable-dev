@@ -3,9 +3,8 @@ title: Project handoffs
 description: Keep a project brief and drawing that another person or agent can continue.
 ---
 
-A handoff should identify the current objective, decisions, unresolved questions,
-and next action. Keep it with the work it describes. This example continues a
-fictional community workshop.
+A handoff states the objective, decisions, open questions, and next action,
+and lives with the work. This example continues a fictional community workshop.
 
 ## Establish the plan
 
@@ -22,9 +21,8 @@ and a waiting area. No room dimensions have been supplied: label the drawing
 as a concept, not a measured floor plan. Link the drawing from the brief.
 ```
 
-Open both results. Confirm the brief does not invent a date or volunteer
-availability. Inspect the drawing to see whether its labels and proposed
-layout are understandable. It should identify missing dimensions.
+Open both. The brief should not invent a date or volunteer availability. The
+drawing should be readable and note the missing dimensions.
 
 ## Leave a decision
 
@@ -35,9 +33,8 @@ We need to confirm room dimensions and accessible routes before choosing
 a final layout. Make that the next action and leave the date unresolved.
 ```
 
-Ask the agent to update the brief and reply to the annotation. **Pin** the
-brief. A small project can keep handoff details in the brief; create a
-separate handoff document only when it has a distinct purpose.
+Ask the agent to update the brief and reply to the annotation, then **Pin**
+the brief. A small project doesn't need a separate handoff document.
 
 ## Continue elsewhere
 
@@ -49,10 +46,9 @@ open annotations. Summarize the next action and the information still
 needed. Do not recreate the existing documents.
 ```
 
-The next session should identify dimensions and accessible routes as unresolved,
-retain the unconfirmed date, and link the current documents. If it misses
-something, improve the saved handoff rather than relying on that session's chat
-history.
+The next session should list dimensions and accessible routes as unresolved,
+keep the date unconfirmed, and link the current documents. If it misses
+something, fix the saved brief, not the chat.
 
-Use a [Space thread](/guides/threads/) for ongoing discussion with a connected
-participant. Record decisions back in the brief when they change the plan.
+Use a [Space thread](/guides/threads/) for ongoing discussion, and record
+decisions that change the plan in the brief.

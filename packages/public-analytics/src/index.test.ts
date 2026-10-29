@@ -1,13 +1,23 @@
 import { describe, expect, test } from "bun:test"
+import { existsSync, readFileSync } from "node:fs"
+import {
+  ANALYTICS_REGION_SITES,
+  analyticsRegionHeaderRules,
+  analyticsRegionRequiresConsent,
+  ANALYTICS_REGION_COOKIE,
+  isAnalyticsRegionHeaderRule,
+} from "./region"
 import {
   approvedCampaignProperties,
+  COOKIELESS_DISTINCT_ID,
   publicAcquisitionProperties,
   isApprovedCta,
-  isDoNotTrackEnabled,
+  isPrivacySignalEnabled,
   isPublicAnalyticsContextAllowed,
   normalizePublicAnalyticsPathname,
   PUBLIC_ANALYTICS_API_HOST,
   PUBLIC_ANALYTICS_SCHEMA_VERSION,
+  publicFirstTouchProperties,
   sanitizePublicAnalyticsEvent,
   type PublicAnalyticsConfig,
   type PublicAnalyticsEvent,
@@ -120,19 +130,19 @@ describe("public analytics collection boundary", () => {
     expect(event?.properties?.$pathname).toBe("/start/desktop")
   })
 
-  test("recognizes browser Do Not Track variants", () => {
-    expect(isDoNotTrackEnabled({ doNotTrack: "1" }, { doNotTrack: null })).toBe(
-      true
-    )
-    expect(
-      isDoNotTrackEnabled(
-        { doNotTrack: null, msDoNotTrack: "yes" },
-        { doNotTrack: null }
-      )
-    ).toBe(true)
-    expect(isDoNotTrackEnabled({ doNotTrack: "0" }, { doNotTrack: "0" })).toBe(
-      false
-    )
+  test("recognizes Do Not Track variants and Global Privacy Control", () => {
+    for (const [navigator, window] of [
+      [{ doNotTrack: "1" }, { doNotTrack: null }],
+      [{ doNotTrack: null, msDoNotTrack: "yes" }, { doNotTrack: null }],
+      [{ doNotTrack: null, globalPrivacyControl: true }, {}],
+    ] as const)
+      expect(isPrivacySignalEnabled(navigator, window)).toBe(true)
+    for (const [navigator, window] of [
+      [{ doNotTrack: "0" }, { doNotTrack: "0" }],
+      [{ globalPrivacyControl: false }, {}],
+      [{ globalPrivacyControl: "true" }, {}],
+    ] as const)
+      expect(isPrivacySignalEnabled(navigator, window)).toBe(false)
   })
 
   test("accepts only the contract's CTA and placement pairs", () => {
@@ -283,6 +293,14 @@ describe("public analytics event sanitizer", () => {
         "/",
         "self_host_install",
         "deployment_card",
+        true,
+      ],
+      [
+        "worktable_cloud",
+        "www.worktable.cloud",
+        "/support",
+        "self_host_install",
+        "deployment_card",
         false,
       ],
       [
@@ -313,6 +331,55 @@ describe("public analytics event sanitizer", () => {
       expect(event !== null).toBe(allowed)
       expect(event?.properties).not.toHaveProperty("command")
     }
+  })
+
+  test("counts cookieless visits without browser identifiers and keeps first-touch labels", () => {
+    const valid = pageviewEvent("worktable_docs", "docs.worktable.dev")
+    const firstTouch = publicFirstTouchProperties(
+      publicAcquisitionProperties(
+        "?utm_source=github&utm_campaign=secret",
+        "github.com"
+      ),
+      "/start/install/",
+      "github.com"
+    )
+    const cookieless = {
+      ...valid.properties,
+      ...firstTouch,
+      $pathname: "/start/install",
+      distinct_id: COOKIELESS_DISTINCT_ID,
+      $cookieless_mode: true,
+      $raw_user_agent: "Mozilla/5.0 Test",
+      $device_id: "device-should-not-leave",
+      $session_id: "session-should-not-leave",
+    }
+    const surface = config("worktable_docs")
+    const page = location("docs.worktable.dev", "/start/install/")
+    const event = sanitizePublicAnalyticsEvent(
+      { ...valid, properties: cookieless },
+      surface,
+      page
+    )
+    expect(event?.properties).toMatchObject({
+      distinct_id: COOKIELESS_DISTINCT_ID,
+      $cookieless_mode: true,
+      $raw_user_agent: "Mozilla/5.0 Test",
+      $process_person_profile: false,
+      initial_acquisition_source: "github",
+      initial_landing_path: "/start/install",
+      initial_utm_source: "github",
+      initial_referring_domain: "github.com",
+    })
+    for (const key of ["$device_id", "$session_id", "initial_utm_campaign"])
+      expect(event?.properties).not.toHaveProperty(key)
+    // A cookieless event can never carry a browser identity or omit the hash input.
+    for (const properties of [
+      { ...cookieless, distinct_id: "persistent-visitor-id" },
+      { ...cookieless, $raw_user_agent: undefined },
+    ])
+      expect(
+        sanitizePublicAnalyticsEvent({ ...valid, properties }, surface, page)
+      ).toBeNull()
   })
 
   test("drops unknown events, invalid properties, and excluded contexts", () => {
@@ -354,5 +421,38 @@ describe("public analytics event sanitizer", () => {
         location("www.worktable.dev")
       )
     ).toBeNull()
+  })
+})
+
+describe("analytics consent regions", () => {
+  test("reads only the routing layer's consent marker", () => {
+    expect(analyticsRegionRequiresConsent("")).toBe(false)
+    expect(
+      analyticsRegionRequiresConsent(`a=1; ${ANALYTICS_REGION_COOKIE}=consent`)
+    ).toBe(true)
+    expect(
+      analyticsRegionRequiresConsent(`${ANALYTICS_REGION_COOKIE}=consented`)
+    ).toBe(false)
+  })
+
+  test("worktable.cloud deploys the shared region rules and docs deploy none", () => {
+    const root = new URL("../../../", import.meta.url)
+    const rules = (path: string) => {
+      const site = new URL(path, root)
+      if (!existsSync(site)) return undefined
+      return (
+        (JSON.parse(readFileSync(site, "utf8")) as { headers?: unknown[] })
+          .headers ?? []
+      ).filter(isAnalyticsRegionHeaderRule)
+    }
+    for (const site of ANALYTICS_REGION_SITES) {
+      const deployed = rules(site)
+      if (deployed)
+        expect(
+          deployed,
+          `${site} is out of date; run \`bun run generate:analytics-regions\``
+        ).toEqual(analyticsRegionHeaderRules())
+    }
+    expect(rules("apps/docs/vercel.json") ?? []).toEqual([])
   })
 })

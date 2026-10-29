@@ -3,9 +3,9 @@ title: Workflows
 description: Try complete examples of research, project handoffs, records, and interactive tools.
 ---
 
-These examples use fictional projects and supplied inputs. Each produces work
-you can inspect, revise, and continue in another session. Start with an open
-workspace and a [connected agent](/start/connect-your-agent/).
+Each example uses a fictional project and produces work you can inspect,
+revise, and continue in another session. You need an open workspace and a
+[connected agent](/start/connect-your-agent/).
 
 | Workflow | Result |
 | --- | --- |
@@ -14,6 +14,4 @@ workspace and a [connected agent](/start/connect-your-agent/).
 | [Track requests](/workflows/track-requests/) | Maintain a records collection through individual updates. |
 | [Interactive tools](/workflows/interactive-tools/) | Build and check a budget explorer from explicit assumptions. |
 
-Use the prompts as starting points. Tell your agent whether to reuse existing
-work and which results should stay durable. Review the saved output before
-relying on it.
+The prompts are starting points. Review the saved output before relying on it.

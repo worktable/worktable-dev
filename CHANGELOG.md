@@ -9,9 +9,12 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.37] - 2026-10-29
+
 ### Changed
 
-- **Settings:** The Worktable's settings come first under shorter names (Sharing, Billing, Remote), with one Data page for History, Backups and Import & Export, spellcheck in General, and the usage analytics switch on its own Privacy page.
+- **Settings:** The Worktable's settings come first under shorter names, with History, Backups and Import & Export together on one Data page.
+- **Cloud analytics:** Usage analytics is on by default, except where the law requires asking first, and you can turn it off in Settings → Privacy.
 
 ### Fixed
 

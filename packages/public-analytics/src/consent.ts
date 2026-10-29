@@ -6,17 +6,25 @@ import {
   type AnalyticsPreference,
 } from "@worktable/types/analytics"
 import {
-  isDoNotTrackEnabled,
+  isPrivacySignalEnabled,
   PUBLIC_ANALYTICS_PREFERENCE_EVENT,
   PUBLIC_ANALYTICS_PREFERENCE_KEY,
 } from "./index"
+import { analyticsRegionRequiresConsent } from "./region"
 
-let documentPreference: AnalyticsPreference | null = null
+// This document's latest choice, for browsers that refuse cookies and storage.
+const documentPreferences = new WeakMap<Document, AnalyticsPreference>()
+const locationAllowsDefault = new WeakMap<Document, boolean>()
 
 export interface AnalyticsChoice {
+  /** Analytics cookies and a persistent visitor ID are allowed. */
   enabled: boolean
-  doNotTrack: boolean
+  /** The browser sends Do Not Track or Global Privacy Control. */
+  privacySignal: boolean
+  /** The visitor has made an explicit choice. */
   decided: boolean
+  /** The visitor's location requires a choice before analytics cookies. */
+  consentRequired: boolean
 }
 
 export function getBrowserAnalyticsPreference(): AnalyticsPreference | null {
@@ -39,7 +47,7 @@ export function getBrowserAnalyticsPreference(): AnalyticsPreference | null {
   const stored = parseAnalyticsCookie(document.cookie)
   // The shared cookie reflects the latest choice on another Cloud subdomain.
   // Local storage and memory preserve a choice when cookies are unavailable.
-  return stored ?? documentPreference ?? storedLocally
+  return stored ?? documentPreferences.get(document) ?? storedLocally
 }
 
 export function migrateLegacyAnalyticsPreference(): void {
@@ -56,17 +64,41 @@ export function migrateLegacyAnalyticsPreference(): void {
   }
 }
 
-export function getPublicAnalyticsChoice(): AnalyticsChoice {
-  const doNotTrack = isDoNotTrackEnabled(
-    navigator,
+function privacySignalEnabled(): boolean {
+  return isPrivacySignalEnabled(
+    navigator as Navigator & { globalPrivacyControl?: unknown },
     window as Window & { doNotTrack?: string | null }
   )
+}
+
+/**
+ * Public sites. An explicit choice always wins; without one, cookies start
+ * unless the routing layer marked the location as requiring consent.
+ * Read the signal once per document so a long visit cannot change modes.
+ */
+export function getPublicAnalyticsChoice(): AnalyticsChoice {
+  const privacySignal = privacySignalEnabled()
   const preference = getBrowserAnalyticsPreference()
-  return {
-    enabled: !doNotTrack && preference?.enabled === true,
-    doNotTrack,
-    decided: preference !== null,
+  let allowsDefault = locationAllowsDefault.get(document)
+  if (allowsDefault === undefined) {
+    allowsDefault = !analyticsRegionRequiresConsent(document.cookie)
+    locationAllowsDefault.set(document, allowsDefault)
   }
+  return {
+    enabled:
+      !privacySignal && (preference ? preference.enabled : allowsDefault),
+    privacySignal,
+    decided: preference !== null,
+    consentRequired: !allowsDefault,
+  }
+}
+
+/** Cloud product analytics is on unless this browser refused it or sends a privacy signal. */
+export function isProductAnalyticsAllowed(): boolean {
+  return (
+    !privacySignalEnabled() &&
+    getBrowserAnalyticsPreference()?.enabled !== false
+  )
 }
 
 export function setBrowserAnalyticsPreference(
@@ -74,7 +106,7 @@ export function setBrowserAnalyticsPreference(
 ): void {
   const preference = parseAnalyticsPreference(value)
   if (!preference) return
-  documentPreference = preference
+  documentPreferences.set(document, preference)
   const domain =
     location.hostname === "worktable.cloud" ||
     location.hostname.endsWith(".worktable.cloud")
@@ -120,12 +152,32 @@ export function clearBrowserAnalyticsIdentity(projectToken: string): void {
   }
 }
 
+/** Removes every analytics value a cookie-using version of a site stored. */
+export function clearStoredAnalytics(projectToken: string): void {
+  clearBrowserAnalyticsIdentity(projectToken)
+  try {
+    for (const storage of [localStorage, sessionStorage])
+      for (const key of [
+        PUBLIC_ANALYTICS_PREFERENCE_KEY,
+        `__ph_opt_in_out_${projectToken}`,
+      ])
+        storage.removeItem(key)
+  } catch {
+    /* Optional storage. */
+  }
+  for (const key of [
+    ANALYTICS_CONSENT_COOKIE,
+    `__ph_opt_in_out_${projectToken}`,
+  ])
+    document.cookie = `${key}=; Path=/; Max-Age=0; SameSite=Lax`
+}
+
 export function subscribeToPublicAnalyticsChoice(
   listener: () => void
 ): () => void {
   const onStorage = (event: StorageEvent) => {
     if (event.key !== PUBLIC_ANALYTICS_PREFERENCE_KEY) return
-    documentPreference = null
+    documentPreferences.delete(document)
     listener()
   }
   const onVisibility = () => {

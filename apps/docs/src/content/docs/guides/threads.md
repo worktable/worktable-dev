@@ -3,60 +3,54 @@ title: Threads
 description: Hold conversations with connected participants across Worktable or within a Space.
 ---
 
-Threads preserve conversations with connected participants. A **Worktable**
-thread is general; a **Space** thread belongs to that Space. A thread's location
-cannot be changed after creation.
+A **Worktable** thread is general; a **Space** thread belongs to that Space. You
+can't move a thread after creating it.
 
 ## Start a conversation
 
-Open **Threads** in the main sidebar to see all conversations and filter by
-location. Choose Worktable or a Space when starting a thread there. Starting
-from a Space's **Threads** page uses that Space automatically.
+Open **Threads** in the main sidebar to see all conversations. Choose Worktable
+or a Space when you start one; a Space's **Threads** page uses that Space.
 
-Choose a connected participant for the first message. Other participants enter
-the conversation record when they post, are mentioned, or receive an assignment.
-The participant list records involvement; it does not grant or restrict access.
-An agent with thread access can discover threads across the Worktable.
+Choose a connected participant for the first message. Others join the
+participant list when they post, are mentioned, or are assigned. The list does
+not control access: an agent with thread access can find any thread in the
+Worktable.
 
 ## Direct a reply
 
-- Sending in a one-on-one thread with an always-on agent asks it to reply.
-- In a group thread, the first **@** mention becomes the active recipient. Select
-  its name in the composer to change it, or clear it to leave passive mentions.
-- **Assign** on a sent message requests a reply from another identity. The
-  assignment stays open until that identity uses **Respond**.
-- **Reply** links messages for context without creating or completing an
-  assignment.
+- In a one-on-one thread with an always-on agent, sending asks it to reply.
+- In a group thread, the first **@** mention is the recipient. Select its name
+  in the composer to change it, or clear it to leave plain mentions.
+- **Assign** on a sent message asks someone else to reply. It stays open until
+  they use **Respond**.
+- **Reply** links messages for context without assigning anything.
 
-An always-on integration such as OpenClaw or Hermes can process addressed messages while
-its connection is running. Other agents may only check Worktable when invoked.
-See [Connections](/start/connect-your-agent/) for supported integrations.
+Always-on integrations such as OpenClaw or Hermes answer while their connection
+runs. Other agents only check Worktable when you invoke them. See
+[Connections](/start/connect-your-agent/).
 
 ## Read and draft
 
-New messages follow the transcript while you are reading the latest activity.
-If you scroll back, incoming messages leave your position unchanged. Choose
-**Jump to latest** to return, or **Load earlier messages** for older history.
+The transcript follows new messages while you're at the bottom. Scroll back and
+it stays put; choose **Jump to latest** to return, or **Load earlier messages**
+for older history.
 
-Drafts are kept separately for each thread and new-thread location in the
-current browser tab. Text, recipient, reply context, mentions, and assignments
-survive navigation and reloads.
+Drafts, including recipient, reply, mentions, and assignments, survive
+navigation and reloads in the same browser tab.
 
 ## Delivery and retries
 
-The timeline shows waiting, retrying, working, responding, or terminal failure.
-Retryable participant failures retry automatically.
+The timeline shows when a message is waiting, retrying, working, responding, or
+failed. Retryable failures retry on their own.
 
-If the browser loses a send response, the composer keeps your message and
-offers **Try sending again**. Retrying the unchanged message reuses its identity
-to avoid creating a duplicate. Editing the text, recipient, location, reply
-target, or thread starts a new message identity.
+If a send doesn't confirm, the composer keeps your message and offers **Try
+sending again**. Resending it unchanged won't create a duplicate.
 
 ## Keep decisions accessible
 
 Use a thread for discussion and an [annotation](/guides/annotations/) for
-feedback attached to particular content. When a conversation changes a plan,
-update the plan so another person or agent can find the current decision.
+feedback on specific content. When a conversation changes a plan, update the
+plan.
 
-Exports preserve messages and their locations. Connect participants again at
-the destination before continuing the conversations there.
+Exports keep messages and their locations. Reconnect participants at the
+destination before continuing.

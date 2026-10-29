@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./plans": "./src/plans.ts"
+    "./plans": "./src/plans.ts",
+    "./analytics-region": "./src/analytics-region.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

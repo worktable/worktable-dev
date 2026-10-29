@@ -4,6 +4,7 @@ import {
   approvedCampaignProperties,
   isApprovedCta,
   publicAcquisitionProperties,
+  publicFirstTouchProperties,
   isPublicAnalyticsContextAllowed,
   normalizePublicAnalyticsPathname,
   PUBLIC_ANALYTICS_API_HOST,
@@ -17,6 +18,7 @@ import {
 } from "./index"
 import {
   clearBrowserAnalyticsIdentity,
+  clearStoredAnalytics,
   migrateLegacyAnalyticsPreference,
   getPublicAnalyticsChoice,
   subscribeToPublicAnalyticsChoice,
@@ -31,9 +33,18 @@ let activeConfig: PublicAnalyticsConfig | undefined
 let initialized = false
 let installed = false
 let lastPageviewKey: string | undefined
+// Memory only: carried from the cookieless phase to the cookie identity.
+let firstTouch: Record<string, string> | undefined
+let latestExternalSource: string | undefined
 
 const sanitizeBeforeSend: BeforeSendFn = (event) => {
-  if (!event || !activeConfig || !canCapture(activeConfig)) return null
+  if (!event || !activeConfig || !canCount(activeConfig)) return null
+  // Identified events need the current choice; a stale tab cannot send them.
+  if (
+    event.properties?.$cookieless_mode !== true &&
+    (activeConfig.cookieless || !getPublicAnalyticsChoice().enabled)
+  )
+    return null
   const sanitized = sanitizePublicAnalyticsEvent(
     event,
     activeConfig,
@@ -53,26 +64,28 @@ export function initializePublicAnalytics(
   config: PublicAnalyticsConfig
 ): boolean {
   activeConfig = config
-  migrateLegacyAnalyticsPreference()
+  if (config.cookieless) {
+    // Nothing persists here, so anything stored by an earlier version goes.
+    if (config.projectToken && !initialized)
+      clearStoredAnalytics(config.projectToken)
+  } else migrateLegacyAnalyticsPreference()
   if (!installed) {
     installed = true
     document.addEventListener("click", captureClick, true)
     document.addEventListener("auxclick", captureClick, true)
     subscribeToPublicAnalyticsChoice(() => {
-      if (!getPublicAnalyticsChoice().enabled) {
-        if (initialized) {
-          posthog.reset(true)
+      if (!activeConfig || activeConfig.cookieless) return
+      const choice = getPublicAnalyticsChoice()
+      // Only a refusal clears the shared identity; an open choice is not one.
+      if (!choice.enabled && choice.decided && activeConfig.projectToken) {
+        if (initialized && posthog.has_opted_in_capturing())
           posthog.opt_out_capturing()
-        }
-        if (activeConfig?.projectToken)
-          clearBrowserAnalyticsIdentity(activeConfig.projectToken)
-        lastPageviewKey = undefined
-      } else if (activeConfig && initializePublicAnalytics(activeConfig)) {
-        capturePublicPageview()
+        clearBrowserAnalyticsIdentity(activeConfig.projectToken)
       }
+      if (initializePublicAnalytics(activeConfig)) capturePublicPageview()
     })
   }
-  if (!canCapture(config)) return false
+  if (!canCount(config)) return false
   if (!initialized) {
     posthog.init(config.projectToken!, {
       api_host: config.apiHost ?? PUBLIC_ANALYTICS_API_HOST,
@@ -100,7 +113,21 @@ export function initializePublicAnalytics(
       advanced_disable_feature_flags_on_first_load: true,
       person_profiles: "identified_only",
       respect_dnt: true,
-      persistence: "localStorage+cookie",
+      ...(config.cookieless
+        ? {
+            cookieless_mode: "always" as const,
+            persistence: "memory" as const,
+            disable_persistence: true,
+          }
+        : {
+            // Until analytics cookies are allowed, count without cookies or
+            // storage. Starting rejected rather than calling
+            // opt_out_capturing() keeps the SDK's own consent marker
+            // unwritten before the visitor chooses.
+            cookieless_mode: "on_reject" as const,
+            opt_out_capturing_by_default: true,
+            persistence: "localStorage+cookie" as const,
+          }),
       cross_subdomain_cookie: true,
       internal_or_test_user_hostname: null,
       request_batching: false,
@@ -108,7 +135,16 @@ export function initializePublicAnalytics(
     })
     initialized = true
   }
-  posthog.opt_in_capturing({ captureEventName: false })
+  if (config.cookieless) return true
+  if (getPublicAnalyticsChoice().enabled) {
+    // Opting in resets the cookieless identity, so the two are never linked.
+    if (!posthog.has_opted_in_capturing())
+      posthog.opt_in_capturing({ captureEventName: false })
+    registerJourney()
+  } else if (posthog.has_opted_in_capturing()) {
+    posthog.opt_out_capturing()
+    clearBrowserAnalyticsIdentity(config.projectToken!)
+  }
   return true
 }
 
@@ -143,40 +179,59 @@ function capture(
   event: "$pageview" | "marketing:install_command_copy" | "marketing:cta_click",
   properties: Record<string, string>
 ) {
-  if (!activeConfig || !initialized || !canCapture(activeConfig)) return
+  if (!activeConfig || !initialized || !canCount(activeConfig)) return
   const referrer = referringDomain()
+  const pathname = normalizePublicAnalyticsPathname(location.pathname)
   const acquisition = publicAcquisitionProperties(location.search, referrer)
-  posthog.register_once({
-    initial_acquisition_source: acquisition.acquisition_source,
-  })
+  firstTouch ??= publicFirstTouchProperties(acquisition, pathname, referrer)
   if (
     !["direct_or_unknown", "internal_unknown"].includes(
       acquisition.acquisition_source!
     )
   )
-    posthog.register({
-      latest_external_acquisition_source: acquisition.acquisition_source,
-    })
+    latestExternalSource = acquisition.acquisition_source
+  const identified = posthog.has_opted_in_capturing()
+  if (identified) registerJourney()
   posthog.capture(
     event,
     {
       analytics_schema_version: PUBLIC_ANALYTICS_SCHEMA_VERSION,
       site_surface: activeConfig.siteSurface,
       $host: location.hostname,
-      $pathname: normalizePublicAnalyticsPathname(location.pathname),
+      $pathname: pathname,
       ...(referrer ? { $referring_domain: referrer } : {}),
       ...acquisition,
+      // Without cookies the journey travels on each event instead.
+      ...(identified ? {} : journey()),
       ...properties,
     },
     { send_instantly: true }
   )
 }
 
+function journey(): Record<string, string> {
+  return {
+    ...firstTouch,
+    ...(latestExternalSource
+      ? { latest_external_acquisition_source: latestExternalSource }
+      : {}),
+  }
+}
+
+/** First touch is kept by the cookie identity; later visits never replace it. */
+function registerJourney(): void {
+  if (firstTouch) posthog.register_once(firstTouch)
+  if (latestExternalSource)
+    posthog.register({
+      latest_external_acquisition_source: latestExternalSource,
+    })
+}
+
 function captureClick(event: MouseEvent): void {
   if (event.type === "auxclick" && event.button !== 1) return
   if (
     !activeConfig ||
-    !canCapture(activeConfig) ||
+    !canCount(activeConfig) ||
     !(event.target instanceof Element)
   )
     return
@@ -236,10 +291,11 @@ function referringDomain(): string | undefined {
   }
 }
 
-function canCapture(config: PublicAnalyticsConfig): boolean {
+/** Counting runs with or without cookies; a privacy signal stops it entirely. */
+function canCount(config: PublicAnalyticsConfig): boolean {
   return (
     Boolean(config.projectToken) &&
     isPublicAnalyticsContextAllowed(config, location) &&
-    getPublicAnalyticsChoice().enabled
+    !getPublicAnalyticsChoice().privacySignal
   )
 }

@@ -325,11 +325,15 @@ test("Cloud Billing keeps export available while billing access is locked", asyn
   expect(exportMethod).toBe("GET")
 })
 
-test("Cloud analytics requires an account choice, filters SDK context, and remembers revocation", async ({
+test("Cloud analytics starts without a choice, filters SDK context, and remembers revocation", async ({
   page,
 }) => {
   await mockCloudAccount(page)
-  let preference = { version: 1, enabled: false, updatedAt: 1000 }
+  let preference: {
+    version: number
+    enabled: boolean
+    updatedAt: number
+  } | null = null
   const choices: unknown[] = []
   const events: Array<{ event: string; properties: Record<string, unknown> }> =
     []
@@ -392,19 +396,24 @@ test("Cloud analytics requires an account choice, filters SDK context, and remem
       },
     })
   })
+  const opened = () =>
+    events.filter((event) => event.event === "product:opened").length
+  // An account without a recorded choice is measured by default.
+  await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
+  await expect.poll(opened).toBe(1)
+  // A refusal recorded elsewhere stops collection on the next load.
+  preference = { version: 1, enabled: false, updatedAt: 1000 }
   await openCloudAccount(page, "Privacy")
   const choice = page.getByRole("switch", { name: "Share usage analytics" })
   await expect(choice).not.toBeChecked()
-  expect(events).toEqual([])
+  expect(opened()).toBe(1)
   await page.evaluate(() => {
     history.replaceState(null, "", "?email=private%40example.com#private-doc")
     document.title = "Private document title"
   })
   await choice.click()
   await expect(choice).toBeChecked()
-  await expect
-    .poll(() => events.map((event) => event.event))
-    .toContain("product:opened")
+  await expect.poll(opened).toBe(2)
   await expect
     .poll(() => events.map((event) => event.event))
     .toContain("$identify")

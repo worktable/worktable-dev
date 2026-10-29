@@ -40,11 +40,13 @@ export function ProductAnalytics() {
             (!local || context.preference.updatedAt > local.updatedAt))
         )
           consent.setBrowserAnalyticsPreference(context.preference)
+        // On unless the account refused it or the browser sends Do Not Track
+        // or Global Privacy Control.
         if (
-          !context.preference?.enabled ||
+          context.preference?.enabled === false ||
           !context.projectToken ||
           !context.apiHost ||
-          !consent.getPublicAnalyticsChoice().enabled
+          !consent.isProductAnalyticsAllowed()
         ) {
           stopAnalytics()
           if (context.projectToken)

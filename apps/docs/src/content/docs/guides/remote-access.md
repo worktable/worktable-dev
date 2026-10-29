@@ -64,8 +64,7 @@ On a one-person Worktable you can also create a pairing on the host:
 worktable agent invite
 ```
 
-Run the printed command on the agent's machine. The pairing is single-use,
-expires after 15 minutes and keeps existing client entries.
+Run the printed command on the agent's machine. The pairing is single-use.
 
 If the guided command doesn't fit, use **Manual install** in Settings or print
 the client configuration on the host:
@@ -112,8 +111,8 @@ running in the background until you quit. Link passes authorized requests
 through Cloud to the device. It does not copy or sync the workspace to Cloud,
 or expose the full local interface.
 
-- Each subscription links a set number of devices: Solo one, Team three,
-  Business five. Unlink one in Cloud to connect another.
+- Each plan links a limited number of devices. Unlink one in Cloud to
+  connect another.
 - **Your Worktables** and the Worktable menu show each linked Worktable, its
   device and whether it is online.
 - On a team installation, an operator turns on Link, and AI apps follow that

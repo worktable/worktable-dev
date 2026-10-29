@@ -68,7 +68,7 @@ how many records visitors can read, and which fields are hidden.
 Readers see current data but cannot change Records or open other documents.
 Filters and other interface choices stay in their tab. Tightening the
 document's permissions or the sharing policy can reduce what an existing link
-can read. A stopped live link loses data access within three seconds.
+can read.
 
 Record rules filter Records reads only. Text or data written into the tool
 itself is visible to every reader.

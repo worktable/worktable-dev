@@ -4,102 +4,11 @@ import DefaultFooter from "@astrojs/starlight/components/Footer.astro"
 
 <DefaultFooter />
 
-<section data-analytics-consent hidden aria-label="Analytics choice" class="wt-analytics-consent print:hidden">
-  <p>Help us improve Worktable? With your permission, we use analytics cookies to understand visits to these docs. We never collect your content.</p>
-  <div>
-    <button type="button" data-analytics-allow>Allow analytics</button>
-    <button type="button" data-analytics-decline>Decline</button>
-    <a href="https://www.worktable.dev/privacy">Privacy</a>
-  </div>
-</section>
-
 <div class="wt-privacy-controls print:hidden">
-  <button
-    type="button"
-    data-public-analytics-toggle
-    aria-pressed="false"
-    aria-label="Turn analytics on for this documentation site"
-  >
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M3 3v18h18M8 17v-5m4 5V7m4 10V9m4 8V5" />
-    </svg>
-    <span data-public-analytics-label>Analytics off</span>
-  </button>
-  <a href="https://www.worktable.dev/privacy">Privacy</a>
+  <a href="https://www.worktable.cloud/privacy">Privacy</a>
 </div>
 
-<script>
-  import {
-    getPublicAnalyticsChoice,
-    setPublicAnalyticsEnabled,
-    subscribeToPublicAnalyticsChoice,
-  } from "@worktable/public-analytics/browser"
-
-  let dispose = () => {}
-  const connect = () => {
-    dispose()
-    const controller = new AbortController()
-    const button = document.querySelector<HTMLButtonElement>(
-      "[data-public-analytics-toggle]",
-    )
-    const label = button?.querySelector<HTMLElement>(
-      "[data-public-analytics-label]",
-    )
-
-    const sync = () => {
-      if (!button || !label) return
-      const choice = getPublicAnalyticsChoice()
-      const prompt = document.querySelector<HTMLElement>("[data-analytics-consent]")
-      if (prompt) prompt.hidden = choice.decided || choice.doNotTrack
-      button.disabled = choice.doNotTrack
-      button.setAttribute("aria-pressed", String(choice.enabled))
-      label.textContent = `Analytics ${choice.enabled ? "on" : "off"}`
-      button.setAttribute(
-        "aria-label",
-        choice.doNotTrack
-          ? "Analytics are off because your browser sends Do Not Track"
-          : `Turn analytics ${choice.enabled ? "off" : "on"} for this documentation site`,
-      )
-    }
-
-    button?.addEventListener("click", () => {
-      const choice = getPublicAnalyticsChoice()
-      if (!choice.doNotTrack) setPublicAnalyticsEnabled(!choice.enabled)
-    }, { signal: controller.signal })
-    document.querySelector("[data-analytics-allow]")?.addEventListener("click", () => setPublicAnalyticsEnabled(true), { signal: controller.signal })
-    document.querySelector("[data-analytics-decline]")?.addEventListener("click", () => setPublicAnalyticsEnabled(false), { signal: controller.signal })
-    const unsubscribe = subscribeToPublicAnalyticsChoice(sync)
-    sync()
-    dispose = () => {
-      controller.abort()
-      unsubscribe()
-    }
-  }
-  document.addEventListener("astro:before-swap", () => dispose())
-  document.addEventListener("astro:page-load", connect)
-  connect()
-</script>
-
 <style>
-  .wt-analytics-consent {
-    position: fixed;
-    inset-inline: 1rem;
-    bottom: 1rem;
-    z-index: 50;
-    max-width: 32rem;
-    margin-inline: auto;
-    padding: 1rem;
-    border: 1px solid var(--overlay-border);
-    border-radius: 0.75rem;
-    background: var(--background);
-    color: var(--foreground);
-    box-shadow: var(--overlay-floating-shadow);
-    font-size: var(--sl-text-sm);
-  }
-  .wt-analytics-consent[hidden] { display: none; }
-  .wt-analytics-consent p { margin: 0 0 0.75rem; }
-  .wt-analytics-consent div { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-  .wt-analytics-consent button { border: 1px solid var(--overlay-border); border-radius: 0.5rem; padding: 0.5rem 0.75rem; color: inherit; background: var(--card); cursor: pointer; font: inherit; }
   .wt-privacy-controls {
     display: flex;
     align-items: center;
@@ -112,47 +21,17 @@ import DefaultFooter from "@astrojs/starlight/components/Footer.astro"
     color: var(--sl-color-gray-3);
   }
 
-  .wt-privacy-controls button,
   .wt-privacy-controls a {
     color: inherit;
     text-decoration: none;
   }
 
-  .wt-privacy-controls button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.35rem 0.5rem;
-    border: 0;
-    border-radius: 0.4rem;
-    background: transparent;
-    font: inherit;
-    cursor: pointer;
-  }
-
-  .wt-privacy-controls button:hover,
   .wt-privacy-controls a:hover {
     color: var(--sl-color-white);
   }
 
-  .wt-privacy-controls button:focus-visible,
   .wt-privacy-controls a:focus-visible {
     outline: 2px solid var(--sl-color-accent);
     outline-offset: 3px;
-  }
-
-  .wt-privacy-controls button:disabled {
-    cursor: not-allowed;
-    opacity: 0.65;
-  }
-
-  .wt-privacy-controls svg {
-    width: 1rem;
-    height: 1rem;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.7;
-    stroke-linecap: round;
-    stroke-linejoin: round;
   }
 </style>

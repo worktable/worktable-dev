@@ -1,6 +1,6 @@
 import posthog from "posthog-js/dist/module.slim"
 import { ANALYTICS_SCHEMA_VERSION } from "@worktable/types/analytics"
-import { getPublicAnalyticsChoice } from "./consent"
+import { isProductAnalyticsAllowed } from "./consent"
 
 let identity: string | null = null
 let allowedUntil = 0
@@ -27,7 +27,7 @@ export function stopProductAnalytics(): void {
 export function startProductAnalytics(config: ProductConfig): void {
   if (
     !/^workos:[a-zA-Z0-9_-]{1,200}$/.test(config.distinctId) ||
-    !getPublicAnalyticsChoice().enabled
+    !isProductAnalyticsAllowed()
   ) {
     stopProductAnalytics()
     return
@@ -70,7 +70,7 @@ export function startProductAnalytics(config: ProductConfig): void {
         if (
           !event ||
           Date.now() >= allowedUntil ||
-          !getPublicAnalyticsChoice().enabled ||
+          !isProductAnalyticsAllowed() ||
           !["$identify", "product:opened"].includes(event.event)
         )
           return null

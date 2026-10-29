@@ -87,7 +87,7 @@ Temporary documents archive after their lifetime expires; archiving does not
 permanently delete them. Restore a document you need to keep using.
 
 For local storage, `worktable paths` reports the selected directory. Cloud
-exports are available in **Settings → Import & Export**.
+exports are available in **Settings → Data → Import & Export**.
 
 ## Edits and previews
 

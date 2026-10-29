@@ -52,7 +52,7 @@ own device. See [Remote access](/guides/remote-access/#worktable-link).
 
 ## Choose whether to share analytics
 
-Optional usage analytics is off until you opt in. Open **Settings → Account →
+Optional usage analytics is off until you opt in. Open **Settings →
 Privacy** to change the choice for your Cloud account and connected agents.
 Analytics never includes your documents, record values, searches, or agent
 instructions. Local, self-hosted, and linked-device content activity does not

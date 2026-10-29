@@ -5,16 +5,16 @@ import type {
 } from "@worktable/types"
 import { fetchJSON } from "./http.ts"
 
-// Settings → Links: every link the reader oversees, and the owner policy.
+// Settings → Sharing: every link the reader oversees, and the owner policy.
 // Apart from the dialog's requests so the page's Share button doesn't load them.
 
-/** Which links Settings → Links lists. Without a status, all but revoked. */
+/** Which links Settings → Sharing lists. Without a status, all but revoked. */
 export interface ShareLinksFilters {
   spaceId?: string
   status?: "expired" | "revoked"
 }
 
-/** Every link the reader may oversee, read when Settings → Links opens. */
+/** Every link the reader may oversee, read when Settings → Sharing opens. */
 export function allShareLinksQueryKey(filters: ShareLinksFilters) {
   return ["share-links", "all", filters] as const
 }

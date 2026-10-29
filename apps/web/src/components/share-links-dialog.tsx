@@ -158,7 +158,7 @@ export function ShareLinksDialog({
   // Results from an earlier opening never apply to a later one.
   const session = useRef(0)
   const scrollRef = useScrollFade<HTMLDivElement>()
-  // Owners can lift a pause or allow the Space from Settings → Links.
+  // Owners can lift a pause or allow the Space from Settings → Sharing.
   const owner = useWorkspace().data?.person?.role === "owner"
 
   const links = list.data?.links
@@ -487,7 +487,7 @@ export function ShareLinksDialog({
                   label: "Settings",
                   onClick: () => {
                     handleOpenChange(false)
-                    openSettings("links")
+                    openSettings("sharing")
                   },
                 }
               : undefined
@@ -548,7 +548,7 @@ export function ShareLinksDialog({
                     size="sm"
                     onClick={() => {
                       handleOpenChange(false)
-                      openSettings("links")
+                      openSettings("sharing")
                     }}
                   >
                     Manage Links

@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Settings:** The Worktable's settings come first under shorter names (Sharing, Billing, Remote), with one Data page for History, Backups and Import & Export, spellcheck in General, and the usage analytics switch on its own Privacy page.
+
 ### Fixed
 
 - **Agent setup:** Grok Bot also appears under Chat apps, and agent logos stay consistent across setup and connected agents.

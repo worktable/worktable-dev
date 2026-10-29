@@ -4,22 +4,19 @@ import { preloadableComponent } from "@worktable/ui/lib/preloadable-component"
 import { GeneralSection } from "./sections/general"
 import { ProfileSection } from "./sections/profile"
 import { AppearanceSection } from "./sections/appearance"
-import { EditorSection } from "./sections/editor"
-import { HistorySection } from "./sections/history"
+import { PrivacySection } from "./sections/privacy"
 import { HelpSection } from "./sections/help"
 import type { LucideIcon } from "lucide-react"
 import {
   Bot,
-  Archive,
   CircleHelp,
-  History,
+  CreditCard,
+  Database,
   Link2,
   MonitorCog,
-  PackageOpen,
   Palette,
-  PencilLine,
   Settings2,
-  CreditCard,
+  ShieldCheck,
   UserRound,
   UsersRound,
 } from "lucide-react"
@@ -28,15 +25,6 @@ import {
 const TeamSection = preloadableComponent<Record<string, never>>(() =>
   import("./sections/team").then((module) => ({ default: module.TeamSection }))
 )
-const TEAM: SettingsSection = {
-  id: "team",
-  group: "Worktable",
-  label: "Team",
-  description: "People, invitations and Space access.",
-  icon: UsersRound,
-  component: TeamSection.Component,
-  preload: TeamSection.preload,
-}
 const LinksSection = preloadableComponent<Record<string, never>>(() =>
   import("./sections/links").then((module) => ({
     default: module.LinksSection,
@@ -52,9 +40,9 @@ const CloudSection = preloadableComponent<Record<string, never>>(() =>
     default: module.CloudSection,
   }))
 )
-const BackupsSection = preloadableComponent<Record<string, never>>(() =>
-  import("./sections/backups").then((module) => ({
-    default: module.BackupsSection,
+const DataSection = preloadableComponent<Record<string, never>>(() =>
+  import("./sections/data").then((module) => ({
+    default: module.DataSection,
   }))
 )
 const AgentsSection = preloadableComponent<Record<string, never>>(() =>
@@ -67,32 +55,28 @@ const SystemSection = preloadableComponent<Record<string, never>>(() =>
     default: module.SystemSection,
   }))
 )
-const PortabilitySection = preloadableComponent<Record<string, never>>(() =>
-  import("./sections/portability").then((module) => ({
-    default: module.PortabilitySection,
-  }))
-)
 
 export type SettingsSectionId =
-  | "profile"
-  | "team"
-  | "links"
   | "general"
-  | "account"
-  | "cloud"
-  | "appearance"
-  | "editor"
-  | "history"
-  | "backups"
-  | "portability"
+  | "team"
   | "agents"
+  | "sharing"
+  | "billing"
+  | "remote"
+  | "data"
+  | "profile"
+  | "appearance"
+  | "privacy"
   | "help"
   | "system"
 
+/** Nav order. Worktable is shown under the Worktable's own name. */
+export const SETTINGS_GROUPS = ["Worktable", "You", "Support"] as const
+
 export interface SettingsSection {
   id: SettingsSectionId
-  /** You: the person's own settings. Worktable: settings for everyone here. */
-  group: "You" | "Worktable" | "Support"
+  /** Worktable: settings for everyone here. You: the person's own settings. */
+  group: (typeof SETTINGS_GROUPS)[number]
   label: string
   /** One-liner under the section title in the content-pane header. */
   description?: string
@@ -108,39 +92,69 @@ const GENERAL: SettingsSection = {
   id: "general",
   group: "Worktable",
   label: "General",
-  description: "Worktable name, URL, and local folder.",
+  description: "Worktable name, URL, local folder, and spellcheck.",
   icon: Settings2,
   component: GeneralSection,
 }
 
-const LINK: SettingsSection = {
-  id: "cloud",
+const TEAM: SettingsSection = {
+  id: "team",
   group: "Worktable",
-  label: "Remote Access",
+  label: "Team",
+  description: "People, invitations and Space access.",
+  icon: UsersRound,
+  component: TeamSection.Component,
+  preload: TeamSection.preload,
+}
+
+const AGENTS: SettingsSection = {
+  id: "agents",
+  group: "Worktable",
+  label: "Agents",
+  description: "Connect agents and manage their access.",
+  icon: Bot,
+  component: AgentsSection.Component,
+  preload: AgentsSection.preload,
+}
+
+const SHARING: SettingsSection = {
+  id: "sharing",
+  group: "Worktable",
+  label: "Sharing",
+  description: "Every share link in this Worktable.",
+  icon: Link2,
+  component: LinksSection.Component,
+  preload: LinksSection.preload,
+}
+
+const BILLING: SettingsSection = {
+  id: "billing",
+  group: "Worktable",
+  label: "Billing",
+  description: "Plan and payment.",
+  icon: CreditCard,
+  component: AccountSection.Component,
+  preload: AccountSection.preload,
+}
+
+const REMOTE: SettingsSection = {
+  id: "remote",
+  group: "Worktable",
+  label: "Remote",
   description: "Use this Worktable away from this device.",
   icon: UserRound,
   component: CloudSection.Component,
   preload: CloudSection.preload,
 }
 
-const ACCOUNT: SettingsSection = {
-  id: "account",
+// The page names its parts (History, Backups, Import & Export).
+const DATA: SettingsSection = {
+  id: "data",
   group: "Worktable",
-  label: "Account",
-  description: "Plan, billing, and privacy.",
-  icon: CreditCard,
-  component: AccountSection.Component,
-  preload: AccountSection.preload,
-}
-
-const LINKS: SettingsSection = {
-  id: "links",
-  group: "Worktable",
-  label: "Links",
-  description: "Every share link in this Worktable.",
-  icon: Link2,
-  component: LinksSection.Component,
-  preload: LinksSection.preload,
+  label: "Data",
+  icon: Database,
+  component: DataSection.Component,
+  preload: DataSection.preload,
 }
 
 const PROFILE: SettingsSection = {
@@ -161,41 +175,12 @@ const APPEARANCE: SettingsSection = {
   component: AppearanceSection,
 }
 
-const EDITOR: SettingsSection = {
-  id: "editor",
-  group: "Worktable",
-  label: "Editor",
-  description: "Writing preferences.",
-  icon: PencilLine,
-  component: EditorSection,
-}
-
-const HISTORY: SettingsSection = {
-  id: "history",
-  group: "Worktable",
-  label: "History",
-  description: "Choose how long to keep doc versions.",
-  icon: History,
-  component: HistorySection,
-}
-
-const PORTABILITY: SettingsSection = {
-  id: "portability",
-  group: "Worktable",
-  label: "Import & Export",
-  icon: PackageOpen,
-  component: PortabilitySection.Component,
-  preload: PortabilitySection.preload,
-}
-
-const AGENTS: SettingsSection = {
-  id: "agents",
-  group: "Worktable",
-  label: "Agents",
-  description: "Connect agents and manage their access.",
-  icon: Bot,
-  component: AgentsSection.Component,
-  preload: AgentsSection.preload,
+const PRIVACY: SettingsSection = {
+  id: "privacy",
+  group: "You",
+  label: "Privacy",
+  icon: ShieldCheck,
+  component: PrivacySection,
 }
 
 const HELP: SettingsSection = {
@@ -219,7 +204,7 @@ const SYSTEM: SettingsSection = {
 
 const CLOUD_GENERAL: SettingsSection = {
   ...GENERAL,
-  description: "Worktable name.",
+  description: "Worktable name and spellcheck.",
 }
 
 const CLOUD_ABOUT: SettingsSection = {
@@ -233,43 +218,24 @@ export function getSettingsSections(
   deployment: DeploymentInfo
 ): SettingsSection[] {
   const { capabilities } = deployment
-  if (deployment.mode === "cloud") {
-    return [
-      PROFILE,
-      APPEARANCE,
-      ...(capabilities.workspaceName ? [CLOUD_GENERAL] : []),
-      ...(capabilities.cloudAccount ? [ACCOUNT] : []),
-      TEAM,
-      ...(capabilities.shareLinks ? [LINKS] : []),
-      ...(capabilities.editorSettings ? [EDITOR] : []),
-      ...(capabilities.historySettings ? [HISTORY] : []),
-      {
-        id: "backups",
-        group: "Worktable",
-        label: "Backups",
-        description: "",
-        icon: Archive,
-        component: BackupsSection.Component,
-        preload: BackupsSection.preload,
-      },
-      ...(capabilities.workspacePortability ? [PORTABILITY] : []),
-      AGENTS,
-      HELP,
-      CLOUD_ABOUT,
-    ]
-  }
+  const cloud = deployment.mode === "cloud"
+  // General and Data each gather several settings; they appear when any of
+  // their parts is available here. Cloud always has Backups.
+  const general = capabilities.workspaceName || capabilities.editorSettings
+  const data =
+    cloud || capabilities.historySettings || capabilities.workspacePortability
   return [
+    ...(general ? [cloud ? CLOUD_GENERAL : GENERAL] : []),
+    TEAM,
+    AGENTS,
+    ...(capabilities.shareLinks ? [SHARING] : []),
+    ...(cloud && capabilities.cloudAccount ? [BILLING] : []),
+    ...(!cloud && capabilities.workspaceUrl ? [REMOTE] : []),
+    ...(data ? [DATA] : []),
     PROFILE,
     APPEARANCE,
-    ...(capabilities.workspaceName ? [GENERAL] : []),
-    ...(capabilities.workspaceUrl ? [LINK] : []),
-    TEAM,
-    ...(capabilities.shareLinks ? [LINKS] : []),
-    ...(capabilities.editorSettings ? [EDITOR] : []),
-    ...(capabilities.historySettings ? [HISTORY] : []),
-    ...(capabilities.workspacePortability ? [PORTABILITY] : []),
-    AGENTS,
+    ...(cloud && capabilities.cloudAccount ? [PRIVACY] : []),
     HELP,
-    SYSTEM,
+    cloud ? CLOUD_ABOUT : SYSTEM,
   ]
 }

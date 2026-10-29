@@ -97,8 +97,8 @@ function needsConfirm(
   return true
 }
 
-// The History section: doc version-history retention. Server-backed via
-// GET/PUT /api/system/settings (same store as Editor/System). Tightening the
+// History, under Data: doc version-history retention. Server-backed via
+// GET/PUT /api/system/settings (same store as General/System). Tightening the
 // policy deletes older versions immediately (the server sweeps on the PUT), so
 // a destructive change is gated behind a confirm; relaxing applies directly.
 export function HistorySection() {
@@ -126,9 +126,8 @@ export function HistorySection() {
   }
 
   return (
-    // The dialog's content header already names the section, and this lone
-    // group has no sibling to disambiguate from — no group heading.
-    <section className="flex flex-col gap-3">
+    // The Data section supplies the heading.
+    <div className="flex flex-col gap-3">
       {notice && (
         <Callout>
           <span className="flex flex-wrap items-center gap-3">
@@ -188,6 +187,6 @@ export function HistorySection() {
           setPending(null)
         }}
       />
-    </section>
+    </div>
   )
 }

@@ -53,7 +53,11 @@ test("a selected Cloud Worktable survives hydration, navigation and direct reloa
   await page.route(`**${mount}/**`, async (route) => {
     const upstream = new URL(route.request().url())
     upstream.pathname = upstream.pathname.slice(mount.length) || "/"
-    const response = await route.fetch({ url: upstream.href })
+    // Reconnect a reset read in this test proxy without replaying mutations.
+    const response = await route.fetch({
+      url: upstream.href,
+      maxRetries: route.request().method() === "GET" ? 1 : 0,
+    })
     await route.fulfill({ response })
   })
 

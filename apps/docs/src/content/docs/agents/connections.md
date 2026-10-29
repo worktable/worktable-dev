@@ -180,6 +180,9 @@ For native setup and webhook behavior, see
 
 ## Chat apps
 
+Grok Bot is also available under **Chat apps** in Settings and Getting Started.
+It uses the same [Grok Bot connection](#grok-bot) and continues answering on its own.
+
 For local or self-hosted Worktable, open **Settings → Agents → Chat apps**.
 On any device, turn on [Worktable Link](/guides/remote-access/#worktable-link)
 with **Set Up** in the app's steps, then add the official Worktable app in

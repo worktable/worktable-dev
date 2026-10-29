@@ -20,8 +20,9 @@ openai.svg    OpenAI Blossom (black) from OpenAI's brand page
               marks usage terms for ChatGPT and Codex. OpenAI, ChatGPT, and
               the Blossom are trademarks of OpenAI.
 
-grok.svg      Official Grok app icon from https://grok.com/images/favicon.svg,
-              unmodified. Grok and its mark belong to SpaceXAI LLC.
+grok-bot.svg  Official Grok Bot mark from https://x.ai/bot, preserving its
+              head and eye paths, viewBox, and published light-theme fills.
+              Grok Bot and its mark belong to SpaceXSI.
               https://x.ai/legal/brand-guidelines
 
 cursor.svg    Cursor 2D cube for light backgrounds, unmodified, from
@@ -40,3 +41,12 @@ vscode.svg    Visual Studio Code stable icon, unmodified, from
 goose.png     Goose logo, unmodified, from the official documentation site
               https://goose-docs.ai/img/logo_light.png.
               https://github.com/aaif-goose/goose
+
+claude-code.svg  Claude Code pixel mark from Simple Icons
+              (https://simpleicons.org/?q=claude+code, source: code.claude.com),
+              filled with Claude's clay #D97757. Claude Code is a trademark
+              of Anthropic.
+
+grok.svg      Legacy Grok app icon from https://grok.com/images/favicon.svg,
+              retained at its existing asset URL. Grok and its mark belong
+              to SpaceXAI LLC. https://x.ai/legal/brand-guidelines

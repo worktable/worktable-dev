@@ -34,7 +34,7 @@ export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
     id: "grok-bot",
     name: "Grok Bot",
     mode: "always-on",
-    logo: "grok.svg",
+    logo: "grok-bot.svg",
   },
   openclaw: {
     id: "openclaw",
@@ -64,7 +64,7 @@ export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
     id: "claude-code",
     name: "Claude Code",
     mode: "on-demand",
-    logo: "claude.svg",
+    logo: "claude-code.svg",
   },
   codex: { id: "codex", name: "Codex", mode: "on-demand", logo: "openai.svg" },
   cursor: {

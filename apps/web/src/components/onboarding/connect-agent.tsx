@@ -87,6 +87,7 @@ const ON_DEMAND: Row[] = [
     options: [
       { kind: "chat", tab: "Claude", app: "claude" },
       { kind: "chat", tab: "ChatGPT", app: "chatgpt" },
+      { kind: "grok", tab: "Grok Bot" },
     ],
   },
 ]
@@ -242,7 +243,8 @@ interface PanelProps {
 
 /** Which tab an agent was connected from. */
 function sourceOf(rowId: RowId, option: Option): string {
-  return `${rowId}:${option.tab}`
+  // Both categories lead to the same Bot connection and completion state.
+  return `${option.kind === "grok" ? "always" : rowId}:${option.tab}`
 }
 
 function setupFor(
@@ -687,7 +689,9 @@ function RowItem({
     )
   )
   const option = row.options[tab]!
-  const done = connected.find((setup) => setup.source?.startsWith(`${row.id}:`))
+  const done = connected.find((setup) =>
+    row.options.some((item) => setup.source === sourceOf(row.id, item))
+  )
   return (
     <AgentSetupCategory
       {...row}

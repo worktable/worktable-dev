@@ -1,3 +1,4 @@
+import { TruncatedText } from "@worktable/ui/components/truncated-text"
 import type { SpaceView } from "@/lib/api"
 import { browserTeamMemberId } from "@/lib/team-context"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
@@ -651,7 +652,7 @@ const SpaceSection = memo(function SpaceSection({
             }}
           >
             <SpaceIcon space={space} />
-            <span className="min-w-0 truncate">{space.name}</span>
+            <TruncatedText text={space.name} />
           </CollapsibleTrigger>
           {/* Always visible on touch (no hover exists) and on keyboard focus;
             hover-revealed on desktop pointers. This cluster is the primary
@@ -856,7 +857,7 @@ function SpaceOverviewLink({
       <LayoutDashboard
         className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
       />
-      <span className="min-w-0 truncate">Space Home</span>
+      <TruncatedText text="Space Home" />
     </Link>
   )
 }
@@ -960,7 +961,7 @@ const CollectionLink = memo(function CollectionLink({
       <Database
         className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
       />
-      <span className="min-w-0 truncate">{name}</span>
+      <TruncatedText text={name} />
       <span className="ml-auto shrink-0 text-[11px] text-sidebar-foreground/35 tabular-nums">
         {count}
       </span>
@@ -1226,7 +1227,7 @@ function WidgetTreeItem({
           <AppWindow
             className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
           />
-          <span className="truncate">{node.label}</span>
+          <TruncatedText text={node.label} />
         </Link>
         <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/widget:opacity-100">
           {rowActions}
@@ -1840,7 +1841,7 @@ function TreeSection({
         render={<button type="button" />}
       >
         <Icon className="size-4 shrink-0 text-sidebar-foreground/30" />
-        <span className="min-w-0 truncate">{label}</span>
+        <TruncatedText text={label} />
         {!open && (
           <span className="ml-auto shrink-0 text-[11px] text-sidebar-foreground/35 tabular-nums">
             {count}
@@ -1985,7 +1986,9 @@ function UnavailableDocumentTreeItem({
         <StateIcon
           className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
         />
-        <span className="truncate">{node.label}</span>
+        <TruncatedText text={node.format?.id === "worktable.file" ? node.name : node.label}>
+          {node.label}
+        </TruncatedText>
       </Link>
       {rowActions && (
         <div className="shrink-0 pr-1 opacity-100 transition-opacity focus-within:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100">
@@ -2318,7 +2321,7 @@ function DocTreeItem({
                       : "text-sidebar-item-foreground"
                   }`}
                 >
-                  <span className="truncate">{node.label}</span>
+                  <TruncatedText text={node.label} />
                 </SpecializedDocumentLink>
               </div>
             ) : (
@@ -2331,7 +2334,7 @@ function DocTreeItem({
                 ) : (
                   <Folder className="size-4 shrink-0 text-sidebar-primary/60" />
                 )}
-                <span className="truncate">{node.label}</span>
+                <TruncatedText text={node.label} />
               </CollapsibleTrigger>
             )}
             <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/folder:opacity-100">
@@ -2469,10 +2472,9 @@ function DocTreeItem({
             node={node}
             className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
           />
-          {/* A file reads by its name; its whole name, extension included, on hover. */}
-          <span className="truncate" title={isFile ? node.name : undefined}>
+          <TruncatedText text={isFile ? node.name : node.label}>
             {node.label}
-          </span>
+          </TruncatedText>
         </Link>
         <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100">
           {rowActions}

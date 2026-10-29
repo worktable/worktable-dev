@@ -1,3 +1,4 @@
+import { TruncatedText } from "@worktable/ui/components/truncated-text"
 import {
   useEffect,
   useImperativeHandle,
@@ -138,11 +139,12 @@ function ResultRow({
         ) : (
           <Database className="size-3.5 shrink-0 opacity-70" />
         )}
-        <span
-          className={`truncate ${active ? "font-medium" : "text-sidebar-foreground/80"}`}
+        <TruncatedText
+          text={result.title}
+          className={active ? "font-medium" : "text-sidebar-foreground/80"}
         >
           <Highlighted text={result.title} tokens={tokens} />
-        </span>
+        </TruncatedText>
       </div>
       {result.excerpt && (
         <p className="line-clamp-2 pl-[22px] text-xs leading-relaxed text-sidebar-foreground/45">
@@ -150,9 +152,10 @@ function ResultRow({
         </p>
       )}
       {(folder ?? (!isDoc && result.collectionId)) && (
-        <p className="truncate pl-[22px] text-[11px] text-sidebar-foreground/35">
-          {isDoc ? folder : result.collectionId}
-        </p>
+        <TruncatedText
+          text={(isDoc ? folder : result.collectionId) ?? ""}
+          className="pl-[22px] text-[11px] text-sidebar-foreground/35"
+        />
       )}
     </div>
   )
@@ -342,9 +345,10 @@ export function SidebarSearchResults({
           <div key={spaceId}>
             <div className="mb-1 flex items-center gap-1.5 px-3 text-sidebar-foreground/40">
               {space ? <SpaceIcon space={space} size="xs" /> : null}
-              <p className="truncate text-[10px] font-semibold tracking-wider uppercase">
-                {space?.name ?? spaceId}
-              </p>
+              <TruncatedText
+                text={space?.name ?? spaceId}
+                className="text-[10px] font-semibold tracking-wider uppercase"
+              />
             </div>
             {/* flex gap, not space-y: router <Link>s render inline <a>s, which ignore vertical margins */}
             <div className="flex flex-col gap-1">

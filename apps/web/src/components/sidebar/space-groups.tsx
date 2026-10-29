@@ -1,3 +1,4 @@
+import { TruncatedText } from "@worktable/ui/components/truncated-text"
 import type { ReactNode } from "react"
 import {
   FolderPlus,
@@ -48,7 +49,7 @@ export function SectionHeading({
         aria-expanded={open}
         className="flex min-h-8 min-w-0 flex-1 items-center gap-1.5 px-3 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase transition-colors hover:text-sidebar-foreground/65 sm:min-h-6"
       >
-        <span className="min-w-0 truncate">{label}</span>
+        <TruncatedText text={label} />
         {!open && (
           <span className="shrink-0 font-medium tracking-normal">{count}</span>
         )}

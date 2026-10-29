@@ -1,3 +1,4 @@
+import { TruncatedText } from "@worktable/ui/components/truncated-text"
 import { useEffect, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { LogOut, Monitor, Moon, SlidersHorizontal, Sun, UserRound } from "lucide-react"
@@ -90,22 +91,28 @@ export function ProfileMenu() {
         >
           <PersonAvatar id={person.id} name={person.name} />
           <span className="min-w-0 flex-1 leading-tight">
-            <span className="block truncate text-[13px] font-medium text-sidebar-foreground">
-              {person.name}
-            </span>
-            <span className="block truncate text-[11px] text-sidebar-foreground/50">
-              {role}
-            </span>
+            <TruncatedText
+              text={person.name}
+              className="block text-[13px] font-medium text-sidebar-foreground"
+            />
+            <TruncatedText
+              text={role}
+              className="block text-[11px] text-sidebar-foreground/50"
+            />
           </span>
         </DropdownMenuTrigger>
         <DropdownMenuContent side="top" align="start" sideOffset={6} className="min-w-60">
           <div className="flex items-center gap-2.5 px-2 py-2">
             <PersonAvatar id={person.id} name={person.name} size="lg" />
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{person.name}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {role} · {workspace?.name}
-              </p>
+              <TruncatedText
+                text={person.name}
+                className="block text-sm font-medium"
+              />
+              <TruncatedText
+                text={`${role} · ${workspace?.name}`}
+                className="block text-xs text-muted-foreground"
+              />
             </div>
           </div>
           <DropdownMenuSeparator />

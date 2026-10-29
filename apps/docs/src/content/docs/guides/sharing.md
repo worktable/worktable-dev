@@ -42,7 +42,7 @@ give its link live data; see [Live tools](#live-tools).
 
 ## Owner controls
 
-Owners manage sharing in **Settings → Sharing**. **Pause all links** stops every
+Owners manage sharing in **Settings → Links**. **Pause all links** stops every
 link at once until it is turned off. Owners can also choose who can share on a
 team, which Spaces can be shared, whether every link needs a password, the
 longest expiry, and whether links can have live tools or visitor comments. These settings apply
@@ -57,7 +57,7 @@ does not replace the current policy with an older copy.
 ## Live tools and visitor comments
 
 Owners first enable **Live tools** and **Comment links** in
-**Settings → Sharing**. Both are off by default. The workflows below are
+**Settings → Links**. Both are off by default. The workflows below are
 available when the owner permits them. Live tools also need a compatible share
 host.
 
@@ -94,7 +94,7 @@ from agent-readable team content until a member chooses **Pass to Team**.
 
 ## Stop sharing
 
-In **Share** or in **Settings → Sharing**, open a link's menu and choose
+In **Share** or in **Settings → Links**, open a link's menu and choose
 **Revoke Link**. Revoke each link you want to stop; revoking is
 permanent. Renaming or moving a document does not revoke its links; archiving
 or deleting it makes them unavailable.

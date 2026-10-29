@@ -55,7 +55,7 @@ Edits one person or agent makes in a row are kept as one version until they
 pause for 10 minutes. An edit by someone else, a restore or a checkpoint starts
 a new version.
 
-**Settings → Data → History** keeps 30, 90 or 180 days, or the last 7 versions of each
+**Settings → History** keeps 30, 90 or 180 days, or the last 7 versions of each
 document. Applying a shorter limit deletes older versions immediately after
 confirmation. Choose a policy before relying on a particular version as your
 recovery path. Workspaces that kept everything before these limits now keep 180

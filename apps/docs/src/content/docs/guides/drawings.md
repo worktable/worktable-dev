@@ -54,7 +54,7 @@ for recovery.
 
 Each autosave stores the full drawing, including embedded images. Image-heavy
 drawings can use substantial history storage. Set a retention limit in
-**Settings → Data → History** if needed; shorter retention removes older recovery
+**Settings → History** if needed; shorter retention removes older recovery
 points.
 
 On iPad, if Apple Pencil handwriting skips strokes, try disabling **Settings →

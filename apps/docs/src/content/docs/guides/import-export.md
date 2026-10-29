@@ -38,7 +38,7 @@ service before taking a filesystem backup of the workspace folder.
 
 ## Portable exports
 
-Open **Settings → Data → Import & Export** in any deployment.
+Open **Settings → Import & Export** in any deployment.
 
 ### Choose history
 
@@ -85,8 +85,8 @@ Current content with incompatible filenames must be corrected before exporting;
 recovery never silently drops current documents. Symlinks, unreadable files,
 archive limits, and integrity failures still stop an export.
 
-You can close Settings while export preparation continues. Reopen **Data** to
-check progress and download the result.
+You can close Settings while export preparation continues. Reopen **Import &
+Export** to check progress and download the result.
 
 ## Replace a workspace
 

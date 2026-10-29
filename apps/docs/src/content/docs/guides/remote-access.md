@@ -58,7 +58,7 @@ you share them; newly created Spaces are shared by default. The
 [security model](/reference/security/) explains owners and restricted Spaces.
 
 If Worktable Link was already connected, enabling Teams pauses it. In
-**Settings → Remote**, turn Link on again to connect your Cloud account to your
+**Settings → Cloud**, turn Link on again to connect your Cloud account to your
 named member account.
 
 ## Connect a remote agent
@@ -110,10 +110,10 @@ HTTPS boundaries in detail.
 
 Where available for your Cloud account, Worktable Link connects a local or
 self-hosted installation to supported AI apps and public document sharing.
-Check **Settings → Remote** for availability.
+Check **Settings → Remote Access** for availability.
 A remote self-hosted installation needs an HTTPS address.
 
-1. Choose **Sign in** in **Settings → Remote**. Complete browser
+1. Choose **Sign in** in **Settings → Remote Access**. Complete browser
    sign-in and confirm the server address when prompted.
 2. Return to Settings, choose a payer-owned **Worktable subscription**, and turn
    on **Worktable Link**. Sign-in alone does not

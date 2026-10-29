@@ -3,7 +3,7 @@ title: Cloud account
 description: Manage billing, cancellation, sign-in, and account recovery.
 ---
 
-Open **Settings → Billing** to see your subscription status or choose
+Open **Settings → Account** to see your subscription status or choose
 **Manage billing**. Checkout and the billing portal show the current price,
 taxes, and renewal terms.
 

@@ -1,3 +1,4 @@
+import { TruncatedText } from "@worktable/ui/components/truncated-text"
 import { Link } from "@tanstack/react-router"
 import { useQueryClient } from "@tanstack/react-query"
 import { PinOff } from "lucide-react"
@@ -38,7 +39,7 @@ export function GettingStartedRow({
         )}
       >
         <ProgressRing done={progress.done} total={progress.total} />
-        <span className="min-w-0 flex-1 truncate">{space.name}</span>
+        <TruncatedText text={space.name} className="flex-1" />
         <span className="text-xs text-sidebar-foreground/45 tabular-nums group-hover/getting-started:opacity-0 group-has-[:focus-visible]/getting-started:opacity-0">
           {progress.done}/{progress.total}
         </span>

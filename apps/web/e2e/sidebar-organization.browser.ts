@@ -78,3 +78,100 @@ test("a person's groups and pins are their own, and the sidebar stays as they le
   expect(spaces.spaces.find((space) => space.id === "alpha")?.group).toBe("research")
   expect(spaces.spaces.find((space) => space.id === "beta")).not.toHaveProperty("group")
 })
+
+test("clipped sidebar names reveal their full text and stop showing a tooltip when they fit", async ({
+  page,
+}, testInfo) => {
+  const spaceName = "Quarterly planning and research"
+  const docName =
+    "Research findings for the next quarterly planning session with the product and engineering teams"
+  const created = await page.request.post(`${harness.apiUrl}/api/spaces`, {
+    data: { name: spaceName },
+  })
+  expect(created.ok()).toBe(true)
+  const { spaceId } = (await created.json()) as { spaceId: string }
+  expect(
+    (
+      await page.request.put(
+        `${harness.apiUrl}/api/spaces/${spaceId}/docs/research`,
+        {
+          data: {
+            content: [
+              {
+                type: "heading",
+                props: { level: 1 },
+                content: [{ type: "text", text: docName, styles: {} }],
+              },
+            ],
+          },
+        }
+      )
+    ).ok()
+  ).toBe(true)
+
+  await page.goto(new URL(`/spaces/${spaceId}`, harness.webUrl).href)
+  const sidebar = page.locator("[data-worktable-sidebar-root]")
+  const space = sidebar.getByRole("button", { name: spaceName, exact: true })
+  const doc = sidebar.getByRole("link", { name: docName, exact: true })
+  await expect(doc).toBeVisible({ timeout: 30_000 })
+  const resize = page.getByRole("separator", { name: "Resize sidebar" })
+  await resize.focus()
+  await resize.press("Home")
+  await expect(resize).toHaveAttribute("aria-valuenow", "220")
+  const spaceLabel = space.getByText(spaceName, { exact: true })
+  await expect
+    .poll(() =>
+      spaceLabel.evaluate(
+        (element) => element.scrollWidth > element.clientWidth
+      )
+    )
+    .toBe(true)
+
+  await page.clock.install()
+  const tooltip = page.getByRole("tooltip")
+  await space.focus()
+  await expect(tooltip).toHaveText(spaceName)
+  await expect(space).toBeFocused()
+  await page.keyboard.press("Tab")
+  await expect(space).not.toBeFocused()
+  await expect(tooltip).not.toBeVisible()
+
+  await spaceLabel.hover()
+  await page.clock.runFor(700)
+  await expect(tooltip).toHaveText(spaceName)
+  await page.keyboard.press("Escape")
+  await expect(tooltip).not.toBeVisible()
+
+  // A fitting label does not show a tooltip, even after the hover delay.
+  await sidebar.getByRole("link", { name: "Space Home", exact: true }).hover()
+  await page.clock.runFor(700)
+  await expect(tooltip).not.toBeVisible()
+
+  // An open tooltip follows the actual clipping state during a resize.
+  await spaceLabel.hover()
+  await page.clock.runFor(700)
+  await expect(tooltip).toHaveText(spaceName)
+  await resize.press("End")
+  await page.clock.runFor(700)
+  await expect
+    .poll(() =>
+      spaceLabel.evaluate(
+        (element) => element.scrollWidth > element.clientWidth
+      )
+    )
+    .toBe(false)
+  await expect(tooltip).not.toBeVisible()
+  await spaceLabel.hover()
+  await page.clock.runFor(700)
+  await expect(tooltip).not.toBeVisible()
+
+  // Long document titles wrap in the bubble and retain their navigation.
+  await doc.getByText(docName, { exact: true }).hover()
+  await page.clock.runFor(700)
+  await expect(tooltip).toHaveText(docName)
+  await expect(tooltip).toHaveCSS("opacity", "1")
+  await page.screenshot({ path: testInfo.outputPath("sidebar-tooltip.png") })
+  await doc.click()
+  await expect(page).toHaveURL(new URL(`/spaces/${spaceId}/documents/research`, harness.webUrl).href)
+  await expect(tooltip).not.toBeVisible()
+})

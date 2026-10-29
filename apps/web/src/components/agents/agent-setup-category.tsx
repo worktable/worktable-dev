@@ -18,8 +18,8 @@ export const AGENT_SETUP_CATEGORIES = {
   },
   chat: {
     title: "Chat apps",
-    description: "Claude and ChatGPT, on desktop, phone and the web",
-    platforms: ["claude", "chatgpt"],
+    description: "Claude, ChatGPT and Grok Bot, on desktop, phone and the web",
+    platforms: ["claude", "chatgpt", "grok-bot"],
   },
   always: {
     title: "Always-on agents",
@@ -30,6 +30,14 @@ export const AGENT_SETUP_CATEGORIES = {
   string,
   { title: string; description: string; platforms: AgentPlatformId[] }
 >
+
+export const CHAT_APP_OPTIONS = AGENT_SETUP_CATEGORIES.chat.platforms.map(
+  (platform) => ({
+    value: platform,
+    label: AGENT_PLATFORMS[platform].name,
+    platform,
+  })
+)
 
 export function AgentSetupCategory({
   title,

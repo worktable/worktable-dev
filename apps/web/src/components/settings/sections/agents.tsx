@@ -104,6 +104,7 @@ import { ChatAppWays, LocalChatSteps } from "@/components/agents/chat-app-ways"
 import { GROK_BOT_STATUS_LABELS, grokAutoReply } from "@/lib/grok-bot-status"
 import {
   AGENT_SETUP_CATEGORIES,
+  CHAT_APP_OPTIONS,
   AgentSetupCategory,
   AgentSetupTabs,
 } from "@/components/agents/agent-setup-category"
@@ -264,28 +265,37 @@ function CloudAlwaysOnPanel({
   )
 }
 
-function CloudNativeAppsPanel({ connection }: { connection: ConnectionInfo }) {
-  const [app, setApp] = useState<"claude" | "chatgpt">("claude")
+function CloudNativeAppsPanel({
+  connection,
+  active,
+}: {
+  connection: ConnectionInfo
+  active: boolean
+}) {
+  const [app, setApp] = useState<"claude" | "chatgpt" | "grok-bot">("claude")
   return (
     <div className="flex flex-col gap-3">
       <AgentSetupTabs
         value={app}
         onValueChange={setApp}
-        options={[
-          { value: "claude", label: "Claude", platform: "claude" },
-          { value: "chatgpt", label: "ChatGPT", platform: "chatgpt" },
-        ]}
+        options={CHAT_APP_OPTIONS}
       />
-      <p className="text-sm text-muted-foreground">
-        {app === "claude"
-          ? "In Claude, add a custom connector in Settings → Connectors. Paste this address and sign in."
-          : "In ChatGPT on the web, create an app in Settings → Apps. Paste this address and sign in."}
-      </p>
-      <CopyField
-        label="MCP endpoint"
-        value={connection.remoteMcpUrl}
-        onCopied={() => toast.success("Copied")}
-      />
+      {app === "grok-bot" ? (
+        <GrokBotSetupPanel connection={connection} open={active} />
+      ) : (
+        <>
+          <p className="text-sm text-muted-foreground">
+            {app === "claude"
+              ? "In Claude, add a custom connector in Settings → Connectors. Paste this address and sign in."
+              : "In ChatGPT on the web, create an app in Settings → Apps. Paste this address and sign in."}
+          </p>
+          <CopyField
+            label="MCP endpoint"
+            value={connection.remoteMcpUrl}
+            onCopied={() => toast.success("Copied")}
+          />
+        </>
+      )}
     </div>
   )
 }
@@ -338,9 +348,15 @@ function AgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
         </AgentSetupCategory>
         <AgentSetupCategory {...categoryProps("chat")}>
           {cloud ? (
-            <CloudNativeAppsPanel connection={connection} />
+            <CloudNativeAppsPanel
+              connection={connection}
+              active={active && open === "chat"}
+            />
           ) : (
-            <DesktopAppsPanel connection={connection} />
+            <DesktopAppsPanel
+              connection={connection}
+              active={active && open === "chat"}
+            />
           )}
         </AgentSetupCategory>
         <AgentSetupCategory {...categoryProps("always")}>
@@ -891,9 +907,15 @@ function AlwaysOnPairingStatus({
 
 // ── Desktop apps ------------------------------------------------------------
 
-type DesktopAppChoice = "claude-desktop" | "chatgpt-desktop"
+type DesktopAppChoice = "claude-desktop" | "chatgpt-desktop" | "grok-bot"
 
-function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
+function DesktopAppsPanel({
+  connection,
+  active,
+}: {
+  connection: ConnectionInfo
+  active: boolean
+}) {
   const sectionActive = useSettingsSectionActive()
   const queryClient = useQueryClient()
   const [app, setApp] = useState<DesktopAppChoice>("claude-desktop")
@@ -902,11 +924,12 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
   const [chosenAccess, setAccess] = useState<AgentAccess | null>(null)
 
   const { endpoint, needsToken } = desktopAgentConnectionDetails(connection)
+  const desktopApp = app === "grok-bot" ? null : app
   // Connecting an app again is the same agent: start from its access.
   const existing = useQuery({
     queryKey: ["agent-connections", "app", app],
-    queryFn: () => getAppAgent(app),
-    enabled: needsToken,
+    queryFn: () => getAppAgent(desktopApp!),
+    enabled: needsToken && desktopApp !== null,
   })
   const existingAgent = existing.data?.connection ?? null
   // Until it is known whether the app is already an agent, its access is not:
@@ -946,19 +969,33 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
   })
   const copied = () => toast.success("Copied")
 
+  const tabs = (
+    <AgentSetupTabs
+      value={app}
+      onValueChange={(value) => {
+        setApp(value)
+        setAccess(null)
+      }}
+      options={CHAT_APP_OPTIONS.map((option) => ({
+        ...option,
+        value:
+          option.value === "grok-bot"
+            ? option.value
+            : (`${option.value}-desktop` as const),
+      }))}
+    />
+  )
+  if (app === "grok-bot")
+    return (
+      <div className="flex flex-col gap-4">
+        {tabs}
+        <GrokBotSetupPanel connection={connection} open={active} />
+      </div>
+    )
+
   return (
     <div className="flex flex-col gap-4">
-      <AgentSetupTabs
-        value={app}
-        onValueChange={(value) => {
-          setApp(value)
-          setAccess(null)
-        }}
-        options={[
-          { value: "claude-desktop", label: "Claude", platform: "claude" },
-          { value: "chatgpt-desktop", label: "ChatGPT", platform: "chatgpt" },
-        ]}
-      />
+      {tabs}
 
       <ChatAppWays
         app={app === "claude-desktop" ? "claude" : "chatgpt"}

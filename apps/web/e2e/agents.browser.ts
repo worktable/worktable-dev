@@ -115,8 +115,11 @@ test("a connected Grok account stays editable while another account is added", a
     "Comet"
   )
   await page.getByRole("button", { name: "Close", exact: true }).click()
-  await dialog.getByRole("button", { name: /^Always-on agents/ }).click()
+  await dialog.getByRole("button", { name: /^Chat apps/ }).click()
   await dialog.getByRole("tab", { name: "Grok Bot", exact: true }).click()
+  await expect(
+    dialog.getByRole("tab", { name: "Grok Bot", exact: true }).locator("img")
+  ).toHaveAttribute("src", "/agent-logos/grok-bot.svg")
   await expect(
     dialog.getByText("Send this in Grok Bot, then authorize Worktable.", {
       exact: true,
@@ -143,6 +146,17 @@ test("a connected Grok account stays editable while another account is added", a
     .click()
   const orbit = connected.getByRole("listitem").filter({ hasText: "Orbit" })
   await expect(orbit).toContainText("Connected")
+  await dialog.getByRole("button", { name: /^Always-on agents/ }).click()
+  await expect(
+    dialog.getByRole("tab", { name: "Grok Bot", exact: true })
+  ).toHaveCount(1)
+  await dialog.getByRole("tab", { name: "Grok Bot", exact: true }).click()
+  await expect(
+    connected.getByRole("listitem").filter({ hasText: "Orbit" })
+  ).toHaveCount(1)
+  await expect(
+    dialog.getByRole("textbox", { name: "Bot name", exact: true })
+  ).toHaveCount(0)
   await expect(comet).toContainText("Connected")
   await orbit.getByRole("button", { name: "Edit", exact: true }).click()
   await expect(page.getByLabel("Bot name", { exact: true })).toHaveValue(
@@ -251,6 +265,13 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
     dialog.getByRole("heading", { name: "Connected agents" })
   ).toBeVisible()
   await expect(dialog.getByRole("button", { name: "New token" })).toHaveCount(0)
+  await dialog.getByRole("button", { name: /^Chat apps/ }).click()
+  await dialog.getByRole("tab", { name: "Grok Bot", exact: true }).click()
+  await expect(
+    dialog.getByText("Send this in Grok Bot, then authorize Worktable.", {
+      exact: true,
+    })
+  ).toBeVisible()
   await dialog.getByRole("button", { name: /Connect any MCP agent/ }).click()
   await expect(dialog.getByRole("combobox")).toHaveCount(0)
   await expect(
@@ -635,7 +656,7 @@ test("coding-agent selections keep their platform logos after connecting", async
     exact: true,
   })
   for (const [client, label, logo] of [
-    ["claude-code", "Claude Code", "claude.svg"],
+    ["claude-code", "Claude Code", "claude-code.svg"],
     ["codex", "ChatGPT / Codex", "openai.svg"],
     ["cursor", "Cursor", "cursor.svg"],
     ["opencode", "opencode", "opencode.svg"],

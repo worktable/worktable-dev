@@ -3,119 +3,95 @@ title: Updates
 description: Update Worktable, upgrade workspace storage, or remove the installation.
 ---
 
-The update controls on this page apply to Desktop, local, and self-hosted
-Worktable. Worktable Cloud updates automatically.
+These controls apply to Desktop, local and self-hosted Worktable. Worktable
+Cloud updates automatically.
 
 ## Update Desktop
 
-Desktop checks for signed releases after startup and every six hours while it
-runs, including when its window is closed. A new release downloads in the
-background and installs the next time you quit Worktable, or right away when
-you restart to update.
+Desktop checks for signed releases at startup and every six hours, even with
+its window closed. It downloads updates in the background and installs them
+when you quit, or right away when you restart to update.
 
-With a local workspace open, Worktable shows a notice when an update is ready,
-and **Settings → System → Software update** shows its progress with
-**Restart to update**. **Worktable → Check for Updates…** opens that section and
-checks immediately. For a self-hosted or Cloud connection, the same menu item
-opens Desktop's own update screen. Once an update is ready, the item reads
-**Restart to Update…**.
+- With a local workspace open, **Settings → System → Software update** shows
+  progress and **Restart to update**.
+- **Worktable → Check for Updates…** checks now. When an update is ready, it
+  reads **Restart to Update…**.
 
-If updating the app needs an administrator password, quitting leaves it
-unchanged; restart to update instead. If installation fails, Desktop keeps
-the current app and offers the signed DMG for manual recovery.
+If updating needs an administrator password, quitting won't install it; restart
+to update instead. If installation fails, Desktop keeps the current app and
+offers the signed DMG. If **Check for Updates…** is missing, install the latest
+DMG once.
 
-If **Worktable → Check for Updates…** is unavailable, install the latest DMG
-once. Future updates can then be installed from the app.
-
-Desktop installs only the release currently offered. Releases can be paused
-for a while; until they resume, Desktop offers no new version and doesn't
-install one it already downloaded. Before installing, Desktop confirms the
-release is still offered. If it can't reach the release server, it keeps the
-current app.
-
-The updater preserves workspace files, saved connections, and local settings.
-A Desktop-owned local host stops for restart; a CLI or managed
-service that Desktop only attached to keeps running. See the
-[Desktop reference](/reference/desktop/) for connection and storage boundaries.
+Desktop only installs a release that is still offered, and keeps the current
+app if it can't reach the release server. Updates keep workspace files, saved
+connections and local settings. A local host Desktop started stops for the
+restart; a CLI or managed service keeps running. See the
+[Desktop reference](/reference/desktop/).
 
 ## Update a service
 
 For a local or self-hosted service, open **Settings → System → Software update**.
-The panel checks for a release, downloads it, and restarts into it. You can keep
-working until the restart. If the release check fails, retry before updating.
-
-A dot on **Settings**, an **Update** badge on **System**, and a release
-notification indicate when an update is available.
+It checks for a release, downloads it and restarts into it. You can keep
+working until the restart. A dot on **Settings** shows when an update is
+available.
 
 ## CLI updates
 
 ```sh
 worktable update --check   # is there a newer release?
 worktable update           # download and switch to it
+worktable update v0.1.23   # install a particular version
 ```
 
-`worktable status` also tells you when an update is available. Turn automatic
-checks off with **Check for updates automatically** in **Settings → System**.
-The [configuration reference](/reference/configuration/) covers the environment
-override for automated or managed installations.
+`worktable status` also reports available updates. Turn off
+**Check for updates automatically** in **Settings → System**, or see the
+[configuration reference](/reference/configuration/) for managed installs.
 
-If Worktable can't reach the release server, `worktable update` and the
-**Software update** panel leave the installed version in place. Releases can
-also be paused for a while; until they resume, Worktable offers no new version.
-To install a particular version anyway, name it: `worktable update v0.1.23`.
+If Worktable can't reach the release server, the installed version stays in
+place. When releases are paused, no new version is offered.
 
 ## Release channels
 
-A local or self-hosted service follows the **stable** channel. To try changes
-before they are released, switch it to **beta**:
+A local or self-hosted service follows **stable**. To try changes early,
+switch to **beta**:
 
 ```sh
 worktable update --channel beta     # follow beta and update now
 worktable update --channel stable   # return to stable releases
 ```
 
-Beta builds are made from every change to the
-[public source](https://github.com/worktable/worktable-dev) and are versioned
-like `0.1.24-dev.131+8737f53`. They are tested but not released, so expect
-rough edges. On beta, Worktable updates to the newest beta or the newest
-stable release, whichever is newer. After you return to stable, Worktable
-keeps the beta you have until the next stable release is newer.
+Beta builds come from every change to the
+[public source](https://github.com/worktable/worktable-dev), are versioned like
+`0.1.24-dev.131+8737f53`, and are published for Linux x64. They are tested but
+not released, so expect rough edges. On beta you get the newest beta or stable
+release, whichever is newer. After switching back, you keep your beta until a
+newer stable release ships.
 
-**Settings → System → About** shows the channel and the commit the running
-version was built from. Beta builds are published for Linux x64.
+**Settings → System → About** shows the channel and commit.
 
 Desktop follows stable unless you turn on **Settings → System → Beta updates**,
-or choose **Worktable → Beta Updates** with a self-hosted or Cloud connection.
-Desktop on beta checks right away, then installs signed beta builds of the app
-as they are published, a few times a day at most, and the newest stable release
-when it is newer. Turning beta off drops a beta update that hasn't been
-installed yet.
+or **Worktable → Beta Updates** with a self-hosted or Cloud connection. Turning
+beta off drops a beta update that isn't installed yet.
 
-What shipped in each release is on [What's new](/whats-new/).
+See [What's new](/whats-new/) for release notes.
 
 ## Workspace upgrades
 
-Starting with 0.1.13, an older workspace upgrades automatically when the updated
-Worktable server starts. No manual export, import, or version selection is needed.
-New workspaces already use the current format.
+Since 0.1.13, an older workspace upgrades automatically when the updated server
+starts. You don't need to export or import.
 
-If you open Worktable while the upgrade is running, you will see **Upgrading your
-workspace**. Editing and agent access wait until preparation finishes, then the
-page opens automatically. Allow several minutes for a large workspace; later
-starts do not repeat the migration. **Drawing** appears in a Space's **+** menu
-after the upgrade.
+While it runs you see **Upgrading your workspace**, and editing and agents
+wait. A large workspace can take several minutes. It only happens once.
 
-Existing documents, history, and share links are preserved. Worktable retains the
-original workspace as a rollback copy beside the workspace folder. Keep that copy
-until you have verified the upgraded workspace; it contains private data.
-Annotations on documents that no longer exist are not carried over; they remain
-in the rollback copy.
+Documents, history and share links are kept. Annotations on documents that no
+longer exist are not carried over.
 
-If you see **Workspace upgrade needs attention**, the owner needs to inspect the
-server logs and resolve the reported issue before choosing **Retry upgrade**.
-The original workspace is preserved and editing stays unavailable until the
-upgrade succeeds. Do not restore an old application release against converted
-workspace files; rollback requires the matching original workspace copy.
+The original workspace is kept as a rollback copy beside the workspace folder.
+It contains private data; keep it until you've checked the upgraded workspace.
+
+If you see **Workspace upgrade needs attention**, the owner should check the
+server logs, fix the issue and choose **Retry upgrade**. Don't run an older
+release against upgraded files; rolling back needs the original copy.
 
 ## Uninstall
 
@@ -123,23 +99,19 @@ workspace files; rollback requires the matching original workspace copy.
 worktable uninstall
 ```
 
-The command previews removal of the launcher, installed releases, app data,
-shell completions, managed agent registrations, and installed skills, then asks
-for confirmation.
-Use `--yes` to confirm non-interactively. Locally modified skill files are
-preserved and reported.
+The command lists what it will remove (launcher, releases, app data, shell
+completions, managed agent registrations and installed skills) and asks you to
+confirm. Use `--yes` to skip the prompt. Skill files you changed are kept.
 
-The workspace folder remains by default. Keep that folder to reopen your work
-with a later installation. To delete the configured workspace as well:
+Your workspace folder stays, so a later installation can reopen it. To delete
+it too:
 
 ```sh
 worktable uninstall --purge
 ```
 
-Export any content you need before purging. Review the paths shown by the
-command; deletion cannot be recovered through Worktable history.
+Export anything you need first and check the paths shown. Worktable history
+cannot recover a purged workspace.
 
-This command removes a CLI installation. To remove Desktop, quit it and remove
-the application from Applications. Removing the app does not delete a workspace
-folder you keep separately. Cloud cancellation is covered in
-[Cloud account](/guides/cloud-account/).
+To remove Desktop, quit it and delete it from Applications. This doesn't delete
+your workspace folder. To cancel Cloud, see [Cloud account](/guides/cloud-account/).

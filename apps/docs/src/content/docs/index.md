@@ -6,63 +6,58 @@ next: false
 tableOfContents: false
 ---
 
-Worktable is an open-source workspace for work you create yourself or with
-agents. Write documents, draw plans, build interactive tools, and track records.
-Keep the results together so you can inspect, revise, and continue them later.
+Worktable is an open-source workspace for work you do yourself or with agents.
+Write documents, draw plans, build interactive tools, and track records in one
+place.
 
 ## Get started
 
-Choose where your workspace runs: on your computer, on a server you operate, or
-in Worktable Cloud. Desktop and the browser are ways to open it.
+Choose where your workspace runs:
 
 | Setup | Use it for |
 | --- | --- |
 | **[Desktop](/start/desktop/)** | A native app for Apple Silicon Macs. Open a local workspace or connect to self-hosted Worktable or Cloud. |
 | **[CLI install](/start/install/)** | Run Worktable on macOS or Linux and open it in a browser. |
-| **[Cloud setup](/guides/worktable-cloud/)** | Give your team its own Worktable, where everyone can connect their agents, with no server to run. |
+| **[Cloud setup](/guides/worktable-cloud/)** | A hosted Worktable for your team, with no server to run. |
 
 Then [connect an agent](/start/connect-your-agent/) and complete your
 [first project](/start/first-space/). An agent can also follow the
-[setup guide](/agents/setup/) on your behalf.
+[setup guide](/agents/setup/) for you.
 
 ## Choose content
 
-A **workspace** contains your work. A **Space** groups a project or area of
-interest. Within a Space, choose the format that fits:
+A **workspace** holds your work. A **Space** groups a project or area. Within a
+Space, pick a format:
 
 | Content | Use it for |
 | --- | --- |
 | [Documents](/guides/docs-and-versions/) | Notes, research, plans, and decisions. |
-| [Drawings](/guides/drawings/) | Sketches, layouts, and diagrams you can edit visually. |
+| [Drawings](/guides/drawings/) | Sketches, layouts, and diagrams. |
 | [HTML docs](/guides/widgets/) | Interactive explanations, calculators, and custom interfaces. |
 | [Records](/guides/records/) | Items with shared fields that change independently. |
 
-Use [annotations](/guides/annotations/) for feedback attached to content and
-[threads](/guides/threads/) for conversations with connected participants.
-[Spaces](/guides/organize-and-find/) explains organization, search, and document
-lifetimes.
+Use [annotations](/guides/annotations/) for feedback on content and
+[threads](/guides/threads/) for conversations. [Spaces](/guides/organize-and-find/)
+covers organizing and search.
 
 ## Work with agents
 
-Connected agents can find and change work within their granted access. You can
-edit it directly, leave feedback, or ask another agent to continue. Optional
-[skills](/agents/skills/) provide workflows for clients that support them.
-A connection alone does not make an agent check messages or maintain documents
-automatically.
+Connected agents can find and change work within their access. You can edit it
+yourself, leave feedback, or hand it to another agent. Optional
+[skills](/agents/skills/) add workflows for clients that support them.
+A connection alone does not make an agent check messages on its own.
 
-For examples, try [research decisions](/workflows/research-decisions/),
+For examples, see [research decisions](/workflows/research-decisions/),
 [project handoffs](/workflows/project-handoffs/),
-[tracking requests](/workflows/track-requests/), or
+[tracking requests](/workflows/track-requests/), and
 [interactive tools](/workflows/interactive-tools/).
 
 ## Keep your work
 
 Local and self-hosted workspaces store content in a folder you control. Cloud
-hosts the same portable content format. [Export a workspace](/guides/import-export/)
-to keep a copy or move it between installations. Exports contain content and
-history, not installation credentials or live agent connections.
+uses the same portable format. [Export a workspace](/guides/import-export/) to
+keep a copy or move it. Exports include content and history, not credentials or
+agent connections.
 
-Worktable's application source is available on
-[GitHub](https://github.com/worktable/worktable-dev). See
-[Contributing](/contributing/) to help develop it, or use the
-[reference](/reference/cli/) for exact commands and formats.
+The source is on [GitHub](https://github.com/worktable/worktable-dev). See
+[Contributing](/contributing/) or the [reference](/reference/cli/).

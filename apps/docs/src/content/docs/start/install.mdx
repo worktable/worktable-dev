@@ -5,16 +5,15 @@ description: Install local or self-hosted Worktable on macOS or Linux with one c
 
 import InstallCommand from "../../../components/InstallCommand.astro"
 
-Use the command-line install on macOS or Linux to run Worktable locally in your
-browser, or on a server you control. For the native macOS app,
-[download Worktable Desktop](/start/desktop/). If you do not want to operate a machine or server, use
+Run Worktable on your computer or a server you control, on macOS or Linux
+(arm64 or x64). For the native macOS app, use
+[Worktable Desktop](/start/desktop/). To skip running a machine, use
 [Worktable Cloud](/guides/worktable-cloud/).
 
 <InstallCommand />
 
-The installer supports macOS and Linux on arm64 and x64. It sets up the
-`worktable` command (with a `wtb` shorthand), then starts interactive setup.
-When setup finishes, open the address it prints. The default is:
+The installer sets up the `worktable` command (shorthand `wtb`) and starts
+setup. When it finishes, open the address it prints. The default is:
 
 ```text
 http://localhost:7480
@@ -22,66 +21,60 @@ http://localhost:7480
 
 ## Inspect the installer
 
-The installer needs no sudo and does not edit shell profiles. Preview its
-downloads and filesystem changes:
+The installer needs no sudo and does not edit shell profiles. Preview what it
+downloads and changes:
 
 ```sh
 curl -fsSL https://worktable.dev/install | sh -s -- --dry-run
 ```
 
-Every flag and default path is listed in the
-[installer reference](/reference/installer/).
+See the [installer reference](/reference/installer/) for every flag and path.
 
 ## Choose the workspace folder
 
-Your workspace is a plain folder at `~/Worktable` by default. Documents, drawings,
-records, annotations, threads, and history remain separate from app settings
-and credentials.
+Your workspace is a plain folder, `~/Worktable` by default. It is kept apart
+from app settings and credentials.
 
-Pick another folder during setup, or steer it explicitly:
+Pick another folder during setup, or set it explicitly:
 
 ```sh
 worktable setup --workspace ~/work/notebook
 ```
 
-To select a workspace when launching, use `worktable launch --workspace
-~/work/notebook`. The CLI uses its saved settings and flags; setting
-`WORKTABLE_WORKSPACE` does not override that selection.
+To pick one at launch, use `worktable launch --workspace ~/work/notebook`.
+Setting `WORKTABLE_WORKSPACE` does not override the CLI's saved settings or
+flags.
 
-Worktable can adopt an existing valid workspace. It refuses to initialize a
-non-empty unrelated folder or overwrite an unfamiliar workspace identity.
+Worktable can adopt an existing workspace. It refuses to initialize a non-empty
+unrelated folder or overwrite another workspace's identity.
 
 ## Choose how it runs
 
-Interactive setup offers a managed background service or a foreground process.
-The background service is convenient for agents that should reach Worktable
-after the terminal closes. Foreground mode keeps lifecycle control in the
-current terminal.
+Setup offers a background service or a foreground process. Use the background
+service if agents should reach Worktable after you close the terminal.
 
-To make a server reachable from another machine, finish the local setup first,
-then follow [Remote access](/guides/remote-access/).
+To reach the server from another machine, finish local setup first, then follow
+[Remote access](/guides/remote-access/).
 
 ## Linux servers
 
 Run Worktable as a regular user, not root. Agents see Drawings and HTML Docs
-through previews, which Worktable renders in a sandboxed browser, and that
-browser can't start its sandbox as root.
+through previews rendered in a sandboxed browser, and that sandbox can't start
+as root.
 
-Ubuntu 23.10 and later block the sandbox until AppArmor allows it. Run this
-once, as the user that runs Worktable:
+On Ubuntu 23.10 and later, run this once as the user that runs Worktable:
 
 ```sh
 worktable preview setup
 ```
 
-It asks for sudo to add an AppArmor rule for this install's preview browser.
-The rule matches the browser's path under your account, so anything your
-account puts at that path can also create user namespaces. `worktable doctor`
-and Settings → System show whether previews work.
+It asks for sudo to add an AppArmor rule for the preview browser. The rule
+matches the browser's path under your account, so anything your account puts at
+that path can also create user namespaces.
 
-A minimal server may also lack the system libraries the preview browser needs.
-`worktable doctor` names any that are missing and, on Debian or Ubuntu, the
-command that installs them. Everything else works without previews.
+`worktable doctor` and **Settings → System** show whether previews work. On a
+minimal server, `doctor` also names missing system libraries and, on Debian or
+Ubuntu, the command to install them. Everything else works without previews.
 
 ## Verify the install
 
@@ -89,8 +82,7 @@ command that installs them. Everything else works without previews.
 worktable doctor
 ```
 
-`doctor` checks the installation and reports the active workspace, service, and
-agent setup.
+It reports the active workspace, service, and agent setup.
 
 ## Non-interactive installs
 
@@ -102,9 +94,8 @@ curl -fsSL https://worktable.dev/install | sh -s -- --yes
 curl -fsSL https://worktable.dev/install | sh -s -- --no-setup
 ```
 
-You can also supply `--workspace`, `--port`, `--background` or `--foreground`,
-and `--mcp <client-ids>` in the same pass. See the
-[installer reference](/reference/installer/) for every flag and path.
+You can also pass `--workspace`, `--port`, `--background` or `--foreground`,
+and `--mcp <client-ids>`. See the [installer reference](/reference/installer/).
 
 ## Next
 

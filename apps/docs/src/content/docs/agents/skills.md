@@ -3,9 +3,9 @@ title: Skills
 description: Read, install, update, and remove Worktable workflow skills.
 ---
 
-Skills provide instructions for working in Worktable. An MCP connection provides
-tools and access. You can use MCP without installing skills, and installing
-skills does not connect an agent or grant access.
+Skills give agents instructions for working in Worktable. The MCP connection
+gives them tools and access. You can use MCP without skills, and installing
+skills does not connect an agent.
 
 ## Available skills
 
@@ -19,21 +19,22 @@ skills does not connect an agent or grant access.
 | [Review annotations](/agents/annotations-protocol/) | Attach feedback and handle requested revisions. |
 | [Use threads](/agents/threads/) | Send and continue authorized conversations. |
 
-Each page is generated from its canonical `SKILL.md`. Use its copy action for
-inspection or a one-off instruction, or download the complete package for
-manual installation. Packages include supporting files and their license.
-The [skill manifest](/.well-known/skills/index.json) lists available files and
-the documentation's source revision.
+Each page is generated from its `SKILL.md`. Copy it for a one-off instruction,
+or download the complete package, with supporting files and license, to
+install by hand. The [skill manifest](/.well-known/skills/index.json) lists the
+files and the source revision.
 
 ## Installation
 
-The general Worktable plugin bundles every skill except Set up Worktable with
-its **Cloud** MCP connection. The OpenClaw plugin bundles the full suite, and the
-Hermes plugin bundles the same skills as the general plugin. If your client
-already loads one of these bundles, avoid installing another copy. To add only
-Set up Worktable, download its package from the
-[Set up Worktable](/agents/setup/) page and place it in your client's skills
-folder.
+Plugins already include skills, so don't install a second copy:
+
+- The general Worktable plugin bundles every skill except Set up Worktable,
+  along with its **Cloud** MCP connection.
+- The Hermes plugin bundles the same skills as the general plugin.
+- The OpenClaw plugin bundles all of them.
+
+To add only Set up Worktable, download its package from the
+[Set up Worktable](/agents/setup/) page into your client's skills folder.
 
 For a client with Agent Skills support, the CLI manages two locations:
 
@@ -42,24 +43,23 @@ For a client with Agent Skills support, the CLI manages two locations:
 | `claude` | `~/.claude/skills` |
 | `agents` | `~/.agents/skills` |
 
-Check which location your client supports. Then install:
+Check which one your client reads, then install:
 
 ```sh
 worktable skills status
 worktable skills install agents
 ```
 
-Substitute `claude` where appropriate. Worktable setup and MCP setup do not
-install skills automatically.
+Use `claude` instead of `agents` where needed. Worktable setup and MCP setup do
+not install skills.
 
-If Worktable runs on another computer, install only the skills locally:
+If Worktable runs on another computer, install only the skills:
 
 ```sh
 curl -fsSL https://worktable.dev/install-skills | sh -s -- --target agents
 ```
 
-This downloads a temporary installer. It does not install the application,
-create a workspace, or configure MCP.
+This does not install the app, create a workspace, or configure MCP.
 
 ## Update and remove
 
@@ -69,20 +69,21 @@ worktable skills repair agents
 worktable skills remove agents
 ```
 
-Use `--preview` to inspect a change before applying it. Automation can apply
-the reviewed plan with `--plan-id <id> --yes`.
+Add `--preview` to inspect a change first. Automation can apply the reviewed
+plan with `--plan-id <id> --yes`.
 
-Status distinguishes missing, outdated, modified, conflicting, and incomplete
-installations. Repair restores missing managed files without overwriting local
-edits or unmanaged skills with the same name. Removal deletes only unchanged
-files recorded in Worktable's ownership manifest.
+- `status` reports missing, outdated, modified, conflicting, and incomplete
+  installations.
+- `repair` restores missing files without overwriting your edits or unmanaged
+  skills with the same name.
+- `remove` deletes only unchanged files that Worktable installed.
 
 With the skills-only installer, put `status`, `update`, `repair`, or `remove`
-before `--target`. Plugin-bundled skills update with the plugin. Manually copied
-skills are your responsibility to update or remove.
+before `--target`. Plugin skills update with the plugin. Skills you copied by
+hand are yours to update or remove.
 
-Bundled skills follow the installed Worktable or plugin release. This site's
-downloads may include newer revisions; check the source revision on each page.
+Bundled skills match the installed Worktable or plugin release. Downloads on
+this site may be newer; each page shows its source revision.
 
 See [Connections](/agents/connections/) to configure access and
-[CLI commands](/reference/cli-commands/) for exact command options.
+[CLI commands](/reference/cli-commands/) for command options.

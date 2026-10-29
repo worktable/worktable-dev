@@ -130,7 +130,7 @@ before using it or sharing it.
 ## Live tools and visitor comments
 
 Live tools read data only through explicit, human-chosen access, and only when
-the owner allows live tools in Settings → Links. A link grants only the selected Records rows and fields, further
+the owner allows live tools in Settings → Sharing. A link grants only the selected Records rows and fields, further
 restricted by the document's current permissions and owner policy. It does not
 give the reader a member account or the maker's credentials. Visitor Records
 access is read only, and interface preferences stay local to the tab.

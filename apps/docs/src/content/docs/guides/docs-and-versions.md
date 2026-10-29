@@ -3,84 +3,66 @@ title: Documents
 description: Edit prose, compare versions, restore changes, and link related work.
 ---
 
-Documents hold notes, plans, research, and decisions. Use the block editor for
-headings, lists, tables, code, and diagrams. You and connected agents can revise
-the same work.
+Documents hold notes, plans, research, and decisions. You and connected agents
+can edit the same doc.
 
 ## Create and edit
 
-Choose **Doc** from a Space's **+** menu. The new doc opens on its title: type
-its name, then press Enter to start writing. Until it has a title it is called
-Untitled, then Untitled 2, and so on. When you leave it, its file takes the
-title's name.
+Choose **Doc** from a Space's **+** menu, type a title, and press Enter to start
+writing. The title is the doc's name everywhere, including its file name. A doc
+without a title is called Untitled; click the grey name to add one.
 
-A doc's name is its title, the large heading at the top, and the sidebar,
-breadcrumbs and lists all show it. A rich doc without one shows its name in
-grey where the title goes; click it to add one.
+Select **Edit** on a Markdown document to use the rich editor. Agents read both
+formats as Markdown.
 
-Select **Edit** on a Markdown document to use the rich editor. Agents can read
-both Markdown and rich-text documents as Markdown. Ask them to change specific
-passages when the rest should remain intact.
+Open documents show agent changes as they save. When several people or agents
+edit at once, ask agents to change specific passages, since a whole-document
+replacement can overwrite other work. Offline changes sync when you reconnect.
 
-Open documents receive saved agent changes. Collaborative editing reduces
-conflicts, but whole-document replacements can overwrite intent; review changes
-when several people or agents are editing. Offline editor changes synchronize
-when the connection returns.
-
-New documents in the app start temporary by default. Use **Archives → Keep** to
-retain one, or change the default in the Space's **+** menu. See
-[Spaces](/guides/organize-and-find/#document-lifetimes) for lifetimes and archiving.
+New documents start temporary. Use **Archives → Keep** to keep one. See
+[document lifetimes](/guides/organize-and-find/#document-lifetimes).
 
 ## Copy and export
 
-The document header or menu provides:
+The document menu offers:
 
-- **Copy Markdown** to copy the prose, including rich text converted to Markdown.
-- **Download Markdown** to save it as a `.md` file.
-- **Print PDF** to open the browser's print dialog with the document content.
-- **Save Markdown**, when the rich document can be represented completely in
-  Markdown, to change its storage format. This action is hidden when conversion
-  would lose rich-only content.
+- **Copy Markdown**
+- **Download Markdown** (a `.md` file)
+- **Print PDF**
+- **Save Markdown**, to store a rich doc as Markdown. It only appears when
+  nothing would be lost.
 
-If another device has offline edits from before a format change, Worktable
-can recover them into a separate document.
+If another device has offline edits from before a format change, Worktable can
+recover them into a separate document.
 
 ## Version history
 
-Open history from the document menu to read older versions, create a checkpoint,
-or restore one. History keeps the last 30 days by default, and always each
-document's newest version.
+Open history from the document menu to read, checkpoint, or restore versions.
 
-Edits one person or agent makes in a row are kept as one version until they
-pause for 10 minutes. An edit by someone else, a restore or a checkpoint starts
-a new version.
+- Edits in a row by one person or agent form one version until a 10-minute
+  pause. Another editor, a restore, or a checkpoint starts a new one.
+- History keeps 30 days by default, plus each document's newest version.
+- **Settings → Data** can keep 30, 90 or 180 days, or the last 7 versions.
+  A shorter limit deletes older versions as soon as you confirm.
+- Workspaces that kept everything before these limits now keep 180 days.
 
-**Settings → History** keeps 30, 90 or 180 days, or the last 7 versions of each
-document. Applying a shorter limit deletes older versions immediately after
-confirmation. Choose a policy before relying on a particular version as your
-recovery path. Workspaces that kept everything before these limits now keep 180
-days.
-
-HTML docs have their own history; restoring their source does not restore saved
-interface state or records they changed. [Drawings](/guides/drawings/) have
-separate recovery controls.
+HTML docs have their own history. Restoring their source does not restore saved
+interface state or records they changed. [Drawings](/guides/drawings/) recover
+differently.
 
 ## Links and backlinks
 
-Link to another document in the Space with Markdown such as
-`[Project brief](/project-brief)`. Worktable tracks links and backlinks. An agent
-write that points to a missing document returns a warning.
+Link to another document with Markdown such as `[Project brief](/project-brief)`.
+Worktable tracks backlinks, and an agent write that links to a missing document
+returns a warning. Links keep working after a document or folder moves.
 
-Worktable links open in the current tab; external websites open in a new tab.
-The browser's link menu can open or copy either destination. Existing links and
-bookmarks continue to resolve after a document or folder moves.
+Worktable links open in the current tab; external sites open in a new tab.
 
 ## Mermaid diagrams
 
-Worktable validates Mermaid diagrams in prose documents before saving. Select a
-diagram or its **Fullscreen** button to zoom, pan, fit it to the screen, or
-download an SVG.
+Mermaid diagrams are validated before saving. Select a diagram or its
+**Fullscreen** button to zoom, pan, or download an SVG.
 
-Use [Drawings](/guides/drawings/) for freehand work or layouts you want to edit
-visually. Agents building Mermaid inside HTML docs should validate it before
-embedding it; see [HTML authoring](/agents/building-widgets/).
+For freehand work or layouts you edit by hand, use
+[Drawings](/guides/drawings/). For Mermaid inside HTML docs, see
+[HTML authoring](/agents/building-widgets/).

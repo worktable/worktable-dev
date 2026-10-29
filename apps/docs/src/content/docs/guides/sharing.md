@@ -3,9 +3,8 @@ title: Sharing
 description: Publish a document link, understand what readers can see, and revoke access.
 ---
 
-Public document links are available in Worktable Cloud and on installations
-with active Worktable Link access. Anyone with the link can view the shared
-content without signing in.
+Public document links work in Worktable Cloud and on installations with active
+Worktable Link access. Anyone with the link can view it without signing in.
 
 ## Create a link
 
@@ -13,95 +12,82 @@ content without signing in.
 2. Choose **Share** in its header or page menu.
 3. Choose **Create Link**, then **Copy**.
 
-A new link expires in 14 days, or sooner if the owner's longest expiry is
-shorter. To change that, open the link's menu and choose **Edit Link**. The
-link stays in **Share**, so you can copy it again at any time.
+A new link expires in 14 days, or sooner if the owner sets a shorter maximum.
+To change it, open the link's menu and choose **Edit Link**.
 
-To give an audience its own link, open **More links** and choose **New Link**.
-Each of these links has its own label and expiry, and revoking one does not
-affect the others. Renaming or moving a document keeps its links working.
+- **More links → New Link** gives an audience its own link, label and expiry.
+  Revoking one does not affect the others.
+- **Password** makes readers enter a password first. Changing it asks readers
+  who already unlocked the link for the new one.
+- Renaming or moving a document keeps its links working.
 
-To protect a link, turn on **Password** when you edit or make it. Readers enter
-the password before the document opens. Changing it asks readers who already
-unlocked the link for the new one.
-
-Shared links are unlisted. Review the content before sending a link. On a
-linked local device, Worktable must stay running, online, and linked for readers
-to reach it.
+Links are unlisted. Review the content before you send one. On a linked local
+device, Worktable must stay running, online and linked for readers to reach it.
 
 ## What readers see
 
-A shared prose document shows its latest saved content. Mermaid diagrams render
+A shared document shows its latest saved content. Mermaid diagrams render
 without their links.
 
-Shared HTML docs retain their layout and safe external links. Scripts, forms,
-record access, saved interface state, and links to private Worktable content are
-disabled. A shared calculator therefore displays its exported content, not the
-interactive experience available inside Worktable. To share a working tool,
-give its link live data; see [Live tools](#live-tools).
+Shared HTML docs keep their layout and safe external links. Scripts, forms,
+record access, saved interface state and links to private Worktable content are
+off. To share a working tool, give its link live data; see
+[Live tools](#live-tools).
 
 ## Owner controls
 
-Owners manage sharing in **Settings → Links**. **Pause all links** stops every
-link at once until it is turned off. Owners can also choose who can share on a
-team, which Spaces can be shared, whether every link needs a password, the
-longest expiry, and whether links can have live tools or visitor comments. These settings apply
-to existing links as well as new ones. The link table lists links across
-Spaces; open a link's menu to copy or revoke it.
+Owners manage sharing in **Settings → Sharing**:
 
-Operator backups preserve owner policy and visitor comments, but do not
-preserve working links after full machine recovery. Make new links after a
-recovery. Restoring a workspace on a machine that still has its sharing store
-does not replace the current policy with an older copy.
+- **Pause all links** stops every link until you turn it off.
+- Choose who can share, which Spaces can be shared, whether every link needs a
+  password, the longest expiry, and whether links can have live tools or
+  visitor comments.
+- The link table lists links across Spaces. Open a link's menu to copy or
+  revoke it.
+
+These settings apply to existing links as well as new ones.
+
+Operator backups keep owner policy and visitor comments, but not working links
+after a full machine recovery. Make new links after a recovery.
 
 ## Live tools and visitor comments
 
-Owners first enable **Live tools** and **Comment links** in
-**Settings → Links**. Both are off by default. The workflows below are
-available when the owner permits them. Live tools also need a compatible share
-host.
+Owners first turn on **Live tools** and **Comment links** in
+**Settings → Sharing**. Both are off by default. Live tools also need a
+compatible share host.
 
 ### Live tools
 
 For an HTML Doc, open **Live data** in **Share** and turn on
-**Show live data**. Worktable checks which Records collections the tool reads
-and shows how many records visitors can read, with the fields kept from them.
-Choose **Hide Fields** to change which fields visitors see, and
-**View as Visitor** to inspect the link.
+**Show live data**. Worktable shows which Records collections the tool reads,
+how many records visitors can read, and which fields are hidden.
 
-The tool reads current data from those collections. Readers cannot change
-Records. Interface choices such as filters stay in their tab and do not change
-the team's saved state. Tightening the document's permissions or the owner's
-sharing policy can reduce what an existing link can read.
+- **Hide Fields** changes which fields visitors see.
+- **View as Visitor** shows the link as a reader sees it.
 
-Record rules filter Records API reads. They do not hide text or data written
-directly into the tool itself, which is shared with every reader of the link.
+Readers see current data but cannot change Records or open other documents.
+Filters and other interface choices stay in their tab. Tightening the
+document's permissions or the sharing policy can reduce what an existing link
+can read.
 
-Readers run the same HTML Doc your team uses, so any tool your agents build
-works on a live link without changes. Parts of a tool that change Records or
-open other documents are unavailable to readers. A stopped live link loses data access within the short cache window, at most
-three seconds.
+Record rules filter Records reads only. Text or data written into the tool
+itself is visible to every reader.
 
 ### Visitor comments
 
-Open **Comments** in **Share** and turn on **Allow comments**. Each visitor
-sees only their own comments and the team's replies to them, never another
-visitor's. A comment needs the visitor's name, and a visitor may need to
-complete a human check before sending one.
+Open **Comments** in **Share** and turn on **Allow comments**. Each visitor sees
+only their own comments and the team's replies. A comment needs the visitor's
+name and may need a human check.
 
-Review visitor comments in the document's comments panel. They stay separate
-from agent-readable team content until a member chooses **Pass to Team**.
+Visitor comments appear in the document's comments panel. Agents do not see
+them until a member chooses **Pass to Team**.
 
 ## Stop sharing
 
-In **Share** or in **Settings → Links**, open a link's menu and choose
-**Revoke Link**. Revoke each link you want to stop; revoking is
-permanent. Renaming or moving a document does not revoke its links; archiving
-or deleting it makes them unavailable.
+In **Share** or **Settings → Sharing**, open a link's menu and choose
+**Revoke Link**. Revoking is permanent. Archiving or deleting a document makes
+its links unavailable.
 
-Links made with earlier versions of Worktable move into the link list when
-Worktable updates, and keep their URLs.
-
-Pausing Worktable Link stops access to that device's shared documents. Resuming
-it restores the existing links; unlinking the device ends its access. See
+Pausing Worktable Link stops access to that device's shared documents until you
+resume it. Unlinking the device ends it. See
 [Remote access](/guides/remote-access/#worktable-link).

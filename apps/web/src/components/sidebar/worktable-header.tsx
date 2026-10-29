@@ -1,3 +1,4 @@
+import { TruncatedText } from "@worktable/ui/components/truncated-text"
 import { lazy, Suspense, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
@@ -67,7 +68,7 @@ function WorktableLocation() {
   if (LOOPBACK_HOSTS.has(window.location.hostname)) {
     return <Laptop aria-label="This computer" className="size-3.5 shrink-0" />
   }
-  return <span className="min-w-0 truncate">{window.location.host}</span>
+  return <TruncatedText text={window.location.host} />
 }
 
 export function WorktableTile({
@@ -161,7 +162,7 @@ export function WorktableHeader() {
   const currentRow = (
     <DropdownMenuItem aria-current="true">
       <WorktableTile name={name} color={color} />
-      <span className="min-w-0 flex-1 truncate">{name}</span>
+      <TruncatedText text={name} className="flex-1" />
       {thisMac.data?.worktables.some(
         (worktable) => worktable.current && worktable.linked
       ) && (
@@ -237,9 +238,10 @@ export function WorktableHeader() {
           }
         >
           <WorktableTile name={name} color={color} />
-          <span className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">
-            {name}
-          </span>
+          <TruncatedText
+            text={name}
+            className="flex-1 text-sm font-semibold tracking-tight"
+          />
           <ChevronsUpDown className="size-3.5 shrink-0 text-sidebar-foreground/40" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" sideOffset={4} className="min-w-64">

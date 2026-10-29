@@ -1,3 +1,4 @@
+import { TruncatedText } from "@worktable/ui/components/truncated-text"
 import type { ReactNode } from "react"
 import { Folder, Plus } from "lucide-react"
 import { Badge } from "@worktable/ui/components/badge"
@@ -32,7 +33,7 @@ function DeviceState({ device, online }: { device: string; online: boolean }) {
           online ? "bg-success" : "bg-warning"
         )}
       />
-      <span className="min-w-0 truncate">{online ? device : "Offline"}</span>
+      <TruncatedText text={online ? device : "Offline"} />
     </span>
   )
 }
@@ -51,7 +52,7 @@ function MenuRowItem({ row, surface }: { row: MenuRow; surface: MenuSurface }) {
   const label = (
     <>
       <WorktableTile name={name} color={recognitionColor(undefined, row.id)} />
-      <span className="min-w-0 flex-1 truncate">{name}</span>
+      <TruncatedText text={name} className="flex-1" />
       {row.kind === "this-mac" && row.linked && (
         <Badge variant="outline">Link</Badge>
       )}

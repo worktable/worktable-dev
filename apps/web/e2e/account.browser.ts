@@ -56,6 +56,7 @@ async function mockCloudAccount(
         mode: "cloud",
         capabilities: {
           cloudAccount: true,
+          analyticsChoice: true,
           workspaceName: true,
           workspacePath: false,
           workspaceUrl: false,

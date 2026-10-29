@@ -5,6 +5,7 @@ import { getSettingsSections } from "./sections"
 
 const capabilities: DeploymentInfo["capabilities"] = {
   cloudAccount: false,
+  analyticsChoice: false,
   workspaceName: true,
   workspacePath: true,
   workspaceUrl: true,
@@ -28,7 +29,12 @@ describe("settings sections", () => {
     expect(
       labels({
         mode: "cloud",
-        capabilities: { ...capabilities, cloudAccount: true, shareLinks: true },
+        capabilities: {
+          ...capabilities,
+          cloudAccount: true,
+          analyticsChoice: true,
+          shareLinks: true,
+        },
       })
     ).toEqual([
       "Worktable/General",
@@ -54,6 +60,20 @@ describe("settings sections", () => {
       "Support/Help",
       "Support/System",
     ])
+  })
+
+  it("gives every Cloud person Privacy, and Billing only to its owners", () => {
+    // A team member: the server grants the analytics choice, not the plan.
+    const member = getSettingsSections({
+      mode: "cloud",
+      capabilities: {
+        ...capabilities,
+        cloudAccount: false,
+        analyticsChoice: true,
+      },
+    }).map((section) => section.id)
+    expect(member).toContain("privacy")
+    expect(member).not.toContain("billing")
   })
 
   it("shows Data while any of History, Backups, or Import & Export applies", () => {

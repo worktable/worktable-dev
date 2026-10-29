@@ -13,6 +13,7 @@ import {
   CreditCard,
   Database,
   Link2,
+  Globe,
   MonitorCog,
   Palette,
   Settings2,
@@ -142,7 +143,7 @@ const REMOTE: SettingsSection = {
   group: "Worktable",
   label: "Remote",
   description: "Use this Worktable away from this device.",
-  icon: UserRound,
+  icon: Globe,
   component: CloudSection.Component,
   preload: CloudSection.preload,
 }
@@ -234,7 +235,7 @@ export function getSettingsSections(
     ...(data ? [DATA] : []),
     PROFILE,
     APPEARANCE,
-    ...(cloud && capabilities.cloudAccount ? [PRIVACY] : []),
+    ...(cloud && capabilities.analyticsChoice ? [PRIVACY] : []),
     HELP,
     cloud ? CLOUD_ABOUT : SYSTEM,
   ]

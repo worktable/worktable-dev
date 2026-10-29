@@ -11,6 +11,7 @@ const cloudDeployment = {
   mode: "cloud",
   capabilities: {
     cloudAccount: true,
+    analyticsChoice: true,
     workspaceName: true,
     workspacePath: false,
     workspaceUrl: false,

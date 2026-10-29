@@ -24,9 +24,8 @@ Use one record per request. Do not add owners, dates, or other facts we
 have not supplied. Link me to the collection.
 ```
 
-Open the collection from the Space's **Records** section. Check the three rows
-and field types. Quantity should support numeric values, and status should use
-the agreed options.
+Open the collection from the Space's **Records** section and check the three
+rows, the numeric quantity, and the status options.
 
 ## Update an item
 
@@ -38,18 +37,15 @@ The desk-lamp request is now unavailable. Update that existing record,
 then list the confirmed equipment and quantities.
 ```
 
-The result should include four folding tables and three extension leads. It
-should preserve the lamp request with its new status rather than delete it or
-create a duplicate.
+The result should list four folding tables and three extension leads. The lamp
+request should keep its record with the new status, not be deleted or
+duplicated.
 
 ## Find outstanding work
 
-Filter the table by status, or ask the agent to query requests that are not
-confirmed. Grouping by status makes counts visible as the collection grows.
+Filter or group the table by status, or ask the agent for requests that are
+not confirmed.
 
-If a workflow later needs assignment, add a contact field through the schema
-editor. Existing data must remain valid when the schema changes.
-
-The built-in table is enough for this example. Add an [HTML doc](/guides/widgets/)
-when a board, form, or other interface serves a specific task, and have it use
-the same collection.
+To assign requests later, add a contact field in the schema editor. Existing
+data must stay valid when the schema changes. For a board or form, add an
+[HTML doc](/guides/widgets/) that uses the same collection.

@@ -3,9 +3,8 @@ title: Interactive tools
 description: Build a budget explorer, test its calculations, and revise the same HTML document.
 ---
 
-An HTML doc can turn fixed inputs into a tool you can inspect and adjust. This
-example estimates the cost of a fictional workshop without needing a records
-collection or external service.
+An HTML doc can turn a few inputs into a tool you can adjust. This example
+estimates the cost of a fictional workshop.
 
 ## Specify the inputs
 
@@ -38,9 +37,8 @@ Open the HTML doc and try these inputs:
 | 10 | $40 | $300 | $30 |
 | 0 | $40 | $220 | Unavailable |
 
-Check that the controls reject negative costs and fractional attendee counts.
-The tool should expose its assumptions so you can tell whether its result fits
-your situation.
+Check that the controls reject negative costs and fractional attendee counts,
+and that the assumptions are visible.
 
 ## Revise the tool
 
@@ -53,9 +51,9 @@ Leave contingency off by default. Test both settings.
 ```
 
 At 20 attendees and $40 equipment cost, the base total should remain $380 and
-the contingency total should be $418. Review the same document and compare its
+the contingency total should be $418. Compare versions in the document's
 history if needed.
 
-If the tool should later track actual requests or purchases, add records for
-those independently changing items. For a public link, remember that
-[shared HTML](/guides/sharing/) does not run interactive scripts.
+To track actual purchases later, add [records](/guides/records/). For a public
+link, note that [shared HTML](/guides/sharing/) does not run interactive
+scripts.

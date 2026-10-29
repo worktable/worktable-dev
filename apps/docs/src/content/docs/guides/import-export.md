@@ -3,124 +3,105 @@ title: Workspace backups
 description: Back up, restore, export, or move workspace content.
 ---
 
-Use a portable export to keep an independent copy of your work or move it to
-another installation. Cloud also provides hosted backups.
+A portable export keeps an independent copy of your work or moves it to another
+installation. Cloud also keeps hosted backups.
 
-Exports contain workspace content. Installation credentials and live agent
-connections do not travel with them.
-Team memberships and Space permissions are rebuilt manually after a content
-transfer. A full operator backup preserves people and permissions; after a full
-restore, people sign in again and agents reconnect.
+Exports contain workspace content only. They leave out installation
+credentials, agent connections, team memberships and Space permissions. A full
+operator backup keeps people and permissions; after a full restore, people sign
+in again and agents reconnect.
 
-Importing content into an existing team Worktable keeps its members. Replacement
-Spaces remain restricted until an owner shares them or grants access again.
+Importing into an existing team Worktable keeps its members. Replaced Spaces
+stay restricted until an owner shares them again.
 
 ## Hosted backups
 
-Full backup and restore requires explicit operator access. Becoming a Worktable
-owner does not grant that access.
+Full backup and restore needs operator access. Being a Worktable owner is not
+enough.
 
-In Worktable Cloud, choose **Backups** beside the Worktable in **Your
-Worktables** to see available backups and the
-configured schedule and retention. Choose **Back up now** for a current backup,
-and check the last successful capture.
+In Worktable Cloud, open **Settings → Data**, or choose **Backups** beside the
+Worktable in **Your Worktables**. You see available backups, the schedule,
+retention and the last successful backup.
 
-Choose the restore icon beside a backup to restore the whole hosted workspace.
-Editing pauses during replacement. Use **Undo** after a restore to return to
-the content saved immediately before it.
+- **Back up now** takes a backup.
+- The restore icon beside a backup restores the whole hosted workspace. Editing
+  pauses during the restore.
+- **Undo** after a restore returns to the content saved just before it.
 
-Hosted backups do not include files on linked local or self-hosted devices.
-If the hosted workspace cannot open, contact
+Hosted backups do not include files on linked local or self-hosted devices. If
+the hosted workspace cannot open, contact
 [support](https://www.worktable.cloud/support).
 
 For local or self-hosted installations, export through Worktable, or stop the
-service before taking a filesystem backup of the workspace folder.
+service before copying the workspace folder.
 
 ## Portable exports
 
-Open **Settings → Import & Export** in any deployment.
+Open **Settings → Data** in any deployment.
 
 ### Choose history
 
-Choose how much available version history to include, then select **Export**.
-Current content is always included.
+Choose how much version history to include, then select **Export**. Current
+content is always included.
 
-- **All history** is the complete snapshot and the default.
+- **All history** (default) is the complete snapshot.
 - **Last 30 days** also keeps each item's newest version and meaningful
   checkpoints.
 - **Last 50 per item** also keeps meaningful checkpoints.
 - **No history** exports current content only.
 
-The supported package envelope is 2 GiB compressed, 8 GiB of portable
-workspace content, 2 GiB for one file, and 100,000 workspace entries. Worktable
-shows a limit error instead of producing or accepting a partial package.
+Limits: 2 GiB compressed, 8 GiB of workspace content, 2 GiB for one file and
+100,000 entries. Worktable shows an error rather than making a partial package.
 
-When preparation finishes, download the `.wtb` package. It is a standard
-compressed ZIP archive. Extract it with
-Finder, 7-Zip, `unzip`, or another ZIP tool.
+You can close Settings while the export is prepared. Download the `.wtb`
+package when it's ready. It is a standard ZIP archive. After extracting:
 
-Inside the extracted folder:
-
-- Open `Open Worktable Export.html` for a read-only offline browser.
-- Find the exact portable workspace under `workspace/`.
-- Read `README.txt` for the package layout.
-
-The offline browser does not run HTML-doc scripts or make network requests.
-Large or unusual files remain available as raw files.
+- `Open Worktable Export.html` is a read-only offline browser. It does not run
+  HTML-doc scripts or make network requests.
+- `workspace/` holds the exact portable workspace.
+- `README.txt` explains the layout.
 
 ### Filename recovery
 
-Older history may contain filenames that cannot be unpacked on every supported
-filesystem. Choosing **No history** excludes those history files before filename
-checks. It still includes all current content.
+Some older history may have filenames that can't be unpacked on every
+filesystem. **No history** avoids this and still includes all current content.
 
-If selected history has incompatible filenames, Worktable shows the affected
-file count and offers **Skip files**. Review the filename
-issues or download the diagnostic report before choosing that option. Trailing
-spaces appear as `␠` in the review. Recovery leaves the original files untouched
-and records the omitted history in the package. If the affected files change,
-Worktable asks for a new review.
+If selected history has such filenames, Worktable shows the count and offers
+**Skip files**. Review the list or download the diagnostic report first.
+Trailing spaces appear as `␠`. Skipped history is recorded in the package; your
+original files are not changed.
 
-Current content with incompatible filenames must be corrected before exporting;
-recovery never silently drops current documents. Symlinks, unreadable files,
-archive limits, and integrity failures still stop an export.
-
-You can close Settings while export preparation continues. Reopen **Import &
-Export** to check progress and download the result.
+Current content with incompatible filenames must be renamed before exporting.
+Symlinks, unreadable files, archive limits and integrity failures also stop an
+export.
 
 ## Replace a workspace
 
-Choose a `.wtb` package under **Import workspace**. Worktable verifies it and
-shows the source workspace, export time, size, file count, and history summary
-before anything changes. If the page reloads during a large upload, reselect
-the same file to continue.
+1. Choose a `.wtb` package under **Import workspace**. Worktable shows the
+   source workspace, export time, size, file count and history before anything
+   changes. If the page reloads during a large upload, choose the same file
+   again to continue.
+2. Review the summary, then select **Replace Worktable** and confirm.
 
-Select **Replace Worktable** and confirm only after reviewing that
-summary. Worktable replaces the portable content, restarts on the same address,
-and keeps the destination workspace identity and account attachment.
-On local installations, sign in to Worktable Cloud and reconnect Worktable Link
-after replacement.
+Worktable replaces the content and version history, restarts on the same
+address and keeps the destination's identity and account. It does not merge or
+sync workspaces. On local installations, sign in to Worktable Cloud and
+reconnect Worktable Link afterwards.
 
-This replaces current portable content and version history; it does not merge
-workspaces or set up synchronization. To transfer later changes, export the
-updated workspace and repeat the replacement at the destination.
-
-If replacement or restart fails before commit, Worktable attempts to restore
-the prior workspace. If recovery also fails, it stops rather than serving an
-uncertain state. Keep the package and inspect the server logs before retrying.
+If replacement fails, Worktable tries to restore the previous workspace. If
+that also fails, it stops. Keep the package and check the server logs before
+retrying.
 
 ## Import separately
 
-The CLI can import the package into a missing or empty folder instead of
-replacing the configured workspace:
+To import into a new or empty folder instead of replacing the workspace:
 
 ```sh
 worktable workspace import backup.wtb ~/Worktable-Restored
 ```
 
-This creates an independent workspace with a fresh ID and records where it
-came from. Use it for inspection, recovery, or keeping both copies. Cloud
-does not offer an “import as new” action.
+This creates an independent workspace with a fresh ID. Cloud does not offer
+this.
 
 ## CLI exports
 
@@ -131,27 +112,26 @@ worktable workspace export backup.wtb --history count --history-count 50
 worktable workspace export backup.wtb --history none
 ```
 
-Use `--force` to replace an existing regular export file. The
-[CLI command reference](/reference/cli-commands/) lists compatibility and
-format options.
+Use `--force` to overwrite an existing export file. See the
+[CLI command reference](/reference/cli-commands/) for more options.
 
 ## Clear a workspace
 
-On local, Desktop, and self-hosted installations, **Clear** under **Clear workspace** opens a
-review of the content to remove. Type the exact `CLEAR <workspace name>` phrase
-and confirm. Reviews expire after ten minutes; changes to the workspace after
-review require a new review.
+On local, Desktop and self-hosted installations, choose **Clear** under
+**Clear workspace**, review what will be removed, type
+`CLEAR <workspace name>` and confirm. A review expires after ten minutes or
+when the workspace changes.
 
-Clearing permanently removes spaces, documents, records, threads, attachments,
-and version history. Export first if you need a copy. The workspace keeps its
-identity, name, local preferences, and storage format. You will need to sign in
-to Worktable Cloud and reconnect Worktable Link again. It remains empty after
-restart; starter content is not recreated.
+Clearing permanently removes Spaces, documents, records, threads, attachments
+and version history. **A completed clear cannot be undone, so export first.**
 
-If replacement or restart fails before the clear commits, Worktable attempts
-to restore the original content. A recovery failure stops the server and needs
-attention. A completed clear cannot be undone. Previously generated
-exports on the server are revoked; copies already downloaded remain yours.
-Open tabs refresh and discard drafts from the old workspace content.
+- The workspace keeps its identity, name, local preferences and storage format.
+- Starter content is not recreated.
+- Sign in to Worktable Cloud and reconnect Worktable Link again afterwards.
+- Exports already on the server are revoked; downloaded copies remain yours.
+- Open tabs refresh and discard drafts.
 
-Clear is not yet available in Cloud.
+If the clear fails before it completes, Worktable tries to restore the original
+content. If that fails, the server stops and needs attention.
+
+Clear is not available in Cloud yet.

@@ -3,9 +3,8 @@ title: Remote access
 description: Reach a local or self-hosted workspace from another device or agent.
 ---
 
-Worktable is available only on its own machine by default. Reachable mode lets
-you use a self-hosted workspace from another device or connect an agent running
-elsewhere.
+By default Worktable is only available on its own machine. Reachable mode lets
+other devices and remote agents use a self-hosted workspace.
 
 ## Turn it on
 
@@ -13,139 +12,119 @@ elsewhere.
 worktable setup --reachable
 ```
 
-Setup asks you to create an owner password, protects agent connections, and
-points you to the remote-agent flow. Worktable will not start in reachable mode
-without the owner password.
+Setup asks you to create an owner password. Worktable will not start in
+reachable mode without it.
 
 ## Add HTTPS
 
-Worktable serves HTTP itself. Put HTTPS in front with Tailscale, Cloudflare
-Tunnel, ngrok, or another reverse proxy, then acknowledge that setup:
+Worktable serves plain HTTP. Put HTTPS in front with Tailscale, Cloudflare
+Tunnel, ngrok or another reverse proxy, then run:
 
 ```sh
 worktable setup --reachable --behind-tls
 ```
 
-If the tunnel gives Worktable a stable address, set it under
-**Settings → General → Workspace URL** so links point to that address. Set the
-owner password before saving a public address. Worktable Cloud manages its own
-address and does not show this setting.
+If the tunnel has a stable address, set it in
+**Settings → General → Workspace URL** so links use it. Set the owner password
+before saving a public address. Worktable Cloud manages its own address.
 
 ## Connect Worktable Desktop
 
-Prefer a valid HTTPS address such as `https://worktable.example.com`.
-
 1. In Desktop, choose **Self-hosted server**.
-2. Enter the server address without a path or query.
+2. Enter the server address without a path or query, for example
+   `https://worktable.example.com`.
 3. If you use plain HTTP, acknowledge the warning. HTTPS is strongly
    recommended.
-4. Sign in with your named account when Teams is enabled, or the Worktable
-   owner password for a one-person workspace.
+4. Sign in with your named account when Teams is on, or with the owner
+   password.
 
-Desktop remembers the server but does not save the owner password. Use
-**Change Connection…** to keep the saved server available, or **Forget this
-server** to remove it from Desktop without changing the remote workspace.
-Desktop does not create the tunnel or configure the server for you. See the
-[Desktop reference](/reference/desktop/) for connection validation and storage
-details.
+Desktop remembers the server but not the owner password. **Forget this server**
+removes it from Desktop without changing the workspace. Desktop does not create
+the tunnel for you. See the [Desktop reference](/reference/desktop/).
 
 ## Invite teammates
 
-Enable Teams from **Settings → Team**, then copy an invitation link for each
-member. Choose a starting Space to open it for them when they join. Everyone
-uses a named account. Existing Spaces remain restricted until
-you share them; newly created Spaces are shared by default. The
-[security model](/reference/security/) explains owners and restricted Spaces.
+Enable Teams in **Settings → Team**, then copy an invitation link for each
+member. You can pick a starting Space for them. Existing Spaces stay restricted
+until you share them; new Spaces are shared by default. See the
+[security model](/reference/security/).
 
-If Worktable Link was already connected, enabling Teams pauses it. In
-**Settings → Cloud**, turn Link on again to connect your Cloud account to your
-named member account.
+Enabling Teams pauses Worktable Link. Turn it on again in **Settings → Remote**
+to connect your Cloud account to your member account.
 
 ## Connect a remote agent
 
-Open **Settings → Agents** and choose **Connect an agent**, or create a pairing
-from the Worktable host:
+Open **Settings → Agents** and choose **Connect an agent**. On a Teams
+Worktable, always use Settings so the connection belongs to the member who
+approves it.
 
-For Teams, use Settings so the connection belongs to the member who approves
-it. The CLI commands below apply to one-person Worktables.
+On a one-person Worktable you can also create a pairing on the host:
 
 ```sh
 worktable agent invite
 ```
 
-Run the one-line command it prints on the machine where the agent lives. The
-single-use pairing expires after 15 minutes, preserves existing Worktable
-client entries, and verifies the connection when it finishes.
+Run the printed command on the agent's machine. The pairing is single-use,
+expires after 15 minutes and keeps existing client entries.
 
-For a machine where the guided command is not suitable, use **Manual install**
-in Settings or print the client configuration from the Worktable host:
+If the guided command doesn't fit, use **Manual install** in Settings or print
+the client configuration on the host:
 
 ```sh
 worktable mcp print-config <client> --with-token
 ```
 
-This command prints a credential. Copy it directly into the client and keep it
-out of shared documents, URLs, and command logs.
+This prints a credential. Paste it straight into the client and keep it out of
+shared documents, URLs and command logs.
 
 ## Manage access
 
 **Settings → Agents** lists connected agents, when they last used Worktable,
 and a disconnect action. **Advanced → Access tokens** lists manually created
-credentials as well. Disconnect or revoke a connection when it should no
-longer have access.
+credentials. Disconnect or revoke anything that should no longer have access.
 
 Claude Desktop and ChatGPT use the **Desktop apps** section. The self-hosted
-address must be reachable from the Mac or service running the app. A browser on
-another device signs in with the owner password.
+address must be reachable from the Mac or service running the app.
 
 ## Return to loopback
 
-Run `worktable setup` again and choose loopback. Previously created agent
-connections remain listed, so revoke any you no longer want to use.
-
-The [security model](/reference/security/) explains the password, token, and
-HTTPS boundaries in detail.
+Run `worktable setup` again and choose loopback. Existing agent connections
+stay listed, so revoke any you no longer want.
 
 ## Worktable Link
 
-Where available for your Cloud account, Worktable Link connects a local or
-self-hosted installation to supported AI apps and public document sharing.
-Check **Settings → Remote Access** for availability.
-A remote self-hosted installation needs an HTTPS address.
+Worktable Link connects a local or self-hosted installation to supported AI
+apps and public sharing through your Cloud account. Check **Settings → Remote**
+for availability. A remote self-hosted installation needs an HTTPS address.
 
-1. Choose **Sign in** in **Settings → Remote Access**. Complete browser
-   sign-in and confirm the server address when prompted.
-2. Return to Settings, choose a payer-owned **Worktable subscription**, and turn
-   on **Worktable Link**. Sign-in alone does not
-   enable remote access. Complete subscription setup if requested.
-3. For ChatGPT or Claude, turn on Link with **Set Up** in that app's steps in
-   **Settings → Agents → Chat apps**, then add the official Worktable app. The
-   app then works in this Worktable, including one already connected to
-   another Worktable. To move an app later, or when Link was already on, use
-   **Apps** in Cloud. For another AI app, open **Connect another app**, copy
-   the device's **MCP URL** into its connector setup and choose OAuth
-   authentication.
+1. Choose **Sign in** in **Settings → Remote** and complete browser sign-in.
+2. Choose a payer-owned **Worktable subscription** and turn on
+   **Worktable Link**. Signing in alone does not enable access.
+3. For ChatGPT or Claude, choose **Set Up** in that app's steps in
+   **Settings → Agents → Chat apps**, then add the official Worktable app. To
+   move an app later, or if Link was already on, use **Apps** in Cloud. For
+   another AI app, open **Connect another app**, copy the device's
+   **MCP URL** into its connector setup and choose OAuth.
 4. Sign in with the same Cloud account and approve the connection.
 
-Keep the device online and Worktable running. Worktable Desktop keeps a
-Worktable with Link on running while its window shows another Worktable, until
-you quit Desktop. Authorized requests pass through Cloud to the device; Link
-does not copy its workspace into the hosted workspace, synchronize the two, or
-expose the full local interface remotely.
-Each device follows its selected subscription: Solo links one device, Team
-three and Business five. If a Worktable's devices are all linked, unlink one in
-Cloud to connect another. **Your Worktables** in Cloud, and the Worktable menu
-in Cloud, Desktop and a Worktable signed in to Cloud, list each linked
-Worktable with its device and whether it is online. On a team installation, an operator enables Link and its
-AI apps follow that member's Space permissions as personal agents.
+Keep the device online and Worktable running. Desktop keeps a linked Worktable
+running in the background until you quit. Link passes authorized requests
+through Cloud to the device. It does not copy or sync the workspace to Cloud,
+or expose the full local interface.
 
-Turn off **Worktable Link** to pause AI access and public sharing. Turning it on
-again restores the same MCP URL, share links, and approved connections. You can
-also pause, resume, or disconnect individual apps under **Manage devices**.
-Apps that reach the Worktable through Link appear under **Connected agents** in
-**Settings → Agents**; **Manage** opens the device's AI connections in Cloud.
+- Each subscription links a set number of devices: Solo one, Team three,
+  Business five. Unlink one in Cloud to connect another.
+- **Your Worktables** and the Worktable menu show each linked Worktable, its
+  device and whether it is online.
+- On a team installation, an operator turns on Link, and AI apps follow that
+  member's Space permissions.
 
-**Unlink** ends that device's access. Linking the same Worktable again restores
-its MCP URL and the AI apps approved for it, so disconnect any app you don't want
-back before you unlink. Replacing the local workspace also requires linking again. Signing out of Cloud
-in local Settings does not unlink the device; pause or unlink it to stop access.
+Turn off **Worktable Link** to pause AI access and public sharing. Turning it
+on again restores the same MCP URL, share links and approved connections.
+**Manage devices** pauses, resumes or disconnects individual apps. Linked apps
+also appear under **Connected agents** in **Settings → Agents**.
+
+**Unlink** ends the device's access. Linking the same Worktable again restores
+its MCP URL and approved AI apps, so disconnect any app you don't want back
+first. Replacing the local workspace requires linking again. Signing out of
+Cloud does not unlink the device; pause or unlink it to stop access.

@@ -3,13 +3,12 @@ title: HTML docs
 description: Create interactive tools, explanations, and interfaces inside a Space.
 ---
 
-An HTML doc is a self-contained interactive page: a calculator, visual plan,
-data explorer, or custom interface. It can use supplied data on its own or work
-with a records collection.
+An HTML doc is an interactive page, such as a calculator, visual plan, or data
+explorer. It can stand alone or work with a records collection.
 
 ## Create a tool
 
-Give a connected agent the task, inputs, and expected interactions:
+Tell a connected agent what the tool should do and what to use:
 
 ```text
 Create an HTML doc for the Community workshop budget. Let me change
@@ -18,45 +17,37 @@ figures in the project brief and display all assumptions beside the controls.
 Keep it durable.
 ```
 
-Open the result and try the controls. Ask for revisions to the same HTML doc.
-The [interactive tools workflow](/workflows/interactive-tools/) provides a
-complete fictional example.
+Try the controls, then ask for revisions to the same HTML doc. See the
+[interactive tools workflow](/workflows/interactive-tools/) for a full example.
 
 ## View and inspect
 
-Open the HTML doc from the sidebar. Use the fullscreen control for more room,
-or **Open in New Tab** from its menu. **Copy HTML** copies the source for use in
-another tool or conversation.
+Open the HTML doc from the sidebar. Use fullscreen, or **Open in New Tab** from
+its menu. **Copy HTML** copies the source.
 
-HTML docs run in a sandbox. Network access is disabled by default, and access
-to records or navigation depends on the document's permissions. Agents with
-write access can also set HTML permissions, so permissions are part of what you
-should inspect when reviewing an agent-built tool. See the
-[HTML runtime](/reference/html-doc-runtime/) for exact capabilities and limits.
+HTML docs run in a sandbox with network access off by default. What else they
+can reach, such as records, depends on the doc's permissions. Agents with write
+access can set those permissions, so check them when reviewing an agent-built
+tool. See the [HTML runtime](/reference/html-doc-runtime/) for details.
 
 ## Use records
 
-An HTML doc can query or update records when permitted. For example, a request
-board can display the same collection you edit in the built-in table. Use
-records for independently changing items; use HTML-doc state for local
-interface preferences such as a selected view.
-
-An HTML doc does not need records when its inputs are fixed or its calculations
-are self-contained.
+With permission, an HTML doc can query and update records, for example a
+request board over the same collection as the built-in table. Keep shared items
+in records; keep interface preferences, such as a selected view, in HTML-doc
+state.
 
 ## Revise and recover
 
 HTML docs have version history and checkpoints. Restoring a version restores
-the HTML source, but does not roll back saved interface state or changes the
-tool made to records.
+the source only, not saved interface state or changes the tool made to records.
 
 Move, rename, archive, restore, or delete an HTML doc from its menu. To move it
-into a folder, choose **Rename** and enter a path such as `plans/budget`. Its
-history, comments, saved state, and existing bookmarks follow it.
+into a folder, **Rename** it to a path such as `plans/budget`. History, comments,
+saved state, and bookmarks follow it.
 
-Links and buttons can open supported documents in the same Space by path. This
-can make an HTML doc a useful project entry point; **Pin** it if people should
-open it first.
+Links and buttons can open other docs in the Space by path, so an HTML doc can
+be a project entry point. **Pin** it if people should open it first.
 
-For a public version, see [Sharing](/guides/sharing/). Shared HTML does not run
-the tool's scripts or provide access to private records.
+To publish one, see [Sharing](/guides/sharing/). Shared HTML doesn't run the
+tool's scripts or expose private records.

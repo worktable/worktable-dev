@@ -3,8 +3,8 @@ title: Research decisions
 description: Compare supplied evidence, record a decision, and update it as new information arrives.
 ---
 
-Use a document when you need to compare evidence and explain a decision. This
-example chooses a venue for a fictional community workshop.
+A document is a good place to compare evidence and explain a decision. This
+example picks a venue for a fictional community workshop.
 
 ## Supply the evidence
 
@@ -30,8 +30,7 @@ questions. Do not invent missing facts or contact anyone.
 ## Review the result
 
 Open the document. Check that Cedar Hall costs $180, River Room does not meet
-capacity, and Orchard Studio costs $200 with access still unconfirmed. The
-comparison should explain why an unresolved requirement affects the choice.
+capacity, and Orchard Studio costs $200 with access still unconfirmed.
 
 Annotate the recommendation:
 
@@ -51,8 +50,8 @@ decision, update the affected comparison, and explain whether its recommendation
 changes.
 
 The revision should show Cedar Hall over budget, keep Orchard's access question
-open, and avoid presenting any option as satisfying all confirmed requirements.
-Use document history to compare the change.
+open, and not present any option as meeting every confirmed requirement. Use
+document history to compare the change.
 
-For a large set of sources that need separate fields and updates, consider a
-[records collection](/guides/records/). Three proposals do not require one.
+For many sources with separate fields, use a
+[records collection](/guides/records/) instead.

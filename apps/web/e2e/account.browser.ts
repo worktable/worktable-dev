@@ -56,6 +56,7 @@ async function mockCloudAccount(
         mode: "cloud",
         capabilities: {
           cloudAccount: true,
+          analyticsChoice: true,
           workspaceName: true,
           workspacePath: false,
           workspaceUrl: false,
@@ -81,15 +82,15 @@ async function mockCloudAccount(
   )
 }
 
-async function openCloudAccount(page: Page): Promise<void> {
+async function openCloudAccount(
+  page: Page,
+  name: "Billing" | "Privacy" = "Billing"
+): Promise<void> {
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
   await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 30_000 })
   await page.getByRole("button", { name: "Settings", exact: true }).click()
   const settings = page.getByRole("dialog")
-  const section = settings.getByRole("button", {
-    name: "Account",
-    exact: true,
-  })
+  const section = settings.getByRole("button", { name, exact: true })
   await section.click()
   await expect(section).toHaveAttribute("aria-pressed", "true")
 }
@@ -170,7 +171,7 @@ test("Signing out of Cloud confirms in-app before a CSRF-protected gateway sign-
   ])
 })
 
-test("Cloud Account shows period-end cancellation and opens the CSRF-protected portal", async ({
+test("Cloud Billing shows period-end cancellation and opens the CSRF-protected portal", async ({
   page,
 }) => {
   const billing = activeBilling({
@@ -230,7 +231,7 @@ test("Cloud Account shows period-end cancellation and opens the CSRF-protected p
   })
 })
 
-test("Cloud Account opens a CSRF-protected checkout without re-entering signup", async ({
+test("Cloud Billing opens a CSRF-protected checkout without re-entering signup", async ({
   page,
 }) => {
   await mockCloudAccount(page, {
@@ -290,7 +291,7 @@ test("Cloud Account opens a CSRF-protected checkout without re-entering signup",
   })
 })
 
-test("Cloud Account keeps export available while billing access is locked", async ({
+test("Cloud Billing keeps export available while billing access is locked", async ({
   page,
 }) => {
   await mockCloudAccount(
@@ -391,8 +392,8 @@ test("Cloud analytics requires an account choice, filters SDK context, and remem
       },
     })
   })
-  await openCloudAccount(page)
-  const choice = page.getByRole("switch", { name: "Help improve Worktable" })
+  await openCloudAccount(page, "Privacy")
+  const choice = page.getByRole("switch", { name: "Share usage analytics" })
   await expect(choice).not.toBeChecked()
   expect(events).toEqual([])
   await page.evaluate(() => {
@@ -433,7 +434,7 @@ test("Cloud analytics requires an account choice, filters SDK context, and remem
   await choice.click()
   await expect(choice).not.toBeChecked()
   expect(choices).toEqual([{ enabled: true }, { enabled: false }])
-  await openCloudAccount(page)
+  await openCloudAccount(page, "Privacy")
   await expect(choice).not.toBeChecked()
   expect(events).toHaveLength(count)
 })

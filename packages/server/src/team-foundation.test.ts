@@ -820,6 +820,51 @@ describe("team foundation", () => {
     }
   })
 
+  test("in Cloud every signed-in person chooses analytics, while only owners see billing", async () => {
+    const { owner, member } = await setup()
+    const capabilities = async (identity: TokenIdentity) => {
+      const app = new Hono()
+      app.use("*", async (c, next) => {
+        c.set("identity", identity)
+        await next()
+      })
+      app.route("/api/system", systemRouter)
+      const response = await app.request("/api/system/deployment")
+      const { analyticsChoice, cloudAccount } = (
+        (await response.json()) as DeploymentInfo
+      ).capabilities
+      return { analyticsChoice, cloudAccount }
+    }
+    const agent: TokenIdentity = {
+      ...member,
+      agent: "codex",
+      principal: { id: "agent:codex", type: "agent", displayName: "Codex" },
+    }
+    expect(await capabilities(member)).toEqual({
+      analyticsChoice: false,
+      cloudAccount: false,
+    })
+    const hosted = process.env["WORKTABLE_HOSTED"]
+    process.env["WORKTABLE_HOSTED"] = "1"
+    try {
+      expect(await capabilities(owner)).toEqual({
+        analyticsChoice: true,
+        cloudAccount: true,
+      })
+      expect(await capabilities(member)).toEqual({
+        analyticsChoice: true,
+        cloudAccount: false,
+      })
+      expect(await capabilities(agent)).toEqual({
+        analyticsChoice: false,
+        cloudAccount: false,
+      })
+    } finally {
+      if (hosted === undefined) delete process.env["WORKTABLE_HOSTED"]
+      else process.env["WORKTABLE_HOSTED"] = hosted
+    }
+  })
+
   test("the owner policy decides who makes and keeps share links, and agents reach neither links nor policy", async () => {
     const { owner, member, auth, ownerHeaders } = await setup()
     await writeDoc("original", "brief", "# Brief")

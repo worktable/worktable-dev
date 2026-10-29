@@ -156,7 +156,10 @@ export type DeploymentMode = "cloud" | "self-managed";
 export interface DeploymentInfo {
   mode: DeploymentMode;
   capabilities: {
+    /** This Worktable's Cloud plan and payment (Settings → Billing). */
     cloudAccount: boolean;
+    /** This person chooses whether Cloud usage analytics is shared (Settings → Privacy). */
+    analyticsChoice: boolean;
     workspaceName: boolean;
     workspacePath: boolean;
     workspaceUrl: boolean;
@@ -168,7 +171,7 @@ export interface DeploymentInfo {
     updateChecks: boolean;
     previewStatus?: boolean;
     documentSharing: boolean;
-    /** This person may see and manage share links in Settings → Links. */
+    /** This person may see and manage share links in Settings → Sharing. */
     shareLinks: boolean;
     /** File features are on: off only where WORKTABLE_FILES=0. */
     files: boolean;
@@ -184,6 +187,8 @@ export function getDeploymentInfo(): DeploymentInfo {
     mode: cloud ? "cloud" : "self-managed",
     capabilities: {
       cloudAccount: cloud,
+      // Decided per request: only a signed-in person makes this choice.
+      analyticsChoice: false,
       workspaceName: true,
       workspacePath: !cloud,
       workspaceUrl: !cloud,
@@ -212,20 +217,26 @@ function managesSomeSpace(c: Context): boolean {
 }
 
 /**
+ * Whether a person is signed in: never an agent, whatever its token allows,
+ * nor Desktop's host verification.
+ */
+function humanSession(c: Context): boolean {
+  const identity = c.get("identity");
+  return Boolean(
+    identity &&
+      identity.agent === null &&
+      identity.principal.type === "human" &&
+      !identity.operatorVerification
+  );
+}
+
+/**
  * Whether the caller may see and manage share links. Like the sharing routes,
  * only people: in Teams an owner or a member who manages a Space, otherwise
- * the Worktable's human owner. Never an agent, whatever its token allows.
+ * the Worktable's human owner.
  */
 function managesShareLinks(c: Context): boolean {
-  const identity = c.get("identity");
-  if (
-    !identity ||
-    identity.agent !== null ||
-    identity.principal.type !== "human" ||
-    identity.operatorVerification
-  ) {
-    return false;
-  }
+  if (!humanSession(c)) return false;
   if (!teamsEnabled()) return isHumanWorkspaceOwner(c);
   return canManageUserSettings(c) || managesSomeSpace(c);
 }
@@ -248,6 +259,9 @@ systemRouter.get("/deployment", (c) => {
   }
   deployment.capabilities.shareLinks =
     deployment.capabilities.shareLinks && managesShareLinks(c);
+  // Usage analytics is each Cloud person's own choice, members included.
+  deployment.capabilities.analyticsChoice =
+    deployment.mode === "cloud" && humanSession(c);
   return c.json(deployment);
 });
 

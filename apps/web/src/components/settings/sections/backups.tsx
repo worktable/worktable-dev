@@ -258,7 +258,7 @@ export function BackupsSection() {
 
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
-          <h4 className="text-sm font-medium">History</h4>
+          <h4 className="text-sm font-medium">Saved backups</h4>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>{Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
             <BackupIconAction

@@ -5,7 +5,7 @@ import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 
 /** The SDK is loaded only after authenticated Cloud configuration is present. */
 export function ProductAnalytics() {
-  const cloud = useDeploymentInfo().data?.capabilities.cloudAccount === true
+  const cloud = useDeploymentInfo().data?.capabilities.analyticsChoice === true
   useEffect(() => {
     if (!cloud) return
     let disposed = false

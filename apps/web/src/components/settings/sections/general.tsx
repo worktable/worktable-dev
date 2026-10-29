@@ -6,6 +6,8 @@ import { toast } from "@worktable/ui/components/sonner"
 import { Callout } from "@worktable/ui/components/callout"
 import { CopyField } from "@worktable/ui/components/copy-field"
 import { Input } from "@worktable/ui/components/input"
+import { SettingRow } from "@worktable/ui/components/setting-row"
+import { Switch } from "@worktable/ui/components/switch"
 import { updateWorkspace, type WorkspaceInfo } from "@/lib/api"
 import { queryKeys, useWorkspace } from "@/lib/queries"
 import { getConnection, type ConnectionInfo } from "@/lib/system-api"
@@ -13,12 +15,14 @@ import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { useServerSettings } from "@/hooks/use-server-settings"
 import { useSettingsPatch } from "../use-settings-patch"
 
-// The General section: workspace identity, agent-facing URL, and the on-disk
-// root. The nav rail names the section, so the group header carries hierarchy.
+// The General section: workspace identity, agent-facing URL, the on-disk root,
+// and writing preferences. The nav rail names the section, so no heading.
 export function GeneralSection() {
+  const capabilities = useDeploymentInfo().data?.capabilities
   return (
-    <div className="flex flex-col gap-6">
-      <WorkspaceGroup />
+    <div className="flex flex-col gap-5">
+      {capabilities?.workspaceName ? <WorkspaceGroup /> : null}
+      {capabilities?.editorSettings ? <SpellcheckField /> : null}
     </div>
   )
 }
@@ -311,5 +315,31 @@ function WorkspaceFolderField({ root }: { root: string | null | undefined }) {
         from the terminal.
       </p>
     </div>
+  )
+}
+
+// ── Spellcheck ───────────────────────────────────────────────────────────────
+
+function SpellcheckField() {
+  const settingsQuery = useServerSettings()
+  const patch = useSettingsPatch()
+  const settings = settingsQuery.data
+  if (settingsQuery.isError) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Spellcheck requires owner access.
+      </p>
+    )
+  }
+  // Disabled until settings load, so a click can't patch against an unknown
+  // baseline.
+  return (
+    <SettingRow label="Spellcheck" description="Underline misspelled words.">
+      <Switch
+        checked={settings?.editor.spellcheck ?? false}
+        disabled={!settings || patch.isPending}
+        onCheckedChange={(v) => patch.mutate({ editor: { spellcheck: v } })}
+      />
+    </SettingRow>
   )
 }

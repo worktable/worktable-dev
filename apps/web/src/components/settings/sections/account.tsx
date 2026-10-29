@@ -38,8 +38,8 @@ import {
 import { useCloudPlan } from "@/lib/cloud-plan"
 import { queryKeys } from "@/lib/queries"
 import { useSettingsSectionActive } from "../settings-dialog"
-import { AccountAnalyticsSettings } from "./account-analytics"
 
+// The Billing section: this Cloud Worktable's plan and payment.
 export function AccountSection() {
   const sectionActive = useSettingsSectionActive()
   const connectionQuery = useQuery({
@@ -101,71 +101,68 @@ export function AccountSection() {
   if (connectionQuery.data.mcpAuthMode !== "oauth") {
     return (
       <p className="text-sm text-muted-foreground">
-        Cloud account settings aren&rsquo;t available for this Worktable.
+        Billing isn&rsquo;t available for this Worktable.
       </p>
     )
   }
 
   return (
-    <>
-      <section className="flex flex-col gap-3">
-        {billingQuery.isLoading ? (
-          <Card size="sm">
-            <CardContent>
-              <p className="text-sm text-muted-foreground" role="status">
-                Checking your subscription…
-              </p>
-            </CardContent>
-          </Card>
-        ) : billingQuery.error instanceof HttpError &&
-          billingQuery.error.status === 403 &&
-          (billingQuery.error.body as { code?: string })?.code ===
-            "BILLING_PAYER_REQUIRED" ? (
-          <p className="text-sm text-muted-foreground">
-            {`Contact ${cloudPlan?.payerName || "the person who pays for it"} about ${worktableName}'s plan and billing.`}
-          </p>
-        ) : billingQuery.isError || !billingQuery.data ? (
-          <Card size="sm">
-            <CardContent className="flex items-start gap-2">
-              <TriangleAlert className="mt-0.5 size-4 text-warning" />
-              <p className="text-sm text-muted-foreground">
-                We couldn&rsquo;t load your subscription.{" "}
-                <a
-                  className="text-primary-text underline underline-offset-4"
-                  href={`mailto:${CLOUD_PLANS.team.supportEmail}`}
-                >
-                  Contact support
-                </a>
-                .
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <SubscriptionCard
-            billing={billingQuery.data}
-            people={cloudPlan?.people ?? null}
-            worktableName={worktableName}
-            pending={
-              checkout.isPending
-                ? "checkout"
-                : portal.isPending
-                  ? "portal"
-                  : change.isPending
-                    ? "change"
-                    : cancel.isPending
-                      ? "cancel"
-                      : null
-            }
-            error={actionError?.message}
-            onCheckout={(plan) => checkout.mutate(plan)}
-            onPortal={() => portal.mutate()}
-            onChangePlan={(plan) => change.mutateAsync(plan)}
-            onCancel={() => cancel.mutate()}
-          />
-        )}
-        <AccountAnalyticsSettings />
-      </section>
-    </>
+    <section className="flex flex-col gap-3">
+      {billingQuery.isLoading ? (
+        <Card size="sm">
+          <CardContent>
+            <p className="text-sm text-muted-foreground" role="status">
+              Checking your subscription…
+            </p>
+          </CardContent>
+        </Card>
+      ) : billingQuery.error instanceof HttpError &&
+        billingQuery.error.status === 403 &&
+        (billingQuery.error.body as { code?: string })?.code ===
+          "BILLING_PAYER_REQUIRED" ? (
+        <p className="text-sm text-muted-foreground">
+          {`Contact ${cloudPlan?.payerName || "the person who pays for it"} about ${worktableName}'s plan and billing.`}
+        </p>
+      ) : billingQuery.isError || !billingQuery.data ? (
+        <Card size="sm">
+          <CardContent className="flex items-start gap-2">
+            <TriangleAlert className="mt-0.5 size-4 text-warning" />
+            <p className="text-sm text-muted-foreground">
+              We couldn&rsquo;t load your subscription.{" "}
+              <a
+                className="text-primary-text underline underline-offset-4"
+                href={`mailto:${CLOUD_PLANS.team.supportEmail}`}
+              >
+                Contact support
+              </a>
+              .
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <SubscriptionCard
+          billing={billingQuery.data}
+          people={cloudPlan?.people ?? null}
+          worktableName={worktableName}
+          pending={
+            checkout.isPending
+              ? "checkout"
+              : portal.isPending
+                ? "portal"
+                : change.isPending
+                  ? "change"
+                  : cancel.isPending
+                    ? "cancel"
+                    : null
+          }
+          error={actionError?.message}
+          onCheckout={(plan) => checkout.mutate(plan)}
+          onPortal={() => portal.mutate()}
+          onChangePlan={(plan) => change.mutateAsync(plan)}
+          onCancel={() => cancel.mutate()}
+        />
+      )}
+    </section>
   )
 }
 

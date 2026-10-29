@@ -134,7 +134,10 @@ export type DeploymentMode = "cloud" | "self-managed"
 export interface DeploymentInfo {
   mode: DeploymentMode
   capabilities: {
+    /** This Worktable's Cloud plan and payment (Settings → Billing). */
     cloudAccount: boolean
+    /** This person chooses whether Cloud usage analytics is shared (Settings → Privacy). */
+    analyticsChoice: boolean
     workspaceName: boolean
     workspacePath: boolean
     workspaceUrl: boolean
@@ -146,7 +149,7 @@ export interface DeploymentInfo {
     updateChecks: boolean
     previewStatus?: boolean
     documentSharing: boolean
-    /** This person may see and manage share links in Settings → Links. */
+    /** This person may see and manage share links in Settings → Sharing. */
     shareLinks: boolean
     /** File features are on: off only where WORKTABLE_FILES=0. */
     files: boolean

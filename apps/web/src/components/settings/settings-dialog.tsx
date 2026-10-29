@@ -31,6 +31,7 @@ import { getConnection } from "@/lib/system-api"
 import {
   DEFAULT_SETTINGS_SECTION_ID,
   getSettingsSections,
+  SETTINGS_GROUPS,
   type SettingsSection,
   type SettingsSectionId,
 } from "./sections"
@@ -112,7 +113,7 @@ function SettingsBody({
   useEffect(() => markSettingsSectionVisible(activeId), [activeId])
   const deploymentQuery = useDeploymentInfo()
   // Shared reads start on open, alongside the remaining section code, so a
-  // first visit to Editor, History, or Agents can reuse the same query cache.
+  // first visit to General, Data, or Agents can reuse the same query cache.
   useServerSettings()
   useQuery({
     queryKey: ["system", "connection"],
@@ -140,7 +141,7 @@ function SettingsBody({
   // Callback ref (survives conditional rendering) drives the vertical edge fade.
   const scrollRef = useScrollFade<HTMLDivElement>()
 
-  // A requested section may not exist in this deployment (Account locally).
+  // A requested section may not exist in this deployment (Billing locally).
   // Normalize only after the authoritative capability response arrives.
   useEffect(() => {
     if (active && active.id !== activeId) onSelect(active.id)
@@ -329,7 +330,6 @@ function SettingsNavRail({
   const [pill, setPill] = useState<{ top: number; height: number } | null>(null)
   const scrollRef = useScrollFade<HTMLElement>()
   const sectionIds = sections.map((section) => section.id).join(",")
-  const groups = ["You", "Worktable", "Support"] as const
   const worktableName = useWorkspace().data?.name ?? "Worktable"
 
   useLayoutEffect(() => {
@@ -356,7 +356,7 @@ function SettingsNavRail({
             }}
           />
         )}
-        {groups.map((group) => {
+        {SETTINGS_GROUPS.map((group) => {
           const groupSections = sections.filter(
             (section) => section.group === group
           )

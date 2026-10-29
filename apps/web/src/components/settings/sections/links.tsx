@@ -77,7 +77,7 @@ import { getSpaceArchiveInfo } from "@/lib/spaces"
 import { SettingsGroup } from "../settings-group"
 import { useSettingsSectionActive } from "../settings-dialog"
 
-// Settings → Links: every share link the reader may oversee, and for owners
+// Settings → Sharing: every share link the reader may oversee, and for owners
 // the policy that applies to all of them. Both are read when the section is
 // shown, never on a timer; a change updates the cache it touched.
 

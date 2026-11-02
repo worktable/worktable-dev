@@ -9,16 +9,6 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
-### Changed
-
-- **Your first Space:** Agents save your first work in a new Space named for it, not among the Getting Started guides, which Home's Recent no longer lists.
-
-### Fixed
-
-- **Starting from an AI app:** When your agent connected before you first opened your Worktable, the link it gave you opens what it made instead of setup, and Getting Started counts what the agent already did.
-- **Setup:** Setup returns you to the page you opened, and on the Solo plan it no longer asks you to invite anyone.
-- **Getting Started:** Starting from an app no longer skips the step that adds Worktable to your agent's global rules.
-
 ## [0.1.38] - 2026-11-02
 
 ### Changed
@@ -26,9 +16,13 @@ infrastructure and personal context out of release notes.
 - **Cloud analytics:** The app no longer loads an analytics script in your browser. Worktable Cloud counts visits on its own servers, and your choice in Settings → Privacy still applies.
 - **Comments:** The comments list shows each comment's latest message, who is in it, and when an agent is working on it. Opening one shows the whole conversation, with names, times and Markdown from agents, and a reply box at the bottom that names the agent a reply goes to. Replying to a resolved comment opens it again.
 - **Comments on rich Docs:** Rich Docs take comments as Markdown Docs do, with Comment in the toolbar and ⌘⌥M (Ctrl+Alt+M), and the commented text is marked. A comment whose text is gone moves to Text Changed, where Original opens the version it was written on.
+- **Your first Space:** Agents save your first work in a new Space named for it, not among the Getting Started guides, which Home's Recent no longer lists.
 
 ### Fixed
 
+- **Starting from an AI app:** When your agent connected before you first opened your Worktable, the link it gave you opens what it made instead of setup, and Getting Started counts what the agent already did.
+- **Setup:** Setup returns you to the page you opened, and on the Solo plan it no longer asks you to invite anyone.
+- **Getting Started:** Starting from an app no longer skips the step that adds Worktable to your agent's global rules.
 - **Comments:** A comment is saved once, even when Send is pressed twice, and stays in its box with a retry if sending fails. On a phone, the comment box and the comments stay above the keyboard. Below 1280px, the comments no longer open over the Doc after each comment.
 
 ## [0.1.37] - 2026-10-29

@@ -8,15 +8,14 @@ const bundledPackages = new Set<string>()
 const metafile = JSON.parse(
   await readFile(join(root, "artifacts/bundle-metafile.json"), "utf8")
 ) as { inputs?: Record<string, unknown> }
+if (Object.keys(metafile.inputs ?? {}).length === 0)
+  throw new Error("The bundle metafile lists no inputs")
 
 for (const path of Object.keys(metafile.inputs ?? {})) {
   for (const match of path.matchAll(/node_modules\/((?:@[^/]+\/)?[^/]+)\//g)) {
     if (match[1]) bundledPackages.add(match[1])
   }
 }
-
-if (bundledPackages.size === 0)
-  throw new Error("Could not identify bundled third-party packages")
 
 function packageManifestPath(name: string): string {
   const resolved = Bun.resolveSync(`${name}/package.json`, root)
@@ -49,5 +48,7 @@ for (const name of [...bundledPackages].sort()) {
 }
 
 console.log(
-  `Verified notices for ${bundledPackages.size} bundled third-party packages`
+  bundledPackages.size === 0
+    ? "Verified that no third-party packages are bundled"
+    : `Verified notices for ${bundledPackages.size} bundled third-party packages`
 )

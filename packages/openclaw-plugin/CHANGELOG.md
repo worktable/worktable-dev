@@ -1,8 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.0.18
 
 - Name new threads with Worktable's current thread tool, and keep naming them on older Worktables.
+- Connect to Worktable with a small built-in client instead of a bundled MCP library. The package is about 80% smaller and bundles no third-party code.
+- Let OpenClaw locate its own state directory instead of passing it the process environment.
+- Leave Codex and ChatGPT prompt metadata out of the bundled skills. OpenClaw does not use it.
 
 ## 0.0.17
 

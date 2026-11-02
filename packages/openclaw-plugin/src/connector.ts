@@ -274,7 +274,7 @@ export function portableWorktableDocLinks(
 }
 
 export function createOpenClawDeliveryDedupe(
-  env: NodeJS.ProcessEnv = process.env
+  env?: NodeJS.ProcessEnv
 ): DeliveryDedupe {
   let persistenceError: unknown
   const guard = createClaimableDedupe({

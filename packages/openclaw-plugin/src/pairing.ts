@@ -67,7 +67,7 @@ function parseInstallationIdentity(
 }
 
 export async function ensureOpenClawInstallationId(
-  env: NodeJS.ProcessEnv = process.env
+  env?: NodeJS.ProcessEnv
 ): Promise<string> {
   const filePath = join(
     resolveStateDir(env),

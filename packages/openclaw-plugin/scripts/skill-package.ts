@@ -24,6 +24,12 @@ export interface PreparedSkillPackage {
   generated: boolean
 }
 
+// agents/ holds Codex and ChatGPT interface metadata, such as default prompts.
+// OpenClaw never reads it, so the OpenClaw package leaves it out.
+export function isOpenClawSkillFile(file: string): boolean {
+  return !file.startsWith("agents/")
+}
+
 function digest(contents: Uint8Array): string {
   return createHash("sha256").update(contents).digest("hex")
 }
@@ -115,9 +121,16 @@ export async function inspectSkillPackage(
           `Skill packages may contain only regular files: ${path}`
         )
       }
+      const packagePath = portable(relative(resolved, path))
+      const skillFile = packagePath.slice(packagePath.indexOf("/") + 1)
+      if (!isOpenClawSkillFile(skillFile)) {
+        throw new Error(
+          `The OpenClaw skill package cannot contain ${packagePath}`
+        )
+      }
       const contents = await readFile(path)
       result.push({
-        path: portable(relative(resolved, path)),
+        path: packagePath,
         sha256: digest(contents),
       })
     }
@@ -178,7 +191,7 @@ export async function prepareSkillPackage(): Promise<PreparedSkillPackage> {
   try {
     await mkdir(destination, { recursive: true })
     for (const skill of inventory.skills) {
-      for (const file of skill.files) {
+      for (const file of skill.files.filter(isOpenClawSkillFile)) {
         // Skills kept out of the agent plugin live under skills/ at the root.
         const source =
           skill.bundled === false

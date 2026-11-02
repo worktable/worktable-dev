@@ -44,11 +44,84 @@ describe("OpenClaw Worktable client", () => {
     })
     const client = new McpWorktableClient(server.url.href, "test-token")
     try {
+      // A stopped caller starts no handshake that could fail unobserved.
+      const realFetch = globalThis.fetch
+      let requests = 0
+      globalThis.fetch = ((...args: Parameters<typeof fetch>) => {
+        requests += 1
+        return realFetch(...args)
+      }) as typeof fetch
+      try {
+        await expect(client.participants(AbortSignal.abort())).rejects.toThrow()
+      } finally {
+        globalThis.fetch = realFetch
+      }
+      expect(requests).toBe(0)
       await expect(client.participants()).rejects.toThrow()
       expect(
         await Promise.all([client.participants(), client.participants()])
       ).toEqual([[], []])
       expect(initializations).toBe(2)
+    } finally {
+      await client.close()
+      await server.stop(true)
+    }
+  })
+
+  it("reads streamed responses and keeps JSON-RPC error codes", async () => {
+    const server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      async fetch(request) {
+        const rpc = (await request.json()) as {
+          id?: number
+          method: string
+          params?: { arguments?: { request?: { spaceId?: string } } }
+        }
+        if (rpc.id === undefined) return new Response(null, { status: 202 })
+        const reply =
+          rpc.method === "initialize"
+            ? {
+                result: {
+                  protocolVersion: "2025-06-18",
+                  capabilities: { tools: {} },
+                  serverInfo: { name: "stream-test", version: "1" },
+                },
+              }
+            : rpc.params?.arguments?.request?.spaceId
+              ? {
+                  result: {
+                    content: [
+                      { type: "text", text: JSON.stringify({ threads: [] }) },
+                    ],
+                  },
+                }
+              : { error: { code: -32602, message: "Unknown field" } }
+        // Interleave a progress notification before the response, as a
+        // streaming server may.
+        const body =
+          `event: message\r\ndata: ${JSON.stringify({ jsonrpc: "2.0", method: "notifications/progress", params: { progress: 1 } })}\r\n\r\n` +
+          `event: message\r\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: rpc.id, ...reply })}\r\n\r\n`
+        // Deliver it in pieces so lines and CRLFs split across chunks.
+        const bytes = new TextEncoder().encode(body)
+        const chunks = new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (let i = 0; i < bytes.length; i += 7)
+              controller.enqueue(bytes.slice(i, i + 7))
+            controller.close()
+          },
+        })
+        return new Response(chunks, {
+          headers: { "Content-Type": "text/event-stream" },
+        })
+      },
+    })
+    const client = new McpWorktableClient(server.url.href, "test-token")
+    try {
+      await expect(client.listThreads()).rejects.toMatchObject({
+        code: -32602,
+      })
+      expect(await client.listThreads("space_1")).toEqual([])
     } finally {
       await client.close()
       await server.stop(true)

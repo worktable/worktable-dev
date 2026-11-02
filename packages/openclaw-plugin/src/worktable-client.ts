@@ -104,6 +104,7 @@ export function worktableAgentPresentationHeaders(input: {
 // Streamed (SSE) responses are still read for servers that choose them.
 const MCP_PROTOCOL_VERSION = "2025-11-25"
 const REQUEST_TIMEOUT_MS = 35_000
+const MAX_ERROR_BODY_CHARS = 500
 
 type JsonRpcMessage = {
   jsonrpc?: string
@@ -208,7 +209,7 @@ export class McpWorktableClient implements WorktableClient {
       this.#send = (init) => {
         const headers = new Headers(init.headers)
         headers.set("Authorization", `Bearer ${auth}`)
-        return fetch(this.#endpoint, { ...init, headers })
+        return fetch(this.#endpoint, { ...init, headers, redirect: "error" })
       }
       return
     }
@@ -223,7 +224,7 @@ export class McpWorktableClient implements WorktableClient {
         for (const [name, value] of Object.entries(presentationHeaders)) {
           headers.set(name, value)
         }
-        return fetch(this.#endpoint, { ...init, headers })
+        return fetch(this.#endpoint, { ...init, headers, redirect: "error" })
       }
       const response = await run()
       if (response.status !== 401) return response
@@ -274,7 +275,7 @@ export class McpWorktableClient implements WorktableClient {
         const text = await response.text().catch(() => "")
         throw Object.assign(
           new Error(
-            `Worktable MCP returned HTTP ${response.status}${text ? `: ${text}` : ""}`
+            `Worktable MCP returned HTTP ${response.status}${text ? `: ${text.slice(0, MAX_ERROR_BODY_CHARS)}` : ""}`
           ),
           { status: response.status }
         )

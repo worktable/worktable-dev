@@ -100,9 +100,18 @@ describe("OpenClaw Worktable client", () => {
         // Interleave a progress notification before the response, as a
         // streaming server may.
         const body =
-          `event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", method: "notifications/progress", params: { progress: 1 } })}\n\n` +
-          `event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: rpc.id, ...reply })}\n\n`
-        return new Response(body, {
+          `event: message\r\ndata: ${JSON.stringify({ jsonrpc: "2.0", method: "notifications/progress", params: { progress: 1 } })}\r\n\r\n` +
+          `event: message\r\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: rpc.id, ...reply })}\r\n\r\n`
+        // Deliver it in pieces so lines and CRLFs split across chunks.
+        const bytes = new TextEncoder().encode(body)
+        const chunks = new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (let i = 0; i < bytes.length; i += 7)
+              controller.enqueue(bytes.slice(i, i + 7))
+            controller.close()
+          },
+        })
+        return new Response(chunks, {
           headers: { "Content-Type": "text/event-stream" },
         })
       },

@@ -8,6 +8,8 @@ const bundledPackages = new Set<string>()
 const metafile = JSON.parse(
   await readFile(join(root, "artifacts/bundle-metafile.json"), "utf8")
 ) as { inputs?: Record<string, unknown> }
+if (Object.keys(metafile.inputs ?? {}).length === 0)
+  throw new Error("The bundle metafile lists no inputs")
 
 for (const path of Object.keys(metafile.inputs ?? {})) {
   for (const match of path.matchAll(/node_modules\/((?:@[^/]+\/)?[^/]+)\//g)) {

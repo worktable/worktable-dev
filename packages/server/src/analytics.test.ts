@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -131,6 +131,7 @@ beforeEach(async () => {
   })
 })
 afterEach(async () => {
+  setSystemTime()
   for (const socket of sockets.splice(0)) socket.close()
   if (runtime) {
     await runtime.stop(true)
@@ -352,6 +353,8 @@ describe("consented committed-work analytics", () => {
       events.filter((event) => event.event === "product:work_saved")
     ).toHaveLength(1)
     permitted = false
+    // Consent is rechecked at most once a minute, the gateway grant's window.
+    setSystemTime(new Date(Date.now() + 61_000))
     const withdrawnAcknowledgement = connection.state.acknowledgements
     await editThroughSocket(connection, "Withdrawn editor content")
     await eventually(
@@ -366,6 +369,8 @@ describe("consented committed-work analytics", () => {
     expect(events).toHaveLength(1)
     expect(connection.socket.readyState).toBe(WebSocket.OPEN)
     permitted = true
+    // Turning it back on takes effect within the same minute.
+    setSystemTime(new Date(Date.now() + 61_000))
     const mixed = await editorSocket(socketPath, false)
     const mixedAcknowledgement = connection.state.acknowledgements
     await editThroughSocket(connection, " Consenting collaborator", true)
@@ -571,6 +576,7 @@ describe("consented committed-work analytics", () => {
       distinctId: `${credential.principal.id}:worktable:worktable_test`,
       actorType: "agent",
       surface: "mcp",
+      client: "chatgpt",
     }
     const call = async (
       request: Record<string, unknown>,
@@ -605,6 +611,8 @@ describe("consented committed-work analytics", () => {
         "https://app.worktable.cloud"
       )
       expect(response.status).toBe(200)
+      // The gateway counts calls by this name and removes it.
+      expect(response.headers.get("x-worktable-mcp")).toBe(`tools/call ${tool}`)
       return await response.json()
     }
     expect(
@@ -662,7 +670,8 @@ describe("consented committed-work analytics", () => {
             event.properties.$mcp_tool_name as string
           ) &&
           event.properties.$mcp_protocol_version === "2025-06-18" &&
-          event.properties.$mcp_client_name === "ChatGPT / Codex" &&
+          // The gateway's label for the verified OAuth client wins.
+          event.properties.$mcp_client_name === "ChatGPT" &&
           event.properties.$process_person_profile === false
       )
     ).toBe(true)

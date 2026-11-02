@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from "react"
+import { useId, useMemo, useRef, useState, type ReactNode } from "react"
 import {
   Check,
   ChevronLeft,
@@ -97,6 +97,8 @@ export interface AnnotationPanelContentProps {
   emptyHint?: string;
   /** Comments whose passage is no longer in the Doc. */
   detachedIds?: ReadonlySet<string>;
+  /** Shows the version of the Doc that still has a comment's passage. */
+  onOriginal?: (annotation: Annotation) => void;
   className?: string;
 }
 
@@ -116,6 +118,7 @@ export function AnnotationPanelContent({
   composeLabel,
   emptyHint,
   detachedIds,
+  onOriginal,
   className,
 }: AnnotationPanelContentProps) {
   const [showResolved, setShowResolved] = useState(false);
@@ -132,9 +135,30 @@ export function AnnotationPanelContent({
   const thread = openId
     ? annotations.find((annotation) => annotation.id === openId)
     : undefined;
-  const visible = useMemo(
-    () => annotations.filter((annotation) => showResolved || annotation.status !== "resolved"),
-    [annotations, showResolved]
+  const changedHeading = useId();
+  // Open comments whose text is gone wait in their own group: often the
+  // change was the answer, and they can be cleared together.
+  const { visible, changed } = useMemo(() => {
+    const visible: Annotation[] = [];
+    const changed: Annotation[] = [];
+    for (const annotation of annotations) {
+      const open = annotation.status !== "resolved";
+      if (open && detachedIds?.has(annotation.id)) changed.push(annotation);
+      else if (open || showResolved) visible.push(annotation);
+    }
+    return { visible, changed };
+  }, [annotations, detachedIds, showResolved]);
+  const row = (annotation: Annotation) => (
+    <li key={annotation.id}>
+      <ThreadRow
+        annotation={annotation}
+        detached={detachedIds?.has(annotation.id) ?? false}
+        onOpen={() => {
+          setOpenId(annotation.id);
+          onSelectAnnotation(annotation);
+        }}
+      />
+    </li>
   );
   const openCount = annotations.filter((annotation) => annotation.status !== "resolved").length;
 
@@ -172,6 +196,7 @@ export function AnnotationPanelContent({
           onResolve={() => onResolve(thread.id)}
           onReopen={() => onReopen(thread.id)}
           onReply={(body) => onReply(thread.id, body)}
+          onOriginal={onOriginal && (() => onOriginal(thread))}
         />
       ) : (
         <>
@@ -193,27 +218,35 @@ export function AnnotationPanelContent({
           </div>
 
           <div ref={scrollRef} className="scroll-fade min-h-0 flex-1 overflow-auto px-2 pb-3">
-            {visible.length === 0 ? (
+            {visible.length === 0 && changed.length === 0 ? (
               <div className="flex h-full min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border p-6 text-center">
                 <MessageSquareText className="mb-3 h-8 w-8 text-muted-foreground/50" />
                 <p className="text-sm font-medium text-foreground">No Open Comments</p>
                 {emptyHint !== "" && <p className="mt-1 text-xs text-muted-foreground">{emptyHint ?? "Use /comment in the editor to attach context to a block."}</p>}
               </div>
             ) : (
-              <ul className="space-y-0.5">
-                {visible.map((annotation) => (
-                  <li key={annotation.id}>
-                    <ThreadRow
-                      annotation={annotation}
-                      detached={detachedIds?.has(annotation.id) ?? false}
-                      onOpen={() => {
-                        setOpenId(annotation.id);
-                        onSelectAnnotation(annotation);
-                      }}
-                    />
-                  </li>
-                ))}
-              </ul>
+              <>
+                {visible.length > 0 && <ul className="space-y-0.5">{visible.map(row)}</ul>}
+                {changed.length > 0 && (
+                  <section aria-labelledby={changedHeading} className="mt-3 border-t border-border pt-2">
+                    <div className="flex min-h-8 items-center justify-between gap-2 px-3">
+                      <h3 id={changedHeading} className="text-xs font-medium text-muted-foreground">
+                        Text Changed <span className="tabular-nums">{changed.length}</span>
+                      </h3>
+                      {!readOnly && changed.length > 1 && (
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => changed.forEach((annotation) => onResolve(annotation.id))}
+                        >
+                          Resolve All
+                        </Button>
+                      )}
+                    </div>
+                    <ul className="space-y-0.5">{changed.map(row)}</ul>
+                  </section>
+                )}
+              </>
             )}
           </div>
         </>
@@ -358,11 +391,13 @@ function CommentThread({
   onResolve,
   onReopen,
   onReply,
+  onOriginal,
 }: {
   annotation: Annotation
   readOnly: boolean
   canReply: boolean
   detached: boolean
+  onOriginal?: () => void
   onBack: () => void
   onSelect: () => void
   onResolve: () => void
@@ -435,22 +470,29 @@ function CommentThread({
         aria-label={`Comment by ${authorName(annotation.author)}`}
         className="scroll-fade min-h-0 flex-1 space-y-4 overflow-auto px-4 pt-1 pb-4"
       >
-        {quote && (
-          <button
-            type="button"
-            onClick={onSelect}
-            className="block w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Quote
-              className={cn(
-                "text-xs",
-                detached && "line-through decoration-muted-foreground/50"
+        {quote &&
+          (detached ? (
+            // The words are no longer in the Doc; Original shows them where
+            // they were.
+            <div className="flex items-start gap-2">
+              <Quote className="min-w-0 flex-1 text-xs line-through decoration-muted-foreground/50">
+                {quote}
+              </Quote>
+              {onOriginal && (
+                <Button size="xs" variant="ghost" className="-my-1 shrink-0" onClick={onOriginal}>
+                  Original
+                </Button>
               )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onSelect}
+              className="block w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {quote}
-            </Quote>
-          </button>
-        )}
+              <Quote className="text-xs">{quote}</Quote>
+            </button>
+          ))}
         <CommentMessage
           id={annotation.id}
           author={annotation.author}

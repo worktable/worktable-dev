@@ -126,7 +126,7 @@ for (const mobile of [true, false]) {
           .poll(() => page.evaluate(() => window.getSelection()?.toString()))
           .toBe(quote)
         const annotate = page.getByRole("button", {
-          name: "Annotate",
+          name: "Comment",
           exact: true,
         })
         if (mobile) await annotate.tap()
@@ -304,3 +304,69 @@ for (const mobile of [true, false]) {
     })
   })
 }
+
+test("a rich Doc marks commented text, and a comment whose text is gone shows it in the version it was written on", async ({
+  page,
+}) => {
+  test.setTimeout(120_000)
+  await page.setViewportSize({ width: 1280, height: 900 })
+  const docPath = "rich-original"
+  const base = `${harness.apiUrl}/api/spaces/annotations/docs`
+  const blocks = (text: string) => [
+    { type: "heading", props: { level: 1 }, content: "Rich Original" },
+    { type: "paragraph", content: text },
+  ]
+  expect(
+    (
+      await page.request.post(base, {
+        data: {
+          title: "Rich Original",
+          content: blocks("The launch date moves to May."),
+        },
+      })
+    ).ok()
+  ).toBe(true)
+  const comment = await page.request.post(
+    `${harness.apiUrl}/api/spaces/annotations/annotations`,
+    {
+      data: {
+        target: { type: "doc", docPath, quote: "launch date moves" },
+        category: "comment",
+        body: "Confirm with finance.",
+      },
+    }
+  )
+  expect(comment.ok()).toBe(true)
+
+  await page.goto(`${harness.webUrl}/spaces/annotations/documents/${docPath}`, {
+    waitUntil: "domcontentloaded",
+  })
+  const editor = page.locator('.bn-editor[contenteditable="true"]')
+  await expect(editor).toContainText("moves to May", { timeout: 60_000 })
+  // Marked as on a Markdown Doc.
+  await expect
+    .poll(() => highlighted(page, "worktable-comment"))
+    .toEqual(["launch date moves"])
+
+  // The sentence is rewritten; the comment waits under Text Changed.
+  expect(
+    (
+      await page.request.fetch(`${base}/${docPath}`, {
+        method: "PUT",
+        data: { content: blocks("We ship in June.") },
+      })
+    ).ok()
+  ).toBe(true)
+  await expect(editor).toContainText("We ship in June.")
+  await page.getByRole("button", { name: /open comments/ }).click()
+  const changed = page.getByRole("region", { name: /Text Changed/ })
+  await expect(changed.getByText("Confirm with finance.")).toBeVisible({
+    timeout: 10_000,
+  })
+  await changed.getByRole("button", { name: /Confirm with finance\./ }).click()
+  await page.getByRole("button", { name: "Original", exact: true }).click()
+  await expect
+    .poll(() => highlighted(page, "worktable-comment-original"))
+    .toEqual(["launch date moves"])
+})
+

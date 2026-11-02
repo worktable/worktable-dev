@@ -53,6 +53,11 @@ import {
 import { createPortal } from "react-dom"
 import { useTheme } from "@/components/theme-provider"
 import { useServerSettings } from "@/hooks/use-server-settings"
+import {
+  rangeForPassage,
+  readPassageText,
+  setHighlight,
+} from "@/components/annotations/passage-text"
 import { initMermaidTouchHandler } from "./mermaid-touch-handler"
 import {
   afterTitleKey,
@@ -182,6 +187,11 @@ interface EditorProps {
   activeAnnotationId?: string | null
   onCreateAnnotation?: (request: AnnotationCreateRequest) => void
   onSelectAnnotation?: (annotation: Annotation) => void
+  /**
+   * Marks the text open comments are about, as a Markdown Doc does, and says
+   * which comments' text is gone. Only for the editor on screen.
+   */
+  passages?: EditorPassages
   /** Shown under the title (the opening level-one heading), outside the content. */
   afterTitle?: ReactNode
   /** How the editor shows the Doc's name, its title. */
@@ -191,6 +201,13 @@ interface EditorProps {
    * pasted or dropped file is saved. Without it, media blocks take URLs only.
    */
   files?: EditorFiles
+}
+
+export interface EditorPassages {
+  /** Text a comment is about was pressed. */
+  onClick: (annotation: Annotation) => void
+  /** The open comments whose text is no longer in the Doc. */
+  onDetached: (annotationIds: ReadonlySet<string>) => void
 }
 
 export interface EditorFiles {
@@ -236,6 +253,7 @@ export function Editor({
   activeAnnotationId,
   onCreateAnnotation,
   onSelectAnnotation,
+  passages,
   afterTitle,
   title,
   files,
@@ -265,6 +283,7 @@ export function Editor({
       activeAnnotationId={activeAnnotationId}
       onCreateAnnotation={onCreateAnnotation}
       onSelectAnnotation={onSelectAnnotation}
+      passages={passages}
       afterTitle={afterTitle}
       title={title}
       files={files}
@@ -285,6 +304,7 @@ function EditorInner({
   activeAnnotationId,
   onCreateAnnotation,
   onSelectAnnotation,
+  passages,
   afterTitle,
   title,
   files,
@@ -584,7 +604,23 @@ function EditorInner({
       className="scroll-fade worktable-editor-scroll-root h-full w-full overflow-auto"
       onPointerDownCapture={markGesture}
       onPointerUpCapture={markGesture}
-      onKeyDownCapture={markGesture}
+      onKeyDownCapture={(event) => {
+        markGesture(event)
+        // Mod+Alt+M comments, as on a Markdown Doc.
+        if (
+          onCreateAnnotation &&
+          editable &&
+          (event.metaKey || event.ctrlKey) &&
+          event.altKey &&
+          event.code === "KeyM"
+        ) {
+          event.preventDefault()
+          createAnnotationFromEditor(
+            editor as unknown as AnnotationCapableEditor,
+            onCreateAnnotation
+          )
+        }
+      }}
       onBeforeInputCapture={markGesture}
       onPasteCapture={markGesture}
       onCutCapture={markGesture}
@@ -602,6 +638,7 @@ function EditorInner({
           containerRef={editorContainerRef}
           editor={editor as unknown as { document: Block[] }}
           onSelectAnnotation={onSelectAnnotation}
+          passages={passages}
         />
         {showsAfterTitle && createPortal(afterTitle, afterTitleHost)}
         <BlockNoteView
@@ -855,18 +892,40 @@ function AnnotationBadges({
   containerRef,
   editor,
   onSelectAnnotation,
+  passages,
 }: {
   annotations: Annotation[]
   activeAnnotationId?: string | null
   containerRef: RefObject<HTMLDivElement | null>
   editor: { document: Block[] }
   onSelectAnnotation?: (annotation: Annotation) => void
+  passages?: EditorPassages
 }) {
   const [positions, setPositions] = useState<
     Array<{ blockId: string; top: number; annotations: Annotation[] }>
   >([])
+  // The text each open comment is about, where it is now.
+  const marked = useRef(new Map<string, Range>())
+  const latestPassages = useRef(passages)
+  useEffect(() => {
+    latestPassages.current = passages
+  }, [passages])
+  const markPassages = Boolean(passages)
+  const reportedDetached = useRef<ReadonlySet<string>>(new Set())
 
   useEffect(() => {
+    const report = (ids: Set<string>) => {
+      const previous = reportedDetached.current
+      if (previous.size === ids.size && [...ids].every((id) => previous.has(id))) return
+      reportedDetached.current = ids
+      latestPassages.current?.onDetached(ids)
+    }
+    const clearMarks = () => {
+      marked.current = new Map()
+      if (!markPassages) return
+      setHighlight(PASSAGE_HIGHLIGHT, [])
+      setHighlight(ACTIVE_PASSAGE_HIGHLIGHT, [])
+    }
     // No badges means no model traversal, forced layout, timer, or resize work.
     // A passage comment (no block id, as made on Markdown) sits on the
     // block that holds its passage, found as the server finds it.
@@ -882,16 +941,15 @@ function AnnotationBadges({
       )
       return found ? blocks[found.index]!.id : undefined
     }
-    if (
-      !annotations.some(
-        (annotation) =>
-          annotation.status !== "resolved" &&
-          ("blockId" in annotation.target
-            ? Boolean(annotation.target.blockId)
-            : annotation.target.type === "doc" && Boolean(annotation.target.quote))
-      )
-    ) {
+    const anchored = (annotation: Annotation) =>
+      annotation.status !== "resolved" &&
+      ("blockId" in annotation.target
+        ? Boolean(annotation.target.blockId)
+        : annotation.target.type === "doc" && Boolean(annotation.target.quote))
+    if (!annotations.some(anchored)) {
       setPositions((previous) => (previous.length ? [] : previous))
+      clearMarks()
+      if (markPassages) report(new Set())
       return
     }
     const update = () => {
@@ -900,10 +958,14 @@ function AnnotationBadges({
       const containerRect = container.getBoundingClientRect()
       const grouped = new Map<string, Annotation[]>()
       const blocks = flattenEditorBlocks(editor.document)
+      const gone = new Set<string>()
       for (const annotation of annotations) {
-        if (annotation.status === "resolved") continue
+        if (!anchored(annotation)) continue
         const blockId = blockIdOf(annotation, blocks)
-        if (!blockId) continue
+        if (!blockId) {
+          gone.add(annotation.id)
+          continue
+        }
         const list = grouped.get(blockId) ?? []
         list.push(annotation)
         grouped.set(blockId, list)
@@ -916,6 +978,9 @@ function AnnotationBadges({
         top: number
         annotations: Annotation[]
       }> = []
+      const ranges = new Map<string, Range>()
+      // Read only when a passage isn't within its own block.
+      let wholeDoc: ReturnType<typeof readPassageText> | undefined
       for (const [blockId, blockAnnotations] of grouped) {
         let node = container.querySelector(
           `[data-id="${CSS.escape(blockId)}"]`
@@ -924,7 +989,8 @@ function AnnotationBadges({
         // document — not when the stored ID still exists but its node is missing
         // from the DOM this tick, since a transient miss could otherwise relocate
         // the badge to a different block whose text happens to match the quote.
-        if (!node && !liveBlockIds.has(blockId)) {
+        const blockGone = !node && !liveBlockIds.has(blockId)
+        if (blockGone) {
           const quote = blockAnnotations
             .map((annotation) =>
               "quote" in annotation.target ? annotation.target.quote : undefined
@@ -937,15 +1003,51 @@ function AnnotationBadges({
             ) as HTMLElement | null
           }
         }
-        if (!node) continue
+        if (!node) {
+          if (blockGone)
+            for (const annotation of blockAnnotations) gone.add(annotation.id)
+          continue
+        }
         const rect = node.getBoundingClientRect()
         next.push({
           blockId,
           top: rect.top - containerRect.top + container.scrollTop + 2,
           annotations: blockAnnotations,
         })
+        if (!markPassages) continue
+        // The quoted words, looked for in their block first.
+        const content =
+          node.querySelector(".bn-block-content") ?? (node as Element)
+        const model = readPassageText(content)
+        for (const annotation of blockAnnotations) {
+          const target = annotation.target
+          const quote = "quote" in target ? target.quote : undefined
+          if (!quote) continue
+          // A passage that runs on into the next blocks is found in the
+          // whole Doc, from its words and what surrounds them.
+          const range =
+            rangeForPassage(model, { quote }) ??
+            rangeForPassage((wholeDoc ??= readPassageText(container.querySelector(".bn-editor") ?? container)), {
+              quote,
+              prefix: "prefix" in target ? target.prefix : undefined,
+              suffix: "suffix" in target ? target.suffix : undefined,
+            })
+          if (range) ranges.set(annotation.id, range)
+          else gone.add(annotation.id)
+        }
       }
       setPositions(next)
+      if (!markPassages) return
+      marked.current = ranges
+      setHighlight(
+        PASSAGE_HIGHLIGHT,
+        [...ranges].flatMap(([id, range]) =>
+          id === activeAnnotationId ? [] : [range]
+        )
+      )
+      const active = activeAnnotationId && ranges.get(activeAnnotationId)
+      setHighlight(ACTIVE_PASSAGE_HIGHLIGHT, active ? [active] : [])
+      report(gone)
     }
     update()
     window.addEventListener("resize", update)
@@ -954,7 +1056,39 @@ function AnnotationBadges({
       window.removeEventListener("resize", update)
       window.clearInterval(timer)
     }
-  }, [annotations, containerRef, editor])
+  }, [annotations, activeAnnotationId, containerRef, editor, markPassages])
+
+  useEffect(
+    () => () => {
+      if (!markPassages) return
+      setHighlight(PASSAGE_HIGHLIGHT, [])
+      setHighlight(ACTIVE_PASSAGE_HIGHLIGHT, [])
+    },
+    [markPassages]
+  )
+
+  // Pressing marked text, without selecting any, shows its comment.
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || !markPassages) return
+    const click = (event: MouseEvent) => {
+      if (!window.getSelection()?.isCollapsed) return
+      const caret = caretPointAt(event.clientX, event.clientY)
+      if (!caret) return
+      let hit: [string, Range] | null = null
+      for (const entry of marked.current) {
+        if (!entry[1].isPointInRange(caret.node, caret.offset)) continue
+        // The innermost passage wins where comments overlap.
+        if (!hit || entry[1].toString().length < hit[1].toString().length)
+          hit = entry
+      }
+      const annotation =
+        hit && annotations.find((candidate) => candidate.id === hit[0])
+      if (annotation) latestPassages.current?.onClick(annotation)
+    }
+    container.addEventListener("click", click)
+    return () => container.removeEventListener("click", click)
+  }, [annotations, containerRef, markPassages])
 
   if (!positions.length) return null
 
@@ -985,6 +1119,23 @@ function AnnotationBadges({
       })}
     </div>
   )
+}
+
+const PASSAGE_HIGHLIGHT = "worktable-comment"
+const ACTIVE_PASSAGE_HIGHLIGHT = "worktable-comment-active"
+
+function caretPointAt(
+  x: number,
+  y: number
+): { node: Node; offset: number } | null {
+  if (document.caretPositionFromPoint) {
+    const position = document.caretPositionFromPoint(x, y)
+    return position
+      ? { node: position.offsetNode, offset: position.offset }
+      : null
+  }
+  const range = document.caretRangeFromPoint?.(x, y)
+  return range ? { node: range.startContainer, offset: range.startOffset } : null
 }
 
 function createAnnotationFromEditor(
@@ -1040,8 +1191,8 @@ function AnnotationToolbarButton({
       className="bn-button"
       data-test="annotate"
       onClick={() => createAnnotationFromEditor(editor, onAnnotate)}
-      label="Annotate"
-      mainTooltip="Annotate"
+      label="Comment"
+      mainTooltip="Comment"
       icon={<MessageSquarePlus className="size-3.5" />}
     />
   )
@@ -1097,7 +1248,7 @@ function AnnotationDragHandleMenu({
             createAnnotationFromEditor(editor, onAnnotate, block)
           }}
         >
-          Annotate
+          Comment
         </Components.Generic.Menu.Item>
       )}
       <RemoveBlockItem>Delete</RemoveBlockItem>

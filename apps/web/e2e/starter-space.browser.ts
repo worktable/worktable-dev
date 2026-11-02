@@ -226,12 +226,12 @@ test("rich-doc block handles remain usable after annotation composer closes", as
   expect(thirdBlockId).toBeTruthy()
 
   await openBlockMenu(page, firstBlock)
-  await page.getByRole("menuitem", { name: "Annotate" }).click()
+  await page.getByRole("menuitem", { name: "Comment" }).click()
   await page.getByPlaceholder("Write a comment…").waitFor()
   await page.keyboard.press("Escape")
 
   await openBlockMenu(page, secondBlock)
-  await page.getByRole("menuitem", { name: "Annotate" }).click()
+  await page.getByRole("menuitem", { name: "Comment" }).click()
   await page.getByPlaceholder("Write a comment…").fill("Second block note")
   const secondCreate = page.waitForResponse(
     (response) =>
@@ -251,7 +251,7 @@ test("rich-doc block handles remain usable after annotation composer closes", as
   await expect(page.getByRole("button", { name: "Close comments" })).toHaveCount(0)
 
   await openBlockMenu(page, thirdBlock)
-  await page.getByRole("menuitem", { name: "Annotate" }).click()
+  await page.getByRole("menuitem", { name: "Comment" }).click()
   await page.getByPlaceholder("Write a comment…").fill("Third block note")
   const thirdCreate = page.waitForResponse(
     (response) =>

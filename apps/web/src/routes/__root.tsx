@@ -1,4 +1,3 @@
-import { ProductAnalytics } from "@/components/product-analytics"
 import { RUNTIME_BASE_PATH, runtimePath } from "@/lib/runtime-path"
 /// <reference types="vite/client" />
 import {
@@ -8,6 +7,7 @@ import {
 import { DEPLOYMENT_QUERY_KEY } from "@/hooks/use-deployment-info"
 import type { DeploymentInfo } from "@/lib/system-api"
 import { WorkspaceOperationObserver } from "@/components/workspace-operation-observer"
+import { BrowserAnalyticsChoice } from "@/components/browser-analytics-choice"
 import { WorkspaceStorageGate } from "@/components/workspace-storage-gate"
 import appStylesheet from "@/styles/app.css?url"
 import {
@@ -614,7 +614,7 @@ function RootLayout() {
     <PageMetaProvider>
       <SidebarContext.Provider value={sidebarCtx}>
         <WorkspaceOperationObserver />
-        <ProductAnalytics />
+        <BrowserAnalyticsChoice />
         <div
           data-worktable-app-shell
           data-worktable-sidebar-open={sidebarOpen ? "true" : "false"}

@@ -24,9 +24,9 @@ export function PrivacySection() {
       queryClient.setQueryData(["cloud", "analytics"], result)
       const consent = await import("@worktable/public-analytics/consent")
       consent.setBrowserAnalyticsPreference(result.preference)
-      if (!enabled) window.dispatchEvent(new Event("worktable:analytics-stop"))
       await query.refetch()
-      window.dispatchEvent(new Event("worktable:account-analytics-preference"))
+      // Open editors reconnect so saves carry the new choice.
+      if (enabled) window.dispatchEvent(new Event("worktable:analytics-enabled"))
     } catch {
       setError(true)
     } finally {

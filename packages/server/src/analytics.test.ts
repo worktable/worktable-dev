@@ -16,6 +16,7 @@ import {
 } from "@worktable/hosted-contract"
 import {
   captureWorkSaved,
+  countedByGateway,
   flushAnalytics,
   requestAnalyticsContext,
   shutdownAnalytics,
@@ -749,4 +750,12 @@ describe("consented committed-work analytics", () => {
       )
     ).toBeNull()
   })
+})
+
+test("hosted app pages leave counting the visit to the gateway", () => {
+  const page = () => new Response("<!doctype html>", { headers: { "Content-Type": "text/html; charset=utf-8" } })
+  expect(countedByGateway(page()).headers.get("x-worktable-product-opened")).toBe("gateway")
+  expect(countedByGateway(Response.json({})).headers.has("x-worktable-product-opened")).toBe(false)
+  process.env.WORKTABLE_HOSTED = "0"
+  expect(countedByGateway(page()).headers.has("x-worktable-product-opened")).toBe(false)
 })

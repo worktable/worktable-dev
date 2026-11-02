@@ -46,6 +46,12 @@ beforeEach(() => {
   process.env[ENV.GATEWAY_SECRET] = admission
   process.env[ENV.OWNER_SUBJECT] = owner
   process.env[ENV.RESOURCE_URL] = "https://app.worktable.cloud/api/mcp"
+  // The gateway's browser assertions, as Cloud configures every workspace.
+  process.env[ENV.CLOUD_WORKSPACE_ID] = cloudWorkspaceId
+  process.env[ENV.AUTH_SERVER_URL] = identityIssuer
+  process.env[ENV.BROWSER_ASSERTION_KEYRING] = JSON.stringify([
+    { kid: "v1", secret: assertionSecret, state: "signing" },
+  ])
   server = startServer(0, "127.0.0.1")
   origin = `http://127.0.0.1:${server.port}`
 })
@@ -164,11 +170,6 @@ const initialize = {
 describe("an agent paired with a Cloud workspace", () => {
   it("connects through the workspace's agent address with the credential it was issued", async () => {
     // A Cloud workspace becomes a Team Worktable on its owner's first visit.
-    process.env[ENV.CLOUD_WORKSPACE_ID] = cloudWorkspaceId
-    process.env[ENV.AUTH_SERVER_URL] = identityIssuer
-    process.env[ENV.BROWSER_ASSERTION_KEYRING] = JSON.stringify([
-      { kid: "v1", secret: assertionSecret, state: "signing" },
-    ])
     expect((await call("/api/spaces", { owner: true })).status).toBe(200)
     const target = {
       kind: "agent-adapter",

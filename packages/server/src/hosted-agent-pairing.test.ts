@@ -5,10 +5,16 @@ import { join } from "node:path"
 import {
   ACTOR_HEADERS,
   AGENT_ROUTE_HEADERS,
+  BROWSER_ASSERTION_TYPE,
   ENV,
   GATEWAY_HEADER,
+  HOSTED_BROWSER_SCOPES,
+  browserAssertionAudience,
+  browserAssertionIssuer,
+  browserRequestBinding,
   hostedOAuthPrincipalId,
 } from "@worktable/hosted-contract"
+import { SignJWT, base64url } from "jose"
 import { setAppDirOverride } from "./app-storage.ts"
 import { issueFileTicket } from "./file-tickets.ts"
 import { hostedFileLinkBase } from "./hosted.ts"
@@ -22,6 +28,9 @@ import { setWorkspaceRootOverride } from "./workspace.ts"
 const admission = "gateway-admission-secret-value"
 const owner = "user_owner_123"
 const agentBase = "https://app.worktable.cloud/w/ws_123"
+const cloudWorkspaceId = "ws_123"
+const identityIssuer = "https://identity.example.test"
+const assertionSecret = base64url.encode(new Uint8Array(32).fill(7))
 const originalEnv = { ...process.env }
 let appDir: string
 let workspaceDir: string
@@ -37,6 +46,12 @@ beforeEach(() => {
   process.env[ENV.GATEWAY_SECRET] = admission
   process.env[ENV.OWNER_SUBJECT] = owner
   process.env[ENV.RESOURCE_URL] = "https://app.worktable.cloud/api/mcp"
+  // The gateway's browser assertions, as Cloud configures every workspace.
+  process.env[ENV.CLOUD_WORKSPACE_ID] = cloudWorkspaceId
+  process.env[ENV.AUTH_SERVER_URL] = identityIssuer
+  process.env[ENV.BROWSER_ASSERTION_KEYRING] = JSON.stringify([
+    { kid: "v1", secret: assertionSecret, state: "signing" },
+  ])
   server = startServer(0, "127.0.0.1")
   origin = `http://127.0.0.1:${server.port}`
 })
@@ -53,19 +68,71 @@ afterEach(async () => {
   rmSync(workspaceDir, { recursive: true, force: true })
 })
 
-function call(
+/**
+ * What the gateway sends for the owner: a request-bound assertion naming
+ * their verified identity, which a Team Worktable requires of a person.
+ */
+async function ownerAssertion(method: string, path: string): Promise<string> {
+  const now = Math.floor(Date.now() / 1000)
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(
+      browserRequestBinding(method, new URL(path, origin))
+    )
+  )
+  return new SignJWT({
+    wt: {
+      credential: "browser",
+      identity: {
+        issuer: identityIssuer,
+        subject: owner,
+        email: "owner@example.test",
+      },
+      workspaceId: cloudWorkspaceId,
+      requestHash: base64url.encode(new Uint8Array(digest)),
+      scopes: [...HOSTED_BROWSER_SCOPES],
+      principal: {
+        id: `workos:${owner}`,
+        type: "human",
+        displayName: "Cloud Owner",
+      },
+    },
+  })
+    .setProtectedHeader({
+      alg: "HS256",
+      typ: BROWSER_ASSERTION_TYPE,
+      kid: "v1",
+    })
+    .setIssuer(browserAssertionIssuer("https://app.worktable.cloud"))
+    .setAudience(browserAssertionAudience(cloudWorkspaceId))
+    .setSubject(owner)
+    .setIssuedAt(now)
+    .setNotBefore(now - 5)
+    .setExpirationTime(now + 60)
+    .setJti(crypto.randomUUID())
+    .sign(base64url.decode(assertionSecret))
+}
+
+async function call(
   path: string,
   options: {
     method?: string
     body?: unknown
+    /** The owner, as the gateway presents them: actor headers and an assertion. */
     owner?: boolean
+    /** The owner's actor headers without the assertion. */
+    ownerHeadersOnly?: boolean
     agentRoute?: boolean
     bearer?: string
     worktableCredential?: boolean
   } = {}
 ): Promise<Response> {
+  const method = options.method ?? (options.body === undefined ? "GET" : "POST")
+  const bearer =
+    options.bearer ??
+    (options.owner ? await ownerAssertion(method, path) : undefined)
   return fetch(`${origin}${path}`, {
-    method: options.method ?? (options.body === undefined ? "GET" : "POST"),
+    method,
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json, text/event-stream",
@@ -73,14 +140,14 @@ function call(
       ...(options.agentRoute === false
         ? {}
         : { [AGENT_ROUTE_HEADERS.BASE]: agentBase }),
-      ...(options.owner
+      ...(options.owner || options.ownerHeadersOnly
         ? {
             [ACTOR_HEADERS.ID]: `workos:${owner}`,
             [ACTOR_HEADERS.TYPE]: "human",
             [ACTOR_HEADERS.NAME]: "Cloud Owner",
           }
         : {}),
-      ...(options.bearer ? { Authorization: `Bearer ${options.bearer}` } : {}),
+      ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
       ...(options.worktableCredential
         ? { [AGENT_ROUTE_HEADERS.CREDENTIAL]: "worktable" }
         : {}),
@@ -102,6 +169,8 @@ const initialize = {
 
 describe("an agent paired with a Cloud workspace", () => {
   it("connects through the workspace's agent address with the credential it was issued", async () => {
+    // A Cloud workspace becomes a Team Worktable on its owner's first visit.
+    expect((await call("/api/spaces", { owner: true })).status).toBe(200)
     const target = {
       kind: "agent-adapter",
       adapter: "openclaw",
@@ -109,7 +178,12 @@ describe("an agent paired with a Cloud workspace", () => {
     }
 
     // Only the signed-in owner may pair, and only once the gateway routes agents.
-    expect((await call("/api/pairing", { body: { target } })).status).toBe(403)
+    expect((await call("/api/pairing", { body: { target } })).status).toBe(401)
+    // The gateway's actor headers do not stand in for the owner's assertion.
+    expect(
+      (await call("/api/pairing", { body: { target }, ownerHeadersOnly: true }))
+        .status
+    ).toBe(401)
     expect(
       (
         await call("/api/pairing", {
@@ -175,11 +249,10 @@ describe("an agent paired with a Cloud workspace", () => {
           platform: "openclaw",
           icon: "brain",
           mode: "always-on",
-          machine: "studio",
         },
       ],
     })
-    expect((await call("/api/agent-connections")).status).toBe(403)
+    expect((await call("/api/agent-connections")).status).toBe(401)
   })
 })
 

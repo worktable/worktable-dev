@@ -96,7 +96,9 @@ export function AnnotationComposer({
   const draftKey = useRef("");
   // The text as it is now, for a send that finishes after more typing.
   const latestBody = useRef(body);
-  latestBody.current = body;
+  useEffect(() => {
+    latestBody.current = body;
+  }, [body]);
   const inFlight = useRef(false);
   const recipients = useCommentRecipients(
     context?.spaceId,

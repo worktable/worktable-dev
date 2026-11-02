@@ -6,8 +6,10 @@ import {
   type SupportedMcpClientId,
 } from "@worktable/types/mcp-clients"
 import {
+  ANALYTICS_CLIENT_NAMES,
   ANALYTICS_HEADER,
   ANALYTICS_SCHEMA_VERSION,
+  isAnalyticsClient,
   type AnalyticsGrant,
   type ProductAnalyticsEvent,
   type ProductAnalyticsProperties,
@@ -24,6 +26,10 @@ const context = new AsyncLocalStorage<SaveAnalyticsContext | null>()
 let client: PostHog | null = null
 let pending = 0
 const deliveries = new Set<Promise<void>>()
+// An account's consent, rechecked at most once a minute: the same window the
+// gateway's grant allows, so a withdrawal still stops collection within it.
+const CONSENT_TTL_MS = 60_000
+const consents = new Map<string, { enabled: boolean; until: number }>()
 
 function configuration() {
   const token = process.env["POSTHOG_PROJECT_TOKEN"]
@@ -91,15 +97,19 @@ export function requestAnalyticsContext(
       return null
     const protocolVersion = request.headers.get("mcp-protocol-version")
     const clientId = identity.agent?.replace(/^managed:/, "")
+    // The gateway names the app from the verified OAuth client.
+    const clientName = isAnalyticsClient(grant.client)
+      ? ANALYTICS_CLIENT_NAMES[grant.client]
+      : clientId && Object.hasOwn(MCP_CLIENTS, clientId)
+        ? MCP_CLIENTS[clientId as SupportedMcpClientId].label
+        : undefined
     return {
       contributors: [grant],
       ...(protocolVersion &&
       SUPPORTED_PROTOCOL_VERSIONS.includes(protocolVersion)
         ? { protocolVersion }
         : {}),
-      ...(clientId && Object.hasOwn(MCP_CLIENTS, clientId)
-        ? { clientName: MCP_CLIENTS[clientId as SupportedMcpClientId].label }
-        : {}),
+      ...(clientName ? { clientName } : {}),
     }
   } catch {
     return null
@@ -255,29 +265,18 @@ function enqueue(
   const delivery = (async () => {
     try {
       // Recheck at delivery, including long-lived Yjs connections and account revocation.
-      const response = await fetch(config.consentUrl, {
-        method: "POST",
-        redirect: "error",
-        signal: AbortSignal.timeout(1500),
-        headers: {
-          "Content-Type": "application/json",
-          "X-Worktable-Runtime": config.runtimeId,
-          Authorization: `Bearer ${process.env["WORKTABLE_GATEWAY_SECRET"]}`,
-        },
-        body: JSON.stringify({
-          subjects: [...new Set(grants.map((grant) => grant.consentSubject))],
-        }),
-      })
       if (
-        !response.ok ||
-        ((await response.json()) as { enabled?: unknown }).enabled !== true ||
+        !(await consented(config, [
+          ...new Set(grants.map((grant) => grant.consentSubject)),
+        ])) ||
         !configuration()
       )
         return
+      // Sent in small batches; shutdown sends what is left.
       client ??= new PostHog(config.token, {
         host: config.host,
-        flushAt: 1,
-        flushInterval: 0,
+        flushAt: 20,
+        flushInterval: 10_000,
         maxQueueSize: 100,
         fetchRetryCount: 0,
         requestTimeout: 2000,
@@ -331,7 +330,6 @@ function enqueue(
             : {}),
         },
       })
-      await client.flush()
     } catch {
       /* Optional telemetry cannot fail or log product content. */
     } finally {
@@ -342,11 +340,40 @@ function enqueue(
   void delivery.finally(() => deliveries.delete(delivery))
 }
 
+async function consented(
+  config: NonNullable<ReturnType<typeof configuration>>,
+  subjects: string[]
+): Promise<boolean> {
+  const key = [...subjects].sort().join(",")
+  const cached = consents.get(key)
+  if (cached && cached.until > Date.now()) return cached.enabled
+  const response = await fetch(config.consentUrl, {
+    method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(1500),
+    headers: {
+      "Content-Type": "application/json",
+      "X-Worktable-Runtime": config.runtimeId,
+      Authorization: `Bearer ${process.env["WORKTABLE_GATEWAY_SECRET"]}`,
+    },
+    body: JSON.stringify({ subjects }),
+  })
+  // An unavailable preference service drops analytics; it is asked again next time.
+  if (!response.ok) return false
+  const enabled =
+    ((await response.json()) as { enabled?: unknown }).enabled === true
+  if (consents.size >= 1000) consents.clear()
+  consents.set(key, { enabled, until: Date.now() + CONSENT_TTL_MS })
+  return enabled
+}
+
 export async function flushAnalytics(): Promise<void> {
   await Promise.allSettled([...deliveries])
+  await client?.flush().catch(() => undefined)
 }
 export async function shutdownAnalytics(): Promise<void> {
   await flushAnalytics()
   await client?.shutdown().catch(() => undefined)
   client = null
+  consents.clear()
 }

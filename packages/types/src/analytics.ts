@@ -47,6 +47,35 @@ export function parseAnalyticsCookie(
 }
 
 export type AnalyticsActorType = "human" | "agent" | "multiple"
+
+/** The app an agent connects through, read from its verified OAuth client. */
+export const ANALYTICS_CLIENTS = [
+  "chatgpt",
+  "claude",
+  "claude_code",
+  "codex",
+  "cursor",
+  "grok",
+  "hermes",
+  "openclaw",
+  "other",
+] as const
+export type AnalyticsClient = (typeof ANALYTICS_CLIENTS)[number]
+export const ANALYTICS_CLIENT_NAMES: Readonly<Record<AnalyticsClient, string>> =
+  {
+    chatgpt: "ChatGPT",
+    claude: "Claude",
+    claude_code: "Claude Code",
+    codex: "Codex",
+    cursor: "Cursor",
+    grok: "Grok",
+    hermes: "Hermes",
+    openclaw: "OpenClaw",
+    other: "Other",
+  }
+export function isAnalyticsClient(value: unknown): value is AnalyticsClient {
+  return (ANALYTICS_CLIENTS as readonly unknown[]).includes(value)
+}
 export type AnalyticsSurface = "web" | "desktop_cloud" | "mcp" | "api"
 export interface AnalyticsGrant {
   /** Verified principal, never a browser supplied analytics ID. */
@@ -56,6 +85,8 @@ export interface AnalyticsGrant {
   expiresAt: number
   surface: AnalyticsSurface
   trafficType?: "internal" | "verification"
+  /** The app an agent connects through; people have none. */
+  client?: AnalyticsClient
 }
 
 export function analyticsTrafficType(

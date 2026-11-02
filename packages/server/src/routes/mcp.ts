@@ -130,6 +130,31 @@ export interface RemoteMcpRequestOptions {
   modernEra?: boolean
 }
 
+/** Tells the Cloud gateway which call it answered, for its request counts. */
+export const MCP_CALL_HEADER = "x-worktable-mcp"
+const CALL_TOOL = /^[a-z][a-z0-9_]{0,63}$/
+
+function callName(message: unknown): string | null {
+  const call = message as { method?: unknown; params?: { name?: unknown } } | null
+  if (typeof call?.method !== "string" || !/^[a-z/_]{1,64}$/i.test(call.method)) return null
+  const tool = call.method === "tools/call" && typeof call.params?.name === "string" && CALL_TOOL.test(call.params.name)
+    ? call.params.name
+    : ""
+  return tool ? `${call.method} ${tool}` : call.method
+}
+
+function namedCall(response: Response, call: string | null): Response {
+  if (!call || !isHosted()) return response
+  try {
+    response.headers.set(MCP_CALL_HEADER, call)
+    return response
+  } catch {
+    const named = new Response(response.body, response)
+    named.headers.set(MCP_CALL_HEADER, call)
+    return named
+  }
+}
+
 // MCP endpoint — stateless: new server + transport per request
 export async function handleRemoteMcpRequest(
   request: Request,
@@ -141,12 +166,13 @@ export async function handleRemoteMcpRequest(
     ? await modernMcpRequestBody(request)
     : undefined
   if (modern) {
-    return runWithTeamIdentity(identity, () =>
+    const response = await runWithTeamIdentity(identity, () =>
       handleModernMcpRequest(request, modern.body, {
         server: remoteMcpServerOptions(request, identity, origin),
         stream: options.stream ?? false,
       })
     )
+    return namedCall(response, callName(Array.isArray(modern.body) ? modern.body[0] : modern.body))
   }
 
   const { bridgeId } = options
@@ -189,6 +215,13 @@ export async function handleRemoteMcpRequest(
     remoteMcpServerOptions(request, identity, origin)
   )
   await server.connect(transport)
+  // Read the call from the message the transport already parsed.
+  let call: string | null = null
+  const deliver = transport.onmessage
+  transport.onmessage = (message, extra) => {
+    call ??= callName(message)
+    deliver?.(message, extra)
+  }
   for (const key of callKeys) bridgeCalls.set(key, server)
   const release = () => {
     for (const key of callKeys) {
@@ -205,6 +238,7 @@ export async function handleRemoteMcpRequest(
     release()
     throw error
   }
+  response = namedCall(response, call)
   if (callKeys.length === 0) return response
   if (!response.body || !options.stream) {
     release()

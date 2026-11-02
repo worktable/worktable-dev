@@ -219,9 +219,28 @@ for (const mobile of [true, false]) {
       if (!mobile)
         await expect.poll(() => draftHighlight(page)).toEqual(["launch date moves"])
       await page.keyboard.insertText("Confirm with finance.")
-      await composer
-        .getByRole("button", { name: "Send comment", exact: true })
-        .click()
+      // A second press while the first is still sending makes no second
+      // comment.
+      let creates = 0
+      page.on("request", (request) => {
+        if (
+          request.method() === "POST" &&
+          new URL(request.url()).pathname.endsWith("/annotations")
+        )
+          creates += 1
+      })
+      const send = composer.getByRole("button", {
+        name: "Send comment",
+        exact: true,
+      })
+      if (mobile) {
+        await send.tap()
+        await send.tap({ force: true, timeout: 1_000 }).catch(() => {})
+      } else {
+        await page.keyboard.press("Enter")
+        await page.keyboard.press("Enter")
+      }
+      await expect(composer).not.toBeVisible()
 
       await expect.poll(savedAnnotations).toMatchObject([
         {
@@ -235,6 +254,7 @@ for (const mobile of [true, false]) {
           },
         },
       ])
+      expect(creates).toBe(1)
       await expect
         .poll(() => highlighted(page, "worktable-comment"))
         .toEqual(["launch date moves"])

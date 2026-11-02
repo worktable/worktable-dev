@@ -59,6 +59,18 @@ function DrawerOverlay({
   )
 }
 
+/**
+ * Keeps a bottom sheet that holds a text field on top of a phone's keyboard
+ * and within the visible screen, from the sizes the app measures. Pair it
+ * with `repositionInputs={false}` so the drawer doesn't move the sheet too.
+ */
+function aboveKeyboard(maxHeight = "100dvh"): React.CSSProperties {
+  return {
+    bottom: "var(--app-keyboard-height, 0px)",
+    maxHeight: `min(${maxHeight}, calc(var(--app-visual-viewport-height, 100dvh) - 1rem))`,
+  }
+}
+
 function DrawerContent({
   className,
   children,
@@ -132,6 +144,7 @@ function DrawerDescription({
 }
 
 export {
+  aboveKeyboard,
   Drawer,
   DrawerPortal,
   DrawerOverlay,

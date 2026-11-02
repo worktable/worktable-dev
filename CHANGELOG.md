@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Comments:** A comment is saved once, even when Send is pressed twice, and stays in its box with a retry if sending fails. On a phone, the comment box and the comments stay above the keyboard. Below 1280px, the comments no longer open over the Doc after each comment.
+
 ## [0.1.37] - 2026-10-29
 
 ### Changed

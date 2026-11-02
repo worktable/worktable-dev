@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@worktable/ui/components/dialog"
 import {
+  aboveKeyboard,
   Drawer,
   DrawerClose,
   DrawerContent,
@@ -129,12 +130,13 @@ function ResponsiveDialogContent({
       <DrawerContent
         onEscapeKeyDown={onEscapeKeyDown}
         className={cn(
-          keyboardFriendly
-            ? "data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-1rem)]"
-            : "data-[vaul-drawer-direction=bottom]:max-h-[90dvh]",
+          "data-[vaul-drawer-direction=bottom]:max-h-[90dvh]",
           className
         )}
         {...props}
+        style={
+          keyboardFriendly ? { ...aboveKeyboard(), ...props.style } : props.style
+        }
       >
         <div className="flex min-h-0 flex-1 flex-col px-5 pt-7 pb-0">
           {children}

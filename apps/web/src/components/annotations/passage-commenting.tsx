@@ -22,7 +22,12 @@ export function PassageCommenting({
   rootRef: RefObject<HTMLElement | null>
   docPath: string
   context?: CommentContext
-  onCreate: (input: { target: AnnotationTarget; body: string; to: string[] }) => void
+  onCreate: (input: {
+    target: AnnotationTarget
+    body: string
+    to: string[]
+    idempotencyKey: string
+  }) => Promise<unknown>
 }) {
   const [draft, setDraft] = useState<PassageDraft | null>(null)
   const [open, setOpen] = useState(false)
@@ -41,13 +46,14 @@ export function PassageCommenting({
         open={open}
         onOpenChange={setOpen}
         context={context}
-        onSubmit={(body, to) => {
+        onSubmit={async (body, to, idempotencyKey) => {
           if (!draft) return
           const { quote, prefix, suffix } = draft
-          onCreate({
+          await onCreate({
             target: { type: "doc", docPath, quote, prefix, suffix },
             body,
             to,
+            idempotencyKey,
           })
         }}
       />

@@ -88,7 +88,6 @@ import { CommentBox } from "@/components/annotations/comment-box"
 import { PassageCommenting } from "@/components/annotations/passage-commenting"
 import { docContributors } from "@/lib/comment-recipients"
 import { usePassageComments } from "@/components/annotations/use-passage-comments"
-import { useIsMobile } from "@/hooks/use-mobile"
 import { Button } from "@worktable/ui/components/button"
 import {
   DocumentStatus,
@@ -96,6 +95,7 @@ import {
 } from "@worktable/ui/components/document-status"
 import { preloadableComponent } from "@worktable/ui/lib/preloadable-component"
 import {
+  aboveKeyboard,
   Drawer,
   DrawerContent,
   DrawerDescription,
@@ -864,7 +864,6 @@ function MarkdownDocPage({
   }, [])
 
   // Comments on a passage: select text in the Doc as it reads, no Edit needed.
-  const isMobile = useIsMobile()
   const canComment = validated && canCommentOn(page, readOnly)
   const passages = usePassageComments({
     rootRef: readingRef,
@@ -1008,7 +1007,7 @@ function MarkdownDocPage({
               annotationMutations.reopen.mutate(annotationId)
             }
             onReply={(annotationId, body) =>
-              annotationMutations.reply.mutate({ annotationId, body })
+              annotationMutations.reply.mutateAsync({ annotationId, body })
             }
             onClose={() => setAnnotationsOpen(false)}
             className="bg-transparent"
@@ -1065,7 +1064,7 @@ function MarkdownDocPage({
             onOpenChange={setAnnotationsOpen}
             repositionInputs={false}
           >
-            <DrawerContent className="data-[vaul-drawer-direction=bottom]:max-h-[86dvh]">
+            <DrawerContent style={aboveKeyboard("86dvh")}>
               <DrawerTitle className="sr-only">Comments</DrawerTitle>
               <DrawerDescription className="sr-only">
                 Annotations for this doc.
@@ -1086,10 +1085,10 @@ function MarkdownDocPage({
                   annotationMutations.reopen.mutate(annotationId)
                 }
                 onReply={(annotationId, body) =>
-                  annotationMutations.reply.mutate({ annotationId, body })
+                  annotationMutations.reply.mutateAsync({ annotationId, body })
                 }
                 onClose={() => setAnnotationsOpen(false)}
-                className="max-h-[calc(86dvh-1.5rem)]"
+                className="max-h-[min(calc(86dvh-1.5rem),calc(var(--app-visual-viewport-height,100dvh)-2.5rem))]"
               />
             </DrawerContent>
           </Drawer>
@@ -1101,10 +1100,12 @@ function MarkdownDocPage({
           rootRef={readingRef}
           docPath={docPath}
           context={commentContext}
-          onCreate={(input) => {
-            annotationMutations.create.mutate({ ...input, category: "comment" })
-            // On a phone the highlight confirms it; the next passage is a tap away.
-            if (!isMobile) {
+          onCreate={async (input) => {
+            await annotationMutations.create.mutateAsync({ ...input, category: "comment" })
+            // The comments open where they sit beside the Doc. Narrower, they
+            // would cover it: the highlight confirms the comment instead, and
+            // the next passage stays a tap away.
+            if (!belowXl) {
               setAnnotationsOpen(true)
               setVersionsOpen(false)
             }
@@ -1324,7 +1325,6 @@ function BlockNoteDocPage({
     null
   )
   const [composerOpen, setComposerOpen] = useState(false)
-  const isMobile = useIsMobile()
   const [belowXl, setBelowXl] = useState(false)
   useEffect(() => {
     const mql = window.matchMedia("(max-width: 1279px)")
@@ -1738,7 +1738,7 @@ function BlockNoteDocPage({
               annotationMutations.reopen.mutate(annotationId)
             }
             onReply={(annotationId, body) =>
-              annotationMutations.reply.mutate({ annotationId, body })
+              annotationMutations.reply.mutateAsync({ annotationId, body })
             }
             onClose={() => setAnnotationsOpen(false)}
             className="bg-transparent"
@@ -1795,7 +1795,7 @@ function BlockNoteDocPage({
             onOpenChange={setAnnotationsOpen}
             repositionInputs={false}
           >
-            <DrawerContent className="data-[vaul-drawer-direction=bottom]:max-h-[86dvh]">
+            <DrawerContent style={aboveKeyboard("86dvh")}>
               <DrawerTitle className="sr-only">Comments</DrawerTitle>
               <DrawerDescription className="sr-only">
                 Annotations for this doc.
@@ -1815,10 +1815,10 @@ function BlockNoteDocPage({
                   annotationMutations.reopen.mutate(annotationId)
                 }
                 onReply={(annotationId, body) =>
-                  annotationMutations.reply.mutate({ annotationId, body })
+                  annotationMutations.reply.mutateAsync({ annotationId, body })
                 }
                 onClose={() => setAnnotationsOpen(false)}
-                className="max-h-[calc(86dvh-1.5rem)]"
+                className="max-h-[min(calc(86dvh-1.5rem),calc(var(--app-visual-viewport-height,100dvh)-2.5rem))]"
               />
             </DrawerContent>
           </Drawer>
@@ -1830,9 +1830,9 @@ function BlockNoteDocPage({
         open={composerOpen && !readOnly}
         onOpenChange={setComposerOpen}
         context={commentContext}
-        onSubmit={(body, to) => {
+        onSubmit={async (body, to, idempotencyKey) => {
           if (!composerDraft) return
-          annotationMutations.create.mutate({
+          await annotationMutations.create.mutateAsync({
             target: {
               type: "block",
               docPath,
@@ -1843,8 +1843,9 @@ function BlockNoteDocPage({
             category: "comment",
             body,
             to,
+            idempotencyKey,
           })
-          if (!isMobile) setAnnotationsOpen(true)
+          if (!belowXl) setAnnotationsOpen(true)
         }}
       />
 
@@ -1853,9 +1854,9 @@ function BlockNoteDocPage({
           rootRef={standInRef}
           docPath={docPath}
           context={commentContext}
-          onCreate={(input) => {
-            annotationMutations.create.mutate({ ...input, category: "comment" })
-            if (!isMobile) setAnnotationsOpen(true)
+          onCreate={async (input) => {
+            await annotationMutations.create.mutateAsync({ ...input, category: "comment" })
+            if (!belowXl) setAnnotationsOpen(true)
           }}
         />
       )}

@@ -74,7 +74,8 @@ export interface AnnotationPanelContentProps {
   onSelectAnnotation: (annotation: Annotation) => void
   onResolve: (annotationId: string) => void
   onReopen: (annotationId: string) => void
-  onReply: (annotationId: string, body: string) => void
+  /** Sends a reply; the box keeps the text until it's saved. */
+  onReply: (annotationId: string, body: string) => Promise<unknown>
   onClose?: () => void
   /** When provided, renders a compose button under the header (used where there
    *  is no editor to attach annotations from — e.g. the HTML doc route). */
@@ -197,9 +198,11 @@ function AnnotationCard({
   onSelect: () => void
   onResolve: () => void
   onReopen: () => void
-  onReply: (body: string) => void
+  onReply: (body: string) => Promise<unknown>
 }) {
   const [reply, setReply] = useState("");
+  const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState(false);
   const replyRef = useRef<HTMLTextAreaElement>(null);
   const isResolved = annotation.status === "resolved";
   const selfId = useWorkspace().data?.person?.id;
@@ -295,11 +298,19 @@ function AnnotationCard({
             onChange={setReply}
             onSubmit={() => {
               const trimmed = reply.trim();
-              if (!trimmed) return;
-              onReply(trimmed);
-              setReply("");
+              if (!trimmed || sending) return;
+              setSending(true);
+              setFailed(false);
+              onReply(trimmed)
+                .then(
+                  // Text written while it sent stays to send next.
+                  () => setReply((current) => (current.trim() === trimmed ? "" : current)),
+                  () => setFailed(true)
+                )
+                .finally(() => setSending(false));
             }}
-            pending={false}
+            pending={sending}
+            error={failed ? "Couldn't send the reply." : undefined}
             placeholder="Reply…"
             label="Reply"
             sendLabel="Send reply"

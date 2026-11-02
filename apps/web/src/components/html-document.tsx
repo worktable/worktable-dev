@@ -71,6 +71,7 @@ import {
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog"
 import {
+  aboveKeyboard,
   Drawer,
   DrawerContent,
   DrawerDescription,
@@ -933,7 +934,7 @@ function WidgetDetailPage({
               annotationMutations.reopen.mutate(annotationId)
             }
             onReply={(annotationId, body) =>
-              annotationMutations.reply.mutate({ annotationId, body })
+              annotationMutations.reply.mutateAsync({ annotationId, body })
             }
             onClose={() => setAnnotationsOpen(false)}
             onCompose={(trigger) => {
@@ -996,7 +997,7 @@ function WidgetDetailPage({
             onOpenChange={setAnnotationsOpen}
             repositionInputs={false}
           >
-            <DrawerContent className="data-[vaul-drawer-direction=bottom]:max-h-[86dvh]">
+            <DrawerContent style={aboveKeyboard("86dvh")}>
               <DrawerTitle className="sr-only">Comments</DrawerTitle>
               <DrawerDescription className="sr-only">
                 Annotations for this HTML doc.
@@ -1014,7 +1015,7 @@ function WidgetDetailPage({
                   annotationMutations.reopen.mutate(annotationId)
                 }
                 onReply={(annotationId, body) =>
-                  annotationMutations.reply.mutate({ annotationId, body })
+                  annotationMutations.reply.mutateAsync({ annotationId, body })
                 }
                 onClose={() => setAnnotationsOpen(false)}
                 onCompose={(trigger) => {
@@ -1023,7 +1024,7 @@ function WidgetDetailPage({
             }}
                 composeLabel="Comment on this HTML doc"
                 emptyHint="Leave a comment for this HTML doc."
-                className="max-h-[calc(86dvh-1.5rem)]"
+                className="max-h-[min(calc(86dvh-1.5rem),calc(var(--app-visual-viewport-height,100dvh)-2.5rem))]"
               />
             </DrawerContent>
           </Drawer>
@@ -1036,13 +1037,16 @@ function WidgetDetailPage({
         open={composerOpen && !readOnly}
         onOpenChange={setComposerOpen}
         context={{ spaceId, contributors: docContributors(page) }}
-        onSubmit={(body, to) => {
-          annotationMutations.create.mutate({
+        onSubmit={async (body, to, idempotencyKey) => {
+          await annotationMutations.create.mutateAsync({
             target: { type: "widget", widgetId },
             category: "comment",
             body,
             to,
+            idempotencyKey,
           })
+          // Beside the HTML Doc only; narrower, the list would cover it.
+          if (belowXl) return
           setAnnotationsOpen(true)
           setVersionsOpen(false)
           setPreviewVersionId(null)

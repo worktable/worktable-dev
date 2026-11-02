@@ -9,6 +9,8 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.38] - 2026-11-02
+
 ### Changed
 
 - **Cloud analytics:** The app no longer loads an analytics script in your browser. Worktable Cloud counts visits on its own servers, and your choice in Settings → Privacy still applies.

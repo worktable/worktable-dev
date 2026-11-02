@@ -93,14 +93,6 @@ export function getPublicAnalyticsChoice(): AnalyticsChoice {
   }
 }
 
-/** Cloud product analytics is on unless this browser refused it or sends a privacy signal. */
-export function isProductAnalyticsAllowed(): boolean {
-  return (
-    !privacySignalEnabled() &&
-    getBrowserAnalyticsPreference()?.enabled !== false
-  )
-}
-
 export function setBrowserAnalyticsPreference(
   value: AnalyticsPreference
 ): void {

@@ -17,6 +17,28 @@ import {
 import { gatewayAdmits, isHosted, trustedGatewayPrincipal } from "./hosted.ts"
 import type { TokenIdentity } from "./token-store.ts"
 
+/**
+ * Marks a hosted app page as sending no product analytics of its own, so the
+ * Cloud gateway counts the visit (`product:opened`) instead.
+ */
+export const PRODUCT_OPENED_HEADER = "x-worktable-product-opened"
+
+export function countedByGateway(response: Response): Response {
+  if (
+    !isHosted() ||
+    !(response.headers.get("Content-Type") ?? "").startsWith("text/html")
+  )
+    return response
+  try {
+    response.headers.set(PRODUCT_OPENED_HEADER, "gateway")
+    return response
+  } catch {
+    const counted = new Response(response.body, response)
+    counted.headers.set(PRODUCT_OPENED_HEADER, "gateway")
+    return counted
+  }
+}
+
 export interface SaveAnalyticsContext {
   contributors: Array<AnalyticsGrant | null>
   protocolVersion?: string

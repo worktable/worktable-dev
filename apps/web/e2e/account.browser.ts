@@ -1,4 +1,3 @@
-import { gunzipSync } from "node:zlib"
 import { expect, test, type Page } from "@playwright/test"
 import { CLOUD_PLANS, type BillingStatus } from "@worktable/hosted-contract"
 import { startWebHarness, type WebHarness } from "./harness"
@@ -325,7 +324,7 @@ test("Cloud Billing keeps export available while billing access is locked", asyn
   expect(exportMethod).toBe("GET")
 })
 
-test("Cloud analytics starts without a choice, filters SDK context, and remembers revocation", async ({
+test("Cloud analytics leaves counting to the gateway and saves the account choice", async ({
   page,
 }) => {
   await mockCloudAccount(page)
@@ -335,18 +334,7 @@ test("Cloud analytics starts without a choice, filters SDK context, and remember
     updatedAt: number
   } | null = null
   const choices: unknown[] = []
-  const events: Array<{ event: string; properties: Record<string, unknown> }> =
-    []
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, "webdriver", {
-      configurable: true,
-      get: () => false,
-    })
-    Object.defineProperty(navigator, "userAgentData", {
-      configurable: true,
-      get: () => undefined,
-    })
-  })
+  const collector: string[] = []
   await page.route("**/api/analytics/preference", async (route) => {
     if (route.request().method() === "POST") {
       const choice = route.request().postDataJSON()
@@ -366,84 +354,23 @@ test("Cloud analytics starts without a choice, filters SDK context, and remember
         apiHost: "https://edge.worktable.dev",
         surface: "web",
         worktableId: "table_test",
-        trafficType: "verification",
       }),
     })
   })
   await page.route("https://edge.worktable.dev/**", async (route) => {
-    const request = route.request()
-    if (request.method() === "POST") {
-      let bytes = request.postDataBuffer()!
-      if (bytes[0] === 0x1f && bytes[1] === 0x8b) bytes = gunzipSync(bytes)
-      const text = bytes.toString("utf8")
-      const encoded = new URLSearchParams(text).get("data")
-      let payload
-      try {
-        payload = JSON.parse(encoded ?? text)
-      } catch {
-        payload = JSON.parse(
-          Buffer.from(encoded ?? text, "base64").toString("utf8")
-        )
-      }
-      events.push(...(payload.batch ?? [payload]))
-    }
-    await route.fulfill({
-      contentType: "application/json",
-      body: "{}",
-      headers: {
-        "access-control-allow-origin": "*",
-        "access-control-allow-headers": "*",
-      },
-    })
+    collector.push(route.request().url())
+    await route.fulfill({ contentType: "application/json", body: "{}" })
   })
-  const opened = () =>
-    events.filter((event) => event.event === "product:opened").length
-  // An account without a recorded choice is measured by default.
+  // The gateway counts the visit; the page itself sends nothing.
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
-  await expect.poll(opened).toBe(1)
-  // A refusal recorded elsewhere stops collection on the next load.
-  preference = { version: 1, enabled: false, updatedAt: 1000 }
   await openCloudAccount(page, "Privacy")
   const choice = page.getByRole("switch", { name: "Share usage analytics" })
+  // An account without a recorded choice is measured by default.
+  await expect(choice).toBeChecked()
+  await choice.click()
   await expect(choice).not.toBeChecked()
-  expect(opened()).toBe(1)
-  await page.evaluate(() => {
-    history.replaceState(null, "", "?email=private%40example.com#private-doc")
-    document.title = "Private document title"
-  })
   await choice.click()
   await expect(choice).toBeChecked()
-  await expect.poll(opened).toBe(2)
-  await expect
-    .poll(() => events.map((event) => event.event))
-    .toContain("$identify")
-  for (const event of events) {
-    expect(event.properties).toMatchObject({
-      distinct_id: "workos:user_analytics",
-      actor_type: "human",
-      traffic_type: "verification",
-      analytics_schema_version: 3,
-    })
-    for (const key of [
-      "$current_url",
-      "$referrer",
-      "$pathname",
-      "$initial_current_url",
-      "$raw_user_agent",
-    ])
-      expect(event.properties).not.toHaveProperty(key)
-  }
-  for (const secret of [
-    "private@example.com",
-    "private-doc",
-    "Private document title",
-  ])
-    expect(JSON.stringify(events)).not.toContain(secret)
-  const count = events.length
-  await choice.click()
-  await expect(choice).not.toBeChecked()
-  expect(choices).toEqual([{ enabled: true }, { enabled: false }])
-  await openCloudAccount(page, "Privacy")
-  await expect(choice).not.toBeChecked()
-  expect(events).toHaveLength(count)
+  expect(choices).toEqual([{ enabled: false }, { enabled: true }])
+  expect(collector).toEqual([])
 })

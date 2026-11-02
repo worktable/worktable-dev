@@ -1,4 +1,3 @@
-import { ProductAnalytics } from "@/components/product-analytics"
 import { RUNTIME_BASE_PATH, runtimePath } from "@/lib/runtime-path"
 /// <reference types="vite/client" />
 import {
@@ -614,7 +613,6 @@ function RootLayout() {
     <PageMetaProvider>
       <SidebarContext.Provider value={sidebarCtx}>
         <WorkspaceOperationObserver />
-        <ProductAnalytics />
         <div
           data-worktable-app-shell
           data-worktable-sidebar-open={sidebarOpen ? "true" : "false"}

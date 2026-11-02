@@ -12,7 +12,6 @@
     "./clipboard": "./src/clipboard.ts",
     "./browser": "./src/browser.ts",
     "./consent": "./src/consent.ts",
-    "./product": "./src/product.ts",
     "./react": "./src/react.tsx"
   },
   "dependencies": {

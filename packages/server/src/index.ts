@@ -1,4 +1,4 @@
-import { requestAnalyticsContext, withAnalyticsContext, shutdownAnalytics, type SaveAnalyticsContext } from "./analytics.ts";
+import { countedByGateway, requestAnalyticsContext, withAnalyticsContext, shutdownAnalytics, type SaveAnalyticsContext } from "./analytics.ts";
 import { finalizeRestoredSharingPolicy } from "./share-links-store.ts";
 import { recoverTeamInitialization } from "./team-initialization.ts";
 import { resetTeamSpacePoliciesAfterContentReplacement, finalizePendingTeamSpacePolicyReset } from "./team-policy.ts";
@@ -710,7 +710,7 @@ if (HAS_STATIC) {
       const compressed =
         acceptsGzip(c.req.header("Accept-Encoding") ?? "") &&
         !isLocalBrowserRequest(c.req.raw);
-      return new Response(compressed ? await gzipAsync(page) : page, {
+      return countedByGateway(new Response(compressed ? await gzipAsync(page) : page, {
         headers: {
           ...APP_SHELL_SECURITY_HEADERS,
           "Content-Type": "text/html; charset=utf-8",
@@ -718,9 +718,9 @@ if (HAS_STATIC) {
           Vary: "Cookie, Authorization, Accept-Encoding",
           ...(compressed ? { "Content-Encoding": "gzip" } : {}),
         },
-      });
+      }));
     }
-    return shell.response(pathname, c.req.raw);
+    return countedByGateway(shell.response(pathname, c.req.raw));
   });
 
 }

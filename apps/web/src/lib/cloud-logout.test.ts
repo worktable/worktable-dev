@@ -11,16 +11,12 @@ afterEach(() => {
 
 test("logout falls back to gateway confirmation when session proof cannot be acquired", async () => {
   const assign = mock(() => {})
-  const dispatchEvent = mock((event: Event) => !event.defaultPrevented)
   Object.defineProperty(globalThis, "window", {
     configurable: true,
-    value: { location: { assign }, dispatchEvent },
+    value: { location: { assign } },
   })
   globalThis.fetch = (async () =>
     new Response("Unavailable", { status: 503 })) as typeof fetch
   await submitCloudLogout()
   expect(assign).toHaveBeenCalledWith("/logout")
-  expect(dispatchEvent.mock.calls[0]?.[0]?.type).toBe(
-    "worktable:analytics-stop"
-  )
 })

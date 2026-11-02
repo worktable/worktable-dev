@@ -1008,7 +1008,7 @@ function MarkdownDocPage({
               annotationMutations.reopen.mutate(annotationId)
             }
             onReply={(annotationId, body) =>
-              annotationMutations.reply.mutate({ annotationId, body })
+              annotationMutations.reply.mutateAsync({ annotationId, body })
             }
             onClose={() => setAnnotationsOpen(false)}
             className="bg-transparent"
@@ -1086,7 +1086,7 @@ function MarkdownDocPage({
                   annotationMutations.reopen.mutate(annotationId)
                 }
                 onReply={(annotationId, body) =>
-                  annotationMutations.reply.mutate({ annotationId, body })
+                  annotationMutations.reply.mutateAsync({ annotationId, body })
                 }
                 onClose={() => setAnnotationsOpen(false)}
                 className="max-h-[calc(86dvh-1.5rem)]"
@@ -1101,8 +1101,8 @@ function MarkdownDocPage({
           rootRef={readingRef}
           docPath={docPath}
           context={commentContext}
-          onCreate={(input) => {
-            annotationMutations.create.mutate({ ...input, category: "comment" })
+          onCreate={async (input) => {
+            await annotationMutations.create.mutateAsync({ ...input, category: "comment" })
             // On a phone the highlight confirms it; the next passage is a tap away.
             if (!isMobile) {
               setAnnotationsOpen(true)
@@ -1738,7 +1738,7 @@ function BlockNoteDocPage({
               annotationMutations.reopen.mutate(annotationId)
             }
             onReply={(annotationId, body) =>
-              annotationMutations.reply.mutate({ annotationId, body })
+              annotationMutations.reply.mutateAsync({ annotationId, body })
             }
             onClose={() => setAnnotationsOpen(false)}
             className="bg-transparent"
@@ -1815,7 +1815,7 @@ function BlockNoteDocPage({
                   annotationMutations.reopen.mutate(annotationId)
                 }
                 onReply={(annotationId, body) =>
-                  annotationMutations.reply.mutate({ annotationId, body })
+                  annotationMutations.reply.mutateAsync({ annotationId, body })
                 }
                 onClose={() => setAnnotationsOpen(false)}
                 className="max-h-[calc(86dvh-1.5rem)]"
@@ -1830,9 +1830,9 @@ function BlockNoteDocPage({
         open={composerOpen && !readOnly}
         onOpenChange={setComposerOpen}
         context={commentContext}
-        onSubmit={(body, to) => {
+        onSubmit={async (body, to, idempotencyKey) => {
           if (!composerDraft) return
-          annotationMutations.create.mutate({
+          await annotationMutations.create.mutateAsync({
             target: {
               type: "block",
               docPath,
@@ -1843,6 +1843,7 @@ function BlockNoteDocPage({
             category: "comment",
             body,
             to,
+            idempotencyKey,
           })
           if (!isMobile) setAnnotationsOpen(true)
         }}
@@ -1853,8 +1854,8 @@ function BlockNoteDocPage({
           rootRef={standInRef}
           docPath={docPath}
           context={commentContext}
-          onCreate={(input) => {
-            annotationMutations.create.mutate({ ...input, category: "comment" })
+          onCreate={async (input) => {
+            await annotationMutations.create.mutateAsync({ ...input, category: "comment" })
             if (!isMobile) setAnnotationsOpen(true)
           }}
         />

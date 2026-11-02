@@ -78,13 +78,22 @@ export function AnnotationComposer({
     | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** `to` holds the participant it is sent to, or is empty. */
-  onSubmit: (body: string, to: string[]) => void;
+  /**
+   * Sends the comment; the box stays open until it's saved. `to` holds the
+   * participant it is sent to, or is empty. `key` is the same for every try
+   * at sending one draft, so a repeat makes no second comment.
+   */
+  onSubmit: (body: string, to: string[], key: string) => Promise<unknown>;
   context?: CommentContext;
   /** Names the box for assistive technology, and on a phone, its sheet. */
   label?: string;
 }) {
   const [body, setBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  // One key per draft, kept current for a send that finishes late.
+  const draftKey = useRef("");
+  const inFlight = useRef(false);
   const recipients = useCommentRecipients(
     context?.spaceId,
     context?.contributors,
@@ -116,8 +125,12 @@ export function AnnotationComposer({
     if (open) {
       setBody("");
       setPicked(null);
+      setFailed(false);
     }
   }
+  useEffect(() => {
+    if (open) draftKey.current = `comment:${crypto.randomUUID()}`;
+  }, [open]);
 
   // Writing moves focus away from the page, which hides the selection; keep
   // the text in view as the thing being commented on.
@@ -130,9 +143,26 @@ export function AnnotationComposer({
 
   const submit = () => {
     const trimmed = body.trim();
-    if (!trimmed || awaitingRecipient) return;
-    onSubmit(trimmed, recipients && recipient !== NO_RECIPIENT ? [recipient] : []);
-    onOpenChange(false);
+    // A second press can arrive before the first one renders.
+    if (!trimmed || awaitingRecipient || inFlight.current) return;
+    const key = draftKey.current;
+    inFlight.current = true;
+    setSending(true);
+    setFailed(false);
+    onSubmit(trimmed, recipients && recipient !== NO_RECIPIENT ? [recipient] : [], key)
+      .then(
+        () => {
+          // Closed and opened again meanwhile: that's a new draft.
+          if (draftKey.current === key) onOpenChange(false);
+        },
+        () => {
+          if (draftKey.current === key) setFailed(true);
+        }
+      )
+      .finally(() => {
+        inFlight.current = false;
+        setSending(false);
+      });
   };
   // The box loads when it first opens; it takes focus as it arrives.
   const focusOnArrival = useCallback((node: HTMLTextAreaElement | null) => {
@@ -146,7 +176,8 @@ export function AnnotationComposer({
         value={body}
         onChange={setBody}
         onSubmit={submit}
-        pending={false}
+        pending={sending}
+        error={failed ? "Couldn't send the comment." : undefined}
         disabled={!draft}
         canSubmit={!awaitingRecipient}
         placeholder="Write a comment…"
@@ -167,7 +198,7 @@ export function AnnotationComposer({
 
   if (isMobile || !anchor) {
     return (
-      <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialog open={open} onOpenChange={onOpenChange} keyboardFriendly>
         <ResponsiveDialogContent>
           <ResponsiveDialogHeader className="sr-only">
             <ResponsiveDialogTitle>{label}</ResponsiveDialogTitle>

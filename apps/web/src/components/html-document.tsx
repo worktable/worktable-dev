@@ -933,7 +933,7 @@ function WidgetDetailPage({
               annotationMutations.reopen.mutate(annotationId)
             }
             onReply={(annotationId, body) =>
-              annotationMutations.reply.mutate({ annotationId, body })
+              annotationMutations.reply.mutateAsync({ annotationId, body })
             }
             onClose={() => setAnnotationsOpen(false)}
             onCompose={(trigger) => {
@@ -1014,7 +1014,7 @@ function WidgetDetailPage({
                   annotationMutations.reopen.mutate(annotationId)
                 }
                 onReply={(annotationId, body) =>
-                  annotationMutations.reply.mutate({ annotationId, body })
+                  annotationMutations.reply.mutateAsync({ annotationId, body })
                 }
                 onClose={() => setAnnotationsOpen(false)}
                 onCompose={(trigger) => {
@@ -1036,12 +1036,13 @@ function WidgetDetailPage({
         open={composerOpen && !readOnly}
         onOpenChange={setComposerOpen}
         context={{ spaceId, contributors: docContributors(page) }}
-        onSubmit={(body, to) => {
-          annotationMutations.create.mutate({
+        onSubmit={async (body, to, idempotencyKey) => {
+          await annotationMutations.create.mutateAsync({
             target: { type: "widget", widgetId },
             category: "comment",
             body,
             to,
+            idempotencyKey,
           })
           setAnnotationsOpen(true)
           setVersionsOpen(false)

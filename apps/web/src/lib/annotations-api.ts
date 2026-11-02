@@ -50,6 +50,8 @@ export async function createAnnotation(spaceId: string, input: {
   labels?: string[];
   /** Participants the comment is sent to. */
   to?: string[];
+  /** The same key sent twice makes one comment. */
+  idempotencyKey?: string;
 }) {
   const author = await canonicalUserAuthor();
   return fetchJSON<{ ok: true; annotationId: string; annotation: Annotation; created: boolean }>(

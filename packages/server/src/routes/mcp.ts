@@ -14,6 +14,8 @@ import {
   type WorktableMcpServerOptions,
 } from "../mcp/server.ts"
 import { configuredMcpSurface, mcpModernEraEnabled } from "../mcp/surface.ts"
+import { PUBLIC_TOOL_NAMES } from "../mcp/catalog.ts"
+import { earlierToolFor } from "../mcp/legacy-calls.ts"
 import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts"
 import type { TokenIdentity } from "../token-store.ts"
 import { runWithTeamIdentity } from "../team-policy.ts"
@@ -132,12 +134,13 @@ export interface RemoteMcpRequestOptions {
 
 /** Tells the Cloud gateway which call it answered, for its request counts. */
 export const MCP_CALL_HEADER = "x-worktable-mcp"
-const CALL_TOOL = /^[a-z][a-z0-9_]{0,63}$/
+const LISTED_TOOLS: ReadonlySet<string> = new Set(PUBLIC_TOOL_NAMES)
 
 function callName(message: unknown): string | null {
   const call = message as { method?: unknown; params?: { name?: unknown } } | null
   if (typeof call?.method !== "string" || !/^[a-z/_]{1,64}$/i.test(call.method)) return null
-  const tool = call.method === "tools/call" && typeof call.params?.name === "string" && CALL_TOOL.test(call.params.name)
+  // Only a tool Worktable answers is named; a caller's own string never is.
+  const tool = call.method === "tools/call" && typeof call.params?.name === "string" && (LISTED_TOOLS.has(call.params.name) || earlierToolFor(call.params.name) !== null)
     ? call.params.name
     : ""
   return tool ? `${call.method} ${tool}` : call.method

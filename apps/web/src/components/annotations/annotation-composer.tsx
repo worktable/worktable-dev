@@ -9,6 +9,7 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog";
+import { createClientId } from "@/lib/client-id";
 import { NO_RECIPIENT, useCommentRecipients } from "@/lib/comment-recipients";
 import { setHighlight } from "./passage-text";
 import { Quote } from "@/components/quote";
@@ -93,6 +94,9 @@ export function AnnotationComposer({
   const [failed, setFailed] = useState(false);
   // One key per draft, kept current for a send that finishes late.
   const draftKey = useRef("");
+  // The text as it is now, for a send that finishes after more typing.
+  const latestBody = useRef(body);
+  latestBody.current = body;
   const inFlight = useRef(false);
   const recipients = useCommentRecipients(
     context?.spaceId,
@@ -129,7 +133,7 @@ export function AnnotationComposer({
     }
   }
   useEffect(() => {
-    if (open) draftKey.current = `comment:${crypto.randomUUID()}`;
+    if (open) draftKey.current = createClientId("comment");
   }, [open]);
 
   // Writing moves focus away from the page, which hides the selection; keep
@@ -153,7 +157,11 @@ export function AnnotationComposer({
       .then(
         () => {
           // Closed and opened again meanwhile: that's a new draft.
-          if (draftKey.current === key) onOpenChange(false);
+          if (draftKey.current !== key) return;
+          if (latestBody.current.trim() === trimmed) onOpenChange(false);
+          // Written on while it sent: what was sent is saved, and the rest
+          // stays as a new comment to send.
+          else draftKey.current = createClientId("comment");
         },
         () => {
           if (draftKey.current === key) setFailed(true);

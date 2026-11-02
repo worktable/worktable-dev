@@ -303,7 +303,8 @@ function AnnotationCard({
               setFailed(false);
               onReply(trimmed)
                 .then(
-                  () => setReply(""),
+                  // Text written while it sent stays to send next.
+                  () => setReply((current) => (current.trim() === trimmed ? "" : current)),
                   () => setFailed(true)
                 )
                 .finally(() => setSending(false));

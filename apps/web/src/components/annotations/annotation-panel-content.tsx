@@ -22,6 +22,7 @@ import { Quote } from "@/components/quote"
 import { RelativeTime } from "@/lib/time"
 import { authorName } from "./comment-author"
 import { CommentAvatar, CommentMessage } from "./comment-message"
+import { ThreadMarkdownProvider } from "@/components/threads/thread-markdown"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useWorkspace } from "@/lib/queries"
 
@@ -382,6 +383,11 @@ function CommentThread({
   const mayReply = canReply && (!isResolved || !readOnly);
   const quote = "quote" in annotation.target ? annotation.target.quote : undefined;
   const replies = annotation.thread;
+  // Links in messages resolve in the comment's Space, as in a Thread there.
+  const location = useMemo(
+    () => ({ kind: "space" as const, spaceId: annotation.spaceId }),
+    [annotation.spaceId]
+  );
   // A long conversation opens on its latest replies.
   const hidden = allReplies || replies.length <= 6 ? 0 : replies.length - 3;
 
@@ -423,6 +429,7 @@ function CommentThread({
           </span>
         )}
       </div>
+      <ThreadMarkdownProvider location={location} mentionNames={NO_MENTIONS}>
       <article
         ref={scrollRef}
         aria-label={`Comment by ${authorName(annotation.author)}`}
@@ -485,6 +492,7 @@ function CommentThread({
           />
         ))}
       </article>
+      </ThreadMarkdownProvider>
       {mayReply && (
         <div className="shrink-0 border-t border-border px-3 pt-2.5 pb-3">
           <Composer
@@ -505,6 +513,8 @@ function CommentThread({
     </div>
   );
 }
+
+const NO_MENTIONS: string[] = [];
 
 /** Names who a reply goes to when it goes to an agent that answered. */
 function replyPlaceholder(annotation: Annotation, selfId?: string): string {

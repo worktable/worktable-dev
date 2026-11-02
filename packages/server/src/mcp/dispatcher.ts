@@ -91,6 +91,7 @@ import {
   queryRecords,
   readRecord,
   readRecordCollectionSchema,
+  listRecordCollectionNames,
   updateRecord,
   writeRecordCollectionSchema,
 } from "../record-store.ts"
@@ -889,10 +890,14 @@ async function addsToSpace(
       return args["ifExists"] !== "replace"
     case "docs.write":
       return !(await docExists(spaceId, args["docPath"] as string))
+    // Writing Records to a collection that doesn't exist yet starts one.
     case "records.upsert_collection":
-      return !(
-        await readRecordCollectionSchema(spaceId, args["collectionId"] as string)
-      ).data
+    case "records.create":
+    case "records.create_many":
+    case "records.import":
+      return !(await listRecordCollectionNames(spaceId)).has(
+        args["collectionId"] as string
+      )
     default:
       return false
   }

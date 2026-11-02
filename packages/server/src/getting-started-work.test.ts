@@ -88,6 +88,12 @@ it("sends an agent's first work to a Space of its own, never into Getting Starte
       name: "Trips",
       fields: { title: { type: "string", name: "Trip" } },
     }),
+    // Records written to a collection that doesn't exist would start one.
+    tool("worktable_records_create", {
+      spaceId: "welcome",
+      collectionId: "trips",
+      records: [{ data: { title: "Lisbon" } }],
+    }),
   ]
   for (const refused of await Promise.all(attempts)) {
     expect(refused.ok).toBe(false)
@@ -95,7 +101,7 @@ it("sends an agent's first work to a Space of its own, never into Getting Starte
   }
   expect(await listDocs("welcome")).not.toContain("lisbon-trip")
 
-  // The guides themselves stay editable.
+  // The guides and the example board stay editable.
   const guide = await tool("worktable_docs_read", {
     spaceId: "welcome",
     docPath: "prompts-to-try",
@@ -107,6 +113,12 @@ it("sends an agent's first work to a Space of its own, never into Getting Starte
     edits: [{ oldText: "# Prompts to Try", newText: "# My Prompts" }],
   })
   expect(edited.ok).toBe(true)
+  const task = await tool("worktable_records_create", {
+    spaceId: "welcome",
+    collectionId: "launch-plan",
+    data: { title: "Book the venue", status: "To do", sequence: 6 },
+  })
+  expect(task.ok).toBe(true)
 
   // Following the advice works, and the hint goes back to orientation.
   const created = await tool("worktable_spaces_write", { name: "Lisbon Trip" })

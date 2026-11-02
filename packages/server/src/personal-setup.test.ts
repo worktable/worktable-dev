@@ -14,6 +14,7 @@ import {
 } from "./personal-setup.ts"
 import { parsePersonalSetup } from "./personal-setup-shape.ts"
 import { profileRouter } from "./routes/profile.ts"
+import { writeSpace } from "./store.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
 import {
   prepareWorkspaceTarget,
@@ -71,9 +72,27 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
-it("completes the owner's first task from their agent's work, not their own", async () => {
+it("completes the owner's first task from their agent's work in their own Space", async () => {
   expect(await setup()).toEqual({ items: {} })
+  const now = new Date().toISOString()
+  await writeSpace({
+    type: "worktable.space",
+    version: 1,
+    id: "welcome",
+    name: "Getting Started",
+    createdAt: now,
+    updatedAt: now,
+    createdBy: "worktable",
+    settings: { gettingStarted: true },
+  })
 
+  // Neither the owner's own doc nor an agent's edit to a guide counts.
+  recordActivity({
+    spaceId: "welcome",
+    action: "doc.edited",
+    actor: { kind: "agent", id: "local-token:codex" },
+    target: { kind: "doc", path: "prompts-to-try" },
+  })
   recordActivity({
     spaceId: "atlas",
     action: "doc.created",

@@ -12,6 +12,7 @@ import { PageWithActivity } from "@/components/home/page-with-activity"
 import { useSpaces } from "@/lib/queries"
 import { useRecentDocuments } from "@/lib/lifetime"
 import { getSpaceArchiveInfo } from "@/lib/spaces"
+import { isGettingStartedSpace } from "@/lib/setup"
 import {
   Select,
   SelectContent,
@@ -118,7 +119,9 @@ function HomePage() {
           <h1 className="min-h-9 font-display text-[1.65rem] leading-tight font-semibold tracking-tight text-foreground sm:min-h-10 sm:text-[2rem]">
             {today}
           </h1>
-          <HomeNewMenu spaces={activeSpaces} />
+          <HomeNewMenu
+            spaces={activeSpaces.filter((space) => !isGettingStartedSpace(space))}
+          />
         </header>
 
         <PendingSection />

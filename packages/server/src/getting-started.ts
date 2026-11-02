@@ -43,6 +43,16 @@ export function spaceOpen(spaceId: string): boolean {
   return Boolean(space && !getSpaceArchiveInfo(space))
 }
 
+/**
+ * Whether a Space is the seeded Getting Started, read from its file. It holds
+ * Worktable's guides, so a person's own work belongs in a Space of its own.
+ */
+export function isGettingStartedSpaceId(spaceId: string): boolean {
+  if (spaceId !== GETTING_STARTED_SPACE_ID) return false
+  const space = storedSpace(spaceId)
+  return Boolean(space && isGettingStartedSpace(space))
+}
+
 /** Whether this Worktable has a Getting Started Space in use. */
 export function gettingStartedOpen(): boolean {
   const space = storedSpace(GETTING_STARTED_SPACE_ID)

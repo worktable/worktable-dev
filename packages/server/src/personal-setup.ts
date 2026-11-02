@@ -5,6 +5,7 @@ import {
   type SetupItemId,
 } from "@worktable/types/setup"
 import { logError } from "./debug-log.ts"
+import { isGettingStartedSpaceId } from "./getting-started.ts"
 import { participantKey } from "./participant-store.ts"
 import {
   movePersonSetup,
@@ -171,10 +172,14 @@ export function noteAgentPairedForSetup(key: string | null): Promise<void> {
   return completeSetupItem(key, "connect-agent")
 }
 
-/** An agent's first doc, or its first edit, is its first task done. */
+/**
+ * An agent's first doc, or its first edit, is its first task done. Work in
+ * Getting Started doesn't count: the task is a Space of the person's own.
+ */
 export function observeActivityForSetup(event: ActivityEvent): void {
   if (event.actor.kind !== "agent") return
   if (event.action !== "doc.created" && event.action !== "doc.edited") return
+  if (event.spaceId && isGettingStartedSpaceId(event.spaceId)) return
   void completeSetupItem(currentSetupKey(), "first-task", {
     ...(event.spaceId ? { spaceId: event.spaceId } : {}),
     ...(event.target.kind === "doc" ? { path: event.target.path } : {}),

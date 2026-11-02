@@ -49,7 +49,8 @@ Archived documents are never deleted automatically.
 - **Search** covers documents and records across Spaces, and can include
   archived results. Drawings match on typed text only.
 - **Home** shows what is pending for you, recent durable docs, and temporary
-  docs that archive soonest. Space Home does the same for one Space.
+  docs that archive soonest. Getting Started's guides appear there only when
+  you filter by that Space. Space Home does the same for one Space.
 - **Activity** lists what people and agents did, newest first. Filter by Space,
   by you, or by agent.
 - **Threads** lists conversations across Worktable; each Space has its own.

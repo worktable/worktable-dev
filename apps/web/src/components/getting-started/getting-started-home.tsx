@@ -317,9 +317,28 @@ function InviteBody({
   )
 }
 
-/** Where a finished task happened. */
-function Evidence({ evidence }: { evidence: SetupEvidence }) {
-  if (!evidence.spaceId || !evidence.path) return null
+/** Where a finished task happened: its Doc, or the Space it is in. */
+function Evidence({
+  evidence,
+  spaceName,
+}: {
+  evidence: SetupEvidence
+  /** Set to link to the Space rather than the Doc. */
+  spaceName?: string
+}) {
+  if (!evidence.spaceId) return null
+  if (spaceName) {
+    return (
+      <Link
+        to="/spaces/$spaceId"
+        params={{ spaceId: evidence.spaceId }}
+        className="min-w-0 truncate text-sm text-muted-foreground hover:text-foreground"
+      >
+        {spaceName}
+      </Link>
+    )
+  }
+  if (!evidence.path) return null
   return (
     <Link
       to="/spaces/$spaceId/documents/$"
@@ -335,6 +354,7 @@ function StepRow({
   item,
   number,
   evidence,
+  evidenceSpaceName,
   open,
   kept = false,
   onOpenChange,
@@ -343,6 +363,8 @@ function StepRow({
   item: ChecklistItem
   number: number
   evidence: SetupEvidence | undefined
+  /** The Space a done row names, for steps about a Space. */
+  evidenceSpaceName?: string
   open: boolean
   /** Finished here just now, so it stays open until the person moves on. */
   kept?: boolean
@@ -393,7 +415,9 @@ function StepRow({
         {evidence?.skipped ? (
           <span className="text-sm text-muted-foreground">Skipped</span>
         ) : done && !kept ? (
-          evidence && <Evidence evidence={evidence} />
+          evidence && (
+            <Evidence evidence={evidence} spaceName={evidenceSpaceName} />
+          )
         ) : (
           <ChevronRight
             className={cn(
@@ -515,6 +539,13 @@ export function GettingStartedHome() {
               item={item}
               number={index + 1}
               evidence={setup.items[item.id]}
+              evidenceSpaceName={
+                item.evidence === "space"
+                  ? spaces?.find(
+                      (entry) => entry.id === setup.items[item.id]?.spaceId
+                    )?.name
+                  : undefined
+              }
               open={openId === item.id}
               kept={kept === item.id}
               onOpenChange={(next) => {

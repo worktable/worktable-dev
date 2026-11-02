@@ -19,6 +19,8 @@ export interface ChecklistItem {
   id: SetupItemId
   title: string
   description: string
+  /** What a done row links to: the Doc, or the Space it is in. */
+  evidence?: "space"
 }
 
 /** Owners can invite once people have accounts to sign in with. */
@@ -33,7 +35,14 @@ const FIRST_SPACE: ChecklistItem = {
   id: "first-task",
   title: "Set up your first Space",
   description: "Your agent builds it from what it already knows.",
+  evidence: "space",
 }
+
+/**
+ * When the global rules step reached Getting Started (v0.1.32). Lists whose
+ * first task was done before then don't gain it.
+ */
+const AGENT_INSTRUCTIONS_ADDED_AT = "2026-10-28T02:57:07.000Z"
 
 const AGENT_INSTRUCTIONS: ChecklistItem = {
   id: "agent-instructions",
@@ -43,8 +52,8 @@ const AGENT_INSTRUCTIONS: ChecklistItem = {
 
 /**
  * Each person's own steps, in the order they're worth doing. The
- * instructions come before the first task; once an agent has done one
- * without them, the step isn't added to a list that was further along.
+ * instructions come before the first task. A list whose first task was done
+ * before the step existed isn't reopened for it.
  */
 export function checklistFor(
   role: "owner" | "member",
@@ -54,8 +63,11 @@ export function checklistFor(
     items: PersonalSetup["items"]
   }
 ): ChecklistItem[] {
+  const firstTask = options.items["first-task"]
   const instructions =
-    options.items["first-task"] && !options.items["agent-instructions"]
+    firstTask &&
+    !options.items["agent-instructions"] &&
+    firstTask.at < AGENT_INSTRUCTIONS_ADDED_AT
       ? []
       : [AGENT_INSTRUCTIONS]
   if (role === "member") {
@@ -113,16 +125,23 @@ export function checklistProgress(
   }
 }
 
+/** Whether a Space is the seeded Getting Started, which holds the guides. */
+export function isGettingStartedSpace(
+  space: Pick<SpaceView, "id" | "settings">
+): boolean {
+  return (
+    space.id === GETTING_STARTED_SPACE_ID &&
+    space.settings?.[GETTING_STARTED_SETTING] === true
+  )
+}
+
 /** The seeded Getting Started Space, if this person can see it. */
 export function gettingStartedSpace(
   spaces: SpaceView[] | undefined
 ): SpaceView | null {
   return (
     spaces?.find(
-      (space) =>
-        space.id === GETTING_STARTED_SPACE_ID &&
-        space.settings?.[GETTING_STARTED_SETTING] === true &&
-        !getSpaceArchiveInfo(space)
+      (space) => isGettingStartedSpace(space) && !getSpaceArchiveInfo(space)
     ) ?? null
   )
 }

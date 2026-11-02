@@ -9,10 +9,15 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Your first Space:** Agents save your first work in a new Space named for it, not among the Getting Started guides, which Home's Recent no longer lists.
+
 ### Fixed
 
 - **Starting from an AI app:** When your agent connected before you first opened your Worktable, the link it gave you opens what it made instead of setup, and Getting Started counts what the agent already did.
 - **Setup:** Setup returns you to the page you opened, and on the Solo plan it no longer asks you to invite anyone.
+- **Getting Started:** Starting from an app no longer skips the step that adds Worktable to your agent's global rules.
 
 ## [0.1.38] - 2026-11-02
 

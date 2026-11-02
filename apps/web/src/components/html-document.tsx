@@ -927,6 +927,7 @@ function WidgetDetailPage({
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
             onSelectAnnotation={selectAnnotation}
+            onDeselectAnnotation={() => setActiveAnnotationId(null)}
             onResolve={(annotationId) =>
               annotationMutations.resolve.mutate({ annotationId })
             }
@@ -941,7 +942,6 @@ function WidgetDetailPage({
               setComposerAnchor(trigger)
               setComposerOpen(true)
             }}
-            composeLabel="Comment on this HTML doc"
             emptyHint="Leave a comment for this HTML doc."
             className="bg-transparent"
           />
@@ -1008,6 +1008,7 @@ function WidgetDetailPage({
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}
                 onSelectAnnotation={selectAnnotation}
+                onDeselectAnnotation={() => setActiveAnnotationId(null)}
                 onResolve={(annotationId) =>
                   annotationMutations.resolve.mutate({ annotationId })
                 }
@@ -1022,8 +1023,7 @@ function WidgetDetailPage({
               setComposerAnchor(trigger)
               setComposerOpen(true)
             }}
-                composeLabel="Comment on this HTML doc"
-                emptyHint="Leave a comment for this HTML doc."
+                    emptyHint="Leave a comment for this HTML doc."
                 className="max-h-[min(calc(86dvh-1.5rem),calc(var(--app-visual-viewport-height,100dvh)-2.5rem))]"
               />
             </DrawerContent>
@@ -1033,7 +1033,6 @@ function WidgetDetailPage({
 
       <CommentBox
         draft={{ anchor: composerAnchor }}
-        label="Comment on this HTML doc"
         open={composerOpen && !readOnly}
         onOpenChange={setComposerOpen}
         context={{ spaceId, contributors: docContributors(page) }}

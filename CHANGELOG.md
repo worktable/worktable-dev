@@ -12,6 +12,7 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **Cloud analytics:** The app no longer loads an analytics script in your browser. Worktable Cloud counts visits on its own servers, and your choice in Settings → Privacy still applies.
+- **Comments:** The comments list shows each comment's latest message, who is in it, and when an agent is working on it. Opening one shows the whole conversation, with names, times and Markdown from agents, and a reply box at the bottom that names the agent a reply goes to. Replying to a resolved comment opens it again.
 
 ### Fixed
 

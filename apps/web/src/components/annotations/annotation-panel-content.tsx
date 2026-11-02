@@ -314,7 +314,7 @@ function ThreadRow({
         <CommentAvatar author={latest.author} />
         <span className="line-clamp-2 min-w-0 pt-0.5 text-[0.84375rem] leading-5 text-foreground/85">
           <span className="font-medium text-foreground">{authorName(latest.author)}</span>{" "}
-          {previewText(latest.body)}
+          <span>{previewText(latest.body)}</span>
         </span>
       </span>
       <span className="flex min-h-5 items-center gap-2 ps-8 text-xs text-muted-foreground">

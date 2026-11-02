@@ -9,8 +9,14 @@ Start with one project brief. To use the prompts below,
 ## Setup and Getting Started
 
 A new Worktable starts with a short setup: name it, connect your agent, and
-invite your team or skip that for now. Setup ends in the **Getting Started**
-Space, which stays at the top of the sidebar until you remove it.
+invite your team or skip that for now. On the Solo plan, setup doesn't ask you
+to invite anyone. If your agent connected before you first opened your
+Worktable, as when you start from ChatGPT or another app, there is no setup:
+the link your agent gave you opens what it made.
+
+Setup that starts on Home ends in the **Getting Started** Space, which stays at
+the top of the sidebar until you remove it. Setup that starts on another page
+returns to that page.
 
 Its home lists your first steps, and each one ticks off when it happens:
 

@@ -669,3 +669,82 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
   await profileResponse
   await expect(displayName).toHaveValue("Name still being edited")
 })
+
+test("a Solo Cloud owner who opens a link during setup isn't asked to invite and finishes on that page", async ({
+  page,
+}) => {
+  const docPath = "lisbon-trip"
+  const written = await page.request.put(
+    `${harness.apiUrl}/api/spaces/welcome/docs/${docPath}`,
+    {
+      data: {
+        content: [
+          {
+            id: "title",
+            type: "heading",
+            props: { level: 1 },
+            content: "Lisbon trip plan",
+          },
+          { id: "intro", type: "paragraph", content: "Four days in March." },
+        ],
+      },
+    }
+  )
+  expect(written.ok()).toBe(true)
+
+  // As Cloud describes a Solo owner whose setup hasn't finished.
+  let finished = false
+  await page.route("**/api/workspace", async (route) => {
+    if (route.request().method() !== "GET") {
+      finished = true
+      return route.continue()
+    }
+    const response = await route.fetch()
+    const workspace = await response.json()
+    await route.fulfill({
+      response,
+      json: {
+        ...workspace,
+        ...(finished ? {} : { onboarding: { status: "pending" } }),
+        person: { ...workspace.person, role: "owner", signOut: "cloud" },
+        cloudPlan: {
+          plan: "solo",
+          access: "active",
+          peopleLimit: 1,
+          people: 1,
+          payerName: "Mara",
+          isPayer: true,
+        },
+      },
+    })
+  })
+  await page.route("**/api/system/connection", async (route) => {
+    const response = await route.fetch()
+    await route.fulfill({
+      response,
+      json: {
+        ...(await response.json()),
+        mcpAuthMode: "oauth",
+        agentPairing: false,
+        remoteMcpUrl: "https://cloud.example.test/api/mcp/w/wt_fixture",
+      },
+    })
+  })
+
+  await page.goto(appUrl(`/spaces/welcome/documents/${docPath}`), {
+    waitUntil: "domcontentloaded",
+  })
+  await expect(
+    page.getByRole("heading", { name: "Connect your agent" })
+  ).toBeVisible({ timeout: 30_000 })
+  await page.getByRole("button", { name: "Skip for now", exact: true }).click()
+
+  await expect(page.locator("[data-worktable-app-shell]")).toBeVisible()
+  await expect(page.getByText("Four days in March.")).toBeVisible()
+  expect(new URL(page.url()).pathname).toBe(
+    `/spaces/welcome/documents/${docPath}`
+  )
+  await expect(
+    page.getByRole("heading", { name: "Invite your team" })
+  ).toHaveCount(0)
+})

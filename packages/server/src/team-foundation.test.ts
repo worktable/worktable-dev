@@ -1,4 +1,5 @@
 import { readPersonSetup } from "./personal-navigation-store.ts"
+import { completeSetupItem, OWNER_SETUP_KEY } from "./personal-setup.ts"
 import type { SetupItemId } from "@worktable/types/setup"
 import { base64url, SignJWT } from "jose"
 import {
@@ -1531,6 +1532,62 @@ test("a member's Cloud sign-in that they disconnected reconnects only after the 
   }
 })
 
+test("an agent that connected before its owner first opened a Cloud Worktable carries its progress over and completes first-run", async () => {
+  const previous = {
+    hosted: process.env.WORKTABLE_HOSTED,
+    issuer: process.env.WORKTABLE_AUTH_SERVER_URL,
+    owner: process.env.WORKTABLE_OWNER_SUBJECT,
+  }
+  process.env.WORKTABLE_HOSTED = "1"
+  process.env.WORKTABLE_AUTH_SERVER_URL = "https://identity.example.test"
+  process.env.WORKTABLE_OWNER_SUBJECT = "user_mara"
+  try {
+    const { resolveVerifiedCloudMember } = await import("./team-cloud.ts")
+    // Signing up from an app: the agent connects and writes a Doc before
+    // anyone opens the Worktable, so its team doesn't exist yet.
+    expect(teamsEnabled()).toBe(false)
+    await completeSetupItem(OWNER_SETUP_KEY, "connect-agent")
+    await completeSetupItem(OWNER_SETUP_KEY, "first-task", {
+      spaceId: "welcome",
+      path: "lisbon-trip",
+    })
+    expect(ensureWorkspaceManifest().onboarding?.status).toBe("pending")
+
+    const owner = await resolveVerifiedCloudMember(
+      origin,
+      {
+        issuer: "https://identity.example.test",
+        subject: "user_mara",
+        email: "mara@example.test",
+        name: "Mara",
+      },
+      false,
+      "Mara's Worktable"
+    )
+
+    const setup = readPersonSetup(participantKey(owner!))
+    expect(setup?.items["connect-agent"]).toBeDefined()
+    expect(setup?.items["first-task"]).toMatchObject({
+      spaceId: "welcome",
+      path: "lisbon-trip",
+    })
+    expect(readPersonSetup(OWNER_SETUP_KEY)).toBeUndefined()
+    expect(ensureWorkspaceManifest()).toMatchObject({
+      name: "Mara's Worktable",
+      onboarding: { status: "complete" },
+    })
+  } finally {
+    for (const [key, value] of [
+      ["WORKTABLE_HOSTED", previous.hosted],
+      ["WORKTABLE_AUTH_SERVER_URL", previous.issuer],
+      ["WORKTABLE_OWNER_SUBJECT", previous.owner],
+    ] as const) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+})
+
 test("an HTML Doc reads Records for members with read access and writes only for editors", async () => {
   const { owner, member, bobHeaders } = await setup()
   setSpaceAccessPolicy(
@@ -2712,7 +2769,11 @@ test("Cloud maps provider subjects to the same membership model and keeps browse
         >("SELECT COUNT(*) AS count FROM organization")
         .get()!.count
     ).toBe(1)
-    expect(ensureWorkspaceManifest().name).toBe("First cloud team")
+    expect(ensureWorkspaceManifest()).toMatchObject({
+      name: "First cloud team",
+      // No agent has connected yet, so first-run setup still opens.
+      onboarding: { status: "pending" },
+    })
     expect(owner?.principal.type).toBe("human")
     expect(owner?.principal.id).not.toBe("workos:user_alice")
     const { serveTeamDirectory } = await import("./team-directory.ts")

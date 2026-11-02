@@ -324,7 +324,7 @@ test("Cloud Billing keeps export available while billing access is locked", asyn
   expect(exportMethod).toBe("GET")
 })
 
-test("Cloud analytics leaves counting to the gateway and saves the account choice", async ({
+test("Cloud analytics leaves counting to the gateway, carries a browser refusal, and saves the account choice", async ({
   page,
 }) => {
   await mockCloudAccount(page)
@@ -361,16 +361,30 @@ test("Cloud analytics leaves counting to the gateway and saves the account choic
     collector.push(route.request().url())
     await route.fulfill({ contentType: "application/json", body: "{}" })
   })
+  // This browser refused analytics in an earlier version, and the account
+  // has no choice yet: the refusal becomes the account's.
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem("seeded")) {
+      localStorage.setItem("worktable.public-analytics", "off")
+      sessionStorage.setItem("seeded", "1")
+    }
+  })
   // The gateway counts the visit; the page itself sends nothing.
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
+  await expect
+    .poll(() => choices)
+    .toEqual([{ enabled: false, initialOnly: true }])
   await openCloudAccount(page, "Privacy")
   const choice = page.getByRole("switch", { name: "Share usage analytics" })
-  // An account without a recorded choice is measured by default.
-  await expect(choice).toBeChecked()
-  await choice.click()
   await expect(choice).not.toBeChecked()
   await choice.click()
   await expect(choice).toBeChecked()
-  expect(choices).toEqual([{ enabled: false }, { enabled: true }])
+  await choice.click()
+  await expect(choice).not.toBeChecked()
+  expect(choices).toEqual([
+    { enabled: false, initialOnly: true },
+    { enabled: true },
+    { enabled: false },
+  ])
   expect(collector).toEqual([])
 })

@@ -276,6 +276,7 @@ function enqueue(
       client ??= new PostHog(config.token, {
         host: config.host,
         flushAt: 20,
+        maxBatchSize: 20,
         flushInterval: 10_000,
         maxQueueSize: 100,
         fetchRetryCount: 0,
@@ -346,7 +347,8 @@ async function consented(
 ): Promise<boolean> {
   const key = [...subjects].sort().join(",")
   const cached = consents.get(key)
-  if (cached && cached.until > Date.now()) return cached.enabled
+  const asked = Date.now()
+  if (cached && cached.until > asked) return cached.enabled
   const response = await fetch(config.consentUrl, {
     method: "POST",
     redirect: "error",
@@ -363,12 +365,14 @@ async function consented(
   const enabled =
     ((await response.json()) as { enabled?: unknown }).enabled === true
   if (consents.size >= 1000) consents.clear()
-  consents.set(key, { enabled, until: Date.now() + CONSENT_TTL_MS })
+  // The minute counts from the question, so a reply can't extend it.
+  consents.set(key, { enabled, until: asked + CONSENT_TTL_MS })
   return enabled
 }
 
 export async function flushAnalytics(): Promise<void> {
-  await Promise.allSettled([...deliveries])
+  // Deliveries that start while earlier ones settle are waited for too.
+  while (deliveries.size > 0) await Promise.allSettled([...deliveries])
   await client?.flush().catch(() => undefined)
 }
 export async function shutdownAnalytics(): Promise<void> {

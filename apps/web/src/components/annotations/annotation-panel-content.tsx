@@ -411,7 +411,7 @@ function CommentThread({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-1 px-2 pb-1">
-        <Button size="xs" variant="ghost" onClick={onBack} aria-label="Back to comments">
+        <Button size="xs" variant="ghost" onClick={onBack}>
           <ChevronLeft className="size-4" />
           All Comments
         </Button>

@@ -297,7 +297,7 @@ for (const mobile of [true, false]) {
         )
         .toEqual(["Moved to **June**.", "Thanks, June works."])
       await expect(thread.getByText("Thanks, June works.")).toBeVisible()
-      await page.getByRole("button", { name: "Back to comments" }).click()
+      await page.getByRole("button", { name: "All Comments", exact: true }).click()
       await expect(
         page.getByRole("button", { name: /Thanks, June works\./ })
       ).toBeVisible()

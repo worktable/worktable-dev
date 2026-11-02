@@ -103,15 +103,15 @@
       "max": 9
     },
     "cold js, open Threads": {
-      "max": 32,
-      "why": "Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
+      "max": 33,
+      "why": "Comments show their messages with the Threads Markdown renderer, so the bundler moves that renderer out of the Threads chunk into one both share: one more small chunk on a cold open of Threads, preloaded with the rest, and none on revisits. Before that, removing the single-link share dialog split its inputs, dialog shell and clipboard helper into five small shared chunks."
     },
     "requests, cold, open a thread": {
       "max": 10
     },
     "cold js, open a thread": {
-      "max": 32,
-      "why": "Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
+      "max": 33,
+      "why": "Comments show their messages with the Threads Markdown renderer, so the bundler moves that renderer out of the Threads chunk into one both share: one more small chunk on a cold open of Threads, preloaded with the rest, and none on revisits. Before that, removing the single-link share dialog split its inputs, dialog shell and clipboard helper into five small shared chunks."
     },
     "requests, first, open the app at Home": {
       "max": 11

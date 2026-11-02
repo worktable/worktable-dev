@@ -47,6 +47,7 @@ import type {
   DocumentPage,
   DocumentPageResult,
   DocumentSharingSummary,
+  PassageSelector,
 } from "@worktable/types"
 import {
   convertDoc,
@@ -87,7 +88,14 @@ import type { AnnotationDraft } from "@/components/annotations/annotation-compos
 import { CommentBox } from "@/components/annotations/comment-box"
 import { PassageCommenting } from "@/components/annotations/passage-commenting"
 import { docContributors } from "@/lib/comment-recipients"
-import { usePassageComments } from "@/components/annotations/use-passage-comments"
+import {
+  annotationPassage,
+  usePassageComments,
+} from "@/components/annotations/use-passage-comments"
+import {
+  useMarkOriginal,
+  versionCommentedOn,
+} from "@/components/annotations/original-passage"
 import { Button } from "@worktable/ui/components/button"
 import {
   DocumentStatus,
@@ -112,6 +120,7 @@ type LoadedEditorProps = ComponentProps<
   typeof import("@/components/editor/editor").Editor
 >
 type EditorHandle = import("@/components/editor/editor").EditorHandle
+type EditorPassages = import("@/components/editor/editor").EditorPassages
 const editor = preloadableComponent<LoadedEditorProps>(() =>
   import("@/components/editor/editor").then((module) => ({
     default: module.Editor,
@@ -848,6 +857,26 @@ function MarkdownDocPage({
     setAnnotationsOpen(false)
   }, [])
   const clearActiveAnnotation = useCallback(() => setActiveAnnotationId(null), [])
+  // Original: the version a comment was written on, its passage marked.
+  const originalRef = useRef<HTMLDivElement>(null)
+  const [original, setOriginal] = useState<PassageSelector | null>(null)
+  useMarkOriginal(originalRef, previewVersionId ? original : null)
+  const showOriginal = useCallback(
+    async (annotation: Annotation) => {
+      try {
+        const versionId = await versionCommentedOn(spaceId, docPath, annotation)
+        if (!versionId) throw new Error("No versions")
+        setOriginal(annotationPassage(annotation))
+        setPreviewVersionId(versionId)
+        // Narrower, the version takes the screen; the lists would cover it.
+        setVersionsOpen(!belowXl)
+        if (belowXl) setAnnotationsOpen(false)
+      } catch {
+        toast.error("Couldn't open the original")
+      }
+    },
+    [spaceId, docPath, belowXl]
+  )
   const selectAnnotation = useCallback((annotation: Annotation) => {
     setActiveAnnotationId(annotation.id)
     setAnnotationsOpen(true)
@@ -960,6 +989,7 @@ function MarkdownDocPage({
             }}
           >
             {(byline) => (
+              <div ref={originalRef} className="contents">
               <Suspense fallback={<EditorSkeleton />}>
                 {previewVersion &&
                 Array.isArray(previewVersion.after.content) ? (
@@ -983,6 +1013,7 @@ function MarkdownDocPage({
                   <EditorSkeleton />
                 )}
               </Suspense>
+              </div>
             )}
           </VersionPreview>
         )}
@@ -1000,6 +1031,7 @@ function MarkdownDocPage({
             onSelectAnnotation={focusAnnotation}
             onDeselectAnnotation={clearActiveAnnotation}
             detachedIds={passages.detached}
+            onOriginal={showOriginal}
             emptyHint={emptyHint}
             onResolve={(annotationId) =>
               annotationMutations.resolve.mutate({ annotationId })
@@ -1079,6 +1111,7 @@ function MarkdownDocPage({
                 onSelectAnnotation={focusAnnotation}
                 onDeselectAnnotation={clearActiveAnnotation}
                 detachedIds={passages.detached}
+                onOriginal={showOriginal}
                 emptyHint={emptyHint}
                 onResolve={(annotationId) =>
                   annotationMutations.resolve.mutate({ annotationId })
@@ -1502,6 +1535,26 @@ function BlockNoteDocPage({
   ])
 
   const clearActiveAnnotation = useCallback(() => setActiveAnnotationId(null), [])
+  // Original: the version a comment was written on, its passage marked.
+  const originalRef = useRef<HTMLDivElement>(null)
+  const [original, setOriginal] = useState<PassageSelector | null>(null)
+  useMarkOriginal(originalRef, previewVersionId ? original : null)
+  const showOriginal = useCallback(
+    async (annotation: Annotation) => {
+      try {
+        const versionId = await versionCommentedOn(spaceId, docPath, annotation)
+        if (!versionId) throw new Error("No versions")
+        setOriginal(annotationPassage(annotation))
+        setPreviewVersionId(versionId)
+        // Narrower, the version takes the screen; the lists would cover it.
+        setVersionsOpen(!belowXl)
+        if (belowXl) setAnnotationsOpen(false)
+      } catch {
+        toast.error("Couldn't open the original")
+      }
+    },
+    [spaceId, docPath, belowXl]
+  )
   const selectAnnotation = useCallback((annotation: Annotation) => {
     setActiveAnnotationId(annotation.id)
     setAnnotationsOpen(true)
@@ -1530,6 +1583,29 @@ function BlockNoteDocPage({
     selectAnnotation(annotation)
     passages.reveal(annotation.id)
   }
+  // While editing, the commented text is marked as in a Markdown Doc. Pressing
+  // it shows the comment where the comments sit beside the Doc; narrower,
+  // they would cover the text being edited, so the margin badge opens them.
+  const [editorDetached, setEditorDetached] = useState<ReadonlySet<string>>(
+    () => new Set()
+  )
+  const editorPassages = useMemo<EditorPassages | undefined>(
+    () =>
+      readOnly
+        ? undefined
+        : {
+            onClick: (annotation) => {
+              if (belowXl) return
+              setActiveAnnotationId(annotation.id)
+              setAnnotationsOpen(true)
+              setVersionsOpen(false)
+              setPreviewVersionId(null)
+            },
+            onDetached: setEditorDetached,
+          },
+    [readOnly, belowXl]
+  )
+  const detachedIds = readOnly ? passages.detached : editorDetached
   // An editor gets the panel's own hint about the editor's commands.
   const readerHint = !readOnly
     ? undefined
@@ -1660,6 +1736,7 @@ function BlockNoteDocPage({
                   annotations={annotations}
                   activeAnnotationId={activeAnnotationId}
                   onSelectAnnotation={selectAnnotation}
+                  passages={editorPassages}
                   onCreateAnnotation={(draft) => {
                     setComposerDraft(draft)
                     setComposerOpen(true)
@@ -1694,6 +1771,7 @@ function BlockNoteDocPage({
             }}
           >
             {(byline) => (
+              <div ref={originalRef} className="contents">
               <Suspense fallback={<EditorSkeleton />}>
                 {previewVersion &&
                 Array.isArray(previewVersion.after.content) ? (
@@ -1717,6 +1795,7 @@ function BlockNoteDocPage({
                   <EditorSkeleton />
                 )}
               </Suspense>
+              </div>
             )}
           </VersionPreview>
         )}
@@ -1734,6 +1813,8 @@ function BlockNoteDocPage({
             onSelectAnnotation={focusAnnotation}
             onDeselectAnnotation={clearActiveAnnotation}
             emptyHint={readerHint}
+            detachedIds={detachedIds}
+            onOriginal={showOriginal}
             onResolve={(annotationId) =>
               annotationMutations.resolve.mutate({ annotationId })
             }
@@ -1812,6 +1893,8 @@ function BlockNoteDocPage({
                 onSelectAnnotation={focusAnnotation}
                 onDeselectAnnotation={clearActiveAnnotation}
                 emptyHint={readerHint}
+                detachedIds={detachedIds}
+                onOriginal={showOriginal}
                 onResolve={(annotationId) =>
                   annotationMutations.resolve.mutate({ annotationId })
                 }

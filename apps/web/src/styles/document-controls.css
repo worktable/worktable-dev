@@ -117,7 +117,8 @@
 }
 
 ::highlight(worktable-comment-active),
-::highlight(worktable-comment-draft) {
+::highlight(worktable-comment-draft),
+::highlight(worktable-comment-original) {
   background-color: color-mix(in oklch, var(--accent-bronze) 28%, transparent);
   text-decoration: underline 2px var(--accent-bronze);
   text-underline-offset: 0.2em;

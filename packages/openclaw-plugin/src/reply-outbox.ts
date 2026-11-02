@@ -137,7 +137,7 @@ function sameReply(
 }
 
 export function createOpenClawReplyOutbox(
-  env: NodeJS.ProcessEnv = process.env
+  env?: NodeJS.ProcessEnv
 ): ReplyOutbox {
   const filePath = join(
     resolveStateDir(env),

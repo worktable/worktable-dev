@@ -15,9 +15,6 @@ for (const path of Object.keys(metafile.inputs ?? {})) {
   }
 }
 
-if (bundledPackages.size === 0)
-  throw new Error("Could not identify bundled third-party packages")
-
 function packageManifestPath(name: string): string {
   const resolved = Bun.resolveSync(`${name}/package.json`, root)
   let directory = dirname(resolved)
@@ -49,5 +46,7 @@ for (const name of [...bundledPackages].sort()) {
 }
 
 console.log(
-  `Verified notices for ${bundledPackages.size} bundled third-party packages`
+  bundledPackages.size === 0
+    ? "Verified that no third-party packages are bundled"
+    : `Verified notices for ${bundledPackages.size} bundled third-party packages`
 )

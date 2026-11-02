@@ -50,6 +50,11 @@ authorization endpoints. Credentials are stored in OpenClaw's sensitive plugin
 configuration. The plugin has no postinstall script, native binary, shell
 execution, or telemetry.
 
+The plugin starts with the OpenClaw Gateway so it can receive thread messages.
+It keeps an installation ID and any replies not yet posted in
+`plugins/worktable/` under OpenClaw's state directory, and records delivered
+messages in OpenClaw's plugin state so a restart does not handle them twice.
+
 Report vulnerabilities through the Worktable
 [security policy](https://github.com/worktable/worktable-dev/security/policy).
 

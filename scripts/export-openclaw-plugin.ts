@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process"
 import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { basename, dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { isOpenClawSkillFile } from "../packages/openclaw-plugin/scripts/skill-package.ts"
 import { WORKTABLE_SKILLS } from "./skill-inventory.ts"
 
 const repositoryRoot = resolve(import.meta.dir, "..")
@@ -53,7 +54,7 @@ export const OPENCLAW_PUBLIC_FILES = [
 ] as const
 
 const OPENCLAW_SKILL_SOURCES = WORKTABLE_SKILLS.flatMap((skill) =>
-  skill.files.map((file) => ({
+  skill.files.filter(isOpenClawSkillFile).map((file) => ({
     path: `skills/${skill.name}/${file}`,
     source: `${skill.sourceDirectory}/${file}`,
   }))

@@ -979,6 +979,8 @@ function AnnotationBadges({
         annotations: Annotation[]
       }> = []
       const ranges = new Map<string, Range>()
+      // Read only when a passage isn't within its own block.
+      let wholeDoc: ReturnType<typeof readPassageText> | undefined
       for (const [blockId, blockAnnotations] of grouped) {
         let node = container.querySelector(
           `[data-id="${CSS.escape(blockId)}"]`
@@ -1013,7 +1015,7 @@ function AnnotationBadges({
           annotations: blockAnnotations,
         })
         if (!markPassages) continue
-        // The quoted words, looked for in this block only.
+        // The quoted words, looked for in their block first.
         const content =
           node.querySelector(".bn-block-content") ?? (node as Element)
         const model = readPassageText(content)
@@ -1021,7 +1023,15 @@ function AnnotationBadges({
           const target = annotation.target
           const quote = "quote" in target ? target.quote : undefined
           if (!quote) continue
-          const range = rangeForPassage(model, { quote })
+          // A passage that runs on into the next blocks is found in the
+          // whole Doc, from its words and what surrounds them.
+          const range =
+            rangeForPassage(model, { quote }) ??
+            rangeForPassage((wholeDoc ??= readPassageText(container.querySelector(".bn-editor") ?? container)), {
+              quote,
+              prefix: "prefix" in target ? target.prefix : undefined,
+              suffix: "suffix" in target ? target.suffix : undefined,
+            })
           if (range) ranges.set(annotation.id, range)
           else gone.add(annotation.id)
         }

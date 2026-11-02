@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 
 TIMEOUT_SECONDS = 15
 # Worktable Cloud's edge refuses requests without a product User-Agent.
-USER_AGENT = "worktable-hermes/0.1.0"
+USER_AGENT = "worktable-hermes/0.1.1"
 
 
 class PairingError(Exception):

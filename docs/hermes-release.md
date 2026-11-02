@@ -31,6 +31,7 @@ that adds or updates `plugin-catalog/worktable.yaml` following its
 - a description that discloses the network calls to the connected Worktable and
   where credentials are stored (see the plugin README).
 
-Catalog CI runs `hermes plugins validate --install-deps`. Run it locally on the
-tagged commit first. Once the entry is merged, switch the install command in
+Catalog CI runs `hermes plugins validate --install-deps` on the current Hermes
+release, while the `Hermes plugin` check here uses the oldest supported one. Run
+it on the tagged commit with the current release first. Once the entry is merged, switch the install command in
 Settings and the documentation to `hermes plugins install worktable`.

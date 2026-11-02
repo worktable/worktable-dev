@@ -221,6 +221,14 @@ for (const mobile of [true, false]) {
       await page.keyboard.insertText("Confirm with finance.")
       // A second press while the first is still sending makes no second
       // comment.
+      let creates = 0
+      page.on("request", (request) => {
+        if (
+          request.method() === "POST" &&
+          new URL(request.url()).pathname.endsWith("/annotations")
+        )
+          creates += 1
+      })
       const send = composer.getByRole("button", {
         name: "Send comment",
         exact: true,
@@ -233,8 +241,6 @@ for (const mobile of [true, false]) {
         await page.keyboard.press("Enter")
       }
       await expect(composer).not.toBeVisible()
-      await page.waitForTimeout(500)
-      expect(await savedAnnotations()).toHaveLength(1)
 
       await expect.poll(savedAnnotations).toMatchObject([
         {
@@ -248,6 +254,7 @@ for (const mobile of [true, false]) {
           },
         },
       ])
+      expect(creates).toBe(1)
       await expect
         .poll(() => highlighted(page, "worktable-comment"))
         .toEqual(["launch date moves"])

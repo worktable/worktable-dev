@@ -29,8 +29,11 @@ workflow.
 
 ## After edits
 
-Annotations keep their quoted text. If the passage has changed, check the quote
-and discussion to see whether the request still applies.
+Annotations keep their quoted text. When the passage is no longer in the
+document, the annotation moves to **Text Changed**. **Original** opens the
+version it was written on, with the passage marked, so you can check whether
+the request still applies. **Resolve All** clears the group once the edits
+answer it.
 
 ## Resolve a thread
 

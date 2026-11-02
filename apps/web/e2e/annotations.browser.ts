@@ -219,9 +219,22 @@ for (const mobile of [true, false]) {
       if (!mobile)
         await expect.poll(() => draftHighlight(page)).toEqual(["launch date moves"])
       await page.keyboard.insertText("Confirm with finance.")
-      await composer
-        .getByRole("button", { name: "Send comment", exact: true })
-        .click()
+      // A second press while the first is still sending makes no second
+      // comment.
+      const send = composer.getByRole("button", {
+        name: "Send comment",
+        exact: true,
+      })
+      if (mobile) {
+        await send.tap()
+        await send.tap({ force: true, timeout: 1_000 }).catch(() => {})
+      } else {
+        await page.keyboard.press("Enter")
+        await page.keyboard.press("Enter")
+      }
+      await expect(composer).not.toBeVisible()
+      await page.waitForTimeout(500)
+      expect(await savedAnnotations()).toHaveLength(1)
 
       await expect.poll(savedAnnotations).toMatchObject([
         {

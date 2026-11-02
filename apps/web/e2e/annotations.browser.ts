@@ -268,6 +268,34 @@ for (const mobile of [true, false]) {
       await expect
         .poll(() => highlighted(page, "worktable-comment"))
         .toEqual(["launch date moves"])
+
+      if (mobile) return
+      // An agent answers in Markdown, and the writer answers back.
+      const [saved] = await savedAnnotations()
+      const replied = await page.request.post(
+        `${harness.apiUrl}/api/spaces/annotations/annotations/${saved.id}/replies`,
+        {
+          data: {
+            body: "Moved to **June**.",
+            author: { type: "agent", id: "agent-reviewer", name: "Reviewer" },
+          },
+        }
+      )
+      expect(replied.ok()).toBe(true)
+      const card = page.getByRole("article", { name: /^Comment by / })
+      await expect(card.locator("strong", { hasText: "June" })).toBeVisible()
+      await card.getByRole("button", { name: "Reply", exact: true }).click()
+      await expect(card.getByRole("textbox")).toBeFocused()
+      await page.keyboard.insertText("Thanks, June works.")
+      await page.keyboard.press("Enter")
+      await expect
+        .poll(async () =>
+          (await savedAnnotations())[0].thread.map(
+            (message: { body: string }) => message.body
+          )
+        )
+        .toEqual(["Moved to **June**.", "Thanks, June works."])
+      await expect(card.getByText("Thanks, June works.")).toBeVisible()
     })
   })
 }

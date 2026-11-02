@@ -300,6 +300,10 @@ import {
 
 import { ensureParticipant, resolveParticipant } from "../participant-store.ts"
 import {
+  isGettingStartedSpace,
+  isGettingStartedSpaceId,
+} from "../getting-started.ts"
+import {
   acceptDelivery,
   assignResponseRequest,
   claimNextThreadDelivery,
@@ -862,6 +866,38 @@ interface ToolDispatchContext {
   onThreadProgress?: (update: ThreadProgressUpdate) => void | Promise<void>
 }
 
+// Getting Started holds Worktable's guides. An agent whose person has no
+// Space yet would otherwise file their first work among them, where the
+// sidebar and Getting Started's own Home never show it.
+export const GETTING_STARTED_ADD_REFUSAL =
+  "Getting Started holds Worktable's guides. Create a Space named for this work with worktable_spaces_write, then save it there."
+export const FIRST_SPACE_HINT =
+  "No Space holds the person's work yet. Create one named for the work with worktable_spaces_write, then save there. Getting Started holds Worktable's guides."
+
+/** Whether an operation would add a new item to the Space it names. */
+async function addsToSpace(
+  operationId: OperationId,
+  args: Record<string, unknown>
+): Promise<boolean> {
+  const spaceId = args["spaceId"] as string
+  switch (operationId) {
+    case "documents.create":
+    case "drawings.create":
+    case "html.create":
+      return true
+    case "documents.upload":
+      return args["ifExists"] !== "replace"
+    case "docs.write":
+      return !(await docExists(spaceId, args["docPath"] as string))
+    case "records.upsert_collection":
+      return !(
+        await readRecordCollectionSchema(spaceId, args["collectionId"] as string)
+      ).data
+    default:
+      return false
+  }
+}
+
 export async function dispatchOperation(
   operationId: OperationId,
   args: Record<string, unknown>,
@@ -879,6 +915,14 @@ export async function dispatchOperation(
   }
   authorize()
   const principal = context.principal ?? DEFAULT_AGENT_PRINCIPAL
+  if (
+    principal.type === "agent" &&
+    typeof args["spaceId"] === "string" &&
+    isGettingStartedSpaceId(args["spaceId"]) &&
+    (await addsToSpace(operationId, args))
+  ) {
+    throw new Error(GETTING_STARTED_ADD_REFUSAL)
+  }
   if (principal.type === "agent") {
     noteAgentCallForSetup(caller)
     await ensureParticipant(
@@ -2385,7 +2429,10 @@ async function _dispatchOperationInner(
               : {}),
           },
           spaces: spacesWithDetail,
-          hint: "List a Space's files in every format with worktable_files_read, or search with worktable_search. Drawing previews and objects are available through worktable_drawings_read.",
+          hint:
+            spaces.length === 1 && isGettingStartedSpace(spaces[0]!)
+              ? FIRST_SPACE_HINT
+              : "List a Space's files in every format with worktable_files_read, or search with worktable_search. Drawing previews and objects are available through worktable_drawings_read.",
         }
       }
       const { data: space, error: spaceErr } = await readSpace(spaceId)

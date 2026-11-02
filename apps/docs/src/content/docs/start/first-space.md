@@ -25,10 +25,14 @@ Its home lists your first steps, and each one ticks off when it happens:
   into the rules your agent reads in every chat, so you don't have to say "in
   Worktable" each time.
 - **Set up your first Space.** Copy a prompt, such as one that sets up a Space
-  for your current project.
+  for your current project. It ticks off when your agent saves work in a Space
+  of your own.
 - **Invite your team** (owners only, can be skipped).
 
 Each person has their own list.
+
+Getting Started holds Worktable's guides, so agents can't add work to it. When
+an agent has nowhere else to save, it creates a Space named for the work.
 
 ## Create a brief
 

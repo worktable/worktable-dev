@@ -10,6 +10,7 @@
 import type { DocumentSummary } from "@worktable/types"
 import { listDocuments } from "./document-query.ts"
 import { getSpaceArchiveInfo, listSpaces } from "./store.ts"
+import { isGettingStartedSpace } from "./getting-started.ts"
 import { logError } from "./debug-log.ts"
 
 export type RecentSort = "updated" | "created"
@@ -45,10 +46,14 @@ export async function listRecentDocuments(options: {
 }> {
   const sort = options.sort ?? "updated"
   const limit = options.limit ?? 30
+  // Across Spaces, Recent is the person's own work: Getting Started's guides
+  // are listed only when that Space is asked for.
   const spaces = (await listSpaces()).filter(
     (space) =>
       !getSpaceArchiveInfo(space) &&
-      (options.spaceId === undefined || space.id === options.spaceId)
+      (options.spaceId === undefined
+        ? !isGettingStartedSpace(space)
+        : space.id === options.spaceId)
   )
   // Spaces are listed in parallel; one unreadable Space must not hide the
   // rest of the workspace's recent work.

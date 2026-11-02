@@ -71,6 +71,7 @@ import {
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog"
 import {
+  aboveKeyboard,
   Drawer,
   DrawerContent,
   DrawerDescription,
@@ -996,7 +997,7 @@ function WidgetDetailPage({
             onOpenChange={setAnnotationsOpen}
             repositionInputs={false}
           >
-            <DrawerContent className="data-[vaul-drawer-direction=bottom]:max-h-[86dvh]">
+            <DrawerContent style={aboveKeyboard("86dvh")}>
               <DrawerTitle className="sr-only">Comments</DrawerTitle>
               <DrawerDescription className="sr-only">
                 Annotations for this HTML doc.
@@ -1023,7 +1024,7 @@ function WidgetDetailPage({
             }}
                 composeLabel="Comment on this HTML doc"
                 emptyHint="Leave a comment for this HTML doc."
-                className="max-h-[calc(86dvh-1.5rem)]"
+                className="max-h-[min(calc(86dvh-1.5rem),calc(var(--app-visual-viewport-height,100dvh)-2.5rem))]"
               />
             </DrawerContent>
           </Drawer>

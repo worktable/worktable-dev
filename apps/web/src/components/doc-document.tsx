@@ -95,6 +95,7 @@ import {
 } from "@worktable/ui/components/document-status"
 import { preloadableComponent } from "@worktable/ui/lib/preloadable-component"
 import {
+  aboveKeyboard,
   Drawer,
   DrawerContent,
   DrawerDescription,
@@ -1063,7 +1064,7 @@ function MarkdownDocPage({
             onOpenChange={setAnnotationsOpen}
             repositionInputs={false}
           >
-            <DrawerContent className="data-[vaul-drawer-direction=bottom]:max-h-[86dvh]">
+            <DrawerContent style={aboveKeyboard("86dvh")}>
               <DrawerTitle className="sr-only">Comments</DrawerTitle>
               <DrawerDescription className="sr-only">
                 Annotations for this doc.
@@ -1087,7 +1088,7 @@ function MarkdownDocPage({
                   annotationMutations.reply.mutateAsync({ annotationId, body })
                 }
                 onClose={() => setAnnotationsOpen(false)}
-                className="max-h-[calc(86dvh-1.5rem)]"
+                className="max-h-[min(calc(86dvh-1.5rem),calc(var(--app-visual-viewport-height,100dvh)-2.5rem))]"
               />
             </DrawerContent>
           </Drawer>
@@ -1794,7 +1795,7 @@ function BlockNoteDocPage({
             onOpenChange={setAnnotationsOpen}
             repositionInputs={false}
           >
-            <DrawerContent className="data-[vaul-drawer-direction=bottom]:max-h-[86dvh]">
+            <DrawerContent style={aboveKeyboard("86dvh")}>
               <DrawerTitle className="sr-only">Comments</DrawerTitle>
               <DrawerDescription className="sr-only">
                 Annotations for this doc.
@@ -1817,7 +1818,7 @@ function BlockNoteDocPage({
                   annotationMutations.reply.mutateAsync({ annotationId, body })
                 }
                 onClose={() => setAnnotationsOpen(false)}
-                className="max-h-[calc(86dvh-1.5rem)]"
+                className="max-h-[min(calc(86dvh-1.5rem),calc(var(--app-visual-viewport-height,100dvh)-2.5rem))]"
               />
             </DrawerContent>
           </Drawer>

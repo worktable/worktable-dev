@@ -44,10 +44,19 @@ describe("OpenClaw Worktable client", () => {
     })
     const client = new McpWorktableClient(server.url.href, "test-token")
     try {
-      await expect(client.participants(AbortSignal.abort())).rejects.toThrow()
-      // Give a stray handshake time to reach the server and fail unobserved.
-      await Bun.sleep(50)
-      expect(initializations).toBe(0)
+      // A stopped caller starts no handshake that could fail unobserved.
+      const realFetch = globalThis.fetch
+      let requests = 0
+      globalThis.fetch = ((...args: Parameters<typeof fetch>) => {
+        requests += 1
+        return realFetch(...args)
+      }) as typeof fetch
+      try {
+        await expect(client.participants(AbortSignal.abort())).rejects.toThrow()
+      } finally {
+        globalThis.fetch = realFetch
+      }
+      expect(requests).toBe(0)
       await expect(client.participants()).rejects.toThrow()
       expect(
         await Promise.all([client.participants(), client.participants()])

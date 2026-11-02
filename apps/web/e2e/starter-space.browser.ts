@@ -246,7 +246,9 @@ test("rich-doc block handles remain usable after annotation composer closes", as
   expect(secondResponse.request().postDataJSON()).toMatchObject({
     target: { blockId: secondBlockId },
   })
-  await page.getByRole("button", { name: "Close comments" }).click()
+  // Narrower than the side panel, the comments don't open over the Doc
+  // after a comment, so the next block is ready to comment on.
+  await expect(page.getByRole("button", { name: "Close comments" })).toHaveCount(0)
 
   await openBlockMenu(page, thirdBlock)
   await page.getByRole("menuitem", { name: "Annotate" }).click()

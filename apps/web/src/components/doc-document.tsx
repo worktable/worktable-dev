@@ -88,7 +88,6 @@ import { CommentBox } from "@/components/annotations/comment-box"
 import { PassageCommenting } from "@/components/annotations/passage-commenting"
 import { docContributors } from "@/lib/comment-recipients"
 import { usePassageComments } from "@/components/annotations/use-passage-comments"
-import { useIsMobile } from "@/hooks/use-mobile"
 import { Button } from "@worktable/ui/components/button"
 import {
   DocumentStatus,
@@ -864,7 +863,6 @@ function MarkdownDocPage({
   }, [])
 
   // Comments on a passage: select text in the Doc as it reads, no Edit needed.
-  const isMobile = useIsMobile()
   const canComment = validated && canCommentOn(page, readOnly)
   const passages = usePassageComments({
     rootRef: readingRef,
@@ -1103,8 +1101,10 @@ function MarkdownDocPage({
           context={commentContext}
           onCreate={async (input) => {
             await annotationMutations.create.mutateAsync({ ...input, category: "comment" })
-            // On a phone the highlight confirms it; the next passage is a tap away.
-            if (!isMobile) {
+            // The comments open where they sit beside the Doc. Narrower, they
+            // would cover it: the highlight confirms the comment instead, and
+            // the next passage stays a tap away.
+            if (!belowXl) {
               setAnnotationsOpen(true)
               setVersionsOpen(false)
             }
@@ -1324,7 +1324,6 @@ function BlockNoteDocPage({
     null
   )
   const [composerOpen, setComposerOpen] = useState(false)
-  const isMobile = useIsMobile()
   const [belowXl, setBelowXl] = useState(false)
   useEffect(() => {
     const mql = window.matchMedia("(max-width: 1279px)")
@@ -1845,7 +1844,7 @@ function BlockNoteDocPage({
             to,
             idempotencyKey,
           })
-          if (!isMobile) setAnnotationsOpen(true)
+          if (!belowXl) setAnnotationsOpen(true)
         }}
       />
 
@@ -1856,7 +1855,7 @@ function BlockNoteDocPage({
           context={commentContext}
           onCreate={async (input) => {
             await annotationMutations.create.mutateAsync({ ...input, category: "comment" })
-            if (!isMobile) setAnnotationsOpen(true)
+            if (!belowXl) setAnnotationsOpen(true)
           }}
         />
       )}

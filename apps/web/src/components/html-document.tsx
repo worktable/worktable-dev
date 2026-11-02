@@ -1044,6 +1044,8 @@ function WidgetDetailPage({
             to,
             idempotencyKey,
           })
+          // Beside the HTML Doc only; narrower, the list would cover it.
+          if (belowXl) return
           setAnnotationsOpen(true)
           setVersionsOpen(false)
           setPreviewVersionId(null)

@@ -336,6 +336,8 @@ export class McpWorktableClient implements WorktableClient {
     if (this.#closing.signal.aborted)
       throw new Error("Worktable client is closed")
     if (this.#initialized) return
+    // Never start a handshake no caller is waiting for.
+    signal?.throwIfAborted()
     // One shared handshake; a failed attempt is cleared so the connector's
     // bounded retry starts a fresh one. A caller's signal only abandons its
     // own wait, not the handshake other callers share.
@@ -353,7 +355,6 @@ export class McpWorktableClient implements WorktableClient {
     )
     const initializing = this.#initializing
     if (!signal) return initializing
-    signal.throwIfAborted()
     await new Promise<void>((resolve, reject) => {
       const abort = () => reject(signal.reason)
       signal.addEventListener("abort", abort, { once: true })

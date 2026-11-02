@@ -44,6 +44,10 @@ describe("OpenClaw Worktable client", () => {
     })
     const client = new McpWorktableClient(server.url.href, "test-token")
     try {
+      await expect(client.participants(AbortSignal.abort())).rejects.toThrow()
+      // Give a stray handshake time to reach the server and fail unobserved.
+      await Bun.sleep(50)
+      expect(initializations).toBe(0)
       await expect(client.participants()).rejects.toThrow()
       expect(
         await Promise.all([client.participants(), client.participants()])

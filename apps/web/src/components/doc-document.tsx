@@ -998,6 +998,7 @@ function MarkdownDocPage({
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
             onSelectAnnotation={focusAnnotation}
+            onDeselectAnnotation={clearActiveAnnotation}
             detachedIds={passages.detached}
             emptyHint={emptyHint}
             onResolve={(annotationId) =>
@@ -1076,6 +1077,7 @@ function MarkdownDocPage({
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}
                 onSelectAnnotation={focusAnnotation}
+                onDeselectAnnotation={clearActiveAnnotation}
                 detachedIds={passages.detached}
                 emptyHint={emptyHint}
                 onResolve={(annotationId) =>
@@ -1730,6 +1732,7 @@ function BlockNoteDocPage({
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
             onSelectAnnotation={focusAnnotation}
+            onDeselectAnnotation={clearActiveAnnotation}
             emptyHint={readerHint}
             onResolve={(annotationId) =>
               annotationMutations.resolve.mutate({ annotationId })
@@ -1807,6 +1810,7 @@ function BlockNoteDocPage({
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}
                 onSelectAnnotation={focusAnnotation}
+                onDeselectAnnotation={clearActiveAnnotation}
                 emptyHint={readerHint}
                 onResolve={(annotationId) =>
                   annotationMutations.resolve.mutate({ annotationId })

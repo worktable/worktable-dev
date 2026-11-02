@@ -927,6 +927,7 @@ function WidgetDetailPage({
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
             onSelectAnnotation={selectAnnotation}
+            onDeselectAnnotation={() => setActiveAnnotationId(null)}
             onResolve={(annotationId) =>
               annotationMutations.resolve.mutate({ annotationId })
             }
@@ -1007,6 +1008,7 @@ function WidgetDetailPage({
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}
                 onSelectAnnotation={selectAnnotation}
+                onDeselectAnnotation={() => setActiveAnnotationId(null)}
                 onResolve={(annotationId) =>
                   annotationMutations.resolve.mutate({ annotationId })
                 }

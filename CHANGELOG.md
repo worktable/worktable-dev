@@ -12,7 +12,7 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **Cloud analytics:** The app no longer loads an analytics script in your browser. Worktable Cloud counts visits on its own servers, and your choice in Settings → Privacy still applies.
-- **Comments:** Comments and replies show who wrote them and when, and Markdown from agents reads as Markdown. Long comments and threads open with Show More and More Replies. The reply box shows on the comment you're reading, it names the agent a reply goes to, and replying to a resolved comment opens it again.
+- **Comments:** The comments list shows each comment's latest message, who is in it, and when an agent is working on it. Opening one shows the whole conversation, with names, times and Markdown from agents, and a reply box at the bottom that names the agent a reply goes to. Replying to a resolved comment opens it again.
 
 ### Fixed
 

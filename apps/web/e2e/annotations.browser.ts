@@ -282,10 +282,11 @@ for (const mobile of [true, false]) {
         }
       )
       expect(replied.ok()).toBe(true)
-      const card = page.getByRole("article", { name: /^Comment by / })
-      await expect(card.locator("strong", { hasText: "June" })).toBeVisible()
-      await card.getByRole("button", { name: "Reply", exact: true }).click()
-      await expect(card.getByRole("textbox")).toBeFocused()
+      // The list shows the latest message; opening it shows the conversation.
+      await page.getByRole("button", { name: /Moved to June\./ }).click()
+      const thread = page.getByRole("article", { name: /^Comment by / })
+      await expect(thread.locator("strong", { hasText: "June" })).toBeVisible()
+      await page.getByPlaceholder(/^Reply/).click()
       await page.keyboard.insertText("Thanks, June works.")
       await page.keyboard.press("Enter")
       await expect
@@ -295,7 +296,11 @@ for (const mobile of [true, false]) {
           )
         )
         .toEqual(["Moved to **June**.", "Thanks, June works."])
-      await expect(card.getByText("Thanks, June works.")).toBeVisible()
+      await expect(thread.getByText("Thanks, June works.")).toBeVisible()
+      await page.getByRole("button", { name: "Back to comments" }).click()
+      await expect(
+        page.getByRole("button", { name: /Thanks, June works\./ })
+      ).toBeVisible()
     })
   })
 }

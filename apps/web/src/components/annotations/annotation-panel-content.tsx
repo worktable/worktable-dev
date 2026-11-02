@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useMemo, useRef, useState, type ReactNode } from "react"
 import {
   Check,
+  ChevronLeft,
   MessageSquareText,
-  Reply,
   RotateCcw,
   X,
 } from "lucide-react"
@@ -19,7 +19,9 @@ import { cn } from "@worktable/ui/lib/utils"
 import { Composer } from "@/components/composer"
 import { ContextPanelHeader } from "@/components/desktop-context-panel"
 import { Quote } from "@/components/quote"
-import { CommentMessage } from "./comment-message"
+import { RelativeTime } from "@/lib/time"
+import { authorName } from "./comment-author"
+import { CommentAvatar, CommentMessage } from "./comment-message"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useWorkspace } from "@/lib/queries"
 
@@ -79,6 +81,8 @@ export interface AnnotationPanelContentProps {
   annotations: Annotation[]
   activeAnnotationId?: string | null
   onSelectAnnotation: (annotation: Annotation) => void
+  /** Back from a comment to the list: lets go of the one chosen. */
+  onDeselectAnnotation?: () => void
   onResolve: (annotationId: string) => void
   onReopen: (annotationId: string) => void
   /** Sends a reply; the box keeps the text until it's saved. */
@@ -102,6 +106,7 @@ export function AnnotationPanelContent({
   annotations,
   activeAnnotationId,
   onSelectAnnotation,
+  onDeselectAnnotation,
   onResolve,
   onReopen,
   onReply,
@@ -114,6 +119,18 @@ export function AnnotationPanelContent({
 }: AnnotationPanelContentProps) {
   const [showResolved, setShowResolved] = useState(false);
   const scrollRef = useScrollFade<HTMLDivElement>();
+  // The comment shown in full. Choosing a comment's passage in the Doc opens
+  // it; Back returns to the list.
+  const active = activeAnnotationId ?? null;
+  const [openId, setOpenId] = useState<string | null>(active);
+  const [seenActive, setSeenActive] = useState<string | null>(active);
+  if (active !== seenActive) {
+    setSeenActive(active);
+    if (active) setOpenId(active);
+  }
+  const thread = openId
+    ? annotations.find((annotation) => annotation.id === openId)
+    : undefined;
   const visible = useMemo(
     () => annotations.filter((annotation) => showResolved || annotation.status !== "resolved"),
     [annotations, showResolved]
@@ -139,69 +156,213 @@ export function AnnotationPanelContent({
           )
         }
       />}
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 pb-2">
-        <Button
-          size="xs"
-          variant="ghost"
-          aria-pressed={showResolved}
-          onClick={() => setShowResolved((value) => !value)}
-        >
-          {showResolved ? "Hide Resolved" : "Show Resolved"}
-        </Button>
-        {onCompose && !readOnly && (
-          <Button size="xs" variant="outline" onClick={(event) => onCompose(event.currentTarget)}>
-            <MessageSquareText className="size-3.5" />
-            {composeLabel ?? "Add Comment"}
-          </Button>
-        )}
-      </div>
+      {thread ? (
+        <CommentThread
+          key={thread.id}
+          annotation={thread}
+          readOnly={readOnly}
+          canReply={canReply}
+          detached={detachedIds?.has(thread.id) ?? false}
+          onBack={() => {
+            setOpenId(null);
+            onDeselectAnnotation?.();
+          }}
+          onSelect={() => onSelectAnnotation(thread)}
+          onResolve={() => onResolve(thread.id)}
+          onReopen={() => onReopen(thread.id)}
+          onReply={(body) => onReply(thread.id, body)}
+        />
+      ) : (
+        <>
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 pb-2">
+            <Button
+              size="xs"
+              variant="ghost"
+              aria-pressed={showResolved}
+              onClick={() => setShowResolved((value) => !value)}
+            >
+              {showResolved ? "Hide Resolved" : "Show Resolved"}
+            </Button>
+            {onCompose && !readOnly && (
+              <Button size="xs" variant="outline" onClick={(event) => onCompose(event.currentTarget)}>
+                <MessageSquareText className="size-3.5" />
+                {composeLabel ?? "Add Comment"}
+              </Button>
+            )}
+          </div>
 
-      <div ref={scrollRef} className="scroll-fade min-h-0 flex-1 overflow-auto px-2 pb-3">
-        {visible.length === 0 ? (
-          <div className="flex h-full min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border p-6 text-center">
-            <MessageSquareText className="mb-3 h-8 w-8 text-muted-foreground/50" />
-            <p className="text-sm font-medium text-foreground">No Open Comments</p>
-            {emptyHint !== "" && <p className="mt-1 text-xs text-muted-foreground">{emptyHint ?? "Use /comment in the editor to attach context to a block."}</p>}
+          <div ref={scrollRef} className="scroll-fade min-h-0 flex-1 overflow-auto px-2 pb-3">
+            {visible.length === 0 ? (
+              <div className="flex h-full min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border p-6 text-center">
+                <MessageSquareText className="mb-3 h-8 w-8 text-muted-foreground/50" />
+                <p className="text-sm font-medium text-foreground">No Open Comments</p>
+                {emptyHint !== "" && <p className="mt-1 text-xs text-muted-foreground">{emptyHint ?? "Use /comment in the editor to attach context to a block."}</p>}
+              </div>
+            ) : (
+              <ul className="space-y-0.5">
+                {visible.map((annotation) => (
+                  <li key={annotation.id}>
+                    <ThreadRow
+                      annotation={annotation}
+                      detached={detachedIds?.has(annotation.id) ?? false}
+                      onOpen={() => {
+                        setOpenId(annotation.id);
+                        onSelectAnnotation(annotation);
+                      }}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        ) : (
-          <div className="space-y-1">
-            {visible.map((annotation) => (
-              <AnnotationCard
-                key={annotation.id}
-                readOnly={readOnly}
-                canReply={canReply}
-                annotation={annotation}
-                detached={detachedIds?.has(annotation.id) ?? false}
-                active={annotation.id === activeAnnotationId}
-                onSelect={() => onSelectAnnotation(annotation)}
-                onResolve={() => onResolve(annotation.id)}
-                onReopen={() => onReopen(annotation.id)}
-                onReply={(body) => onReply(annotation.id, body)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+        </>
+      )}
     </aside>
   );
 }
 
-function AnnotationCard({
-  readOnly,
-  canReply,
+interface ThreadMessageLike {
+  id: string
+  author: Annotation["author"]
+  body: string
+  createdAt: string
+}
+
+/** The comment and its replies, in order. */
+function messagesOf(annotation: Annotation): ThreadMessageLike[] {
+  return [
+    {
+      id: annotation.id,
+      author: annotation.author,
+      body: annotation.body,
+      createdAt: annotation.createdAt,
+    },
+    ...annotation.thread,
+  ];
+}
+
+/** A message as one line of plain text, for the list. */
+function previewText(body: string): string {
+  return body
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+[.)])\s+/gm, "")
+    .replace(/(\*\*|__|\*|_|`|~~)/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** What an agent the comment went to is doing with it, while it is. */
+function agentStatus(annotation: Annotation): string | null {
+  if (annotation.status === "resolved") return null;
+  const waiting = openRequests(annotation).filter(
+    (request) => request.to.kind === "agent" && requestState(request) !== "replied"
+  );
+  const working = waiting.find((request) => requestState(request) === "read");
+  if (working) return `${working.to.name} is working…`;
+  const sent = waiting[0];
+  return sent ? `Sent to ${sent.to.name}` : null;
+}
+
+/**
+ * One comment in the list: its passage, the latest message and who is in
+ * it. Opening it shows the whole conversation.
+ */
+function ThreadRow({
   annotation,
   detached,
-  active,
+  onOpen,
+}: {
+  annotation: Annotation
+  detached: boolean
+  onOpen: () => void
+}) {
+  const quote = "quote" in annotation.target ? annotation.target.quote : undefined;
+  const messages = messagesOf(annotation);
+  const latest = messages[messages.length - 1]!;
+  const people = [
+    ...new Map(messages.map((message) => [message.author.id, message.author])).values(),
+  ].slice(0, 3);
+  const replies = annotation.thread.length;
+  const status = agentStatus(annotation);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        "grid w-full gap-1.5 rounded-lg px-3 py-2.5 text-left outline-none transition-colors hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-ring",
+        annotation.status === "resolved" && "opacity-70"
+      )}
+    >
+      {quote ? (
+        <span
+          className={cn(
+            "quoted block truncate text-xs",
+            detached && "line-through decoration-muted-foreground/50"
+          )}
+        >
+          {quote}
+        </span>
+      ) : (
+        annotation.title && (
+          <span className="block truncate text-sm font-medium text-foreground">
+            {annotation.title}
+          </span>
+        )
+      )}
+      <span className="flex items-start gap-2">
+        <CommentAvatar author={latest.author} />
+        <span className="line-clamp-2 min-w-0 pt-0.5 text-[0.84375rem] leading-5 text-foreground/85">
+          <span className="font-medium text-foreground">{authorName(latest.author)}</span>{" "}
+          {previewText(latest.body)}
+        </span>
+      </span>
+      <span className="flex min-h-5 items-center gap-2 ps-8 text-xs text-muted-foreground">
+        {status ? (
+          <>
+            <span className="size-1.5 shrink-0 rounded-full bg-accent-bronze" aria-hidden />
+            {status}
+          </>
+        ) : (
+          <>
+            {people.length > 1 && (
+              <span className="flex" aria-hidden>
+                {people.map((author) => (
+                  <CommentAvatar
+                    key={author.id}
+                    author={author}
+                    className="-ms-1 size-[1.125rem] text-[0.5rem] outline-2 outline-card first:ms-0"
+                  />
+                ))}
+              </span>
+            )}
+            {annotation.status === "resolved" && <span>Resolved ·</span>}
+            {replies > 0 && <span>{replies === 1 ? "1 reply" : `${replies} replies`} ·</span>}
+            <RelativeTime iso={latest.createdAt} />
+          </>
+        )}
+      </span>
+    </button>
+  );
+}
+
+/** A comment in full, with every reply and the box to answer it. */
+function CommentThread({
+  annotation,
+  readOnly,
+  canReply,
+  detached,
+  onBack,
   onSelect,
   onResolve,
   onReopen,
   onReply,
 }: {
-  readOnly?: boolean
-  canReply: boolean
   annotation: Annotation
+  readOnly: boolean
+  canReply: boolean
   detached: boolean
-  active: boolean
+  onBack: () => void
   onSelect: () => void
   onResolve: () => void
   onReopen: () => void
@@ -210,25 +371,19 @@ function AnnotationCard({
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [replying, setReplying] = useState(false);
   const [allReplies, setAllReplies] = useState(false);
   const replyRef = useRef<HTMLTextAreaElement>(null);
+  const scrollRef = useScrollFade<HTMLDivElement>();
   const isResolved = annotation.status === "resolved";
   const selfId = useWorkspace().data?.person?.id;
   const recipients = recipientsLine(annotation, selfId);
   const notShown = isResolved ? [] : agentsNotShown(annotation);
   // Replying to a resolved comment opens it again, which needs the right to.
   const mayReply = canReply && (!isResolved || !readOnly);
-  // The box shows on the comment being looked at, or once Reply is pressed.
-  const showReply = mayReply && (active || replying || reply.trim() !== "");
   const quote = "quote" in annotation.target ? annotation.target.quote : undefined;
   const replies = annotation.thread;
-  const hidden = allReplies || replies.length <= 3 ? 0 : replies.length - 2;
-  // A comment chosen from its passage comes into view in the panel.
-  const ref = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (active) ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [active]);
+  // A long conversation opens on its latest replies.
+  const hidden = allReplies || replies.length <= 6 ? 0 : replies.length - 3;
 
   const send = () => {
     const trimmed = reply.trim();
@@ -240,7 +395,6 @@ function AnnotationCard({
         () => {
           // Text written while it sent stays to send next.
           setReply((current) => (current.trim() === trimmed ? "" : current));
-          setReplying(false);
           if (isResolved) onReopen();
         },
         () => setFailed(true)
@@ -249,89 +403,90 @@ function AnnotationCard({
   };
 
   return (
-    <article
-      ref={ref}
-      aria-label={`Comment by ${annotation.author.name ?? "someone"}`}
-      onClick={(event) => {
-        // Pressing the comment, not one of its controls, shows its passage.
-        if (!(event.target as Element).closest("a, button, textarea")) onSelect();
-      }}
-      className={cn(
-        "space-y-3 rounded-lg px-3 py-3 transition-colors",
-        active ? "comment-selected" : "hover:bg-surface-hover",
-        isResolved && !active && "opacity-75"
-      )}
-    >
-      {quote && (
-        <button
-          type="button"
-          onClick={onSelect}
-          className="block w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Quote className="line-clamp-2 text-xs">{quote}</Quote>
-          {detached && (
-            <span className="mt-1 block text-[11px] text-muted-foreground">
-              This text has changed since.
-            </span>
-          )}
-        </button>
-      )}
-      <CommentMessage
-        id={annotation.id}
-        author={annotation.author}
-        body={annotation.body}
-        createdAt={annotation.createdAt}
-        title={annotation.title}
-        actions={
-          !readOnly &&
-          (isResolved ? (
-            <IconAction label="Reopen" onClick={onReopen}>
-              <RotateCcw />
-            </IconAction>
-          ) : (
-            <IconAction label="Resolve" onClick={onResolve}>
-              <Check />
-            </IconAction>
-          ))
-        }
-      >
-        {(recipients || isResolved) && (
-          <p className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground">
-            {[isResolved ? "Resolved" : null, recipients].filter(Boolean).join(" · ")}
-            {notShown.length > 0 && (
-              <InfoTip label="When they see it" className="size-6">
-                <p>
-                  {notShown.length === 1
-                    ? `${notShown[0]} sees this when it next works in this Space.`
-                    : `${notShown.join(", ")} see this when they next work in this Space.`}
-                </p>
-              </InfoTip>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center gap-1 px-2 pb-1">
+        <Button size="xs" variant="ghost" onClick={onBack} aria-label="Back to comments">
+          <ChevronLeft className="size-4" />
+          Comments
+        </Button>
+        {!readOnly && (
+          <span className="ms-auto">
+            {isResolved ? (
+              <IconAction label="Reopen" onClick={onReopen}>
+                <RotateCcw />
+              </IconAction>
+            ) : (
+              <IconAction label="Resolve" onClick={onResolve}>
+                <Check />
+              </IconAction>
             )}
-          </p>
+          </span>
         )}
-      </CommentMessage>
-
-      {hidden > 0 && (
-        <button
-          type="button"
-          onClick={() => setAllReplies(true)}
-          className="ms-8 rounded-sm text-xs font-medium text-primary-text outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {hidden === 1 ? "1 More Reply" : `${hidden} More Replies`}
-        </button>
-      )}
-      {replies.slice(hidden).map((message) => (
+      </div>
+      <article
+        ref={scrollRef}
+        aria-label={`Comment by ${authorName(annotation.author)}`}
+        className="scroll-fade min-h-0 flex-1 space-y-4 overflow-auto px-4 pt-1 pb-4"
+      >
+        {quote && (
+          <button
+            type="button"
+            onClick={onSelect}
+            className="block w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Quote
+              className={cn(
+                "text-xs",
+                detached && "line-through decoration-muted-foreground/50"
+              )}
+            >
+              {quote}
+            </Quote>
+          </button>
+        )}
         <CommentMessage
-          key={message.id}
-          id={message.id}
-          author={message.author}
-          body={message.body}
-          createdAt={message.createdAt}
-        />
-      ))}
-
-      {showReply ? (
-        <div className="ps-8">
+          id={annotation.id}
+          author={annotation.author}
+          body={annotation.body}
+          createdAt={annotation.createdAt}
+          title={annotation.title}
+        >
+          {(recipients || isResolved) && (
+            <p className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground">
+              {[isResolved ? "Resolved" : null, recipients].filter(Boolean).join(" · ")}
+              {notShown.length > 0 && (
+                <InfoTip label="When they see it" className="size-6">
+                  <p>
+                    {notShown.length === 1
+                      ? `${notShown[0]} sees this when it next works in this Space.`
+                      : `${notShown.join(", ")} see this when they next work in this Space.`}
+                  </p>
+                </InfoTip>
+              )}
+            </p>
+          )}
+        </CommentMessage>
+        {hidden > 0 && (
+          <button
+            type="button"
+            onClick={() => setAllReplies(true)}
+            className="ms-8 rounded-sm text-xs font-medium text-primary-text outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {hidden === 1 ? "1 Earlier Reply" : `${hidden} Earlier Replies`}
+          </button>
+        )}
+        {replies.slice(hidden).map((message) => (
+          <CommentMessage
+            key={message.id}
+            id={message.id}
+            author={message.author}
+            body={message.body}
+            createdAt={message.createdAt}
+          />
+        ))}
+      </article>
+      {mayReply && (
+        <div className="shrink-0 border-t border-border px-3 pt-2.5 pb-3">
           <Composer
             ref={replyRef}
             value={reply}
@@ -346,22 +501,8 @@ function AnnotationCard({
             placement="inline"
           />
         </div>
-      ) : (
-        mayReply && (
-          <button
-            type="button"
-            className="ms-8 -mt-1 flex items-center gap-1 rounded-sm text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => {
-              setReplying(true);
-              requestAnimationFrame(() => replyRef.current?.focus());
-            }}
-          >
-            <Reply className="size-3.5" />
-            Reply
-          </button>
-        )
       )}
-    </article>
+    </div>
   );
 }
 

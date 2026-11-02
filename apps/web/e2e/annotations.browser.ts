@@ -363,7 +363,8 @@ test("a rich Doc marks commented text, and a comment whose text is gone shows it
   await expect(changed.getByText("Confirm with finance.")).toBeVisible({
     timeout: 10_000,
   })
-  await changed.getByRole("button", { name: "Original", exact: true }).click()
+  await changed.getByRole("button", { name: /Confirm with finance\./ }).click()
+  await page.getByRole("button", { name: "Original", exact: true }).click()
   await expect
     .poll(() => highlighted(page, "worktable-comment-original"))
     .toEqual(["launch date moves"])

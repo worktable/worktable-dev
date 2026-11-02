@@ -407,7 +407,7 @@ function CommentThread({
       <div className="flex shrink-0 items-center gap-1 px-2 pb-1">
         <Button size="xs" variant="ghost" onClick={onBack} aria-label="Back to comments">
           <ChevronLeft className="size-4" />
-          Comments
+          All Comments
         </Button>
         {!readOnly && (
           <span className="ms-auto">

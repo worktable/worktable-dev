@@ -31,7 +31,12 @@ import {
 } from "./team-database.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { assertRoomToJoin } from "./hosted-billing.ts"
-import { noteAgentPairedForSetup, setupKeyForIdentity } from "./personal-setup.ts"
+import {
+  moveOwnerSetup,
+  noteAgentPairedForSetup,
+  setupKeyForIdentity,
+  setupSummary,
+} from "./personal-setup.ts"
 import {
   ensureWorkspaceManifest,
   workspaceCacheKey,
@@ -61,6 +66,28 @@ export function setCloudTeamInitializationHookForTests(
   hook: (() => void) | null
 ): void {
   initializationHookForTests = hook
+}
+
+/**
+ * An agent can connect and work before its owner first opens the Worktable,
+ * which is when its team begins. That progress carries over to the owner, and
+ * an agent that already connected has done what first-run setup asks for.
+ */
+async function carryOverEarlySetup(ownerKey: string): Promise<void> {
+  await moveOwnerSetup(ownerKey)
+  const manifest = ensureWorkspaceManifest()
+  if (
+    manifest.onboarding?.status === "pending" &&
+    setupSummary(ownerKey).items["connect-agent"]
+  )
+    writeWorkspaceManifest({
+      ...manifest,
+      onboarding: {
+        version: 1,
+        status: "complete",
+        completedAt: new Date().toISOString(),
+      },
+    })
 }
 
 /**
@@ -140,6 +167,7 @@ export async function resolveVerifiedCloudMember(
             recoverTeamInitialization()
             throw error
           }
+          await carryOverEarlySetup(`principal:${actorId}`)
         }
       )
     } finally {

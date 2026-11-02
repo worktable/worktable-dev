@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useNavigate } from "@tanstack/react-router"
+import { useNavigate, useRouter } from "@tanstack/react-router"
 import { Button } from "@worktable/ui/components/button"
 import { Callout } from "@worktable/ui/components/callout"
 import { Input } from "@worktable/ui/components/input"
@@ -380,6 +380,8 @@ function InviteStep({
 
 export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
   const navigate = useNavigate()
+  const router = useRouter()
+  const { plan } = useCloudPlan()
   const queryClient = useQueryClient()
   const { person } = usePersonalSetup()
   const { data: spaces } = useSpaces()
@@ -389,12 +391,15 @@ export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
 
   // Cloud names the Worktable before it opens. Inviting needs accounts:
   // Cloud and Teams have them, and a Worktable behind a password gets them
-  // when it is created. One used only on this computer skips inviting.
+  // when it is created. One used only on this computer skips inviting, and
+  // so does Solo, which is just for one person: Getting Started still offers
+  // inviting, and the plans it takes, without holding up setup.
   const cloud = person?.signOut === "cloud"
+  const solo = plan?.plan === "solo"
   const steps = STEPS.filter(
     (step) =>
       (step !== "create" || !cloud) &&
-      (step !== "invite" || person?.signOut != null)
+      (step !== "invite" || (person?.signOut != null && !solo))
   )
   const step = steps.includes(draft.step) ? draft.step : steps[0]!
 
@@ -421,6 +426,9 @@ export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
       // Setup has no socket; read the progress it made, such as the agent
       // that connected, once.
       noteSetupChanged(queryClient)
+      // Setup showed in place of the page that was opened. Stay there, unless
+      // it was Home, where Getting Started takes over.
+      if (router.state.location.pathname !== "/") return
       const start = gettingStartedSpace(spaces)
       void (start
         ? navigate({ to: "/spaces/$spaceId", params: { spaceId: start.id } })

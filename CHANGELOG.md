@@ -9,6 +9,11 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Starting from an AI app:** When your agent connected before you first opened your Worktable, the link it gave you opens what it made instead of setup, and Getting Started counts what the agent already did.
+- **Setup:** Setup returns you to the page you opened, and on the Solo plan it no longer asks you to invite anyone.
+
 ## [0.1.38] - 2026-11-02
 
 ### Changed

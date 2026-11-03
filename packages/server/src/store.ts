@@ -26,6 +26,7 @@ import {
   prepareMarkdownStorageConversion,
 } from "./markdown.ts";
 import { canonicalizeBlocksForWrite, inheritBlockIds } from "./blocknote.ts";
+import { checkRichTextBlocks, RICH_TEXT_SOURCE_BUDGET } from "./rich-text-blocks.ts";
 import { extractMarkdownMermaid } from "./mermaid-document.ts";
 
 import { getSpacesDir, workspaceCacheKey } from "./workspace.ts";
@@ -2372,7 +2373,11 @@ function summarizeDocBody(data: DocReadResult["data"]): DocBodySummary {
 // clients) are seen on the next list; see derived-revision.ts for the rule.
 // Spaces listed least recently are let go first, so a deleted Space's
 // summaries do not stay.
-type CachedDocBodySummary = DocBodySummary & DerivedRevision;
+type CachedDocBodySummary = DocBodySummary &
+  DerivedRevision & {
+    /** A `.json` that isn't Doc blocks: a plain file, not listed here. */
+    notADoc?: true;
+  };
 const DOC_BODY_SUMMARY_SPACES = 1_024;
 const docBodySummaries = new Map<string, Map<string, CachedDocBodySummary>>();
 
@@ -2386,7 +2391,7 @@ export async function listDocsDetailed(
   const summariesKey = docsDir(spaceId);
   const previous = docBodySummaries.get(summariesKey);
   const summaries = new Map<string, CachedDocBodySummary>();
-  const docs = await Promise.all(files.map(async ({ path, format, file }) => {
+  const docs = await Promise.all(files.map(async ({ path, format, file }): Promise<DocListEntry | null> => {
     const readAt = Date.now();
     // The walk found the file docStat would resolve, so stat it directly.
     // Paths that sanitizing changes, and files gone since the walk, keep
@@ -2400,21 +2405,31 @@ export async function listDocsDetailed(
       : "";
     const cached = previous?.get(path);
     let body: DocBodySummary;
+    let notADoc = false;
     if (
       cached &&
       statResult &&
       canReuseDerived(cached, revision, statResult.updatedAt)
     ) {
       body = cached;
+      notADoc = cached.notADoc === true;
       summaries.set(path, cached);
     } else {
       const readResult = await readDoc(spaceId, path);
       body = summarizeDocBody(readResult.data);
-      // A failed read may be transient; read it again next time.
-      if (statResult && !readResult.error) {
-        summaries.set(path, { ...body, revision, readAt });
+      notADoc = readResult.error === NOT_DOC_BLOCKS_ERROR;
+      // A failed read may be transient; read it again next time. What the
+      // bytes are is not, until they change.
+      if (statResult && (!readResult.error || notADoc)) {
+        summaries.set(path, {
+          ...body,
+          ...(notADoc ? { notADoc: true as const } : {}),
+          revision,
+          readAt,
+        });
       }
     }
+    if (notADoc) return null;
 
     return {
       path,
@@ -2439,7 +2454,9 @@ export async function listDocsDetailed(
     docBodySummaries.delete(oldest);
   }
 
-  return docs.filter((doc) => includeArchived || !doc.archived);
+  return docs.filter(
+    (doc): doc is DocListEntry => doc !== null && (includeArchived || !doc.archived)
+  );
 }
 
 export async function listDocsByPrefix(spaceId: string, prefix: string): Promise<string[]> {
@@ -2448,6 +2465,9 @@ export async function listDocsByPrefix(spaceId: string, prefix: string): Promise
     (path) => path === sanitizedPrefix || path.startsWith(`${sanitizedPrefix}/`)
   );
 }
+
+/** Why a `.json` doesn't open as a Doc: it is a plain file. */
+export const NOT_DOC_BLOCKS_ERROR = "Invalid document format: expected Doc blocks";
 
 export interface DocReadResult {
   data: unknown[] | string | null;
@@ -2531,14 +2551,24 @@ export async function readDocSourceSnapshot(
       };
     }
 
-    const blocks = JSON.parse(content);
-    if (!Array.isArray(blocks)) {
+    let blocks: unknown;
+    try {
+      blocks = JSON.parse(content);
+    } catch {
+      blocks = null;
+    }
+    // Whatever lists it, JSON that isn't Doc blocks never reaches the editor,
+    // a collaboration room or a Doc write: each would drop what it holds.
+    if (
+      !Array.isArray(blocks) ||
+      checkRichTextBlocks(blocks, RICH_TEXT_SOURCE_BUDGET) === "not-blocks"
+    ) {
       return {
         result: {
           data: null,
           format: null,
           storedAs: "json",
-          error: "Invalid document format: expected array",
+          error: NOT_DOC_BLOCKS_ERROR,
         },
         revision,
         bytes: new Uint8Array(bytes),
@@ -3010,7 +3040,6 @@ export async function writeDoc(
       error: pathError,
     };
   }
-
   const writeLocked = async (
     formatFenced: boolean
   ): Promise<DocWriteResult | typeof formatFenceRequired> => {
@@ -3683,6 +3712,19 @@ async function writeDocUnlocked(
         content as unknown[],
         Array.isArray(before?.data) ? before.data : undefined
       );
+  // Blocks the editor can't hold, kept raw when they could not be put in its
+  // shape, would make a Doc that no reader opens.
+  if (
+    checkRichTextBlocks(preparedBlocks.content, RICH_TEXT_SOURCE_BUDGET) ===
+    "not-blocks"
+  ) {
+    return {
+      ok: false,
+      storedAs: "json",
+      error:
+        "Doc content must be Doc blocks: each a block type the editor knows, with its props, content and children.",
+    };
+  }
   // Serialized once for the file, its version and its revision.
   let serialized: string | undefined;
   const fileText = (): string =>

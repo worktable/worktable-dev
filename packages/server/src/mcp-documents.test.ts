@@ -1691,9 +1691,13 @@ describe("format-neutral document access", () => {
     expect(await read("oversized")).toMatchObject({
       projection: { kind: "metadata-only", reason: "too-large" },
     })
-    expect(await read("malformed")).toMatchObject({
-      document: { health: "invalid" },
-      projection: { kind: "metadata-only", reason: "invalid" },
+    // JSON that isn't Doc blocks is a plain file under its whole name.
+    expect(await read("malformed.json")).toMatchObject({
+      document: {
+        path: "malformed.json",
+        format: { id: "worktable.file" },
+        health: "supported",
+      },
     })
     expect(await read("invalid-utf8")).toMatchObject({
       document: { health: "invalid" },

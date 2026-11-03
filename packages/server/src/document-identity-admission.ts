@@ -117,6 +117,34 @@ function requireManagedDocumentPath(path: string) {
   return analyzed
 }
 
+/** The listed path of whatever already holds a new Doc's source, if any. */
+function sourceHolder(
+  catalog: DocumentCatalog,
+  family: ManagedLegacyDocumentFamily,
+  path: string
+): string | null {
+  const key = (relativePath: string) =>
+    analyzeDocumentPath(relativePath).comparisonKey ?? relativePath
+  const sources = new Set(
+    (family === "html"
+      ? [`docs/${path}.html`, `widgets/${path}`]
+      : [`docs/${path}.json`, `docs/${path}.md`]
+    ).map(key)
+  )
+  for (const entry of catalog.entries) {
+    const claims =
+      entry.kind === "document"
+        ? [{ path: entry.descriptor.path, source: entry.handle.source }]
+        : entry.claims.flatMap((claim) =>
+            claim.kind === "document" ? [claim] : []
+          )
+    for (const claim of claims) {
+      if (sources.has(key(claim.source.relativePath))) return claim.path
+    }
+  }
+  return null
+}
+
 async function documentIdForManagedWrite(
   spaceId: string,
   selectedPath: ManagedDocumentPath,
@@ -166,6 +194,14 @@ async function documentIdForManagedWrite(
     if (!newPath.safe || !newPath.portable || newPath.canonicalPath !== path) {
       throw new ManagedDocumentAdmissionError(
         `Document path cannot be created here: ${path}`
+      )
+    }
+    // A plain file can hold the name this Doc's source would take: a `.json`
+    // that isn't Doc blocks keeps its whole name. Never write over it.
+    const holder = sourceHolder(catalog, family, path)
+    if (holder) {
+      throw new ManagedDocumentAdmissionError(
+        `Another document already uses this path: ${holder}`
       )
     }
     return {

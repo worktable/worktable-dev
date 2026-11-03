@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test"
+import { readdirSync, readFileSync } from "node:fs"
+import { join, resolve } from "node:path"
 import type { DocumentFormatId, DocumentTextProjection } from "@worktable/types"
 import {
   BUILTIN_DOCUMENT_FORMATS,
@@ -7,6 +9,8 @@ import {
   createBuiltinDocumentFormatRegistry,
   type DocumentOperationBudget,
 } from "./document-format-registry.ts"
+import { canonicalizeBlocks } from "./blocknote.ts"
+import { buildWhatAgentsCanMakeBlocks } from "./starter-space.ts"
 
 function adapter(
   id: string,
@@ -251,5 +255,95 @@ describe("document format registry", () => {
       text: "1234567",
       truncated: false,
     })
+  })
+
+  it("takes JSON as a rich-text Doc only when it holds Doc blocks", async () => {
+    const registry = createBuiltinDocumentFormatRegistry()
+    const richText = registry.get(BUILTIN_DOCUMENT_FORMATS.richText)!
+    const budget: DocumentOperationBudget = {
+      maxInputBytes: 1024 * 1024,
+      maxOutputBytes: 1024 * 1024,
+      maxDepth: 128,
+      maxElements: 100_000,
+      timeoutMs: 1_000,
+    }
+    const write = (value: unknown) =>
+      richText.prepareWrite!({
+        bytes: new TextEncoder().encode(JSON.stringify(value)),
+        sourceVersion: 1,
+        budget,
+        signal: new AbortController().signal,
+      })
+
+    // Every rich-text Doc the repository ships, as written and as the editor
+    // saves it, and the shapes agents and earlier versions wrote.
+    const fixtureDocs: unknown[] = []
+    const visit = (directory: string) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const path = join(directory, entry.name)
+        if (entry.isDirectory()) visit(path)
+        else if (/\/spaces\/[^/]+\/docs\/.+\.json$/.test(path)) {
+          fixtureDocs.push(JSON.parse(readFileSync(path, "utf8")))
+        }
+      }
+    }
+    visit(resolve(import.meta.dir, "../../../fixtures/workspaces"))
+    expect(fixtureDocs.length).toBeGreaterThan(0)
+    const gettingStarted = await buildWhatAgentsCanMakeBlocks()
+    const docs: unknown[] = [
+      ...fixtureDocs,
+      gettingStarted,
+      await canonicalizeBlocks(gettingStarted),
+      [],
+      [{ type: "paragraph" }],
+      [{ type: "paragraph", content: "Plain words" }],
+      [{ type: "paragraph", content: [{ text: "Untyped text" }] }],
+      [
+        {
+          type: "bulletListItem",
+          props: { textColor: "default", extraFromNewerVersion: "kept" },
+          content: [
+            { type: "link", href: "https://example.com", content: "a link" },
+          ],
+          children: [{ type: "checkListItem", props: { checked: true } }],
+        },
+      ],
+      [
+        {
+          type: "table",
+          content: {
+            type: "tableContent",
+            columnWidths: [null, 120],
+            rows: [
+              { cells: [[{ type: "text", text: "A", styles: {} }], "B"] },
+              { cells: [{ type: "tableCell", content: "C" }] },
+            ],
+          },
+        },
+      ],
+      [{ type: "mermaid", props: { code: "graph TD" }, content: [] }],
+      [{ type: "image", props: { url: "https://example.com/a.png" } }],
+    ]
+    for (const doc of docs) {
+      await expect(write(doc)).resolves.toBeDefined()
+    }
+
+    // An agent's data, configuration and anything else is not a Doc.
+    for (const data of [
+      [{ id: 1, name: "a" }, { id: 2, name: "b" }],
+      { name: "package", version: "1.0.0" },
+      [1, 2, 3],
+      ["a", "b"],
+      [{ type: "user", name: "Ada" }],
+      [{ type: "paragraph", text: "a field the editor would drop" }],
+      [{ type: "paragraph", props: { nested: { value: 1 } } }],
+      [{ type: "paragraph", content: [{ type: "mention", user: "x" }] }],
+      [{ type: "image", content: [{ type: "text", text: "x" }] }],
+      [{ type: "paragraph", children: [{ id: 3 }] }],
+    ]) {
+      await expect(write(data)).rejects.toThrow(
+        "Rich-text source must contain Doc blocks"
+      )
+    }
   })
 })

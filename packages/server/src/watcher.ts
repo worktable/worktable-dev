@@ -258,8 +258,8 @@ export function parseChangedPath(
     const docParts = parts.slice(2)
     const lastPart = docParts[docParts.length - 1]
     if (lastPart?.endsWith(".json")) {
-      const docPath = docParts.join("/").replace(/\.json$/, "")
-      return { type: "doc", spaceId, docPath }
+      const file = docParts.join("/")
+      return { type: "doc", spaceId, docPath: file.replace(/\.json$/, ""), file }
     }
     if (lastPart?.endsWith(".md")) {
       const docPath = docParts.join("/").replace(/\.md$/, "")

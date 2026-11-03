@@ -12,6 +12,11 @@ export interface DocChangeEvent {
   type: "doc"
   spaceId: string
   docPath: string
+  /**
+   * A changed `.json` below docs/, by its whole name: it is a plain file
+   * when it doesn't hold Doc blocks.
+   */
+  file?: string
 }
 
 /**

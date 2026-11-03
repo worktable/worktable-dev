@@ -9,9 +9,13 @@ import type {
   DocumentId,
   DocumentSource,
 } from "@worktable/types"
-import { CanonicalIdSchema } from "@worktable/types"
+import {
+  CanonicalIdSchema,
+  DOCUMENT_GENERATION_MAX_ENTRY_BYTES,
+} from "@worktable/types"
 import {
   listLegacyDocumentClaims,
+  plainFileClaim,
   type DocumentSourceClaim,
   type SourceClaimDiagnostic,
 } from "./document-adapters.ts"
@@ -48,6 +52,7 @@ import {
   type DocumentFormatRegistry,
 } from "./document-format-registry.ts"
 import { storedDocTitle } from "./doc-title-text.ts"
+import { richTextSourceIsDoc } from "./rich-text-blocks.ts"
 import { filesEnabled } from "./files-enabled.ts"
 import {
   DOCUMENT_STORAGE_PROFILE_IDS,
@@ -360,27 +365,50 @@ async function readCatalogHtmlProperties(input: {
   return view
 }
 
-const docTitles = new FingerprintCache<string>(DOC_TITLE_CACHE_LIMIT)
+/** What a Doc file opens with, from one read of it. */
+interface DocSourceView {
+  title: string
+  /** False for a `.json` that isn't Doc blocks: a plain file, not a Doc. */
+  doc: boolean
+}
+
+const docSources = new FingerprintCache<DocSourceView>(DOC_TITLE_CACHE_LIMIT)
 
 /**
- * The title a Doc file opens with, re-read only when its fingerprint
- * changed. A file changed too recently to identify is read every time.
+ * The title a Doc file opens with and, for rich text, whether it is Doc
+ * blocks at all, re-read only when its fingerprint changed. A file changed
+ * too recently to identify is read every time.
  */
-async function readCatalogDocTitle(
+async function readCatalogDocSource(
   file: string,
   key: string | undefined,
-  markdown: boolean
-): Promise<string> {
-  const cached = key !== undefined ? docTitles.get(file, key) : undefined
+  markdown: boolean,
+  size?: bigint
+): Promise<DocSourceView> {
+  const cached = key !== undefined ? docSources.get(file, key) : undefined
   if (cached !== undefined) return cached
-  let title = ""
-  try {
-    title = storedDocTitle(await readFile(file, "utf8"), markdown)
-  } catch {
-    // An unreadable file keeps the name its path gives; its reader reports why.
+  let view: DocSourceView = { title: "", doc: true }
+  if (
+    !markdown &&
+    size !== undefined &&
+    size > BigInt(DOCUMENT_GENERATION_MAX_ENTRY_BYTES)
+  ) {
+    // Larger than any Doc can be written; no need to read it to know.
+    view = { title: "", doc: false }
+  } else {
+    try {
+      const text = await readFile(file, "utf8")
+      view =
+        markdown || richTextSourceIsDoc(text)
+          ? { title: storedDocTitle(text, markdown), doc: true }
+          : { title: "", doc: false }
+    } catch {
+      // An unreadable file keeps the name its path gives and stays what its
+      // name says; its reader reports why.
+    }
   }
-  if (key !== undefined) docTitles.set(file, key, title)
-  return title
+  if (key !== undefined) docSources.set(file, key, view)
+  return view
 }
 
 /** Freeze a parsed value; binary views cannot be frozen and are left as is. */
@@ -419,7 +447,7 @@ function humanizePath(path: string): string {
   )
 }
 
-function hasErrors(diagnostics: SourceClaimDiagnostic[]): boolean {
+function hasErrors(diagnostics: readonly SourceClaimDiagnostic[]): boolean {
   return diagnostics.some((diagnostic) => diagnostic.severity === "error")
 }
 
@@ -627,6 +655,7 @@ async function inventoryClaims(
   reservedByAlias: (path: string) => unknown,
   registry: DocumentFormatRegistry,
   lstatPath: BuildLstat,
+  docSourceViews: ReadonlyMap<string, DocSourceView>,
   signal?: AbortSignal
 ): Promise<{
   claims: Array<
@@ -700,10 +729,18 @@ async function inventoryClaims(
   > = []
   const consumed = new Set<DocumentId>()
 
-  for (const claim of visibleLegacyClaims) {
+  for (const found of visibleLegacyClaims) {
     const inventoryEntry = bySource.get(
-      `${claim.source.kind}:${sourcePathKey(claim.source.relativePath)}`
+      `${found.source.kind}:${sourcePathKey(found.source.relativePath)}`
     )
+    const claim = classifiedByContent(
+      found,
+      inventoryEntry,
+      docSourceViews,
+      reservedByAlias,
+      registry
+    )
+    if (!claim) continue
     if (!inventoryEntry) {
       claims.push({
         ...claim,
@@ -853,12 +890,72 @@ async function inventoryClaims(
   }
 }
 
+/**
+ * A `.json` is named a rich-text Doc by its extension, but it is one only
+ * when it holds Doc blocks. What an item is stays as it is once Worktable
+ * holds it: the inventory's file stays a file whatever its bytes, and its
+ * Doc stays a Doc, unreadable while its source isn't Doc blocks, so its
+ * identity, history and comments survive. A source without an identity is
+ * what its content is. Null when it is neither: a plain file where files
+ * can't be, or under a name an alias holds.
+ */
+function classifiedByContent(
+  claim: DocumentSourceClaim,
+  inventoryEntry: InventoryClaimEntry | undefined,
+  docSourceViews: ReadonlyMap<string, DocSourceView>,
+  reservedByAlias: (path: string) => unknown,
+  registry: DocumentFormatRegistry
+): DocumentSourceClaim | null {
+  if (
+    claim.format.id !== BUILTIN_DOCUMENT_FORMATS.richText ||
+    claim.source.kind !== "file"
+  ) {
+    return claim
+  }
+  const doc = docSourceViews.get(claim.source.relativePath)?.doc ?? true
+  const registered = inventoryEntry?.format.id
+  if (registered === BUILTIN_DOCUMENT_FORMATS.richText || (!inventoryEntry && doc)) {
+    return doc
+      ? claim
+      : {
+          ...claim,
+          diagnostics: [
+            ...claim.diagnostics,
+            {
+              severity: "warning",
+              code: "source-not-a-doc",
+              message: "rich-text source does not hold Doc blocks",
+            },
+          ],
+        }
+  }
+  if (registered !== undefined && registered !== BUILTIN_DOCUMENT_FORMATS.file) {
+    return claim
+  }
+  const file = plainFileClaim(claim, registry)
+  return file && !reservedByAlias(file.path) ? file : null
+}
+
+/**
+ * Whether a Doc is unreadable only because its source isn't Doc blocks. Its
+ * bytes are safe to move, download and keep in history; they just don't
+ * open as the Doc.
+ */
+export function sourceIsNotADoc(
+  diagnostics: readonly SourceClaimDiagnostic[]
+): boolean {
+  return (
+    !hasErrors(diagnostics) &&
+    diagnostics.some((diagnostic) => diagnostic.code === "source-not-a-doc")
+  )
+}
+
 function claimHealth(
   format: DocumentFormatClaim,
   diagnostics: SourceClaimDiagnostic[],
   registry: DocumentFormatRegistry
 ): DocumentHealth {
-  if (hasErrors(diagnostics)) return "invalid"
+  if (hasErrors(diagnostics) || sourceIsNotADoc(diagnostics)) return "invalid"
   return registry.health(format)
 }
 
@@ -1010,6 +1107,33 @@ async function buildDocumentCatalogFromFiles(
     registry
   )
   options.signal?.throwIfAborted()
+  // Whether each `.json` is Doc blocks, from the same read that gives a
+  // Doc its title: once per fingerprint, like the title always was.
+  const docSourceViews = new Map<string, DocSourceView>()
+  await mapWithConcurrency(
+    legacyClaims.filter(
+      (claim) =>
+        claim.format.id === BUILTIN_DOCUMENT_FORMATS.richText &&
+        claim.source.kind === "file"
+    ),
+    CATALOG_IO_CONCURRENCY,
+    async (claim) => {
+      options.signal?.throwIfAborted()
+      const file = resolve(spaceRoot, claim.source.relativePath)
+      const info = await lstatPath(file).catch(() => null)
+      const fingerprint = info ? fingerprintOf(info, startedAt) : null
+      docSourceViews.set(
+        claim.source.relativePath,
+        await readCatalogDocSource(
+          file,
+          fingerprint && !fingerprint.racy ? fingerprint.key : undefined,
+          false,
+          info?.size
+        )
+      )
+    }
+  )
+  options.signal?.throwIfAborted()
   const inventoried = await inventoryClaims(
     spaceRoot,
     spaceId,
@@ -1017,6 +1141,7 @@ async function buildDocumentCatalogFromFiles(
     aliases.reserved,
     registry,
     lstatPath,
+    docSourceViews,
     options.signal
   )
   // With files off, files that gained an identity while they were on take no
@@ -1089,11 +1214,13 @@ async function buildDocumentCatalogFromFiles(
     CATALOG_IO_CONCURRENCY,
     async (claim) => {
       options.signal?.throwIfAborted()
-      const title = await readCatalogDocTitle(
-        resolve(spaceRoot, claim.source.relativePath),
-        sourceKeys.get(claim.source.relativePath),
-        claim.format.id === BUILTIN_DOCUMENT_FORMATS.markdown
-      )
+      const { title } =
+        docSourceViews.get(claim.source.relativePath) ??
+        (await readCatalogDocSource(
+          resolve(spaceRoot, claim.source.relativePath),
+          sourceKeys.get(claim.source.relativePath),
+          claim.format.id === BUILTIN_DOCUMENT_FORMATS.markdown
+        ))
       if (title) claim.title = title
     }
   )

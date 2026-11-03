@@ -537,18 +537,19 @@ describe("markdown support", () => {
       expect(result.containsMermaid).toBe(false);
     });
 
-    it("read_doc never crashes even on unconvertible inline content", async () => {
-      await writeDoc("test-space", "unconvertible-doc", [
+    it("refuses inline content the editor can't hold, and read_doc reports it without crashing", async () => {
+      const blocks = [
         { id: "x", type: "paragraph", props: {}, content: [{ type: "alienInline", payload: { deep: true } }], children: [] },
-      ]);
+      ];
+      expect(await writeDoc("test-space", "unconvertible-doc", blocks)).toMatchObject({ ok: false });
 
-      const result = (await dispatchOperation("docs.read", {
-        spaceId: "test-space",
-        docPath: "unconvertible-doc",
-      })) as { format: string; content: unknown };
-
-      expect(result.content).toBeDefined();
-      expect(["markdown", "blocknote"]).toContain(result.format);
+      writeFileSync(
+        join(spacesDir, "test-space", "docs", "unconvertible-doc.json"),
+        JSON.stringify(blocks)
+      );
+      await expect(
+        dispatchOperation("docs.read", { spaceId: "test-space", docPath: "unconvertible-doc" })
+      ).rejects.toThrow("expected Doc blocks");
     });
   });
 });

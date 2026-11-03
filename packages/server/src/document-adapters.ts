@@ -60,6 +60,7 @@ export interface SourceClaimDiagnostic {
     | "inventory-source-missing"
     | "source-ownership-overlap"
     | "bundle-manifest-mismatch"
+    | "source-not-a-doc"
   message: string
 }
 
@@ -108,6 +109,37 @@ function pathDiagnostics(path: string): {
     })
   }
   return { comparisonKey: analysis.comparisonKey, diagnostics }
+}
+
+/**
+ * The claim a source registered by its extension makes as a plain file, for
+ * a `.json` whose content isn't Doc blocks or that the inventory registers
+ * as a file. A file is named by its whole filename. Null when no file can be
+ * there: files are not registered, or the path is hidden.
+ */
+export function plainFileClaim(
+  claim: DocumentSourceClaim,
+  registry: DocumentFormatRegistry
+): DocumentSourceClaim | null {
+  const file = registry.get(BUILTIN_DOCUMENT_FORMATS.file)
+  if (
+    !file?.fileSource ||
+    claim.source.kind !== "file" ||
+    !claim.source.relativePath.startsWith("docs/")
+  ) {
+    return null
+  }
+  const path = claim.source.relativePath.slice("docs/".length)
+  if (path.split("/").some(isHiddenName)) return null
+  const analyzed = pathDiagnostics(path)
+  return {
+    ...claim,
+    path,
+    comparisonKey: analyzed.comparisonKey,
+    format: { id: file.id, sourceVersion: file.fileSource.discoveryVersion },
+    title: path.slice(path.lastIndexOf("/") + 1),
+    diagnostics: analyzed.diagnostics,
+  }
 }
 
 interface LegacyCatalogBudget {

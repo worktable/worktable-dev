@@ -1750,6 +1750,9 @@ export function startServer(
           noteExternalFileChange(event.spaceId, path);
         }
       }
+      if (event.type === "doc" && event.file) {
+        noteExternalFileChange(event.spaceId, event.file);
+      }
 
       // Sync external doc changes into Yjs in-memory state
       if (event.type === "doc") {

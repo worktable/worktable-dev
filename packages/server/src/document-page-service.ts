@@ -388,7 +388,9 @@ async function pageForHandle(
             comment: canAccessSpace(spaceId, commentAccess()),
           }
         : {}),
-      rawSource: rawSourceAuthorized && handle.document.health !== "invalid",
+      rawSource:
+        rawSourceAuthorized &&
+        (handle.document.health !== "invalid" || handle.sourceNotADoc === true),
       versions:
         (storageV2 && handle.identity === "durable") || Boolean(integration),
       annotations:
@@ -647,7 +649,7 @@ export async function readRawDocumentSource(options: {
   return useResolvedDocumentHandle(
     { ...options, snapshot: true },
     async (handle) => {
-      if (handle.document.health === "invalid") {
+      if (handle.document.health === "invalid" && !handle.sourceNotADoc) {
         return { kind: "unavailable" } as const
       }
       const bytes = await readDocumentSource({

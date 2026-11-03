@@ -2821,6 +2821,7 @@ async function prepareExactRename(
   }
   const targetAnalysis = analyzeDocumentPath(to, {
     enforceNewPathGrammar: true,
+    fileName: source.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file,
   })
   if (
     !targetAnalysis.safe ||
@@ -3141,7 +3142,10 @@ async function preparePrefixRename(
         "Document folder contents changed before the move"
       )
     }
-    const target = analyzeDocumentPath(to, { enforceNewPathGrammar: true })
+    const target = analyzeDocumentPath(to, {
+      enforceNewPathGrammar: true,
+      fileName: source.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file,
+    })
     if (
       !target.safe ||
       !target.portable ||
@@ -4708,6 +4712,9 @@ function validatePrefixRenameJournalPaths(journal: PrefixRenameJournal): void {
     const from = analyzeDocumentPath(entry.from.logicalPath)
     const to = analyzeDocumentPath(entry.to.logicalPath, {
       enforceNewPathGrammar: true,
+      fileName:
+        entry.to.source.kind === "file" &&
+        entry.to.source.relativePath === `docs/${entry.to.logicalPath}`,
     })
     if (
       !from.safe ||
@@ -5129,6 +5136,9 @@ function validateJournalPaths(journal: DocumentLifecycleJournal): void {
   const from = analyzeDocumentPath(journal.from.logicalPath)
   const to = analyzeDocumentPath(journal.to.logicalPath, {
     enforceNewPathGrammar: journal.operationType === "exact-rename",
+    fileName:
+      journal.to.source.kind === "file" &&
+      journal.to.source.relativePath === `docs/${journal.to.logicalPath}`,
   })
   if (!from.safe || from.canonicalPath !== journal.from.logicalPath) {
     throw new Error("document lifecycle source path is unsafe")
@@ -7764,11 +7774,15 @@ function verifyRecoveryCatalogCheckpoint(
   const plannedEntries: readonly LifecycleEndpoint[] =
     expectedPrefixEntries ??
     ("source" in endpoint ? [endpoint as LifecycleEndpoint] : [])
-  const anyFile = plannedEntries.some(
-    (entry) =>
+  const plannedFiles = new Set(
+    plannedEntries.flatMap((entry) =>
       entry.source.kind === "file" &&
       entry.source.relativePath === `docs/${entry.logicalPath}`
+        ? [entry.source.relativePath]
+        : []
+    )
   )
+  const anyFile = plannedFiles.size > 0
   const scanDocs = (
     directory: string,
     segments: string[],
@@ -7786,6 +7800,13 @@ function verifyRecoveryCatalogCheckpoint(
         continue
       }
       if (!entry.isFile()) continue
+      // A planned file keeps its whole name, even one a Doc format's
+      // extension ends, such as a `.json` that isn't Doc blocks.
+      const sourcePath = ["docs", ...nextSegments].join("/")
+      if (plannedFiles.has(sourcePath) && !hidden) {
+        maybeClaim(nextSegments.join("/"), sourcePath)
+        continue
+      }
       const extension =
         journal.planVersion === LEGACY_JOURNAL_PLAN_VERSION
           ? entry.name.endsWith(".md")
@@ -7799,7 +7820,7 @@ function verifyRecoveryCatalogCheckpoint(
       if (extension === null) continue
       maybeClaim(
         [...segments, withoutSuffix(entry.name, extension)].join("/"),
-        ["docs", ...nextSegments].join("/")
+        sourcePath
       )
     }
   }

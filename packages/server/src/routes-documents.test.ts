@@ -31,8 +31,10 @@ import { deleteHtmlDocument } from "./html-document-delete.ts"
 import { moveHtmlDocument } from "./html-document-move.ts"
 import { getSpaceLinkGraph } from "./link-graph.ts"
 import {
+  createRegisteredDocument,
   readRegisteredDocumentSource,
   recordExternalFileChanges,
+  replaceRegisteredDocument,
 } from "./document-write-service.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import {
@@ -1062,6 +1064,28 @@ describe("format-neutral document route", () => {
       ).toBe(403)
       // A Doc's name is for the Doc tools.
       expect((await upload("design/notes.md", "# Notes")).status).toBe(415)
+      // JSON is a file unless it holds Doc blocks, whoever writes it.
+      const config = '{"theme":"dark"}\n'
+      expect((await upload("data/config.json", config)).status).toBe(201)
+      expect(
+        (await upload("data/notes.json", '[{"type":"paragraph","content":"Hi"}]'))
+          .status
+      ).toBe(409)
+      const docs = join(root, "spaces", spaceId, "docs")
+      const data = '[{"id":1,"name":"a"},{"id":2,"name":"b"}]'
+      await mkdir(join(docs, "agent-out"), { recursive: true })
+      await writeFile(join(docs, "agent-out", "data.json"), data)
+      await writeFile(join(docs, "package.json"), '{"name":"tool"}')
+      noteSpaceChanged(spaceId)
+      for (const [path, bytes] of [
+        ["data/config.json", config],
+        ["agent-out/data.json", data],
+        ["package.json", '{"name":"tool"}'],
+      ] as const) {
+        const served = await instance.request(fileUrl(path))
+        expect(served.status).toBe(200)
+        expect(await served.text()).toBe(bytes)
+      }
 
       const created = await upload("design/error.png", "first")
       expect(created.status).toBe(201)
@@ -1155,6 +1179,97 @@ describe("format-neutral document route", () => {
       if (previous === undefined) delete process.env["WORKTABLE_FILES"]
       else process.env["WORKTABLE_FILES"] = previous
     }
+  })
+
+  it("keeps a Doc overwritten with plain JSON as the same unreadable item, with its history", async () => {
+    const instance = app()
+    const blocks = (text: string) =>
+      new TextEncoder().encode(
+        JSON.stringify([{ type: "paragraph", content: text }])
+      )
+    const created = await createRegisteredDocument({
+      spaceId,
+      path: "plan",
+      format: { id: "worktable.rich-text", sourceVersion: 1 },
+      bytes: blocks("First draft"),
+      createdBy: "test",
+      source: "test",
+    })
+    await replaceRegisteredDocument({
+      spaceId,
+      path: "plan",
+      bytes: blocks("Second draft"),
+      expectedRevision: created.sourceRevision,
+      updatedBy: "test",
+      source: "test",
+    })
+    const request = async (route: string) =>
+      instance.request(`/api/spaces/${spaceId}/documents/${route}`)
+    const versions = async () =>
+      ((await (await request("versions?path=plan&all=true")).json()) as {
+        versions: unknown[]
+      }).versions.length
+    const kept = await versions()
+    expect(kept).toBe(2)
+
+    // A shell agent writes data over the Doc's file.
+    const data = '[{"id":1,"name":"a"},{"id":2,"name":"b"}]'
+    await writeFile(join(root, "spaces", spaceId, "docs", "plan.json"), data)
+    noteSpaceChanged(spaceId)
+
+    const page = (await (await request("page?path=plan")).json()) as {
+      page: unknown
+    }
+    expect(page.page).toMatchObject({
+      document: { path: "plan", health: "invalid" },
+      renderer: null,
+      capabilities: { rawSource: true, versions: true },
+    })
+    const current = await readRegisteredDocumentSource({ spaceId, path: "plan" })
+    expect(current.documentId).toBe(created.documentId)
+    expect(await versions()).toBe(kept)
+    expect(await (await request("source?path=plan")).text()).toBe(data)
+    // The editor never imports it, so nothing can save over the bytes.
+    expect((await readDoc(spaceId, "plan")).data).toBeNull()
+    await expect(
+      yjsManager.handleConnection(
+        { send() {}, close() {} } as never,
+        spaceId,
+        "plan"
+      )
+    ).rejects.toThrow()
+    expect(
+      await readFile(join(root, "spaces", spaceId, "docs", "plan.json"), "utf8")
+    ).toBe(data)
+
+    // Replacing it with Doc blocks repairs it, keeping the agent's bytes.
+    await expect(
+      replaceRegisteredDocument({
+        spaceId,
+        path: "plan",
+        bytes: new TextEncoder().encode('[{"id":3}]'),
+        expectedRevision: current.sourceRevision,
+        updatedBy: "test",
+        source: "test",
+      })
+    ).rejects.toThrow("Doc blocks")
+    await replaceRegisteredDocument({
+      spaceId,
+      path: "plan",
+      bytes: blocks("Repaired"),
+      expectedRevision: current.sourceRevision,
+      updatedBy: "test",
+      source: "test",
+    })
+    expect(
+      ((await (await request("page?path=plan")).json()) as {
+        page: { document: { health: string } }
+      }).page.document.health
+    ).toBe("supported")
+    expect(
+      (await readRegisteredDocumentSource({ spaceId, path: "plan" })).documentId
+    ).toBe(created.documentId)
+    expect(await versions()).toBe(kept + 2)
   })
 
   it("keeps a version when a file with history changes on disk", async () => {

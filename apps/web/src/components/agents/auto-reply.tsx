@@ -1,6 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { AgentConnection, AutoReply } from "@worktable/types"
-import { AGENT_PLATFORMS, agentConnectionPlatform } from "@worktable/types"
+import {
+  AGENT_PLATFORMS,
+  agentConnectionOnCodexHost,
+  agentConnectionPlatform,
+} from "@worktable/types"
 import { Button, buttonVariants } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
 import { InfoTip } from "@worktable/ui/components/info-tip"
@@ -156,9 +160,20 @@ export function CopyLine({ text }: { text: string }) {
   )
 }
 
+/** Where to paste the line: a terminal for Claude Code, this computer for a Codex host. */
+function pasteInto(connection: AgentConnection, app: string): string {
+  if (agentConnectionOnCodexHost(connection))
+    return `Paste it into ${app} on this computer`
+  return connection.autoReply?.kind === "session"
+    ? `Paste it into ${app} in your terminal`
+    : `Paste it into ${app}`
+}
+
 function TurnOn({ connection }: { connection: AgentConnection }) {
   const platform = agentConnectionPlatform(connection)
-  const chatgpt = platform === "chatgpt"
+  // Open ChatGPT goes to the web, which doesn't use the desktop app's MCP servers.
+  const chatgptWeb =
+    platform === "chatgpt" && !agentConnectionOnCodexHost(connection)
   const app = AGENT_PLATFORMS[platform].name
   return (
     <Popover>
@@ -170,15 +185,8 @@ function TurnOn({ connection }: { connection: AgentConnection }) {
           <SetupStep number={1} title="Copy this">
             <CopyLine text={AUTO_REPLY_PROMPT} />
           </SetupStep>
-          <SetupStep
-            number={2}
-            title={
-              connection.autoReply?.kind === "session"
-                ? `Paste it into ${app} in your terminal`
-                : `Paste it into ${app}`
-            }
-          >
-            {chatgpt && (
+          <SetupStep number={2} title={pasteInto(connection, app)}>
+            {chatgptWeb && (
               <a
                 href="https://chatgpt.com/"
                 target="_blank"

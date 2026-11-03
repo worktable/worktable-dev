@@ -174,10 +174,14 @@ describe("agent connection routes", () => {
         await resolveParticipant(identity)
         return identity
       }
-      const chat = await connect("chatgpt-desktop")
-      const session = await connect("claude-code")
-      // Like a sign-in on Cloud: no recorded app, so its name says which.
+      // Like sign-ins on Cloud: no recorded app, so their names say which.
+      const chat = await connect(null, "ChatGPT")
       const named = await connect(null, "Claude")
+      const session = await connect("claude-code")
+      // Codex and ChatGPT's desktop MCP servers share settings and get no
+      // events: a running chat waits, as a Claude Code session does.
+      await connect("codex")
+      const desktop = await connect("chatgpt-desktop", "ChatGPT Desktop")
       const autoReplies = async () => {
         const listed = (await (
           await app.fetch(request("GET", "/api/agent-connections", cookie))
@@ -192,6 +196,8 @@ describe("agent connection routes", () => {
         ChatGPT: { kind: "chat", state: "off" },
         "Claude Code": { kind: "session", state: "off" },
         Claude: { kind: "task", state: "off" },
+        Codex: { kind: "session", state: "off" },
+        "ChatGPT Desktop": { kind: "session", state: "off" },
       })
 
       // ChatGPT subscribes from a chat; Claude Code waits in its session.
@@ -224,10 +230,13 @@ describe("agent connection routes", () => {
       )
       expect((await heard)["ChatGPT"]).toEqual({ kind: "chat", state: "on" })
       await waitForPending(session, {}, { seconds: 0 })
+      await waitForPending(desktop, {}, { seconds: 0 })
       expect(await autoReplies()).toEqual({
         ChatGPT: { kind: "chat", state: "on" },
         "Claude Code": { kind: "session", state: "on" },
         Claude: { kind: "task", state: "off" },
+        Codex: { kind: "session", state: "off" },
+        "ChatGPT Desktop": { kind: "session", state: "on" },
       })
 
       // What an agent does outweighs what its name suggests.

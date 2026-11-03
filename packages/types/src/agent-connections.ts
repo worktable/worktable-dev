@@ -200,3 +200,17 @@ export function agentConnectionPlatform(
     ? platformForName(connection.displayName)
     : fromClient
 }
+
+/**
+ * Whether an agent connects from a Codex host: Codex itself, or the ChatGPT
+ * desktop app's own MCP servers, which share Codex's settings. These connect
+ * without MCP Events, so they answer only while a chat keeps waiting.
+ */
+export function agentConnectionOnCodexHost(
+  connection: Pick<AgentConnection, "target">
+): boolean {
+  const { target } = connection
+  if (target.kind !== "mcp-client") return false
+  const client = target.clientId?.toLowerCase()
+  return client === "codex" || client === "chatgpt-desktop"
+}

@@ -1,5 +1,13 @@
 import { writeManagedFixtureHtml as writeWidget } from "./fixtures/managed-content.ts"
-import { afterEach, beforeEach, describe, expect, it, setSystemTime } from "bun:test"
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  setSystemTime,
+  spyOn,
+} from "bun:test"
 import {
   access,
   mkdir,
@@ -25,6 +33,7 @@ import { ownerIdentity } from "./auth.ts"
 import { createAnnotation } from "./annotation-store.ts"
 import { HOSTED_BROWSER_RUNTIME_SCOPES } from "./hosted-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
+import { FILE_READ_CHUNK_BYTES, OpenFileRevision } from "./file-revision.ts"
 import { renameDocAndSync } from "./doc-rename.ts"
 import { recordDocAlias, resolveDocAlias } from "./doc-aliases.ts"
 import { deleteHtmlDocument } from "./html-document-delete.ts"
@@ -1157,6 +1166,102 @@ describe("format-neutral document route", () => {
     }
   })
 
+  it("serves ranges of a file, streamed at one revision without holding its Space", async () => {
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
+    const opens = spyOn(OpenFileRevision, "open")
+    try {
+      const instance = app()
+      const url = (path: string) =>
+        `/api/spaces/${spaceId}/documents/file?path=${encodeURIComponent(path)}`
+      const get = (path: string, headers: Record<string, string> = {}, method = "GET") =>
+        instance.request(url(path), { method, headers })
+      const bytes = new Uint8Array(4 * FILE_READ_CHUNK_BYTES + 7).map((_, i) => i % 251)
+      const created = await instance.request(url("data/archive.bin"), {
+        method: "PUT",
+        body: bytes,
+      })
+      const { contentHash } = (await created.json()) as { contentHash: string }
+      const etag = `"${contentHash}"`
+      const securityHeaders = (response: Response) => {
+        expect(response.headers.get("content-security-policy")).toContain("sandbox")
+        expect(response.headers.get("x-content-type-options")).toBe("nosniff")
+        expect(response.headers.get("cross-origin-resource-policy")).toBe("same-origin")
+        expect(response.headers.get("content-disposition")).toStartWith("attachment;")
+      }
+
+      const part = await get("data/archive.bin", { range: "bytes=10-19" })
+      expect(part.status).toBe(206)
+      expect(part.headers.get("content-range")).toBe(`bytes 10-19/${bytes.length}`)
+      expect(part.headers.get("accept-ranges")).toBe("bytes")
+      expect(new Uint8Array(await part.arrayBuffer())).toEqual(bytes.slice(10, 20))
+      securityHeaders(part)
+      const tail = await get("data/archive.bin", { range: "bytes=-5" })
+      expect(new Uint8Array(await tail.arrayBuffer())).toEqual(bytes.slice(-5))
+      const past = await get("data/archive.bin", { range: `bytes=${bytes.length}-` })
+      expect(past.status).toBe(416)
+      expect(past.headers.get("content-range")).toBe(`bytes */${bytes.length}`)
+      securityHeaders(past)
+      // A range of other content than the client's sends the whole file.
+      const stale = await get("data/archive.bin", { range: "bytes=0-0", "if-range": '"other"' })
+      expect(stale.status).toBe(200)
+      expect((await stale.arrayBuffer()).byteLength).toBe(bytes.length)
+      expect(
+        (await get("data/archive.bin", { range: "bytes=0-0", "if-range": etag })).status
+      ).toBe(206)
+      const head = await get("data/archive.bin", {}, "HEAD")
+      expect(head.status).toBe(200)
+      expect(head.headers.get("content-length")).toBe(String(bytes.length))
+      expect(head.headers.get("etag")).toBe(etag)
+
+      // A copy the client has is confirmed without opening the file.
+      opens.mockClear()
+      const revisit = await get("data/archive.bin", { "if-none-match": etag })
+      expect(revisit.status).toBe(304)
+      securityHeaders(revisit)
+      expect(opens).not.toHaveBeenCalled()
+
+      // The bytes arrive a chunk at a time, and the Space is free meanwhile.
+      const whole = await get("data/archive.bin")
+      const reader = whole.body!.getReader()
+      const first = await reader.read()
+      expect(first.value?.byteLength).toBe(FILE_READ_CHUNK_BYTES)
+      expect(
+        (await instance.request(url("data/other.bin"), { method: "PUT", body: "x" })).status
+      ).toBe(201)
+      // A new version saved meanwhile leaves this transfer whole and as it was.
+      expect(
+        (
+          await instance.request(`${url("data/archive.bin")}&replace=1`, {
+            method: "PUT",
+            body: bytes.slice(0, 100),
+          })
+        ).status
+      ).toBe(200)
+      const received = [first.value!]
+      for (let next = await reader.read(); !next.done; next = await reader.read()) {
+        received.push(next.value)
+      }
+      expect(new Uint8Array(await new Blob(received).arrayBuffer())).toEqual(bytes)
+
+      // A file changed in place partway fails the transfer, never mixing.
+      const docs = join(root, "spaces", spaceId, "docs")
+      await writeFile(join(docs, "data", "archive.bin"), bytes)
+      const changing = (await get("data/archive.bin")).body!.getReader()
+      await changing.read()
+      // Rewritten where it is, as an editor saving in place does.
+      await writeFile(join(docs, "data", "archive.bin"), bytes.subarray(1))
+      const rest = (async () => {
+        for (let next = await changing.read(); !next.done; next = await changing.read());
+      })()
+      await expect(rest).rejects.toThrow()
+    } finally {
+      opens.mockRestore()
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
+    }
+  })
+
   it("keeps a version when a file with history changes on disk", async () => {
     const previous = process.env["WORKTABLE_FILES"]
     process.env["WORKTABLE_FILES"] = "1"
@@ -1536,6 +1641,18 @@ describe("format-neutral document route", () => {
       const then = await instance.request(url(`&at=${encodeURIComponent(monday)}`))
       expect(await then.text()).toBe("Monday")
       expect(then.headers.get("cache-control")).toContain("immutable")
+      const thenPart = await instance.request(url(`&at=${encodeURIComponent(monday)}`), {
+        headers: { range: "bytes=3-" },
+      })
+      expect(thenPart.status).toBe(206)
+      expect(await thenPart.text()).toBe("day")
+      expect(
+        (
+          await instance.request(url(`&at=${encodeURIComponent(monday)}`), {
+            headers: { "if-none-match": then.headers.get("etag")! },
+          })
+        ).status
+      ).toBe(304)
       // Nothing was kept from before the file existed: never today's file.
       expect(
         (await instance.request(url(`&at=${encodeURIComponent(before)}`))).status

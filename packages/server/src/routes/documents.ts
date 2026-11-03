@@ -27,6 +27,7 @@ import { deleteDocumentFolder } from "../document-folder-delete.ts"
 import { moveDocumentFolder } from "../document-folder-move.ts"
 import {
   DocumentSourceReadError,
+  resolveCurrentFile,
   readDocumentAnnotations,
   readDocumentContent,
   readDocumentPage,
@@ -66,9 +67,9 @@ import {
   updateDocumentAnnotation,
 } from "../document-annotation-service.ts"
 import { wsManager } from "../ws.ts"
-import { BUILTIN_DOCUMENT_FORMATS } from "../document-format-registry.ts"
 import { filesEnabled } from "../files-enabled.ts"
-import { serveFileBytes } from "../file-response.ts"
+import { serveFile, servedCurrentFile } from "../file-response.ts"
+import { FileRevisionError } from "../file-revision.ts"
 import {
   FILE_UPLOAD_MAX_BYTES,
   FILE_UPLOAD_TOO_LARGE,
@@ -79,7 +80,7 @@ import {
 import { usesAtOrBelow } from "../document-uses.ts"
 import {
   keepEarlierImagesAfterRestore,
-  readFileAsOf,
+  fileAsOf,
 } from "../file-history.ts"
 
 /** Format-neutral document collection for common browser surfaces. */
@@ -532,52 +533,46 @@ documentsRouter.get("/file", requireScope("documents:read"), async (c) => {
     if (atQuery !== undefined) {
       const at = Date.parse(atQuery)
       const then = Number.isFinite(at)
-        ? await readFileAsOf(c.req.param("spaceId") ?? "", path, at)
+        ? await fileAsOf(c.req.param("spaceId") ?? "", path, at)
         : null
       if (!then) {
         return c.json({ error: "This file wasn't kept from then.", code: "NOT_FOUND" }, 404)
       }
-      return serveFileBytes(c, then.bytes, then.fileName, {
-        cacheForGood: true,
-      })
+      return serveFile(c, then, { cacheForGood: true })
     }
-    const result = await readRawDocumentSource({
+    const result = await resolveCurrentFile({
       spaceId: c.req.param("spaceId") ?? "",
       path,
-      includeArchived: true,
     })
-    if (
-      result.kind === "not-found" ||
-      (result.kind === "source" &&
-        result.source.formatId !== BUILTIN_DOCUMENT_FORMATS.file)
-    ) {
+    if (result.kind === "not-found") {
       return c.json({ error: "File not found.", code: "NOT_FOUND" }, 404)
     }
-    if (result.kind !== "source") {
+    if (result.kind === "too-large") {
+      return c.json(
+        { error: "This file is too large to read here.", code: "PAYLOAD_TOO_LARGE" },
+        413
+      )
+    }
+    if (result.kind === "conflict") {
       return c.json(
         { error: "This file can't be read safely.", code: "CONFLICT" },
         409
       )
     }
-    const { bytes, fileName, version } = result.source
-    return serveFileBytes(c, bytes, fileName, {
+    if (result.kind !== "file") {
+      return c.json(
+        { error: "This file can't be read safely.", code: "SOURCE_UNAVAILABLE" },
+        409
+      )
+    }
+    return serveFile(c, await servedCurrentFile(result.current), {
       cacheForGood: false,
-      ...(version !== undefined ? { version } : {}),
     })
   } catch (error) {
-    if (error instanceof DocumentSourceReadError) {
+    if (error instanceof FileRevisionError) {
       return c.json(
-        {
-          error:
-            error.reason === "too-large"
-              ? "This file is too large to read here."
-              : "This file can't be read safely.",
-          code:
-            error.reason === "too-large"
-              ? "PAYLOAD_TOO_LARGE"
-              : "SOURCE_UNAVAILABLE",
-        },
-        error.reason === "too-large" ? 413 : 409
+        { error: "This file can't be read safely.", code: "SOURCE_UNAVAILABLE" },
+        409
       )
     }
     throw error

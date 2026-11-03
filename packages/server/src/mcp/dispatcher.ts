@@ -1310,7 +1310,8 @@ async function _dispatchOperationInner(
             context.fileLinkOrigin,
             principal,
             args["spaceId"] as string,
-            result.path
+            result.path,
+            result.fileRevision
           ),
         }
         const readable = readableFileSource(result.path, result.bytes)

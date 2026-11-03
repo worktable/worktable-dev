@@ -33,6 +33,7 @@ import {
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { createLinkedIngress } from "./linked-ingress.ts"
 import { issueFileTicket } from "./file-tickets.ts"
+import { writeUploadedFile } from "./file-uploads.ts"
 import { listAgentConnections } from "./agent-connection-store.ts"
 import { disconnectLink } from "./linked-runtime.ts"
 import {
@@ -1058,7 +1059,19 @@ it("carries a file link in pieces: an upload saved after its last piece, and a d
   expect(new Uint8Array(await head.arrayBuffer())).toEqual(first)
   const tail = await read(LINKED_REQUEST_MAX_BYTES)
   expect(new Uint8Array(await tail.arrayBuffer())).toEqual(rest)
-  // Every piece names the same content, so a file replaced partway shows.
+  // Every piece names the same content and reads the revision the first
+  // one did: a later piece of a file replaced partway is refused.
   expect(head.headers.get("ETag")).toMatch(/^"/)
   expect(tail.headers.get("ETag")).toBe(head.headers.get("ETag"))
+  await writeUploadedFile({
+    spaceId: "space",
+    path: "design/archive.bin",
+    bytes: rest,
+    mode: { kind: "replace" },
+    actor: principal.id,
+    source: "mcp",
+  })
+  const changed = await read(LINKED_REQUEST_MAX_BYTES)
+  expect(changed.status).toBe(409)
+  expect(await changed.json()).toMatchObject({ code: "FILE_CHANGED" })
 }, 30_000)

@@ -131,6 +131,8 @@ fileLinksRouter.get("/:token", async (c) => {
       return c.json({ error: "This file can't be read safely.", code: "CONFLICT" }, 409)
     }
     pinDownloadTicket(ticket, result.current.pinned.revision)
+    // Two first uses at once pin only the first one's revision.
+    if (ticket.revision !== result.current.pinned.revision) return c.json(CHANGED, 409)
     return await serveFile(c, await servedCurrentFile(result.current), {
       cacheForGood: false,
     })

@@ -8,6 +8,7 @@ import {
   LINKED_FILE_SIZE_HEADER,
   LINKED_REQUEST_MAX_BYTES,
 } from "@worktable/hosted-contract"
+import { FileRevisionError } from "./file-revision.ts"
 import { redeemFileTicket, type FileTicket } from "./file-tickets.ts"
 import { filesEnabled } from "./files-enabled.ts"
 import { fileLinksRouter, saveFileLinkUpload } from "./routes/file-links.ts"
@@ -163,7 +164,21 @@ async function readDownloadPiece(
   })
   if (ranged.status === 206) {
     const size = Number(ranged.headers.get("Content-Range")?.split("/")[1])
-    return piece(ranged, size, await ranged.arrayBuffer())
+    let body: ArrayBuffer
+    try {
+      body = await ranged.arrayBuffer()
+    } catch (error) {
+      // The file changed while this piece was read.
+      if (!(error instanceof FileRevisionError)) throw error
+      return answer(
+        {
+          error: "This file changed after the link was made. Read it again for a new link.",
+          code: "FILE_CHANGED",
+        },
+        409
+      )
+    }
+    return piece(ranged, size, body)
   }
   if (ranged.status === 416) {
     const size = Number(ranged.headers.get("Content-Range")?.split("/")[1])

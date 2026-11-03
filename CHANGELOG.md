@@ -9,6 +9,12 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.39] - 2026-11-03
+
+### Changed
+
+- **OpenClaw and Hermes on Worktable Cloud:** Connect them the same way as on a self-hosted Worktable. Run the one-time command from Settings → Agents, or connect with `https://app.worktable.cloud` and approve the agent. Each one gets its own credential, with the access you choose when you connect it.
+
 ## [0.1.38] - 2026-11-02
 
 ### Changed

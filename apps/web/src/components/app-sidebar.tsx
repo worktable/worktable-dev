@@ -633,6 +633,8 @@ const SpaceSection = memo(function SpaceSection({
       <Collapsible open={expanded} onOpenChange={handleToggleExpanded}>
         <div
           ref={rowRef}
+          data-tree-row
+          data-current={isInSpace ? "" : undefined}
           className="group/space relative flex items-center rounded-md transition-colors duration-180 hover:bg-sidebar-hover"
         >
           {/* The whole row folds and unfolds the Space; its overview is the
@@ -1814,7 +1816,8 @@ function SpaceTreeSection({
 
 /**
  * Temporary and Archived: folder-like rows at the end of a Space's tree, so
- * they read as part of the Space rather than as sidebar headings.
+ * they read as part of the Space rather than as sidebar headings. Archived
+ * Spaces end the Spaces list the same way.
  */
 function TreeSection({
   label,
@@ -1823,6 +1826,8 @@ function TreeSection({
   open,
   onOpenChange,
   dimmed = false,
+  listLabel = `${label} documents`,
+  spaceRows = false,
   children,
 }: {
   label: string
@@ -1830,6 +1835,9 @@ function TreeSection({
   count: number
   /** Quiets each row inside, nested ones too, except the open and hovered rows. */
   dimmed?: boolean
+  listLabel?: string
+  /** Lines the icon and name up with the Space rows around it. */
+  spaceRows?: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
   children: ReactNode
@@ -1837,10 +1845,18 @@ function TreeSection({
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
       <CollapsibleTrigger
-        className="flex min-h-10 w-full min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm text-sidebar-foreground/50 transition-colors duration-180 hover:bg-sidebar-hover hover:text-sidebar-foreground sm:min-h-0"
+        className={`flex min-h-10 w-full min-w-0 items-center rounded-md py-2 text-sm text-sidebar-foreground/50 transition-colors duration-180 hover:bg-sidebar-hover hover:text-sidebar-foreground sm:min-h-0 ${
+          spaceRows ? "gap-2.5 pr-2 pl-2.5" : "gap-2 px-3"
+        }`}
         render={<button type="button" />}
       >
-        <Icon className="size-4 shrink-0 text-sidebar-foreground/30" />
+        {spaceRows ? (
+          <span aria-hidden className="flex size-5 shrink-0 items-center justify-center">
+            <Icon className="size-4 text-sidebar-foreground/30" />
+          </span>
+        ) : (
+          <Icon className="size-4 shrink-0 text-sidebar-foreground/30" />
+        )}
         <TruncatedText text={label} />
         {!open && (
           <span className="ml-auto shrink-0 text-[11px] text-sidebar-foreground/35 tabular-nums">
@@ -1850,10 +1866,10 @@ function TreeSection({
       </CollapsibleTrigger>
       <CollapsibleContent className="collapsible-instant">
         <nav
-          aria-label={`${label} documents`}
+          aria-label={listLabel}
           className={`ml-4 space-y-0.5 pl-2 ${
             dimmed
-              ? "[&_[data-tree-row]:not(:hover):not(:has([aria-current=page]))]:opacity-60"
+              ? "[&_[data-tree-row]:not(:hover):not([data-current]):not(:has([aria-current=page]))]:opacity-60"
               : ""
           }`}
         >
@@ -2691,7 +2707,13 @@ export function AppSidebar() {
     label: string,
     members: SpaceView[],
     actions?: ReactNode,
-    options: { revealActions?: boolean; pinned?: boolean; emptyHint?: boolean } = {}
+    options: {
+      revealActions?: boolean
+      pinned?: boolean
+      emptyHint?: boolean
+      /** Ends the open section, after its Spaces. */
+      footer?: ReactNode
+    } = {}
   ) => {
     const open = isSectionOpen(key)
     return (
@@ -2725,6 +2747,7 @@ export function AppSidebar() {
               No Spaces
             </p>
           ))}
+        {open && options.footer}
       </div>
     )
   }
@@ -2855,7 +2878,26 @@ export function AppSidebar() {
                 {!isMobile && <span aria-hidden className="w-6" />}
               </>,
               // The list's own empty state covers a Worktable with no Spaces.
-              { revealActions: false, emptyHint: false }
+              {
+                revealActions: false,
+                emptyHint: false,
+                footer: archivedSpaces.length > 0 && (
+                  <div className="mt-0.5">
+                    <TreeSection
+                      label="Archived"
+                      icon={Archive}
+                      count={archivedSpaces.length}
+                      open={archivedSpacesOpen}
+                      onOpenChange={transitionOpenChange(setArchivedSpacesOpen)}
+                      listLabel="Archived Spaces"
+                      spaceRows
+                      dimmed
+                    >
+                      {archivedSpaces.map((space) => spaceRow(space))}
+                    </TreeSection>
+                  </div>
+                ),
+              }
             )}
 
             {/* Spaces */}
@@ -2881,35 +2923,6 @@ export function AppSidebar() {
               </div>
             )}
 
-            {spaces && spaces.length > 0 && (
-              <div className="space-y-2">
-
-                {archivedSpaces.length > 0 && (
-                  <Collapsible
-                    open={archivedSpacesOpen}
-                    onOpenChange={transitionOpenChange(setArchivedSpacesOpen)}
-                  >
-                    <div className="px-3">
-                      <CollapsibleTrigger
-                        className="flex w-full items-center gap-2 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase"
-                        render={<button type="button" />}
-                      >
-                        <ChevronRight
-                          className={`size-3 shrink-0 transition-transform ${archivedSpacesOpen ? "rotate-90" : ""}`}
-                        />
-                        <Archive className="size-3 shrink-0" />
-                        <span>Archived</span>
-                      </CollapsibleTrigger>
-                    </div>
-                    <CollapsibleContent className="collapsible-instant">
-                      <div className="space-y-0.5">
-                        {archivedSpaces.map((space) => spaceRow(space))}
-                      </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-                )}
-              </div>
-            )}
           </div>
         )}
       </ScrollFadeArea>

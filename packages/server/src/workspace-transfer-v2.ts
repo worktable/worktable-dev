@@ -13,6 +13,7 @@ import {
 import type { Stats } from "node:fs"
 import {
   chmod,
+  copyFile,
   lstat,
   mkdir,
   mkdtemp,
@@ -50,6 +51,7 @@ import { isAtomicWriteTemporaryFileName } from "./atomic-file.ts"
 import { blocksToMarkdownSafe } from "./markdown.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { readBoundedRegularFile } from "./bounded-file.ts"
+import { RACY_FINGERPRINT_WINDOW_MS } from "./file-fingerprint.ts"
 import {
   assertDocumentGenerationFormatOwnership,
   documentGenerationManifestContentHash,
@@ -950,7 +952,8 @@ async function selectEntries(
   inventory: SourceInventory,
   policy: WorkspaceExportHistoryPolicy,
   exportedAt: Date,
-  recoveryFingerprint?: string
+  recoveryFingerprint?: string,
+  options: { classifyHistory?: boolean } = {}
 ): Promise<{
   entries: SourceEntry[]
   history: WorkspaceExportV2Manifest["history"]
@@ -994,8 +997,10 @@ async function selectEntries(
   >()
   // "none" only needs inventory totals. Avoid loading history content merely
   // to omit it, especially when this policy is chosen for a large workspace.
+  // Snapshots keep all history and discard the summary, so they skip it too.
   const versionFiles =
-    policy.mode !== "none"
+    policy.mode !== "none" &&
+    (policy.mode !== "all" || options.classifyHistory !== false)
       ? await mapWithConcurrency(
           rawVersionFiles,
           HISTORY_CLASSIFICATION_CONCURRENCY,
@@ -1227,15 +1232,24 @@ async function selectEntries(
   }
 }
 
+/**
+ * Copy one file into a capture and hash the bytes copied. The bytes come from
+ * a descriptor whose identity matches the inventory before and after the copy.
+ * Inside the barrier the ancestors are checked too; staging before it skips
+ * that check, because live writes keep changing directory times and a staged
+ * file is only kept when the barrier's own inventory proves it unchanged.
+ */
 async function copyAndHash(
   source: SourceEntry,
   destination: string,
   inventory: SourceInventory,
   directories: Map<string, SourceEntry>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  checkAncestors = true
 ): Promise<string> {
   signal?.throwIfAborted()
-  await assertSourceAncestors(source, inventory, directories)
+  if (checkAncestors)
+    await assertSourceAncestors(source, inventory, directories)
   const before = await lstat(source.absolute)
   if (
     !before.isFile() ||
@@ -1280,7 +1294,8 @@ async function copyAndHash(
     ) {
       throw new WorkspaceChangedDuringExportError(source.path)
     }
-    await assertSourceAncestors(source, inventory, directories)
+    if (checkAncestors)
+      await assertSourceAncestors(source, inventory, directories)
     await chmod(destination, source.mode)
     await utimes(destination, source.mtime, source.mtime)
     return hash.digest("hex")
@@ -1336,112 +1351,376 @@ interface CapturedWorkspace {
   directories: WorkspaceExportV2Directory[]
   files: CapturedEntry[]
 }
-interface CaptureOptions {
-  signal?: AbortSignal
-  deferCleanup?: (capture: CapturedWorkspace) => void
+
+/**
+ * How a capture copies files. A reflink shares the source's blocks until
+ * either side changes, so it costs metadata, not bytes. Otherwise bytes are
+ * copied. Hard links are never used: linking and unlinking change the live
+ * file's ctime, which readers and derived data treat as a modification.
+ */
+export type WorkspaceCaptureMethod = "reflink" | "copy"
+
+/** Where a capture spent its time. Diagnostics only; never persisted. */
+export interface WorkspaceCaptureReport {
+  method: WorkspaceCaptureMethod
+  files: number
+  bytes: number
+  /** Files staged while writes were held: new, changed, or changed too recently to trust. */
+  barrierFiles: number
+  barrierBytes: number
+  stageMs: number
+  barrierMs: number
+  hashMs: number
 }
 
-async function captureEntries(
-  entries: SourceEntry[],
+interface CaptureOptions {
+  signal?: AbortSignal
+  recoveryFingerprint?: string
+  onProgress?: (phase: WorkspaceExportPhase) => Promise<void>
+  classifyHistory?: boolean
+}
+
+interface StagedFile {
+  source: SourceEntry
+  output: string
+  /** Null for a reflink, which is hashed after the barrier. */
+  sha256: string | null
+}
+
+/**
+ * A capture in three steps. `prepareWorkspaceCapture` stages files while
+ * writes continue. `captureConsistentWorkspace` runs inside the barrier: it
+ * takes a fresh inventory and stages again only files whose identity changed
+ * or changed too recently to prove unchanged, so its cost grows with entries
+ * and recent edits rather than bytes. `finishWorkspaceCapture` hashes reflinks
+ * and settles directory metadata after writers resume.
+ */
+interface CaptureStaging {
+  root: string
+  sourceRoot: string
+  method: WorkspaceCaptureMethod | null
+  files: Map<string, StagedFile>
+  directories: WorkspaceExportV2Directory[]
+  report: WorkspaceCaptureReport
+}
+
+const REFLINK_UNSUPPORTED_CODES = new Set([
+  "EBADF",
+  "EINVAL",
+  "ENOSYS",
+  "ENOTSUP",
+  "ENOTTY",
+  "EOPNOTSUPP",
+  "EXDEV",
+])
+
+let captureClockForTests: (() => number) | null = null
+
+/** Replace the clock that decides whether a file changed too recently to stage early. */
+export function setWorkspaceCaptureClockForTests(
+  clock: (() => number) | null
+): void {
+  captureClockForTests = clock
+}
+
+function captureOutput(root: string, path: string): string {
+  return join(root, ...path.split("/"))
+}
+
+function sameStagedSource(staged: SourceEntry, current: SourceEntry): boolean {
+  return (
+    staged.kind === current.kind &&
+    staged.size === current.size &&
+    staged.mode === current.mode &&
+    staged.dev === current.dev &&
+    staged.ino === current.ino &&
+    staged.ctimeMs === current.ctimeMs &&
+    staged.mtimeMs === current.mtimeMs
+  )
+}
+
+function assertSelectionWithinLimits(entries: SourceEntry[]): void {
+  let expandedBytes = 0
+  for (const entry of entries) {
+    validateWorkspaceExportV2Path(entry.path)
+    if (entry.kind !== "file") continue
+    if (entry.size > WORKSPACE_EXPORT_V2_MAX_FILE_BYTES)
+      throw new Error(`workspace file exceeds the v2 limit: ${entry.path}`)
+    expandedBytes += entry.size
+  }
+  if (expandedBytes > WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES) {
+    throw new Error("workspace export exceeds the v2 expanded-size limit")
+  }
+}
+
+/** Clone one file, checking the source and its ancestors before and after. */
+async function cloneSource(
+  source: SourceEntry,
+  destination: string,
   inventory: SourceInventory,
+  directories: Map<string, SourceEntry>,
+  signal?: AbortSignal
+): Promise<void> {
+  signal?.throwIfAborted()
+  const assertSource = async () => {
+    await assertSourceAncestors(source, inventory, directories)
+    const current = await lstat(source.absolute)
+    if (
+      !current.isFile() ||
+      current.isSymbolicLink() ||
+      !sameSourceIdentity(source, current)
+    ) {
+      throw new WorkspaceChangedDuringExportError(source.path)
+    }
+  }
+  await assertSource()
+  await mkdir(dirname(destination), { recursive: true, mode: 0o700 })
+  await copyFile(
+    source.absolute,
+    destination,
+    fsConstants.COPYFILE_EXCL | fsConstants.COPYFILE_FICLONE_FORCE
+  )
+  await assertSource()
+  const staged = await lstat(destination)
+  if (!staged.isFile() || staged.size !== source.size) {
+    throw new WorkspaceChangedDuringExportError(source.path)
+  }
+  await chmod(destination, source.mode)
+  await utimes(destination, source.mtime, source.mtime)
+}
+
+/**
+ * Stage one file by the capture's method. The first file decides it: a
+ * reflink that the filesystem refuses switches the whole capture to copies.
+ * A later refusal, such as a file on another mount, copies just that file.
+ */
+async function stageFile(
+  staging: CaptureStaging,
+  source: SourceEntry,
+  inventory: SourceInventory,
+  directories: Map<string, SourceEntry>,
+  options: { checkAncestors: boolean; signal?: AbortSignal }
+): Promise<StagedFile> {
+  const output = captureOutput(staging.root, source.path)
+  if (staging.method !== "copy") {
+    try {
+      await cloneSource(source, output, inventory, directories, options.signal)
+      staging.method ??= "reflink"
+      return { source, output, sha256: null }
+    } catch (error) {
+      await rm(output, { force: true })
+      if (
+        !REFLINK_UNSUPPORTED_CODES.has(
+          (error as NodeJS.ErrnoException).code ?? ""
+        )
+      )
+        throw error
+      staging.method ??= "copy"
+    }
+  }
+  try {
+    const sha256 = await copyAndHash(
+      source,
+      output,
+      inventory,
+      directories,
+      options.signal,
+      options.checkAncestors
+    )
+    return { source, output, sha256 }
+  } catch (error) {
+    await rm(output, { force: true })
+    throw error
+  }
+}
+
+/** Stage the first file alone so it can choose the method, then the rest in parallel. */
+async function stageFiles(
+  staging: CaptureStaging,
+  entries: SourceEntry[],
+  stage: (entry: SourceEntry) => Promise<void>
+): Promise<void> {
+  let index = 0
+  while (staging.method === null && index < entries.length) {
+    await stage(entries[index]!)
+    index += 1
+  }
+  await mapWithConcurrency(entries.slice(index), 8, stage)
+}
+
+/**
+ * Stage every selected file that has not changed recently, while writes
+ * continue. Nothing here is trusted yet: a staged file survives only if the
+ * barrier's inventory finds the same identity. A file changed within the
+ * fingerprint window could change again without a new ctime, so it is left
+ * for the barrier.
+ */
+async function prepareWorkspaceCapture(
+  sourceRoot: string,
+  historyPolicy: WorkspaceExportHistoryPolicy,
+  exportedAt: Date,
   options: CaptureOptions = {}
-): Promise<CapturedWorkspace> {
+): Promise<CaptureStaging> {
+  const startedAt = performance.now()
   const transfers = workspaceExportCapturesRoot()
   await mkdir(transfers, { recursive: true, mode: 0o700 })
   const root = await mkdtemp(join(transfers, "export-"))
-  const directories: WorkspaceExportV2Directory[] = []
-  const files: CapturedEntry[] = []
-  const sourceDirectories = new Map(
-    inventory.entries
-      .filter(
-        (entry): entry is SourceEntry & { kind: "directory" } =>
-          entry.kind === "directory"
-      )
-      .map((entry) => [entry.path, entry])
-  )
+  const staging: CaptureStaging = {
+    root,
+    sourceRoot,
+    method: null,
+    files: new Map(),
+    directories: [],
+    report: {
+      method: "copy",
+      files: 0,
+      bytes: 0,
+      barrierFiles: 0,
+      barrierBytes: 0,
+      stageMs: 0,
+      barrierMs: 0,
+      hashMs: 0,
+    },
+  }
   try {
-    await mapWithConcurrency(entries, 8, async (entry) => {
-      options.signal?.throwIfAborted()
-      try {
-        const output = join(root, ...entry.path.split("/"))
-        if (entry.kind === "directory") {
-          await assertSourceAncestors(entry, inventory, sourceDirectories)
-          const current = await lstat(entry.absolute)
-          if (
-            !current.isDirectory() ||
-            current.isSymbolicLink() ||
-            !sameSourceIdentity(entry, current)
-          ) {
-            throw new WorkspaceChangedDuringExportError(entry.path)
-          }
-          await mkdir(output, { recursive: true, mode: 0o700 })
-          directories.push({
-            path: entry.path,
-            mode: entry.mode,
-            mtime: entry.mtime.toISOString(),
-          })
-        } else {
-          const hash = await copyAndHash(
-            entry,
-            output,
-            inventory,
-            sourceDirectories,
-            options.signal
-          )
-          files.push({
-            path: entry.path,
-            absolute: output,
-            size: entry.size,
-            mode: entry.mode,
-            mtime: entry.mtime.toISOString(),
-            sha256: hash,
-          })
-        }
-        await captureEntryHookForTests?.({
-          path: entry.path,
-          kind: entry.kind,
-        })
-        options.signal?.throwIfAborted()
-      } catch (error) {
-        if (
-          ["ENOENT", "ENOTDIR", "ELOOP"].includes(
-            (error as NodeJS.ErrnoException).code ?? ""
-          )
-        )
-          throw new WorkspaceChangedDuringExportError(entry.path)
-        throw error
-      }
+    options.signal?.throwIfAborted()
+    await options.onProgress?.("inventory")
+    const settledBefore =
+      (captureClockForTests ?? Date.now)() - RACY_FINGERPRINT_WINDOW_MS
+    const inventory = await listSourceEntries(sourceRoot, {
+      paths: "local",
+      signal: options.signal,
     })
-    for (const directory of [...directories].sort(
-      (left, right) =>
-        right.path.split("/").length - left.path.split("/").length
-    )) {
-      const output = join(root, ...directory.path.split("/"))
-      await chmod(output, directory.mode)
-      const mtime = new Date(directory.mtime)
-      await utimes(output, mtime, mtime)
-    }
-    directories.sort((left, right) =>
-      comparePortableText(left.path, right.path)
+    await options.onProgress?.("history")
+    const selected = await selectEntries(
+      inventory,
+      historyPolicy,
+      exportedAt,
+      options.recoveryFingerprint,
+      { classifyHistory: options.classifyHistory }
     )
-    files.sort((left, right) => comparePortableText(left.path, right.path))
-    return { root, directories, files }
+    assertSelectionWithinLimits(selected.entries)
+    await options.onProgress?.("capture")
+    const directories = new Map(
+      inventory.entries
+        .filter((entry) => entry.kind === "directory")
+        .map((entry) => [entry.path, entry])
+    )
+    await stageFiles(
+      staging,
+      selected.entries.filter(
+        (entry) => entry.kind === "file" && entry.ctimeMs < settledBefore
+      ),
+      async (entry) => {
+        options.signal?.throwIfAborted()
+        try {
+          staging.files.set(
+            entry.path,
+            await stageFile(staging, entry, inventory, directories, {
+              checkAncestors: false,
+              signal: options.signal,
+            })
+          )
+        } catch (error) {
+          if (options.signal?.aborted) throw error
+          // Left for the barrier, which reports any lasting failure.
+        }
+      }
+    )
+    staging.report.stageMs = performance.now() - startedAt
+    return staging
   } catch (error) {
-    if (options.deferCleanup) {
-      options.deferCleanup({ root, directories, files })
-      throw error
-    }
-    for (const directory of [...directories].sort(
-      (left, right) =>
-        left.path.split("/").length - right.path.split("/").length
-    )) {
-      await chmod(join(root, ...directory.path.split("/")), 0o700).catch(
-        () => undefined
-      )
-    }
-    await rm(root, { recursive: true, force: true })
+    await removeCapture(root)
     throw error
   }
+}
+
+/**
+ * Remove capture directories that staging created for entries the barrier
+ * dropped. They hold no files: the barrier already removed stale ones.
+ */
+async function pruneCaptureDirectories(
+  root: string,
+  keep: Set<string>,
+  relativePath = ""
+): Promise<void> {
+  const directory = relativePath ? captureOutput(root, relativePath) : root
+  for (const child of await readdir(directory, { withFileTypes: true })) {
+    if (!child.isDirectory() || child.isSymbolicLink()) continue
+    const path = relativePath ? `${relativePath}/${child.name}` : child.name
+    await pruneCaptureDirectories(root, keep, path)
+    if (!keep.has(path)) await rmdir(captureOutput(root, path))
+  }
+}
+
+/** Hash a reflinked file. The clone is private, so live writes cannot reach it. */
+async function hashStagedFile(staged: StagedFile): Promise<string> {
+  const handle = await open(staged.output, SECURE_READ_FLAGS)
+  let stream: ReturnType<typeof handle.createReadStream> | undefined
+  const hash = createHash("sha256")
+  let bytes = 0
+  try {
+    const opened = await handle.stat()
+    if (!opened.isFile() || opened.size !== staged.source.size) {
+      throw new WorkspaceChangedDuringExportError(staged.source.path)
+    }
+    stream = handle.createReadStream({ autoClose: false })
+    for await (const chunk of stream) {
+      const data = chunk as Buffer
+      bytes += data.byteLength
+      hash.update(data)
+    }
+    if (bytes !== staged.source.size) {
+      throw new WorkspaceChangedDuringExportError(staged.source.path)
+    }
+    return hash.digest("hex")
+  } finally {
+    stream?.destroy()
+    await handle.close()
+  }
+}
+
+/** Settle a capture after writers resume: hashes, then directory metadata. */
+async function finishWorkspaceCapture(
+  staging: CaptureStaging,
+  signal?: AbortSignal
+): Promise<CapturedWorkspace> {
+  const startedAt = performance.now()
+  await pruneCaptureDirectories(
+    staging.root,
+    new Set(staging.directories.map((directory) => directory.path))
+  )
+  const files = await mapWithConcurrency(
+    [...staging.files.values()],
+    8,
+    async (staged): Promise<CapturedEntry> => {
+      signal?.throwIfAborted()
+      return {
+        path: staged.source.path,
+        absolute: staged.output,
+        size: staged.source.size,
+        mode: staged.source.mode,
+        mtime: staged.source.mtime.toISOString(),
+        sha256: staged.sha256 ?? (await hashStagedFile(staged)),
+      }
+    }
+  )
+  const directories = [...staging.directories]
+  for (const directory of [...directories].sort(
+    (left, right) => right.path.split("/").length - left.path.split("/").length
+  )) {
+    const output = captureOutput(staging.root, directory.path)
+    await chmod(output, directory.mode)
+    const mtime = new Date(directory.mtime)
+    await utimes(output, mtime, mtime)
+  }
+  directories.sort((left, right) => comparePortableText(left.path, right.path))
+  files.sort((left, right) => comparePortableText(left.path, right.path))
+  staging.report.method = staging.method ?? "copy"
+  staging.report.files = files.length
+  staging.report.bytes = files.reduce((sum, file) => sum + file.size, 0)
+  staging.report.hashMs = performance.now() - startedAt
+  return { root: staging.root, directories, files }
 }
 
 function workspaceExportCapturesRoot(): string {
@@ -1452,18 +1731,10 @@ function workspaceExportCaptureLockPath(): string {
   return join(ensureAppDir(), "workspace-transfers", "capture.lock")
 }
 
-async function removeCapture(
-  capture: Awaited<ReturnType<typeof captureEntries>>
-): Promise<void> {
+/** Remove a private capture, whatever state it reached. */
+async function removeCapture(root: string): Promise<void> {
   await captureRemovalHookForTests?.()
-  for (const directory of [...capture.directories].sort(
-    (left, right) => left.path.split("/").length - right.path.split("/").length
-  )) {
-    await chmod(join(capture.root, ...directory.path.split("/")), 0o700).catch(
-      () => undefined
-    )
-  }
-  await rm(capture.root, { recursive: true, force: true })
+  await removeWorkspaceTree(root)
 }
 
 async function removeAbandonedCapture(root: string): Promise<void> {
@@ -1564,65 +1835,140 @@ function assertSourceInventoryUnchanged(
   }
 }
 
+/**
+ * The part of a capture that runs while writes are held. Files staged earlier
+ * are kept when this inventory finds them unchanged, so their bytes are not
+ * read again. The caller removes the staging directory on failure, after the
+ * barrier is released.
+ */
 async function captureConsistentWorkspace(
-  sourceRoot: string,
+  staging: CaptureStaging,
   historyPolicy: WorkspaceExportHistoryPolicy,
   exportedAt: Date,
-  options: CaptureOptions & WorkspaceExportV2WriteOptions = {}
-): Promise<{
-  selected: Awaited<ReturnType<typeof selectEntries>>
-  capture: Awaited<ReturnType<typeof captureEntries>>
-}> {
-  let capture: Awaited<ReturnType<typeof captureEntries>> | null = null
-  try {
+  options: CaptureOptions = {}
+): Promise<{ selected: Awaited<ReturnType<typeof selectEntries>> }> {
+  const startedAt = performance.now()
+  options.signal?.throwIfAborted()
+  const inventory = await listSourceEntries(staging.sourceRoot, {
+    paths: "local",
+    signal: options.signal,
+  })
+  const selected = await selectEntries(
+    inventory,
+    historyPolicy,
+    exportedAt,
+    options.recoveryFingerprint,
+    { classifyHistory: options.classifyHistory }
+  )
+  assertSelectionWithinLimits(selected.entries)
+  const selectedFiles = new Map(
+    selected.entries
+      .filter((entry) => entry.kind === "file")
+      .map((entry) => [entry.path, entry])
+  )
+  const stale = [...staging.files.values()].filter((staged) => {
+    const current = selectedFiles.get(staged.source.path)
+    return !current || !sameStagedSource(staged.source, current)
+  })
+  await mapWithConcurrency(stale, 8, async (staged) => {
+    staging.files.delete(staged.source.path)
+    await rm(staged.output, { force: true })
+  })
+  const sourceDirectories = new Map(
+    inventory.entries
+      .filter(
+        (entry): entry is SourceEntry & { kind: "directory" } =>
+          entry.kind === "directory"
+      )
+      .map((entry) => [entry.path, entry])
+  )
+  const directories: WorkspaceExportV2Directory[] = []
+  const pending = selected.entries.filter(
+    (entry) => entry.kind === "file" && !staging.files.has(entry.path)
+  )
+  const stageInBarrier = async (entry: SourceEntry): Promise<void> => {
     options.signal?.throwIfAborted()
-    await options.onProgress?.("inventory")
-    const inventory = await listSourceEntries(sourceRoot, {
+    // Staging may have made a directory here for entries that are gone.
+    await rm(captureOutput(staging.root, entry.path), {
+      recursive: true,
+      force: true,
+    })
+    staging.files.set(
+      entry.path,
+      await stageFile(staging, entry, inventory, sourceDirectories, {
+        checkAncestors: true,
+        signal: options.signal,
+      })
+    )
+    staging.report.barrierFiles += 1
+    staging.report.barrierBytes += entry.size
+  }
+  // The first file decides the method when staging staged nothing.
+  if (staging.method === null && pending.length > 0) {
+    await withCaptureErrors(pending[0]!, () => stageInBarrier(pending[0]!))
+  }
+  await mapWithConcurrency(selected.entries, 8, (entry) =>
+    withCaptureErrors(entry, async () => {
+      options.signal?.throwIfAborted()
+      if (entry.kind === "directory") {
+        await assertSourceAncestors(entry, inventory, sourceDirectories)
+        const current = await lstat(entry.absolute)
+        if (
+          !current.isDirectory() ||
+          current.isSymbolicLink() ||
+          !sameSourceIdentity(entry, current)
+        ) {
+          throw new WorkspaceChangedDuringExportError(entry.path)
+        }
+        await mkdir(captureOutput(staging.root, entry.path), {
+          recursive: true,
+          mode: 0o700,
+        })
+        directories.push({
+          path: entry.path,
+          mode: entry.mode,
+          mtime: entry.mtime.toISOString(),
+        })
+      } else if (!staging.files.has(entry.path)) {
+        await stageInBarrier(entry)
+      }
+      await captureEntryHookForTests?.({
+        path: entry.path,
+        kind: entry.kind,
+      })
+      options.signal?.throwIfAborted()
+    })
+  )
+  staging.directories = directories
+  let current: SourceInventory
+  try {
+    current = await listSourceEntries(staging.sourceRoot, {
       paths: "local",
       signal: options.signal,
     })
-    await options.onProgress?.("history")
-    const selected = await selectEntries(
-      inventory,
-      historyPolicy,
-      exportedAt,
-      options.recoveryFingerprint
-    )
-    for (const entry of selected.entries) {
-      validateWorkspaceExportV2Path(entry.path)
-      if (
-        entry.kind === "file" &&
-        entry.size > WORKSPACE_EXPORT_V2_MAX_FILE_BYTES
-      )
-        throw new Error(`workspace file exceeds the v2 limit: ${entry.path}`)
-    }
-    const expandedBytes = selected.entries.reduce(
-      (sum, entry) => sum + (entry.kind === "file" ? entry.size : 0),
-      0
-    )
-    if (expandedBytes > WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES) {
-      throw new Error("workspace export exceeds the v2 expanded-size limit")
-    }
-    await options.onProgress?.("capture")
-    capture = await captureEntries(selected.entries, inventory, options)
-    let current: SourceInventory
-    try {
-      current = await listSourceEntries(sourceRoot, {
-        paths: "local",
-        signal: options.signal,
-      })
-    } catch (error) {
-      throw new WorkspaceChangedDuringExportError(
-        error instanceof Error ? error.message : "workspace inventory"
-      )
-    }
-    assertSourceInventoryUnchanged(inventory, current)
-    return { selected, capture }
   } catch (error) {
-    if (capture) {
-      if (options.deferCleanup) options.deferCleanup(capture)
-      else await removeCapture(capture)
-    }
+    throw new WorkspaceChangedDuringExportError(
+      error instanceof Error ? error.message : "workspace inventory"
+    )
+  }
+  assertSourceInventoryUnchanged(inventory, current)
+  staging.report.barrierMs = performance.now() - startedAt
+  return { selected }
+}
+
+async function withCaptureErrors(
+  entry: SourceEntry,
+  work: () => Promise<void>
+): Promise<void> {
+  try {
+    await work()
+  } catch (error) {
+    if (
+      ["ENOENT", "ENOTDIR", "ELOOP"].includes(
+        (error as NodeJS.ErrnoException).code ?? ""
+      )
+    )
+      throw new WorkspaceChangedDuringExportError(entry.path)
     throw error
   }
 }
@@ -1739,7 +2085,8 @@ export async function calculateWorkspaceContentCheckpoint(
 
 /**
  * Share export's exact full-history capture with directory snapshot consumers.
- * The mutation barrier covers only flush/capture. The capture lock protects its
+ * The mutation barrier covers only flush and the barrier step of the capture;
+ * staging and hashing run while writes continue. The capture lock protects its
  * private lifetime from the export janitor until the consumer finishes.
  */
 export async function withPortableWorkspaceCapture<T>(
@@ -1753,6 +2100,7 @@ export async function withPortableWorkspaceCapture<T>(
     workspaceRoot?: string
     withCaptureBarrier?: <R>(work: () => Promise<R>) => Promise<R>
     signal?: AbortSignal
+    onCaptureReport?: (report: WorkspaceCaptureReport) => void
   } = {}
 ): Promise<T> {
   const sourceRoot = resolve(options.workspaceRoot ?? getWorkspaceRoot())
@@ -1771,19 +2119,27 @@ export async function withPortableWorkspaceCapture<T>(
       timeoutMs: EXPORT_CAPTURE_LOCK_TIMEOUT_MS,
     },
     async () => {
-      let pendingCleanup: CapturedWorkspace | undefined
+      const exportedAt = new Date()
+      // Snapshots discard the history summary, so history is not classified.
+      const captureOptions = { signal: options.signal, classifyHistory: false }
+      const staging = await prepareWorkspaceCapture(
+        sourceRoot,
+        { mode: "all" },
+        exportedAt,
+        captureOptions
+      )
       const work = () =>
-        captureConsistentWorkspace(sourceRoot, { mode: "all" }, new Date(), {
-          signal: options.signal,
-          deferCleanup: (capture) => {
-            pendingCleanup = capture
-          },
-        })
+        captureConsistentWorkspace(
+          staging,
+          { mode: "all" },
+          exportedAt,
+          captureOptions
+        )
       try {
-        const { capture } = options.withCaptureBarrier
-          ? await options.withCaptureBarrier(work)
-          : await work()
-        pendingCleanup = capture
+        if (options.withCaptureBarrier) await options.withCaptureBarrier(work)
+        else await work()
+        const capture = await finishWorkspaceCapture(staging, options.signal)
+        options.onCaptureReport?.({ ...staging.report })
         const manifestFile = capture.files.find(
           (file) => file.path === "worktable.workspace.json"
         )
@@ -1813,7 +2169,7 @@ export async function withPortableWorkspaceCapture<T>(
           files,
         })
       } finally {
-        if (pendingCleanup) await removeCapture(pendingCleanup)
+        await removeCapture(staging.root)
       }
     }
   )
@@ -2444,11 +2800,25 @@ async function writeWorkspaceExportV2WithCaptureLock(
   }
 
   const exportedAt = new Date()
-  const captureWorkspace = () =>
-    captureConsistentWorkspace(sourceRoot, historyPolicy, exportedAt, options)
-  const { selected, capture } = options.withCaptureBarrier
-    ? await options.withCaptureBarrier(captureWorkspace)
-    : await captureWorkspace()
+  const staging = await prepareWorkspaceCapture(
+    sourceRoot,
+    historyPolicy,
+    exportedAt,
+    options
+  )
+  let selected: Awaited<ReturnType<typeof selectEntries>>
+  let capture: CapturedWorkspace
+  try {
+    const captureWorkspace = () =>
+      captureConsistentWorkspace(staging, historyPolicy, exportedAt, options)
+    ;({ selected } = options.withCaptureBarrier
+      ? await options.withCaptureBarrier(captureWorkspace)
+      : await captureWorkspace())
+    capture = await finishWorkspaceCapture(staging)
+  } catch (error) {
+    await removeCapture(staging.root)
+    throw error
+  }
   const temporary = join(
     outputParent,
     `.${basename(output)}.${randomBytes(8).toString("hex")}.partial`
@@ -2622,7 +2992,7 @@ async function writeWorkspaceExportV2WithCaptureLock(
     }
   } finally {
     try {
-      await removeCapture(capture)
+      await removeCapture(capture.root)
     } finally {
       await rm(temporary, { force: true })
     }

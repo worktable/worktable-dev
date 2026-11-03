@@ -3,6 +3,7 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/channel-core"
 import {
   agentCredentialForConnection,
   listDirectoryThreads,
+  pairingCompletionOnce,
   pendingAgentRegistrationToPromote,
   resolveWorktableAccount,
   resolveWorktableThreadTarget,
@@ -11,6 +12,30 @@ import {
 } from "./channel.js"
 
 describe("Worktable channel account setup", () => {
+  it("completes a pairing on the first connection only, retrying after a failure", async () => {
+    const attempts: string[] = []
+    let fail = true
+    const complete = pairingCompletionOnce("PAIR1-CODE2", async (code) => {
+      attempts.push(code)
+      if (fail) {
+        fail = false
+        throw new Error("Worktable is restarting")
+      }
+    })
+    await expect(complete()).rejects.toThrow("Worktable is restarting")
+    await complete()
+    // Reconnects after the completion succeeded do not repeat it.
+    await complete()
+    await complete()
+    expect(attempts).toEqual(["PAIR1-CODE2", "PAIR1-CODE2"])
+
+    const unpaired: string[] = []
+    await pairingCompletionOnce(undefined, async (code) => {
+      unpaired.push(code)
+    })()
+    expect(unpaired).toEqual([])
+  })
+
   it("keeps running when it clears its pairing code, and restarts for other channel settings", () => {
     // The channel removes the code itself once Worktable confirms pairing.
     // OpenClaw used to replace the plugin for that write, which left the

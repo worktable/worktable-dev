@@ -175,6 +175,24 @@ export async function listDirectoryThreads(
   }
 }
 
+/**
+ * Completes a new pairing on the first successful connection only. Clearing
+ * the saved code does not restart the channel, so later reconnects must not
+ * repeat a completion Worktable has already accepted. A failed attempt is
+ * retried on the next connection.
+ */
+export function pairingCompletionOnce(
+  pairingCode: string | undefined,
+  complete: (pairingCode: string) => Promise<void>
+): () => Promise<void> {
+  let pending = pairingCode
+  return async () => {
+    if (!pending) return
+    await complete(pending)
+    pending = undefined
+  }
+}
+
 const base = createChannelPluginBase<WorktableChannelAccount>({
   id: CHANNEL_ID,
   meta: {
@@ -236,6 +254,13 @@ export const worktableChannel = createChatChannelPlugin({
     ...base,
     capabilities: base.capabilities!,
     config: base.config!,
+    reload: {
+      configPrefixes: [`channels.${CHANNEL_ID}`],
+      // The running channel clears its pairing code once Worktable confirms
+      // it. Nothing reads the code after that, and replacing the plugin for
+      // that write left the channel stopped until the Gateway restarted.
+      noopPrefixes: [`channels.${CHANNEL_ID}.pendingPairingCode`],
+    },
     gateway: {
       async startAccount(ctx) {
         if (!accountIsConfigured(ctx.account)) {
@@ -251,6 +276,18 @@ export const worktableChannel = createChatChannelPlugin({
           import("./reply-outbox.js"),
         ])
         const connectedCredential = agentCredentialForConnection(ctx.account)
+        const completePairing = pairingCompletionOnce(
+          ctx.account.pendingPairingCode,
+          async (pairingCode) => {
+            const { resumePendingPairingCompletion } =
+              await import("./pairing.js")
+            await resumePendingPairingCompletion({
+              origin: ctx.account.server,
+              pairingCode,
+              token: ctx.account.token,
+            })
+          }
+        )
         const connector = new WorktableConnector({
           client: await worktableClient(ctx.account, connectedCredential),
           dispatcher: new OpenClawAgentDispatcher(ctx.cfg),
@@ -259,15 +296,7 @@ export const worktableChannel = createChatChannelPlugin({
           worktableOrigin: ctx.account.server,
           logger: ctx.log,
           async onConnected() {
-            if (ctx.account.pendingPairingCode) {
-              const { resumePendingPairingCompletion } =
-                await import("./pairing.js")
-              await resumePendingPairingCompletion({
-                origin: ctx.account.server,
-                pairingCode: ctx.account.pendingPairingCode,
-                token: ctx.account.token,
-              })
-            }
+            await completePairing()
             const registrationId = pendingAgentRegistrationToPromote(
               ctx.account,
               connectedCredential?.registrationId

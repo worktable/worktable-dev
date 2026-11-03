@@ -76,15 +76,15 @@ Install the Worktable plugin:
 openclaw plugins install clawhub:@worktable/openclaw
 ```
 
-- **Local or self-hosted:** run `openclaw worktable connect --server <address>`
-  and approve the agent at the link it prints, or use the single-use pairing
-  command from Settings.
-- **Cloud:** run the displayed Agent Registration command and complete the
-  claim in the browser.
+- Run the single-use command from **Settings → Agents → Always-on agents →
+  OpenClaw**, where OpenClaw is installed.
+- Or run `openclaw worktable connect --server <address>` and approve the agent at
+  the link it prints. On Cloud, the address is `https://app.worktable.cloud`.
 
-The plugin includes Worktable skills, so you don't need to install them
-separately. OpenClaw connects to the whole Worktable, with general and Space
-conversations. Its default Cloud access is conversation-only. For diagnostics,
+Then start or restart the OpenClaw Gateway. The plugin includes Worktable
+skills, so you don't need to install them separately. OpenClaw connects to the
+whole Worktable, with general and Space conversations, and the access you choose
+when you connect it. For diagnostics,
 see the [OpenClaw plugin CLI](https://docs.openclaw.ai/cli/plugins).
 
 ### Hermes
@@ -98,12 +98,10 @@ hermes plugins install worktable/worktable-dev#packages/hermes-plugin --enable
 
 Then connect the Hermes profile:
 
-- **Cloud:** run `hermes worktable connect https://app.worktable.cloud` and sign
-  in when Hermes opens the page. Without a browser, open the printed link
-  elsewhere and paste the final address back into Hermes.
-- **Local or self-hosted:** run `hermes worktable connect <address>` and approve
-  Hermes at the link it prints. Or run the single-use command from
-  **Settings → Agents → Always-on agents → Hermes** where Hermes is installed.
+- Run the single-use command from **Settings → Agents → Always-on agents →
+  Hermes**, where Hermes is installed.
+- Or run `hermes worktable connect <address>` and approve Hermes at the link it
+  prints. On Cloud, the address is `https://app.worktable.cloud`.
 
 Restart the gateway with `hermes gateway restart`. Hermes then answers thread
 messages addressed to it and can use Worktable in any of its conversations.
@@ -132,6 +130,7 @@ Grok Bot needs OAuth sign-in; a public URL with a bearer token is not enough.
 
    The `grokbot://` shortcuts open fields; paste their values, not the
    shortcuts.
+
 4. **Check the connection.** Select **Save and check**. When Grok Bot replies
    to the test message, refresh the status.
 

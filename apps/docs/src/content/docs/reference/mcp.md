@@ -158,9 +158,9 @@ The Cloud quick-connect command detects supported clients and configures the
 canonical `/api/mcp` URL. Open or restart the client and complete OAuth to
 verify the connection.
 
-OpenClaw uses WorkOS Agent Registration instead of a static Cloud token. Follow
-the claim flow once for each installation. Its default access is limited to
-conversations, and you can disconnect it later from **Settings → Agents**.
+OpenClaw and Hermes pair with Cloud the same way as with a local Worktable: each
+installation gets its own credential, with the access you choose, and you can
+disconnect it later from **Settings → Agents**.
 
 ## Client configuration
 
@@ -175,8 +175,8 @@ Support maturity and configuration method are separate:
 | `vscode`         | VS Code                                            | Connector-installable                                   |
 | `goose`          | Goose                                              | Manual snippet                                          |
 | `claude-desktop` | Claude Desktop and supported local Cowork releases | Desktop extension or Cloud OAuth                        |
-| `openclaw`       | OpenClaw                                           | ClawHub plugin plus local pairing or Cloud registration |
-| `hermes`         | Hermes Agent                                       | Hermes plugin plus local pairing or Cloud OAuth         |
+| `openclaw`       | OpenClaw                                           | ClawHub plugin plus pairing                             |
+| `hermes`         | Hermes Agent                                       | Hermes plugin plus pairing                              |
 
 `worktable mcp setup`, detection, status, repair, removal, and pairing accept
 only connector-installable IDs. `worktable mcp print-config goose` produces the
@@ -185,9 +185,8 @@ manual Goose configuration. Claude Desktop is installed from the MCPB in
 for it.
 
 OpenClaw and Hermes are not accepted by `worktable mcp setup`. Install their
-Worktable plugins, then use the pairing command shown by a local/self-hosted
-Worktable. On Cloud, OpenClaw uses the agent-registration flow, with
-conversation-only scope by default, and Hermes signs in with OAuth.
+Worktable plugins, then use the pairing command shown in **Settings → Agents**,
+on local, self-hosted, and Cloud Worktables alike.
 
 ## HTTP-to-stdio bridge
 

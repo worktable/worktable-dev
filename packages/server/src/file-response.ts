@@ -8,6 +8,7 @@ import type { CurrentFile } from "./document-page-service.ts"
 import {
   contentHashOf,
   pinnedFileStream,
+  verifyPinnedFile,
   type PinnedFile,
 } from "./file-revision.ts"
 
@@ -79,11 +80,11 @@ function requestedRange(c: Context, size: number, etag: string): ByteRange {
  * may keep it for good, as may bytes from a moment past: a file's bytes at
  * any of these never change. Others revalidate by ETag.
  */
-export function serveFile(
+export async function serveFile(
   c: Context,
   served: ServedFile,
   options: { cacheForGood: boolean }
-): Response {
+): Promise<Response> {
   const size = served.pinned.size
   const etag = etagOf(served.contentHash)
   const v = c.req.query("v")
@@ -120,6 +121,17 @@ export function serveFile(
     })
   }
   if (range) {
+    // A range can't be checked against the whole file's recorded hash as it
+    // goes, so a file with one is checked whole first, once per revision.
+    if (served.verify) {
+      const sound = await verifyPinnedFile(served.pinned, served.verify()).catch(() => false)
+      if (!sound) {
+        return Response.json(
+          { error: "This file can't be read safely.", code: "SOURCE_UNAVAILABLE" },
+          { status: 409, headers: SECURITY_HEADERS }
+        )
+      }
+    }
     return new Response(pinnedFileStream(served.pinned, range.start, range.end + 1), {
       status: 206,
       headers: {

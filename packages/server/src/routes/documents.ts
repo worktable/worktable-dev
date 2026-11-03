@@ -538,7 +538,7 @@ documentsRouter.get("/file", requireScope("documents:read"), async (c) => {
       if (!then) {
         return c.json({ error: "This file wasn't kept from then.", code: "NOT_FOUND" }, 404)
       }
-      return serveFile(c, then, { cacheForGood: true })
+      return await serveFile(c, then, { cacheForGood: true })
     }
     const result = await resolveCurrentFile({
       spaceId: c.req.param("spaceId") ?? "",
@@ -565,7 +565,7 @@ documentsRouter.get("/file", requireScope("documents:read"), async (c) => {
         409
       )
     }
-    return serveFile(c, await servedCurrentFile(result.current), {
+    return await serveFile(c, await servedCurrentFile(result.current), {
       cacheForGood: false,
     })
   } catch (error) {

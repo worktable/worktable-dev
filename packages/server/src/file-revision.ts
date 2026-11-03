@@ -41,8 +41,10 @@ export function fileRevisionOf(info: BigIntStats): string {
 
 /**
  * What an open file's bytes are: a write moves its modification time. Its
- * change time also moves when the file is only replaced or moved, which
- * leaves the bytes an open handle reads as they were.
+ * change time also moves when the file is only replaced, moved or linked,
+ * which leaves the bytes an open handle reads as they were; each of those
+ * changes its link count. A change time that moves while the link count
+ * stays is a write whose writer put the modification time back.
  */
 function contentStampOf(info: BigIntStats): string {
   return `${info.ino}.${info.size}.${info.mtimeNs}`
@@ -70,6 +72,8 @@ export class OpenFileRevision {
   readonly size: number
   readonly #handle: FileHandle
   readonly #content: string
+  #changedAt: bigint
+  #links: bigint
   #closed = false
 
   private constructor(handle: FileHandle, info: BigIntStats) {
@@ -77,6 +81,22 @@ export class OpenFileRevision {
     this.revision = fileRevisionOf(info)
     this.size = Number(info.size)
     this.#content = contentStampOf(info)
+    this.#changedAt = info.ctimeNs
+    this.#links = info.nlink
+  }
+
+  /**
+   * Whether the bytes may have changed since the last check. A link count
+   * that changed explains a new change time (a replace, a move, a backup's
+   * hard link), and the next check starts from it.
+   */
+  #bytesMayHaveChanged(after: BigIntStats): boolean {
+    if (contentStampOf(after) !== this.#content) return true
+    if (after.ctimeNs === this.#changedAt) return false
+    if (after.nlink === this.#links) return true
+    this.#changedAt = after.ctimeNs
+    this.#links = after.nlink
+    return false
   }
 
   /**
@@ -132,7 +152,7 @@ export class OpenFileRevision {
       filled += bytesRead
     }
     const after = await this.#handle.stat({ bigint: true })
-    if (filled !== length || contentStampOf(after) !== this.#content) {
+    if (filled !== length || this.#bytesMayHaveChanged(after)) {
       throw new FileRevisionError("changed", "file changed while it was read")
     }
     return buffer
@@ -239,6 +259,41 @@ export function sha256Check(hex: string): { update(chunk: Uint8Array): void; ok(
 /** A sha256 recorded as hex, as content hashes are written. */
 export function contentHashFromHex(hex: string): string {
   return Buffer.from(hex, "hex").toString("base64url")
+}
+
+const verifiedRevisions = new Set<string>()
+
+/**
+ * Whether a whole file at its revision matches the hash recorded for it,
+ * read once per revision and kept, so a range of it can be served knowing
+ * the rest is sound.
+ */
+export async function verifyPinnedFile(
+  pinned: PinnedFile,
+  check: { update(chunk: Uint8Array): void; ok(): boolean }
+): Promise<boolean> {
+  const key = hashKey(pinned.path, pinned.revision)
+  if (verifiedRevisions.has(key)) return true
+  const file = await OpenFileRevision.open(pinned.path, pinned.revision)
+  try {
+    for (let position = 0; position < file.size; ) {
+      const chunk = await file.read(
+        position,
+        Math.min(FILE_READ_CHUNK_BYTES, file.size - position)
+      )
+      check.update(chunk)
+      position += chunk.byteLength
+    }
+  } finally {
+    await file.close()
+  }
+  if (!check.ok()) return false
+  if (verifiedRevisions.size >= CONTENT_HASHES_MAX) {
+    const oldest = verifiedRevisions.values().next().value
+    if (oldest !== undefined) verifiedRevisions.delete(oldest)
+  }
+  verifiedRevisions.add(key)
+  return true
 }
 
 const contentHashes = new Map<string, string>()

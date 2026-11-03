@@ -1255,6 +1255,22 @@ describe("format-neutral document route", () => {
         for (let next = await changing.read(); !next.done; next = await changing.read());
       })()
       await expect(rest).rejects.toThrow()
+
+      // So does one of the same size whose writer puts the time back.
+      const archive = join(docs, "data", "archive.bin")
+      await writeFile(archive, bytes)
+      const when = new Date("2026-10-20T09:00:00.000Z")
+      await utimes(archive, when, when)
+      const sneaky = (await get("data/archive.bin")).body!.getReader()
+      await sneaky.read()
+      const altered = bytes.slice()
+      altered[altered.length - 1] = altered[altered.length - 1]! ^ 0xff
+      await writeFile(archive, altered)
+      await utimes(archive, when, when)
+      const remainder = (async () => {
+        for (let next = await sneaky.read(); !next.done; next = await sneaky.read());
+      })()
+      await expect(remainder).rejects.toThrow()
     } finally {
       opens.mockRestore()
       if (previous === undefined) delete process.env["WORKTABLE_FILES"]
@@ -1646,6 +1662,25 @@ describe("format-neutral document route", () => {
       })
       expect(thenPart.status).toBe(206)
       expect(await thenPart.text()).toBe("day")
+      // A kept copy changed on disk is never served as that version, whole or in part.
+      const keptCopies = (await readdir(join(root, "versions"), { recursive: true }))
+        .map((entry) => join(root, "versions", String(entry)))
+      let kept: string | undefined
+      for (const candidate of keptCopies) {
+        if ((await stat(candidate)).isFile() && (await readFile(candidate, "utf8")) === "Monday") {
+          kept = candidate
+        }
+      }
+      expect(kept).toBeDefined()
+      await writeFile(kept!, "Mxnday")
+      expect(
+        (
+          await instance.request(url(`&at=${encodeURIComponent(monday)}`), {
+            headers: { range: "bytes=3-" },
+          })
+        ).status
+      ).toBe(409)
+      await writeFile(kept!, "Monday")
       expect(
         (
           await instance.request(url(`&at=${encodeURIComponent(monday)}`), {

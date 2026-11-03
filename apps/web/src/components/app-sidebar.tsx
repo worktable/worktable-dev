@@ -1871,11 +1871,8 @@ function TreeSection({
         <ListElement
           role={spaceRows ? "group" : undefined}
           aria-label={listLabel}
-          className={`ml-4 space-y-0.5 pl-2 ${
-            dimmed
-              ? "[&_[data-tree-row]:not(:hover):not([data-current]):not(:has([aria-current=page])):not(:has([data-popup-open]))]:opacity-60"
-              : ""
-          }`}
+          data-dim-rows={dimmed ? "" : undefined}
+          className="ml-4 space-y-0.5 pl-2"
         >
           {children}
         </ListElement>

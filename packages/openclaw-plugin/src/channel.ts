@@ -236,6 +236,13 @@ export const worktableChannel = createChatChannelPlugin({
     ...base,
     capabilities: base.capabilities!,
     config: base.config!,
+    reload: {
+      configPrefixes: [`channels.${CHANNEL_ID}`],
+      // The running channel clears its pairing code once Worktable confirms
+      // it. Nothing reads the code after that, and replacing the plugin for
+      // that write left the channel stopped until the Gateway restarted.
+      noopPrefixes: [`channels.${CHANNEL_ID}.pendingPairingCode`],
+    },
     gateway: {
       async startAccount(ctx) {
         if (!accountIsConfigured(ctx.account)) {

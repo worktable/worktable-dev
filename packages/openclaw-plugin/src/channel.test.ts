@@ -11,6 +11,16 @@ import {
 } from "./channel.js"
 
 describe("Worktable channel account setup", () => {
+  it("keeps running when it clears its pairing code, and restarts for other channel settings", () => {
+    // The channel removes the code itself once Worktable confirms pairing.
+    // OpenClaw used to replace the plugin for that write, which left the
+    // channel stopped until the next Gateway restart.
+    expect(worktableChannel.reload).toEqual({
+      configPrefixes: ["channels.worktable"],
+      noopPrefixes: ["channels.worktable.pendingPairingCode"],
+    })
+  })
+
   it("verifies a staged credential before promoting that exact registration", () => {
     const active = {
       registrationId: "agent_reg_active",

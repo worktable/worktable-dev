@@ -1836,18 +1836,20 @@ function TreeSection({
   /** Quiets each row inside, nested ones too, except the open and hovered rows. */
   dimmed?: boolean
   listLabel?: string
-  /** Lines the icon and name up with the Space rows around it. */
+  /** Holds Spaces: its icon and name line up with the Space rows around it. */
   spaceRows?: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
   children: ReactNode
 }) {
+  const ListElement = spaceRows ? "div" : "nav"
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
       <CollapsibleTrigger
         className={`flex min-h-10 w-full min-w-0 items-center rounded-md py-2 text-sm text-sidebar-foreground/50 transition-colors duration-180 hover:bg-sidebar-hover hover:text-sidebar-foreground sm:min-h-0 ${
           spaceRows ? "gap-2.5 pr-2 pl-2.5" : "gap-2 px-3"
         }`}
+        data-tree-row
         render={<button type="button" />}
       >
         {spaceRows ? (
@@ -1865,16 +1867,18 @@ function TreeSection({
         )}
       </CollapsibleTrigger>
       <CollapsibleContent className="collapsible-instant">
-        <nav
+        {/* Spaces hold navigation of their own, so their list is a group. */}
+        <ListElement
+          role={spaceRows ? "group" : undefined}
           aria-label={listLabel}
           className={`ml-4 space-y-0.5 pl-2 ${
             dimmed
-              ? "[&_[data-tree-row]:not(:hover):not([data-current]):not(:has([aria-current=page]))]:opacity-60"
+              ? "[&_[data-tree-row]:not(:hover):not([data-current]):not(:has([aria-current=page])):not(:has([data-popup-open]))]:opacity-60"
               : ""
           }`}
         >
           {children}
-        </nav>
+        </ListElement>
       </CollapsibleContent>
     </Collapsible>
   )
@@ -2900,7 +2904,6 @@ export function AppSidebar() {
               }
             )}
 
-            {/* Spaces */}
             {spacesLoading && (
               <div className="flex flex-col gap-2 px-2">
                 {Array.from({ length: 3 }).map((_, i) => (
@@ -2922,7 +2925,6 @@ export function AppSidebar() {
                 </p>
               </div>
             )}
-
           </div>
         )}
       </ScrollFadeArea>

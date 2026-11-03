@@ -26,12 +26,11 @@ openclaw worktable connect --server https://worktable.example.com
 Or open **Settings → Agents → OpenClaw** in Worktable and run the generated
 command, which includes a one-time pairing code.
 
-For Worktable Cloud, run:
+For Worktable Cloud, run the command from **Settings → Agents → OpenClaw**, or
+run this and approve the agent at the link it prints:
 
 ```sh
-openclaw worktable connect \
-  --server https://app.worktable.cloud \
-  --agent-registration
+openclaw worktable connect --server https://app.worktable.cloud
 ```
 
 Then start or restart the OpenClaw Gateway. Learn more in the Worktable docs for

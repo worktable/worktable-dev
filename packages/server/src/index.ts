@@ -177,6 +177,8 @@ import {
   runRetentionSweep,
   workspaceHasVersionHistory,
 } from "./version-retention.ts"
+import { runDeletedItemsInBackground } from "./deleted-items.ts"
+import { setDeletedItemsRunner } from "./deleted-item-events.ts"
 import { settleRetentionPolicy } from "./settings-store.ts"
 import { readLocalWorkspaceRegistry } from "./local-host.ts"
 import {
@@ -1453,7 +1455,9 @@ export function startServer(
   }
 
   // Doc version-history retention: one deferred sweep ~30s after boot (so it
-  // never delays startup) plus a 24h steady-state sweep. At boot, before any
+  // never delays startup) plus a 24h steady-state sweep. Each pass also moves
+  // deleted Docs, files and Spaces out of the workspace folder (a delete asks
+  // for that moments after it settles) and removes those past the window. At boot, before any
   // sweep, the install's policy is settled: new installs start at 30 days;
   // installs whose stored policy is no longer offered move to 180. The same
   // pass forgets share links revoked more than 90 days ago.
@@ -1465,6 +1469,7 @@ export function startServer(
   if (retentionSweepTimer) clearInterval(retentionSweepTimer);
   retentionBootTimer = null;
   retentionSweepTimer = null;
+  setDeletedItemsRunner(null);
   if (!workspaceRejected && process.env["WORKTABLE_SKIP_RETENTION_SWEEP"] !== "1") {
     const settled = settleRetentionPolicy({
       hasVersionHistory: installHasVersionHistory,
@@ -1474,7 +1479,10 @@ export function startServer(
     const sweep = () => {
       void settled
         .then(() => runRetentionSweep())
-        .catch((err) => console.error("[version-retention] sweep error:", logError(err)));
+        .catch((err) => console.error("[version-retention] sweep error:", logError(err)))
+        // Then move deleted items out of the workspace folder, and remove
+        // those past the window.
+        .then(() => runDeletedItemsInBackground());
       try {
         sweepRevokedShareLinks();
       } catch (err) {
@@ -1489,6 +1497,7 @@ export function startServer(
         console.error("[visitor-comments] retention unavailable");
       }
     };
+    setDeletedItemsRunner(() => void runDeletedItemsInBackground());
     retentionBootTimer = setTimeout(sweep, RETENTION_BOOT_DELAY_MS);
     retentionBootTimer.unref?.();
     retentionSweepTimer = setInterval(sweep, RETENTION_SWEEP_INTERVAL_MS);
@@ -1631,6 +1640,7 @@ export function startServer(
     retentionBootTimer = null;
     if (retentionSweepTimer) clearInterval(retentionSweepTimer);
     retentionSweepTimer = null;
+    setDeletedItemsRunner(null);
     if (recordReconcileSweepTimer) clearInterval(recordReconcileSweepTimer);
     recordReconcileSweepTimer = null;
     if (lintRetirementTimer) clearTimeout(lintRetirementTimer);
@@ -2411,6 +2421,7 @@ export function startServer(
     retentionBootTimer = null;
     if (retentionSweepTimer) clearInterval(retentionSweepTimer);
     retentionSweepTimer = null;
+    setDeletedItemsRunner(null);
     if (recordReconcileSweepTimer) clearInterval(recordReconcileSweepTimer);
     recordReconcileSweepTimer = null;
     if (lintRetirementTimer) clearTimeout(lintRetirementTimer);

@@ -43,11 +43,19 @@ paths. Those are legacy layouts, not instructions for creating current content.
           <record-id>.yaml        one record per file
       threads/
         <thread-id>.json          Space-level conversations
-    .trash/                       recoverable deleted content
+    .trash/                       deleted Spaces, until they move to app data
   versions/
     <space-id>/
       documents/<document-id>/    version history for every document format
+      .retired/                   deleted documents' history, until it moves
+    .trash/                       deleted Spaces' history, until it moves
 ```
+
+Moments after you delete a document or a Space, Worktable moves its history,
+and a Space's content, out of the workspace folder into the app data folder,
+so copies and packages of the folder no longer include it. It removes it from
+there once the period chosen in **Settings → Data** has passed since the
+deletion (30 days when keeping the last 7 versions).
 
 ## Portable content
 
@@ -77,8 +85,9 @@ through Worktable; documents added another way have none.
 
 Machine-local state, including install data, CLI config, Worktable-managed token
 and password hashes, participant bindings, thread delivery state, service logs,
-realtime edit state, and caches, lives in the app data folder (macOS Application
-Support, or `~/.config/worktable`). The rule:
+realtime edit state, caches, and deleted items waiting to be removed, lives in
+the app data folder (macOS Application Support, or `~/.config/worktable`). The
+rule:
 if copying the workspace should preserve its meaning, it is in the workspace;
 if it is security-sensitive, install-specific, or rebuildable, it is not.
 User-authored content can still contain secrets, so review it before sharing or

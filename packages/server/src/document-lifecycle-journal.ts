@@ -10526,3 +10526,36 @@ export function recoverInterruptedDocumentLifecycles(): RecoveredDocumentLifecyc
     },
   ]
 }
+
+/** A lifecycle operation whose recovery could still read or move history. */
+export interface UnsettledDocumentLifecycle {
+  operationId: string
+  spaceIds: string[]
+}
+
+/**
+ * Run `operation` while no document lifecycle operation can start or advance,
+ * given every operation that recovery could still act on: the active journal
+ * (applying or committed) and each reconciliation marker. Only
+ * these can move history between `versions/<space>/.retired/` and the active
+ * tree, and each names its retired history by its own operation id. Throws
+ * when that state cannot be read, so a caller never acts on a guess.
+ */
+export function withUnsettledDocumentLifecycles<T>(
+  operation: (unsettled: readonly UnsettledDocumentLifecycle[]) => Promise<T>
+): Promise<T> {
+  return withWorkspaceLifecycleLock(async () => {
+    const journals = [
+      readJournal(),
+      ...readReconciliationMarkers().map((marker) =>
+        parseJournal(join(marker.directory, "journal.json"))
+      ),
+    ].filter((journal): journal is DocumentLifecycleJournal => journal !== null)
+    return operation(
+      journals.map((journal) => ({
+        operationId: journal.operationId,
+        spaceIds: [...new Set([journal.from.spaceId, journal.to.spaceId])],
+      }))
+    )
+  })
+}

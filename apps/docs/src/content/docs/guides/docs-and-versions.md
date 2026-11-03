@@ -45,6 +45,9 @@ Open history from the document menu to read, checkpoint, or restore versions.
 - **Settings → Data** can keep 30, 90 or 180 days, or the last 7 versions.
   A shorter limit deletes older versions as soon as you confirm.
 - Workspaces that kept everything before these limits now keep 180 days.
+- Deleting a document moves its history out of the workspace folder and
+  removes it once the same period has passed (30 days when keeping the last
+  7 versions).
 
 HTML docs have their own history. Restoring their source does not restore saved
 interface state or records they changed. [Drawings](/guides/drawings/) recover

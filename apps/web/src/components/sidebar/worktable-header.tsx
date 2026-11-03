@@ -238,10 +238,7 @@ export function WorktableHeader() {
           }
         >
           <WorktableTile name={name} color={color} />
-          <TruncatedText
-            text={name}
-            className="flex-1 text-sm font-medium tracking-tight"
-          />
+          <TruncatedText text={name} className="flex-1 text-sm font-medium" />
           <ChevronsUpDown className="size-3.5 shrink-0 text-sidebar-foreground/40" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" sideOffset={4} className="min-w-64">

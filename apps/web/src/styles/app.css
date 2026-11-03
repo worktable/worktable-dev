@@ -27,3 +27,16 @@
   font-weight: 400 800;
   font-display: swap;
 }
+
+/* Archived rows in the sidebar, nested ones too, are quieted except the
+   one that is open, hovered or showing its menu. */
+@layer utilities {
+  [data-dim-rows]
+    [data-tree-row]:not(
+      :hover,
+      [data-current],
+      :has([aria-current="page"], [data-popup-open])
+    ) {
+    opacity: 0.6;
+  }
+}

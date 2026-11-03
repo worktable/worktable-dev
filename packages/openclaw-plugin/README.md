@@ -54,6 +54,17 @@ It keeps an installation ID and any replies not yet posted in
 `plugins/worktable/` under OpenClaw's state directory, and records delivered
 messages in OpenClaw's plugin state so a restart does not handle them twice.
 
+To identify this installation, the plugin sends that Worktable this computer's
+hostname and the random installation ID when it pairs. Its requests also carry
+the installation ID.
+
+A message addressed to this agent in a Worktable thread runs as an OpenClaw turn
+with the agent's tools, as if its owner sent it, including OpenClaw commands.
+Anyone who can post in a thread the agent is part of can address it, so connect
+it only to a Worktable whose members you trust with it, and limit its tools in
+OpenClaw.
+Disconnect it in **Settings → Agents** to stop it receiving messages.
+
 Report vulnerabilities through the Worktable
 [security policy](https://github.com/worktable/worktable-dev/security/policy).
 

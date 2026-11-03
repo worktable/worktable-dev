@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.19
+
+- The README says what the plugin sends to Worktable when it pairs, and that messages addressed to the agent in Worktable run as its owner's commands.
+
 ## 0.0.18
 
 - Answer Worktable messages as soon as the Gateway first starts after pairing. Before, the channel stopped once pairing finished, until the Gateway restarted again.

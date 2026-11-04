@@ -100,6 +100,8 @@ export function AnnotationComposer({
     latestBody.current = body;
   }, [body]);
   const inFlight = useRef(false);
+  // Which send may unlock the box: the latest, until the box opens again.
+  const sendCount = useRef(0);
   const recipients = useCommentRecipients(
     context?.spaceId,
     context?.contributors,
@@ -132,10 +134,14 @@ export function AnnotationComposer({
       setBody("");
       setPicked(null);
       setFailed(false);
+      setSending(false);
     }
   }
   useEffect(() => {
-    if (open) draftKey.current = createClientId("comment");
+    if (!open) return;
+    draftKey.current = createClientId("comment");
+    inFlight.current = false;
+    sendCount.current += 1;
   }, [open]);
 
   // Writing moves focus away from the page, which hides the selection; keep
@@ -153,14 +159,19 @@ export function AnnotationComposer({
     if (!trimmed || awaitingRecipient || inFlight.current) return;
     const key = draftKey.current;
     inFlight.current = true;
+    const send = ++sendCount.current;
     setSending(true);
     setFailed(false);
+    let closing = false;
     onSubmit(trimmed, recipients && recipient !== NO_RECIPIENT ? [recipient] : [], key)
       .then(
         () => {
           // Closed and opened again meanwhile: that's a new draft.
           if (draftKey.current !== key) return;
-          if (latestBody.current.trim() === trimmed) onOpenChange(false);
+          if (latestBody.current.trim() === trimmed) {
+            closing = true;
+            onOpenChange(false);
+          }
           // Written on while it sent: what was sent is saved, and the rest
           // stays as a new comment to send.
           else draftKey.current = createClientId("comment");
@@ -170,6 +181,10 @@ export function AnnotationComposer({
         }
       )
       .finally(() => {
+        // A sent comment's box stays shut to Send while it slides away; a
+        // tap then would send it again. Opening the box again lets go, and
+        // an earlier send settling late leaves the newer one locked.
+        if (closing || sendCount.current !== send) return;
         inFlight.current = false;
         setSending(false);
       });

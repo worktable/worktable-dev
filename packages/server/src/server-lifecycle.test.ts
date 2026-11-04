@@ -354,10 +354,11 @@ describe("server lifecycle", () => {
     setWorkspaceWatcherTestOptions({
       debounceMs: 60_000,
       onPendingChange: (event) => {
+        // A `.json` is reported by its whole name until it is classified.
         if (
-          event?.type === "doc" &&
+          event?.type === "jsonSource" &&
           event.spaceId === "meta" &&
-          event.docPath === docPath
+          event.file === `${docPath}.json`
         ) {
           reportPending()
         }

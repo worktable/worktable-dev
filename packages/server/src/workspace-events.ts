@@ -12,11 +12,17 @@ export interface DocChangeEvent {
   type: "doc"
   spaceId: string
   docPath: string
-  /**
-   * A changed `.json` below docs/, by its whole name: it is a plain file
-   * when it doesn't hold Doc blocks.
-   */
-  file?: string
+}
+
+/**
+ * A `.json` below docs/ changed, by its whole name. It is not dispatched as
+ * it is: the filesystem coordinator first decides whether it is a Doc or a
+ * plain file (json-source-kind.ts), so nothing keys a plain file as a Doc.
+ */
+export interface JsonSourceChangeEvent {
+  type: "jsonSource"
+  spaceId: string
+  file: string
 }
 
 /**

@@ -84,6 +84,7 @@ import {
   documentPathKeyIsBelow,
   remapDocumentPathPrefix,
 } from "./document-path.ts"
+import { jsonSourceIsDocSync } from "./json-source-kind.ts"
 import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
@@ -7756,18 +7757,19 @@ function verifyRecoveryCatalogCheckpoint(
       )
     }
   }
-  const maybeClaim = (path: string, source: string): void => {
+  const relevant = (path: string): boolean => {
     const comparisonKey = analyzeDocumentPath(path).comparisonKey
-    if (
+    return Boolean(
       comparisonKey &&
-      (comparisonKeys.has(comparisonKey) ||
-        (archivePrefixKey &&
-          documentPathKeyIsAtOrBelow(comparisonKey, archivePrefixKey)) ||
-        (deletePrefixKey &&
-          documentPathKeyIsAtOrBelow(comparisonKey, deletePrefixKey)))
-    ) {
-      claims.push({ path, source })
-    }
+        (comparisonKeys.has(comparisonKey) ||
+          (archivePrefixKey &&
+            documentPathKeyIsAtOrBelow(comparisonKey, archivePrefixKey)) ||
+          (deletePrefixKey &&
+            documentPathKeyIsAtOrBelow(comparisonKey, deletePrefixKey)))
+    )
+  }
+  const maybeClaim = (path: string, source: string): void => {
+    if (relevant(path)) claims.push({ path, source })
   }
   // Whether files took part is a fact of the journal, not of the preview
   // switch now: recovery must settle what the operation planned either way.
@@ -7818,10 +7820,18 @@ function verifyRecoveryCatalogCheckpoint(
               anyFile: anyFile && !hidden,
             })?.source.extension ?? null)
       if (extension === null) continue
-      maybeClaim(
-        [...segments, withoutSuffix(entry.name, extension)].join("/"),
-        sourcePath
-      )
+      const docPath = [...segments, withoutSuffix(entry.name, extension)].join("/")
+      // A `.json` is the Doc its name gives only by the catalog's rule; a
+      // plain file goes by its whole name, and only where files take part.
+      if (
+        extension === ".json" &&
+        relevant(docPath) &&
+        !jsonSourceIsDocSync(spaceRoot, sourcePath)
+      ) {
+        if (anyFile && !hidden) maybeClaim(nextSegments.join("/"), sourcePath)
+        continue
+      }
+      maybeClaim(docPath, sourcePath)
     }
   }
   const scanWidgets = (directory: string, segments: string[]): void => {

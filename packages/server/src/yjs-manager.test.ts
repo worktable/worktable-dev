@@ -771,7 +771,7 @@ describe("YjsDocManager sync persistence", () => {
     // failed. The old cache header still agrees with the old provenance, so
     // cache admission must independently compare both with current content.
     writeFileSync(
-      getDocPath("test-space", "stale/doc"),
+      await getDocPath("test-space", "stale/doc"),
       JSON.stringify([para("newer")])
     )
     const recentDate = new Date();
@@ -1115,7 +1115,7 @@ describe("YjsDocManager sync persistence", () => {
         children: [],
       },
     ];
-    const docPath = getDocPath("test-space", "watcher-mermaid");
+    const docPath = await getDocPath("test-space", "watcher-mermaid");
     writeFileSync(docPath, JSON.stringify(legacyContent));
 
     await yjsManager.syncFromDisk("test-space", "watcher-mermaid");
@@ -1135,7 +1135,7 @@ describe("YjsDocManager sync persistence", () => {
     const manager = new YjsDocManager();
     try {
       const ydoc = await manager.getOrCreateDoc("test-space", "ordered-sync");
-      const docPath = getDocPath("test-space", "ordered-sync");
+      const docPath = await getDocPath("test-space", "ordered-sync");
       writeFileSync(docPath, JSON.stringify([para("external edit")]));
       const diskSyncGeneration = manager.contentGeneration(
         "test-space",
@@ -1193,7 +1193,7 @@ describe("YjsDocManager sync persistence", () => {
     try {
       await manager.handleConnection(ws, "test-space", "intent-during-sync");
       writeFileSync(
-        getDocPath("test-space", "intent-during-sync"),
+        await getDocPath("test-space", "intent-during-sync"),
         JSON.stringify([para("canonical disk edit")])
       );
       const sentBefore = ws.sent.length;
@@ -1299,7 +1299,7 @@ describe("YjsDocManager sync persistence", () => {
     });
     const [loaded] = (await readDoc("test-space", "protect-doc")).data as Array<{ id: string }>;
     await yjsManager.getOrCreateDoc("test-space", "protect-doc");
-    const loadStat = statSync(getDocPath("test-space", "protect-doc"));
+    const loadStat = statSync(await getDocPath("test-space", "protect-doc"));
 
     const agentBlock = { ...para("agent content"), id: "agent-block" };
     const written = await yjsManager.commitAgentWrite(
@@ -1313,7 +1313,7 @@ describe("YjsDocManager sync persistence", () => {
         });
         // Keep the file mtime inside the mtime-guard slack — the worst case,
         // where the mtime guard cannot catch the stale write either.
-        utimesSync(getDocPath("test-space", "protect-doc"), loadStat.atime, loadStat.mtime);
+        utimesSync(await getDocPath("test-space", "protect-doc"), loadStat.atime, loadStat.mtime);
         return result;
       }
     );
@@ -2127,7 +2127,7 @@ describe("YjsDocManager sync persistence", () => {
 
     // Give the file a whole-second modification time that an outside writer
     // can restore exactly, and let the room see the file with it.
-    const path = getDocPath("test-space", "outside");
+    const path = await getDocPath("test-space", "outside");
     const second = Math.floor(statSync(path).mtimeMs / 1000);
     utimesSync(path, second, second);
     typeAndUndo(ydoc);

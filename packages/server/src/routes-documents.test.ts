@@ -1130,6 +1130,21 @@ describe("format-neutral document route", () => {
       expect((await listDocsDetailed(spaceId)).map((doc) => doc.path)).toContain(
         "notes/readme"
       )
+      // Lifecycle checks take the file for a file: archiving the Doc beside
+      // it is not mistaken for two Docs at one path.
+      await writeDoc(spaceId, "plan", "# Plan", {
+        updatedBy: "test",
+        source: "rest-api",
+        managedIdentity: true,
+      })
+      await writeFile(join(docs, "plan.json"), '[{"id":1}]')
+      noteSpaceChanged(spaceId)
+      const archived = await instance.request(`/api/spaces/${spaceId}/documents/archive`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: "plan" }),
+      })
+      expect(archived.status).toBe(200)
       // A moved Doc's alias holds its old name, not a new file's whole name.
       await writeDoc(spaceId, "setup", "# Setup", {
         updatedBy: "test",
@@ -1299,6 +1314,10 @@ describe("format-neutral document route", () => {
     const current = await readRegisteredDocumentSource({ spaceId, path: "plan" })
     expect(current.documentId).toBe(created.documentId)
     expect(await versions()).toBe(kept)
+    // Lists keep it, as unreadable.
+    expect(
+      (await listDocsDetailed(spaceId)).find((doc) => doc.path === "plan")
+    ).toMatchObject({ unreadable: true })
     expect(await (await request("source?path=plan")).text()).toBe(data)
     // The editor never imports it, so nothing can save over the bytes.
     expect((await readDoc(spaceId, "plan")).data).toBeNull()

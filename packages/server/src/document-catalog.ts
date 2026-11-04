@@ -52,10 +52,8 @@ import {
   type DocumentFormatRegistry,
 } from "./document-format-registry.ts"
 import { storedDocTitle } from "./doc-title-text.ts"
-import {
-  rememberRichTextFile,
-  richTextSourceIsDoc,
-} from "./rich-text-blocks.ts"
+import { richTextSourceIsDoc } from "./rich-text-blocks.ts"
+import { rememberRichTextFile } from "./json-source-kind.ts"
 import { filesEnabled } from "./files-enabled.ts"
 import {
   DOCUMENT_STORAGE_PROFILE_IDS,
@@ -391,6 +389,8 @@ async function readCatalogDocSource(
   const cached = key !== undefined ? docSources.get(file, key) : undefined
   if (cached !== undefined) return cached
   let view: DocSourceView = { title: "", doc: true }
+  // Only an answer from the bytes is kept: a failed read is asked again.
+  let settled = true
   if (
     !markdown &&
     size !== undefined &&
@@ -407,10 +407,11 @@ async function readCatalogDocSource(
           : { title: "", doc: false }
     } catch {
       // An unreadable file keeps the name its path gives and stays what its
-      // name says; its reader reports why.
+      // name says for now; its reader reports why.
+      settled = false
     }
   }
-  if (key !== undefined) {
+  if (key !== undefined && settled) {
     docSources.set(file, key, view)
     if (!markdown) rememberRichTextFile(file, key, view.doc)
   }

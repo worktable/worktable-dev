@@ -417,7 +417,8 @@ describe("workspace read model", () => {
     expect(listed.annotations[0]?.thread.map((reply) => reply.body)).toEqual([
       "Yes.",
     ])
-    expect(await pending()).toEqual(["commentReply"])
+    // An answer that asks nothing waits on nobody.
+    expect(await pending()).toEqual([])
   })
 })
 

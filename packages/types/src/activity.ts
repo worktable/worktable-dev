@@ -117,21 +117,8 @@ export type PendingItem =
       excerpt: string
     }
   | {
-      /** A comment sent to the reader, or to one of their agents. */
+      /** A comment sent to the reader. */
       kind: "commentRequest"
-      id: string
-      at: string
-      spaceId: string
-      annotationId: string
-      docPath: string
-      docTitle?: string
-      from: ActivityActor
-      /** The reader's agent it was sent to; absent when sent to the reader. */
-      agent?: { name: string }
-      excerpt: string
-    }
-  | {
-      kind: "commentReply"
       id: string
       at: string
       spaceId: string
@@ -152,5 +139,8 @@ export type PendingItem =
     }
 
 export interface PendingResult {
+  /** The newest items, at most ten. */
   items: PendingItem[]
+  /** How many items wait in all, including those past the first ten. */
+  total: number
 }

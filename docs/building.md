@@ -111,12 +111,14 @@ GitHub OIDC. Run the workflow by hand to republish the current release.
 The agent plugin also lives at the root of
 [worktable/worktable-plugin](https://github.com/worktable/worktable-plugin),
 for directories that read a plugin only from a repository root, such as the
-Gemini CLI gallery, Kiro Powers and Grok Build. Every change to
-`plugins/worktable` on `main` runs the Plugin repository workflow:
-`bun scripts/plugin-repo.ts` builds the tree, adds `gemini-extension.json`, and
-the workflow pushes it with the `PLUGIN_REPO_DEPLOY_KEY` deploy key. A new
-version in `plugin.json` gets a `v<version>` tag and release there from its
-`CHANGELOG.md` entry. Edit the plugin here, never in that repository.
+Gemini CLI gallery, Kiro Powers and Grok Build. That repository pulls rather
+than being pushed to, so no credential for it is stored here. Its Sync workflow
+runs hourly or by hand: it builds the tree with `bun scripts/plugin-repo.ts`
+from this repository's `main`, adds `gemini-extension.json`, commits any change,
+and releases a new `plugin.json` version as `v<version>` from its
+`CHANGELOG.md` entry. A workflow token can't change workflow files, so when the
+generated `.github/workflows/sync.yml` changes, push it there by hand. Edit the
+plugin here, never in that repository.
 
 ## Runtime verification
 

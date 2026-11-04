@@ -1,8 +1,12 @@
 import { describe, expect, it } from "bun:test"
 import {
+  FILE_SURFACE_NOTES,
   FILE_SURFACE_RULES,
-  FILE_SURFACES,
+  FILE_TYPE_NOTES,
+} from "./file-type-notes"
+import {
   FILE_TYPES,
+  UNKNOWN_FILE_POLICIES,
   fileMediaTypesWhere,
   fileTypeFor,
   type FileSurface,
@@ -27,7 +31,7 @@ const POLICY_VALUES: {
   diff: [true, false],
 }
 
-const SURFACES = Object.keys(FILE_SURFACES) as FileSurface[]
+const SURFACES = Object.keys(UNKNOWN_FILE_POLICIES) as FileSurface[]
 const TYPES = Object.entries(FILE_TYPES) as [FileTypeId, FileTypeEntry][]
 
 describe("the file type table", () => {
@@ -35,8 +39,12 @@ describe("the file type table", () => {
     expect(SURFACES.sort()).toEqual(
       (Object.keys(POLICY_VALUES) as FileSurface[]).sort()
     )
+    expect((Object.keys(FILE_SURFACE_NOTES) as FileSurface[]).sort()).toEqual(SURFACES)
     for (const surface of SURFACES) {
-      expect(POLICY_VALUES[surface]).toContain(FILE_SURFACES[surface].unknown)
+      expect(POLICY_VALUES[surface] as readonly unknown[]).toContain(
+        UNKNOWN_FILE_POLICIES[surface]
+      )
+      expect(FILE_SURFACE_NOTES[surface].where.length).toBeGreaterThan(0)
     }
     for (const [id, entry] of TYPES) {
       for (const surface of SURFACES) {
@@ -87,14 +95,15 @@ describe("the file type table", () => {
 
   it("records why wherever surfaces disagree, and nowhere else", () => {
     for (const [id, entry] of TYPES) {
+      const notes = FILE_TYPE_NOTES[id]
       const broken = new Set<FileSurface>()
       for (const rule of FILE_SURFACE_RULES) {
         if (rule.holds(entry.surfaces, entry)) continue
-        const noted = rule.surfaces.filter((surface) => entry.notes?.[surface])
+        const noted = rule.surfaces.filter((surface) => notes?.[surface])
         expect(noted, `${id} breaks "${rule.name}" without a note`).not.toEqual([])
         for (const surface of rule.surfaces) broken.add(surface)
       }
-      for (const [surface, note] of Object.entries(entry.notes ?? {})) {
+      for (const [surface, note] of Object.entries(notes ?? {})) {
         expect(broken.has(surface as FileSurface), `${id}: stale note on ${surface}`).toBe(
           true
         )

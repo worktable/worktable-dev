@@ -12,8 +12,10 @@
 // name nominates a type; a surface may check the bytes and refuse them, but
 // never take them as a wider type or as anything that runs.
 //
-// This module is pure data and stays runtime independent: the shared-page
-// policy in hosted-contract, which the Cloud gateway runs too, reads it.
+// This module is pure data and stays runtime independent, and holds only
+// what code reads, since every page loads it. Why surfaces differ, where
+// each lives, and the rules they agree by are in file-type-notes.ts, which
+// only the conformance test reads.
 //
 // The name rule, the one every surface uses:
 // - The type comes from the base name, the part after the last "/".
@@ -86,16 +88,6 @@ export interface FileSurfacePolicies {
   diff: boolean
 }
 
-/**
- * Why a surface treats a type differently from what an agreement rule
- * expects. `fix` marks a difference that looks accidental, and says what
- * a later change could do; it is kept as it is until then.
- */
-export interface FileTypeNote {
-  why: string
-  fix?: string
-}
-
 export interface FileTypeEntry {
   /** Lowercase ASCII, without the dot. The first is the one Worktable writes. */
   extensions: readonly string[]
@@ -107,8 +99,6 @@ export interface FileTypeEntry {
   /** The cell separator of a delimited table. */
   delimiter?: "," | "\t"
   surfaces: FileSurfacePolicies
-  /** Each surface that breaks an agreement rule, and why. */
-  notes?: { readonly [S in FileSurface]?: FileTypeNote }
 }
 
 const NONE = {
@@ -139,16 +129,11 @@ const CODE = {
   agent: "text",
 } as const
 
-const CODE_PAGE: FileTypeNote = {
-  why: "Agents read source as text; the page has no source view yet.",
-  fix: "Show it as text on its page, as agents read it.",
-}
-
 const BINARY = { ...NONE, page: "card", agent: "bytes" } as const
 
 /**
  * Every plain file type Worktable knows. A name that matches none of them
- * gets each surface's `unknown` policy in FILE_SURFACES.
+ * gets UNKNOWN_FILE_POLICIES.
  */
 export const FILE_TYPES = {
   png: {
@@ -185,16 +170,6 @@ export const FILE_TYPES = {
       share: "placeholder",
       drawing: false,
     },
-    notes: {
-      agent: {
-        why: "Agents take images as PNG, JPEG, GIF or WebP, so an AVIF comes as base64.",
-        fix: "Convert it to PNG when an agent reads it, so it arrives as an image.",
-      },
-      share: {
-        why: "The shared-page policy, which the Cloud gateway enforces too, accepts PNG, JPEG, GIF and WebP data URLs only.",
-        fix: "Add AVIF to the shared-page policy together with the Cloud gateway.",
-      },
-    },
   },
   svg: {
     extensions: ["svg"],
@@ -205,14 +180,6 @@ export const FILE_TYPES = {
       agent: "text",
       share: "placeholder",
       drawing: false,
-    },
-    notes: {
-      agent: {
-        why: "SVG is XML markup: agents read and edit its source as text.",
-      },
-      share: {
-        why: "SVG can carry script and outside references, so shared pages, which carry only raster data URLs, show a placeholder.",
-      },
     },
   },
   heic: {
@@ -351,35 +318,30 @@ export const FILE_TYPES = {
     mediaType: "text/markdown",
     family: "code",
     surfaces: CODE,
-    notes: { page: CODE_PAGE },
   },
   html: {
     extensions: ["html", "htm"],
     mediaType: "text/html",
     family: "code",
     surfaces: CODE,
-    notes: { page: CODE_PAGE },
   },
   css: {
     extensions: ["css"],
     mediaType: "text/css",
     family: "code",
     surfaces: CODE,
-    notes: { page: CODE_PAGE },
   },
   javascript: {
     extensions: ["js"],
     mediaType: "text/javascript",
     family: "code",
     surfaces: CODE,
-    notes: { page: CODE_PAGE },
   },
   typescript: {
     extensions: ["ts"],
     mediaType: "text/plain",
     family: "code",
     surfaces: CODE,
-    notes: { page: CODE_PAGE },
   },
   dockerfile: {
     extensions: [],
@@ -511,112 +473,18 @@ export type FileTypesWhere<S extends FileSurface, P extends Policy<S>> = {
     : never
 }[FileTypeId]
 
-/** Each surface: where it lives, and what it does with an unknown name. */
-export const FILE_SURFACES: {
-  readonly [S in FileSurface]: {
-    where: string
-    unknown: Policy<S>
-    note?: string
-  }
-} = {
-  serve: {
-    where: "packages/server/src/file-media.ts",
-    unknown: "bytes",
-    note: "Only images show inline; a type without a media type here downloads as plain bytes.",
-  },
-  page: {
-    where: "apps/web/src/components/file-page.tsx",
-    unknown: "card",
-  },
-  icon: {
-    where: "apps/web/src/components/document-format-icon.tsx",
-    unknown: "file",
-  },
-  agent: {
-    where: "packages/server/src/mcp/file-results.ts",
-    unknown: "bytes",
-    note: "Size limits and UTF-8 decoding stay with the surface: a large image or text, or text that isn't UTF-8, also comes as base64. Agents overwriting a delimited table get a row summary.",
-  },
-  share: {
-    where:
-      "packages/server/src/share-images.ts, packages/hosted-contract/src/public-share-policy.ts, packages/ui/src/markdown-document.ts",
-    unknown: "placeholder",
-    note: "The accepted media types are shared with the Cloud gateway, so changing them is a change on both sides.",
-  },
-  drawing: {
-    where: "packages/server/src/drawing-image-validation.ts",
-    unknown: false,
-    note: "Drawing images are data URLs; their declared media type names the type, and the bytes must match it.",
-  },
-  paste: {
-    where: "apps/web/src/lib/file-embeds.ts",
-    unknown: false,
-    note: "A pasted image with no name of its own is named for its media type. An image type not in this table keeps the subtype of its media type.",
-  },
-  import: {
-    where: "packages/server/src/records-import.ts and the file page's Import",
-    unknown: false,
-  },
-  diff: {
-    where: "packages/server/src/document-diff.ts",
-    unknown: false,
-    note: "Diffs compare a Doc's text projection; a plain file keeps versions but has no projection yet, even text agents read as text. Offering one needs that projection first.",
-  },
+/** What each surface does with a name that matches no type. */
+export const UNKNOWN_FILE_POLICIES: FileSurfacePolicies = {
+  serve: "bytes",
+  page: "card",
+  icon: "file",
+  agent: "bytes",
+  share: "placeholder",
+  drawing: false,
+  paste: false,
+  import: false,
+  diff: false,
 }
-
-/**
- * How surfaces are expected to agree for every type. A type that breaks one
- * carries a note on one of the rule's surfaces saying why.
- */
-export const FILE_SURFACE_RULES: readonly {
-  name: string
-  surfaces: readonly FileSurface[]
-  holds: (surfaces: FileSurfacePolicies, entry: FileTypeEntry) => boolean
-}[] = [
-  {
-    name: "People and agents see the same thing",
-    surfaces: ["page", "agent"],
-    holds: ({ page, agent }) =>
-      page === "image"
-        ? agent === "image"
-        : page === "card"
-          ? agent === "bytes"
-          : agent === "text",
-  },
-  {
-    name: "The page shows an image exactly when serving shows it inline",
-    surfaces: ["page", "serve"],
-    holds: ({ page, serve }) => (page === "image") === (serve === "inline"),
-  },
-  {
-    name: "Shared pages show the images the page shows",
-    surfaces: ["share", "page"],
-    holds: ({ share, page }) => (share === "inline") === (page === "image"),
-  },
-  {
-    name: "Drawings hold the images shared pages carry",
-    surfaces: ["drawing", "share"],
-    holds: ({ drawing, share }) => drawing === (share === "inline"),
-  },
-  {
-    name: "A paste is named for image types only",
-    surfaces: ["paste"],
-    holds: ({ paste }, entry) => paste === entry.mediaType.startsWith("image/"),
-  },
-  {
-    name: "A table shows as a table and splits on its delimiter",
-    surfaces: ["page"],
-    holds: ({ page }, entry) => (page === "table") === (entry.delimiter !== undefined),
-  },
-  {
-    name: "What imports into Records is text people and agents can read",
-    surfaces: ["import"],
-    holds: (surfaces) =>
-      !surfaces.import ||
-      (surfaces.agent === "text" &&
-        (surfaces.page === "table" || surfaces.page === "text")),
-  },
-]
 
 const ENTRIES = FILE_TYPES as Readonly<Record<FileTypeId, FileTypeEntry>>
 const BY_EXTENSION = new Map<string, FileTypeId>()
@@ -647,7 +515,7 @@ export function fileTypePolicy<S extends FileSurface>(
   surface: S
 ): Policy<S> {
   return type === null
-    ? FILE_SURFACES[surface].unknown
+    ? UNKNOWN_FILE_POLICIES[surface]
     : (ENTRIES[type].surfaces[surface] as Policy<S>)
 }
 

@@ -77,6 +77,8 @@ export class OpenFileRevision {
   readonly #content: string
   #changedAt: bigint
   #links: bigint
+  /** Whether a new change time was already put down to leaving the path. */
+  #departed = false
   #closed = false
 
   private constructor(handle: FileHandle, path: string, info: BigIntStats) {
@@ -91,14 +93,18 @@ export class OpenFileRevision {
 
   /**
    * Whether the bytes may have changed since the last check. A new change
-   * time is explained by a new link count (a replace, a link) or by the file
-   * no longer being at its path (a rename, a move); the next check starts
-   * from it.
+   * time is explained by a new link count (a replace, a link), or once by
+   * the file leaving its path (a rename, a move); the next check starts from
+   * it. A file already gone from its path can't explain another change that
+   * way, so a later one fails the transfer.
    */
   async #bytesMayHaveChanged(after: BigIntStats): Promise<boolean> {
     if (contentStampOf(after) !== this.#content) return true
     if (after.ctimeNs === this.#changedAt) return false
-    if (after.nlink === this.#links && (await this.#stillAtPath(after))) return true
+    if (after.nlink === this.#links) {
+      if (this.#departed || (await this.#stillAtPath(after))) return true
+      this.#departed = true
+    }
     this.#changedAt = after.ctimeNs
     this.#links = after.nlink
     return false

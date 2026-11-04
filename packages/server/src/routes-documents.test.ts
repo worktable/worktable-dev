@@ -1270,6 +1270,26 @@ describe("format-neutral document route", () => {
       expect(new Uint8Array(await new Blob(renamedParts).arrayBuffer())).toEqual(bytes)
       await rename(join(docs, "data", "archive.bak"), join(docs, "data", "archive.bin"))
 
+      // A rename explains one change, not a later same-size write that puts
+      // the time back.
+      const moved = join(docs, "data", "archive.moved")
+      await writeFile(join(docs, "data", "archive.bin"), bytes)
+      const pinnedTime = new Date("2026-10-20T09:00:00.000Z")
+      await utimes(join(docs, "data", "archive.bin"), pinnedTime, pinnedTime)
+      const departing = (await get("data/archive.bin")).body!.getReader()
+      await departing.read()
+      await rename(join(docs, "data", "archive.bin"), moved)
+      await departing.read()
+      const overwritten = bytes.slice()
+      overwritten[overwritten.length - 1] = overwritten[overwritten.length - 1]! ^ 0xff
+      await writeFile(moved, overwritten)
+      await utimes(moved, pinnedTime, pinnedTime)
+      const leftover = (async () => {
+        for (let next = await departing.read(); !next.done; next = await departing.read());
+      })()
+      await expect(leftover).rejects.toThrow()
+      await rename(moved, join(docs, "data", "archive.bin"))
+
       // So does one of the same size whose writer puts the time back.
       const archive = join(docs, "data", "archive.bin")
       await writeFile(archive, bytes)

@@ -10,7 +10,12 @@ import {
 import { existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { runBackupWorkerJob } from "./workspace-backup-worker.ts"
+import {
+  incrementalUploadArguments,
+  runBackupWorkerJob,
+  type BackupParent,
+  type UploadedFile,
+} from "./workspace-backup-worker.ts"
 
 const JOB = `bkp_${"a".repeat(32)}`
 const SECRETS = {
@@ -45,7 +50,9 @@ async function fakeRestic(backupExit: number) {
   return executable(
     "restic",
     `echo "${RESTIC_STDERR} $RESTIC_REPOSITORY $RESTIC_PASSWORD $AWS_ACCESS_KEY_ID $AWS_SECRET_ACCESS_KEY $AWS_SESSION_TOKEN" >&2
-shift 4
+while [ "\${1#-}" != "$1" ]; do
+  case "$1" in --cache-dir|--stuck-request-timeout) shift 2 ;; *) shift ;; esac
+done
 case "$1" in
   cat) printf '{"id":"${"b".repeat(64)}"}\\n' ;;
   backup) printf '%s\\n' "$@" > ../restic-args.txt; exit ${backupExit} ;;
@@ -192,5 +199,43 @@ describe("backup worker failures", () => {
       message:
         "server command printed no snapshot manifest (35 bytes, cut off mid-line)",
     })
+  })
+})
+
+describe("incremental uploads", () => {
+  const at = "2026-01-01T00:00:00.000Z"
+  const later = "2026-01-01T01:00:00.000Z"
+  const parent: BackupParent = {
+    version: 1,
+    repositoryId: "b".repeat(64),
+    workspaceId: "ws_backup_test",
+    snapshotId: "c".repeat(64),
+    files: [
+      ["workspace/kept.md", 4, at, "1".repeat(64)],
+      ["workspace/edited.md", 4, at, "2".repeat(64)],
+    ],
+  }
+  const skipUnchanged = ["--parent", "c".repeat(64), "--ignore-inode"]
+
+  it("reads every file without a parent", () => {
+    expect(incrementalUploadArguments(undefined, parent.files)).toEqual([])
+  })
+
+  it("skips files unchanged since the parent, and rereads ones whose mtime moved", () => {
+    const files: UploadedFile[] = [
+      ["workspace/kept.md", 4, at, "1".repeat(64)],
+      ["workspace/edited.md", 4, later, "3".repeat(64)],
+      ["workspace/new.md", 4, at, "4".repeat(64)],
+    ]
+    expect(incrementalUploadArguments(parent, files)).toEqual(skipUnchanged)
+  })
+
+  it("reads every file when new bytes kept the parent's size and mtime", () => {
+    // Restic would take the parent's content for it.
+    const files: UploadedFile[] = [
+      ["workspace/kept.md", 4, at, "1".repeat(64)],
+      ["workspace/edited.md", 4, at, "3".repeat(64)],
+    ]
+    expect(incrementalUploadArguments(parent, files)).toEqual([])
   })
 })

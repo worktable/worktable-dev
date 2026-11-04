@@ -205,13 +205,28 @@ export async function runServerMaintenance(
   }
   const inspectIndex = argv.lastIndexOf("workspace-snapshot-inspect")
   if (inspectIndex !== -1) {
-    if (inspectIndex !== argv.length - 3)
+    // `--captured`: a fresh capture's own record vouches for unchanged files.
+    const byCaptureIdentity = argv.at(-1) === "--captured"
+    if (inspectIndex !== argv.length - (byCaptureIdentity ? 4 : 3))
       throw new Error(
-        "usage: worktable-server workspace-snapshot-inspect <directory> <workspace-id>"
+        "usage: worktable-server workspace-snapshot-inspect <directory> <workspace-id> [--captured]"
       )
-    const result = await inspectWorkspaceSnapshot(argv[inspectIndex + 1]!, {
-      workspaceId: argv[inspectIndex + 2]!,
-    })
+    const report = { hashedFiles: 0, hashedBytes: 0 }
+    const result = await inspectWorkspaceSnapshot(
+      argv[inspectIndex + 1]!,
+      { workspaceId: argv[inspectIndex + 2]! },
+      { byCaptureIdentity, report }
+    )
+    // The worker reads the manifest line among others; whole-output readers
+    // of the plain form still get the manifest alone.
+    if (byCaptureIdentity)
+      await writeResult(
+        JSON.stringify({
+          type: "worktable.workspace-snapshot-inspection",
+          files: result.files.length,
+          ...report,
+        })
+      )
     await writeResult(JSON.stringify(result))
     return true
   }

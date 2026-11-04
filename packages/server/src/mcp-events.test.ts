@@ -399,23 +399,35 @@ describe("MCP Events", () => {
       expect(events(sent)).toHaveLength(0)
       expect(await watching()).toMatchObject({ attention: true })
 
-      // Not renewed in time: it lapses, so it reads as off, and an item sent
-      // meanwhile isn't queued for it.
+      // Not renewed in time: it lapses, so it reads as off and sends nothing.
+      // Two items come while nothing runs, then one while it is lapsed.
       await restartAt(61)
       expect(await watching()).toBeUndefined()
+      await stop?.()
+      stop = undefined
+      at(62)
+      await comment("pricing", "First while nothing ran.")
+      at(63)
+      await comment("pricing", "Second while nothing ran.")
+      await restartAt(64)
       await after(() => comment("pricing", "Written while it was lapsed."))
       expect(events(sent)).toHaveLength(0)
 
-      // Back online, the client renews: both go, in order, once each.
+      // Back online, the client renews: everything goes, oldest first, once.
       down = false
       at(75)
       await after(() => subscribe(caller, params(), transport))
       expect(
         events(sent).map((e) => (e.body.data as { excerpt: string }).excerpt)
-      ).toEqual(["Written while offline.", "Written while it was lapsed."])
+      ).toEqual([
+        "Written while offline.",
+        "First while nothing ran.",
+        "Second while nothing ran.",
+        "Written while it was lapsed.",
+      ])
       expect(await watching()).toMatchObject({ attention: false })
       await restartAt(80)
-      expect(events(sent)).toHaveLength(2)
+      expect(events(sent)).toHaveLength(4)
     } finally {
       setSystemTime()
     }

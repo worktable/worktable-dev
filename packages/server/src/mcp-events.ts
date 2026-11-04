@@ -926,14 +926,17 @@ export async function subscribe(
     for (const entry of file.outbox)
       if (entry.subscriptionId === id)
         Object.assign(entry, { attempts: 0, nextAt: 0 })
+    // What a lapsed subscription heard is queued already; this brings what
+    // came while nothing was listening, oldest first, once each.
     const after = new Date(since).toISOString()
     queueEvents(
       file,
       subscription,
-      missed.filter(
-        (item) => item.createdAt >= after && wants(subscription, item)
-      )
+      missed
+        .filter((item) => item.createdAt >= after && wants(subscription, item))
+        .reverse()
     )
+    inOrder(file, id)
   })
   signalChange()
   return {
@@ -1089,6 +1092,18 @@ function queueEvents(
     file.outbox.splice(0, file.outbox.length - MAX_OUTBOX)
 }
 
+/** One subscription's events in the order their items came, oldest first. */
+function inOrder(file: EventsFile, subscriptionId: string): void {
+  const slots: number[] = []
+  file.outbox.forEach((entry, index) => {
+    if (entry.subscriptionId === subscriptionId) slots.push(index)
+  })
+  const sorted = slots
+    .map((index) => file.outbox[index]!)
+    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+  slots.forEach((index, i) => (file.outbox[index] = sorted[i]!))
+}
+
 /** When a subscription lapsed, or undefined while it is live. */
 function lapsedSince(s: Subscription, now = Date.now()): number | undefined {
   return s.lapsedAt ?? (s.refreshBefore <= now ? s.refreshBefore : undefined)
@@ -1205,14 +1220,13 @@ export function startMcpEventsRuntime(
 
   async function enqueue(entry: PendingEntry) {
     const file = await load(path())
-    const now = Date.now()
-    const matching = file.subscriptions.filter(
-      (s) => s.refreshBefore > now && !s.lapsedAt && wants(s, entry)
-    )
-    if (!matching.length) return
+    // A lapsed subscription still queues what comes, sending nothing until
+    // it is renewed, so nothing falls between this and a renewal's catch-up.
+    if (!file.subscriptions.some((s) => wants(s, entry))) return
     await mutate((current) => {
-      for (const subscription of matching)
-        queueEvents(current, subscription, [entry])
+      for (const subscription of current.subscriptions)
+        if (wants(subscription, entry))
+          queueEvents(current, subscription, [entry])
     })
     nudge()
   }

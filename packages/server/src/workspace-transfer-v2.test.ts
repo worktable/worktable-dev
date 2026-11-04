@@ -26,6 +26,7 @@ import { setAppDirOverride } from "./app-storage.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import { openFileAsHtmlDoc } from "./document-write-service.ts"
 import { recordSourceKinds } from "./source-kind-records.ts"
+import { writeSpace } from "./store.ts"
 import {
   BUILTIN_DOCUMENT_COMPANIONS,
   BUILTIN_DOCUMENT_FORMATS,
@@ -270,6 +271,17 @@ describe("workspace export v2", () => {
   })
 
   it("keeps a file opened as an HTML Doc one through export and restore", async () => {
+    const now = new Date().toISOString()
+    await writeSpace({
+      type: "worktable.space",
+      version: 1,
+      id: "notes",
+      name: "Notes",
+      createdAt: now,
+      updatedAt: now,
+      createdBy: "test",
+      settings: {},
+    })
     await recordSourceKinds("notes")
     await writeFile(
       join(source, "spaces", "notes", "docs", "report.html"),

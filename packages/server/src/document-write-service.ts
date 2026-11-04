@@ -91,11 +91,7 @@ import {
   DOCUMENT_STORAGE_PROFILE_IDS,
   documentStorageProfiles,
 } from "./document-storage-profile.ts"
-import {
-  recordDocAlias,
-  resolveDocAliasIn,
-  reservedByAliasIn,
-} from "./doc-aliases.ts"
+import { resolveDocAliasIn, reservedByAliasIn } from "./doc-aliases.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
 import {
   catalogHasDocumentsBelow,
@@ -735,10 +731,12 @@ async function materializeManagedFileDocument(
 
 /**
  * Open a plain `.html` file as an HTML Doc: the person's choice, recorded as
- * the inventory's claim, so it stays one wherever the Space goes. The file
- * keeps its identity and the versions it has, and its path loses the
- * extension, as an HTML Doc's does; its old name becomes an alias, so links
- * to the file find the HTML Doc. Its source stays where it is.
+ * the inventory's claim, so it stays one wherever the Space goes. Its path
+ * loses the extension, as an HTML Doc's does, through the same lifecycle as
+ * a move: what is kept under its path (archive state, lifetime, its place in
+ * the sidebar, annotations) goes with it, and its old name becomes an alias,
+ * so links to the file find the HTML Doc. It keeps its identity and the
+ * versions it has, and its source stays where it is.
  */
 export async function openFileAsHtmlDoc(options: {
   spaceId: string
@@ -785,20 +783,22 @@ export async function openFileAsHtmlDoc(options: {
         "Another document already uses this path"
       )
     }
-    const documentId =
-      current.identity === "durable" ? current.documentId : mintDocumentId()
-    await updateDocumentInventory(options.spaceId, {
-      upsert: [{ documentId, path, format, source: current.source }],
-    })
-    return { documentId, path, from: current.path }
+    const moved = await moveDurableDocumentExactlyLocked(
+      options.spaceId,
+      current.path,
+      path,
+      { afterFormat: format }
+    )
+    if (moved.error) throw new DocumentWriteError("conflict", moved.error)
+    if (!moved.handled || !moved.documentId) {
+      throw new DocumentWriteError(
+        "not-found",
+        "This file could not be opened as an HTML Doc"
+      )
+    }
+    return { documentId: moved.documentId, path }
   })
-  // Links to the file by its name keep working. The HTML Doc stands without
-  // this, so a failure is logged rather than undoing the choice.
-  await recordDocAlias(options.spaceId, opened.from, opened.path, "exact").catch(
-    (error: unknown) =>
-      console.warn("[documents] an opened file's old name was not kept:", logError(error))
-  )
-  return { documentId: opened.documentId, path: opened.path, format }
+  return { ...opened, format }
 }
 
 function resolveWritableDocument(

@@ -66,6 +66,7 @@ import {
 } from "./document-inventory.ts"
 import {
   getDocArchiveInfo,
+  getDocLifetimeView,
   listDocsDetailed,
   readDoc,
   readSpace,
@@ -2467,12 +2468,23 @@ describe("format-neutral document route", () => {
     )
     expect(replaced.status).toBe(200)
     const before = (await kinds()).get("reports/new.html")!
-    const open = (headers: Record<string, string> = {}) =>
-      instance.request(`/api/spaces/${spaceId}/documents/open-as-html`, {
+    const post = (route: string, body: unknown, headers: Record<string, string> = {}) =>
+      instance.request(`/api/spaces/${spaceId}/documents/${route}`, {
         method: "POST",
         headers: { "content-type": "application/json", ...headers },
-        body: JSON.stringify({ path: "reports/new.html" }),
+        body: JSON.stringify(body),
       })
+    const open = (headers: Record<string, string> = {}, path = "reports/new.html") =>
+      post("open-as-html", { path }, headers)
+    // A temporary file stays temporary, and an archived one archived.
+    expect(
+      (await post("lifetime", { path: "reports/new.html", lifetime: "temporary" })).status
+    ).toBe(200)
+    const temporary = await getDocLifetimeView(spaceId, "reports/new.html")
+    expect(temporary).toMatchObject({ lifetime: "temporary" })
+    await writeFile(join(docs, "reports", "shelved.html"), "<h1>Shelved</h1>")
+    noteSpaceChanged(spaceId)
+    expect((await post("archive", { path: "reports/shelved.html" })).status).toBe(200)
     // Not an agent's choice, nor one an HTML Doc's frame can make.
     expect((await open({ "x-test-principal": "agent" })).status).toBe(403)
     expect((await open({ "sec-fetch-site": "cross-site" })).status).toBe(403)
@@ -2488,9 +2500,23 @@ describe("format-neutral document route", () => {
       documentId: before.documentId,
       format: { id: "worktable.html" },
     })
-    // Its versions as a file are its history as an HTML Doc.
+    expect(await getDocLifetimeView(spaceId, "reports/new")).toMatchObject({
+      lifetime: "temporary",
+      archiveOn: temporary.archiveOn,
+    })
+    expect(
+      (await open({ "sec-fetch-site": "same-origin" }, "reports/shelved.html")).status
+    ).toBe(200)
+    expect(await getDocArchiveInfo(spaceId, "reports/shelved")).toBeDefined()
+    expect(await getDocArchiveInfo(spaceId, "reports/shelved.html")).toBeUndefined()
+    // Its versions as a file are its history as an HTML Doc, after the one
+    // the move keeps of it as the HTML Doc it became.
     const versions = await listLegacyWidgetVersionsV2(spaceId, "reports/new")
-    expect(versions.length).toBe(2)
+    expect(versions.map((version) => version.reason)).toEqual([
+      "Reconciled after document move",
+      "Uploaded a new version",
+      "Pre-tracking baseline",
+    ])
     const first = await readLegacyWidgetVersionV2(
       spaceId,
       "reports/new",

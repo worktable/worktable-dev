@@ -843,7 +843,8 @@ describe("local access boundary model", () => {
     const agent = await createToken({ scopes: ["docs:*", "widgets:*", "annotations:*", "records:*"], agent: "synthetic-writer" })
     const agentHeaders = { Authorization: `Bearer ${agent.token}`, "Content-Type": "application/json" }
     const content = [{ type: "paragraph", content: [{ type: "text", text: "SYNTHETIC_BOUNDARY_CONTENT_AGENT", styles: {} }] }]
-    expect((await fetch(`${origin}/api/spaces/demo/docs/private`, { method: "PUT", headers: agentHeaders, body: JSON.stringify({ content }) })).status).toBe(200)
+    const { revision: expectedRevision } = await (await fetch(`${origin}/api/spaces/demo/docs/private`, { headers: agentHeaders })).json() as { revision: string }
+    expect((await fetch(`${origin}/api/spaces/demo/docs/private`, { method: "PUT", headers: agentHeaders, body: JSON.stringify({ content, expectedRevision }) })).status).toBe(200)
     const afterWrite = await fetch(`${origin}/api/spaces/demo/docs/private`, { headers: agentHeaders })
     const document = await afterWrite.json() as { provenance: { updatedBy: string } }
     expect(document.provenance.updatedBy).toStartWith("agent:")

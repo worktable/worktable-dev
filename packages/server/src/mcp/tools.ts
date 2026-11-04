@@ -34,7 +34,6 @@ import {
 import { logError } from "../debug-log.ts"
 import { isHosted } from "../hosted.ts"
 import {
-  CATALOG_TOOLS,
   catalogTools,
   ToolArgumentError,
   catalogOutputSchema,
@@ -201,9 +200,17 @@ function publicizeResult(
 }
 
 // Tool contracts are immutable, and a server is built for every request.
-const CATALOG_OUTPUT_SCHEMAS = new Map(
-  CATALOG_TOOLS.map((tool) => [tool.name, withNotices(catalogOutputSchema(tool))])
-)
+const CATALOG_OUTPUT_SCHEMAS = Object.fromEntries(
+  (["released", "preview"] as const).map((surface) => [
+    surface,
+    new Map(
+      catalogTools(surface).map((tool) => [
+        tool.name,
+        withNotices(catalogOutputSchema(tool)),
+      ])
+    ),
+  ])
+) as Record<McpSurface, Map<string, ReturnType<typeof withNotices>>>
 
 export function registerTools(
   server: McpServer,
@@ -393,7 +400,7 @@ export function registerTools(
           ...(tool.fileParams ? { "openai/fileParams": tool.fileParams } : {}),
         },
         inputSchema: tool.inputSchema,
-        outputSchema: CATALOG_OUTPUT_SCHEMAS.get(tool.name),
+        outputSchema: CATALOG_OUTPUT_SCHEMAS[surface].get(tool.name),
       },
       async (args: Record<string, unknown>, extra: CallExtra) => {
         let routed

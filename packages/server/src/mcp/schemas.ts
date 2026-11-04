@@ -1206,6 +1206,14 @@ export const HtmlWriteInput = z.strictObject({
       html: UpdateWidgetInput.shape.html,
       metadata: UpdateWidgetInput.shape.metadata,
       permissions: UpdateWidgetInput.shape.permissions,
+      expectedRevision: z
+        .string()
+        .min(1)
+        .max(256)
+        .optional()
+        .describe(
+          "The revision from your latest worktable_html_read. Required to replace an HTML Doc's html; refused if the HTML Doc changed since."
+        ),
     }),
     actionSchema("rename", {
       spaceId: RenameWidgetInput.shape.spaceId,

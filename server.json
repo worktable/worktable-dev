@@ -1,0 +1,25 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.worktable/worktable",
+  "title": "Worktable",
+  "description": "A workspace where you and your agents create and revise Docs, HTML tools, drawings, and Records.",
+  "version": "0.1.39",
+  "websiteUrl": "https://www.worktable.cloud",
+  "repository": {
+    "url": "https://github.com/worktable/worktable-dev",
+    "source": "github"
+  },
+  "icons": [
+    {
+      "src": "https://www.worktable.cloud/favicon.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://app.worktable.cloud/api/mcp"
+    }
+  ]
+}

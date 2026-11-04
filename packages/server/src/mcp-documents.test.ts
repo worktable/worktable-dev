@@ -8,6 +8,7 @@ import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, open, readdir, readFile, rm, truncate, writeFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { FILE_VERSION_MAX_BYTES } from "./file-limits.ts"
+import { FILE_READ_CHUNK_BYTES, OpenFileRevision } from "./file-revision.ts"
 import { noteSpaceChanged } from "./workspace-read-model.ts"
 import { recordSourceKinds } from "./source-kind-records.ts"
 import { tmpdir } from "node:os"
@@ -291,6 +292,73 @@ describe("files for agents on the released surface", () => {
       })
       expect(latin1.isError).not.toBe(true)
       expect(latin1.structuredContent).not.toHaveProperty("changes")
+
+      // A file is read once the Space's lock is released, at one revision:
+      // another writer goes ahead while the read waits, and a file that
+      // changes partway is read again from the start, never mixed.
+      const before = "a".repeat(FILE_READ_CHUNK_BYTES * 2 + 10)
+      const after = "b".repeat(before.length)
+      expect(
+        (
+          await write({
+            action: "create",
+            lifetime: "durable",
+            spaceId,
+            path: "data/large.txt",
+            format: file,
+            source: before,
+          })
+        ).isError
+      ).not.toBe(true)
+      const readChunk = OpenFileRevision.prototype.read
+      let chunks = 0
+      let reachedSecondChunk!: () => void
+      let resume!: () => void
+      const atSecondChunk = new Promise<void>((done) => (reachedSecondChunk = done))
+      const resumed = new Promise<void>((done) => (resume = done))
+      const paused = spyOn(OpenFileRevision.prototype, "read").mockImplementation(
+        async function (this: OpenFileRevision, position: number, length: number) {
+          chunks += 1
+          if (chunks === 2) {
+            reachedSecondChunk()
+            await resumed
+          }
+          return readChunk.call(this, position, length)
+        }
+      )
+      try {
+        const reading = read({ action: "read_source", spaceId, path: "data/large.txt" })
+        await atSecondChunk
+        const other = await Promise.race([
+          write({
+            action: "create",
+            lifetime: "durable",
+            spaceId,
+            path: "data/other.txt",
+            format: file,
+            source: "other",
+          }),
+          Bun.sleep(10_000).then(() => "the write waited for the read" as const),
+        ])
+        expect(other).not.toBe("the write waited for the read")
+        await writeFile(join(root, "spaces", spaceId, "docs", "data", "large.txt"), after)
+        resume()
+        const result = await reading
+        expect(result.isError).not.toBe(true)
+        const whole = result.structuredContent as { source: string; sourceRevision: string }
+        expect(whole.source).toBe(after)
+        // What was read is the revision a replace names.
+        const replacedLarge = await write({
+          action: "replace",
+          spaceId,
+          path: "data/large.txt",
+          source: "c",
+          expectedRevision: whole.sourceRevision,
+        })
+        expect(replacedLarge.isError).not.toBe(true)
+      } finally {
+        paused.mockRestore()
+      }
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES"]
       else process.env["WORKTABLE_FILES"] = previous
@@ -719,6 +787,19 @@ describe("importing a file into Records", () => {
         counts: { rows: 2, created: 2, skipped: 0, failed: 0 },
         columnsLeftOut: ["note"],
       })
+      // Both name the one revision of the file they read, as a read does.
+      const csvRead = await connected.callTool({
+        name: "worktable_files_read",
+        arguments: { request: { action: "read_source", spaceId, path: "research/feedback.csv" } },
+      })
+      const csvRevision = (csvRead.structuredContent as { sourceRevision: string }).sourceRevision
+      expect(
+        (proposal.structuredContent as { proposal: { sourceRevision: string } }).proposal
+          .sourceRevision
+      ).toBe(csvRevision)
+      expect((imported.structuredContent as { sourceRevision: string }).sourceRevision).toBe(
+        csvRevision
+      )
       const again = await write("worktable_records_write", {
         action: "import",
         spaceId,
@@ -1002,6 +1083,64 @@ describe("format-neutral document access", () => {
     expect(await readFile(join(docs, "state.html"), "utf8")).toContain(
       "After agent edit"
     )
+
+    // A read names the revision a replace of its html is based on, and a
+    // write the revision it saved. The released surface refuses a stale one.
+    const readRevision = (read.structuredContent as { revision: string }).revision
+    const savedRevision = (updated.structuredContent as { revision: string }).revision
+    expect(readRevision).toMatch(/^html:sha256:/)
+    expect(savedRevision).not.toBe(readRevision)
+    const staleOnReleased = await connected.callTool({
+      name: "worktable_html_write",
+      arguments: {
+        request: {
+          action: "update",
+          spaceId,
+          htmlId: "Team Board/state",
+          html: "<p>Based on the first read</p>",
+          expectedRevision: readRevision,
+        },
+      },
+    })
+    expect(staleOnReleased.isError).toBe(true)
+    expect(JSON.stringify(staleOnReleased.content)).toContain("revision_conflict")
+
+    // The preview surface says a replace needs it, and refuses one without.
+    const preview = await connect(
+      ["documents:read", "documents:write", "widgets:read", "widgets:write"],
+      "preview"
+    )
+    const listed = (await preview.listTools()).tools.find(
+      (tool) => tool.name === "worktable_html_write"
+    )
+    expect(listed?.description).toContain("needs expectedRevision")
+    expect(listed?.inputSchema.properties).toHaveProperty("expectedRevision")
+    const replace = (extra: Record<string, unknown>) =>
+      preview.callTool({
+        name: "worktable_html_write",
+        arguments: {
+          spaceId,
+          htmlId: "Team Board/state",
+          html: "<!doctype html><title>Team state</title><p>Preview edit</p>",
+          ...extra,
+        },
+      })
+    const unnamed = await replace({})
+    expect(unnamed.isError).toBe(true)
+    expect(JSON.stringify(unnamed.content)).toContain("revision_required")
+    const stale = await replace({ expectedRevision: readRevision })
+    expect(stale.isError).toBe(true)
+    expect(JSON.stringify(stale.content)).toContain("revision_conflict")
+    expect(JSON.stringify(stale.content)).toContain(savedRevision)
+    expect(await readFile(join(docs, "state.html"), "utf8")).toContain(
+      "After agent edit"
+    )
+    const named = await replace({ expectedRevision: savedRevision })
+    expect(named.isError).not.toBe(true)
+    expect(await readFile(join(docs, "state.html"), "utf8")).toContain(
+      "Preview edit"
+    )
+
     const created = await connected.callTool({
       name: "worktable_html_write",
       arguments: {

@@ -35,6 +35,13 @@ async function req(app: Hono, method: string, path: string, body?: unknown) {
   return { status: res.status, text, json: contentType.includes("json") && text ? JSON.parse(text) : null };
 }
 
+/** Replace an HTML Doc as a client does: from the revision of the source it read. */
+async function replaceHtml(app: Hono, path: string, body: Record<string, unknown>) {
+  const read = await app.fetch(new Request(`http://localhost${path}/content?format=raw`));
+  const expectedRevision = (read.headers.get("etag") ?? "").replace(/"/g, "");
+  return req(app, "PUT", path, { ...body, expectedRevision });
+}
+
 const HTML_V1 = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>:root{--ad-bg:#fff;--ad-text:#111}html[data-theme="dark"]{--ad-bg:#111;--ad-text:#eee}body{background:var(--ad-bg);color:var(--ad-text)}</style></head><body><p>v1</p></body></html>`;
 const HTML_V2 = HTML_V1.replace("<p>v1</p>", "<p>v2</p>");
 
@@ -64,7 +71,7 @@ describe("widget version history", () => {
   it("records create and update versions with before/after content and provenance", async () => {
     setSystemTime(new Date("2026-07-13T14:17:32.773Z"));
     await req(app, "POST", "/api/spaces/meta/widgets", { id: "plans/q3", name: "Q3", html: HTML_V1 });
-    await req(app, "PUT", "/api/spaces/meta/widgets/plans/q3", { name: "Q3 v2", html: HTML_V2, updatedBy: "user" });
+    await replaceHtml(app, "/api/spaces/meta/widgets/plans/q3", { name: "Q3 v2", html: HTML_V2, updatedBy: "user" });
 
     const versions = await listWidgetVersions("meta", "plans/q3");
     expect(versions.length).toBe(2);
@@ -87,7 +94,7 @@ describe("widget version history", () => {
 
   it("dedupes idempotent rewrites (no version churn from identical regeneration)", async () => {
     await req(app, "POST", "/api/spaces/meta/widgets", { id: "tracker", name: "Tracker", html: HTML_V1 });
-    await req(app, "PUT", "/api/spaces/meta/widgets/tracker", { name: "Tracker", html: HTML_V1 });
+    await replaceHtml(app, "/api/spaces/meta/widgets/tracker", { name: "Tracker", html: HTML_V1 });
     const versions = await listWidgetVersions("meta", "tracker");
     expect(versions.length).toBe(1); // create only — identical PUT recorded nothing
   });
@@ -103,7 +110,7 @@ describe("widget version history", () => {
 
   it("marks a source-transition checkpoint when agent and human writes alternate", async () => {
     await req(app, "POST", "/api/spaces/meta/widgets", { id: "tracker", name: "Tracker", html: HTML_V1, createdBy: "agent" });
-    await req(app, "PUT", "/api/spaces/meta/widgets/tracker", { name: "Tracker", html: HTML_V2, updatedBy: "user" });
+    await replaceHtml(app, "/api/spaces/meta/widgets/tracker", { name: "Tracker", html: HTML_V2, updatedBy: "user" });
     const versions = await listWidgetVersions("meta", "tracker");
     // The agent-created version was retroactively marked a meaningful checkpoint
     // when the human write transitioned the source category.
@@ -195,7 +202,7 @@ describe("widget version history", () => {
 
   it("lists versions over REST (checkpoints-only default, ?all=true for everything)", async () => {
     await req(app, "POST", "/api/spaces/meta/widgets", { id: "tracker", name: "Tracker", html: HTML_V1 });
-    await req(app, "PUT", "/api/spaces/meta/widgets/tracker", { name: "Tracker", html: HTML_V2 });
+    await replaceHtml(app, "/api/spaces/meta/widgets/tracker", { name: "Tracker", html: HTML_V2 });
     const all = await req(app, "GET", "/api/spaces/meta/widgets/tracker/versions?all=true");
     expect(all.status).toBe(200);
     expect(all.json.versions.length).toBe(2);
@@ -214,7 +221,7 @@ describe("widget version history", () => {
       id: "plans/q3", name: "Q3", html: HTML_V1,
       permissions: { records: { tasks: { read: true } } },
     });
-    await req(app, "PUT", "/api/spaces/meta/widgets/plans/q3", {
+    await replaceHtml(app, "/api/spaces/meta/widgets/plans/q3", {
       name: "Q3 narrowed", html: HTML_V2,
       permissions: { records: {} },
     });
@@ -247,7 +254,7 @@ describe("widget version history", () => {
 
   it("serves a rendered version snapshot without the runtime bridge", async () => {
     await req(app, "POST", "/api/spaces/meta/widgets", { id: "tracker", name: "Tracker", html: HTML_V1 });
-    await req(app, "PUT", "/api/spaces/meta/widgets/tracker", { name: "Tracker", html: HTML_V2 });
+    await replaceHtml(app, "/api/spaces/meta/widgets/tracker", { name: "Tracker", html: HTML_V2 });
     const versions = (await req(app, "GET", "/api/spaces/meta/widgets/tracker/versions?all=true")).json.versions;
     const createVersion = versions.find((v: { operation: string }) => v.operation === "create");
     const res = await app.fetch(new Request(`http://localhost/api/spaces/meta/widgets/tracker/versions/${createVersion.id}/content?theme=dark`));
@@ -275,7 +282,7 @@ describe("widget version history", () => {
     await req(app, "POST", "/api/spaces/meta/widgets", { id: "tracker", name: "Tracker", html: HTML_V1 });
     await req(app, "POST", "/api/spaces/meta/widgets/tracker/versions/checkpoint", { label: "Keep me" });
     for (let i = 0; i < 4; i++) {
-      await req(app, "PUT", "/api/spaces/meta/widgets/tracker", { name: "Tracker", html: HTML_V1.replace("<p>v1</p>", `<p>rev ${i}</p>`) });
+      await replaceHtml(app, "/api/spaces/meta/widgets/tracker", { name: "Tracker", html: HTML_V1.replace("<p>v1</p>", `<p>rev ${i}</p>`) });
     }
     const before = await listWidgetVersions("meta", "tracker");
     expect(before.length).toBe(6); // create + checkpoint + 4 updates
@@ -298,7 +305,7 @@ describe("widget version history", () => {
     rmSync(join(testDir, "versions", "meta", "widgets", "old-timer"), { recursive: true, force: true });
 
     // First tracked update after "upgrade".
-    const put = await req(app, "PUT", "/api/spaces/meta/widgets/old-timer", { name: "Old Timer", html: HTML_V2 });
+    const put = await replaceHtml(app, "/api/spaces/meta/widgets/old-timer", { name: "Old Timer", html: HTML_V2 });
     expect(put.status).toBe(200);
 
     const versions = (await req(app, "GET", "/api/spaces/meta/widgets/old-timer/versions?all=true")).json.versions;
@@ -441,8 +448,8 @@ describe("widget version history", () => {
     // lock the per-file writes could interleave and the post-write snapshot could
     // capture NameA's metadata with BBB's HTML.
     await Promise.all([
-      req(app, "PUT", "/api/spaces/meta/widgets/tracker", { name: "NameA", html: htmlA, updatedBy: "user" }),
-      req(app, "PUT", "/api/spaces/meta/widgets/tracker", { name: "NameB", html: htmlB, updatedBy: "user" }),
+      replaceHtml(app, "/api/spaces/meta/widgets/tracker", { name: "NameA", html: htmlA, updatedBy: "user" }),
+      replaceHtml(app, "/api/spaces/meta/widgets/tracker", { name: "NameB", html: htmlB, updatedBy: "user" }),
     ]);
     // Every recorded snapshot is an internally consistent name↔html pair.
     const versions = await listWidgetVersions("meta", "tracker", { checkpointsOnly: false });

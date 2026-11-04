@@ -4,7 +4,7 @@ import { recoverTeamInitialization } from "./team-initialization.ts";
 import { resetTeamSpacePoliciesAfterContentReplacement, finalizePendingTeamSpacePolicyReset } from "./team-policy.ts";
 import { serveTeamDirectory, TEAM_DIRECTORY_PATH } from "./team-directory.ts"
 import { finalizeCommittedTeamSnapshotRestore } from "./workspace-snapshot-restore.ts"
-import { APIError } from "better-auth/api"
+import { apiErrorResponse } from "./api-error-response.ts"
 import { verifyTeamSession } from "./team-session.ts"
 import {
   canAccessSpace,
@@ -38,11 +38,7 @@ import { pendingList, savePendingList } from "./pending-list.ts"
 import { grokBotRouter } from "./routes/grok-bot.ts"
 import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts"
 import { startStorageAccounting } from "./storage-usage.ts"
-import {
-  startStorageLimits,
-  StorageLimitError,
-  storageLimitBody,
-} from "./storage-limit.ts"
+import { startStorageLimits } from "./storage-limit.ts"
 import {
   markBootMilestone,
   startBootPhase,
@@ -53,7 +49,6 @@ import { compressApiResponse } from "./http-compression.ts"
 import {
   serverTiming,
   timedMiddleware,
-  unexpectedErrorResponse,
 } from "./request-timing.ts"
 import {
   noteServerActivity,
@@ -255,7 +250,6 @@ import {
   clearWorkspaceRecoveryRequirement,
   onWorkspaceRecoveryRequired,
   requireWorkspaceRecovery,
-  WorkspaceUnavailableError,
   workspaceRecoveryRequired,
 } from "./workspace-safety.ts"
 import { startWorkspaceTransferMaintenance } from "./workspace-transfer-jobs.ts";
@@ -265,10 +259,7 @@ import {
   isAuthorizedLocalOperatorRequest,
 } from "./operator-export.ts";
 import { runAsActivityActor, setActivityObserver } from "./activity-log.ts";
-import { TeamAccessError } from "./team-policy.ts";
 import { fileLinksRouter } from "./routes/file-links.ts";
-import { SpaceTooLargeError } from "./document-adapters.ts";
-import { TeamStateError } from "./team-database.ts";
 
 // ============================================================
 // App setup
@@ -412,30 +403,7 @@ app.use("*", async (c, next) => {
 
 // Error handler. Routes answer expected errors themselves; anything that
 // reaches here gets a generic message and an id that is also logged.
-app.onError((err, c) => {
-  if (err instanceof APIError)
-    return new Response(
-      JSON.stringify({ error: err.message, code: err.body?.code }),
-      {
-        status: err.statusCode,
-        headers: { "Content-Type": "application/json" },
-      }
-    )
-  if (err instanceof TeamAccessError)
-    return c.json({ error: err.message, code: err.code }, 403)
-  if (err instanceof TeamStateError)
-    return c.json({ error: err.message, code: err.code }, 503)
-  if (err instanceof WorkspaceUnavailableError) {
-    return c.json({ error: err.message, code: err.code }, 503)
-  }
-  if (err instanceof SpaceTooLargeError) {
-    return c.json({ error: err.message, code: err.code }, 413)
-  }
-  if (err instanceof StorageLimitError) {
-    return c.json(storageLimitBody(err), 507)
-  }
-  return unexpectedErrorResponse(c, err);
-});
+app.onError(apiErrorResponse);
 
 // Every REST request resolves to an identity (implicit owner for bare
 // local requests; presented bearers must verify). Handlers can read it

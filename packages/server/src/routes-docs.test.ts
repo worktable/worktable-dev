@@ -207,21 +207,37 @@ describe("doc routes", () => {
       expect(j.path).toBe("new-doc");
     });
 
-    it("updates an existing doc", async () => {
-      await req(app, "PUT", "/api/spaces/test-space/docs/update-me", {
-        content: [para("v1")],
-      });
-      await req(app, "PUT", "/api/spaces/test-space/docs/update-me", {
-        content: [para("v2")],
-      });
+    it("replaces an existing doc only from the revision it read", async () => {
+      const path = "/api/spaces/test-space/docs/update-me";
+      const created = await req(app, "PUT", path, { content: [para("v1")] });
+      const read = (await req(app, "GET", path)).json as { revision: string };
+      expect((created.json as { revision: string }).revision).toBe(read.revision);
 
-      const { json } = await req(
-        app,
-        "GET",
-        "/api/spaces/test-space/docs/update-me"
-      );
-      const j = json as { content: unknown[] };
-      expect(textOf(j.content)).toBe("v2");
+      // Naming no revision is refused before anything is written.
+      const unnamed = await req(app, "PUT", path, { content: [para("blind")] });
+      expect(unnamed.status).toBe(428);
+      expect((unnamed.json as { code: string }).code).toBe("REVISION_REQUIRED");
+
+      const replaced = await req(app, "PUT", path, {
+        content: [para("v2")],
+        expectedRevision: read.revision,
+      });
+      expect(replaced.status).toBe(200);
+      const current = (replaced.json as { revision: string }).revision;
+      expect(current).not.toBe(read.revision);
+
+      // A writer still at the first revision is refused with the current
+      // one, and what the other wrote stays.
+      const stale = await req(app, "PUT", path, {
+        content: [para("stale")],
+        expectedRevision: read.revision,
+      });
+      expect(stale.status).toBe(409);
+      expect(stale.json).toMatchObject({ code: "REVISION_CHANGED", revision: current });
+
+      const { json } = await req(app, "GET", path);
+      expect(textOf((json as { content: unknown[] }).content)).toBe("v2");
+      expect((json as { revision: string }).revision).toBe(current);
     });
 
     it("returns 400 for invalid body", async () => {
@@ -610,11 +626,12 @@ describe("doc routes", () => {
 
   describe("POST /api/spaces/:spaceId/docs/*/versions/:versionId/restore", () => {
     it("restores only versions owned by the active Doc generation", async () => {
-      await req(app, "PUT", "/api/spaces/test-space/docs/folder/doc", {
+      const first = await req(app, "PUT", "/api/spaces/test-space/docs/folder/doc", {
         content: [para("first")],
       });
       await req(app, "PUT", "/api/spaces/test-space/docs/folder/doc", {
         content: [para("second")],
+        expectedRevision: (first.json as { revision: string }).revision,
       });
 
       const versionsRes = await req(

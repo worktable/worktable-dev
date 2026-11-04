@@ -968,15 +968,15 @@ test("HTML documents become readable from the runtime ready signal", async ({
   ).toBeHidden()
 
   await subscribed
-  const edited = await page.request.put(
-    `${harness.apiUrl}/api/spaces/welcome/widgets/runtime-ready`,
-    {
-      data: {
-        name: "Runtime ready",
-        html: "<!doctype html><body><h1>Edited elsewhere</h1></body>",
-      },
-    }
-  )
+  const widget = `${harness.apiUrl}/api/spaces/welcome/widgets/runtime-ready`
+  const source = await page.request.get(`${widget}/content?format=raw`)
+  const edited = await page.request.put(widget, {
+    data: {
+      name: "Runtime ready",
+      html: "<!doctype html><body><h1>Edited elsewhere</h1></body>",
+      expectedRevision: (source.headers().etag ?? "").replace(/"/g, ""),
+    },
+  })
   expect(edited.ok(), await edited.text()).toBe(true)
   await expect(
     frame.getByRole("heading", { name: "Edited elsewhere" })

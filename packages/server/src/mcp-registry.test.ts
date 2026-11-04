@@ -430,7 +430,9 @@ describe("released tool surface", () => {
     )
     for (const name of held) {
       const inputs = (tools: typeof released) =>
-        Object.keys(tools.find((tool) => tool.name === name)?.inputSchema.properties ?? {})
+        Object.keys(
+          tools.find((tool) => tool.name === name)?.inputSchema.properties ?? {}
+        )
       expect(inputs(preview)).toEqual(inputs(released))
     }
     expect(released.map((tool) => tool.name)).toEqual([...PUBLIC_TOOL_NAMES])
@@ -442,9 +444,9 @@ describe("released tool surface", () => {
     expect(byName.worktable_files_write?.inputSchema.properties).toHaveProperty(
       "file"
     )
-    expect(byName.worktable_files_read?.outputSchema?.properties).toHaveProperty(
-      "source"
-    )
+    expect(
+      byName.worktable_files_read?.outputSchema?.properties
+    ).toHaveProperty("source")
     expect(byName.worktable_records_create?.description).toContain(
       "Never overwrites"
     )

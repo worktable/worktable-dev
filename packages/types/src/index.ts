@@ -8,6 +8,7 @@ export * from "./constants";
 export * from "./mermaid";
 export * from "./markdown";
 export * from "./delimited-text";
+export * from "./file-types";
 export * from "./annotations";
 export * from "./passage";
 export * from "./widgets";

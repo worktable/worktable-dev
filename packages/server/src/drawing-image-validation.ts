@@ -1,6 +1,9 @@
 import { imageSize } from "image-size"
 import type { Page } from "playwright-core"
-import type { QuickdrawDocument } from "@worktable/types"
+import {
+  mediaTypeAlternation,
+  type QuickdrawDocument,
+} from "@worktable/types"
 import { withPreviewPage } from "./document-preview-browser.ts"
 
 type DrawingAsset = Extract<
@@ -9,19 +12,21 @@ type DrawingAsset = Extract<
 >
 const MAX_IMAGE_DIMENSION = 8192
 const MAX_IMAGE_PIXELS = 16_000_000
+/** A drawing image: a data URL of a type the file type table lets drawings hold. */
+const DRAWING_IMAGE = new RegExp(
+  `^data:(${mediaTypeAlternation("drawing", true)});base64,([A-Za-z0-9+/]+=*)$`
+)
 
 /** Inspect compressed headers before a browser can allocate decoded pixels. */
 export function inspectDrawingImageAssets(assets: DrawingAsset[]): void {
   let pixels = 0
   for (const asset of assets) {
-    const match =
-      /^data:image\/(png|jpeg|gif|webp);base64,([A-Za-z0-9+/]+=*)$/.exec(
-        asset.src
-      )
+    const match = DRAWING_IMAGE.exec(asset.src)
     if (!match) throw new Error("Invalid drawing image asset")
     const bytes = Buffer.from(match[2]!, "base64")
     const dimensions = imageSize(bytes)
-    if (dimensions.type !== (match[1] === "jpeg" ? "jpg" : match[1]))
+    const subtype = match[1]!.slice("image/".length)
+    if (dimensions.type !== (subtype === "jpeg" ? "jpg" : subtype))
       throw new Error("Drawing image bytes do not match their declared format")
     pixels += dimensions.width * dimensions.height
     if (

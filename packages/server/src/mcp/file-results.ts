@@ -1,31 +1,25 @@
-// How a file reads for an agent on the preview surface: an image as an image,
-// text as text, and an overwritten CSV or TSV with what changed in it.
+// How a file reads for an agent on the preview surface, as the file type
+// table's agent policy says: an image as an image, text as text, and an
+// overwritten CSV or TSV with what changed in it.
 
 import {
+  FILE_TYPES,
   delimiterForFilename,
+  fileDelimiter,
+  fileTypeFor,
+  fileTypePolicy,
   parseDelimitedText,
 } from "@worktable/types"
 
-const IMAGE_TYPES: Readonly<Record<string, string>> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
+/** Whether a file is a delimited table, whose overwrite says what changed. */
+export function isDelimitedFile(path: string): boolean {
+  return fileDelimiter(path) !== null
 }
-const TEXT_NAME =
-  /\.(?:csv|tsv|txt|log|md|json|jsonl|ya?ml|xml|svg|html?|css|js|ts|ini|toml)$/i
-export const DELIMITED_NAME = /\.(?:csv|tsv)$/i
 
 /** Images up to this size travel as images; larger ones as base64. */
 const IMAGE_MAX_BYTES = 5 * 1024 * 1024
 /** Text up to this size travels as text. */
 const TEXT_MAX_BYTES = 1024 * 1024
-
-function extension(path: string): string {
-  const dot = path.lastIndexOf(".")
-  return dot > path.lastIndexOf("/") ? path.slice(dot).toLowerCase() : ""
-}
 
 /** A file as an image or as text, when it is one and small enough. */
 export function readableFileSource(
@@ -35,11 +29,14 @@ export function readableFileSource(
   | { kind: "image"; mediaType: string }
   | { kind: "text"; text: string }
   | null {
-  const mediaType = IMAGE_TYPES[extension(path)]
-  if (mediaType) {
-    return bytes.byteLength <= IMAGE_MAX_BYTES ? { kind: "image", mediaType } : null
+  const type = fileTypeFor(path)
+  const reads = fileTypePolicy(type, "agent")
+  if (type !== null && reads === "image") {
+    return bytes.byteLength <= IMAGE_MAX_BYTES
+      ? { kind: "image", mediaType: FILE_TYPES[type].mediaType }
+      : null
   }
-  if (!TEXT_NAME.test(path) || bytes.byteLength > TEXT_MAX_BYTES) return null
+  if (reads !== "text" || bytes.byteLength > TEXT_MAX_BYTES) return null
   try {
     return {
       kind: "text",

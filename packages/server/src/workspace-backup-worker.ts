@@ -1,11 +1,12 @@
 import type {
+  BackupWorkerDiagnostics,
   BackupWorkerInput,
   BackupWorkerResult,
   VisitorCommentsCheckpoint,
 } from "@worktable/hosted-contract"
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
-import { lstat, mkdir, open, rename, rm } from "node:fs/promises"
+import { lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises"
 import { basename, join, relative, resolve } from "node:path"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { readBoundedRegularFile } from "./bounded-file.ts"
@@ -18,11 +19,15 @@ interface WorkspaceSnapshotManifest {
   workspaceStorageVersion: 1 | 2
   capturedAt: string
   teamState?: {
-    authentication: { size: number }
-    participants?: { size: number }
+    authentication: { size: number; sha256: string }
+    participants?: { size: number; sha256: string }
   }
-  visitorComments?: { size: number; checkpoint: VisitorCommentsCheckpoint }
-  files: Array<{ size: number }>
+  visitorComments?: {
+    size: number
+    sha256: string
+    checkpoint: VisitorCommentsCheckpoint
+  }
+  files: Array<{ path: string; size: number; mtime: string; sha256: string }>
 }
 
 export interface WorkerTools {
@@ -32,6 +37,168 @@ export interface WorkerTools {
 }
 const DIGEST = /^[a-f0-9]{64}$/
 const sha = (value: string) => createHash("sha256").update(value).digest("hex")
+
+/**
+ * Restic's cache of repository metadata (index, snapshots and trees, never
+ * file data) lives in app storage. It is dropped whenever it grows past this,
+ * and restic fetches what it needs again.
+ */
+const RESTIC_CACHE_LIMIT_BYTES = 256 * 1024 * 1024
+
+/** Remove the cache when it outgrows its limit. Returns its size before. */
+export async function boundResticCache(
+  directory: string,
+  limitBytes = RESTIC_CACHE_LIMIT_BYTES
+): Promise<number> {
+  let total = 0
+  const pending = [directory]
+  while (pending.length > 0) {
+    const current = pending.pop()!
+    let entries
+    try {
+      entries = await readdir(current, { withFileTypes: true })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
+      throw error
+    }
+    for (const entry of entries) {
+      const path = join(current, entry.name)
+      if (entry.isDirectory()) pending.push(path)
+      else total += (await lstat(path)).size
+    }
+  }
+  if (total > limitBytes) await rm(directory, { recursive: true, force: true })
+  return total
+}
+
+/**
+ * A regular file in a restic snapshot, by its path there: size, modification
+ * time to the millisecond, and content hash.
+ */
+export type UploadedFile = [
+  path: string,
+  size: number,
+  mtime: string,
+  sha256: string,
+]
+
+/** The last snapshot this worker uploaded and verified, and its files. */
+export interface BackupParent {
+  version: 1
+  repositoryId: string
+  workspaceId: string
+  snapshotId: string
+  files: UploadedFile[]
+}
+
+function readBackupParent(value: unknown): BackupParent | undefined {
+  const parent = value as Partial<BackupParent> | null
+  if (
+    parent?.version !== 1 ||
+    typeof parent.repositoryId !== "string" ||
+    typeof parent.workspaceId !== "string" ||
+    typeof parent.snapshotId !== "string" ||
+    !DIGEST.test(parent.snapshotId) ||
+    !Array.isArray(parent.files) ||
+    !parent.files.every(
+      (file) =>
+        Array.isArray(file) &&
+        file.length === 4 &&
+        typeof file[0] === "string" &&
+        Number.isSafeInteger(file[1]) &&
+        typeof file[2] === "string" &&
+        typeof file[3] === "string"
+    )
+  )
+    return undefined
+  return parent as BackupParent
+}
+
+/**
+ * Restic arguments that let an upload skip files unchanged since `parent`.
+ *
+ * Every capture is a fresh copy, so restic's default change detection (path,
+ * size, mtime, ctime and inode must all match the parent) rereads every file.
+ * `--ignore-inode` also ignores inode and ctime, and trusts path, size and
+ * mtime alone. A capture keeps each file's source mtime, so a file edited
+ * with its mtime put back would then keep its old bytes in the backup. That
+ * happens only when this capture hashed different bytes for a path whose size
+ * and mtime match the parent's, so then nothing is trusted and every file is
+ * read. The parent is named explicitly, so restic compares with the snapshot
+ * these files describe.
+ */
+export function incrementalUploadArguments(
+  parent: BackupParent | undefined,
+  files: UploadedFile[]
+): string[] {
+  if (!parent) return []
+  const previous = new Map(parent.files.map((file) => [file[0], file]))
+  for (const [path, size, mtime, sha256] of files) {
+    const before = previous.get(path)
+    if (
+      before &&
+      before[1] === size &&
+      before[2] === mtime &&
+      before[3] !== sha256
+    )
+      return []
+  }
+  return ["--parent", parent.snapshotId, "--ignore-inode"]
+}
+
+/** The capture command's diagnostics, when it printed any. */
+function captureDiagnostics(
+  stdout: string
+): Omit<BackupWorkerDiagnostics["capture"], "ms"> {
+  for (const line of stdout.split("\n").reverse()) {
+    if (!line.trim().startsWith("{")) continue
+    try {
+      const value = JSON.parse(line)
+      if (value?.command !== "workspace-snapshot") continue
+      const report = value.capture ?? {}
+      const number = (field: unknown) =>
+        typeof field === "number" && Number.isFinite(field)
+          ? Math.round(field)
+          : undefined
+      return {
+        method: ["reflink", "copy"].includes(report.method)
+          ? report.method
+          : undefined,
+        files: number(value.files),
+        bytes: number(value.bytes),
+        hashedFiles: number(report.hashedFiles),
+        hashedBytes: number(report.hashedBytes),
+        barrierMs: number(value.captureBarrierMs),
+      }
+    } catch {
+      // Not the result line.
+    }
+  }
+  return {}
+}
+
+/** The inspection's counts, printed beside the manifest by `--captured`. */
+function inspectDiagnostics(
+  stdout: string
+): Omit<BackupWorkerDiagnostics["inspect"], "ms"> {
+  for (const line of stdout.split("\n")) {
+    if (!line.includes('"worktable.workspace-snapshot-inspection"')) continue
+    try {
+      const value = JSON.parse(line)
+      if (
+        Number.isSafeInteger(value.hashedFiles) &&
+        Number.isSafeInteger(value.hashedBytes)
+      )
+        return {
+          hashedFiles: value.hashedFiles,
+          hashedBytes: value.hashedBytes,
+        }
+    } catch {
+      // Not the inspection line.
+    }
+  }
+  return {}
+}
 
 /**
  * The snapshot manifest a server command printed. The command prints it as
@@ -307,6 +474,45 @@ function backupSecrets(input: BackupWorkerInput): string[] {
 }
 
 /**
+ * Every regular file an upload stores, as `incrementalUploadArguments`
+ * compares them, or undefined when the upload holds a file the manifest
+ * does not describe.
+ */
+async function uploadedFiles(
+  capture: string,
+  manifest: WorkspaceSnapshotManifest,
+  snapshotBytes: string
+): Promise<UploadedFile[] | undefined> {
+  const mtime = async (path: string) =>
+    new Date((await lstat(join(capture, path))).mtimeMs).toISOString()
+  const files: UploadedFile[] = manifest.files.map((file) => [
+    `workspace/${file.path}`,
+    file.size,
+    file.mtime,
+    file.sha256,
+  ])
+  const own: Array<[string, { size: number; sha256: string } | undefined]> = [
+    ["team/auth.sqlite", manifest.teamState?.authentication],
+    ["team/participants.json", manifest.teamState?.participants],
+    ["app/visitor-comments.sqlite", manifest.visitorComments],
+  ]
+  for (const [path, state] of own)
+    if (state) files.push([path, state.size, await mtime(path), state.sha256])
+  if (manifest.teamState) {
+    const described = new Set(files.map(([path]) => path))
+    for (const name of await readdir(join(capture, "team")))
+      if (!described.has(`team/${name}`)) return undefined
+  }
+  files.push([
+    "snapshot.json",
+    Buffer.byteLength(snapshotBytes),
+    await mtime("snapshot.json"),
+    sha(snapshotBytes),
+  ])
+  return files
+}
+
+/**
  * Same implementation is compiled for the Sprite and exercised with real restic.
  * A failure is rethrown as BackupWorkerFailure naming the step that failed.
  */
@@ -384,11 +590,15 @@ async function runBackupSteps(
         }
       : {}),
   }
+  const resticCache = join(resolve(tools.appDirectory), "backup-cache")
+  const parentRecord = join(root, "backup-parent.json")
   const restic = async (args: string[], cwd = directory) =>
     runBackupCommand(
       [
         tools.restic,
-        "--no-cache",
+        "--cache-dir",
+        resticCache,
+        "--cleanup-cache",
         "--json",
         "--stuck-request-timeout",
         "30s",
@@ -415,12 +625,28 @@ async function runBackupSteps(
       )
     return result.stdout
   }
+  const snapshotExists = async (id: string) => {
+    const listing = await restic(["snapshots", id])
+    if (listing.code !== 0) return false
+    try {
+      const matches = JSON.parse(listing.stdout)
+      return (
+        Array.isArray(matches) &&
+        matches.length === 1 &&
+        matches[0]?.id === id &&
+        matches[0]?.hostname === input.workspaceId
+      )
+    } catch {
+      return false
+    }
+  }
   await advance("lock")
   return withCrossProcessLock(
     join(root, ".worker.lock"),
     { label: "Cloud backup worker", staleMs: 0, timeoutMs: 1000 },
     async () => {
       await advance("repository-check")
+      await boundResticCache(resticCache)
       let repository = await restic(["cat", "config"])
       if (
         repository.code === 10 &&
@@ -449,15 +675,21 @@ async function runBackupSteps(
         throw new Error("backup repository identity changed")
       let manifest: WorkspaceSnapshotManifest
       let snapshotId: string
+      let diagnostics: BackupWorkerDiagnostics | undefined
       if (input.kind === "backup") {
         await advance("capture", "capturing")
-        await core([
+        let startedAt = performance.now()
+        const captured = await core([
           "workspace-snapshot",
           input.jobId,
           ...(input.captureBudgetMs === undefined
             ? []
             : [String(input.captureBudgetMs)]),
         ])
+        const captureTimings = {
+          ms: Math.round(performance.now() - startedAt),
+          ...captureDiagnostics(captured),
+        }
         const capture = join(directory, "capture")
         try {
           await advance("read-manifest")
@@ -466,16 +698,48 @@ async function runBackupSteps(
             32 * 1024 * 1024
           )
           await advance("inspect")
+          startedAt = performance.now()
+          // The capture vouches for files it wrote that are still unchanged.
           const inspected = await core([
             "workspace-snapshot-inspect",
             capture,
             input.workspaceId,
+            "--captured",
           ])
+          const inspectTimings = {
+            ms: Math.round(performance.now() - startedAt),
+            ...inspectDiagnostics(inspected),
+          }
           await advance("parse-manifest")
           manifest = snapshotManifestResult(
             inspected
           ) as WorkspaceSnapshotManifest
           await advance("upload", "uploading")
+          // Incremental uploads are an optimization: never a reason to fail.
+          const uploaded = await uploadedFiles(capture, manifest, bytes).catch(
+            () => undefined
+          )
+          let parent: BackupParent | undefined
+          try {
+            parent = readBackupParent(
+              JSON.parse(
+                await readBoundedRegularFile(parentRecord, 64 * 1024 * 1024)
+              )
+            )
+          } catch {
+            // No parent yet, or an unreadable one: read every file.
+          }
+          if (
+            parent &&
+            (parent.repositoryId !== repositoryId ||
+              parent.workspaceId !== input.workspaceId ||
+              !(await snapshotExists(parent.snapshotId)))
+          )
+            parent = undefined
+          const incremental = uploaded
+            ? incrementalUploadArguments(parent, uploaded)
+            : []
+          startedAt = performance.now()
           const backup = await restic(
             [
               "backup",
@@ -483,6 +747,7 @@ async function runBackupSteps(
               input.workspaceId,
               "--group-by",
               "host",
+              ...incremental,
               "--tag",
               `worktable-job:${input.jobId}`,
               "--quiet",
@@ -509,6 +774,20 @@ async function runBackupSteps(
             .find((row) => row.message_type === "summary")
           if (!summary || !/^[a-f0-9]{8,64}$/.test(summary.snapshot_id ?? ""))
             throw new Error("backup returned no snapshot")
+          const count = (value: unknown) =>
+            Number.isSafeInteger(value) ? (value as number) : undefined
+          diagnostics = {
+            capture: captureTimings,
+            inspect: inspectTimings,
+            upload: {
+              ms: Math.round(performance.now() - startedAt),
+              incremental: incremental.length > 0,
+              filesNew: count(summary.files_new),
+              filesChanged: count(summary.files_changed),
+              filesUnmodified: count(summary.files_unmodified),
+              bytesAdded: count(summary.data_added),
+            },
+          }
           await advance("verify")
           const metadata = await restic([
             "cat",
@@ -549,6 +828,21 @@ async function runBackupSteps(
             )
           if (sha(remote.stdout) !== sha(bytes))
             throw new Error("backup manifest read-back failed")
+          // Verified, so it can be the next upload's parent. A record that
+          // fails to replace the last one leaves that one, which still
+          // describes its own snapshot.
+          if (uploaded) {
+            const record: BackupParent = {
+              version: 1,
+              repositoryId,
+              workspaceId: input.workspaceId,
+              snapshotId,
+              files: uploaded,
+            }
+            await publishWorkerJson(root, "backup-parent.json", record).catch(
+              () => undefined
+            )
+          }
         } finally {
           await removeWorkspaceTree(capture)
         }
@@ -611,6 +905,7 @@ async function runBackupSteps(
           (manifest.teamState?.participants?.size ?? 0) +
           (manifest.visitorComments?.size ?? 0),
         completedAt: new Date().toISOString(),
+        ...(diagnostics ? { diagnostics } : {}),
       }
       await publishWorkerJson(directory, "result.json", result)
       return result

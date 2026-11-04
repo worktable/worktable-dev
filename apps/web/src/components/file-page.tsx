@@ -11,8 +11,10 @@ import {
 import { toast } from "@worktable/ui/components/sonner"
 import {
   delimiterForFilename,
+  filePolicy,
   parseDelimitedText,
   type DocumentPage,
+  type FileSurfacePolicies,
 } from "@worktable/types"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { mergeRefs, usePaneWidth } from "@/hooks/use-pane-width"
@@ -21,12 +23,8 @@ import { DocTable } from "@/components/document/doc-table"
 import { DocumentByline } from "@/components/document/document-byline"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { documentRoute } from "@/lib/document-views"
-import { authenticatedFetch } from "@/lib/http"
-import {
-  fileSourceUrl,
-  openFileAsHtmlDoc,
-  replaceFile,
-} from "@/lib/file-embeds"
+import { authenticatedFetch, fetchJSON } from "@/lib/http"
+import { fileSourceUrl, replaceFile } from "@/lib/file-embeds"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import "@/styles/document-controls.css"
 
@@ -37,20 +35,18 @@ const ImportRecordsDialog = lazy(() =>
   }))
 )
 
-/** How a file shows on its page, decided by its name. */
-type FileView = "image" | "html" | "table" | "text" | "card"
+/** How a file shows on its page: the file type table's page policy. */
+type FileView = FileSurfacePolicies["page"]
 
-const IMAGE = /\.(?:avif|gif|jpe?g|png|svg|webp)$/i
-const HTML = /\.html?$/i
-const TABLE = /\.(?:csv|tsv)$/i
-const TEXT = /\.(?:txt|log|json|jsonl|ya?ml|xml|ini|toml)$/i
-
-function fileView(name: string): FileView {
-  if (IMAGE.test(name)) return "image"
-  if (HTML.test(name)) return "html"
-  if (TABLE.test(name)) return "table"
-  if (TEXT.test(name)) return "text"
-  return "card"
+/** Open as HTML Doc: the file becomes an HTML Doc, its history kept. */
+function openFileAsHtmlDoc(
+  spaceId: string,
+  path: string
+): Promise<{ path: string }> {
+  return fetchJSON(
+    `/api/spaces/${encodeURIComponent(spaceId)}/documents/open-as-html`,
+    { method: "POST", body: JSON.stringify({ path }) }
+  )
 }
 
 /** Text larger than this shows as a card with Download instead. */
@@ -99,7 +95,7 @@ export function FilePage({
 }) {
   const path = page.document.path
   const name = page.document.title
-  const view = fileView(name)
+  const view = filePolicy(name, "page")
   const setPageMeta = useSetPageMeta()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -126,9 +122,10 @@ export function FilePage({
   // couldn't keep this one.
   const canReplace = canEdit && !page.noHistory
   // A table people will keep working in belongs in Records.
-  const importable = canEdit && /\.(?:csv|tsv|jsonl)$/i.test(name)
-  // An HTML file runs only once a person opens it as an HTML Doc.
-  const openableAsHtml = canEdit && /\.html$/.test(path)
+  const importable = canEdit && filePolicy(name, "import")
+  // An HTML file runs only once a person opens it as an HTML Doc, whose
+  // source is a .html file.
+  const openableAsHtml = canEdit && view === "frame" && path.endsWith(".html")
   const [openingAsHtml, setOpeningAsHtml] = useState(false)
   const url = fileSourceUrl(spaceId, path, version)
 
@@ -326,7 +323,7 @@ function FileContent({
       </p>
     )
   }
-  if (view === "html") {
+  if (view === "frame") {
     // The page as written, with its scripts off and nothing loaded from the
     // network: the server sandboxes the response, and so does the frame.
     return (

@@ -32,6 +32,7 @@ import {
 } from "./workspace.ts"
 import {
   inspectPortableWorkspaceTree,
+  portableContentIdentity,
   portableWorkspaceCheckpoint,
   validateWorkspaceExportV2Path,
   withPortableWorkspaceCapture,
@@ -39,6 +40,7 @@ import {
   WORKSPACE_EXPORT_V2_MAX_MANIFEST_BYTES,
   WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES,
   WORKSPACE_EXPORT_V2_MAX_WORKSPACE_MANIFEST_BYTES,
+  type PortableContentHashCache,
   type PortableWorkspaceInventory,
 } from "./workspace-transfer-v2.ts"
 
@@ -88,6 +90,19 @@ export const WorkspaceSnapshotManifestSchema = z.object({
 export type WorkspaceSnapshotManifest = z.infer<
   typeof WorkspaceSnapshotManifestSchema
 >
+
+/**
+ * Beside a fresh capture, never uploaded: the identity each captured file had
+ * once its bytes were hashed and settled. A write, chmod or replacement
+ * changes that identity, and any copy or restore of the snapshot has new
+ * inodes and change times, so it can only vouch for these files.
+ */
+const CAPTURE_IDENTITIES = "capture-identities.json"
+const CaptureIdentitiesSchema = z.object({
+  version: z.literal(1),
+  snapshotId: z.string(),
+  files: z.record(z.string(), z.string()),
+})
 
 function contained(root: string, target: string): boolean {
   const rel = relative(root, target)
@@ -220,6 +235,26 @@ export async function writeWorkspaceSnapshot(
       await sync(join(temporary, "workspace", directory.path))
     }
     await sync(join(temporary, "workspace"))
+    // Recorded after the last change to each file: everything above only reads.
+    const identities: Record<string, string> = {}
+    await mapWithConcurrency(manifest.files, 8, async (file) => {
+      identities[file.path] = portableContentIdentity(
+        await lstat(join(temporary, "workspace", file.path))
+      )
+    })
+    const handle = await open(join(temporary, CAPTURE_IDENTITIES), "wx", 0o600)
+    try {
+      await handle.writeFile(
+        JSON.stringify({
+          version: 1,
+          snapshotId: manifest.snapshotId,
+          files: identities,
+        })
+      )
+      await handle.sync()
+    } finally {
+      await handle.close()
+    }
     await sync(temporary)
     const current = await lstat(parent)
     if (
@@ -239,10 +274,45 @@ export async function writeWorkspaceSnapshot(
   }
 }
 
-/** Validate downloaded snapshot bytes before they become a workspace. */
+/** Hashes the capture vouches for, or none when it cannot. */
+async function capturedHashes(
+  root: string,
+  manifest: WorkspaceSnapshotManifest
+): Promise<PortableContentHashCache> {
+  const hashes: PortableContentHashCache = new Map()
+  try {
+    const recorded = CaptureIdentitiesSchema.parse(
+      JSON.parse(
+        await readBoundedRegularFile(
+          join(root, CAPTURE_IDENTITIES),
+          WORKSPACE_EXPORT_V2_MAX_MANIFEST_BYTES
+        )
+      )
+    )
+    if (recorded.snapshotId !== manifest.snapshotId) return hashes
+    for (const file of manifest.files) {
+      const identity = recorded.files[file.path]
+      if (identity) hashes.set(file.path, { identity, sha256: file.sha256 })
+    }
+  } catch {
+    // Missing or unreadable: every file is hashed.
+  }
+  return hashes
+}
+
+/**
+ * Validate snapshot bytes before they are uploaded or become a workspace.
+ * Every file is hashed, unless `byCaptureIdentity` asks to trust a fresh
+ * capture's own record for files whose identity it still matches. Restores
+ * never ask: their bytes always come from elsewhere.
+ */
 export async function inspectWorkspaceSnapshot(
   directory: string,
-  expected?: { workspaceId: string; sourceCheckpoint?: string }
+  expected?: { workspaceId: string; sourceCheckpoint?: string },
+  options: {
+    byCaptureIdentity?: boolean
+    report?: { hashedFiles: number; hashedBytes: number }
+  } = {}
 ): Promise<WorkspaceSnapshotManifest> {
   const root = resolve(directory)
   const info = await lstat(root)
@@ -287,7 +357,12 @@ export async function inspectWorkspaceSnapshot(
     }) !== manifest.contentCheckpoint
   )
     throw new Error("snapshot manifest integrity failed")
-  const actual = await inspectPortableWorkspaceTree(join(root, "workspace"))
+  const actual = await inspectPortableWorkspaceTree(join(root, "workspace"), {
+    hashCache: options.byCaptureIdentity
+      ? await capturedHashes(root, manifest)
+      : undefined,
+    report: options.report,
+  })
   if (portableWorkspaceCheckpoint(actual) !== manifest.sourceCheckpoint)
     throw new Error("snapshot workspace integrity failed")
   const actualModes = new Map(

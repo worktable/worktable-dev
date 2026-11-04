@@ -186,8 +186,8 @@ import {
 } from "../markdown-passage.ts"
 import type { McpSurface } from "./surface.ts"
 import {
-  DELIMITED_NAME,
   delimitedChanges,
+  isDelimitedFile,
   readableFileSource,
 } from "./file-results.ts"
 import { withResultMedia } from "./media.ts"
@@ -1601,7 +1601,7 @@ async function _dispatchOperationInner(
       // reads the old table, so it needs read access too; the old bytes come
       // from the replacement's own read.
       const summarize =
-        DELIMITED_NAME.test(args["path"] as string) &&
+        isDelimitedFile(args["path"] as string) &&
         hasScope(identity.scopes, "documents:read")
       const tableBefore: { bytes?: Uint8Array; formatId?: string } = {}
       const result = await replaceRegisteredDocument({

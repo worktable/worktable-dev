@@ -5,8 +5,13 @@
 // a Doc go in the Doc's own folder (`onboarding/signup-flow.md` owns
 // `onboarding/signup-flow/`), and the Doc stores the path relative to it.
 
-import { resolveDocLink, versionIdTimestamp } from "@worktable/types"
-import { authenticatedFetch, BASE_URL, fetchJSON, HttpError } from "./http"
+import {
+  FILE_TYPES,
+  pastedFileType,
+  resolveDocLink,
+  versionIdTimestamp,
+} from "@worktable/types"
+import { authenticatedFetch, BASE_URL, HttpError } from "./http"
 
 /**
  * A file's bytes in a Space. Naming its version, its content hash or the
@@ -20,17 +25,6 @@ export function fileSourceUrl(
   options: { download?: boolean; at?: string } = {}
 ): string {
   return `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}${version ? `&v=${encodeURIComponent(version)}` : ""}${options.download ? "&download=1" : ""}${options.at ? `&at=${encodeURIComponent(options.at)}` : ""}`
-}
-
-/** Open as HTML Doc: the file becomes an HTML Doc, its history kept. */
-export async function openFileAsHtmlDoc(
-  spaceId: string,
-  path: string
-): Promise<{ path: string }> {
-  return fetchJSON(
-    `/api/spaces/${encodeURIComponent(spaceId)}/documents/open-as-html`,
-    { method: "POST", body: JSON.stringify({ path }) }
-  )
 }
 
 /** Upload New Version: the file's new bytes, keeping the old in its history. */
@@ -142,9 +136,14 @@ export function embeddedFileName(file: File, now = new Date()): string {
   const fileName = file.name ?? ""
   const dot = fileName.lastIndexOf(".")
   const base = dot > 0 ? fileName.slice(0, dot) : fileName
-  const fromType = file.type.startsWith("image/")
-    ? file.type.slice("image/".length).replace("jpeg", "jpg").replace("svg+xml", "svg")
-    : ""
+  // A pasted image is named for its type in the file type table; one the
+  // table doesn't list keeps its media subtype.
+  const pasted = pastedFileType(file.type)
+  const fromType = pasted
+    ? (FILE_TYPES[pasted].extensions[0] ?? "")
+    : file.type.startsWith("image/")
+      ? file.type.slice("image/".length).replace("jpeg", "jpg").replace("svg+xml", "svg")
+      : ""
   const extension = (dot > 0 ? fileName.slice(dot + 1) : fromType)
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "")

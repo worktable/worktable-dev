@@ -6,7 +6,7 @@ import {
   it,
   setSystemTime,
 } from "bun:test"
-import { randomBytes } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import {
   cp,
@@ -44,6 +44,7 @@ import {
   setWorkspaceExportCaptureHookForTests,
   setWorkspaceExportCaptureRemovalHookForTests,
   setWorkspaceSourceListingHookForTests,
+  type PortableContentHashCache,
   type WorkspaceCaptureReport,
 } from "./workspace-transfer-v2.ts"
 
@@ -300,6 +301,85 @@ describe("portable workspace snapshots", () => {
     await expect(
       inspectWorkspaceSnapshot(join(root, "snapshot"))
     ).resolves.toEqual(saved)
+  })
+
+  it("hashes only files whose identity changed since the last capture", async () => {
+    // Treat files as settled, as they are in a workspace edited minutes ago.
+    setWorkspaceCaptureClockForTests(() => Date.now() + 60_000)
+    // A whole second, so putting the mtime back restores it exactly.
+    const earlier = new Date(Math.floor(Date.now() / 1000) * 1000 - 600_000)
+    for (const name of ["kept", "edited", "restored", "replaced"]) {
+      await writeFile(join(workspace, `${name}.md`), `${name} one`)
+      await utimes(join(workspace, `${name}.md`), earlier, earlier)
+    }
+    const hashCache: PortableContentHashCache = new Map()
+    let report: WorkspaceCaptureReport | undefined
+    const capture = (name: string) =>
+      writeWorkspaceSnapshot(join(root, name), {
+        hashCache,
+        onCaptureReport: (captured) => {
+          report = captured
+        },
+      })
+    const first = await capture("first")
+    expect(report?.hashedFiles).toBe(first.files.length)
+    const second = await capture("second")
+    expect(report?.hashedFiles).toBe(0)
+    expect(report?.hashedBytes).toBe(0)
+    expect(second.sourceCheckpoint).toBe(first.sourceCheckpoint)
+
+    // Same sizes throughout. One edit is ordinary; two put the old mtime
+    // back, one in place (new ctime) and one by rename (new inode).
+    await writeFile(join(workspace, "edited.md"), "edited two")
+    const restored = join(workspace, "restored.md")
+    await writeFile(restored, "restored two")
+    await utimes(restored, earlier, earlier)
+    const replaced = join(workspace, "replaced.md")
+    await writeFile(`${replaced}.new`, "replaced two")
+    await utimes(`${replaced}.new`, earlier, earlier)
+    await rename(`${replaced}.new`, replaced)
+
+    const third = await capture("third")
+    expect(report?.hashedFiles).toBe(3)
+    const digest = (text: string) =>
+      createHash("sha256").update(text).digest("hex")
+    const hashes = new Map(third.files.map((file) => [file.path, file.sha256]))
+    expect(hashes.get("kept.md")).toBe(digest("kept one"))
+    expect(hashes.get("edited.md")).toBe(digest("edited two"))
+    expect(hashes.get("restored.md")).toBe(digest("restored two"))
+    expect(hashes.get("replaced.md")).toBe(digest("replaced two"))
+    // Every byte of the capture matches what the manifest says.
+    await expect(
+      inspectWorkspaceSnapshot(join(root, "third"))
+    ).resolves.toEqual(third)
+  })
+
+  it("inspects a fresh capture by its own record, and reads every byte otherwise", async () => {
+    const earlier = new Date(Math.floor(Date.now() / 1000) * 1000 - 600_000)
+    await writeFile(join(workspace, "note.md"), "captured")
+    await utimes(join(workspace, "note.md"), earlier, earlier)
+    const destination = join(root, "snapshot")
+    const saved = await writeWorkspaceSnapshot(destination)
+    const inspect = async (byCaptureIdentity: boolean) => {
+      const report = { hashedFiles: 0, hashedBytes: 0 }
+      const manifest = await inspectWorkspaceSnapshot(destination, undefined, {
+        byCaptureIdentity,
+        report,
+      })
+      return { manifest, report }
+    }
+    // Restores take this path: it hashes every file.
+    expect((await inspect(false)).report.hashedFiles).toBe(saved.files.length)
+    expect(await inspect(true)).toEqual({
+      manifest: saved,
+      report: { hashedFiles: 0, hashedBytes: 0 },
+    })
+    // Changed after capture, same size, mtime put back: caught either way.
+    const note = join(destination, "workspace", "note.md")
+    await writeFile(note, "CAPTURED")
+    await utimes(note, earlier, earlier)
+    await expect(inspect(true)).rejects.toThrow("integrity")
+    await expect(inspect(false)).rejects.toThrow("integrity")
   })
 
   it("rejects changed bytes, another workspace, and unsupported layouts", async () => {

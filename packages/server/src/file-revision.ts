@@ -274,6 +274,21 @@ export async function verifyPinnedFile(
 ): Promise<boolean> {
   const key = hashKey(pinned.path, pinned.revision)
   if (verifiedRevisions.has(key)) return true
+  // Parallel ranges of one revision share a single read.
+  const pending = verifying.get(key)
+  if (pending) return pending
+  const work = verifyWhole(pinned, check, key).finally(() => verifying.delete(key))
+  verifying.set(key, work)
+  return work
+}
+
+const verifying = new Map<string, Promise<boolean>>()
+
+async function verifyWhole(
+  pinned: PinnedFile,
+  check: { update(chunk: Uint8Array): void; ok(): boolean },
+  key: string
+): Promise<boolean> {
   const file = await OpenFileRevision.open(pinned.path, pinned.revision)
   try {
     for (let position = 0; position < file.size; ) {
@@ -318,6 +333,19 @@ export function knownContentHash(path: string, revision: string): string | undef
 export async function contentHashOf(pinned: PinnedFile): Promise<string> {
   const known = knownContentHash(pinned.path, pinned.revision)
   if (known !== undefined) return known
+  // Parallel requests for one revision, such as a video's ranges, share a
+  // single read.
+  const key = hashKey(pinned.path, pinned.revision)
+  const pending = hashing.get(key)
+  if (pending) return pending
+  const work = hashWhole(pinned, key).finally(() => hashing.delete(key))
+  hashing.set(key, work)
+  return work
+}
+
+const hashing = new Map<string, Promise<string>>()
+
+async function hashWhole(pinned: PinnedFile, key: string): Promise<string> {
   const file = await OpenFileRevision.open(pinned.path, pinned.revision)
   let hash: string
   try {
@@ -329,6 +357,6 @@ export async function contentHashOf(pinned: PinnedFile): Promise<string> {
     const oldest = contentHashes.keys().next().value
     if (oldest !== undefined) contentHashes.delete(oldest)
   }
-  contentHashes.set(hashKey(pinned.path, pinned.revision), hash)
+  contentHashes.set(key, hash)
   return hash
 }

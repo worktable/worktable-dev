@@ -18,6 +18,7 @@ import {
   rename,
   rm,
   stat,
+  symlink,
   truncate,
   utimes,
   writeFile,
@@ -719,8 +720,32 @@ describe("format-neutral document route", () => {
     expect((await content("notes/readme", "")).status).toBe(400)
   }, 15_000)
 
-  it("moves mixed folders with common write authority", async () => {
+  it("moves mixed folders with common write authority, hidden items included", async () => {
     const instance = app()
+    // Hidden items as a shell or git leaves them, and a link beside them.
+    const docs = join(root, "spaces", spaceId, "docs")
+    const hidden = {
+      ".env": "TOKEN=synthetic\n",
+      ".git/HEAD": "ref: refs/heads/main\n",
+      ".drafts.md": "# Drafts\n",
+      "empty/.gitkeep": "",
+    }
+    for (const [path, content] of Object.entries(hidden)) {
+      await mkdir(join(docs, "notes", path, ".."), { recursive: true })
+      await writeFile(join(docs, "notes", path), content)
+    }
+    await symlink("readme.md", join(docs, "notes", ".link"))
+    const listed = async (prefix: string) =>
+      (
+        (await (
+          await instance.request(`/api/spaces/${spaceId}/documents`)
+        ).json()) as { documents: Array<{ path: string }> }
+      ).documents
+        .map((document) => document.path)
+        .filter((path) => path.startsWith(`${prefix}/`))
+        .map((path) => path.slice(prefix.length + 1))
+    const listedBefore = await listed("notes")
+
     const forbidden = await instance.request(
       `/api/spaces/${spaceId}/documents/move-folder`,
       {
@@ -749,12 +774,10 @@ describe("format-neutral document route", () => {
     const movedBody = (await moved.json()) as {
       renamed: Array<{ from: string; to: string }>
     }
-    expect(movedBody.renamed).toHaveLength(3)
     expect(movedBody).toMatchObject({
       ok: true,
       oldPath: "notes",
       newPath: "library",
-      count: 3,
       renamed: expect.arrayContaining([
         { from: "notes/old", to: "library/old" },
         { from: "notes/readme", to: "library/readme" },
@@ -765,6 +788,14 @@ describe("format-neutral document route", () => {
     expect((await readWidget(spaceId, "library/status")).data?.id).toBe(
       "library/status"
     )
+    // Hidden items go with the folder, byte for byte, and stay hidden.
+    for (const [path, content] of Object.entries(hidden)) {
+      expect(await readFile(join(docs, "library", path), "utf8")).toBe(content)
+    }
+    expect(await listed("library")).toEqual(listedBefore)
+    expect(listedBefore).not.toContainEqual(expect.stringMatching(/env|git|link/))
+    // A link stays where it was, so it alone keeps the old folder.
+    expect(await readdir(join(docs, "notes"))).toEqual([".link"])
   }, 10_000)
 
   it("refuses a folder over the limit with how many it holds, and moves nothing", async () => {

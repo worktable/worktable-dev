@@ -82,6 +82,8 @@ export interface HtmlDocumentUpdateResult {
   warnings: WidgetValidationIssue[]
   /** The saved source's revision. */
   revision: string
+  /** The page as saved. */
+  html: string
   /** Whether anything was saved. */
   changed: boolean
 }
@@ -158,10 +160,11 @@ export async function updateHtmlDocumentLocked(
     metadata: input.metadata,
     permissions,
     requests: granted.requests ?? null,
+    spaceImages: granted.spaceImages,
     existing,
   })
   if (html === current.html && sameProperties(widget, existing)) {
-    return { widget: existing, warnings, revision: currentRevision, changed: false }
+    return { widget: existing, warnings, revision: currentRevision, html, changed: false }
   }
   const before = await captureWidgetVersionContent(spaceId, htmlId)
   const written = await writeWidget(spaceId, widget, html)
@@ -181,6 +184,7 @@ export async function updateHtmlDocumentLocked(
     warnings,
     // The source is stored as the html's UTF-8 bytes.
     revision: htmlSourceRevision(new TextEncoder().encode(html)),
+    html,
     changed: true,
   }
 }
@@ -251,6 +255,7 @@ function sameProperties(next: WidgetFile, existing: WidgetFile): boolean {
       metadata: widget.metadata,
       permissions: widget.permissions,
       requests: widget.requests ?? null,
+      spaceImages: widget.spaceImages ?? null,
     })
   return comparable(next) === comparable(existing)
 }

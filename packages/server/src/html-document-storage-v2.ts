@@ -386,13 +386,15 @@ function widgetForOwner(
     })
   }
   // Properties saved for different source bytes keep their metadata but
-  // lose granted permissions: the source changed outside Worktable.
-  return properties.sourceSha256 === sourceSha256()
-    ? properties.widget
-    : parseHtmlDocumentWidgetFile(
-        { ...properties.widget, permissions: DENIED_PERMISSIONS },
-        owner.path
-      )
+  // lose granted permissions and Space images: the source changed outside
+  // Worktable, by a writer it didn't check.
+  if (properties.sourceSha256 === sourceSha256()) return properties.widget
+  const widget: Partial<WidgetFile> = { ...properties.widget }
+  delete widget.spaceImages
+  return parseHtmlDocumentWidgetFile(
+    { ...widget, permissions: DENIED_PERMISSIONS },
+    owner.path
+  )
 }
 
 async function readHtmlDocumentStorageV2Owner(
@@ -480,12 +482,16 @@ export async function htmlDocumentFrameInputsStorageV2(input: {
   spaceId: string
   catalog: () => Promise<DocumentCatalog>
   paths?: ReadonlySet<string>
-}): Promise<Map<string, { sourceSha256: string; network: boolean }>> {
+}): Promise<Map<string, { sourceSha256: string; network: boolean; spaceImages: boolean }>> {
   const listed = await listedHtmlDocumentsStorageV2(input)
   return new Map(
     listed.map(({ path, widget, sourceSha256 }) => [
       path,
-      { sourceSha256, network: widget.permissions?.network ?? false },
+      {
+        sourceSha256,
+        network: widget.permissions?.network ?? false,
+        spaceImages: widget.spaceImages === true,
+      },
     ])
   )
 }

@@ -1,3 +1,4 @@
+import { filesEnabled } from "../files-enabled.ts"
 import { isHosted } from "../hosted.ts"
 import { getServerSettings } from "../settings-store.ts"
 
@@ -42,6 +43,15 @@ export function mcpModernEraEnabled(): boolean {
  */
 export function mcpModernEraOverLink(): boolean {
   return mcpModernEraEnabled() && configuredMcpSurface() === "preview"
+}
+
+/**
+ * Whether HTML Docs show the Space images they name with <img src>, placed
+ * in the page when it is served (html-space-images.ts). Held behind the
+ * preview, with the warnings and guidance that teach it.
+ */
+export function htmlSpaceImagesEnabled(): boolean {
+  return filesEnabled() && configuredMcpSurface() === "preview"
 }
 
 function envSwitch(name: string): boolean | null {

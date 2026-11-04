@@ -109,6 +109,8 @@ export interface FixtureManifest {
     file: DocRef
     /** A Markdown Doc that embeds `images`, files in the same Space. */
     withImages: DocRef & { images: string[] }
+    /** An HTML Doc that names the same images with <img src>. */
+    htmlWithImages: DocRef & { images: string[] }
   }
   searchTerms: string[]
 }
@@ -540,8 +542,8 @@ function chartPng(): Uint8Array {
 
 /**
  * Probes for files: two images, uploaded as
- * the app uploads them, and a Markdown Doc that embeds both. Fixed content,
- * so the other documents stay as they were.
+ * the app uploads them, a Markdown Doc that embeds both and an HTML Doc that
+ * names both. Fixed content, so the other documents stay as they were.
  */
 async function writeFileProbes(spaceId: string): Promise<void> {
   for (const [path, bytes] of [
@@ -580,11 +582,35 @@ async function writeFileProbes(spaceId: string): Promise<void> {
   )
   if (!result.ok)
     throw new Error(`${spaceId}/${WITH_IMAGES_PROBE}: ${result.error}`)
+  const html = await writeManagedFixtureHtml(
+    spaceId,
+    widgetFile(HTML_WITH_IMAGES_PROBE, "HTML with images", HUMAN.updatedBy),
+    `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTML with images</title>
+<style>body { font-family: system-ui, sans-serif; margin: 24px; } img { max-width: 100%; }</style>
+</head>
+<body>
+<h1>With images</h1>
+<img src="${relativeTo(HTML_WITH_IMAGES_PROBE, FILE_PROBE)}" alt="Screenshot">
+<p>The release plan shipped in three steps, each behind its own flag.</p>
+<img src="${relativeTo(HTML_WITH_IMAGES_PROBE, CHART_PROBE)}" alt="Chart">
+</body>
+</html>
+`
+  )
+  html.release?.()
+  if (html.error)
+    throw new Error(`${spaceId}/${HTML_WITH_IMAGES_PROBE}: ${html.error}`)
 }
 
 const FILE_PROBE = "perf/files/shot.png"
 const CHART_PROBE = "perf/files/chart.png"
 const WITH_IMAGES_PROBE = "perf/with-images"
+const HTML_WITH_IMAGES_PROBE = "perf/html-with-images"
 
 /** `target` as a Doc at `from` embeds it: relative to the Doc's folder. */
 function relativeTo(from: string, target: string): string {
@@ -881,6 +907,10 @@ async function generate(
       file: probe(FILE_PROBE),
       withImages: {
         ...probe(WITH_IMAGES_PROBE),
+        images: [FILE_PROBE, CHART_PROBE],
+      },
+      htmlWithImages: {
+        ...probe(HTML_WITH_IMAGES_PROBE),
         images: [FILE_PROBE, CHART_PROBE],
       },
     },

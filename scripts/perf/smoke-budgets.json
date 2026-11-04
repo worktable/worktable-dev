@@ -95,9 +95,17 @@
       "max": 16,
       "why": "New journey (Plan 21): a deep link to a Markdown Doc that embeds two images. The Markdown doc's requests plus one per image."
     },
+    "requests, cold, open an HTML Doc with images": {
+      "max": 14,
+      "why": "New journey: a deep link to an HTML Doc that names two Space images. The HTML doc's requests: the images come inside its frame."
+    },
     "cold js, open a Doc with images": {
       "max": 31,
       "why": "New journey (Plan 21): the same code as a Markdown doc."
+    },
+    "cold js, open an HTML Doc with images": {
+      "max": 30,
+      "why": "New journey: the same code as an HTML doc."
     },
     "requests, cold, open Threads": {
       "max": 9
@@ -198,13 +206,25 @@
       "max": 4,
       "why": "New journey (Plan 21): the Doc's content, page check and annotations, and the image the file page did not already load."
     },
+    "requests, first, open an HTML Doc with images": {
+      "max": 3,
+      "why": "New journey: the HTML doc's requests. The images come inside its frame, so none of their own."
+    },
     "chain, first, open a Doc with images": {
       "max": 1,
       "why": "New journey (Plan 21): the images wait on the Doc's content, which a hover starts early, so one step after the click."
     },
+    "chain, first, open an HTML Doc with images": {
+      "max": 1,
+      "why": "New journey: the frame waits on the page check, as an HTML doc's does."
+    },
     "dom, first, open a Doc with images": {
       "max": 1547,
       "why": "New journey (Plan 21): a Markdown Doc with two images."
+    },
+    "dom, first, open an HTML Doc with images": {
+      "max": 1510,
+      "why": "New journey: the HTML doc's screen; the images are inside its frame."
     },
     "requests, first, back to Home": {
       "max": 4
@@ -349,9 +369,17 @@
       "max": 2,
       "why": "New journey (Plan 21): the page check and annotations. The images come from the browser's cache at their versioned addresses."
     },
+    "requests, revisit, open an HTML Doc with images": {
+      "max": 2,
+      "why": "New journey: the page check and annotations. The frame, images included, comes from the browser's cache at its revision."
+    },
     "chain, revisit, open a Doc with images": {
       "max": 0,
       "why": "New journey (Plan 21): the images come from the browser's cache, so nothing waits on the page check."
+    },
+    "chain, revisit, open an HTML Doc with images": {
+      "max": 0,
+      "why": "New journey: the frame comes from the browser's cache, so nothing waits on a download."
     },
     "requests, revisit, back to Home": {
       "max": 4

@@ -8,7 +8,8 @@
 // must name exactly the response the server sends for it. It hashes:
 // - the source bytes;
 // - what else shapes the response: the storage kind of a Doc (Markdown or
-//   rich text) and whether an HTML Doc may use the network (its frame's CSP);
+//   rich text), whether an HTML Doc may use the network (its frame's CSP),
+//   and the Space images an HTML Doc's frame carries (html-space-images.ts);
 // - the web build this server serves. Server code turns bytes into a
 //   response (parsing, the HTML runtime it injects), and the build changes
 //   with every release and deployment. Without a build id, as in
@@ -22,6 +23,8 @@
 // source's hash is kept with its file fingerprint and reused while the
 // fingerprint is unchanged, the rule the read model uses: a fingerprint that
 // changed within the racy window proves nothing, so that file is read again.
+// The images an HTML Doc names are kept by its source's hash, and stamped
+// from the Space's catalog snapshot.
 
 import { createHash, randomUUID } from "node:crypto"
 import { stat } from "node:fs/promises"
@@ -36,10 +39,15 @@ import {
 } from "./document-query.ts"
 import { FingerprintCache, fingerprintOf } from "./file-fingerprint.ts"
 import {
+  htmlImagesStamp,
+  htmlSpaceImagesEnabled,
+} from "./html-space-images.ts"
+import {
   htmlDocumentFrameInputsStorageV2,
   usesHtmlDocumentStorageV2,
 } from "./html-document-storage-v2.ts"
 import { previewFontVersion } from "./preview-fonts.ts"
+import { showableSpaceFiles } from "./space-images.ts"
 import { servedBuildId } from "./static-assets.ts"
 import { getDocPath } from "./store.ts"
 import {
@@ -79,29 +87,53 @@ export function docContentRevision(input: {
 
 /**
  * An HTML Doc frame's revision. The frame also carries the preview fonts'
- * CSS, which changes when the product font is provisioned or replaced.
+ * CSS, which changes when the product font is provisioned or replaced, and
+ * the Space images it names (`images`, from htmlImagesStamp), which only a
+ * page that names one has.
  */
 export function htmlContentRevision(input: {
   sourceSha256: string
   network: boolean
+  images?: string
 }): string {
   return revisionOf([
     "html",
     input.network ? "network" : "local",
     previewFontVersion(),
     input.sourceSha256,
+    ...(input.images === undefined ? [] : [`images\0${input.images}`]),
   ])
 }
 
-/** The revision of an HTML Doc as read by readWidgetDocument. */
-export function htmlContentRevisionOf(document: {
-  widget: { permissions?: { network?: boolean } }
-  sourceBytes: Uint8Array
-}): string {
+/**
+ * The frame revision of an HTML Doc at `path` as read by readWidgetDocument.
+ * `lockHeld` says the caller holds the Space's document path lock.
+ */
+export async function htmlContentRevisionOf(
+  spaceId: string,
+  path: string,
+  document: {
+    widget: { permissions?: { network?: boolean }; spaceImages?: true }
+    html: string
+    sourceBytes: Uint8Array
+  },
+  options: { lockHeld?: boolean } = {}
+): Promise<string> {
+  const sourceSha256 = sha256Hex(document.sourceBytes)
   return htmlContentRevision({
-    sourceSha256: sha256Hex(document.sourceBytes),
+    sourceSha256,
     // As the frame's CSP reads it.
     network: document.widget.permissions?.network ?? false,
+    // Only a page whose writer could read the Space's files shows its images.
+    images: document.widget.spaceImages
+      ? await htmlImagesStamp({
+          spaceId,
+          path,
+          sourceSha256,
+          html: document.html,
+          ...options,
+        })
+      : undefined,
   })
 }
 
@@ -203,33 +235,66 @@ export async function docSourceContentRevision(
 }
 
 // A legacy HTML bundle's frame depends on widget.yaml (its permissions) and
-// index.html. Keep each bundle's revision with both fingerprints.
+// index.html. Keep what each bundle's frame is served from with both
+// fingerprints; the images it names are stamped on every listing.
 const LEGACY_HTML_LIMIT = 4_096
-const legacyHtmlRevisions = new FingerprintCache<string>(LEGACY_HTML_LIMIT)
+const legacyHtmlInputs = new FingerprintCache<{
+  sourceSha256: string
+  network: boolean
+  spaceImages: boolean
+}>(LEGACY_HTML_LIMIT)
 
 async function legacyHtmlRevision(
   spaceId: string,
   widgetId: string
 ): Promise<string | null> {
   const yamlPath = getWidgetPath(spaceId, widgetId)
+  const contentPath = getWidgetContentPath(spaceId, widgetId)
   const [settings, source] = await Promise.all([
     stat(yamlPath, { bigint: true }),
-    stat(getWidgetContentPath(spaceId, widgetId), { bigint: true }),
+    stat(contentPath, { bigint: true }),
   ])
   if (source.size > BigInt(DOC_CONTENT_MAX_BYTES)) return null
   const settingsKey = fingerprintOf(settings)
   const sourceKey = fingerprintOf(source)
-  const key = `${settingsKey.key}|${sourceKey.key}|${previewFontVersion()}`
+  const key = `${settingsKey.key}|${sourceKey.key}`
   const racy = settingsKey.racy || sourceKey.racy
-  if (!racy) {
-    const known = legacyHtmlRevisions.get(yamlPath, key)
-    if (known !== undefined) return known
+  let inputs = racy ? undefined : legacyHtmlInputs.get(yamlPath, key)
+  let html: string | undefined
+  if (!inputs) {
+    const { data } = await readWidgetDocument(spaceId, widgetId)
+    if (!data) return null
+    html = data.html
+    inputs = {
+      sourceSha256: sha256Hex(data.sourceBytes),
+      network: data.widget.permissions?.network ?? false,
+      spaceImages: data.widget.spaceImages === true,
+    }
+    if (!racy) legacyHtmlInputs.set(yamlPath, key, inputs)
   }
-  const { data } = await readWidgetDocument(spaceId, widgetId)
-  if (!data) return null
-  const revision = htmlContentRevisionOf(data)
-  if (!racy) legacyHtmlRevisions.set(yamlPath, key, revision)
-  return revision
+  return htmlContentRevision({
+    sourceSha256: inputs.sourceSha256,
+    network: inputs.network,
+    images: inputs.spaceImages
+      ? await htmlImagesStamp({
+          spaceId,
+          path: widgetId,
+          sourceSha256: inputs.sourceSha256,
+          html: html ?? (() => readHtmlSource(contentPath)),
+        })
+      : undefined,
+  })
+}
+
+/** An HTML Doc's source by its file, or null when it can't be read. */
+async function readHtmlSource(path: string): Promise<string | null> {
+  try {
+    return Buffer.from(
+      await readBoundedRegularFileBytes(path, DOC_CONTENT_MAX_BYTES)
+    ).toString("utf8")
+  } catch {
+    return null
+  }
 }
 
 // ── Revisions for rows ───────────────────────────────────────
@@ -239,10 +304,16 @@ const ROW_CONCURRENCY = 16
 // The read model publishes the same catalog again while nothing it was built
 // from changed, every source's fingerprint included, and builds a new one
 // when anything did. A Space's revisions are therefore listed once per
-// catalog, and again only when the fonts HTML frames carry change.
+// catalog, and again only when the fonts HTML frames carry change, or
+// whether they carry Space images. The catalog stamps those images too.
 const listedRevisions = new WeakMap<
   DocumentCatalog,
-  { fonts: string; htmlFiles: boolean; revisions: Promise<Map<string, string>> }
+  {
+    fonts: string
+    htmlFiles: boolean
+    images: boolean
+    revisions: Promise<Map<string, string>>
+  }
 >()
 
 /**
@@ -267,8 +338,13 @@ export async function documentContentRevisions(
   }
   const htmlFiles = await usesHtmlDocumentStorageV2()
   const fonts = previewFontVersion()
+  const images = htmlSpaceImagesEnabled()
   const listed = listedRevisions.get(catalog)
-  if (listed?.fonts === fonts && listed.htmlFiles === htmlFiles) {
+  if (
+    listed?.fonts === fonts &&
+    listed.htmlFiles === htmlFiles &&
+    listed.images === images
+  ) {
     const all = await listed.revisions
     return wanted
       ? new Map(
@@ -283,7 +359,7 @@ export async function documentContentRevisions(
   // what it read for the next one.
   if (wanted) return catalogRevisions(spaceId, catalog, htmlFiles, wanted)
   const revisions = catalogRevisions(spaceId, catalog, htmlFiles)
-  listedRevisions.set(catalog, { fonts, htmlFiles, revisions })
+  listedRevisions.set(catalog, { fonts, htmlFiles, images, revisions })
   return revisions
 }
 
@@ -338,9 +414,24 @@ async function catalogRevisions(
         catalog: async () => catalog,
         ...(wanted ? { paths: wanted } : {}),
       })
-      for (const [path, input] of inputs) {
-        revisions.set(path, htmlContentRevision(input))
-      }
+      // One look at the Space's files for every page that names an image.
+      let showable: ReturnType<typeof showableSpaceFiles> | undefined
+      const files = () => (showable ??= showableSpaceFiles(spaceId))
+      await mapWithConcurrency([...inputs], ROW_CONCURRENCY, async ([path, input]) => {
+        const images = input.spaceImages
+          ? await htmlImagesStamp({
+              spaceId,
+              path,
+              sourceSha256: input.sourceSha256,
+              html: () => readHtmlSource(resolve(spaceRoot, "docs", `${path}.html`)),
+              files,
+            })
+          : undefined
+        revisions.set(
+          path,
+          htmlContentRevision({ sourceSha256: input.sourceSha256, network: input.network, images })
+        )
+      })
     } catch {
       // Listed without revisions, as above.
     }

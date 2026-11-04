@@ -435,6 +435,7 @@ export interface Targets {
   htmlB: DocTarget
   file: DocTarget
   withImages: DocTarget
+  htmlWithImages: DocTarget
   threadsHref: string
   threadA: ThreadTarget
   threadB: ThreadTarget
@@ -1594,6 +1595,11 @@ function clickJourney(pass: Pass, targets: Targets, second: boolean): Action[] {
       : [
           openDocument(pass, "open a file page", targets.file),
           openDocument(pass, "open a Doc with images", targets.withImages),
+          openDocument(
+            pass,
+            "open an HTML Doc with images",
+            targets.htmlWithImages
+          ),
         ]),
     goHome(pass),
     openThreads(pass, targets),
@@ -1648,6 +1654,7 @@ function coldLoads(targets: Targets): ColdLoad[] {
     doc("open HTML doc", targets.htmlA),
     doc("open a file page", targets.file),
     doc("open a Doc with images", targets.withImages),
+    doc("open an HTML Doc with images", targets.htmlWithImages),
     {
       journey: "open Threads",
       target: targets.threadsHref,
@@ -2386,6 +2393,7 @@ async function setup(
       ...(await docTarget(fixture.probes.withImages.path, "md")),
       images: fixture.probes.withImages.images,
     },
+    htmlWithImages: await docTarget(fixture.probes.htmlWithImages.path, "html"),
   }
 
   // Threads: the sidebar link and the first two rows of the list.
@@ -2687,7 +2695,13 @@ async function main() {
       checkout,
       workspace,
       app,
-      env: { WORKTABLE_STATIC_DIR: staticDir, WORKTABLE_REQUIRE_AUTH: "1" },
+      env: {
+        WORKTABLE_STATIC_DIR: staticDir,
+        WORKTABLE_REQUIRE_AUTH: "1",
+        // Space images in HTML Docs are held behind the preview; only the
+        // HTML Doc with images names any, so the other journeys are as before.
+        WORKTABLE_MCP_PREVIEW: "1",
+      },
     })
     const bootMs = Math.round(performance.now() - booted)
     const idleBefore = performance.now()

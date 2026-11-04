@@ -31,6 +31,8 @@ export interface CreateHtmlDocumentInput {
   metadata?: Record<string, unknown>
   permissions?: WidgetFile["permissions"]
   requests?: WidgetFile["requests"]
+  /** Whether its writer could read the Space's files (authorizeHtmlPermissions). */
+  spaceImages?: boolean
   versionSource: string
   versionUpdatedBy: string
   /** Private initial content can be published without an edit-history entry. */
@@ -122,6 +124,7 @@ export async function createHtmlDocument(
               metadata: input.metadata,
               permissions: input.permissions,
               requests: input.requests,
+              spaceImages: input.spaceImages,
             }),
             input.html,
             admission ? { documentId: admission.documentId } : undefined

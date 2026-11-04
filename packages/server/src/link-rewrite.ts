@@ -8,12 +8,18 @@
 // that moved has those link and embed targets rewritten in place: relative
 // targets stay relative, `/`-rooted ones stay rooted, and a target's query,
 // fragment and `.md` style are kept. Aliases remain for anything missed.
+// With Space images in HTML Docs on, an HTML Doc's img targets are kept
+// true the same way, since its images resolve without aliases.
 
 import { posix } from "node:path"
-import { Parser } from "htmlparser2"
 import { resolveDocLink } from "@worktable/types"
 import { logError } from "./debug-log.ts"
 import { filesEnabled } from "./files-enabled.ts"
+import {
+  applySpanEdits,
+  htmlAttributeText,
+  htmlMediaSources,
+} from "./html-media-sources.ts"
 import { getSpaceLinkGraph } from "./link-graph.ts"
 import { blankRanges, markdownLayout } from "./markdown-code.ts"
 import {
@@ -22,6 +28,25 @@ import {
   syncDocAfterToolWrite,
 } from "./mcp/dispatcher.ts"
 import { docExists, writeDoc } from "./store.ts"
+import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts"
+import { readDocumentCatalogSnapshot } from "./document-query.ts"
+import { withCanonicalHtmlDocumentPath } from "./html-document-path.ts"
+import {
+  htmlSpaceImagesEnabled,
+  rewriteHtmlImageTargets,
+} from "./html-space-images.ts"
+import { invalidateSearchIndex } from "./search-index.ts"
+import { buildWidgetFile } from "./widget-authoring.ts"
+import {
+  readWidgetDocument,
+  withWidgetWriteLock,
+  writeWidget,
+} from "./widget-store.ts"
+import {
+  captureWidgetVersionContent,
+  recordWidgetVersion,
+} from "./widget-version-store.ts"
+import { wsManager } from "./ws.ts"
 import { normalizeRecordFieldType } from "@worktable/types"
 import {
   listRecordCollections,
@@ -100,74 +125,6 @@ export function rewrittenTarget(
 
 // ── Markdown ────────────────────────────────────────────────
 
-const HTML_MEDIA_TAGS = new Set(["img", "video", "audio", "source"])
-const HTML_MEDIA_HINT = /<(?:img|video|audio|source)\b/i
-
-
-/**
- * The src values of a Doc's HTML media tags, read as a browser reads them,
- * with where each sits in the text and the quote around it.
- */
-function htmlMediaSources(
-  scanned: string
-): Array<{
-  at: number
-  length: number
-  value: string
-  quote: string | null
-  tag: string
-}> {
-  if (!HTML_MEDIA_HINT.test(scanned)) return []
-  const sources: Array<{
-    at: number
-    length: number
-    value: string
-    quote: string | null
-    tag: string
-  }> = []
-  let tag = ""
-  const parser: Parser = new Parser({
-    onopentagname(name) {
-      tag = name
-    },
-    onattribute(name, value, quote) {
-      if (!HTML_MEDIA_TAGS.has(tag) || name !== "src") return
-      // The attribute's text runs from its name; its value follows the "=".
-      const raw = scanned.slice(parser.startIndex, parser.endIndex + 1)
-      const equals = raw.indexOf("=")
-      if (equals === -1) return
-      let start = equals + 1
-      while (/\s/.test(raw[start] ?? "")) start += 1
-      if (quote) start += 1
-      let end = start
-      while (
-        end < raw.length &&
-        (quote ? raw[end] !== quote : !/[\s>]/.test(raw[end]!))
-      ) {
-        end += 1
-      }
-      sources.push({
-        at: parser.startIndex + start,
-        length: end - start,
-        value,
-        quote: quote ?? null,
-        tag,
-      })
-    },
-  })
-  parser.write(scanned)
-  parser.end()
-  return sources
-}
-
-/** A path as an HTML attribute value holds it. */
-function htmlAttributeText(value: string, quote: string | null): string {
-  const text = value.replace(/&/g, "&amp;")
-  if (quote === "'") return text.replace(/'/g, "&#39;")
-  if (quote === '"') return text.replace(/"/g, "&quot;")
-  return text.replace(/[\s"'=<>`]/g, (char) => `&#${char.charCodeAt(0)};`)
-}
-
 /**
  * A Markdown Doc with its link, image and media targets rewritten, or with
  * `imagesOnly`, its images alone.
@@ -203,15 +160,7 @@ export function rewriteMarkdownLinks(
     }
   }
   // Assembled in one pass, however many links change.
-  const parts: string[] = []
-  let at = 0
-  for (const edit of edits.sort((a, b) => a.at - b.at)) {
-    if (edit.at < at) continue
-    parts.push(markdown.slice(at, edit.at), edit.text)
-    at = edit.at + edit.length
-  }
-  parts.push(markdown.slice(at))
-  return parts.join("")
+  return applySpanEdits(markdown, edits)
 }
 
 // ── Rich text ───────────────────────────────────────────────
@@ -377,6 +326,81 @@ export async function rewriteDocTargets(
   return true
 }
 
+// ── HTML Docs ───────────────────────────────────────────────
+
+/** The Space's HTML Docs, while their img targets are kept true. */
+async function htmlDocPaths(spaceId: string): Promise<Set<string>> {
+  if (!htmlSpaceImagesEnabled()) return new Set()
+  const catalog = await readDocumentCatalogSnapshot(spaceId)
+  return new Set(
+    catalog.entries.flatMap((entry) =>
+      entry.kind === "document" &&
+      entry.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.html
+        ? [entry.descriptor.path]
+        : []
+    )
+  )
+}
+
+/**
+ * Rewrite one HTML Doc's img targets as it is now, saved as a version with
+ * `reason`. Its name and permissions stay as they are.
+ */
+async function rewriteHtmlDoc(
+  spaceId: string,
+  path: string,
+  oldPath: string,
+  moved: ReadonlyMap<string, string>
+): Promise<boolean> {
+  const widget = await withCanonicalHtmlDocumentPath(
+    spaceId,
+    path,
+    () =>
+      withWidgetWriteLock(spaceId, path, async () => {
+        const { data } = await readWidgetDocument(spaceId, path)
+        if (!data) return null
+        const html = rewriteHtmlImageTargets(data.html, (target) =>
+          rewrittenTarget(target, oldPath, path, moved)
+        )
+        if (html === data.html) return null
+        const before = await captureWidgetVersionContent(spaceId, path)
+        const result = await writeWidget(
+          spaceId,
+          buildWidgetFile({
+            id: path,
+            name: data.widget.name,
+            description: data.widget.description,
+            updatedBy: "system",
+            existing: data.widget,
+          }),
+          html,
+          // Keeps image paths in step with a move: counted, never refused.
+          { storage: "counted" }
+        )
+        if (result.error || !result.data) {
+          throw new Error(result.error ?? "Links were not updated")
+        }
+        await recordWidgetVersion(spaceId, path, before, {
+          source: "system",
+          updatedBy: "system",
+          reason: "Updated links after a move",
+        })
+        result.release?.()
+        return result.data
+      }),
+    { materialize: true }
+  )
+  if (!widget) return false
+  invalidateSearchIndex({ spaceId, path })
+  wsManager.broadcast(spaceId, {
+    type: "widget_update",
+    spaceId,
+    widgetId: path,
+    data: widget,
+  })
+  return true
+}
+
 /** Rewrite one Doc's links to what moved; `oldPath` is where it was. */
 function rewriteDoc(
   spaceId: string,
@@ -475,8 +499,17 @@ export async function rewriteLinksAfterMove(
   const actual = moves.filter((move) => move.from !== move.to)
   if (actual.length === 0) return { rewritten }
   const moved = new Map(actual.map((move) => [move.from, move.to]))
+  // Without the catalog, each moved Doc is tried as an HTML Doc first.
+  const htmlDocs = await htmlDocPaths(spaceId).catch(() => null)
   for (const move of actual) {
     try {
+      if (htmlDocs === null || htmlDocs.has(move.to)) {
+        if (await rewriteHtmlDoc(spaceId, move.to, move.from, moved)) {
+          rewritten.push(move.to)
+          continue
+        }
+        if (htmlDocs !== null) continue
+      }
       if (!(await docExists(spaceId, move.to))) continue
       if (await rewriteDoc(spaceId, move.to, move.from, moved)) {
         rewritten.push(move.to)
@@ -524,9 +557,17 @@ async function rewriteLinksTo(
   }
   // A move rewrites a bounded number of Docs; links in any more keep working
   // through aliases, so one move can't turn into unbounded writes.
-  for (const docPath of [...docs].slice(0, REWRITES_PER_MOVE_MAX)) {
+  const htmlDocs = await htmlDocPaths(spaceId)
+  // HTML Docs first: their images don't follow aliases, so only a rewrite
+  // keeps them showing.
+  const ordered = [...docs].sort(
+    (a, b) => Number(htmlDocs.has(b)) - Number(htmlDocs.has(a))
+  )
+  for (const docPath of ordered.slice(0, REWRITES_PER_MOVE_MAX)) {
     try {
-      if (await docExists(spaceId, docPath)) {
+      if (htmlDocs.has(docPath)) {
+        await rewriteHtmlDoc(spaceId, docPath, docPath, moved)
+      } else if (await docExists(spaceId, docPath)) {
         await rewriteDoc(spaceId, docPath, docPath, moved)
       }
     } catch (error) {

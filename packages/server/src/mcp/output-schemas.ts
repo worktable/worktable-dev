@@ -39,7 +39,7 @@ const PortableHtmlIdSchema = z.string().min(1).max(4096).meta({ id: "HtmlId" })
 const PortableArchiveInfoSchema = ArchiveInfoSchema.loose().meta({
   id: "ArchiveInfo",
 })
-const PortableHtmlDocSchema = WidgetFileSchema.omit({ id: true })
+const PortableHtmlDocSchema = WidgetFileSchema.omit({ id: true, spaceImages: true })
   .extend({ id: PortableHtmlIdSchema })
   .loose()
   .meta({ id: "HtmlDoc" })

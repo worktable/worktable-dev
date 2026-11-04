@@ -1921,6 +1921,62 @@ describe("share links", () => {
     }
   })
 
+  it("shows only the Space images an HTML Doc names, on static and live links", async () => {
+    // Opened first with Space images off, the live page is built again once
+    // they are on.
+    process.env["WORKTABLE_MCP_PREVIEW"] = "0"
+    await useHtmlStorageV2()
+    const policy = (await (await send("GET", "/api/shares/policy")).json())
+      .policy as SharingPolicy
+    expect(
+      (await send("PUT", "/api/shares/policy", { ...policy, liveLinks: true }))
+        .status
+    ).toBe(200)
+    const docs = join(workspaceDir, "spaces", "space", "docs")
+    await mkdir(join(docs, "board", "img"), { recursive: true })
+    await writeFile(join(docs, "board", "img", "shot.png"), "shot image")
+    await writeFile(join(docs, "board", "img", "other.png"), "other image")
+    noteSpaceChanged("space")
+    const created = await createHtmlDocument({
+      spaceId: "space",
+      explicitId: "board/status",
+      name: "Status",
+      html: '<main><img src="img/shot.png" alt="Shot"><script>const later = "img/other.png"</script></main>',
+      // Written by someone who can read the Space's files.
+      spaceImages: true,
+      versionSource: "test",
+      versionUpdatedBy: "test",
+    })
+    expect(created.error).toBeUndefined()
+    const frameOf = async (token: string) => {
+      const outer = (await (await view(token)).json()) as {
+        contentTicket: string
+      }
+      return (await view(outer.contentTicket, "/public/share/content")).text()
+    }
+    const shot = Buffer.from("shot image").toString("base64")
+    const live = await createLink("board/status", { grant: { version: 1 } }, "html")
+    expect(await frameOf(live.token)).not.toContain(shot)
+    process.env["WORKTABLE_MCP_PREVIEW"] = "1"
+    expect(await frameOf(live.token)).toContain(`data:image/png;base64,${shot}`)
+    const links = [await createLink("board/status", {}, "html"), live]
+    for (const { token } of links) {
+      const html = await frameOf(token)
+      expect(html).toContain(`data:image/png;base64,${shot}`)
+      expect(html).not.toContain(Buffer.from("other image").toString("base64"))
+    }
+    // Archived, it leaves both pages at their next view.
+    await setRegisteredDocumentArchived({
+      spaceId: "space",
+      path: "board/img/shot.png",
+      archived: true,
+      archivedBy: "test",
+    })
+    for (const { token } of links) {
+      expect(await frameOf(token)).not.toContain(shot)
+    }
+  })
+
   it("follows an HTML Doc through moves and title edits until it is deleted", async () => {
     await useHtmlStorageV2()
     const written = await createHtmlDocument({

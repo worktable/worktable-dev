@@ -90,6 +90,13 @@ export const WidgetFileSchema = z.object({
     state: { read: true, write: true },
   }),
   /**
+   * Set when the HTML Doc's latest writer could read its Space's files: a
+   * person, or an agent with documents:read. Only then does its page show
+   * the Space images it names, so a page can't show what its writer couldn't
+   * read. Kept out of the agent tools' schemas.
+   */
+  spaceImages: z.literal(true).optional(),
+  /**
    * Permissions an agent asked for that wait on a person. Network access an
    * agent requests stays off until someone allows it in Worktable.
    */

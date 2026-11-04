@@ -46,6 +46,25 @@ export function preferredEncoding(
   return best
 }
 
+/**
+ * A body compressed as this middleware compresses it, off the request loop:
+ * Brotli quality 5, fast enough for every response and smaller than gzip
+ * level 6.
+ */
+export function compressBody(
+  body: Uint8Array,
+  encoding: ContentEncoding
+): Promise<Uint8Array<ArrayBuffer>> {
+  return encoding === "br"
+    ? brotliAsync(body, {
+        params: {
+          [constants.BROTLI_PARAM_QUALITY]: 5,
+          [constants.BROTLI_PARAM_SIZE_HINT]: body.byteLength,
+        },
+      })
+    : gzipAsync(body, { level: 6 })
+}
+
 export function acceptsGzip(value: string): boolean {
   return preferredEncoding(value, ["gzip"]) === "gzip"
 }
@@ -102,17 +121,7 @@ export const compressApiResponse: MiddlewareHandler = async (c, next) => {
   const compressed =
     body.byteLength < 1024
       ? null
-      : await timing.span(encoding, () =>
-          encoding === "br"
-            ? brotliAsync(body, {
-                params: {
-                  // Fast enough for every response; smaller than gzip level 6.
-                  [constants.BROTLI_PARAM_QUALITY]: 5,
-                  [constants.BROTLI_PARAM_SIZE_HINT]: body.byteLength,
-                },
-              })
-            : gzipAsync(body, { level: 6 })
-        )
+      : await timing.span(encoding, () => compressBody(body, encoding))
   if (compressed && compressed.byteLength < body.byteLength) {
     c.res = new Response(compressed, c.res)
     c.header("Content-Encoding", encoding)

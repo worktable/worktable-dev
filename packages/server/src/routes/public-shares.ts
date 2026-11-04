@@ -3,6 +3,7 @@ import {
   inlineSharedImages,
   type EmbeddedFile,
 } from "../share-images.ts"
+import { inlineHtmlSpaceImages } from "../html-space-images.ts"
 import { createPublicVisitorCommentsRouter } from "./public-visitor-comments.ts"
 import { visitorCommentNamespace } from "../visitor-comment-access.ts"
 import { commentPause } from "../visitor-comment-store.ts"
@@ -149,7 +150,9 @@ function busy(
 // if its share was still current after the artifact was read.
 
 const MAX_RENDERED_PAGES = 64
-const MAX_RENDERED_BYTES = 16 * 1024 * 1024
+// A quarter of this is the largest page kept: room for one whose images
+// reach their budget (space-images.ts), about 5.4 MB once encoded.
+const MAX_RENDERED_BYTES = 32 * 1024 * 1024
 
 interface RenderedPage {
   revision: string
@@ -276,7 +279,12 @@ async function renderLinkBody(
     )
     revision = view.revision
   } else if (document.kind === "html") {
-    body = renderPublicHtmlProjection(document.html)
+    // The images the HTML Doc names from its Space show in the page itself,
+    // when its writer could read them.
+    const inlined = document.spaceImages
+      ? await inlineHtmlSpaceImages(view.link.spaceId, view.path, document.html)
+      : { html: document.html }
+    body = renderPublicHtmlProjection(inlined.html)
     revision = document.revision
   } else {
     // The images the Doc embeds from its Space show in the page itself.

@@ -33,6 +33,7 @@ import {
   WidgetRecordAccessError,
 } from "./widget-runtime-policy.ts"
 import { previewFontVersion, fulfillPreviewFont } from "./preview-fonts.ts"
+import { inlineHtmlSpaceImages } from "./html-space-images.ts"
 import { withPreviewPage } from "./document-preview-browser.ts"
 import { productFontIssue } from "./product-fonts.ts"
 
@@ -565,13 +566,19 @@ window.addEventListener('message',async event=>{
  const result=await window.${binding}({type:'request',path:d.path,method:d.method,body:d.body});
  if(result)frame.contentWindow.postMessage({type:'worktable.api.response',id:d.id,...result},'*');
 });</script></body></html>`
-  const html = snapshot.historical
+  const source = snapshot.historical
     ? injectWidgetHostStyles(applyWidgetTheme(snapshot.html, options.theme))
     : injectWidgetRuntime(
         applyWidgetTheme(snapshot.html, options.theme),
         snapshot.spaceId,
         snapshot.path
       )
+  // A preview shows the Space images the page names, as its frame does, to
+  // a caller that may read the Space's files; an old version shows the
+  // images now at those paths.
+  const { html } = hasScope(input.scopes, "documents:read")
+    ? await inlineHtmlSpaceImages(snapshot.spaceId, snapshot.path, source)
+    : { html: source }
   await bounded(() =>
     page.route("**/*", async (route) => {
       const request = route.request()

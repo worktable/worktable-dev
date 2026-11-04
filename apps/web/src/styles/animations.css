@@ -70,3 +70,13 @@
 .animate-border-pulse {
   animation: border-pulse 1s ease-in-out 1;
 }
+
+/* A reply waiting to send: the bar fills over the send delay. */
+@keyframes send-wait {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}

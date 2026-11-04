@@ -20,6 +20,7 @@ import {
   runAsActivityActor,
 } from "./activity-log.ts"
 import { setAppDirOverride } from "./app-storage.ts"
+import { listRecentDocuments } from "./recent-documents.ts"
 import { pathMovesFor } from "./doc-aliases.ts"
 import { ownerIdentity } from "./auth.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
@@ -335,15 +336,61 @@ describe("workspace activity", () => {
     await drainActivity()
   })
 
+  it("names who last worked on each recent doc, and features what an agent just made", async () => {
+    const writeAsAgent = (docPath: string, content: string) =>
+      agentTool("worktable_docs_write", {
+        action: "write",
+        spaceId: "company",
+        docPath,
+        content,
+        lifetime: "durable",
+      })
+    await writeAsAgent("notes", "# Notes\n\nScratch.\n")
+    await writeAsAgent(
+      "brief",
+      "# Launch brief\n\nThe **launch** plan is ready. See [the plan](notes) for dates.\n"
+    )
+    // The first read starts the Space's summary without waiting on it.
+    await listRecentDocuments({ featured: true })
+    await drainActivity()
+
+    const recent = await listRecentDocuments({ featured: true })
+    expect(recent.featured).toMatchObject({
+      spaceId: "company",
+      document: { path: "brief" },
+      lastEditor: { kind: "agent" },
+      excerpt: "The launch plan is ready. See the plan for dates.",
+    })
+    expect(recent.items.map((item) => item.document.path)).toEqual(["notes"])
+    expect(recent.items[0]?.lastEditor?.kind).toBe("agent")
+
+    // Once a person changes it, it's their work, not an agent's to show off.
+    recordActivity({
+      spaceId: "company",
+      action: "doc.edited",
+      actor: { kind: "person", id: "local:owner" },
+      target: { kind: "doc", path: "brief" },
+    })
+    const edited = await listRecentDocuments({ featured: true })
+    expect(edited.featured?.document.path).toBe("notes")
+    // Narrowed to one person, only what they worked on is listed.
+    const mine = await listRecentDocuments({ actorIds: new Set(["local:owner"]) })
+    expect(mine.items.map((item) => item.document.path)).toEqual(["brief"])
+    expect(mine.items[0]?.lastEditor).toMatchObject({ kind: "person" })
+    await drainActivity()
+  })
+
   it("lists what is waiting on the reader until they answer", async () => {
     const owner = ownerIdentity()
     const ownerParticipant = (
       await resolveParticipant(owner, { name: "Owner" })
     ).participant
-    await resolveParticipant(codex, {
-      name: "Codex",
-      defaultSpaceId: "company",
-    })
+    const codexParticipant = (
+      await resolveParticipant(codex, {
+        name: "Codex",
+        defaultSpaceId: "company",
+      })
+    ).participant
     const asked = await postThreadMessage(codex, {
       location: { kind: "space", spaceId: "company" },
       to: "Owner",
@@ -363,14 +410,21 @@ describe("workspace activity", () => {
       },
     ])
 
-    await postThreadMessage(owner, {
+    // Answered from Home, the reply goes back to the agent that asked.
+    const [item] = pending.items
+    const answer = await postThreadMessage(owner, {
       threadId: asked.threadId,
       body: "The shorter one.",
       idempotencyKey: "owner-answer",
       inReplyTo: asked.messageId,
       responseTo: asked.messageId,
-      expectsReply: false,
+      responseIdentityId:
+        item?.kind === "threadRequest" ? (item.fromIdentityId ?? null) : null,
+      waitSeconds: 0,
     })
+    expect(answer.activity?.identityId).toBe(
+      defaultConversationIdentityId(codexParticipant.id)
+    )
     expect((await request<PendingResult>("/api/pending")).items).toEqual([])
   })
 })

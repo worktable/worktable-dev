@@ -85,6 +85,8 @@ export interface PendingThreadRequestSource {
   messageId: string
   createdAt: string
   from: PendingActor
+  /** The thread identity that asked, so a reply can go back to it. */
+  fromIdentityId?: string
   /** The identity it was assigned to, by its name in the thread. */
   recipientName: string
   excerpt: string
@@ -484,6 +486,7 @@ function threadItems(digest: ThreadDigest): Derived[] {
             id: message.authorMemberId,
             name: author?.name ?? member?.name ?? "Someone",
           },
+          ...(author ? { fromIdentityId: author.id } : {}),
           recipientName: identity.name,
           excerpt: excerpt(message.body),
         },

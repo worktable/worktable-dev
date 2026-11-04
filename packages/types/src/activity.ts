@@ -114,6 +114,8 @@ export type PendingItem =
       threadTitle: string
       messageId: string
       from: ActivityActor
+      /** The thread identity that asked, so a reply can go back to it. */
+      fromIdentityId?: string
       excerpt: string
     }
   | {

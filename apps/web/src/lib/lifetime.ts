@@ -2,6 +2,7 @@ import { activityQueryKeys } from "./activity.ts"
 import { keepPreviousData, queryOptions, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useSyncExternalStore } from "react"
 import type {
+  ActivityActor,
   DocumentLifetime,
   DocumentSummary,
   ResolvedStartHerePin,
@@ -124,12 +125,16 @@ export interface RecentDocument {
   spaceName: string
   /** With the revision of the content it opens (see document-rows.ts). */
   document: WithContentRevision<DocumentSummary>
+  /** Who last created or edited it, once its Space's history is summarized. */
+  lastEditor?: ActivityActor
 }
 
 export interface RecentDocuments {
   items: RecentDocument[]
   /** Temporary documents, soonest to archive first, when asked for. */
   temporary?: RecentDocument[]
+  /** The newest doc an agent made in the last day, when asked for. */
+  featured?: RecentDocument & { excerpt?: string }
   spaces: Array<{ spaceId: string; lastActivityAt?: string }>
 }
 
@@ -147,6 +152,12 @@ export interface RecentOptions {
   limit?: number
   /** Also list this many temporary docs, soonest to archive first. */
   temporaryLimit?: number
+  /** Only docs the reader or their agents created or edited. */
+  mine?: boolean
+  /** Only docs in this folder of `spaceId`. */
+  folder?: string
+  /** Also pick the newest doc an agent made in the last day. */
+  featured?: boolean
 }
 
 export function recentQueryOptions(options: RecentOptions) {
@@ -162,6 +173,9 @@ export function recentQueryOptions(options: RecentOptions) {
           ? { temporaryLimit: String(options.temporaryLimit) }
           : {}),
         ...(options.spaceId ? { spaceId: options.spaceId } : {}),
+        ...(options.mine ? { scope: "mine" } : {}),
+        ...(options.folder ? { folder: options.folder } : {}),
+        ...(options.featured ? { featured: "true" } : {}),
       })
       return fetchJSON<RecentDocuments>(`/api/recent?${query}`)
     },

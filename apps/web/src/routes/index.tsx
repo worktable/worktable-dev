@@ -2,30 +2,14 @@ import { useEffect, useMemo, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { WorktableAppIcon } from "@/components/worktable-app-icon"
 import { HomeNewMenu } from "@/components/home/home-new-menu"
-import {
-  PendingSection,
-  RecentRows,
-  TemporaryGroup,
-  type RecentItem,
-} from "@/components/home/home-sections"
-import { PageWithActivity } from "@/components/home/page-with-activity"
-import { useSpaces } from "@/lib/queries"
-import { useRecentDocuments } from "@/lib/lifetime"
+import { PendingSection, RecentSection } from "@/components/home/home-sections"
+import { useSpaces, useWorkspace } from "@/lib/queries"
 import { getSpaceArchiveInfo } from "@/lib/spaces"
 import { isGettingStartedSpace } from "@/lib/setup"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@worktable/ui/components/select"
 
 export const Route = createFileRoute("/")({
   component: HomePage,
 })
-
-const RECENT_ROWS = 8
 
 function EmptyState() {
   return (
@@ -42,18 +26,32 @@ function EmptyState() {
   )
 }
 
-/** Today's date, rendered after mount so server and browser time zones agree. */
-function useToday(): string | null {
-  const [today, setToday] = useState<string | null>(null)
+function greetingFor(hour: number): string {
+  if (hour >= 5 && hour < 12) return "Good morning"
+  if (hour >= 12 && hour < 17) return "Good afternoon"
+  return "Good evening"
+}
+
+/**
+ * Today's date and greeting, rendered after mount so server and browser time
+ * zones agree.
+ */
+function useToday(): { date: string; greeting: string } | null {
+  const [today, setToday] = useState<{ date: string; greeting: string } | null>(
+    null
+  )
   useEffect(() => {
-    const update = () =>
-      setToday(
-        new Date().toLocaleDateString(undefined, {
+    const update = () => {
+      const now = new Date()
+      setToday({
+        date: now.toLocaleDateString(undefined, {
           weekday: "long",
           month: "long",
           day: "numeric",
-        })
-      )
+        }),
+        greeting: greetingFor(now.getHours()),
+      })
+    }
     update()
     const timer = window.setInterval(update, 60_000)
     return () => window.clearInterval(timer)
@@ -63,46 +61,22 @@ function useToday(): string | null {
 
 function HomePage() {
   const { data: spaces } = useSpaces()
+  const { data: workspace } = useWorkspace()
   const today = useToday()
-  const [spaceFilter, setSpaceFilter] = useState<string | undefined>()
-  const [showAll, setShowAll] = useState(false)
+  // An unnamed owner is just greeted.
+  const name = workspace?.person?.name?.trim()
+  const greeted = name && name !== "Owner" ? name : undefined
 
-  // One request carries both Recent and the temporary documents.
-  const recent = useRecentDocuments({
-    sort: "updated",
-    includeTemporary: false,
-    temporaryLimit: 100,
-    ...(spaceFilter ? { spaceId: spaceFilter } : {}),
-  })
-
-  const activeSpaces = useMemo(() => {
-    const active = (spaces ?? []).filter((space) => !getSpaceArchiveInfo(space))
-    const lastActivity = new Map(
-      (recent.data?.spaces ?? []).map((entry) => [
-        entry.spaceId,
-        entry.lastActivityAt ?? "",
-      ])
-    )
-    return active.sort((a, b) =>
-      (lastActivity.get(b.id) ?? "").localeCompare(lastActivity.get(a.id) ?? "")
-    )
-  }, [spaces, recent.data])
-
-  const recentItems: RecentItem[] = (recent.data?.items ?? []).map((item) => ({
-    spaceId: item.spaceId,
-    spaceName: spaceFilter ? undefined : item.spaceName,
-    document: item.document,
-  }))
-  const temporaryItems: RecentItem[] = (recent.data?.temporary ?? []).map(
-    (item) => ({
-      spaceId: item.spaceId,
-      spaceName: spaceFilter ? undefined : item.spaceName,
-      document: item.document,
-    })
+  const newMenuSpaces = useMemo(
+    () =>
+      (spaces ?? []).filter(
+        (space) => !getSpaceArchiveInfo(space) && !isGettingStartedSpace(space)
+      ),
+    [spaces]
   )
 
-  // Home does not wait for the Spaces list: Recent, Pending and Activity
-  // load on their own, and only a workspace known to be empty shows welcome.
+  // Home does not wait for the Spaces list: Recent and Pending load on their
+  // own, and only a workspace known to be empty shows welcome.
   if (spaces?.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
@@ -111,94 +85,22 @@ function HomePage() {
     )
   }
 
-  const visibleRecent = showAll ? recentItems : recentItems.slice(0, RECENT_ROWS)
-
   return (
-    <PageWithActivity>
-        <header className="flex items-start justify-between gap-4">
-          <h1 className="min-h-9 font-display text-[1.65rem] leading-tight font-semibold tracking-tight text-foreground sm:min-h-10 sm:text-[2rem]">
-            {today}
+    <div className="mx-auto max-w-3xl space-y-8 px-4 py-8 sm:px-8 lg:py-10">
+      <header className="flex items-start justify-between gap-4 px-0.5">
+        <div className="min-w-0">
+          <h1 className="min-h-9 font-display text-[1.9rem] leading-tight font-semibold tracking-tight text-balance text-foreground sm:min-h-11 sm:text-[2.6rem]">
+            {today ? `${today.greeting}${greeted ? `, ${greeted}` : ""}.` : null}
           </h1>
-          <HomeNewMenu
-            spaces={activeSpaces.filter((space) => !isGettingStartedSpace(space))}
-          />
-        </header>
+          <p className="mt-1.5 min-h-5 text-sm text-muted-foreground">
+            {today?.date}
+          </p>
+        </div>
+        <HomeNewMenu spaces={newMenuSpaces} />
+      </header>
 
-        <PendingSection />
-
-        <section aria-labelledby="recent-heading">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <h2
-              id="recent-heading"
-              className="text-sm font-semibold text-foreground"
-            >
-              Recent
-            </h2>
-            <Select
-              value={spaceFilter ?? "all"}
-              onValueChange={(value) =>
-                setSpaceFilter(!value || value === "all" ? undefined : String(value))
-              }
-            >
-              <SelectTrigger
-                aria-label="Filter by Space"
-                className="h-8 w-auto max-w-48 border-none bg-transparent text-muted-foreground shadow-none hover:text-foreground"
-              >
-                <SelectValue>
-                  {(value: string) =>
-                    value === "all"
-                      ? "All Spaces"
-                      : (activeSpaces.find((space) => space.id === value)?.name ??
-                        "All Spaces")
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent align="end">
-                <SelectItem value="all">All Spaces</SelectItem>
-                {activeSpaces.map((space) => (
-                  <SelectItem key={space.id} value={space.id}>
-                    {space.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {recent.isLoading ? (
-            <div className="space-y-1">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="h-10 animate-pulse rounded-lg bg-muted" />
-              ))}
-            </div>
-          ) : recent.isError ? (
-            <p className="text-sm text-muted-foreground">
-              Couldn’t load recent docs.{" "}
-              <button
-                type="button"
-                className="text-primary-text hover:underline"
-                onClick={() => void recent.refetch()}
-              >
-                Try again
-              </button>
-            </p>
-          ) : recentItems.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing yet.</p>
-          ) : (
-            <>
-              <RecentRows items={visibleRecent} />
-              {!showAll && recentItems.length > RECENT_ROWS && (
-                <button
-                  type="button"
-                  onClick={() => setShowAll(true)}
-                  className="mt-1 text-sm text-muted-foreground hover:text-foreground"
-                >
-                  Show more
-                </button>
-              )}
-            </>
-          )}
-        </section>
-        <TemporaryGroup items={temporaryItems} />
-    </PageWithActivity>
+      <PendingSection />
+      <RecentSection />
+    </div>
   )
 }

@@ -10,6 +10,7 @@ import {
   analyzeDocumentPath,
   documentPathKeyIsAtOrBelow,
   documentPathKeyIsBelow,
+  newPathRefusal,
   remapDocumentPathPrefix,
 } from "./document-path.ts"
 import {
@@ -82,6 +83,8 @@ async function planDocumentFolderMove(
     }
   }
   const fromKey = from.comparisonKey
+  const refusal = newPathRefusal(toPrefix)
+  if (refusal) return { ok: false, kind: "conflict", error: refusal.message }
   if (
     !to.safe ||
     !to.portable ||

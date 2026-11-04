@@ -202,7 +202,7 @@ import {
 } from "../file-uploads.ts"
 import { fetchChatGptFile, type ChatGptFile } from "./chatgpt-files.ts"
 import { discardStagedFile } from "../staged-file.ts"
-import { analyzeDocumentPath } from "../document-path.ts"
+import { pathRefusal } from "../document-path.ts"
 import {
   importIntoRecords,
   proposeImport,
@@ -1501,9 +1501,14 @@ async function _dispatchOperationInner(
         throw new Error("File features are turned off on this Worktable.")
       }
       const file = args["file"] as ChatGptFile | undefined
-      if (!analyzeDocumentPath(path).safe || !namesAFile(path)) {
+      // A refused name says which rule it breaks. Only an unsafe or hidden
+      // one is refused before the bytes: a replace may keep a name that
+      // isn't portable.
+      const refusal = pathRefusal(path)
+      if (refusal) throw new Error(refusal.message)
+      if (!namesAFile(path)) {
         throw new Error(
-          "Upload a file by its path with its extension, such as design/logo.png. Docs are created with create."
+          "This name is for a Doc. Upload a file by its path with its extension, such as design/logo.png. Docs are created with create."
         )
       }
       const ifExists = (args["ifExists"] as "fail" | "keep_both" | "replace" | undefined) ?? "fail"

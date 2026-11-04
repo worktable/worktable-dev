@@ -2593,6 +2593,7 @@ async function commandWorkspaceExport(
   const result = await writeWorkspaceExportV2(file, {
     force: opts.force,
     history,
+    leaveOutLinks: true,
   })
   console.log(
     `Exported ${result.manifest.integrity.files.length} files to ${result.destination}`
@@ -2602,6 +2603,11 @@ async function commandWorkspaceExport(
   console.log(
     `History: ${result.manifest.history.includedFiles} included, ${result.manifest.history.omittedFiles} omitted`
   )
+  for (const entry of result.manifest.leftOut ?? []) {
+    console.log(
+      `Left out ${entry.reason === "link" ? "link" : "special file"}: ${entry.path}`
+    )
+  }
 }
 
 async function commandWorkspaceImport(

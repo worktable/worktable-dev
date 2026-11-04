@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import type { SpaceFile, WidgetFile } from "@worktable/types"
+import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, open, readdir, readFile, rm, truncate, writeFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { FILE_VERSION_MAX_BYTES } from "./file-limits.ts"
@@ -1595,6 +1596,10 @@ describe("format-neutral document access", () => {
     await writeFile(join(docs, "canvas.bin"), "opaque")
     await mkdir(join(docs, "future"), { recursive: true })
     await writeFile(join(docs, "future", "canvas.md"), "# Old canvas")
+    // Hidden Docs stay on disk, out of every list, read and search.
+    await mkdir(join(docs, ".notes"), { recursive: true })
+    await writeFile(join(docs, ".notes", "plan.md"), "# Plan\n\nQuarterly secret\n")
+    await writeFile(join(docs, ".hidden.md"), "# Hidden\n\nQuarterly secret\n")
 
     const activeWidget = await writeWidget(
       spaceId,
@@ -1738,6 +1743,43 @@ describe("format-neutral document access", () => {
     }
     expect(mixed.kind).toBe("conflict")
     expect(mixed.claims.filter((claim) => claim.archived)).toHaveLength(1)
+    expect(JSON.stringify(allDocuments)).not.toContain("hidden")
+
+    const agent = await connect([
+      "documents:read",
+      "docs:read",
+      "docs:write",
+      "search:read",
+    ])
+    for (const docPath of [".notes/plan", ".hidden"]) {
+      const read = await agent.callTool({
+        name: "worktable_docs_read",
+        arguments: { spaceId, docPath },
+      })
+      expect(read.isError).toBe(true)
+      expect(JSON.stringify(read.content)).toContain("not found")
+    }
+    for (const exact of [false, true]) {
+      const found = await agent.callTool({
+        name: "worktable_search",
+        arguments: { spaceId, query: "Quarterly secret", exact },
+      })
+      expect(found.isError).not.toBe(true)
+      expect(JSON.stringify(found.structuredContent)).not.toMatch(/plan|hidden/i)
+    }
+    // Making or replacing one is refused for its reason, and changes nothing.
+    for (const docPath of [".notes/plan", ".notes/new"]) {
+      const write = await agent.callTool({
+        name: "worktable_docs_write",
+        arguments: { spaceId, docPath, content: "# Replaced", lifetime: "durable" },
+      })
+      expect(write.isError).toBe(true)
+      expect(JSON.stringify(write.content)).toContain("start with a dot are hidden")
+    }
+    expect(await readFile(join(docs, ".notes", "plan.md"), "utf8")).toBe(
+      "# Plan\n\nQuarterly secret\n"
+    )
+    expect(existsSync(join(docs, ".notes", "new.md"))).toBe(false)
   })
 
   it("reads supported formats through one bounded inert projection", async () => {

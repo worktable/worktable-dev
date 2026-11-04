@@ -77,11 +77,11 @@ object can be refused, and only for a reason on this list:
 
 | Reason                 | Examples                                                                                                                           | Where                                    |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| Hidden                 | A plain file whose name starts with a dot, or in a folder whose name does (`.env`, `.git/HEAD`); see [Hidden files](#hidden-files) | `document-format-registry.ts`            |
+| Hidden                 | A file or Doc whose name starts with a dot, or in a folder whose name does (`.env`, `.git/HEAD`); see [Hidden files](#hidden-files) | `document-format-registry.ts`            |
 | Unsafe                 | Empty or absolute paths, `.` and `..`, backslashes, encoded separators, NUL, a segment over 255 bytes, ill-formed Unicode          | `document-path.ts` (`UNSAFE_CODES`)      |
 | Not portable           | Reserved Windows names, characters Windows refuses, a trailing dot or space, a path that is too long                               | `document-path.ts` (`PORTABILITY_CODES`) |
 | A Doc's name           | `.md`, `.excalidraw` and `.quickdraw` are for the Doc tools; a `.json` holding Doc blocks is a Doc                                 | `file-uploads.ts` (`namesAFile`)         |
-| A link or special file | Symbolic links, sockets and devices in the folder are skipped                                                                      | `document-adapters.ts`                   |
+| A link or special file | Symbolic links, sockets and devices are skipped; an export leaves them out and lists them                                          | `document-adapters.ts`                   |
 | Over a limit           | An upload over 64 MiB; a write through Worktable past the storage limit                                                            | `file-uploads.ts`, `storage-limit.ts`    |
 
 A `.json` that doesn't hold Doc blocks and an outside `.html` are plain files,
@@ -100,18 +100,18 @@ loses work. A refusal that names its reason lets a person or agent fix the name.
   is refused.
 - `routes-documents.test.ts` "streams an upload to disk as it arrives, and saves
   only a whole one": one byte over the limit is refused and nothing is kept.
-- `document-catalog.test.ts` "lists every visible file by its whole name once
-  files are on": `.git/HEAD` and `.DS_Store` aren't listed.
+- `document-catalog.test.ts` "lists every visible file and Doc by its whole name
+  once files are on": `.git/HEAD` and `.DS_Store` aren't listed.
 - `document-path.test.ts` "rejects unsafe encodings, separators, dot segments,
   and malformed Unicode".
+- `document-path.test.ts` "refuses a new name for one reason on the written
+  list, and says which": each refusal carries its own code (`HIDDEN_NAME`,
+  `UNSAFE_PATH`, `NOT_PORTABLE`, `DOC_NAME`).
 
 **Gaps:**
 
-- Refusals don't say which rule failed: an unsafe or non-portable name gets
-  "Enter a valid file path.", and a hidden name such as `.env` gets the message
-  for a Doc's name.
-- Links and special files on disk are skipped without saying so.
-- No test covers links or special files.
+- Listings skip links and special files without saying so; only an export
+  reports them.
 
 ### 3. Every file stays usable
 
@@ -580,17 +580,19 @@ them.
   policies".
 - `workspace-transfer-v2.test.ts` "stops ZIP generation at the archive ceiling
   and removes partial output".
+- `workspace-transfer-v2.test.ts` "leaves links and special files out of a
+  person's export, keeps hidden items, and refuses unsafe destinations".
 
 **Gaps:** export stops at 2 GiB compressed and 8 GiB expanded. Outside Cloud
-the storage limit is set to fit; a Cloud plan's limit can be higher. One link or special file in the folder fails the whole
-export. Share links and visitor comments live in app data, so an export doesn't
+the storage limit is set to fit; a Cloud plan's limit can be higher. Share links and visitor comments live in app data, so an export doesn't
 carry them.
 
 ## Hidden files
 
-A plain file whose name starts with a dot, or that sits in a folder whose name
+A file or Doc whose name starts with a dot, or that sits in a folder whose name
 does, is hidden: it isn't listed, searched, shared or sent to agents, and
-Worktable doesn't create or move files there. The agent guidance says so.
+Worktable doesn't create or move anything there. Hidden items stay on disk and
+go into exports and backups. The agent guidance says so.
 
 **Enforced in:** `document-format-registry.ts` (`isHiddenName`,
 `pathIsHidden`), `document-adapters.ts` (discovery), `document-write-service.ts`
@@ -599,13 +601,16 @@ search, sharing and agent tools all read the catalog, so they inherit it.
 
 **Proved by:**
 
-- `document-catalog.test.ts` "lists every visible file by its whole name once
-  files are on".
+- `document-catalog.test.ts` "lists every visible file and Doc by its whole name
+  once files are on": hidden Docs, and a stale inventory entry for one, aren't
+  listed.
 - `routes-documents.test.ts` "moves, archives, restores and deletes a plain
   file once files are on": a move into a hidden folder is refused.
+- `workspace-snapshot.test.ts` "captures hidden items whole, and refuses
+  in-workspace destinations, overwrites, and linked content".
 
-**Gaps:** Docs aren't hidden yet: a Doc in a hidden folder, or with a dot name,
-is still listed, searched and readable by agents, and export includes it.
+**Gaps:** a direct read by path of a symbolic link to a Doc still follows the
+link.
 
 ## Agents
 

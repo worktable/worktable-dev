@@ -55,7 +55,6 @@ import {
 import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
-  pathIsHidden,
   type DocumentFormatRegistry,
   type ServerDocumentFormatRegistration,
 } from "./document-format-registry.ts"
@@ -67,7 +66,12 @@ import {
   updateDocumentInventoryAt,
   validateDocumentInventoryMutation,
 } from "./document-inventory.ts"
-import { analyzeDocumentPath } from "./document-path.ts"
+import {
+  analyzeDocumentPath,
+  DOC_NAME_MESSAGE,
+  newPathRefusal,
+  type PathRefusal,
+} from "./document-path.ts"
 import {
   readDocumentFileSourceInChunks,
   readDocumentSource,
@@ -176,17 +180,29 @@ export class DocumentWriteError extends Error {
   readonly reason: DocumentWriteFailure
   /** For a write based on a revision the source is no longer at: the one it is at now. */
   readonly currentRevision: string | undefined
+  /** The code a route answers with: a refused name's reason, or the failure. */
+  readonly code: string
 
   constructor(
     reason: DocumentWriteFailure,
     message: string,
-    options: { currentRevision?: string } = {}
+    options: { currentRevision?: string; code?: PathRefusal["code"] } = {}
   ) {
     super(message)
     this.name = "DocumentWriteError"
     this.reason = reason
     this.currentRevision = options.currentRevision
+    this.code = options.code ?? reason.toUpperCase()
   }
+}
+
+/** A name refused by the written list, as a write error that names why. */
+export function refusedPathError(refusal: PathRefusal): DocumentWriteError {
+  return new DocumentWriteError(
+    refusal.reason === "doc-name" ? "unsupported" : "invalid",
+    refusal.message,
+    { code: refusal.code }
+  )
 }
 
 function requireValidVersionId(
@@ -437,24 +453,19 @@ async function assertNamesAFile(
   ) {
     return
   }
-  throw new DocumentWriteError(
-    "unsupported",
-    "This name is for a Doc. Create Docs with the Doc tools."
-  )
+  throw new DocumentWriteError("unsupported", DOC_NAME_MESSAGE, {
+    code: "DOC_NAME",
+  })
 }
 
-/** A file's path is its whole name, so `fileName` lets it end in `.json` or `.html`. */
+/**
+ * A path a new or moved item can take, or the refusal that says why not.
+ * A file's path is its whole name, so `fileName` lets it end in `.json` or
+ * `.html`. Hidden paths are refused for Docs and files alike.
+ */
 function requirePortablePath(path: string, fileName = false): string {
-  const analyzed = analyzeDocumentPath(path, {
-    enforceNewPathGrammar: true,
-    fileName,
-  })
-  if (!analyzed.safe || !analyzed.portable || analyzed.canonicalPath !== path) {
-    throw new DocumentWriteError(
-      "invalid",
-      "Document path must be canonical and portable"
-    )
-  }
+  const refusal = newPathRefusal(path, { fileName })
+  if (refusal) throw refusedPathError(refusal)
   return path
 }
 
@@ -1245,12 +1256,6 @@ async function createRegisteredDocumentWithRoom(
     options.path,
     options.format.id === BUILTIN_DOCUMENT_FORMATS.file
   )
-  if (
-    options.format.id === BUILTIN_DOCUMENT_FORMATS.file &&
-    pathIsHidden(path)
-  ) {
-    throw new DocumentWriteError("invalid", "Files can't go in hidden folders")
-  }
   if (options.format.id === BUILTIN_DOCUMENT_FORMATS.file) {
     await assertNamesAFile(
       registry,

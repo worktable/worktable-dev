@@ -12,6 +12,7 @@ import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
   isHiddenName,
+  pathIsHidden,
   withoutSuffix,
   type DocumentFormatRegistry,
 } from "./document-format-registry.ts"
@@ -130,7 +131,7 @@ export function plainFileClaim(
     return null
   }
   const path = claim.source.relativePath.slice("docs/".length)
-  if (path.split("/").some(isHiddenName)) return null
+  if (pathIsHidden(path)) return null
   const analyzed = pathDiagnostics(path)
   return {
     ...claim,
@@ -179,8 +180,7 @@ async function scanLegacyDocDirectory(
   budget: LegacyCatalogBudget,
   registry: DocumentFormatRegistry,
   limit: ReturnType<typeof createConcurrencyLimit>,
-  anyFile: boolean,
-  insideHidden = false
+  anyFile: boolean
 ): Promise<DocumentSourceClaim[]> {
   const directory = join(root, ...relativeSegments)
   const entries = await limit(() => readLegacyDirectory(directory, budget))
@@ -189,8 +189,9 @@ async function scanLegacyDocDirectory(
     entries.map(async (entry): Promise<DocumentSourceClaim[]> => {
       const segments = [...relativeSegments, entry.name]
       if (entry.isSymbolicLink()) return []
-      // Nothing under a hidden name is a file. Docs there are found as ever.
-      const hidden = insideHidden || isHiddenName(entry.name)
+      // Nothing under a hidden name is a file or a Doc, so a hidden folder
+      // such as `.git` isn't read at all.
+      if (isHiddenName(entry.name)) return []
       if (entry.isDirectory()) {
         return scanLegacyDocDirectory(
           root,
@@ -199,13 +200,12 @@ async function scanLegacyDocDirectory(
           budget,
           registry,
           limit,
-          anyFile,
-          hidden
+          anyFile
         )
       }
       if (!entry.isFile()) return []
       const registration = registry.fileSourceForFilename(entry.name, {
-        anyFile: anyFile && !hidden,
+        anyFile,
       })
       if (!registration) return []
       const { registration: format, source } = registration

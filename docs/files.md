@@ -550,7 +550,9 @@ reason for both), `mcp/file-results.ts`.
 - `mcp-document-previews.test.ts` "keeps HTML saved when preview runtime is
   unavailable and fences standalone captures to the source revision".
 
-**Gaps:** a code or text file is a card to people but text to agents. No test
+**Gaps:** a code file (such as `.py` or `.ts`) is a card to people but text to
+agents. Plain text and logs are text to both; CSV and TSV are a table to people
+and text to agents, which carries the same content. No test
 checks that the HTTP API and agent tools report the same identity and revision
 for one file.
 

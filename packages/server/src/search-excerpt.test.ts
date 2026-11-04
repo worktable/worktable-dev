@@ -696,6 +696,11 @@ describe("search excerpts", () => {
     const ftsHit = viaFts.find((r) => r.type === "record");
     expect(ftsHit?.excerpt).toContain("aqueduct");
     expect(ftsHit?.excerpt).not.toContain("{");
+
+    // A deleted Space's records match nothing, archived ones included.
+    expect((await req(app, "DELETE", "/api/spaces/meta")).status).toBe(204);
+    const afterDelete = await searchWithStatus("aqueduct", { includeArchived: true });
+    expect(afterDelete.results.filter((r) => r.type === "record")).toEqual([]);
   });
 
   it("explains collection-name-only matches in the excerpt, in both modes", async () => {

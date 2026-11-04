@@ -64,6 +64,7 @@ import {
   writeWorkspaceManifest,
 } from "./workspace.ts"
 import { resetWorkspaceSafetyForTests } from "./workspace-safety.ts"
+import { yjsManager } from "./yjs-manager.ts"
 
 const DAY = 24 * 60 * 60 * 1000
 let workspace: string
@@ -175,6 +176,36 @@ afterEach(() => {
 })
 
 describe("deleted items", () => {
+  it("take their live editing state with them", async () => {
+    ensureWorkspaceManifest()
+    await writeSpace(space("notes"))
+    await writeDoc(
+      "notes",
+      "board",
+      [
+        {
+          id: "p1",
+          type: "paragraph",
+          props: {},
+          content: [{ type: "text", text: "Draft", styles: {} }],
+          children: [],
+        },
+      ],
+      { updatedBy: "test", source: "rest-api" }
+    )
+    let editorClosed = false
+    await yjsManager.handleConnection(
+      { send() {}, close: () => (editorClosed = true) } as never,
+      "notes",
+      "board"
+    )
+    await deleteRegisteredDocument({ spaceId: "notes", path: "board" })
+    // No one goes on editing a deleted Doc, nor is a new Doc at its path
+    // served from its room.
+    expect(editorClosed).toBe(true)
+    expect(yjsManager.isLoaded("notes", "board")).toBe(false)
+  })
+
   it("move out of the workspace folder at once and are removed after the window", async () => {
     ensureWorkspaceManifest()
     await writeSpace(space("notes"))

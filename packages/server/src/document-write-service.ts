@@ -84,9 +84,12 @@ import {
 } from "./staged-file.ts"
 import {
   deleteDurableDocExactlyLocked,
+  didDocumentLifecyclePreserveGeneration,
   moveDurableDocumentExactlyLocked,
   setDurableDocumentArchivedExactlyLocked,
 } from "./document-lifecycle-journal.ts"
+import { withDocGenerationLocks } from "./doc-generation-lock.ts"
+import { DocFormatTransitionConflictError, yjsManager } from "./yjs-manager.ts"
 import {
   DOCUMENT_STORAGE_PROFILE_IDS,
   documentStorageProfiles,
@@ -2725,9 +2728,73 @@ async function deleteRegisteredDocumentExactly(options: {
   registry?: DocumentFormatRegistry
 }): Promise<{ documentId: DocumentId; path: string }> {
   assertSpaceAccess(options.spaceId, "edit");
-  const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
-  const result = await withDocPathLock(options.spaceId, async () => {
+  // A Doc open for editing has a live room. The delete lets its editors go
+  // and retires its collaboration state, so no one keeps editing, or is
+  // served, the deleted Doc; a refused delete leaves the room as it was.
+  // The snapshot only names the room to fence, by the Doc's own path; the
+  // delete checks that path again under the lock.
+  const fenced = [options.path]
+  try {
+    const known = resolveManagedFileDocument(
+      await readDocumentCatalogSnapshot(options.spaceId),
+      options.path,
+      registry
+    ).path
+    if (known !== options.path) fenced.push(known)
+  } catch {
+    // The delete itself reports a path it can't resolve.
+  }
+  const locked = () =>
+    deleteRegisteredDocumentLocked(options, fenced, registry).then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => {
+        if (error instanceof DocumentWriteError) {
+          return { ok: false as const, error }
+        }
+        throw error
+      }
+    )
+  let outcome: Awaited<ReturnType<typeof locked>>
+  try {
+    outcome = await withDocGenerationLocks(
+      fenced.map((docPath) => ({ spaceId: options.spaceId, docPath })),
+      () =>
+        yjsManager.withDocGenerationTransitions(
+          options.spaceId,
+          fenced,
+          locked,
+          (result) => result.ok,
+          didDocumentLifecyclePreserveGeneration
+        )
+    )
+  } catch (error) {
+    if (error instanceof DocFormatTransitionConflictError) {
+      throw new DocumentWriteError(
+        "conflict",
+        "This document is already changing. Try again."
+      )
+    }
+    throw error
+  }
+  if (!outcome.ok) throw outcome.error
+  const result = outcome.value
+  await publishMutation(options.spaceId)
+  await notifyWorkspaceChangeAndWait({
+    type: "documentCorpus",
+    spaceId: options.spaceId,
+  })
+  return result
+}
+
+/** The delete under the lock, of a Doc at one of the paths fenced for it. */
+function deleteRegisteredDocumentLocked(
+  options: { spaceId: string; path: string },
+  fenced: readonly string[],
+  registry: DocumentFormatRegistry
+): Promise<{ documentId: DocumentId; path: string }> {
+  const workspaceRoot = getWorkspaceRoot()
+  return withDocPathLock(options.spaceId, async () => {
     assertSpaceAccess(options.spaceId, "edit");
     await requireV2Workspace(workspaceRoot)
     const catalog = await buildDocumentCatalog({
@@ -2739,6 +2806,12 @@ async function deleteRegisteredDocumentExactly(options: {
       options.spaceId,
       resolveManagedFileDocument(catalog, options.path, registry)
     )
+    if (!fenced.includes(current.path)) {
+      throw new DocumentWriteError(
+        "conflict",
+        "The document changed during the delete. Try again."
+      )
+    }
     const deleted = await deleteDurableDocExactlyLocked(
       options.spaceId,
       current.path
@@ -2751,10 +2824,4 @@ async function deleteRegisteredDocumentExactly(options: {
     }
     return { documentId: deleted.documentId, path: current.path }
   })
-  await publishMutation(options.spaceId)
-  await notifyWorkspaceChangeAndWait({
-    type: "documentCorpus",
-    spaceId: options.spaceId,
-  })
-  return result
 }

@@ -323,18 +323,21 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
       return route.fulfill({ json: { ok: true } })
     }
   )
-  await dialog.getByRole("button", { name: "Disconnect", exact: true }).click()
+  // Disconnect lives in the agent's dialog and asks first.
+  await dialog.getByRole("button", { name: "Edit", exact: true }).click()
+  const editor = page.getByRole("dialog", { name: "Grok Bot", exact: true })
+  await editor.getByRole("button", { name: "Disconnect", exact: true }).click()
+  const confirm = page.getByRole("dialog", { name: "Disconnect Grok Bot?" })
+  await confirm.getByRole("button", { name: "Disconnect", exact: true }).click()
   await expect(
     page.getByText("Disconnect unavailable", { exact: true })
   ).toBeVisible()
   expect(cleanupRequests).toBe(0)
   await expect(
-    dialog.getByRole("button", { name: "Disconnect", exact: true })
+    confirm.getByRole("button", { name: "Disconnect", exact: true })
   ).toBeEnabled()
-  await dialog.getByRole("button", { name: "Disconnect", exact: true }).click()
-  await expect(
-    dialog.getByRole("button", { name: "Disconnect", exact: true })
-  ).toHaveCount(0)
+  await confirm.getByRole("button", { name: "Disconnect", exact: true }).click()
+  await expect(editor).toHaveCount(0)
   await expect(
     page.getByText("Agent disconnected. Could not remove its Grok routine.", {
       exact: true,
@@ -657,7 +660,7 @@ test("coding-agent selections keep their platform logos after connecting", async
   })
   for (const [client, label, logo] of [
     ["claude-code", "Claude Code", "claude-code.svg"],
-    ["codex", "ChatGPT / Codex", "openai.svg"],
+    ["codex", "Codex CLI", "openai.svg"],
     ["cursor", "Cursor", "cursor.svg"],
     ["opencode", "opencode", "opencode.svg"],
     ["vscode", "VS Code", "vscode.svg"],

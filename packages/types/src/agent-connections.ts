@@ -185,32 +185,33 @@ export interface AgentConnectionInventory {
 }
 
 /**
- * The platform an agent is: recorded, else inferred. Cloud's sign-ins carry
- * an opaque client id and no recorded platform, so their name decides.
+ * The platform an agent is. A client id that names an app decides: a label
+ * made here, or a vendor's signed client metadata URL. Otherwise the recorded
+ * platform, else the name, which is all some sign-ins carry.
  */
 export function agentConnectionPlatform(
   connection: Pick<AgentConnection, "platform" | "target" | "displayName">
 ): AgentPlatformId {
+  const fromClient =
+    connection.target.kind === "mcp-client"
+      ? platformForClient(connection.target.clientId)
+      : "other"
+  if (fromClient !== "other") return fromClient
   if (isAgentPlatformId(connection.platform) && connection.platform !== "other")
     return connection.platform
   if (connection.target.kind === "agent-adapter")
     return platformForAdapter(connection.target.adapter)
-  const fromClient = platformForClient(connection.target.clientId)
-  return fromClient === "other"
-    ? platformForName(connection.displayName)
-    : fromClient
+  return platformForName(connection.displayName)
 }
 
 /**
- * Whether an agent connects from a Codex host: Codex itself, or the ChatGPT
- * desktop app's own MCP servers, which share Codex's settings. These connect
- * without MCP Events, so they answer only while a chat keeps waiting.
+ * Whether an agent connects from a Codex host: Codex CLI, or ChatGPT Desktop's
+ * own MCP servers, which run on Codex. These connect without MCP Events, so
+ * they answer only while a chat keeps waiting.
  */
 export function agentConnectionOnCodexHost(
-  connection: Pick<AgentConnection, "target">
+  connection: Pick<AgentConnection, "platform" | "target" | "displayName">
 ): boolean {
-  const { target } = connection
-  if (target.kind !== "mcp-client") return false
-  const client = target.clientId?.toLowerCase()
-  return client === "codex" || client === "chatgpt-desktop"
+  const platform = agentConnectionPlatform(connection)
+  return platform === "codex" || platform === "chatgpt-desktop"
 }

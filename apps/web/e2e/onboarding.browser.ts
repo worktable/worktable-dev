@@ -452,7 +452,7 @@ test("Cloud coding agents are recognized on their own tab when they sign in", as
 
   // An agent already connected when the step opened isn't new, while one
   // that signed in since is recognized when its tab opens.
-  await page.getByRole("tab", { name: "Codex", exact: true }).click()
+  await page.getByRole("tab", { name: "Codex CLI", exact: true }).click()
   await expect(page.getByText("Codex is connected.")).toBeVisible()
   await expect(
     page.getByRole("button", { name: "Continue", exact: true })
@@ -498,7 +498,7 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     hostname: "browser-devbox",
     client: "codex",
   })
-  await expect(page.getByText("Codex is connected.")).toBeVisible({
+  await expect(page.getByText("Codex CLI is connected.")).toBeVisible({
     timeout: 10_000,
   })
 
@@ -584,7 +584,7 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     )
   ).toMatchObject({
     connections: expect.arrayContaining([
-      expect.objectContaining({ displayName: "Codex" }),
+      expect.objectContaining({ displayName: "Codex CLI" }),
       expect.objectContaining({
         target: expect.objectContaining({ adapter: "hermes" }),
         displayName: "Hermes",

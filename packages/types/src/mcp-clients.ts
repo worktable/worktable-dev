@@ -108,7 +108,7 @@ export const MCP_CLIENTS: Record<McpClientId, McpClientMeta> = {
   },
   codex: {
     id: "codex",
-    label: "ChatGPT / Codex",
+    label: "Codex CLI",
     maturity: "supported",
     setupKind: "connector",
     configPathHint: "~/.codex/config.toml",

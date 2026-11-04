@@ -8,7 +8,9 @@ export const AGENT_PLATFORM_IDS = [
   "hermes",
   "grok-bot",
   "chatgpt",
+  "chatgpt-desktop",
   "claude",
+  "claude-desktop",
   "claude-code",
   "codex",
   "cursor",
@@ -54,9 +56,24 @@ export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
     mode: "on-demand",
     logo: "openai.svg",
   },
+  // The desktop app's own MCP servers, which it shares with Codex CLI. In the
+  // app with Cloud selected, ChatGPT uses the account's apps, so it is ChatGPT.
+  "chatgpt-desktop": {
+    id: "chatgpt-desktop",
+    name: "ChatGPT Desktop",
+    mode: "on-demand",
+    logo: "openai.svg",
+  },
   claude: {
     id: "claude",
     name: "Claude",
+    mode: "on-demand",
+    logo: "claude.svg",
+  },
+  // Claude Desktop's local extension; its connectors are Claude's.
+  "claude-desktop": {
+    id: "claude-desktop",
+    name: "Claude Desktop",
     mode: "on-demand",
     logo: "claude.svg",
   },
@@ -66,7 +83,12 @@ export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
     mode: "on-demand",
     logo: "claude-code.svg",
   },
-  codex: { id: "codex", name: "Codex", mode: "on-demand", logo: "openai.svg" },
+  codex: {
+    id: "codex",
+    name: "Codex CLI",
+    mode: "on-demand",
+    logo: "openai.svg",
+  },
   cursor: {
     id: "cursor",
     name: "Cursor",
@@ -98,9 +120,9 @@ export function isAgentPlatformId(value: unknown): value is AgentPlatformId {
 
 const CLIENT_PLATFORMS: Record<string, AgentPlatformId> = {
   "claude-code": "claude-code",
-  "claude-desktop": "claude",
+  "claude-desktop": "claude-desktop",
   claude: "claude",
-  "chatgpt-desktop": "chatgpt",
+  "chatgpt-desktop": "chatgpt-desktop",
   chatgpt: "chatgpt",
   codex: "codex",
   cursor: "cursor",
@@ -117,11 +139,91 @@ export function platformForAdapter(adapter: string): AgentPlatformId {
     : "other"
 }
 
-/** The platform of an MCP client id, such as `claude-code` or `codex`. */
+/**
+ * The platform of an MCP client id: a label such as `claude-code` or `codex`,
+ * or a vendor's signed client metadata URL.
+ */
 export function platformForClient(
   clientId: string | null | undefined
 ): AgentPlatformId {
-  return clientPlatform(clientId?.toLowerCase()) ?? "other"
+  return (
+    clientPlatform(clientId?.toLowerCase()) ??
+    platformForClientMetadata(clientId) ??
+    "other"
+  )
+}
+
+/**
+ * Apps that sign in with a client metadata document on their maker's domain.
+ * The authorization server fetches that document and signs its URL as the
+ * client id, so these ids say which app it is; names can say anything.
+ * The desktop app's MCP servers sign in through Codex, as Codex CLI does.
+ */
+const CLIENT_METADATA: readonly {
+  origin: string
+  path: string
+  platform: AgentPlatformId
+}[] = [
+  {
+    origin: "https://chatgpt.com",
+    path: "/oauth/codex/",
+    platform: "chatgpt-desktop",
+  },
+  { origin: "https://chatgpt.com", path: "/oauth/", platform: "chatgpt" },
+  {
+    origin: "https://claude.ai",
+    path: "/oauth/claude-code-client-metadata",
+    platform: "claude-code",
+  },
+  {
+    origin: "https://claude.ai",
+    path: "/oauth/mcp-oauth-client-metadata",
+    platform: "claude",
+  },
+  {
+    origin: "https://nousresearch.github.io",
+    path: "/hermes-agent/",
+    platform: "hermes",
+  },
+]
+
+function platformForClientMetadata(
+  clientId: string | null | undefined
+): AgentPlatformId | null {
+  if (!clientId?.startsWith("https://")) return null
+  let url: URL
+  try {
+    url = new URL(clientId)
+  } catch {
+    return null
+  }
+  return (
+    CLIENT_METADATA.find(
+      (entry) =>
+        url.origin === entry.origin && url.pathname.startsWith(entry.path)
+    )?.platform ?? null
+  )
+}
+
+/**
+ * What a Cloud or Worktable Link sign-in is called until its owner renames it:
+ * its app's name when its signed client id says which app it is, else the
+ * name the client gave itself.
+ */
+export function signInAgentName(principalId: string, clientName: string) {
+  const platform = platformForClient(clientIdForSignInPrincipal(principalId))
+  return platform === "other" ? clientName : AGENT_PLATFORMS[platform].name
+}
+
+/**
+ * The client id inside a Cloud or Worktable Link sign-in's principal,
+ * `oauth:<client id>:<account>`. Null for any other principal.
+ */
+export function clientIdForSignInPrincipal(principalId: string): string | null {
+  if (!principalId.startsWith("oauth:")) return null
+  const rest = principalId.slice("oauth:".length)
+  const end = rest.lastIndexOf(":")
+  return end > 0 ? rest.slice(0, end) : null
 }
 
 /** Own entries only: a client named like `constructor` is no platform. */

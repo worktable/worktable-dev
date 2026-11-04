@@ -148,7 +148,7 @@ describe("connector transaction model", () => {
     expect(host.requests).toEqual([])
     expect(signIns).toEqual(["codex"])
     expect(first.stdout.join("\n")).toContain(
-      "ChatGPT / Codex is connected to Worktable."
+      "Codex CLI is connected to Worktable."
     )
 
     // Run again, as someone does when they aren't sure it worked. Without a
@@ -187,7 +187,7 @@ describe("connector transaction model", () => {
     expect(attempted).toEqual(["codex"])
     const steps = stopped.stdout.join("\n")
     expect(steps).toContain("Signing in didn't finish.")
-    expect(steps).toContain("ChatGPT / Codex: ")
+    expect(steps).toContain("Codex CLI: ")
     expect(steps).toContain("opencode: ")
   })
 

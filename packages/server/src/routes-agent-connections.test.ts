@@ -124,7 +124,7 @@ describe("agent connection routes", () => {
     }
     expect(first.connection).toMatchObject({
       displayName: "Research GPT",
-      platform: "chatgpt",
+      platform: "chatgpt-desktop",
       access: { threads: true, read: true, edit: false },
     })
     const scopes = (await verifyToken(first.token))?.scopes ?? []
@@ -178,8 +178,8 @@ describe("agent connection routes", () => {
       const chat = await connect(null, "ChatGPT")
       const named = await connect(null, "Claude")
       const session = await connect("claude-code")
-      // Codex and ChatGPT's desktop MCP servers share settings and get no
-      // events: a running chat waits, as a Claude Code session does.
+      // Codex CLI and ChatGPT Desktop share settings and get no events: a
+      // running chat waits, as a Claude Code session does.
       await connect("codex")
       const desktop = await connect("chatgpt-desktop", "ChatGPT Desktop")
       const autoReplies = async () => {
@@ -196,7 +196,7 @@ describe("agent connection routes", () => {
         ChatGPT: { kind: "chat", state: "off" },
         "Claude Code": { kind: "session", state: "off" },
         Claude: { kind: "task", state: "off" },
-        Codex: { kind: "session", state: "off" },
+        "Codex CLI": { kind: "session", state: "off" },
         "ChatGPT Desktop": { kind: "session", state: "off" },
       })
 
@@ -235,7 +235,7 @@ describe("agent connection routes", () => {
         ChatGPT: { kind: "chat", state: "on" },
         "Claude Code": { kind: "session", state: "on" },
         Claude: { kind: "task", state: "off" },
-        Codex: { kind: "session", state: "off" },
+        "Codex CLI": { kind: "session", state: "off" },
         "ChatGPT Desktop": { kind: "session", state: "on" },
       })
 

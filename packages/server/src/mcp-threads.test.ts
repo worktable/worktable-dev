@@ -480,20 +480,20 @@ describe("thread MCP operations", () => {
     const thread = (listed.threads as Array<Record<string, unknown>>)[0]!
     expect(thread.members).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "Codex" }),
+        expect.objectContaining({ name: "Codex CLI" }),
         expect.objectContaining({ name: "Atlas" }),
       ])
     )
 
     expect(
       (await listParticipantBindings()).some(
-        ({ participant }) => participant.name === "Codex"
+        ({ participant }) => participant.name === "Codex CLI"
       )
     ).toBe(true)
     await revokeToken(credential.metadata.id)
     expect(
       (await listParticipantBindings()).some(
-        ({ participant }) => participant.name === "Codex"
+        ({ participant }) => participant.name === "Codex CLI"
       )
     ).toBe(false)
   })

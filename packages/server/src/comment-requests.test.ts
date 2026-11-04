@@ -156,7 +156,7 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
       const { participants } = (await response.json()) as {
         participants: Array<{ name: string }>
       }
-      expect(participants.map((participant) => participant.name)).toContain("Codex")
+      expect(participants.map((participant) => participant.name)).toContain("Codex CLI")
     })
 
     it("waits on its recipient until they reply, and asks again when the commenter answers", async () => {

@@ -194,7 +194,9 @@ beforeEach(async () => {
   process.env["WORKTABLE_REQUIRE_AUTH"] = "1"
 
   const created = (await (
-    await api("POST", "", { client: "claude-desktop" })
+    // Claude's sign-in, as its connector uses; Claude Desktop's own
+    // extension isn't what a cloud task reaches Worktable with.
+    await api("POST", "", { client: null, displayName: "Claude" })
   ).json()) as { token: string; connection: { id: string } }
   connectionId = created.connection.id
   claude = (await verifyToken(created.token))!

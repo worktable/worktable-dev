@@ -36,6 +36,14 @@ export function mcpModernEraEnabled(): boolean {
   return envSwitch("WORKTABLE_MCP_MODERN") ?? true
 }
 
+/**
+ * Whether Link also serves MCP 2026-07-28, so a chat app reaching this
+ * device through Cloud gets events and tasks. Held behind the preview.
+ */
+export function mcpModernEraOverLink(): boolean {
+  return mcpModernEraEnabled() && configuredMcpSurface() === "preview"
+}
+
 function envSwitch(name: string): boolean | null {
   const env = process.env[name]?.trim().toLowerCase()
   if (env === "1" || env === "true") return true

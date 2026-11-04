@@ -1284,6 +1284,32 @@ export function protectedDocumentGenerations(
 }
 
 /**
+ * The bytes a write replacing a document's current version may count as
+ * given back under the storage limit: that version's, when afterwards
+ * pruning can remove it or the write continues it. None when it is a
+ * meaningful checkpoint, or when the write makes one, since the version
+ * before a checkpoint stays as the newest that is not one (see
+ * `protectedDocumentGenerations`). `generationId` names the current version
+ * when known; otherwise it is the newest. Read only near the limit.
+ */
+export async function reclaimableAfterReplacementV2(input: {
+  workspaceRoot: string
+  spaceId: string
+  documentId: DocumentId
+  generationId?: string
+  writesCheckpoint: boolean
+}): Promise<number> {
+  if (input.writesCheckpoint) return 0
+  const current = input.generationId
+    ? await readDocumentGenerationManifestV2({
+        ...input,
+        generationId: input.generationId,
+      }).catch(() => null)
+    : ((await listDocumentGenerationsV2(input).catch(() => []))[0] ?? null)
+  return current && !current.checkpoint?.meaningful ? current.totalBytes : 0
+}
+
+/**
  * Remove the named generations of one document to free storage, oldest
  * history only. Under the document's history locks it lists the generations
  * again and skips any now protected (see `protectedDocumentGenerations`) or

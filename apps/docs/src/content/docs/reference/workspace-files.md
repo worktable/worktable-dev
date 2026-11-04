@@ -65,15 +65,16 @@ in progress such as uploads and exports, and indexes and caches. Sizes are
 file sizes. Changes made directly in the folder are counted too, and
 everything is recounted every few hours.
 
-A Worktable may take up to 2 GiB, the most an export can carry, so it can
-always be exported. An operator can set a lower limit with
-`WORKTABLE_STORAGE_LIMIT_BYTES`; on Cloud the plan sets it. At the limit,
-Worktable makes room by removing the oldest history first: deleted items,
-then old versions, oldest first. It never removes a current version or a
-saved version. A version's history says when older versions were removed.
-When nothing is left to remove, writes that would add data are refused, for
-people and agents alike, until something is deleted. Reading, deleting,
-moving and exporting keep working. Files written straight into the folder
+A Worktable's limit is 2 GiB by default. An operator can set a lower one
+with `WORKTABLE_STORAGE_LIMIT_BYTES`; on Cloud the plan sets it. Transfers in
+progress don't count toward it. At the limit, Worktable makes room by
+removing the oldest history first: deleted items, then old versions, oldest
+first. It never removes a current version or a saved version. A version's
+history says when older versions were removed. When nothing is left to
+remove, writes that would add data are refused, for people and agents
+alike, until something is deleted. Reading, deleting, moving and exporting
+keep working, and so does typing in an open Doc, which can take the
+Worktable slightly over its limit. Files written straight into the folder
 are never refused; they count, and the Worktable then acts as at its limit.
 
 ## Portable content

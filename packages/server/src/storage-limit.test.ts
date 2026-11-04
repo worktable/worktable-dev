@@ -8,10 +8,12 @@ import { setAppDirOverride } from "./app-storage.ts"
 import { runDeletedItemsPass } from "./deleted-items.ts"
 import { listDocumentGenerationsV2 } from "./document-version-store-v2.ts"
 import {
+  checkpointRegisteredDocument,
   createRegisteredDocument,
   deleteRegisteredDocument,
   readRegisteredDocumentSource,
   replaceRegisteredDocument,
+  restoreRegisteredDocumentVersion,
 } from "./document-write-service.ts"
 import { withStagedUpload, writeUploadedFile } from "./file-uploads.ts"
 import {
@@ -30,14 +32,21 @@ import {
   storageSummary,
 } from "./storage-limit.ts"
 import { prunedHistoryFor, resetPrunedRecordForTests } from "./storage-pruned.ts"
+import { setStoragePruningHooksForTests } from "./storage-pruning.ts"
 import {
   activeStorageAccount,
+  noteStorageChange,
   startStorageAccounting,
   storageUsage,
 } from "./storage-usage.ts"
-import { writeSpace } from "./store.ts"
+import { restoreDocVersion, writeSpace } from "./store.ts"
+import { appendThreadMessage, createThread } from "./thread-store.ts"
 import { WorkspaceWatcher } from "./watcher.ts"
-import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
+import {
+  ensureWorkspaceManifest,
+  setWorkspaceRootOverride,
+  workspaceCacheKey,
+} from "./workspace.ts"
 
 const KB = 1024
 let workspace: string
@@ -153,7 +162,7 @@ afterEach(async () => {
 })
 
 describe("storage limit", () => {
-  it("prunes deleted items first, then the oldest versions, so the write succeeds", async () => {
+  it("prunes deleted items first, then the oldest versions, only as much as writes need", async () => {
     const older = await docWithVersions("older", 3, 16 * KB)
     const newer = await docWithVersions("newer", 2, 16 * KB)
     await createDoc("gone", 16 * KB)
@@ -177,12 +186,21 @@ describe("storage limit", () => {
     expect(usage).toBeLessThanOrEqual(storageLimitBytes())
 
     // Then the oldest version in the whole Worktable, never a current one.
+    // A second write asks while that pass runs; one version makes room for
+    // both, so no second one goes.
     await roomForLess()
+    let second: Promise<unknown> | null = null
+    setStoragePruningHooksForTests({
+      beforeVersions: () => {
+        second ??= createDoc("third", 4 * KB)
+      },
+    })
     await createDoc("second", 4 * KB)
+    await second
+    setStoragePruningHooksForTests({})
     usage = await settled()
     expect(usage).toBeLessThanOrEqual(storageLimitBytes())
-    const olderAfter = await generations(older)
-    expect(olderAfter).toEqual(olderBefore.slice(0, -1))
+    expect(await generations(older)).toEqual(olderBefore.slice(0, -1))
     expect(await generations(newer)).toEqual(newerBefore)
     expect(
       (await readRegisteredDocumentSource({ spaceId: "notes", path: "older" }))
@@ -194,11 +212,39 @@ describe("storage limit", () => {
     expect(storageSummary()!.pruned).toMatchObject({ versions: 1, deletedItems: 1 })
   })
 
-  it("refuses a write when nothing prunable is left, and leaves nothing behind", async () => {
-    await createDoc("kept", 8 * KB)
-    setStorageLimitForTests((await settled()) + 4 * KB)
-    const before = workspaceFiles()
+  it("admits restores and saved versions for what they keep, prunes a version once no restore holds it, and refuses when nothing is left", async () => {
+    // Two versions of the same size; the older one isn't current, so it can go.
+    const kept = await docWithVersions("kept", 2, 16 * KB)
+    const oldest = (await generations(kept)).at(-1)!
+    setStorageLimitForTests((await settled()) + 4 * KB, { promptPruneMs: 10_000 })
+    let before = workspaceFiles()
 
+    // A restore keeps its checkpoint, and the version before it, for good:
+    // it needs room for the restored version, on both restore paths, and
+    // holds the version it reads, so pruning can't take that one meanwhile.
+    const current = await readRegisteredDocumentSource({ spaceId: "notes", path: "kept" })
+    const restore = await restoreRegisteredDocumentVersion({
+      spaceId: "notes",
+      path: "kept",
+      versionId: oldest,
+      expectedRevision: current.sourceRevision,
+      restoredBy: "test",
+      source: "test",
+    }).catch((error) => error)
+    expect(restore).toBeInstanceOf(StorageLimitError)
+    expect(
+      await restoreDocVersion("notes", "kept", oldest).catch((error) => error)
+    ).toBeInstanceOf(StorageLimitError)
+    expect(workspaceFiles()).toEqual(before)
+    expect(await generations(kept)).toContain(oldest)
+
+    // Once no restore holds it, that version goes to make room.
+    await createDoc("after", 4 * KB)
+    expect(await generations(kept)).not.toContain(oldest)
+
+    // Now nothing is prunable: writes that add bytes are refused.
+    await settled()
+    before = workspaceFiles()
     const refused = await createDoc("refused", 8 * KB).catch((error) => error)
     expect(refused).toBeInstanceOf(StorageLimitError)
     expect(refused.code).toBe("STORAGE_LIMIT")
@@ -217,23 +263,33 @@ describe("storage limit", () => {
       })
     ).catch((error) => error)
     expect(upload).toBeInstanceOf(StorageLimitError)
+    // A saved version is a whole copy kept for good.
+    const now = await readRegisteredDocumentSource({ spaceId: "notes", path: "kept" })
+    expect(
+      await checkpointRegisteredDocument({
+        spaceId: "notes",
+        path: "kept",
+        expectedRevision: now.sourceRevision,
+        createdBy: "test",
+        source: "test",
+      }).catch((error) => error)
+    ).toBeInstanceOf(StorageLimitError)
     expect(workspaceFiles()).toEqual(before)
     expect(existsSync(stagingDirectory()) ? readdirSync(stagingDirectory()) : []).toEqual([])
 
     // Reads, smaller replacements and deletes still work at the limit.
-    const kept = await readRegisteredDocumentSource({ spaceId: "notes", path: "kept" })
     await replaceRegisteredDocument({
       spaceId: "notes",
       path: "kept",
       bytes: bytes(2 * KB, "kept"),
-      expectedRevision: kept.sourceRevision,
+      expectedRevision: now.sourceRevision,
       updatedBy: "test",
       source: "test",
     })
     await deleteRegisteredDocument({ spaceId: "notes", path: "kept" })
   })
 
-  it("counts a write on disk past the limit and refuses the next Worktable write", async () => {
+  it("leaves transfers out, counts a write on disk past the limit, and refuses the next new write", async () => {
     listeners = new Map()
     watcher = new WorkspaceWatcher({
       watch: (directory, listener) => {
@@ -245,19 +301,53 @@ describe("storage limit", () => {
     })
     watcher.start()
     await createDoc("plan", 2 * KB)
+    const people = {
+      author: { id: "ptc_storage_author", kind: "human" as const, name: "Ada" },
+      recipient: { id: "ptc_storage_agent", kind: "agent" as const, name: "Atlas" },
+    }
+    const posted = await createThread("notes", {
+      ...people,
+      body: "Status?",
+      idempotencyKey: "status-1",
+    })
     setStorageLimitForTests((await settled()) + 16 * KB)
+
+    // An export package waiting to be downloaded is shown, not counted.
+    const job = join(app, "workspace-transfers", "jobs", "wtx_storage_test")
+    mkdirSync(job, { recursive: true })
+    writeFileSync(join(job, "job.json"), JSON.stringify({ workspaceKey: workspaceCacheKey() }))
+    writeFileSync(join(job, "package.wtb"), new Uint8Array(64 * KB))
+    noteStorageChange(job)
+    expect(await settled()).toBeGreaterThan(storageLimitBytes())
+    await createDoc("small", 1 * KB)
+    expect(storageSummary()!.pruned).toBeNull()
 
     // An agent with a shell writes straight into the Space's folder.
     const folder = join(workspace, "spaces", "notes", "exports")
     mkdirSync(folder, { recursive: true })
     writeFileSync(join(folder, "dump.bin"), new Uint8Array(32 * KB))
     listeners.get(join(workspace, "spaces"))!("rename", "notes/exports/dump.bin")
-    expect(await settled()).toBeGreaterThan(storageLimitBytes())
+    await settled()
+    expect(storageSummary()!.limit.countedBytes).toBeGreaterThan(storageLimitBytes())
     expect(existsSync(join(folder, "dump.bin"))).toBe(true)
 
     expect(await createDoc("next", 1 * KB).catch((error) => error)).toBeInstanceOf(
       StorageLimitError
     )
+    // A retried message is answered as before; only a new one is refused.
+    const retried = await createThread("notes", {
+      ...people,
+      body: "Status?",
+      idempotencyKey: "status-1",
+    })
+    expect(retried).toMatchObject({ created: false, message: { id: posted.message.id } })
+    expect(
+      await appendThreadMessage("notes", posted.thread.id, {
+        ...people,
+        body: "Any news?",
+        idempotencyKey: "status-2",
+      }).catch((error) => error)
+    ).toBeInstanceOf(StorageLimitError)
   })
 
   it("takes its limit from the environment, within the ceiling outside Cloud", () => {

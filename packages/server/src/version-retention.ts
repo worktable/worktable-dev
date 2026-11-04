@@ -749,8 +749,9 @@ export interface PrunableVersion {
 }
 
 /**
- * Every version pruning may remove, in no particular order. Walks the
- * versions folder: background work only, never on a request.
+ * Every version pruning may remove, in no particular order: only those it
+ * would remove, so planned bytes are bytes it can free. Walks the versions
+ * folder: background work only, never on a request.
  */
 export async function listPrunableVersions(
   stopped: () => boolean = () => false,
@@ -789,7 +790,8 @@ export async function listPrunableVersions(
     const protect = await protectCache.get(spaceId);
     const files = await collectVersionFiles(dir);
     for (const file of files.slice(1)) {
-      if (protect.has(file.id)) continue;
+      // Checkpoints are never removed, so they are never planned either.
+      if (protect.has(file.id) || (await isMeaningfulCheckpoint(file))) continue;
       found.push({
         store: "legacy",
         spaceId,

@@ -8,8 +8,8 @@
 // on Cloud, the plan's storage, which the control plane passes in the tenant
 // environment (hosted-contract ENV.STORAGE_LIMIT_BYTES); elsewhere an
 // operator may set any value up to STORAGE_LIMIT_CEILING_BYTES. It counts
-// everything storage-usage.ts counts: live files, history, deleted items,
-// transfers in progress and derived output.
+// what storage-usage.ts counts, except transfers in progress (see
+// countedBytes): live files, history, deleted items and derived output.
 //
 // Writes through Worktable can't pass it. Each write that adds bytes asks
 // for room first, from the running total in memory plus the writes admitted
@@ -146,12 +146,23 @@ let inflight = 0
 /** Bytes written or freed that the count includes once it reaches `sequence`. */
 let settling: { bytes: number; sequence: number }[] = []
 
+/**
+ * What counts toward the limit: everything but transfers in progress.
+ * Uploads being received, export packages and import staging are temporary,
+ * made by Worktable, and expire (workspace-transfer-jobs.ts removes jobs a
+ * day after they finish), and pruning history can't free them. Settings
+ * still shows them as their own part.
+ */
+export function countedBytes(usage: StorageUsage): number {
+  return usage.total.bytes - usage.parts.transfers.bytes
+}
+
 function usedBytes(usage: StorageUsage): number {
   const { applied } = storageNoteSequences()
   settling = settling.filter((entry) => entry.sequence > applied)
   let pending = inflight
   for (const entry of settling) pending += entry.bytes
-  return Math.max(0, usage.total.bytes + pending)
+  return Math.max(0, countedBytes(usage) + pending)
 }
 
 function reserve(bytes: number): StorageReservation {
@@ -181,8 +192,14 @@ export function admitStorageWrite(bytes: number): StorageReservation {
   const limit = storageLimitBytes()
   const used = usedBytes(usage)
   if (used + bytes <= limit) return reserve(bytes)
-  void requestPruning(used + bytes - limit)
+  void requestPruning(bytes)
   throw new StorageLimitError(limit, used)
+}
+
+/** Whether `bytes` more fit now. No side effects; nothing is reserved. */
+export function storageFits(bytes: number): boolean {
+  const usage = storageUsage()
+  return !usage || bytes <= 0 || usedBytes(usage) + bytes <= storageLimitBytes()
 }
 
 /**
@@ -193,11 +210,10 @@ export async function makeStorageRoom(bytes: number): Promise<void> {
   if (!(bytes > 0)) return
   const usage = storageUsage()
   if (!usage) return
-  const over = usedBytes(usage) + bytes - storageLimitBytes()
-  if (over <= 0) return
+  if (usedBytes(usage) + bytes <= storageLimitBytes()) return
   let timer: ReturnType<typeof setTimeout> | undefined
   await Promise.race([
-    requestPruning(over),
+    requestPruning(bytes),
     new Promise<void>((resolve) => {
       timer = setTimeout(resolve, promptPruneMs)
     }),
@@ -243,6 +259,28 @@ export async function withStorageRoom<T>(
 }
 
 /**
+ * Run `write`, which admits its room under its own locks by calling
+ * `admit` (synchronously; it throws StorageLimitError when there is no
+ * room) once it knows what it adds; the room is released when it ends. A
+ * refusal waits for pruning and tries once more, as `retryAfterPruning`.
+ */
+export function withAdmittedRoom<T>(
+  write: (admit: (bytes: number) => void) => Promise<T>
+): Promise<T> {
+  return retryAfterPruning(async () => {
+    const room: { reservation: StorageReservation | null } = { reservation: null }
+    try {
+      return await write((bytes) => {
+        room.reservation?.release()
+        room.reservation = admitStorageWrite(bytes)
+      })
+    } finally {
+      room.reservation?.release()
+    }
+  })
+}
+
+/**
  * Run `write`, which admits its room under its own locks. When it is
  * refused, wait a few seconds for the pruning the refusal started, then try
  * once more; a second refusal is final.
@@ -267,18 +305,34 @@ export async function retryAfterPruning<T>(write: () => Promise<T>): Promise<T> 
 // ── Pruning at the limit ────────────────────────────────────
 
 let pruning: Promise<void> | null = null
-let pruningWant = 0
+/** The most a write waiting on this pruning asked for. */
+let pruningIncoming = 0
 let stopped = true
 let promptPruneMs = PROMPT_PRUNE_MS
 /** History and trash when a run found nothing to prune; skip until they change. */
 let exhausted: { history: number; trash: number } | null = null
 
-function requestPruning(overBytes: number): Promise<void> {
+/**
+ * What pruning should free now: enough to bring usage, with the largest
+ * write waiting on it, down to PRUNE_TARGET_RATIO of the limit. Read from
+ * the current count before every pass, so a pass never frees again what an
+ * earlier one already did.
+ */
+function pruningWant(): number {
+  const usage = storageUsage()
+  if (!usage) return 0
+  return (
+    usedBytes(usage) +
+    pruningIncoming -
+    Math.round(storageLimitBytes() * PRUNE_TARGET_RATIO)
+  )
+}
+
+/** Prune until a write of `incoming` bytes fits; 0 when already over. */
+function requestPruning(incoming: number): Promise<void> {
   if (stopped) return Promise.resolve()
-  const want =
-    overBytes + Math.round(storageLimitBytes() * (1 - PRUNE_TARGET_RATIO))
   if (pruning) {
-    pruningWant = Math.max(pruningWant, want)
+    pruningIncoming = Math.max(pruningIncoming, incoming)
     return pruning
   }
   const usage = storageUsage()
@@ -290,13 +344,11 @@ function requestPruning(overBytes: number): Promise<void> {
   ) {
     return Promise.resolve()
   }
-  pruningWant = want
+  pruningIncoming = incoming
   pruning = (async () => {
     try {
       const { pruneOldestHistory } = await import("./storage-pruning.ts")
-      while (pruningWant > 0 && !stopped) {
-        const target = pruningWant
-        pruningWant = 0
+      for (let target = pruningWant(); target > 0 && !stopped; target = pruningWant()) {
         const result = await pruneOldestHistory(target, () => stopped)
         if (result.bytes > 0) {
           settling.push({
@@ -315,7 +367,7 @@ function requestPruning(overBytes: number): Promise<void> {
       console.error("[storage-limit] pruning failed:", logError(error))
     } finally {
       pruning = null
-      pruningWant = 0
+      pruningIncoming = 0
     }
   })()
   return pruning
@@ -325,8 +377,7 @@ function requestPruning(overBytes: number): Promise<void> {
 function pruneWhenOver(): void {
   const usage = storageUsage()
   if (!usage) return
-  const over = usedBytes(usage) - storageLimitBytes()
-  if (over >= 0) void requestPruning(over)
+  if (usedBytes(usage) >= storageLimitBytes()) void requestPruning(0)
 }
 
 /** Start enforcing for the served workspace. Returns its stop. */
@@ -347,7 +398,8 @@ export function startStorageLimits(): () => Promise<void> {
 // ── What Settings shows ─────────────────────────────────────
 
 export interface StorageSummary extends StorageUsage {
-  limit: { bytes: number; warnAt: number }
+  /** `countedBytes`: what counts toward the limit, without transfers. */
+  limit: { bytes: number; warnAt: number; countedBytes: number }
   pruned: PrunedSummary | null
 }
 
@@ -357,7 +409,11 @@ export function storageSummary(): StorageSummary | null {
   if (!usage) return null
   return {
     ...usage,
-    limit: { bytes: storageLimitBytes(), warnAt: STORAGE_WARNING_RATIO },
+    limit: {
+      bytes: storageLimitBytes(),
+      warnAt: STORAGE_WARNING_RATIO,
+      countedBytes: countedBytes(usage),
+    },
     pruned: prunedSummary(),
   }
 }

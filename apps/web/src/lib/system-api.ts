@@ -229,8 +229,11 @@ export interface StorageUsage {
   /** Files and folders in the workspace folder, as exports list them. */
   workspaceEntries: number
   disk: { freeBytes: number; totalBytes: number } | null
-  /** The most it may take, and the share of it past which Settings warns. Absent on older servers. */
-  limit?: { bytes: number; warnAt: number }
+  /**
+   * The most it may take, the share of it past which Settings warns, and
+   * what counts toward it (all but transfers). Absent on older servers.
+   */
+  limit?: { bytes: number; warnAt: number; countedBytes?: number }
   /** What pruning at the limit removed, oldest history first; null when nothing. */
   pruned?: {
     versions: number

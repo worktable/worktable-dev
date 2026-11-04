@@ -1,4 +1,3 @@
-import { withStorageRoom } from "./storage-limit.ts"
 import { isWorkspaceDraining } from "./workspace-request-lifecycle.ts"
 import { grokBotPolicy, observeGrokBotCandidate, readGrokBots } from "./grok-bot-store.ts"
 import { currentTeamWorktable, requireTeamDatabase } from "./team-database.ts"
@@ -429,18 +428,6 @@ export async function postThreadMessage(
  * message without reading the thread again. Agents keep the result shape above.
  */
 export async function postThreadMessageWithStored(
-  identity: ThreadIdentity,
-  input: PostThreadInput,
-  onProgress?: (update: ThreadProgressUpdate) => void | Promise<void>
-): Promise<{ result: ThreadPostResult; message: ThreadMessage }> {
-  // A message needs room under the storage limit (storage-limit.ts).
-  return withStorageRoom(
-    { adds: Buffer.byteLength(JSON.stringify(input)) },
-    () => postThreadMessageWithRoom(identity, input, onProgress)
-  )
-}
-
-async function postThreadMessageWithRoom(
   identity: ThreadIdentity,
   input: PostThreadInput,
   onProgress?: (update: ThreadProgressUpdate) => void | Promise<void>

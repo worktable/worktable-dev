@@ -31,6 +31,7 @@ import { discoverDocumentDataV2LifecycleRecovery } from "./document-data-lifecyc
 import { withUnsettledDocumentLifecycles } from "./document-lifecycle-journal.ts"
 import { removeDocumentGenerationsV2 } from "./document-version-store-v2.ts"
 import {
+  lastDeletedItemsPassKeptSome,
   removeOldestTrash,
   runDeletedItemsInBackground,
 } from "./deleted-items.ts"
@@ -52,8 +53,22 @@ export interface PruneResult {
   deletedItems: number
   versions: number
   bytes: number
-  /** A capture, replacement or recovery held the workspace; try again later. */
+  /**
+   * Something removable was kept for now: a capture, replacement or
+   * recovery held the workspace, a restore held a version, or an unsettled
+   * lifecycle operation named its Space. Try again later; this is not
+   * "nothing left to prune".
+   */
   deferred: boolean
+}
+
+let testHooks: {
+  /** Called once a pass has emptied the trash, before it prunes versions. */
+  beforeVersions?: () => void
+} = {}
+
+export function setStoragePruningHooksForTests(hooks: typeof testHooks): void {
+  testHooks = hooks
 }
 
 /** Free about `wantBytes` from the oldest history; see the header. */
@@ -71,10 +86,16 @@ export async function pruneOldestHistory(
     const trash = await removeOldestTrash(wantBytes, stopped)
     result.deletedItems = trash.removed
     result.bytes += trash.bytes
+    // One rule: anything kept for a temporary reason makes the run deferred,
+    // never "nothing left to prune".
+    if (trash.skipped > 0 || lastDeletedItemsPassKeptSome()) result.deferred = true
+    testHooks.beforeVersions?.()
     if (result.bytes < wantBytes && !stopped()) {
       await pruneOldestVersions(wantBytes - result.bytes, stopped, result, items)
     }
   } catch (error) {
+    // Failed partway: not proof that nothing is left.
+    result.deferred = true
     console.error("[storage-limit] pruning failed:", logError(error))
   } finally {
     await recordPruning({ ...result, items })
@@ -98,20 +119,29 @@ async function pruneOldestVersions(
     (a, b) => a.at - b.at || (a.id < b.id ? -1 : 1)
   )
   let freed = 0
-  for (let start = 0; start < candidates.length; start += BATCH) {
-    if (freed >= wantBytes || stopped()) return
+  // The next candidate not yet tried: the cursor moves only past those a
+  // batch tried, so one that turns out to be kept leaves the rest in line.
+  let next = 0
+  while (next < candidates.length && freed < wantBytes) {
+    if (stopped()) return
     if (workspaceRecoveryRequired() || getWorkspaceRoot() !== root) {
       result.deferred = true
       return
     }
-    // Only as many of this batch as still need to go.
+    // The oldest candidates, as many as still need to go, at most BATCH.
     const batch: PrunableVersion[] = []
     let planned = freed
-    for (const candidate of candidates.slice(start, start + BATCH)) {
-      if (planned >= wantBytes) break
+    while (next < candidates.length && batch.length < BATCH && planned < wantBytes) {
+      const candidate = candidates[next++]!
+      if (versionHeld(candidate.id)) {
+        // A running restore reads it: kept now, removable once it ends.
+        result.deferred = true
+        continue
+      }
       batch.push(candidate)
       planned += candidate.bytes
     }
+    if (batch.length === 0) continue
     const release = admitWorkspaceRequest("write")
     if (!release) {
       result.deferred = true
@@ -128,8 +158,15 @@ async function pruneOldestVersions(
         let bytes = 0
         for (const [owner, versions] of groupByOwner(batch)) {
           const first = versions[0]!
-          if (busy.has(first.spaceId)) continue
+          if (busy.has(first.spaceId)) {
+            // A delete or move recovery could still roll back: kept for now.
+            result.deferred = true
+            continue
+          }
           const removed = await removeVersions(first, versions)
+          if (versions.some((version) => versionHeld(version.id))) {
+            result.deferred = true
+          }
           if (removed.count === 0) continue
           bytes += removed.bytes
           result.versions += removed.count

@@ -2,6 +2,8 @@ import { existsSync } from "node:fs";
 import { assertSpaceAccess } from "./team-policy.ts";
 import { mkdir, readdir, rmdir, stat } from "node:fs/promises";
 import { reserveStorage } from "./storage-limit.ts";
+import { reclaimableAfterReplacementV2 } from "./document-version-store-v2.ts";
+import { getWorkspaceRoot } from "./workspace.ts";
 import { dirname, join, sep } from "node:path";
 import {
   CanonicalIdSchema,
@@ -368,7 +370,11 @@ export async function writeWidget(
   spaceId: string,
   widget: WidgetFile,
   html: string,
-  options?: { documentId?: DocumentId }
+  options?: {
+    documentId?: DocumentId;
+    /** The caller records this write as a checkpoint, such as a restore. */
+    checkpoint?: boolean;
+  }
 ): Promise<{ data: WidgetFile | null; error: string | null; release?: () => void }> {
   assertSpaceAccess(spaceId, "edit");
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
@@ -406,7 +412,14 @@ export async function writeWidget(
       };
     }
     const htmlPath = join(spaceDir(spaceId), owner.sourceRelativePath);
-    const room = await reserveHtmlRoom(htmlPath, html);
+    const room = await reserveHtmlRoom(htmlPath, html, () =>
+      reclaimableAfterReplacementV2({
+        workspaceRoot: getWorkspaceRoot(),
+        spaceId,
+        documentId: owner.documentId,
+        writesCheckpoint: options?.checkpoint === true,
+      })
+    );
     const release = holdSuppression([htmlPath]);
     try {
       await writeHtmlDocumentStorageV2({
@@ -444,7 +457,7 @@ export async function writeWidget(
   // returned release once recordWidgetVersion resolves.
   const yamlPath = widgetPath(spaceId, parsedWidget.id);
   const htmlPath = widgetContentPath(spaceId, parsedWidget.id);
-  const room = await reserveHtmlRoom(htmlPath, html);
+  const room = await reserveHtmlRoom(htmlPath, html, async () => 0);
   const release = holdSuppression([yamlPath, htmlPath]);
   try {
     await writeTextFile(yamlPath, stringifyCanonicalYaml(parsedWidget));
@@ -461,12 +474,18 @@ export async function writeWidget(
 
 /**
  * Room under the storage limit for an HTML document's new source and its
- * version, less what it replaces (storage-limit.ts).
+ * version, less what goes because of it: the source it replaces, and the
+ * version `reclaimable` reports pruning can remove afterwards.
  */
-function reserveHtmlRoom(htmlPath: string, html: string) {
+function reserveHtmlRoom(
+  htmlPath: string,
+  html: string,
+  reclaimable: () => Promise<number>
+) {
   return reserveStorage({
     adds: 2 * Buffer.byteLength(html),
-    replaces: async () => 2 * ((await stat(htmlPath).catch(() => null))?.size ?? 0),
+    replaces: async () =>
+      ((await stat(htmlPath).catch(() => null))?.size ?? 0) + (await reclaimable()),
   });
 }
 

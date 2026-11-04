@@ -76,7 +76,8 @@ import {
 import { logDocument, logError } from "./debug-log.ts";
 import { noteDeletedItems } from "./deleted-item-events.ts";
 import { noteStorageChange } from "./storage-usage.ts";
-import { withStorageRoom } from "./storage-limit.ts";
+import { withAdmittedRoom, withStorageRoom } from "./storage-limit.ts";
+import { withVersionHeld } from "./version-holds.ts";
 
 // ============================================================
 // Paths
@@ -2724,10 +2725,15 @@ export async function createManualDocCheckpoint(
   label?: string,
   updatedBy = "user"
 ): Promise<DocProvenance | undefined> {
-  return withDocPathLock(spaceId, async () => {
+  // A saved version is kept for good: it needs room for its whole content.
+  return withAdmittedRoom((admit) => withDocPathLock(spaceId, async () => {
     const snapshot = await readDocSourceSnapshot(spaceId, docPath);
     const current = snapshot.result;
     if (current.error || current.data === null) return undefined;
+    admit(
+      snapshot.bytes?.byteLength ??
+        Buffer.byteLength(JSON.stringify(current.data))
+    );
     const category = sourceCategory("manual-checkpoint", updatedBy);
     return recordDocVersion(spaceId, docPath, current, current, {
       updatedBy,
@@ -2746,7 +2752,7 @@ export async function createManualDocCheckpoint(
         ? { before: snapshot.bytes, after: snapshot.bytes }
         : undefined,
     });
-  });
+  }));
 }
 
 export interface DocWriteOptions {
@@ -3107,7 +3113,9 @@ export async function writeDoc(
   if (options?.storage === "counted") {
     return writeDocWithRoom(spaceId, docPath, content, options);
   }
-  // The Doc and its version: twice its bytes, less what it replaces twice.
+  // The Doc and its version: twice its bytes, less what goes because of
+  // it: the source it replaces, and the version it replaces when pruning can
+  // remove that afterwards (see reclaimableAfterReplacementV2).
   return withStorageRoom(
     {
       adds:
@@ -3117,7 +3125,16 @@ export async function writeDoc(
         ),
       replaces: async () => {
         const file = await resolveDocFile(spaceId, sanitizeDocPath(docPath));
-        return file ? 2 * (await stat(file.path)).size : 0;
+        if (!file) return 0;
+        const { reclaimableDocVersionBytesV2 } = await import(
+          "./document-version-compatibility-v2.ts"
+        );
+        return (
+          (await stat(file.path)).size +
+          (await reclaimableDocVersionBytesV2(spaceId, docPath, "doc", {
+            writesCheckpoint: options?.checkpoint === true,
+          }))
+        );
       },
     },
     () => writeDocWithRoom(spaceId, docPath, content, options)
@@ -3424,11 +3441,30 @@ function sameDocGenerationOwner(
 }
 
 /** Replace one active Doc with a retained version as one generation change. */
+/**
+ * Restore a version, held so pruning at the storage limit leaves it be, with
+ * room for it under the limit: the restored content and its version, a
+ * checkpoint kept for good, less only the source it replaces.
+ */
 export async function restoreDocVersion(
   spaceId: string,
   docPath: string,
   versionId: string,
   options: RestoreDocVersionOptions = {}
+): Promise<DocVersionRestoreResult> {
+  return withVersionHeld(versionId, () =>
+    withAdmittedRoom((admit) =>
+      restoreDocVersionWithRoom(spaceId, docPath, versionId, options, admit)
+    )
+  );
+}
+
+async function restoreDocVersionWithRoom(
+  spaceId: string,
+  docPath: string,
+  versionId: string,
+  options: RestoreDocVersionOptions,
+  admit: (bytes: number) => void
 ): Promise<DocVersionRestoreResult> {
   const pathError = generationMutationPathError(docPath);
   if (pathError) {
@@ -3530,6 +3566,16 @@ export async function restoreDocVersion(
             }
 
             const content = version.after.content;
+            admit(
+              2 *
+                Buffer.byteLength(
+                  Array.isArray(content)
+                    ? JSON.stringify(content)
+                    : String(content ?? "")
+                ) -
+                (activeSource.bytes?.byteLength ??
+                  Buffer.byteLength(JSON.stringify(activeSource.result.data)))
+            );
             if (activeSource.result.storedAs === "json" || Array.isArray(content)) {
               // Fence the old browser cache before committing any restored
               // content. A failed metadata write must leave the source intact.

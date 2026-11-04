@@ -505,7 +505,7 @@ async function directoryBytes(path: string): Promise<number> {
 export async function removeOldestTrash(
   wantBytes: number,
   stopped: () => boolean = () => false
-): Promise<{ removed: number; bytes: number }> {
+): Promise<{ removed: number; bytes: number; skipped: number }> {
   const trash = deletedItemsTrashDir()
   const entries: { name: string; path: string; retiredAt: number }[] = []
   for (const name of await childDirectories(trash)) {
@@ -519,6 +519,7 @@ export async function removeOldestTrash(
   entries.sort((a, b) => a.retiredAt - b.retiredAt || (a.name < b.name ? -1 : 1))
   let removed = 0
   let bytes = 0
+  let skipped = 0
   for (const entry of entries) {
     if (bytes >= wantBytes || stopped()) break
     const size = await directoryBytes(entry.path)
@@ -526,6 +527,8 @@ export async function removeOldestTrash(
     try {
       await rename(entry.path, emptying)
     } catch {
+      // Busy or gone: the next pass tries again.
+      skipped += 1
       continue
     }
     noteStorageChange(entry.path)
@@ -534,7 +537,7 @@ export async function removeOldestTrash(
     removed += 1
     bytes += size
   }
-  return { removed, bytes }
+  return { removed, bytes, skipped }
 }
 
 // ── The pass ────────────────────────────────────────────────
@@ -684,6 +687,16 @@ async function moveOutOfWorkspace(
 
 let running: Promise<void> | null = null
 let again = false
+let lastPassKept = false
+
+/**
+ * Whether the last pass left deleted items in the workspace folder for now:
+ * an unsettled operation still named them, or a capture, replacement or
+ * failure held the pass. They count as deleted items until a later pass.
+ */
+export function lastDeletedItemsPassKeptSome(): boolean {
+  return lastPassKept
+}
 
 /** One pass at a time; a request during a pass runs another after it. */
 export function runDeletedItemsInBackground(): Promise<void> {
@@ -696,12 +709,14 @@ export function runDeletedItemsInBackground(): Promise<void> {
       again = false
       try {
         const result = await runDeletedItemsPass()
+        lastPassKept = result.protected > 0 || result.deferred
         // An export, snapshot or replacement held the workspace: try again
         // shortly after it lets go, instead of waiting for the daily pass.
         if (result.deferred) retryDeletedItemsSoon()
         else settleDeletedItemsRetry()
       } catch (error) {
         // The next delete, restart or daily pass tries again.
+        lastPassKept = true
         console.error("[deleted-items] pass failed:", logError(error))
       }
     } while (again)

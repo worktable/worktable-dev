@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { withAdmittedRoom } from "./storage-limit.ts"
 import { assertSpaceAccess, assertCurrentTeamIdentity, assertWorktableThreadAccess, canAccessWorktableThreads, currentRequestIdentity, canAccessSpace } from "./team-policy.ts";
 import {
   copyFile,
@@ -89,6 +90,11 @@ export interface AppendThreadMessageInput {
 }
 
 let tmpCounter = 0
+
+/** What a new message adds to its thread, about, under the storage limit. */
+function messageBytes(input: AppendThreadMessageInput): number {
+  return Buffer.byteLength(JSON.stringify(input))
+}
 
 function assertSafeSegment(value: string, label: string): void {
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value)) {
@@ -960,7 +966,7 @@ export async function createThread(
     )
   }
   const recipient = input.recipient
-  return withThreadMutationLock({ kind: "worktable" }, "create", async () => {
+  return withAdmittedRoom((admit) => withThreadMutationLock({ kind: "worktable" }, "create", async () => {
     if (location.kind === "space") assertSpaceAccess(location.spaceId, "edit");
     for (const existingThread of await threadsWithIdempotencyKey(
       location,
@@ -972,6 +978,8 @@ export async function createThread(
         return { thread: existingThread, message: existing, created: false }
       }
     }
+    // A retry is answered above; only a new message needs room.
+    admit(messageBytes(input))
 
     const now = new Date().toISOString()
     let threadId: string
@@ -1100,7 +1108,7 @@ export async function createThread(
       threadId,
     })
     return { thread, message, created: true }
-  }, location)
+  }, location))
 }
 
 export async function appendThreadMessage(
@@ -1109,10 +1117,12 @@ export async function appendThreadMessage(
   input: AppendThreadMessageInput
 ): Promise<{ thread: Thread; message: ThreadMessage; created: boolean }> {
   const location = normalizeThreadLocation(locationInput)
-  return withThreadMutationLock(location, threadId, async () => {
+  return withAdmittedRoom((admit) => withThreadMutationLock(location, threadId, async () => {
     const stored = await readThread(location, threadId)
     const existing = idempotencyMatch(stored, input)
     if (existing) return { thread: stored, message: existing, created: false }
+    // A retry is answered above; only a new message needs room.
+    admit(messageBytes(input))
     const now = new Date().toISOString()
     const thread = threadWithParticipants(
       stored,
@@ -1206,7 +1216,7 @@ export async function appendThreadMessage(
       threadId,
     })
     return { thread: next, message, created: true }
-  })
+  }))
 }
 
 async function persistThreadMutation(

@@ -142,7 +142,7 @@
       "why": "Writer: checks the current files under the write lock; writers never read snapshots."
     },
     {
-      "site": "packages/server/src/document-write-service.ts#checkpointRegisteredDocument.catalog",
+      "site": "packages/server/src/document-write-service.ts#checkpointRegisteredDocumentWithRoom.catalog",
       "kind": "buildDocumentCatalog",
       "why": "Writer: checks the current files under the write lock; writers never read snapshots."
     },

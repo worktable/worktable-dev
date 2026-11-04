@@ -354,9 +354,12 @@ export function isHiddenName(name: string): boolean {
   return name.startsWith(".")
 }
 
-/** Whether a path names or passes through something hidden. */
+/**
+ * Whether a path names or passes through something hidden. A backslash counts
+ * as a separator too: Windows resolves `notes\.plan` to `notes/.plan`.
+ */
 export function pathIsHidden(path: string): boolean {
-  return path.split("/").some(isHiddenName)
+  return path.split(/[\\/]/).some(isHiddenName)
 }
 
 export const BUILTIN_DOCUMENT_FORMATS = {

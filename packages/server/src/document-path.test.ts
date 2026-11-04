@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import fc from "fast-check"
+import { pathIsHidden } from "./document-format-registry.ts"
 import {
   analyzeDocumentPath,
   newPathRefusal,
@@ -104,6 +105,10 @@ describe("document path authority", () => {
     expect(reason("notes/plan")).toBeNull()
     expect(reason("data/config.json", true)).toBeNull()
     expect(newPathRefusal(".notes/plan")?.message).not.toContain("Doc")
+    // Windows resolves a backslash as a separator, so what it reaches stays
+    // hidden to every read, not only to new names.
+    expect(pathIsHidden("notes\\.plan")).toBe(true)
+    expect(pathIsHidden("notes\\plan")).toBe(false)
   })
 
   it("keeps stable storage suffixes outside new logical paths", () => {

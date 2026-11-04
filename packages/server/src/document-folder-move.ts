@@ -434,9 +434,17 @@ export async function moveDocumentFolder(
         logError(error)
       )
     }
-    await removeEmptiedFolders(
-      resolve(getWorkspaceRoot(), "spaces", spaceId, "docs", ...fromPrefix.split("/"))
-    )
+    // The folder as spelled on disk, which a request may spell otherwise.
+    if (outcome.folderOnDisk) {
+      await removeEmptiedFolders(
+        resolve(
+          getWorkspaceRoot(),
+          "spaces",
+          spaceId,
+          ...outcome.folderOnDisk.split("/")
+        )
+      )
+    }
     return {
       ok: true,
       from: fromPrefix,

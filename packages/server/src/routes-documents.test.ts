@@ -29,6 +29,9 @@ import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
 import { FILE_UPLOAD_MAX_BYTES } from "./file-uploads.ts"
 import { removeLeftoverStagedFiles, stagingDirectory } from "./staged-file.ts"
+import { workspaceRecoveryRequired } from "./workspace-safety.ts"
+import { setDocumentLifecycleStepHookForTests } from "./document-lifecycle-journal.ts"
+import { renameSync } from "node:fs"
 import { FOLDER_OPERATION_MAX_ENTRIES } from "./folder-operation-limit.ts"
 import { join } from "node:path"
 import { Hono } from "hono"
@@ -748,6 +751,27 @@ describe("format-neutral document route", () => {
         .map((path) => path.slice(prefix.length + 1))
     const listedBefore = await listed("notes")
 
+    // A name with a backslash, legal on disk, can't be recorded for recovery:
+    // the move refuses it by name before anything moves.
+    const unrecordable = join(docs, "notes", ".cache\\old")
+    await writeFile(unrecordable, "cached")
+    const refused = await instance.request(
+      `/api/spaces/${spaceId}/documents/move-folder`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-test-scopes": "documents:write",
+        },
+        body: JSON.stringify({ oldPath: "notes", newPath: "library" }),
+      }
+    )
+    expect(refused.status).toBe(409)
+    expect((await refused.json()).error).toContain("notes/.cache\\old")
+    expect(workspaceRecoveryRequired()).toBe(false)
+    expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
+    await rm(unrecordable)
+
     const forbidden = await instance.request(
       `/api/spaces/${spaceId}/documents/move-folder`,
       {
@@ -769,7 +793,8 @@ describe("format-neutral document route", () => {
           "content-type": "application/json",
           "x-test-scopes": "documents:write",
         },
-        body: JSON.stringify({ oldPath: "notes", newPath: "library" }),
+        // Spelled otherwise than on disk: the folder there is the one moved.
+        body: JSON.stringify({ oldPath: "Notes", newPath: "library" }),
       }
     )
     expect(moved.status).toBe(200)
@@ -778,7 +803,7 @@ describe("format-neutral document route", () => {
     }
     expect(movedBody).toMatchObject({
       ok: true,
-      oldPath: "notes",
+      oldPath: "Notes",
       newPath: "library",
       renamed: expect.arrayContaining([
         { from: "notes/old", to: "library/old" },
@@ -2298,6 +2323,11 @@ describe("format-neutral document route", () => {
       await writeFile(join(docs, "notes", "readme", "shared.png"), "shared")
       await writeFile(join(docs, "notes", "readme", "own.png"), "own")
       await writeFile(join(docs, "notes", "readme", "inner.png"), "inner")
+      // Hidden items, which leave with the folder whatever it keeps.
+      await mkdir(join(docs, "notes", "readme", ".git"), { recursive: true })
+      const readme = join(docs, "notes", "readme")
+      await writeFile(join(readme, ".env"), "TOKEN=synthetic\n")
+      await writeFile(join(readme, ".git", "HEAD"), "ref: main\n")
       noteSpaceChanged(spaceId)
       await recordDocAlias(spaceId, "old-shot.png", "notes/readme/shared.png", "exact")
       const inFolderBoard = await writeWidget(
@@ -2367,7 +2397,8 @@ describe("format-neutral document route", () => {
       expect((await listed()).length).toBe(6)
 
       // Deleting it takes its folder too, except what another Doc uses,
-      // which keeps its place in the Space's order.
+      // which keeps its place in the Space's order. The path's case is
+      // written otherwise again: the folder on disk is the one it names.
       const space = await readSpace(spaceId)
       await writeSpace({
         ...space.data!,
@@ -2376,7 +2407,29 @@ describe("format-neutral document route", () => {
           docOrder: ["notes/readme", "notes/readme/own.png", "notes/readme/shared.png"],
         },
       })
-      expect((await post("delete", { path: "notes/readme" })).status).toBe(200)
+      // Should a kept file ever leave with the folder, the delete fails and
+      // rolls back instead of committing without it.
+      const shared = join(docs, "notes", "readme", "shared.png")
+      let taken = false
+      setDocumentLifecycleStepHookForTests((step) => {
+        if (step !== "remainder-retired" || taken) return
+        taken = true
+        renameSync(shared, `${shared}.away`)
+      })
+      try {
+        const failed = await post("delete", { path: "Notes/Readme" })
+        expect(failed.status).not.toBe(200)
+      } finally {
+        setDocumentLifecycleStepHookForTests(null)
+      }
+      expect(await readFile(join(readme, "own.png"), "utf8")).toBe("own")
+      expect(await readFile(join(readme, ".env"), "utf8")).toBe(
+        "TOKEN=synthetic\n"
+      )
+      await rename(`${shared}.away`, shared)
+      noteSpaceChanged(spaceId)
+      expect((await listed()).length).toBe(6)
+      expect((await post("delete", { path: "Notes/Readme" })).status).toBe(200)
       expect((await readSpace(spaceId)).data?.settings["docOrder"]).toEqual([
         "notes/readme",
         "notes/readme/shared.png",
@@ -2390,6 +2443,15 @@ describe("format-neutral document route", () => {
       expect(
         await readFile(join(docs, "notes", "readme", "shared.png"), "utf8")
       ).toBe("shared")
+      expect(
+        await readFile(join(docs, "notes", "readme", "inner.png"), "utf8")
+      ).toBe("inner")
+      expect((await readdir(join(docs, "notes", "readme"))).sort()).toEqual([
+        "board.html",
+        "details.md",
+        "inner.png",
+        "shared.png",
+      ])
       // HTML tools delete an HTML Doc alone: its folder is not theirs.
       const board = await writeWidget(
         spaceId,
@@ -2653,6 +2715,25 @@ describe("format-neutral document route", () => {
         await rm(locked, { recursive: true })
       }
     }
+    // So does a name with a backslash, which recovery couldn't read back.
+    const unrecordable = join(folder, ".cache\\old")
+    await writeFile(unrecordable, "cached")
+    const unrecorded = await instance.request(
+      `/api/spaces/${spaceId}/documents/delete-folder`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-test-scopes": "documents:write",
+        },
+        body: JSON.stringify({ path: "notes" }),
+      }
+    )
+    expect(unrecorded.status).toBe(409)
+    expect((await unrecorded.json()).error).toContain("notes/.cache\\old")
+    expect(workspaceRecoveryRequired()).toBe(false)
+    expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
+    await rm(unrecordable)
     const deleted = await instance.request(
       `/api/spaces/${spaceId}/documents/delete-folder`,
       {

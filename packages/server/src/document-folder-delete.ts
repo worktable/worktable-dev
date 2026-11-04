@@ -291,9 +291,16 @@ export async function deleteDocumentFolder(
     }
     // Everything else in it left with the delete, so only empty folders and
     // the documents kept are left.
-    await removeEmptiedFolders(
-      resolve(getWorkspaceRoot(), "spaces", spaceId, "docs", ...path.split("/"))
-    )
+    if (outcome.folderOnDisk) {
+      await removeEmptiedFolders(
+        resolve(
+          getWorkspaceRoot(),
+          "spaces",
+          spaceId,
+          ...outcome.folderOnDisk.split("/")
+        )
+      )
+    }
     return { ok: true, path, paths: outcome.deleted.map((entry) => entry.path) }
   }
   const underNamespaceLocks = () =>

@@ -605,8 +605,9 @@ Moving a folder takes its hidden items with it, as Finder or a shell does:
 each hidden file, and each hidden folder whole, goes to the same place in the
 new folder, byte for byte and still hidden, in the same move. A crash rolls
 them back or forward with the folder's Docs. The move is refused when one
-would land on something already there. Links and special files stay where
-they are. Moving one Doc or file doesn't touch hidden items beside it.
+would land on something already there, or when a name in the folder holds a
+backslash, which Windows reads as a separator. Links and special files stay
+where they are. Moving one Doc or file doesn't touch hidden items beside it.
 
 Deleting a folder takes everything in it: its Docs and files, and with them
 its hidden items, links and special files, each as itself. A link is never
@@ -615,7 +616,9 @@ gone, and the folder is gone from disk. Files other Docs use stay when the
 delete keeps them. Delete is permanent: what the folder held waits in deleted
 items, outside backups and exports, until the history window ends (rule 14).
 The delete is refused, naming the item, when something in the folder can't be
-moved, such as a folder Worktable can't write or another disk mounted inside.
+moved: a folder Worktable can't write, another disk mounted inside, or a name
+with a backslash. A move or delete finds the folder on disk however its name's
+case is written, and a delete that would lose a file it keeps rolls back.
 Deleting one Doc or file doesn't touch hidden items beside it.
 
 **Enforced in:** `document-format-registry.ts` (`isHiddenName`,

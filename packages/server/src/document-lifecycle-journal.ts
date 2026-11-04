@@ -578,13 +578,22 @@ const PrefixDeleteJournalSchema = JournalBaseSchema.extend({
     .min(1)
     .max(PREFIX_RENAME_MAX_DOCUMENTS),
   /**
-   * What else the folder holds, below it: hidden items, links, special files
-   * and anything no document claims. It leaves with the documents, into the
-   * folder's retired directory. Omitted when there is nothing. Older builds
-   * refuse a journal that sets it, so they never roll back the documents and
-   * leave the rest retired.
+   * What else the folder holds: hidden items, links, special files and
+   * anything no document claims, by Space-relative path as spelled on disk.
+   * It leaves with the documents, into the folder's retired directory.
+   * Omitted when there is nothing. Older builds refuse a journal that sets
+   * it, so they never roll back the documents and leave the rest retired.
    */
   remainder: z
+    .array(z.string().min(1).max(4096))
+    .min(1)
+    .max(PREFIX_RENAME_MAX_DOCUMENTS)
+    .optional(),
+  /**
+   * Sources below the folder the delete keeps, by Space-relative path. Each
+   * must still be there before the delete commits.
+   */
+  retained: z
     .array(z.string().min(1).max(4096))
     .min(1)
     .max(PREFIX_RENAME_MAX_DOCUMENTS)
@@ -637,6 +646,8 @@ interface PreparedJournal {
   prefixHistoryFiles?: DirectHistoryFile[][]
   prefixDeleteHistoryFiles?: Array<DirectHistoryFile[] | undefined>
   targetBytes?: Buffer
+  /** A folder operation's folder under `docs/`, as spelled on disk. */
+  folderOnDisk?: string
 }
 
 export interface DurableExactRenameOutcome {
@@ -648,6 +659,8 @@ export interface DurableExactRenameOutcome {
 export interface DurablePrefixRenameOutcome {
   handled: boolean
   renamed?: Array<{ from: string; to: string; documentId: DocumentId }>
+  /** The source folder under `docs/`, Space-relative, as spelled on disk. */
+  folderOnDisk?: string
   error?: string
 }
 
@@ -702,6 +715,8 @@ export interface DurablePrefixDeleteOutcome {
     documentId: DocumentId
     storageProfileId: DocumentStorageProfileId
   }>
+  /** The folder under `docs/`, Space-relative, as spelled on disk. */
+  folderOnDisk?: string
   error?: string
 }
 
@@ -3101,8 +3116,7 @@ async function prepareExactRename(
     annotation,
     completed: [],
   }
-  JournalSchema.parse(journal)
-  assertPreparedJournalFits(journal)
+  assertPreparedJournalPublishable(journal)
   return { journal, blobs, directHistoryFiles: historyFiles }
 }
 
@@ -3520,7 +3534,10 @@ async function preparePrefixRename(
       "Document folder metadata is too large to move safely"
     )
   }
-  const hidden = planPrefixHiddenCarries(spaceRoot, fromPrefix, toPrefix, moves)
+  const folder = folderOnDisk(spaceRoot, fromPrefix)
+  const hidden = folder
+    ? planPrefixHiddenCarries(spaceRoot, folder, fromPrefix, toPrefix, moves)
+    : []
   const journal: PrefixRenameJournal = {
     schemaVersion: JOURNAL_SCHEMA_VERSION,
     planVersion: JOURNAL_PLAN_VERSION,
@@ -3538,41 +3555,118 @@ async function preparePrefixRename(
     edits,
     completed: [],
   }
-  JournalSchema.parse(journal)
-  assertPreparedJournalFits(journal)
-  return { journal, blobs, prefixHistoryFiles: historyFiles }
+  assertPreparedJournalPublishable(journal)
+  return {
+    journal,
+    blobs,
+    prefixHistoryFiles: historyFiles,
+    ...(folder ? { folderOnDisk: folder.join("/") } : {}),
+  }
+}
+
+/** A path's comparison key, by document-path.ts's rule, for any name on disk. */
+function diskKey(path: string): string {
+  return path.normalize("NFC").toLowerCase()
 }
 
 /**
- * The hidden items a folder move carries, found under the folder's `docs/`
- * directory: each hidden file, and each hidden folder whole, without reading
- * inside it. Links and special files stay where they are, as discovery skips
- * them. Only names hidden below the folder count, so what the move carries
- * stays hidden under the new name. A hidden folder that holds a planned
- * document (a Doc made before Docs were hidden) is walked instead, so the
- * document moves on its own.
+ * Whether a name on disk can be one segment of a path a journal holds. A
+ * backslash can't: recovery reads it as a separator, as Windows does.
+ */
+function journalSegmentIsPlain(segment: string): boolean {
+  return (
+    segment !== "" &&
+    segment !== "." &&
+    segment !== ".." &&
+    !segment.includes("\\") &&
+    !segment.includes("\0")
+  )
+}
+
+/**
+ * A folder operation's folder under `docs/`, as spelled on disk, found by the
+ * comparison key the operation matches its documents with. Null when there
+ * is no such folder. Refused when two folders share the key, as two
+ * spellings can on a case-sensitive disk.
+ */
+function folderOnDisk(spaceRoot: string, prefix: string): string[] | null {
+  const found = ["docs"]
+  for (const segment of prefix.split("/")) {
+    const matches = readRecoveryDirectory(resolve(spaceRoot, ...found)).filter(
+      (entry) => entry.isDirectory() && diskKey(entry.name) === diskKey(segment)
+    )
+    if (matches.length === 0) return null
+    if (matches.length > 1) {
+      throw new DocumentLifecyclePreconditionError(
+        `This folder is on disk under more than one spelling: ${prefix}`
+      )
+    }
+    found.push(matches[0]!.name)
+  }
+  return found
+}
+
+/**
+ * The segments of a Space-relative path below a folder operation's folder
+ * under `docs/`, matched by comparison key, when every segment is plain.
+ */
+function segmentsBelowFolder(path: string, prefix: string): string[] | null {
+  const root = ["docs", ...prefix.split("/")]
+  const segments = path.split("/")
+  if (
+    segments.length <= root.length ||
+    root.some(
+      (segment, index) => diskKey(segments[index]!) !== diskKey(segment)
+    ) ||
+    !segments.every(journalSegmentIsPlain)
+  ) {
+    return null
+  }
+  return segments.slice(root.length)
+}
+
+/** Sources at or below a folder on disk, by comparison key. */
+function sourceKeysBelow(
+  folder: readonly string[],
+  sources: readonly string[]
+): string[] {
+  const root = `${diskKey(folder.join("/"))}/`
+  return sources.map(diskKey).filter((key) => key.startsWith(root))
+}
+
+/**
+ * The hidden items a folder move carries, found in the folder on disk: each
+ * hidden file, and each hidden folder whole, without reading inside it.
+ * Links and special files stay where they are, as discovery skips them. Only
+ * names hidden below the folder count, so what the move carries stays hidden
+ * under the new name. A hidden folder that holds a planned document (a Doc
+ * made before Docs were hidden) is walked instead, so the document moves on
+ * its own. Sources are compared by comparison key, as the move matched them.
  */
 function planPrefixHiddenCarries(
   spaceRoot: string,
+  folder: readonly string[],
   fromPrefix: string,
   toPrefix: string,
   moves: readonly PrefixMovePreparation[]
 ): PrefixHiddenCarry[] {
-  const sourceRoot = ["docs", ...fromPrefix.split("/")]
   const targetRoot = ["docs", ...toPrefix.split("/")]
   const plannedSources = new Set(
-    moves.map((move) => move.fromSource.relativePath)
+    sourceKeysBelow(
+      folder,
+      moves.map((move) => move.fromSource.relativePath)
+    )
   )
   const plannedPaths = moves.flatMap((move) => [
-    move.fromSource.relativePath,
-    move.toSource.relativePath,
+    diskKey(move.fromSource.relativePath),
+    diskKey(move.toSource.relativePath),
   ])
-  const holdsPlanned = (path: string): boolean =>
-    plannedPaths.some((planned) => planned.startsWith(`${path}/`))
+  const holdsPlanned = (key: string): boolean =>
+    plannedPaths.some((planned) => planned.startsWith(`${key}/`))
   const carries: PrefixHiddenCarry[] = []
   let scanned = 0
   const walk = (segments: string[]): void => {
-    const directory = resolve(spaceRoot, ...sourceRoot, ...segments)
+    const directory = resolve(spaceRoot, ...folder, ...segments)
     const entries = readRecoveryDirectory(directory).sort((left, right) =>
       left.name < right.name ? -1 : left.name > right.name ? 1 : 0
     )
@@ -3585,18 +3679,27 @@ function planPrefixHiddenCarries(
       }
       if (entry.isSymbolicLink()) continue
       const next = [...segments, entry.name]
-      const from = [...sourceRoot, ...next].join("/")
+      const from = [...folder, ...next].join("/")
       const hidden = next.some(isHiddenName)
-      if (entry.isDirectory()) {
-        if (hidden && !holdsPlanned(from)) {
-          carries.push({ from, to: [...targetRoot, ...next].join("/") })
-        } else {
-          walk(next)
-        }
-        continue
+      const carried =
+        hidden &&
+        (entry.isDirectory()
+          ? !holdsPlanned(diskKey(from))
+          : entry.isFile() && !plannedSources.has(diskKey(from)))
+      // Whatever the move carries or walks into goes into its journal.
+      if (
+        (carried || entry.isDirectory()) &&
+        !journalSegmentIsPlain(entry.name)
+      ) {
+        throw new DocumentLifecyclePreconditionError(
+          `This folder holds a name Worktable can't move: ${[fromPrefix, ...next].join("/")}`
+        )
       }
-      if (!entry.isFile() || !hidden || plannedSources.has(from)) continue
-      carries.push({ from, to: [...targetRoot, ...next].join("/") })
+      if (carried) {
+        carries.push({ from, to: [...targetRoot, ...next].join("/") })
+      } else if (entry.isDirectory()) {
+        walk(next)
+      }
     }
   }
   walk([])
@@ -3625,7 +3728,7 @@ function planPrefixHiddenCarries(
       )
     }
     // A move into an ancestor can land a carry where a document goes.
-    if (plannedPaths.some((planned) => related(planned, carry.to))) {
+    if (plannedPaths.some((planned) => related(planned, diskKey(carry.to)))) {
       throw new DocumentLifecyclePreconditionError(
         "This folder can't be moved to that location because its document paths would overlap"
       )
@@ -3709,29 +3812,44 @@ function prefixDeleteRetiredRoot(
 }
 
 /**
- * What a folder delete takes besides its documents: everything below the
- * folder that no document claims, as itself. A folder that holds no claimed
- * source goes whole, without reading inside it; one that does is walked, so
- * kept documents stay. Refused when something can't be moved by a rename:
- * another filesystem mounted inside, or a folder Worktable can't write.
+ * What a folder delete takes besides its documents: everything in the folder
+ * on disk that no document claims, as itself, by Space-relative path. A folder
+ * that holds no claimed source goes whole, without reading inside it; one
+ * that does is walked, so kept documents stay. Claims are compared by the
+ * comparison key the delete matched its documents with. Also gives the
+ * sources it keeps, which must still be there when it commits. Refused when
+ * something can't be moved by a rename (another filesystem mounted inside, a
+ * folder Worktable can't write) or held in the journal (a name with a
+ * backslash).
  */
 function planPrefixDeleteRemainder(
   spaceRoot: string,
+  folder: readonly string[],
   prefix: string,
-  claimedSources: readonly string[]
-): string[] {
-  const folderRoot = ["docs", ...prefix.split("/")]
-  const claimedBelow = claimedSources.filter((source) =>
-    source.startsWith(`${folderRoot.join("/")}/`)
-  )
+  claimedSources: readonly string[],
+  deletedSources: readonly string[]
+): { remainder: string[]; retained: string[] } {
+  const claimedBelow = sourceKeysBelow(folder, claimedSources)
   const claimed = new Set(claimedBelow)
-  const holdsClaimed = (path: string): boolean =>
-    claimedBelow.some((source) => source.startsWith(`${path}/`))
+  const holdsClaimed = (key: string): boolean =>
+    claimedBelow.some((source) => source.startsWith(`${key}/`))
+  const deleted = new Set(deletedSources.map(diskKey))
+  const root = `${diskKey(folder.join("/"))}/`
+  const retained = [
+    ...new Map(
+      claimedSources.flatMap((source) => {
+        const key = diskKey(source)
+        return key.startsWith(root) && !deleted.has(key)
+          ? [[key, source] as const]
+          : []
+      })
+    ).values(),
+  ]
   const device = lstatSync(spaceRoot).dev
   const remainder: string[] = []
   let scanned = 0
   const walk = (segments: string[]): void => {
-    const directory = resolve(spaceRoot, ...folderRoot, ...segments)
+    const directory = resolve(spaceRoot, ...folder, ...segments)
     const entries = readRecoveryDirectory(directory).sort((left, right) =>
       left.name < right.name ? -1 : left.name > right.name ? 1 : 0
     )
@@ -3743,38 +3861,41 @@ function planPrefixDeleteRemainder(
         )
       }
       const next = [...segments, entry.name]
-      const source = [...folderRoot, ...next].join("/")
-      if (claimed.has(source)) continue
-      const isDirectory = entry.isDirectory() && !entry.isSymbolicLink()
-      if (isDirectory && holdsClaimed(source)) {
-        walk(next)
-        continue
-      }
-      const absolute = resolve(spaceRoot, ...folderRoot, ...next)
-      const info = lstatSync(absolute)
-      let movable = info.dev === device
-      if (movable && isDirectory) {
-        try {
-          accessSync(absolute, constants.W_OK)
-        } catch {
-          movable = false
-        }
-      }
-      if (!movable) {
+      const source = [...folder, ...next].join("/")
+      const refuse = (): never => {
         throw new DocumentLifecyclePreconditionError(
           `This folder holds something Worktable can't delete: ${[prefix, ...next].join("/")}`
         )
       }
-      remainder.push(next.join("/"))
+      if (claimed.has(diskKey(source))) continue
+      if (!journalSegmentIsPlain(entry.name)) refuse()
+      const isDirectory = entry.isDirectory() && !entry.isSymbolicLink()
+      if (isDirectory && holdsClaimed(diskKey(source))) {
+        walk(next)
+        continue
+      }
+      const absolute = resolve(spaceRoot, ...folder, ...next)
+      if (lstatSync(absolute).dev !== device) refuse()
+      if (isDirectory) {
+        try {
+          accessSync(absolute, constants.W_OK)
+        } catch {
+          refuse()
+        }
+      }
+      remainder.push(source)
     }
   }
   walk([])
-  if (remainder.length > PREFIX_RENAME_MAX_DOCUMENTS) {
+  if (
+    remainder.length > PREFIX_RENAME_MAX_DOCUMENTS ||
+    retained.length > PREFIX_RENAME_MAX_DOCUMENTS
+  ) {
     throw new DocumentLifecyclePreconditionError(
       "This folder holds too many items to delete safely"
     )
   }
-  return remainder
+  return { remainder, retained }
 }
 
 /** Retire one item of a folder delete's remainder, or bring it back. */
@@ -3786,19 +3907,33 @@ function retirePrefixDeleteItem(
   const root = resolve(getSpacesBaseDir(), journal.from.spaceId)
   assertSafeWorkspacePath(root)
   requireRealDirectory(root, `Space ${journal.from.spaceId}`)
-  const segments = item.split("/")
+  const below = segmentsBelowFolder(item, journal.from.logicalPath)
+  if (!below) {
+    throw new Error("document deletion lifecycle remainder path is unsafe")
+  }
   movePlannedEntry(
-    resolve(root, "docs", ...journal.from.logicalPath.split("/"), ...segments),
+    resolve(root, ...item.split("/")),
     resolve(
       prefixDeleteRetiredRoot(
         journal.from.spaceId,
         journal.from.logicalPath,
         journal.operationId
       ),
-      ...segments
+      ...below
     ),
     direction
   )
+}
+
+/** Fail the delete, before it commits, when a source it keeps has gone. */
+function verifyPrefixDeleteRetained(journal: PrefixDeleteJournal): void {
+  const root = resolve(getSpacesBaseDir(), journal.from.spaceId)
+  assertSafeWorkspacePath(root)
+  for (const source of journal.retained ?? []) {
+    if (!hasFilesystemEntry(resolve(root, ...source.split("/")))) {
+      throw new Error("a source the folder delete keeps is missing")
+    }
+  }
 }
 
 /** Remove the retired directories a rolled-back folder delete left empty. */
@@ -4125,8 +4260,7 @@ async function preparePrefixArchive(
     annotation: null,
     completed: [],
   }
-  JournalSchema.parse(journal)
-  assertPreparedJournalFits(journal)
+  assertPreparedJournalPublishable(journal)
   return { journal, blobs }
 }
 
@@ -4392,17 +4526,22 @@ async function preparePrefixDelete(
     )
   }
 
-  const remainder = planPrefixDeleteRemainder(
-    spaceRoot,
-    prefix,
-    catalog.entries.flatMap((entry) =>
-      entry.kind === "document"
-        ? [entry.handle.source.relativePath]
-        : entry.claims.flatMap((claim) =>
-            "source" in claim ? [claim.source.relativePath] : []
-          )
-    )
-  )
+  const folder = folderOnDisk(spaceRoot, prefix)
+  const { remainder, retained } = folder
+    ? planPrefixDeleteRemainder(
+        spaceRoot,
+        folder,
+        prefix,
+        catalog.entries.flatMap((entry) =>
+          entry.kind === "document"
+            ? [entry.handle.source.relativePath]
+            : entry.claims.flatMap((claim) =>
+                "source" in claim ? [claim.source.relativePath] : []
+              )
+        ),
+        deletions.map((deletion) => deletion.source.relativePath)
+      )
+    : { remainder: [], retained: [] }
   const journal: PrefixDeleteJournal = {
     schemaVersion: JOURNAL_SCHEMA_VERSION,
     planVersion: JOURNAL_PLAN_VERSION,
@@ -4415,14 +4554,19 @@ async function preparePrefixDelete(
     to: { spaceId, logicalPath: prefix },
     documents,
     ...(remainder.length > 0 ? { remainder } : {}),
+    ...(retained.length > 0 ? { retained } : {}),
     completedDocuments: 0,
     progressStride: PREFIX_PROGRESS_STRIDE,
     edits,
     completed: [],
   }
-  JournalSchema.parse(journal)
-  assertPreparedJournalFits(journal)
-  return { journal, blobs, prefixDeleteHistoryFiles: historyFiles }
+  assertPreparedJournalPublishable(journal)
+  return {
+    journal,
+    blobs,
+    prefixDeleteHistoryFiles: historyFiles,
+    ...(folder ? { folderOnDisk: folder.join("/") } : {}),
+  }
 }
 
 async function prepareExactDelete(
@@ -4733,8 +4877,7 @@ async function prepareExactDelete(
     annotation: null,
     completed: [],
   }
-  JournalSchema.parse(journal)
-  assertPreparedJournalFits(journal)
+  assertPreparedJournalPublishable(journal)
   return { journal, blobs, directHistoryFiles: historyFiles }
 }
 
@@ -4923,7 +5066,7 @@ async function prepareFormatTransition(
     annotation: null,
     completed: [],
   }
-  JournalSchema.parse(journal)
+  assertPreparedJournalPublishable(journal)
   return { journal, blobs, targetBytes }
 }
 
@@ -4936,7 +5079,22 @@ function writeJournal(journal: DocumentLifecycleJournal): void {
   writeDurableFile(journalPath(), bytes, 0o600)
 }
 
-function assertPreparedJournalFits(journal: DocumentLifecycleJournal): void {
+/**
+ * Before a journal is published, the checks recovery runs when it reads it
+ * back (`parseJournal`): a plan recovery would refuse is refused now, before
+ * anything changes, instead of leaving the workspace needing recovery.
+ */
+function assertPreparedJournalPublishable(
+  journal: DocumentLifecycleJournal
+): void {
+  const parsed = JournalSchema.parse(journal)
+  try {
+    validateJournalPaths(parsed)
+  } catch {
+    throw new DocumentLifecyclePreconditionError(
+      "This change can't be recorded safely, so nothing changed"
+    )
+  }
   const bytes = Buffer.byteLength(`${JSON.stringify(journal, null, 2)}\n`)
   if (bytes > JOURNAL_MAX_BYTES) {
     throw new DocumentLifecyclePreconditionError(
@@ -5045,32 +5203,28 @@ function validateJournalBinding(journal: DocumentLifecycleJournal): void {
 }
 
 /**
- * A carry names one hidden item below the source folder and the same place
- * below the target, through plain segments only.
+ * A carry names one hidden item in the source folder as spelled on disk, and
+ * the same place below the target, through plain segments only.
  */
 function validatePrefixHiddenCarries(journal: PrefixRenameJournal): void {
-  const fromRoot = `docs/${journal.from.logicalPath}/`
-  const toRoot = `docs/${journal.to.logicalPath}/`
+  const toRoot = ["docs", ...journal.to.logicalPath.split("/")]
   const seen = new Set<string>()
+  let folder: string | null = null
   for (const carry of journal.hidden ?? []) {
-    const below = carry.from.slice(fromRoot.length)
-    const segments = below.split("/")
+    const below = segmentsBelowFolder(carry.from, journal.from.logicalPath)
+    const spelled = below
+      ? carry.from.split("/").slice(0, -below.length).join("/")
+      : null
     if (
-      !carry.from.startsWith(fromRoot) ||
-      carry.to !== `${toRoot}${below}` ||
-      !segments.some(isHiddenName) ||
-      segments.some(
-        (segment) =>
-          segment === "" ||
-          segment === "." ||
-          segment === ".." ||
-          segment.includes("\\") ||
-          segment.includes("\0")
-      ) ||
+      !below ||
+      carry.to !== [...toRoot, ...below].join("/") ||
+      !below.some(isHiddenName) ||
+      (folder !== null && spelled !== folder) ||
       seen.has(carry.from)
     ) {
       throw new Error("document folder lifecycle hidden item path is unsafe")
     }
+    folder = spelled
     seen.add(carry.from)
   }
 }
@@ -5399,26 +5553,22 @@ function validatePrefixArchiveJournalPaths(
 }
 
 /**
- * Each remainder item names one entry below the folder through plain
- * segments, and none holds another.
+ * Each remainder item names one entry in the folder as spelled on disk,
+ * through plain segments, and none holds another. Each retained source is
+ * below the folder too.
  */
 function validatePrefixDeleteRemainder(journal: PrefixDeleteJournal): void {
   const seen = new Set<string>()
+  let folder: string | null = null
   for (const item of journal.remainder ?? []) {
-    const segments = item.split("/")
-    if (
-      segments.some(
-        (segment) =>
-          segment === "" ||
-          segment === "." ||
-          segment === ".." ||
-          segment.includes("\\") ||
-          segment.includes("\0")
-      ) ||
-      seen.has(item)
-    ) {
+    const below = segmentsBelowFolder(item, journal.from.logicalPath)
+    const spelled = below
+      ? item.split("/").slice(0, -below.length).join("/")
+      : null
+    if (!below || (folder !== null && spelled !== folder) || seen.has(item)) {
       throw new Error("document deletion lifecycle remainder path is unsafe")
     }
+    folder = spelled
     seen.add(item)
   }
   for (const item of seen) {
@@ -5427,6 +5577,11 @@ function validatePrefixDeleteRemainder(journal: PrefixDeleteJournal): void {
       if (seen.has(segments.slice(0, depth).join("/"))) {
         throw new Error("document deletion lifecycle remainder is ambiguous")
       }
+    }
+  }
+  for (const source of journal.retained ?? []) {
+    if (!segmentsBelowFolder(source, journal.from.logicalPath)) {
+      throw new Error("document deletion lifecycle retained path is unsafe")
     }
   }
 }
@@ -7798,6 +7953,7 @@ async function applyPortableRuntime(
       retirePrefixDeleteItem(journal, item, "forward")
       await stepHookForTests?.("remainder-retired")
     }
+    verifyPrefixDeleteRetained(journal)
     markCompleted(journal, "source")
     await stepHookForTests?.("source")
     for (const edit of orderedEdits(journal, "forward")) {
@@ -10163,6 +10319,9 @@ async function moveDurableDocumentsByPrefixSerialized(
                     to: entry.to.logicalPath,
                     documentId: entry.document.id,
                   })),
+                  ...(prepared.folderOnDisk
+                    ? { folderOnDisk: prepared.folderOnDisk }
+                    : {}),
                 }
               } finally {
                 for (const path of paths) unsuppressPath(path)
@@ -10568,6 +10727,9 @@ async function deleteDurableDocumentsByPrefixSerialized(
                     documentId: entry.document.id,
                     storageProfileId: entry.storageProfileId,
                   })),
+                  ...(prepared.folderOnDisk
+                    ? { folderOnDisk: prepared.folderOnDisk }
+                    : {}),
                 }
               } finally {
                 for (const path of paths) unsuppressPath(path)

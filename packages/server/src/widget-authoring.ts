@@ -145,6 +145,8 @@ Read it with worktable_html_read: it returns the source as html, and its revisio
 
 Generated HTML is often one long line. worktable_search with exact finds text in HTML Docs and returns a short excerpt around each match, enough to copy an oldText from.
 
+With a shell, a large page can move outside the call. worktable_html_read gives a downloadUrl for the source it read. worktable_html_write with upload gives a one-time link that takes a page with curl -T and saves it as the call would have; to replace a page that way, pass htmlId and expectedRevision. A link the page was refused through is used up: ask for a new one.
+
 Name, description and permissions change without html. Every agent change to the page or its permissions turns network access off until a person allows it again.`
 
 export function getHtmlAuthoringGuide(

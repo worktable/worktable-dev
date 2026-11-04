@@ -185,6 +185,8 @@ const docsWrite = fieldsOf("worktable_docs_write", "write")
 const docsEdit = fieldsOf("worktable_docs_write", "edit")
 const htmlCreate = fieldsOf("worktable_html_write", "create")
 const htmlUpdate = fieldsOf("worktable_html_write", "update")
+/** HTML Doc update fields held for the preview surface. */
+const HTML_HELD_FIELDS = ["expectedRevision", "edits", "upload"] as const
 const drawingsInspect = fieldsOf("worktable_drawings_read", "inspect")
 const drawingsCreate = fieldsOf("worktable_drawings_write", "create")
 const drawingsEdit = fieldsOf("worktable_drawings_write", "edit")
@@ -478,8 +480,8 @@ const TOOLS: CatalogTool[] = [
     description:
       "Create an HTML Doc, or with htmlId change one's HTML, name, description or permissions. A new HTML Doc needs name, lifetime and html. Create and update may return an opt-in PNG preview; a failed preview never undoes the save. Read worktable_guidance topic html before writing one.",
     annotations: writes({ destructiveHint: true }),
-    // The released listing holds back expectedRevision and edits (PREVIEW_CHANGES).
-    inputSchema: flatInput(["spaceId"], [htmlCreate, without(htmlUpdate, "expectedRevision", "edits")], {
+    // The released listing holds back edits, revisions and uploads (PREVIEW_CHANGES).
+    inputSchema: flatInput(["spaceId"], [without(htmlCreate, "upload"), without(htmlUpdate, ...HTML_HELD_FIELDS)], {
       htmlId: z.string().describe("HTML Doc to change. Omit to create one."),
       // Renaming clears a description with null; create and update take text.
       description: described(fieldsOf("worktable_html_write", "rename").description!, "Short description shown in Worktable; null clears it."),
@@ -924,21 +926,25 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
   worktable_html_write: (tool) => ({
     ...tool,
     description:
-      "Create an HTML Doc, or with htmlId change one. To change part of a page, pass edits: read it with worktable_html_read first, copy each oldText exactly from its html, and pass its revision as expectedRevision; on no_match or ambiguous, read again and never guess. To replace the whole page, pass html; that needs expectedRevision, and one the HTML Doc is no longer at is refused. Name, description and permissions change without html. A new HTML Doc needs name, lifetime and html. Create and update may return an opt-in PNG preview; a failed preview never undoes the save. Read worktable_guidance topic html before writing one.",
+      "Create an HTML Doc, or with htmlId change one. To change part of a page, pass edits: read it with worktable_html_read first, copy each oldText exactly from its html, and pass its revision as expectedRevision; on no_match or ambiguous, read again and never guess. To replace the whole page, pass html; that needs expectedRevision, and one the HTML Doc is no longer at is refused. With a shell, a large page can go through a one-time link instead: pass upload, and send the file with the command it returns. Name, description and permissions change without html. A new HTML Doc needs name, lifetime and html. Create and update may return an opt-in PNG preview; a failed preview never undoes the save. Read worktable_guidance topic html before writing one.",
     inputSchema: z.strictObject({
       ...tool.inputSchema.shape,
       edits: htmlUpdate.edits!.optional(),
       expectedRevision: htmlUpdate.expectedRevision!.optional(),
+      upload: htmlUpdate.upload!,
     }),
     route: (args) => {
+      const pages = ["html", "edits", "upload"].filter((key) => args[key] !== undefined)
+      if (pages.length > 1)
+        throw new ToolArgumentError("Pass one of html, edits or upload.")
+      if (args.upload !== undefined && args.preview !== undefined)
+        throw new ToolArgumentError("A page sent through a link has no preview; render it with worktable_files_render once it is saved.")
       if (args.htmlId === undefined) {
         if (args.expectedRevision !== undefined || args.edits !== undefined)
           throw new ToolArgumentError("expectedRevision and edits apply when changing an existing HTML Doc: pass its htmlId.")
         return step("worktable_html_write", "create", args)
       }
-      if (args.html !== undefined && args.edits !== undefined)
-        throw new ToolArgumentError("Pass html to replace the page or edits to change part of it, not both.")
-      const updates = ["html", "edits", "expectedRevision", "permissions", "preview"]
+      const updates = ["html", "edits", "upload", "expectedRevision", "permissions", "preview"]
       // A rename needs a name, and only a rename clears a description with
       // null; any other change of properties is an update.
       const renames = args.name !== undefined || args.description === null
@@ -948,14 +954,21 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
     },
     outputFields: {
       revision: z.string().optional().describe("The saved page's revision, for expectedRevision on the next write."),
+      uploadUrl: z.string().optional().describe("With upload: the one-time link that takes the page, with curl -T."),
+      method: z.literal("PUT").optional().describe("With upload: the method the link takes."),
+      expiresAt: z.string().optional().describe("With upload: when the link stops working."),
+      maxBytes: z.number().int().positive().optional().describe("With upload: the largest page the link takes."),
+      command: z.string().optional().describe("With upload: the command that sends a local file to the link."),
     },
   }),
   worktable_html_read: (tool) => ({
     ...tool,
     description:
-      "Read an HTML Doc's details, permissions, revision and source; with includeHtml false, no source. The revision is what worktable_html_write takes as expectedRevision. List HTML Docs with worktable_files_read, find text in them with worktable_search exact, and see one with worktable_files_render.",
+      "Read an HTML Doc's details, permissions, revision and source; with includeHtml false, no source. The revision is what worktable_html_write takes as expectedRevision. With a shell, downloadUrl gives the source outside the call. List HTML Docs with worktable_files_read, find text in them with worktable_search exact, and see one with worktable_files_render.",
     outputFields: {
       revision: z.string().optional().describe("The source's revision, for expectedRevision in worktable_html_write."),
+      downloadUrl: z.string().optional().describe("Where a shell can fetch this revision of the source with curl, outside the call, until downloadExpiresAt. It refuses once the page changes."),
+      downloadExpiresAt: z.string().optional().describe("When downloadUrl stops working."),
     },
   }),
   worktable_search: (tool) => ({

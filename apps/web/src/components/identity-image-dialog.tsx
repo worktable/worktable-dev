@@ -11,12 +11,6 @@ import {
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog"
 import { toast } from "@worktable/ui/components/sonner"
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@worktable/ui/components/tabs"
 import { cn } from "@worktable/ui/lib/utils"
 import { IconSearchGrid } from "@/components/icon-search-grid"
 import { NamedIcon } from "@/lib/icons"
@@ -434,25 +428,41 @@ export function IdentityImageDialog({
             }}
           />
           {onSaveIcon ? (
-            <Tabs
-              value={tab}
-              onValueChange={(value) => setTab(value as "image" | "icon")}
-            >
-              <TabsList aria-label="Logo kind" className="self-center">
-                <TabsTrigger value="image">Image</TabsTrigger>
-                <TabsTrigger value="icon">Icon</TabsTrigger>
-              </TabsList>
-              <TabsContent value="image" className="pt-2">
-                {imagePane}
-              </TabsContent>
-              <TabsContent value="icon" className="pt-2">
-                <IconSearchGrid
-                  selected={icon}
-                  onSelect={setIcon}
-                  className="max-h-48"
-                />
-              </TabsContent>
-            </Tabs>
+            <div className="flex flex-col gap-2">
+              {/* Two buttons rather than Tabs, so the picker adds no shared
+                  chunk to every page's first load. */}
+              <div
+                role="group"
+                aria-label="Logo kind"
+                className="inline-flex h-8 w-fit items-center self-center rounded-lg bg-surface-inset p-[3px]"
+              >
+                {(["image", "icon"] as const).map((kind) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    aria-pressed={tab === kind}
+                    onClick={() => setTab(kind)}
+                    className={cn(
+                      "inline-flex h-full items-center rounded-md border border-transparent px-2.5 text-sm font-medium text-foreground/60 transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
+                      tab === kind && "border-card-border bg-card text-foreground"
+                    )}
+                  >
+                    {kind === "image" ? "Image" : "Icon"}
+                  </button>
+                ))}
+              </div>
+              <div className="pt-2">
+                {tab === "image" ? (
+                  imagePane
+                ) : (
+                  <IconSearchGrid
+                    selected={icon}
+                    onSelect={setIcon}
+                    className="max-h-48"
+                  />
+                )}
+              </div>
+            </div>
           ) : (
             imagePane
           )}

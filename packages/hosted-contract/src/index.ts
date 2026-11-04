@@ -223,6 +223,12 @@ export const ENV = {
   SHARE_BASE_URL: "WORKTABLE_SHARE_BASE_URL",
   /** Separate, disposable origin used only for executable shared HTML. */
   HTML_SHARE_BASE_URL: "WORKTABLE_HTML_SHARE_BASE_URL",
+  /**
+   * The most this Worktable may take on disk, in bytes: its plan's storage.
+   * Unset means the server's default. Outside Cloud an operator may set it
+   * too, up to the server's ceiling.
+   */
+  STORAGE_LIMIT_BYTES: "WORKTABLE_STORAGE_LIMIT_BYTES",
 } as const
 
 /**
@@ -784,6 +790,8 @@ export const TenantProvisionInput = z
         runtimeId: z.string().min(1),
       })
       .optional(),
+    /** The plan's storage, in bytes; unset leaves the server's default. */
+    storageLimitBytes: z.number().int().positive().optional(),
   })
   .superRefine((input, ctx) => {
     if (
@@ -877,6 +885,9 @@ export function buildTenantEnv(
           [ENV.SHARE_BASE_URL]: new URL(parsed.shareBaseUrl).origin,
           [ENV.HTML_SHARE_BASE_URL]: new URL(parsed.htmlShareBaseUrl).origin,
         }
+      : {}),
+    ...(parsed.storageLimitBytes
+      ? { [ENV.STORAGE_LIMIT_BYTES]: String(parsed.storageLimitBytes) }
       : {}),
   }
 }

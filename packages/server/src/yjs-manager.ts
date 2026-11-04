@@ -2563,6 +2563,8 @@ export class YjsDocManager {
         managedIdentity: true,
         canonical: mermaidNormalized,
         continueSession,
+        // Refusing would lose what the editor holds; counted instead.
+        storage: "counted",
       })));
       if (!writeResult.ok) {
         throw new Error(writeResult.error ?? "Yjs document persist failed");

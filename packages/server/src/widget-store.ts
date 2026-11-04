@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { assertSpaceAccess } from "./team-policy.ts";
-import { mkdir, readdir, rmdir } from "node:fs/promises";
+import { mkdir, readdir, rmdir, stat } from "node:fs/promises";
+import { reserveStorage } from "./storage-limit.ts";
 import { dirname, join, sep } from "node:path";
 import {
   CanonicalIdSchema,
@@ -405,6 +406,7 @@ export async function writeWidget(
       };
     }
     const htmlPath = join(spaceDir(spaceId), owner.sourceRelativePath);
+    const room = await reserveHtmlRoom(htmlPath, html);
     const release = holdSuppression([htmlPath]);
     try {
       await writeHtmlDocumentStorageV2({
@@ -416,6 +418,8 @@ export async function writeWidget(
     } catch (error) {
       release();
       throw error;
+    } finally {
+      room.release();
     }
     notifyHtmlContentChanged(spaceId, parsedWidget.id);
     return { data: parsedWidget, error: null, release };
@@ -440,6 +444,7 @@ export async function writeWidget(
   // returned release once recordWidgetVersion resolves.
   const yamlPath = widgetPath(spaceId, parsedWidget.id);
   const htmlPath = widgetContentPath(spaceId, parsedWidget.id);
+  const room = await reserveHtmlRoom(htmlPath, html);
   const release = holdSuppression([yamlPath, htmlPath]);
   try {
     await writeTextFile(yamlPath, stringifyCanonicalYaml(parsedWidget));
@@ -447,9 +452,22 @@ export async function writeWidget(
   } catch (err) {
     release();
     throw err;
+  } finally {
+    room.release();
   }
   notifyHtmlContentChanged(spaceId, parsedWidget.id);
   return { data: parsedWidget, error: null, release };
+}
+
+/**
+ * Room under the storage limit for an HTML document's new source and its
+ * version, less what it replaces (storage-limit.ts).
+ */
+function reserveHtmlRoom(htmlPath: string, html: string) {
+  return reserveStorage({
+    adds: 2 * Buffer.byteLength(html),
+    replaces: async () => 2 * ((await stat(htmlPath).catch(() => null))?.size ?? 0),
+  });
 }
 
 export async function updateWidgetMetadata(

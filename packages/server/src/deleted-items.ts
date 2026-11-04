@@ -468,6 +468,75 @@ async function emptyAllTrash(now: number, window: number): Promise<number> {
   return removed
 }
 
+/** Bytes in the regular files under a directory; links are not followed. */
+async function directoryBytes(path: string): Promise<number> {
+  let total = 0
+  const pending = [path]
+  while (pending.length > 0) {
+    const current = pending.pop()!
+    let entries
+    try {
+      entries = await readdir(current, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      const child = join(current, entry.name)
+      if (entry.isDirectory()) pending.push(child)
+      else if (entry.isFile()) {
+        try {
+          total += (await lstat(child)).size
+        } catch {
+          // Gone meanwhile.
+        }
+      }
+    }
+  }
+  return total
+}
+
+/**
+ * At the storage limit, empty the served workspace's trash oldest first,
+ * before its window runs out, until `wantBytes` are freed. Only entries
+ * that finished moving out of the workspace folder are removed; nothing a
+ * lifecycle operation could still read is in this trash (see the header).
+ * Background work only (storage-pruning.ts).
+ */
+export async function removeOldestTrash(
+  wantBytes: number,
+  stopped: () => boolean = () => false
+): Promise<{ removed: number; bytes: number }> {
+  const trash = deletedItemsTrashDir()
+  const entries: { name: string; path: string; retiredAt: number }[] = []
+  for (const name of await childDirectories(trash)) {
+    const path = join(trash, name)
+    if (!ENTRY_ID.test(name) || !(await realDirectory(join(path, "data")))) {
+      continue
+    }
+    const entry = await readEntry(path)
+    entries.push({ name, path, retiredAt: entry?.retiredAt ?? 0 })
+  }
+  entries.sort((a, b) => a.retiredAt - b.retiredAt || (a.name < b.name ? -1 : 1))
+  let removed = 0
+  let bytes = 0
+  for (const entry of entries) {
+    if (bytes >= wantBytes || stopped()) break
+    const size = await directoryBytes(entry.path)
+    const emptying = join(trash, `.empty-${entry.name}`)
+    try {
+      await rename(entry.path, emptying)
+    } catch {
+      continue
+    }
+    noteStorageChange(entry.path)
+    await rm(emptying, { recursive: true, force: true })
+    noteStorageChange(emptying)
+    removed += 1
+    bytes += size
+  }
+  return { removed, bytes }
+}
+
 // ── The pass ────────────────────────────────────────────────
 
 /**

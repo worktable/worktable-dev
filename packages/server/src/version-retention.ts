@@ -28,6 +28,7 @@ import { DocumentIdSchema, type DocumentId } from "@worktable/types";
 import { readFile } from "node:fs/promises";
 import {
   listDocumentGenerationsV2,
+  protectedDocumentGenerations,
   pruneDocumentGenerationsV2,
 } from "./document-version-store-v2.ts";
 import {
@@ -98,6 +99,7 @@ interface VersionFile {
   tsFromId: boolean;
   /** File mtime (ms) — fallback ordering for legacy ids only. */
   mtime: number;
+  size: number;
 }
 
 function isMissingVersionDirError(error: unknown): boolean {
@@ -180,8 +182,11 @@ async function collectVersionFiles(dir: string): Promise<VersionFile[]> {
   for (const name of names) {
     const id = name.replace(/\.json$/, "");
     let mtime = 0;
+    let size = 0;
     try {
-      mtime = (await stat(join(dir, name))).mtimeMs;
+      const info = await stat(join(dir, name));
+      mtime = info.mtimeMs;
+      size = info.size;
     } catch {
       // Vanished mid-walk (concurrent prune/write) — keep 0; it sorts oldest.
     }
@@ -193,6 +198,7 @@ async function collectVersionFiles(dir: string): Promise<VersionFile[]> {
       ts: parsedTs ?? mtime,
       tsFromId: parsedTs !== null,
       mtime,
+      size,
     });
   }
   // Newest first. For timestamped ids, the filename is authoritative through
@@ -252,6 +258,8 @@ function selectDeletions(
 interface PruneContext {
   policy: RetentionPolicy;
   protect: ReadonlySet<string>;
+  /** Choose the files to delete instead of the policy; never the newest. */
+  select?: (newestFirst: VersionFile[]) => VersionFile[];
 }
 
 function isInsideResolvedRoot(path: string, root: string): boolean {
@@ -345,7 +353,9 @@ async function pruneKeyDir(
     const ctx = await resolveContext();
     if (!ctx) return { filesDeleted, bytesFreed };
     const files = await collectVersionFiles(dir);
-    const toDelete = selectDeletions(files, ctx.policy, ctx.protect);
+    const toDelete = ctx.select
+      ? ctx.select(files).filter((file) => file !== files[0] && !ctx.protect.has(file.id))
+      : selectDeletions(files, ctx.policy, ctx.protect);
     for (const file of toDelete) {
       if (await isMeaningfulCheckpoint(file)) continue;
       try {
@@ -717,4 +727,102 @@ export async function pruneDocKeyForCount(
       logError(err),
     );
   }
+}
+
+// ── Pruning at the storage limit ────────────────────────────
+//
+// storage-pruning.ts frees room when a Worktable reaches its storage limit,
+// oldest history first across the whole Worktable. These list what it may
+// remove and remove it, with the same guards as retention: never a
+// document's newest version, the version its provenance points at, or a
+// meaningful checkpoint, and only files inside the versions folder.
+
+export interface PrunableVersion {
+  store: "v2" | "legacy";
+  spaceId: string;
+  /** The document id, or for legacy history its version key (its path then). */
+  owner: string;
+  id: string;
+  /** When the version was last saved (ms). */
+  at: number;
+  bytes: number;
+}
+
+/**
+ * Every version pruning may remove, in no particular order. Walks the
+ * versions folder: background work only, never on a request.
+ */
+export async function listPrunableVersions(
+  stopped: () => boolean = () => false,
+): Promise<PrunableVersion[]> {
+  const found: PrunableVersion[] = [];
+  for await (const { spaceId, documentId } of iterActiveDocumentGenerationOwners()) {
+    if (stopped()) return found;
+    try {
+      const manifests = await listDocumentGenerationsV2({
+        workspaceRoot: getWorkspaceRoot(),
+        spaceId,
+        documentId,
+      });
+      const kept = protectedDocumentGenerations(manifests);
+      for (const manifest of manifests) {
+        if (kept.has(manifest.id)) continue;
+        found.push({
+          store: "v2",
+          spaceId,
+          owner: documentId,
+          id: manifest.id,
+          at: Date.parse(manifest.updatedAt ?? manifest.createdAt),
+          bytes: manifest.totalBytes,
+        });
+      }
+    } catch (error) {
+      console.warn(
+        `[version-retention] could not list versions for ${spaceId}/${documentId}:`,
+        logError(error),
+      );
+    }
+  }
+  const protectCache = new ProvenanceProtectionCache();
+  for await (const { spaceId, key, dir } of iterDocKeyDirs()) {
+    if (stopped()) return found;
+    const protect = await protectCache.get(spaceId);
+    const files = await collectVersionFiles(dir);
+    for (const file of files.slice(1)) {
+      if (protect.has(file.id)) continue;
+      found.push({
+        store: "legacy",
+        spaceId,
+        owner: key,
+        id: file.id,
+        at: file.ts,
+        bytes: file.size,
+      });
+    }
+  }
+  return found;
+}
+
+/**
+ * Remove these legacy snapshots of one Doc under its version lock, skipping
+ * any now protected or kept by `keep`. Returns what was freed.
+ */
+export async function removeLegacyDocVersions(
+  spaceId: string,
+  key: string,
+  ids: ReadonlySet<string>,
+  keep: (id: string) => boolean,
+): Promise<{ filesDeleted: number; bytesFreed: number }> {
+  const versionsRoot = getVersionsDir();
+  return pruneKeyDir(
+    spaceId,
+    key,
+    join(versionsRoot, spaceId, "docs", ...key.split("/")),
+    resolve(versionsRoot),
+    async () => ({
+      policy: getServerSettings().history.retention,
+      protect: await provenanceVersionIds(spaceId),
+      select: (files) => files.filter((file) => ids.has(file.id) && !keep(file.id)),
+    }),
+  );
 }

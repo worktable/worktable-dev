@@ -1,3 +1,8 @@
+import {
+  prunedHistoryFor,
+  spaceHasPrunedHistory,
+  type PrunedItem,
+} from "./storage-pruned.ts"
 import type {
   DocumentFormatClaim,
   DocumentGenerationManifestV2,
@@ -783,6 +788,32 @@ export async function listLegacyDocVersionsV2(
   ])
   if (!owner) return []
   return listOwnedDocVersionsV2(spaceId, owner, options)
+}
+
+/**
+ * What pruning at the storage limit removed from a Doc's or HTML
+ * document's history, or null. No catalog read unless something in this
+ * Space was pruned.
+ */
+export async function prunedDocumentHistoryV2(
+  spaceId: string,
+  path: string,
+  kind: "doc" | "html"
+): Promise<PrunedItem | null> {
+  if (!spaceHasPrunedHistory(spaceId)) return null
+  const owner = await resolveOwner(
+    spaceId,
+    path,
+    kind === "html"
+      ? [BUILTIN_DOCUMENT_FORMATS.html]
+      : [BUILTIN_DOCUMENT_FORMATS.markdown, BUILTIN_DOCUMENT_FORMATS.richText],
+    { snapshot: true }
+  )
+  if (!owner) return null
+  return prunedHistoryFor(spaceId, {
+    documentId: owner.documentId,
+    legacyKey: owner.path,
+  })
 }
 
 /** Versions of a Doc already resolved to its owner, newest first. */

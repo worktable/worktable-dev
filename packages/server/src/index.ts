@@ -39,6 +39,11 @@ import { grokBotRouter } from "./routes/grok-bot.ts"
 import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts"
 import { startStorageAccounting } from "./storage-usage.ts"
 import {
+  startStorageLimits,
+  StorageLimitError,
+  storageLimitBody,
+} from "./storage-limit.ts"
+import {
   markBootMilestone,
   startBootPhase,
   timeBootTask,
@@ -425,6 +430,9 @@ app.onError((err, c) => {
   }
   if (err instanceof SpaceTooLargeError) {
     return c.json({ error: err.message, code: err.code }, 413)
+  }
+  if (err instanceof StorageLimitError) {
+    return c.json(storageLimitBody(err), 507)
   }
   return unexpectedErrorResponse(c, err);
 });
@@ -2369,6 +2377,11 @@ export function startServer(
       : startStorageAccounting({
           onFirstCount: () => wsManager.broadcastAll({ type: "storage_counted" }),
         });
+  // The limit on that count: writes that would pass it are refused, and at
+  // it the oldest history is pruned (storage-limit.ts).
+  const stopStorageLimits = workspaceRejected
+    ? () => Promise.resolve()
+    : startStorageLimits();
   if (options.resumeWorkspaceRequests !== false) {
     resumeWorkspaceRequestAdmission();
   }
@@ -2499,6 +2512,7 @@ export function startServer(
         await settle(() => mcpEventsStopping);
         await settle(() => cloudTasksStopping);
         await settle(stopBackupNotifier);
+        await settle(stopStorageLimits);
         await settle(stopStorageAccounting);
         await settle(() => credentialCheck ?? Promise.resolve());
         credentialSockets.clear();

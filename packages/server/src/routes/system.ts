@@ -43,7 +43,7 @@ import {
   type WorkspaceOriginSource,
 } from "../workspace-origin.ts";
 import { logError } from "../debug-log.ts";
-import { storageUsage } from "../storage-usage.ts";
+import { storageSummary } from "../storage-limit.ts";
 import {
   checkPreviewBrowser,
   previewBrowserAvailability,
@@ -425,7 +425,7 @@ function withEnvironmentOverrides(settings: ServerSettings) {
   return {
     ...settings,
     agents: { ...settings.agents, previewToolsOverride: mcpPreviewEnvOverride() },
-    storage: storageUsage(),
+    storage: storageSummary(),
   };
 }
 

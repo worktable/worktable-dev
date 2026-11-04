@@ -127,7 +127,7 @@
       "why": "Writer: checks the current files under the write lock; writers never read snapshots."
     },
     {
-      "site": "packages/server/src/document-write-service.ts#createRegisteredDocument.catalog",
+      "site": "packages/server/src/document-write-service.ts#createRegisteredDocumentWithRoom.catalog",
       "kind": "buildDocumentCatalog",
       "why": "Writer: checks the current files under the write lock; writers never read snapshots."
     },
@@ -137,7 +137,7 @@
       "why": "Editable source, previews and drawing reads. Should use the snapshot (Plan 15)."
     },
     {
-      "site": "packages/server/src/document-write-service.ts#replaceRegisteredDocument.catalog",
+      "site": "packages/server/src/document-write-service.ts#replaceRegisteredDocumentWithRoom.catalog",
       "kind": "buildDocumentCatalog",
       "why": "Writer: checks the current files under the write lock; writers never read snapshots."
     },
@@ -147,7 +147,7 @@
       "why": "Writer: checks the current files under the write lock; writers never read snapshots."
     },
     {
-      "site": "packages/server/src/document-write-service.ts#restoreRegisteredDocumentVersion.catalog",
+      "site": "packages/server/src/document-write-service.ts#restoreRegisteredDocumentVersionHeld.catalog",
       "kind": "buildDocumentCatalog",
       "why": "Writer: checks the current files under the write lock; writers never read snapshots."
     },

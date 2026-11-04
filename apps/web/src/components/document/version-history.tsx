@@ -34,7 +34,7 @@ import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { clockTime, groupByDay } from "@/lib/activity-format"
 import {
   createDocCheckpoint,
-  listDocVersions,
+  listDocVersionHistory,
   restoreDocVersion,
   type DocVersionEntry,
 } from "@/lib/docs-api"
@@ -42,7 +42,7 @@ import { useSpace, useWorkspace } from "@/lib/queries"
 import { browserTeamMemberId } from "@/lib/team-context"
 import {
   createWidgetCheckpoint,
-  listWidgetVersions,
+  listWidgetVersionHistory,
   restoreWidgetVersion,
 } from "@/lib/widgets-api"
 
@@ -229,12 +229,14 @@ export function VersionHistoryPanel({
     queryKey: listKey(location, filter === "all"),
     queryFn: () =>
       kind === "doc"
-        ? listDocVersions(spaceId, path, filter === "all")
-        : listWidgetVersions(spaceId, path, filter === "all"),
+        ? listDocVersionHistory(spaceId, path, filter === "all")
+        : listWidgetVersionHistory(spaceId, path, filter === "all"),
     enabled: open,
     staleTime: Infinity,
   })
-  const entries = (versions.data ?? []).filter((version, index) => {
+  // Pruning at the storage limit removes only unsaved versions.
+  const pruned = filter === "all" ? versions.data?.pruned : undefined
+  const entries = (versions.data?.versions ?? []).filter((version, index) => {
     const currentSnapshot =
       index === 0 &&
       version.after.contentHash === provenance?.contentHash &&
@@ -357,28 +359,35 @@ export function VersionHistoryPanel({
               Try again
             </button>
           </p>
-        ) : entries.length === 0 ? (
+        ) : entries.length === 0 && !pruned ? (
           <p className="px-3 py-4 text-sm leading-6 text-muted-foreground">
             {filter === "saved"
               ? "No saved versions yet. Save a version to keep this point in the document."
               : "Saved versions will appear here as you edit."}
           </p>
         ) : (
-          groups.map((group) => (
-            <section key={group.label} aria-label={group.label}>
-              <h3 className="px-3 pt-4 pb-1 text-xs font-medium text-muted-foreground">
-                {group.label}
-              </h3>
-              {group.items.map((version) => (
-                <VersionRow
-                  key={version.id}
-                  version={version}
-                  active={version.id === selectedVersionId}
-                  onSelect={() => onSelect(version.id)}
-                />
-              ))}
-            </section>
-          ))
+          <>
+            {groups.map((group) => (
+              <section key={group.label} aria-label={group.label}>
+                <h3 className="px-3 pt-4 pb-1 text-xs font-medium text-muted-foreground">
+                  {group.label}
+                </h3>
+                {group.items.map((version) => (
+                  <VersionRow
+                    key={version.id}
+                    version={version}
+                    active={version.id === selectedVersionId}
+                    onSelect={() => onSelect(version.id)}
+                  />
+                ))}
+              </section>
+            ))}
+            {pruned && (
+              <p className="px-3 py-4 text-sm leading-6 text-muted-foreground">
+                Older versions were removed at the storage limit.
+              </p>
+            )}
+          </>
         )}
       </div>
     </aside>

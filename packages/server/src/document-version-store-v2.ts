@@ -1263,6 +1263,81 @@ export async function pruneDocumentGenerationsV2(input: {
   })
 }
 
+/**
+ * Which of a document's generations pruning may never remove: the newest
+ * (the document's current version), the newest that is not a checkpoint
+ * (the one a save may continue, as count retention keeps it), and every
+ * meaningful checkpoint (restore points: saved, restored, before an agent
+ * took over, reviewed).
+ */
+export function protectedDocumentGenerations(
+  newestFirst: readonly DocumentGenerationManifestV2[]
+): Set<string> {
+  const kept = new Set<string>()
+  if (newestFirst[0]) kept.add(newestFirst[0].id)
+  const open = newestFirst.find((manifest) => !manifest.checkpoint?.meaningful)
+  if (open) kept.add(open.id)
+  for (const manifest of newestFirst) {
+    if (manifest.checkpoint?.meaningful) kept.add(manifest.id)
+  }
+  return kept
+}
+
+/**
+ * Remove the named generations of one document to free storage, oldest
+ * history only. Under the document's history locks it lists the generations
+ * again and skips any now protected (see `protectedDocumentGenerations`) or
+ * kept by `keep`. Each leaves the listing in one rename before it is
+ * removed, so a crash leaves no half-removed generation. Returns what went.
+ */
+export async function removeDocumentGenerationsV2(input: {
+  workspaceRoot: string
+  spaceId: string
+  documentId: DocumentId
+  generationIds: readonly string[]
+  keep?: (generationId: string) => boolean
+}): Promise<DocumentGenerationManifestV2[]> {
+  const parent = documentVersionsV2Directory(
+    input.workspaceRoot,
+    input.spaceId,
+    input.documentId
+  )
+  return withDocumentGenerationLock(parent, async () => {
+    if (!(await pathExists(parent))) return []
+    await requireRealDocumentStorageDirectory(input.workspaceRoot, parent)
+    return withCrossProcessLock(
+      join(parent, ".write-lock"),
+      { label: `Document ${input.documentId} version retention` },
+      async () => {
+        const manifests = await listDocumentGenerationsV2(input)
+        const kept = protectedDocumentGenerations(manifests)
+        const wanted = new Set(input.generationIds)
+        const removed: DocumentGenerationManifestV2[] = []
+        for (const manifest of manifests) {
+          if (!wanted.has(manifest.id) || kept.has(manifest.id)) continue
+          if (input.keep?.(manifest.id)) continue
+          const removing = join(
+            parent,
+            `.pending-pruned-${randomBytes(8).toString("hex")}`
+          )
+          await rename(
+            documentGenerationV2Directory(
+              input.workspaceRoot,
+              input.spaceId,
+              input.documentId,
+              manifest.id
+            ),
+            removing
+          )
+          await rm(removing, { recursive: true, force: true })
+          removed.push(manifest)
+        }
+        return removed
+      }
+    )
+  })
+}
+
 export type LegacyDocumentVersionKind = "docs" | "widgets"
 
 export interface LegacyDocumentVersionLocator {

@@ -339,6 +339,8 @@ export async function rewriteDocTargets(
     source: "system",
     reason: options.reason,
     managedIdentity: true,
+    // Keeps links in step with a move: counted, never refused.
+    storage: "counted" as const,
   }
   const scan = { imagesOnly: options.imagesOnly ?? false }
   const current = await agentChangeBase(spaceId, docPath, undefined, false)

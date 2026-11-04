@@ -114,14 +114,26 @@ export function widgetContentUrl(spaceId: string, widgetId: string) {
 // interpolate into the path as-is (same as everywhere else); version ids are
 // encoded like docs-api does.
 
+/** An HTML document's versions, and what pruning at the storage limit removed. */
+export function listWidgetVersionHistory(
+  spaceId: string,
+  widgetId: string,
+  all = false
+): Promise<{
+  versions: WidgetVersionEntry[]
+  pruned?: { versions: number; at: string }
+}> {
+  return fetchJSON(
+    `${htmlDocumentApiPath(spaceId, widgetId)}/versions${all ? "?all=true" : ""}`
+  )
+}
+
 export function listWidgetVersions(
   spaceId: string,
   widgetId: string,
   all = false
 ): Promise<WidgetVersionEntry[]> {
-  return fetchJSON<{ versions: WidgetVersionEntry[] }>(
-    `${htmlDocumentApiPath(spaceId, widgetId)}/versions${all ? "?all=true" : ""}`
-  ).then((r) => r.versions);
+  return listWidgetVersionHistory(spaceId, widgetId, all).then((r) => r.versions);
 }
 
 export function readWidgetVersion(

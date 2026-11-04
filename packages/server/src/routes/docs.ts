@@ -1,3 +1,4 @@
+import { prunedDocumentHistoryV2 } from "../document-version-compatibility-v2.ts";
 import { keepEarlierImagesAfterRestore } from "../file-history.ts";
 import { requireScope, requireHumanWorkspaceOwner, restWriteActor } from "../auth.ts";
 import { Hono } from "hono";
@@ -821,7 +822,9 @@ docsRouter.get("/*", requireScope("docs:read"), async (c) => {
     const docPath = rawDocPath.slice(0, -"/versions".length);
     const checkpointsOnly = c.req.query("all") !== "true";
     const versions = await listDocVersions(spaceId, docPath, { checkpointsOnly });
-    return c.json({ versions });
+    // Older versions removed at the storage limit, when any were.
+    const pruned = await prunedDocumentHistoryV2(spaceId, docPath, "doc");
+    return c.json({ versions, ...(pruned ? { pruned } : {}) });
   }
 
   const versionMatch = rawDocPath.match(/^(.*)\/versions\/([^/]+)$/);

@@ -3,6 +3,7 @@ import { cn } from "@worktable/ui/lib/utils"
 import { humanBytes } from "@/lib/bytes"
 import type { StorageUsage } from "@/lib/system-api"
 import { useServerSettings } from "@/hooks/use-server-settings"
+import { OperationStatus } from "../operation-status"
 
 const PARTS: { key: keyof StorageUsage["parts"]; label: string }[] = [
   { key: "live", label: "Docs & Files" },
@@ -12,15 +13,32 @@ const PARTS: { key: keyof StorageUsage["parts"]; label: string }[] = [
   { key: "derived", label: "Indexes & Caches" },
 ]
 
-// Storage, under Data: what this Worktable takes on disk, read-only. It comes
-// with the settings the Data page already loads; the server keeps the count.
+// Storage, under Data: what this Worktable takes on disk against its limit,
+// read-only. It comes with the settings the Data page already loads; the
+// server keeps the count. At the limit the server removes the oldest
+// history first; what it removed shows here.
 export function StorageSection() {
   const storage = useServerSettings().data?.storage ?? null
+  const limit = storage?.limit
+  const share = storage && limit ? storage.total.bytes / limit.bytes : 0
   return (
     <div className="flex flex-col gap-3 rounded-xl card-surface p-4">
+      {limit && share >= 1 ? (
+        <OperationStatus state="error">
+          At the limit. Delete something to make room.
+        </OperationStatus>
+      ) : limit && share >= limit.warnAt ? (
+        <OperationStatus state="attention">Close to the limit.</OperationStatus>
+      ) : null}
       <StorageRow
         label="Total"
-        value={storage ? humanBytes(storage.total.bytes) : null}
+        value={
+          storage
+            ? limit
+              ? `${humanBytes(storage.total.bytes)} of ${humanBytes(limit.bytes)}`
+              : humanBytes(storage.total.bytes)
+            : null
+        }
         strong
       />
       {PARTS.map(({ key, label }) => (
@@ -34,6 +52,12 @@ export function StorageSection() {
         label="Files"
         value={storage ? storage.total.files.toLocaleString() : null}
       />
+      {storage?.pruned ? (
+        <StorageRow
+          label="Removed History"
+          value={humanBytes(storage.pruned.bytes)}
+        />
+      ) : null}
     </div>
   )
 }

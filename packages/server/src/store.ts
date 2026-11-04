@@ -76,6 +76,7 @@ import {
 import { logDocument, logError } from "./debug-log.ts";
 import { noteDeletedItems } from "./deleted-item-events.ts";
 import { noteStorageChange } from "./storage-usage.ts";
+import { withStorageRoom } from "./storage-limit.ts";
 
 // ============================================================
 // Paths
@@ -2778,6 +2779,13 @@ export interface DocWriteOptions {
    * leaves its version pending (see recordPendingDocVersion).
    */
   continueSession?: boolean;
+  /**
+   * `counted`: never refused at the storage limit, only counted. For the
+   * editor's saves while someone types, which can't be turned away without
+   * losing what they typed, and for rewrites that only keep a Doc in step
+   * with a rename or move. Every other write needs room (storage-limit.ts).
+   */
+  storage?: "counted";
 }
 
 type DocWriteTransactionOptions = DocWriteOptions & {
@@ -3096,6 +3104,32 @@ export async function writeDoc(
   options?: DocWriteOptions
 ): Promise<DocWriteResult> {
   assertSpaceAccess(spaceId, "edit");
+  if (options?.storage === "counted") {
+    return writeDocWithRoom(spaceId, docPath, content, options);
+  }
+  // The Doc and its version: twice its bytes, less what it replaces twice.
+  return withStorageRoom(
+    {
+      adds:
+        2 *
+        Buffer.byteLength(
+          typeof content === "string" ? content : JSON.stringify(content)
+        ),
+      replaces: async () => {
+        const file = await resolveDocFile(spaceId, sanitizeDocPath(docPath));
+        return file ? 2 * (await stat(file.path)).size : 0;
+      },
+    },
+    () => writeDocWithRoom(spaceId, docPath, content, options)
+  );
+}
+
+async function writeDocWithRoom(
+  spaceId: string,
+  docPath: string,
+  content: unknown[] | string,
+  options?: DocWriteOptions
+): Promise<DocWriteResult> {
   const sanitizedDocPath = sanitizeDocPath(docPath);
   const pathError = options?.managedIdentity
     ? managedDocPathError(docPath)

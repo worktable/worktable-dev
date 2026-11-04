@@ -27,6 +27,7 @@ const WORKTABLE_PLUGIN_SKILL_FILES = WORKTABLE_PLUGIN_SKILLS.flatMap(
 export const WORKTABLE_PLUGIN_PUBLIC_FILES = [
   ".claude-plugin/plugin.json",
   ".codex-plugin/plugin.json",
+  ".cursor-plugin/plugin.json",
   ".mcp.json",
   "CHANGELOG.md",
   "LICENSE",
@@ -43,6 +44,7 @@ export const WORKTABLE_PLUGIN_PUBLIC_FILES = [
 export const WORKTABLE_PLUGIN_PUBLIC_CATALOGS = {
   ".agents/plugins/marketplace.json": "distribution/codex-marketplace.json",
   ".claude-plugin/marketplace.json": "distribution/claude-marketplace.json",
+  ".cursor-plugin/marketplace.json": "distribution/cursor-marketplace.json",
 } as const
 
 const BINARY_EXTENSIONS = new Set([".png"])

@@ -3,9 +3,9 @@ import {
   embeddedFileName,
   embedSourceUrl,
   fileSourceUrl,
-  sourceFileOf,
   uploadEmbeddedFile,
 } from "./file-embeds"
+import { sourceFileOf } from "./source-file"
 
 const realFetch = globalThis.fetch
 

@@ -419,7 +419,20 @@ describe("released tool surface", () => {
 
   it("lists the same flat tools on both surfaces", async () => {
     const released = (await listTools()).tools
-    expect((await listTools("preview")).tools).toEqual(released)
+    const preview = (await listTools("preview")).tools
+    const names = (tools: typeof released) => tools.map((tool) => tool.name)
+    expect(names(preview)).toEqual(names(released))
+    // Preview holds wording changes until agent directories review them;
+    // the tools' inputs stay the same and every other tool is identical.
+    const held = new Set(["worktable_files_write"])
+    expect(preview.filter((tool) => !held.has(tool.name))).toEqual(
+      released.filter((tool) => !held.has(tool.name))
+    )
+    for (const name of held) {
+      const inputs = (tools: typeof released) =>
+        Object.keys(tools.find((tool) => tool.name === name)?.inputSchema.properties ?? {})
+      expect(inputs(preview)).toEqual(inputs(released))
+    }
     expect(released.map((tool) => tool.name)).toEqual([...PUBLIC_TOOL_NAMES])
     const byName = Object.fromEntries(released.map((tool) => [tool.name, tool]))
     // ChatGPT passes a file the user attached as a link to it.

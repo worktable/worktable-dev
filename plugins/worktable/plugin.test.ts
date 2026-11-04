@@ -145,6 +145,21 @@ describe("Worktable plugin bundle", () => {
         termsOfServiceUrl: listingLink,
       })
     )
+    const cursorManifest = await jsonFile(
+      join(pluginRoot, ".cursor-plugin", "plugin.json")
+    )
+    // Cursor's marketplace, which also lists plugins in Grok Bot, reads this
+    // manifest and resolves the logo against the repository.
+    expect(cursorManifest).toEqual(
+      expect.objectContaining({
+        name: portableManifest.name,
+        version: portableManifest.version,
+        description: portableManifest.description,
+        license: "MIT",
+        logo: "assets/logo.png",
+        mcpServers: "./.mcp.json",
+      })
+    )
     const claudeMcp = await jsonFile(join(pluginRoot, ".mcp.json"))
     expect(claudeMcp).toEqual({
       mcpServers: {
@@ -178,6 +193,15 @@ describe("Worktable plugin bundle", () => {
         },
       }),
     ])
+    const cursorMarketplace = (await jsonFile(
+      join(pluginRoot, "distribution", "cursor-marketplace.json")
+    )) as { plugins?: Array<JsonObject> }
+    expect(cursorMarketplace.plugins).toEqual([
+      expect.objectContaining({
+        name: portableManifest.name,
+        source: "plugins/worktable",
+      }),
+    ])
     // `marketplace add` on this repository reads the root catalogs; they must
     // list the same plugin and version as the distribution copies.
     const repoRoot = join(pluginRoot, "..", "..")
@@ -187,6 +211,9 @@ describe("Worktable plugin bundle", () => {
     expect(
       await jsonFile(join(repoRoot, ".agents", "plugins", "marketplace.json"))
     ).toEqual(codexMarketplace)
+    expect(
+      await jsonFile(join(repoRoot, ".cursor-plugin", "marketplace.json"))
+    ).toEqual(cursorMarketplace)
 
     const license = await readFile(join(pluginRoot, "LICENSE"), "utf8")
     expect(license).toStartWith("MIT License\n")

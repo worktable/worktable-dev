@@ -1,0 +1,17 @@
+{
+  "name": "worktable",
+  "owner": {
+    "name": "Reva Labs",
+    "email": "support@worktable.dev"
+  },
+  "metadata": {
+    "description": "Official Worktable plugins for Cursor and Grok Bot."
+  },
+  "plugins": [
+    {
+      "name": "worktable",
+      "source": "plugins/worktable",
+      "description": "Build shared Docs, live HTML workspaces, structured Records, annotations, and durable agent threads in Worktable."
+    }
+  ]
+}

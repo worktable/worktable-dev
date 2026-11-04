@@ -11,9 +11,9 @@
 //   2. Only files under getVersionsDir() are ever removed — every candidate is
 //      resolve()d and skipped (with a log) if it escapes that root.
 //   3. Existing, archived, and legacy orphan histories in the active docs tree
-//      are treated identically. Generation-retired histories live under
-//      `.retired` and stay outside sweeps until retention can use the original
-//      document-key lock identity safely.
+//      are treated identically. Histories retired by a delete live under
+//      `.retired`, outside these per-version passes: deleted-items.ts moves
+//      each whole out of the workspace folder and removes it after the window.
 //   4. mode "all" is a hard no-op (no directory walk at all).
 //   5. Idempotent: running twice equals running once.
 //

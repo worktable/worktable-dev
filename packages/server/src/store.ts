@@ -1,5 +1,5 @@
 import { withCrossProcessLock } from "./cross-process-lock.ts";
-import { copyFile, link, mkdir, readFile, readdir, rename, rm, rmdir, stat, unlink, writeFile } from "node:fs/promises";
+import { copyFile, link, lstat, mkdir, readFile, readdir, rename, rm, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { effectiveArchiveOn } from "./lifetime-rules.ts";
 import { constants, existsSync, lstatSync, readFileSync, statSync } from "node:fs";
 import crypto from "node:crypto";
@@ -33,7 +33,7 @@ import {
 } from "./rich-text-blocks.ts";
 import { extractMarkdownMermaid } from "./mermaid-document.ts";
 
-import { getSpacesDir, workspaceCacheKey } from "./workspace.ts";
+import { getSpacesDir, getVersionsDir, workspaceCacheKey } from "./workspace.ts";
 import { refreshTeamStateForWrite } from "./team-database.ts";
 import { ensureAppDir } from "./app-storage.ts";
 import {
@@ -77,6 +77,7 @@ import {
   invalidateHostedDocumentSharesForSpace,
 } from "./share-lifecycle.ts";
 import { logDocument, logError } from "./debug-log.ts";
+import { noteDeletedItems } from "./deleted-item-events.ts";
 
 // ============================================================
 // Paths
@@ -1207,6 +1208,28 @@ export async function setSpaceArchived(
   return { space: updated, error: null };
 }
 
+/**
+ * A deleted Space's history leaves the active namespace under the same name as
+ * its trash entry, so a new Space that reuses the id starts without it. Both
+ * then leave the workspace folder in the background (deleted-items.ts).
+ */
+async function retireSpaceHistory(spaceId: string, trashName: string): Promise<void> {
+  const versions = getVersionsDir();
+  const source = join(versions, spaceId);
+  try {
+    const info = await lstat(source);
+    if (!info.isDirectory() || info.isSymbolicLink()) return;
+  } catch {
+    return;
+  }
+  try {
+    await mkdir(join(versions, ".trash"), { recursive: true });
+    await rename(source, join(versions, ".trash", trashName));
+  } catch (err) {
+    console.warn("[store] could not move a deleted Space's history:", logError(err));
+  }
+}
+
 export async function deleteSpace(spaceId: string): Promise<void> {
   assertSpaceAccess(spaceId, "manage");
   await withDocPathLock(spaceId, async () => {
@@ -1215,16 +1238,19 @@ export async function deleteSpace(spaceId: string): Promise<void> {
       const dir = spaceDir(spaceId);
       const trashBase = join(baseDir(), ".trash");
       await mkdir(trashBase, { recursive: true });
-      const trashDest = join(trashBase, `${spaceId}-${Date.now()}`);
+      const trashName = `${spaceId}-${Date.now()}`;
+      const trashDest = join(trashBase, trashName);
       try {
         await rename(dir, trashDest);
       } catch {
         // rename fails across devices; fall back to hard delete
         await rm(dir, { recursive: true, force: true });
       }
+      await retireSpaceHistory(spaceId, trashName);
       retireTeamSpacePolicy(spaceId);
       await invalidateHostedDocumentSharesForSpace(spaceId, "removed");
       await notifyWorkspaceChangeAndWait({ type: "space", spaceId });
+      noteDeletedItems();
     });
   });
 }

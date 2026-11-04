@@ -56,6 +56,8 @@ export interface ModernMcpExchange {
    * local connections, as on the legacy path.
    */
   stream: boolean
+  /** The Link destination the request came through, when it did. */
+  link?: string
 }
 
 /** Per-request exchanges, keyed by the request the handler hands its factory. */
@@ -171,7 +173,11 @@ async function eventsCall<T>(
       ? full
       : { ...partial, scopes: exchange.server.scopes ?? [] }
   try {
-    return await run({ identity, origin: exchange.server.urlOrigin ?? "" })
+    return await run({
+      identity,
+      origin: exchange.server.urlOrigin ?? "",
+      ...(exchange.link ? { link: exchange.link } : {}),
+    })
   } catch (error) {
     if (error instanceof EventsError)
       throw new ProtocolError(error.code, error.message, error.data)

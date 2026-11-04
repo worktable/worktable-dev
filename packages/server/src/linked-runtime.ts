@@ -36,6 +36,7 @@ import { revokeAllLinks } from "./share-links-lifecycle.ts"
 import { forgetLinkedApps } from "./agent-connection-store.ts"
 import { logError } from "./debug-log.ts"
 import { isHosted } from "./hosted.ts"
+import { mcpModernEraOverLink } from "./mcp/surface.ts"
 import {
   localServiceOrigin,
   resolveConfiguredWorkspaceOrigin,
@@ -666,6 +667,9 @@ function launch(): void {
                     LINKED_CAPABILITIES.SHARE_READ_HINTS,
                     LINKED_CAPABILITIES.SHARE_COMMENTS,
                     LINKED_CAPABILITIES.FILE_LINKS,
+                    ...(mcpModernEraOverLink()
+                      ? [LINKED_CAPABILITIES.MCP_HEADERS]
+                      : []),
                   ],
                   ...linkedOpenUrl(),
                 }),

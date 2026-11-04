@@ -75,6 +75,7 @@ import {
 } from "./share-lifecycle.ts";
 import { logDocument, logError } from "./debug-log.ts";
 import { noteDeletedItems } from "./deleted-item-events.ts";
+import { noteStorageChange } from "./storage-usage.ts";
 
 // ============================================================
 // Paths
@@ -1172,6 +1173,8 @@ async function retireSpaceHistory(spaceId: string, trashName: string): Promise<v
   try {
     await mkdir(join(versions, ".trash"), { recursive: true });
     await rename(source, join(versions, ".trash", trashName));
+    noteStorageChange(source);
+    noteStorageChange(join(versions, ".trash", trashName));
   } catch (err) {
     console.warn("[store] could not move a deleted Space's history:", logError(err));
   }
@@ -4273,6 +4276,8 @@ export async function renameDoc(
     }
     await mkdir(dirname(newVersionDir), { recursive: true });
     await rename(oldVersionDir, newVersionDir);
+    noteStorageChange(oldVersionDir);
+    noteStorageChange(newVersionDir);
   }
 
   await mkdir(dirname(newFilePath), { recursive: true });

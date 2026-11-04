@@ -102,6 +102,7 @@ import {
   eraseVisitorCommentsOrRecord,
   retryPendingCommentErase,
 } from "./pending-comment-erase.ts"
+import { noteStorageChange } from "./storage-usage.ts"
 import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
 import { admitWorkspaceRequest } from "./workspace-request-lifecycle.ts"
 import { workspaceRecoveryRequired } from "./workspace-safety.ts"
@@ -361,6 +362,8 @@ async function writeEntry(entryDir: string, entry: TrashEntry): Promise<void> {
 
 /** Finish one tombstone: into its trash entry, or gone. Idempotent. */
 async function settleTombstone(tombstone: Tombstone, now: number): Promise<void> {
+  noteStorageChange(tombstone.path)
+  noteStorageChange(join(deletedItemsTrashDir(), tombstone.id))
   if (tombstone.erase) {
     await rm(tombstone.path, { recursive: true, force: true })
     return
@@ -410,6 +413,7 @@ async function tidyTrash(): Promise<void> {
       // Every tombstone was settled before this runs, so the item is still
       // in place and will be found again.
       await rm(path, { recursive: true, force: true })
+      noteStorageChange(path)
     }
   }
 }
@@ -431,6 +435,7 @@ async function emptyAllTrash(now: number, window: number): Promise<number> {
       const path = join(trash, name)
       if (EMPTYING.test(name)) {
         await rm(path, { recursive: true, force: true })
+        noteStorageChange(path)
         continue
       }
       if (!ENTRY_ID.test(name) || !(await realDirectory(join(path, "data")))) {
@@ -445,7 +450,9 @@ async function emptyAllTrash(now: number, window: number): Promise<number> {
       if (entry.retiredAt + window > now) continue
       const emptying = join(trash, `.empty-${name}`)
       await rename(path, emptying)
+      noteStorageChange(path)
       await rm(emptying, { recursive: true, force: true })
+      noteStorageChange(emptying)
       removed += 1
     }
   }
@@ -574,6 +581,7 @@ async function moveOutOfWorkspace(
               `.${erase ? "erase" : "sweep"}-${id}`
             )
             await rename(item.path, tombstone)
+            noteStorageChange(item.path)
             left.push({ path: tombstone, id, erase })
             testHooks.afterTombstone?.()
             for (const parent of item.emptyParents) {

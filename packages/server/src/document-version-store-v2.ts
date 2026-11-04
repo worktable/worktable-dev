@@ -39,6 +39,7 @@ import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { requireSafeLegacySpaceId } from "./legacy-space-id.ts"
 import { versionIdTimestamp } from "./version-store.ts"
 import { copyStagedFileInto, type StagedFile } from "./staged-file.ts"
+import { noteStorageChange } from "./storage-usage.ts"
 import {
   documentGenerationV2Directory,
   documentVersionsV2Directory,
@@ -232,6 +233,8 @@ async function withDocumentGenerationLock<T>(
   try {
     return await operation()
   } finally {
+    // The key is the document's history folder, whatever the operation did.
+    noteStorageChange(key)
     release()
     if (generationLocks.get(key) === tail) generationLocks.delete(key)
   }

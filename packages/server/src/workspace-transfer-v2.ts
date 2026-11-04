@@ -60,6 +60,7 @@ import {
 } from "./document-version-store-v2.ts"
 import { versionIdTimestamp } from "./version-store.ts"
 import { removeWorkspaceTree } from "./workspace-tree-cleanup.ts"
+import { noteStorageChange } from "./storage-usage.ts"
 import {
   classifyWorkspaceTarget,
   getWorkspaceRoot,
@@ -1720,6 +1721,7 @@ async function prepareWorkspaceCapture(
       }
     )
     staging.report.stageMs = performance.now() - startedAt
+    noteStorageChange(root)
     return staging
   } catch (error) {
     await removeCapture(root)
@@ -1827,6 +1829,7 @@ function workspaceExportCaptureLockPath(): string {
 async function removeCapture(root: string): Promise<void> {
   await captureRemovalHookForTests?.()
   await removeWorkspaceTree(root)
+  noteStorageChange(root)
 }
 
 async function removeAbandonedCapture(root: string): Promise<void> {
@@ -1845,6 +1848,7 @@ async function removeAbandonedCapture(root: string): Promise<void> {
     }
   }
   await rm(root, { recursive: true, force: true })
+  noteStorageChange(root)
 }
 
 /**

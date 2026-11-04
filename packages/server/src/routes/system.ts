@@ -43,6 +43,7 @@ import {
   type WorkspaceOriginSource,
 } from "../workspace-origin.ts";
 import { logError } from "../debug-log.ts";
+import { storageUsage } from "../storage-usage.ts";
 import {
   checkPreviewBrowser,
   previewBrowserAvailability,
@@ -418,11 +419,13 @@ systemRouter.get("/settings", (c) => {
 });
 
 /** The stored settings plus what the process environment overrides, so each
- *  preview switch shows what this server actually runs. */
+ *  preview switch shows what this server actually runs, and what this
+ *  Worktable takes on disk (from memory; null until first counted). */
 function withEnvironmentOverrides(settings: ServerSettings) {
   return {
     ...settings,
     agents: { ...settings.agents, previewToolsOverride: mcpPreviewEnvOverride() },
+    storage: storageUsage(),
   };
 }
 

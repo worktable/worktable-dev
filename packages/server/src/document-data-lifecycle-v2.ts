@@ -30,6 +30,7 @@ import { FOLDER_OPERATION_MAX_ENTRIES } from "./folder-operation-limit.ts"
 import { requireWorkspaceRecovery } from "./workspace-safety.ts"
 import { logError } from "./debug-log.ts"
 import { noteDeletedItems } from "./deleted-item-events.ts"
+import { noteStorageChange } from "./storage-usage.ts"
 import { eraseVisitorCommentsOrRecord } from "./pending-comment-erase.ts"
 
 const JOB_ID_PATTERN = /^dsv2_[A-Za-z0-9_-]{22}$/
@@ -418,6 +419,8 @@ async function retireRealStorageDirectory(
   await requireRealDocumentStorageDirectory(workspaceRoot, dirname(source))
   await ensureRealDocumentStorageDirectory(workspaceRoot, dirname(destination))
   await rename(source, destination)
+  noteStorageChange(source)
+  noteStorageChange(destination)
 }
 
 async function applyJob(job: DocumentDataLifecycleV2Job): Promise<void> {

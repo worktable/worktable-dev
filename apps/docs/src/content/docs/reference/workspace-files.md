@@ -57,6 +57,12 @@ so copies and packages of the folder no longer include it. It removes it from
 there once the period chosen in **Settings → Data** has passed since the
 deletion (30 days when keeping the last 7 versions).
 
+**Settings → Data → Storage** shows how much space the Worktable takes up:
+Docs and files, version history, deleted items, transfers in progress such
+as uploads and exports, and indexes and caches. Sizes are file sizes. Changes
+made directly in the folder are counted too, and everything is recounted
+every few hours.
+
 ## Portable content
 
 Copy the folder or move it in a `.wtb` package and its portable meaning remains.

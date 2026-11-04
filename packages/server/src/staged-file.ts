@@ -34,8 +34,15 @@ export interface StagedFile {
   readonly sha256: string
 }
 
-/** Staged files this process is writing or still holds. */
-const live = new Set<string>()
+/** Staged files this process is writing or still holds, and their sizes. */
+const live = new Map<string, number>()
+
+/** What staged files this process holds take on disk, for storage usage. */
+export function stagedFilesInProgress(): { bytes: number; files: number } {
+  let bytes = 0
+  for (const size of live.values()) bytes += size
+  return { bytes, files: live.size }
+}
 
 /** Where staged files are kept, in app storage. */
 export function stagingDirectory(): string {
@@ -63,7 +70,7 @@ export class StagingFile {
       `${process.pid}-${randomBytes(16).toString("hex")}.staged`
     )
     const handle = await open(path, CREATE_FLAGS, 0o600)
-    live.add(path)
+    live.set(path, 0)
     return new StagingFile(path, handle)
   }
 
@@ -82,6 +89,7 @@ export class StagingFile {
     }
     this.#hash.update(chunk)
     this.#byteLength += chunk.byteLength
+    if (live.has(this.path)) live.set(this.path, this.#byteLength)
   }
 
   /** Close it: its bytes are complete. */

@@ -6,20 +6,26 @@ import {
   it,
   setSystemTime,
 } from "bun:test"
+import { randomBytes } from "node:crypto"
+import { existsSync, readFileSync } from "node:fs"
 import {
   cp,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readdir,
+  rename,
   rm,
+  stat,
   symlink,
   utimes,
   writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
+import { atomicWriteText } from "./atomic-file.ts"
 import {
   ensureWorkspaceManifest,
   setWorkspaceRootOverride,
@@ -34,8 +40,11 @@ import {
 } from "./workspace-replacement.ts"
 import {
   calculateWorkspaceContentCheckpoint,
+  setWorkspaceCaptureClockForTests,
   setWorkspaceExportCaptureHookForTests,
   setWorkspaceExportCaptureRemovalHookForTests,
+  setWorkspaceSourceListingHookForTests,
+  type WorkspaceCaptureReport,
 } from "./workspace-transfer-v2.ts"
 
 import { WorkspaceBackupNotifier } from "./workspace-backup-notifier.ts"
@@ -50,6 +59,8 @@ beforeEach(async () => {
   ensureWorkspaceManifest()
 })
 afterEach(async () => {
+  setWorkspaceCaptureClockForTests(null)
+  setWorkspaceSourceListingHookForTests(null)
   setWorkspaceExportCaptureHookForTests(null)
   setWorkspaceExportCaptureRemovalHookForTests(null)
   setWorkspaceRootOverride(null)
@@ -136,8 +147,14 @@ describe("portable workspace snapshots", () => {
         '{"content":"older"}'
       )
       await writeFile(join(workspace, "note.md"), "saved")
+      const attachment = randomBytes(3 * 1024 * 1024 + 17)
+      await writeFile(join(workspace, "attachment.bin"), attachment)
       let barrier = false
+      let report: WorkspaceCaptureReport | undefined
       const saved = await writeWorkspaceSnapshot(join(root, "snapshot"), {
+        onCaptureReport: (captured) => {
+          report = captured
+        },
         withCaptureBarrier: async (capture) => {
           barrier = true
           try {
@@ -150,6 +167,9 @@ describe("portable workspace snapshots", () => {
         },
       })
       expect(barrier).toBe(false)
+      // A reflink where the filesystem supports one, otherwise a copy.
+      expect(report?.method).toMatch(/^(reflink|copy)$/)
+      expect(report?.files).toBe(saved.files.length)
       expect(saved.workspaceStorageVersion).toBe(version)
       expect(
         saved.files.some((file) => file.path === "versions/notes/old.json")
@@ -192,8 +212,95 @@ describe("portable workspace snapshots", () => {
         version,
       })
       expect(await readFile(join(workspace, "note.md"), "utf8")).toBe("saved")
+      expect(
+        (await readFile(join(workspace, "attachment.bin"))).equals(attachment)
+      ).toBe(true)
     }
   )
+
+  it("stages before the barrier, recaptures what changed before it, and reads no unchanged bytes inside it", async () => {
+    // Treat files as settled, as they are in a workspace edited minutes ago.
+    setWorkspaceCaptureClockForTests(() => Date.now() + 60_000)
+    const large = join(workspace, "large.bin")
+    const handle = await open(large, "w")
+    try {
+      await handle.truncate(32 * 1024 * 1024)
+    } finally {
+      await handle.close()
+    }
+    await writeFile(join(workspace, "replaced.md"), "staged")
+    await writeFile(join(workspace, "edited.md"), "staged")
+    const readBytes = () =>
+      Number(/^rchar: (\d+)$/m.exec(readFileSync("/proc/self/io", "utf8"))![1])
+    const countsReads = existsSync("/proc/self/io")
+    let barrierRead = 0
+    let report: WorkspaceCaptureReport | undefined
+    const saved = await writeWorkspaceSnapshot(join(root, "snapshot"), {
+      onCaptureReport: (captured) => {
+        report = captured
+      },
+      withCaptureBarrier: async (capture) => {
+        // Writes that land after staging but before the barrier: one through
+        // Worktable, which replaces the file, and one in place.
+        await atomicWriteText(join(workspace, "replaced.md"), "replaced")
+        await writeFile(join(workspace, "edited.md"), "edited in place")
+        const before = countsReads ? readBytes() : 0
+        try {
+          return await capture()
+        } finally {
+          if (countsReads) barrierRead = readBytes() - before
+          await atomicWriteText(join(workspace, "replaced.md"), "too late")
+        }
+      },
+    })
+    const captured = join(root, "snapshot", "workspace")
+    expect(await readFile(join(captured, "replaced.md"), "utf8")).toBe(
+      "replaced"
+    )
+    expect(await readFile(join(captured, "edited.md"), "utf8")).toBe(
+      "edited in place"
+    )
+    expect((await stat(join(captured, "large.bin"))).size).toBe(
+      32 * 1024 * 1024
+    )
+    await expect(
+      inspectWorkspaceSnapshot(join(root, "snapshot"))
+    ).resolves.toEqual(saved)
+    // The barrier stats the large file but never reads it.
+    if (countsReads) expect(barrierRead).toBeLessThan(4 * 1024 * 1024)
+    expect(report?.barrierFiles).toBe(2)
+  })
+
+  it("survives a write finishing and a document being deleted while staging lists the workspace", async () => {
+    const docs = join(workspace, "spaces", "notes", "docs")
+    await mkdir(docs, { recursive: true })
+    await writeFile(join(docs, "kept.md"), "kept")
+    await writeFile(join(docs, "deleted.md"), "deleted")
+    // An atomic write in flight: its temporary file is renamed into place.
+    const temporary = join(
+      docs,
+      `.worktable-write-${process.pid}-${"0".repeat(32)}.tmp`
+    )
+    await writeFile(temporary, "written")
+    let raced = false
+    // The first listing is staging's, which runs while writers continue.
+    setWorkspaceSourceListingHookForTests(async (directory, names) => {
+      if (raced || directory !== "spaces/notes/docs") return
+      expect(names).toContain(basename(temporary))
+      raced = true
+      await rename(temporary, join(docs, "written.md"))
+      await rm(join(docs, "deleted.md"))
+    })
+    const saved = await writeWorkspaceSnapshot(join(root, "snapshot"))
+    expect(raced).toBe(true)
+    const paths = saved.files.map((file) => file.path)
+    expect(paths).toContain("spaces/notes/docs/kept.md")
+    expect(paths).toContain("spaces/notes/docs/written.md")
+    expect(paths).not.toContain("spaces/notes/docs/deleted.md")
+    await expect(
+      inspectWorkspaceSnapshot(join(root, "snapshot"))
+    ).resolves.toEqual(saved)
+  })
 
   it("rejects changed bytes, another workspace, and unsupported layouts", async () => {
     const destination = join(root, "snapshot")

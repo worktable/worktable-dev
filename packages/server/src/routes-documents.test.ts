@@ -17,8 +17,10 @@ import {
   open,
   readFile,
   readlink,
+  realpath,
   rename,
   rm,
+  rmdir,
   stat,
   symlink,
   truncate,
@@ -30,10 +32,14 @@ import { tmpdir } from "node:os"
 import { FILE_UPLOAD_MAX_BYTES } from "./file-uploads.ts"
 import { removeLeftoverStagedFiles, stagingDirectory } from "./staged-file.ts"
 import { workspaceRecoveryRequired } from "./workspace-safety.ts"
-import { setDocumentLifecycleStepHookForTests } from "./document-lifecycle-journal.ts"
+import * as fs from "node:fs"
+import {
+  setDocumentLifecycleStepHookForTests,
+  setMountPointsForTests,
+} from "./document-lifecycle-journal.ts"
 import { renameSync } from "node:fs"
 import { FOLDER_OPERATION_MAX_ENTRIES } from "./folder-operation-limit.ts"
-import { join } from "node:path"
+import { join, sep } from "node:path"
 import { Hono } from "hono"
 import {
   DOCUMENT_ARCHIVE_REASON_MAX_LENGTH,
@@ -771,6 +777,61 @@ describe("format-neutral document route", () => {
     expect(workspaceRecoveryRequired()).toBe(false)
     expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
     await rm(unrecordable)
+    // A mount below the folder, even a bind mount of the same filesystem,
+    // refuses the move by name before anything moves.
+    await mkdir(join(docs, "notes", ".mnt"))
+    setMountPointsForTests([join(await realpath(join(docs, "notes")), ".mnt")])
+    try {
+      const mounted = await instance.request(
+        `/api/spaces/${spaceId}/documents/move-folder`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-test-scopes": "documents:write",
+          },
+          body: JSON.stringify({ oldPath: "notes", newPath: "library" }),
+        }
+      )
+      expect(mounted.status).toBe(409)
+      expect((await mounted.json()).error).toContain("notes/.mnt")
+    } finally {
+      setMountPointsForTests(undefined)
+      await rmdir(join(docs, "notes", ".mnt"))
+    }
+    // Should the kernel still refuse a rename (EBUSY, as across mounts),
+    // the move rolls back: it never copies instead.
+    const rename = fs.renameSync
+    const refusing = spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (String(from).endsWith(`${sep}.git`)) {
+        throw Object.assign(new Error("simulated"), { code: "EBUSY" })
+      }
+      return rename(from, to)
+    })
+    try {
+      const failed = await instance.request(
+        `/api/spaces/${spaceId}/documents/move-folder`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-test-scopes": "documents:write",
+          },
+          body: JSON.stringify({ oldPath: "notes", newPath: "library" }),
+        }
+      )
+      expect(failed.status).not.toBe(200)
+    } finally {
+      refusing.mockRestore()
+    }
+    expect(workspaceRecoveryRequired()).toBe(false)
+    expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
+    expect(await readFile(join(docs, "notes", ".env"), "utf8")).toBe(
+      hidden[".env"]
+    )
+    expect(await readFile(join(docs, "notes", ".git", "HEAD"), "utf8")).toBe(
+      hidden[".git/HEAD"]
+    )
 
     const forbidden = await instance.request(
       `/api/spaces/${spaceId}/documents/move-folder`,
@@ -2734,6 +2795,59 @@ describe("format-neutral document route", () => {
     expect(workspaceRecoveryRequired()).toBe(false)
     expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
     await rm(unrecordable)
+    // A mount below the folder, even a bind mount of the same filesystem,
+    // refuses the delete by name before anything moves.
+    await mkdir(join(folder, ".mnt"))
+    setMountPointsForTests([join(await realpath(folder), ".mnt")])
+    try {
+      const mounted = await instance.request(
+        `/api/spaces/${spaceId}/documents/delete-folder`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-test-scopes": "documents:write",
+          },
+          body: JSON.stringify({ path: "notes" }),
+        }
+      )
+      expect(mounted.status).toBe(409)
+      expect((await mounted.json()).error).toContain("notes/.mnt")
+    } finally {
+      setMountPointsForTests(undefined)
+      await rmdir(join(folder, ".mnt"))
+    }
+    // Should the kernel still refuse a rename (EXDEV, as across mounts),
+    // the delete rolls back: it never copies instead.
+    const rename = fs.renameSync
+    const refusing = spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (String(from).endsWith(`${sep}.env`)) {
+        throw Object.assign(new Error("simulated"), { code: "EXDEV" })
+      }
+      return rename(from, to)
+    })
+    try {
+      const failed = await instance.request(
+        `/api/spaces/${spaceId}/documents/delete-folder`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-test-scopes": "documents:write",
+          },
+          body: JSON.stringify({ path: "notes" }),
+        }
+      )
+      expect(failed.status).not.toBe(200)
+    } finally {
+      refusing.mockRestore()
+    }
+    expect(workspaceRecoveryRequired()).toBe(false)
+    expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
+    expect(await readFile(join(folder, ".env"), "utf8")).toBe(hidden[".env"])
+    expect(await readFile(join(folder, ".git", "HEAD"), "utf8")).toBe(
+      hidden[".git/HEAD"]
+    )
     const deleted = await instance.request(
       `/api/spaces/${spaceId}/documents/delete-folder`,
       {

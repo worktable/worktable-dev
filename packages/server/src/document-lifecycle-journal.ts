@@ -12,6 +12,7 @@ import {
   mkdirSync,
   openSync,
   readdirSync,
+  readFileSync,
   readSync,
   realpathSync,
   renameSync,
@@ -3634,6 +3635,80 @@ function sourceKeysBelow(
   return sources.map(diskKey).filter((key) => key.startsWith(root))
 }
 
+let mountPointsForTests: readonly string[] | null | undefined
+
+/** Stand in for the system's mount points, or null as if none can be read. */
+export function setMountPointsForTests(
+  points: readonly string[] | null | undefined
+): void {
+  mountPointsForTests = points
+}
+
+/**
+ * Every mount point in this process's view, from `/proc/self/mountinfo` on
+ * Linux, or null where there is none to read. A bind mount of the same
+ * filesystem shares its device, so only this shows it.
+ */
+function readMountPoints(): readonly string[] | null {
+  if (mountPointsForTests !== undefined) return mountPointsForTests
+  if (process.platform !== "linux") return null
+  let text: string
+  try {
+    text = readFileSync("/proc/self/mountinfo", "utf8")
+  } catch {
+    return null
+  }
+  // The fifth field; space, tab, newline and backslash come octal-escaped.
+  return text.split("\n").flatMap((line) => {
+    const field = line.split(" ")[4]
+    return field
+      ? [
+          field.replace(/\\([0-7]{3})/g, (_, octal: string) =>
+            String.fromCharCode(Number.parseInt(octal, 8))
+          ),
+        ]
+      : []
+  })
+}
+
+/**
+ * Refuse a folder operation when a mount point is at or below its folder,
+ * naming it. Renaming out of a mount would move what lives outside the
+ * Space; the kernel refuses that (EXDEV, or EBUSY for the mount point
+ * itself), which rolls the operation back, but the refusal shouldn't rest on
+ * it. Where there are no mount points to read, each folder walked and each
+ * item taken is checked by device instead (`onSpaceDevice`).
+ */
+function refuseMountsBelow(
+  spaceRoot: string,
+  folder: readonly string[],
+  prefix: string,
+  verb: "move" | "delete"
+): void {
+  const points = readMountPoints()
+  if (!points) return
+  let real: string
+  try {
+    real = realpathSync(resolve(spaceRoot, ...folder))
+  } catch {
+    return
+  }
+  const found = points.find(
+    (point) => point === real || point.startsWith(`${real}${sep}`)
+  )
+  if (found !== undefined) {
+    const below = relative(real, found).split(sep).filter(Boolean)
+    throw new DocumentLifecyclePreconditionError(
+      `This folder holds something Worktable can't ${verb}: ${[prefix, ...below].join("/")}`
+    )
+  }
+}
+
+/** Whether an entry is on the Space's filesystem, as a rename needs. */
+function onSpaceDevice(path: string, device: number): boolean {
+  return lstatSync(path).dev === device
+}
+
 /**
  * The hidden items a folder move carries, found in the folder on disk: each
  * hidden file, and each hidden folder whole, without reading inside it.
@@ -3663,6 +3738,8 @@ function planPrefixHiddenCarries(
   ])
   const holdsPlanned = (key: string): boolean =>
     plannedPaths.some((planned) => planned.startsWith(`${key}/`))
+  refuseMountsBelow(spaceRoot, folder, fromPrefix, "move")
+  const device = lstatSync(spaceRoot).dev
   const carries: PrefixHiddenCarry[] = []
   let scanned = 0
   const walk = (segments: string[]): void => {
@@ -3686,13 +3763,22 @@ function planPrefixHiddenCarries(
         (entry.isDirectory()
           ? !holdsPlanned(diskKey(from))
           : entry.isFile() && !plannedSources.has(diskKey(from)))
-      // Whatever the move carries or walks into goes into its journal.
+      // Whatever the move carries or walks into goes into its journal, and
+      // is renamed on the Space's filesystem.
       if (
         (carried || entry.isDirectory()) &&
         !journalSegmentIsPlain(entry.name)
       ) {
         throw new DocumentLifecyclePreconditionError(
           `This folder holds a name Worktable can't move: ${[fromPrefix, ...next].join("/")}`
+        )
+      }
+      if (
+        (carried || entry.isDirectory()) &&
+        !onSpaceDevice(resolve(spaceRoot, from), device)
+      ) {
+        throw new DocumentLifecyclePreconditionError(
+          `This folder holds something Worktable can't move: ${[fromPrefix, ...next].join("/")}`
         )
       }
       if (carried) {
@@ -3845,6 +3931,7 @@ function planPrefixDeleteRemainder(
       })
     ).values(),
   ]
+  refuseMountsBelow(spaceRoot, folder, prefix, "delete")
   const device = lstatSync(spaceRoot).dev
   const remainder: string[] = []
   let scanned = 0
@@ -3870,12 +3957,13 @@ function planPrefixDeleteRemainder(
       if (claimed.has(diskKey(source))) continue
       if (!journalSegmentIsPlain(entry.name)) refuse()
       const isDirectory = entry.isDirectory() && !entry.isSymbolicLink()
+      const absolute = resolve(spaceRoot, ...folder, ...next)
+      // Never walked into or taken from another filesystem.
+      if (!onSpaceDevice(absolute, device)) refuse()
       if (isDirectory && holdsClaimed(diskKey(source))) {
         walk(next)
         continue
       }
-      const absolute = resolve(spaceRoot, ...folder, ...next)
-      if (lstatSync(absolute).dev !== device) refuse()
       if (isDirectory) {
         try {
           accessSync(absolute, constants.W_OK)

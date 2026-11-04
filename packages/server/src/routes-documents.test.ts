@@ -1049,6 +1049,11 @@ describe("format-neutral document route", () => {
       expect(entry?.kind === "document" && entry.descriptor.format.id).toBe(
         "worktable.file"
       )
+      // The file keeps one identity through the move, archive and restore.
+      const identity = async () =>
+        (await readRegisteredDocumentSource({ spaceId, path: "design/error.png" }))
+          .documentId
+      const movedId = await identity()
 
       expect((await post("archive", { path: "design/error.png" })).status).toBe(
         200
@@ -1056,11 +1061,27 @@ describe("format-neutral document route", () => {
       expect((await post("restore", { path: "design/error.png" })).status).toBe(
         200
       )
+      expect(await identity()).toBe(movedId)
       expect((await post("delete", { path: "design/error.png" })).status).toBe(
         200
       )
       await expect(access(join(docs, "design", "error.png"))).rejects.toThrow()
       expect(await fileEntry("design/error.png")).toBeUndefined()
+
+      // Delete ends it: a new file at the same path is a new item, with none
+      // of the deleted one's history.
+      const again = await instance.request(
+        `/api/spaces/${spaceId}/documents/file?path=design/error.png`,
+        { method: "PUT", body: "new png bytes" }
+      )
+      expect(again.status).toBe(201)
+      expect(await identity()).not.toBe(movedId)
+      const versions = await instance.request(
+        `/api/spaces/${spaceId}/documents/versions?path=design/error.png&all=true`
+      )
+      expect(
+        ((await versions.json()) as { versions: unknown[] }).versions
+      ).toHaveLength(1)
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES"]
       else process.env["WORKTABLE_FILES"] = previous
@@ -1841,7 +1862,9 @@ describe("format-neutral document route", () => {
             await instance.request(
               `/api/spaces/${spaceId}/documents/versions?path=${path}&all=true`
             )
-          ).json()) as { versions?: Array<{ source: string }> }
+          ).json()) as {
+            versions?: Array<{ source: string; createdBy: string }>
+          }
         ).versions ?? []
       const uploaded = await instance.request(
         `/api/spaces/${spaceId}/documents/file?path=data/feedback.csv`,
@@ -1858,7 +1881,12 @@ describe("format-neutral document route", () => {
       ).toEqual({ recorded: ["data/feedback.csv"], tooLarge: [] })
       const after = await versions("data/feedback.csv")
       expect(after.length).toBe(before + 1)
-      expect(after[0]?.source).toBe("filesystem")
+      // It says it was made on disk, not by whoever wrote the version before.
+      expect(after[0]).toMatchObject({
+        source: "filesystem",
+        createdBy: "external",
+      })
+      expect(after[1]?.createdBy).not.toBe("external")
       // The same bytes again keep nothing new.
       expect(
         await recordExternalFileChanges({ spaceId, paths: ["data/feedback.csv"] })

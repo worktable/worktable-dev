@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { FileNoHistorySchema } from "@worktable/types"
 import { ChatGptFileInput } from "./schemas.ts"
 import {
   COMPANY_KNOWLEDGE_TOOL_NAMES,
@@ -47,6 +48,11 @@ export interface CatalogTool {
   route: (args: Record<string, unknown>) => Step | Step[]
   /** Arguments that are ChatGPT file attachments (openai/fileParams). */
   fileParams?: string[]
+  /**
+   * Fields the output schema declares beyond its operations' own, each in
+   * place of a merged one. Results already carry them.
+   */
+  outputFields?: Record<string, z.ZodType>
 }
 
 /** A call whose arguments don't describe one thing to do. */
@@ -867,6 +873,24 @@ export const CATALOG_TOOLS: readonly CatalogTool[] = TOOLS
  * until agent directories review them. Each takes a released tool's place.
  */
 const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
+  // A file read's size, and why a file keeps no history, as results give them.
+  worktable_files_read: (tool) => ({
+    ...tool,
+    outputFields: {
+      byteLength: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe("The file's size in bytes."),
+      noHistory: z
+        .looseObject({ ...FileNoHistorySchema.shape, message: z.string() })
+        .optional()
+        .describe(
+          "Present when the file's current content isn't kept as a version, with why: content larger than maxBytes isn't versioned. Versions from before the file grew stay in its history."
+        ),
+    },
+  }),
   // A replace through an upload link names the revision it is based on.
   worktable_files_write: (tool) => ({
     ...tool,
@@ -955,7 +979,7 @@ export function catalogOutputSchema(tool: CatalogTool): z.ZodObject {
     (operation) =>
       PUBLIC_OPERATION_OUTPUT_VARIANTS[operation] as readonly z.ZodObject[]
   )
-  if (variants.length === 1) return variants[0]!
+  if (variants.length === 1) return variants[0]!.extend(tool.outputFields ?? {})
   const fields = new Map<string, z.ZodType[]>()
   for (const variant of variants) {
     for (const [key, field] of Object.entries(variant.shape)) {
@@ -977,5 +1001,5 @@ export function catalogOutputSchema(tool: CatalogTool): z.ZodObject {
         return [key, field.optional()]
       })
     )
-  )
+  ).extend(tool.outputFields ?? {})
 }

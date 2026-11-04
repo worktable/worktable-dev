@@ -116,7 +116,9 @@ describe("who may grant an HTML Doc its permissions", () => {
 
     // Over REST too, an agent's write only asks.
     caller = agent(["*"]);
-    expect((await req("PUT", "/api/spaces/meta/widgets/feed", { name: "Feed", html, permissions: { network: true } })).status).toBe(200);
+    const source = await req("GET", "/api/spaces/meta/widgets/feed/content?format=raw");
+    const expectedRevision = source.headers.get("etag")?.replace(/"/g, "");
+    expect((await req("PUT", "/api/spaces/meta/widgets/feed", { name: "Feed", html, permissions: { network: true }, expectedRevision })).status).toBe(200);
     expect(await opened("feed")).toEqual({ networkRequested: true, network: false });
     // The notice names who asked.
     expect((await req("GET", "/api/spaces/meta/documents/page?path=feed")).json.page.networkRequestedBy).toBe("Claude Code");

@@ -16,7 +16,11 @@ import {
   updateDocumentInventory,
   validateDocumentInventoryMutation,
 } from "./document-inventory.ts"
-import { analyzeDocumentPath } from "./document-path.ts"
+import {
+  analyzeDocumentPath,
+  newPathRefusal,
+  type PathRefusal,
+} from "./document-path.ts"
 import {
   DOCUMENT_STORAGE_PROFILE_IDS,
   documentStorageProfiles,
@@ -47,9 +51,12 @@ export interface ManagedDocumentAdmissionContext {
 }
 
 export class ManagedDocumentAdmissionError extends Error {
-  constructor(message: string) {
+  /** For a name refused by the written list: which reason. */
+  readonly code: PathRefusal["code"] | undefined
+  constructor(message: string, code?: PathRefusal["code"]) {
     super(message)
     this.name = "ManagedDocumentAdmissionError"
+    this.code = code
   }
 }
 
@@ -188,13 +195,11 @@ async function documentIdForManagedWrite(
   )
   if (occupying.length === 0) {
     if (intent === "delete") return { path, admission: null }
-    const newPath = analyzeDocumentPath(path, {
-      enforceNewPathGrammar: true,
-    })
-    if (!newPath.safe || !newPath.portable || newPath.canonicalPath !== path) {
-      throw new ManagedDocumentAdmissionError(
-        `Document path cannot be created here: ${path}`
-      )
+    // A hidden Doc already there isn't in the catalog, so this refuses it
+    // too, and its file stays as it is.
+    const refusal = newPathRefusal(path)
+    if (refusal) {
+      throw new ManagedDocumentAdmissionError(refusal.message, refusal.code)
     }
     // A plain file can hold the name this Doc's source would take: a `.json`
     // that isn't Doc blocks keeps its whole name. Never write over it.

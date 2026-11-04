@@ -8,6 +8,9 @@ patterns. Protect persisted data and known consumers. Inspect affected callers
 and sibling paths when changing a shared contract. Exercise the real runtime
 path and self-review before pushing.
 
+Read `docs/files.md` before changing how files are stored, served, versioned
+or classified.
+
 ## Product copy
 
 Read `DESIGN_SYSTEM.md` before frontend changes. Inspect adjacent screens and

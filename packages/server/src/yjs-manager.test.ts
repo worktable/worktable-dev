@@ -1033,10 +1033,14 @@ describe("YjsDocManager sync persistence", () => {
       legacyPath,
       JSON.stringify([{ type: "paragraph", content: [{ type: "text", text: "legacy", styles: {} }] }])
     );
+    const original = readFileSync(legacyPath);
 
     const ydoc = await yjsManager.getOrCreateDoc("test-space", "legacy-doc");
     typeAndUndo(ydoc);
     await yjsManager.flushPersist("test-space", "legacy-doc");
+    // Opening and closing without an edit leaves the file's bytes as they
+    // were, ids the editor minted included.
+    expect(readFileSync(legacyPath)).toEqual(original);
 
     // No provenance was ever recorded for this doc, and a pure open must not
     // create one (a write would).

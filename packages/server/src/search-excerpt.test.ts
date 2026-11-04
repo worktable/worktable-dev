@@ -524,8 +524,10 @@ describe("search excerpts", () => {
     ]);
     expect(reread.get("meta")).toBeGreaterThan(140);
 
+    const { revision } = (await req(app, "GET", "/api/spaces/meta/docs/richdoc")).json as { revision: string };
     reread.clear();
     const edited = await req(app, "PUT", "/api/spaces/meta/docs/richdoc", {
+      expectedRevision: revision,
       content: [
         { type: "heading", props: { level: 1 }, content: [{ type: "text", text: "Rich doc", styles: {} }] },
         { type: "paragraph", content: [{ type: "text", text: "The narwhal census is complete.", styles: {} }] },

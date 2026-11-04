@@ -56,8 +56,16 @@ import {
 } from "./doc-aliases.ts";
 import { withDocPathLock } from "./doc-path-lock.ts";
 import { withDocGenerationLock } from "./doc-generation-lock.ts";
-import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts";
-import { analyzeDocumentPath } from "./document-path.ts";
+import {
+  BUILTIN_DOCUMENT_FORMATS,
+  isHiddenName,
+  pathIsHidden,
+} from "./document-format-registry.ts";
+import {
+  analyzeDocumentPath,
+  HIDDEN_NAME_MESSAGE,
+  type PathRefusal,
+} from "./document-path.ts";
 import { DOCUMENT_STORAGE_PROFILE_IDS } from "./document-storage-profile.ts";
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts";
 import {
@@ -304,6 +312,8 @@ async function resolveDocFile(
   docPath: string
 ): Promise<{ path: string; format: DocFileFormat } | null> {
   const sanitized = sanitizeDocPath(docPath);
+  // A hidden Doc stays on disk, but no read, list or write finds it.
+  if (pathIsHidden(sanitized)) return null;
   if (await jsonDocAt(spaceId, sanitized)) {
     return { path: join(docsDir(spaceId), `${sanitized}.json`), format: "json" };
   }
@@ -1741,6 +1751,9 @@ async function walkDir(
     // .json is the Doc unless it is a plain file, which no Doc list holds.
     const seen = new Set<string>();
     for (const entry of entries) {
+      // Nothing under a hidden name is a Doc, so a hidden folder isn't read.
+      // Links are skipped, as discovery skips them.
+      if (isHiddenName(entry.name) || entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) {
         await walkDir(`${dir}${sep}${entry.name}`, below(entry.name), files, isDoc);
       } else if (entry.name.endsWith(".json")) {
@@ -1755,6 +1768,7 @@ async function walkDir(
     }
     // Then .md files (only if no .json for same path)
     for (const entry of entries) {
+      if (isHiddenName(entry.name) || entry.isSymbolicLink()) continue;
       if (!entry.isDirectory() && entry.name.endsWith(".md")) {
         const relPath = below(entry.name.slice(0, -".md".length));
         if (!seen.has(relPath)) {
@@ -2807,7 +2821,8 @@ export interface DocWriteResult {
    * SOURCE_CHANGED: the source no longer matched `sourceRevision`, or a
    * `createOnly` write found an existing document; nothing was written.
    */
-  errorCode?: "NOT_FOUND" | "SOURCE_CHANGED";
+  /** A refused name's reason, from the written list in docs/files.md. */
+  errorCode?: "NOT_FOUND" | "SOURCE_CHANGED" | PathRefusal["code"];
   lossyFields?: string[];
   /** The source this write committed (or found unchanged), on success. */
   revision?: DocSourceRevision;
@@ -3090,6 +3105,7 @@ export async function convertDocToMarkdownStorage(
           storedAs:
             (await resolveDocFile(spaceId, sanitizeDocPath(docPath)))?.format ?? "json",
           error: error.message,
+          ...(error.code ? { errorCode: error.code } : {}),
         };
       }
       throw error;
@@ -3148,6 +3164,14 @@ async function writeDocWithRoom(
   options?: DocWriteOptions
 ): Promise<DocWriteResult> {
   const sanitizedDocPath = sanitizeDocPath(docPath);
+  if (pathIsHidden(sanitizedDocPath)) {
+    return {
+      ok: false,
+      storedAs: typeof content === "string" ? "md" : "json",
+      error: HIDDEN_NAME_MESSAGE,
+      errorCode: "HIDDEN_NAME",
+    };
+  }
   const pathError = options?.managedIdentity
     ? managedDocPathError(docPath)
     : null;
@@ -3226,6 +3250,7 @@ async function writeDocWithRoom(
               (await resolveDocFile(spaceId, sanitizedDocPath))?.format ??
               (typeof content === "string" ? "md" : "json"),
             error: error.message,
+            ...(error.code ? { errorCode: error.code } : {}),
           };
         }
         throw error;
@@ -4325,6 +4350,7 @@ export async function renameDoc(
   if (!resolved) {
     return { error: `Doc not found: ${sanitizedOldPath}` };
   }
+  if (pathIsHidden(sanitizedNewPath)) return { error: HIDDEN_NAME_MESSAGE };
   if (!opts?.skipAliasChecks) {
     const sourceAliasError = await docAliasReservationError(spaceId, sanitizedOldPath);
     if (sourceAliasError) return { error: sourceAliasError };

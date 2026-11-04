@@ -19,7 +19,7 @@ import { applyWidgetTheme, buildWidgetFile, getBlockingWidgetIssue, injectWidget
 import { captureWidgetContentForOverwrite, captureWidgetVersionContent, getWidgetProvenance, getWidgetVersion, listWidgetVersions, recordWidgetVersion } from "../widget-version-store.ts";
 import { invalidateSearchIndex, noteRecordMutated } from "../search-index.ts";
 import { wsManager } from "../ws.ts";
-import { htmlContentRevisionOf } from "../document-content-revision.ts";
+import { htmlContentRevisionOf, htmlSourceRevision } from "../document-content-revision.ts";
 import { deleteHtmlDocument } from "../html-document-delete.ts";
 import { moveHtmlDocument } from "../html-document-move.ts";
 import { createHtmlDocument } from "../html-document-create.ts";
@@ -104,7 +104,14 @@ const PutWidgetSchema = z.object({
   updatedBy: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   permissions: WidgetPermissionsInputSchema.optional(),
+  /** The revision the writer read: the ETag of its source (content?format=raw). */
+  expectedRevision: z.string().min(1).max(256).optional(),
 });
+
+const HTML_REVISION_REQUIRED =
+  "Replacing an HTML Doc needs the revision you read. Read its source, then send its ETag as expectedRevision.";
+const HTML_REVISION_CHANGED =
+  "This HTML Doc changed since you read it. Read it again, then replace it with its new revision.";
 
 const PatchWidgetSchema = z.object({
   /** A person allows the network access an agent asked for, for the revision they saw. */
@@ -392,6 +399,8 @@ async function handleGetContent(c: Context, spaceId: string, widgetId: string) {
         "Content-Security-Policy": buildWidgetCsp(false),
         "X-Content-Type-Options": "nosniff",
         "Content-Disposition": documentSourceDisposition(`${filename}.html`),
+        // The revision a replace (PUT) of this source names.
+        ETag: `"${htmlSourceRevision(document.sourceBytes)}"`,
       },
     });
   }
@@ -530,12 +539,20 @@ async function handlePutWidget(c: Context, spaceId: string, widgetId: string) {
   // whole capture→write→record is serialized per widget id so a concurrent
   // write can't interleave into a mixed snapshot or mixed on-disk state.
   const outcome = await withWidgetWriteLock(spaceId, widgetId, async () => {
-    const { data: existing, error } = await readWidget(spaceId, widgetId);
-    if (error || !existing) {
+    const { data: document, error } = await readWidgetDocument(spaceId, widgetId);
+    if (error || !document) {
       return { kind: "not-found" as const, error: error ?? "Widget not found" };
     }
+    const existing = document.widget;
     const granted = grantedPermissions(c, normalizeWidgetPermissions(parsed.data.permissions), existing);
     if (granted instanceof Response) return { kind: "denied" as const, response: granted };
+    // A replace names the revision it is based on; one the HTML Doc is no
+    // longer at is refused, and what is there stays.
+    const current = htmlSourceRevision(document.sourceBytes);
+    if (parsed.data.expectedRevision === undefined) return { kind: "revision-required" as const };
+    if (parsed.data.expectedRevision !== current) {
+      return { kind: "revision-changed" as const, revision: current };
+    }
     const permissions = (granted ? granted.permissions : normalizeWidgetPermissions(parsed.data.permissions)) ?? existing.permissions;
     const warnings = validateWidgetHtml(parsed.data.html, permissions);
     const blockingIssue = getBlockingWidgetIssue(warnings);
@@ -560,10 +577,22 @@ async function handlePutWidget(c: Context, spaceId: string, widgetId: string) {
     }
     await recordWidgetVersion(spaceId, widgetId, beforeContent, { source: "rest-api", updatedBy: restWriteActor(c, parsed.data.updatedBy) });
     result.release?.();
-    return { kind: "ok" as const, data: result.data, warnings };
+    // The source is stored as the html's UTF-8 bytes.
+    return {
+      kind: "ok" as const,
+      data: result.data,
+      warnings,
+      revision: htmlSourceRevision(new TextEncoder().encode(parsed.data.html)),
+    };
   });
   if (outcome.kind === "not-found") {
     return c.json({ error: outcome.error, code: "NOT_FOUND" }, 404);
+  }
+  if (outcome.kind === "revision-required") {
+    return c.json({ error: HTML_REVISION_REQUIRED, code: "REVISION_REQUIRED" }, 428);
+  }
+  if (outcome.kind === "revision-changed") {
+    return c.json({ error: HTML_REVISION_CHANGED, code: "REVISION_CHANGED", revision: outcome.revision }, 409);
   }
   if (outcome.kind === "denied") return outcome.response;
   if (outcome.kind === "invalid") {
@@ -575,7 +604,11 @@ async function handlePutWidget(c: Context, spaceId: string, widgetId: string) {
   }
   invalidateSearchIndex({ spaceId, path: widgetId });
   wsManager.broadcast(spaceId, { type: "widget_update", spaceId, widgetId, data: outcome.data });
-  return c.json({ widget: outcome.data, warnings: outcome.warnings });
+  return c.json({
+    widget: outcome.data,
+    warnings: outcome.warnings,
+    revision: outcome.revision,
+  });
 }
 
 async function handlePatchWidget(c: Context, spaceId: string, widgetId: string) {

@@ -102,6 +102,24 @@ To build a Desktop beta, set `WORKTABLE_VERSION` to the beta's dev version for
 `release:finalize`. The app, its updater signature and its feed then carry that
 version, and the feed points at the beta's tag.
 
+Each stable release tag also lists Worktable Cloud's MCP server in the official
+[MCP Registry](https://registry.modelcontextprotocol.io) as
+`io.github.worktable/worktable`. The MCP Registry workflow stamps
+[server.json](../server.json) with the release version and publishes it through
+GitHub OIDC. Run the workflow by hand to republish the current release.
+
+The agent plugin also lives at the root of
+[worktable/worktable-plugin](https://github.com/worktable/worktable-plugin),
+for directories that read a plugin only from a repository root, such as the
+Gemini CLI gallery, Kiro Powers and Grok Build. That repository pulls rather
+than being pushed to, so no credential for it is stored here. Its Sync workflow
+runs hourly or by hand: it builds the tree with `bun scripts/plugin-repo.ts`
+from this repository's `main`, adds `gemini-extension.json`, commits any change,
+and releases a new `plugin.json` version as `v<version>` from its
+`CHANGELOG.md` entry. A workflow token can't change workflow files, so when the
+generated `.github/workflows/sync.yml` changes, push it there by hand. Edit the
+plugin here, never in that repository.
+
 ## Runtime verification
 
 Prebuilt Worktable downloads include Bun. [SOURCE-MATERIALS.json](../SOURCE-MATERIALS.json)

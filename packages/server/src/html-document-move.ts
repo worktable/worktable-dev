@@ -20,7 +20,7 @@ import {
   isHtmlDocumentPath,
   usesHtmlDocumentStorageV2,
 } from "./html-document-storage-v2.ts"
-import { parseNewDocumentPath } from "./document-path.ts"
+import { newPathRefusal, parseNewDocumentPath } from "./document-path.ts"
 import {
   DocumentWriteError,
   moveRegisteredDocument,
@@ -65,6 +65,8 @@ export async function moveHtmlDocument(
       error: `HTML doc not found: ${from}`,
     }
   }
+  const refusal = newPathRefusal(to)
+  if (refusal) return { ok: false, kind: "conflict", error: refusal.message }
   if (
     storageV2
       ? "error" in parseNewDocumentPath(to)

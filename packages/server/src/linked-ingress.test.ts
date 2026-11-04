@@ -15,6 +15,7 @@ import {
   LINKED_REQUEST_MAX_BYTES,
   VISITOR_HEADERS,
   type ShareVisitor,
+  type LinkedMcpHeaders,
   type LinkedRequestGrant,
   type LinkedDestinationBinding,
 } from "@worktable/hosted-contract"
@@ -47,6 +48,7 @@ import {
   updateGrokBot,
   removeGrokBot,
 } from "./grok-bot-store.ts"
+import { pendingList } from "./pending-list.ts"
 import { postThreadMessage } from "./thread-service.ts"
 import { drainWorkspaceChanges } from "./workspace-events.ts"
 import { createHtmlDocument } from "./html-document-create.ts"
@@ -157,6 +159,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  delete process.env["WORKTABLE_MCP_PREVIEW"]
   await server?.stop(true)
   await drainWorkspaceChanges()
   closeVisitorCommentStores()
@@ -577,6 +580,100 @@ it("keeps agent permissions bounded and fences revoked, replaced and draining wo
   expect((await fetch(await mcpRequest())).status).toBe(200)
   await rotateWorkspaceCollaborationEpoch()
   expect((await fetch(await mcpRequest())).status).toBe(403)
+})
+
+it("serves MCP 2026-07-28, events included, only with the client's MCP headers Cloud signed", async () => {
+  // Held behind the MCP preview.
+  process.env["WORKTABLE_MCP_PREVIEW"] = "1"
+  const full = await newIngress([...HOSTED_OAUTH_SCOPES])
+  const call = async (
+    method: string,
+    params: Record<string, unknown>,
+    headers?: LinkedMcpHeaders
+  ) => {
+    const response = await full.fetch(
+      await createLinkedRequest({
+        origin: server.url.origin,
+        key,
+        binding: full.binding,
+        grant: { ...grant, ...(headers ? { headers } : {}) },
+        method: "POST",
+        path: "/api/mcp",
+        body: new TextEncoder().encode(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method,
+            params: {
+              ...params,
+              _meta: {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientInfo": {
+                  name: "chat",
+                  version: "1",
+                },
+                "io.modelcontextprotocol/clientCapabilities": {},
+              },
+            },
+          })
+        ),
+      })
+    )
+    return (await response.json()) as {
+      result?: Record<string, unknown> & {
+        capabilities?: Record<string, unknown>
+      }
+      error?: { code: number }
+    }
+  }
+  const signed = (method: string, name?: string): LinkedMcpHeaders => ({
+    protocolVersion: "2026-07-28",
+    method,
+    ...(name ? { name } : {}),
+  })
+
+  const discovered = await call(
+    "server/discover",
+    {},
+    signed("server/discover")
+  )
+  expect(discovered.result?.capabilities).toMatchObject({ events: {} })
+  const tool = await call(
+    "tools/call",
+    {
+      name: "worktable_guidance",
+      arguments: { request: { action: "format_spec" } },
+    },
+    signed("tools/call", "worktable_guidance")
+  )
+  expect(tool.result?.resultType).toBe("complete")
+  // Subscribing reaches events, as this agent: the callback fails its check.
+  const subscribed = await call(
+    "events/subscribe",
+    {
+      name: "item.sent_to_you",
+      delivery: {
+        mode: "webhook",
+        url: "https://127.0.0.1/cb",
+        secret: `whsec_${Buffer.alloc(32, 7).toString("base64")}`,
+      },
+    },
+    signed("events/subscribe")
+  )
+  expect(subscribed.error?.code).toBe(-32015)
+  // A gateway that doesn't sign them gets the earlier revisions, as before.
+  const unsigned = await call("server/discover", {})
+  expect(unsigned.result?.capabilities?.events).toBeUndefined()
+  // With the preview off, signed headers change nothing.
+  delete process.env["WORKTABLE_MCP_PREVIEW"]
+  const released = await call(
+    "server/discover",
+    {},
+    signed("server/discover")
+  )
+  expect(released.result?.capabilities?.events).toBeUndefined()
+  // Let the pending list a tool result reads finish before cleanup.
+  await pendingList()
 })
 
 it("carries password unlocks and frame tickets over authenticated Link requests", async () => {

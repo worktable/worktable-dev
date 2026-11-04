@@ -16,9 +16,11 @@ import { createAnnotation } from "./annotation-store.ts"
 import {
   EventsError,
   privateAddress,
+  setLinkServed,
   startMcpEventsRuntime,
   subscribe,
   unsubscribe,
+  watchingParticipants,
   type EventsCaller,
   type EventsTransport,
 } from "./mcp-events.ts"
@@ -345,23 +347,124 @@ describe("MCP Events", () => {
     expect(events(sent)).toHaveLength(2)
   })
 
-  it("retries with the same event id, and ends the subscription on 410", async () => {
+  it("retries with the same event id, keeps later events behind it, and ends the subscription on 410", async () => {
     const sent: Sent[] = []
-    const statuses = [503, 200, 410]
+    const statuses = [503, 200, 200, 410]
     const transport = callback(sent, { status: () => statuses.shift() ?? 200 })
     await subscribe(caller, params(), transport)
     await start(transport)
     await after(() => comment("pricing", "Delivered on the second try."))
+    // An item that comes while the first waits its retry goes after it.
+    await after(() => comment("pricing", "Written while it waited."))
     await stop?.()
     // The failed attempt waits its retry delay, even across a restart.
     await pastRetryDelay(() => start(transport))
     const [first, second] = events(sent)
     expect(second!.body.eventId).toBe(first!.body.eventId)
+    expect(
+      events(sent).map((e) => (e.body.data as { excerpt: string }).excerpt)
+    ).toEqual([
+      "Delivered on the second try.",
+      "Delivered on the second try.",
+      "Written while it waited.",
+    ])
 
     await after(() => comment("pricing", "The receiver is gone."))
-    expect(events(sent)).toHaveLength(3)
+    expect(events(sent)).toHaveLength(4)
     await after(() => comment("pricing", "Never sent: the subscription ended."))
-    expect(events(sent)).toHaveLength(3)
+    expect(events(sent)).toHaveLength(4)
+  })
+
+  it("keeps what couldn't be sent through an outage and a lapse, and sends each once when it can", async () => {
+    const base = Date.now()
+    const at = (minutes: number) =>
+      setSystemTime(new Date(base + minutes * 60_000))
+    const restartAt = async (minutes: number) => {
+      await stop?.()
+      at(minutes)
+      await start(transport)
+    }
+    const sent: Sent[] = []
+    let down = false
+    const reachable = callback(sent)
+    const transport: EventsTransport = {
+      resolve: reachable.resolve,
+      fetch: (url, init) =>
+        down
+          ? Promise.reject(new Error("network unreachable"))
+          : reachable.fetch(url, init),
+    }
+    const watching = async () =>
+      (await watchingParticipants()).get(participantId)
+    try {
+      at(0)
+      await subscribe(caller, params(), transport)
+      await start(transport)
+      down = true
+      await after(() => comment("pricing", "Written while offline."))
+      // Past the whole retry schedule, it is still waiting, and the agent's
+      // auto-reply says so.
+      for (const minutes of [1, 2, 5, 10, 20, 30, 45]) await restartAt(minutes)
+      expect(events(sent)).toHaveLength(0)
+      expect(await watching()).toMatchObject({ attention: true })
+
+      // Not renewed in time: it lapses, so it reads as off and sends nothing.
+      // Two items come while nothing runs, then one while it is lapsed.
+      await restartAt(61)
+      expect(await watching()).toBeUndefined()
+      await stop?.()
+      stop = undefined
+      at(62)
+      await comment("pricing", "First while nothing ran.")
+      at(63)
+      await comment("pricing", "Second while nothing ran.")
+      await restartAt(64)
+      await after(() => comment("pricing", "Written while it was lapsed."))
+      expect(events(sent)).toHaveLength(0)
+
+      // Back online, the client renews: everything goes, oldest first, once.
+      down = false
+      at(75)
+      await after(() => subscribe(caller, params(), transport))
+      expect(
+        events(sent).map((e) => (e.body.data as { excerpt: string }).excerpt)
+      ).toEqual([
+        "Written while offline.",
+        "First while nothing ran.",
+        "Second while nothing ran.",
+        "Written while it was lapsed.",
+      ])
+      expect(await watching()).toMatchObject({ attention: false })
+      await restartAt(80)
+      expect(events(sent)).toHaveLength(4)
+    } finally {
+      setSystemTime()
+    }
+  })
+
+  it("holds a Link subscription's events while Link is off", async () => {
+    const destination = "d".repeat(32)
+    setLinkServed(destination, true)
+    try {
+      const sent: Sent[] = []
+      const transport = callback(sent)
+      await subscribe({ ...caller, link: destination }, params(), transport)
+      await start(transport)
+      const watching = async () =>
+        (await watchingParticipants()).get(participantId)
+      expect(await watching()).toMatchObject({ attention: false })
+
+      setLinkServed(destination, false)
+      expect(await watching()).toMatchObject({ attention: true })
+      await after(() => comment("pricing", "Sent while Link was off."))
+      expect(events(sent)).toHaveLength(0)
+
+      await after(async () => setLinkServed(destination, true))
+      expect(events(sent)).toHaveLength(1)
+      expect(await watching()).toMatchObject({ attention: false })
+    } finally {
+      setLinkServed(destination, false)
+    }
   })
 
   it("refuses private addresses in every spelling, IPv4 inside IPv6 included", () => {
@@ -397,18 +500,19 @@ describe("MCP Events", () => {
 
   it("sends nothing more once the receiver answers 410, though events were queued", async () => {
     const sent: Sent[] = []
-    const statuses = [503, 503, 410, 200]
+    const statuses = [503, 410, 200]
     const transport = callback(sent, { status: () => statuses.shift() ?? 200 })
     await subscribe(caller, params(), transport)
     await start(transport)
     await after(() => comment("pricing", "First."))
+    // The second waits behind the first's retry.
     await after(() => comment("pricing", "Second."))
-    expect(events(sent)).toHaveLength(2)
+    expect(events(sent)).toHaveLength(1)
     await stop?.()
     // Both wait in the outbox, and one drain finds both. The first retry
     // gets 410: the second must not be sent after it.
     await pastRetryDelay(() => start(transport))
-    expect(events(sent)).toHaveLength(3)
+    expect(events(sent)).toHaveLength(2)
   })
 
   it("follows a local token: narrowed scopes and revocation apply to the next event", async () => {

@@ -1,0 +1,70 @@
+name: Plugin repository
+
+# Mirrors plugins/worktable to the root of worktable/worktable-plugin, for
+# directories that read a plugin only from a repository root (Gemini CLI
+# gallery, Kiro Powers, Grok Build). That repository's own workflow tags and
+# releases each new plugin version.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/plugin-repo.yml"
+      - "plugins/worktable/**"
+      - "scripts/plugin-repo.ts"
+      - "scripts/export-worktable-plugin.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-repo
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the public source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.3.14"
+
+      - name: Build the plugin repository tree
+        run: bun scripts/plugin-repo.ts --output "$RUNNER_TEMP/tree"
+
+      - name: Push to worktable/worktable-plugin
+        env:
+          DEPLOY_KEY: ${{ secrets.PLUGIN_REPO_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          ssh_dir="$RUNNER_TEMP/ssh"
+          mkdir -m 700 "$ssh_dir"
+          printf '%s\n' "$DEPLOY_KEY" > "$ssh_dir/key"
+          chmod 600 "$ssh_dir/key"
+          # GitHub's published SSH host key.
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > "$ssh_dir/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $ssh_dir/key -o IdentitiesOnly=yes -o UserKnownHostsFile=$ssh_dir/known_hosts"
+
+          repo="$RUNNER_TEMP/repo"
+          git clone --quiet --depth 1 git@github.com:worktable/worktable-plugin.git "$repo"
+          rsync -a --delete --exclude=.git "$RUNNER_TEMP/tree/" "$repo/"
+          cd "$repo"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "worktable-plugin is up to date"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet \
+            -m "Sync from worktable-dev ${GITHUB_SHA::12}" \
+            -m "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA"
+          git push --quiet origin HEAD:main
+          echo "Pushed $(git rev-parse HEAD) to worktable/worktable-plugin"

@@ -108,6 +108,16 @@ Each stable release tag also lists Worktable Cloud's MCP server in the official
 [server.json](../server.json) with the release version and publishes it through
 GitHub OIDC. Run the workflow by hand to republish the current release.
 
+The agent plugin also lives at the root of
+[worktable/worktable-plugin](https://github.com/worktable/worktable-plugin),
+for directories that read a plugin only from a repository root, such as the
+Gemini CLI gallery, Kiro Powers and Grok Build. Every change to
+`plugins/worktable` on `main` runs the Plugin repository workflow:
+`bun scripts/plugin-repo.ts` builds the tree, adds `gemini-extension.json`, and
+the workflow pushes it with the `PLUGIN_REPO_DEPLOY_KEY` deploy key. A new
+version in `plugin.json` gets a `v<version>` tag and release there from its
+`CHANGELOG.md` entry. Edit the plugin here, never in that repository.
+
 ## Runtime verification
 
 Prebuilt Worktable downloads include Bun. [SOURCE-MATERIALS.json](../SOURCE-MATERIALS.json)

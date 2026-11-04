@@ -113,8 +113,8 @@ function pathDiagnostics(path: string): {
 
 /**
  * The claim a source registered by its extension makes as a plain file, for
- * a `.json` whose content isn't Doc blocks or that the inventory registers
- * as a file. A file is named by its whole filename. Null when no file can be
+ * a `.json` whose content isn't Doc blocks, a `.html` no HTML Doc claims, or
+ * either when the inventory registers it as a file. A file is named by its whole filename. Null when no file can be
  * there: files are not registered, or the path is hidden.
  */
 export function plainFileClaim(
@@ -214,9 +214,13 @@ async function scanLegacyDocDirectory(
         withoutSuffix(entry.name, source.extension),
       ]
       const path = logicalSegments.join("/")
-      // A `.json` is a Doc only when it holds Doc blocks, so the catalog
-      // decides its alias once it knows which name it goes by.
-      if (format.id !== BUILTIN_DOCUMENT_FORMATS.richText && reserved(path)) {
+      // A `.json` or `.html` may be a plain file, so the catalog decides
+      // its alias once it knows which name it goes by.
+      if (
+        format.id !== BUILTIN_DOCUMENT_FORMATS.richText &&
+        format.id !== BUILTIN_DOCUMENT_FORMATS.html &&
+        reserved(path)
+      ) {
         return []
       }
       const analyzed = pathDiagnostics(path)

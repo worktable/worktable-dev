@@ -401,6 +401,9 @@ export const BACKGROUND_FUNCTIONS = [
   "packages/server/src/pending-list.ts#build",
   // Follows one changed thread location after its event; no request waits.
   "packages/server/src/pending-list.ts#rescanThreadLocation",
+  // Records which files are HTML Docs once per Space, after boot recovery
+  // and when a Space appears (source-kind-records.ts). No request waits.
+  "packages/server/src/source-kind-records.ts#recordSourceKinds",
 ]
 
 const inBackground = (site: string) =>

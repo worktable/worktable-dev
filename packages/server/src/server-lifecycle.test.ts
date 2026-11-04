@@ -356,7 +356,7 @@ describe("server lifecycle", () => {
       onPendingChange: (event) => {
         // A `.json` is reported by its whole name until it is classified.
         if (
-          event?.type === "jsonSource" &&
+          event?.type === "docSource" &&
           event.spaceId === "meta" &&
           event.file === `${docPath}.json`
         ) {

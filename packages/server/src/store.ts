@@ -27,7 +27,7 @@ import {
 } from "./markdown.ts";
 import { canonicalizeBlocksForWrite, inheritBlockIds } from "./blocknote.ts";
 import { checkRichTextBlocks, RICH_TEXT_SOURCE_BUDGET } from "./rich-text-blocks.ts";
-import { jsonSourceIsDoc } from "./json-source-kind.ts";
+import { sourceIsDoc } from "./doc-source-kind.ts";
 import { extractMarkdownMermaid } from "./mermaid-document.ts";
 
 import { getSpacesDir, getVersionsDir, workspaceCacheKey } from "./workspace.ts";
@@ -276,7 +276,7 @@ export function stableHash(value: unknown): string {
 // ============================================================
 //
 // Every read, write and list here takes a `.json` as a Doc only by the rule
-// the catalog uses (json-source-kind.ts): the inventory's claim, then its
+// the catalog uses (doc-source-kind.ts): the inventory's claim, then its
 // content. A plain file is never read, listed or written as a Doc, never
 // shadows a Markdown Doc of the same name, and stays readable only through
 // the file API and its scope. The checks read asynchronously.
@@ -285,7 +285,7 @@ export function stableHash(value: unknown): string {
 async function jsonDocAt(spaceId: string, sanitized: string): Promise<boolean> {
   return (
     existsSync(join(docsDir(spaceId), `${sanitized}.json`)) &&
-    (await jsonSourceIsDoc(spaceDir(spaceId), `docs/${sanitized}.json`))
+    (await sourceIsDoc(spaceDir(spaceId), `docs/${sanitized}.json`))
   );
 }
 
@@ -293,7 +293,7 @@ async function jsonDocAt(spaceId: string, sanitized: string): Promise<boolean> {
 async function plainJsonAt(spaceId: string, sanitized: string): Promise<boolean> {
   return (
     existsSync(join(docsDir(spaceId), `${sanitized}.json`)) &&
-    !(await jsonSourceIsDoc(spaceDir(spaceId), `docs/${sanitized}.json`))
+    !(await sourceIsDoc(spaceDir(spaceId), `docs/${sanitized}.json`))
   );
 }
 
@@ -1770,7 +1770,7 @@ async function walkDir(
 async function listDocFiles(spaceId: string): Promise<DocFile[]> {
   const files: DocFile[] = [];
   await walkDir(docsDir(spaceId), "", files, (path) =>
-    jsonSourceIsDoc(spaceDir(spaceId), `docs/${path.split(sep).join("/")}.json`)
+    sourceIsDoc(spaceDir(spaceId), `docs/${path.split(sep).join("/")}.json`)
   );
   const { aliases, error } = await readDocAliases(spaceId);
   if (!aliases) throw new Error(error ?? "Document aliases are unavailable");

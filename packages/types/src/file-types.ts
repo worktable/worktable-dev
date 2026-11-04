@@ -62,8 +62,12 @@ export interface FileSurfacePolicies {
    * Content-Security-Policy, which is what makes inline SVG safe.
    */
   serve: "inline" | "download" | "bytes"
-  /** How the file's own page shows it in the app; a card offers Download. */
-  page: "image" | "table" | "text" | "card"
+  /**
+   * How the file's own page shows it in the app; a card offers Download. A
+   * frame shows the page the file makes, in a frame sandboxed with no
+   * scripts, as the server's sandboxed response does too.
+   */
+  page: "image" | "frame" | "table" | "text" | "card"
   /** The icon lists show for it. */
   icon:
     | "image"
@@ -312,18 +316,20 @@ export const FILE_TYPES = {
     family: "data",
     surfaces: { ...NONE, serve: "bytes", page: "text", icon: "code", agent: "text" },
   },
-  // The Doc registry claims .md and .html first, as it does .json.
+  // The Doc registry claims .md first, as it does .json.
   markdown: {
     extensions: ["md"],
     mediaType: "text/markdown",
     family: "code",
     surfaces: CODE,
   },
+  // A .html is an HTML Doc only when Worktable made it one or a person
+  // opened it as one; any other is this plain file, which never runs.
   html: {
     extensions: ["html", "htm"],
     mediaType: "text/html",
     family: "code",
-    surfaces: CODE,
+    surfaces: { ...CODE, serve: "inline", page: "frame" },
   },
   css: {
     extensions: ["css"],

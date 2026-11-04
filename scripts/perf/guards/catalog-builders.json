@@ -117,7 +117,7 @@
       "why": "Version history reads and restores. Reads should use the snapshot (Plan 15)."
     },
     {
-      "site": "packages/server/src/document-write-service.ts#materializeRegisteredDocumentIdentity.current",
+      "site": "packages/server/src/document-write-service.ts#openFileAsHtmlDoc.catalog",
       "kind": "buildDocumentCatalog",
       "why": "Writer: checks the current files under the write lock; writers never read snapshots."
     },

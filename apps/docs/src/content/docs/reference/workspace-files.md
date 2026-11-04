@@ -74,8 +74,14 @@ indexes, including SQLite projections, outside the portable content.
 
 Safe and supported: document `.md` and `.html` files and record `.yaml` files.
 Worktable watches the folder, so external edits show up live in the app and to
-agents. In V2, an HTML file added under a Space's `docs/` tree becomes an HTML
-doc with network and Records access off until permissions are set through the app or supported tools.
+agents. An HTML file added under a Space's `docs/` tree is a plain file. Its
+page shows it with scripts off and nothing loaded from the network. To run it,
+a person chooses **Open as HTML Doc** on that page. It then opens as an HTML
+doc with network and Records access off until permissions are set through the
+app or supported tools, and it stays an HTML doc when the workspace is copied
+or exported. HTML docs made through Worktable, and those that existed before
+this rule, stay HTML docs. Editing an HTML doc's `.html` file by hand keeps it
+an HTML doc.
 
 Manage these files through Worktable rather than editing them directly:
 `worktable.workspace.json`, `space.json`, `docs.meta.json`,

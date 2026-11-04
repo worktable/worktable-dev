@@ -23,6 +23,10 @@ import { pipeline } from "node:stream/promises"
 import * as yazl from "yazl"
 import type { DocumentId } from "@worktable/types"
 import { setAppDirOverride } from "./app-storage.ts"
+import { buildDocumentCatalog } from "./document-catalog.ts"
+import { openFileAsHtmlDoc } from "./document-write-service.ts"
+import { recordSourceKinds } from "./source-kind-records.ts"
+import { writeSpace } from "./store.ts"
 import {
   BUILTIN_DOCUMENT_COMPANIONS,
   BUILTIN_DOCUMENT_FORMATS,
@@ -264,6 +268,53 @@ describe("workspace export v2", () => {
         recoveryFingerprint: fingerprint,
       })
     ).rejects.toBeInstanceOf(WorkspaceExportPathError)
+  })
+
+  it("keeps a file opened as an HTML Doc one through export and restore", async () => {
+    const now = new Date().toISOString()
+    await writeSpace({
+      type: "worktable.space",
+      version: 1,
+      id: "notes",
+      name: "Notes",
+      createdAt: now,
+      updatedAt: now,
+      createdBy: "test",
+      settings: {},
+    })
+    await recordSourceKinds("notes")
+    await writeFile(
+      join(source, "spaces", "notes", "docs", "report.html"),
+      "<h1>Report</h1>"
+    )
+    const opened = await openFileAsHtmlDoc({
+      spaceId: "notes",
+      path: "report.html",
+    })
+    const result = await writeWorkspaceExportV2(join(root, "package"))
+    const restored = join(root, "restored")
+    await importWorkspaceExportV2(result.destination, restored)
+    // HTML added to the restored copy is a file there too.
+    await writeFile(
+      join(restored, "spaces", "notes", "docs", "later.html"),
+      "<h1>Later</h1>"
+    )
+    const catalog = await buildDocumentCatalog({
+      workspaceRoot: restored,
+      spaceId: "notes",
+    })
+    const kinds = Object.fromEntries(
+      catalog.entries.flatMap((entry) =>
+        entry.kind === "document"
+          ? [[entry.descriptor.path, entry.descriptor] as const]
+          : []
+      )
+    )
+    expect(kinds["report"]).toMatchObject({
+      documentId: opened.documentId,
+      format: { id: "worktable.html" },
+    })
+    expect(kinds["later.html"]?.format.id).toBe("worktable.file")
   })
 
   it("never offers recovery for current content and omits both sides of a history collision", async () => {

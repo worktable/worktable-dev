@@ -857,6 +857,27 @@ function htmlLifetime(
 const FILE_INLINE_BINARY_MAX_BYTES = 1024 * 1024
 
 /**
+ * Why an HTML Doc read finds nothing where a plain `.html` file has the name:
+ * HTML written straight into the folder is a file until a person opens it
+ * as an HTML Doc. Only asked once the read has failed, from the snapshot.
+ */
+async function plainHtmlFileHint(
+  spaceId: string,
+  htmlId: string
+): Promise<string | null> {
+  const file = `${htmlId}.html`
+  const catalog = await readDocumentCatalogSnapshot(spaceId, { lockHeld: true })
+  return catalog.entries.some(
+    (entry) =>
+      entry.kind === "document" &&
+      entry.descriptor.path === file &&
+      entry.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file
+  )
+    ? `${file} is a plain file, not an HTML Doc. Read it with worktable_files_read; a person can open it as an HTML Doc from its page.`
+    : null
+}
+
+/**
  * A file past what a version holds, decided by its size on disk without
  * reading it, with why it keeps no history; or null for anything else.
  */
@@ -1758,7 +1779,13 @@ async function _dispatchOperationInner(
         return withWidgetReadLock(spaceId, widgetId, async () => {
           if (!includeHtml) {
             const { data: widget, error } = await readWidget(spaceId, widgetId)
-            if (error || !widget) throw new Error(error ?? "Widget not found")
+            if (error || !widget) {
+              throw new Error(
+                (await plainHtmlFileHint(spaceId, widgetId)) ??
+                  error ??
+                  "Widget not found"
+              )
+            }
             return {
               widget: {
                 ...widget,
@@ -1767,8 +1794,13 @@ async function _dispatchOperationInner(
             }
           }
           const { data, error } = await readWidgetDocument(spaceId, widgetId)
-          if (error || !data)
-            throw new Error(error ?? "Widget content not found")
+          if (error || !data) {
+            throw new Error(
+              (await plainHtmlFileHint(spaceId, widgetId)) ??
+                error ??
+                "Widget content not found"
+            )
+          }
           return {
             widget: {
               ...data.widget,

@@ -16,11 +16,8 @@ import { useServerSettings } from "@/hooks/use-server-settings"
 import { useSettingsPatch } from "../use-settings-patch"
 import { EditMarkButton } from "@/components/edit-mark-button"
 import { WorktableTile } from "@/components/worktable-tile"
-import {
-  tileLogo,
-  uploadWorktableLogo,
-  worktableLogoUrl,
-} from "@/lib/identity-images"
+import { tileLogo, worktableLogoUrl } from "@/lib/identity-images"
+import { uploadWorktableLogo } from "@/lib/identity-image-upload"
 
 const IdentityImageDialog = lazy(() =>
   import("@/components/identity-image-dialog").then((module) => ({

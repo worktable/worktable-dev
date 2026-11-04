@@ -20,7 +20,6 @@ import {
 import { recognitionColor } from "@worktable/types/recognition"
 import { ProvenanceChip } from "@/components/provenance-chip"
 import { WorktableTile } from "@/components/worktable-tile"
-import { WorktableFavicon } from "@/components/worktable-favicon"
 import { tileLogo } from "@/lib/identity-images"
 import { queryKeys, useWorkspace } from "@/lib/queries"
 import { openSettings } from "@/lib/settings-open"
@@ -30,6 +29,13 @@ import { Skeleton } from "@worktable/ui/components/skeleton"
 import { toast } from "@worktable/ui/components/sonner"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import type { MenuSurface } from "@/lib/worktable-menu"
+
+// Only a Worktable with a logo draws its own tab icon.
+const WorktableFavicon = lazy(() =>
+  import("@/components/worktable-favicon").then((module) => ({
+    default: module.WorktableFavicon,
+  }))
+)
 
 // Warm the list and its data together when the person approaches the menu.
 const loadList = () => import("./worktable-menu-list")
@@ -249,7 +255,11 @@ export function WorktableHeader() {
         </DropdownMenuContent>
       </DropdownMenu>
       <ProvenanceChip />
-      <WorktableFavicon color={color} logo={logo} />
+      {logo ? (
+        <Suspense fallback={null}>
+          <WorktableFavicon color={color} logo={logo} />
+        </Suspense>
+      ) : null}
     </div>
   )
 

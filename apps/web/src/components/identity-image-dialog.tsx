@@ -20,7 +20,7 @@ import {
 import { cn } from "@worktable/ui/lib/utils"
 import { IconSearchGrid } from "@/components/icon-search-grid"
 import { NamedIcon } from "@/lib/icons"
-import { encodeSquare } from "@/lib/identity-images"
+import { encodeSquare } from "@/lib/identity-image-upload"
 import { recognitionSolid } from "@/lib/recognition"
 
 /** The crop area's side, in CSS pixels. */

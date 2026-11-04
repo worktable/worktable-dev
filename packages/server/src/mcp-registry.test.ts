@@ -444,19 +444,23 @@ describe("released tool surface", () => {
     const preview = (await listTools("preview")).tools
     const names = (tools: typeof released) => tools.map((tool) => tool.name)
     expect(names(preview)).toEqual(names(released))
-    // Preview holds wording and output changes until agent directories
-    // review them; the tools' inputs stay the same and every other tool is
-    // identical.
-    const held = new Set(["worktable_files_read", "worktable_files_write"])
-    expect(preview.filter((tool) => !held.has(tool.name))).toEqual(
-      released.filter((tool) => !held.has(tool.name))
+    // Preview holds changes until agent directories review them: wording,
+    // output fields, and the revision an HTML Doc's replace names. Every
+    // other tool is identical.
+    const held: Record<string, string[]> = {
+      worktable_files_read: [],
+      worktable_files_write: [],
+      worktable_html_write: ["expectedRevision"],
+    }
+    expect(preview.filter((tool) => !(tool.name in held))).toEqual(
+      released.filter((tool) => !(tool.name in held))
     )
-    for (const name of held) {
+    for (const [name, added] of Object.entries(held)) {
       const inputs = (tools: typeof released) =>
         Object.keys(
           tools.find((tool) => tool.name === name)?.inputSchema.properties ?? {}
         )
-      expect(inputs(preview)).toEqual(inputs(released))
+      expect(inputs(preview)).toEqual([...inputs(released), ...added])
     }
     // A file read says why a file keeps no history, which schema-driven
     // clients find only in the preview's output schema for now.

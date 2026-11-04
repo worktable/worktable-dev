@@ -33,6 +33,7 @@ import {
   type DocProvenance,
 } from "../store.ts";
 import { getDocLinks } from "../link-graph.ts";
+import { docRevisionId } from "../doc-markdown-projection.ts";
 import { wsManager } from "../ws.ts";
 import { currentDocContentRevision } from "../document-content-revision.ts";
 import { DocFormatTransitionConflictError, yjsManager } from "../yjs-manager.ts";
@@ -49,7 +50,17 @@ import { logDocument, logError } from "../debug-log.ts";
 
 const WriteDocSchema = z.object({
   content: z.array(z.unknown()),
+  /**
+   * The revision the writer read, as GET gives it. Needed to replace a Doc
+   * that exists; left out to create one.
+   */
+  expectedRevision: z.string().min(1).max(256).optional(),
 });
+
+const DOC_REVISION_REQUIRED =
+  "Replacing a Doc needs the revision you read. Read it, then send its revision as expectedRevision.";
+const DOC_REVISION_CHANGED =
+  "This Doc changed since you read it. Read it again, then replace it with its new revision.";
 
 const TitleDocSchema = z.object({
   /** Omitted: keep the Doc's title and move it to the path made from it. */
@@ -858,7 +869,8 @@ docsRouter.get("/*", requireScope("docs:read"), async (c) => {
     await yjsManager.flushPersist(spaceId, docPath);
   }
 
-  const result = await readDoc(spaceId, docPath);
+  const snapshot = await readDocSourceSnapshot(spaceId, docPath);
+  const result = snapshot.result;
   if (result.error || result.data === null) {
     return c.json({ error: result.error ?? "Not found", code: "NOT_FOUND" }, 404);
   }
@@ -905,6 +917,8 @@ docsRouter.get("/*", requireScope("docs:read"), async (c) => {
   return c.json({
     path: docPath,
     content: result.data,
+    // What a whole replace (PUT) names as expectedRevision.
+    ...(snapshot.revision ? { revision: docRevisionId(snapshot.revision) } : {}),
     format: result.format,
     storedAs: result.storedAs,
     updatedAt: statResult?.updatedAt ?? Date.now(),
@@ -942,17 +956,63 @@ docsRouter.put("/*", requireScope("docs:write"), async (c) => {
     return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
   }
 
+  // A path another Doc moved from stays reserved, whatever is on disk there.
+  const aliasError = await docAliasReservationError(spaceId, sanitizeDocPath(docPath));
+  if (aliasError) {
+    return c.json({ error: aliasError, code: "CONFLICT" }, 409);
+  }
+
+  // A replace names the revision it is based on: a Doc that changed since,
+  // typing not yet saved included, is refused with the revision it is at
+  // now and stays as it is. One that names none is refused before anything
+  // is written. A Doc that doesn't exist yet is created.
+  await yjsManager.flushPersist(spaceId, docPath);
+  const before = await readDocSourceSnapshot(spaceId, docPath);
+  const current = before.revision && before.result.data !== null
+    ? docRevisionId(before.revision)
+    : undefined;
+  const expectedRevision = parsed.data.expectedRevision;
+  if (current !== undefined && expectedRevision === undefined) {
+    return c.json({ error: DOC_REVISION_REQUIRED, code: "REVISION_REQUIRED" }, 428);
+  }
+  if (current === undefined && expectedRevision !== undefined) {
+    return c.json({ error: `Doc not found: ${docPath}`, code: "NOT_FOUND" }, 404);
+  }
+  if (current !== undefined && expectedRevision !== current) {
+    return c.json(
+      { error: DOC_REVISION_CHANGED, code: "REVISION_CHANGED", revision: current },
+      409
+    );
+  }
+
   const filePath = await getDocPath(spaceId, docPath);
+  let revision: string | undefined;
   suppressPath(filePath);
   try {
     const result = await writeDoc(spaceId, docPath, parsed.data.content, {
       updatedBy: restWriteActor(c),
       source: "rest-api",
       managedIdentity: true,
+      ...(before.revision && current !== undefined
+        ? { sourceRevision: before.revision }
+        : { createOnly: true }),
     });
     if (!result.ok) {
+      if (result.errorCode === "SOURCE_CHANGED") {
+        // Another writer got there first; what it wrote stays.
+        const now = (await readDocSourceSnapshot(spaceId, docPath)).revision;
+        return c.json(
+          {
+            error: DOC_REVISION_CHANGED,
+            code: "REVISION_CHANGED",
+            ...(now ? { revision: docRevisionId(now) } : {}),
+          },
+          409
+        );
+      }
       return c.json({ error: result.error ?? "Write failed", code: "CONFLICT" }, 409);
     }
+    revision = result.revision ? docRevisionId(result.revision) : undefined;
   } finally {
     setTimeout(() => unsuppressPath(filePath), 150);
   }
@@ -993,6 +1053,7 @@ docsRouter.put("/*", requireScope("docs:write"), async (c) => {
 
   return c.json({
     path: docPath,
+    ...(revision ? { revision } : {}),
     updatedAt: statResult?.updatedAt ?? Date.now(),
     archived: await getDocArchiveInfo(spaceId, docPath),
     provenance,

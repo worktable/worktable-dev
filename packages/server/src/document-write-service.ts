@@ -286,6 +286,21 @@ export async function registeredDocumentSourceRevision(
 }
 
 /**
+ * `registeredDocumentSourceRevision`, given the bytes a chunk at a time, so
+ * a file read after its Space's lock is released never needs to be held
+ * whole to name its revision.
+ */
+export async function registeredDocumentSourceRevisionHasher(
+  owner: SourceRevisionOwner
+): Promise<{ update(chunk: Uint8Array): void; revision(): string }> {
+  const hash = await sourceRevisionHash(owner)
+  return {
+    update: (chunk) => void hash.update(chunk),
+    revision: () => sourceRevisionOf(hash),
+  }
+}
+
+/**
  * A source's new content: bytes in memory, or a file's bytes staged on disk
  * by an upload. Staged content is copied and hashed a chunk at a time, so a
  * file is never held whole; only the file format takes it, since its bytes

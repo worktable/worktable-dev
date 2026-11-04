@@ -2109,6 +2109,14 @@ function startBackupLoad(context: BackupContext): {
   })()
   const writeLoop = (async () => {
     let index = 0
+    // Each replace names the revision it read, then the one the previous
+    // write saved or a refusal gave.
+    let revision = await fetch(`${context.base}${space}/docs/perf/backup-load`, {
+      headers: { Cookie: cookie },
+    })
+      .then((response) => (response.ok ? response.json() : {}))
+      .then((doc) => (doc as { revision?: string }).revision)
+      .catch(() => undefined)
     while (running) {
       const at = performance.now()
       let status = 0
@@ -2120,11 +2128,15 @@ function startBackupLoad(context: BackupContext): {
             headers: { "Content-Type": "application/json", Cookie: cookie },
             body: JSON.stringify({
               content: richBlocks(`Backup load ${index++}`, 6, "backup-load"),
+              ...(revision ? { expectedRevision: revision } : {}),
             }),
             signal: AbortSignal.timeout(60_000),
           }
         )
-        await response.arrayBuffer()
+        const body = (await response.json().catch(() => ({}))) as {
+          revision?: string
+        }
+        revision = body.revision ?? revision
         status = response.status
       } catch {
         status = 0

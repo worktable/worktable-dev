@@ -19,7 +19,7 @@ import {
   type FileTypesWhere,
   type RecordCollectionSchema,
 } from "@worktable/types"
-import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts"
+import { readCurrentFileSource } from "./current-file-source.ts"
 import { readRegisteredDocumentSource } from "./document-write-service.ts"
 import {
   buildRecordCollectionSchema,
@@ -175,15 +175,24 @@ function readTable(path: string, bytes: Uint8Array): ImportTable {
   return { columns: table.header, rows }
 }
 
+/**
+ * The file's rows, read at one revision once the Space's lock is released,
+ * with that revision: an import never mixes two versions of its file.
+ */
 async function readImportFile(spaceId: string, path: string) {
   if (importReader(path) === null) {
     throw new Error("Import reads a .csv, .tsv or .jsonl file")
   }
-  const source = await readRegisteredDocumentSource({ spaceId, path })
-  if (source.format.id !== BUILTIN_DOCUMENT_FORMATS.file) {
+  const file = await readCurrentFileSource({ spaceId, path, bytes: true })
+  if (!file?.bytes) {
+    // Missing, or a Doc: refused as before.
+    await readRegisteredDocumentSource({ spaceId, path })
     throw new Error("Import reads a file, not a Doc")
   }
-  return readTable(path, source.bytes)
+  return {
+    ...readTable(path, file.bytes),
+    sourceRevision: file.sourceRevision,
+  }
 }
 
 /** A Record field key from a column name. */
@@ -252,6 +261,8 @@ function proposedTitleColumn(
 
 export interface ImportProposal {
   path: string
+  /** The revision of the file this proposal read. */
+  sourceRevision: string
   rowCount: number
   columns: ImportColumn[]
   idColumn?: string
@@ -299,6 +310,7 @@ export async function proposeImport(
   )
   return {
     path,
+    sourceRevision: table.sourceRevision,
     rowCount: table.rows.length,
     columns,
     ...(idColumn ? { idColumn } : {}),
@@ -338,6 +350,8 @@ const SCHEMA_TYPE: Record<ImportFieldType, string> = {
 
 export interface ImportResult {
   collectionId: string
+  /** The revision of the file whose rows were imported. */
+  sourceRevision: string
   counts: { rows: number; created: number; skipped: number; failed: number }
   /** Rows not created, with why: an existing id or unique value, or an error. */
   rows: Array<{ row: number; recordId?: string; skipped?: string; error?: string }>
@@ -486,6 +500,7 @@ export async function importIntoRecords(options: {
   const mapped = new Set(options.columns.map((column) => column.column))
   return {
     collectionId,
+    sourceRevision: table.sourceRevision,
     counts: { rows: rows.length, created, skipped, failed },
     rows: results,
     columnsLeftOut: table.columns.filter(

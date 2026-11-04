@@ -289,7 +289,9 @@ describe("path-style widget ids", () => {
     expect(raw.text).toBe(VALID_HTML);
     expect(raw.headers.get("content-disposition")).toContain("q3-redesign.html");
 
-    const put = await req(app, "PUT", "/api/spaces/meta/widgets/plans/q3-redesign", { name: "Q3 Plan v2", html: VALID_HTML });
+    // A replace names the revision of the source it read.
+    const expectedRevision = raw.headers.get("etag")?.replace(/"/g, "");
+    const put = await req(app, "PUT", "/api/spaces/meta/widgets/plans/q3-redesign", { name: "Q3 Plan v2", html: VALID_HTML, expectedRevision });
     expect(put.status).toBe(200);
     expect(put.json.widget.name).toBe("Q3 Plan v2");
 

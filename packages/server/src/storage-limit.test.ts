@@ -44,6 +44,7 @@ import {
 } from "./storage-usage.ts"
 import { restoreDocVersion, writeDoc, writeSpace } from "./store.ts"
 import { Hono } from "hono"
+import { apiErrorResponse } from "./api-error-response.ts"
 import { ownerIdentity } from "./auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { appendThreadMessage, createThread } from "./thread-store.ts"
@@ -282,6 +283,30 @@ describe("storage limit", () => {
     expect(refused.message).toBe(
       `This Worktable is at its ${Math.round(storageLimitBytes() / KB)} KB limit. Delete something to make room.`
     )
+    // Over REST, the server answers it with 507, the limit and what is used.
+    const api = new Hono()
+      .use("*", async (c, next) => {
+        c.set("identity", { ...ownerIdentity(), scopes: ["*"] })
+        return next()
+      })
+      .route("/api/spaces/:spaceId/documents", documentsRouter)
+      .onError(apiErrorResponse)
+    const overLimit = await api.request("/api/spaces/notes/documents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: "refused-rest",
+        format: { id: "worktable.markdown", sourceVersion: 1 },
+        source: new TextDecoder().decode(bytes(8 * KB, "refused-rest")),
+      }),
+    })
+    expect(overLimit.status).toBe(507)
+    expect(await overLimit.json()).toEqual({
+      error: refused.message,
+      code: "STORAGE_LIMIT",
+      limitBytes: storageLimitBytes(),
+      usedBytes: expect.any(Number),
+    })
     // An upload is staged first; a refused one leaves no file behind either.
     const upload = await withStagedUpload(new Response(new Uint8Array(8 * KB)), (file) =>
       writeUploadedFile({

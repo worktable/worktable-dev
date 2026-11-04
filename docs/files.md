@@ -312,16 +312,19 @@ work without knowing it.
 - `document-format-conformance.test.ts` "gives a registered writable format
   fenced CRUD and exact versions": a Doc changed on disk is kept as a recovery
   point before the next write.
+- `routes-docs.test.ts` "replaces an existing doc only from the revision it
+  read": a whole-Doc replace with no revision gets 428 and a stale one 409.
 
 **Gaps:**
 
-- HTML Doc updates take no revision: `worktable_html_write` and the HTML Doc
-  HTTP route (`routes/widgets.ts`) replace whatever is current.
-- The HTTP route that replaces a whole Doc (`routes/docs.ts`) takes no revision.
-  `worktable_docs_write` needs one for a whole replace; its `edits` match the
-  current text instead.
+- `worktable_html_write` requires a revision on the preview surface only; the
+  released tool doesn't name one, so it refuses only a stale revision. The HTML
+  Doc and whole-Doc HTTP routes (`routes/widgets.ts`, `routes/docs.ts`) refuse
+  a missing or stale revision on every surface.
+- Restoring an HTML Doc version over HTTP names no revision.
 - The released MCP surface still describes `expectedRevision` as optional for
-  `worktable_files_write`, though a replace without it is refused.
+  `worktable_files_write`, though a replace without it is refused; the preview
+  surface says it's required.
 - No test covers a ChatGPT attachment replace.
 
 ### 9. A revision is one state
@@ -470,10 +473,10 @@ lock, hashes kept per revision), `staged-file.ts` and `file-uploads.ts`
 - `perf-smoke` file reads and stats per request, in
   `scripts/perf/smoke-budgets.json`. See [Keep Worktable fast](performance.md).
 
-**Gaps:** an agent's read of a file up to 64 MiB reads it whole while holding
-the Space lock (`documents.read_source` in `mcp/dispatcher.ts`); so do a Records
-import and a replace based on a page's version (`file-uploads.ts`). No test shows that listing opens no
-file; only the perf budget does.
+**Gaps:** an agent's read of a large binary file still loads the whole file into
+memory before returning its download link, though outside the Space lock
+(`current-file-source.ts`). No test shows that listing opens no file; only the
+perf budget does.
 
 ### 14. Storage is accounted, bounded and recoverable
 
@@ -521,7 +524,7 @@ export can carry, can't be recovered.
 - Removing Cloud backups after 30 days isn't built in this repository yet.
 - The limit check doesn't cover annotations, Space metadata or pre-V2 HTML
   snapshots.
-- No test covers the HTTP 507, or a move or export at the limit.
+- No test covers a move or export at the limit.
 
 ## People and agents
 

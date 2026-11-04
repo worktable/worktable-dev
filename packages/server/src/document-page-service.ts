@@ -9,12 +9,14 @@ import type {
   DocumentCollaboration,
   DocumentContributors,
   DocumentContent,
+  DocumentFormatClaim,
   DocumentPage,
   DocumentPageResult,
   DocumentProvenance,
   DocumentRenderDisposition,
   DocumentSharingSummary,
   DocumentVersionSummary,
+  FileNoHistory,
 } from "@worktable/types"
 import { listAnnotations } from "./annotation-store.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
@@ -53,6 +55,8 @@ import {
   FileRevisionError,
   type PinnedFile,
 } from "./file-revision.ts"
+import { fileNoHistory } from "./file-limits.ts"
+import { sourceStampSize } from "./document-catalog.ts"
 import { peekDocActivity } from "./activity-log.ts"
 import { peekDocBacklinks, peekDocOutbound } from "./link-graph.ts"
 import { filesEnabled } from "./files-enabled.ts"
@@ -91,6 +95,8 @@ interface DocumentPageMetadata {
   contributors?: DocumentContributors
   embeds?: Record<string, string>
   version?: string
+  byteLength?: number
+  noHistory?: FileNoHistory
   networkRequested?: true
   networkRequestedBy?: string
 }
@@ -340,10 +346,15 @@ function fileMetadata(
   const backlinks = peekDocBacklinks(spaceId, handle.document.path, moves)
   // Records whose file fields name it use it too.
   const referrers = peekDocReferrers(spaceId, handle.document.path, moves.current)
+  // Its size is in what the catalog saw on disk; nothing is read for it.
+  const byteLength = sourceStampSize(handle.sourceStamp)
+  const noHistory = fileNoHistory(byteLength)
   return {
     ...(backlinks ? { backlinks } : {}),
     ...(referrers ? { referrers } : {}),
     ...(handle.sourceStamp ? { version: handle.sourceStamp } : {}),
+    ...(byteLength !== undefined ? { byteLength } : {}),
+    ...(noHistory ? { noHistory } : {}),
   }
 }
 
@@ -424,6 +435,8 @@ async function pageForHandle(
     ...(metadata?.contributors ? { contributors: metadata.contributors } : {}),
     ...(metadata?.embeds ? { embeds: metadata.embeds } : {}),
     ...(metadata?.version ? { version: metadata.version } : {}),
+    ...(metadata?.byteLength !== undefined ? { byteLength: metadata.byteLength } : {}),
+    ...(metadata?.noHistory ? { noHistory: metadata.noHistory } : {}),
     ...(metadata?.networkRequested
       ? {
           networkRequested: true as const,
@@ -680,6 +693,10 @@ export async function readRawDocumentSource(options: {
 }
 
 export interface CurrentFile {
+  documentId: string
+  /** The file's path, after any move its asked-for path followed. */
+  path: string
+  format: DocumentFormatClaim
   fileName: string
   /** The file at its current revision, not yet open. */
   pinned: PinnedFile
@@ -690,7 +707,6 @@ export type CurrentFileResolution =
   | { kind: "not-found" }
   /** At a path that can't be read safely, or not a plain file's source. */
   | { kind: "conflict" }
-  | { kind: "too-large" }
   /** Not at the revision asked for. */
   | { kind: "changed" }
   | { kind: "unavailable" }
@@ -698,7 +714,8 @@ export type CurrentFileResolution =
 /**
  * A plain file at its current revision, resolved under its Space's lock,
  * which is released before any of its bytes are read. With `revision`,
- * only that revision: a file changed since reads as changed.
+ * only that revision: a file changed since reads as changed. Its bytes are
+ * streamed, so a file of any size resolves, past what a version holds too.
  */
 export async function resolveCurrentFile(options: {
   spaceId: string
@@ -725,10 +742,12 @@ export async function resolveCurrentFile(options: {
         if (options.revision !== undefined && now.revision !== options.revision) {
           return { kind: "changed" }
         }
-        if (now.size > RAW_SOURCE_MAX_BYTES) return { kind: "too-large" }
         return {
           kind: "file",
           current: {
+            documentId: handle.documentId,
+            path: handle.document.path,
+            format: handle.document.format,
             fileName: sourceFileName(handle),
             pinned: { path: absolutePath, ...now },
           },

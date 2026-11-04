@@ -1,6 +1,6 @@
 import { LinkGrantSchema, defaultSharingPolicy } from "@worktable/types"
 import { afterEach, beforeEach, expect, it } from "bun:test"
-import { mkdtemp, readdir, rm } from "node:fs/promises"
+import { mkdtemp, open, readdir, rm, stat, truncate } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import fc from "fast-check"
@@ -36,6 +36,8 @@ import { receiveUploadPiece } from "./linked-file-links.ts"
 import { issueFileTicket } from "./file-tickets.ts"
 import { withStagedUpload, writeUploadedFile } from "./file-uploads.ts"
 import { stagingDirectory } from "./staged-file.ts"
+import { FILE_VERSION_MAX_BYTES } from "./file-limits.ts"
+import { noteSpaceChanged } from "./workspace-read-model.ts"
 import { listAgentConnections } from "./agent-connection-store.ts"
 import { disconnectLink } from "./linked-runtime.ts"
 import {
@@ -1105,4 +1107,56 @@ it("carries a file link in pieces: an upload saved after its last piece, and a d
   const changed = await read(LINKED_REQUEST_MAX_BYTES)
   expect(changed.status).toBe(409)
   expect(await changed.json()).toMatchObject({ code: "FILE_CHANGED" })
+
+  // A file grown on disk past what an upload or a version holds still
+  // downloads, from a piece past that limit too.
+  const onDisk = join(directory, "workspace", "spaces", "space", "docs", "design", "archive.bin")
+  const size = FILE_VERSION_MAX_BYTES + 7
+  await truncate(onDisk, size)
+  const marker = await open(onDisk, "r+")
+  await marker.write(rest, 0, rest.byteLength, FILE_VERSION_MAX_BYTES)
+  await marker.close()
+  noteSpaceChanged("space")
+  const large = issueFileTicket({
+    kind: "download",
+    spaceId: "space",
+    path: "design/archive.bin",
+    identity: null,
+    principal,
+    actor: principal.id,
+  }).token
+  const past = await ingress.fetch(
+    await createLinkedRequest({
+      origin: server.url.origin,
+      key,
+      binding: ingress.binding,
+      grant: { kind: "file-link", capability: large, offset: FILE_VERSION_MAX_BYTES },
+      method: "GET",
+      path: "/linked/file-links/download",
+    })
+  )
+  expect(past.status).toBe(200)
+  expect(past.headers.get(LINKED_FILE_SIZE_HEADER)).toBe(String(size))
+  expect(new Uint8Array(await past.arrayBuffer())).toEqual(
+    new Uint8Array([...rest, 0, 0, 0, 0])
+  )
+  // Replacing it in pieces is refused with the reason, as a new version
+  // would lose it, and leaves it as it was.
+  const replacing = issueFileTicket({
+    kind: "upload",
+    spaceId: "space",
+    path: "design/archive.bin",
+    mode: { kind: "replace", expectedRevision: "rev_seen" },
+    identity: null,
+    principal,
+    actor: principal.id,
+  }).token
+  const refused = await piece(replacing, 0, rest, rest.byteLength)
+  expect(refused.status).toBe(409)
+  expect(await refused.json()).toMatchObject({
+    code: "CONFLICT",
+    error: expect.stringContaining("larger than 64 MiB"),
+  })
+  expect((await stat(onDisk)).size).toBe(size)
+  expect(await readdir(stagingDirectory())).toEqual([])
 }, 30_000)

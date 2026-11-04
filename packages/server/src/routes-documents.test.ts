@@ -13,15 +13,17 @@ import {
   mkdir,
   readdir,
   mkdtemp,
+  open,
   readFile,
   rename,
   rm,
   stat,
+  truncate,
   utimes,
   writeFile,
 } from "node:fs/promises"
-import { tmpdir } from "node:os"
 import { createHash } from "node:crypto"
+import { tmpdir } from "node:os"
 import { FILE_UPLOAD_MAX_BYTES } from "./file-uploads.ts"
 import { removeLeftoverStagedFiles, stagingDirectory } from "./staged-file.ts"
 import { FOLDER_OPERATION_MAX_ENTRIES } from "./folder-operation-limit.ts"
@@ -39,6 +41,7 @@ import { HOSTED_BROWSER_RUNTIME_SCOPES } from "./hosted-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { docsRouter } from "./routes/docs.ts"
 import { FILE_READ_CHUNK_BYTES, OpenFileRevision } from "./file-revision.ts"
+import { FILE_VERSION_MAX_BYTES } from "./file-limits.ts"
 import { renameDocAndSync } from "./doc-rename.ts"
 import { recordDocAlias, resolveDocAlias } from "./doc-aliases.ts"
 import { deleteHtmlDocument } from "./html-document-delete.ts"
@@ -1739,14 +1742,14 @@ describe("format-neutral document route", () => {
       noteSpaceChanged(spaceId)
       expect(
         await recordExternalFileChanges({ spaceId, paths: ["data/feedback.csv"] })
-      ).toEqual({ recorded: ["data/feedback.csv"] })
+      ).toEqual({ recorded: ["data/feedback.csv"], tooLarge: [] })
       const after = await versions("data/feedback.csv")
       expect(after.length).toBe(before + 1)
       expect(after[0]?.source).toBe("filesystem")
       // The same bytes again keep nothing new.
       expect(
         await recordExternalFileChanges({ spaceId, paths: ["data/feedback.csv"] })
-      ).toEqual({ recorded: [] })
+      ).toEqual({ recorded: [], tooLarge: [] })
       // A quick further change, saved atomically and reported only by its
       // temporary name, continues that version rather than adding one.
       await writeFile(join(docs, "data", "feedback.csv"), "id\n1\n2\n3\n")
@@ -1756,7 +1759,7 @@ describe("format-neutral document route", () => {
           spaceId,
           paths: ["data/feedback.csv.tmp"],
         })
-      ).toEqual({ recorded: ["data/feedback.csv"] })
+      ).toEqual({ recorded: ["data/feedback.csv"], tooLarge: [] })
       expect((await versions("data/feedback.csv")).length).toBe(before + 1)
 
       // A file nobody has kept yet has no history to add to.
@@ -1764,7 +1767,83 @@ describe("format-neutral document route", () => {
       noteSpaceChanged(spaceId)
       expect(
         await recordExternalFileChanges({ spaceId, paths: ["data/dropped.csv"] })
-      ).toEqual({ recorded: [] })
+      ).toEqual({ recorded: [], tooLarge: [] })
+
+      // Grown past what a version holds, it is marked rather than read: it
+      // keeps no version, and its page says why.
+      const onDisk = join(docs, "data", "feedback.csv")
+      const size = FILE_VERSION_MAX_BYTES + FILE_READ_CHUNK_BYTES + 3
+      const end = new TextEncoder().encode("end\n")
+      await truncate(onDisk, size)
+      const handle = await open(onDisk, "r+")
+      await handle.write(end, 0, end.length, size - end.length)
+      await handle.close()
+      noteSpaceChanged(spaceId)
+      const kept = (await versions("data/feedback.csv")).length
+      expect(
+        await recordExternalFileChanges({ spaceId, paths: ["data/feedback.csv"] })
+      ).toEqual({ recorded: [], tooLarge: ["data/feedback.csv"] })
+      expect((await versions("data/feedback.csv")).length).toBe(kept)
+      const page = async () =>
+        (
+          (await (
+            await instance.request(`/api/spaces/${spaceId}/documents/page?path=data/feedback.csv`)
+          ).json()) as { page: { byteLength?: number; noHistory?: unknown } }
+        ).page
+      expect(await page()).toMatchObject({
+        byteLength: size,
+        noHistory: { reason: "too-large", maxBytes: FILE_VERSION_MAX_BYTES },
+      })
+      // It still lists, and downloads whole or in part, byte for byte.
+      const listed = (await (
+        await instance.request(`/api/spaces/${spaceId}/documents`)
+      ).json()) as { documents: Array<{ path?: string }> }
+      expect(listed.documents.map((document) => document.path)).toContain("data/feedback.csv")
+      const file = `/api/spaces/${spaceId}/documents/file?path=data/feedback.csv`
+      const whole = await instance.request(file)
+      expect(whole.status).toBe(200)
+      expect(whole.headers.get("content-length")).toBe(String(size))
+      const sha256 = (bytes: ArrayBuffer | Uint8Array) =>
+        createHash("sha256").update(new Uint8Array(bytes)).digest("hex")
+      expect(sha256(await whole.arrayBuffer())).toBe(sha256(await readFile(onDisk)))
+      const tail = await instance.request(file, {
+        headers: { range: `bytes=${FILE_VERSION_MAX_BYTES}-` },
+      })
+      expect(tail.status).toBe(206)
+      expect(tail.headers.get("content-range")).toBe(
+        `bytes ${FILE_VERSION_MAX_BYTES}-${size - 1}/${size}`
+      )
+      const tailBytes = new Uint8Array(await tail.arrayBuffer())
+      expect(tailBytes.byteLength).toBe(size - FILE_VERSION_MAX_BYTES)
+      expect(tailBytes.slice(-end.length)).toEqual(end)
+      // A new version would lose it, as nothing could keep it: it is refused.
+      const replaced = await instance.request(`${file}&replace=1`, { method: "PUT", body: "id\n" })
+      expect(replaced.status).toBe(409)
+      expect(await replaced.json()).toMatchObject({ code: "CONFLICT" })
+      // So is one that names the revision it read, with the reason, leaving
+      // the file and nothing staged.
+      const named = await instance.request(file, {
+        method: "PUT",
+        headers: { "if-match": "rev_seen" },
+        body: "id\n",
+      })
+      expect(named.status).toBe(409)
+      expect(await named.json()).toMatchObject({
+        code: "CONFLICT",
+        error: expect.stringContaining("larger than 64 MiB"),
+      })
+      expect((await stat(onDisk)).size).toBe(size)
+      expect(await readdir(stagingDirectory())).toEqual([])
+
+      // Back within the limit, its history resumes.
+      setSystemTime(new Date("2026-10-20T10:00:00.000Z"))
+      await writeFile(onDisk, "id\n1\n")
+      noteSpaceChanged(spaceId)
+      expect(
+        await recordExternalFileChanges({ spaceId, paths: ["data/feedback.csv"] })
+      ).toEqual({ recorded: ["data/feedback.csv"], tooLarge: [] })
+      expect((await versions("data/feedback.csv")).length).toBe(kept + 1)
+      expect(await page()).not.toHaveProperty("noHistory")
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES"]
       else process.env["WORKTABLE_FILES"] = previous

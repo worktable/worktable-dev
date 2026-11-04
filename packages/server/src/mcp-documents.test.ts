@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import type { SpaceFile, WidgetFile } from "@worktable/types"
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, open, readdir, readFile, rm, truncate, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { FILE_VERSION_MAX_BYTES } from "./file-limits.ts"
+import { noteSpaceChanged } from "./workspace-read-model.ts"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
@@ -354,6 +357,41 @@ describe("file links for agents", () => {
       expect(bigRead.structuredContent).toMatchObject({ encoding: "download", byteLength: 1_500_000 })
       expect(bigRead.structuredContent).not.toHaveProperty("source")
 
+      // A file written on disk past what a version holds is described by its
+      // size and linked, never read into the result, and says why it has no
+      // history.
+      const hugePath = join(root, "spaces", spaceId, "docs", "data", "huge.bin")
+      const hugeSize = FILE_VERSION_MAX_BYTES + 5
+      await writeFile(hugePath, "")
+      await truncate(hugePath, hugeSize)
+      const marker = await open(hugePath, "r+")
+      await marker.write(new Uint8Array([1, 2, 3, 4, 5]), 0, 5, FILE_VERSION_MAX_BYTES)
+      await marker.close()
+      noteSpaceChanged(spaceId)
+      const noHistory = {
+        reason: "too-large",
+        maxBytes: FILE_VERSION_MAX_BYTES,
+        message: "No history while this file is larger than 64 MiB.",
+      }
+      const hugeRead = await read({ action: "read_source", spaceId, path: "data/huge.bin" })
+      expect(hugeRead.isError).not.toBe(true)
+      expect(hugeRead.structuredContent).toMatchObject({
+        path: "data/huge.bin",
+        encoding: "download",
+        byteLength: hugeSize,
+        noHistory,
+      })
+      expect(hugeRead.structuredContent).not.toHaveProperty("source")
+      const hugeLink = (hugeRead.structuredContent as { downloadUrl: string }).downloadUrl
+      const hugeBytes = await fileLinksRouter.request(`/${token(hugeLink)}`)
+      expect(hugeBytes.status).toBe(200)
+      const sha256 = (bytes: ArrayBuffer | Uint8Array) =>
+        createHash("sha256").update(new Uint8Array(bytes)).digest("hex")
+      expect(sha256(await hugeBytes.arrayBuffer())).toBe(sha256(await readFile(hugePath)))
+      expect(
+        (await read({ action: "read", spaceId, path: "data/huge.bin" })).structuredContent
+      ).toMatchObject({ byteLength: hugeSize, noHistory })
+
       // A body is counted as it arrives, so one without Content-Length can't
       // run past the limit, and nothing of it is kept.
       const chunked = new ReadableStream<Uint8Array>({
@@ -446,6 +484,13 @@ describe("file links for agents", () => {
       })
       expect(local.structuredContent).toMatchObject({ encoding: "base64" })
       expect(local.structuredContent).not.toHaveProperty("downloadUrl")
+      // A file past what a version holds says where to read it instead.
+      const localHuge = await stdio.callTool({
+        name: "worktable_files_read",
+        arguments: { request: { action: "read_source", spaceId, path: "data/huge.bin" } },
+      })
+      expect(localHuge.isError).toBe(true)
+      expect(JSON.stringify(localHuge.content)).toContain("larger than 64 MiB")
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES"]
       else process.env["WORKTABLE_FILES"] = previous

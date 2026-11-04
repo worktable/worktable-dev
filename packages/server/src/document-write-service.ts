@@ -28,8 +28,10 @@ import {
 import {
   buildDocumentCatalog,
   sourceIsNotADoc,
+  sourceStampSize,
   type DocumentCatalog,
 } from "./document-catalog.ts"
+import { fileNoHistory } from "./file-limits.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
 import {
   advanceDocumentCreateRecoveryV2,
@@ -1473,11 +1475,15 @@ export async function readRegisteredDocumentSourceLocked(options: {
  * One catalog serves every path in the batch. A path that names no file with
  * history, such as the temporary name of an atomic save, stands for its
  * folder: the files with history directly in it are checked instead.
+ *
+ * A file larger than one version holds is not read: it is listed in
+ * `tooLarge`, and its page and agents' reads say it has no history while it
+ * stays that large. Its next change back within the limit is kept again.
  */
 export async function recordExternalFileChanges(options: {
   spaceId: string
   paths: readonly string[]
-}): Promise<{ recorded: string[] }> {
+}): Promise<{ recorded: string[]; tooLarge: string[] }> {
   const workspaceRoot = getWorkspaceRoot()
   const registry = createBuiltinDocumentFormatRegistry()
   return withDocPathLock(options.spaceId, async () => {
@@ -1508,7 +1514,13 @@ export async function recordExternalFileChanges(options: {
       if (folders.has(folderOf(path))) candidates.add(path)
     }
     const recorded: string[] = []
+    const tooLarge: string[] = []
     for (const path of candidates) {
+      // Decided by its size on disk, as the catalog saw it, without a read.
+      if (fileNoHistory(sourceStampSize(keptFiles.get(path)?.handle.sourceStamp))) {
+        tooLarge.push(path)
+        continue
+      }
       // One file that can't be kept leaves the rest of the batch kept.
       try {
         if (await recordFileVersionLocked(workspaceRoot, options.spaceId, catalog, path, registry)) {
@@ -1521,7 +1533,12 @@ export async function recordExternalFileChanges(options: {
         )
       }
     }
-    return { recorded }
+    if (tooLarge.length > 0) {
+      console.info(
+        `[files] no version kept for ${tooLarge.length} file(s) past the version limit`
+      )
+    }
+    return { recorded, tooLarge }
   })
 }
 
@@ -1538,7 +1555,7 @@ async function recordFileVersionLocked(
   try {
     bytes = await readSource(workspaceRoot, spaceId, document)
   } catch {
-    // Gone again, or past what one version can hold.
+    // Gone again, or grown past what one version holds since it was listed.
     return false
   }
   const newest = await newestVersionHolding({

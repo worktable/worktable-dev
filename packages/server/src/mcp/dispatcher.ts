@@ -135,7 +135,13 @@ import {
   readDocumentCatalogSnapshot,
   type DocumentLifetimeTarget,
 } from "../document-query.ts"
-import { readDocumentVersions } from "../document-page-service.ts"
+import {
+  readDocumentVersions,
+  resolveCurrentFile,
+  type CurrentFile,
+} from "../document-page-service.ts"
+import { FILE_NO_HISTORY_MESSAGE, fileNoHistory } from "../file-limits.ts"
+import type { FileNoHistory } from "@worktable/types"
 import { randomUUID } from "node:crypto"
 import { diffDocumentText, docBlocksAtRevision } from "../document-diff.ts"
 import {
@@ -850,6 +856,29 @@ function htmlLifetime(
 /** Binary files past this come by download link rather than base64. */
 const FILE_INLINE_BINARY_MAX_BYTES = 1024 * 1024
 
+/**
+ * A file past what a version holds, decided by its size on disk without
+ * reading it, with why it keeps no history; or null for anything else.
+ */
+async function fileOverVersionLimit(
+  spaceId: string,
+  path: string
+): Promise<{
+  current: CurrentFile
+  noHistory: FileNoHistory & { message: string }
+} | null> {
+  if (!namesAFile(path)) return null
+  const resolved = await resolveCurrentFile({ spaceId, path })
+  if (resolved.kind !== "file") return null
+  const noHistory = fileNoHistory(resolved.current.pinned.size)
+  return noHistory
+    ? {
+        current: resolved.current,
+        noHistory: { ...noHistory, message: FILE_NO_HISTORY_MESSAGE },
+      }
+    : null
+}
+
 interface ToolDispatchContext {
   signal?: AbortSignal
   principal?: RequestPrincipal
@@ -1279,16 +1308,57 @@ async function _dispatchOperationInner(
       }
     }
     case "documents.read": {
+      const result = await readDocument({
+        spaceId: args["spaceId"] as string,
+        path: args["path"] as string,
+        includeArchived:
+          (args["includeArchived"] as boolean | undefined) ?? false,
+      })
+      const large =
+        result.kind === "document" &&
+        result.document.format.id === BUILTIN_DOCUMENT_FORMATS.file
+          ? await fileOverVersionLimit(args["spaceId"] as string, result.document.path)
+          : null
       return {
-        result: await readDocument({
-          spaceId: args["spaceId"] as string,
-          path: args["path"] as string,
-          includeArchived:
-            (args["includeArchived"] as boolean | undefined) ?? false,
-        }),
+        result,
+        ...(large
+          ? { byteLength: large.current.pinned.size, noHistory: large.noHistory }
+          : {}),
       }
     }
     case "documents.read_source": {
+      // A file past what a version holds is described and linked, never
+      // read whole into the result.
+      const large = await fileOverVersionLimit(
+        args["spaceId"] as string,
+        args["path"] as string
+      )
+      if (large) {
+        const { current } = large
+        const link = context.legacyFileRead
+          ? {}
+          : fileDownloadLink(
+              context.fileLinkOrigin,
+              principal,
+              args["spaceId"] as string,
+              current.path,
+              current.pinned.revision
+            )
+        if (!("downloadUrl" in link)) {
+          throw new Error(
+            `${current.path} is larger than 64 MiB, too large to send in a tool result. Read it from the Space's folder on disk, or over a direct, Cloud or Worktable Link connection, which gives a download link.`
+          )
+        }
+        return {
+          documentId: current.documentId,
+          path: current.path,
+          format: current.format,
+          byteLength: current.pinned.size,
+          encoding: "download" as const,
+          ...link,
+          noHistory: large.noHistory,
+        }
+      }
       const result = await readRegisteredDocumentSource({
         spaceId: args["spaceId"] as string,
         path: args["path"] as string,

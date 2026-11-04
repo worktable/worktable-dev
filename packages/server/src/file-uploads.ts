@@ -25,10 +25,13 @@ import {
   StagingFile,
   type StagedFile,
 } from "./staged-file.ts"
+import { DocumentSourceReadError } from "./document-source-errors.ts"
 
 /** The largest file an upload takes: one version entry. */
 export const FILE_UPLOAD_MAX_BYTES = DOCUMENT_GENERATION_MAX_ENTRY_BYTES
 export const FILE_UPLOAD_TOO_LARGE = "Files can be up to 64 MiB."
+const FILE_REPLACE_TOO_LARGE =
+  "This file is larger than 64 MiB, so its history can't keep it. Replace it on disk, or upload under a new name."
 const FILE_KEEP_BOTH_TRIES = 100
 const fileRegistry = createBuiltinDocumentFormatRegistry()
 
@@ -155,20 +158,29 @@ export async function writeUploadedFile(options: {
   const { spaceId, path, file: bytes, mode } = options
   const contentHash = contentHashFromHex(bytes.sha256)
   if (mode.kind === "replace") {
-    const expectedRevision =
-      mode.expectedRevision ?? (await currentFileRevision(spaceId, path))
-    const result = await replaceRegisteredDocument({
-      spaceId,
-      path,
-      bytes,
-      expectedRevision,
-      updatedBy: options.actor,
-      source: options.source,
-      reason: "Uploaded a new version",
-      expectedFormatId: BUILTIN_DOCUMENT_FORMATS.file,
-      separateVersion: true,
-    })
-    return { status: 200, result, contentHash }
+    try {
+      const expectedRevision =
+        mode.expectedRevision ?? (await currentFileRevision(spaceId, path))
+      const result = await replaceRegisteredDocument({
+        spaceId,
+        path,
+        bytes,
+        expectedRevision,
+        updatedBy: options.actor,
+        source: options.source,
+        reason: "Uploaded a new version",
+        expectedFormatId: BUILTIN_DOCUMENT_FORMATS.file,
+        separateVersion: true,
+      })
+      return { status: 200, result, contentHash }
+    } catch (error) {
+      // The file now is past what a version holds, so replacing it would
+      // lose it: nothing could keep it in history.
+      if (error instanceof DocumentSourceReadError && error.reason === "too-large") {
+        throw new DocumentWriteError("conflict", FILE_REPLACE_TOO_LARGE)
+      }
+      throw error
+    }
   }
   for (let n = 1; ; n++) {
     const candidate = n === 1 ? path : numberedFilePath(path, n)

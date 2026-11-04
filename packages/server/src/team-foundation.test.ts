@@ -292,16 +292,14 @@ describe("team foundation", () => {
       type: "agent",
       id: agent.actorId,
     })
-    expect(
-      (await runWithTeamIdentity(owner, () => listPending(owner))).items.some(
-        (item) => item.kind === "commentReply"
-      )
-    ).toBe(true)
-    expect(
-      (await runWithTeamIdentity(member, () => listPending(member))).items.some(
-        (item) => item.kind === "commentReply"
-      )
-    ).toBe(false)
+    // An agent's answer that asks nobody waits on nobody.
+    for (const reader of [owner, member]) {
+      expect(
+        (await runWithTeamIdentity(reader, () => listPending(reader))).items.some(
+          (item) => "annotationId" in item && item.annotationId === annotation.id
+        )
+      ).toBe(false)
+    }
     updateTeamAgent(agent.id, { active: false }, owner)
     await expect(
       runWithTeamIdentity(owner, () =>

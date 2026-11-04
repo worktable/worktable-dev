@@ -54,6 +54,7 @@ import {
   deleteRegisteredDocument,
   DocumentWriteError,
   moveRegisteredDocument,
+  openFileAsHtmlDoc,
   readRegisteredDocumentSource,
   replaceRegisteredDocument,
   restoreRegisteredDocumentVersion,
@@ -70,6 +71,7 @@ import { wsManager } from "../ws.ts"
 import { filesEnabled } from "../files-enabled.ts"
 import { serveFile, servedCurrentFile } from "../file-response.ts"
 import { FileRevisionError } from "../file-revision.ts"
+import { isSameOriginAppRequest } from "./widgets.ts"
 import {
   FILE_UPLOAD_MAX_BYTES,
   FILE_UPLOAD_TOO_LARGE,
@@ -147,6 +149,10 @@ const RestoreDocumentVersionSchema = z.object({
   store: z.enum(["v2", "legacy-v1"]).optional(),
   expectedRevision: z.string().min(1).max(256),
   reason: z.string().max(2048).optional(),
+})
+
+const OpenAsHtmlDocSchema = z.object({
+  path: z.string().min(1).max(4096),
 })
 
 const MoveDocumentSchema = z.object({
@@ -945,6 +951,50 @@ documentsRouter.post("/move", requireScope("documents:write"), async (c) => {
     throw error
   }
 })
+
+// Open as HTML Doc runs a file's HTML: a person's choice in the app, never
+// an agent's, and never one an HTML Doc's own frame makes.
+documentsRouter.post(
+  "/open-as-html",
+  requireScope("documents:write"),
+  async (c) => {
+    if (
+      c.get("identity")?.principal.type !== "human" ||
+      !isSameOriginAppRequest(c)
+    ) {
+      return c.json(
+        { error: "Only a person can open a file as an HTML Doc", code: "FORBIDDEN" },
+        403
+      )
+    }
+    const parsed = OpenAsHtmlDocSchema.safeParse(
+      await c.req.json().catch(() => null)
+    )
+    if (!parsed.success) {
+      return c.json(
+        { error: parsed.error.message, code: "VALIDATION_ERROR" },
+        400
+      )
+    }
+    try {
+      return c.json({
+        ok: true,
+        ...(await openFileAsHtmlDoc({
+          spaceId: c.req.param("spaceId") ?? "",
+          path: parsed.data.path,
+        })),
+      })
+    } catch (error) {
+      if (error instanceof DocumentWriteError) {
+        return c.json(
+          { error: error.message, code: error.reason.toUpperCase() },
+          documentWriteStatus(error)
+        )
+      }
+      throw error
+    }
+  }
+)
 
 documentsRouter.post("/lifetime", requireScope("documents:write"), async (c) => {
   const parsed = DocumentLifetimeRequestSchema.safeParse(

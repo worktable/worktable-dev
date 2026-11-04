@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Comments:** On a phone, a second tap on Send while the comment box closes no longer sends the comment again.
+
 ## [0.1.39] - 2026-11-03
 
 ### Changed

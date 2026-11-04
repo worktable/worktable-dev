@@ -8,6 +8,7 @@ import { mkdir, mkdtemp, open, readdir, readFile, rm, truncate, writeFile } from
 import { createHash } from "node:crypto"
 import { FILE_VERSION_MAX_BYTES } from "./file-limits.ts"
 import { noteSpaceChanged } from "./workspace-read-model.ts"
+import { recordSourceKinds } from "./source-kind-records.ts"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
@@ -992,6 +993,35 @@ describe("format-neutral document access", () => {
         "utf8"
       )
     ).rejects.toThrow()
+
+    // Once the Space records its HTML Docs, HTML written on disk is a file
+    // the agent reads as one, and its HTML Docs stay as they were.
+    await recordSourceKinds(spaceId)
+    await writeFile(join(docs, "outside.html"), "<p>Written on disk</p>")
+    noteSpaceChanged(spaceId)
+    const asHtml = await connected.callTool({
+      name: "worktable_html_read",
+      arguments: {
+        request: { action: "read", spaceId, htmlId: "Team Board/outside" },
+      },
+    })
+    expect(asHtml.isError).toBe(true)
+    expect(JSON.stringify(asHtml.content)).toContain("worktable_files_read")
+    const asFile = await connected.callTool({
+      name: "worktable_files_read",
+      arguments: {
+        request: { action: "read_source", spaceId, path: "Team Board/outside.html" },
+      },
+    })
+    expect(asFile.isError).not.toBe(true)
+    expect(JSON.stringify(asFile.structuredContent)).toContain("Written on disk")
+    const kept = await connected.callTool({
+      name: "worktable_html_read",
+      arguments: {
+        request: { action: "read", spaceId, htmlId: "Team Board/state" },
+      },
+    })
+    expect(kept.isError).not.toBe(true)
   }, 15_000)
 
   // Use the same bounded real-I/O allowance as the projection journey below.

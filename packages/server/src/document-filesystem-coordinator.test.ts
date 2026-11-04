@@ -130,7 +130,7 @@ it("drains queued filesystem activity during graceful shutdown", async () => {
   })
 })
 
-it("dispatches a changed .json as what it is, a plain file by its whole name", async () => {
+it("dispatches a changed .json or .html as what it is, a plain file by its whole name", async () => {
   const root = await mkdtemp(join(tmpdir(), "worktable-json-events-"))
   setWorkspaceRootOverride(root)
   try {
@@ -142,16 +142,25 @@ it("dispatches a changed .json as what it is, a plain file by its whole name", a
     await writeFile(join(docs, "notes.json"), blocks)
     // The inventory's file claim wins over Doc blocks written into it.
     await writeFile(join(docs, "kept.json"), blocks)
+    // Once a Space records its HTML Docs, only a claimed .html is one.
+    await writeFile(join(docs, "board.html"), "<h1>Board</h1>")
+    await writeFile(join(docs, "outside.html"), "<h1>Outside</h1>")
     await writeFile(
       join(root, "spaces", "alpha", "documents.meta.json"),
       JSON.stringify({
         type: "worktable.document-inventory",
         version: 1,
+        htmlDocs: "claimed",
         documents: {
           doc_kept: {
             path: "kept.json",
             format: { id: "worktable.file", sourceVersion: 1 },
             source: { kind: "file", relativePath: "docs/kept.json" },
+          },
+          doc_board: {
+            path: "board",
+            format: { id: "worktable.html", sourceVersion: 1 },
+            source: { kind: "file", relativePath: "docs/board.html" },
           },
         },
       })
@@ -165,8 +174,15 @@ it("dispatches a changed .json as what it is, a plain file by its whole name", a
       debounceMs: 60_000,
       emit: (event) => forwarded.push(event),
     })
-    for (const file of ["plan.json", "notes.json", "kept.json", "export.json"]) {
-      coordinator.note({ type: "jsonSource", spaceId: "alpha", file })
+    for (const file of [
+      "plan.json",
+      "notes.json",
+      "kept.json",
+      "export.json",
+      "board.html",
+      "outside.html",
+    ]) {
+      coordinator.note({ type: "docSource", spaceId: "alpha", file })
     }
     // A same-named Markdown Doc's change, later in the batch, absorbs nothing.
     coordinator.note({ type: "doc", spaceId: "alpha", docPath: "plan" })
@@ -176,6 +192,8 @@ it("dispatches a changed .json as what it is, a plain file by its whole name", a
       { type: "doc", spaceId: "alpha", docPath: "notes" },
       { type: "documentCorpus", spaceId: "alpha", paths: ["kept.json"] },
       { type: "documentCorpus", spaceId: "alpha", paths: ["export.json"] },
+      { type: "widget", spaceId: "alpha", widgetId: "board" },
+      { type: "documentCorpus", spaceId: "alpha", paths: ["outside.html"] },
       { type: "doc", spaceId: "alpha", docPath: "plan" },
     ])
 

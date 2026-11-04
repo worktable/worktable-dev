@@ -89,7 +89,8 @@ export async function withStagedUpload<T>(
 /**
  * Whether a new file at this path could be a file rather than a Doc. A
  * `.json` can: it is a Doc only when it holds Doc blocks, which the write
- * checks once it has the bytes.
+ * checks once it has the bytes. An uploaded `.html` is a file: only
+ * Worktable's HTML tools, or a person, make an HTML Doc.
  */
 export function namesAFile(path: string): boolean {
   const leaf = path.split("/").at(-1) ?? ""
@@ -97,7 +98,8 @@ export function namesAFile(path: string): boolean {
     ?.registration.id
   return (
     format === BUILTIN_DOCUMENT_FORMATS.file ||
-    format === BUILTIN_DOCUMENT_FORMATS.richText
+    format === BUILTIN_DOCUMENT_FORMATS.richText ||
+    format === BUILTIN_DOCUMENT_FORMATS.html
   )
 }
 
@@ -193,6 +195,7 @@ export async function writeUploadedFile(options: {
         createdBy: options.actor,
         source: options.source,
         reason: "Uploaded",
+        htmlAsFile: true,
       })
       return { status: 201, result, contentHash }
     } catch (error) {

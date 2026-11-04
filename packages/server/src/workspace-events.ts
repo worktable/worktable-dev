@@ -15,12 +15,13 @@ export interface DocChangeEvent {
 }
 
 /**
- * A `.json` below docs/ changed, by its whole name. It is not dispatched as
- * it is: the filesystem coordinator first decides whether it is a Doc or a
- * plain file (json-source-kind.ts), so nothing keys a plain file as a Doc.
+ * A `.json` or `.html` below docs/ changed, by its whole name. It is not
+ * dispatched as it is: the filesystem coordinator first decides whether it
+ * is a Doc or a plain file (doc-source-kind.ts), so nothing keys a plain
+ * file as a Doc.
  */
-export interface JsonSourceChangeEvent {
-  type: "jsonSource"
+export interface DocSourceChangeEvent {
+  type: "docSource"
   spaceId: string
   file: string
 }

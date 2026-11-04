@@ -929,6 +929,41 @@ export async function readLegacyWidgetVersionV2(
       versionId
     )
   }
+  // A version from before a person opened the file as an HTML Doc holds
+  // just the file's bytes; it reads as that HTML with no permissions.
+  if (generation.manifest.format.id === BUILTIN_DOCUMENT_FORMATS.file) {
+    const bytes = generation.authoredSource.entries[0]?.bytes
+    if (!bytes) throw new Error("V2 file generation is incomplete")
+    const leaf = generation.manifest.logicalPath.split("/").at(-1) ?? owner.path
+    return {
+      type: "worktable.widget-version",
+      version: 1,
+      spaceId,
+      widgetId: owner.path,
+      ...publicV2Entry({
+        manifest: generation.manifest,
+        format: "html",
+        storedAs: "html",
+      }),
+      before: null,
+      after: {
+        format: "html",
+        storedAs: "html",
+        contentHash:
+          generation.manifest.provenance?.contentHash ??
+          generation.manifest.contentHash,
+        content: {
+          html: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+          widget: {
+            name: leaf.replace(/\.html$/, "") || leaf,
+            permissions: { network: false, records: {}, state: { read: true, write: true } },
+            metadata: {},
+            runtime: { type: "html", entry: "index.html" },
+          },
+        },
+      },
+    }
+  }
   const html = generation.authoredSource.entries.find(
     (entry) =>
       generation.authoredSource.kind === "file"

@@ -52,7 +52,11 @@ export const FILE_TYPE_NOTES: {
     },
   },
   markdown: { page: CODE_PAGE },
-  html: { page: CODE_PAGE },
+  html: {
+    serve: {
+      why: "Served inline as text/html, unlike other text, because its page shows it in a frame. The response's sandbox policy and the frame's sandbox keep its scripts off and load nothing, so it shows as a static page until a person opens it as an HTML Doc.",
+    },
+  },
   css: { page: CODE_PAGE },
   javascript: { page: CODE_PAGE },
   typescript: { page: CODE_PAGE },
@@ -64,7 +68,7 @@ export const FILE_SURFACE_NOTES: {
 } = {
   serve: {
     where: "packages/server/src/file-media.ts",
-    note: "Only images show inline; a type without a media type here downloads as plain bytes.",
+    note: "Only images, and HTML for the sandboxed frame its page shows it in, show inline; a type without a media type here downloads as plain bytes.",
   },
   page: { where: "apps/web/src/components/file-page.tsx" },
   icon: { where: "apps/web/src/components/document-format-icon.tsx" },

@@ -3,9 +3,11 @@
 // ============================================================
 //
 // How Worktable serves a file's bytes, as the file type table's serve
-// policy says. Only images are shown inline; every other file is a download.
-// SVG is shown inline too, under a sandboxing policy, so a script inside it
-// never runs on Worktable's origin.
+// policy says. Images are shown inline, and so is HTML, for the sandboxed
+// frame its page shows it in; every other file is a download. Every file is
+// served under a sandboxing policy with no sources allowed, so a script in
+// an SVG or an HTML file never runs on Worktable's origin and the page it
+// makes loads nothing.
 
 import {
   FILE_TYPES,

@@ -54,12 +54,19 @@ import {
   replaceRegisteredDocument,
 } from "./document-write-service.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
+import { recordSourceKinds } from "./source-kind-records.ts"
+import { createHtmlDocument } from "./html-document-create.ts"
+import {
+  listLegacyWidgetVersionsV2,
+  readLegacyWidgetVersionV2,
+} from "./document-version-compatibility-v2.ts"
 import {
   mintDocumentId,
   updateDocumentInventory,
 } from "./document-inventory.ts"
 import {
   getDocArchiveInfo,
+  getDocLifetimeView,
   listDocsDetailed,
   readDoc,
   readSpace,
@@ -149,7 +156,14 @@ function app() {
   const instance = new Hono()
   instance.use("*", async (c, next) => {
     const scopes = c.req.header("x-test-scopes")?.split(",") ?? ["*"]
-    c.set("identity", { ...ownerIdentity(), scopes })
+    const owner = ownerIdentity()
+    c.set("identity", {
+      ...owner,
+      scopes,
+      ...(c.req.header("x-test-principal") === "agent"
+        ? { principal: { id: "agent-test", type: "agent", displayName: "Agent" } }
+        : {}),
+    })
     return next()
   })
   instance.route("/api/spaces/:spaceId/documents", documentsRouter)
@@ -2434,4 +2448,155 @@ describe("format-neutral document route", () => {
     // Every file in the folder is part of it, so it goes too.
     await expect(readFile(unclaimed, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
   }, 10_000)
+
+  it("keeps HTML that was there an HTML Doc, and takes HTML added later as a file a person can open", async () => {
+    const instance = app()
+    const docs = join(root, "spaces", spaceId, "docs")
+    const kinds = async () => {
+      noteSpaceChanged(spaceId)
+      const catalog = await buildDocumentCatalog({ workspaceRoot: root, spaceId })
+      return new Map(
+        catalog.entries.flatMap((entry) =>
+          entry.kind === "document"
+            ? [[entry.descriptor.path, entry.descriptor] as const]
+            : []
+        )
+      )
+    }
+    // An agent's dashboard and data, written on disk before the record.
+    await mkdir(join(docs, "reports"), { recursive: true })
+    await writeFile(join(docs, "reports", "old.html"), "<h1>Old board</h1>")
+    await writeFile(join(docs, "reports", "rows.json"), '[{"id":1}]')
+    expect((await kinds()).get("reports/old")?.format.id).toBe("worktable.html")
+
+    expect(await recordSourceKinds(spaceId)).toBe("recorded")
+    expect(await recordSourceKinds(spaceId)).toBe("already")
+    const recorded = await kinds()
+    expect(recorded.get("reports/old")?.format.id).toBe("worktable.html")
+    expect(recorded.get("notes/status")?.format.id).toBe("worktable.html")
+    const board = await instance.request(
+      `/api/spaces/${spaceId}/documents/page?path=reports/old`
+    )
+    expect(board.status).toBe(200)
+
+    // HTML added on disk afterwards is a file, shown as a static page.
+    await writeFile(
+      join(docs, "reports", "new.html"),
+      "<h1>New board</h1><script>parent.leak = 1</script>"
+    )
+    expect((await kinds()).get("reports/new.html")?.format.id).toBe(
+      "worktable.file"
+    )
+    const fileUrl = (path: string) =>
+      `/api/spaces/${spaceId}/documents/file?path=${encodeURIComponent(path)}`
+    const preview = await instance.request(fileUrl("reports/new.html"))
+    expect(preview.status).toBe(200)
+    expect(preview.headers.get("content-type")).toStartWith("text/html")
+    expect(preview.headers.get("content-disposition")).toStartWith("inline;")
+    expect(preview.headers.get("content-security-policy")).toBe(
+      "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    )
+    // It is no HTML Doc, so no HTML Doc can be made over it.
+    await expect(
+      createHtmlDocument({
+        spaceId,
+        explicitId: "reports/new",
+        name: "New",
+        html: "<h1>Other</h1>",
+        versionSource: "test",
+        versionUpdatedBy: "test",
+      })
+    ).rejects.toThrow("Another document already uses this path")
+    // HTML made through Worktable is an HTML Doc, as ever.
+    const made = await createHtmlDocument({
+      spaceId,
+      explicitId: "reports/made",
+      name: "Made",
+      html: "<h1>Made</h1>",
+      versionSource: "test",
+      versionUpdatedBy: "test",
+    })
+    expect(made.error).toBeUndefined()
+    expect((await kinds()).get("reports/made")?.format.id).toBe("worktable.html")
+
+    // A new version of the file, then a person opens it as an HTML Doc.
+    const replaced = await instance.request(
+      `${fileUrl("reports/new.html")}&replace=1`,
+      { method: "PUT", body: "<h1>New board, second</h1>" }
+    )
+    expect(replaced.status).toBe(200)
+    const before = (await kinds()).get("reports/new.html")!
+    const post = (route: string, body: unknown, headers: Record<string, string> = {}) =>
+      instance.request(`/api/spaces/${spaceId}/documents/${route}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify(body),
+      })
+    const open = (headers: Record<string, string> = {}, path = "reports/new.html") =>
+      post("open-as-html", { path }, headers)
+    // A temporary file stays temporary, and an archived one archived.
+    expect(
+      (await post("lifetime", { path: "reports/new.html", lifetime: "temporary" })).status
+    ).toBe(200)
+    const temporary = await getDocLifetimeView(spaceId, "reports/new.html")
+    expect(temporary).toMatchObject({ lifetime: "temporary" })
+    await writeFile(join(docs, "reports", "shelved.html"), "<h1>Shelved</h1>")
+    noteSpaceChanged(spaceId)
+    expect((await post("archive", { path: "reports/shelved.html" })).status).toBe(200)
+    // Not an agent's choice, nor one an HTML Doc's frame can make.
+    expect((await open({ "x-test-principal": "agent" })).status).toBe(403)
+    expect((await open({ "sec-fetch-site": "cross-site" })).status).toBe(403)
+    const opened = await open({ "sec-fetch-site": "same-origin" })
+    expect(opened.status).toBe(200)
+    expect(await opened.json()).toMatchObject({
+      path: "reports/new",
+      documentId: before.documentId,
+      format: { id: "worktable.html" },
+    })
+    const after = (await kinds()).get("reports/new")!
+    expect(after).toMatchObject({
+      documentId: before.documentId,
+      format: { id: "worktable.html" },
+    })
+    expect(await getDocLifetimeView(spaceId, "reports/new")).toMatchObject({
+      lifetime: "temporary",
+      archiveOn: temporary.archiveOn,
+    })
+    expect(
+      (await open({ "sec-fetch-site": "same-origin" }, "reports/shelved.html")).status
+    ).toBe(200)
+    expect(await getDocArchiveInfo(spaceId, "reports/shelved")).toBeDefined()
+    expect(await getDocArchiveInfo(spaceId, "reports/shelved.html")).toBeUndefined()
+    // Its versions as a file are its history as an HTML Doc, after the one
+    // the move keeps of it as the HTML Doc it became.
+    const versions = await listLegacyWidgetVersionsV2(spaceId, "reports/new")
+    expect(versions.map((version) => version.reason)).toEqual([
+      "Reconciled after document move",
+      "Uploaded a new version",
+      "Pre-tracking baseline",
+    ])
+    const first = await readLegacyWidgetVersionV2(
+      spaceId,
+      "reports/new",
+      versions.at(-1)!.id
+    )
+    expect((first?.after.content as { html: string }).html).toContain("New board")
+    // Links to the file by its name find the HTML Doc.
+    expect((await resolveDocAlias(spaceId, "reports/new.html")).path).toBe(
+      "reports/new"
+    )
+
+    // A plain .json stays a file when Doc blocks are written into it later:
+    // the one there before the record, and one Worktable sees change.
+    await writeFile(join(docs, "reports", "later.json"), '{"rows":[]}')
+    await recordExternalFileChanges({ spaceId, paths: ["reports/later.json"] })
+    const blocks = '[{"type":"paragraph","content":"Now blocks"}]'
+    await writeFile(join(docs, "reports", "rows.json"), blocks)
+    await writeFile(join(docs, "reports", "later.json"), blocks)
+    const json = await kinds()
+    expect(json.get("reports/rows.json")?.format.id).toBe("worktable.file")
+    expect(json.get("reports/later.json")?.format.id).toBe("worktable.file")
+    expect(json.has("reports/rows")).toBe(false)
+    expect(json.has("reports/later")).toBe(false)
+  }, 15_000)
 })

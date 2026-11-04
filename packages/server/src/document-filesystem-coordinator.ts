@@ -2,11 +2,11 @@ import { join } from "node:path"
 import type {
   DocChangeEvent,
   DocumentCorpusChangeEvent,
-  JsonSourceChangeEvent,
+  DocSourceChangeEvent,
   WidgetChangeEvent,
 } from "./workspace-events.ts"
 import { logError } from "./debug-log.ts"
-import { jsonSourceIsDoc } from "./json-source-kind.ts"
+import { sourceIsDoc } from "./doc-source-kind.ts"
 import { getSpacesDir } from "./workspace.ts"
 
 const DEFAULT_DEBOUNCE_MS = 250
@@ -14,7 +14,7 @@ const DEFAULT_MAX_BATCH_DELAY_MS = 1_000
 // The same cap bounds exact events and conservative per-Space overflow events.
 const DEFAULT_MAX_PENDING_EVENTS = 10_000
 
-/** What the coordinator dispatches once a `.json` is classified. */
+/** What the coordinator dispatches once a `.json` or `.html` is classified. */
 export type DispatchedFilesystemChangeEvent =
   | DocChangeEvent
   | WidgetChangeEvent
@@ -22,26 +22,34 @@ export type DispatchedFilesystemChangeEvent =
 
 export type DocumentFilesystemChangeEvent =
   | DispatchedFilesystemChangeEvent
-  | JsonSourceChangeEvent
+  | DocSourceChangeEvent
 
 /**
- * A changed `.json` as what it is: the Doc its name gives, or a plain file
- * reported by its whole name, the way any other file is.
+ * A changed `.json` or `.html` as what it is: the Doc or HTML Doc its name
+ * gives, or a plain file reported by its whole name, the way any other file
+ * is.
  */
-export async function classifiedJsonSourceEvent(
-  event: JsonSourceChangeEvent
-): Promise<DocChangeEvent | DocumentCorpusChangeEvent> {
-  const doc = await jsonSourceIsDoc(
+export async function classifiedDocSourceEvent(
+  event: DocSourceChangeEvent
+): Promise<DocChangeEvent | WidgetChangeEvent | DocumentCorpusChangeEvent> {
+  const doc = await sourceIsDoc(
     join(getSpacesDir(), event.spaceId),
     `docs/${event.file}`
   )
-  return doc
+  if (!doc) {
+    return { type: "documentCorpus", spaceId: event.spaceId, paths: [event.file] }
+  }
+  return event.file.endsWith(".html")
     ? {
+        type: "widget",
+        spaceId: event.spaceId,
+        widgetId: event.file.slice(0, -".html".length),
+      }
+    : {
         type: "doc",
         spaceId: event.spaceId,
         docPath: event.file.slice(0, -".json".length),
       }
-    : { type: "documentCorpus", spaceId: event.spaceId, paths: [event.file] }
 }
 
 export interface DocumentFilesystemCoordinatorOptions {
@@ -57,7 +65,7 @@ function eventKey(event: DocumentFilesystemChangeEvent): string {
     ? `doc\0${event.spaceId}\0${event.docPath}`
     : event.type === "widget"
       ? `widget\0${event.spaceId}\0${event.widgetId}`
-      : event.type === "jsonSource"
+      : event.type === "docSource"
         ? // By its whole name, so a same-named Markdown Doc never absorbs it.
           `json\0${event.spaceId}\0${event.file}`
         : `corpus\0${event.spaceId}`
@@ -301,8 +309,8 @@ export class DocumentFilesystemCoordinator {
     for (const event of deduplicateEvents(events)) {
       if (this.discardPending) return
       await this.emitEvent(
-        event.type === "jsonSource"
-          ? await classifiedJsonSourceEvent(event)
+        event.type === "docSource"
+          ? await classifiedDocSourceEvent(event)
           : event
       )
     }

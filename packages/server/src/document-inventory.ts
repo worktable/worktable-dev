@@ -14,6 +14,7 @@ import {
 import { BoundedFileReadError, readBoundedRegularFile } from "./bounded-file.ts"
 import { atomicWriteText } from "./atomic-file.ts"
 import { analyzeDocumentPath } from "./document-path.ts"
+import { HTML_DOCS_CLAIMED, HTML_DOCS_CLAIMED_VALUE } from "./doc-source-kind.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
 import { withStoreWriteLock } from "./store.ts"
 import { getDocumentInventoryPath, getSpacesDir } from "./workspace.ts"
@@ -582,6 +583,11 @@ export interface DocumentInventoryMutation {
     Omit<DocumentInventoryEntry, "raw"> & { raw?: Record<string, unknown> }
   >
   remove?: DocumentId[]
+  /**
+   * Record that this Space's HTML Docs are exactly those it claims, so any
+   * other `.html` is a plain file (doc-source-kind.ts). Never unset.
+   */
+  claimHtmlDocs?: true
 }
 
 interface InventorySpaceRootIdentity {
@@ -623,6 +629,7 @@ function prepareInventoryMutation(
   const documents = isObject(raw["documents"]) ? raw["documents"] : {}
   raw["documents"] = documents
 
+  if (mutation.claimHtmlDocs) raw[HTML_DOCS_CLAIMED] = HTML_DOCS_CLAIMED_VALUE
   for (const documentId of mutation.remove ?? []) delete documents[documentId]
   for (const entry of mutation.upsert ?? []) {
     const validatedId = DocumentIdSchema.parse(entry.documentId)

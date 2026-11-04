@@ -84,7 +84,7 @@ import {
   documentPathKeyIsBelow,
   remapDocumentPathPrefix,
 } from "./document-path.ts"
-import { jsonSourceIsDocSync } from "./json-source-kind.ts"
+import { sourceIsDocSync } from "./doc-source-kind.ts"
 import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
@@ -331,6 +331,12 @@ const ExactRenameJournalSchema = JournalBaseSchema.extend({
       sourceIdentity: SourceIdentityEditSchema.optional(),
       history: z.enum(["present", "absent"]),
       historyManifest: BlobRefSchema.optional(),
+      /**
+       * The format it has after the rename, when the rename changes it in
+       * place: a file opened as an HTML Doc keeps its source where it is.
+       * Older builds refuse a journal that sets it.
+       */
+      afterFormat: DocumentFormatClaimSchema.optional(),
     })
     .strict(),
   from: EndpointSchema,
@@ -1160,15 +1166,47 @@ interface ExactRenameBehavior {
 }
 
 /** Logical companions belong to a storage profile, never to file-vs-bundle. */
+/** The format a renamed document has once the rename is done. */
+function renamedFormat(document: {
+  format: DocumentFormatClaim
+  afterFormat?: DocumentFormatClaim
+}): DocumentFormatClaim {
+  return document.afterFormat ?? document.format
+}
+
+/** A rename that leaves its source where it is, such as Open as HTML Doc. */
+function renamesInPlace(
+  journal: Pick<ExactRenameJournal, "from" | "to">
+): boolean {
+  return sameDocumentSource(journal.from.source, journal.to.source)
+}
+
+/**
+ * Whether the source is where `expected` puts it. A source renamed in place
+ * is at both endpoints, so only its presence counts; the inventory edit
+ * tells the two apart.
+ */
+function sourceAtCheckpoint(
+  journal: ExactRenameJournal,
+  expected: "before" | "after"
+): boolean {
+  if (!exactRenameBehavior(journal).parksBundleSource && renamesInPlace(journal)) {
+    return Boolean(fingerprintOptionalRegularFile(sourcePaths(journal).from))
+  }
+  return classifySource(journal) === expected
+}
+
+/**
+ * How a rename treats its document: by the format it ends with, so a file
+ * opened as an HTML Doc settles as the HTML Doc it becomes.
+ */
 function exactRenameBehavior(
   journal: Pick<ExactRenameJournal, "document" | "from">
 ): ExactRenameBehavior {
-  const profile = documentStorageProfiles.resolve(
-    journal.document.format,
-    journal.from.source
-  )
+  const format = renamedFormat(journal.document)
+  const profile = documentStorageProfiles.resolve(format, journal.from.source)
   const historyKind = legacyVersionKindFor(
-    journal.document.format,
+    format,
     profile === DOCUMENT_STORAGE_PROFILE_IDS.legacyHtmlBundle
       ? "widgets"
       : "docs"
@@ -2663,7 +2701,9 @@ async function prepareExactRename(
   spaceId: string,
   from: string,
   to: string,
-  expectedStorageProfileId: DocumentStorageProfileId = DOCUMENT_STORAGE_PROFILE_IDS.legacyDocFile
+  expectedStorageProfileId: DocumentStorageProfileId = DOCUMENT_STORAGE_PROFILE_IDS.legacyDocFile,
+  /** The format it takes in place, its source staying where it is. */
+  afterFormat?: DocumentFormatClaim
 ): Promise<PreparedJournal | null> {
   const inventory = await readDocumentInventory(spaceId)
   const registry = createBuiltinDocumentFormatRegistry()
@@ -2869,12 +2909,23 @@ async function prepareExactRename(
   assertSafeContainedPath(resolve(getWorkspaceRoot()), spaceRoot)
   const sourcePath = resolve(spaceRoot, source.handle.source.relativePath)
   const targetSource = storageProfile.sourceForLogicalPath?.(
-    source.descriptor.format,
+    afterFormat ?? source.descriptor.format,
     to
   )
   if (!targetSource || targetSource.kind !== source.handle.source.kind) {
     throw new DocumentLifecyclePreconditionError(
       "This document type can't be moved yet"
+    )
+  }
+  const inPlace = sameDocumentSource(source.handle.source, targetSource)
+  if (
+    afterFormat &&
+    (!inPlace ||
+      source.descriptor.format.id !== BUILTIN_DOCUMENT_FORMATS.file ||
+      afterFormat.id !== BUILTIN_DOCUMENT_FORMATS.html)
+  ) {
+    throw new DocumentLifecyclePreconditionError(
+      "This document can't change format here"
     )
   }
   const targetRelativePath = targetSource.relativePath
@@ -2905,14 +2956,18 @@ async function prepareExactRename(
     targetContainsSource
   ) {
     validateHtmlAncestorTarget(sourcePath, targetPath)
-  } else if (!sourceContainsTarget && hasFilesystemEntry(targetPath)) {
+  } else if (
+    !inPlace &&
+    !sourceContainsTarget &&
+    hasFilesystemEntry(targetPath)
+  ) {
     throw new DocumentLifecyclePreconditionError(
       `Target path already exists: ${to}`
     )
   }
 
   const historyKind = legacyVersionKindFor(
-    source.descriptor.format,
+    afterFormat ?? source.descriptor.format,
     expectedStorageProfileId === DOCUMENT_STORAGE_PROFILE_IDS.legacyHtmlBundle
       ? "widgets"
       : "docs"
@@ -2951,7 +3006,7 @@ async function prepareExactRename(
       source.handle.identity,
       from,
       to,
-      source.descriptor.format,
+      afterFormat ?? source.descriptor.format,
       source.handle.source,
       targetSource
     ),
@@ -2966,7 +3021,9 @@ async function prepareExactRename(
     source.handle.identity,
     "annotation",
     undefined,
-    expectedStorageProfileId === DOCUMENT_STORAGE_PROFILE_IDS.legacyHtmlBundle
+    expectedStorageProfileId === DOCUMENT_STORAGE_PROFILE_IDS.legacyHtmlBundle ||
+      // The HTML Doc it becomes keeps its annotations where HTML Docs do.
+      historyKind === "widgets"
       ? "widget"
       : "doc"
   )
@@ -2998,6 +3055,7 @@ async function prepareExactRename(
       ...(sourceIdentity ? { sourceIdentity } : {}),
       history: historyFiles.length > 0 ? "present" : "absent",
       historyManifest,
+      ...(afterFormat ? { afterFormat } : {}),
     },
     from: {
       spaceId,
@@ -5179,7 +5237,9 @@ function validateJournalPaths(journal: DocumentLifecycleJournal): void {
   const targetFormat =
     journal.operationType === "format-transition"
       ? journal.document.afterFormat
-      : journal.document.format
+      : journal.operationType === "exact-rename"
+        ? renamedFormat(journal.document)
+        : journal.document.format
   const expectedTo = storageProfile.sourceForLogicalPath?.(
     targetFormat,
     journal.to.logicalPath
@@ -5214,6 +5274,16 @@ function validateJournalPaths(journal: DocumentLifecycleJournal): void {
     ) {
       throw new Error("document deletion source checkpoint is inconsistent")
     }
+  }
+  if (
+    journal.operationType === "exact-rename" &&
+    journal.document.afterFormat &&
+    (journal.document.format.id !== BUILTIN_DOCUMENT_FORMATS.file ||
+      journal.document.afterFormat.id !== BUILTIN_DOCUMENT_FORMATS.html ||
+      journal.from.source.kind !== "file" ||
+      !renamesInPlace(journal))
+  ) {
+    throw new Error("document format change in a rename is unsupported")
   }
   if (journal.operationType === "exact-rename") {
     const bundleSource = journal.from.source.kind === "bundle"
@@ -6391,6 +6461,13 @@ function applySource(
 ): void {
   if (exactRenameBehavior(journal).parksBundleSource) {
     applyParkedBundleSource(journal, direction)
+    return
+  }
+  // A source renamed in place stays where it is either way.
+  if (renamesInPlace(journal)) {
+    if (!sourceAtCheckpoint(journal, "after")) {
+      throw new Error("document lifecycle source is missing")
+    }
     return
   }
   const state = classifySource(journal)
@@ -7639,7 +7716,7 @@ function verifyPortableState(
       throw new Error("document deletion history did not remain absent")
     }
   } else {
-    if (classifySource(journal) !== expected) {
+    if (!sourceAtCheckpoint(journal, expected)) {
       throw new Error("document lifecycle source did not reach its checkpoint")
     }
     const history = classifyHistory(journal, options?.directHistoryFiles)
@@ -7821,12 +7898,13 @@ function verifyRecoveryCatalogCheckpoint(
             })?.source.extension ?? null)
       if (extension === null) continue
       const docPath = [...segments, withoutSuffix(entry.name, extension)].join("/")
-      // A `.json` is the Doc its name gives only by the catalog's rule; a
-      // plain file goes by its whole name, and only where files take part.
+      // A `.json` or `.html` is the Doc its name gives only by the catalog's
+      // rule; a plain file goes by its whole name, and only where files take
+      // part.
       if (
-        extension === ".json" &&
+        (extension === ".json" || extension === ".html") &&
         relevant(docPath) &&
-        !jsonSourceIsDocSync(spaceRoot, sourcePath)
+        !sourceIsDocSync(spaceRoot, sourcePath)
       ) {
         if (anyFile && !hidden) maybeClaim(nextSegments.join("/"), sourcePath)
         continue
@@ -8068,9 +8146,10 @@ async function verifyCommittedCatalog(
       (diagnostic) => diagnostic.severity === "error"
     ) ||
     (journal.operationType === "exact-rename" &&
-      (matches[0].descriptor.format.id !== journal.document.format.id ||
+      (matches[0].descriptor.format.id !==
+        renamedFormat(journal.document).id ||
         matches[0].descriptor.format.sourceVersion !==
-          journal.document.format.sourceVersion ||
+          renamedFormat(journal.document).sourceVersion ||
         !sameDocumentSource(matches[0].handle.source, journal.to.source))) ||
     (journal.operationType === "format-transition" &&
       (matches[0].descriptor.format.id !== journal.document.afterFormat.id ||
@@ -8774,7 +8853,7 @@ export async function reconcileRecoveredDocumentLifecycles(
       )
     } else if (journal.operationType === "prefix-delete") {
       throw new Error("document deletion reconciliation was not isolated")
-    } else if (classifySource(journal) !== expected) {
+    } else if (!sourceAtCheckpoint(journal, expected)) {
       throw new Error(
         "document lifecycle endpoints changed during reconciliation"
       )
@@ -9134,7 +9213,8 @@ function suppressionPaths(journal: DocumentLifecycleJournal): string[] {
 async function moveDurableDocumentExactlySerialized(
   spaceId: string,
   from: string,
-  to: string
+  to: string,
+  afterFormat?: DocumentFormatClaim
 ): Promise<DurableExactRenameOutcome> {
   const root = resolve(getSpacesBaseDir(), spaceId)
   const storePaths = [
@@ -9157,7 +9237,13 @@ async function moveDurableDocumentExactlySerialized(
               withHostedDocumentShareLifecycle(async (invalidateShares) => {
                 let prepared: PreparedJournal | null
                 try {
-                  prepared = await prepareExactRename(spaceId, from, to)
+                  prepared = await prepareExactRename(
+                    spaceId,
+                    from,
+                    to,
+                    undefined,
+                    afterFormat
+                  )
                 } catch (error) {
                   if (error instanceof DocumentLifecyclePreconditionError) {
                     return { handled: true, error: error.message }
@@ -9238,15 +9324,28 @@ async function reconcileDocumentMove<T>(operation: () => Promise<T>): Promise<T>
   return result as T
 }
 
+/**
+ * Move one document through its recoverable lifecycle: everything kept under
+ * its path (metadata, order, identity, aliases, annotations and history)
+ * goes with it. With `afterFormat`, the move instead changes the format in
+ * place, as Open as HTML Doc does: the path loses the file's extension and
+ * the source stays where it is.
+ */
 export function moveDurableDocumentExactlyLocked(
   spaceId: string,
   from: string,
-  to: string
+  to: string,
+  options: { afterFormat?: DocumentFormatClaim } = {}
 ): Promise<DurableExactRenameOutcome> {
   return withWorkspaceLifecycleLock(() =>
     reconcileDocumentMove(() =>
       withDocumentDataV2ExactMove(spaceId, from, to, () =>
-        moveDurableDocumentExactlySerialized(spaceId, from, to)
+        moveDurableDocumentExactlySerialized(
+          spaceId,
+          from,
+          to,
+          options.afterFormat
+        )
       )
     )
   )

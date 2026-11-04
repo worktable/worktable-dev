@@ -170,14 +170,14 @@ function pushOnce(
 export interface DocumentPathOptions {
   enforceNewPathGrammar?: boolean
   /**
-   * The path names a file by its whole filename. A `.json` there is the
-   * file's own name, not a Doc's source: JSON that isn't Doc blocks is a
-   * plain file.
+   * The path names a file by its whole filename. A `.json` or `.html` there
+   * is the file's own name, not a Doc's source: JSON that isn't Doc blocks,
+   * and HTML no HTML Doc claims, are plain files.
    */
   fileName?: boolean
 }
 
-const FILE_NAME_SUFFIX = ".json"
+const FILE_NAME_SUFFIXES: ReadonlySet<string> = new Set([".json", ".html"])
 
 const ANALYSIS_MEMO_MAX_ENTRIES = 10_000
 const analyses = new Map<string, DocumentPathAnalysis>()
@@ -303,7 +303,7 @@ function analyzeDocumentPathUncached(
   const lowerPath = canonicalPath.toLowerCase()
   if (options?.enforceNewPathGrammar) {
     for (const suffix of RESERVED_DOCUMENT_SOURCE_SUFFIXES) {
-      if (options.fileName && suffix === FILE_NAME_SUFFIX) continue
+      if (options.fileName && FILE_NAME_SUFFIXES.has(suffix)) continue
       if (lowerPath.endsWith(suffix)) {
         pushOnce(diagnostics, { code: "registered-extension" })
         break

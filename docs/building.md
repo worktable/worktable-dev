@@ -102,6 +102,12 @@ To build a Desktop beta, set `WORKTABLE_VERSION` to the beta's dev version for
 `release:finalize`. The app, its updater signature and its feed then carry that
 version, and the feed points at the beta's tag.
 
+Each stable release tag also lists Worktable Cloud's MCP server in the official
+[MCP Registry](https://registry.modelcontextprotocol.io) as
+`io.github.worktable/worktable`. The MCP Registry workflow stamps
+[server.json](../server.json) with the release version and publishes it through
+GitHub OIDC. Run the workflow by hand to republish the current release.
+
 ## Runtime verification
 
 Prebuilt Worktable downloads include Bun. [SOURCE-MATERIALS.json](../SOURCE-MATERIALS.json)

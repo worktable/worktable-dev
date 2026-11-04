@@ -6,7 +6,7 @@
 // `onboarding/signup-flow/`), and the Doc stores the path relative to it.
 
 import { resolveDocLink, versionIdTimestamp } from "@worktable/types"
-import { authenticatedFetch, BASE_URL, HttpError } from "./http"
+import { authenticatedFetch, BASE_URL, fetchJSON, HttpError } from "./http"
 
 /**
  * A file's bytes in a Space. Naming its version, its content hash or the
@@ -20,6 +20,17 @@ export function fileSourceUrl(
   options: { download?: boolean; at?: string } = {}
 ): string {
   return `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}${version ? `&v=${encodeURIComponent(version)}` : ""}${options.download ? "&download=1" : ""}${options.at ? `&at=${encodeURIComponent(options.at)}` : ""}`
+}
+
+/** Open as HTML Doc: the file becomes an HTML Doc, its history kept. */
+export async function openFileAsHtmlDoc(
+  spaceId: string,
+  path: string
+): Promise<{ path: string }> {
+  return fetchJSON(
+    `/api/spaces/${encodeURIComponent(spaceId)}/documents/open-as-html`,
+    { method: "POST", body: JSON.stringify({ path }) }
+  )
 }
 
 /** Upload New Version: the file's new bytes, keeping the old in its history. */

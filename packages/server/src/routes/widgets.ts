@@ -881,7 +881,7 @@ async function handleCreateCheckpoint(c: Context, spaceId: string, widgetId: str
 // the Worktable app. Non-browser callers (tests, CLI, tooling) send neither
 // header and are unaffected; this holds in local no-auth mode too, where the
 // WS/CORS origin gate does not run.
-function isSameOriginAppRequest(c: Context): boolean {
+export function isSameOriginAppRequest(c: Context): boolean {
   const secFetchSite = c.req.header("sec-fetch-site");
   if (secFetchSite) {
     // Forbidden header, unforgeable by page JS: it states the initiator's

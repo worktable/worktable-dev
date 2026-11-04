@@ -84,7 +84,7 @@ import {
   documentPathKeyIsBelow,
   remapDocumentPathPrefix,
 } from "./document-path.ts"
-import { jsonSourceIsDocSync } from "./json-source-kind.ts"
+import { sourceIsDocSync } from "./doc-source-kind.ts"
 import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
@@ -7821,12 +7821,13 @@ function verifyRecoveryCatalogCheckpoint(
             })?.source.extension ?? null)
       if (extension === null) continue
       const docPath = [...segments, withoutSuffix(entry.name, extension)].join("/")
-      // A `.json` is the Doc its name gives only by the catalog's rule; a
-      // plain file goes by its whole name, and only where files take part.
+      // A `.json` or `.html` is the Doc its name gives only by the catalog's
+      // rule; a plain file goes by its whole name, and only where files take
+      // part.
       if (
-        extension === ".json" &&
+        (extension === ".json" || extension === ".html") &&
         relevant(docPath) &&
-        !jsonSourceIsDocSync(spaceRoot, sourcePath)
+        !sourceIsDocSync(spaceRoot, sourcePath)
       ) {
         if (anyFile && !hidden) maybeClaim(nextSegments.join("/"), sourcePath)
         continue

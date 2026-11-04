@@ -3,7 +3,7 @@ export const FORMAT_SPEC = `# Worktable format
 Worktable has four durable primitives:
 
 1. **Docs** are documents stored as markdown, BlockNote JSON, or Quickdraw drawing JSON and addressed by an extensionless path within a space.
-2. **HTML docs** are self-contained pages stored as HTML files in a space's docs tree and addressed through the MCP by htmlId. Prefer HTML docs in Worktable for custom visual or interactive artifacts.
+2. **HTML docs** are self-contained pages stored as HTML files in a space's docs tree and addressed through the MCP by htmlId. Prefer HTML docs in Worktable for custom visual or interactive artifacts. Create them with worktable_html_write: a new .html written straight into the folder is a plain file, which never runs, until a person opens it as an HTML doc.
 3. **Records** are independently addressable YAML items grouped into optional typed collections.
 4. **Annotations** are comment or instruction threads attached to Docs, blocks, text ranges, or HTML docs.
 

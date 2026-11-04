@@ -16,10 +16,10 @@ import {
   onWorkspaceChange,
   type ChangeEvent,
   type ChangeHandler,
-  type JsonSourceChangeEvent,
+  type DocSourceChangeEvent,
   threadEventLocation,
 } from "./workspace-events.ts"
-import { classifiedJsonSourceEvent } from "./document-filesystem-coordinator.ts"
+import { classifiedDocSourceEvent } from "./document-filesystem-coordinator.ts"
 import {
   documentSpaceForPath,
   noteSpaceChanged,
@@ -56,11 +56,11 @@ export interface WorkspaceWatcherOptions {
 }
 
 /** What the watcher reports: a workspace change, or a `.json` to classify. */
-export type WatcherEvent = ChangeEvent | JsonSourceChangeEvent
+export type WatcherEvent = ChangeEvent | DocSourceChangeEvent
 
 export type DocumentFilesystemChangeEvent =
   | Extract<ChangeEvent, { type: "doc" | "widget" | "documentCorpus" }>
-  | JsonSourceChangeEvent
+  | DocSourceChangeEvent
 
 // ============================================================
 // Types
@@ -263,15 +263,15 @@ export function parseChangedPath(
     const lastPart = docParts[docParts.length - 1]
     if (lastPart?.endsWith(".json")) {
       // A Doc or a plain file: decided before dispatch, by its whole name.
-      return { type: "jsonSource", spaceId, file: docParts.join("/") }
+      return { type: "docSource", spaceId, file: docParts.join("/") }
     }
     if (lastPart?.endsWith(".md")) {
       const docPath = docParts.join("/").replace(/\.md$/, "")
       return { type: "doc", spaceId, docPath }
     }
     if (lastPart?.endsWith(".html")) {
-      const widgetId = docParts.join("/").replace(/\.html$/, "")
-      return { type: "widget", spaceId, widgetId }
+      // An HTML Doc or a plain file, decided the same way.
+      return { type: "docSource", spaceId, file: docParts.join("/") }
     }
     return { type: "documentCorpus", spaceId, paths: [docParts.join("/")] }
   }
@@ -548,17 +548,17 @@ export class WorkspaceWatcher {
       (event.type === "doc" ||
         event.type === "widget" ||
         event.type === "documentCorpus" ||
-        event.type === "jsonSource")
+        event.type === "docSource")
     ) {
       this.onDocumentChange(event)
       return
     }
-    if (event.type === "jsonSource") {
+    if (event.type === "docSource") {
       // Without a coordinator, decide what it is before anyone hears of it.
-      void classifiedJsonSourceEvent(event)
+      void classifiedDocSourceEvent(event)
         .then(notifyWorkspaceChange)
         .catch((error: unknown) =>
-          console.error("[WorkspaceWatcher] JSON change dropped:", logError(error))
+          console.error("[WorkspaceWatcher] document change dropped:", logError(error))
         )
       return
     }

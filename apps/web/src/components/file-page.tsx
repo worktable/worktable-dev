@@ -1,6 +1,13 @@
 import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Database, Download, File as FileIcon, Upload } from "lucide-react"
+import { useNavigate } from "@tanstack/react-router"
+import {
+  AppWindow,
+  Database,
+  Download,
+  File as FileIcon,
+  Upload,
+} from "lucide-react"
 import { toast } from "@worktable/ui/components/sonner"
 import {
   delimiterForFilename,
@@ -13,8 +20,13 @@ import { useSetPageMeta } from "@/hooks/use-page-meta"
 import { DocTable } from "@/components/document/doc-table"
 import { DocumentByline } from "@/components/document/document-byline"
 import { documentQueryKeys } from "@/lib/documents-queries"
+import { documentRoute } from "@/lib/document-views"
 import { authenticatedFetch } from "@/lib/http"
-import { fileSourceUrl, replaceFile } from "@/lib/file-embeds"
+import {
+  fileSourceUrl,
+  openFileAsHtmlDoc,
+  replaceFile,
+} from "@/lib/file-embeds"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import "@/styles/document-controls.css"
 
@@ -26,14 +38,16 @@ const ImportRecordsDialog = lazy(() =>
 )
 
 /** How a file shows on its page, decided by its name. */
-type FileView = "image" | "table" | "text" | "card"
+type FileView = "image" | "html" | "table" | "text" | "card"
 
 const IMAGE = /\.(?:avif|gif|jpe?g|png|svg|webp)$/i
+const HTML = /\.html?$/i
 const TABLE = /\.(?:csv|tsv)$/i
 const TEXT = /\.(?:txt|log|json|jsonl|ya?ml|xml|ini|toml)$/i
 
 function fileView(name: string): FileView {
   if (IMAGE.test(name)) return "image"
+  if (HTML.test(name)) return "html"
   if (TABLE.test(name)) return "table"
   if (TEXT.test(name)) return "text"
   return "card"
@@ -88,6 +102,7 @@ export function FilePage({
   const view = fileView(name)
   const setPageMeta = useSetPageMeta()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const fade = useScrollFade<HTMLDivElement>(8, { top: false })
   // A table's Expand widens it to this pane, as it does in a Doc.
   const paneWidth = usePaneWidth<HTMLDivElement>()
@@ -112,6 +127,9 @@ export function FilePage({
   const canReplace = canEdit && !page.noHistory
   // A table people will keep working in belongs in Records.
   const importable = canEdit && /\.(?:csv|tsv|jsonl)$/i.test(name)
+  // An HTML file runs only once a person opens it as an HTML Doc.
+  const openableAsHtml = canEdit && /\.html$/.test(path)
+  const [openingAsHtml, setOpeningAsHtml] = useState(false)
   const url = fileSourceUrl(spaceId, path, version)
 
   const uploadVersion = useCallback(
@@ -135,6 +153,22 @@ export function FilePage({
     [page.version, path, queryClient, spaceId]
   )
 
+  const openAsHtml = useCallback(async () => {
+    setOpeningAsHtml(true)
+    try {
+      const opened = await openFileAsHtmlDoc(spaceId, path)
+      void queryClient.invalidateQueries({
+        queryKey: documentQueryKeys.list(spaceId),
+        exact: true,
+      })
+      await navigate({ ...documentRoute(spaceId, opened.path), replace: true })
+    } catch (error) {
+      console.error("Open as HTML Doc failed:", error)
+      toast.error("Couldn’t open this file as an HTML Doc. Try again.")
+      setOpeningAsHtml(false)
+    }
+  }, [navigate, path, queryClient, spaceId])
+
   useEffect(() => {
     setPageMeta({
       titleOverride: name,
@@ -148,15 +182,30 @@ export function FilePage({
           })
         },
       },
-      ...(importable
+      ...(importable || openableAsHtml
         ? {
             overflowActions: [
-              {
-                id: "import-records",
-                label: "Import into Records",
-                icon: Database,
-                onSelect: () => setImportOpen(true),
-              },
+              ...(openableAsHtml
+                ? [
+                    {
+                      id: "open-as-html",
+                      label: "Open as HTML Doc",
+                      icon: AppWindow,
+                      disabled: openingAsHtml,
+                      onSelect: () => void openAsHtml(),
+                    },
+                  ]
+                : []),
+              ...(importable
+                ? [
+                    {
+                      id: "import-records",
+                      label: "Import into Records",
+                      icon: Database,
+                      onSelect: () => setImportOpen(true),
+                    },
+                  ]
+                : []),
             ],
           }
         : {}),
@@ -175,7 +224,19 @@ export function FilePage({
         : {}),
     })
     return () => setPageMeta(null)
-  }, [canReplace, importable, name, page, path, setPageMeta, spaceId, uploading])
+  }, [
+    canReplace,
+    importable,
+    name,
+    openAsHtml,
+    openableAsHtml,
+    openingAsHtml,
+    page,
+    path,
+    setPageMeta,
+    spaceId,
+    uploading,
+  ])
 
   return (
     <div className="flex h-full flex-col">
@@ -263,6 +324,21 @@ function FileContent({
       <p>
         <img src={url} alt={name} onError={() => setImageFailed(true)} />
       </p>
+    )
+  }
+  if (view === "html") {
+    // The page as written, with its scripts off and nothing loaded from the
+    // network: the server sandboxes the response, and so does the frame.
+    return (
+      <div className="not-prose my-6 overflow-hidden rounded-xl card-surface">
+        <iframe
+          title={name}
+          src={url}
+          sandbox=""
+          referrerPolicy="no-referrer"
+          className="block h-[70vh] w-full border-0 bg-background"
+        />
+      </div>
     )
   }
   if (text.data === undefined) return null

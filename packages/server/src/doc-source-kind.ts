@@ -16,24 +16,51 @@ import {
 } from "./staged-file.ts"
 
 // ============================================================
-// Whether a `.json` below docs/ is a Doc or a plain file
+// Whether a `.json` or `.html` below docs/ is a Doc or a plain file
 // ============================================================
 //
-// One rule wherever a `.json` path could become a Doc's key: the catalog, the
+// One rule wherever such a path could become a Doc's key: the catalog, the
 // Doc store, filesystem events and lifecycle recovery. The inventory's claim
 // decides first, so a file stays a file whatever is written into it and a Doc
-// stays a Doc, unreadable while its bytes aren't Doc blocks. A source without
-// a claim is a Doc only when it holds Doc blocks and is no larger than a Doc
-// can be written. A plain file goes by its whole filename.
+// stays a Doc, unreadable while its bytes aren't what its format needs.
+//
+// Without a claim, a `.json` is a Doc only when it holds Doc blocks and is no
+// larger than a Doc can be written. A `.html` is a plain file once its Space
+// records its HTML Docs by claim (HTML_DOCS_CLAIMED): only Worktable makes an
+// HTML Doc, or a person who opens a file as one. A Space that doesn't yet
+// keeps the earlier rule, every `.html` an HTML Doc, until its existing ones
+// are recorded (source-kind-records.ts), so recording changes nothing. A
+// plain file goes by its whole filename.
 //
 // Costs stats: the parsed inventory and each file's answer are kept while
 // their fingerprints hold, and the catalog's title read fills the latter. A
 // file changed within the racy window, or one that could not be read, is
 // read again next time.
 
-const inventoryFormats = new FingerprintCache<ReadonlyMap<string, string>>(
-  1_024
-)
+/**
+ * The inventory field that says a Space's HTML Docs are exactly those it
+ * claims. Written once, with the claims for every `.html` that was an HTML
+ * Doc before, and kept by every later inventory write.
+ */
+export const HTML_DOCS_CLAIMED = "htmlDocs"
+export const HTML_DOCS_CLAIMED_VALUE = "claimed"
+
+/** Whether a parsed inventory says its Space's HTML Docs are all claimed. */
+export function inventoryClaimsHtmlDocs(raw: unknown): boolean {
+  return (
+    typeof raw === "object" &&
+    raw !== null &&
+    (raw as Record<string, unknown>)[HTML_DOCS_CLAIMED] ===
+      HTML_DOCS_CLAIMED_VALUE
+  )
+}
+
+interface InventoryKinds {
+  formats: ReadonlyMap<string, string>
+  htmlDocsClaimed: boolean
+}
+
+const inventoryKinds = new FingerprintCache<InventoryKinds>(1_024)
 const richTextFiles = new FingerprintCache<boolean>(50_000)
 const INVENTORY_FILE = "documents.meta.json"
 const MAX_DOC_BYTES = BigInt(DOCUMENT_GENERATION_MAX_ENTRY_BYTES)
@@ -47,8 +74,9 @@ export function rememberRichTextFile(
   richTextFiles.set(file, fingerprintKey, doc)
 }
 
-function parseInventoryFormats(text: string): ReadonlyMap<string, string> {
+function parseInventoryKinds(text: string): InventoryKinds {
   const formats = new Map<string, string>()
+  let htmlDocsClaimed = false
   try {
     const inventory = JSON.parse(text) as {
       documents?: Record<
@@ -59,6 +87,7 @@ function parseInventoryFormats(text: string): ReadonlyMap<string, string> {
         }
       >
     }
+    htmlDocsClaimed = inventoryClaimsHtmlDocs(inventory)
     for (const entry of Object.values(inventory.documents ?? {})) {
       if (
         entry?.source?.kind === "file" &&
@@ -71,7 +100,7 @@ function parseInventoryFormats(text: string): ReadonlyMap<string, string> {
   } catch {
     // An unreadable inventory claims nothing; the catalog reports it.
   }
-  return formats
+  return { formats, htmlDocsClaimed }
 }
 
 type Io = {
@@ -105,12 +134,12 @@ function* classify(
 > {
   const inventoryPath = join(spaceRoot, INVENTORY_FILE)
   const inventoryInfo = (yield { stat: inventoryPath }) as BigIntStats | null
-  let formats: ReadonlyMap<string, string> = new Map()
+  let kinds: InventoryKinds = { formats: new Map(), htmlDocsClaimed: false }
   if (inventoryInfo) {
     const fingerprint = fingerprintOf(inventoryInfo)
-    const cached = inventoryFormats.get(inventoryPath, fingerprint.key)
+    const cached = inventoryKinds.get(inventoryPath, fingerprint.key)
     if (cached) {
-      formats = cached
+      kinds = cached
     } else {
       let text: string | null = null
       try {
@@ -119,15 +148,16 @@ function* classify(
         // Unreadable now; nothing is kept, so the next call reads again.
       }
       if (text !== null) {
-        formats = parseInventoryFormats(text)
+        kinds = parseInventoryKinds(text)
         if (!fingerprint.racy) {
-          inventoryFormats.set(inventoryPath, fingerprint.key, formats)
+          inventoryKinds.set(inventoryPath, fingerprint.key, kinds)
         }
       }
     }
   }
-  const registered = formats.get(relativePath)
+  const registered = kinds.formats.get(relativePath)
   if (registered !== undefined) return registered !== "worktable.file"
+  if (relativePath.endsWith(".html")) return !kinds.htmlDocsClaimed
 
   const file = join(spaceRoot, relativePath)
   const info = (yield { stat: file }) as BigIntStats | null
@@ -150,10 +180,11 @@ function* classify(
 }
 
 /**
- * Whether `relativePath` (such as `docs/plan.json`) is the Doc its name
- * gives, rather than a plain file. For request paths and event dispatch.
+ * Whether `relativePath` (such as `docs/plan.json` or `docs/board.html`) is
+ * the Doc its name gives, rather than a plain file. For request paths and
+ * event dispatch.
  */
-export async function jsonSourceIsDoc(
+export async function sourceIsDoc(
   spaceRoot: string,
   relativePath: string
 ): Promise<boolean> {
@@ -176,7 +207,7 @@ export async function jsonSourceIsDoc(
  * The same decision, synchronously, for checkpoints that must not yield,
  * such as lifecycle recovery's scan.
  */
-export function jsonSourceIsDocSync(
+export function sourceIsDocSync(
   spaceRoot: string,
   relativePath: string
 ): boolean {

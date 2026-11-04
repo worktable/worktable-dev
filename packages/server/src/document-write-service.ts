@@ -59,7 +59,7 @@ import {
   type ServerDocumentFormatRegistration,
 } from "./document-format-registry.ts"
 import { richTextSourceIsDoc } from "./rich-text-blocks.ts"
-import { stagedJsonIsDoc } from "./json-source-kind.ts"
+import { stagedJsonIsDoc } from "./doc-source-kind.ts"
 import {
   mintDocumentId,
   updateDocumentInventory,
@@ -91,7 +91,11 @@ import {
   DOCUMENT_STORAGE_PROFILE_IDS,
   documentStorageProfiles,
 } from "./document-storage-profile.ts"
-import { resolveDocAliasIn, reservedByAliasIn } from "./doc-aliases.ts"
+import {
+  recordDocAlias,
+  resolveDocAliasIn,
+  reservedByAliasIn,
+} from "./doc-aliases.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
 import {
   catalogHasDocumentsBelow,
@@ -128,6 +132,7 @@ import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { requireWorkspaceRecovery } from "./workspace-safety.ts"
 import { validateDrawingImageMutation } from "./drawing-image-validation.ts"
 import { logDocument, logError } from "./debug-log.ts"
+import { sourceKindClaims } from "./source-kind-records.ts"
 
 const WRITE_ADAPTER_BUDGET = {
   maxInputBytes: DOCUMENT_GENERATION_MAX_ENTRY_BYTES,
@@ -382,12 +387,14 @@ function writableRegistration(
 /**
  * A new file can't take a name a Doc format claims, or it would list as that
  * Doc. A `.json` is a Doc only when it holds Doc blocks, so any other JSON
- * is a file under its own name.
+ * is a file under its own name. A `.html` from outside, such as an upload,
+ * is a file too; HTML made through Worktable's HTML tools is an HTML Doc.
  */
 async function assertNamesAFile(
   registry: DocumentFormatRegistry,
   path: string,
-  content: SourceContent
+  content: SourceContent,
+  htmlAsFile: boolean
 ): Promise<void> {
   const claimed = registry.fileSourceForFilename(
     path.slice(path.lastIndexOf("/") + 1)
@@ -397,7 +404,8 @@ async function assertNamesAFile(
     (claimed.id === BUILTIN_DOCUMENT_FORMATS.richText &&
       !(content instanceof Uint8Array
         ? richTextSourceIsDoc(new TextDecoder().decode(content))
-        : await stagedJsonIsDoc(content)))
+        : await stagedJsonIsDoc(content))) ||
+    (claimed.id === BUILTIN_DOCUMENT_FORMATS.html && htmlAsFile)
   ) {
     return
   }
@@ -407,7 +415,7 @@ async function assertNamesAFile(
   )
 }
 
-/** A file's path is its whole name, so `fileName` lets it end in `.json`. */
+/** A file's path is its whole name, so `fileName` lets it end in `.json` or `.html`. */
 function requirePortablePath(path: string, fileName = false): string {
   const analyzed = analyzeDocumentPath(path, {
     enforceNewPathGrammar: true,
@@ -725,7 +733,14 @@ async function materializeManagedFileDocument(
   return { ...document, documentId, identity: "durable" }
 }
 
-export async function materializeRegisteredDocumentIdentity(options: {
+/**
+ * Open a plain `.html` file as an HTML Doc: the person's choice, recorded as
+ * the inventory's claim, so it stays one wherever the Space goes. The file
+ * keeps its identity and the versions it has, and its path loses the
+ * extension, as an HTML Doc's does; its old name becomes an alias, so links
+ * to the file find the HTML Doc. Its source stays where it is.
+ */
+export async function openFileAsHtmlDoc(options: {
   spaceId: string
   path: string
   registry?: DocumentFormatRegistry
@@ -734,30 +749,56 @@ export async function materializeRegisteredDocumentIdentity(options: {
   path: string
   format: DocumentFormatClaim
 }> {
-  assertSpaceAccess(options.spaceId);
+  assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
-  return withDocPathLock(options.spaceId, async () => {
+  const format = { id: BUILTIN_DOCUMENT_FORMATS.html, sourceVersion: 1 }
+  const opened = await withDocPathLock(options.spaceId, async () => {
     await requireV2Workspace(workspaceRoot)
-    const current = resolveManagedFileDocument(
-      await buildDocumentCatalog({
-        workspaceRoot,
-        spaceId: options.spaceId,
-        registry,
-      }),
-      options.path,
-      registry
-    )
-    const durable = await materializeManagedFileDocument(
-      options.spaceId,
-      current
-    )
-    return {
-      documentId: durable.documentId,
-      path: durable.path,
-      format: durable.format,
+    const catalog = await buildDocumentCatalog({
+      workspaceRoot,
+      spaceId: options.spaceId,
+      registry,
+    })
+    const current = resolveManagedFileDocument(catalog, options.path, registry)
+    if (
+      current.format.id !== BUILTIN_DOCUMENT_FORMATS.file ||
+      !current.path.endsWith(".html") ||
+      current.source.relativePath !== `docs/${current.path}`
+    ) {
+      throw new DocumentWriteError(
+        "unsupported",
+        "Only an .html file opens as an HTML Doc"
+      )
     }
+    const path = current.path.slice(0, -".html".length)
+    const analyzed = analyzeDocumentPath(path, { enforceNewPathGrammar: true })
+    if (!analyzed.safe || !analyzed.portable || analyzed.canonicalPath !== path) {
+      throw new DocumentWriteError(
+        "invalid",
+        "This file's name can't be an HTML Doc's"
+      )
+    }
+    if (entryAt(catalog, path) || reservedByAliasIn(catalog.aliases, path)) {
+      throw new DocumentWriteError(
+        "conflict",
+        "Another document already uses this path"
+      )
+    }
+    const documentId =
+      current.identity === "durable" ? current.documentId : mintDocumentId()
+    await updateDocumentInventory(options.spaceId, {
+      upsert: [{ documentId, path, format, source: current.source }],
+    })
+    return { documentId, path, from: current.path }
   })
+  // Links to the file by its name keep working. The HTML Doc stands without
+  // this, so a failure is logged rather than undoing the choice.
+  await recordDocAlias(options.spaceId, opened.from, opened.path, "exact").catch(
+    (error: unknown) =>
+      console.warn("[documents] an opened file's old name was not kept:", logError(error))
+  )
+  return { documentId: opened.documentId, path: opened.path, format }
 }
 
 function resolveWritableDocument(
@@ -1139,6 +1180,8 @@ export async function createRegisteredDocument(options: {
   reason?: string
   agentMutation?: DocumentAgentMutationInput
   registry?: DocumentFormatRegistry
+  /** An uploaded `.html` is a plain file, not an HTML Doc. */
+  htmlAsFile?: boolean
 }): Promise<DocumentWriteResult> {
   assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
@@ -1154,7 +1197,12 @@ export async function createRegisteredDocument(options: {
     throw new DocumentWriteError("invalid", "Files can't go in hidden folders")
   }
   if (options.format.id === BUILTIN_DOCUMENT_FORMATS.file) {
-    await assertNamesAFile(registry, path, options.bytes)
+    await assertNamesAFile(
+      registry,
+      path,
+      options.bytes,
+      options.htmlAsFile === true
+    )
   }
   const registration = writableRegistration(registry, options.format)
   const content: SourceContent =
@@ -1493,6 +1541,19 @@ export async function recordExternalFileChanges(options: {
       spaceId: options.spaceId,
       registry,
     })
+    // A plain `.json` Worktable sees change is a file from now on: Doc
+    // blocks written into it later don't make it a Doc.
+    const plainJson = sourceKindClaims(catalog, {
+      html: false,
+      paths: new Set(options.paths),
+    })
+    if (plainJson.length > 0) {
+      // Left for its next change when the inventory can't take it now.
+      await updateDocumentInventory(options.spaceId, { upsert: plainJson }).catch(
+        (error: unknown) =>
+          console.warn("[files] a JSON file's kind was not recorded:", logError(error))
+      )
+    }
     const keptFiles = new Map(
       catalog.entries.flatMap((entry) =>
         entry.kind === "document" &&

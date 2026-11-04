@@ -128,6 +128,11 @@ import {
 } from "./exposure-notice.ts";
 import { WorkspaceWatcher, type WatcherEvent } from "./watcher.ts";
 import { startSearchWarmup } from "./search-index.ts";
+import {
+  resetSourceKindRecords,
+  scheduleSourceKindRecords,
+  workspaceSpaceIds,
+} from "./source-kind-records.ts";
 import { DocumentFilesystemCoordinator } from "./document-filesystem-coordinator.ts";
 import { docAliasesRouter } from "./routes/doc-aliases.ts";
 import { docAliasReservationError } from "./doc-aliases.ts";
@@ -1550,6 +1555,7 @@ export function startServer(
   let starterSeedTask: Promise<void> | null = null;
   let recoveredDocumentTask: Promise<void> | null = null;
   let startupDiscarded = false;
+  let sourceKindsScheduled = false;
   let stopWorkspaceChangeHandler: (() => void) | null = null;
 
   const trackServerTask = (task: Promise<unknown>): void => {
@@ -1664,6 +1670,11 @@ export function startServer(
   const WIDGET_CHANGE_COALESCE_MS = 250;
   if (!workspaceRejected) {
     stopWorkspaceChangeHandler = onWorkspaceChange(async (event) => {
+      // A Space that appears records which of its files are HTML Docs, as
+      // the Spaces present at boot do. Recorded Spaces cost nothing here.
+      if (event.type === "space" && sourceKindsScheduled) {
+        trackServerTask(scheduleSourceKindRecords([event.spaceId]));
+      }
       if (event.type === "doc") {
         const aliasError = await docAliasReservationError(
           event.spaceId,
@@ -1844,6 +1855,18 @@ export function startServer(
     trackServerTask(
       Promise.resolve(recovery).then(() =>
         startupDiscarded ? undefined : startV1ShareLinkDrain()
+      )
+    );
+    // Once recovery has settled the documents, record which files are HTML
+    // Docs in every Space not yet recorded (source-kind-records.ts).
+    trackServerTask(
+      Promise.resolve(recovery).then(async () => {
+        if (startupDiscarded) return;
+        resetSourceKindRecords();
+        sourceKindsScheduled = true;
+        await scheduleSourceKindRecords(await workspaceSpaceIds());
+      }).catch((err) =>
+        console.error("[documents] recording HTML Docs failed:", logError(err))
       )
     );
   }

@@ -2,13 +2,17 @@
 // File media types
 // ============================================================
 //
-// How Worktable serves a file's bytes. Only images are shown inline; every
-// other file is a download. SVG is shown inline too, under a sandboxing
-// policy, so a script inside it never runs on Worktable's origin.
+// How Worktable serves a file's bytes. Only images and HTML are shown
+// inline; every other file is a download. Every file is served under a
+// sandboxing policy with no sources allowed, so a script in an SVG or an
+// HTML file never runs and the page it makes loads nothing: an HTML file
+// shows as a static page until a person opens it as an HTML Doc.
 
 const MEDIA_TYPES: Readonly<Record<string, string>> = {
   ".avif": "image/avif",
   ".gif": "image/gif",
+  ".htm": "text/html; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
   ".jpeg": "image/jpeg",
   ".jpg": "image/jpeg",
   ".png": "image/png",
@@ -33,6 +37,7 @@ const INLINE_TYPES = new Set([
   "image/png",
   "image/svg+xml",
   "image/webp",
+  "text/html; charset=utf-8",
 ])
 
 function extensionOf(fileName: string): string {

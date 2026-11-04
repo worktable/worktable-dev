@@ -53,7 +53,10 @@ import {
 } from "./document-format-registry.ts"
 import { storedDocTitle } from "./doc-title-text.ts"
 import { richTextSourceIsDoc } from "./rich-text-blocks.ts"
-import { rememberRichTextFile } from "./json-source-kind.ts"
+import {
+  inventoryClaimsHtmlDocs,
+  rememberRichTextFile,
+} from "./doc-source-kind.ts"
 import { filesEnabled } from "./files-enabled.ts"
 import {
   DOCUMENT_STORAGE_PROFILE_IDS,
@@ -250,6 +253,8 @@ type InventoryClaimEntry = Readonly<Omit<DocumentInventoryEntry, "raw">>
 interface CatalogInventory {
   entries: readonly InventoryClaimEntry[]
   diagnostics: readonly DocumentInventoryDiagnostic[]
+  /** Its HTML Docs are exactly those it claims (doc-source-kind.ts). */
+  htmlDocsClaimed: boolean
 }
 
 const parsedInventories = new FingerprintCache<CatalogInventory>(
@@ -283,6 +288,7 @@ async function readCatalogInventory(
           Object.freeze({ ...diagnostic })
         )
       ),
+      htmlDocsClaimed: inventoryClaimsHtmlDocs(inventory.raw),
     })
   })
 }
@@ -683,6 +689,7 @@ async function inventoryClaims(
   provenCoreBundleIdentities: ReadonlySet<string>
 }> {
   const inventory = await readCatalogInventory(spaceRoot, lstatPath)
+  const { htmlDocsClaimed } = inventory
   const provenCoreBundleIds = new Set<DocumentId>()
   const provenCoreBundleIdentities = new Set<string>()
   const provenCoreBundleUpdatedAt = new Map<DocumentId, string>()
@@ -753,7 +760,8 @@ async function inventoryClaims(
       inventoryEntry,
       docSourceViews,
       reservedByAlias,
-      registry
+      registry,
+      htmlDocsClaimed
     )
     if (!claim) continue
     if (!inventoryEntry) {
@@ -920,8 +928,21 @@ function classifiedByContent(
   inventoryEntry: InventoryClaimEntry | undefined,
   docSourceViews: ReadonlyMap<string, DocSourceView>,
   reservedByAlias: (path: string) => unknown,
-  registry: DocumentFormatRegistry
+  registry: DocumentFormatRegistry,
+  htmlDocsClaimed: boolean
 ): DocumentSourceClaim | null {
+  if (
+    claim.format.id === BUILTIN_DOCUMENT_FORMATS.html &&
+    claim.source.kind === "file"
+  ) {
+    return classifiedHtmlSource(
+      claim,
+      inventoryEntry,
+      reservedByAlias,
+      registry,
+      htmlDocsClaimed
+    )
+  }
   if (
     claim.format.id !== BUILTIN_DOCUMENT_FORMATS.richText ||
     claim.source.kind !== "file"
@@ -948,6 +969,33 @@ function classifiedByContent(
         }
   }
   if (registered !== undefined && registered !== BUILTIN_DOCUMENT_FORMATS.file) {
+    return reservedByAlias(claim.path) ? null : claim
+  }
+  const file = plainFileClaim(claim, registry)
+  return file && !reservedByAlias(file.path) ? file : null
+}
+
+/**
+ * A `.html` below docs/ is an HTML Doc only when Worktable made it one: its
+ * inventory claims it, or its Space hasn't yet recorded its HTML Docs by
+ * claim and keeps the earlier rule. Any other `.html` is a plain file, under
+ * its whole name, until a person opens it as an HTML Doc. As for `.json`,
+ * the inventory's file stays a file.
+ */
+function classifiedHtmlSource(
+  claim: DocumentSourceClaim,
+  inventoryEntry: InventoryClaimEntry | undefined,
+  reservedByAlias: (path: string) => unknown,
+  registry: DocumentFormatRegistry,
+  htmlDocsClaimed: boolean
+): DocumentSourceClaim | null {
+  const registered = inventoryEntry?.format.id
+  if (
+    registered === undefined
+      ? !htmlDocsClaimed
+      : registered !== BUILTIN_DOCUMENT_FORMATS.file
+  ) {
+    // A Doc's old name an alias holds hides a stale copy, as for any Doc.
     return reservedByAlias(claim.path) ? null : claim
   }
   const file = plainFileClaim(claim, registry)

@@ -5,12 +5,15 @@
 
 import { Hono } from "hono"
 import { runAsActivityActor } from "../activity-log.ts"
-import { BUILTIN_DOCUMENT_FORMATS } from "../document-format-registry.ts"
-import { readRawDocumentSource } from "../document-page-service.ts"
-import { DocumentSourceReadError } from "../document-source-errors.ts"
+import { resolveCurrentFile } from "../document-page-service.ts"
 import { DocumentWriteError } from "../document-write-service.ts"
-import { redeemFileTicket, type FileTicket } from "../file-tickets.ts"
-import { serveFileBytes } from "../file-response.ts"
+import {
+  pinDownloadTicket,
+  redeemFileTicket,
+  type FileTicket,
+} from "../file-tickets.ts"
+import { serveFile, servedCurrentFile } from "../file-response.ts"
+import { FileRevisionError } from "../file-revision.ts"
 import {
   FILE_UPLOAD_MAX_BYTES,
   FILE_UPLOAD_TOO_LARGE,
@@ -29,6 +32,11 @@ export const fileLinksRouter = new Hono()
 const GONE = {
   error: "This link has expired or was used. Ask for a new one.",
   code: "LINK_EXPIRED",
+}
+
+const CHANGED = {
+  error: "This file changed after the link was made. Read it again for a new link.",
+  code: "FILE_CHANGED",
 }
 
 function asMaker<T>(ticket: FileTicket, work: () => Promise<T>): Promise<T> {
@@ -104,42 +112,39 @@ export async function saveFileLinkUpload(
 fileLinksRouter.get("/:token", async (c) => {
   if (!filesEnabled()) return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
   const ticket = redeemFileTicket(c.req.param("token"), "download")
-  if (!ticket) return c.json(GONE, 410)
+  if (!ticket || ticket.kind !== "download") return c.json(GONE, 410)
   try {
     const result = await asMaker(ticket, () => {
       // The maker may have lost the Space since making the link.
       assertSpaceAccess(ticket.spaceId, "read")
-      return readRawDocumentSource({
+      return resolveCurrentFile({
         spaceId: ticket.spaceId,
         path: ticket.path,
-        includeArchived: true,
+        ...(ticket.revision !== undefined ? { revision: ticket.revision } : {}),
       })
     })
-    if (
-      result.kind === "not-found" ||
-      (result.kind === "source" &&
-        result.source.formatId !== BUILTIN_DOCUMENT_FORMATS.file)
-    ) {
+    if (result.kind === "not-found") {
       return c.json({ error: "File not found.", code: "NOT_FOUND" }, 404)
     }
-    if (result.kind !== "source") {
+    if (result.kind === "changed") return c.json(CHANGED, 409)
+    if (result.kind !== "file") {
       return c.json({ error: "This file can't be read safely.", code: "CONFLICT" }, 409)
     }
-    return serveFileBytes(c, result.source.bytes, result.source.fileName, {
+    pinDownloadTicket(ticket, result.current.pinned.revision)
+    // Two first uses at once pin only the first one's revision.
+    if (ticket.revision !== result.current.pinned.revision) return c.json(CHANGED, 409)
+    return await serveFile(c, await servedCurrentFile(result.current), {
       cacheForGood: false,
     })
   } catch (error) {
     if (error instanceof TeamAccessError) {
       return c.json({ error: "File not found.", code: "NOT_FOUND" }, 404)
     }
-    if (error instanceof DocumentSourceReadError) {
-      return c.json(
-        { error: "This file can't be read safely.", code: "SOURCE_UNAVAILABLE" },
-        409
-      )
+    if (error instanceof FileRevisionError) {
+      return error.reason === "changed"
+        ? c.json(CHANGED, 409)
+        : c.json({ error: "This file can't be read safely.", code: "SOURCE_UNAVAILABLE" }, 409)
     }
-    const failure = writeFailure(error)
-    if (failure) return c.json(failure.body, failure.status)
     throw error
   }
 })

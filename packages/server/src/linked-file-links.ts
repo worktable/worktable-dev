@@ -8,6 +8,7 @@ import {
   LINKED_FILE_SIZE_HEADER,
   LINKED_REQUEST_MAX_BYTES,
 } from "@worktable/hosted-contract"
+import { FileRevisionError } from "./file-revision.ts"
 import { redeemFileTicket, type FileTicket } from "./file-tickets.ts"
 import { filesEnabled } from "./files-enabled.ts"
 import { fileLinksRouter, saveFileLinkUpload } from "./routes/file-links.ts"
@@ -15,8 +16,8 @@ import { fileLinksRouter, saveFileLinkUpload } from "./routes/file-links.ts"
 /** Each upload in progress holds its file in memory until it is saved. */
 const UPLOADS_AT_ONCE = 2
 /**
- * Each download piece reads the whole file, as every file read does, so
- * pieces take turns: at most this many files are held at once.
+ * Each download piece is held whole while it crosses the relay, so pieces
+ * take turns: at most this many are held at once.
  */
 const DOWNLOAD_PIECES_AT_ONCE = 2
 /** An upload whose next piece doesn't come in this long is dropped. */
@@ -115,8 +116,9 @@ export async function receiveUploadPiece(
 
 /**
  * One piece of a download, from `offset`: the file's own headers, at most
- * one piece of its bytes, and its whole size. Its ETag names the content,
- * so the gateway can tell a file replaced partway and stop.
+ * one piece of its bytes, and its whole size. The link reads the revision
+ * its first piece did, and only this piece's range of it: a later piece of
+ * a file replaced partway is refused. Its ETag names the content too.
  */
 export async function sendDownloadPiece(
   token: string,
@@ -136,23 +138,58 @@ export async function sendDownloadPiece(
   }
 }
 
+function piece(from: Response, size: number, body: ArrayBuffer | null): Response {
+  const headers = new Headers(from.headers)
+  headers.set(LINKED_FILE_SIZE_HEADER, String(size))
+  headers.set("Cache-Control", "no-store")
+  headers.delete("Content-Length")
+  headers.delete("Content-Range")
+  return new Response(body, { status: 200, headers })
+}
+
 async function readDownloadPiece(
   token: string,
   offset: number,
   method: "GET" | "HEAD"
 ): Promise<Response> {
-  const whole = await fileLinksRouter.request(`/${token}`)
-  if (!whole.ok) return whole
-  const bytes = new Uint8Array(await whole.arrayBuffer())
-  if (offset > bytes.byteLength) {
-    return answer({ error: "Past the end of the file.", code: "RANGE" }, 416)
+  // A HEAD, or a piece at the very end, carries the headers and no bytes.
+  const whole = () => fileLinksRouter.request(`/${token}`, { method: "HEAD" })
+  if (method === "HEAD") {
+    const head = await whole()
+    if (!head.ok) return head
+    return piece(head, Number(head.headers.get("Content-Length") ?? "0"), null)
   }
-  const headers = new Headers(whole.headers)
-  headers.set(LINKED_FILE_SIZE_HEADER, String(bytes.byteLength))
-  headers.set("Cache-Control", "no-store")
-  headers.delete("Content-Length")
-  const piece = bytes.slice(offset, offset + LINKED_REQUEST_MAX_BYTES)
-  return new Response(method === "HEAD" ? null : piece, { status: 200, headers })
+  const ranged = await fileLinksRouter.request(`/${token}`, {
+    headers: { Range: `bytes=${offset}-${offset + LINKED_REQUEST_MAX_BYTES - 1}` },
+  })
+  if (ranged.status === 206) {
+    const size = Number(ranged.headers.get("Content-Range")?.split("/")[1])
+    let body: ArrayBuffer
+    try {
+      body = await ranged.arrayBuffer()
+    } catch (error) {
+      // The file changed while this piece was read.
+      if (!(error instanceof FileRevisionError)) throw error
+      return answer(
+        {
+          error: "This file changed after the link was made. Read it again for a new link.",
+          code: "FILE_CHANGED",
+        },
+        409
+      )
+    }
+    return piece(ranged, size, body)
+  }
+  if (ranged.status === 416) {
+    const size = Number(ranged.headers.get("Content-Range")?.split("/")[1])
+    if (offset !== size) {
+      return answer({ error: "Past the end of the file.", code: "RANGE" }, 416)
+    }
+    const head = await whole()
+    if (!head.ok) return head
+    return piece(head, size, new ArrayBuffer(0))
+  }
+  return ranged
 }
 
 /** Drop uploads in progress, as when the link is revoked. */

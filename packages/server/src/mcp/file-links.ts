@@ -18,18 +18,24 @@ function ticketMaker(principal: RequestPrincipal) {
   }
 }
 
-/** A download link for a file, or nothing where links can't reach. */
+/**
+ * A download link for a file, or nothing where links can't reach. With
+ * `revision`, the revision a read gave the agent, it gives those bytes or
+ * none.
+ */
 export function fileDownloadLink(
   origin: string | null | undefined,
   principal: RequestPrincipal,
   spaceId: string,
-  path: string
+  path: string,
+  revision?: string
 ): { downloadUrl: string; downloadExpiresAt: string } | Record<string, never> {
   if (!origin) return {}
   const ticket: FileTicketInput = {
     kind: "download",
     spaceId,
     path,
+    ...(revision !== undefined ? { revision } : {}),
     ...ticketMaker(principal),
   }
   const { token, expiresAt } = issueFileTicket(ticket)

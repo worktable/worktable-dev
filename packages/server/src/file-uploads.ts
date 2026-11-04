@@ -3,10 +3,11 @@
 // ============================================================
 //
 // One write path for every upload: the app's Upload and Upload New Version,
-// and the one-time links agents send files to. A storage quota, when it
-// comes, goes here.
+// the one-time links agents send files to, directly or through Worktable
+// Link, and files attached in ChatGPT. Each body is staged on disk as it
+// arrives, so no transfer holds a file in memory, and saved from there. A
+// storage quota, when it comes, goes here.
 
-import { createHash } from "node:crypto"
 import { DOCUMENT_GENERATION_MAX_ENTRY_BYTES } from "@worktable/types"
 import {
   BUILTIN_DOCUMENT_FORMATS,
@@ -18,6 +19,12 @@ import {
   readRegisteredDocumentSource,
   replaceRegisteredDocument,
 } from "./document-write-service.ts"
+import { contentHashFromHex } from "./file-revision.ts"
+import {
+  discardStagedFile,
+  StagingFile,
+  type StagedFile,
+} from "./staged-file.ts"
 import { DocumentSourceReadError } from "./document-source-errors.ts"
 
 /** The largest file an upload takes: one version entry. */
@@ -29,39 +36,54 @@ const FILE_KEEP_BOTH_TRIES = 100
 const fileRegistry = createBuiltinDocumentFormatRegistry()
 
 /**
- * A request's or response's body up to `max` bytes, counted as it arrives,
- * or null past it: a sender that leaves out Content-Length, as curl does
- * from stdin, can't make the server hold more.
+ * A request's or response's body staged on disk as it arrives, hashed on
+ * the way, or null once it passes `max`: a sender that leaves out
+ * Content-Length, as curl does from stdin, can't make the server keep more.
+ * At most one chunk is in memory at a time. A body over the limit, or one
+ * that fails or is cut off partway, leaves no staged file behind. The caller
+ * discards the staged file once it is saved.
  */
-export async function readLimitedBody(
+export async function stageUploadBody(
   message: Request | Response,
-  max: number
-): Promise<Uint8Array | null> {
-  if (!message.body) return new Uint8Array(0)
-  const reader = message.body.getReader()
-  const chunks: Uint8Array[] = []
-  let total = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    total += value.byteLength
-    if (total > max) {
-      await reader.cancel()
-      return null
+  max: number = FILE_UPLOAD_MAX_BYTES
+): Promise<StagedFile | null> {
+  const file = await StagingFile.create()
+  try {
+    if (message.body) {
+      const reader = message.body.getReader()
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (file.byteLength + value.byteLength > max) {
+          await reader.cancel().catch(() => undefined)
+          await file.discard()
+          return null
+        }
+        await file.append(value)
+      }
     }
-    chunks.push(value)
+    return await file.finish()
+  } catch (error) {
+    await file.discard()
+    throw error
   }
-  const bytes = new Uint8Array(total)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return bytes
 }
 
-export function fileContentHash(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("base64url")
+/**
+ * Stage a body and give it to `save`, removing the staged file after,
+ * whatever happens; null, with nothing kept, when it is over the limit.
+ */
+export async function withStagedUpload<T>(
+  message: Request | Response,
+  save: (file: StagedFile) => Promise<T>
+): Promise<T | null> {
+  const file = await stageUploadBody(message)
+  if (!file) return null
+  try {
+    return await save(file)
+  } finally {
+    await discardStagedFile(file)
+  }
 }
 
 /**
@@ -120,16 +142,21 @@ export interface FileUploadResult {
   contentHash: string
 }
 
-/** Write an uploaded file's bytes, by the rules of `mode`. */
+/**
+ * Save an uploaded file, staged on disk, by the rules of `mode`. Its content
+ * hash is the one computed as it was staged. The caller discards the staged
+ * file after.
+ */
 export async function writeUploadedFile(options: {
   spaceId: string
   path: string
-  bytes: Uint8Array
+  file: StagedFile
   mode: FileUploadMode
   actor: string
   source: string
 }): Promise<FileUploadResult> {
-  const { spaceId, path, bytes, mode } = options
+  const { spaceId, path, file: bytes, mode } = options
+  const contentHash = contentHashFromHex(bytes.sha256)
   if (mode.kind === "replace") {
     try {
       const expectedRevision =
@@ -145,7 +172,7 @@ export async function writeUploadedFile(options: {
         expectedFormatId: BUILTIN_DOCUMENT_FORMATS.file,
         separateVersion: true,
       })
-      return { status: 200, result, contentHash: fileContentHash(bytes) }
+      return { status: 200, result, contentHash }
     } catch (error) {
       // The file now is past what a version holds, so replacing it would
       // lose it: nothing could keep it in history.
@@ -167,7 +194,7 @@ export async function writeUploadedFile(options: {
         source: options.source,
         reason: "Uploaded",
       })
-      return { status: 201, result, contentHash: fileContentHash(bytes) }
+      return { status: 201, result, contentHash }
     } catch (error) {
       if (
         !mode.keepBoth ||

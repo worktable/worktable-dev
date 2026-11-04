@@ -25,7 +25,10 @@ import {
   drainActivity,
 } from "../../packages/server/src/activity-log.ts"
 import { setAppDirOverride } from "../../packages/server/src/app-storage.ts"
-import { writeUploadedFile } from "../../packages/server/src/file-uploads.ts"
+import {
+  withStagedUpload,
+  writeUploadedFile,
+} from "../../packages/server/src/file-uploads.ts"
 import { recordIndex } from "../../packages/server/src/record-index.ts"
 import {
   blockDoc,
@@ -545,14 +548,16 @@ async function writeFileProbes(spaceId: string): Promise<void> {
     [FILE_PROBE, screenshotPng()],
     [CHART_PROBE, chartPng()],
   ] as const)
-    await writeUploadedFile({
-      spaceId,
-      path,
-      bytes,
-      mode: { kind: "create", keepBoth: false },
-      actor: HUMAN.updatedBy,
-      source: HUMAN.source,
-    })
+    await withStagedUpload(new Response(new Uint8Array(bytes)), (file) =>
+      writeUploadedFile({
+        spaceId,
+        path,
+        file,
+        mode: { kind: "create", keepBoth: false },
+        actor: HUMAN.updatedBy,
+        source: HUMAN.source,
+      })
+    )
   const content = [
     "# With images",
     "",

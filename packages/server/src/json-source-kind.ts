@@ -4,7 +4,16 @@ import { readFile, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { DOCUMENT_GENERATION_MAX_ENTRY_BYTES } from "@worktable/types"
 import { FingerprintCache, fingerprintOf } from "./file-fingerprint.ts"
-import { richTextSourceIsDoc } from "./rich-text-blocks.ts"
+import {
+  checkRichTextBlocks,
+  RICH_TEXT_SOURCE_BUDGET,
+  richTextSourceIsDoc,
+} from "./rich-text-blocks.ts"
+import {
+  readStagedFile,
+  readStagedFilePrefix,
+  type StagedFile,
+} from "./staged-file.ts"
 
 // ============================================================
 // Whether a `.json` below docs/ is a Doc or a plain file
@@ -186,4 +195,95 @@ export function jsonSourceIsDocSync(
     }
   }
   return next.value
+}
+
+// ── An upload staged on disk ─────────────────────────────────
+
+/** How much of a staged `.json` is read to tell that it isn't a Doc. */
+const STAGED_PREFIX_BYTES = 1024 * 1024
+
+/**
+ * Whether an uploaded `.json`, staged on disk, holds Doc blocks. This is the
+ * answer `richTextSourceIsDoc` gives for its whole text, without reading
+ * all of a file that plainly isn't one. The block check walks the array in
+ * document order and fails at the first element that isn't a block, so a
+ * file that doesn't open an array, or whose first element isn't a block, is
+ * decided from its first bytes. Only a file whose first element is a block
+ * is read whole: one shaped like a Doc, no larger than a Doc can be written.
+ */
+export async function stagedJsonIsDoc(file: StagedFile): Promise<boolean> {
+  if (BigInt(file.byteLength) > MAX_DOC_BYTES) return false
+  const prefix = await readStagedFilePrefix(file, STAGED_PREFIX_BYTES)
+  const complete = prefix.byteLength === file.byteLength
+  // Decoded as uploads always are; a character cut off at the end of the
+  // prefix waits for bytes that aren't read.
+  const text = new TextDecoder().decode(prefix, { stream: !complete })
+  if (complete) return richTextSourceIsDoc(text)
+  if (firstElementIsNotABlock(text)) return false
+  const whole = new Uint8Array(file.byteLength)
+  let at = 0
+  await readStagedFile(file, (chunk) => {
+    whole.set(chunk, at)
+    at += chunk.byteLength
+  })
+  return richTextSourceIsDoc(new TextDecoder().decode(whole))
+}
+
+const JSON_WHITESPACE = new Set([" ", "\t", "\n", "\r"])
+
+function skipWhitespace(text: string, from: number): number {
+  let at = from
+  while (at < text.length && JSON_WHITESPACE.has(text[at]!)) at += 1
+  return at
+}
+
+/**
+ * Whether the start of a `.json`'s text already shows it can't be Doc
+ * blocks: it doesn't open an array, or its first element isn't a block. A
+ * false answer only means the start doesn't tell.
+ */
+function firstElementIsNotABlock(text: string): boolean {
+  let at = skipWhitespace(text, text.startsWith("\uFEFF") ? 1 : 0)
+  if (at >= text.length) return false
+  // Not JSON, or JSON that isn't an array.
+  if (text[at] !== "[") return true
+  at = skipWhitespace(text, at + 1)
+  if (at >= text.length || text[at] === "]") return false
+  // An element that isn't an object isn't a block.
+  if (text[at] !== "{") return true
+  const end = endOfValue(text, at)
+  if (end < 0) return false
+  let first: unknown
+  try {
+    first = JSON.parse(text.slice(at, end))
+  } catch {
+    // The first element's text isn't JSON, so neither is the file's.
+    return true
+  }
+  // The check counts and fails in document order, so the first element and
+  // what it holds are judged alone exactly as within the whole array.
+  return checkRichTextBlocks([first], RICH_TEXT_SOURCE_BUDGET) === "not-blocks"
+}
+
+/** Where the object or array opening at `start` ends, or -1 past the text. */
+function endOfValue(text: string, start: number): number {
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let at = start; at < text.length; at += 1) {
+    const char = text[at]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (char === "\\") escaped = true
+      else if (char === '"') inString = false
+    } else if (char === '"') {
+      inString = true
+    } else if (char === "{" || char === "[") {
+      depth += 1
+    } else if (char === "}" || char === "]") {
+      depth -= 1
+      if (depth === 0) return at + 1
+    }
+  }
+  return -1
 }

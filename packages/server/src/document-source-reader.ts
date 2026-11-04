@@ -7,6 +7,7 @@ import type {
 import {
   BoundedFileReadError,
   readBoundedRegularFileBytes,
+  readBoundedRegularFileInChunks,
 } from "./bounded-file.ts"
 import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts"
 import {
@@ -57,6 +58,44 @@ async function readFileSource(input: {
   maxBytes: number
   signal: AbortSignal
 }): Promise<Uint8Array> {
+  let content: Uint8Array = new Uint8Array(0)
+  await readFileSourceWith(input, async (path) => {
+    content = await readBoundedRegularFileBytes(path, input.maxBytes, input.signal)
+  })
+  return content
+}
+
+/**
+ * A file document's source a chunk at a time, as `readDocumentSource`
+ * reads it whole, with the same checks. A chunk is passed to `onChunk`,
+ * and awaited, before the next is read; if the read fails, the caller
+ * discards what it kept of them.
+ */
+export async function readDocumentFileSourceInChunks(input: {
+  spaceRoot: string
+  source: DocumentSource & { kind: "file" }
+  maxBytes: number
+  signal: AbortSignal
+  onChunk: (chunk: Uint8Array) => void | Promise<void>
+}): Promise<void> {
+  await readFileSourceWith(input, async (path) => {
+    await readBoundedRegularFileInChunks(
+      path,
+      input.maxBytes,
+      input.onChunk,
+      input.signal
+    )
+  })
+}
+
+async function readFileSourceWith(
+  input: {
+    spaceRoot: string
+    source: DocumentSource & { kind: "file" }
+    signal: AbortSignal
+  },
+  read: (absolutePath: string) => Promise<void>
+): Promise<void> {
   if (input.signal.aborted) throw readFailure(input.signal.reason)
   const inspected = await inspectDocumentSource(input.spaceRoot, input.source)
   if (!inspected.safe) {
@@ -64,11 +103,7 @@ async function readFileSource(input: {
   }
   const before = await lstat(inspected.absolutePath)
   try {
-    const content = await readBoundedRegularFileBytes(
-      inspected.absolutePath,
-      input.maxBytes,
-      input.signal
-    )
+    await read(inspected.absolutePath)
     if (
       input.signal.aborted ||
       !(await sourceStillMatches({
@@ -82,7 +117,6 @@ async function readFileSource(input: {
         "document source changed while it was read"
       )
     }
-    return content
   } catch (error) {
     throw readFailure(error)
   }

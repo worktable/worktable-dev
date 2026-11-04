@@ -74,7 +74,7 @@ import {
   FILE_UPLOAD_MAX_BYTES,
   FILE_UPLOAD_TOO_LARGE,
   namesAFile,
-  readLimitedBody,
+  withStagedUpload,
   writeUploadedFile,
 } from "../file-uploads.ts"
 import { usesAtOrBelow } from "../document-uses.ts"
@@ -606,30 +606,31 @@ documentsRouter.put("/file", requireScope("documents:write"), async (c) => {
       413
     )
   }
-  const bytes = await readLimitedBody(c.req.raw, FILE_UPLOAD_MAX_BYTES)
-  if (!bytes) {
-    return c.json(
-      { error: FILE_UPLOAD_TOO_LARGE, code: "PAYLOAD_TOO_LARGE" },
-      413
-    )
-  }
   const attribution = documentWriteAttribution(c.get("identity").principal)
+  const expectedRevision = c.req.header("if-match")?.replace(/^"|"$/g, "")
   try {
-    const expectedRevision = c.req.header("if-match")?.replace(/^"|"$/g, "")
-    const written = await writeUploadedFile({
-      spaceId,
-      path,
-      bytes,
-      mode:
-        expectedRevision !== undefined || c.req.query("replace") === "1"
-          ? {
-              kind: "replace",
-              ...(expectedRevision !== undefined ? { expectedRevision } : {}),
-            }
-          : { kind: "create", keepBoth: c.req.query("keepBoth") === "1" },
-      actor: attribution.actor,
-      source: attribution.source,
-    })
+    const written = await withStagedUpload(c.req.raw, (file) =>
+      writeUploadedFile({
+        spaceId,
+        path,
+        file,
+        mode:
+          expectedRevision !== undefined || c.req.query("replace") === "1"
+            ? {
+                kind: "replace",
+                ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+              }
+            : { kind: "create", keepBoth: c.req.query("keepBoth") === "1" },
+        actor: attribution.actor,
+        source: attribution.source,
+      })
+    )
+    if (!written) {
+      return c.json(
+        { error: FILE_UPLOAD_TOO_LARGE, code: "PAYLOAD_TOO_LARGE" },
+        413
+      )
+    }
     return c.json(
       { ok: true, ...written.result, contentHash: written.contentHash },
       written.status

@@ -7,7 +7,7 @@ import {
   noteDocumentCreated,
 } from "./document-activity.ts"
 import { effectiveArchiveOn } from "./lifetime-rules.ts"
-import { createHash } from "node:crypto"
+import { createHash, type Hash } from "node:crypto"
 import { isDeepStrictEqual } from "node:util"
 import { lstat, rm } from "node:fs/promises"
 import { basename, dirname, resolve } from "node:path"
@@ -46,6 +46,8 @@ import {
   commitDocumentAgentMutationV2,
   listCompatibleDocumentVersionsV2,
   readCompatibleDocumentVersionV2,
+  documentGenerationSourceEntryPathV2,
+  readDocumentGenerationManifestV2,
   retireReplacedGenerationV2,
   writeDocumentGenerationV2,
 } from "./document-version-store-v2.ts"
@@ -57,6 +59,7 @@ import {
   type ServerDocumentFormatRegistration,
 } from "./document-format-registry.ts"
 import { richTextSourceIsDoc } from "./rich-text-blocks.ts"
+import { stagedJsonIsDoc } from "./json-source-kind.ts"
 import {
   mintDocumentId,
   updateDocumentInventory,
@@ -64,7 +67,21 @@ import {
   validateDocumentInventoryMutation,
 } from "./document-inventory.ts"
 import { analyzeDocumentPath } from "./document-path.ts"
-import { readDocumentSource } from "./document-source-reader.ts"
+import {
+  readDocumentFileSourceInChunks,
+  readDocumentSource,
+} from "./document-source-reader.ts"
+import {
+  currentFileRevision,
+  sha256Check,
+  verifyPinnedFile,
+} from "./file-revision.ts"
+import {
+  discardStagedFile,
+  readStagedFile,
+  StagingFile,
+  type StagedFile,
+} from "./staged-file.ts"
 import {
   deleteDurableDocExactlyLocked,
   moveDurableDocumentExactlyLocked,
@@ -214,13 +231,15 @@ type WritableDocument = ManagedFileDocument & {
   }
 }
 
-export async function registeredDocumentSourceRevision(input: {
+interface SourceRevisionOwner {
   documentId: DocumentId
   path: string
   format: DocumentFormatClaim
   source: DocumentSource
-  bytes: Uint8Array
-}): Promise<string> {
+}
+
+/** A revision's hash, given everything but the source's bytes. */
+async function sourceRevisionHash(input: SourceRevisionOwner): Promise<Hash> {
   const hash = createHash("sha256")
   hash.update(
     JSON.stringify({
@@ -233,8 +252,96 @@ export async function registeredDocumentSourceRevision(input: {
     })
   )
   hash.update("\0")
-  hash.update(input.bytes)
+  return hash
+}
+
+function sourceRevisionOf(hash: Hash): string {
   return `rev_${hash.digest("base64url")}`
+}
+
+export async function registeredDocumentSourceRevision(
+  input: SourceRevisionOwner & { bytes: Uint8Array }
+): Promise<string> {
+  const hash = await sourceRevisionHash(input)
+  hash.update(input.bytes)
+  return sourceRevisionOf(hash)
+}
+
+/**
+ * A source's new content: bytes in memory, or a file's bytes staged on disk
+ * by an upload. Staged content is copied and hashed a chunk at a time, so a
+ * file is never held whole; only the file format takes it, since its bytes
+ * are stored exactly as given and need no adapter.
+ */
+type SourceContent = Uint8Array | StagedFile
+
+/** The revision `content` would have as `owner`'s source. */
+async function contentRevision(
+  owner: SourceRevisionOwner,
+  content: SourceContent
+): Promise<string> {
+  if (content instanceof Uint8Array) {
+    return registeredDocumentSourceRevision({ ...owner, bytes: content })
+  }
+  const hash = await sourceRevisionHash(owner)
+  await readStagedFile(content, (chunk) => void hash.update(chunk))
+  return sourceRevisionOf(hash)
+}
+
+function contentEntry(path: string, content: SourceContent) {
+  return content instanceof Uint8Array
+    ? { path, bytes: content }
+    : { path, staged: content }
+}
+
+function contentHasAuthoredSource(
+  content: SourceContent,
+  registration: ServerDocumentFormatRegistration
+): boolean {
+  if (content instanceof Uint8Array) return hasAuthoredSource(content, registration)
+  // A staged file is never parsed: any bytes are work saved.
+  return Boolean(currentAnalyticsContext()) && content.byteLength > 0
+}
+
+function contentChanged(
+  before: SourceContent,
+  after: SourceContent,
+  registration: ServerDocumentFormatRegistration
+): boolean {
+  if (before instanceof Uint8Array && after instanceof Uint8Array) {
+    return sourceContentChanged(before, after, registration)
+  }
+  return (
+    before instanceof Uint8Array ||
+    after instanceof Uint8Array ||
+    before.sha256 !== after.sha256 ||
+    before.byteLength !== after.byteLength
+  )
+}
+
+/** Staged content, if this write may take it. */
+function stagedFileContent(
+  format: DocumentFormatClaim,
+  staged: StagedFile,
+  options: { agentMutation?: unknown; onPrevious?: unknown }
+): StagedFile {
+  if (
+    format.id !== BUILTIN_DOCUMENT_FORMATS.file ||
+    options.agentMutation ||
+    options.onPrevious
+  ) {
+    throw new DocumentWriteError(
+      "unsupported",
+      "Only a file's bytes can be saved from a staged file"
+    )
+  }
+  if (staged.byteLength > WRITE_ADAPTER_BUDGET.maxInputBytes) {
+    throw new DocumentWriteError(
+      "invalid",
+      "Document source exceeds the authoring size limit"
+    )
+  }
+  return staged
 }
 
 function entryComparisonKey(entry: DocumentCatalog["entries"][number]): string {
@@ -277,18 +384,20 @@ function writableRegistration(
  * Doc. A `.json` is a Doc only when it holds Doc blocks, so any other JSON
  * is a file under its own name.
  */
-function assertNamesAFile(
+async function assertNamesAFile(
   registry: DocumentFormatRegistry,
   path: string,
-  bytes: Uint8Array
-): void {
+  content: SourceContent
+): Promise<void> {
   const claimed = registry.fileSourceForFilename(
     path.slice(path.lastIndexOf("/") + 1)
   )?.registration
   if (
     !claimed ||
     (claimed.id === BUILTIN_DOCUMENT_FORMATS.richText &&
-      !richTextSourceIsDoc(new TextDecoder().decode(bytes)))
+      !(content instanceof Uint8Array
+        ? richTextSourceIsDoc(new TextDecoder().decode(content))
+        : await stagedJsonIsDoc(content)))
   ) {
     return
   }
@@ -405,6 +514,88 @@ async function readSource(
   } finally {
     clearTimeout(timeout)
   }
+}
+
+/**
+ * A file document's source a chunk at a time, under the same budget and
+ * checks as `readSource`.
+ */
+async function readSourceInChunks(
+  workspaceRoot: string,
+  spaceId: string,
+  document: ManagedFileDocument,
+  onChunk: (chunk: Uint8Array) => void | Promise<void>
+): Promise<void> {
+  const controller = new AbortController()
+  const timeout = setTimeout(
+    () => controller.abort(new Error("Document source read timed out")),
+    WRITE_ADAPTER_BUDGET.timeoutMs
+  )
+  try {
+    await readDocumentFileSourceInChunks({
+      spaceRoot: resolve(workspaceRoot, "spaces", spaceId),
+      source: document.source,
+      maxBytes: WRITE_ADAPTER_BUDGET.maxInputBytes,
+      signal: controller.signal,
+      onChunk,
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+/**
+ * A file's current bytes copied to a staged file, with their revision, so
+ * replacing a large file never holds the version it replaces in memory.
+ */
+async function stageCurrentSource(
+  workspaceRoot: string,
+  spaceId: string,
+  document: ManagedFileDocument
+): Promise<{ staged: StagedFile; revision: string }> {
+  const file = await StagingFile.create()
+  try {
+    const hash = await sourceRevisionHash(document)
+    await readSourceInChunks(workspaceRoot, spaceId, document, async (chunk) => {
+      hash.update(chunk)
+      await file.append(chunk)
+    })
+    return { staged: await file.finish(), revision: sourceRevisionOf(hash) }
+  } catch (error) {
+    await file.discard()
+    throw error
+  }
+}
+
+/** The revision of a document's source as it is now, read in chunks. */
+async function liveSourceRevision(
+  workspaceRoot: string,
+  spaceId: string,
+  document: ManagedFileDocument
+): Promise<string> {
+  const hash = await sourceRevisionHash(document)
+  await readSourceInChunks(workspaceRoot, spaceId, document, (chunk) => void hash.update(chunk))
+  return sourceRevisionOf(hash)
+}
+
+/** Whether a document's source holds exactly `content` now. */
+async function liveSourceHolds(
+  workspaceRoot: string,
+  spaceId: string,
+  document: ManagedFileDocument,
+  content: SourceContent
+): Promise<boolean> {
+  if (content instanceof Uint8Array) {
+    const latest = await readSource(workspaceRoot, spaceId, document)
+    return Buffer.from(latest).equals(Buffer.from(content))
+  }
+  const hash = createHash("sha256")
+  let size = 0
+  await readSourceInChunks(workspaceRoot, spaceId, document, (chunk) => {
+    hash.update(chunk)
+    size += chunk.byteLength
+  })
+  return size === content.byteLength && hash.digest("hex") === content.sha256
 }
 
 async function legacyDocRestoreFence(input: {
@@ -678,7 +869,7 @@ async function newestVersionHolding(input: {
   spaceId: string
   document: WritableDocument
   documentId: DocumentId
-  bytes: Uint8Array
+  content: SourceContent
 }): Promise<{
   count: number
   newestId: string | undefined
@@ -699,7 +890,12 @@ async function newestVersionHolding(input: {
       : {}),
   })
   const latest = existing[0]
-  if (latest?.store === "v2") {
+  const content = input.content
+  if (latest?.store === "v2" && !(content instanceof Uint8Array)) {
+    const holds = await newestVersionHoldsStaged(input, latest.id, content)
+    return { count: existing.length, newestId: latest.id, holds }
+  }
+  if (latest?.store === "v2" && content instanceof Uint8Array) {
     const generation = await readCompatibleDocumentVersionV2({
       workspaceRoot: input.workspaceRoot,
       spaceId: input.spaceId,
@@ -715,7 +911,7 @@ async function newestVersionHolding(input: {
         : null
     if (
       previousBytes &&
-      Buffer.from(previousBytes).equals(Buffer.from(input.bytes))
+      Buffer.from(previousBytes).equals(Buffer.from(content))
     ) {
       return { count: existing.length, newestId: latest.id, holds: true }
     }
@@ -723,12 +919,60 @@ async function newestVersionHolding(input: {
   return { count: existing.length, newestId: latest?.id, holds: false }
 }
 
+/**
+ * Whether a version holds a staged file's bytes: its manifest records their
+ * hash, and its stored copy still matches it. The copy is read a chunk at a
+ * time, once per on-disk revision, as history reads check it. A copy that
+ * is missing or doesn't match holds nothing, so the caller keeps a fresh
+ * baseline rather than trusting it.
+ */
+async function newestVersionHoldsStaged(
+  input: { workspaceRoot: string; spaceId: string; documentId: DocumentId },
+  generationId: string,
+  content: StagedFile
+): Promise<boolean> {
+  try {
+    const manifest = await readDocumentGenerationManifestV2({
+      workspaceRoot: input.workspaceRoot,
+      spaceId: input.spaceId,
+      documentId: input.documentId,
+      generationId,
+    })
+    if (!manifest) return false
+    const recorded =
+      manifest.authoredSource.kind === "file" &&
+      manifest.authoredSource.entries.length === 1
+        ? manifest.authoredSource.entries[0]!
+        : null
+    if (
+      recorded?.bytes !== content.byteLength ||
+      recorded.sha256 !== content.sha256
+    ) {
+      return false
+    }
+    const stored = await documentGenerationSourceEntryPathV2({
+      workspaceRoot: input.workspaceRoot,
+      manifest,
+      entryPath: recorded.path,
+    })
+    if (!stored) return false
+    const now = await currentFileRevision(stored.path)
+    if (now.size !== stored.bytes) return false
+    return await verifyPinnedFile(
+      { path: stored.path, revision: now.revision, size: now.size },
+      sha256Check(stored.sha256)
+    )
+  } catch {
+    return false
+  }
+}
+
 async function ensurePreEditBaseline(input: {
   workspaceRoot: string
   spaceId: string
   document: WritableDocument
   documentId: DocumentId
-  bytes: Uint8Array
+  content: SourceContent
   beforeCreatedAt: string
   registry: DocumentFormatRegistry
 }): Promise<{ generationId: string; created: boolean }> {
@@ -760,9 +1004,7 @@ async function ensurePreEditBaseline(input: {
     },
     authoredSource: {
       kind: "file",
-      entries: [
-        { path: generationEntryName(input.document), bytes: input.bytes },
-      ],
+      entries: [contentEntry(generationEntryName(input.document), input.content)],
     },
     registry: input.registry,
   })
@@ -890,7 +1132,8 @@ export async function createRegisteredDocument(options: {
   spaceId: string
   path: string
   format: DocumentFormatClaim
-  bytes: Uint8Array
+  /** The source's bytes, or a file's bytes staged on disk. */
+  bytes: SourceContent
   createdBy: string
   source: string
   reason?: string
@@ -911,10 +1154,13 @@ export async function createRegisteredDocument(options: {
     throw new DocumentWriteError("invalid", "Files can't go in hidden folders")
   }
   if (options.format.id === BUILTIN_DOCUMENT_FORMATS.file) {
-    assertNamesAFile(registry, path, options.bytes)
+    await assertNamesAFile(registry, path, options.bytes)
   }
   const registration = writableRegistration(registry, options.format)
-  const bytes = await preparedBytes(registration, options.format, options.bytes)
+  const content: SourceContent =
+    options.bytes instanceof Uint8Array
+      ? await preparedBytes(registration, options.format, options.bytes)
+      : stagedFileContent(options.format, options.bytes, options)
 
   const result = await withDocPathLock(options.spaceId, async () => {
     assertSpaceAccess(options.spaceId, "edit");
@@ -956,7 +1202,9 @@ export async function createRegisteredDocument(options: {
           "Another document already uses this path"
         )
       }
-      await validateDrawingImagesBeforeCommit(options.format, bytes)
+      if (content instanceof Uint8Array) {
+        await validateDrawingImagesBeforeCommit(options.format, content)
+      }
       const profile = documentStorageProfiles.get(
         DOCUMENT_STORAGE_PROFILE_IDS.legacyDocFile
       )
@@ -1012,13 +1260,10 @@ export async function createRegisteredDocument(options: {
           ? {
               ...options.agentMutation,
               state: "prepared" as const,
-              sourceRevision: await registeredDocumentSourceRevision({
-                documentId,
-                path,
-                format: options.format,
-                source,
-                bytes,
-              }),
+              sourceRevision: await contentRevision(
+                { documentId, path, format: options.format, source },
+                content
+              ),
             }
           : undefined
         const committedResult = async (): Promise<DocumentWriteResult> => {
@@ -1039,24 +1284,21 @@ export async function createRegisteredDocument(options: {
             versionId,
             contentChanged: true,
           })
-          if (!isAnalyticsMaintenance(options.source, options.createdBy) && hasAuthoredSource(bytes, registration)) captureWorkSaved(registration.legacyVersionKind === "widgets" ? "html" : "document")
+          if (!isAnalyticsMaintenance(options.source, options.createdBy) && contentHasAuthoredSource(content, registration)) captureWorkSaved(registration.legacyVersionKind === "widgets" ? "html" : "document")
           return {
             documentId,
             path,
             format: options.format,
-            sourceRevision: await registeredDocumentSourceRevision({
-              documentId,
-              path,
-              format: options.format,
-              source,
-              bytes,
-            }),
+            sourceRevision: await contentRevision(
+              { documentId, path, format: options.format, source },
+              content
+            ),
             versionId,
-            ...(agentMutation
+            ...(agentMutation && content instanceof Uint8Array
               ? {
                   mutation: {
                     receipt: { ...agentMutation, state: "committed" as const },
-                    bytes,
+                    bytes: content,
                     replayed: false,
                   },
                 }
@@ -1075,7 +1317,7 @@ export async function createRegisteredDocument(options: {
           createdBy: options.createdBy,
           operationSource: options.source,
           ...(options.reason ? { reason: options.reason } : {}),
-          sourceBytes: bytes,
+          sourceBytes: content,
         })
         try {
           await writeDocumentGenerationV2({
@@ -1093,18 +1335,13 @@ export async function createRegisteredDocument(options: {
             ...(agentMutation ? { agentMutation } : {}),
             authoredSource: {
               kind: "file",
-              entries: [
-                {
-                  path: generationEntry,
-                  bytes,
-                },
-              ],
+              entries: [contentEntry(generationEntry, content)],
             },
             registry,
           })
           await advanceDocumentCreateRecoveryV2(recovery, "generation-written")
           try {
-            await atomicCreateBytes(absoluteSource, bytes)
+            await atomicCreateBytes(absoluteSource, content)
           } catch (error) {
             if ((error as NodeJS.ErrnoException).code === "EEXIST") {
               throw new DocumentWriteError(
@@ -1326,7 +1563,7 @@ async function recordFileVersionLocked(
     spaceId,
     document,
     documentId: document.documentId,
-    bytes,
+    content: bytes,
   })
   if (newest.holds) return false
   const now = new Date().toISOString()
@@ -1372,7 +1609,8 @@ async function recordFileVersionLocked(
 export async function replaceRegisteredDocument(options: {
   spaceId: string
   path: string
-  bytes: Uint8Array
+  /** The source's bytes, or a file's bytes staged on disk. */
+  bytes: SourceContent
   expectedRevision: string
   updatedBy: string
   source: string
@@ -1399,6 +1637,8 @@ export async function replaceRegisteredDocument(options: {
   assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
+  // The replaced bytes, when staged too, are removed once the write is done.
+  const staging: StagedFile[] = []
   const result = await withDocPathLock(options.spaceId, async () => {
     assertSpaceAccess(options.spaceId, "edit");
     await requireV2Workspace(workspaceRoot)
@@ -1426,24 +1666,47 @@ export async function replaceRegisteredDocument(options: {
       })
       if (replay) return replay
     }
-    const before = await readSource(workspaceRoot, options.spaceId, current)
-    options.onPrevious?.(before, current.format.id)
-    const beforeRevision = await registeredDocumentSourceRevision({
-      ...current,
-      bytes: before,
-    })
+    const staged =
+      options.bytes instanceof Uint8Array
+        ? null
+        : stagedFileContent(current.format, options.bytes, options)
+    let before: SourceContent
+    let beforeRevision: string
+    if (staged) {
+      const previous = await stageCurrentSource(
+        workspaceRoot,
+        options.spaceId,
+        current
+      )
+      staging.push(previous.staged)
+      before = previous.staged
+      beforeRevision = previous.revision
+    } else {
+      const bytes = await readSource(workspaceRoot, options.spaceId, current)
+      options.onPrevious?.(bytes, current.format.id)
+      before = bytes
+      beforeRevision = await registeredDocumentSourceRevision({
+        ...current,
+        bytes,
+      })
+    }
     if (beforeRevision !== options.expectedRevision) {
       throw new DocumentWriteError(
         "conflict",
         "Document source changed since it was read"
       )
     }
-    const bytes = await preparedBytes(
-      current.registration,
-      current.format,
-      options.bytes
-    )
-    await validateDrawingImagesBeforeCommit(current.format, bytes, before)
+    const content: SourceContent =
+      options.bytes instanceof Uint8Array
+        ? await preparedBytes(
+            current.registration,
+            current.format,
+            options.bytes
+          )
+        : options.bytes
+    if (content instanceof Uint8Array && before instanceof Uint8Array) {
+      await validateDrawingImagesBeforeCommit(current.format, content, before)
+    }
     const documentId =
       current.identity === "durable" ? current.documentId : mintDocumentId()
     const now = new Date().toISOString()
@@ -1487,7 +1750,7 @@ export async function replaceRegisteredDocument(options: {
         spaceId: options.spaceId,
         document: current,
         documentId,
-        bytes: before,
+        content: before,
         beforeCreatedAt: now,
         registry,
       })
@@ -1496,13 +1759,15 @@ export async function replaceRegisteredDocument(options: {
             ...options.agentMutation,
             state: "prepared" as const,
             beforeGenerationId: baseline.generationId,
-            sourceRevision: await registeredDocumentSourceRevision({
-              documentId,
-              path: current.path,
-              format: current.format,
-              source: current.source,
-              bytes,
-            }),
+            sourceRevision: await contentRevision(
+              {
+                documentId,
+                path: current.path,
+                format: current.format,
+                source: current.source,
+              },
+              content
+            ),
           }
         : undefined
       // The newest version holds the content this save replaces; when it is
@@ -1528,26 +1793,19 @@ export async function replaceRegisteredDocument(options: {
         ...(agentMutation ? { agentMutation } : {}),
         authoredSource: {
           kind: "file",
-          entries: [{ path: generationEntryName(current), bytes }],
+          entries: [contentEntry(generationEntryName(current), content)],
         },
         registry,
       })
       sourcePublished = await atomicWriteBytesAfterValidation(
         absoluteSource,
-        bytes,
-        async () => {
-          const latest = await readSource(
+        content,
+        async () =>
+          (await liveSourceRevision(
             workspaceRoot,
             options.spaceId,
             current
-          )
-          return (
-            (await registeredDocumentSourceRevision({
-              ...current,
-              bytes: latest,
-            })) === beforeRevision
-          )
-        }
+          )) === beforeRevision
       )
       if (!sourcePublished) {
         throw new DocumentWriteError(
@@ -1601,24 +1859,26 @@ export async function replaceRegisteredDocument(options: {
           documentId,
           generationId: versionId,
         })
-      if (currentAnalyticsContext() && !isAnalyticsMaintenance(options.source, options.updatedBy) && sourceContentChanged(before, bytes, current.registration) && (hasAuthoredSource(bytes, current.registration) || hasAuthoredSource(before, current.registration))) captureWorkSaved(current.registration.legacyVersionKind === "widgets" ? "html" : "document")
+      if (currentAnalyticsContext() && !isAnalyticsMaintenance(options.source, options.updatedBy) && contentChanged(before, content, current.registration) && (contentHasAuthoredSource(content, current.registration) || contentHasAuthoredSource(before, current.registration))) captureWorkSaved(current.registration.legacyVersionKind === "widgets" ? "html" : "document")
       return {
         documentId,
         path: current.path,
         format: current.format,
-        sourceRevision: await registeredDocumentSourceRevision({
-          documentId,
-          path: current.path,
-          format: current.format,
-          source: current.source,
-          bytes,
-        }),
+        sourceRevision: await contentRevision(
+          {
+            documentId,
+            path: current.path,
+            format: current.format,
+            source: current.source,
+          },
+          content
+        ),
         versionId,
-        ...(agentMutation
+        ...(agentMutation && content instanceof Uint8Array
           ? {
               mutation: {
                 receipt: { ...agentMutation, state: "committed" as const },
-                bytes,
+                bytes: content,
                 replayed: false,
               },
             }
@@ -1630,16 +1890,13 @@ export async function replaceRegisteredDocument(options: {
         canRollBackPublishedSource = await atomicWriteBytesAfterValidation(
           absoluteSource,
           before,
-          async () => {
-            const latest = await readSource(
+          () =>
+            liveSourceHolds(
               workspaceRoot,
               options.spaceId,
-              current
-            ).catch(() => null)
-            return Boolean(
-              latest && Buffer.from(latest).equals(Buffer.from(bytes))
-            )
-          }
+              current,
+              content
+            ).catch(() => false)
         )
         if (!canRollBackPublishedSource) {
           console.warn(
@@ -1677,7 +1934,7 @@ export async function replaceRegisteredDocument(options: {
     } finally {
       releaseWatcherSuppression()
     }
-  })
+  }).finally(() => Promise.all(staging.map(discardStagedFile)))
   await pruneCommittedHistory({
     spaceId: options.spaceId,
     documentId: result.documentId,

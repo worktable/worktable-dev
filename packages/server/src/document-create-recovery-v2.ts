@@ -1,3 +1,4 @@
+import type { StagedFile } from "./staged-file.ts"
 import { createHash, randomBytes } from "node:crypto"
 import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs"
 import { lstat, mkdir, open, rename, rm } from "node:fs/promises"
@@ -162,7 +163,8 @@ export async function prepareDocumentCreateRecoveryV2(input: {
   createdBy: string
   operationSource: string
   reason?: string
-  sourceBytes: Uint8Array
+  /** The bytes being created, or the staged file holding them. */
+  sourceBytes: Uint8Array | StagedFile
 }): Promise<RecoveredDocumentCreateV2> {
   if (input.source.kind !== "file") {
     throw new Error("document create recovery supports managed files only")
@@ -192,7 +194,10 @@ export async function prepareDocumentCreateRecoveryV2(input: {
     operationSource: input.operationSource,
     ...(input.reason ? { reason: input.reason } : {}),
     bytes: input.sourceBytes.byteLength,
-    sha256: sha256(input.sourceBytes),
+    sha256:
+      input.sourceBytes instanceof Uint8Array
+        ? sha256(input.sourceBytes)
+        : input.sourceBytes.sha256,
   })
   await writeJob(job)
   return { path: jobPath(id), job }

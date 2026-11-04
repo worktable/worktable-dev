@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import type { SpaceFile, WidgetFile } from "@worktable/types"
-import { mkdir, mkdtemp, open, readFile, rm, truncate, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, open, readdir, readFile, rm, truncate, writeFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { FILE_VERSION_MAX_BYTES } from "./file-limits.ts"
 import { noteSpaceChanged } from "./workspace-read-model.ts"
@@ -17,7 +17,8 @@ import {
 import { readDocument } from "./document-query.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
 import { fileLinksRouter } from "./routes/file-links.ts"
-import { readLimitedBody } from "./file-uploads.ts"
+import { stageUploadBody } from "./file-uploads.ts"
+import { stagingDirectory } from "./staged-file.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
 import { invalidateSearchIndex, search } from "./search-index.ts"
 import { setDocArchived, writeDoc, writeSpace } from "./store.ts"
@@ -392,7 +393,7 @@ describe("file links for agents", () => {
       ).toMatchObject({ byteLength: hugeSize, noHistory })
 
       // A body is counted as it arrives, so one without Content-Length can't
-      // run past the limit.
+      // run past the limit, and nothing of it is kept.
       const chunked = new ReadableStream<Uint8Array>({
         start(controller) {
           for (let i = 0; i < 3; i++) controller.enqueue(new Uint8Array(4))
@@ -400,8 +401,9 @@ describe("file links for agents", () => {
         },
       })
       expect(
-        await readLimitedBody(new Request("http://x", { method: "PUT", body: chunked }), 10)
+        await stageUploadBody(new Request("http://x", { method: "PUT", body: chunked }), 10)
       ).toBeNull()
+      expect(await readdir(stagingDirectory())).toEqual([])
 
       // Replaced content ends every link made before it.
       const before = await read({ action: "read_source", spaceId, path: "design/shot.png" })

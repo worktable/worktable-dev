@@ -1,6 +1,6 @@
 import { LinkGrantSchema, defaultSharingPolicy } from "@worktable/types"
 import { afterEach, beforeEach, expect, it } from "bun:test"
-import { mkdtemp, open, rm, truncate } from "node:fs/promises"
+import { mkdtemp, open, readdir, rm, stat, truncate } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import fc from "fast-check"
@@ -32,8 +32,10 @@ import {
 } from "./share-links-store.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { createLinkedIngress } from "./linked-ingress.ts"
+import { receiveUploadPiece } from "./linked-file-links.ts"
 import { issueFileTicket } from "./file-tickets.ts"
-import { writeUploadedFile } from "./file-uploads.ts"
+import { withStagedUpload, writeUploadedFile } from "./file-uploads.ts"
+import { stagingDirectory } from "./staged-file.ts"
 import { FILE_VERSION_MAX_BYTES } from "./file-limits.ts"
 import { noteSpaceChanged } from "./workspace-read-model.ts"
 import { listAgentConnections } from "./agent-connection-store.ts"
@@ -1013,15 +1015,42 @@ it("carries a file link in pieces: an upload saved after its last piece, and a d
   expect(await done.json()).toMatchObject({
     path: "design/archive.bin",
     byteLength: file.byteLength,
+    contentHash: createHash("sha256").update(file).digest("base64url"),
   })
+  // Each piece went to disk as it came, and nothing is left there now.
+  expect(await readdir(stagingDirectory())).toEqual([])
   // The link worked once.
   expect((await piece(token, 0, first, file.byteLength)).status).toBe(410)
+
+  // Pieces that overlap, in order, save the whole file: only the last one
+  // saves it, once every piece is written.
+  const overlapping = issueFileTicket({
+    kind: "upload",
+    spaceId: "space",
+    path: "design/three.bin",
+    mode: { kind: "create", keepBoth: false },
+    identity: null,
+    principal,
+    actor: principal.id,
+  }).token
+  const one = (offset: number) =>
+    receiveUploadPiece(overlapping, offset, 3, new Uint8Array([offset + 1]))
+  expect((await one(0)).status).toBe(202)
+  const [second, third] = await Promise.all([one(1), one(2)])
+  expect(second.status).toBe(202)
+  expect(third.status).toBe(201)
+  expect(await third.json()).toMatchObject({
+    byteLength: 3,
+    contentHash: createHash("sha256").update(new Uint8Array([1, 2, 3])).digest("base64url"),
+  })
+  expect(await readdir(stagingDirectory())).toEqual([])
 
   // A piece out of order ends the upload, and its link with it.
   const broken = upload()
   expect((await piece(broken, 0, first, file.byteLength)).status).toBe(202)
   expect((await piece(broken, 5, rest, file.byteLength)).status).toBe(409)
   expect((await piece(broken, LINKED_REQUEST_MAX_BYTES, rest, file.byteLength)).status).toBe(410)
+  expect(await readdir(stagingDirectory())).toEqual([])
 
   // A piece claiming another path or method is refused before it is read.
   const misdirected = await createLinkedRequest({
@@ -1065,14 +1094,16 @@ it("carries a file link in pieces: an upload saved after its last piece, and a d
   // one did: a later piece of a file replaced partway is refused.
   expect(head.headers.get("ETag")).toMatch(/^"/)
   expect(tail.headers.get("ETag")).toBe(head.headers.get("ETag"))
-  await writeUploadedFile({
-    spaceId: "space",
-    path: "design/archive.bin",
-    bytes: rest,
-    mode: { kind: "replace" },
-    actor: principal.id,
-    source: "mcp",
-  })
+  await withStagedUpload(new Response(rest), (file) =>
+    writeUploadedFile({
+      spaceId: "space",
+      path: "design/archive.bin",
+      file,
+      mode: { kind: "replace" },
+      actor: principal.id,
+      source: "mcp",
+    })
+  )
   const changed = await read(LINKED_REQUEST_MAX_BYTES)
   expect(changed.status).toBe(409)
   expect(await changed.json()).toMatchObject({ code: "FILE_CHANGED" })
@@ -1109,4 +1140,23 @@ it("carries a file link in pieces: an upload saved after its last piece, and a d
   expect(new Uint8Array(await past.arrayBuffer())).toEqual(
     new Uint8Array([...rest, 0, 0, 0, 0])
   )
+  // Replacing it in pieces is refused with the reason, as a new version
+  // would lose it, and leaves it as it was.
+  const replacing = issueFileTicket({
+    kind: "upload",
+    spaceId: "space",
+    path: "design/archive.bin",
+    mode: { kind: "replace", expectedRevision: "rev_seen" },
+    identity: null,
+    principal,
+    actor: principal.id,
+  }).token
+  const refused = await piece(replacing, 0, rest, rest.byteLength)
+  expect(refused.status).toBe(409)
+  expect(await refused.json()).toMatchObject({
+    code: "CONFLICT",
+    error: expect.stringContaining("larger than 64 MiB"),
+  })
+  expect((await stat(onDisk)).size).toBe(size)
+  expect(await readdir(stagingDirectory())).toEqual([])
 }, 30_000)

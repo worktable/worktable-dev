@@ -4,11 +4,8 @@
 // On the preview surface.
 
 import type { z } from "zod"
-import {
-  FILE_UPLOAD_MAX_BYTES,
-  FILE_UPLOAD_TOO_LARGE,
-  readLimitedBody,
-} from "../file-uploads.ts"
+import { FILE_UPLOAD_TOO_LARGE, stageUploadBody } from "../file-uploads.ts"
+import type { StagedFile } from "../staged-file.ts"
 import type { ChatGptFileInput } from "./schemas.ts"
 
 export type ChatGptFile = z.infer<typeof ChatGptFileInput>
@@ -38,11 +35,14 @@ export function isChatGptFileUrl(value: string): boolean {
   )
 }
 
-/** The bytes of a file attached in ChatGPT, or why they couldn't be read. */
+/**
+ * A file attached in ChatGPT, staged on disk as it arrives, or why it
+ * couldn't be read. The caller discards the staged file after saving it.
+ */
 export async function fetchChatGptFile(
   file: ChatGptFile,
   signal?: AbortSignal
-): Promise<Uint8Array> {
+): Promise<StagedFile> {
   if (!isChatGptFileUrl(file.download_url)) {
     throw new Error(
       "file.download_url must be a ChatGPT file link. Attach the file in ChatGPT, or use upload without file for a link to send it to."
@@ -61,7 +61,9 @@ export async function fetchChatGptFile(
       "ChatGPT's link to the file has expired or was refused. Attach the file again."
     )
   }
-  const bytes = await readLimitedBody(response, FILE_UPLOAD_MAX_BYTES)
-  if (!bytes) throw new Error(FILE_UPLOAD_TOO_LARGE)
-  return bytes
+  const staged = await stageUploadBody(response).catch(() => {
+    throw new Error("ChatGPT's link to the file stopped partway. Try again.")
+  })
+  if (!staged) throw new Error(FILE_UPLOAD_TOO_LARGE)
+  return staged
 }

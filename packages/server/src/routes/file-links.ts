@@ -17,9 +17,10 @@ import { FileRevisionError } from "../file-revision.ts"
 import {
   FILE_UPLOAD_MAX_BYTES,
   FILE_UPLOAD_TOO_LARGE,
-  readLimitedBody,
+  withStagedUpload,
   writeUploadedFile,
 } from "../file-uploads.ts"
+import type { StagedFile } from "../staged-file.ts"
 import { filesEnabled } from "../files-enabled.ts"
 import {
   assertSpaceAccess,
@@ -65,28 +66,29 @@ fileLinksRouter.put("/:token", async (c) => {
   }
   const ticket = redeemFileTicket(c.req.param("token"), "upload")
   if (!ticket || ticket.kind !== "upload") return c.json(GONE, 410)
-  const bytes = await readLimitedBody(c.req.raw, FILE_UPLOAD_MAX_BYTES)
-  if (!bytes) {
+  const saved = await withStagedUpload(c.req.raw, (file) =>
+    saveFileLinkUpload(ticket, file)
+  )
+  if (!saved) {
     return c.json({ error: FILE_UPLOAD_TOO_LARGE, code: "PAYLOAD_TOO_LARGE" }, 413)
   }
-  const saved = await saveFileLinkUpload(ticket, bytes)
   return c.json(saved.body, saved.status)
 })
 
 /**
- * Save an upload link's bytes as whoever made the link. Its ticket is
+ * Save an upload link's staged file as whoever made the link. Its ticket is
  * already redeemed: here, or by Worktable Link once every piece is in.
  */
 export async function saveFileLinkUpload(
   ticket: Extract<FileTicket, { kind: "upload" }>,
-  bytes: Uint8Array
+  file: StagedFile
 ) {
   try {
     const written = await asMaker(ticket, () =>
       writeUploadedFile({
         spaceId: ticket.spaceId,
         path: ticket.path,
-        bytes,
+        file,
         mode: ticket.mode,
         actor: ticket.actor,
         source: "mcp",
@@ -97,7 +99,7 @@ export async function saveFileLinkUpload(
         ok: true,
         path: written.result.path,
         sourceRevision: written.result.sourceRevision,
-        byteLength: bytes.byteLength,
+        byteLength: file.byteLength,
         contentHash: written.contentHash,
       },
       status: written.status,

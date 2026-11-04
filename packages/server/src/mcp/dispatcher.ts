@@ -200,6 +200,7 @@ import {
   type FileUploadMode,
 } from "../file-uploads.ts"
 import { fetchChatGptFile, type ChatGptFile } from "./chatgpt-files.ts"
+import { discardStagedFile } from "../staged-file.ts"
 import { analyzeDocumentPath } from "../document-path.ts"
 import {
   importIntoRecords,
@@ -1473,21 +1474,25 @@ async function _dispatchOperationInner(
           : { kind: "create", keepBoth: ifExists === "keep_both" }
       // A file attached in ChatGPT: fetch it and save it now.
       if (file) {
-        const bytes = await fetchChatGptFile(file, context.signal)
-        const written = await writeUploadedFile({
-          spaceId,
-          path,
-          bytes,
-          mode,
-          actor: actorId,
-          source: "mcp",
-        })
-        return {
-          ok: true as const,
-          path: written.result.path,
-          sourceRevision: written.result.sourceRevision,
-          byteLength: bytes.byteLength,
-          contentHash: written.contentHash,
+        const staged = await fetchChatGptFile(file, context.signal)
+        try {
+          const written = await writeUploadedFile({
+            spaceId,
+            path,
+            file: staged,
+            mode,
+            actor: actorId,
+            source: "mcp",
+          })
+          return {
+            ok: true as const,
+            path: written.result.path,
+            sourceRevision: written.result.sourceRevision,
+            byteLength: staged.byteLength,
+            contentHash: written.contentHash,
+          }
+        } finally {
+          await discardStagedFile(staged)
         }
       }
       if (!context.fileLinkOrigin) {

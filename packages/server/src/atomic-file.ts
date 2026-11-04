@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto"
 import { constants } from "node:fs"
 import { link, open, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
+import { copyStagedFileInto, type StagedFile } from "./staged-file.ts"
 
 const ATOMIC_WRITE_FLAGS =
   constants.O_WRONLY |
@@ -14,6 +15,15 @@ const ATOMIC_WRITE_TEMPORARY_FILE_PATTERN =
 
 export function isAtomicWriteTemporaryFileName(name: string): boolean {
   return ATOMIC_WRITE_TEMPORARY_FILE_PATTERN.test(name)
+}
+
+/** Bytes in memory, or a staged file copied a chunk at a time. */
+async function writeContent(
+  handle: Awaited<ReturnType<typeof open>>,
+  content: Uint8Array | StagedFile
+): Promise<void> {
+  if (content instanceof Uint8Array) await handle.writeFile(content)
+  else await copyStagedFileInto(content, handle)
 }
 
 /**
@@ -44,7 +54,7 @@ export async function atomicWriteBytes(
  */
 export async function atomicWriteBytesAfterValidation(
   filePath: string,
-  bytes: Uint8Array,
+  bytes: Uint8Array | StagedFile,
   validate: () => boolean | Promise<boolean>
 ): Promise<boolean> {
   const temporaryPath = join(
@@ -55,7 +65,7 @@ export async function atomicWriteBytesAfterValidation(
   try {
     const handle = await open(temporaryPath, ATOMIC_WRITE_FLAGS, 0o666)
     try {
-      await handle.writeFile(bytes)
+      await writeContent(handle, bytes)
     } finally {
       await handle.close()
     }
@@ -73,7 +83,7 @@ export async function atomicWriteBytesAfterValidation(
 /** Publish a new file without replacing a source created by another writer. */
 export async function atomicCreateBytes(
   filePath: string,
-  bytes: Uint8Array
+  bytes: Uint8Array | StagedFile
 ): Promise<void> {
   const temporaryPath = join(
     dirname(filePath),
@@ -82,7 +92,7 @@ export async function atomicCreateBytes(
   try {
     const handle = await open(temporaryPath, ATOMIC_WRITE_FLAGS, 0o666)
     try {
-      await handle.writeFile(bytes)
+      await writeContent(handle, bytes)
     } finally {
       await handle.close()
     }

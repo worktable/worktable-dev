@@ -61,10 +61,17 @@ returns a warning. Links keep working after a document or folder moves.
 
 Worktable links open in the current tab; external sites open in a new tab.
 
+## Images
+
+Select an image, or its **Full screen** button, to see it full screen. Zoom and
+pan as you would a diagram, use the arrow keys to move through the document's
+images, and **Download** an image or **Open** its file. While you edit a rich
+doc, selecting an image lets you resize or caption it, so use **Full screen**.
+
 ## Mermaid diagrams
 
 Mermaid diagrams are validated before saving. Select a diagram or its
-**Fullscreen** button to zoom, pan, or download an SVG.
+**Full screen** button to zoom, pan, or download an SVG.
 
 For freehand work or layouts you edit by hand, use
 [Drawings](/guides/drawings/). For Mermaid inside HTML docs, see

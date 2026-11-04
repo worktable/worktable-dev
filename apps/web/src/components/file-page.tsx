@@ -18,6 +18,8 @@ import {
   type FileSurfacePolicies,
 } from "@worktable/types"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
+import { DataTooltips } from "@/components/document/data-tooltip"
+import { ImageViewControl } from "@/components/viewer/image-view-control"
 import { mergeRefs, usePaneWidth } from "@/hooks/use-pane-width"
 import { useSetPageMeta } from "@/hooks/use-page-meta"
 import { DocTable } from "@/components/document/doc-table"
@@ -109,6 +111,7 @@ export function FilePage({
   const paneWidth = usePaneWidth<HTMLDivElement>()
   const scrollRef = useMemo(() => mergeRefs(fade, paneWidth), [fade, paneWidth])
   const picker = useRef<HTMLInputElement>(null)
+  const article = useRef<HTMLElement>(null)
   const [uploading, setUploading] = useState(false)
   // The file loads by what its bytes are, so an unchanged file comes from
   // the browser's cache and a changed one loads anew. Right after Upload New
@@ -298,7 +301,10 @@ export function FilePage({
         data-document-scroll-root
         className="scroll-fade h-full w-full flex-1 overflow-auto"
       >
-        <article className="worktable-markdown worktable-document-content">
+        <article
+          ref={article}
+          className="worktable-markdown worktable-document-content"
+        >
           <h1>{name}</h1>
           <DocumentByline
             spaceId={spaceId}
@@ -320,6 +326,16 @@ export function FilePage({
             <p className="text-sm text-muted-foreground">
               No history while this file is larger than 64 MiB.
             </p>
+          ) : null}
+          {view === "image" ? (
+            <>
+              <DataTooltips rootRef={article} />
+              <ImageViewControl
+                frameRef={article}
+                openOnClick
+                linksToFile={false}
+              />
+            </>
           ) : null}
         </article>
       </div>
@@ -356,7 +372,13 @@ function FileContent({
   if (view === "image") {
     return (
       <p>
-        <img src={url} alt={name} onError={() => setImageFailed(true)} />
+        <img
+          src={url}
+          alt={name}
+          data-viewable=""
+          tabIndex={0}
+          onError={() => setImageFailed(true)}
+        />
       </p>
     )
   }

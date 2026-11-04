@@ -33,6 +33,8 @@ import { CodeBlock } from "@/components/document/code-block"
 import { DocTable } from "@/components/document/doc-table"
 import { DocDetails, DocSummary } from "@/components/document/doc-details"
 import { DataTooltips } from "@/components/document/data-tooltip"
+import { ImageViewControl } from "@/components/viewer/image-view-control"
+import { viewableImage } from "@/lib/viewable-images"
 import { NumberedList } from "@worktable/ui/lib/numbered-list"
 import { markdownTitleLine } from "@worktable/ui/document-reading-preview"
 import "@/styles/document-controls.css"
@@ -47,6 +49,29 @@ import { externalLinkProps, worktableLinkOrigins } from "@/lib/external-links"
 import { BASE_URL } from "@/lib/http"
 import { useTheme } from "@/components/theme-provider"
 import { resolveDocLink } from "@worktable/types"
+
+/** Inside a link, an image keeps the link's click and focus. */
+const InLink = createContext(false)
+
+/**
+ * A Doc's image, which opens in the viewer. Once it has loaded as one the
+ * viewer shows, it takes focus too, so the keyboard can open it.
+ */
+function ViewableImage({ onLoad, ...props }: ComponentProps<"img">) {
+  const inLink = useContext(InLink)
+  const [openable, setOpenable] = useState(false)
+  return (
+    <img
+      {...props}
+      data-viewable=""
+      tabIndex={openable && !inLink ? 0 : undefined}
+      onLoad={(event) => {
+        onLoad?.(event)
+        setOpenable(viewableImage(event.currentTarget) !== null)
+      }}
+    />
+  )
+}
 
 const MermaidRenderer = lazy(() =>
   import("./worktable-mermaid-renderer").then((module) => ({
@@ -195,6 +220,7 @@ export function MarkdownViewer({
   const fade = useScrollFade<HTMLDivElement>(8, { top: false })
   const paneWidth = usePaneWidth<HTMLDivElement>()
   const scrollRoot = useRef<HTMLDivElement | null>(null)
+  const article = useRef<HTMLElement>(null)
   const setScrollRoot = useCallback((node: HTMLDivElement | null) => {
     scrollRoot.current = node
   }, [])
@@ -236,7 +262,10 @@ export function MarkdownViewer({
         className="scroll-fade h-full w-full flex-1 overflow-auto"
       >
         <DataTooltips rootRef={scrollRoot} />
-        <article className="worktable-markdown worktable-document-content">
+        <article
+          ref={article}
+          className="worktable-markdown worktable-document-content"
+        >
           {afterTitle != null && titleLine === null && afterTitle}
           <MarkdownErrorBoundary>
             <AfterTitleContext value={afterTitleValue}>
@@ -246,7 +275,7 @@ export function MarkdownViewer({
                 skipHtml={html.skipHtml}
                 components={{
                   h1: TitleHeading,
-                  a: ({ node, href = "", ...props }) => {
+                  a: ({ node, href = "", children, ...props }) => {
                     void node
                     const renderedHref = renderDocLinkHref(
                       spaceId,
@@ -291,7 +320,9 @@ export function MarkdownViewer({
                           })
                         }}
                         {...externalLinkProps(renderedHref, worktableOrigins)}
-                      />
+                      >
+                        <InLink value>{children}</InLink>
+                      </a>
                     )
                   },
                   table: ({ node, children }) => {
@@ -330,7 +361,7 @@ export function MarkdownViewer({
                         ? knownImageSize(source)
                         : undefined
                     const image = (
-                      <img
+                      <ViewableImage
                         {...known}
                         {...props}
                         src={source}
@@ -418,6 +449,7 @@ export function MarkdownViewer({
               </Markdown>
             </AfterTitleContext>
           </MarkdownErrorBoundary>
+          <ImageViewControl frameRef={article} openOnClick />
         </article>
       </div>
     </div>

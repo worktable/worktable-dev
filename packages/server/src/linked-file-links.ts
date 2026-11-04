@@ -9,7 +9,7 @@ import {
   LINKED_REQUEST_MAX_BYTES,
 } from "@worktable/hosted-contract"
 import { FileRevisionError } from "./file-revision.ts"
-import { redeemFileTicket, type FileTicket } from "./file-tickets.ts"
+import { redeemFileTicket, type UploadTicket } from "./file-tickets.ts"
 import { filesEnabled } from "./files-enabled.ts"
 import { fileLinksRouter, saveFileLinkUpload } from "./routes/file-links.ts"
 import { discardStagedFile, StagingFile } from "./staged-file.ts"
@@ -28,7 +28,7 @@ const DOWNLOAD_PIECES_AT_ONCE = 2
 const UPLOAD_IDLE_MS = 2 * 60_000
 
 interface PendingUpload {
-  ticket: Extract<FileTicket, { kind: "upload" }>
+  ticket: UploadTicket
   file: StagingFile
   total: number
   /** Bytes taken, counted when a piece arrives, before it is written. */
@@ -95,7 +95,7 @@ export async function receiveUploadPiece(
       )
     }
     const ticket = redeemFileTicket(token, "upload", now)
-    if (!ticket || ticket.kind !== "upload") return answer(GONE, 410)
+    if (!ticket || ticket.kind === "download") return answer(GONE, 410)
     // Held while the file is created, so the next piece finds the upload.
     uploadsSaving++
     let file: StagingFile

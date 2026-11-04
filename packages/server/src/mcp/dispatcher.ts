@@ -190,7 +190,13 @@ import {
 } from "./file-results.ts"
 import { withResultMedia } from "./media.ts"
 import { filesEnabled } from "../files-enabled.ts"
-import { fileDownloadLink, fileUploadLink } from "./file-links.ts"
+import {
+  fileDownloadLink,
+  fileUploadLink,
+  htmlDownloadLink,
+  htmlUploadLink,
+} from "./file-links.ts"
+import type { HtmlUploadCall } from "../file-tickets.ts"
 import { readCurrentFileSource } from "../current-file-source.ts"
 import {
   FILE_UPLOAD_MAX_BYTES,
@@ -916,6 +922,40 @@ interface ToolDispatchContext {
    */
   fileLinkOrigin?: string | null
   onThreadProgress?: (update: ThreadProgressUpdate) => void | Promise<void>
+}
+
+/** The call's fields an HTML upload link keeps for when the page arrives. */
+function htmlUploadCallArgs(args: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(args).filter(
+      ([key, value]) => value !== undefined && key !== "upload" && key !== "preview" && key !== "html" && key !== "edits"
+    )
+  )
+}
+
+/** A one-time link that takes an HTML Doc's page, and how to send it. */
+function htmlUploadLinkResult(
+  context: ToolDispatchContext,
+  principal: RequestPrincipal,
+  spaceId: string,
+  path: string,
+  call: HtmlUploadCall,
+  widgetId?: string
+) {
+  if (context.surface !== "preview")
+    throw new Error("This Worktable doesn't take HTML Docs through upload links yet. Pass the page as html.")
+  if (!filesEnabled()) throw new Error("File features are turned off on this Worktable.")
+  if (!context.fileLinkOrigin)
+    throw new Error("This connection can't take upload links. Pass the page as html, or change part of it with edits.")
+  const link = htmlUploadLink(context.fileLinkOrigin, principal, spaceId, path, call)
+  return {
+    ok: true as const,
+    ...(widgetId ? { widgetId } : {}),
+    ...link,
+    method: "PUT" as const,
+    maxBytes: FILE_UPLOAD_MAX_BYTES,
+    command: `curl --fail-with-body -T <local file> '${link.uploadUrl}'`,
+  }
 }
 
 const AGENT_FILE_REVISION_REQUIRED =
@@ -1821,10 +1861,16 @@ async function _dispatchOperationInner(
           }
           // The revision a replace of its html names, with or without it.
           const revision = htmlSourceRevision(data.sourceBytes)
-          if (!includeHtml) return { widget, revision }
+          // With a shell, a large page moves through a link, outside the call.
+          const download =
+            context.surface === "preview"
+              ? htmlDownloadLink(context.fileLinkOrigin, principal, spaceId, widgetId, revision)
+              : {}
+          if (!includeHtml) return { widget, revision, ...download }
           return {
             widget,
             revision,
+            ...download,
             html: data.html,
             warnings: validateWidgetHtml(data.html, data.widget.permissions),
           }
@@ -2245,6 +2291,16 @@ async function _dispatchOperationInner(
             : `Invalid widget id "${explicitId}". Ids are slash-separated segments of lowercase letters, digits, and hyphens (nesting it in sidebar folders); nested ids may not use reserved segment names (records, state, content, archive, restore, versions, review).`
         )
       }
+      // The page comes through a link: the create runs once it arrives.
+      if (args["upload"]) {
+        return htmlUploadLinkResult(context, principal, spaceId, explicitId ?? name, {
+          operation: "html.create",
+          args: htmlUploadCallArgs(args),
+          scopes: identity.scopes,
+          ...(context.identity ? { agentIdentity: context.identity } : {}),
+        })
+      }
+      if (typeof html !== "string") throw new Error("A new HTML Doc needs html.")
       const warnings = validateWidgetHtml(html, permissions)
       const blockingIssue = getBlockingWidgetIssue(warnings)
       if (blockingIssue)
@@ -2336,6 +2392,44 @@ async function _dispatchOperationInner(
       // Edits are held for the preview surface.
       if (!preview && edits !== undefined)
         throw new Error("This Worktable doesn't take edits to HTML Docs yet. Pass the whole page as html.")
+      if (args["upload"]) {
+        if (args["html"] !== undefined || edits !== undefined)
+          throw new Error("Pass upload to send the page through a link, or html or edits, not both.")
+        // Checked now, while the agent can still read again, and once more
+        // when the page arrives.
+        await withCanonicalHtmlDocumentPath(spaceId, widgetId, async () => {
+          const { data: document, error } = await readWidgetDocument(spaceId, widgetId)
+          if (error || !document) throw new Error(error ?? "Widget not found")
+          authorizeHtmlPermissions({
+            requested: args["permissions"] as WidgetFile["permissions"],
+            existing: document.widget,
+            person: false,
+            identity,
+            scopes: identity.scopes,
+          })
+          const expectedRevision = args["expectedRevision"] as string | undefined
+          if (expectedRevision === undefined) {
+            throw new DocEditError(
+              "revision_required",
+              `${widgetId} already exists. Read it with worktable_html_read and pass its revision as expectedRevision to replace its html through a link.`
+            )
+          }
+          const current = htmlSourceRevision(document.sourceBytes)
+          if (expectedRevision !== current) {
+            throw new DocEditError(
+              "revision_conflict",
+              `${widgetId} changed since revision ${expectedRevision}. Read it again and reapply your change.`,
+              { currentRevision: current }
+            )
+          }
+        })
+        return htmlUploadLinkResult(context, principal, spaceId, widgetId, {
+          operation: "html.update",
+          args: htmlUploadCallArgs(args),
+          scopes: identity.scopes,
+          ...(context.identity ? { agentIdentity: context.identity } : {}),
+        }, widgetId)
+      }
       let previewSnapshot: HtmlPreviewSnapshot | undefined
       let previewError: unknown
       const updated = await withCanonicalHtmlDocumentPath(

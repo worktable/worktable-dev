@@ -8,7 +8,8 @@
 // and a few minutes: an upload link works once, a download link until it
 // expires. A download link reads one revision of its file: the one the
 // read that made it saw, or else the one its first use found. Once the file
-// changes, the link refuses rather than give other bytes. The link's token
+// changes, the link refuses rather than give other bytes. An HTML Doc's page
+// moves the same way: its upload link finishes the write that made it. The link's token
 // is the only key, so only its hash is kept, in this process's memory: a
 // restart ends every link.
 
@@ -36,17 +37,35 @@ interface TicketBase {
   expiresAt: number
 }
 
+/**
+ * The HTML Doc write an upload link finishes once the page arrives: the
+ * tool call that made the link, as its caller, without the html.
+ */
+export interface HtmlUploadCall {
+  operation: "html.create" | "html.update"
+  args: Record<string, unknown>
+  scopes: string[]
+  agentIdentity?: Pick<TokenIdentity, "agent" | "credentialClass" | "principal">
+}
+
 export type FileTicket =
   | (TicketBase & { kind: "upload"; mode: FileUploadMode })
+  | (TicketBase & { kind: "html-upload"; call: HtmlUploadCall })
   | (TicketBase & {
       kind: "download"
       /** The file's revision this link reads; set by its first use if absent. */
       revision?: string
+      /** An HTML Doc's source, at the revision its read gave. */
+      html?: { revision: string }
     })
+
+/** A link that takes bytes, once. */
+export type UploadTicket = Extract<FileTicket, { kind: "upload" | "html-upload" }>
 
 /** A file link's ticket, before its token. */
 export type FileTicketInput =
   | Omit<Extract<FileTicket, { kind: "upload" }>, "expiresAt">
+  | Omit<Extract<FileTicket, { kind: "html-upload" }>, "expiresAt">
   | Omit<Extract<FileTicket, { kind: "download" }>, "expiresAt">
 
 const tickets = new Map<string, FileTicket>()
@@ -83,18 +102,19 @@ export function issueFileTicket(
  */
 export function redeemFileTicket(
   token: string,
-  kind: FileTicket["kind"],
+  kind: "upload" | "download",
   now = Date.now()
 ): FileTicket | null {
   if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null
   const hash = tokenHash(token)
   const ticket = tickets.get(hash)
-  if (!ticket || ticket.kind !== kind) return null
+  // Every upload link takes bytes the same way, for a file or an HTML Doc.
+  if (!ticket || (kind === "upload" ? ticket.kind === "download" : ticket.kind !== kind)) return null
   if (ticket.expiresAt <= now) {
     tickets.delete(hash)
     return null
   }
-  if (ticket.kind === "upload") tickets.delete(hash)
+  if (ticket.kind !== "download") tickets.delete(hash)
   return ticket
 }
 

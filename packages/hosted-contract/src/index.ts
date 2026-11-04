@@ -925,6 +925,7 @@ export * from "./public-share-policy.ts"
 
 export {
   CloudBackupStatus,
+  type BackupWorkerDiagnostics,
   type BackupWorkerInput,
   type BackupWorkerResult,
   type VisitorCommentsCheckpoint,

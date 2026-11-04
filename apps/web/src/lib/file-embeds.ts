@@ -5,7 +5,12 @@
 // a Doc go in the Doc's own folder (`onboarding/signup-flow.md` owns
 // `onboarding/signup-flow/`), and the Doc stores the path relative to it.
 
-import { resolveDocLink, versionIdTimestamp } from "@worktable/types"
+import {
+  FILE_TYPES,
+  pastedFileType,
+  resolveDocLink,
+  versionIdTimestamp,
+} from "@worktable/types"
 import { authenticatedFetch, BASE_URL, HttpError } from "./http"
 
 /**
@@ -131,9 +136,14 @@ export function embeddedFileName(file: File, now = new Date()): string {
   const fileName = file.name ?? ""
   const dot = fileName.lastIndexOf(".")
   const base = dot > 0 ? fileName.slice(0, dot) : fileName
-  const fromType = file.type.startsWith("image/")
-    ? file.type.slice("image/".length).replace("jpeg", "jpg").replace("svg+xml", "svg")
-    : ""
+  // A pasted image is named for its type in the file type table; one the
+  // table doesn't list keeps its media subtype.
+  const pasted = pastedFileType(file.type)
+  const fromType = pasted
+    ? (FILE_TYPES[pasted].extensions[0] ?? "")
+    : file.type.startsWith("image/")
+      ? file.type.slice("image/".length).replace("jpeg", "jpg").replace("svg+xml", "svg")
+      : ""
   const extension = (dot > 0 ? fileName.slice(dot + 1) : fromType)
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "")

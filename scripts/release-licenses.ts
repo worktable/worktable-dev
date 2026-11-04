@@ -9,7 +9,11 @@ import {
 // These are the existing notices for identified bundled Worktable components
 // and Desktop fonts. Public AGPL builds also retain their root LICENSE/NOTICE;
 // the private checkout is not relicensed by this packaging helper.
-const appLicenses = ["packages/ui/LICENSE", "packages/hosted-contract/LICENSE"]
+const appLicenses = [
+  "packages/ui/LICENSE",
+  "packages/types/LICENSE",
+  "packages/hosted-contract/LICENSE",
+]
 const drawingLicenses = [
   "apps/desktop/ui/fonts/GeneralSans-LICENSE.txt",
   "scripts/licenses/NotoSans-OFL.txt",

@@ -1292,8 +1292,10 @@ async function copyAndHash(
   inventory: SourceInventory,
   directories: Map<string, SourceEntry>,
   signal?: AbortSignal,
-  checkAncestors = true
-): Promise<string> {
+  checkAncestors = true,
+  /** False when a remembered hash already vouches for these bytes. */
+  hashBytes = true
+): Promise<string | null> {
   signal?.throwIfAborted()
   if (checkAncestors)
     await assertSourceAncestors(source, inventory, directories)
@@ -1312,7 +1314,7 @@ async function copyAndHash(
   const meter = new Transform({
     transform(chunk: Buffer, _encoding, callback) {
       bytes += chunk.byteLength
-      hash.update(chunk)
+      if (hashBytes) hash.update(chunk)
       callback(null, chunk)
     },
   })
@@ -1345,7 +1347,7 @@ async function copyAndHash(
       await assertSourceAncestors(source, inventory, directories)
     await chmod(destination, source.mode)
     await utimes(destination, source.mtime, source.mtime)
-    return hash.digest("hex")
+    return hashBytes ? hash.digest("hex") : null
   } finally {
     stream?.destroy()
     await handle.close()
@@ -1415,6 +1417,9 @@ export interface WorkspaceCaptureReport {
   /** Files staged while writes were held: new, changed, or changed too recently to trust. */
   barrierFiles: number
   barrierBytes: number
+  /** Files whose bytes were hashed. The rest reused a remembered hash. */
+  hashedFiles: number
+  hashedBytes: number
   stageMs: number
   barrierMs: number
   hashMs: number
@@ -1425,12 +1430,14 @@ interface CaptureOptions {
   recoveryFingerprint?: string
   onProgress?: (phase: WorkspaceExportPhase) => Promise<void>
   classifyHistory?: boolean
+  /** Hashes from earlier captures, reused while a file keeps its identity. */
+  hashCache?: PortableContentHashCache
 }
 
 interface StagedFile {
   source: SourceEntry
   output: string
-  /** Null for a reflink, which is hashed after the barrier. */
+  /** Null for a reflink without a remembered hash; it is hashed after the barrier. */
   sha256: string | null
 }
 
@@ -1449,6 +1456,9 @@ interface CaptureStaging {
   files: Map<string, StagedFile>
   directories: WorkspaceExportV2Directory[]
   report: WorkspaceCaptureReport
+  hashCache?: PortableContentHashCache
+  /** Files whose last change is older than this cannot change unseen. */
+  settledBefore: number
 }
 
 const REFLINK_UNSUPPORTED_CODES = new Set([
@@ -1595,6 +1605,11 @@ async function stageFile(
   options: { checkAncestors: boolean; signal?: AbortSignal }
 ): Promise<StagedFile> {
   const output = captureOutput(staging.root, source.path)
+  // The staged bytes are the source's at this identity, checked before and
+  // after staging, so a hash remembered for the identity is theirs.
+  const cached = staging.hashCache?.get(source.path)
+  const known =
+    cached?.identity === portableContentIdentity(source) ? cached.sha256 : null
   if (staging.method !== "copy") {
     try {
       await cloneSource(
@@ -1606,7 +1621,7 @@ async function stageFile(
         options.checkAncestors
       )
       staging.method ??= "reflink"
-      return { source, output, sha256: null }
+      return { source, output, sha256: known }
     } catch (error) {
       await rm(output, { force: true })
       if (
@@ -1625,9 +1640,14 @@ async function stageFile(
       inventory,
       directories,
       options.signal,
-      options.checkAncestors
+      options.checkAncestors,
+      known === null
     )
-    return { source, output, sha256 }
+    if (known === null) {
+      staging.report.hashedFiles += 1
+      staging.report.hashedBytes += source.size
+    }
+    return { source, output, sha256: known ?? sha256 }
   } catch (error) {
     await rm(output, { force: true })
     throw error
@@ -1676,16 +1696,20 @@ async function prepareWorkspaceCapture(
       bytes: 0,
       barrierFiles: 0,
       barrierBytes: 0,
+      hashedFiles: 0,
+      hashedBytes: 0,
       stageMs: 0,
       barrierMs: 0,
       hashMs: 0,
     },
+    hashCache: options.hashCache,
+    settledBefore:
+      (captureClockForTests ?? Date.now)() - RACY_FINGERPRINT_WINDOW_MS,
   }
   try {
     options.signal?.throwIfAborted()
     await options.onProgress?.("inventory")
-    const settledBefore =
-      (captureClockForTests ?? Date.now)() - RACY_FINGERPRINT_WINDOW_MS
+    const settledBefore = staging.settledBefore
     const inventory = await listSourceEntries(sourceRoot, {
       paths: "local",
       signal: options.signal,
@@ -1789,16 +1813,36 @@ async function finishWorkspaceCapture(
     8,
     async (staged): Promise<CapturedEntry> => {
       signal?.throwIfAborted()
+      if (staged.sha256 === null) {
+        staged.sha256 = await hashStagedFile(staged)
+        staging.report.hashedFiles += 1
+        staging.report.hashedBytes += staged.source.size
+      }
       return {
         path: staged.source.path,
         absolute: staged.output,
         size: staged.source.size,
         mode: staged.source.mode,
         mtime: staged.source.mtime.toISOString(),
-        sha256: staged.sha256 ?? (await hashStagedFile(staged)),
+        sha256: staged.sha256,
       }
     }
   )
+  if (staging.hashCache) {
+    // Remember only files settled before staging began: a later write to
+    // them must change their identity.
+    staging.hashCache.clear()
+    for (const staged of staging.files.values())
+      if (
+        staged.sha256 !== null &&
+        Math.max(staged.source.mtimeMs, staged.source.ctimeMs) <
+          staging.settledBefore
+      )
+        staging.hashCache.set(staged.source.path, {
+          identity: portableContentIdentity(staged.source),
+          sha256: staged.sha256,
+        })
+  }
   const directories = [...staging.directories]
   for (const directory of [...directories].sort(
     (left, right) => right.path.split("/").length - left.path.split("/").length
@@ -2075,9 +2119,10 @@ export interface PortableWorkspaceInventory {
 }
 
 /**
- * Content hashes remembered between inspections, by portable path. A hash is
- * reused only while the file keeps its device, inode, size, modification time
- * and change time. Inspection replaces the contents with the files it saw.
+ * Content hashes remembered between inspections or captures, by portable
+ * path. A hash is reused only while the file keeps its device, inode, size,
+ * modification time and change time. Each inspection or capture replaces the
+ * contents with the settled files it saw.
  */
 export type PortableContentHashCache = Map<
   string,
@@ -2089,14 +2134,21 @@ export type PortableContentHashCache = Map<
 // identity. Only files older than this are remembered.
 const CONTENT_HASH_SETTLED_MS = 2_000
 
-function sourceContentIdentity(entry: SourceEntry): string {
+/** The identity a remembered hash is bound to: a write changes it. */
+export function portableContentIdentity(
+  entry: Pick<Stats, "dev" | "ino" | "size" | "mtimeMs" | "ctimeMs">
+): string {
   return `${entry.dev}:${entry.ino}:${entry.size}:${entry.mtimeMs}:${entry.ctimeMs}`
 }
 
 /** Hash an admitted tree, including its identity manifest, without copying it. */
 export async function inspectPortableWorkspaceTree(
   workspaceRoot: string,
-  options: { hashCache?: PortableContentHashCache } = {}
+  options: {
+    hashCache?: PortableContentHashCache
+    /** Counts the files whose bytes were read rather than vouched for. */
+    report?: { hashedFiles: number; hashedBytes: number }
+  } = {}
 ): Promise<PortableWorkspaceInventory> {
   const settledBefore = Date.now() - CONTENT_HASH_SETTLED_MS
   const remembered: PortableContentHashCache = new Map()
@@ -2115,12 +2167,16 @@ export async function inspectPortableWorkspaceTree(
     fileEntries,
     HISTORY_CLASSIFICATION_CONCURRENCY,
     async (entry): Promise<WorkspaceExportV2File> => {
-      const identity = sourceContentIdentity(entry)
+      const identity = portableContentIdentity(entry)
       const cached = options.hashCache?.get(entry.path)
-      const sha256 =
-        cached?.identity === identity
-          ? cached.sha256
-          : await hashSourceEntry(entry, inventory, directoriesByPath)
+      let sha256 = cached?.identity === identity ? cached.sha256 : undefined
+      if (sha256 === undefined) {
+        sha256 = await hashSourceEntry(entry, inventory, directoriesByPath)
+        if (options.report) {
+          options.report.hashedFiles += 1
+          options.report.hashedBytes += entry.size
+        }
+      }
       if (
         options.hashCache &&
         Math.max(entry.mtimeMs, entry.ctimeMs) < settledBefore
@@ -2197,6 +2253,8 @@ export async function withPortableWorkspaceCapture<T>(
     withCaptureBarrier?: <R>(work: () => Promise<R>) => Promise<R>
     signal?: AbortSignal
     onCaptureReport?: (report: WorkspaceCaptureReport) => void
+    /** Reused across captures; see `PortableContentHashCache`. */
+    hashCache?: PortableContentHashCache
   } = {}
 ): Promise<T> {
   const sourceRoot = resolve(options.workspaceRoot ?? getWorkspaceRoot())
@@ -2217,7 +2275,11 @@ export async function withPortableWorkspaceCapture<T>(
     async () => {
       const exportedAt = new Date()
       // Snapshots discard the history summary, so history is not classified.
-      const captureOptions = { signal: options.signal, classifyHistory: false }
+      const captureOptions = {
+        signal: options.signal,
+        classifyHistory: false,
+        hashCache: options.hashCache,
+      }
       const staging = await prepareWorkspaceCapture(
         sourceRoot,
         { mode: "all" },
@@ -3743,7 +3805,8 @@ export async function importWorkspaceExportV2(
       staging,
       `${JSON.stringify(newManifest, null, 2)}\n`
     )
-    const { convertStagedWorkspaceStorageV2 } = await import("./document-storage-migration-v2.ts")
+    const { convertStagedWorkspaceStorageV2 } =
+      await import("./document-storage-migration-v2.ts")
     await convertStagedWorkspaceStorageV2(staging)
     newManifest.version = 2
     if (classification.outcome === "empty") {

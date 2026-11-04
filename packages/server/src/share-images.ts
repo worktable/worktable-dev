@@ -7,12 +7,17 @@
 // the page as a data URL, which the share renderer and its policy already
 // allow. A page carries at most a few MiB of images, since it travels to a
 // linked Worktable's visitor through a tunnel with a response limit; images
-// past that, larger ones, and SVGs keep the placeholder shared pages show
-// today.
+// past that, larger ones, and types the file type table's share policy
+// leaves out (SVG and AVIF) keep the placeholder shared pages show today.
 
 import { lstat } from "node:fs/promises"
 import { resolve } from "node:path"
-import { resolveDocLink } from "@worktable/types"
+import {
+  FILE_TYPES,
+  fileTypeFor,
+  fileTypePolicy,
+  resolveDocLink,
+} from "@worktable/types"
 import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts"
 import { readDocumentSource } from "./document-source-reader.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
@@ -20,13 +25,6 @@ import { filesEnabled } from "./files-enabled.ts"
 import { rewriteBlockLinks, rewriteMarkdownLinks } from "./link-rewrite.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 
-const IMAGE_TYPES: Readonly<Record<string, string>> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-}
 /** One image larger than this keeps the placeholder. */
 const IMAGE_MAX_BYTES = 2 * 1024 * 1024
 /** A page's images together, before base64; it grows by a third. */
@@ -71,10 +69,11 @@ export async function stampsStillHold(
   return true
 }
 
+/** The media type a shared page carries an image of this name as. */
 function imageType(path: string): string | undefined {
-  const dot = path.lastIndexOf(".")
-  return dot > path.lastIndexOf("/")
-    ? IMAGE_TYPES[path.slice(dot).toLowerCase()]
+  const type = fileTypeFor(path)
+  return type !== null && fileTypePolicy(type, "share") === "inline"
+    ? FILE_TYPES[type].mediaType
     : undefined
 }
 

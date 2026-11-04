@@ -11,7 +11,14 @@
 // Subscriptions live a day at most. The client renews them with its sign-in,
 // so a revoked sign-in stops delivery within that time; Space access is checked
 // again for every event. Undelivered events survive a restart in the outbox
-// and retry on the shared wake schedule. Secrets never appear in logs.
+// and retry on the shared wake schedule until they are delivered or their
+// subscription ends. Secrets never appear in logs.
+//
+// A subscription the client didn't renew in time lapses: nothing is sent for
+// it, but its events wait a day. A client that couldn't reach this Worktable,
+// such as ChatGPT through Link while the device was offline, renews it once it
+// can, and then gets what was waiting and what came while it was lapsed.
+// Events for a subscription made through Link wait while Link is off.
 
 import {
   createHash,
@@ -66,6 +73,10 @@ export const ITEM_SENT_EVENT = "item.sent_to_you"
  */
 const MAX_TTL_MS = 24 * 60 * 60_000
 const UNCHECKED_TTL_MS = 60 * 60_000
+/** How long a lapsed subscription and its events wait for a renewal. */
+const LAPSED_MS = 24 * 60 * 60_000
+/** Failed sends of one event before its subscriber's auto-reply needs attention. */
+const ATTENTION_ATTEMPTS = 2
 
 const LOCAL_TOKEN = "local-token:"
 
@@ -117,12 +128,13 @@ const MAX_SUBSCRIPTIONS = 500
 const MAX_URL_LENGTH = 2048
 const INVALID_REQUEST = -32600
 
+/** Lapsed subscriptions don't count: the oldest give way instead (see lapse). */
 function overQuota(file: EventsFile, principalId: string, id: string): boolean {
-  if (file.subscriptions.some((s) => s.id === id)) return false
+  const held = file.subscriptions.filter((s) => s.lapsedAt === undefined)
+  if (held.some((s) => s.id === id)) return false
   return (
-    file.subscriptions.filter((s) => s.principalId === principalId).length >=
-      MAX_SUBSCRIPTIONS_PER_SUBSCRIBER ||
-    file.subscriptions.length >= MAX_SUBSCRIPTIONS
+    held.filter((s) => s.principalId === principalId).length >=
+      MAX_SUBSCRIPTIONS_PER_SUBSCRIBER || held.length >= MAX_SUBSCRIPTIONS
   )
 }
 
@@ -214,6 +226,10 @@ const SubscriptionSchema = z.object({
     .object({ secret: z.string(), until: z.number() })
     .optional(),
   refreshBefore: z.number(),
+  /** The Link destination the subscriber came through, when it did. */
+  link: z.string().optional(),
+  /** When it lapsed: its refreshBefore, once that passed unrenewed. */
+  lapsedAt: z.number().optional(),
 })
 type Subscription = z.infer<typeof SubscriptionSchema>
 
@@ -278,14 +294,7 @@ async function mutate<T>(change: (file: EventsFile) => T): Promise<T> {
         await chmod(temporary, 0o600)
         await rename(temporary, filePath)
         // Only once saved, so a screen that refetches reads the new state.
-        if (watchingKey(file) !== before)
-          for (const listener of watchingListeners) {
-            try {
-              listener()
-            } catch {
-              // A screen's refresh never undoes a saved subscription.
-            }
-          }
+        if (watchingKey(file) !== before) notifyWatching()
         return result
       }
     )
@@ -298,16 +307,57 @@ function signalChange(): void {
   for (const listener of changeListeners) listener()
 }
 
-/** Each subscriber, and the Spaces it watches (none: every Space). */
-export type Watching = Map<string, { all: boolean; spaceIds: string[] }>
+/**
+ * Each subscriber, the Spaces it watches (none: every Space), and whether
+ * what's sent to it isn't getting through: Link is off, or an event keeps
+ * failing to reach it.
+ */
+export type Watching = Map<
+  string,
+  { all: boolean; spaceIds: string[]; attention: boolean }
+>
+
+/** Link destinations this device serves now, as linked-ingress.ts says. */
+const servedLinks = new Set<string>()
+
+/**
+ * Link starts or stops serving a destination. Events for subscriptions made
+ * through it wait while it doesn't, and go once it does again.
+ */
+export function setLinkServed(destinationId: string, served: boolean): void {
+  if (served === servedLinks.has(destinationId)) return
+  if (served) servedLinks.add(destinationId)
+  else servedLinks.delete(destinationId)
+  notifyWatching()
+  signalChange()
+}
+
+/** Sent for now: Link serves the destination it came through, if any. */
+const sendable = (s: Subscription) =>
+  s.link === undefined || servedLinks.has(s.link)
+
+/** Subscriptions with an event that keeps failing. */
+function failing(file: EventsFile): Set<string> {
+  return new Set(
+    file.outbox
+      .filter((entry) => entry.attempts >= ATTENTION_ATTEMPTS)
+      .map((entry) => entry.subscriptionId)
+  )
+}
 
 function watchingOf(file: EventsFile, now = Date.now()): Watching {
   const watching: Watching = new Map()
+  const stuck = failing(file)
   for (const s of file.subscriptions) {
-    if (s.refreshBefore <= now) continue
-    const entry = watching.get(s.participantId) ?? { all: false, spaceIds: [] }
+    if (s.refreshBefore <= now || s.lapsedAt !== undefined) continue
+    const entry = watching.get(s.participantId) ?? {
+      all: false,
+      spaceIds: [],
+      attention: false,
+    }
     if (s.arguments.spaceId) entry.spaceIds.push(s.arguments.spaceId)
     else entry.all = true
+    entry.attention ||= stuck.has(s.id) || !sendable(s)
     watching.set(s.participantId, entry)
   }
   return watching
@@ -315,16 +365,31 @@ function watchingOf(file: EventsFile, now = Date.now()): Watching {
 
 const watchingListeners = new Set<() => void>()
 
+function notifyWatching(): void {
+  for (const listener of watchingListeners) {
+    try {
+      listener()
+    } catch {
+      // A screen's refresh never undoes a saved subscription.
+    }
+  }
+}
+
 /**
- * Who has a stored subscription, and to which Spaces. The runtime removes one
- * when it expires, so comparing what's stored also notices expiry.
+ * Who has a subscription that hasn't lapsed, to which Spaces, and which need
+ * attention. The runtime marks one lapsed when it expires, so comparing
+ * what's stored also notices expiry.
  */
 function watchingKey(file: EventsFile): string {
+  const stuck = failing(file)
   return [
     ...new Set(
-      file.subscriptions.map(
-        (s) => `${s.participantId}\t${s.arguments.spaceId ?? ""}`
-      )
+      file.subscriptions
+        .filter((s) => s.lapsedAt === undefined)
+        .map(
+          (s) =>
+            `${s.participantId}\t${s.arguments.spaceId ?? ""}\t${stuck.has(s.id) || !sendable(s)}`
+        )
     ),
   ]
     .sort()
@@ -700,6 +765,8 @@ export interface EventsCaller {
   identity: Pick<TokenIdentity, "agent" | "principal" | "scopes"> &
     Partial<TokenIdentity>
   origin: string
+  /** The Link destination the request came through, when it did. */
+  link?: string
 }
 
 const DeliveryParams = z.object({
@@ -812,13 +879,16 @@ export async function subscribe(
       : Infinity
   const granted = Math.min(maxTtl, expiresIn)
   const refreshBefore = Date.now() + Math.min(ttlMs ?? granted, granted)
+  // Renewing a lapsed subscription brings what came while it was lapsed.
+  const missed = existing ? await pendingFor(participant.id) : []
   await mutate((file) => {
     // Checked again under the lock, so parallel subscribes can't pass it.
     if (overQuota(file, principalId, id))
       throw new EventsError(INVALID_REQUEST, "Too many subscriptions")
     const previous = file.subscriptions.find((s) => s.id === id)
+    const since = previous && lapsedSince(previous)
     file.subscriptions = file.subscriptions.filter((s) => s.id !== id)
-    file.subscriptions.push({
+    const subscription: Subscription = {
       id,
       principalId,
       participantId: participant.id,
@@ -848,7 +918,22 @@ export async function subscribe(
           ? { previousSecret: previous.previousSecret }
           : {}),
       refreshBefore,
-    })
+      ...(caller.link ? { link: caller.link } : {}),
+    }
+    file.subscriptions.push(subscription)
+    if (since === undefined) return
+    // What was waiting goes now, in order, then what came since.
+    for (const entry of file.outbox)
+      if (entry.subscriptionId === id)
+        Object.assign(entry, { attempts: 0, nextAt: 0 })
+    const after = new Date(since).toISOString()
+    queueEvents(
+      file,
+      subscription,
+      missed.filter(
+        (item) => item.createdAt >= after && wants(subscription, item)
+      )
+    )
   })
   signalChange()
   return {
@@ -969,6 +1054,87 @@ async function eventBody(
     : { body, itemId: notice.itemId }
 }
 
+/**
+ * Whether a subscription wants an item: by recipient, Space and thread, so
+ * items none wants are never queued. A Doc filter is checked when sending.
+ */
+function wants(s: Subscription, entry: PendingEntry): boolean {
+  return (
+    s.participantId === entry.recipient.participantId &&
+    (!s.arguments.spaceId || s.arguments.spaceId === entry.scope.spaceId) &&
+    (!s.arguments.threadId || s.arguments.threadId === entry.scope.threadId)
+  )
+}
+
+/** Queue an event per item, once each: the event id is the item's. */
+function queueEvents(
+  file: EventsFile,
+  subscription: Subscription,
+  items: readonly PendingEntry[]
+): void {
+  for (const item of items) {
+    const id = eventId(subscription.id, item.itemId)
+    if (file.outbox.some((queued) => queued.eventId === id)) continue
+    file.outbox.push({
+      eventId: id,
+      subscriptionId: subscription.id,
+      itemId: item.itemId,
+      at: item.createdAt,
+      attempts: 0,
+      nextAt: 0,
+    })
+  }
+  // A bounded outbox: past the limit the oldest events give way.
+  if (file.outbox.length > MAX_OUTBOX)
+    file.outbox.splice(0, file.outbox.length - MAX_OUTBOX)
+}
+
+/** When a subscription lapsed, or undefined while it is live. */
+function lapsedSince(s: Subscription, now = Date.now()): number | undefined {
+  return s.lapsedAt ?? (s.refreshBefore <= now ? s.refreshBefore : undefined)
+}
+
+/** Whether `lapse` has anything to do. */
+function lapsing(file: EventsFile, now: number): boolean {
+  const ids = new Set(file.subscriptions.map((s) => s.id))
+  return (
+    file.subscriptions.some((s) =>
+      s.lapsedAt === undefined
+        ? s.refreshBefore <= now
+        : s.lapsedAt + LAPSED_MS <= now
+    ) || file.outbox.some((entry) => !ids.has(entry.subscriptionId))
+  )
+}
+
+/**
+ * Mark subscriptions past their refreshBefore lapsed, keeping their events,
+ * and remove those lapsed a day with theirs, and events whose subscription
+ * ended. Lapsed ones are bounded as live ones are; the oldest give way.
+ */
+function lapse(file: EventsFile, now: number): void {
+  for (const s of file.subscriptions)
+    if (s.lapsedAt === undefined && s.refreshBefore <= now)
+      s.lapsedAt = s.refreshBefore
+  const lapsed = file.subscriptions
+    .filter((s) => s.lapsedAt !== undefined)
+    .sort((a, b) => b.lapsedAt! - a.lapsedAt!)
+  const perSubscriber = new Map<string, number>()
+  const gone = new Set<string>()
+  for (const [index, s] of lapsed.entries()) {
+    const count = (perSubscriber.get(s.principalId) ?? 0) + 1
+    perSubscriber.set(s.principalId, count)
+    if (
+      s.lapsedAt! + LAPSED_MS <= now ||
+      count > MAX_SUBSCRIPTIONS_PER_SUBSCRIBER ||
+      index >= MAX_SUBSCRIPTIONS
+    )
+      gone.add(s.id)
+  }
+  file.subscriptions = file.subscriptions.filter((s) => !gone.has(s.id))
+  const ids = new Set(file.subscriptions.map((s) => s.id))
+  file.outbox = file.outbox.filter((entry) => ids.has(entry.subscriptionId))
+}
+
 /** `gone` ends the subscription: its receiver or its credential is gone. */
 type Outcome = "delivered" | "drop" | "gone" | "retry"
 
@@ -1040,32 +1206,13 @@ export function startMcpEventsRuntime(
   async function enqueue(entry: PendingEntry) {
     const file = await load(path())
     const now = Date.now()
-    // Filter by Space and thread here, so items no subscription wants are
-    // never queued. A Doc filter is checked when sending.
     const matching = file.subscriptions.filter(
-      (s) =>
-        s.participantId === entry.recipient.participantId &&
-        s.refreshBefore > now &&
-        (!s.arguments.spaceId || s.arguments.spaceId === entry.scope.spaceId) &&
-        (!s.arguments.threadId || s.arguments.threadId === entry.scope.threadId)
+      (s) => s.refreshBefore > now && !s.lapsedAt && wants(s, entry)
     )
     if (!matching.length) return
     await mutate((current) => {
-      for (const subscription of matching) {
-        const id = eventId(subscription.id, entry.itemId)
-        if (current.outbox.some((queued) => queued.eventId === id)) continue
-        current.outbox.push({
-          eventId: id,
-          subscriptionId: subscription.id,
-          itemId: entry.itemId,
-          at: entry.createdAt,
-          attempts: 0,
-          nextAt: 0,
-        })
-      }
-      // A bounded outbox: past the limit the oldest events give way.
-      if (current.outbox.length > MAX_OUTBOX)
-        current.outbox.splice(0, current.outbox.length - MAX_OUTBOX)
+      for (const subscription of matching)
+        queueEvents(current, subscription, [entry])
     })
     nudge()
   }
@@ -1073,31 +1220,29 @@ export function startMcpEventsRuntime(
   async function drain(): Promise<void> {
     const now = Date.now()
     const file = await load(path())
-    // Expired subscriptions and their queued events go.
-    if (file.subscriptions.some((s) => s.refreshBefore <= now)) {
-      await mutate((current) => {
-        const expired = new Set(
-          current.subscriptions
-            .filter((s) => s.refreshBefore <= now)
-            .map((s) => s.id)
-        )
-        current.subscriptions = current.subscriptions.filter(
-          (s) => !expired.has(s.id)
-        )
-        current.outbox = current.outbox.filter(
-          (entry) => !expired.has(entry.subscriptionId)
-        )
-      })
+    // Expired subscriptions lapse; those lapsed a day go, with their events.
+    if (lapsing(file, now)) {
+      await mutate((current) => lapse(current, now))
       return drain()
     }
+    // Wake when the next subscription lapses or a lapsed one goes.
     let nextAt = Math.min(
       Infinity,
-      ...file.subscriptions.map((s) => s.refreshBefore)
+      ...file.subscriptions.map((s) =>
+        s.lapsedAt === undefined ? s.refreshBefore : s.lapsedAt + LAPSED_MS
+      )
+    )
+    // Events wait, unsent, while their subscription is lapsed or Link is off.
+    const sending = new Set(
+      file.subscriptions
+        .filter((s) => s.lapsedAt === undefined && sendable(s))
+        .map((s) => s.id)
     )
     // One subscription's events go in order, but subscriptions are served
     // side by side, so a slow or hanging callback holds up only its own.
     const due = new Map<string, OutboxEntry[]>()
     for (const entry of file.outbox) {
+      if (!sending.has(entry.subscriptionId)) continue
       if (entry.nextAt > now) {
         nextAt = Math.min(nextAt, entry.nextAt)
         continue
@@ -1106,26 +1251,47 @@ export function startMcpEventsRuntime(
       group.push(entry)
       due.set(entry.subscriptionId, group)
     }
-    const send = async (entry: OutboxEntry) => {
+    /** Whether to go on to the subscription's next event. */
+    const send = async (entry: OutboxEntry): Promise<boolean> => {
       // Read again before each send: an earlier send's 410, an unsubscribe
       // or an expiry since this drain began must stop the rest.
       const current = await load(path())
       if (!current.outbox.some((queued) => queued.eventId === entry.eventId))
-        return
+        return true
       const subscription = current.subscriptions.find(
-        (s) => s.id === entry.subscriptionId && s.refreshBefore > Date.now()
+        (s) => s.id === entry.subscriptionId
       )
+      // Lapsed or held since: it waits for the next pass that may send it.
+      if (
+        subscription &&
+        (subscription.lapsedAt !== undefined ||
+          subscription.refreshBefore <= Date.now() ||
+          !sendable(subscription))
+      )
+        return false
       const outcome = subscription
         ? await deliver(subscription, entry, transport, abort.signal)
         : "drop"
-      if (!live()) return
+      if (!live()) return false
       await mutate((current) => {
         const queued = current.outbox.find((e) => e.eventId === entry.eventId)
         if (!queued) return
-        if (outcome === "retry" && queued.attempts < WAKE_RETRIES.length) {
-          queued.nextAt = Date.now() + WAKE_RETRIES[queued.attempts]!
+        // A send that failed is tried again for as long as the subscription
+        // lives, at the last delay once the schedule runs out: the receiver
+        // may be offline, or this device may be.
+        if (outcome === "retry") {
+          queued.nextAt =
+            Date.now() +
+            WAKE_RETRIES[Math.min(queued.attempts, WAKE_RETRIES.length - 1)]!
           queued.attempts += 1
           nextAt = Math.min(nextAt, queued.nextAt)
+          // The rest wait behind it, keeping their order.
+          for (const other of current.outbox)
+            if (
+              other.subscriptionId === queued.subscriptionId &&
+              other.nextAt < queued.nextAt
+            )
+              other.nextAt = queued.nextAt
           return
         }
         current.outbox = current.outbox.filter((e) => e !== queued)
@@ -1134,6 +1300,7 @@ export function startMcpEventsRuntime(
             (s) => s.id !== queued.subscriptionId
           )
       })
+      return outcome !== "retry"
     }
     const groups = [...due.values()]
     let next = 0
@@ -1142,7 +1309,7 @@ export function startMcpEventsRuntime(
         const group = groups[next++]!
         for (const entry of group) {
           if (!live()) return
-          await send(entry)
+          if (!(await send(entry))) break
         }
       }
     }

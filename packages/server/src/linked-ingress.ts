@@ -9,6 +9,7 @@ import {
   LINKED_ASSERTION_TYPE,
   LINKED_REQUEST_MAX_BYTES,
   LinkedDestinationBinding,
+  LINKED_MCP_HEADERS,
   LinkedRequestClaims,
   SHARE_CAPABILITY_HEADER,
   ShareLinkToken,
@@ -26,6 +27,8 @@ import {
   WRITE_ADMISSION_WAIT_MS,
 } from "./workspace-request-lifecycle.ts"
 import { handleRemoteMcpRequest } from "./routes/mcp.ts"
+import { mcpModernEraOverLink } from "./mcp/surface.ts"
+import { setLinkServed } from "./mcp-events.ts"
 import { createPublicSharesRouter } from "./routes/public-shares.ts"
 import { currentTeamWorktable } from "./team-database.ts"
 import { resolveCloudTeamAgentCredential } from "./team-cloud.ts"
@@ -181,6 +184,7 @@ export async function createLinkedIngress(options: {
   )
   const consumed = new Map<string, number>()
   let active = true
+  setLinkServed(binding.destinationId, true)
   let inFlight = 0
   let shareInFlight = 0
 
@@ -385,6 +389,15 @@ export async function createLinkedIngress(options: {
       // A team's agents are its members'; others show in Settings → Agents.
       // Only an app's first request here waits, for the one write.
       if (!currentTeamWorktable()) await noteLinkedApp(identity)
+      // MCP 2026-07-28 (events, tasks) checks the client's MCP headers against
+      // the body, so it is served only when Cloud signed them; otherwise the
+      // earlier revisions answer, as before.
+      const modernEra = grant.headers !== undefined && mcpModernEraOverLink()
+      if (modernEra)
+        for (const [field, name] of Object.entries(LINKED_MCP_HEADERS)) {
+          const value = grant.headers![field as keyof typeof LINKED_MCP_HEADERS]
+          if (value) headers.set(name, value)
+        }
       return await handleRemoteMcpRequest(
         new Request(request.url, {
           method: request.method,
@@ -392,7 +405,8 @@ export async function createLinkedIngress(options: {
           ...(request.method === "POST" ? { body: new Uint8Array(body) } : {}),
         }),
         identity,
-        `${publicOrigin}/api/mcp/d/${binding.destinationId}`
+        `${publicOrigin}/api/mcp/d/${binding.destinationId}`,
+        { modernEra, link: binding.destinationId }
       )
     } finally {
       inFlight--
@@ -413,6 +427,7 @@ export async function createLinkedIngress(options: {
     },
     revoke() {
       active = false
+      setLinkServed(binding.destinationId, false)
       clearPendingUploads()
     },
   }

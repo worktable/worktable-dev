@@ -90,7 +90,39 @@ export const LINKED_CAPABILITIES = {
    * `GET /linked/file-links/download`, with `file-link` grants.
    */
   FILE_LINKS: "file-links",
+  /** `headers` on MCP grants, so the device serves MCP 2026-07-28. */
+  MCP_HEADERS: "mcp-headers",
 } as const
+
+/**
+ * The MCP request headers a client sent that cross Link, by the name each
+ * has in a grant. MCP 2026-07-28 requires them to match the body, so the
+ * device can't serve that revision without them. No other client header
+ * crosses: the device builds the rest itself.
+ */
+export const LINKED_MCP_HEADERS = {
+  protocolVersion: "MCP-Protocol-Version",
+  method: "Mcp-Method",
+  name: "Mcp-Name",
+} as const
+
+/** A header value: visible ASCII, inner spaces allowed. */
+const headerValue = (max: number) =>
+  z
+    .string()
+    .max(max)
+    .regex(/^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/)
+
+export const LinkedMcpHeaders = z
+  .object({
+    protocolVersion: headerValue(64),
+    method: headerValue(128),
+    // A tool's name, a resource's address or a task's id.
+    name: headerValue(2048),
+  })
+  .partial()
+  .strict()
+export type LinkedMcpHeaders = z.infer<typeof LinkedMcpHeaders>
 
 export const LinkedHeartbeat = z
   .object({
@@ -249,6 +281,8 @@ export const LinkedRequestGrant = z.discriminatedUnion("kind", [
       displayName: z.string().min(1).max(256),
       credentialIssuedAt: z.number().int().positive().optional(),
       scopes: z.array(z.string().min(1).max(128)).max(128),
+      /** Only to a device whose current boot reported `mcp-headers`. */
+      headers: LinkedMcpHeaders.optional(),
     })
     .strict(),
   z

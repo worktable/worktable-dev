@@ -130,6 +130,8 @@ export interface RemoteMcpRequestOptions {
   stream?: boolean
   /** Also serve MCP 2026-07-28 requests; without it they get the legacy answer. */
   modernEra?: boolean
+  /** The Link destination the request came through, when it did. */
+  link?: string
 }
 
 /** Tells the Cloud gateway which call it answered, for its request counts. */
@@ -173,6 +175,7 @@ export async function handleRemoteMcpRequest(
       handleModernMcpRequest(request, modern.body, {
         server: remoteMcpServerOptions(request, identity, origin),
         stream: options.stream ?? false,
+        ...(options.link ? { link: options.link } : {}),
       })
     )
     return namedCall(response, callName(Array.isArray(modern.body) ? modern.body[0] : modern.body))

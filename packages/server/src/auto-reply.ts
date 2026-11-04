@@ -81,7 +81,8 @@ function autoReplyFor(
   if (watched)
     return {
       kind: "chat",
-      state: "on",
+      // Subscribed, but what's sent to it isn't getting through.
+      state: watched.attention ? "attention" : "on",
       ...(watched.all ? {} : { spaceIds: watched.spaceIds }),
     }
   if (known.modern && id && isWaiting(id))

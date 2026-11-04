@@ -16,9 +16,11 @@ import { createAnnotation } from "./annotation-store.ts"
 import {
   EventsError,
   privateAddress,
+  setLinkServed,
   startMcpEventsRuntime,
   subscribe,
   unsubscribe,
+  watchingParticipants,
   type EventsCaller,
   type EventsTransport,
 } from "./mcp-events.ts"
@@ -362,6 +364,86 @@ describe("MCP Events", () => {
     expect(events(sent)).toHaveLength(3)
     await after(() => comment("pricing", "Never sent: the subscription ended."))
     expect(events(sent)).toHaveLength(3)
+  })
+
+  it("keeps what couldn't be sent through an outage and a lapse, and sends each once when it can", async () => {
+    const base = Date.now()
+    const at = (minutes: number) =>
+      setSystemTime(new Date(base + minutes * 60_000))
+    const restartAt = async (minutes: number) => {
+      await stop?.()
+      at(minutes)
+      await start(transport)
+    }
+    const sent: Sent[] = []
+    let down = false
+    const reachable = callback(sent)
+    const transport: EventsTransport = {
+      resolve: reachable.resolve,
+      fetch: (url, init) =>
+        down
+          ? Promise.reject(new Error("network unreachable"))
+          : reachable.fetch(url, init),
+    }
+    const watching = async () =>
+      (await watchingParticipants()).get(participantId)
+    try {
+      at(0)
+      await subscribe(caller, params(), transport)
+      await start(transport)
+      down = true
+      await after(() => comment("pricing", "Written while offline."))
+      // Past the whole retry schedule, it is still waiting, and the agent's
+      // auto-reply says so.
+      for (const minutes of [1, 2, 5, 10, 20, 30, 45]) await restartAt(minutes)
+      expect(events(sent)).toHaveLength(0)
+      expect(await watching()).toMatchObject({ attention: true })
+
+      // Not renewed in time: it lapses, so it reads as off, and an item sent
+      // meanwhile isn't queued for it.
+      await restartAt(61)
+      expect(await watching()).toBeUndefined()
+      await after(() => comment("pricing", "Written while it was lapsed."))
+      expect(events(sent)).toHaveLength(0)
+
+      // Back online, the client renews: both go, in order, once each.
+      down = false
+      at(75)
+      await after(() => subscribe(caller, params(), transport))
+      expect(
+        events(sent).map((e) => (e.body.data as { excerpt: string }).excerpt)
+      ).toEqual(["Written while offline.", "Written while it was lapsed."])
+      expect(await watching()).toMatchObject({ attention: false })
+      await restartAt(80)
+      expect(events(sent)).toHaveLength(2)
+    } finally {
+      setSystemTime()
+    }
+  })
+
+  it("holds a Link subscription's events while Link is off", async () => {
+    const destination = "d".repeat(32)
+    setLinkServed(destination, true)
+    try {
+      const sent: Sent[] = []
+      const transport = callback(sent)
+      await subscribe({ ...caller, link: destination }, params(), transport)
+      await start(transport)
+      const watching = async () =>
+        (await watchingParticipants()).get(participantId)
+      expect(await watching()).toMatchObject({ attention: false })
+
+      setLinkServed(destination, false)
+      expect(await watching()).toMatchObject({ attention: true })
+      await after(() => comment("pricing", "Sent while Link was off."))
+      expect(events(sent)).toHaveLength(0)
+
+      await after(async () => setLinkServed(destination, true))
+      expect(events(sent)).toHaveLength(1)
+      expect(await watching()).toMatchObject({ attention: false })
+    } finally {
+      setLinkServed(destination, false)
+    }
   })
 
   it("refuses private addresses in every spelling, IPv4 inside IPv6 included", () => {

@@ -27,6 +27,10 @@ import {
   workspaceCacheKey,
 } from "./workspace.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
+import {
+  listedWorkspaceMark,
+  listedWorkspaceMarkKey,
+} from "./workspace-logo.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { createLinkedIngress } from "./linked-ingress.ts"
 import { linkedConnectorBinary } from "./linked-connector.ts"
@@ -246,6 +250,9 @@ async function prepareLink(): Promise<StoredLink> {
  * The folder's own id, so relinking it keeps its Worktable's address, and its
  * name for the account's list of Worktables.
  */
+/** How long a mark waits after a heartbeat carrying it fails. */
+const MARK_RETRY_MS = 10 * 60_000
+
 function localWorkspace(): {
   localWorkspaceId?: string
   localWorkspaceName?: string
@@ -589,6 +596,11 @@ function launch(): void {
         let bootNonce = randomUUID()
         let renewBoot = false
         let port = 0
+        // How this Worktable looks in Cloud's lists, sent once Cloud says it
+        // takes marks and again whenever it changes.
+        let cloudTakesMarks = false
+        let savedMark: string | null = null
+        let markRetryAt = 0
         while (!controller.signal.aborted && getWorkspaceRoot() === root) {
           try {
             if (link.disabled) {
@@ -650,12 +662,30 @@ function launch(): void {
                 /* A running connector may have lost its edge connections. */
               }
             }
+            const manifest = ensureWorkspaceManifest()
+            // Cloud names a linked Worktable in up to 100 characters, as
+            // linking it does.
+            const name = manifest.name.trim().slice(0, 100)
+            const markKey = JSON.stringify([
+              name,
+              listedWorkspaceMarkKey(manifest),
+            ])
+            const mark =
+              cloudTakesMarks &&
+              markKey !== savedMark &&
+              Date.now() >= markRetryAt
+                ? {
+                    ...(name ? { name } : {}),
+                    ...(await listedWorkspaceMark(root, manifest)),
+                  }
+                : undefined
             const response = await fetch(
               `${link.cloudOrigin}/linked/heartbeat`,
               {
                 method: "POST",
                 headers,
                 body: JSON.stringify({
+                  ...(mark ? { mark } : {}),
                   workspaceEpoch: link.workspaceEpoch,
                   bootSequence: link.bootSequence,
                   bootNonce,
@@ -677,8 +707,15 @@ function launch(): void {
                 redirect: "error",
               }
             )
+            // Cloud answers any failure alike, so after one that carried a
+            // mark the next heartbeats go without it and the mark waits. A
+            // mark Cloud refuses can't keep the device offline.
+            if (!response.ok && mark) markRetryAt = Date.now() + MARK_RETRY_MS
             if (!response.ok) throw new Error("HEARTBEAT_FAILED")
             const reply = LinkedHostReply.parse(await response.json())
+            // A device waiting for approval has no row to keep a mark on.
+            cloudTakesMarks = reply.marks === true && reply.state !== "pending"
+            if (mark && reply.markSaved) savedMark = markKey
             if (controller.signal.aborted) break
             if (reply.state === "revoked" || reply.state === "superseded") {
               fence()

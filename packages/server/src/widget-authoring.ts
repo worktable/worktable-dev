@@ -133,10 +133,29 @@ const HTML_GUIDE_SHARE_LINKS = `## Share links
 
 Someone can share an HTML Doc by link with people outside the team, including its live data. Visitors run the same HTML with the same SDK, read-only: records create, update and delete reject with LINK_READ_ONLY, state writes last only for that visitor's browser tab, and openDocument is unavailable. Visitors can read only the collections and fields the link grants, so handle a rejected query the way you handle a missing permission. Write one tool for members and visitors; don't detect visitors or build a separate version.`
 
+// The preview tool surface changes part of a page with edits, so its guide
+// doesn't ask for a complete page on every write.
+const HTML_GUIDE_SHARED_PREVIEW = `# Worktable HTML Doc Authoring
+
+An HTML Doc is one HTML document rendered in a sandbox inside a Worktable Space. It includes doctype, html, head, viewport metadata, and body. External scripts, stylesheets, fonts, images, and other http/https assets are not supported; ordinary links are supported, and inline SVG, CSS, data URLs, and local HTML/JavaScript remain inside the artifact.`
+
+const HTML_GUIDE_CHANGES = `## Changing an HTML Doc
+
+Read it with worktable_html_read: it returns the source as html, and its revision. Change part of the page with edits on worktable_html_write: copy each oldText exactly from that html, with enough surrounding text to match once, and pass the revision as expectedRevision so a change made since is never overwritten. Edits apply in order, and all apply or none do. On no_match or ambiguous, read again and copy the text exactly; on revision_conflict, read again and redo the change on the current source. Replace the whole page with html only when most of it changes; that needs expectedRevision too.
+
+Generated HTML is often one long line. worktable_search with exact finds text in HTML Docs and returns a short excerpt around each match, enough to copy an oldText from.
+
+Name, description and permissions change without html. Every agent change to the page or its permissions turns network access off until a person allows it again.`
+
 export function getHtmlAuthoringGuide(
-  _profile: HtmlGuideProfile = "runtime"
+  _profile: HtmlGuideProfile = "runtime",
+  surface: "released" | "preview" = "released"
 ): string {
-  return `${HTML_GUIDE_SHARED}\n\n${HTML_GUIDE_RUNTIME}\n\n${HTML_GUIDE_SHARE_LINKS}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
+  const intro =
+    surface === "preview"
+      ? `${HTML_GUIDE_SHARED_PREVIEW}\n\n${HTML_GUIDE_CHANGES}`
+      : HTML_GUIDE_SHARED
+  return `${intro}\n\n${HTML_GUIDE_RUNTIME}\n\n${HTML_GUIDE_SHARE_LINKS}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
 }
 
 function hasRecordPermission(

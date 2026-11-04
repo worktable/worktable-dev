@@ -56,13 +56,14 @@ import {
   rename,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { existsSync } from "node:fs"
+import { existsSync, writeFileSync } from "node:fs"
 import { updateAgentConnection } from "./agent-connection-store.ts"
 import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
 import {
   ensureWorkspaceManifest,
   writeWorkspaceManifest,
+  getWorkspaceRoot,
   workspaceCacheKey,
   prepareWorkspaceTarget,
   setWorkspaceRootOverride,
@@ -2794,19 +2795,22 @@ test("Cloud maps provider subjects to the same membership model and keeps browse
       process.env.WORKTABLE_BROWSER_ASSERTION_KEYRING = JSON.stringify([
         { kid: "test", secret: base64url.encode(secret), state: "signing" },
       ])
-      const proof = (typ: string) =>
-        new SignJWT({})
+      const proof = (typ: string, claims: Record<string, unknown> = {}) =>
+        new SignJWT(claims)
           .setProtectedHeader({ alg: "HS256", kid: "test", typ })
           .setIssuer("https://cloud.example.test/_worktable/control")
           .setAudience("urn:worktable:team-directory:cloud_test_worktable")
           .setIssuedAt()
           .setExpirationTime("60s")
           .sign(secret)
-      const request = async (typ: string) =>
+      const request = async (
+        typ: string,
+        claims: Record<string, unknown> = {}
+      ) =>
         new Request("https://cloud.example.test/_worktable/team-directory", {
           headers: {
             [GATEWAY_HEADER]: process.env.WORKTABLE_GATEWAY_SECRET!,
-            Authorization: `Bearer ${await proof(typ)}`,
+            Authorization: `Bearer ${await proof(typ, claims)}`,
           },
         })
       expect(
@@ -2835,6 +2839,40 @@ test("Cloud maps provider subjects to the same membership model and keeps browse
         await serveTeamDirectory(await request("worktable-directory+jwt"))
       ).json()
       expect(repeated.revision).toBe(renamed.revision)
+      expect(repeated).not.toHaveProperty("color")
+      // A reader that asks for marks gets the color and logo, and Cloud keeps
+      // them because the revision is newer.
+      const marked = async () =>
+        (
+          await serveTeamDirectory(
+            await request("worktable-directory+jwt", { marks: true })
+          )
+        ).json()
+      writeWorkspaceManifest({
+        ...ensureWorkspaceManifest(),
+        color: "teal",
+        logo: { kind: "icon", icon: "rocket" },
+      })
+      const first = await marked()
+      expect(first).toMatchObject({
+        color: "teal",
+        logo: { kind: "icon", icon: "rocket" },
+      })
+      expect(first.revision).toBeGreaterThan(repeated.revision)
+      expect((await marked()).revision).toBe(first.revision)
+      const bytes = new Uint8Array([1, 2, 3])
+      const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 32)
+      writeFileSync(join(getWorkspaceRoot(), "worktable-logo.webp"), bytes)
+      writeWorkspaceManifest({
+        ...ensureWorkspaceManifest(),
+        logo: { kind: "image", hash, type: "image/webp" },
+      })
+      const image = await marked()
+      expect(image.logo).toEqual({
+        kind: "image",
+        data: "data:image/webp;base64,AQID",
+      })
+      expect(image.revision).toBeGreaterThan(first.revision)
     } finally {
       for (const [index, key] of scopedVariables.entries()) {
         const value = saved[index]

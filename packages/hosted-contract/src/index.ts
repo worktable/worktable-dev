@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { ShareTicket } from "./linked-access.ts"
+import { LISTED_MARK_FIELDS } from "./listed-mark.ts"
 
 export * from "@worktable/types/analytics"
 /** Gateway-owned context; it conveys no authorization to product APIs. */
@@ -895,6 +896,7 @@ export function buildTenantEnv(
   }
 }
 export * from "./linked-access.ts"
+export * from "./listed-mark.ts"
 export * from "./grok-email.ts"
 
 /** The control-plane route a tenant calls to email one team invitation. */
@@ -950,6 +952,8 @@ export const TeamDirectorySnapshot = z
   .object({
     workspaceId: z.string().min(1).max(128),
     name: z.string().trim().min(1).max(4096).optional(),
+    /** Sent only when the reader's credential asks for marks (`marks: true`). */
+    ...LISTED_MARK_FIELDS,
     portableWorkspaceId: z.string().min(1).max(128),
     epoch: z.string().regex(/^[a-f0-9]{64}$/),
     revision: z.number().int().nonnegative(),

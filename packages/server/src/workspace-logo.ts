@@ -1,7 +1,15 @@
 import { createHash } from "node:crypto"
 import { copyFile, readFile, rm } from "node:fs/promises"
 import { join } from "node:path"
-import { IDENTITY_IMAGE_TYPES, type IdentityImageType } from "@worktable/types"
+import {
+  IDENTITY_IMAGE_TYPES,
+  isIconName,
+  LISTED_LOGO_MAX_CHARS,
+  recognitionColor,
+  type IdentityImageType,
+  type ListedWorktableLogo,
+  type RecognitionColor,
+} from "@worktable/types"
 import {
   IDENTITY_IMAGE_EXTENSIONS,
   type IdentityImage,
@@ -91,4 +99,43 @@ export async function carryWorkspaceLogo(
       if (error.code !== "ENOENT") throw error
     }
   )
+}
+
+/** A Worktable's color and logo as a list of other Worktables shows them. */
+export interface ListedWorkspaceMark {
+  color: RecognitionColor
+  logo?: ListedWorktableLogo
+}
+
+/** What `listedWorkspaceMark` reports, without reading the image. */
+export function listedWorkspaceMarkKey(manifest: WorkspaceManifest): string {
+  const logo = manifest.logo
+  return JSON.stringify([
+    recognitionColor(manifest.color, manifest.id),
+    logo?.kind === "icon" ? `icon:${logo.icon}` : logo ? `image:${logo.hash}` : null,
+  ])
+}
+
+/**
+ * The color the Worktable shows, and its logo: an icon, or the image inlined
+ * when it is small enough for a list. A larger image lists as the color alone.
+ */
+export async function listedWorkspaceMark(
+  root: string,
+  manifest: WorkspaceManifest
+): Promise<ListedWorkspaceMark> {
+  const color = recognitionColor(manifest.color, manifest.id)
+  const logo = manifest.logo
+  if (logo?.kind === "icon")
+    return isIconName(logo.icon) ? { color, logo: { kind: "icon", icon: logo.icon } } : { color }
+  if (logo?.kind !== "image") return { color }
+  // The logo is cosmetic: a file that can't be read lists as the color.
+  const file = await readWorkspaceLogoFile(root, manifest, logo.hash).catch(
+    () => null
+  )
+  if (!file) return { color }
+  const data = `data:${file.type};base64,${Buffer.from(file.bytes).toString("base64")}`
+  return data.length <= LISTED_LOGO_MAX_CHARS
+    ? { color, logo: { kind: "image", data } }
+    : { color }
 }

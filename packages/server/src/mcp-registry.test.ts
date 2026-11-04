@@ -445,12 +445,14 @@ describe("released tool surface", () => {
     const names = (tools: typeof released) => tools.map((tool) => tool.name)
     expect(names(preview)).toEqual(names(released))
     // Preview holds changes until agent directories review them: wording,
-    // output fields, and the revision an HTML Doc's replace names. Every
+    // output fields, HTML Doc edits and the revision a replace names. Every
     // other tool is identical.
     const held: Record<string, string[]> = {
+      worktable_search: [],
       worktable_files_read: [],
       worktable_files_write: [],
-      worktable_html_write: ["expectedRevision"],
+      worktable_html_read: [],
+      worktable_html_write: ["edits", "expectedRevision"],
     }
     expect(preview.filter((tool) => !(tool.name in held))).toEqual(
       released.filter((tool) => !(tool.name in held))

@@ -7,6 +7,8 @@
 // two different tables. Every value stays the exact text the file holds:
 // nothing is trimmed, typed or reformatted, so `007` stays `007`.
 
+import { FILE_TYPES, fileTypeFor, type FileTypeEntry } from "./file-types"
+
 export interface DelimitedTable {
   /** The first row, as the column names. */
   header: string[]
@@ -16,9 +18,16 @@ export interface DelimitedTable {
   rowCount: number
 }
 
-/** The delimiter a file uses: tab for `.tsv`, else comma. */
+/** The delimiter of a delimited table file by its type, or null. */
+export function fileDelimiter(name: string): "," | "\t" | null {
+  const type = fileTypeFor(name)
+  const entry: FileTypeEntry | null = type === null ? null : FILE_TYPES[type]
+  return entry?.delimiter ?? null
+}
+
+/** The delimiter a file uses: its file type's, else comma. */
 export function delimiterForFilename(name: string): "," | "\t" {
-  return name.toLowerCase().endsWith(".tsv") ? "\t" : ","
+  return fileDelimiter(name) ?? ","
 }
 
 /**

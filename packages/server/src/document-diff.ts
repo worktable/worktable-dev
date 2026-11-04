@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { resolve } from "node:path"
 import {
   DocumentGenerationIdSchema,
+  filePolicy,
   type DocumentFormatClaim,
   type DocumentGenerationManifestV2,
   type DocumentSource,
@@ -496,7 +497,12 @@ export async function diffDocumentText(options: {
     },
     async (handle) => {
       const formatId = handle.document.format.id
-      if (!TEXT_FORMATS.has(formatId)) {
+      // A plain file has a diff only where the file type table offers one.
+      const diffable =
+        TEXT_FORMATS.has(formatId) ||
+        (formatId === BUILTIN_DOCUMENT_FORMATS.file &&
+          filePolicy(handle.document.path, "diff"))
+      if (!diffable) {
         throw new DocumentDiffError(
           `Diff is not available for ${formatId} documents because they have no text projection`
         )

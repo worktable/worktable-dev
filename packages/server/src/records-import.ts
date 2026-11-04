@@ -13,7 +13,10 @@
 import {
   CanonicalIdSchema,
   delimiterForFilename,
+  fileTypeFor,
+  fileTypePolicy,
   parseDelimitedText,
+  type FileTypesWhere,
   type RecordCollectionSchema,
 } from "@worktable/types"
 import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts"
@@ -25,6 +28,23 @@ import {
   readRecordCollectionSchema,
   writeRecordCollectionSchema,
 } from "./record-store.ts"
+
+/**
+ * How each type the file type table lets Records import is read: a JSON
+ * object per line, or a delimited table. A type the table makes importable
+ * needs its reader here, so the file page's Import and this agree.
+ */
+type ImportableFileType = FileTypesWhere<"import", true>
+const IMPORT_READERS: Readonly<
+  Record<ImportableFileType, "lines" | "delimited">
+> = { csv: "delimited", tsv: "delimited", jsonl: "lines" }
+
+function importReader(path: string): "lines" | "delimited" | null {
+  const type = fileTypeFor(path)
+  return type !== null && fileTypePolicy(type, "import")
+    ? IMPORT_READERS[type as ImportableFileType]
+    : null
+}
 
 /** Rows one import may hold. */
 export const IMPORT_MAX_ROWS = 5000
@@ -74,7 +94,7 @@ function tooManyColumns(): Error {
  */
 function readTable(path: string, bytes: Uint8Array): ImportTable {
   const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes)
-  if (/\.jsonl$/i.test(path)) {
+  if (importReader(path) === "lines") {
     const rows: Array<Record<string, string>> = []
     const columns: string[] = []
     const known = new Set<string>()
@@ -156,7 +176,7 @@ function readTable(path: string, bytes: Uint8Array): ImportTable {
 }
 
 async function readImportFile(spaceId: string, path: string) {
-  if (!/\.(?:csv|tsv|jsonl)$/i.test(path)) {
+  if (importReader(path) === null) {
     throw new Error("Import reads a .csv, .tsv or .jsonl file")
   }
   const source = await readRegisteredDocumentSource({ spaceId, path })

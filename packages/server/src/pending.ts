@@ -75,6 +75,7 @@ function threadRequests(requests: ViewerThreadRequest[]): PendingItem[] {
       id: request.author.id,
       name: request.author.name,
     },
+    ...(request.authorIdentityId ? { fromIdentityId: request.authorIdentityId } : {}),
     excerpt: request.excerpt,
   }))
 }

@@ -594,10 +594,18 @@ does, is hidden: it isn't listed, searched, shared or sent to agents, and
 Worktable doesn't create or move anything there. Hidden items stay on disk and
 go into exports and backups. The agent guidance says so.
 
+Moving a folder takes its hidden items with it, as Finder or a shell does:
+each hidden file, and each hidden folder whole, goes to the same place in the
+new folder, byte for byte and still hidden, in the same move. A crash rolls
+them back or forward with the folder's Docs. The move is refused when one
+would land on something already there. Links and special files stay where
+they are. Moving one Doc or file doesn't touch hidden items beside it.
+
 **Enforced in:** `document-format-registry.ts` (`isHiddenName`,
 `pathIsHidden`), `document-adapters.ts` (discovery), `document-write-service.ts`
-and `document-lifecycle-journal.ts` (creates and moves refused). Listing,
-search, sharing and agent tools all read the catalog, so they inherit it.
+and `document-lifecycle-journal.ts` (creates and moves refused; a folder
+move's plan carries hidden items). Listing, search, sharing and agent tools all
+read the catalog, so they inherit it.
 
 **Proved by:**
 
@@ -608,9 +616,18 @@ search, sharing and agent tools all read the catalog, so they inherit it.
   file once files are on": a move into a hidden folder is refused.
 - `workspace-snapshot.test.ts` "captures hidden items whole, and refuses
   in-workspace destinations, overwrites, and linked content".
+- `routes-documents.test.ts` "moves mixed folders with common write authority,
+  hidden items included": `.env`, `.git/HEAD` and a dot-named Doc arrive
+  byte for byte, the listing is unchanged, and a link stays behind.
+- `document-lifecycle-journal.test.ts` "recovers one all-or-nothing mixed
+  folder generation": a crash before, during or after the hidden items move
+  leaves them all in one folder.
 
-**Gaps:** a direct read by path of a symbolic link to a Doc still follows the
-link.
+**Gaps:**
+
+- A direct read by path of a symbolic link to a Doc still follows the link.
+- Deleting a folder deletes its Docs and files and leaves its hidden items,
+  links and special files, so the folder stays on disk.
 
 ## Agents
 

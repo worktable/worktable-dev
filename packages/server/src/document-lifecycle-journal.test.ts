@@ -1163,7 +1163,7 @@ describe("recoverable document lifecycle", () => {
     }
   }, 60_000)
 
-  for (const boundary of ["source-moved", "committed"] as const) {
+  for (const boundary of ["source-moved", "hidden-moved", "committed"] as const) {
     it(`recovers one all-or-nothing mixed folder generation at ${boundary}`, async () => {
       const workspace = join(root, `prefix-${boundary}`, "workspace")
       const app = join(root, `prefix-${boundary}`, "app")
@@ -1280,6 +1280,16 @@ describe("recoverable document lifecycle", () => {
       const markdownVersions = await listDocVersions("space", "folder/markdown")
       const richVersions = await listDocVersions("space", "folder/nested/rich")
       const htmlVersions = await listWidgetVersions("space", "folder/dashboard")
+      const docsRoot = join(workspace, "spaces", "space", "docs")
+      const hidden = {
+        ".env": "TOKEN=synthetic\n",
+        ".git/HEAD": "ref: refs/heads/main\n",
+        "nested/.cache": "cached",
+      }
+      for (const [path, content] of Object.entries(hidden)) {
+        mkdirSync(dirname(join(docsRoot, "folder", path)), { recursive: true })
+        writeFileSync(join(docsRoot, "folder", path), content)
+      }
 
       setDocumentLifecycleStepHookForTests((step) => {
         if (step === boundary) {
@@ -1302,6 +1312,11 @@ describe("recoverable document lifecycle", () => {
       const committed = boundary === "committed"
       const prefix = committed ? "relocated" : "folder"
       const otherPrefix = committed ? "folder" : "relocated"
+      // Hidden items end up in one folder with the documents, never split.
+      for (const [path, content] of Object.entries(hidden)) {
+        expect(readFileSync(join(docsRoot, prefix, path), "utf8")).toBe(content)
+        expect(existsSync(join(docsRoot, otherPrefix, path))).toBe(false)
+      }
       expect(await docExists("space", `${prefix}/markdown`)).toBe(true)
       expect(await docExists("space", `${prefix}/nested/rich`)).toBe(true)
       expect(await docExists("space", `${otherPrefix}/markdown`)).toBe(false)

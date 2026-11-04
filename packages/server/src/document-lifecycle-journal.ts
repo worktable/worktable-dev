@@ -225,6 +225,7 @@ type LifecycleFaultStep =
   | "target-published"
   | "history-file-moved"
   | "source-moved"
+  | "hidden-moved"
   | "archive-mutation-written"
   | "annotation-moved"
   | "reconciliation-target-captured"
@@ -379,6 +380,17 @@ const PrefixEndpointSchema = z
   })
   .strict()
 
+/**
+ * A hidden item a folder move carries: Space-relative paths under the
+ * folder's `docs/` directory, at the same place below each folder.
+ */
+const PrefixHiddenCarrySchema = z
+  .object({
+    from: z.string().min(1).max(4096),
+    to: z.string().min(1).max(4096),
+  })
+  .strict()
+
 const PrefixRenameJournalSchema = JournalBaseSchema.extend({
   operationType: z.literal("prefix-rename"),
   from: PrefixEndpointSchema,
@@ -387,6 +399,16 @@ const PrefixRenameJournalSchema = JournalBaseSchema.extend({
     .array(PrefixRenameDocumentSchema)
     .min(1)
     .max(PREFIX_RENAME_MAX_DOCUMENTS),
+  /**
+   * Hidden items in the folder, moved with it after its documents. Omitted
+   * when there are none. Older builds refuse a journal that sets it, so they
+   * never roll back the documents and leave hidden items in the new folder.
+   */
+  hidden: z
+    .array(PrefixHiddenCarrySchema)
+    .min(1)
+    .max(PREFIX_RENAME_MAX_DOCUMENTS)
+    .optional(),
   completedDocuments: z.number().int().min(0).max(PREFIX_RENAME_MAX_DOCUMENTS),
   /**
    * Documents the cursor may trail by. Omitted by journals that saved it
@@ -580,6 +602,7 @@ type DocumentLifecycleJournal = z.infer<typeof JournalSchema>
 type ExactRenameJournal = z.infer<typeof ExactRenameJournalSchema>
 type PrefixRenameJournal = z.infer<typeof PrefixRenameJournalSchema>
 type PrefixRenameDocument = z.infer<typeof PrefixRenameDocumentSchema>
+type PrefixHiddenCarry = z.infer<typeof PrefixHiddenCarrySchema>
 type PrefixArchiveJournal = z.infer<typeof PrefixArchiveJournalSchema>
 type PrefixArchiveDocument = z.infer<typeof PrefixArchiveDocumentSchema>
 type PrefixArchiveMutation = z.infer<typeof PrefixArchiveMutationSchema>
@@ -3483,6 +3506,7 @@ async function preparePrefixRename(
       "Document folder metadata is too large to move safely"
     )
   }
+  const hidden = planPrefixHiddenCarries(spaceRoot, fromPrefix, toPrefix, moves)
   const journal: PrefixRenameJournal = {
     schemaVersion: JOURNAL_SCHEMA_VERSION,
     planVersion: JOURNAL_PLAN_VERSION,
@@ -3494,6 +3518,7 @@ async function preparePrefixRename(
     from: { spaceId, logicalPath: fromPrefix },
     to: { spaceId, logicalPath: toPrefix },
     documents,
+    ...(hidden.length > 0 ? { hidden } : {}),
     completedDocuments: 0,
     progressStride: PREFIX_PROGRESS_STRIDE,
     edits,
@@ -3502,6 +3527,128 @@ async function preparePrefixRename(
   JournalSchema.parse(journal)
   assertPreparedJournalFits(journal)
   return { journal, blobs, prefixHistoryFiles: historyFiles }
+}
+
+/**
+ * The hidden items a folder move carries, found under the folder's `docs/`
+ * directory: each hidden file, and each hidden folder whole, without reading
+ * inside it. Links and special files stay where they are, as discovery skips
+ * them. Only names hidden below the folder count, so what the move carries
+ * stays hidden under the new name. A hidden folder that holds a planned
+ * document (a Doc made before Docs were hidden) is walked instead, so the
+ * document moves on its own.
+ */
+function planPrefixHiddenCarries(
+  spaceRoot: string,
+  fromPrefix: string,
+  toPrefix: string,
+  moves: readonly PrefixMovePreparation[]
+): PrefixHiddenCarry[] {
+  const sourceRoot = ["docs", ...fromPrefix.split("/")]
+  const targetRoot = ["docs", ...toPrefix.split("/")]
+  const plannedSources = new Set(
+    moves.map((move) => move.fromSource.relativePath)
+  )
+  const plannedPaths = moves.flatMap((move) => [
+    move.fromSource.relativePath,
+    move.toSource.relativePath,
+  ])
+  const holdsPlanned = (path: string): boolean =>
+    plannedPaths.some((planned) => planned.startsWith(`${path}/`))
+  const carries: PrefixHiddenCarry[] = []
+  let scanned = 0
+  const walk = (segments: string[]): void => {
+    const directory = resolve(spaceRoot, ...sourceRoot, ...segments)
+    const entries = readRecoveryDirectory(directory).sort((left, right) =>
+      left.name < right.name ? -1 : left.name > right.name ? 1 : 0
+    )
+    for (const entry of entries) {
+      scanned += 1
+      if (scanned > RECOVERY_CATALOG_MAX_ENTRIES) {
+        throw new DocumentLifecyclePreconditionError(
+          "This folder holds too many items to move safely"
+        )
+      }
+      if (entry.isSymbolicLink()) continue
+      const next = [...segments, entry.name]
+      const from = [...sourceRoot, ...next].join("/")
+      const hidden = next.some(isHiddenName)
+      if (entry.isDirectory()) {
+        if (hidden && !holdsPlanned(from)) {
+          carries.push({ from, to: [...targetRoot, ...next].join("/") })
+        } else {
+          walk(next)
+        }
+        continue
+      }
+      if (!entry.isFile() || !hidden || plannedSources.has(from)) continue
+      carries.push({ from, to: [...targetRoot, ...next].join("/") })
+    }
+  }
+  walk([])
+  if (carries.length > PREFIX_RENAME_MAX_DOCUMENTS) {
+    throw new DocumentLifecyclePreconditionError(
+      "This folder holds too many hidden items to move safely"
+    )
+  }
+  const related = (left: string, right: string): boolean =>
+    left === right ||
+    left.startsWith(`${right}/`) ||
+    right.startsWith(`${left}/`)
+  for (const carry of carries) {
+    const target = resolve(spaceRoot, ...carry.to.split("/"))
+    const logical = carry.to.slice("docs/".length)
+    try {
+      assertSafeContainedPath(spaceRoot, target)
+    } catch {
+      throw new DocumentLifecyclePreconditionError(
+        `Target path already exists: ${logical}`
+      )
+    }
+    if (hasFilesystemEntry(target)) {
+      throw new DocumentLifecyclePreconditionError(
+        `Target path already exists: ${logical}`
+      )
+    }
+    // A move into an ancestor can land a carry where a document goes.
+    if (plannedPaths.some((planned) => related(planned, carry.to))) {
+      throw new DocumentLifecyclePreconditionError(
+        "This folder can't be moved to that location because its document paths would overlap"
+      )
+    }
+  }
+  return carries
+}
+
+/**
+ * Move one hidden item to the other folder, or back. Never replaces what is
+ * already there: a forward move refuses, so the folder rolls back, and a
+ * rollback leaves both rather than lose either.
+ */
+function carryPrefixHiddenItem(
+  journal: PrefixRenameJournal,
+  carry: PrefixHiddenCarry,
+  direction: "forward" | "compensate"
+): void {
+  const root = resolve(getSpacesBaseDir(), journal.from.spaceId)
+  assertSafeWorkspacePath(root)
+  requireRealDirectory(root, `Space ${journal.from.spaceId}`)
+  const from = resolve(root, ...carry.from.split("/"))
+  const to = resolve(root, ...carry.to.split("/"))
+  assertSafeContainedPath(root, from)
+  assertSafeContainedPath(root, to)
+  const [source, target] = direction === "forward" ? [from, to] : [to, from]
+  // Gone already: never moved, moved back, or removed while the move ran.
+  if (!hasFilesystemEntry(source)) return
+  if (hasFilesystemEntry(target)) {
+    if (direction === "forward") {
+      throw new Error("a hidden item's target appeared during the folder move")
+    }
+    return
+  }
+  ensureDurableDirectory(dirname(target), root)
+  renameSync(source, target)
+  fsyncRenameParents(source, target)
 }
 
 function archiveStateArtifact(
@@ -4708,6 +4855,37 @@ function validateJournalBinding(journal: DocumentLifecycleJournal): void {
   }
 }
 
+/**
+ * A carry names one hidden item below the source folder and the same place
+ * below the target, through plain segments only.
+ */
+function validatePrefixHiddenCarries(journal: PrefixRenameJournal): void {
+  const fromRoot = `docs/${journal.from.logicalPath}/`
+  const toRoot = `docs/${journal.to.logicalPath}/`
+  const seen = new Set<string>()
+  for (const carry of journal.hidden ?? []) {
+    const below = carry.from.slice(fromRoot.length)
+    const segments = below.split("/")
+    if (
+      !carry.from.startsWith(fromRoot) ||
+      carry.to !== `${toRoot}${below}` ||
+      !segments.some(isHiddenName) ||
+      segments.some(
+        (segment) =>
+          segment === "" ||
+          segment === "." ||
+          segment === ".." ||
+          segment.includes("\\") ||
+          segment.includes("\0")
+      ) ||
+      seen.has(carry.from)
+    ) {
+      throw new Error("document folder lifecycle hidden item path is unsafe")
+    }
+    seen.add(carry.from)
+  }
+}
+
 function validatePrefixRenameJournalPaths(journal: PrefixRenameJournal): void {
   if (journal.from.spaceId !== journal.to.spaceId) {
     throw new Error("document folder lifecycle journal crosses Spaces")
@@ -4728,6 +4906,7 @@ function validatePrefixRenameJournalPaths(journal: PrefixRenameJournal): void {
   ) {
     throw new Error("document folder lifecycle roots are unsafe")
   }
+  validatePrefixHiddenCarries(journal)
   const ids = new Set<string>()
   const sources = new Set<string>()
   const targets = new Set<string>()
@@ -6985,6 +7164,10 @@ function applyPrefixDocumentsRecovery(
     }
     return
   }
+  // Hidden items move after every document, so they go back first.
+  for (const carry of [...(journal.hidden ?? [])].reverse()) {
+    carryPrefixHiddenItem(journal, carry, "compensate")
+  }
   // The cursor is saved after member moves, so destinations past it, up to
   // the journal's stride, can already be operation-owned.
   const end = prefixCompensationEnd(
@@ -7352,6 +7535,11 @@ async function applyPortableRuntime(
       if (annotationMoved) await stepHookForTests?.("annotation-moved")
       journal.completedDocuments = index + 1
       checkpointPrefixCursor(journal, index + 1, journal.documents.length)
+    }
+    // Each carry is settled by where its item is, so it needs no cursor.
+    for (const carry of journal.hidden ?? []) {
+      carryPrefixHiddenItem(journal, carry, "forward")
+      await stepHookForTests?.("hidden-moved")
     }
     markCompleted(journal, "source")
     await stepHookForTests?.("source")

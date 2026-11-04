@@ -73,6 +73,14 @@ export function sourceStampOf(info: {
     .join(".")
 }
 
+/** The size in bytes a source stamp records, without touching the file. */
+export function sourceStampSize(stamp: string | undefined): number | undefined {
+  const size = stamp?.split(".")[3]
+  if (size === undefined) return undefined
+  const bytes = parseInt(size, 36)
+  return Number.isSafeInteger(bytes) && bytes >= 0 ? bytes : undefined
+}
+
 export interface DocumentHandle {
   documentId: DocumentId
   identity: "durable" | "provisional"

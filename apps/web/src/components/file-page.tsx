@@ -107,6 +107,9 @@ export function FilePage({
       : (page.version ?? null)
   const [importOpen, setImportOpen] = useState(false)
   const canEdit = page.capabilities.edit !== false && !page.document.archived
+  // A file past what a version holds keeps no history, so a new version
+  // couldn't keep this one.
+  const canReplace = canEdit && !page.noHistory
   // A table people will keep working in belongs in Records.
   const importable = canEdit && /\.(?:csv|tsv|jsonl)$/i.test(name)
   const url = fileSourceUrl(spaceId, path, version)
@@ -157,7 +160,7 @@ export function FilePage({
             ],
           }
         : {}),
-      ...(canEdit
+      ...(canReplace
         ? {
             secondaryAction: {
               label: "Upload New Version",
@@ -172,7 +175,7 @@ export function FilePage({
         : {}),
     })
     return () => setPageMeta(null)
-  }, [canEdit, importable, name, page, path, setPageMeta, spaceId, uploading])
+  }, [canReplace, importable, name, page, path, setPageMeta, spaceId, uploading])
 
   return (
     <div className="flex h-full flex-col">
@@ -211,7 +214,18 @@ export function FilePage({
             {...(page.backlinks ? { backlinks: page.backlinks } : {})}
             {...(page.referrers ? { referrers: page.referrers } : {})}
           />
-          <FileContent view={view} url={url} name={name} />
+          <FileContent
+            key={url}
+            view={view}
+            url={url}
+            name={name}
+            tooLarge={page.noHistory !== undefined}
+          />
+          {page.noHistory ? (
+            <p className="text-sm text-muted-foreground">
+              No history while this file is larger than 64 MiB.
+            </p>
+          ) : null}
         </article>
       </div>
     </div>
@@ -222,26 +236,34 @@ function FileContent({
   view,
   url,
   name,
+  tooLarge,
 }: {
   view: FileView
   url: string
   name: string
+  /** Past what a version holds: no preview is read. */
+  tooLarge: boolean
 }) {
+  const [imageFailed, setImageFailed] = useState(false)
   const text = useQuery({
     queryKey: ["file-preview", url],
     queryFn: () => readPreviewText(url),
-    enabled: view === "table" || view === "text",
+    enabled: !tooLarge && (view === "table" || view === "text"),
     staleTime: Infinity,
   })
+  if (view === "card") return <FileCard name={name} status="No preview" />
+  if (tooLarge || text.data === null) {
+    return <FileCard name={name} status="Too large to preview" />
+  }
+  if (text.isError || imageFailed) {
+    return <FileCard name={name} status="Couldn’t load preview" />
+  }
   if (view === "image") {
     return (
       <p>
-        <img src={url} alt={name} />
+        <img src={url} alt={name} onError={() => setImageFailed(true)} />
       </p>
     )
-  }
-  if (view === "card" || text.data === null || text.isError) {
-    return <FileCard name={name} />
   }
   if (text.data === undefined) return null
   if (view === "text") {
@@ -302,7 +324,7 @@ function FileContent({
   )
 }
 
-function FileCard({ name }: { name: string }) {
+function FileCard({ name, status }: { name: string; status: string }) {
   const dot = name.lastIndexOf(".")
   const type = dot > 0 ? name.slice(dot + 1).toUpperCase() : "File"
   return (
@@ -313,7 +335,7 @@ function FileCard({ name }: { name: string }) {
       <div className="min-w-0">
         <div className="truncate text-sm font-medium text-foreground">{name}</div>
         <div className="text-sm text-muted-foreground">
-          {type} · No preview
+          {type} · {status}
         </div>
       </div>
     </div>

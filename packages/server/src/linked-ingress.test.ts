@@ -1,6 +1,6 @@
 import { LinkGrantSchema, defaultSharingPolicy } from "@worktable/types"
 import { afterEach, beforeEach, expect, it } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, open, rm, truncate } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import fc from "fast-check"
@@ -34,6 +34,8 @@ import { useResolvedDocumentHandle } from "./document-query.ts"
 import { createLinkedIngress } from "./linked-ingress.ts"
 import { issueFileTicket } from "./file-tickets.ts"
 import { writeUploadedFile } from "./file-uploads.ts"
+import { FILE_VERSION_MAX_BYTES } from "./file-limits.ts"
+import { noteSpaceChanged } from "./workspace-read-model.ts"
 import { listAgentConnections } from "./agent-connection-store.ts"
 import { disconnectLink } from "./linked-runtime.ts"
 import {
@@ -1074,4 +1076,37 @@ it("carries a file link in pieces: an upload saved after its last piece, and a d
   const changed = await read(LINKED_REQUEST_MAX_BYTES)
   expect(changed.status).toBe(409)
   expect(await changed.json()).toMatchObject({ code: "FILE_CHANGED" })
+
+  // A file grown on disk past what an upload or a version holds still
+  // downloads, from a piece past that limit too.
+  const onDisk = join(directory, "workspace", "spaces", "space", "docs", "design", "archive.bin")
+  const size = FILE_VERSION_MAX_BYTES + 7
+  await truncate(onDisk, size)
+  const marker = await open(onDisk, "r+")
+  await marker.write(rest, 0, rest.byteLength, FILE_VERSION_MAX_BYTES)
+  await marker.close()
+  noteSpaceChanged("space")
+  const large = issueFileTicket({
+    kind: "download",
+    spaceId: "space",
+    path: "design/archive.bin",
+    identity: null,
+    principal,
+    actor: principal.id,
+  }).token
+  const past = await ingress.fetch(
+    await createLinkedRequest({
+      origin: server.url.origin,
+      key,
+      binding: ingress.binding,
+      grant: { kind: "file-link", capability: large, offset: FILE_VERSION_MAX_BYTES },
+      method: "GET",
+      path: "/linked/file-links/download",
+    })
+  )
+  expect(past.status).toBe(200)
+  expect(past.headers.get(LINKED_FILE_SIZE_HEADER)).toBe(String(size))
+  expect(new Uint8Array(await past.arrayBuffer())).toEqual(
+    new Uint8Array([...rest, 0, 0, 0, 0])
+  )
 }, 30_000)

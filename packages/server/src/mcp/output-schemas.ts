@@ -771,6 +771,16 @@ const PendingOutputSchema = z.looseObject({
   more: z.number().int().positive().optional(),
 })
 
+/** A file read whose bytes come by its download link. */
+const FILE_DOWNLOAD_FIELDS = {
+  documentId: z.string(),
+  path: z.string(),
+  format: DocumentFormatClaimSchema,
+  encoding: z.literal("download"),
+  downloadUrl: z.string(),
+  byteLength: z.number().int().nonnegative(),
+}
+
 export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
   "workspace.state": [WorkspaceOverviewSchema, SpaceDetailSchema],
   "workspace.search": [
@@ -829,15 +839,10 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
       sourceRevision: z.string(),
     }),
     // Preview: a binary file over 1 MiB, whose bytes come by its download link.
-    z.looseObject({
-      documentId: z.string(),
-      path: z.string(),
-      format: DocumentFormatClaimSchema,
-      encoding: z.literal("download"),
-      downloadUrl: z.string(),
-      byteLength: z.number().int().nonnegative(),
-      sourceRevision: z.string(),
-    }),
+    z.looseObject({ ...FILE_DOWNLOAD_FIELDS, sourceRevision: z.string() }),
+    // A file past what a version holds: only its link, and why it keeps no
+    // history. Its fields are the ones above, so the tool's schema is too.
+    z.looseObject(FILE_DOWNLOAD_FIELDS),
     // Preview: an image file, whose bytes travel as MCP image content.
     z.looseObject({
       documentId: z.string(),

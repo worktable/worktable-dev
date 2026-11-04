@@ -404,17 +404,36 @@ describe("portable workspace snapshots", () => {
     await expect(inspectWorkspaceSnapshot(destination)).rejects.toThrow()
   })
 
-  it("refuses in-workspace destinations, overwrites, and linked content", async () => {
+  it("captures hidden items whole, and refuses in-workspace destinations, overwrites, and linked content", async () => {
     await expect(
       writeWorkspaceSnapshot(join(workspace, "backup"))
     ).rejects.toThrow("outside")
+    // Hidden items aren't shown, but a backup holds them like anything else.
+    const docs = join(workspace, "spaces", "notes", "docs")
+    await mkdir(join(docs, ".notes"), { recursive: true })
+    await writeFile(join(docs, ".notes", "plan.md"), "# Hidden plan\n")
+    await writeFile(join(docs, ".env"), "TOKEN=1\n")
     const destination = join(root, "snapshot")
     await writeWorkspaceSnapshot(destination)
+    const captured = join(destination, "workspace", "spaces", "notes", "docs")
+    expect(await readFile(join(captured, ".notes", "plan.md"), "utf8")).toBe(
+      "# Hidden plan\n"
+    )
+    expect(await readFile(join(captured, ".env"), "utf8")).toBe("TOKEN=1\n")
     await expect(writeWorkspaceSnapshot(destination)).rejects.toThrow(
       "already exists"
     )
+    // A link fails a backup, in a Space or anywhere else: only a person's
+    // export leaves one out.
+    await symlink(join(docs, ".env"), join(docs, "linked.md"))
+    await expect(writeWorkspaceSnapshot(join(root, "other"))).rejects.toThrow(
+      /refuses symlink/
+    )
+    await rm(join(docs, "linked.md"))
     await symlink(join(root, "app"), join(workspace, "linked"))
-    await expect(writeWorkspaceSnapshot(join(root, "other"))).rejects.toThrow()
+    await expect(writeWorkspaceSnapshot(join(root, "third"))).rejects.toThrow(
+      /refuses symlink/
+    )
   })
 })
 

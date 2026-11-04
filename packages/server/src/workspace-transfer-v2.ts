@@ -61,7 +61,6 @@ import {
 import { versionIdTimestamp } from "./version-store.ts"
 import { removeWorkspaceTree } from "./workspace-tree-cleanup.ts"
 import { noteStorageChange } from "./storage-usage.ts"
-import { pathIsHidden } from "./document-format-registry.ts"
 import {
   classifyWorkspaceTarget,
   getWorkspaceRoot,
@@ -221,17 +220,8 @@ interface SourceRootIdentity {
 interface SourceInventory {
   root: SourceRootIdentity
   entries: SourceEntry[]
-  /** For an export's listing: what it left out, in listing order. */
+  /** Links and special files a person's export left out, in listing order. */
   leftOut: WorkspaceExportV2LeftOut[]
-}
-
-/** A Space's own folder, where hidden names hold nothing Worktable shows. */
-const SPACE_DOCS_PATH = /^spaces\/[^/]+\/docs\/(.+)$/
-
-/** Whether an export leaves this path out as hidden: never listed or sent. */
-function hiddenInSpace(path: string): boolean {
-  const inSpace = SPACE_DOCS_PATH.exec(path)
-  return inSpace !== null && pathIsHidden(inSpace[1]!)
 }
 
 interface VersionCandidate extends SourceEntry {
@@ -590,11 +580,11 @@ async function listSourceEntries(
     signal?: AbortSignal
     live?: boolean
     /**
-     * An export's listing: what is hidden in a Space is left out, and a
-     * link or special file is left out and named instead of failing it.
-     * Every other listing refuses both.
+     * A person's export: a link or special file is left out and named
+     * instead of failing the listing. Every other listing, a backup
+     * snapshot's included, refuses both, so a capture is complete or fails.
      */
-    export?: boolean
+    leaveOutLinks?: boolean
   } = {}
 ): Promise<SourceInventory> {
   const canonicalRoot = await realpath(root)
@@ -630,7 +620,6 @@ async function listSourceEntries(
       const absolute = join(directory, child.name)
       const localPath = portablePath(root, absolute)
       if (isWorkspaceTransactionArtifact(localPath)) continue
-      if (options.export && hiddenInSpace(localPath)) continue
       const info = await tolerate(() => lstat(absolute))
       if (!info) continue
       const path =
@@ -645,7 +634,7 @@ async function listSourceEntries(
         collisionPaths.add(collisionPath)
       }
       if (info.isSymbolicLink()) {
-        if (options.export) {
+        if (options.leaveOutLinks) {
           leftOut.push({ path, reason: "link" })
           continue
         }
@@ -695,7 +684,7 @@ async function listSourceEntries(
           ctimeMs: info.ctimeMs,
           mtimeMs: info.mtimeMs,
         })
-      } else if (options.export) {
+      } else if (options.leaveOutLinks) {
         leftOut.push({ path, reason: "special-file" })
       } else {
         throw new Error(`workspace export refuses special file: ${path}`)
@@ -1474,6 +1463,12 @@ interface CaptureOptions {
   classifyHistory?: boolean
   /** Hashes from earlier captures, reused while a file keeps its identity. */
   hashCache?: PortableContentHashCache
+  /**
+   * Only for a person's export: leave out links and special files and list
+   * them, instead of refusing the capture. Off by default, so a snapshot or
+   * any new caller gets a complete capture or none.
+   */
+  leaveOutLinks?: boolean
 }
 
 interface StagedFile {
@@ -1756,7 +1751,7 @@ async function prepareWorkspaceCapture(
       paths: "local",
       signal: options.signal,
       live: true,
-      export: true,
+      leaveOutLinks: options.leaveOutLinks === true,
     })
     await options.onProgress?.("history")
     // History is neither read nor selected here: files change underneath a
@@ -2038,7 +2033,7 @@ async function captureConsistentWorkspace(
   const inventory = await listSourceEntries(staging.sourceRoot, {
     paths: "local",
     signal: options.signal,
-    export: true,
+    leaveOutLinks: options.leaveOutLinks === true,
   })
   const selected = await selectEntries(
     inventory,
@@ -2132,7 +2127,7 @@ async function captureConsistentWorkspace(
     current = await listSourceEntries(staging.sourceRoot, {
       paths: "local",
       signal: options.signal,
-      export: true,
+      leaveOutLinks: options.leaveOutLinks === true,
     })
   } catch (error) {
     throw new WorkspaceChangedDuringExportError(
@@ -2931,6 +2926,11 @@ type WorkspaceExportV2WriteOptions = {
   history?: WorkspaceExportHistoryPolicy
   workspaceRoot?: string
   withCaptureBarrier?: <T>(capture: () => Promise<T>) => Promise<T>
+  /**
+   * A person's export: leave out links and special files, and list them in
+   * the manifest's `leftOut`. Without it, one fails the export.
+   */
+  leaveOutLinks?: boolean
 }
 
 export async function writeWorkspaceExportV2(

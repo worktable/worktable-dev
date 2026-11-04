@@ -90,6 +90,7 @@ import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
   isHiddenName,
+  pathIsHidden,
   withoutSuffix,
 } from "./document-format-registry.ts"
 import {
@@ -7822,7 +7823,14 @@ function verifyRecoveryCatalogCheckpoint(
     )
   }
   const maybeClaim = (path: string, source: string): void => {
-    if (relevant(path)) claims.push({ path, source })
+    if (!relevant(path)) return
+    // Discovery never finds a hidden Doc, so a new plan never holds one. A
+    // journal written before Docs were hidden may: it still counts there.
+    if (pathIsHidden(path)) {
+      const key = analyzeDocumentPath(path).comparisonKey
+      if (!key || !comparisonKeys.has(key)) return
+    }
+    claims.push({ path, source })
   }
   // Whether files took part is a fact of the journal, not of the preview
   // switch now: recovery must settle what the operation planned either way.
@@ -7847,8 +7855,7 @@ function verifyRecoveryCatalogCheckpoint(
       account()
       if (entry.isSymbolicLink()) continue
       // Discovery's rule: nothing under a hidden name is a file. Docs there
-      // are still found, so an operation planned before Docs were hidden
-      // settles; no new one can name them.
+      // are still found, and count only where the journal planned them.
       const hidden = insideHidden || isHiddenName(entry.name)
       const nextSegments = [...segments, entry.name]
       const absolute = join(directory, entry.name)

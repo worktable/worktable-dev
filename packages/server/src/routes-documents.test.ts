@@ -796,6 +796,22 @@ describe("format-neutral document route", () => {
 
   it("archives and restores mixed folders with common write authority", async () => {
     const instance = app()
+    // Hidden items in the folder take no part, and stay where they are.
+    const notes = join(root, "spaces", spaceId, "docs", "notes")
+    await mkdir(join(notes, ".drafts"), { recursive: true })
+    const hidden = {
+      ".hidden.md": "# Hidden\n",
+      ".drafts/plan.md": "# Plan\n",
+      ".env": "TOKEN=1\n",
+    }
+    for (const [path, text] of Object.entries(hidden)) {
+      await writeFile(join(notes, path), text)
+    }
+    const hiddenUnchanged = async () => {
+      for (const [path, text] of Object.entries(hidden)) {
+        expect(await readFile(join(notes, path), "utf8")).toBe(text)
+      }
+    }
     const originalOldArchive = await getDocArchiveInfo(spaceId, "notes/old")
     const forbiddenArchive = await instance.request(
       `/api/spaces/${spaceId}/documents/archive-folder`,
@@ -872,6 +888,7 @@ describe("format-neutral document route", () => {
       archivedBy: "local:owner",
       reason: "Quarter complete",
     })
+    await hiddenUnchanged()
 
     const restored = await instance.request(
       `/api/spaces/${spaceId}/documents/restore-folder`,
@@ -902,6 +919,7 @@ describe("format-neutral document route", () => {
     expect(await getDocArchiveInfo(spaceId, "notes/old")).toBeUndefined()
     expect(await getDocArchiveInfo(spaceId, "notes/readme")).toBeUndefined()
     expect((await readWidget(spaceId, "notes/status")).data?.archive).toBeNull()
+    await hiddenUnchanged()
   }, 10_000)
 
   it("refuses unsupported mixed-folder archive and delete without changing source", async () => {

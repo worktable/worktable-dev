@@ -401,9 +401,9 @@ describe("workspace export v2", () => {
     for (const path of transactionArtifacts) {
       expect(listing.stdout).not.toContain(path)
     }
-    // Authored names like these are hidden in a Space, so they stay out.
-    expect(listing.stdout).not.toContain("docs/.pending-guide.md")
-    expect(listing.stdout).not.toContain("docs/.worktable-write-1-a.tmp")
+    // Authored hidden names are a complete copy's, though no list shows them.
+    expect(listing.stdout).toContain("docs/.pending-guide.md")
+    expect(listing.stdout).toContain("docs/.worktable-write-1-a.tmp")
     const previewPath = listing.stdout
       .split("\n")
       .find((path) => /\/browse\/content\/preview-\d+\.html$/.test(path))
@@ -465,9 +465,20 @@ describe("workspace export v2", () => {
     for (const path of transactionArtifacts) {
       await expect(stat(join(destination, path))).rejects.toThrow()
     }
-    await expect(
-      stat(join(destination, "spaces", "notes", "docs", ".pending-guide.md"))
-    ).rejects.toThrow()
+    expect(
+      await readFile(
+        join(destination, "spaces", "notes", "docs", ".pending-guide.md"),
+        "utf8"
+      )
+    ).toBe("# Authored pending guide\n")
+    // Restored to disk, and still hidden there.
+    const restoredPaths = (
+      await buildDocumentCatalog({ workspaceRoot: destination, spaceId: "notes" })
+    ).entries.map((entry) =>
+      entry.kind === "document" ? entry.descriptor.path : entry.pathKey
+    )
+    expect(restoredPaths).toContain("welcome")
+    expect(restoredPaths.filter((path) => path.includes(".pending"))).toEqual([])
   })
 
   it("uses one source-identity contract for writers and untrusted packages", async () => {
@@ -905,7 +916,7 @@ describe("workspace export v2", () => {
     expect(maximum).toBe(8)
   })
 
-  it("leaves out links, special files and hidden Docs, and refuses unsafe destinations", async () => {
+  it("leaves links and special files out of a person's export, keeps hidden items, and refuses unsafe destinations", async () => {
     await symlink(
       join(source, "worktable.workspace.json"),
       join(source, "spaces", "manifest-link")
@@ -915,16 +926,23 @@ describe("workspace export v2", () => {
     await mkdir(join(docs, ".notes"), { recursive: true })
     await writeFile(join(docs, ".notes", "plan.md"), "# Hidden plan\n")
     await symlink(join(docs, "welcome.md"), join(docs, ".notes", "link.md"))
-    const exported = await writeWorkspaceExportV2(join(root, "left-out"))
+    // Any other export, such as an operator's, is complete or fails.
+    await expect(writeWorkspaceExportV2(join(root, "unsafe"))).rejects.toThrow(
+      /refuses symlink/
+    )
+    const exported = await writeWorkspaceExportV2(join(root, "left-out"), {
+      leaveOutLinks: true,
+    })
     expect(exported.manifest.leftOut).toEqual([
       { path: "spaces/manifest-link", reason: "link" },
+      { path: "spaces/notes/docs/.notes/link.md", reason: "link" },
       { path: "spaces/notes/docs/pipe", reason: "special-file" },
     ])
     expect(
-      exported.manifest.integrity.files.filter((file) =>
-        file.path.includes("/docs/.notes/")
-      )
-    ).toEqual([])
+      exported.manifest.integrity.files
+        .filter((file) => file.path.includes("/docs/.notes/"))
+        .map((file) => file.path)
+    ).toEqual(["spaces/notes/docs/.notes/plan.md"])
     expect(
       (await inspectWorkspaceExportV2(exported.destination)).manifest.leftOut
     ).toEqual(exported.manifest.leftOut)
@@ -934,6 +952,7 @@ describe("workspace export v2", () => {
     ).rejects.toThrow(/refuses symlink/)
     await rm(join(source, "spaces", "manifest-link"))
     await rm(join(docs, "pipe"))
+    await rm(join(docs, ".notes", "link.md"))
 
     const existing = join(root, "existing.wtb")
     await writeFile(existing, "unchanged")

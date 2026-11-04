@@ -25,9 +25,14 @@ on or refusing a write over a limit, cover writes through Worktable only. What
 Worktable records of a change on disk depends on the file:
 
 - A plain file Worktable already keeps (uploaded, moved or otherwise managed
-  through it) gets a version once the change settles, marked as made on disk.
+  through it) gets a version once its Space's changes settle, marked as made on
+  disk. Changes in quick succession merge into one version, and a Space that
+  keeps changing is recorded after at most 10 seconds
+  (`file-change-recorder.ts`), so a version can hold a state the writer hadn't
+  finished.
 - A new file written on disk has no history until Worktable keeps it.
-- A file over 64 MiB has no history.
+- A file over 64 MiB keeps no new versions while it stays that large; versions
+  from before it grew stay in its history.
 - A Doc gets no version when the change settles. Its next write through
   Worktable first keeps what is on disk as a recovery point.
 
@@ -472,16 +477,22 @@ file; only the perf budget does.
 
 ### 14. Storage is accounted, bounded and recoverable
 
-Limits count live files, history, transfers in progress and derived output.
-Writes through Worktable can't pass them; writes on disk are counted. At the
-limit the oldest history is pruned first, visibly, and a write is refused (507
-`STORAGE_LIMIT`) only when nothing prunable is left. A person typing in a Doc
+Limits count live files, history, deleted items and derived output. Transfers
+in progress (uploads being received, export packages and import staging) are
+temporary and don't count, by decision, so disk use can briefly exceed the
+limit. Writes through Worktable can't pass it; writes on disk are counted. At
+the limit the oldest history is pruned first, visibly. A write is refused (507
+`STORAGE_LIMIT`) when it couldn't fit even if all prunable history went, in
+which case nothing is pruned for it, or when pruning can't make room within a
+few seconds. A person typing in a Doc
 keeps saving at the limit, counted but never refused. At its limit a Worktable
 still opens, reads, deletes and exports. What people delete leaves the
 backed-up folder at once and is removed after the history window.
 
-The default limit is 2 GiB everywhere, the most today's export can carry.
-`WORKTABLE_STORAGE_LIMIT_BYTES` lowers it.
+The default limit is 2 GiB, the most today's export can carry.
+`WORKTABLE_STORAGE_LIMIT_BYTES` sets another; outside Cloud it is capped at
+2 GiB. On Cloud it carries the plan's limit, which can be higher, while export
+still stops at 2 GiB compressed (rule 16).
 
 **Why:** a Worktable that fills its disk, or grows past what its backup and
 export can carry, can't be recovered.
@@ -565,8 +576,8 @@ them.
 - `workspace-transfer-v2.test.ts` "stops ZIP generation at the archive ceiling
   and removes partial output".
 
-**Gaps:** export stops at 2 GiB compressed and 8 GiB expanded, and the storage
-limit is set to fit. One link or special file in the folder fails the whole
+**Gaps:** export stops at 2 GiB compressed and 8 GiB expanded. Outside Cloud
+the storage limit is set to fit; a Cloud plan's limit can be higher. One link or special file in the folder fails the whole
 export. Share links and visitor comments live in app data, so an export doesn't
 carry them.
 

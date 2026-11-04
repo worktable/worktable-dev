@@ -887,7 +887,7 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
         .looseObject({ ...FileNoHistorySchema.shape, message: z.string() })
         .optional()
         .describe(
-          "Present when the file keeps no version history, with why: a file larger than maxBytes has no saved versions."
+          "Present when the file's current content isn't kept as a version, with why: content larger than maxBytes isn't versioned. Versions from before the file grew stay in its history."
         ),
     },
   }),

@@ -215,6 +215,23 @@ describe("workspace export v2", () => {
     ).toBe(false)
   })
 
+  it("exports filtered history without consent for a non-portable revision the policy omits", async () => {
+    const legacy = join(source, "versions", "notes", "docs", "welcome")
+    await mkdir(legacy, { recursive: true })
+    await writeFile(
+      join(legacy, "con.json"),
+      JSON.stringify({ createdAt: "2020-01-01T00:00:00.000Z", content: "old" })
+    )
+    const recent = await addVersion("2026-01-02T00:00:00.000Z", "recent")
+    const result = await writeWorkspaceExportV2(join(root, "filtered"), {
+      history: { mode: "count", maxPerItem: 1 },
+    })
+    const paths = result.manifest.integrity.files.map((file) => file.path)
+    expect(paths).toContain(recent)
+    expect(paths).not.toContain("versions/notes/docs/welcome/con.json")
+    expect(result.manifest.history.recovery).toBeUndefined()
+  })
+
   it("requires reviewed history recovery, retains whole V2 generations, and rejects expanded consent", async () => {
     const unit = await addV2Generation("2026-01-01T00:00:00.000Z", "bad")
     await writeFile(join(source, unit, "trailing "), "legacy companion")

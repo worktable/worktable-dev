@@ -1496,36 +1496,38 @@ function assertSelectionWithinLimits(entries: SourceEntry[]): void {
 }
 
 /**
- * Files worth staging before the barrier. With "all" or "none" this is the
- * barrier's own selection, so a workspace over the limits fails before any
- * copying. Otherwise it is a superset: staging stops at the expanded-size
- * limit and leaves the definitive checks, paths included, to the barrier.
+ * Files worth staging before the barrier, from a live inventory. Staging
+ * never selects: classification, portability and recovery consent belong to
+ * the barrier's selection, which may omit history. So this takes every file
+ * the policy could select, skips paths that selection might refuse or omit,
+ * and fails early only on files every policy exports: those outside history.
  */
 function stagingCandidates(
   entries: SourceEntry[],
   policy: WorkspaceExportHistoryPolicy
 ): SourceEntry[] {
-  const exact = policy.mode === "all" || policy.mode === "none"
-  const files = entries.filter((entry) => entry.kind === "file")
-  if (exact) {
-    let expandedBytes = 0
-    for (const file of files) {
-      if (file.size > WORKSPACE_EXPORT_V2_MAX_FILE_BYTES)
-        throw new Error(`workspace file exceeds the v2 limit: ${file.path}`)
-      expandedBytes += file.size
-    }
-    if (expandedBytes > WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES)
-      throw new Error("workspace export exceeds the v2 expanded-size limit")
+  const files = entries.filter(
+    (entry) =>
+      entry.kind === "file" &&
+      (policy.mode !== "none" || !entry.path.startsWith("versions/"))
+  )
+  let currentBytes = 0
+  for (const file of files) {
+    if (file.path.startsWith("versions/")) continue
+    if (file.size > WORKSPACE_EXPORT_V2_MAX_FILE_BYTES)
+      throw new Error(`workspace file exceeds the v2 limit: ${file.path}`)
+    currentBytes += file.size
   }
+  if (currentBytes > WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES)
+    throw new Error("workspace export exceeds the v2 expanded-size limit")
   const candidates: SourceEntry[] = []
+  const folded = new Set<string>()
   let budget = WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES
   for (const file of files) {
-    if (file.size > budget) continue
-    try {
-      validateWorkspaceExportV2Path(file.path)
-    } catch {
+    const key = file.path.toLocaleLowerCase("en-US")
+    if (file.size > budget || analyzePackagePath(file.path) || folded.has(key))
       continue
-    }
+    folded.add(key)
     budget -= file.size
     candidates.push(file)
   }
@@ -1628,8 +1630,8 @@ async function stageFiles(
 }
 
 /**
- * Stage every selected file that has not changed recently, while writes
- * continue. Nothing here is trusted yet: a staged file survives only if the
+ * Stage every file the policy could export that has not changed recently,
+ * while writes continue. Nothing here is trusted yet: a staged file survives only if the
  * barrier's inventory finds the same identity. A file changed within the
  * fingerprint window could change again without a new ctime, so it is left
  * for the barrier.
@@ -1637,7 +1639,6 @@ async function stageFiles(
 async function prepareWorkspaceCapture(
   sourceRoot: string,
   historyPolicy: WorkspaceExportHistoryPolicy,
-  exportedAt: Date,
   options: CaptureOptions = {}
 ): Promise<CaptureStaging> {
   const startedAt = performance.now()
@@ -1672,17 +1673,9 @@ async function prepareWorkspaceCapture(
       live: true,
     })
     await options.onProgress?.("history")
-    // History is not read here: files change underneath a live listing, and
-    // unclassified history is included, so this stages a superset of what the
-    // barrier selects. The barrier classifies and drops the rest.
-    const selected = await selectEntries(
-      inventory,
-      historyPolicy,
-      exportedAt,
-      options.recoveryFingerprint,
-      { classifyHistory: false }
-    )
-    const candidates = stagingCandidates(selected.entries, historyPolicy)
+    // History is neither read nor selected here: files change underneath a
+    // live listing, and the barrier's selection drops what it omits.
+    const candidates = stagingCandidates(inventory.entries, historyPolicy)
     await options.onProgress?.("capture")
     const directories = new Map(
       inventory.entries
@@ -2206,7 +2199,6 @@ export async function withPortableWorkspaceCapture<T>(
       const staging = await prepareWorkspaceCapture(
         sourceRoot,
         { mode: "all" },
-        exportedAt,
         captureOptions
       )
       const work = () =>
@@ -2884,7 +2876,6 @@ async function writeWorkspaceExportV2WithCaptureLock(
   const staging = await prepareWorkspaceCapture(
     sourceRoot,
     historyPolicy,
-    exportedAt,
     options
   )
   let selected: Awaited<ReturnType<typeof selectEntries>>

@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto"
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { getAppDir } from "./app-storage.ts"
+import { noteStorageChange } from "./storage-usage.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 
@@ -30,6 +31,7 @@ async function writeEpoch(path: string, epoch: string): Promise<string> {
     return epoch
   } finally {
     await rm(temporary, { force: true })
+    noteStorageChange(path)
   }
 }
 

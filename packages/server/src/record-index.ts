@@ -43,6 +43,7 @@ import { getSpacesBaseDir, withStoreWriteLock } from "./store.ts";
 import { workspaceCacheKey, getWorkspaceRoot } from "./workspace.ts";
 import { parseCanonicalYaml, stringifyCanonicalYaml } from "./yaml.ts";
 import { logError } from "./debug-log.ts";
+import { noteStorageChange } from "./storage-usage.ts";
 
 // Bump when the table layout or row semantics change; a mismatch wipes and
 // rebuilds the file (it is a cache — rebuild is always safe). Additive,
@@ -429,6 +430,7 @@ class RecordIndex {
   /** A collection's projected rows or schema changed. */
   private noteCollectionChanged(spaceId: string, collectionId: string): void {
     this.bumpRevision(spaceId, collectionId);
+    noteStorageChange(this.indexPath());
     // A drift verdict may no longer hold; the next health read checks again.
     const key = `${spaceId}/${collectionId}`;
     if (this.healthCache.get(key)?.state === "drifted") this.healthCache.delete(key);
@@ -666,6 +668,7 @@ class RecordIndex {
   async rebuild(): Promise<void> {
     const run = this.rebuildQueue.then(async () => {
       await this.doRebuild();
+      noteStorageChange(this.indexPath());
       if (this.isReady()) await this.refreshProjectionHealthCache();
     });
     this.rebuildQueue = run.catch(() => {});

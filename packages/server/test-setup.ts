@@ -45,6 +45,10 @@ process.env["WORKTABLE_SKIP_RETENTION_SWEEP"] = "1";
 // attach its five-minute timer to disposable test workspaces.
 process.env["WORKTABLE_SKIP_RECORD_RECONCILE_SWEEP"] = "1";
 
+// The storage count walks the workspace a few seconds after start, which
+// would outlive a test's temp workspace. storage-usage.test.ts drives it.
+process.env["WORKTABLE_SKIP_STORAGE_ACCOUNTING"] = "1";
+
 afterEach(async () => {
   await yjsManager.shutdown();
   // Workspace handlers and the record projection read through the provider at

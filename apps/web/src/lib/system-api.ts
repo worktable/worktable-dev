@@ -209,6 +209,28 @@ export interface RetentionNotice {
   at: string
 }
 
+/** Bytes and files in one part of a Worktable's storage. */
+export interface StoragePart {
+  bytes: number
+  files: number
+}
+
+/**
+ * What a Worktable takes on disk, from the server's running count
+ * (storage-usage.ts). Read-only; it comes with the settings.
+ */
+export interface StorageUsage {
+  countedAt: string
+  total: StoragePart
+  parts: Record<
+    "live" | "history" | "trash" | "transfers" | "derived",
+    StoragePart
+  >
+  /** Files and folders in the workspace folder, as exports list them. */
+  workspaceEntries: number
+  disk: { freeBytes: number; totalBytes: number } | null
+}
+
 /**
  * Persisted server-side settings from GET /api/system/settings. `version` is a
  * forward-compat marker; the grouped sub-objects hold the actual toggles.
@@ -229,6 +251,8 @@ export interface ServerSettings {
     /** Set when WORKTABLE_MCP_PREVIEW overrides the setting on this server. */
     previewToolsOverride?: boolean | null
   }
+  /** Not a setting: null until the server has counted; absent on older servers. */
+  storage?: StorageUsage | null
 }
 
 /**

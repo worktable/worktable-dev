@@ -228,6 +228,8 @@ describe("GET /api/system/settings", () => {
     expect(await res.json()).toEqual({
       ...SETTINGS_DEFAULTS,
       agents: { ...SETTINGS_DEFAULTS.agents, previewToolsOverride: null },
+      // Nothing is counting storage here.
+      storage: null,
     });
   });
 });

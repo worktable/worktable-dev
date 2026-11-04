@@ -3,14 +3,19 @@ import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { BackupsSection } from "./backups"
 import { HistorySection } from "./history"
 import { PortabilitySection } from "./portability"
+import { StorageSection } from "./storage"
 
-// The Data section: how long versions are kept, Cloud backups, and moving the
-// whole Worktable in or out. Each part shows where this deployment offers it.
+// The Data section: what the Worktable takes on disk, how long versions are
+// kept, Cloud backups, and moving the whole Worktable in or out. Each part
+// shows where this deployment offers it.
 export function DataSection() {
   const deployment = useDeploymentInfo().data
   const capabilities = deployment?.capabilities
   return (
     <div className="flex flex-col gap-6">
+      <DataGroup title="Storage">
+        <StorageSection />
+      </DataGroup>
       {capabilities?.historySettings ? (
         <DataGroup title="History">
           <HistorySection />

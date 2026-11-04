@@ -34,11 +34,10 @@ content only when that follows from the requested task. Do not clean up unrelate
 work as a side effect of an edit. Archived documents remain searchable with
 `includeArchived` and can be restored.
 
-When you set up or organize a Space, pin only the one or two docs to read
-first, usually an overview. Space Home already lists every doc, so pinning
-all of them repeats that list. Preserve existing useful pins. A linked
-narrative overview can still be useful; avoid duplicating the automatically
-generated document listing.
+Pins are kept by people, and Worktable refuses an agent's change to them. When
+a doc should be read first in a Space, say so to the person in your reply or a
+thread, and let them pin it. A linked narrative overview can still be useful;
+avoid duplicating the automatically generated document listing.
 
 ## Verify and report
 

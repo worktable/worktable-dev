@@ -17,7 +17,7 @@ import {
   setDocumentLifetime,
   type DocumentLifetimeChange,
 } from "../document-lifetime.ts"
-import { resolveStartHere, setStartHere } from "../space-start-here.ts"
+import { agentPinsRefusal, resolveStartHere } from "../space-start-here.ts"
 import {
   freezeHtmlPreviewSnapshotLocked,
   freezeSavedHtmlPreviewSnapshotLocked,
@@ -111,7 +111,6 @@ import {
   WidgetIdSchema,
   type AnnotationAuthor,
   type DocumentLifetime,
-  type StartHerePin,
   type RecordCollectionSchema,
   type SpaceFile,
   type WidgetFile,
@@ -1213,14 +1212,13 @@ async function _dispatchOperationInner(
       const metadataChange = ["name", "description", "icon", "group"].some(
         (key) => args[key] !== undefined
       )
-      // Changing how the Space appears to everyone needs manage access; check
-      // it before pins are saved so a refused update changes nothing.
-      if (metadataChange) assertSpaceAccess(spaceId, "manage")
-      // Pins validate against current documents; apply them first so an
-      // invalid pin fails the whole update before anything is saved.
-      if (args["pins"]) {
-        await setStartHere(spaceId, args["pins"] as StartHerePin[])
+      // Every MCP caller is an agent, and pins are kept by people. Refuse
+      // before anything is saved, so the rest of the update changes nothing.
+      if (args["pins"] !== undefined || args["startHere"] !== undefined) {
+        throw agentPinsRefusal()
       }
+      // Changing how the Space appears to everyone needs manage access.
+      if (metadataChange) assertSpaceAccess(spaceId, "manage")
       const { data: updated, error } = await mutateSpace(spaceId, (space) => ({
         ...space,
         ...(args["name"] !== undefined

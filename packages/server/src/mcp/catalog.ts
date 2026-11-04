@@ -896,6 +896,12 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
         ),
     },
   }),
+  // Pins are kept by people; an agent's change to them is refused.
+  worktable_spaces_write: (tool) => ({
+    ...tool,
+    description:
+      "Create a Space, or with spaceId update its name, description, icon or group, or archive or restore it. Pins are kept by people: to suggest one, tell the person in a thread.",
+  }),
   // A replace through an upload link names the revision it is based on.
   worktable_files_write: (tool) => ({
     ...tool,

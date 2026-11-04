@@ -257,7 +257,13 @@ async function download(url: URL): Promise<Uint8Array> {
       throw new TransientPhotoError(`HTTP ${response.status}`)
     }
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const bytes = await readBoundedStream(response.body, IDENTITY_IMAGE_MAX_BYTES)
+    let bytes: Uint8Array | null
+    try {
+      bytes = await readBoundedStream(response.body, IDENTITY_IMAGE_MAX_BYTES)
+    } catch (error) {
+      // A connection that drops or times out mid-photo may work next time.
+      throw new TransientPhotoError(error instanceof Error ? error.message : "read failed")
+    }
     if (!bytes) throw new Error("photo too large")
     return bytes
   }
@@ -286,8 +292,11 @@ export function adoptSignInPhoto(participantId: string, url: string): void {
     try {
       const image = acceptIdentityImage(await download(address))
       await change(async (latest) => {
-        // They chose their own while this was loading.
+        // They chose their own, or removed this one, while it was loading.
         if (latest.photos[participantId]?.source === "upload") return false
+        if (latest.signIn[participantId]?.removed && latest.signIn[participantId]?.url === url) {
+          return false
+        }
         await store(participantId, image, "sign-in", latest)
         latest.signIn[participantId] = { url }
         return true

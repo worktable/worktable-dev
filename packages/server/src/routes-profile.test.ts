@@ -184,13 +184,21 @@ describe("profile routes", () => {
       await signInPhotosSettledForTests()
       expect(fetches).toBe(1)
 
-      // A network failure is tried again on a later page; a redirect off
+      // A dropped connection is tried again on a later page; a redirect off
       // https is not followed.
       let failing = true
       let tries = 0
       setSignInPhotoFetchForTests((async () => {
         tries += 1
-        if (failing) throw new TypeError("network down")
+        // The connection drops partway through the photo.
+        if (failing)
+          return new Response(
+            new ReadableStream({
+              pull(controller) {
+                controller.error(new TypeError("connection reset"))
+              },
+            })
+          )
         return new Response(null, { status: 302, headers: { Location: "http://photos.example/c.png" } })
       }) as unknown as typeof fetch)
       adoptSignInPhoto("ptc_later", "https://photos.example/c.png")

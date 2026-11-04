@@ -39,7 +39,7 @@ import {
 import {
   readWorkspaceLogoFile,
   removeWorkspaceLogoFiles,
-  writeWorkspaceLogoFile,
+  replaceWorkspaceLogo,
 } from "../workspace-logo.ts"
 import { canReadSpaceFor, personalPreferencesKey, personSummary } from "../personal-identity.ts"
 import { readPersonalNavigation } from "../personal-navigation-store.ts"
@@ -950,12 +950,12 @@ workspaceRouter.put("/logo", async (c) => {
     throw error
   }
   return chainManifestWrite(async () => {
-    const root = getWorkspaceRoot()
-    await writeWorkspaceLogoFile(root, image)
-    writeWorkspaceManifest({
-      ...ensureWorkspaceManifest(),
-      logo: { kind: "image", hash: image.hash, type: image.type },
-    })
+    await replaceWorkspaceLogo(getWorkspaceRoot(), image, () =>
+      writeWorkspaceManifest({
+        ...ensureWorkspaceManifest(),
+        logo: { kind: "image", hash: image.hash, type: image.type },
+      })
+    )
     return c.json(await workspaceSummary(c))
   })
 })

@@ -14,12 +14,29 @@ export function workspaceLogoFileName(type: IdentityImageType): string {
   return `worktable-logo.${IDENTITY_IMAGE_EXTENSIONS[type]}`
 }
 
-/** Write a logo image, replacing the previous one atomically. */
-export async function writeWorkspaceLogoFile(
+/**
+ * Put a new logo image in place, then record it with `commit`. Until the
+ * record is written the previous logo stays whole: if it fails, the file it
+ * replaced comes back, and logos of other types are removed only after.
+ */
+export async function replaceWorkspaceLogo(
   root: string,
-  image: IdentityImage
+  image: IdentityImage,
+  commit: () => void | Promise<void>
 ): Promise<void> {
-  await atomicWriteBytes(join(root, workspaceLogoFileName(image.type)), image.bytes)
+  const path = join(root, workspaceLogoFileName(image.type))
+  const previous = await readFile(path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return null
+    throw error
+  })
+  await atomicWriteBytes(path, image.bytes)
+  try {
+    await commit()
+  } catch (error) {
+    if (previous) await atomicWriteBytes(path, new Uint8Array(previous))
+    else await rm(path, { force: true })
+    throw error
+  }
   await removeWorkspaceLogoFiles(root, image.type)
 }
 

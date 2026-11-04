@@ -15,7 +15,8 @@ import {
   prepareWorkspaceTarget,
   setWorkspaceRootOverride,
 } from "./workspace.ts"
-import { carryWorkspaceLogo } from "./workspace-logo.ts"
+import { carryWorkspaceLogo, replaceWorkspaceLogo } from "./workspace-logo.ts"
+import { acceptIdentityImage } from "./identity-images.ts"
 
 let root: string
 
@@ -171,6 +172,18 @@ describe("Worktable logos", () => {
     // the wrong image for good.
     await writeFile(join(root, "workspace", "worktable-logo.png"), PNG.slice(0, -1))
     expect((await get(`/api/workspace/logo/${summary.logo.hash}`)).status).toBe(404)
+  })
+
+  it("keep the previous image when recording a new one fails", async () => {
+    await upload("/api/workspace/logo", PNG)
+    const file = join(root, "workspace", "worktable-logo.png")
+    const other = acceptIdentityImage(PNG.slice(0, -1))
+    await expect(
+      replaceWorkspaceLogo(join(root, "workspace"), other, () => {
+        throw new Error("disk full")
+      })
+    ).rejects.toThrow("disk full")
+    expect(await readFile(file)).toEqual(Buffer.from(PNG))
   })
 
   it("stay with the Worktable when its content is replaced", async () => {

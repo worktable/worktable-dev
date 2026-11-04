@@ -349,11 +349,14 @@ test("a rich Doc marks commented text, and a comment whose text is gone shows it
     .toEqual(["launch date moves"])
 
   // The sentence is rewritten; the comment waits under Text Changed.
+  const { revision } = (await (
+    await page.request.get(`${base}/${docPath}`)
+  ).json()) as { revision: string }
   expect(
     (
       await page.request.fetch(`${base}/${docPath}`, {
         method: "PUT",
-        data: { content: blocks("We ship in June.") },
+        data: { content: blocks("We ship in June."), expectedRevision: revision },
       })
     ).ok()
   ).toBe(true)

@@ -19,7 +19,8 @@ import {
   readRegisteredDocumentSource,
   replaceRegisteredDocument,
 } from "./document-write-service.ts"
-import { contentHashFromHex } from "./file-revision.ts"
+import { readCurrentFileSource } from "./current-file-source.ts"
+import { contentHashFromHex, FileRevisionError } from "./file-revision.ts"
 import {
   discardStagedFile,
   StagingFile,
@@ -125,19 +126,31 @@ export class FileReplaceRefused extends Error {
 const FILE_REVISION_CHANGED =
   "This file changed since you read it. Read it again, then replace it with its new revision."
 
-/** A file as it is now, with the revision a replace of it names. */
-async function currentFile(spaceId: string, path: string) {
-  const current = await readRegisteredDocumentSource({ spaceId, path })
-  if (current.format.id !== BUILTIN_DOCUMENT_FORMATS.file) {
-    throw new DocumentWriteError("unsupported", "This document is not a file")
-  }
-  return current
+/**
+ * The revision a replace of the file names, as it is now, or at `version`
+ * (its version on disk, as its page gives it). Its bytes are read once the
+ * Space's lock is released, pinned to one revision.
+ */
+async function currentFileRevision(
+  spaceId: string,
+  path: string,
+  version?: string
+): Promise<string> {
+  const current = await readCurrentFileSource({
+    spaceId,
+    path,
+    ...(version !== undefined ? { revision: version } : {}),
+  })
+  if (current) return current.sourceRevision
+  // Not a plain file: refused as it always was, missing or a Doc.
+  await readRegisteredDocumentSource({ spaceId, path })
+  throw new DocumentWriteError("unsupported", "This document is not a file")
 }
 
 /**
  * The sourceRevision a replace is based on. A file's page gives its version
- * instead, which names its bytes on disk without reading them; it stands for
- * the file's revision while the file is still at that version.
+ * instead, which names its bytes on disk; it stands for the file's revision
+ * while the file is still at that version.
  */
 async function baseRevision(
   spaceId: string,
@@ -145,15 +158,18 @@ async function baseRevision(
   named: string
 ): Promise<string> {
   if (named.startsWith("rev_")) return named
-  const current = await currentFile(spaceId, path)
-  if (current.fileRevision !== named) {
+  try {
+    return await currentFileRevision(spaceId, path, named)
+  } catch (error) {
+    if (!(error instanceof FileRevisionError) || error.reason !== "changed") {
+      throw error
+    }
     throw new FileReplaceRefused(
       "REVISION_CHANGED",
       FILE_REVISION_CHANGED,
-      current.sourceRevision
+      await currentFileRevision(spaceId, path)
     )
   }
-  return current.sourceRevision
 }
 
 /** `name-2.ext`, `name-3.ext`… for keeping both when a name is taken. */
@@ -208,7 +224,7 @@ export async function writeUploadedFile(options: {
       const expectedRevision =
         mode.kind === "replace"
           ? await baseRevision(spaceId, path, mode.expectedRevision)
-          : (await currentFile(spaceId, path)).sourceRevision
+          : await currentFileRevision(spaceId, path)
       const result = await replaceRegisteredDocument({
         spaceId,
         path,

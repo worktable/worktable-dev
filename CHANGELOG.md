@@ -17,6 +17,8 @@ infrastructure and personal context out of release notes.
 
 - **Files:** Upload New Version checks that the file hasn't changed since you opened it. If someone, such as an agent, saved a newer version first, Worktable asks before replacing it, and Replace Anyway keeps that version in the file's history.
 - **Files for agents and the API:** Replacing a file names the revision it was read at, including through upload links. A replace without one, or based on a revision that is no longer current, is refused and the file stays as it is. The `replace=1` upload option is replaced by `If-Match`.
+- **Docs and HTML Docs over the API:** Replacing a whole Doc (`PUT …/docs/<path>`) or an HTML Doc (`PUT …/widgets/<id>`) needs `expectedRevision`, the revision you read: a Doc's from reading it, an HTML Doc's from the `ETag` of its source (`content?format=raw`). Without one the replace is refused with 428, and one based on a revision that is no longer current is refused with 409 and the current revision. Creating a Doc with `PUT` needs no revision.
+- **Large files and agents:** An agent reading a file, a Records import and Upload New Version no longer hold up the rest of the Space while a large file is read. A file that changes during the read is read again, never mixed.
 
 ### Fixed
 

@@ -472,7 +472,8 @@ const TOOLS: CatalogTool[] = [
     description:
       "Create an HTML Doc, or with htmlId change one's HTML, name, description or permissions. A new HTML Doc needs name, lifetime and html. Create and update may return an opt-in PNG preview; a failed preview never undoes the save. Read worktable_guidance topic html before writing one.",
     annotations: writes({ destructiveHint: true }),
-    inputSchema: flatInput(["spaceId"], [htmlCreate, htmlUpdate], {
+    // The released listing holds back expectedRevision (PREVIEW_CHANGES).
+    inputSchema: flatInput(["spaceId"], [htmlCreate, without(htmlUpdate, "expectedRevision")], {
       htmlId: z.string().describe("HTML Doc to change. Omit to create one."),
       // Renaming clears a description with null; create and update take text.
       description: described(fieldsOf("worktable_html_write", "rename").description!, "Short description shown in Worktable; null clears it."),
@@ -484,13 +485,17 @@ const TOOLS: CatalogTool[] = [
       ["worktable_html_write", "rename"],
     ],
     route: (args) => {
-      if (args.htmlId === undefined)
+      if (args.htmlId === undefined) {
+        if (args.expectedRevision !== undefined)
+          throw new ToolArgumentError("expectedRevision applies when changing an existing HTML Doc's html.")
         return step("worktable_html_write", "create", args)
+      }
       if (args.html === undefined && (args.permissions !== undefined || args.preview !== undefined))
         throw new ToolArgumentError("Changing permissions or asking for a preview needs html too.")
+      // A rename replaces no content, so it names no revision.
       return args.html !== undefined
         ? step("worktable_html_write", "update", args)
-        : step("worktable_html_write", "rename", args)
+        : step("worktable_html_write", "rename", without(args, "expectedRevision"))
     },
   },
   {
@@ -871,7 +876,7 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
   worktable_files_write: (tool) => ({
     ...tool,
     description:
-      "Create a file, or replace one's content when expectedRevision is given, from source, from an earlier version with fromVersionId, or from an uploaded file. A new file needs format (worktable.file for a plain file) and lifetime. In ChatGPT, pass the user's attached file as file. With a shell and no source, the result gives a one-time link that takes the bytes with curl -T within 10 minutes, up to 64 MiB; to replace a file through it, pass ifExists replace with expectedRevision. Replacing a CSV or TSV reports what changed row by row. Replaced content stays in version history.",
+      "Create a file, or replace one's content, from source, from an earlier version with fromVersionId, or from an uploaded file. A new file needs format (worktable.file for a plain file) and lifetime. Every replace needs expectedRevision, the sourceRevision from your latest worktable_files_read; one the file is no longer at is refused. In ChatGPT, pass the user's attached file as file. With a shell and no source, the result gives a one-time link that takes the bytes with curl -T within 10 minutes, up to 64 MiB; to replace a file through it, pass ifExists replace with expectedRevision. Replacing a CSV or TSV reports what changed row by row. Replaced content stays in version history.",
     inputSchema: z.strictObject({
       ...tool.inputSchema.shape,
       ifExists: z
@@ -880,6 +885,24 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
         .describe(
           "When the path is taken: fail, keep_both (saves name-2.ext) or replace, which needs expectedRevision from your latest read (a new version; the old one stays in the file's history)"
         ),
+      expectedRevision: z
+        .string()
+        .min(1)
+        .max(256)
+        .optional()
+        .describe(
+          "The sourceRevision from your latest worktable_files_read. Required to replace or restore an existing file; omit when creating."
+        ),
+    }),
+  }),
+  // Replacing an HTML Doc's html names the revision it is based on.
+  worktable_html_write: (tool) => ({
+    ...tool,
+    description:
+      "Create an HTML Doc, or with htmlId change one's HTML, name, description or permissions. A new HTML Doc needs name, lifetime and html. Changing html needs expectedRevision, the revision from your latest worktable_html_read; one the HTML Doc is no longer at is refused. Create and update may return an opt-in PNG preview; a failed preview never undoes the save. Read worktable_guidance topic html before writing one.",
+    inputSchema: z.strictObject({
+      ...tool.inputSchema.shape,
+      expectedRevision: htmlUpdate.expectedRevision!.optional(),
     }),
   }),
 }

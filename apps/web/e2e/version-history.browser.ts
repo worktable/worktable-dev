@@ -27,6 +27,21 @@ for (const kind of ["doc", "html"] as const) {
       { type: "heading", props: { level: 1 }, content: `History ${kind}` },
       { type: "paragraph", content: text },
     ]
+    // A replace names the revision it read: a Doc's from reading it, an
+    // HTML Doc's from its source's ETag.
+    const replace = async (data: Record<string, unknown>) => {
+      const expectedRevision =
+        kind === "doc"
+          ? ((await (await page.request.get(endpoint)).json()) as { revision: string })
+              .revision
+          : (await page.request.get(`${endpoint}/content?format=raw`)).headers()[
+              "etag"
+            ]?.replace(/"/g, "")
+      return page.request.fetch(endpoint, {
+        method: "PUT",
+        data: { ...data, expectedRevision },
+      })
+    }
     const created = await page.request.post(base, {
       data:
         kind === "doc"
@@ -52,13 +67,11 @@ for (const kind of ["doc", "html"] as const) {
     ).id as string
     expect(
       (
-        await page.request.fetch(endpoint, {
-          method: "PUT",
-          data:
-            kind === "doc"
-              ? { content: blocks("Review paragraph") }
-              : { name: "History HTML", html: "<p>Review paragraph</p>" },
-        })
+        await replace(
+          kind === "doc"
+            ? { content: blocks("Review paragraph") }
+            : { name: "History HTML", html: "<p>Review paragraph</p>" }
+        )
       ).ok()
     ).toBe(true)
     expect(
@@ -68,13 +81,11 @@ for (const kind of ["doc", "html"] as const) {
         })
       ).ok()
     ).toBe(true)
-    const changed = await page.request.fetch(endpoint, {
-      method: "PUT",
-      data:
-        kind === "doc"
-          ? { content: blocks("Latest paragraph") }
-          : { name: "History HTML", html: "<p>Latest paragraph</p>" },
-    })
+    const changed = await replace(
+      kind === "doc"
+        ? { content: blocks("Latest paragraph") }
+        : { name: "History HTML", html: "<p>Latest paragraph</p>" }
+    )
     expect(changed.ok()).toBe(true)
     let snapshotReads = 0
     let rawHistoryReads = 0

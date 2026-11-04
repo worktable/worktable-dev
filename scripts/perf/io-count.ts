@@ -895,13 +895,27 @@ async function fanOut(
   const each: number[] = []
   const write: number[] = []
   let missed = 0
-  const put = (index: number) =>
-    api(
+  // Each replace names the revision it read, then the one the previous
+  // write saved.
+  const path = `/api/spaces/${encodeURIComponent(spaceId)}/docs/perf/fan-out`
+  let revision = await api<{ revision?: string }>(base, session.cookies, path)
+    .then((doc) => doc.revision)
+    .catch(() => undefined)
+  const put = async (index: number) => {
+    const written = await api<{ revision?: string }>(
       base,
       session.cookies,
-      `/api/spaces/${encodeURIComponent(spaceId)}/docs/perf/fan-out`,
-      { method: "PUT", body: { content: richBlocks(`Fan-out ${index}`) } }
+      path,
+      {
+        method: "PUT",
+        body: {
+          content: richBlocks(`Fan-out ${index}`),
+          ...(revision ? { expectedRevision: revision } : {}),
+        },
+      }
     )
+    revision = written.revision
+  }
   try {
     // The first write after boot loads the editor model; not measured.
     await put(-1)

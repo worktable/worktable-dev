@@ -44,6 +44,8 @@ export type ParticipantPresentations = Record<
     /** An agent's Threads participant; a person's is id. */
     participantId?: string
     name?: string
+    /** A person's photo, named by its content. */
+    photo?: string
   }
 >
 

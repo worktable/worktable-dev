@@ -229,3 +229,36 @@ test("a local page asks once through its Cloud sign-in, and keeps today's menu w
   answer = () => Response.json({ signedIn: true, ...directory("this-mac") })
   expect(await loadCloudDirectory(false)).toMatchObject(directory("this-mac"))
 })
+
+test("each row carries the color and logo its listing gives, and draws only safe images", () => {
+  const image = "data:image/webp;base64,UklGRg=="
+  const groups = worktableMenuGroups({
+    surface: "desktop",
+    data: {
+      thisMac: [
+        { id: "ws_studio", name: "Studio", linked: false, current: true, color: "teal", logo: { kind: "icon", icon: "leaf" } },
+      ],
+      directory: {
+        cloudOrigin: "https://cloud.example",
+        worktables: [
+          { id: "hosted_team", name: "Team", color: "amber", logo: { kind: "image", data: image } },
+          // A listing can't make the menu load an address or run a script.
+          { id: "hosted_lab", name: "Lab", logo: { kind: "image", data: "https://tracker.example/x.png" } },
+          { id: "hosted_svg", name: "Svg", logo: { kind: "image", data: "data:image/svg+xml;base64,PHN2Zz4=" } },
+        ],
+        linked: [],
+      },
+    },
+    localIds: ["ws_studio"],
+    currentHostedId: null,
+    onDevice: true,
+  })
+  expect(
+    groups.flatMap((group) => group.rows.map((row) => [row.name, row.color ?? null, row.logo]))
+  ).toEqual([
+    ["Studio", "teal", { kind: "icon", icon: "leaf" }],
+    ["Team", "amber", { kind: "image", src: image }],
+    ["Lab", null, null],
+    ["Svg", null, null],
+  ])
+})

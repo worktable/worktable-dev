@@ -663,6 +663,9 @@ export const BrowserAssertionClaims = z.object({
   wt: z.object({
     credential: z.literal("browser"),
     worktableName: z.string().trim().min(1).max(4096).optional(),
+    /** The person's photo from their sign-in provider, when it has one. */
+    // Never a reason to refuse a sign-in: one that can't be used is dropped.
+    picture: z.string().url().max(2048).optional().catch(undefined),
     identity: z
       .object({
         issuer: z.string().url(),

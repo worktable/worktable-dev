@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import fc from "fast-check"
 import {
+  BrowserAssertionClaims,
   readTeamDirectorySnapshot,
   ACTOR_HEADERS,
   AssertionKeyring,
@@ -574,6 +575,34 @@ describe("cloud plans", () => {
       expect(PublicPlanDetails.parse(plan)).toEqual(plan)
       const next = nextCloudPlan(id)
       if (next) expect(CLOUD_PLANS[next].peopleLimit).toBeGreaterThan(plan.peopleLimit)
+    }
+  })
+})
+
+describe("browser assertion claims", () => {
+  it("never refuse a sign-in over its photo", () => {
+    const claims = (picture: unknown) => ({
+      iss: "https://app.worktable.cloud/_worktable/browser-assertions",
+      aud: "urn:worktable:cloud:workspace:workspace_1",
+      sub: "user_1",
+      iat: 100,
+      nbf: 95,
+      exp: 160,
+      jti: "00000000-0000-4000-8000-000000000000",
+      wt: {
+        credential: "browser",
+        picture,
+        workspaceId: "workspace_1",
+        requestHash: "a".repeat(43),
+        scopes: ["docs:read"],
+        principal: { id: "workos:user_1", type: "human", displayName: "Avery" },
+      },
+    })
+    expect(BrowserAssertionClaims.parse(claims("https://photos.example/a.png")).wt.picture).toBe(
+      "https://photos.example/a.png"
+    )
+    for (const unusable of [null, "", "not a url", `https://p.example/${"a".repeat(3000)}`]) {
+      expect(BrowserAssertionClaims.parse(claims(unusable)).wt.picture).toBeUndefined()
     }
   })
 })

@@ -89,7 +89,7 @@ export function ProfileMenu() {
             />
           }
         >
-          <PersonAvatar id={person.id} name={person.name} />
+          <PersonAvatar id={person.id} name={person.name} photo={person.photo} />
           <span className="min-w-0 flex-1 leading-tight">
             <TruncatedText
               text={person.name}
@@ -103,7 +103,7 @@ export function ProfileMenu() {
         </DropdownMenuTrigger>
         <DropdownMenuContent side="top" align="start" sideOffset={6} className="min-w-60">
           <div className="flex items-center gap-2.5 px-2 py-2">
-            <PersonAvatar id={person.id} name={person.name} size="lg" />
+            <PersonAvatar id={person.id} name={person.name} photo={person.photo} size="lg" />
             <div className="min-w-0">
               <TruncatedText
                 text={person.name}

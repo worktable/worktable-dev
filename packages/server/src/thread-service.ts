@@ -1,4 +1,5 @@
 import { isWorkspaceDraining } from "./workspace-request-lifecycle.ts"
+import { participantPhotoHash } from "./participant-photos.ts"
 import { grokBotPolicy, observeGrokBotCandidate, readGrokBots } from "./grok-bot-store.ts"
 import { currentTeamWorktable, requireTeamDatabase } from "./team-database.ts"
 import { findTeamMemberById, listTeamMembers } from "./team-members.ts"
@@ -1009,6 +1010,8 @@ export interface ParticipantPresentation {
   name?: string
   platform?: AgentPlatformId
   icon?: string | null
+  /** A person's photo, named by its content. */
+  photo?: string
 }
 
 /**
@@ -1112,9 +1115,11 @@ async function buildParticipantPresentations(): Promise<Record<string, Participa
   }
   for (const [key, participant] of bindings) {
     if (participant.kind === "human") {
+      const photo = participantPhotoHash(participant.id)
       presentations[participant.id] = {
         id: participant.id,
         name: participant.name,
+        ...(photo ? { photo } : {}),
       }
     }
     // Only identities this reader may see have a presentation to extend.

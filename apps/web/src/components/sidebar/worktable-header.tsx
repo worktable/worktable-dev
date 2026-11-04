@@ -17,12 +17,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@worktable/ui/components/dropdown-menu"
-import {
-  recognitionColor,
-  type RecognitionColor,
-} from "@worktable/types/recognition"
+import { recognitionColor } from "@worktable/types/recognition"
 import { ProvenanceChip } from "@/components/provenance-chip"
-import { recognitionSolid } from "@/lib/recognition"
+import { WorktableTile } from "@/components/identity-icons"
+import { tileLogo } from "@/lib/recognition"
 import { queryKeys, useWorkspace } from "@/lib/queries"
 import { openSettings } from "@/lib/settings-open"
 import { RUNTIME_BASE_PATH } from "@/lib/runtime-path"
@@ -31,6 +29,13 @@ import { Skeleton } from "@worktable/ui/components/skeleton"
 import { toast } from "@worktable/ui/components/sonner"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import type { MenuSurface } from "@/lib/worktable-menu"
+
+// Only a Worktable with a logo draws its own tab icon.
+const WorktableFavicon = lazy(() =>
+  import("@/components/worktable-favicon").then((module) => ({
+    default: module.WorktableFavicon,
+  }))
+)
 
 // Warm the list and its data together when the person approaches the menu.
 const loadList = () => import("./worktable-menu-list")
@@ -71,24 +76,6 @@ function WorktableLocation() {
   return <TruncatedText text={window.location.host} />
 }
 
-export function WorktableTile({
-  name,
-  color,
-}: {
-  name: string
-  color: RecognitionColor
-}) {
-  return (
-    <span
-      aria-hidden
-      className="flex size-6 shrink-0 items-center justify-center rounded-[6px] text-xs font-semibold"
-      style={recognitionSolid(color)}
-    >
-      {name.trim().charAt(0).toUpperCase() || "W"}
-    </span>
-  )
-}
-
 /**
  * The current Worktable, which opens the Worktable menu: every Worktable the
  * person can reach, in groups, then the actions. Desktop draws its titlebar
@@ -99,6 +86,7 @@ export function WorktableHeader() {
   const { data: workspace } = useWorkspace()
   const name = workspace?.name ?? "Worktable"
   const color = recognitionColor(workspace?.color, workspace?.id ?? name)
+  const logo = tileLogo(workspace?.logo)
   const desktop =
     typeof document !== "undefined" &&
     document.documentElement.hasAttribute("data-worktable-desktop")
@@ -161,7 +149,7 @@ export function WorktableHeader() {
   ) : null
   const currentRow = (
     <DropdownMenuItem aria-current="true">
-      <WorktableTile name={name} color={color} />
+      <WorktableTile name={name} color={color} logo={logo} />
       <TruncatedText text={name} className="flex-1" />
       {thisMac.data?.worktables.some(
         (worktable) => worktable.current && worktable.linked
@@ -237,7 +225,7 @@ export function WorktableHeader() {
             />
           }
         >
-          <WorktableTile name={name} color={color} />
+          <WorktableTile name={name} color={color} logo={logo} />
           <TruncatedText text={name} className="flex-1 text-sm font-medium" />
           <ChevronsUpDown className="size-3.5 shrink-0 text-sidebar-foreground/40" />
         </DropdownMenuTrigger>
@@ -267,6 +255,11 @@ export function WorktableHeader() {
         </DropdownMenuContent>
       </DropdownMenu>
       <ProvenanceChip />
+      {logo ? (
+        <Suspense fallback={null}>
+          <WorktableFavicon color={color} logo={logo} />
+        </Suspense>
+      ) : null}
     </div>
   )
 

@@ -20,7 +20,7 @@ import { LinkToSend } from "../link-to-send"
 import { copyText } from "@/lib/clipboard"
 import { PlanFullNotice } from "@/components/billing/plan-full-notice"
 import { roomFor, useCloudPlan } from "@/lib/cloud-plan"
-import { queryKeys } from "@/lib/queries"
+import { queryKeys, useWorkspace } from "@/lib/queries"
 import { useSettingsSectionActive } from "../settings-dialog"
 import {
   activateTeams,
@@ -178,6 +178,8 @@ function TeamMembers({
   cloud: boolean
 }) {
   const client = useQueryClient()
+  // People's photos ride along with the summary, under their actor too.
+  const presentations = useWorkspace().data?.presentations
   const [email, setEmail] = useState("")
   const [invited, setInvited] = useState<{
     email: string
@@ -363,7 +365,14 @@ function TeamMembers({
                 return (
                   <PersonRow
                     key={member.id}
-                    avatar={<PersonAvatar id={member.actorId} name={member.name} size="lg" />}
+                    avatar={
+                      <PersonAvatar
+                        id={presentations?.[member.actorId]?.id ?? member.actorId}
+                        name={member.name}
+                        photo={presentations?.[member.actorId]?.photo}
+                        size="lg"
+                      />
+                    }
                     name={
                       <>
                         {member.name}

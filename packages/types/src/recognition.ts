@@ -86,3 +86,78 @@ export function recognitionColor(
 ): RecognitionColor {
   return isRecognitionColor(chosen) ? chosen : defaultRecognitionColor(seed);
 }
+
+/** Image types a Worktable logo or a person's photo may be stored as. */
+export const IDENTITY_IMAGE_TYPES = [
+  "image/webp",
+  "image/png",
+  "image/jpeg",
+] as const;
+
+export type IdentityImageType = (typeof IDENTITY_IMAGE_TYPES)[number];
+
+/** Uploads are cropped and re-encoded first, so these leave ample room. */
+export const IDENTITY_IMAGE_MAX_BYTES = 512 * 1024;
+export const IDENTITY_IMAGE_MAX_SIDE = 1024;
+
+const ICON_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const IMAGE_HASH = /^[a-f0-9]{32}$/;
+
+/**
+ * A Worktable's own mark: an image someone uploaded, or an icon from the
+ * library drawn on the Worktable's color.
+ */
+export type WorktableLogo =
+  | { kind: "image"; hash: string }
+  | { kind: "icon"; icon: string };
+
+export function isIconName(value: unknown): value is string {
+  return typeof value === "string" && value.length <= 64 && ICON_NAME.test(value);
+}
+
+export function isImageHash(value: unknown): value is string {
+  return typeof value === "string" && IMAGE_HASH.test(value);
+}
+
+/** A saved logo, or null for anything else. */
+export function worktableLogo(value: unknown): WorktableLogo | null {
+  if (!value || typeof value !== "object") return null;
+  const logo = value as Record<string, unknown>;
+  if (logo["kind"] === "image" && isImageHash(logo["hash"])) {
+    return { kind: "image", hash: logo["hash"] };
+  }
+  if (logo["kind"] === "icon" && isIconName(logo["icon"])) {
+    return { kind: "icon", icon: logo["icon"] };
+  }
+  return null;
+}
+
+/**
+ * A logo as a list of Worktables carries it, for Worktables other than the
+ * one being viewed: an icon name, or a small image inlined as a data URL.
+ */
+export type ListedWorktableLogo =
+  | { kind: "icon"; icon: string }
+  | { kind: "image"; data: string };
+
+const LISTED_IMAGE = /^data:image\/(?:webp|png|jpeg);base64,[A-Za-z0-9+/]+=*$/;
+/** A 64 px image is a few kilobytes; this leaves room and bounds a list. */
+export const LISTED_LOGO_MAX_CHARS = 64 * 1024;
+
+export function listedWorktableLogo(value: unknown): ListedWorktableLogo | null {
+  if (!value || typeof value !== "object") return null;
+  const logo = value as Record<string, unknown>;
+  if (logo["kind"] === "icon" && isIconName(logo["icon"])) {
+    return { kind: "icon", icon: logo["icon"] };
+  }
+  const data = logo["data"];
+  if (
+    logo["kind"] === "image" &&
+    typeof data === "string" &&
+    data.length <= LISTED_LOGO_MAX_CHARS &&
+    LISTED_IMAGE.test(data)
+  ) {
+    return { kind: "image", data };
+  }
+  return null;
+}

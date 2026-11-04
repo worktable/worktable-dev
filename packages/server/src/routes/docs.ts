@@ -1,7 +1,7 @@
 import { prunedDocumentHistoryV2 } from "../document-version-compatibility-v2.ts";
 import { keepEarlierImagesAfterRestore } from "../file-history.ts";
 import { requireScope, requireHumanWorkspaceOwner, restWriteActor } from "../auth.ts";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { DocumentLifetimeSchema } from "@worktable/types";
 import { applyLifetimeOnCreate, ArchiveOnSchema, lifetimeCreateError } from "../document-lifetime.ts";
@@ -68,6 +68,29 @@ const CreateDocSchema = z.object({
   lifetime: DocumentLifetimeSchema.optional(),
   archiveOn: ArchiveOnSchema.optional(),
 });
+
+const REFUSED_NAME_CODES: ReadonlySet<string> = new Set([
+  "HIDDEN_NAME",
+  "UNSAFE_PATH",
+  "NOT_PORTABLE",
+  "DOC_NAME",
+]);
+
+/** A failed write: a refused name says its reason; anything else conflicts. */
+function writeFailure(
+  c: Context,
+  result: { error?: string; errorCode?: string }
+) {
+  const refused =
+    result.errorCode !== undefined && REFUSED_NAME_CODES.has(result.errorCode);
+  return c.json(
+    {
+      error: result.error ?? "Write failed",
+      code: refused ? result.errorCode : "CONFLICT",
+    },
+    refused ? 400 : 409
+  );
+}
 
 async function hasUnportableAnnotationAnchors(
   spaceId: string,
@@ -285,9 +308,7 @@ docsRouter.post("/", requireScope("docs:write"), async (c) => {
       source: "rest-api",
       managedIdentity: true,
     });
-    if (!result.ok) {
-      return c.json({ error: result.error ?? "Write failed", code: "CONFLICT" }, 409);
-    }
+    if (!result.ok) return writeFailure(c, result);
   } finally {
     setTimeout(() => unsuppressPath(filePath), 150);
   }
@@ -950,9 +971,7 @@ docsRouter.put("/*", requireScope("docs:write"), async (c) => {
       source: "rest-api",
       managedIdentity: true,
     });
-    if (!result.ok) {
-      return c.json({ error: result.error ?? "Write failed", code: "CONFLICT" }, 409);
-    }
+    if (!result.ok) return writeFailure(c, result);
   } finally {
     setTimeout(() => unsuppressPath(filePath), 150);
   }

@@ -48,6 +48,7 @@ import {
 import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
+  pathIsHidden,
   withoutSuffix,
   type DocumentFormatRegistry,
 } from "./document-format-registry.ts"
@@ -803,7 +804,7 @@ async function inventoryClaims(
   }
 
   const unconsumed = inventory.entries.filter((entry) => {
-    if (consumed.has(entry.documentId)) return false
+    if (consumed.has(entry.documentId) || pathIsHidden(entry.path)) return false
     const legacyPath = registeredFileLogicalPath(entry, registry)
     return !(legacyPath && reservedByAlias(legacyPath))
   })
@@ -1212,14 +1213,18 @@ async function buildDocumentCatalogFromFiles(
   )
   // With files off, files that gained an identity while they were on take no
   // part in the Space: not listed, and in no conflict with a Doc's path.
-  const merged = filesEnabled()
-    ? inventoried
-    : {
-        ...inventoried,
-        claims: inventoried.claims.filter(
-          (claim) => claim.format.id !== BUILTIN_DOCUMENT_FORMATS.file
-        ),
-      }
+  // Nor does anything hidden. Discovery never finds it, but the inventory
+  // may still hold a Doc that was made at a hidden path, or moved to one on
+  // disk, before hidden Docs were: it stays recorded, and out of sight.
+  const files = filesEnabled()
+  const merged = {
+    ...inventoried,
+    claims: inventoried.claims.filter(
+      (claim) =>
+        !pathIsHidden(claim.path) &&
+        (files || claim.format.id !== BUILTIN_DOCUMENT_FORMATS.file)
+    ),
+  }
   const htmlProperties = new Map<DocumentId, HtmlDocumentPropertiesRead | null>()
   const htmlClaims = merged.claims.filter(
     (claim) =>

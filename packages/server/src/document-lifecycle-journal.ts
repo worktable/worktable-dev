@@ -82,6 +82,7 @@ import {
   analyzeDocumentPath,
   documentPathKeyIsAtOrBelow,
   documentPathKeyIsBelow,
+  newPathRefusal,
   remapDocumentPathPrefix,
 } from "./document-path.ts"
 import { sourceIsDocSync } from "./doc-source-kind.ts"
@@ -89,7 +90,6 @@ import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
   isHiddenName,
-  pathIsHidden,
   withoutSuffix,
 } from "./document-format-registry.ts"
 import {
@@ -2860,26 +2860,18 @@ async function prepareExactRename(
       "Durable document source does not match its logical path"
     )
   }
+  const fileName =
+    source.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file
+  // Nothing moves to a hidden path, a Doc or a file: the refusal says why.
+  const refusal = newPathRefusal(to, { fileName })
+  if (refusal) throw new DocumentLifecyclePreconditionError(refusal.message)
   const targetAnalysis = analyzeDocumentPath(to, {
     enforceNewPathGrammar: true,
-    fileName: source.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file,
+    fileName,
   })
-  if (
-    !targetAnalysis.safe ||
-    !targetAnalysis.portable ||
-    targetAnalysis.canonicalPath !== to ||
-    !targetAnalysis.comparisonKey
-  ) {
+  if (!targetAnalysis.comparisonKey) {
     throw new DocumentLifecyclePreconditionError(
       "Target document path is not portable"
-    )
-  }
-  if (
-    source.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file &&
-    pathIsHidden(to)
-  ) {
-    throw new DocumentLifecyclePreconditionError(
-      "Files can't go in hidden folders"
     )
   }
   if (
@@ -3201,27 +3193,11 @@ async function preparePrefixRename(
         "Document folder contents changed before the move"
       )
     }
-    const target = analyzeDocumentPath(to, {
-      enforceNewPathGrammar: true,
+    const refusal = newPathRefusal(to, {
       fileName: source.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file,
     })
-    if (
-      !target.safe ||
-      !target.portable ||
-      target.canonicalPath !== to ||
-      !target.comparisonKey
-    ) {
-      throw new DocumentLifecyclePreconditionError(
-        `Target document path is not portable: ${to}`
-      )
-    }
-    if (
-      source.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file &&
-      pathIsHidden(to)
-    ) {
-      throw new DocumentLifecyclePreconditionError(
-        "Files can't go in hidden folders"
-      )
+    if (refusal) {
+      throw new DocumentLifecyclePreconditionError(`${refusal.message} (${to})`)
     }
     const storageProfileId = source.handle.storageProfile
     if (!storageProfileId) {
@@ -7870,7 +7846,9 @@ function verifyRecoveryCatalogCheckpoint(
     for (const entry of readRecoveryDirectory(directory)) {
       account()
       if (entry.isSymbolicLink()) continue
-      // Discovery's rule: nothing under a hidden name is a file.
+      // Discovery's rule: nothing under a hidden name is a file. Docs there
+      // are still found, so an operation planned before Docs were hidden
+      // settles; no new one can name them.
       const hidden = insideHidden || isHiddenName(entry.name)
       const nextSegments = [...segments, entry.name]
       const absolute = join(directory, entry.name)

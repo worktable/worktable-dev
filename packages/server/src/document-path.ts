@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { pathIsHidden } from "./document-format-registry.ts"
 import { RESERVED_DOCUMENT_SOURCE_SUFFIXES } from "./document-storage-profile.ts"
 
 const WINDOWS_RESERVED_SEGMENT =
@@ -360,4 +361,100 @@ export function parseNewDocumentPath(
     path: analysis.canonicalPath,
     comparisonKey: analysis.comparisonKey,
   }
+}
+
+/**
+ * Why Worktable refuses a name, from the written list in docs/files.md. A
+ * link or special file is refused where one is found, and a name over a
+ * limit where the bytes are counted, so neither is decided here.
+ */
+export type PathRefusalReason = "hidden" | "unsafe" | "not-portable" | "doc-name"
+
+export interface PathRefusal {
+  reason: PathRefusalReason
+  /** The error code a route or tool answers with. */
+  code: "HIDDEN_NAME" | "UNSAFE_PATH" | "NOT_PORTABLE" | "DOC_NAME"
+  message: string
+}
+
+const REFUSAL_CODES = {
+  hidden: "HIDDEN_NAME",
+  unsafe: "UNSAFE_PATH",
+  "not-portable": "NOT_PORTABLE",
+  "doc-name": "DOC_NAME",
+} as const
+
+export const HIDDEN_NAME_MESSAGE =
+  "Names that start with a dot are hidden. Choose a name without the dot."
+export const DOC_NAME_MESSAGE =
+  "This name is for a Doc. Create Docs with the Doc tools."
+const DOC_PATH_EXTENSION_MESSAGE =
+  "A Doc's path has no extension. Leave out the extension, such as .md."
+const UNSAFE_PATH_MESSAGE =
+  "This path isn't safe. Use names separated by /, without .., \\ or encoded characters."
+
+const NOT_PORTABLE_MESSAGES: Partial<Record<DocumentPathDiagnosticCode, string>> = {
+  "path-too-long": "This path is too long to work on every computer.",
+  "windows-reserved": "This name is reserved on Windows, such as CON or NUL.",
+  "windows-invalid-character":
+    'This name has a character Windows refuses: < > : " | ? *',
+  "trailing-dot-or-space": "A name can't end in a dot or a space.",
+}
+
+function pathRefusalFor(
+  reason: PathRefusalReason,
+  message: string
+): PathRefusal {
+  return { reason, code: REFUSAL_CODES[reason], message }
+}
+
+/**
+ * The refusal for a path that may name something already there, such as a
+ * file a write replaces: only an unsafe or hidden path is refused, since an
+ * item that is there may keep a name a new one couldn't take.
+ */
+export function pathRefusal(path: string): PathRefusal | null {
+  if (!analyzeDocumentPath(path).safe) {
+    return pathRefusalFor("unsafe", UNSAFE_PATH_MESSAGE)
+  }
+  return pathIsHidden(path)
+    ? pathRefusalFor("hidden", HIDDEN_NAME_MESSAGE)
+    : null
+}
+
+/**
+ * Whether Worktable can give a new item this path, and if not, the one
+ * reason it can't. Unsafe comes first, since nothing else can be said of an
+ * unsafe path, then hidden, then the rest.
+ */
+export function newPathRefusal(
+  path: string,
+  options: { fileName?: boolean } = {}
+): PathRefusal | null {
+  const analysis = analyzeDocumentPath(path, {
+    enforceNewPathGrammar: true,
+    fileName: options.fileName,
+  })
+  const unsafeOrHidden = pathRefusal(path)
+  if (unsafeOrHidden) return unsafeOrHidden
+  if (
+    analysis.diagnostics.some(
+      (diagnostic) => diagnostic.code === "registered-extension"
+    )
+  ) {
+    return options.fileName
+      ? pathRefusalFor("doc-name", DOC_NAME_MESSAGE)
+      : pathRefusalFor("doc-name", DOC_PATH_EXTENSION_MESSAGE)
+  }
+  for (const diagnostic of analysis.diagnostics) {
+    const message = NOT_PORTABLE_MESSAGES[diagnostic.code]
+    if (message) return pathRefusalFor("not-portable", message)
+  }
+  if (!analysis.portable || analysis.canonicalPath !== path) {
+    return pathRefusalFor(
+      "not-portable",
+      "This name doesn't work on every computer."
+    )
+  }
+  return null
 }

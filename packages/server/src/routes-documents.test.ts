@@ -1026,12 +1026,14 @@ describe("format-neutral document route", () => {
           (entry) => entry.kind === "document" && entry.descriptor.path === path
         )
 
-      // Nothing under a hidden name is a file, so a file can't move there.
+      // Nothing under a hidden name is a file, so a file can't move there,
+      // and the refusal says so.
       const hiddenMove = await post("move", {
         path: "notes/readme/error.png",
         to: ".private/error.png",
       })
-      expect(hiddenMove.status).toBe(409)
+      expect(hiddenMove.status).toBe(400)
+      expect(await hiddenMove.json()).toMatchObject({ code: "HIDDEN_NAME" })
       expect(
         await readFile(join(docs, "notes", "readme", "error.png"), "utf8")
       ).toBe("png bytes")
@@ -1096,8 +1098,15 @@ describe("format-neutral document route", () => {
           })
         ).status
       ).toBe(403)
-      // A Doc's name is for the Doc tools.
-      expect((await upload("design/notes.md", "# Notes")).status).toBe(415)
+      // A refused name says which written rule it breaks.
+      const refusedName = async (path: string) => {
+        const response = await upload(path, "x")
+        return [response.status, ((await response.json()) as { code: string }).code]
+      }
+      expect(await refusedName("design/notes.md")).toEqual([415, "DOC_NAME"])
+      expect(await refusedName(".env")).toEqual([400, "HIDDEN_NAME"])
+      expect(await refusedName("design/.drafts/logo.png")).toEqual([400, "HIDDEN_NAME"])
+      expect(await refusedName("design/CON.png")).toEqual([400, "NOT_PORTABLE"])
       // JSON is a file unless it holds Doc blocks, whoever writes it.
       const config = '{"theme":"dark"}\n'
       expect((await upload("data/config.json", config)).status).toBe(201)

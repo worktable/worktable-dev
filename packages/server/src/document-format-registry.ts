@@ -344,7 +344,12 @@ export function withoutSuffix(name: string, extension: string): string {
   return extension ? name.slice(0, -extension.length) : name
 }
 
-/** Hidden names (a leading dot) never hold files. */
+/**
+ * Hidden names (a leading dot) hold no file and no Doc: whatever is there,
+ * or below, isn't listed, searched, shared, exported or sent to agents, and
+ * Worktable never makes or moves anything there. This is the one rule; every
+ * surface asks it by name, never by reading content.
+ */
 export function isHiddenName(name: string): boolean {
   return name.startsWith(".")
 }

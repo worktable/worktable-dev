@@ -62,7 +62,7 @@ function writeFailure(error: unknown) {
         : error.reason === "invalid"
           ? 400
           : 409
-  return { body: { error: error.message, code: error.reason.toUpperCase() }, status } as const
+  return { body: { error: error.message, code: error.code }, status } as const
 }
 
 fileLinksRouter.put("/:token", async (c) => {

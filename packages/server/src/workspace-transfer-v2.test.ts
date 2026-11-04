@@ -33,6 +33,7 @@ import {
 } from "./document-format-registry.ts"
 import { writeDocumentGenerationV2 } from "./document-version-store-v2.ts"
 import {
+  calculateLocalWorkspaceContentCheckpoints,
   cleanupAbandonedWorkspaceExportCaptures,
   importWorkspaceExportV2,
   inspectWorkspaceExportV2,
@@ -400,8 +401,9 @@ describe("workspace export v2", () => {
     for (const path of transactionArtifacts) {
       expect(listing.stdout).not.toContain(path)
     }
-    expect(listing.stdout).toContain("docs/.pending-guide.md")
-    expect(listing.stdout).toContain("docs/.worktable-write-1-a.tmp")
+    // Authored names like these are hidden in a Space, so they stay out.
+    expect(listing.stdout).not.toContain("docs/.pending-guide.md")
+    expect(listing.stdout).not.toContain("docs/.worktable-write-1-a.tmp")
     const previewPath = listing.stdout
       .split("\n")
       .find((path) => /\/browse\/content\/preview-\d+\.html$/.test(path))
@@ -463,12 +465,9 @@ describe("workspace export v2", () => {
     for (const path of transactionArtifacts) {
       await expect(stat(join(destination, path))).rejects.toThrow()
     }
-    expect(
-      await readFile(
-        join(destination, "spaces", "notes", "docs", ".pending-guide.md"),
-        "utf8"
-      )
-    ).toBe("# Authored pending guide\n")
+    await expect(
+      stat(join(destination, "spaces", "notes", "docs", ".pending-guide.md"))
+    ).rejects.toThrow()
   })
 
   it("uses one source-identity contract for writers and untrusted packages", async () => {
@@ -906,15 +905,35 @@ describe("workspace export v2", () => {
     expect(maximum).toBe(8)
   })
 
-  it("refuses unsafe sources and destinations", async () => {
+  it("leaves out links, special files and hidden Docs, and refuses unsafe destinations", async () => {
     await symlink(
       join(source, "worktable.workspace.json"),
       join(source, "spaces", "manifest-link")
     )
-    await expect(writeWorkspaceExportV2(join(root, "unsafe"))).rejects.toThrow(
-      /refuses symlink/
-    )
+    const docs = join(source, "spaces", "notes", "docs")
+    expect(spawnSync("mkfifo", [join(docs, "pipe")]).status).toBe(0)
+    await mkdir(join(docs, ".notes"), { recursive: true })
+    await writeFile(join(docs, ".notes", "plan.md"), "# Hidden plan\n")
+    await symlink(join(docs, "welcome.md"), join(docs, ".notes", "link.md"))
+    const exported = await writeWorkspaceExportV2(join(root, "left-out"))
+    expect(exported.manifest.leftOut).toEqual([
+      { path: "spaces/manifest-link", reason: "link" },
+      { path: "spaces/notes/docs/pipe", reason: "special-file" },
+    ])
+    expect(
+      exported.manifest.integrity.files.filter((file) =>
+        file.path.includes("/docs/.notes/")
+      )
+    ).toEqual([])
+    expect(
+      (await inspectWorkspaceExportV2(exported.destination)).manifest.leftOut
+    ).toEqual(exported.manifest.leftOut)
+    // Only an export leaves them out: replacing a workspace still refuses one.
+    await expect(
+      calculateLocalWorkspaceContentCheckpoints(source)
+    ).rejects.toThrow(/refuses symlink/)
     await rm(join(source, "spaces", "manifest-link"))
+    await rm(join(docs, "pipe"))
 
     const existing = join(root, "existing.wtb")
     await writeFile(existing, "unchanged")

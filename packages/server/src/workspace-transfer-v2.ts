@@ -61,6 +61,7 @@ import {
 import { versionIdTimestamp } from "./version-store.ts"
 import { removeWorkspaceTree } from "./workspace-tree-cleanup.ts"
 import { noteStorageChange } from "./storage-usage.ts"
+import { pathIsHidden } from "./document-format-registry.ts"
 import {
   classifyWorkspaceTarget,
   getWorkspaceRoot,
@@ -122,6 +123,16 @@ export interface WorkspaceExportV2Directory {
   mtime: string
 }
 
+/**
+ * Something on disk an export can't carry: a symbolic link, or a special
+ * file such as a socket or device. It is left out and named here, so the
+ * rest still exports.
+ */
+export interface WorkspaceExportV2LeftOut {
+  path: string
+  reason: "link" | "special-file"
+}
+
 export interface WorkspaceExportV2Manifest {
   type: typeof WORKSPACE_EXPORT_V2_TYPE
   version: typeof WORKSPACE_EXPORT_V2_VERSION
@@ -166,6 +177,8 @@ export interface WorkspaceExportV2Manifest {
     status: "complete" | "partial" | "failed"
     warnings: string[]
   }
+  /** Links and special files left out. Absent from earlier exports. */
+  leftOut?: WorkspaceExportV2LeftOut[]
 }
 
 export interface WorkspaceExportV2Result {
@@ -208,6 +221,17 @@ interface SourceRootIdentity {
 interface SourceInventory {
   root: SourceRootIdentity
   entries: SourceEntry[]
+  /** For an export's listing: what it left out, in listing order. */
+  leftOut: WorkspaceExportV2LeftOut[]
+}
+
+/** A Space's own folder, where hidden names hold nothing Worktable shows. */
+const SPACE_DOCS_PATH = /^spaces\/[^/]+\/docs\/(.+)$/
+
+/** Whether an export leaves this path out as hidden: never listed or sent. */
+function hiddenInSpace(path: string): boolean {
+  const inSpace = SPACE_DOCS_PATH.exec(path)
+  return inSpace !== null && pathIsHidden(inSpace[1]!)
 }
 
 interface VersionCandidate extends SourceEntry {
@@ -565,6 +589,12 @@ async function listSourceEntries(
     paths?: "portable" | "local"
     signal?: AbortSignal
     live?: boolean
+    /**
+     * An export's listing: what is hidden in a Space is left out, and a
+     * link or special file is left out and named instead of failing it.
+     * Every other listing refuses both.
+     */
+    export?: boolean
   } = {}
 ): Promise<SourceInventory> {
   const canonicalRoot = await realpath(root)
@@ -573,6 +603,7 @@ async function listSourceEntries(
     throw new Error("workspace export requires a real workspace directory")
   }
   const entries: SourceEntry[] = []
+  const leftOut: WorkspaceExportV2LeftOut[] = []
   const collisionPaths = new Set<string>()
 
   // A live listing tolerates an entry that disappears while it is read.
@@ -599,6 +630,7 @@ async function listSourceEntries(
       const absolute = join(directory, child.name)
       const localPath = portablePath(root, absolute)
       if (isWorkspaceTransactionArtifact(localPath)) continue
+      if (options.export && hiddenInSpace(localPath)) continue
       const info = await tolerate(() => lstat(absolute))
       if (!info) continue
       const path =
@@ -613,6 +645,10 @@ async function listSourceEntries(
         collisionPaths.add(collisionPath)
       }
       if (info.isSymbolicLink()) {
+        if (options.export) {
+          leftOut.push({ path, reason: "link" })
+          continue
+        }
         throw new Error(`workspace export refuses symlink: ${path}`)
       }
       const canonical = await tolerate(() => realpath(absolute))
@@ -659,10 +695,15 @@ async function listSourceEntries(
           ctimeMs: info.ctimeMs,
           mtimeMs: info.mtimeMs,
         })
+      } else if (options.export) {
+        leftOut.push({ path, reason: "special-file" })
       } else {
         throw new Error(`workspace export refuses special file: ${path}`)
       }
-      if (entries.length > WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES) {
+      if (
+        entries.length + leftOut.length >
+        WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES
+      ) {
         throw new Error("workspace exceeds the v2 entry limit")
       }
     }
@@ -680,6 +721,7 @@ async function listSourceEntries(
       mode: rootInfo.mode & 0o777,
     },
     entries,
+    leftOut,
   }
 }
 
@@ -1714,6 +1756,7 @@ async function prepareWorkspaceCapture(
       paths: "local",
       signal: options.signal,
       live: true,
+      export: true,
     })
     await options.onProgress?.("history")
     // History is neither read nor selected here: files change underneath a
@@ -1986,12 +2029,16 @@ async function captureConsistentWorkspace(
   historyPolicy: WorkspaceExportHistoryPolicy,
   exportedAt: Date,
   options: CaptureOptions = {}
-): Promise<{ selected: Awaited<ReturnType<typeof selectEntries>> }> {
+): Promise<{
+  selected: Awaited<ReturnType<typeof selectEntries>>
+  leftOut: WorkspaceExportV2LeftOut[]
+}> {
   const startedAt = performance.now()
   options.signal?.throwIfAborted()
   const inventory = await listSourceEntries(staging.sourceRoot, {
     paths: "local",
     signal: options.signal,
+    export: true,
   })
   const selected = await selectEntries(
     inventory,
@@ -2085,6 +2132,7 @@ async function captureConsistentWorkspace(
     current = await listSourceEntries(staging.sourceRoot, {
       paths: "local",
       signal: options.signal,
+      export: true,
     })
   } catch (error) {
     throw new WorkspaceChangedDuringExportError(
@@ -2093,7 +2141,7 @@ async function captureConsistentWorkspace(
   }
   assertSourceInventoryUnchanged(inventory, current)
   staging.report.barrierMs = performance.now() - startedAt
-  return { selected }
+  return { selected, leftOut: inventory.leftOut }
 }
 
 async function withCaptureErrors(
@@ -2971,11 +3019,12 @@ async function writeWorkspaceExportV2WithCaptureLock(
     options
   )
   let selected: Awaited<ReturnType<typeof selectEntries>>
+  let leftOut: WorkspaceExportV2LeftOut[]
   let capture: CapturedWorkspace
   try {
     const captureWorkspace = () =>
       captureConsistentWorkspace(staging, historyPolicy, exportedAt, options)
-    ;({ selected } = options.withCaptureBarrier
+    ;({ selected, leftOut } = options.withCaptureBarrier
       ? await options.withCaptureBarrier(captureWorkspace)
       : await captureWorkspace())
     capture = await finishWorkspaceCapture(staging)
@@ -3067,6 +3116,7 @@ async function writeWorkspaceExportV2WithCaptureLock(
         files: publicFiles,
       },
       viewer: viewer.status,
+      ...(leftOut.length > 0 ? { leftOut } : {}),
     }
     const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`)
     const manifestLimit =
@@ -3290,6 +3340,18 @@ function parseManifest(value: unknown): WorkspaceExportV2Manifest {
   }
   manifest.source = validateWorkspaceExportSource(manifest.source)
   validateWorkspaceExportV2Path(manifest.archive.root)
+  if (
+    manifest.leftOut !== undefined &&
+    (!Array.isArray(manifest.leftOut) ||
+      !manifest.leftOut.every(
+        (entry) =>
+          entry &&
+          typeof entry.path === "string" &&
+          (entry.reason === "link" || entry.reason === "special-file")
+      ))
+  ) {
+    throw new Error("workspace package manifest is invalid or unsupported")
+  }
   validateHistoryPolicy(manifest.history.requested)
   if (manifest.history.recovery !== undefined) {
     const recovery = manifest.history.recovery

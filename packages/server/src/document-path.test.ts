@@ -1,6 +1,10 @@
 import { describe, expect, it } from "bun:test"
 import fc from "fast-check"
-import { analyzeDocumentPath, parseNewDocumentPath } from "./document-path.ts"
+import {
+  analyzeDocumentPath,
+  newPathRefusal,
+  parseNewDocumentPath,
+} from "./document-path.ts"
 
 describe("document path authority", () => {
   it("normalizes portable identity without rewriting legacy input", () => {
@@ -82,6 +86,24 @@ describe("document path authority", () => {
         }
       )
     )
+  })
+
+  it("refuses a new name for one reason on the written list, and says which", () => {
+    const reason = (path: string, fileName = false) =>
+      newPathRefusal(path, { fileName })?.code ?? null
+    expect(reason("notes/../plan")).toBe("UNSAFE_PATH")
+    expect(reason("/plan")).toBe("UNSAFE_PATH")
+    expect(reason(".notes/plan")).toBe("HIDDEN_NAME")
+    expect(reason("notes/.plan")).toBe("HIDDEN_NAME")
+    expect(reason(".env", true)).toBe("HIDDEN_NAME")
+    expect(reason("notes/plan.md")).toBe("DOC_NAME")
+    expect(reason("notes/plan.md", true)).toBe("DOC_NAME")
+    expect(reason("notes/CON")).toBe("NOT_PORTABLE")
+    expect(reason("notes/a:b")).toBe("NOT_PORTABLE")
+    expect(reason("notes/plan ")).toBe("NOT_PORTABLE")
+    expect(reason("notes/plan")).toBeNull()
+    expect(reason("data/config.json", true)).toBeNull()
+    expect(newPathRefusal(".notes/plan")?.message).not.toContain("Doc")
   })
 
   it("keeps stable storage suffixes outside new logical paths", () => {

@@ -14,6 +14,7 @@ import {
   readdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   stat,
   utimes,
@@ -1255,6 +1256,19 @@ describe("format-neutral document route", () => {
         for (let next = await changing.read(); !next.done; next = await changing.read());
       })()
       await expect(rest).rejects.toThrow()
+
+      // A file renamed partway, as an editor keeping a backup does, finishes
+      // from what it was.
+      await writeFile(join(docs, "data", "archive.bin"), bytes)
+      const renaming = (await get("data/archive.bin")).body!.getReader()
+      const renamedFirst = await renaming.read()
+      await rename(join(docs, "data", "archive.bin"), join(docs, "data", "archive.bak"))
+      const renamedParts = [renamedFirst.value!]
+      for (let next = await renaming.read(); !next.done; next = await renaming.read()) {
+        renamedParts.push(next.value)
+      }
+      expect(new Uint8Array(await new Blob(renamedParts).arrayBuffer())).toEqual(bytes)
+      await rename(join(docs, "data", "archive.bak"), join(docs, "data", "archive.bin"))
 
       // So does one of the same size whose writer puts the time back.
       const archive = join(docs, "data", "archive.bin")

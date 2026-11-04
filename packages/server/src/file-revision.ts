@@ -41,10 +41,12 @@ export function fileRevisionOf(info: BigIntStats): string {
 
 /**
  * What an open file's bytes are: a write moves its modification time. Its
- * change time also moves when the file is only replaced, moved or linked,
- * which leaves the bytes an open handle reads as they were; each of those
- * changes its link count. A change time that moves while the link count
- * stays is a write whose writer put the modification time back.
+ * change time also moves when the file is only replaced, renamed, moved or
+ * linked, which leaves the bytes an open handle reads as they were: those
+ * change its link count or take it away from its path. A change time that
+ * moves while the file keeps its link count and its place is a write whose
+ * writer put the modification time back, or a change of its permissions,
+ * and either fails the transfer.
  */
 function contentStampOf(info: BigIntStats): string {
   return `${info.ino}.${info.size}.${info.mtimeNs}`
@@ -71,13 +73,15 @@ export class OpenFileRevision {
   readonly revision: string
   readonly size: number
   readonly #handle: FileHandle
+  readonly #path: string
   readonly #content: string
   #changedAt: bigint
   #links: bigint
   #closed = false
 
-  private constructor(handle: FileHandle, info: BigIntStats) {
+  private constructor(handle: FileHandle, path: string, info: BigIntStats) {
     this.#handle = handle
+    this.#path = path
     this.revision = fileRevisionOf(info)
     this.size = Number(info.size)
     this.#content = contentStampOf(info)
@@ -86,17 +90,27 @@ export class OpenFileRevision {
   }
 
   /**
-   * Whether the bytes may have changed since the last check. A link count
-   * that changed explains a new change time (a replace, a move, a backup's
-   * hard link), and the next check starts from it.
+   * Whether the bytes may have changed since the last check. A new change
+   * time is explained by a new link count (a replace, a link) or by the file
+   * no longer being at its path (a rename, a move); the next check starts
+   * from it.
    */
-  #bytesMayHaveChanged(after: BigIntStats): boolean {
+  async #bytesMayHaveChanged(after: BigIntStats): Promise<boolean> {
     if (contentStampOf(after) !== this.#content) return true
     if (after.ctimeNs === this.#changedAt) return false
-    if (after.nlink === this.#links) return true
+    if (after.nlink === this.#links && (await this.#stillAtPath(after))) return true
     this.#changedAt = after.ctimeNs
     this.#links = after.nlink
     return false
+  }
+
+  async #stillAtPath(after: BigIntStats): Promise<boolean> {
+    try {
+      const there = await lstat(this.#path, { bigint: true })
+      return there.dev === after.dev && there.ino === after.ino
+    } catch {
+      return false
+    }
   }
 
   /**
@@ -123,7 +137,7 @@ export class OpenFileRevision {
       ) {
         throw new FileRevisionError("unreadable", "source is not a regular file")
       }
-      const file = new OpenFileRevision(handle, opened)
+      const file = new OpenFileRevision(handle, path, opened)
       if (revision !== undefined && file.revision !== revision) {
         throw new FileRevisionError("changed", "file changed before it was opened")
       }
@@ -152,7 +166,7 @@ export class OpenFileRevision {
       filled += bytesRead
     }
     const after = await this.#handle.stat({ bigint: true })
-    if (filled !== length || this.#bytesMayHaveChanged(after)) {
+    if (filled !== length || (await this.#bytesMayHaveChanged(after))) {
       throw new FileRevisionError("changed", "file changed while it was read")
     }
     return buffer

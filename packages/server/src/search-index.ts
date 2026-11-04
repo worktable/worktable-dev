@@ -1123,6 +1123,17 @@ export async function searchWithStatus(
       displayBody: displayBodies.get(String(result.id)) ?? "",
     }));
 
+  // Many hits share a Space: each Space is read once per search.
+  const spaces = new Map<string, ReturnType<typeof readSpace>>();
+  const spaceOf = (spaceId: string) => {
+    let reading = spaces.get(spaceId);
+    if (!reading) {
+      reading = readSpace(spaceId);
+      spaces.set(spaceId, reading);
+    }
+    return reading;
+  };
+
   const filtered: typeof hits = [];
   for (const hit of hits) {
     if (includeArchived) {
@@ -1136,7 +1147,7 @@ export async function searchWithStatus(
       filtered.push(hit);
       continue;
     }
-    const { data: space } = await readSpace(entry.spaceId);
+    const { data: space } = await spaceOf(entry.spaceId);
     if (!space || getSpaceArchiveInfo(space)) continue;
 
     if (entry.type === "record") {
@@ -1200,7 +1211,7 @@ export async function searchWithStatus(
       if (results.length >= maxResults) break;
       // The record index keeps a deleted Space's rows until its sweep: a
       // Space that is gone shows none of them, archived ones included.
-      const { data: space } = await readSpace(hit.spaceId);
+      const { data: space } = await spaceOf(hit.spaceId);
       if (!space || (!includeArchived && getSpaceArchiveInfo(space))) continue;
       const excerpt = makeExcerpt(recordDisplayText(hit.collectionName, hit.data), queryTerms);
       results.push({

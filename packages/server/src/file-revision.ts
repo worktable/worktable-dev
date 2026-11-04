@@ -63,7 +63,7 @@ function contentStampOf(info: BigIntStats): string {
 /** The revision of the file at `path` now, without opening it. */
 export async function currentFileRevision(
   path: string
-): Promise<{ revision: string; size: number }> {
+): Promise<{ revision: string; size: number; changedAtNs: bigint }> {
   let info: BigIntStats
   try {
     info = await lstat(path, { bigint: true })
@@ -73,7 +73,11 @@ export async function currentFileRevision(
   if (!info.isFile() || info.isSymbolicLink()) {
     throw new FileRevisionError("unreadable", "source is not a regular file")
   }
-  return { revision: fileRevisionOf(info), size: Number(info.size) }
+  return {
+    revision: fileRevisionOf(info),
+    size: Number(info.size),
+    changedAtNs: info.ctimeNs,
+  }
 }
 
 /** An open file at the revision it had when opened. */
@@ -335,7 +339,7 @@ async function verifyWhole(
     await file.close()
   }
   if (!check.ok()) return false
-  if (!settledBefore(file, startedAt)) return true
+  if (!settledBefore(key, file.changedAtNs, startedAt)) return true
   if (verifiedRevisions.size >= CONTENT_HASHES_MAX) {
     const oldest = verifiedRevisions.values().next().value
     if (oldest !== undefined) verifiedRevisions.delete(oldest)
@@ -350,12 +354,62 @@ function nowNs(): bigint {
   return BigInt(Date.now()) * 1_000_000n
 }
 
+/** When a revision whose change time was ahead of this clock was first seen. */
+const aheadSince = new Map<string, bigint>()
+
 /**
  * Whether the file's revision had settled when its bytes began to be read,
- * so a later write within the same tick can't leave it unchanged.
+ * so a later write within the same tick can't leave it unchanged. A change
+ * time ahead of this clock, as on a mount whose clock runs fast, counts from
+ * when this revision was first seen instead: the mount's clock moves at the
+ * same pace, so a write after that leaves a later change time.
  */
-function settledBefore(file: OpenFileRevision, startedAt: bigint): boolean {
-  return file.changedAtNs + REVISION_SETTLES_NS < startedAt
+function settledBefore(
+  key: string,
+  changedAtNs: bigint,
+  startedAt: bigint
+): boolean {
+  if (changedAtNs <= startedAt) {
+    return changedAtNs + REVISION_SETTLES_NS < startedAt
+  }
+  const seen = aheadSince.get(key)
+  if (seen === undefined) {
+    if (aheadSince.size >= CONTENT_HASHES_MAX) {
+      const oldest = aheadSince.keys().next().value
+      if (oldest !== undefined) aheadSince.delete(oldest)
+    }
+    aheadSince.set(key, startedAt)
+    return false
+  }
+  return seen + REVISION_SETTLES_NS < startedAt
+}
+
+function keepContentHash(key: string, hash: string): void {
+  if (contentHashes.size >= CONTENT_HASHES_MAX) {
+    const oldest = contentHashes.keys().next().value
+    if (oldest !== undefined) contentHashes.delete(oldest)
+  }
+  contentHashes.set(key, hash)
+}
+
+/**
+ * Keep the content hash of bytes a caller read itself, as `contentHashOf`
+ * would have: under the file's revision, only when the file still has the
+ * revision it had before the read, and that revision had settled by
+ * `startedAt` (from `Date.now()`, taken before the revision was read).
+ */
+export async function rememberContentHash(
+  path: string,
+  before: { revision: string; changedAtNs: bigint },
+  startedAt: number,
+  hash: string
+): Promise<void> {
+  const key = hashKey(path, before.revision)
+  if (!settledBefore(key, before.changedAtNs, BigInt(startedAt) * 1_000_000n)) {
+    return
+  }
+  const after = await currentFileRevision(path).catch(() => null)
+  if (after?.revision === before.revision) keepContentHash(key, hash)
 }
 
 function hashKey(path: string, revision: string): string {
@@ -399,11 +453,6 @@ async function hashWhole(pinned: PinnedFile, key: string): Promise<string> {
   } finally {
     await file.close()
   }
-  if (!settledBefore(file, startedAt)) return hash
-  if (contentHashes.size >= CONTENT_HASHES_MAX) {
-    const oldest = contentHashes.keys().next().value
-    if (oldest !== undefined) contentHashes.delete(oldest)
-  }
-  contentHashes.set(key, hash)
+  if (settledBefore(key, file.changedAtNs, startedAt)) keepContentHash(key, hash)
   return hash
 }

@@ -1571,6 +1571,34 @@ describe("format-neutral document route", () => {
     expect(await versions()).toBe(kept + 2)
   })
 
+  it("gives two same-size writes in one clock tick their own ETags", async () => {
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
+    try {
+      const instance = app()
+      const url = `/api/spaces/${spaceId}/documents/file?path=${encodeURIComponent("data/tick.bin")}`
+      expect((await instance.request(url, { method: "PUT", body: "first!" })).status).toBe(201)
+      // Both writes keep one size and one modification time, and the clock
+      // stays within the two seconds a revision takes to settle.
+      setSystemTime(new Date())
+      const onDisk = join(root, "spaces", spaceId, "docs", "data", "tick.bin")
+      const tick = new Date("2026-01-01T00:00:00Z")
+      await utimes(onDisk, tick, tick)
+      const first = await instance.request(url)
+      expect(await first.text()).toBe("first!")
+      await writeFile(onDisk, "other!")
+      await utimes(onDisk, tick, tick)
+      noteSpaceChanged(spaceId)
+      const second = await instance.request(url)
+      expect(await second.text()).toBe("other!")
+      expect(second.headers.get("etag")).not.toBe(first.headers.get("etag"))
+    } finally {
+      setSystemTime()
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
+    }
+  })
+
   it("serves ranges of a file, streamed at one revision without holding its Space", async () => {
     const previous = process.env["WORKTABLE_FILES"]
     process.env["WORKTABLE_FILES"] = "1"

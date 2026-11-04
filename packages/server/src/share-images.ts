@@ -22,7 +22,11 @@ import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts"
 import { readDocumentSource } from "./document-source-reader.ts"
 import type { DocumentCatalogEntry } from "./document-catalog.ts"
 import { readDocumentIdentities } from "./document-query.ts"
-import { contentHashOf, currentFileRevision } from "./file-revision.ts"
+import {
+  contentHashOf,
+  currentFileRevision,
+  rememberContentHash,
+} from "./file-revision.ts"
 import { filesEnabled } from "./files-enabled.ts"
 import { rewriteBlockLinks, rewriteMarkdownLinks } from "./link-rewrite.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
@@ -52,7 +56,7 @@ type CatalogFile = Extract<DocumentCatalogEntry, { kind: "document" }>
 
 async function revisionOf(
   absolutePath: string
-): Promise<{ revision: string; size: number } | null> {
+): Promise<{ revision: string; size: number; changedAtNs: bigint } | null> {
   return currentFileRevision(absolutePath).catch(() => null)
 }
 
@@ -158,6 +162,7 @@ export async function inlineSharedImages<T extends string | unknown[]>(
       entry && entry.handle.source.kind === "file"
         ? resolve(spaceRoot, entry.handle.source.relativePath)
         : resolve(spaceRoot, "docs", ...path.split("/"))
+    const startedAt = Date.now()
     const current = await revisionOf(absolutePath)
     const shown =
       entry &&
@@ -184,12 +189,13 @@ export async function inlineSharedImages<T extends string | unknown[]>(
       continue
     }
     // The bytes shown are named by their own hash, as the file's content
-    // hash names them, whatever revision they were read at.
-    embeds.push({
-      absolutePath,
-      path,
-      contentHash: createHash("sha256").update(shown).digest("base64url"),
-    })
+    // hash names them, whatever revision they were read at. Kept for the
+    // file's revision too, so the next view needn't read them again.
+    const contentHash = createHash("sha256").update(shown).digest("base64url")
+    embeds.push({ absolutePath, path, contentHash })
+    if (current) {
+      await rememberContentHash(absolutePath, current, startedAt, contentHash)
+    }
     budget -= shown.byteLength * occurrences
     dataUrls.set(
       target,

@@ -2,29 +2,14 @@ import { lazy, useCallback, useEffect, useState, type RefObject } from "react"
 import { Maximize2 } from "lucide-react"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import { DocIconButton } from "@/components/document/doc-icon-button"
+import { VIEWABLE_IMAGES, viewableImage } from "@/lib/viewable-images"
 import type { ViewerImage } from "./image-viewer"
-
-/**
- * The images a page shows as content: a Markdown Doc's and a file page's
- * (marked data-viewable), and a rich text Doc's image blocks.
- */
-const VIEWABLE_IMAGES =
-  'img[data-viewable], [data-content-type="image"] img.bn-visual-media'
-/** Shown smaller than this, an image is a mark, such as a badge, not a picture. */
-const MIN_SHOWN = 40
 
 // The viewer loads when an image is first pointed at, so it opens at once.
 const loadViewer = () => import("./image-viewer")
 const ImageViewer = lazy(() =>
   loadViewer().then((module) => ({ default: module.ImageViewer }))
 )
-
-function viewableImage(element: Element | null): HTMLImageElement | null {
-  const image = element?.closest<HTMLImageElement>(VIEWABLE_IMAGES)
-  if (!image || image.naturalWidth === 0) return null
-  const box = image.getBoundingClientRect()
-  return box.width >= MIN_SHOWN && box.height >= MIN_SHOWN ? image : null
-}
 
 function viewerImage(image: HTMLImageElement): ViewerImage {
   return {

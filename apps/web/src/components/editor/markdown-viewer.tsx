@@ -34,6 +34,7 @@ import { DocTable } from "@/components/document/doc-table"
 import { DocDetails, DocSummary } from "@/components/document/doc-details"
 import { DataTooltips } from "@/components/document/data-tooltip"
 import { ImageViewControl } from "@/components/viewer/image-view-control"
+import { viewableImage } from "@/lib/viewable-images"
 import { NumberedList } from "@worktable/ui/lib/numbered-list"
 import { markdownTitleLine } from "@worktable/ui/document-reading-preview"
 import "@/styles/document-controls.css"
@@ -52,10 +53,24 @@ import { resolveDocLink } from "@worktable/types"
 /** Inside a link, an image keeps the link's click and focus. */
 const InLink = createContext(false)
 
-/** A Doc's image, which opens in the viewer, from the keyboard too. */
-function ViewableImage(props: ComponentProps<"img">) {
+/**
+ * A Doc's image, which opens in the viewer. Once it has loaded as one the
+ * viewer shows, it takes focus too, so the keyboard can open it.
+ */
+function ViewableImage({ onLoad, ...props }: ComponentProps<"img">) {
   const inLink = useContext(InLink)
-  return <img {...props} data-viewable="" tabIndex={inLink ? undefined : 0} />
+  const [openable, setOpenable] = useState(false)
+  return (
+    <img
+      {...props}
+      data-viewable=""
+      tabIndex={openable && !inLink ? 0 : undefined}
+      onLoad={(event) => {
+        onLoad?.(event)
+        setOpenable(viewableImage(event.currentTarget) !== null)
+      }}
+    />
+  )
 }
 
 const MermaidRenderer = lazy(() =>

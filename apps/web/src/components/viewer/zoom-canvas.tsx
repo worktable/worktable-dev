@@ -113,10 +113,12 @@ export function ZoomCanvas({
     [setView]
   )
 
+  // Something new to show starts at its own placement. The header stays, so
+  // Previous and Next keep keyboard focus.
   const openPlacement = placement.open
   useLayoutEffect(() => {
     place(openPlacement)
-  }, [openPlacement, place])
+  }, [content, openPlacement, place])
 
   useEffect(() => {
     const replace = () => {
@@ -230,6 +232,8 @@ export function ZoomCanvas({
       />
     ) : (
       <img
+        // A new image never shows the last one's pixels at its size.
+        key={content.src}
         src={content.src}
         alt={content.alt}
         draggable={false}

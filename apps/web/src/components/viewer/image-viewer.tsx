@@ -68,8 +68,6 @@ export function ImageViewer({
     <ViewerDialog open={open} onOpenChange={onOpenChange}>
       {image ? (
         <ImageBody
-          // A new image starts at its own placement.
-          key={`${index}:${image.src}`}
           image={image}
           linksToFile={linksToFile}
           onOpenFile={() => onOpenChange(false)}
@@ -96,7 +94,10 @@ export function ImageViewer({
                 >
                   <ChevronRight />
                 </Button>
-                <span className="ml-1 font-mono text-[11px] whitespace-nowrap text-muted-foreground">
+                <span
+                  className="ml-1 font-mono text-[11px] whitespace-nowrap text-muted-foreground"
+                  aria-live="polite"
+                >
                   {index + 1} of {images.length}
                 </span>
               </div>

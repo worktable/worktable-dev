@@ -60,11 +60,16 @@ export function sourceFileOf(url: string): SourceFile | null {
   const path = source.searchParams.get("path")
   if (!spaceId || !path) return null
   const at = source.searchParams.get("at")
-  return {
-    spaceId: decodeURIComponent(spaceId),
-    path,
-    version: source.searchParams.get("v"),
-    ...(at ? { at } : {}),
+  try {
+    return {
+      spaceId: decodeURIComponent(spaceId),
+      path,
+      version: source.searchParams.get("v"),
+      ...(at ? { at } : {}),
+    }
+  } catch {
+    // A Doc can embed any URL, including one that isn't validly encoded.
+    return null
   }
 }
 

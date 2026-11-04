@@ -45,6 +45,8 @@ describe("a Doc's embedded files", () => {
     expect(sourceFileOf("https://example.com/api/spaces/a/documents/file?path=x.png")).toBeNull()
     expect(sourceFileOf("data:image/png;base64,AAAA")).toBeNull()
     expect(sourceFileOf("/api/spaces/a/documents/page?path=x.png")).toBeNull()
+    // A Doc may embed a URL that isn't validly encoded.
+    expect(sourceFileOf("/api/spaces/%E0/documents/file?path=x.png")).toBeNull()
   })
 
   afterEach(() => {

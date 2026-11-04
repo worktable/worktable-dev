@@ -15,6 +15,7 @@ import {
   open,
   readFile,
   readdir,
+  rename,
   rm,
   stat,
   symlink,
@@ -22,7 +23,7 @@ import {
   writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
 import { atomicWriteText } from "./atomic-file.ts"
 import {
@@ -42,6 +43,7 @@ import {
   setWorkspaceCaptureClockForTests,
   setWorkspaceExportCaptureHookForTests,
   setWorkspaceExportCaptureRemovalHookForTests,
+  setWorkspaceSourceListingHookForTests,
   type WorkspaceCaptureReport,
 } from "./workspace-transfer-v2.ts"
 
@@ -58,6 +60,7 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   setWorkspaceCaptureClockForTests(null)
+  setWorkspaceSourceListingHookForTests(null)
   setWorkspaceExportCaptureHookForTests(null)
   setWorkspaceExportCaptureRemovalHookForTests(null)
   setWorkspaceRootOverride(null)
@@ -266,6 +269,37 @@ describe("portable workspace snapshots", () => {
     // The barrier stats the large file but never reads it.
     if (countsReads) expect(barrierRead).toBeLessThan(4 * 1024 * 1024)
     expect(report?.barrierFiles).toBe(2)
+  })
+
+  it("survives a write finishing and a document being deleted while staging lists the workspace", async () => {
+    const docs = join(workspace, "spaces", "notes", "docs")
+    await mkdir(docs, { recursive: true })
+    await writeFile(join(docs, "kept.md"), "kept")
+    await writeFile(join(docs, "deleted.md"), "deleted")
+    // An atomic write in flight: its temporary file is renamed into place.
+    const temporary = join(
+      docs,
+      `.worktable-write-${process.pid}-${"0".repeat(32)}.tmp`
+    )
+    await writeFile(temporary, "written")
+    let raced = false
+    // The first listing is staging's, which runs while writers continue.
+    setWorkspaceSourceListingHookForTests(async (directory, names) => {
+      if (raced || directory !== "spaces/notes/docs") return
+      expect(names).toContain(basename(temporary))
+      raced = true
+      await rename(temporary, join(docs, "written.md"))
+      await rm(join(docs, "deleted.md"))
+    })
+    const saved = await writeWorkspaceSnapshot(join(root, "snapshot"))
+    expect(raced).toBe(true)
+    const paths = saved.files.map((file) => file.path)
+    expect(paths).toContain("spaces/notes/docs/kept.md")
+    expect(paths).toContain("spaces/notes/docs/written.md")
+    expect(paths).not.toContain("spaces/notes/docs/deleted.md")
+    await expect(
+      inspectWorkspaceSnapshot(join(root, "snapshot"))
+    ).resolves.toEqual(saved)
   })
 
   it("rejects changed bytes, another workspace, and unsupported layouts", async () => {

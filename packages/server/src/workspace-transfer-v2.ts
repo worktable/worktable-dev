@@ -245,6 +245,16 @@ let archiveLimitForTests: number | null = null
 let manifestLimitForTests: number | null = null
 let pipelineStartHookForTests: (() => void) | null = null
 let captureRemovalHookForTests: (() => Promise<void>) | null = null
+let sourceListingHookForTests:
+  | ((directory: string, names: string[]) => Promise<void>)
+  | null = null
+
+/** Runs after each directory read of a workspace listing, before its entries are examined. */
+export function setWorkspaceSourceListingHookForTests(
+  hook: ((directory: string, names: string[]) => Promise<void>) | null
+): void {
+  sourceListingHookForTests = hook
+}
 
 export function setHistoryClassificationHookForTests(
   hook: ((entry: { path: string; size: number }) => Promise<void>) | null
@@ -534,9 +544,23 @@ function isWorkspaceTransactionArtifact(path: string): boolean {
   )
 }
 
+function vanished(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code
+  return code === "ENOENT" || code === "ENOTDIR"
+}
+
+/**
+ * List a workspace. A `live` listing runs while writers continue, so an entry
+ * removed or renamed away between `readdir` and its `lstat` is skipped; the
+ * strict listing inside the barrier is the one that decides what is captured.
+ */
 async function listSourceEntries(
   root: string,
-  options: { paths?: "portable" | "local"; signal?: AbortSignal } = {}
+  options: {
+    paths?: "portable" | "local"
+    signal?: AbortSignal
+    live?: boolean
+  } = {}
 ): Promise<SourceInventory> {
   const canonicalRoot = await realpath(root)
   const rootInfo = await lstat(root)
@@ -546,15 +570,32 @@ async function listSourceEntries(
   const entries: SourceEntry[] = []
   const collisionPaths = new Set<string>()
 
+  // A live listing tolerates an entry that disappears while it is read.
+  const tolerate = async <T>(read: () => Promise<T>): Promise<T | null> => {
+    try {
+      return await read()
+    } catch (error) {
+      if (options.live && vanished(error)) return null
+      throw error
+    }
+  }
   const visit = async (directory: string): Promise<void> => {
-    const children = await readdir(directory, { withFileTypes: true })
+    const children = await tolerate(() =>
+      readdir(directory, { withFileTypes: true })
+    )
+    if (!children) return
+    await sourceListingHookForTests?.(
+      portablePath(root, directory),
+      children.map((child) => child.name)
+    )
     children.sort((left, right) => comparePortableText(left.name, right.name))
     for (const child of children) {
       options.signal?.throwIfAborted()
       const absolute = join(directory, child.name)
-      const info = await lstat(absolute)
       const localPath = portablePath(root, absolute)
       if (isWorkspaceTransactionArtifact(localPath)) continue
+      const info = await tolerate(() => lstat(absolute))
+      if (!info) continue
       const path =
         options.paths === "local"
           ? localPath
@@ -569,7 +610,8 @@ async function listSourceEntries(
       if (info.isSymbolicLink()) {
         throw new Error(`workspace export refuses symlink: ${path}`)
       }
-      const canonical = await realpath(absolute)
+      const canonical = await tolerate(() => realpath(absolute))
+      if (canonical === null) continue
       if (!isInside(canonicalRoot, canonical)) {
         throw new Error(`workspace path escaped during export: ${path}`)
       }
@@ -997,10 +1039,10 @@ async function selectEntries(
   >()
   // "none" only needs inventory totals. Avoid loading history content merely
   // to omit it, especially when this policy is chosen for a large workspace.
-  // Snapshots keep all history and discard the summary, so they skip it too.
+  // Without classification every history entry is included conservatively:
+  // snapshots discard the summary, and staging needs only a superset.
   const versionFiles =
-    policy.mode !== "none" &&
-    (policy.mode !== "all" || options.classifyHistory !== false)
+    policy.mode !== "none" && options.classifyHistory !== false
       ? await mapWithConcurrency(
           rawVersionFiles,
           HISTORY_CLASSIFICATION_CONCURRENCY,
@@ -1453,6 +1495,43 @@ function assertSelectionWithinLimits(entries: SourceEntry[]): void {
   }
 }
 
+/**
+ * Files worth staging before the barrier. With "all" or "none" this is the
+ * barrier's own selection, so a workspace over the limits fails before any
+ * copying. Otherwise it is a superset: staging stops at the expanded-size
+ * limit and leaves the definitive checks, paths included, to the barrier.
+ */
+function stagingCandidates(
+  entries: SourceEntry[],
+  policy: WorkspaceExportHistoryPolicy
+): SourceEntry[] {
+  const exact = policy.mode === "all" || policy.mode === "none"
+  const files = entries.filter((entry) => entry.kind === "file")
+  if (exact) {
+    let expandedBytes = 0
+    for (const file of files) {
+      if (file.size > WORKSPACE_EXPORT_V2_MAX_FILE_BYTES)
+        throw new Error(`workspace file exceeds the v2 limit: ${file.path}`)
+      expandedBytes += file.size
+    }
+    if (expandedBytes > WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES)
+      throw new Error("workspace export exceeds the v2 expanded-size limit")
+  }
+  const candidates: SourceEntry[] = []
+  let budget = WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES
+  for (const file of files) {
+    if (file.size > budget) continue
+    try {
+      validateWorkspaceExportV2Path(file.path)
+    } catch {
+      continue
+    }
+    budget -= file.size
+    candidates.push(file)
+  }
+  return candidates
+}
+
 /** Clone one file, checking the source and its ancestors before and after. */
 async function cloneSource(
   source: SourceEntry,
@@ -1590,16 +1669,20 @@ async function prepareWorkspaceCapture(
     const inventory = await listSourceEntries(sourceRoot, {
       paths: "local",
       signal: options.signal,
+      live: true,
     })
     await options.onProgress?.("history")
+    // History is not read here: files change underneath a live listing, and
+    // unclassified history is included, so this stages a superset of what the
+    // barrier selects. The barrier classifies and drops the rest.
     const selected = await selectEntries(
       inventory,
       historyPolicy,
       exportedAt,
       options.recoveryFingerprint,
-      { classifyHistory: options.classifyHistory }
+      { classifyHistory: false }
     )
-    assertSelectionWithinLimits(selected.entries)
+    const candidates = stagingCandidates(selected.entries, historyPolicy)
     await options.onProgress?.("capture")
     const directories = new Map(
       inventory.entries
@@ -1608,9 +1691,7 @@ async function prepareWorkspaceCapture(
     )
     await stageFiles(
       staging,
-      selected.entries.filter(
-        (entry) => entry.kind === "file" && entry.ctimeMs < settledBefore
-      ),
+      candidates.filter((entry) => entry.ctimeMs < settledBefore),
       async (entry) => {
         options.signal?.throwIfAborted()
         try {

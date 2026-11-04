@@ -160,6 +160,8 @@ describe("Worktable plugin bundle", () => {
         mcpServers: "./.mcp.json",
       })
     )
+    // Cursor's schema rejects any other author field.
+    expectOnlyKeys(cursorManifest.author as JsonObject, ["name", "email"])
     const claudeMcp = await jsonFile(join(pluginRoot, ".mcp.json"))
     expect(claudeMcp).toEqual({
       mcpServers: {

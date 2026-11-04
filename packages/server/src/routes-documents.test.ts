@@ -799,6 +799,41 @@ describe("format-neutral document route", () => {
       setMountPointsForTests(undefined)
       await rmdir(join(docs, "notes", ".mnt"))
     }
+    // Without mount points to read (as on macOS), a directory on another
+    // filesystem anywhere in what the move would take refuses it too.
+    const nested = join(docs, "notes", ".cache", "mnt")
+    await mkdir(nested, { recursive: true })
+    const realLstat = fs.lstatSync
+    setMountPointsForTests(null)
+    const elsewhere = spyOn(fs, "lstatSync").mockImplementation(((
+      path: fs.PathLike,
+      options?: fs.StatSyncOptions
+    ) => {
+      const info = realLstat(path, options) as fs.Stats
+      if (String(path) !== nested) return info
+      const moved = Object.create(info) as fs.Stats
+      Object.defineProperty(moved, "dev", { value: info.dev + 1 })
+      return moved
+    }) as typeof fs.lstatSync)
+    try {
+      const across = await instance.request(
+        `/api/spaces/${spaceId}/documents/move-folder`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-test-scopes": "documents:write",
+          },
+          body: JSON.stringify({ oldPath: "notes", newPath: "library" }),
+        }
+      )
+      expect(across.status).toBe(409)
+      expect((await across.json()).error).toContain("notes/.cache/mnt")
+    } finally {
+      elsewhere.mockRestore()
+      setMountPointsForTests(undefined)
+      await rm(join(docs, "notes", ".cache"), { recursive: true })
+    }
     // Should the kernel still refuse a rename (EBUSY, as across mounts),
     // the move rolls back: it never copies instead.
     const rename = fs.renameSync
@@ -2816,6 +2851,41 @@ describe("format-neutral document route", () => {
     } finally {
       setMountPointsForTests(undefined)
       await rmdir(join(folder, ".mnt"))
+    }
+    // Without mount points to read (as on macOS), a directory on another
+    // filesystem anywhere in what the delete would take refuses it too.
+    const nested = join(folder, ".cache", "mnt")
+    await mkdir(nested, { recursive: true })
+    const realLstat = fs.lstatSync
+    setMountPointsForTests(null)
+    const elsewhere = spyOn(fs, "lstatSync").mockImplementation(((
+      path: fs.PathLike,
+      options?: fs.StatSyncOptions
+    ) => {
+      const info = realLstat(path, options) as fs.Stats
+      if (String(path) !== nested) return info
+      const moved = Object.create(info) as fs.Stats
+      Object.defineProperty(moved, "dev", { value: info.dev + 1 })
+      return moved
+    }) as typeof fs.lstatSync)
+    try {
+      const across = await instance.request(
+        `/api/spaces/${spaceId}/documents/delete-folder`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-test-scopes": "documents:write",
+          },
+          body: JSON.stringify({ path: "notes" }),
+        }
+      )
+      expect(across.status).toBe(409)
+      expect((await across.json()).error).toContain("notes/.cache/mnt")
+    } finally {
+      elsewhere.mockRestore()
+      setMountPointsForTests(undefined)
+      await rm(join(folder, ".cache"), { recursive: true })
     }
     // Should the kernel still refuse a rename (EXDEV, as across mounts),
     // the delete rolls back: it never copies instead.

@@ -3676,22 +3676,23 @@ function readMountPoints(): readonly string[] | null {
  * naming it. Renaming out of a mount would move what lives outside the
  * Space; the kernel refuses that (EXDEV, or EBUSY for the mount point
  * itself), which rolls the operation back, but the refusal shouldn't rest on
- * it. Where there are no mount points to read, each folder walked and each
- * item taken is checked by device instead (`onSpaceDevice`).
+ * it. False when there are no mount points to read: then every folder the
+ * operation walks or takes is checked by device instead (`onSpaceDevice`,
+ * `refuseOtherDevicesBelow`).
  */
 function refuseMountsBelow(
   spaceRoot: string,
   folder: readonly string[],
   prefix: string,
   verb: "move" | "delete"
-): void {
+): boolean {
   const points = readMountPoints()
-  if (!points) return
+  if (!points) return false
   let real: string
   try {
     real = realpathSync(resolve(spaceRoot, ...folder))
   } catch {
-    return
+    return true
   }
   const found = points.find(
     (point) => point === real || point.startsWith(`${real}${sep}`)
@@ -3701,6 +3702,45 @@ function refuseMountsBelow(
     throw new DocumentLifecyclePreconditionError(
       `This folder holds something Worktable can't ${verb}: ${[prefix, ...below].join("/")}`
     )
+  }
+  return true
+}
+
+/**
+ * Without mount points to read, refuse a folder the operation takes whole
+ * when any directory in it is on another filesystem, naming that directory.
+ * One pass over directories only: files can't be mount points, links are
+ * never followed, and nothing is read but directory listings.
+ */
+function refuseOtherDevicesBelow(
+  directory: string,
+  device: number,
+  name: (path: string) => string,
+  verb: "move" | "delete",
+  budget: { left: number }
+): void {
+  const pending = [directory]
+  while (pending.length > 0) {
+    const current = pending.pop()!
+    let entries: Dirent[]
+    try {
+      if (lstatSync(current).dev !== device) throw new Error("other device")
+      entries = readdirSync(current, { withFileTypes: true })
+    } catch {
+      throw new DocumentLifecyclePreconditionError(
+        `This folder holds something Worktable can't ${verb}: ${name(current)}`
+      )
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      budget.left -= 1
+      if (budget.left < 0) {
+        throw new DocumentLifecyclePreconditionError(
+          `This folder holds too many items to ${verb} safely`
+        )
+      }
+      pending.push(join(current, entry.name))
+    }
   }
 }
 
@@ -3738,8 +3778,14 @@ function planPrefixHiddenCarries(
   ])
   const holdsPlanned = (key: string): boolean =>
     plannedPaths.some((planned) => planned.startsWith(`${key}/`))
-  refuseMountsBelow(spaceRoot, folder, fromPrefix, "move")
+  const mountsRead = refuseMountsBelow(spaceRoot, folder, fromPrefix, "move")
   const device = lstatSync(spaceRoot).dev
+  const budget = { left: RECOVERY_CATALOG_MAX_ENTRIES }
+  const folderPath = resolve(spaceRoot, ...folder)
+  const named = (path: string): string =>
+    [fromPrefix, ...relative(folderPath, path).split(sep).filter(Boolean)].join(
+      "/"
+    )
   const carries: PrefixHiddenCarry[] = []
   let scanned = 0
   const walk = (segments: string[]): void => {
@@ -3782,6 +3828,15 @@ function planPrefixHiddenCarries(
         )
       }
       if (carried) {
+        if (!mountsRead && entry.isDirectory()) {
+          refuseOtherDevicesBelow(
+            resolve(spaceRoot, from),
+            device,
+            named,
+            "move",
+            budget
+          )
+        }
         carries.push({ from, to: [...targetRoot, ...next].join("/") })
       } else if (entry.isDirectory()) {
         walk(next)
@@ -3931,8 +3986,12 @@ function planPrefixDeleteRemainder(
       })
     ).values(),
   ]
-  refuseMountsBelow(spaceRoot, folder, prefix, "delete")
+  const mountsRead = refuseMountsBelow(spaceRoot, folder, prefix, "delete")
   const device = lstatSync(spaceRoot).dev
+  const budget = { left: RECOVERY_CATALOG_MAX_ENTRIES }
+  const folderPath = resolve(spaceRoot, ...folder)
+  const named = (path: string): string =>
+    [prefix, ...relative(folderPath, path).split(sep).filter(Boolean)].join("/")
   const remainder: string[] = []
   let scanned = 0
   const walk = (segments: string[]): void => {
@@ -3969,6 +4028,9 @@ function planPrefixDeleteRemainder(
           accessSync(absolute, constants.W_OK)
         } catch {
           refuse()
+        }
+        if (!mountsRead) {
+          refuseOtherDevicesBelow(absolute, device, named, "delete", budget)
         }
       }
       remainder.push(source)

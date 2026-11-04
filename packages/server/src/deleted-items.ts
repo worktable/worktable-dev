@@ -84,8 +84,9 @@ import {
   rename,
   rm,
   rmdir,
+  unlink,
 } from "node:fs/promises"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { DocumentIdSchema } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
 import { atomicWriteText } from "./atomic-file.ts"
@@ -228,6 +229,86 @@ async function removeEmptyDirectory(path: string): Promise<void> {
   } catch {
     // Not empty, already gone, or busy: leave it.
   }
+}
+
+// ── Removing without crossing a mount ───────────────────────
+
+/**
+ * Whether any directory at or below `path` is on another filesystem than
+ * `path` itself, as a mount inside it would be. Directories only; links are
+ * never followed.
+ */
+async function holdsOtherFilesystem(path: string): Promise<boolean> {
+  let root
+  try {
+    root = await lstat(path)
+  } catch {
+    return false
+  }
+  if (!root.isDirectory()) return false
+  const pending = [path]
+  while (pending.length > 0) {
+    const current = pending.pop()!
+    let entries
+    try {
+      if ((await lstat(current)).dev !== root.dev) return true
+      entries = await readdir(current, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) pending.push(join(current, entry.name))
+    }
+  }
+  return false
+}
+
+/** Remove a tree checked to be on `device`, stopping at any that isn't. */
+async function removeTree(path: string, device: number): Promise<void> {
+  for (const entry of await readdir(path, { withFileTypes: true })) {
+    const child = join(path, entry.name)
+    if (entry.isDirectory()) {
+      if ((await lstat(child)).dev !== device) {
+        throw new Error("a trash item holds another filesystem")
+      }
+      await removeTree(child, device)
+    } else {
+      await unlink(child)
+    }
+  }
+  await rmdir(path)
+}
+
+/**
+ * Remove a trash item without crossing into another filesystem, which `rm`
+ * with `recursive` would: a mount that reached the trash would lose what is
+ * mounted there. An item that holds one is left whole for an operator, and
+ * logged by its opaque name. True once the item is gone.
+ */
+async function removeWithinDevice(path: string): Promise<boolean> {
+  let root
+  try {
+    root = await lstat(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return true
+    throw error
+  }
+  if (!root.isDirectory()) {
+    await rm(path, { force: true })
+    return true
+  }
+  if (await holdsOtherFilesystem(path)) {
+    keptAcrossFilesystems(path)
+    return false
+  }
+  await removeTree(path, root.dev)
+  return true
+}
+
+function keptAcrossFilesystems(path: string): void {
+  console.warn(
+    `[deleted-items] kept ${basename(path)}: it holds another filesystem, so an operator should look at it`
+  )
 }
 
 function newEntryId(): string {
@@ -389,14 +470,14 @@ async function settleTombstone(tombstone: Tombstone, now: number): Promise<void>
 
 async function moveTombstone(tombstone: Tombstone, now: number): Promise<void> {
   if (tombstone.erase) {
-    await rm(tombstone.path, { recursive: true, force: true })
+    await removeWithinDevice(tombstone.path)
     return
   }
   const entryDir = join(deletedItemsTrashDir(), tombstone.id)
   const data = join(entryDir, "data")
   if (await realDirectory(data)) {
     // The move finished; only the copy's source is left.
-    await rm(tombstone.path, { recursive: true, force: true })
+    await removeWithinDevice(tombstone.path)
     return
   }
   if (!(await readEntry(entryDir))) {
@@ -417,7 +498,7 @@ async function moveTombstone(tombstone: Tombstone, now: number): Promise<void> {
     }
   }
   const partial = join(entryDir, "data.partial")
-  await rm(partial, { recursive: true, force: true })
+  if (!(await removeWithinDevice(partial))) return
   await cp(tombstone.path, partial, {
     recursive: true,
     verbatimSymlinks: true,
@@ -431,7 +512,7 @@ async function moveTombstone(tombstone: Tombstone, now: number): Promise<void> {
     },
   })
   await rename(partial, data)
-  await rm(tombstone.path, { recursive: true, force: true })
+  await removeWithinDevice(tombstone.path)
 }
 
 /** Drop the active workspace's entries whose item never left its place. */
@@ -442,7 +523,7 @@ async function tidyTrash(): Promise<void> {
     if (ENTRY_ID.test(name) && !(await realDirectory(join(path, "data")))) {
       // Every tombstone was settled before this runs, so the item is still
       // in place and will be found again.
-      await rm(path, { recursive: true, force: true })
+      await removeWithinDevice(path)
       noteStorageChange(path)
     }
   }
@@ -464,7 +545,7 @@ async function emptyAllTrash(now: number, window: number): Promise<number> {
     for (const name of await childDirectories(trash)) {
       const path = join(trash, name)
       if (EMPTYING.test(name)) {
-        await rm(path, { recursive: true, force: true })
+        await removeWithinDevice(path)
         noteStorageChange(path)
         continue
       }
@@ -478,12 +559,16 @@ async function emptyAllTrash(now: number, window: number): Promise<number> {
         continue
       }
       if (entry.retiredAt + window > now) continue
+      if (await holdsOtherFilesystem(path)) {
+        keptAcrossFilesystems(path)
+        continue
+      }
       const emptying = join(trash, `.empty-${name}`)
       await rename(path, emptying)
       noteStorageChange(path)
-      await rm(emptying, { recursive: true, force: true })
+      const gone = await removeWithinDevice(emptying)
       noteStorageChange(emptying)
-      removed += 1
+      if (gone) removed += 1
     }
   }
   return removed
@@ -553,6 +638,10 @@ export async function listTrashToPrune(): Promise<TrashEntryToPrune[]> {
 
 /** Empty one trash entry before its window runs out. False if busy or gone. */
 export async function removeTrashEntry(entry: TrashEntryToPrune): Promise<boolean> {
+  if (await holdsOtherFilesystem(entry.path)) {
+    keptAcrossFilesystems(entry.path)
+    return false
+  }
   const emptying = join(deletedItemsTrashDir(), `.empty-${entry.name}`)
   try {
     await rename(entry.path, emptying)
@@ -560,9 +649,9 @@ export async function removeTrashEntry(entry: TrashEntryToPrune): Promise<boolea
     return false
   }
   noteStorageChange(entry.path)
-  await rm(emptying, { recursive: true, force: true })
+  const gone = await removeWithinDevice(emptying)
   noteStorageChange(emptying)
-  return true
+  return gone
 }
 
 // ── The pass ────────────────────────────────────────────────

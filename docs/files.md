@@ -616,6 +616,8 @@ followed. They leave in the same delete, so a crash leaves the folder whole or
 gone, and the folder is gone from disk. Files other Docs use stay when the
 delete keeps them. Delete is permanent: what the folder held waits in deleted
 items, outside backups and exports, until the history window ends (rule 14).
+Emptying deleted items never crosses into another filesystem: an item that
+holds one stays, logged, for an operator.
 The delete is refused, naming the item, when something in the folder can't be
 moved: a folder Worktable can't write, anything mounted inside (a bind mount
 of the same disk included), or a name with a backslash. A move or delete finds the folder on disk however its name's

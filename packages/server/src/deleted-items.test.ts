@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import { spawnSync } from "node:child_process"
 import {
   copyFileSync,
@@ -15,6 +15,7 @@ import {
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
+import * as fsp from "node:fs/promises"
 import { join } from "node:path"
 import type { SpaceFile } from "@worktable/types"
 import { setAppDirOverride } from "./app-storage.ts"
@@ -31,6 +32,8 @@ import {
 } from "./document-lifecycle-journal.ts"
 import {
   deletedItemsTrashDir,
+  listTrashToPrune,
+  removeTrashEntry,
   runDeletedItemsInBackground,
   runDeletedItemsPass,
   setDeletedItemsHooksForTests,
@@ -231,6 +234,42 @@ describe("deleted items", () => {
     await createAndDelete("notes", "newer")
     await runDeletedItemsPass({ now: () => start + 20 * DAY })
     expect(trash()).toHaveLength(2)
+
+    // An entry holding another filesystem, as a mount that slipped past
+    // planning would, is never emptied, by the window or by pruning: it stays
+    // for an operator.
+    const firstId = readdirSync(deletedItemsTrashDir()).find(
+      (id) =>
+        JSON.parse(
+          readFileSync(join(deletedItemsTrashDir(), id, "entry.json"), "utf8")
+        ).origin === entry!.origin
+    )!
+    const mounted = join(deletedItemsTrashDir(), firstId, "data", "mnt")
+    mkdirSync(mounted)
+    writeFileSync(join(mounted, "theirs.txt"), "not ours")
+    const realLstat = fsp.lstat
+    const elsewhere = spyOn(fsp, "lstat").mockImplementation((async (
+      path: Parameters<typeof fsp.lstat>[0]
+    ) => {
+      const info = await realLstat(path)
+      if (String(path) !== mounted) return info
+      const moved = Object.create(info) as typeof info
+      Object.defineProperty(moved, "dev", { value: info.dev + 1 })
+      return moved
+    }) as typeof fsp.lstat)
+    try {
+      expect(
+        await runDeletedItemsPass({ now: () => start + 31 * DAY })
+      ).toMatchObject({ removed: 0 })
+      const blocked = (await listTrashToPrune()).find(
+        (candidate) => candidate.name === firstId
+      )
+      expect(await removeTrashEntry(blocked!)).toBe(false)
+    } finally {
+      elsewhere.mockRestore()
+    }
+    expect(trash()).toHaveLength(2)
+    expect(readFileSync(join(mounted, "theirs.txt"), "utf8")).toBe("not ours")
 
     // 31 days after the first deletion, 11 after the second.
     expect(

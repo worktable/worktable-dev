@@ -12,7 +12,8 @@
     "./recognition": "./src/recognition.ts",
     "./doc-source": "./src/doc-source.ts",
     "./setup": "./src/setup.ts",
-    "./analytics": "./src/analytics.ts"
+    "./analytics": "./src/analytics.ts",
+    "./file-types": "./src/file-types.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

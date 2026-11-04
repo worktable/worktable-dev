@@ -15,8 +15,8 @@ import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { useServerSettings } from "@/hooks/use-server-settings"
 import { useSettingsPatch } from "../use-settings-patch"
 import { EditMarkButton } from "@/components/edit-mark-button"
-import { WorktableTile } from "@/components/worktable-tile"
-import { tileLogo, worktableLogoUrl } from "@/lib/identity-images"
+import { WorktableTile } from "@/components/identity-icons"
+import { tileLogo, worktableLogoUrl } from "@/lib/recognition"
 import { uploadWorktableLogo } from "@/lib/identity-image-upload"
 
 const IdentityImageDialog = lazy(() =>

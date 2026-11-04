@@ -14,7 +14,7 @@ import { profileStorageKey } from "@/lib/team-context"
 import { PersonAvatar } from "@/components/person-avatar"
 import { EditMarkButton } from "@/components/edit-mark-button"
 import type { WorkspaceInfo } from "@/lib/api"
-import { personPhotoUrl } from "@/lib/identity-images"
+import { personPhotoUrl } from "@/lib/recognition"
 import {
   removePersonPhoto,
   uploadPersonPhoto,

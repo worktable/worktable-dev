@@ -1,6 +1,7 @@
 import type { DesktopWorktable } from "./desktop-worktables"
 import { fetchJSON, HttpError } from "./http"
-import { listedLogo, type TileLogo } from "./identity-images"
+import { listedWorktableLogo } from "@worktable/types/recognition"
+import type { TileLogo } from "./recognition"
 
 /** How a listing may draw a Worktable; older listings leave both out. */
 export interface ListedMark {
@@ -97,6 +98,17 @@ export function loadCloudDirectory(
   cloudPage: boolean
 ): Promise<CloudDirectory | null> {
   return cloudPage ? cloudTabDirectory() : localDirectory()
+}
+
+/**
+ * A logo another Worktable's listing carries, from Desktop or Cloud. Only an
+ * icon name or an inline raster image is drawn; anything else draws the
+ * initial.
+ */
+function listedLogo(value: unknown): TileLogo | null {
+  const logo = listedWorktableLogo(value)
+  if (!logo) return null
+  return logo.kind === "icon" ? logo : { kind: "image", src: logo.data }
 }
 
 /** What every row draws its tile with. */

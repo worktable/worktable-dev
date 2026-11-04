@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react"
 import type { RecognitionColor } from "@worktable/types/recognition"
-import type { TileLogo } from "@/lib/identity-images"
+import type { TileLogo } from "@/lib/recognition"
 import { NamedIcon } from "@/lib/icons"
 
 const SIDE = 64

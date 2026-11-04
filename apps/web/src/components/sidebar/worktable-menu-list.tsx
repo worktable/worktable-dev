@@ -20,7 +20,7 @@ import {
   type MenuSurface,
   type WorktableMenuData,
 } from "@/lib/worktable-menu"
-import { WorktableTile } from "@/components/worktable-tile"
+import { WorktableTile } from "@/components/identity-icons"
 
 /** A Worktable's state beside its name: a dot, and its device or Offline. */
 function DeviceState({ device, online }: { device: string; online: boolean }) {

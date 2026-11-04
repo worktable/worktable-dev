@@ -318,18 +318,19 @@ describe("doc UX routes", () => {
     });
 
     it("keeps the action unavailable for schema-foreign rich props", async () => {
+      // Props an earlier Worktable wrote, which today's schema doesn't give.
       const blockProps = [
         {
-          type: "paragraph",
-          props: { foreignProp: "keep-me" },
-          content: [{ type: "text", text: "Foreign data", styles: {} }],
+          type: "codeBlock",
+          props: { language: "ts", backgroundColor: "default" },
+          content: [{ type: "text", text: "const a = 1", styles: {} }],
           children: [],
         },
       ];
       const tableCellProps = [
         {
           type: "table",
-          props: { textColor: "default" },
+          props: { textColor: "default", backgroundColor: "default" },
           content: {
             type: "tableContent",
             rows: [
@@ -337,7 +338,6 @@ describe("doc UX routes", () => {
                 cells: [
                   {
                     type: "tableCell",
-                    props: { foreignProp: "keep-me" },
                     content: [
                       { type: "text", text: "Foreign data", styles: {} },
                     ],

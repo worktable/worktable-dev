@@ -26,7 +26,11 @@ import {
   prepareMarkdownStorageConversion,
 } from "./markdown.ts";
 import { canonicalizeBlocksForWrite, inheritBlockIds } from "./blocknote.ts";
-import { checkRichTextBlocks, RICH_TEXT_SOURCE_BUDGET } from "./rich-text-blocks.ts";
+import {
+  checkRichTextBlocks,
+  RICH_TEXT_SOURCE_BUDGET,
+  richTextBlocksProblem,
+} from "./rich-text-blocks.ts";
 import { sourceIsDoc } from "./doc-source-kind.ts";
 import { extractMarkdownMermaid } from "./mermaid-document.ts";
 
@@ -3903,6 +3907,7 @@ async function writeDocUnlocked(
       ok: false,
       storedAs: "json",
       error:
+        richTextBlocksProblem(preparedBlocks.content, RICH_TEXT_SOURCE_BUDGET) ??
         "Doc content must be Doc blocks: each a block type the editor knows, with its props, content and children.",
     };
   }

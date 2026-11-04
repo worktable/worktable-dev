@@ -356,32 +356,44 @@ describe("worktable_docs_write action write on an existing Doc", () => {
     expect(forced.data.formattingDropped).toHaveLength(1)
   }, 20_000)
 
-  it("keeps properties Worktable does not recognize until their own block changes", async () => {
-    await write(
+  it("refuses a field the editor would drop, and keeps an earlier Worktable's until its own block changes", async () => {
+    const unknown = await write(
       "foreign",
       [paragraph("Flagged by another tool.", { props: { reviewState: "flagged" } }), paragraph("Plain.")],
       { lifetime: "durable" }
     )
-    expect((await storedBlocks("foreign"))[0].props.reviewState).toBe("flagged")
+    expect(unknown.ok).not.toBe(true)
+    expect(JSON.stringify(unknown)).toContain("Unknown field `reviewState` on paragraph")
+    expect(await storedBlocks("foreign")).toBeNull()
+
+    // AgentDash wrote a code block's color and alignment, which the schema
+    // no longer gives it.
+    const earlier = {
+      type: "codeBlock",
+      props: { language: "ts", backgroundColor: "default" },
+      content: [{ type: "text", text: "const a = 1", styles: {} }],
+    }
+    await write("foreign", [earlier, paragraph("Plain.")], { lifetime: "durable" })
+    expect((await storedBlocks("foreign"))[0].props.backgroundColor).toBe("default")
 
     expect((await edit("foreign", [{ oldText: "Plain.", newText: "Plain, edited." }])).ok).toBe(true)
     const current = await read("foreign")
-    expect((await storedBlocks("foreign"))[0].props.reviewState).toBe("flagged")
+    expect((await storedBlocks("foreign"))[0].props.backgroundColor).toBe("default")
     expect(
-      (await write("foreign", "Flagged by another tool.\n\nRewritten.\n", { expectedRevision: current.data.revision })).ok
+      (await write("foreign", "```ts\nconst a = 1\n```\n\nRewritten.\n", { expectedRevision: current.data.revision })).ok
     ).toBe(true)
-    expect((await storedBlocks("foreign"))[0].props.reviewState).toBe("flagged")
+    expect((await storedBlocks("foreign"))[0].props.backgroundColor).toBe("default")
 
-    const refused = await write("foreign", "Changed.\n\nRewritten.\n", {
+    const refused = await write("foreign", "```ts\nconst b = 2\n```\n\nRewritten.\n", {
       expectedRevision: (await read("foreign")).data.revision,
     })
-    expect(refused.error.formattingDropped[0].fields).toEqual(["prop:reviewState"])
-    const forced = await write("foreign", "Changed.\n\nRewritten.\n", {
+    expect(refused.error.formattingDropped[0].fields).toEqual(["prop:backgroundColor"])
+    const forced = await write("foreign", "```ts\nconst b = 2\n```\n\nRewritten.\n", {
       expectedRevision: (await read("foreign")).data.revision,
       force: true,
     })
     expect(forced.ok).toBe(true)
-    expect((await storedBlocks("foreign"))[0].props).not.toHaveProperty("reviewState")
+    expect((await storedBlocks("foreign"))[0].props).not.toHaveProperty("backgroundColor")
   }, 20_000)
 })
 

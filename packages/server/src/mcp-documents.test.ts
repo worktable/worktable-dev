@@ -331,6 +331,10 @@ describe("file links for agents", () => {
       const fetched = await fileLinksRouter.request(`/${token(downloadUrl)}`)
       expect(fetched.status).toBe(200)
       expect(new Uint8Array(await fetched.arrayBuffer())).toEqual(shot)
+      // The link gives the bytes that read saw, or none once they change.
+      const replaced = await write({ action: "upload", spaceId, path: "design/shot.png", ifExists: "replace" })
+      await send((replaced.structuredContent as { uploadUrl: string }).uploadUrl, shot.slice(0, 9))
+      expect((await fileLinksRouter.request(`/${token(downloadUrl)}`)).status).toBe(409)
 
       // A taken name is refused, numbered, or replaced, as asked.
       const again = await write({ action: "upload", spaceId, path: "design/shot.png" })

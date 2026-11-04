@@ -1168,6 +1168,11 @@ export async function readRegisteredDocumentSource(options: {
   sourceRevision: string
   /** When the source last changed, as the document catalog records it. */
   updatedAt?: string
+  /**
+   * A file's revision as the catalog saw it before its bytes were read. A
+   * file changed since, even while it was read, is at another.
+   */
+  fileRevision?: string
 }> {
   assertSpaceAccess(options.spaceId);
   return withDocPathLock(options.spaceId, () =>
@@ -1187,6 +1192,7 @@ export async function readRegisteredDocumentSourceLocked(options: {
   bytes: Uint8Array
   sourceRevision: string
   updatedAt?: string
+  fileRevision?: string
 }> {
   assertSpaceAccess(options.spaceId);
   const workspaceRoot = getWorkspaceRoot()
@@ -1204,6 +1210,8 @@ export async function readRegisteredDocumentSourceLocked(options: {
   const entry = entryAt(catalog, document.path)
   const updatedAt =
     entry?.kind === "document" ? entry.descriptor.updatedAt : undefined
+  const fileRevision =
+    entry?.kind === "document" ? entry.handle.sourceStamp : undefined
   return {
     documentId: document.documentId,
     path: document.path,
@@ -1214,6 +1222,7 @@ export async function readRegisteredDocumentSourceLocked(options: {
       bytes,
     }),
     ...(updatedAt ? { updatedAt } : {}),
+    ...(fileRevision ? { fileRevision } : {}),
   }
 }
 

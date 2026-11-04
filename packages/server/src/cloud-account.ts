@@ -1,3 +1,9 @@
+import {
+  isRecognitionColor,
+  listedWorktableLogo,
+  type ListedWorktableLogo,
+  type RecognitionColor,
+} from "@worktable/types"
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
@@ -369,10 +375,26 @@ export async function cloudAppIntent(
   )
 }
 
+/** How a newer Cloud draws each Worktable; a mark it can't read is left out. */
+const LISTED_MARK = {
+  color: z
+    .unknown()
+    .optional()
+    .transform((value) => (isRecognitionColor(value) ? value : undefined)),
+  logo: z
+    .unknown()
+    .optional()
+    .transform((value) => listedWorktableLogo(value) ?? undefined),
+}
+
 const Directory = z.object({
   worktables: z
     .array(
-      z.object({ id: z.string().min(1).max(200), name: z.string().max(200) })
+      z.object({
+        id: z.string().min(1).max(200),
+        name: z.string().max(200),
+        ...LISTED_MARK,
+      })
     )
     .max(1000),
   linked: z
@@ -384,12 +406,21 @@ const Directory = z.object({
         state: z.string().max(40),
         openUrl: z.string().max(2048).optional(),
         localWorkspaceId: z.string().max(200).optional(),
+        ...LISTED_MARK,
       })
     )
     .max(1000)
     .default([]),
 })
-export type CloudDirectory = z.infer<typeof Directory> & { cloudOrigin: string }
+type Listed<T> = Omit<T, "color" | "logo"> & {
+  color?: RecognitionColor
+  logo?: ListedWorktableLogo
+}
+export type CloudDirectory = {
+  worktables: Listed<z.infer<typeof Directory>["worktables"][number]>[]
+  linked: Listed<z.infer<typeof Directory>["linked"][number]>[]
+  cloudOrigin: string
+}
 
 /**
  * The account's Worktables for the Worktable menu: hosted ones and the linked
@@ -403,15 +434,22 @@ export async function cloudWorktables(): Promise<CloudDirectory | null> {
   // Only the fields the menu shows, whatever a newer Cloud adds.
   return {
     cloudOrigin: origin,
-    worktables: worktables.map(({ id, name }) => ({ id, name })),
+    worktables: worktables.map(({ id, name, color, logo }) => ({
+      id,
+      name,
+      ...(color ? { color } : {}),
+      ...(logo ? { logo } : {}),
+    })),
     linked: linked.map(
-      ({ id, name, device, state, openUrl, localWorkspaceId }) => ({
+      ({ id, name, device, state, openUrl, localWorkspaceId, color, logo }) => ({
         id,
         name,
         device,
         state,
         ...(openUrl ? { openUrl } : {}),
         ...(localWorkspaceId ? { localWorkspaceId } : {}),
+        ...(color ? { color } : {}),
+        ...(logo ? { logo } : {}),
       })
     ),
   }

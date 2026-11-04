@@ -149,11 +149,13 @@ export async function verifyHostedBrowserAssertion(
       return null
     }
     if (consumesReplayEntry(request)) consumeJti(claims.jti)
+    const picture = claims.wt.picture ? { picture: claims.wt.picture } : {}
     if (claims.wt.identity) {
       if (claims.wt.identity.subject !== claims.sub || claims.wt.identity.issuer !== process.env[ENV.AUTH_SERVER_URL]?.trim()) return null;
-      return await resolveVerifiedCloudMember(resolveWorkspaceOriginForRequest(request).origin, { ...claims.wt.identity, name: claims.wt.principal.displayName },
+      const member = await resolveVerifiedCloudMember(resolveWorkspaceOriginForRequest(request).origin, { ...claims.wt.identity, name: claims.wt.principal.displayName },
         // Acceptance binds the identity itself, once the invitation checks out.
         request.method === "POST" && new URL(request.url).pathname === "/api/team/accept-invitation" ? "deferred" : false, claims.wt.worktableName);
+      return member ? { ...member, ...picture } : member
     }
     if (teamsEnabled()) return null;
     return {
@@ -163,6 +165,7 @@ export async function verifyHostedBrowserAssertion(
       scopes: [...HOSTED_BROWSER_RUNTIME_SCOPES],
       agent: null,
       principal: claims.wt.principal,
+      ...picture,
     }
   } catch (error) {
     if (error instanceof APIError || error instanceof HostedCredentialError || error instanceof TeamAccessError || error instanceof TeamStateError) throw error

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { lazy, Suspense, useEffect, useRef, useState } from "react"
+import { useQueryClient, type QueryClient } from "@tanstack/react-query"
+import { recognitionColor } from "@worktable/types/recognition"
 import { Input } from "@worktable/ui/components/input"
 import { toast } from "@worktable/ui/components/sonner"
 import {
@@ -11,6 +12,19 @@ import {
 import { queryKeys, useWorkspace } from "@/lib/queries"
 import { profileStorageKey } from "@/lib/team-context"
 import { PersonAvatar } from "@/components/person-avatar"
+import { EditMarkButton } from "@/components/edit-mark-button"
+import type { WorkspaceInfo } from "@/lib/api"
+import { personPhotoUrl } from "@/lib/recognition"
+import {
+  removePersonPhoto,
+  uploadPersonPhoto,
+} from "@/lib/identity-image-upload"
+
+const IdentityImageDialog = lazy(() =>
+  import("@/components/identity-image-dialog").then((module) => ({
+    default: module.IdentityImageDialog,
+  }))
+)
 
 export function ProfileSection() {
   return (
@@ -29,6 +43,9 @@ function DisplayNameGroup() {
   const { data: workspace } = useWorkspace()
   const [value, setValue] = useState(() => getCurrentUser().name)
   const [saving, setSaving] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const personId = workspace?.person?.id ?? getCurrentUser().id
+  const photo = workspace?.person?.photo ?? null
   const editRevision = useRef(0)
   const hasLocalEdit = useRef(false)
 
@@ -97,11 +114,14 @@ function DisplayNameGroup() {
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-3">
-          <PersonAvatar
-            id={workspace?.person?.id ?? getCurrentUser().id}
-            name={value.trim() || DEFAULT_NAME}
-            size="lg"
-          />
+          <EditMarkButton label="Change Photo" round onClick={() => setPicking(true)}>
+            <PersonAvatar
+              id={personId}
+              name={value.trim() || DEFAULT_NAME}
+              photo={photo}
+              size="lg"
+            />
+          </EditMarkButton>
           <Input
             aria-label="Display name"
             value={value}
@@ -121,6 +141,58 @@ function DisplayNameGroup() {
           Shown on your comments and Threads.
         </p>
       </div>
+      {picking ? (
+        <Suspense fallback={null}>
+          <IdentityImageDialog
+            open
+            onClose={() => setPicking(false)}
+            kind="photo"
+            currentImage={photo ? personPhotoUrl(personId, photo) : null}
+            color={recognitionColor(null, personId)}
+            name={value.trim() || DEFAULT_NAME}
+            onSaveImage={async (image) => {
+              const saved = await uploadPersonPhoto(image)
+              applyOwnPhoto(queryClient, saved.id, saved.photo)
+            }}
+            {...(photo
+              ? {
+                  onRemove: async () => {
+                    const saved = await removePersonPhoto()
+                    applyOwnPhoto(queryClient, saved.id, null)
+                  },
+                }
+              : {})}
+          />
+        </Suspense>
+      ) : null}
     </section>
   )
+}
+
+/** Show your new photo everywhere this tab draws you, without a refetch. */
+function applyOwnPhoto(
+  queryClient: QueryClient,
+  id: string,
+  photo: string | null
+) {
+  const withPhoto = <T extends { photo?: string }>(entry: T): T => ({
+    ...entry,
+    photo: photo ?? undefined,
+  })
+  queryClient.setQueryData<WorkspaceInfo>(queryKeys.workspace, (workspace) => {
+    if (!workspace) return workspace
+    const presentations = workspace.presentations
+      ? Object.fromEntries(
+          Object.entries(workspace.presentations).map(([key, entry]) => [
+            key,
+            entry.id === id || key === id ? withPhoto(entry) : entry,
+          ])
+        )
+      : undefined
+    return {
+      ...workspace,
+      ...(presentations ? { presentations } : {}),
+      person: workspace.person ? withPhoto(workspace.person) : workspace.person,
+    }
+  })
 }

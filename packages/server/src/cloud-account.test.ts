@@ -137,7 +137,15 @@ beforeEach(async () => {
       if (body.action === "pause") paused = body.paused
       if (body.action === "worktables")
         return Response.json({
-          worktables: [{ id: "hosted_one", name: "Studio", role: "owner" }],
+          worktables: [
+            {
+              id: "hosted_one",
+              name: "Studio",
+              role: "owner",
+              color: "teal",
+              logo: { kind: "image", data: "data:image/png;base64,iVBORw==" },
+            },
+          ],
           linked: [
             {
               id: `wl_${"c".repeat(32)}`,
@@ -147,6 +155,9 @@ beforeEach(async () => {
               openUrl: "https://notes.example",
               localWorkspaceId: "ws_notes",
               extra: "ignored",
+              // A mark the menu can't draw safely is left out.
+              color: "cobalt",
+              logo: { kind: "image", data: "https://tracker.example/x.png" },
             },
           ],
         })
@@ -200,7 +211,14 @@ test("local sign-in consumes only the matching callback and does not enable Link
   expect(linkActions).toBe(0)
   expect(await cloudWorktables()).toEqual({
     cloudOrigin: cloud,
-    worktables: [{ id: "hosted_one", name: "Studio" }],
+    worktables: [
+      {
+        id: "hosted_one",
+        name: "Studio",
+        color: "teal",
+        logo: { kind: "image", data: "data:image/png;base64,iVBORw==" },
+      },
+    ],
     linked: [
       {
         id: `wl_${"c".repeat(32)}`,

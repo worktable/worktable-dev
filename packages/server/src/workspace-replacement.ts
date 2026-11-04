@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto"
+import { carryWorkspaceLogo } from "./workspace-logo.ts"
 import {
   chmod,
   lstat,
@@ -430,6 +431,8 @@ export async function beginPreparedWorkspaceReplacement(
           )
         : current.bytes
     )
+    // The kept manifest names the live logo, so the live logo file goes too.
+    await carryWorkspaceLogo(workspaceRoot, resolvedStaging, current.value)
   } else if (options.manifest === "checkpoint") {
     const current = await readCurrentManifest()
     const saved = replacementManifest as WorkspaceManifest
@@ -458,6 +461,7 @@ export async function beginPreparedWorkspaceReplacement(
         JSON.stringify(clearedWorkspaceManifest(current.value), null, 2) + "\n"
       )
     )
+    await carryWorkspaceLogo(workspaceRoot, resolvedStaging, current.value)
   }
   await chmod(resolvedStaging, workspaceInfo.mode & 0o777)
   await options.validateBeforeSwap?.()

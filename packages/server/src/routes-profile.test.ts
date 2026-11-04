@@ -10,6 +10,20 @@ import { createThread, readThread } from "./thread-store.ts"
 import { createToken } from "./token-store.ts"
 import { listThreadParticipantsForDisplay } from "./thread-service.ts"
 import { setWorkspaceRootOverride } from "./workspace.ts"
+import {
+  adoptSignInPhoto,
+  participantPhotoHash,
+  removeParticipantPhoto,
+  setSignInPhotoFetchForTests,
+  signInPhotosSettledForTests,
+} from "./participant-photos.ts"
+
+const PNG = Uint8Array.from(
+  atob(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+  ),
+  (char) => char.charCodeAt(0)
+)
 
 let appDir: string
 let workspaceDir: string
@@ -101,5 +115,101 @@ describe("profile routes", () => {
       })
     )
     expect(invalid.status).toBe(400)
+  })
+
+  it("keeps a person's photo, shows it wherever they appear, and removes it", async () => {
+    const credential = await createToken({ scopes: ["threads:*"], agent: "codex@test" })
+    const agentPut = await app().fetch(
+      new Request("http://localhost/api/profile/photo", {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${credential.token}`, "Content-Type": "image/png" },
+        body: PNG,
+      })
+    )
+    expect(agentPut.status).toBe(403)
+
+    const put = await app().fetch(
+      new Request("http://localhost/api/profile/photo", {
+        method: "PUT",
+        headers: { "Content-Type": "image/png" },
+        body: PNG,
+      })
+    )
+    expect(put.status).toBe(200)
+    const { id, photo } = (await put.json()) as { id: string; photo: string }
+    expect((await listThreadParticipantsForDisplay()).presentations[id]?.photo).toBe(photo)
+
+    // An agent that reads Threads sees people's photos too.
+    const served = await app().fetch(
+      new Request(`http://localhost/api/profile/photos/${id}/${photo}`, {
+        headers: { Authorization: `Bearer ${credential.token}` },
+      })
+    )
+    expect(served.status).toBe(200)
+    expect(served.headers.get("Cache-Control")).toContain("immutable")
+    expect(new Uint8Array(await served.arrayBuffer())).toEqual(PNG)
+
+    const removed = await app().fetch(
+      new Request("http://localhost/api/profile/photo", { method: "DELETE" })
+    )
+    expect(await removed.json()).toEqual({ id, photo: null })
+    expect((await listThreadParticipantsForDisplay()).presentations[id]?.photo).toBeUndefined()
+    expect(
+      (await app().fetch(new Request(`http://localhost/api/profile/photos/${id}/${photo}`))).status
+    ).toBe(404)
+  })
+
+  it("takes a sign-in photo once, until the person chooses or removes one", async () => {
+    let fetches = 0
+    setSignInPhotoFetchForTests((async () => {
+      fetches += 1
+      return new Response(PNG, { headers: { "Content-Type": "image/png" } })
+    }) as unknown as typeof fetch)
+    try {
+      const id = "ptc_signin"
+      adoptSignInPhoto(id, "https://photos.example/a.png")
+      await signInPhotosSettledForTests()
+      expect(participantPhotoHash(id)).toMatch(/^[a-f0-9]{32}$/)
+      adoptSignInPhoto(id, "https://photos.example/a.png")
+      await signInPhotosSettledForTests()
+      expect(fetches).toBe(1)
+
+      await removeParticipantPhoto(id, "https://photos.example/a.png")
+      adoptSignInPhoto(id, "https://photos.example/a.png")
+      await signInPhotosSettledForTests()
+      expect(participantPhotoHash(id)).toBeNull()
+
+      // Only an address that can't be read in transit is fetched.
+      adoptSignInPhoto("ptc_other", "http://photos.example/b.png")
+      await signInPhotosSettledForTests()
+      expect(fetches).toBe(1)
+
+      // A dropped connection is tried again on a later page; a redirect off
+      // https is not followed.
+      let failing = true
+      let tries = 0
+      setSignInPhotoFetchForTests((async () => {
+        tries += 1
+        // The connection drops partway through the photo.
+        if (failing)
+          return new Response(
+            new ReadableStream({
+              pull(controller) {
+                controller.error(new TypeError("connection reset"))
+              },
+            })
+          )
+        return new Response(null, { status: 302, headers: { Location: "http://photos.example/c.png" } })
+      }) as unknown as typeof fetch)
+      adoptSignInPhoto("ptc_later", "https://photos.example/c.png")
+      await signInPhotosSettledForTests()
+      failing = false
+      adoptSignInPhoto("ptc_later", "https://photos.example/c.png")
+      await signInPhotosSettledForTests()
+      expect(tries).toBe(2)
+      expect(participantPhotoHash("ptc_later")).toBeNull()
+    } finally {
+      setSignInPhotoFetchForTests(null)
+    }
   })
 })

@@ -20,7 +20,7 @@ import {
   type MenuSurface,
   type WorktableMenuData,
 } from "@/lib/worktable-menu"
-import { WorktableTile } from "./worktable-header"
+import { WorktableTile } from "@/components/identity-icons"
 
 /** A Worktable's state beside its name: a dot, and its device or Offline. */
 function DeviceState({ device, online }: { device: string; online: boolean }) {
@@ -51,7 +51,11 @@ function MenuRowItem({ row, surface }: { row: MenuRow; surface: MenuSurface }) {
   const name = row.name
   const label = (
     <>
-      <WorktableTile name={name} color={recognitionColor(undefined, row.id)} />
+      <WorktableTile
+        name={name}
+        color={recognitionColor(row.color, row.id)}
+        logo={row.logo}
+      />
       <TruncatedText text={name} className="flex-1" />
       {row.kind === "this-mac" && row.linked && (
         <Badge variant="outline">Link</Badge>

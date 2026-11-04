@@ -3353,6 +3353,12 @@ struct WorkspaceMenuWorktable {
     linked: bool,
     /// Whether this window shows it.
     current: bool,
+    /// Its chosen recognition color, as its manifest names it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    color: Option<String>,
+    /// Its logo: an icon name, or a small image inlined as a data URL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    logo: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -3394,34 +3400,89 @@ fn menu_worktables(
         .workspaces
         .iter()
         .filter(|workspace| !workspace.path.is_empty() && Path::new(&workspace.path).is_dir())
-        .map(|workspace| WorkspaceMenuWorktable {
-            id: workspace.workspace_id.clone(),
-            // The registry keeps the name a Worktable had when it was first
-            // opened; its manifest has the current one.
-            name: manifest_name(&workspace.path, &workspace.workspace_id)
-                .or_else(|| (!workspace.name.trim().is_empty()).then(|| workspace.name.clone()))
-                .unwrap_or_else(|| {
-                    Path::new(&workspace.path)
-                        .file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "Worktable".into())
-                }),
-            linked: workspace.linked == Some(true),
-            current: current_id == Some(workspace.workspace_id.as_str()),
+        .map(|workspace| {
+            let (color, logo) = manifest_mark(&workspace.path, &workspace.workspace_id);
+            WorkspaceMenuWorktable {
+                id: workspace.workspace_id.clone(),
+                // The registry keeps the name a Worktable had when it was first
+                // opened; its manifest has the current one.
+                name: manifest_name(&workspace.path, &workspace.workspace_id)
+                    .or_else(|| (!workspace.name.trim().is_empty()).then(|| workspace.name.clone()))
+                    .unwrap_or_else(|| {
+                        Path::new(&workspace.path)
+                            .file_name()
+                            .map(|name| name.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| "Worktable".into())
+                    }),
+                linked: workspace.linked == Some(true),
+                current: current_id == Some(workspace.workspace_id.as_str()),
+                color,
+                logo,
+            }
         })
         .collect()
 }
 
-/// The name in a Worktable folder's manifest, when it is the expected Worktable.
-fn manifest_name(path: &str, workspace_id: &str) -> Option<String> {
+/// A logo image small enough to inline in the menu's list.
+const MENU_LOGO_MAX_BYTES: u64 = 48 * 1024;
+
+/// The color and logo in a Worktable folder's manifest, when it is the expected Worktable.
+fn manifest_mark(path: &str, workspace_id: &str) -> (Option<String>, Option<serde_json::Value>) {
+    let Some(value) = read_manifest(path, workspace_id) else {
+        return (None, None);
+    };
+    let color = value
+        .get("color")
+        .and_then(|color| color.as_str())
+        .filter(|color| color.len() <= 20 && color.chars().all(|c| c.is_ascii_lowercase()))
+        .map(str::to_string);
+    let logo = value
+        .get("logo")
+        .and_then(|logo| match logo.get("kind")?.as_str()? {
+            "icon" => {
+                let icon = logo.get("icon")?.as_str()?;
+                (icon.len() <= 64
+                    && icon
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'))
+                .then(|| serde_json::json!({ "kind": "icon", "icon": icon }))
+            }
+            "image" => {
+                let (extension, mime) = match logo.get("type")?.as_str()? {
+                    "image/webp" => ("webp", "image/webp"),
+                    "image/png" => ("png", "image/png"),
+                    "image/jpeg" => ("jpg", "image/jpeg"),
+                    _ => return None,
+                };
+                let file = Path::new(path).join(format!("worktable-logo.{extension}"));
+                if std::fs::metadata(&file).ok()?.len() > MENU_LOGO_MAX_BYTES {
+                    return None;
+                }
+                let bytes = std::fs::read(file).ok()?;
+                use base64::{engine::general_purpose::STANDARD, Engine as _};
+                Some(serde_json::json!({
+                    "kind": "image",
+                    "data": format!("data:{mime};base64,{}", STANDARD.encode(bytes)),
+                }))
+            }
+            _ => None,
+        });
+    (color, logo)
+}
+
+/// A Worktable folder's manifest, when it is the expected Worktable.
+fn read_manifest(path: &str, workspace_id: &str) -> Option<serde_json::Value> {
     let manifest = Path::new(path).join("worktable.workspace.json");
     if std::fs::metadata(&manifest).ok()?.len() > 1_048_576 {
         return None;
     }
     let value: serde_json::Value = serde_json::from_slice(&std::fs::read(manifest).ok()?).ok()?;
-    if value.get("id")?.as_str()? != workspace_id {
-        return None;
-    }
+    (value.get("id")?.as_str()? == workspace_id).then_some(value)
+}
+
+/// The name in a Worktable folder's manifest, when it is the expected Worktable.
+fn manifest_name(path: &str, workspace_id: &str) -> Option<String> {
+    let value = read_manifest(path, workspace_id)?;
     let name = value.get("name")?.as_str()?.trim();
     (!name.is_empty()).then(|| name.to_string())
 }
@@ -8923,7 +8984,13 @@ mod tests {
         // Renamed since it was first opened: the manifest's name wins.
         std::fs::write(
             studio.join("worktable.workspace.json"),
-            r#"{"version":2,"id":"ws_studio","name":"Studio Notes"}"#,
+            r#"{"version":2,"id":"ws_studio","name":"Studio Notes","color":"teal","logo":{"kind":"image","hash":"00000000000000000000000000000000","type":"image/png"}}"#,
+        )
+        .unwrap();
+        std::fs::write(studio.join("worktable-logo.png"), [0x89, b'P', b'N', b'G']).unwrap();
+        std::fs::write(
+            unnamed.join("worktable.workspace.json"),
+            r#"{"version":2,"id":"ws_client","name":" ","logo":{"kind":"icon","icon":"leaf"}}"#,
         )
         .unwrap();
         let authority: LocalAuthorityInspection = serde_json::from_value(serde_json::json!({
@@ -8944,8 +9011,15 @@ mod tests {
         assert_eq!(
             listed,
             serde_json::json!([
-                { "id": "ws_studio", "name": "Studio Notes", "linked": true, "current": true },
-                { "id": "ws_client", "name": "Client Work", "linked": false, "current": false }
+                {
+                    "id": "ws_studio", "name": "Studio Notes", "linked": true, "current": true,
+                    "color": "teal",
+                    "logo": { "kind": "image", "data": "data:image/png;base64,iVBORw==" }
+                },
+                {
+                    "id": "ws_client", "name": "Client Work", "linked": false, "current": false,
+                    "logo": { "kind": "icon", "icon": "leaf" }
+                }
             ])
         );
         std::fs::remove_dir_all(root).unwrap();

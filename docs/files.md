@@ -176,8 +176,15 @@ and `json-source-kind.ts` (whether a `.json` is a Doc), `yjs-manager.ts`,
 - `routes-documents.test.ts` "keeps a Doc overwritten with plain JSON as the
   same unreadable item, with its history": the editor refuses it.
 
-**Gaps:** the Doc check accepts block properties the editor doesn't know, and
-the editor drops them on the next edit (`blocknote.ts`). No test covers that.
+The Doc check refuses a block or table-cell field the editor doesn't know, so a
+write holding one is refused by name and an existing Doc holding one is listed as
+unreadable. Fields an earlier Worktable editor wrote, always at default values,
+stay known (`EARLIER_BLOCK_PROPS`); the editor drops them on the next save,
+which changes nothing the Doc shows.
+
+**Gaps:** unknown style keys inside text are still accepted, since Worktable's
+own writes never store them. An agent reading an unreadable Doc is told it
+isn't Doc blocks, without the field that made it so.
 
 ### 5. What a file is doesn't change silently
 

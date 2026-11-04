@@ -1729,6 +1729,44 @@ describe("format-neutral document route", () => {
       (await readRegisteredDocumentSource({ spaceId, path: "plan" })).documentId
     ).toBe(created.documentId)
     expect(await versions()).toBe(kept + 2)
+
+    // Doc blocks with a field the editor would drop are unreadable the same
+    // way, and a write that holds one is refused by name.
+    const flagged =
+      '[{"type":"paragraph","props":{"reviewState":"flagged"},"content":"Draft"}]'
+    await writeFile(join(root, "spaces", spaceId, "docs", "plan.json"), flagged)
+    noteSpaceChanged(spaceId)
+    expect(
+      ((await (await request("page?path=plan")).json()) as {
+        page: { document: { health: string } }
+      }).page.document.health
+    ).toBe("invalid")
+    expect(
+      (await listDocsDetailed(spaceId)).find((doc) => doc.path === "plan")
+    ).toMatchObject({ unreadable: true })
+    const unreadable = await readRegisteredDocumentSource({ spaceId, path: "plan" })
+    expect(unreadable.documentId).toBe(created.documentId)
+    expect(await versions()).toBe(kept + 2)
+    await expect(
+      yjsManager.handleConnection(
+        { send() {}, close() {} } as never,
+        spaceId,
+        "plan"
+      )
+    ).rejects.toThrow()
+    await expect(
+      replaceRegisteredDocument({
+        spaceId,
+        path: "plan",
+        bytes: new TextEncoder().encode(flagged),
+        expectedRevision: unreadable.sourceRevision,
+        updatedBy: "test",
+        source: "test",
+      })
+    ).rejects.toThrow("Unknown field `reviewState` on paragraph")
+    expect(
+      await readFile(join(root, "spaces", spaceId, "docs", "plan.json"), "utf8")
+    ).toBe(flagged)
   })
 
   it("gives two same-size writes in one clock tick their own ETags", async () => {

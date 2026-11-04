@@ -9,7 +9,8 @@ import {
   createBuiltinDocumentFormatRegistry,
   type DocumentOperationBudget,
 } from "./document-format-registry.ts"
-import { canonicalizeBlocks } from "./blocknote.ts"
+import { canonicalizeBlocks, serverSchema } from "./blocknote.ts"
+import { markdownToBlocks } from "./markdown.ts"
 import { buildWhatAgentsCanMakeBlocks } from "./starter-space.ts"
 
 function adapter(
@@ -290,10 +291,65 @@ describe("document format registry", () => {
     visit(resolve(import.meta.dir, "../../../fixtures/workspaces"))
     expect(fixtureDocs.length).toBeGreaterThan(0)
     const gettingStarted = await buildWhatAgentsCanMakeBlocks()
+    // What a Markdown import, a conversion and an agent's Markdown write make.
+    const imported = await markdownToBlocks(
+      [
+        "# One", "## Two", "### Three", "#### Four", "##### Five", "###### Six",
+        "Text with **bold**, *italic*, ~~strike~~, `code` and [a link](https://example.com).",
+        "- bullet", "  - nested", "1. first", "2. second", "5. from five",
+        "- [ ] open", "- [x] done", "> quoted", "---",
+        "```ts\nconst a = 1\n```", "```mermaid\ngraph TD\nA-->B\n```",
+        "| A | B |\n| :-- | --: |\n| 1 | 2 |",
+        "![alt](https://example.com/a.png)",
+      ].join("\n\n")
+    )
+    // Every block type the editor knows, with every prop it has, as it saves.
+    const everyType = Object.entries(
+      serverSchema.blockSchema as Record<
+        string,
+        { content: string; propSchema: Record<string, { default?: unknown }> }
+      >
+    ).map(([type, config]) => ({
+      type,
+      props: Object.fromEntries(
+        Object.entries(config.propSchema).map(([key, spec]) => [
+          key,
+          spec.default ?? (key === "level" ? 2 : ""),
+        ])
+      ),
+      ...(config.content === "inline" || config.content === "plain"
+        ? { content: "words" }
+        : config.content === "table"
+          ? { content: { type: "tableContent", rows: [{ cells: ["A", "B"] }] } }
+          : {}),
+    }))
     const docs: unknown[] = [
       ...fixtureDocs,
       gettingStarted,
       await canonicalizeBlocks(gettingStarted),
+      imported,
+      await canonicalizeBlocks(imported),
+      everyType,
+      await canonicalizeBlocks(everyType),
+      // Props earlier Worktables wrote, which today's schema doesn't give.
+      [
+        {
+          type: "codeBlock",
+          props: {
+            language: "ts",
+            backgroundColor: "default",
+            textColor: "default",
+            textAlignment: "left",
+          },
+          content: "const a = 1",
+        },
+        {
+          type: "table",
+          props: { textColor: "default", backgroundColor: "default", textAlignment: "left" },
+          content: { type: "tableContent", rows: [{ cells: ["A"] }] },
+        },
+        { type: "mermaid", props: { code: "graph TD", language: "mermaid" } },
+      ],
       [],
       [{ type: "paragraph" }],
       [{ type: "paragraph", content: "Plain words" }],
@@ -301,7 +357,7 @@ describe("document format registry", () => {
       [
         {
           type: "bulletListItem",
-          props: { textColor: "default", extraFromNewerVersion: "kept" },
+          props: { textColor: "default" },
           content: [
             { type: "link", href: "https://example.com", content: "a link" },
           ],
@@ -327,6 +383,31 @@ describe("document format registry", () => {
     for (const doc of docs) {
       await expect(write(doc)).resolves.toBeDefined()
     }
+    expect(everyType.length).toBe(
+      Object.keys(serverSchema.blockSchema).length
+    )
+
+    // A field the editor would drop on its next save is refused by name.
+    await expect(
+      write([
+        {
+          type: "bulletListItem",
+          props: { textColor: "default", extraFromNewerVersion: "dropped" },
+          content: "words",
+        },
+      ])
+    ).rejects.toThrow("Unknown field `extraFromNewerVersion` on bulletListItem")
+    await expect(
+      write([
+        {
+          type: "table",
+          content: {
+            type: "tableContent",
+            rows: [{ cells: [{ type: "tableCell", props: { tint: "red" }, content: "A" }] }],
+          },
+        },
+      ])
+    ).rejects.toThrow("Unknown field `tint` on a table cell")
 
     // An agent's data, configuration and anything else is not a Doc.
     for (const data of [

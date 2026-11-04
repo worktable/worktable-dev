@@ -1,5 +1,5 @@
 import { quickdrawFormat } from "./quickdraw-format.ts"
-import { checkRichTextBlocks } from "./rich-text-blocks.ts"
+import { checkRichTextBlocks, richTextBlocksProblem } from "./rich-text-blocks.ts"
 import {
   DocumentCompanionKeySchema,
   DocumentFormatIdSchema,
@@ -388,7 +388,10 @@ function validateRichTextStructure(
     throw new Error("Rich-text source exceeds its structural limit")
   }
   if (check === "not-blocks") {
-    throw new Error("Rich-text source must contain Doc blocks")
+    throw new Error(
+      richTextBlocksProblem(value, budget) ??
+        "Rich-text source must contain Doc blocks"
+    )
   }
 }
 

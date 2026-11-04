@@ -15,6 +15,17 @@ export interface DocChangeEvent {
 }
 
 /**
+ * A `.json` below docs/ changed, by its whole name. It is not dispatched as
+ * it is: the filesystem coordinator first decides whether it is a Doc or a
+ * plain file (json-source-kind.ts), so nothing keys a plain file as a Doc.
+ */
+export interface JsonSourceChangeEvent {
+  type: "jsonSource"
+  spaceId: string
+  file: string
+}
+
+/**
  * A format-neutral document claim or source changed without a more specific
  * legacy Doc or HTML Doc identity. Consumers should refresh corpus-level
  * derived state rather than guessing which future format owns the path.

@@ -64,12 +64,18 @@ export function fileContentHash(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("base64url")
 }
 
-/** Whether a new file at this path would be a file rather than a Doc. */
+/**
+ * Whether a new file at this path could be a file rather than a Doc. A
+ * `.json` can: it is a Doc only when it holds Doc blocks, which the write
+ * checks once it has the bytes.
+ */
 export function namesAFile(path: string): boolean {
   const leaf = path.split("/").at(-1) ?? ""
+  const format = fileRegistry.fileSourceForFilename(leaf, { anyFile: true })
+    ?.registration.id
   return (
-    fileRegistry.fileSourceForFilename(leaf, { anyFile: true })?.registration
-      .id === BUILTIN_DOCUMENT_FORMATS.file
+    format === BUILTIN_DOCUMENT_FORMATS.file ||
+    format === BUILTIN_DOCUMENT_FORMATS.richText
   )
 }
 

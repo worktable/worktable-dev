@@ -1,3 +1,4 @@
+import { richTextSourceIsDoc } from "./rich-text-blocks.ts"
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
 import {
   analyzePackagePath,
@@ -2159,13 +2160,21 @@ async function generateViewer<T extends ViewerSourceEntry>(
           `<p><a href="../../${rawHref}">Open raw file</a></p><article>${renderMarkdown(markdown)}</article>`
         )
       } else if (/\/docs\/.+\.json$/.test(file.path)) {
-        const parsed = JSON.parse(await readText(file))
-        const blocks = Array.isArray(parsed) ? parsed : []
-        const markdown = (await blocksToMarkdownSafe(blocks)) ?? ""
-        contentPage = viewerPage(
-          title,
-          `<p><a href="../../${rawHref}">Open raw file</a></p><article>${renderMarkdown(markdown)}</article>`
-        )
+        const text = await readText(file)
+        // JSON that isn't Doc blocks is a plain file: show it as written.
+        if (richTextSourceIsDoc(text)) {
+          const parsed = JSON.parse(text.replace(/^\uFEFF/, "")) as unknown[]
+          const markdown = (await blocksToMarkdownSafe(parsed)) ?? ""
+          contentPage = viewerPage(
+            title,
+            `<p><a href="../../${rawHref}">Open raw file</a></p><article>${renderMarkdown(markdown)}</article>`
+          )
+        } else {
+          contentPage = viewerPage(
+            title,
+            `<p><a href="../../${rawHref}">Open raw file</a></p><article><pre>${escapeHtml(text)}</pre></article>`
+          )
+        }
       } else if (htmlDocument) {
         const html = await readText(file)
         const previewPath = `browse/content/preview-${sequence}.html`

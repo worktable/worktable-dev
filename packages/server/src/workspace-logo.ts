@@ -1,4 +1,5 @@
-import { readFile, rm } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { copyFile, readFile, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { IDENTITY_IMAGE_TYPES, type IdentityImageType } from "@worktable/types"
 import {
@@ -41,13 +42,36 @@ export async function readWorkspaceLogoFile(
   const logo = manifest.logo
   if (logo?.kind !== "image" || logo.hash !== hash) return null
   if (!IDENTITY_IMAGE_TYPES.includes(logo.type)) return null
+  let bytes: Uint8Array
   try {
-    return {
-      bytes: new Uint8Array(await readFile(join(root, workspaceLogoFileName(logo.type)))),
-      type: logo.type,
-    }
+    bytes = new Uint8Array(await readFile(join(root, workspaceLogoFileName(logo.type))))
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
     throw error
   }
+  // Browsers keep a logo by its address, so only the bytes that address
+  // names may answer it, never a file that changed under the manifest.
+  const actual = createHash("sha256").update(bytes).digest("hex").slice(0, 32)
+  return actual === hash ? { bytes, type: logo.type } : null
+}
+
+/**
+ * Give a replacement tree the logo its manifest keeps: the live Worktable's,
+ * when replacing content keeps the live identity, such as clearing it or
+ * importing a package into it.
+ */
+export async function carryWorkspaceLogo(
+  liveRoot: string,
+  stagingRoot: string,
+  manifest: WorkspaceManifest
+): Promise<void> {
+  await removeWorkspaceLogoFiles(stagingRoot)
+  const logo = manifest.logo
+  if (logo?.kind !== "image" || !IDENTITY_IMAGE_TYPES.includes(logo.type)) return
+  const name = workspaceLogoFileName(logo.type)
+  await copyFile(join(liveRoot, name), join(stagingRoot, name)).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error
+    }
+  )
 }

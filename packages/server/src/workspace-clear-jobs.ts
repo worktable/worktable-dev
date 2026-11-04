@@ -1,6 +1,6 @@
 import { resetTeamSpacePoliciesAfterContentReplacement } from "./team-policy.ts"
 import { randomBytes } from "node:crypto"
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import {
   clearedWorkspaceManifest,
@@ -10,7 +10,7 @@ import {
   type WorkspaceManifest,
 } from "./workspace.ts"
 import { calculateLocalWorkspaceContentCheckpoints } from "./workspace-transfer-v2.ts"
-import { workspaceLogoFileName } from "./workspace-logo.ts"
+import { carryWorkspaceLogo } from "./workspace-logo.ts"
 import { withWorkspaceExportSnapshot } from "./workspace-export-coordinator.ts"
 import {
   scheduleWorkspaceReplacement,
@@ -101,15 +101,7 @@ function startPreparation(id: string): void {
           { mode: 0o600 }
         )
         // Clearing keeps the Worktable's identity, its logo included.
-        const logo = reviewed.manifest.logo
-        if (logo?.kind === "image") {
-          const name = workspaceLogoFileName(logo.type)
-          await copyFile(join(getWorkspaceRoot(), name), join(paths.stagingPath, name)).catch(
-            (error: NodeJS.ErrnoException) => {
-              if (error.code !== "ENOENT") throw error
-            }
-          )
-        }
+        await carryWorkspaceLogo(getWorkspaceRoot(), paths.stagingPath, reviewed.manifest)
         const staged = await calculateLocalWorkspaceContentCheckpoints(
           paths.stagingPath
         )

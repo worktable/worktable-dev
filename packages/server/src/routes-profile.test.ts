@@ -183,6 +183,23 @@ describe("profile routes", () => {
       adoptSignInPhoto("ptc_other", "http://photos.example/b.png")
       await signInPhotosSettledForTests()
       expect(fetches).toBe(1)
+
+      // A network failure is tried again on a later page; a redirect off
+      // https is not followed.
+      let failing = true
+      let tries = 0
+      setSignInPhotoFetchForTests((async () => {
+        tries += 1
+        if (failing) throw new TypeError("network down")
+        return new Response(null, { status: 302, headers: { Location: "http://photos.example/c.png" } })
+      }) as unknown as typeof fetch)
+      adoptSignInPhoto("ptc_later", "https://photos.example/c.png")
+      await signInPhotosSettledForTests()
+      failing = false
+      adoptSignInPhoto("ptc_later", "https://photos.example/c.png")
+      await signInPhotosSettledForTests()
+      expect(tries).toBe(2)
+      expect(participantPhotoHash("ptc_later")).toBeNull()
     } finally {
       setSignInPhotoFetchForTests(null)
     }

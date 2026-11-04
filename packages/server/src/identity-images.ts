@@ -149,11 +149,45 @@ export function identityImageResponse(
   })
 }
 
-/** A request body, refused early when it declares more than an image may be. */
+/** Read at most `limit` bytes of a stream; more is refused, not buffered. */
+export async function readBoundedStream(
+  body: ReadableStream<Uint8Array> | null,
+  limit: number
+): Promise<Uint8Array | null> {
+  if (!body) return new Uint8Array(0)
+  const reader = body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > limit) {
+        await reader.cancel()
+        return null
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
+}
+
+/** A request body, refused as soon as it is larger than an image may be. */
 export async function readImageBody(c: Context): Promise<Uint8Array> {
   const declared = Number(c.req.header("Content-Length"))
   if (Number.isFinite(declared) && declared > IDENTITY_IMAGE_MAX_BYTES) {
     throw new IdentityImageError("That image is too large")
   }
-  return new Uint8Array(await c.req.arrayBuffer())
+  const bytes = await readBoundedStream(c.req.raw.body, IDENTITY_IMAGE_MAX_BYTES)
+  if (!bytes) throw new IdentityImageError("That image is too large")
+  return bytes
 }

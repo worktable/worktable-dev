@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { existsSync } from "node:fs"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
@@ -10,7 +10,12 @@ import { spacesRouter } from "./routes/spaces.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
 import { isRecognitionColor } from "@worktable/types/recognition"
 import { assignMissingSpaceColors, readSpace, writeSpace } from "./store.ts"
-import { prepareWorkspaceTarget, setWorkspaceRootOverride } from "./workspace.ts"
+import {
+  ensureWorkspaceManifest,
+  prepareWorkspaceTarget,
+  setWorkspaceRootOverride,
+} from "./workspace.ts"
+import { carryWorkspaceLogo } from "./workspace-logo.ts"
 
 let root: string
 
@@ -162,6 +167,21 @@ describe("Worktable logos", () => {
     expect(new Uint8Array(await served.arrayBuffer())).toEqual(PNG)
     // A replaced logo's old address no longer answers.
     expect((await get(`/api/workspace/logo/${"0".repeat(32)}`)).status).toBe(404)
+    // Nor does an address whose file changed under it: browsers would keep
+    // the wrong image for good.
+    await writeFile(join(root, "workspace", "worktable-logo.png"), PNG.slice(0, -1))
+    expect((await get(`/api/workspace/logo/${summary.logo.hash}`)).status).toBe(404)
+  })
+
+  it("stay with the Worktable when its content is replaced", async () => {
+    await upload("/api/workspace/logo", PNG)
+    const staging = join(root, "staging")
+    await mkdir(staging)
+    // A package from elsewhere brings a logo of its own.
+    await writeFile(join(staging, "worktable-logo.webp"), "other")
+    await carryWorkspaceLogo(join(root, "workspace"), staging, ensureWorkspaceManifest())
+    expect(existsSync(join(staging, "worktable-logo.webp"))).toBe(false)
+    expect(await readFile(join(staging, "worktable-logo.png"))).toEqual(Buffer.from(PNG))
   })
 
   it("refuse anything that is not a small raster image", async () => {

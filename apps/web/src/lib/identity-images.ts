@@ -88,7 +88,7 @@ export const IDENTITY_IMAGE_SIDE = 256
 /**
  * Draw the chosen square of an image at the stored size. Re-encoding drops
  * metadata such as a photo's location. WebP where the browser can write it,
- * else PNG.
+ * else JPEG, or PNG for an image with transparency.
  */
 export async function encodeSquare(
   image: HTMLImageElement,
@@ -114,7 +114,15 @@ export async function encodeSquare(
     new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality))
   const webp = await encode("image/webp", 0.9)
   if (webp?.type === "image/webp") return webp
-  const png = await encode("image/png")
-  if (!png) throw new Error("Couldn’t read that image.")
-  return png
+  // Safari can't write WebP. A photo as PNG would be too large for the
+  // Worktable menu to carry, so an opaque image goes as JPEG and only one
+  // with transparency as PNG.
+  const opaque = context
+    .getImageData(0, 0, IDENTITY_IMAGE_SIDE, IDENTITY_IMAGE_SIDE)
+    .data.every((value, index) => index % 4 !== 3 || value === 255)
+  const fallback = opaque
+    ? await encode("image/jpeg", 0.88)
+    : await encode("image/png")
+  if (!fallback) throw new Error("Couldn’t read that image.")
+  return fallback
 }

@@ -13,6 +13,7 @@ import { logError } from "./debug-log.ts"
 import {
   acceptIdentityImage,
   IDENTITY_IMAGE_EXTENSIONS,
+  readBoundedStream,
   type IdentityImage,
 } from "./identity-images.ts"
 import { listSpaces } from "./store.ts"
@@ -224,33 +225,43 @@ export async function signInPhotosSettledForTests(): Promise<void> {
   await queue
 }
 
-async function download(url: string): Promise<Uint8Array> {
-  const response = await (fetchForTests ?? fetch)(url, {
-    redirect: "follow",
-    signal: AbortSignal.timeout(5_000),
-    headers: { Accept: "image/webp,image/png,image/jpeg" },
-  })
-  if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
-  const reader = response.body.getReader()
-  const chunks: Uint8Array[] = []
-  let size = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    size += value.length
-    if (size > IDENTITY_IMAGE_MAX_BYTES) {
-      await reader.cancel()
-      throw new Error("photo too large")
+/** A failure worth trying again on a later page, such as a network error. */
+class TransientPhotoError extends Error {}
+
+const MAX_REDIRECTS = 3
+
+/** Fetch a sign-in photo, following only https redirects. */
+async function download(url: URL): Promise<Uint8Array> {
+  let address = url
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    let response: Response
+    try {
+      response = await (fetchForTests ?? fetch)(address.href, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(5_000),
+        headers: { Accept: "image/webp,image/png,image/jpeg" },
+      })
+    } catch (error) {
+      throw new TransientPhotoError(error instanceof Error ? error.message : "fetch failed")
     }
-    chunks.push(value)
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("Location")
+      await response.body?.cancel()
+      if (!location) throw new Error("redirect without a location")
+      address = new URL(location, address)
+      if (address.protocol !== "https:") throw new Error("redirect left https")
+      continue
+    }
+    if (response.status >= 500 || response.status === 429) {
+      await response.body?.cancel()
+      throw new TransientPhotoError(`HTTP ${response.status}`)
+    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const bytes = await readBoundedStream(response.body, IDENTITY_IMAGE_MAX_BYTES)
+    if (!bytes) throw new Error("photo too large")
+    return bytes
   }
-  const bytes = new Uint8Array(size)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.length
-  }
-  return bytes
+  throw new Error("too many redirects")
 }
 
 /**
@@ -273,7 +284,7 @@ export function adoptSignInPhoto(participantId: string, url: string): void {
   adopting.add(participantId)
   void (async () => {
     try {
-      const image = acceptIdentityImage(await download(address.href))
+      const image = acceptIdentityImage(await download(address))
       await change(async (latest) => {
         // They chose their own while this was loading.
         if (latest.photos[participantId]?.source === "upload") return false
@@ -282,6 +293,10 @@ export function adoptSignInPhoto(participantId: string, url: string): void {
         return true
       })
     } catch (error) {
+      if (error instanceof TransientPhotoError) {
+        console.warn("Could not reach a sign-in photo; trying again later", logError(error))
+        return
+      }
       // Remember the address, so a broken photo is not fetched on every page.
       await change(async (latest) => {
         if (latest.signIn[participantId]?.url === url) return false

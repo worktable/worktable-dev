@@ -10,23 +10,6 @@ repository root LICENSE or their own third-party notices. This is not an MIT
 license for the entire types package. This notice grants no rights to
 Worktable trademarks or brand assets.
 
-MIT License below applies only to these files and to this license notice:
-
-- src/theme/theme-config.ts
-- src/public-share-page.ts
-- src/components/button.tsx
-- src/hooks/use-scroll-fade-x.ts
-- src/lib/utils.ts
-- src/styles/backdrop.css
-- src/styles/globals.css
-- src/styles/shadcn-utilities.css
-- src/styles/theme.generated.css
-- src/styles/typeset.css
-
-All other files in this package remain governed by the repository root LICENSE
-or their own third-party notices. This is not an MIT license for the entire UI
-package. This notice grants no rights to Worktable trademarks or brand assets.
-
 MIT License
 
 Copyright (c) 2026 Reva Labs

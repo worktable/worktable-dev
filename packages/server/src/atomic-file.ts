@@ -3,6 +3,7 @@ import { constants } from "node:fs"
 import { link, open, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { copyStagedFileInto, type StagedFile } from "./staged-file.ts"
+import { noteStorageChange } from "./storage-usage.ts"
 
 const ATOMIC_WRITE_FLAGS =
   constants.O_WRONLY |
@@ -72,6 +73,7 @@ export async function atomicWriteBytesAfterValidation(
     if (!(await validate())) return false
     await rename(temporaryPath, filePath)
     published = true
+    noteStorageChange(filePath)
     return true
   } finally {
     if (!published) {
@@ -97,6 +99,7 @@ export async function atomicCreateBytes(
       await handle.close()
     }
     await link(temporaryPath, filePath)
+    noteStorageChange(filePath)
   } finally {
     await rm(temporaryPath, { force: true }).catch(() => undefined)
   }

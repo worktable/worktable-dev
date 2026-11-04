@@ -43,6 +43,8 @@ const DAY = 24 * 60 * 60 * 1000
 let workspace: string
 let app: string
 let watcher: WorkspaceWatcher | null = null
+/** The watcher's listeners, by the directory each watches. */
+let listeners = new Map<string, (eventType: string, filename: string) => void>()
 let stopAccounting: (() => Promise<void>) | null = null
 
 function space(id: string): SpaceFile {
@@ -113,22 +115,35 @@ async function counted() {
   return storageUsage()!.parts
 }
 
-/** The count matches the disk once the watcher has reported what it saw. */
+/** Once the notes are applied, the count is what is on disk. */
 async function matchesDisk(): Promise<void> {
-  const deadline = Date.now() + 5_000
-  for (;;) {
-    const expected = onDisk()
-    const actual = await counted()
-    if (Bun.deepEquals(actual, expected)) return
-    if (Date.now() > deadline) expect(actual).toEqual(expected)
-    // test-policy: external-readiness-backoff
-    await Bun.sleep(20)
-  }
+  expect(await counted()).toEqual(onDisk())
 }
 
-async function createDoc(path: string, body: string) {
+/** Watch through the real watcher, with the test standing in for the OS. */
+function startWatcher(): void {
+  listeners = new Map()
+  watcher = new WorkspaceWatcher({
+    watch: (directory, listener) => {
+      listeners.set(directory, listener)
+      return { close: () => listeners.delete(directory), on: () => undefined }
+    },
+    // Debounced follow-up work is not what is counted here.
+    schedule: () => setTimeout(() => undefined, 0),
+    cancel: () => undefined,
+  })
+  watcher.start()
+}
+
+/** What the OS reports after `path`, under `spaces/`, changed on disk. */
+function changedOnDisk(path: string): void {
+  const spaces = join(workspace, "spaces")
+  listeners.get(spaces)!("rename", relative(spaces, path))
+}
+
+async function createDoc(path: string, body: string, spaceId = "notes") {
   return createRegisteredDocument({
-    spaceId: "notes",
+    spaceId,
     path,
     format: { id: "worktable.markdown", sourceVersion: 1 },
     bytes: new TextEncoder().encode(body),
@@ -164,9 +179,8 @@ afterEach(async () => {
 
 describe("storage usage", () => {
   it("matches the disk through writes, a change on disk, a delete and an emptied trash", async () => {
-    stopAccounting = startStorageAccounting({ noteDelayMs: 10 })
-    watcher = new WorkspaceWatcher(10)
-    watcher.start()
+    stopAccounting = startStorageAccounting()
+    startWatcher()
     await matchesDisk()
 
     // Writes through Worktable: Docs and their first versions.
@@ -189,6 +203,7 @@ describe("storage usage", () => {
     const outside = join(workspace, "spaces", "notes", "files")
     mkdirSync(outside, { recursive: true })
     writeFileSync(join(outside, "photo.bin"), new Uint8Array(10_000))
+    changedOnDisk(join(outside, "photo.bin"))
     await matchesDisk()
     expect((await counted()).live.bytes - written.live.bytes).toBeGreaterThanOrEqual(10_000)
 
@@ -207,12 +222,15 @@ describe("storage usage", () => {
     expect((await counted()).trash).toEqual({ bytes: 0, files: 0 })
   })
 
-  it("answers requests from memory, without reading the disk", async () => {
+  it("answers requests from memory, and rescans only what a change touched", async () => {
+    await writeSpace(space("other"))
     await createDoc("plan", "# Plan\n")
+    await createDoc("elsewhere", "# Elsewhere\n", "other")
     let calls = 0
+    const read: string[] = []
     const counting: StorageFileSystem = {
-      readdir: (path) => (calls++, readdir(path)),
-      lstat: (path) => (calls++, lstat(path)),
+      readdir: (path) => (calls++, read.push(path), readdir(path)),
+      lstat: (path) => (calls++, read.push(path), lstat(path)),
       statfs: (path) => (calls++, statfs(path)),
     }
     stopAccounting = startStorageAccounting({ fs: counting })
@@ -229,6 +247,14 @@ describe("storage usage", () => {
       expect(body.storage).toEqual(storageUsage())
     }
     expect(calls).toBe(before)
+
+    // A write rescans the directories it touched, not the tree: nothing
+    // in the other Space is read again.
+    read.length = 0
+    await createDoc("more", "# More\n")
+    await activeStorageAccount()!.settled()
+    expect(read.some((path) => path.includes(`${sep}notes${sep}`))).toBe(true)
+    expect(read.filter((path) => path.includes(`${sep}other`))).toEqual([])
     const usage = storageUsage()!
     expect(usage.total.bytes).toBeGreaterThan(0)
     expect(usage.workspaceEntries).toBeGreaterThan(usage.parts.live.files)

@@ -369,6 +369,9 @@ export function suppressPath(filePath: string): void {
 export function unsuppressPath(filePath: string): void {
   const state = suppressedPaths.get(filePath);
   if (!state) return;
+  // The internal write is done: count it now rather than when (or if) the
+  // watcher reports it.
+  noteStorageChange(filePath);
   state.count -= 1;
   const spaceId = documentSpaceForPath(baseDir(), filePath);
   if (spaceId) endSpaceWrite(spaceId);

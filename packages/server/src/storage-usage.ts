@@ -26,10 +26,12 @@
 // subdirectories. A change to a path rescans its directory alone (one readdir
 // and an lstat per entry), walks only directories it has not seen, and drops
 // the subtree of one that went away:
+//   - Worktable's own writes note their paths as they finish: every atomic
+//     publish (atomic-file.ts) and every write bracketed for the watcher
+//     (store.ts unsuppressPath), and the writers of history, the trash,
+//     transfers and the caches, which nothing watches;
 //   - the watcher notes every change under `spaces/` and the workspace root,
-//     Worktable's own writes and those made on disk alike;
-//   - writes to history, the trash and the caches note their paths
-//     (`noteStorageChange`), since nothing watches those folders;
+//     which brings in changes made on disk;
 //   - staged uploads are counted from memory as their bytes arrive.
 // Notes cost a Set insert on the writer's path. They are applied a moment
 // later, in the background, one directory at a time and yielding between

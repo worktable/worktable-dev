@@ -8,6 +8,7 @@ import {
   File as FileIcon,
   Upload,
 } from "lucide-react"
+import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { toast } from "@worktable/ui/components/sonner"
 import {
   delimiterForFilename,
@@ -24,7 +25,11 @@ import { DocumentByline } from "@/components/document/document-byline"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { documentRoute } from "@/lib/document-views"
 import { authenticatedFetch, fetchJSON } from "@/lib/http"
-import { fileSourceUrl, replaceFile } from "@/lib/file-embeds"
+import {
+  FileChangedError,
+  fileSourceUrl,
+  replaceFile,
+} from "@/lib/file-embeds"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import "@/styles/document-controls.css"
 
@@ -107,20 +112,23 @@ export function FilePage({
   const [uploading, setUploading] = useState(false)
   // The file loads by what its bytes are, so an unchanged file comes from
   // the browser's cache and a changed one loads anew. Right after Upload New
-  // Version, the new bytes' hash stands in until the page catches up.
+  // Version, the new bytes' hash stands in until the page catches up, and
+  // the next upload is based on the revision that one saved.
   const [uploaded, setUploaded] = useState<{
     hash: string
+    revision: string
     replacedVersion: string | undefined
   } | null>(null)
-  const version =
-    uploaded && uploaded.replacedVersion === page.version
-      ? uploaded.hash
-      : (page.version ?? null)
+  const caughtUp = !uploaded || uploaded.replacedVersion !== page.version
+  const version = caughtUp ? (page.version ?? null) : uploaded.hash
+  const basedOn = caughtUp ? page.version : uploaded.revision
+  // A new version picked after the file changed, until the person decides.
+  const [changed, setChanged] = useState<File | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const canEdit = page.capabilities.edit !== false && !page.document.archived
   // A file past what a version holds keeps no history, so a new version
   // couldn't keep this one.
-  const canReplace = canEdit && !page.noHistory
+  const canReplace = canEdit && !page.noHistory && basedOn !== undefined
   // A table people will keep working in belongs in Records.
   const importable = canEdit && filePolicy(name, "import")
   // An HTML file runs only once a person opens it as an HTML Doc, whose
@@ -130,18 +138,33 @@ export function FilePage({
   const url = fileSourceUrl(spaceId, path, version)
 
   const uploadVersion = useCallback(
-    async (file: File) => {
+    async (file: File, over: string | undefined) => {
+      if (over === undefined) return
       setUploading(true)
-      try {
-        const { contentHash } = await replaceFile(spaceId, path, file)
-        setUploaded({ hash: contentHash, replacedVersion: page.version })
+      const refreshPage = () =>
         void queryClient.invalidateQueries({
           queryKey: documentQueryKeys.page(spaceId, path),
           exact: true,
         })
+      try {
+        const saved = await replaceFile(spaceId, path, file, over)
+        setUploaded({
+          hash: saved.contentHash,
+          revision: saved.sourceRevision,
+          replacedVersion: page.version,
+        })
+        setChanged(null)
+        refreshPage()
         toast.success("New version uploaded")
       } catch (error) {
+        if (error instanceof FileChangedError) {
+          // Show the newer version behind the question.
+          setChanged(file)
+          refreshPage()
+          return
+        }
         console.error("File upload failed:", error)
+        setChanged(null)
         toast.error("Couldn’t upload the new version. Try again.")
       } finally {
         setUploading(false)
@@ -246,6 +269,20 @@ export function FilePage({
           fileName={name}
         />
       </DeferredMount>
+      <ConfirmDialog
+        open={changed !== null}
+        onOpenChange={(open) => {
+          if (!open) setChanged(null)
+        }}
+        title="This file changed"
+        description="A newer version was saved after you opened it. Replacing it keeps that version in history."
+        confirmLabel="Replace Anyway"
+        loadingLabel="Replacing…"
+        loading={uploading}
+        onConfirm={() => {
+          if (changed) void uploadVersion(changed, "current")
+        }}
+      />
       <input
         ref={picker}
         type="file"
@@ -253,7 +290,7 @@ export function FilePage({
         onChange={(event) => {
           const file = event.target.files?.[0]
           event.target.value = ""
-          if (file) void uploadVersion(file)
+          if (file) void uploadVersion(file, basedOn)
         }}
       />
       <div

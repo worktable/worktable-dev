@@ -3117,7 +3117,7 @@
   {
     "name": "worktable_files_write",
     "title": "Write a Worktable file",
-    "description": "Create a file, or replace one's content when expectedRevision is given, from source, from an earlier version with fromVersionId, or from an uploaded file. A new file needs format (worktable.file for a plain file) and lifetime. In ChatGPT, pass the user's attached file as file. With a shell and no source, the result gives a one-time link that takes the bytes with curl -T within 10 minutes, up to 64 MiB. Replacing a CSV or TSV reports what changed row by row. Replaced content stays in version history.",
+    "description": "Create a file, or replace one's content when expectedRevision is given, from source, from an earlier version with fromVersionId, or from an uploaded file. A new file needs format (worktable.file for a plain file) and lifetime. In ChatGPT, pass the user's attached file as file. With a shell and no source, the result gives a one-time link that takes the bytes with curl -T within 10 minutes, up to 64 MiB; to replace a file through it, pass ifExists replace with expectedRevision. Replacing a CSV or TSV reports what changed row by row. Replaced content stays in version history.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3185,7 +3185,7 @@
           "maxLength": 256
         },
         "ifExists": {
-          "description": "When the path is taken: fail, keep_both (saves name-2.ext) or replace (a new version; the old one stays in the file's history)",
+          "description": "When the path is taken: fail, keep_both (saves name-2.ext) or replace, which needs expectedRevision from your latest read (a new version; the old one stays in the file's history)",
           "type": "string",
           "enum": [
             "fail",

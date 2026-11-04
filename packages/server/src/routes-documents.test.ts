@@ -1258,11 +1258,14 @@ describe("format-neutral document route", () => {
       expect(csv.headers.get("content-disposition")).toStartWith("attachment;")
       expect(await csv.text()).toBe("id,score\n007,5\n")
 
-      // Replacing needs the revision it read, and keeps the old version.
-      expect(
-        (await upload("design/error.png", "second", { "if-match": "rev_stale" }))
-          .status
-      ).toBe(409)
+      // Replacing needs the revision it read, and keeps the old version. A
+      // stale one is refused with the revision the file is at now.
+      const stale = await upload("design/error.png", "second", { "if-match": "rev_stale" })
+      expect(stale.status).toBe(409)
+      expect(await stale.json()).toMatchObject({
+        code: "REVISION_CHANGED",
+        revision: first.sourceRevision,
+      })
       const replaced = await upload("design/error.png", "second", {
         "if-match": first.sourceRevision,
       })
@@ -1286,14 +1289,78 @@ describe("format-neutral document route", () => {
         ((await versions.json()) as { versions: unknown[] }).versions.length
       ).toBe(3)
 
-      // Upload New Version replaces whatever the file holds now.
+      // A replace that names no revision is refused, before its bytes are read.
+      const unnamed = await upload("design/error.png", "fourth", {}, "&replace=1")
+      expect(unnamed.status).toBe(428)
+      expect(await unnamed.json()).toMatchObject({ code: "REVISION_REQUIRED" })
+
+      // Upload New Version is based on the version the file's page loaded.
+      const pageVersion = async () =>
+        (
+          (await (
+            await instance.request(
+              `/api/spaces/${spaceId}/documents/page?path=design/error.png`
+            )
+          ).json()) as { page: { version: string } }
+        ).page.version
+      const opened = await pageVersion()
+      // An agent saves a newer version meanwhile: the page's is stale, and
+      // the newer one stays current.
+      const third = (
+        await readRegisteredDocumentSource({ spaceId, path: "design/error.png" })
+      ).sourceRevision
+      const agentSaved = await upload("design/error.png", "agent's", {
+        "if-match": third,
+        "x-test-principal": "agent",
+      })
+      expect(agentSaved.status).toBe(200)
+      const newer = ((await agentSaved.json()) as { sourceRevision: string })
+        .sourceRevision
+      const refused = await upload("design/error.png", "fourth", {
+        "if-match": `"${opened}"`,
+      })
+      expect(refused.status).toBe(409)
+      expect(await refused.json()).toMatchObject({
+        code: "REVISION_CHANGED",
+        revision: newer,
+      })
+      expect(await (await instance.request(fileUrl("design/error.png"))).text()).toBe(
+        "agent's"
+      )
+      // Replace Anyway is a person's: it replaces whatever is current, and
+      // the newer version stays in history.
       expect(
-        (await upload("design/error.png", "fourth", {}, "&replace=1")).status
+        (
+          await upload(
+            "design/error.png",
+            "fourth",
+            { "x-test-principal": "agent" },
+            "&replace=current"
+          )
+        ).status
+      ).toBe(428)
+      expect(
+        (await upload("design/error.png", "fourth", {}, "&replace=current")).status
       ).toBe(200)
       expect(await (await instance.request(fileUrl("design/error.png"))).text()).toBe(
         "fourth"
       )
-      expect((await upload("design/missing.png", "x", {}, "&replace=1")).status).toBe(404)
+      const history = (await (
+        await instance.request(
+          `/api/spaces/${spaceId}/documents/versions?path=design/error.png&all=true`
+        )
+      ).json()) as { versions: unknown[] }
+      // first, second, third, the agent's and this one.
+      expect(history.versions.length).toBe(5)
+      // A page version that is current replaces the file.
+      expect(
+        (
+          await upload("design/error.png", "fifth", {
+            "if-match": `"${await pageVersion()}"`,
+          })
+        ).status
+      ).toBe(200)
+      expect((await upload("design/missing.png", "x", {}, "&replace=current")).status).toBe(404)
 
       // A Doc's path is not a file's, whatever revision is offered.
       const docRevision = (
@@ -1308,7 +1375,7 @@ describe("format-neutral document route", () => {
       if (previous === undefined) delete process.env["WORKTABLE_FILES"]
       else process.env["WORKTABLE_FILES"] = previous
     }
-  })
+  }, 15_000)
 
   it("streams an upload to disk as it arrives, and saves only a whole one", async () => {
     const previous = process.env["WORKTABLE_FILES"]
@@ -1682,7 +1749,7 @@ describe("format-neutral document route", () => {
       // A new version saved meanwhile leaves this transfer whole and as it was.
       expect(
         (
-          await instance.request(`${url("data/archive.bin")}&replace=1`, {
+          await instance.request(`${url("data/archive.bin")}&replace=current`, {
             method: "PUT",
             body: bytes.slice(0, 100),
           })
@@ -1863,7 +1930,7 @@ describe("format-neutral document route", () => {
       expect(tailBytes.byteLength).toBe(size - FILE_VERSION_MAX_BYTES)
       expect(tailBytes.slice(-end.length)).toEqual(end)
       // A new version would lose it, as nothing could keep it: it is refused.
-      const replaced = await instance.request(`${file}&replace=1`, { method: "PUT", body: "id\n" })
+      const replaced = await instance.request(`${file}&replace=current`, { method: "PUT", body: "id\n" })
       expect(replaced.status).toBe(409)
       expect(await replaced.json()).toMatchObject({ code: "CONFLICT" })
       // So is one that names the revision it read, with the reason, leaving
@@ -2234,7 +2301,7 @@ describe("format-neutral document route", () => {
       const monday = "2026-10-20T12:00:00.000Z"
       setSystemTime(new Date("2026-10-21T09:00:00.000Z"))
       expect(
-        (await instance.request(url("&replace=1"), { method: "PUT", body: "Tuesday" }))
+        (await instance.request(url("&replace=current"), { method: "PUT", body: "Tuesday" }))
           .status
       ).toBe(200)
 
@@ -2323,7 +2390,7 @@ describe("format-neutral document route", () => {
       // Tuesday: a new screenshot, and the spec changes.
       setSystemTime(new Date("2026-10-21T09:00:00.000Z"))
       await instance.request(
-        `/api/spaces/${spaceId}/documents/file?path=${encodeURIComponent("spec/Shot one.png")}&replace=1`,
+        `/api/spaces/${spaceId}/documents/file?path=${encodeURIComponent("spec/Shot one.png")}&replace=current`,
         { method: "PUT", body: "Tuesday" }
       )
       const tuesday = await request("PUT", "", {
@@ -2521,7 +2588,7 @@ describe("format-neutral document route", () => {
 
     // A new version of the file, then a person opens it as an HTML Doc.
     const replaced = await instance.request(
-      `${fileUrl("reports/new.html")}&replace=1`,
+      `${fileUrl("reports/new.html")}&replace=current`,
       { method: "PUT", body: "<h1>New board, second</h1>" }
     )
     expect(replaced.status).toBe(200)

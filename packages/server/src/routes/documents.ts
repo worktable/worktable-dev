@@ -75,10 +75,13 @@ import { isSameOriginAppRequest } from "./widgets.ts"
 import {
   FILE_UPLOAD_MAX_BYTES,
   FILE_UPLOAD_TOO_LARGE,
+  FileReplaceRefused,
   namesAFile,
   withStagedUpload,
   writeUploadedFile,
+  type FileUploadMode,
 } from "../file-uploads.ts"
+import { isPersonWriter } from "../html-permission-authority.ts"
 import { usesAtOrBelow } from "../document-uses.ts"
 import {
   keepEarlierImagesAfterRestore,
@@ -581,9 +584,15 @@ documentsRouter.get("/file", requireScope("documents:read"), async (c) => {
 
 // The body is the file's bytes. Without If-Match it creates the file; a name
 // that is taken is refused, or numbered with keepBoth=1. With If-Match, the
-// file's current sourceRevision, it replaces the file and keeps the old
-// version in its history; replace=1 replaces whatever is current, as Upload
-// New Version does, since nothing replaced is lost from history.
+// revision the writer read (the file's sourceRevision, or the version its
+// page gave), it replaces the file and keeps the old version in its history.
+// Once the file changed since, the replace is refused with the revision it is
+// at now, and the newer version stays. A replace that names no revision is
+// refused. Only a person who saw that refusal may choose replace=current,
+// Replace Anyway, which replaces whatever is current: it stays in history.
+const FILE_REVISION_REQUIRED =
+  "Replacing a file needs the revision you read. Read the file, then send its sourceRevision as If-Match."
+
 documentsRouter.put("/file", requireScope("documents:write"), async (c) => {
   if (!filesEnabled()) {
     return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
@@ -612,21 +621,31 @@ documentsRouter.put("/file", requireScope("documents:write"), async (c) => {
       413
     )
   }
-  const attribution = documentWriteAttribution(c.get("identity").principal)
-  const expectedRevision = c.req.header("if-match")?.replace(/^"|"$/g, "")
+  const identity = c.get("identity")
+  const attribution = documentWriteAttribution(identity.principal)
+  const named = c.req.header("if-match")?.replace(/^"|"$/g, "")
+  const expectedRevision = named && named !== "*" ? named : undefined
+  const replace = c.req.query("replace")
+  let mode: FileUploadMode
+  if (expectedRevision !== undefined) {
+    mode = { kind: "replace", expectedRevision }
+  } else if (replace === "current" && isPersonWriter(identity)) {
+    mode = { kind: "replace-current" }
+  } else if (replace !== undefined || named !== undefined) {
+    return c.json(
+      { error: FILE_REVISION_REQUIRED, code: "REVISION_REQUIRED" },
+      428
+    )
+  } else {
+    mode = { kind: "create", keepBoth: c.req.query("keepBoth") === "1" }
+  }
   try {
     const written = await withStagedUpload(c.req.raw, (file) =>
       writeUploadedFile({
         spaceId,
         path,
         file,
-        mode:
-          expectedRevision !== undefined || c.req.query("replace") === "1"
-            ? {
-                kind: "replace",
-                ...(expectedRevision !== undefined ? { expectedRevision } : {}),
-              }
-            : { kind: "create", keepBoth: c.req.query("keepBoth") === "1" },
+        mode,
         actor: attribution.actor,
         source: attribution.source,
       })
@@ -642,6 +661,12 @@ documentsRouter.put("/file", requireScope("documents:write"), async (c) => {
       written.status
     )
   } catch (error) {
+    if (error instanceof FileReplaceRefused) {
+      return c.json(
+        { error: error.message, code: error.code, ...error.details },
+        409
+      )
+    }
     if (error instanceof DocumentWriteError) {
       return c.json(
         { error: error.message, code: error.reason.toUpperCase() },

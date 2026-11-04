@@ -8,6 +8,7 @@ import {
   type WorktableToolName,
 } from "./operations.ts"
 import { PUBLIC_OPERATION_OUTPUT_VARIANTS } from "./output-schemas.ts"
+import type { McpSurface } from "./surface.ts"
 import {
   LEGACY_INPUT_SCHEMAS,
   describeIssues,
@@ -860,6 +861,35 @@ const TOOLS: CatalogTool[] = [
 ]
 
 export const CATALOG_TOOLS: readonly CatalogTool[] = TOOLS
+
+/**
+ * Listing changes held for the preview surface (mcp-tools.preview.json)
+ * until agent directories review them. Each takes a released tool's place.
+ */
+const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
+  // A replace through an upload link names the revision it is based on.
+  worktable_files_write: (tool) => ({
+    ...tool,
+    description:
+      "Create a file, or replace one's content when expectedRevision is given, from source, from an earlier version with fromVersionId, or from an uploaded file. A new file needs format (worktable.file for a plain file) and lifetime. In ChatGPT, pass the user's attached file as file. With a shell and no source, the result gives a one-time link that takes the bytes with curl -T within 10 minutes, up to 64 MiB; to replace a file through it, pass ifExists replace with expectedRevision. Replacing a CSV or TSV reports what changed row by row. Replaced content stays in version history.",
+    inputSchema: z.strictObject({
+      ...tool.inputSchema.shape,
+      ifExists: z
+        .enum(["fail", "keep_both", "replace"])
+        .optional()
+        .describe(
+          "When the path is taken: fail, keep_both (saves name-2.ext) or replace, which needs expectedRevision from your latest read (a new version; the old one stays in the file's history)"
+        ),
+    }),
+  }),
+}
+
+/** The tools a surface lists, in order. */
+export function catalogTools(surface: McpSurface): readonly CatalogTool[] {
+  return surface === "preview"
+    ? TOOLS.map((tool) => PREVIEW_CHANGES[tool.name]?.(tool) ?? tool)
+    : TOOLS
+}
 
 /** The tools Worktable lists, besides search and fetch. */
 export const CATALOG_TOOL_NAMES = TOOLS.map((tool) => tool.name)

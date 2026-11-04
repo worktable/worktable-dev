@@ -298,6 +298,38 @@ describe("files for agents on the released surface", () => {
 })
 
 describe("file links for agents", () => {
+  it("asks for the revision a replace is based on, on the preview surface too", async () => {
+    const manifestPath = join(root, "worktable.workspace.json")
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>
+    await writeFile(manifestPath, `${JSON.stringify({ ...manifest, version: 2 }, null, 2)}\n`)
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
+    try {
+      const connected = await connect(
+        ["documents:read", "documents:write"],
+        "preview",
+        "http://127.0.0.1:7480"
+      )
+      const listed = (await connected.listTools()).tools.find(
+        (tool) => tool.name === "worktable_files_write"
+      )
+      const ifExists = (listed?.inputSchema.properties as Record<string, { description?: string }>)[
+        "ifExists"
+      ]
+      expect(ifExists?.description).toContain("needs expectedRevision")
+      const write = (args: Record<string, unknown>) =>
+        connected.callTool({ name: "worktable_files_write", arguments: { spaceId, path: "design/shot.png", ...args } })
+      const unnamed = await write({ ifExists: "replace" })
+      expect(unnamed.isError).toBe(true)
+      expect(JSON.stringify(unnamed.content)).toContain("worktable_files_read")
+      const named = await write({ ifExists: "replace", expectedRevision: "rev_read" })
+      expect(named.structuredContent).toHaveProperty("uploadUrl")
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
+    }
+  })
+
   it("sends a file to a one-time upload link and reads it back from a download link", async () => {
     const manifestPath = join(root, "worktable.workspace.json")
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>
@@ -336,10 +368,29 @@ describe("file links for agents", () => {
       const fetched = await fileLinksRouter.request(`/${token(downloadUrl)}`)
       expect(fetched.status).toBe(200)
       expect(new Uint8Array(await fetched.arrayBuffer())).toEqual(shot)
+      // A link to replace a file names the revision read; without one, no
+      // link is made.
+      const unnamed = await write({ action: "upload", spaceId, path: "design/shot.png", ifExists: "replace" })
+      expect(unnamed.isError).toBe(true)
+      expect(JSON.stringify(unnamed.content)).toContain("REVISION_REQUIRED")
+      const { sourceRevision } = image.structuredContent as { sourceRevision: string }
+      const replace = () =>
+        write({ action: "upload", spaceId, path: "design/shot.png", ifExists: "replace", expectedRevision: sourceRevision })
+      const [replaced, stale] = [await replace(), await replace()]
+      const saved = await send((replaced.structuredContent as { uploadUrl: string }).uploadUrl, shot.slice(0, 9))
+      expect(saved.status).toBe(200)
       // The link gives the bytes that read saw, or none once they change.
-      const replaced = await write({ action: "upload", spaceId, path: "design/shot.png", ifExists: "replace" })
-      await send((replaced.structuredContent as { uploadUrl: string }).uploadUrl, shot.slice(0, 9))
       expect((await fileLinksRouter.request(`/${token(downloadUrl)}`)).status).toBe(409)
+      // A link based on a revision the file is no longer at is refused, and
+      // the newer version stays.
+      const refused = await send((stale.structuredContent as { uploadUrl: string }).uploadUrl, shot)
+      expect(refused.status).toBe(409)
+      expect(await refused.json()).toMatchObject({
+        code: "REVISION_CHANGED",
+        revision: ((await saved.json()) as { sourceRevision: string }).sourceRevision,
+      })
+      const now = await read({ action: "read_source", spaceId, path: "design/shot.png" })
+      expect(now.structuredContent).toMatchObject({ byteLength: 9 })
 
       // A taken name is refused, numbered, or replaced, as asked.
       const again = await write({ action: "upload", spaceId, path: "design/shot.png" })

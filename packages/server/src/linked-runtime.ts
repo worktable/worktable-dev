@@ -27,6 +27,10 @@ import {
   workspaceCacheKey,
 } from "./workspace.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
+import {
+  listedWorkspaceMark,
+  listedWorkspaceMarkKey,
+} from "./workspace-logo.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { createLinkedIngress } from "./linked-ingress.ts"
 import { linkedConnectorBinary } from "./linked-connector.ts"
@@ -589,6 +593,10 @@ function launch(): void {
         let bootNonce = randomUUID()
         let renewBoot = false
         let port = 0
+        // How this Worktable looks in Cloud's lists, sent once Cloud says it
+        // takes marks and again whenever it changes.
+        let cloudTakesMarks = false
+        let savedMark: string | null = null
         while (!controller.signal.aborted && getWorkspaceRoot() === root) {
           try {
             if (link.disabled) {
@@ -650,12 +658,27 @@ function launch(): void {
                 /* A running connector may have lost its edge connections. */
               }
             }
+            const manifest = ensureWorkspaceManifest()
+            const markKey = JSON.stringify([
+              manifest.name,
+              listedWorkspaceMarkKey(manifest),
+            ])
+            const mark =
+              cloudTakesMarks && markKey !== savedMark
+                ? {
+                    ...(manifest.name.length <= 100
+                      ? { name: manifest.name }
+                      : {}),
+                    ...(await listedWorkspaceMark(root, manifest)),
+                  }
+                : undefined
             const response = await fetch(
               `${link.cloudOrigin}/linked/heartbeat`,
               {
                 method: "POST",
                 headers,
                 body: JSON.stringify({
+                  ...(mark ? { mark } : {}),
                   workspaceEpoch: link.workspaceEpoch,
                   bootSequence: link.bootSequence,
                   bootNonce,
@@ -677,8 +700,13 @@ function launch(): void {
                 redirect: "error",
               }
             )
+            // A refused mark is not sent again until it changes, so it can
+            // never keep the device offline.
+            if (!response.ok && mark) savedMark = markKey
             if (!response.ok) throw new Error("HEARTBEAT_FAILED")
             const reply = LinkedHostReply.parse(await response.json())
+            cloudTakesMarks = reply.marks === true
+            if (mark && reply.markSaved) savedMark = markKey
             if (controller.signal.aborted) break
             if (reply.state === "revoked" || reply.state === "superseded") {
               fence()

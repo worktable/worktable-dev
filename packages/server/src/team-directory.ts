@@ -9,7 +9,11 @@ import {
   requireTeamDatabase,
   teamSecret,
 } from "./team-database.ts"
-import { ensureWorkspaceManifest } from "./workspace.ts"
+import { ensureWorkspaceManifest, getWorkspaceRoot } from "./workspace.ts"
+import {
+  listedWorkspaceMark,
+  listedWorkspaceMarkKey,
+} from "./workspace-logo.ts"
 
 export const TEAM_DIRECTORY_PATH = "/_worktable/team-directory"
 
@@ -67,21 +71,41 @@ export async function serveTeamDirectory(request: Request): Promise<Response> {
     const worktable = currentTeamWorktable()
     if (!worktable) return new Response(null, { status: 204 })
     const db = requireTeamDatabase()
-    const name = ensureWorkspaceManifest().name
+    const manifest = ensureWorkspaceManifest()
+    const name = manifest.name
+    // A reader that asks for marks also gets the color and logo.
+    const marks = payload["marks"] === true
+    const mark = marks
+      ? await listedWorkspaceMark(getWorkspaceRoot(), manifest)
+      : null
+    const markKey = listedWorkspaceMarkKey(manifest)
     // Include manifest changes made by any supported writer in the same
     // monotonic discovery revision, without depending on wall-clock order.
     db.transaction(() => {
-      const previous = db
-        .query<
-          { value: string },
-          []
-        >("SELECT value FROM wt_config WHERE key = 'directory_name'")
-        .get()
-      if (previous && previous.value !== name) advanceTeamPolicy(worktable.id)
-      if (previous?.value !== name)
-        db.query(
-          "INSERT INTO wt_config(key, value) VALUES ('directory_name', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-        ).run(name)
+      const read = (key: string) =>
+        db
+          .query<
+            { value: string },
+            [string]
+          >("SELECT value FROM wt_config WHERE key = ?")
+          .get(key)?.value
+      const write = (key: string, value: string) =>
+        db
+          .query(
+            "INSERT INTO wt_config(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+          )
+          .run(key, value)
+      const previousName = read("directory_name")
+      // Cloud keeps a mark only from a newer revision, so the first one it
+      // can take advances the revision too.
+      const previousMark = marks ? read("directory_mark") : markKey
+      if (
+        (previousName !== undefined && previousName !== name) ||
+        previousMark !== markKey
+      )
+        advanceTeamPolicy(worktable.id)
+      if (previousName !== name) write("directory_name", name)
+      if (previousMark !== markKey) write("directory_mark", markKey)
     })()
     const members = db
       .query<
@@ -106,6 +130,7 @@ export async function serveTeamDirectory(request: Request): Promise<Response> {
       {
         workspaceId: cloudId,
         name,
+        ...mark,
         portableWorkspaceId: worktable.id,
         epoch: createHash("sha256").update(teamSecret(db)).digest("hex"),
         revision: currentTeamWorktable()!.policyRevision,

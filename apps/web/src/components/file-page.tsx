@@ -4,8 +4,10 @@ import { Database, Download, File as FileIcon, Upload } from "lucide-react"
 import { toast } from "@worktable/ui/components/sonner"
 import {
   delimiterForFilename,
+  filePolicy,
   parseDelimitedText,
   type DocumentPage,
+  type FileSurfacePolicies,
 } from "@worktable/types"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { mergeRefs, usePaneWidth } from "@/hooks/use-pane-width"
@@ -25,19 +27,8 @@ const ImportRecordsDialog = lazy(() =>
   }))
 )
 
-/** How a file shows on its page, decided by its name. */
-type FileView = "image" | "table" | "text" | "card"
-
-const IMAGE = /\.(?:avif|gif|jpe?g|png|svg|webp)$/i
-const TABLE = /\.(?:csv|tsv)$/i
-const TEXT = /\.(?:txt|log|json|jsonl|ya?ml|xml|ini|toml)$/i
-
-function fileView(name: string): FileView {
-  if (IMAGE.test(name)) return "image"
-  if (TABLE.test(name)) return "table"
-  if (TEXT.test(name)) return "text"
-  return "card"
-}
+/** How a file shows on its page: the file type table's page policy. */
+type FileView = FileSurfacePolicies["page"]
 
 /** Text larger than this shows as a card with Download instead. */
 const PREVIEW_MAX_BYTES = 5 * 1024 * 1024
@@ -85,7 +76,7 @@ export function FilePage({
 }) {
   const path = page.document.path
   const name = page.document.title
-  const view = fileView(name)
+  const view = filePolicy(name, "page")
   const setPageMeta = useSetPageMeta()
   const queryClient = useQueryClient()
   const fade = useScrollFade<HTMLDivElement>(8, { top: false })
@@ -111,7 +102,7 @@ export function FilePage({
   // couldn't keep this one.
   const canReplace = canEdit && !page.noHistory
   // A table people will keep working in belongs in Records.
-  const importable = canEdit && /\.(?:csv|tsv|jsonl)$/i.test(name)
+  const importable = canEdit && filePolicy(name, "import")
   const url = fileSourceUrl(spaceId, path, version)
 
   const uploadVersion = useCallback(

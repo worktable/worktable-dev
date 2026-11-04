@@ -15,7 +15,7 @@ import { readSpace, slugifyDocPath } from "../store.ts";
 import { readDocumentCatalogSnapshot } from "../document-query.ts";
 import { getWidgetPath, listWidgets, readWidget, readWidgetDocument, setWidgetArchived, updateWidgetMetadata, withWidgetWriteLock, writeWidget } from "../widget-store.ts";
 import { createRecord, deleteRecord, queryRecords, readWidgetState, RecordQueryError, updateRecord, writeWidgetState } from "../record-store.ts";
-import { applyWidgetTheme, buildWidgetFile, getBlockingWidgetIssue, injectWidgetHostStyles, injectWidgetRuntime, validateWidgetHtml } from "../widget-authoring.ts";
+import { applyWidgetTheme, getBlockingWidgetIssue, injectWidgetHostStyles, injectWidgetRuntime, validateWidgetHtml } from "../widget-authoring.ts";
 import { captureWidgetContentForOverwrite, captureWidgetVersionContent, getWidgetProvenance, getWidgetVersion, listWidgetVersions, recordWidgetVersion } from "../widget-version-store.ts";
 import { invalidateSearchIndex, noteRecordMutated } from "../search-index.ts";
 import { wsManager } from "../ws.ts";
@@ -23,6 +23,8 @@ import { htmlContentRevisionOf, htmlSourceRevision } from "../document-content-r
 import { deleteHtmlDocument } from "../html-document-delete.ts";
 import { moveHtmlDocument } from "../html-document-move.ts";
 import { createHtmlDocument } from "../html-document-create.ts";
+import { HtmlDocumentWriteError, updateHtmlDocumentLocked } from "../html-document-update.ts";
+import { DocEditError } from "../markdown-edit.ts";
 import { authorizeHtmlPermissions, HtmlPermissionError, isPersonWriter, NETWORK_REQUEST_WARNING } from "../html-permission-authority.ts";
 import type { TokenIdentity } from "../token-store.ts";
 import { ManagedDocumentAdmissionError } from "../document-identity-admission.ts";
@@ -533,82 +535,50 @@ async function handlePutWidget(c: Context, spaceId: string, widgetId: string) {
   const body = await c.req.json().catch(() => null);
   const parsed = PutWidgetSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
-  // Capture the pre-write state so the version snapshot carries a real
-  // `before` (an agent overwriting a widget must never destroy the prior
-  // version silently — that undo layer is the point of widget history). The
-  // whole capture→write→record is serialized per widget id so a concurrent
-  // write can't interleave into a mixed snapshot or mixed on-disk state.
-  const outcome = await withWidgetWriteLock(spaceId, widgetId, async () => {
-    const { data: document, error } = await readWidgetDocument(spaceId, widgetId);
-    if (error || !document) {
-      return { kind: "not-found" as const, error: error ?? "Widget not found" };
+  const identity = c.get("identity") as TokenIdentity | undefined;
+  const updatedBy = restWriteActor(c, parsed.data.updatedBy);
+  // The read, the revision check, the write and its version are serialized
+  // per HTML Doc, so a concurrent write can't land between the check and the
+  // write, or leave a mixed snapshot. An overwrite keeps the prior version.
+  let updated;
+  try {
+    updated = await withWidgetWriteLock(spaceId, widgetId, () =>
+      updateHtmlDocumentLocked({
+        spaceId,
+        htmlId: widgetId,
+        html: parsed.data.html,
+        expectedRevision: parsed.data.expectedRevision,
+        requireRevisionToReplace: true,
+        name: parsed.data.name,
+        description: parsed.data.description,
+        metadata: parsed.data.metadata,
+        permissions: normalizeWidgetPermissions(parsed.data.permissions),
+        writer: { person: isPersonWriter(identity), identity, scopes: identity?.scopes ?? [], updatedBy },
+        versionSource: "rest-api",
+      })
+    );
+  } catch (error) {
+    if (error instanceof HtmlPermissionError) {
+      return c.json({ error: error.message, code: "FORBIDDEN", missingScope: error.missingScope }, 403);
     }
-    const existing = document.widget;
-    const granted = grantedPermissions(c, normalizeWidgetPermissions(parsed.data.permissions), existing);
-    if (granted instanceof Response) return { kind: "denied" as const, response: granted };
-    // A replace names the revision it is based on; one the HTML Doc is no
-    // longer at is refused, and what is there stays.
-    const current = htmlSourceRevision(document.sourceBytes);
-    if (parsed.data.expectedRevision === undefined) return { kind: "revision-required" as const };
-    if (parsed.data.expectedRevision !== current) {
-      return { kind: "revision-changed" as const, revision: current };
+    if (error instanceof DocEditError && error.code === "revision_required") {
+      return c.json({ error: HTML_REVISION_REQUIRED, code: "REVISION_REQUIRED" }, 428);
     }
-    const permissions = (granted ? granted.permissions : normalizeWidgetPermissions(parsed.data.permissions)) ?? existing.permissions;
-    const warnings = validateWidgetHtml(parsed.data.html, permissions);
-    const blockingIssue = getBlockingWidgetIssue(warnings);
-    if (blockingIssue) {
-      return { kind: "invalid" as const, issue: blockingIssue, warnings };
+    if (error instanceof DocEditError && error.code === "revision_conflict") {
+      return c.json({ error: HTML_REVISION_CHANGED, code: "REVISION_CHANGED", revision: error.details.currentRevision }, 409);
     }
-    if (granted?.requests?.network) warnings.push(NETWORK_REQUEST_WARNING);
-    const widget = buildWidgetFile({
-      id: widgetId,
-      name: parsed.data.name,
-      description: parsed.data.description,
-      updatedBy: restWriteActor(c, parsed.data.updatedBy),
-      metadata: parsed.data.metadata,
-      permissions,
-      ...(granted ? { requests: granted.requests ?? null } : {}),
-      existing,
-    });
-    const beforeContent = await captureWidgetVersionContent(spaceId, widgetId);
-    const result = await writeWidget(spaceId, widget, parsed.data.html);
-    if (result.error || !result.data) {
-      return { kind: "invalid" as const, error: result.error ?? "Write failed", warnings };
+    if (error instanceof HtmlDocumentWriteError) {
+      return error.kind === "not_found"
+        ? c.json({ error: error.message, code: "NOT_FOUND" }, 404)
+        : c.json({ error: error.issue?.message ?? error.message, code: error.issue?.code ?? "VALIDATION_ERROR", warnings: error.warnings }, 400);
     }
-    await recordWidgetVersion(spaceId, widgetId, beforeContent, { source: "rest-api", updatedBy: restWriteActor(c, parsed.data.updatedBy) });
-    result.release?.();
-    // The source is stored as the html's UTF-8 bytes.
-    return {
-      kind: "ok" as const,
-      data: result.data,
-      warnings,
-      revision: htmlSourceRevision(new TextEncoder().encode(parsed.data.html)),
-    };
-  });
-  if (outcome.kind === "not-found") {
-    return c.json({ error: outcome.error, code: "NOT_FOUND" }, 404);
+    throw error;
   }
-  if (outcome.kind === "revision-required") {
-    return c.json({ error: HTML_REVISION_REQUIRED, code: "REVISION_REQUIRED" }, 428);
+  if (updated.changed) {
+    invalidateSearchIndex({ spaceId, path: widgetId });
+    wsManager.broadcast(spaceId, { type: "widget_update", spaceId, widgetId, data: updated.widget });
   }
-  if (outcome.kind === "revision-changed") {
-    return c.json({ error: HTML_REVISION_CHANGED, code: "REVISION_CHANGED", revision: outcome.revision }, 409);
-  }
-  if (outcome.kind === "denied") return outcome.response;
-  if (outcome.kind === "invalid") {
-    return c.json({
-      error: outcome.issue?.message ?? outcome.error ?? "Write failed",
-      code: outcome.issue?.code ?? "VALIDATION_ERROR",
-      warnings: outcome.warnings,
-    }, 400);
-  }
-  invalidateSearchIndex({ spaceId, path: widgetId });
-  wsManager.broadcast(spaceId, { type: "widget_update", spaceId, widgetId, data: outcome.data });
-  return c.json({
-    widget: outcome.data,
-    warnings: outcome.warnings,
-    revision: outcome.revision,
-  });
+  return c.json({ widget: updated.widget, warnings: updated.warnings, revision: updated.revision });
 }
 
 async function handlePatchWidget(c: Context, spaceId: string, widgetId: string) {

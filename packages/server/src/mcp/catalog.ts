@@ -478,8 +478,8 @@ const TOOLS: CatalogTool[] = [
     description:
       "Create an HTML Doc, or with htmlId change one's HTML, name, description or permissions. A new HTML Doc needs name, lifetime and html. Create and update may return an opt-in PNG preview; a failed preview never undoes the save. Read worktable_guidance topic html before writing one.",
     annotations: writes({ destructiveHint: true }),
-    // The released listing holds back expectedRevision (PREVIEW_CHANGES).
-    inputSchema: flatInput(["spaceId"], [htmlCreate, without(htmlUpdate, "expectedRevision")], {
+    // The released listing holds back expectedRevision and edits (PREVIEW_CHANGES).
+    inputSchema: flatInput(["spaceId"], [htmlCreate, without(htmlUpdate, "expectedRevision", "edits")], {
       htmlId: z.string().describe("HTML Doc to change. Omit to create one."),
       // Renaming clears a description with null; create and update take text.
       description: described(fieldsOf("worktable_html_write", "rename").description!, "Short description shown in Worktable; null clears it."),
@@ -919,14 +919,57 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
         ),
     }),
   }),
-  // Replacing an HTML Doc's html names the revision it is based on.
+  // Change part of a page with edits; a whole replace names the revision it
+  // is based on; name, description and permissions change without html.
   worktable_html_write: (tool) => ({
     ...tool,
     description:
-      "Create an HTML Doc, or with htmlId change one's HTML, name, description or permissions. A new HTML Doc needs name, lifetime and html. Changing html needs expectedRevision, the revision from your latest worktable_html_read; one the HTML Doc is no longer at is refused. Create and update may return an opt-in PNG preview; a failed preview never undoes the save. Read worktable_guidance topic html before writing one.",
+      "Create an HTML Doc, or with htmlId change one. To change part of a page, pass edits: read it with worktable_html_read first, copy each oldText exactly from its html, and pass its revision as expectedRevision; on no_match or ambiguous, read again and never guess. To replace the whole page, pass html; that needs expectedRevision, and one the HTML Doc is no longer at is refused. Name, description and permissions change without html. A new HTML Doc needs name, lifetime and html. Create and update may return an opt-in PNG preview; a failed preview never undoes the save. Read worktable_guidance topic html before writing one.",
     inputSchema: z.strictObject({
       ...tool.inputSchema.shape,
+      edits: htmlUpdate.edits!.optional(),
       expectedRevision: htmlUpdate.expectedRevision!.optional(),
+    }),
+    route: (args) => {
+      if (args.htmlId === undefined) {
+        if (args.expectedRevision !== undefined || args.edits !== undefined)
+          throw new ToolArgumentError("expectedRevision and edits apply when changing an existing HTML Doc: pass its htmlId.")
+        return step("worktable_html_write", "create", args)
+      }
+      if (args.html !== undefined && args.edits !== undefined)
+        throw new ToolArgumentError("Pass html to replace the page or edits to change part of it, not both.")
+      const updates = ["html", "edits", "expectedRevision", "permissions", "preview"]
+      // A rename needs a name, and only a rename clears a description with
+      // null; any other change of properties is an update.
+      const renames = args.name !== undefined || args.description === null
+      return updates.some((key) => args[key] !== undefined) || !renames
+        ? step("worktable_html_write", "update", args)
+        : step("worktable_html_write", "rename", args)
+    },
+    outputFields: {
+      revision: z.string().optional().describe("The saved page's revision, for expectedRevision on the next write."),
+    },
+  }),
+  worktable_html_read: (tool) => ({
+    ...tool,
+    description:
+      "Read an HTML Doc's details, permissions, revision and source; with includeHtml false, no source. The revision is what worktable_html_write takes as expectedRevision. List HTML Docs with worktable_files_read, find text in them with worktable_search exact, and see one with worktable_files_render.",
+    outputFields: {
+      revision: z.string().optional().describe("The source's revision, for expectedRevision in worktable_html_write."),
+    },
+  }),
+  worktable_search: (tool) => ({
+    ...tool,
+    description:
+      "Search workspace content by meaning, with fuzzy matching and relevance ranking, optionally scoped to a Space or folder. Returns matching items with their sources. Set exact to find exact text, or a regex with regex, line by line in Docs and HTML Docs instead.",
+    inputSchema: z.strictObject({
+      ...tool.inputSchema.shape,
+      exact: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true, match query as exact text line by line in Docs and HTML Docs, returning each match's Doc, line number and revision, plus any Docs it could not search. An HTML Doc's match has type html; in a long line, each match returns an excerpt around it, with the column it starts at."
+        ),
     }),
   }),
 }

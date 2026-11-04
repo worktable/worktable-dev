@@ -17,6 +17,7 @@ import { FileRevisionError } from "../file-revision.ts"
 import {
   FILE_UPLOAD_MAX_BYTES,
   FILE_UPLOAD_TOO_LARGE,
+  FileReplaceRefused,
   withStagedUpload,
   writeUploadedFile,
 } from "../file-uploads.ts"
@@ -46,6 +47,12 @@ function asMaker<T>(ticket: FileTicket, work: () => Promise<T>): Promise<T> {
 }
 
 function writeFailure(error: unknown) {
+  if (error instanceof FileReplaceRefused) {
+    return {
+      body: { error: error.message, code: error.code, ...error.details },
+      status: 409,
+    } as const
+  }
   if (!(error instanceof DocumentWriteError)) return null
   const status =
     error.reason === "not-found"

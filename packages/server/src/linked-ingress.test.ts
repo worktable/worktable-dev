@@ -1099,7 +1099,7 @@ it("carries a file link in pieces: an upload saved after its last piece, and a d
       spaceId: "space",
       path: "design/archive.bin",
       file,
-      mode: { kind: "replace" },
+      mode: { kind: "replace-current" },
       actor: principal.id,
       source: "mcp",
     })

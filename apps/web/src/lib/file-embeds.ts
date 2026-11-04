@@ -27,28 +27,55 @@ export function fileSourceUrl(
   return `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}${version ? `&v=${encodeURIComponent(version)}` : ""}${options.download ? "&download=1" : ""}${options.at ? `&at=${encodeURIComponent(options.at)}` : ""}`
 }
 
-/** Upload New Version: the file's new bytes, keeping the old in its history. */
+/**
+ * Upload New Version: the file's new bytes, keeping the old in its history.
+ * `basedOn` is the version the page loaded, or a revision a replace gave;
+ * once the file changed since, this throws a FileChangedError and nothing
+ * is replaced. "current" is Replace Anyway: it replaces whatever is current.
+ */
 export async function replaceFile(
   spaceId: string,
   path: string,
-  file: File
-): Promise<{ contentHash: string }> {
+  file: File,
+  basedOn: string
+): Promise<{ contentHash: string; sourceRevision: string }> {
   const response = await authenticatedFetch(
-    `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}&replace=1`,
-    { method: "PUT", body: file }
+    `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}${basedOn === "current" ? "&replace=current" : ""}`,
+    {
+      method: "PUT",
+      body: file,
+      ...(basedOn === "current" ? {} : { headers: { "If-Match": `"${basedOn}"` } }),
+    }
   )
   const body = (await response.json().catch(() => null)) as {
     contentHash?: string
+    sourceRevision?: string
+    code?: string
     error?: string
   } | null
-  if (!response.ok || typeof body?.contentHash !== "string") {
+  if (response.status === 409 && body?.code === "REVISION_CHANGED") {
+    throw new FileChangedError()
+  }
+  if (
+    !response.ok ||
+    typeof body?.contentHash !== "string" ||
+    typeof body.sourceRevision !== "string"
+  ) {
     throw new HttpError(
       response.status,
       body,
       body?.error ?? "The file could not be replaced"
     )
   }
-  return { contentHash: body.contentHash }
+  return { contentHash: body.contentHash, sourceRevision: body.sourceRevision }
+}
+
+/** The file changed after the version a replace was based on. */
+export class FileChangedError extends Error {
+  constructor() {
+    super("The file changed since it was opened")
+    this.name = "FileChangedError"
+  }
 }
 
 /**

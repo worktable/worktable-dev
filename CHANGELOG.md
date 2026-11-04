@@ -9,6 +9,11 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Files:** Upload New Version checks that the file hasn't changed since you opened it. If someone, such as an agent, saved a newer version first, Worktable asks before replacing it, and Replace Anyway keeps that version in the file's history.
+- **Files for agents and the API:** Replacing a file names the revision it was read at, including through upload links. A replace without one, or based on a revision that is no longer current, is refused and the file stays as it is. The `replace=1` upload option is replaced by `If-Match`.
+
 ### Fixed
 
 - **Comments:** On a phone, a second tap on Send while the comment box closes no longer sends the comment again.

@@ -195,6 +195,7 @@ import { filesEnabled } from "../files-enabled.ts"
 import { fileDownloadLink, fileUploadLink } from "./file-links.ts"
 import {
   FILE_UPLOAD_MAX_BYTES,
+  FileReplaceRefused,
   namesAFile,
   writeUploadedFile,
   type FileUploadMode,
@@ -918,6 +919,9 @@ interface ToolDispatchContext {
   onThreadProgress?: (update: ThreadProgressUpdate) => void | Promise<void>
 }
 
+const AGENT_FILE_REVISION_REQUIRED =
+  "Replacing a file needs the revision you read. Read it with worktable_files_read, then pass its sourceRevision as expectedRevision."
+
 // Getting Started holds Worktable's guides. An agent whose person has no
 // Space yet would otherwise file their first work among them, where the
 // sidebar and Getting Started's own Home never show it.
@@ -1489,9 +1493,13 @@ async function _dispatchOperationInner(
       if (expectedRevision !== undefined && ifExists !== "replace") {
         throw new Error("expectedRevision applies with ifExists replace.")
       }
+      // A replace names the revision it is based on, before any bytes move.
+      if (ifExists === "replace" && expectedRevision === undefined) {
+        throw new FileReplaceRefused("REVISION_REQUIRED", AGENT_FILE_REVISION_REQUIRED)
+      }
       const mode: FileUploadMode =
-        ifExists === "replace"
-          ? { kind: "replace", ...(expectedRevision ? { expectedRevision } : {}) }
+        ifExists === "replace" && expectedRevision !== undefined
+          ? { kind: "replace", expectedRevision }
           : { kind: "create", keepBoth: ifExists === "keep_both" }
       // A file attached in ChatGPT: fetch it and save it now.
       if (file) {

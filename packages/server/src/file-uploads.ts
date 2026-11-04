@@ -103,14 +103,55 @@ export function namesAFile(path: string): boolean {
   )
 }
 
-/** A file's current revision, to replace it with whatever it holds now. */
-async function currentFileRevision(
-  spaceId: string,
-  path: string
-): Promise<string> {
+/**
+ * A replace refused before anything changed: it named no revision, or one
+ * the file is no longer at. A stale one gives the revision it is at now.
+ */
+export class FileReplaceRefused extends Error {
+  readonly code: "REVISION_REQUIRED" | "REVISION_CHANGED"
+  readonly details: { revision: string } | undefined
+  constructor(
+    code: "REVISION_REQUIRED" | "REVISION_CHANGED",
+    message: string,
+    revision?: string
+  ) {
+    super(message)
+    this.name = "FileReplaceRefused"
+    this.code = code
+    this.details = revision !== undefined ? { revision } : undefined
+  }
+}
+
+const FILE_REVISION_CHANGED =
+  "This file changed since you read it. Read it again, then replace it with its new revision."
+
+/** A file as it is now, with the revision a replace of it names. */
+async function currentFile(spaceId: string, path: string) {
   const current = await readRegisteredDocumentSource({ spaceId, path })
   if (current.format.id !== BUILTIN_DOCUMENT_FORMATS.file) {
     throw new DocumentWriteError("unsupported", "This document is not a file")
+  }
+  return current
+}
+
+/**
+ * The sourceRevision a replace is based on. A file's page gives its version
+ * instead, which names its bytes on disk without reading them; it stands for
+ * the file's revision while the file is still at that version.
+ */
+async function baseRevision(
+  spaceId: string,
+  path: string,
+  named: string
+): Promise<string> {
+  if (named.startsWith("rev_")) return named
+  const current = await currentFile(spaceId, path)
+  if (current.fileRevision !== named) {
+    throw new FileReplaceRefused(
+      "REVISION_CHANGED",
+      FILE_REVISION_CHANGED,
+      current.sourceRevision
+    )
   }
   return current.sourceRevision
 }
@@ -128,12 +169,15 @@ function numberedFilePath(path: string, n: number): string {
 
 /**
  * What an upload does when the name is taken: refuse, keep both (`name-2`),
- * or replace the file, keeping its old version in history. `replace` with an
- * expected revision refuses if the file changed since.
+ * or replace the file, keeping its old version in history. A replace names
+ * the revision it is based on, a sourceRevision or the version the file's
+ * page gave, and is refused once the file changed since. Only a person's
+ * Replace Anyway, after that refusal, replaces whatever is current.
  */
 export type FileUploadMode =
   | { kind: "create"; keepBoth: boolean }
-  | { kind: "replace"; expectedRevision?: string }
+  | { kind: "replace"; expectedRevision: string }
+  | { kind: "replace-current" }
 
 export interface FileUploadResult {
   /** 201 when a file was created, 200 when one was replaced. */
@@ -159,10 +203,12 @@ export async function writeUploadedFile(options: {
 }): Promise<FileUploadResult> {
   const { spaceId, path, file: bytes, mode } = options
   const contentHash = contentHashFromHex(bytes.sha256)
-  if (mode.kind === "replace") {
+  if (mode.kind !== "create") {
     try {
       const expectedRevision =
-        mode.expectedRevision ?? (await currentFileRevision(spaceId, path))
+        mode.kind === "replace"
+          ? await baseRevision(spaceId, path, mode.expectedRevision)
+          : (await currentFile(spaceId, path)).sourceRevision
       const result = await replaceRegisteredDocument({
         spaceId,
         path,
@@ -180,6 +226,14 @@ export async function writeUploadedFile(options: {
       // lose it: nothing could keep it in history.
       if (error instanceof DocumentSourceReadError && error.reason === "too-large") {
         throw new DocumentWriteError("conflict", FILE_REPLACE_TOO_LARGE)
+      }
+      // Someone saved a newer version first. It stays current.
+      if (error instanceof DocumentWriteError && error.currentRevision !== undefined) {
+        throw new FileReplaceRefused(
+          "REVISION_CHANGED",
+          FILE_REVISION_CHANGED,
+          error.currentRevision
+        )
       }
       throw error
     }

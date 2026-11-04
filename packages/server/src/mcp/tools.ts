@@ -35,6 +35,7 @@ import { logError } from "../debug-log.ts"
 import { isHosted } from "../hosted.ts"
 import {
   CATALOG_TOOLS,
+  catalogTools,
   ToolArgumentError,
   catalogOutputSchema,
   routeCatalogCall,
@@ -375,7 +376,7 @@ export function registerTools(
     urlOrigin: urlOriginFor(),
   })
 
-  for (const tool of CATALOG_TOOLS) {
+  for (const tool of catalogTools(surface)) {
     const metadata = oauthToolMetadata()
     server.registerTool(
       tool.name,

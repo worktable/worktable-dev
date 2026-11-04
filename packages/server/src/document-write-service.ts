@@ -164,11 +164,18 @@ function sourceContentChanged(before: Uint8Array, after: Uint8Array, registratio
 
 export class DocumentWriteError extends Error {
   readonly reason: DocumentWriteFailure
+  /** For a write based on a revision the source is no longer at: the one it is at now. */
+  readonly currentRevision: string | undefined
 
-  constructor(reason: DocumentWriteFailure, message: string) {
+  constructor(
+    reason: DocumentWriteFailure,
+    message: string,
+    options: { currentRevision?: string } = {}
+  ) {
     super(message)
     this.name = "DocumentWriteError"
     this.reason = reason
+    this.currentRevision = options.currentRevision
   }
 }
 
@@ -1754,7 +1761,8 @@ export async function replaceRegisteredDocument(options: {
     if (beforeRevision !== options.expectedRevision) {
       throw new DocumentWriteError(
         "conflict",
-        "Document source changed since it was read"
+        "Document source changed since it was read",
+        { currentRevision: beforeRevision }
       )
     }
     const content: SourceContent =

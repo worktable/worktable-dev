@@ -3,10 +3,10 @@ import { existsSync } from "node:fs"
 import { readFile, readdir } from "node:fs/promises"
 import { join } from "node:path"
 import sharp from "sharp"
-import { WORKTABLE_PLUGIN_SKILLS } from "../../scripts/export-worktable-plugin.ts"
-import { WORKTABLE_OPENAI_SUBMISSION_FILES } from "../../scripts/package-openai-plugin.ts"
+import { WORKTABLE_PLUGIN_SKILLS } from "./export-worktable-plugin.ts"
+import { WORKTABLE_OPENAI_SUBMISSION_FILES } from "./package-openai-plugin.ts"
 
-const pluginRoot = import.meta.dir
+const pluginRoot = join(import.meta.dir, "..", "plugins", "worktable")
 const agentPluginSchema =
   "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 const agentPluginMcpSchema =

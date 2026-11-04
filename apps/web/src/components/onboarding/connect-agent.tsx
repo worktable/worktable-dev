@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Check, Loader2 } from "lucide-react"
 import {
   AGENT_PLATFORMS,
+  agentConnectionOnCodexHost,
   DEFAULT_AGENT_ACCESS,
   platformForClient,
   type AgentConnection,
@@ -542,7 +543,10 @@ function signedInHere(option: Option, connection: AgentConnection): boolean {
   // A named tab waits for its own agent; Other takes any that signs in.
   const expected = platformOf(option)
   return (
-    expected === "other" || agentConnectionPlatform(connection) === expected
+    expected === "other" ||
+    agentConnectionPlatform(connection) === expected ||
+    // Codex CLI signs in as the Codex client, which ChatGPT Desktop shares.
+    (expected === "codex" && agentConnectionOnCodexHost(connection))
   )
 }
 

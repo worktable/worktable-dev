@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setGrepTimeLimitForTests } from "./doc-markdown-projection.ts"
+import { createRegisteredDocument } from "./document-write-service.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import { setDocArchived, writeSpace } from "./store.ts"
@@ -125,7 +126,18 @@ describe("line-addressed Doc reads", () => {
       join(docs, "plans", "brief.json"),
       JSON.stringify(richDoc("Closing note."))
     )
+    // A Doc that was kept as one, then broken on disk, stays a Doc that
+    // can't be read; a malformed .json nothing kept is a plain file.
+    await createRegisteredDocument({
+      spaceId,
+      path: "plans/broken",
+      format: { id: "worktable.rich-text", sourceVersion: 1 },
+      bytes: new TextEncoder().encode(JSON.stringify(richDoc("Kept."))),
+      createdBy: "test",
+      source: "test",
+    })
     await writeFile(join(docs, "plans", "broken.json"), "{")
+    await writeFile(join(docs, "plans", "stray.json"), "{")
     await writeFile(join(docs, "notes", "field.md"), "A beacon was sighted.")
     await writeFile(join(docs, "notes", "old.md"), "The old beacon log.")
     await setDocArchived(spaceId, "notes/old", true, "test")

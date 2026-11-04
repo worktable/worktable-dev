@@ -547,12 +547,6 @@ documentsRouter.get("/file", requireScope("documents:read"), async (c) => {
     if (result.kind === "not-found") {
       return c.json({ error: "File not found.", code: "NOT_FOUND" }, 404)
     }
-    if (result.kind === "too-large") {
-      return c.json(
-        { error: "This file is too large to read here.", code: "PAYLOAD_TOO_LARGE" },
-        413
-      )
-    }
     if (result.kind === "conflict") {
       return c.json(
         { error: "This file can't be read safely.", code: "CONFLICT" },

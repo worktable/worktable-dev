@@ -207,7 +207,7 @@ export type ShareVisitor = z.infer<typeof ShareVisitor>
 /** A file link's token: 32 random bytes, base64url. */
 export const FileLinkToken = z.string().regex(/^[A-Za-z0-9_-]{43}$/)
 
-/** The most a file link carries, as the device allows: 64 MiB. */
+/** The most a file link uploads, as the device allows: 64 MiB. */
 export const LINKED_FILE_LINK_MAX_BYTES = 64 * 1024 * 1024
 
 /**
@@ -215,8 +215,11 @@ export const LINKED_FILE_LINK_MAX_BYTES = 64 * 1024 * 1024
  * LINKED_REQUEST_MAX_BYTES, each its own signed request. An upload piece
  * says where it starts and the file's whole size; a download piece asks
  * from where, and the device answers with up to one piece and the size.
+ * A download streams from the device, so it may start anywhere in a file
+ * of any size; an upload is held whole and stays within the limit.
  */
-const FileLinkOffset = z.number().int().min(0).max(LINKED_FILE_LINK_MAX_BYTES)
+const FileLinkOffset = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER)
+const FileLinkUploadSize = z.number().int().min(0).max(LINKED_FILE_LINK_MAX_BYTES)
 
 /**
  * The whole file's size, on every download piece. Each piece's ETag names
@@ -274,7 +277,7 @@ export const LinkedRequestGrant = z.discriminatedUnion("kind", [
       capability: FileLinkToken,
       offset: FileLinkOffset,
       /** On an upload piece, the whole file's size. */
-      total: FileLinkOffset.optional(),
+      total: FileLinkUploadSize.optional(),
     })
     .strict(),
 ])

@@ -34,7 +34,11 @@ import {
   readDocumentVersions,
   readRawDocumentSource,
 } from "../document-page-service.ts"
-import { analyzeDocumentPath } from "../document-path.ts"
+import {
+  analyzeDocumentPath,
+  DOC_NAME_MESSAGE,
+  pathRefusal,
+} from "../document-path.ts"
 import { listDocuments, resolveDocumentNavigation } from "../document-query.ts"
 import {
   applyLifetimeOnCreate,
@@ -601,7 +605,14 @@ documentsRouter.put("/file", requireScope("documents:write"), async (c) => {
     return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
   }
   const spaceId = c.req.param("spaceId") ?? ""
-  const path = exactDocumentPath(c.req.query("path"))
+  const requested = c.req.query("path")
+  // A refused name says which rule it breaks. A new name's portability is
+  // checked once the write knows whether the file is there.
+  const refusal = requested ? pathRefusal(requested) : null
+  if (refusal) {
+    return c.json({ error: refusal.message, code: refusal.code }, 400)
+  }
+  const path = exactDocumentPath(requested)
   if (!path) {
     return c.json(
       { error: "Enter a valid file path.", code: "VALIDATION_ERROR" },
@@ -609,13 +620,7 @@ documentsRouter.put("/file", requireScope("documents:write"), async (c) => {
     )
   }
   if (!namesAFile(path)) {
-    return c.json(
-      {
-        error: "This name is for a Doc. Create Docs with the Doc tools.",
-        code: "UNSUPPORTED_MEDIA_TYPE",
-      },
-      415
-    )
+    return c.json({ error: DOC_NAME_MESSAGE, code: "DOC_NAME" }, 415)
   }
   const declared = Number(c.req.header("content-length") ?? "0")
   if (declared > FILE_UPLOAD_MAX_BYTES) {
@@ -672,7 +677,7 @@ documentsRouter.put("/file", requireScope("documents:write"), async (c) => {
     }
     if (error instanceof DocumentWriteError) {
       return c.json(
-        { error: error.message, code: error.reason.toUpperCase() },
+        { error: error.message, code: error.code },
         documentWriteStatus(error)
       )
     }
@@ -762,7 +767,7 @@ documentsRouter.get(
     } catch (error) {
       if (error instanceof DocumentWriteError) {
         return c.json(
-          { error: error.message, code: error.reason.toUpperCase() },
+          { error: error.message, code: error.code },
           documentWriteStatus(error)
         )
       }
@@ -810,7 +815,7 @@ documentsRouter.post("/", requireScope("documents:write"), async (c) => {
   } catch (error) {
     if (error instanceof DocumentWriteError) {
       return c.json(
-        { error: error.message, code: error.reason.toUpperCase() },
+        { error: error.message, code: error.code },
         documentWriteStatus(error)
       )
     }
@@ -844,7 +849,7 @@ documentsRouter.put("/", requireScope("documents:write"), async (c) => {
   } catch (error) {
     if (error instanceof DocumentWriteError) {
       return c.json(
-        { error: error.message, code: error.reason.toUpperCase() },
+        { error: error.message, code: error.code },
         documentWriteStatus(error)
       )
     }
@@ -881,7 +886,7 @@ documentsRouter.post(
     } catch (error) {
       if (error instanceof DocumentWriteError) {
         return c.json(
-          { error: error.message, code: error.reason.toUpperCase() },
+          { error: error.message, code: error.code },
           documentWriteStatus(error)
         )
       }
@@ -940,7 +945,7 @@ documentsRouter.post(
     } catch (error) {
       if (error instanceof DocumentWriteError) {
         return c.json(
-          { error: error.message, code: error.reason.toUpperCase() },
+          { error: error.message, code: error.code },
           documentWriteStatus(error)
         )
       }
@@ -972,7 +977,7 @@ documentsRouter.post("/move", requireScope("documents:write"), async (c) => {
   } catch (error) {
     if (error instanceof DocumentWriteError) {
       return c.json(
-        { error: error.message, code: error.reason.toUpperCase() },
+        { error: error.message, code: error.code },
         documentWriteStatus(error)
       )
     }
@@ -1015,7 +1020,7 @@ documentsRouter.post(
     } catch (error) {
       if (error instanceof DocumentWriteError) {
         return c.json(
-          { error: error.message, code: error.reason.toUpperCase() },
+          { error: error.message, code: error.code },
           documentWriteStatus(error)
         )
       }
@@ -1110,7 +1115,7 @@ documentsRouter.post("/archive", requireScope("documents:write"), async (c) => {
   } catch (error) {
     if (error instanceof DocumentWriteError) {
       return c.json(
-        { error: error.message, code: error.reason.toUpperCase() },
+        { error: error.message, code: error.code },
         documentWriteStatus(error)
       )
     }
@@ -1141,7 +1146,7 @@ documentsRouter.post("/restore", requireScope("documents:write"), async (c) => {
   } catch (error) {
     if (error instanceof DocumentWriteError) {
       return c.json(
-        { error: error.message, code: error.reason.toUpperCase() },
+        { error: error.message, code: error.code },
         documentWriteStatus(error)
       )
     }
@@ -1194,7 +1199,7 @@ documentsRouter.post("/delete", requireScope("documents:write"), async (c) => {
   } catch (error) {
     if (error instanceof DocumentWriteError) {
       return c.json(
-        { error: error.message, code: error.reason.toUpperCase() },
+        { error: error.message, code: error.code },
         documentWriteStatus(error)
       )
     }

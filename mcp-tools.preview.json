@@ -1922,28 +1922,10 @@
           ]
         },
         "byteLength": {
-          "anyOf": [
-            {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            }
-          ]
+          "description": "The file's size in bytes.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "sourceRevision": {
           "anyOf": [
@@ -2194,6 +2176,30 @@
             "status",
             "kind",
             "sourceRevision"
+          ],
+          "additionalProperties": {}
+        },
+        "noHistory": {
+          "description": "Present when the file's current content isn't kept as a version, with why: content larger than maxBytes isn't versioned. Versions from before the file grew stay in its history.",
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "const": "too-large"
+            },
+            "maxBytes": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "reason",
+            "maxBytes",
+            "message"
           ],
           "additionalProperties": {}
         },
@@ -3117,7 +3123,7 @@
   {
     "name": "worktable_files_write",
     "title": "Write a Worktable file",
-    "description": "Create a file, or replace one's content when expectedRevision is given, from source, from an earlier version with fromVersionId, or from an uploaded file. A new file needs format (worktable.file for a plain file) and lifetime. In ChatGPT, pass the user's attached file as file. With a shell and no source, the result gives a one-time link that takes the bytes with curl -T within 10 minutes, up to 64 MiB; to replace a file through it, pass ifExists replace with expectedRevision. Replacing a CSV or TSV reports what changed row by row. Replaced content stays in version history.",
+    "description": "Create a file, or replace one's content, from source, from an earlier version with fromVersionId, or from an uploaded file. A new file needs format (worktable.file for a plain file) and lifetime. Every replace needs expectedRevision, the sourceRevision from your latest worktable_files_read; one the file is no longer at is refused. In ChatGPT, pass the user's attached file as file. With a shell and no source, the result gives a one-time link that takes the bytes with curl -T within 10 minutes, up to 64 MiB; to replace a file through it, pass ifExists replace with expectedRevision. Replacing a CSV or TSV reports what changed row by row. Replaced content stays in version history.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3179,7 +3185,7 @@
           "maxLength": 2048
         },
         "expectedRevision": {
-          "description": "The revision from your latest read. Required to replace or restore an existing file; omit when creating.",
+          "description": "The sourceRevision from your latest worktable_files_read. Required to replace or restore an existing file; omit when creating.",
           "type": "string",
           "minLength": 1,
           "maxLength": 256
@@ -5384,7 +5390,7 @@
   {
     "name": "worktable_html_write",
     "title": "Write a Worktable HTML Doc",
-    "description": "Create an HTML Doc, or with htmlId change one's HTML, name, description or permissions. A new HTML Doc needs name, lifetime and html. Create and update may return an opt-in PNG preview; a failed preview never undoes the save. Read worktable_guidance topic html before writing one.",
+    "description": "Create an HTML Doc, or with htmlId change one's HTML, name, description or permissions. A new HTML Doc needs name, lifetime and html. Changing html needs expectedRevision, the revision from your latest worktable_html_read; one the HTML Doc is no longer at is refused. Create and update may return an opt-in PNG preview; a failed preview never undoes the save. Read worktable_guidance topic html before writing one.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -5549,6 +5555,12 @@
         "htmlId": {
           "description": "HTML Doc to change. Omit to create one.",
           "type": "string"
+        },
+        "expectedRevision": {
+          "description": "The revision from your latest worktable_html_read. Required to replace an HTML Doc's html; refused if the HTML Doc changed since.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
         }
       },
       "required": [

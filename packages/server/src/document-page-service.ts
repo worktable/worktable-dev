@@ -16,6 +16,7 @@ import type {
   DocumentProvenance,
   DocumentRenderDisposition,
   DocumentSharingSummary,
+  DocumentSource,
   DocumentVersionSummary,
   FileNoHistory,
 } from "@worktable/types"
@@ -729,6 +730,8 @@ export interface CurrentFile {
   /** The file's path, after any move its asked-for path followed. */
   path: string
   format: DocumentFormatClaim
+  /** Where its bytes are kept, which its sourceRevision names. */
+  source: DocumentSource
   fileName: string
   /** The file at its current revision, not yet open. */
   pinned: PinnedFile
@@ -780,6 +783,7 @@ export async function resolveCurrentFile(options: {
             documentId: handle.documentId,
             path: handle.document.path,
             format: handle.document.format,
+            source: handle.source,
             fileName: sourceFileName(handle),
             pinned: { path: absolutePath, ...now },
           },

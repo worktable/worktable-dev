@@ -86,14 +86,22 @@ async function call<T = unknown>(
   return json as T
 }
 
-function save(at: Date, actor: string, text: string): Promise<unknown> {
+/** Save the whole Doc as a writer does: from the revision it read, if any. */
+async function save(at: Date, actor: string, text: string): Promise<unknown> {
   setSystemTime(at)
+  const read = await app.fetch(
+    new Request(`http://localhost/api/spaces/${spaceId}/docs/notes`)
+  )
+  const expectedRevision = read.ok
+    ? ((await read.json()) as { revision?: string }).revision
+    : undefined
   return call("PUT", "notes", {
     actor,
     body: {
       content: [
         { type: "paragraph", content: [{ type: "text", text, styles: {} }] },
       ],
+      ...(expectedRevision ? { expectedRevision } : {}),
     },
   })
 }

@@ -222,6 +222,7 @@ function transferView(job: WorkspaceTransferJob) {
         source: job.manifest.source,
         history: job.manifest.history,
         viewer: job.manifest.viewer,
+        ...(job.manifest.leftOut ? { leftOut: job.manifest.leftOut } : {}),
         contentCheckpoint: job.manifest.integrity.contentCheckpoint,
         files: job.manifest.integrity.files.length,
         bytes: job.manifest.integrity.files.reduce(

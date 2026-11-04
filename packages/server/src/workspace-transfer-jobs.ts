@@ -425,6 +425,8 @@ function runExport(id: string): void {
           },
           force: true,
           withCaptureBarrier: withWorkspaceExportSnapshot,
+          // A person's export takes everything it can, and says what it left out.
+          leaveOutLinks: true,
         })
       )
       await updateJob(job, {

@@ -39,6 +39,12 @@ async function req(app: Hono, method: string, path: string, body?: unknown) {
   return { status: res.status, text, json: contentType.includes("json") && text ? JSON.parse(text) : null, headers: res.headers };
 }
 
+/** The revision a replace names: the ETag of the source a client read. */
+async function sourceRevision(app: Hono, path: string): Promise<string> {
+  const read = await app.fetch(new Request(`http://localhost${path}/content?format=raw`));
+  return (read.headers.get("etag") ?? "").replace(/"/g, "");
+}
+
 const testDir = join(tmpdir(), `worktable-widget-routes-${Date.now()}`);
 const appDir = join(tmpdir(), `worktable-widget-routes-app-${Date.now()}`);
 
@@ -125,13 +131,35 @@ describe("widget REST routes", () => {
     expect(permissionWarnings[0].hint).toContain("permissions.records.tasks.create");
     expect(permissionWarnings[0].suggestedPermissions.records.tasks.create).toBe(true);
 
-    const updateRes = await req(app, "PUT", "/api/spaces/meta/widgets/record-permission-hints", {
+    // A replace names the revision of the source it read.
+    const path = "/api/spaces/meta/widgets/record-permission-hints";
+    const read = await sourceRevision(app, path);
+    expect(read).toMatch(/^html:sha256:/);
+    const update = {
       name: "Record Permission Hints",
       html,
       permissions: { records: { tasks: { read: true, create: true } } },
-    });
+    };
+    const unnamed = await req(app, "PUT", path, update);
+    expect(unnamed.status).toBe(428);
+    expect(unnamed.json.code).toBe("REVISION_REQUIRED");
+    const updateRes = await req(app, "PUT", path, { ...update, expectedRevision: read });
     expect(updateRes.status).toBe(200);
     expect(updateRes.json.warnings.some((issue: { code: string }) => issue.code === "missing_record_permission")).toBe(false);
+
+    // Someone else replaced it since this writer read it: refused with the
+    // revision it is at now, and their HTML stays.
+    const replaced = await req(app, "PUT", path, {
+      ...update,
+      html: html.replace("Load", "Reload"),
+      expectedRevision: await sourceRevision(app, path),
+    });
+    expect(replaced.status).toBe(200);
+    const stale = await req(app, "PUT", path, { ...update, expectedRevision: read });
+    expect(stale.status).toBe(409);
+    expect(stale.json).toMatchObject({ code: "REVISION_CHANGED", revision: replaced.json.revision });
+    expect(await sourceRevision(app, path)).toBe(replaced.json.revision);
+    expect((await req(app, "GET", `${path}/content?format=raw`)).text).toContain("Reload");
   });
 
   it("classifies polish-only validation feedback as hints", async () => {
@@ -389,6 +417,7 @@ describe("widget REST routes", () => {
 
     const revoked = await req(app, "PUT", "/api/spaces/meta/widgets/network-data", {
       name: "Network data", html, permissions: { network: false },
+      expectedRevision: await sourceRevision(app, "/api/spaces/meta/widgets/network-data"),
     });
     expect(revoked.status).toBe(200);
     // Same source, new CSP: a new revision, and the old one is not kept.
@@ -407,6 +436,7 @@ describe("widget REST routes", () => {
       const rejected = await req(app, "PUT", "/api/spaces/meta/widgets/network-data", {
         name: "Network data", html: `<!doctype html><html><head></head><body>${external}</body></html>`,
         permissions: { network: true },
+        expectedRevision: await sourceRevision(app, "/api/spaces/meta/widgets/network-data"),
       });
       expect(rejected.status).toBe(400);
       expect(rejected.json.warnings.some((issue: { severity: string; code: string }) => issue.severity === "error" && issue.code.startsWith("external_"))).toBe(true);

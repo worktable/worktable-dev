@@ -46,10 +46,22 @@ codex plugin marketplace add worktable/worktable-dev
 codex plugin add worktable@worktable
 ```
 
+### Gemini CLI
+
+```text
+gemini extensions install https://github.com/worktable/worktable-plugin
+```
+
+### Kiro
+
+In Kiro, choose **Add Custom Power**, then **Import power from GitHub**, and
+enter `https://github.com/worktable/worktable-plugin`.
+
 ### Other agents
 
-Install `plugins/worktable` as an Agent Plugins 1.0 package. Its root contains
-`plugin.json`, `mcp.json`, and `skills/`.
+Install [worktable/worktable-plugin](https://github.com/worktable/worktable-plugin)
+as an Agent Plugins 1.0 package. Its root contains `plugin.json`, `mcp.json`,
+and `skills/`.
 
 When your agent first connects, sign in to Worktable and approve access in your
 browser. Your agent host stores the resulting credentials; this package

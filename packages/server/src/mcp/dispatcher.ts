@@ -63,7 +63,6 @@ import {
 } from "../workspace.ts"
 import {
   listWidgets,
-  readWidget,
   readWidgetDocument,
   setWidgetArchived,
   updateWidgetMetadata,
@@ -193,6 +192,7 @@ import {
 import { withResultMedia } from "./media.ts"
 import { filesEnabled } from "../files-enabled.ts"
 import { fileDownloadLink, fileUploadLink } from "./file-links.ts"
+import { readCurrentFileSource } from "../current-file-source.ts"
 import {
   FILE_UPLOAD_MAX_BYTES,
   FileReplaceRefused,
@@ -202,7 +202,7 @@ import {
 } from "../file-uploads.ts"
 import { fetchChatGptFile, type ChatGptFile } from "./chatgpt-files.ts"
 import { discardStagedFile } from "../staged-file.ts"
-import { analyzeDocumentPath } from "../document-path.ts"
+import { pathRefusal } from "../document-path.ts"
 import {
   importIntoRecords,
   proposeImport,
@@ -246,8 +246,8 @@ import { moveDocumentFolder } from "../document-folder-move.ts"
 import { setDocumentFolderArchived } from "../document-folder-archive.ts"
 import { deleteDocumentFolder } from "../document-folder-delete.ts"
 import { wsManager } from "../ws.ts"
-import { docSnapshotRevision } from "../document-content-revision.ts"
-import { FORMAT_SPEC } from "./format-spec.ts"
+import { docSnapshotRevision, htmlSourceRevision } from "../document-content-revision.ts"
+import { FILES_SPEC, FORMAT_SPEC } from "./format-spec.ts"
 import {
   isMarkdownSafe,
   extractMarkdownHeadings,
@@ -1384,10 +1384,28 @@ async function _dispatchOperationInner(
           noHistory: large.noHistory,
         }
       }
-      const result = await readRegisteredDocumentSource({
-        spaceId: args["spaceId"] as string,
-        path: args["path"] as string,
-      })
+      // A plain file's bytes are read once the Space's lock is released,
+      // all at one revision; anything else is read as before.
+      const file = namesAFile(args["path"] as string)
+        ? await readCurrentFileSource({
+            spaceId: args["spaceId"] as string,
+            path: args["path"] as string,
+            bytes: true,
+          })
+        : null
+      const result = file?.bytes
+        ? {
+            documentId: file.current.documentId,
+            path: file.current.path,
+            format: file.current.format,
+            bytes: file.bytes,
+            sourceRevision: file.sourceRevision,
+            fileRevision: file.current.pinned.revision,
+          }
+        : await readRegisteredDocumentSource({
+            spaceId: args["spaceId"] as string,
+            path: args["path"] as string,
+          })
       // A file reads as what it is: an image the model can
       // see, or text, rather than base64.
       if (
@@ -1483,9 +1501,14 @@ async function _dispatchOperationInner(
         throw new Error("File features are turned off on this Worktable.")
       }
       const file = args["file"] as ChatGptFile | undefined
-      if (!analyzeDocumentPath(path).safe || !namesAFile(path)) {
+      // A refused name says which rule it breaks. Only an unsafe or hidden
+      // one is refused before the bytes: a replace may keep a name that
+      // isn't portable.
+      const refusal = pathRefusal(path)
+      if (refusal) throw new Error(refusal.message)
+      if (!namesAFile(path)) {
         throw new Error(
-          "Upload a file by its path with its extension, such as design/logo.png. Docs are created with create."
+          "This name is for a Doc. Upload a file by its path with its extension, such as design/logo.png. Docs are created with create."
         )
       }
       const ifExists = (args["ifExists"] as "fail" | "keep_both" | "replace" | undefined) ?? "fail"
@@ -1785,35 +1808,24 @@ async function _dispatchOperationInner(
         }
         const widgetId = aliasResolution.path
         return withWidgetReadLock(spaceId, widgetId, async () => {
-          if (!includeHtml) {
-            const { data: widget, error } = await readWidget(spaceId, widgetId)
-            if (error || !widget) {
-              throw new Error(
-                (await plainHtmlFileHint(spaceId, widgetId)) ??
-                  error ??
-                  "Widget not found"
-              )
-            }
-            return {
-              widget: {
-                ...widget,
-                ...(await htmlDocumentLifetimeV2(spaceId, widget.id)),
-              },
-            }
-          }
           const { data, error } = await readWidgetDocument(spaceId, widgetId)
           if (error || !data) {
             throw new Error(
               (await plainHtmlFileHint(spaceId, widgetId)) ??
                 error ??
-                "Widget content not found"
+                (includeHtml ? "Widget content not found" : "Widget not found")
             )
           }
+          const widget = {
+            ...data.widget,
+            ...(await htmlDocumentLifetimeV2(spaceId, data.widget.id)),
+          }
+          // The revision a replace of its html names, with or without it.
+          const revision = htmlSourceRevision(data.sourceBytes)
+          if (!includeHtml) return { widget, revision }
           return {
-            widget: {
-              ...data.widget,
-              ...(await htmlDocumentLifetimeV2(spaceId, data.widget.id)),
-            },
+            widget,
+            revision,
             html: data.html,
             warnings: validateWidgetHtml(data.html, data.widget.permissions),
           }
@@ -2290,7 +2302,14 @@ async function _dispatchOperationInner(
         widgetId,
         data: created.data,
       })
-      const result = { widgetId, widget: created.data, warnings, ...lifetime }
+      const result = {
+        widgetId,
+        widget: created.data,
+        // What a replace of its html names; the source is the html's bytes.
+        revision: htmlSourceRevision(new TextEncoder().encode(args["html"] as string)),
+        warnings,
+        ...lifetime,
+      }
       if (!args["preview"]) return result
       return previewSnapshot
         ? {
@@ -2314,6 +2333,7 @@ async function _dispatchOperationInner(
       const spaceId = args["spaceId"] as string
       const widgetId = args["widgetId"] as string
       const html = args["html"] as string
+      const expectedRevision = args["expectedRevision"] as string | undefined
       let previewSnapshot: HtmlPreviewSnapshot | undefined
       let previewError: unknown
       const updated = await withCanonicalHtmlDocumentPath(
@@ -2321,11 +2341,12 @@ async function _dispatchOperationInner(
         widgetId,
         () =>
           withWidgetWriteLock(spaceId, widgetId, async () => {
-            const { data: existing, error } = await readWidget(
+            const { data: document, error } = await readWidgetDocument(
               spaceId,
               widgetId
             )
-            if (error || !existing) throw new Error(error ?? "Widget not found")
+            if (error || !document) throw new Error(error ?? "Widget not found")
+            const existing = document.widget
             const granted = authorizeHtmlPermissions({
               requested: args["permissions"] as WidgetFile["permissions"],
               existing,
@@ -2333,6 +2354,23 @@ async function _dispatchOperationInner(
               identity,
               scopes: identity.scopes,
             })
+            // A replace names the revision it is based on. The preview
+            // surface says so and requires it; the released one, whose
+            // listing doesn't, still refuses a stale one when given.
+            const current = htmlSourceRevision(document.sourceBytes)
+            if (expectedRevision === undefined && context.surface === "preview") {
+              throw new DocEditError(
+                "revision_required",
+                `${widgetId} already exists. Read it with worktable_html_read and pass its revision as expectedRevision to replace its html.`
+              )
+            }
+            if (expectedRevision !== undefined && expectedRevision !== current) {
+              throw new DocEditError(
+                "revision_conflict",
+                `${widgetId} changed since revision ${expectedRevision}. Read it again and reapply your change.`,
+                { currentRevision: current }
+              )
+            }
             const permissions = granted.permissions
             const warnings = validateWidgetHtml(html, permissions)
             const blockingIssue = getBlockingWidgetIssue(warnings)
@@ -2379,7 +2417,12 @@ async function _dispatchOperationInner(
                 previewError = error
               }
             }
-            return { data: result.data, warnings }
+            // The source is stored as the html's UTF-8 bytes.
+            return {
+              data: result.data,
+              warnings,
+              revision: htmlSourceRevision(new TextEncoder().encode(html)),
+            }
           }),
         { materialize: true }
       )
@@ -2392,6 +2435,7 @@ async function _dispatchOperationInner(
       const result = {
         widgetId,
         widget: updated.data,
+        revision: updated.revision,
         warnings: updated.warnings,
       }
       if (!args["preview"]) return result
@@ -3308,7 +3352,10 @@ async function _dispatchOperationInner(
         guide: DRAWING_GUIDE,
       }
     case "guidance.format_spec": {
-      const spec = FORMAT_SPEC.trim()
+      const spec =
+        context.surface === "preview"
+          ? `${FORMAT_SPEC.trim()}\n\n${FILES_SPEC}`
+          : FORMAT_SPEC.trim()
       return {
         spec,
       }

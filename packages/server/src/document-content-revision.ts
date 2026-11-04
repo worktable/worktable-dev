@@ -105,6 +105,15 @@ export function htmlContentRevisionOf(document: {
   })
 }
 
+/**
+ * The revision a replace of an HTML Doc names: a hash of its exact source,
+ * `html:sha256:…`, as a Doc's is `md:sha256:…`. Unlike the frame's revision,
+ * it changes only when the source does, never with a release or fonts.
+ */
+export function htmlSourceRevision(sourceBytes: Uint8Array): string {
+  return `html:sha256:${sha256Hex(sourceBytes)}`
+}
+
 /** The revision of the bytes a Doc read (readDocSourceSnapshot) parsed. */
 export function docSnapshotRevision(snapshot: {
   result: { storedAs: "md" | "json" | null }

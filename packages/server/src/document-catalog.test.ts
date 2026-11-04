@@ -207,10 +207,24 @@ describe("shadow document catalog", () => {
     expect(titles).toContainEqual(["plan.json", "plan.json"])
   })
 
-  it("lists every visible file by its whole name once files are on", async () => {
+  it("lists every visible file and Doc by its whole name once files are on", async () => {
     const docs = join(root, "spaces", spaceId, "docs")
     await mkdir(join(docs, "onboarding", "signup-flow"), { recursive: true })
     await mkdir(join(docs, ".git"))
+    // Hidden Docs, made on disk or by an earlier Worktable that recorded one.
+    await mkdir(join(docs, ".notes"))
+    await writeFile(join(docs, ".notes", "plan.md"), "# Plan")
+    await writeFile(join(docs, ".hidden.md"), "# Hidden")
+    await updateDocumentInventory(spaceId, {
+      upsert: [
+        {
+          documentId: mintDocumentId(),
+          path: ".notes/plan",
+          format: { id: "worktable.markdown", sourceVersion: 1 },
+          source: { kind: "file", relativePath: "docs/.notes/plan.md" },
+        },
+      ],
+    })
     await writeFile(join(docs, "onboarding", "signup-flow.md"), "# Signup flow")
     await writeFile(
       join(docs, "onboarding", "signup-flow", "signup-error.png"),

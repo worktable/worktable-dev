@@ -16,8 +16,10 @@ import {
   onWorkspaceChange,
   type ChangeEvent,
   type ChangeHandler,
+  type JsonSourceChangeEvent,
   threadEventLocation,
 } from "./workspace-events.ts"
+import { classifiedJsonSourceEvent } from "./document-filesystem-coordinator.ts"
 import {
   documentSpaceForPath,
   noteSpaceChanged,
@@ -40,7 +42,7 @@ export interface WorkspaceWatcherOptions {
   /** Route watcher-originated document activity through its coordinator. */
   onDocumentChange?: (event: DocumentFilesystemChangeEvent) => void
   /** Observe a queued debounce boundary; used to coordinate real-I/O tests. */
-  onPendingChange?: (event: ChangeEvent | null) => void
+  onPendingChange?: (event: WatcherEvent | null) => void
   watch?: (
     directory: string,
     listener: (eventType: string, filename: string | null) => void,
@@ -53,10 +55,12 @@ export interface WorkspaceWatcherOptions {
   cancel?: (timer: ReturnType<typeof setTimeout>) => void
 }
 
-export type DocumentFilesystemChangeEvent = Extract<
-  ChangeEvent,
-  { type: "doc" | "widget" | "documentCorpus" }
->
+/** What the watcher reports: a workspace change, or a `.json` to classify. */
+export type WatcherEvent = ChangeEvent | JsonSourceChangeEvent
+
+export type DocumentFilesystemChangeEvent =
+  | Extract<ChangeEvent, { type: "doc" | "widget" | "documentCorpus" }>
+  | JsonSourceChangeEvent
 
 // ============================================================
 // Types
@@ -133,7 +137,7 @@ export function parseChangedPath(
   spacesBase: string,
   filename: string | null,
   watchedDir: string
-): ChangeEvent | null {
+): WatcherEvent | null {
   if (!filename) return null
 
   // watchedDir is the directory being watched
@@ -258,8 +262,8 @@ export function parseChangedPath(
     const docParts = parts.slice(2)
     const lastPart = docParts[docParts.length - 1]
     if (lastPart?.endsWith(".json")) {
-      const docPath = docParts.join("/").replace(/\.json$/, "")
-      return { type: "doc", spaceId, docPath }
+      // A Doc or a plain file: decided before dispatch, by its whole name.
+      return { type: "jsonSource", spaceId, file: docParts.join("/") }
     }
     if (lastPart?.endsWith(".md")) {
       const docPath = docParts.join("/").replace(/\.md$/, "")
@@ -538,14 +542,24 @@ export class WorkspaceWatcher {
     for (const off of [...this.handlerOffs]) off()
   }
 
-  private emit(event: ChangeEvent): void {
+  private emit(event: WatcherEvent): void {
     if (
       this.onDocumentChange &&
       (event.type === "doc" ||
         event.type === "widget" ||
-        event.type === "documentCorpus")
+        event.type === "documentCorpus" ||
+        event.type === "jsonSource")
     ) {
       this.onDocumentChange(event)
+      return
+    }
+    if (event.type === "jsonSource") {
+      // Without a coordinator, decide what it is before anyone hears of it.
+      void classifiedJsonSourceEvent(event)
+        .then(notifyWorkspaceChange)
+        .catch((error: unknown) =>
+          console.error("[WorkspaceWatcher] JSON change dropped:", logError(error))
+        )
       return
     }
     notifyWorkspaceChange(event)

@@ -167,6 +167,18 @@ function pushOnce(
   diagnostics.push(diagnostic)
 }
 
+export interface DocumentPathOptions {
+  enforceNewPathGrammar?: boolean
+  /**
+   * The path names a file by its whole filename. A `.json` there is the
+   * file's own name, not a Doc's source: JSON that isn't Doc blocks is a
+   * plain file.
+   */
+  fileName?: boolean
+}
+
+const FILE_NAME_SUFFIX = ".json"
+
 const ANALYSIS_MEMO_MAX_ENTRIES = 10_000
 const analyses = new Map<string, DocumentPathAnalysis>()
 
@@ -177,12 +189,12 @@ const analyses = new Map<string, DocumentPathAnalysis>()
  */
 export function analyzeDocumentPath(
   input: string,
-  options?: { enforceNewPathGrammar?: boolean }
+  options?: DocumentPathOptions
 ): DocumentPathAnalysis {
   if (input.length > DOCUMENT_PATH_MAX_BYTES) {
     return analyzeDocumentPathUncached(input, options)
   }
-  const key = `${options?.enforceNewPathGrammar ? 1 : 0}${input}`
+  const key = `${options?.enforceNewPathGrammar ? 1 : 0}${options?.fileName ? 1 : 0}${input}`
   let analysis = analyses.get(key)
   if (!analysis) {
     analysis = analyzeDocumentPathUncached(input, options)
@@ -197,7 +209,7 @@ export function analyzeDocumentPath(
 
 function analyzeDocumentPathUncached(
   input: string,
-  options?: { enforceNewPathGrammar?: boolean }
+  options?: DocumentPathOptions
 ): DocumentPathAnalysis {
   const diagnostics: DocumentPathDiagnostic[] = []
   if (
@@ -291,6 +303,7 @@ function analyzeDocumentPathUncached(
   const lowerPath = canonicalPath.toLowerCase()
   if (options?.enforceNewPathGrammar) {
     for (const suffix of RESERVED_DOCUMENT_SOURCE_SUFFIXES) {
+      if (options.fileName && suffix === FILE_NAME_SUFFIX) continue
       if (lowerPath.endsWith(suffix)) {
         pushOnce(diagnostics, { code: "registered-extension" })
         break

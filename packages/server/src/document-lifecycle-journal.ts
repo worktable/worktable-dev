@@ -84,6 +84,7 @@ import {
   documentPathKeyIsBelow,
   remapDocumentPathPrefix,
 } from "./document-path.ts"
+import { jsonSourceIsDocSync } from "./json-source-kind.ts"
 import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
@@ -2821,6 +2822,7 @@ async function prepareExactRename(
   }
   const targetAnalysis = analyzeDocumentPath(to, {
     enforceNewPathGrammar: true,
+    fileName: source.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file,
   })
   if (
     !targetAnalysis.safe ||
@@ -3141,7 +3143,10 @@ async function preparePrefixRename(
         "Document folder contents changed before the move"
       )
     }
-    const target = analyzeDocumentPath(to, { enforceNewPathGrammar: true })
+    const target = analyzeDocumentPath(to, {
+      enforceNewPathGrammar: true,
+      fileName: source.descriptor.format.id === BUILTIN_DOCUMENT_FORMATS.file,
+    })
     if (
       !target.safe ||
       !target.portable ||
@@ -4708,6 +4713,9 @@ function validatePrefixRenameJournalPaths(journal: PrefixRenameJournal): void {
     const from = analyzeDocumentPath(entry.from.logicalPath)
     const to = analyzeDocumentPath(entry.to.logicalPath, {
       enforceNewPathGrammar: true,
+      fileName:
+        entry.to.source.kind === "file" &&
+        entry.to.source.relativePath === `docs/${entry.to.logicalPath}`,
     })
     if (
       !from.safe ||
@@ -5129,6 +5137,9 @@ function validateJournalPaths(journal: DocumentLifecycleJournal): void {
   const from = analyzeDocumentPath(journal.from.logicalPath)
   const to = analyzeDocumentPath(journal.to.logicalPath, {
     enforceNewPathGrammar: journal.operationType === "exact-rename",
+    fileName:
+      journal.to.source.kind === "file" &&
+      journal.to.source.relativePath === `docs/${journal.to.logicalPath}`,
   })
   if (!from.safe || from.canonicalPath !== journal.from.logicalPath) {
     throw new Error("document lifecycle source path is unsafe")
@@ -7746,29 +7757,34 @@ function verifyRecoveryCatalogCheckpoint(
       )
     }
   }
-  const maybeClaim = (path: string, source: string): void => {
+  const relevant = (path: string): boolean => {
     const comparisonKey = analyzeDocumentPath(path).comparisonKey
-    if (
+    return Boolean(
       comparisonKey &&
-      (comparisonKeys.has(comparisonKey) ||
-        (archivePrefixKey &&
-          documentPathKeyIsAtOrBelow(comparisonKey, archivePrefixKey)) ||
-        (deletePrefixKey &&
-          documentPathKeyIsAtOrBelow(comparisonKey, deletePrefixKey)))
-    ) {
-      claims.push({ path, source })
-    }
+        (comparisonKeys.has(comparisonKey) ||
+          (archivePrefixKey &&
+            documentPathKeyIsAtOrBelow(comparisonKey, archivePrefixKey)) ||
+          (deletePrefixKey &&
+            documentPathKeyIsAtOrBelow(comparisonKey, deletePrefixKey)))
+    )
+  }
+  const maybeClaim = (path: string, source: string): void => {
+    if (relevant(path)) claims.push({ path, source })
   }
   // Whether files took part is a fact of the journal, not of the preview
   // switch now: recovery must settle what the operation planned either way.
   const plannedEntries: readonly LifecycleEndpoint[] =
     expectedPrefixEntries ??
     ("source" in endpoint ? [endpoint as LifecycleEndpoint] : [])
-  const anyFile = plannedEntries.some(
-    (entry) =>
+  const plannedFiles = new Set(
+    plannedEntries.flatMap((entry) =>
       entry.source.kind === "file" &&
       entry.source.relativePath === `docs/${entry.logicalPath}`
+        ? [entry.source.relativePath]
+        : []
+    )
   )
+  const anyFile = plannedFiles.size > 0
   const scanDocs = (
     directory: string,
     segments: string[],
@@ -7786,6 +7802,13 @@ function verifyRecoveryCatalogCheckpoint(
         continue
       }
       if (!entry.isFile()) continue
+      // A planned file keeps its whole name, even one a Doc format's
+      // extension ends, such as a `.json` that isn't Doc blocks.
+      const sourcePath = ["docs", ...nextSegments].join("/")
+      if (plannedFiles.has(sourcePath) && !hidden) {
+        maybeClaim(nextSegments.join("/"), sourcePath)
+        continue
+      }
       const extension =
         journal.planVersion === LEGACY_JOURNAL_PLAN_VERSION
           ? entry.name.endsWith(".md")
@@ -7797,10 +7820,18 @@ function verifyRecoveryCatalogCheckpoint(
               anyFile: anyFile && !hidden,
             })?.source.extension ?? null)
       if (extension === null) continue
-      maybeClaim(
-        [...segments, withoutSuffix(entry.name, extension)].join("/"),
-        ["docs", ...nextSegments].join("/")
-      )
+      const docPath = [...segments, withoutSuffix(entry.name, extension)].join("/")
+      // A `.json` is the Doc its name gives only by the catalog's rule; a
+      // plain file goes by its whole name, and only where files take part.
+      if (
+        extension === ".json" &&
+        relevant(docPath) &&
+        !jsonSourceIsDocSync(spaceRoot, sourcePath)
+      ) {
+        if (anyFile && !hidden) maybeClaim(nextSegments.join("/"), sourcePath)
+        continue
+      }
+      maybeClaim(docPath, sourcePath)
     }
   }
   const scanWidgets = (directory: string, segments: string[]): void => {

@@ -309,7 +309,7 @@ describe("doc routes", () => {
       await req(app, "PUT", "/api/spaces/test-space/docs/to-delete", {
         content: [para("retiring")],
       });
-      const sourcePath = getDocPath("test-space", "to-delete");
+      const sourcePath = await getDocPath("test-space", "to-delete");
       expect(existsSync(sourcePath)).toBe(true);
       rmSync(sourcePath);
 

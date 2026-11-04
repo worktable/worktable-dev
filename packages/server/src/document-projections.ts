@@ -1,6 +1,7 @@
 import { Parser } from "htmlparser2"
 import type { DocumentTextProjection } from "@worktable/types"
 import type { DocumentOperationBudget } from "./document-format-registry.ts"
+import { checkRichTextBlocks } from "./rich-text-blocks.ts"
 
 const FATAL_UTF8_DECODER = new TextDecoder("utf-8", {
   fatal: true,
@@ -196,10 +197,13 @@ export async function projectRichText(input: {
       "rich-text source is not valid JSON"
     )
   }
-  if (!Array.isArray(blocks)) {
+  if (
+    !Array.isArray(blocks) ||
+    checkRichTextBlocks(blocks, input.budget, input.signal) === "not-blocks"
+  ) {
     throw new DocumentProjectionError(
       "invalid",
-      "rich-text source must contain a block array"
+      "rich-text source must contain Doc blocks"
     )
   }
 

@@ -1,4 +1,5 @@
 import { quickdrawFormat } from "./quickdraw-format.ts"
+import { checkRichTextBlocks } from "./rich-text-blocks.ts"
 import {
   DocumentCompanionKeySchema,
   DocumentFormatIdSchema,
@@ -374,31 +375,12 @@ function validateRichTextStructure(
   budget: DocumentOperationBudget,
   signal: AbortSignal
 ): void {
-  if (!Array.isArray(value)) {
-    throw new Error("Rich-text source must contain a block array")
+  const check = checkRichTextBlocks(value, budget, signal)
+  if (check === "too-large") {
+    throw new Error("Rich-text source exceeds its structural limit")
   }
-  const stack: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }]
-  let elements = 0
-  while (stack.length > 0) {
-    if (signal.aborted) throw signal.reason
-    const current = stack.pop()!
-    elements += 1
-    if (elements > budget.maxElements || current.depth > budget.maxDepth) {
-      throw new Error("Rich-text source exceeds its structural limit")
-    }
-    if (Array.isArray(current.value)) {
-      for (const entry of current.value) {
-        stack.push({ value: entry, depth: current.depth + 1 })
-      }
-      continue
-    }
-    if (current.value && typeof current.value === "object") {
-      for (const entry of Object.values(
-        current.value as Record<string, unknown>
-      )) {
-        stack.push({ value: entry, depth: current.depth + 1 })
-      }
-    }
+  if (check === "not-blocks") {
+    throw new Error("Rich-text source must contain Doc blocks")
   }
 }
 

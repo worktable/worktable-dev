@@ -106,11 +106,48 @@ describe("shadow document catalog", () => {
     }
   })
 
-  it("enumerates current formats, and names Docs by their titles without judging their bodies", async () => {
+  it("enumerates current formats, names Docs by their titles, and takes JSON as a Doc only when it holds Doc blocks", async () => {
     const docs = join(root, "spaces", spaceId, "docs")
     await mkdir(join(docs, "notes"))
+    await mkdir(join(docs, "agent-out"))
     await writeFile(join(docs, "notes", "brief.md"), "# Brief")
+    await writeFile(
+      join(docs, "plan.json"),
+      JSON.stringify([
+        {
+          type: "heading",
+          props: { level: 1 },
+          content: [{ type: "text", text: "Launch plan", styles: {} }],
+        },
+      ])
+    )
+    // What a shell agent leaves: data, configuration, a half-written file.
+    const data = '[{"id":1,"name":"a"},{"id":2,"name":"b"}]'
+    await writeFile(join(docs, "agent-out", "data.json"), data)
+    await writeFile(join(docs, "package.json"), '{"name":"tool"}')
     await writeFile(join(docs, "broken.json"), "{not blocknote")
+    // Worktable already holds these: a Doc an agent overwrote with plain
+    // JSON, and an uploaded file that happens to hold Doc blocks.
+    const keptId = mintDocumentId()
+    const configId = mintDocumentId()
+    await writeFile(join(docs, "kept.json"), data)
+    await writeFile(join(docs, "config.json"), "[]")
+    await updateDocumentInventory(spaceId, {
+      upsert: [
+        {
+          documentId: keptId,
+          path: "kept",
+          format: { id: "worktable.rich-text", sourceVersion: 1 },
+          source: { kind: "file", relativePath: "docs/kept.json" },
+        },
+        {
+          documentId: configId,
+          path: "config.json",
+          format: { id: "worktable.file", sourceVersion: 1 },
+          source: { kind: "file", relativePath: "docs/config.json" },
+        },
+      ],
+    })
     await writeFile(
       join(root, "spaces", spaceId, "widgets", "widget.yaml"),
       "stray root metadata"
@@ -126,44 +163,48 @@ describe("shadow document catalog", () => {
               entry.descriptor.format.id,
               entry.descriptor.health,
               entry.handle.identity,
-              entry.handle.storageProfile,
+              entry.descriptor.title,
             ]
           : [entry.pathKey, "conflict"]
       )
     ).toEqual([
       [
-        "broken",
-        "worktable.rich-text",
+        "agent-out/data.json",
+        "worktable.file",
         "supported",
         "provisional",
-        "legacy-doc-file",
+        "data.json",
       ],
+      ["broken.json", "worktable.file", "supported", "provisional", "broken.json"],
+      ["config.json", "worktable.file", "supported", "durable", "config.json"],
       [
         "dashboards/status",
         "worktable.html",
         "supported",
         "provisional",
-        "legacy-html-bundle",
+        "Status board",
       ],
-      [
-        "notes/brief",
-        "worktable.markdown",
-        "supported",
-        "provisional",
-        "legacy-doc-file",
-      ],
+      ["kept", "worktable.rich-text", "invalid", "durable", "Kept"],
+      ["notes/brief", "worktable.markdown", "supported", "provisional", "Brief"],
+      ["package.json", "worktable.file", "supported", "provisional", "package.json"],
+      ["plan", "worktable.rich-text", "supported", "provisional", "Launch plan"],
     ])
-    const titles = (from: typeof catalog) =>
-      from.entries.map((entry) =>
-        entry.kind === "document" ? entry.descriptor.title : entry.pathKey
-      )
-    // A body that does not parse keeps the name its path gives.
-    expect(titles(catalog)).toEqual(["Broken", "Status board", "Brief"])
+    const kept = catalog.entries.find(
+      (entry) => entry.kind === "document" && entry.descriptor.path === "kept"
+    )
+    expect(kept?.kind === "document" && kept.descriptor.documentId).toBe(keptId)
 
     await writeFile(join(docs, "notes", "brief.md"), "Launch brief\n===\n\nBody")
-    expect(
-      titles(await buildDocumentCatalog({ workspaceRoot: root, spaceId }))
-    ).toEqual(["Broken", "Status board", "Launch brief"])
+    await writeFile(join(docs, "plan.json"), data)
+    const titles = (await buildDocumentCatalog({ workspaceRoot: root, spaceId }))
+      .entries.flatMap((entry) =>
+        entry.kind === "document"
+          ? [[entry.descriptor.path, entry.descriptor.title]]
+          : []
+      )
+    // A source without an identity is what its bytes are now.
+    expect(titles).toContainEqual(["notes/brief", "Launch brief"])
+    expect(titles).toContainEqual(["plan.json", "plan.json"])
   })
 
   it("lists every visible file by its whole name once files are on", async () => {

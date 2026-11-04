@@ -19,6 +19,7 @@ import {
   buildDocumentCatalog,
   catalogBuildsStarted,
   catalogDocumentUnchanged,
+  sourceIsNotADoc,
   type DocumentCatalog,
   type DocumentCatalogEntry,
 } from "./document-catalog.ts"
@@ -94,6 +95,8 @@ interface QueryDocumentClaim {
   catalogArchived?: boolean
   archiveProvider?: "legacy-doc-metadata"
   storageProfile: DocumentStorageProfileId | null
+  /** Invalid only because its source isn't Doc blocks; see the handle. */
+  sourceNotADoc?: true
 }
 
 interface QueryAliasClaim {
@@ -141,6 +144,11 @@ export interface ResolvedDocumentHandle {
   resolvedFrom?: string
   /** The Space's aliases from the same catalog, mapping old paths to current ones. */
   aliases?: DocAliases
+  /**
+   * Invalid only because its source isn't the Doc its format names: it
+   * doesn't open, but its bytes are safe to download.
+   */
+  sourceNotADoc?: true
 }
 
 export type DocumentHandleResolution =
@@ -208,6 +216,9 @@ function claimsFor(entry: DocumentCatalogEntry): QueryClaim[] {
           ? { archiveProvider: entry.handle.archiveProvider }
           : {}),
         storageProfile: entry.handle.storageProfile,
+        ...(sourceIsNotADoc(entry.handle.diagnostics)
+          ? { sourceNotADoc: true as const }
+          : {}),
       },
     ]
   }
@@ -254,6 +265,9 @@ function claimsFor(entry: DocumentCatalogEntry): QueryClaim[] {
             ? { archiveProvider: claim.archiveProvider }
             : {}),
           storageProfile: claim.storageProfile,
+          ...(sourceIsNotADoc(claim.diagnostics)
+            ? { sourceNotADoc: true as const }
+            : {}),
         }
   )
 }
@@ -1112,6 +1126,7 @@ function handleForPrepared(
       formatCapabilities: registration?.capabilities ?? null,
       ...(resolvedFrom ? { resolvedFrom } : {}),
       aliases: context.catalog.aliases,
+      ...(classified.claim.sourceNotADoc ? { sourceNotADoc: true as const } : {}),
     },
   }
 }

@@ -2166,7 +2166,7 @@ describe("recoverable document lifecycle", () => {
         ),
         expectedData: "Stable",
         externalBytes: Buffer.from(
-          JSON.stringify([{ type: "paragraph", external: "Rich edit" }])
+          JSON.stringify([{ type: "paragraph", content: "Rich edit" }])
         ),
         externalData: "Rich edit",
         boundaries: [
@@ -2573,7 +2573,7 @@ describe("recoverable document lifecycle", () => {
     const target = join(workspace, "spaces", "space", "docs", "doc.json")
     setDocumentLifecycleStepHookForTests((step) => {
       if (step !== "inventory") return
-      writeFileSync(target, JSON.stringify([{ external: true }]))
+      writeFileSync(target, JSON.stringify([{ type: "paragraph", content: "external" }]))
     })
     await expect(
       withDocPathLock("space", () =>
@@ -2581,7 +2581,7 @@ describe("recoverable document lifecycle", () => {
           spaceId: "space",
           docPath: "doc",
           format: { id: "worktable.rich-text", sourceVersion: 1 },
-          bytes: Buffer.from(JSON.stringify([{ converted: true }])),
+          bytes: Buffer.from(JSON.stringify([{ type: "paragraph", content: "converted" }])),
         })
       )
     ).rejects.toThrow(/recovery|compensation/)
@@ -2634,7 +2634,7 @@ describe("recoverable document lifecycle", () => {
           spaceId: "space",
           docPath: "doc",
           format: { id: "worktable.rich-text", sourceVersion: 1 },
-          bytes: Buffer.from(JSON.stringify([{ converted: true }])),
+          bytes: Buffer.from(JSON.stringify([{ type: "paragraph", content: "converted" }])),
         })
       )
     ).rejects.toThrow("committed")

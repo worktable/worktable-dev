@@ -82,6 +82,8 @@ export interface DocListEntry {
   };
   /** Docs linking to this one — count only in lists; full paths on single-doc reads. */
   backlinkCount?: number;
+  /** The Doc is kept, but its source isn't Doc blocks, so it doesn't open. */
+  unreadable?: true;
 }
 
 export { sourceCategory, type DocSourceCategory } from "./doc-source";

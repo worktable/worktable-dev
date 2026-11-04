@@ -27,6 +27,7 @@ import {
 
 import {
   buildDocumentCatalog,
+  sourceIsNotADoc,
   type DocumentCatalog,
 } from "./document-catalog.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
@@ -53,6 +54,7 @@ import {
   type DocumentFormatRegistry,
   type ServerDocumentFormatRegistration,
 } from "./document-format-registry.ts"
+import { richTextSourceIsDoc } from "./rich-text-blocks.ts"
 import {
   mintDocumentId,
   updateDocumentInventory,
@@ -268,8 +270,38 @@ function writableRegistration(
   return registration
 }
 
-function requirePortablePath(path: string): string {
-  const analyzed = analyzeDocumentPath(path, { enforceNewPathGrammar: true })
+/**
+ * A new file can't take a name a Doc format claims, or it would list as that
+ * Doc. A `.json` is a Doc only when it holds Doc blocks, so any other JSON
+ * is a file under its own name.
+ */
+function assertNamesAFile(
+  registry: DocumentFormatRegistry,
+  path: string,
+  bytes: Uint8Array
+): void {
+  const claimed = registry.fileSourceForFilename(
+    path.slice(path.lastIndexOf("/") + 1)
+  )?.registration
+  if (
+    !claimed ||
+    (claimed.id === BUILTIN_DOCUMENT_FORMATS.richText &&
+      !richTextSourceIsDoc(new TextDecoder().decode(bytes)))
+  ) {
+    return
+  }
+  throw new DocumentWriteError(
+    "unsupported",
+    "This name is for a Doc. Create Docs with the Doc tools."
+  )
+}
+
+/** A file's path is its whole name, so `fileName` lets it end in `.json`. */
+function requirePortablePath(path: string, fileName = false): string {
+  const analyzed = analyzeDocumentPath(path, {
+    enforceNewPathGrammar: true,
+    fileName,
+  })
   if (!analyzed.safe || !analyzed.portable || analyzed.canonicalPath !== path) {
     throw new DocumentWriteError(
       "invalid",
@@ -435,8 +467,11 @@ function resolveManagedFileDocument(
       "This document path has conflicting sources"
     )
   }
+  // A Doc whose bytes aren't Doc blocks can still be read, moved, kept and
+  // repaired by a whole replacement, which its format checks.
   if (
-    entry.descriptor.health !== "supported" ||
+    (entry.descriptor.health !== "supported" &&
+      !sourceIsNotADoc(entry.handle.diagnostics)) ||
     entry.handle.diagnostics.some(
       (diagnostic) => diagnostic.severity === "error"
     )
@@ -863,12 +898,18 @@ export async function createRegisteredDocument(options: {
   assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
-  const path = requirePortablePath(options.path)
+  const path = requirePortablePath(
+    options.path,
+    options.format.id === BUILTIN_DOCUMENT_FORMATS.file
+  )
   if (
     options.format.id === BUILTIN_DOCUMENT_FORMATS.file &&
     pathIsHidden(path)
   ) {
     throw new DocumentWriteError("invalid", "Files can't go in hidden folders")
+  }
+  if (options.format.id === BUILTIN_DOCUMENT_FORMATS.file) {
+    assertNamesAFile(registry, path, options.bytes)
   }
   const registration = writableRegistration(registry, options.format)
   const bytes = await preparedBytes(registration, options.format, options.bytes)
@@ -1981,7 +2022,9 @@ export async function moveRegisteredDocument(options: {
 }): Promise<DocumentMoveResult> {
   assertSpaceAccess(options.spaceId, "edit");
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
-  const to = requirePortablePath(options.to)
+  // The lifecycle checks the destination again knowing what moves: only a
+  // file's name may end in `.json`.
+  const to = requirePortablePath(options.to, true)
   // A Doc's folder belongs to it: sub-Docs and files under it move with it,
   // as one folder move, which takes its own lock. A first child created while
   // this decides is seen under the lock, and the move starts again.

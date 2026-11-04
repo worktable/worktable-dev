@@ -65,6 +65,7 @@ interface OutgoingMessage {
     | "navigation_changed"
     | "setup_changed"
     | "visitor_comments_changed"
+    | "storage_counted"
     | "error"
     | "subscribed"
   revision?: number
@@ -466,7 +467,9 @@ function canReceive(ws: WsClient, msg: OutgoingMessage): boolean {
     case "visitor_comments_changed":
       // This private event must use sendToPeopleWithAccess exclusively.
       return false
+    // People's own settings and sharing; agents have no use for either.
     case "share_policy_changed":
+    case "storage_counted":
       return (
         ws.data.identity?.principal.type === "human" &&
         ws.data.identity.agent === null

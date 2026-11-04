@@ -2336,12 +2336,16 @@ export function startServer(
   if (!workspaceRejected) timeBootTask("pending list build", pendingList());
   const stopBackupNotifier = startWorkspaceBackupNotifier();
   // What this Worktable takes on disk: counted in the background shortly
-  // after start, then kept current from notes and a slow recount.
-  // WORKTABLE_SKIP_STORAGE_ACCOUNTING=1 exists for the test runner.
+  // after start, then kept current from notes and a slow recount. Settings
+  // read before the first count show it loading; the event tells open pages
+  // to read them again. WORKTABLE_SKIP_STORAGE_ACCOUNTING=1 exists for the
+  // test runner.
   const stopStorageAccounting =
     workspaceRejected || process.env["WORKTABLE_SKIP_STORAGE_ACCOUNTING"] === "1"
       ? () => Promise.resolve()
-      : startStorageAccounting();
+      : startStorageAccounting({
+          onFirstCount: () => wsManager.broadcastAll({ type: "storage_counted" }),
+        });
   if (options.resumeWorkspaceRequests !== false) {
     resumeWorkspaceRequestAdmission();
   }

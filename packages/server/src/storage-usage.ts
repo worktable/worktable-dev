@@ -25,7 +25,9 @@
 // directory holds the size and number of its own files and the names of its
 // subdirectories. A change to a path rescans its directory alone (one readdir
 // and an lstat per entry), walks only directories it has not seen, and drops
-// the subtree of one that went away:
+// the subtree of one that went away. The paths noted in one batch are first
+// grouped by the directory each needs, so a batch that changed many files in
+// one directory scans it once. Notes come from:
 //   - Worktable's own writes note their paths as they finish: every atomic
 //     publish (atomic-file.ts) and every write bracketed for the watcher
 //     (store.ts unsuppressPath), and the writers of history, the trash,
@@ -45,6 +47,7 @@
 import { lstat, readdir, statfs } from "node:fs/promises"
 import { basename, dirname, join, relative, sep } from "node:path"
 import { getAppDir } from "./app-storage.ts"
+import { readBoundedRegularFile } from "./bounded-file.ts"
 import { logError } from "./debug-log.ts"
 import { stagedFilesInProgress } from "./staged-file.ts"
 import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
@@ -95,6 +98,28 @@ const nodeFileSystem: StorageFileSystem = {
 export interface StorageArea {
   root: string
   part: StoragePartName | "workspace"
+  /** Whether a subdirectory belongs to the served workspace; all do by default. */
+  owns?: (directory: string, name: string) => Promise<boolean>
+}
+
+/**
+ * Transfer jobs of every workspace that uses this app data share one
+ * folder. A job is this workspace's unless it names another, as
+ * workspace-transfer-jobs.ts reads them; one whose state can't be read is
+ * counted, since it takes space here until it expires.
+ */
+function ownsTransferJob(jobs: string, key: string) {
+  return async (directory: string, name: string): Promise<boolean> => {
+    if (directory !== jobs) return true
+    try {
+      const job = JSON.parse(
+        await readBoundedRegularFile(join(directory, name, "job.json"), 1024 * 1024)
+      ) as { workspaceKey?: unknown }
+      return !job.workspaceKey || job.workspaceKey === key
+    } catch {
+      return true
+    }
+  }
 }
 
 /** The folders counted for the served workspace. */
@@ -106,7 +131,11 @@ export function storageAreas(
   return [
     { root: workspaceRoot, part: "workspace" },
     { root: join(appDir, "trash", key), part: "trash" },
-    { root: join(appDir, "workspace-transfers"), part: "transfers" },
+    {
+      root: join(appDir, "workspace-transfers"),
+      part: "transfers",
+      owns: ownsTransferJob(join(appDir, "workspace-transfers", "jobs"), key),
+    },
     { root: join(appDir, "yjs", key), part: "derived" },
     { root: join(appDir, "records-index", key), part: "derived" },
   ]
@@ -121,6 +150,13 @@ const FIRST_COUNT_DELAY_MS = 5_000
 const RECOUNT_INTERVAL_MS = 6 * 60 * 60 * 1000
 /** Free space is sampled at most this often, after applied notes. */
 const DISK_SAMPLE_MS = 60_000
+
+interface ScanTarget {
+  directory: string
+  area: StorageArea
+  /** Every directory under it too, not only new ones. */
+  deep: boolean
+}
 
 interface Directory {
   part: StoragePartName
@@ -181,34 +217,61 @@ export class StorageTree {
 
   /** Count every area from scratch. */
   async countAll(): Promise<void> {
-    for (const area of this.#areas) await this.apply(area.root)
+    await this.apply(this.#areas.map((area) => area.root))
   }
 
-  /** Bring the totals in line with the disk at `path` and what it holds. */
-  async apply(path: string): Promise<void> {
-    const area = this.#areas.find((candidate) => inside(candidate.root, path))
-    if (!area) return
-    let current = path
-    for (;;) {
+  /**
+   * Bring the totals in line with the disk at each path and what it holds.
+   * Paths are first turned into the directories to rescan, so a batch that
+   * changed many files in one directory scans it once.
+   */
+  async apply(paths: Iterable<string>): Promise<void> {
+    const targets = new Map<string, ScanTarget>()
+    for (const path of paths) {
       if (this.#stopped()) return
-      const info = await this.#lstat(current)
-      const known = this.directories.has(current)
-      if (info?.isDirectory() && (known || current === area.root)) {
-        await this.#scan(current, area, true)
-        return
+      const target = await this.#target(path)
+      if (!target) continue
+      const existing = targets.get(target.directory)
+      if (!existing || (target.deep && !existing.deep)) {
+        targets.set(target.directory, target)
       }
-      if (current === area.root) {
-        this.#remove(current)
-        return
-      }
-      if (known) this.#remove(current)
-      const parent = dirname(current)
-      if (this.directories.has(parent)) {
-        await this.#scan(parent, area, false)
-        return
-      }
-      current = parent
     }
+    // An ancestor sorts before what is under it, so a deep rescan is done
+    // before the rescans it already covers are skipped.
+    const ordered = [...targets.values()].sort((a, b) =>
+      a.directory < b.directory ? -1 : a.directory > b.directory ? 1 : 0
+    )
+    const deep: string[] = []
+    for (const target of ordered) {
+      if (this.#stopped()) return
+      if (deep.some((root) => inside(root, target.directory))) continue
+      await this.#scan(target.directory, target.area, target.deep)
+      if (target.deep) deep.push(target.directory)
+    }
+  }
+
+  /**
+   * What to rescan for a change at `path`: a counted directory that is still
+   * one, whole; otherwise the nearest counted directory above it, alone, which
+   * finds what was added under it and drops what went away.
+   */
+  async #target(path: string): Promise<ScanTarget | null> {
+    const area = this.#areas.find((candidate) => inside(candidate.root, path))
+    if (!area) return null
+    if (this.directories.has(path)) {
+      if (path === area.root || (await this.#lstat(path))?.isDirectory()) {
+        return { directory: path, area, deep: true }
+      }
+    }
+    let current = path
+    while (current !== area.root) {
+      current = dirname(current)
+      if (this.directories.has(current)) {
+        return { directory: current, area, deep: false }
+      }
+    }
+    // Nothing above it is counted yet, not even the area itself.
+    return { directory: area.root, area, deep: true }
   }
 
   /**
@@ -253,7 +316,12 @@ export class StorageTree {
       const info = await this.#lstat(path)
       if (!info) continue
       if (info.isDirectory()) {
-        if (!this.#skip.has(path)) next.children.add(name)
+        if (
+          !this.#skip.has(path) &&
+          (!area.owns || (await area.owns(directory, name)))
+        ) {
+          next.children.add(name)
+        }
       } else if (info.isFile()) {
         next.bytes += info.size
         next.files += 1
@@ -339,6 +407,8 @@ export interface StorageAccountOptions {
   firstCountDelayMs?: number
   recountIntervalMs?: number
   now?: () => number
+  /** Called once, when the first count is ready, to tell open pages. */
+  onFirstCount?: () => void
 }
 
 /** The running count for one served workspace. */
@@ -362,6 +432,7 @@ export class StorageAccount {
   readonly #firstCountDelayMs: number
   readonly #recountIntervalMs: number
   readonly #now: () => number
+  #onFirstCount: (() => void) | undefined
 
   constructor(options: StorageAccountOptions = {}) {
     this.#areas = options.areas ?? storageAreas()
@@ -372,6 +443,7 @@ export class StorageAccount {
     this.#firstCountDelayMs = options.firstCountDelayMs ?? FIRST_COUNT_DELAY_MS
     this.#recountIntervalMs = options.recountIntervalMs ?? RECOUNT_INTERVAL_MS
     this.#now = options.now ?? Date.now
+    this.#onFirstCount = options.onFirstCount
   }
 
   start(): void {
@@ -484,18 +556,18 @@ export class StorageAccount {
     this.#tree = tree
     this.#countedAt = this.#now()
     await this.#sampleDisk(true)
+    const first = this.#onFirstCount
+    this.#onFirstCount = undefined
+    first?.()
   }
 
   async #applyNotes(): Promise<void> {
     const tree = this.#tree
     // Before the first count, it will read these paths itself.
     if (!tree || this.#notes.size === 0) return
-    const paths = [...this.#notes].sort()
+    const paths = [...this.#notes]
     this.#notes.clear()
-    for (const path of paths) {
-      if (this.#stopped) return
-      await tree.apply(path)
-    }
+    await tree.apply(paths)
     await this.#sampleDisk(false)
   }
 

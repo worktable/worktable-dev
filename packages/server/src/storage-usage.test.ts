@@ -13,6 +13,7 @@ import { join, relative, sep } from "node:path"
 import { Hono } from "hono"
 import type { SpaceFile } from "@worktable/types"
 import { setAppDirOverride } from "./app-storage.ts"
+import { atomicWriteText } from "./atomic-file.ts"
 import { runDeletedItemsPass } from "./deleted-items.ts"
 import {
   createRegisteredDocument,
@@ -107,6 +108,9 @@ function onDisk() {
   for (const size of filesUnder(join(app, "staged-files")).values()) {
     add("transfers", size)
   }
+  for (const area of ["yjs", "records-index"]) {
+    for (const size of filesUnder(join(app, area, key)).values()) add("derived", size)
+  }
   return parts
 }
 
@@ -141,9 +145,9 @@ function changedOnDisk(path: string): void {
   listeners.get(spaces)!("rename", relative(spaces, path))
 }
 
-async function createDoc(path: string, body: string, spaceId = "notes") {
+async function createDoc(path: string, body: string) {
   return createRegisteredDocument({
-    spaceId,
+    spaceId: "notes",
     path,
     format: { id: "worktable.markdown", sourceVersion: 1 },
     bytes: new TextEncoder().encode(body),
@@ -222,20 +226,38 @@ describe("storage usage", () => {
     expect((await counted()).trash).toEqual({ bytes: 0, files: 0 })
   })
 
-  it("answers requests from memory, and rescans only what a change touched", async () => {
-    await writeSpace(space("other"))
+  it("answers requests from memory, with this workspace's transfers only", async () => {
     await createDoc("plan", "# Plan\n")
-    await createDoc("elsewhere", "# Elsewhere\n", "other")
+    // Transfer jobs of two workspaces that share this app data.
+    const jobs = join(app, "workspace-transfers", "jobs")
+    const job = (id: string, workspaceKey: string, bytes: number) => {
+      mkdirSync(join(jobs, id), { recursive: true })
+      writeFileSync(join(jobs, id, "job.json"), JSON.stringify({ id, workspaceKey }))
+      writeFileSync(join(jobs, id, "package.wtb"), new Uint8Array(bytes))
+    }
+    job("wtx_ours", workspaceCacheKey(), 1_000)
+    job("wtx_theirs", "0123456789abcdef", 50_000)
     let calls = 0
-    const read: string[] = []
     const counting: StorageFileSystem = {
-      readdir: (path) => (calls++, read.push(path), readdir(path)),
-      lstat: (path) => (calls++, read.push(path), lstat(path)),
+      readdir: (path) => (calls++, readdir(path)),
+      lstat: (path) => (calls++, lstat(path)),
       statfs: (path) => (calls++, statfs(path)),
     }
-    stopAccounting = startStorageAccounting({ fs: counting })
+    let firstCounts = 0
+    stopAccounting = startStorageAccounting({
+      fs: counting,
+      onFirstCount: () => firstCounts++,
+    })
     await activeStorageAccount()!.settled()
     expect(calls).toBeGreaterThan(10)
+    expect(storageUsage()!.parts.transfers).toEqual({
+      bytes: 1_000 + JSON.stringify({ id: "wtx_ours", workspaceKey: workspaceCacheKey() }).length,
+      files: 2,
+    })
+    // Open pages hear of the first count once, not of each recount.
+    activeStorageAccount()!.recount()
+    await activeStorageAccount()!.settled()
+    expect(firstCounts).toBe(1)
 
     const before = calls
     const api = new Hono().route("/api/system", systemRouter)
@@ -247,17 +269,53 @@ describe("storage usage", () => {
       expect(body.storage).toEqual(storageUsage())
     }
     expect(calls).toBe(before)
-
-    // A write rescans the directories it touched, not the tree: nothing
-    // in the other Space is read again.
-    read.length = 0
-    await createDoc("more", "# More\n")
-    await activeStorageAccount()!.settled()
-    expect(read.some((path) => path.includes(`${sep}notes${sep}`))).toBe(true)
-    expect(read.filter((path) => path.includes(`${sep}other`))).toEqual([])
     const usage = storageUsage()!
     expect(usage.total.bytes).toBeGreaterThan(0)
     expect(usage.workspaceEntries).toBeGreaterThan(usage.parts.live.files)
     expect(usage.disk?.freeBytes).toBeGreaterThan(0)
+  })
+
+  it("rescans only the directories a batch touched, each once", async () => {
+    await writeSpace(space("other"))
+    const elsewhere = join(workspace, "spaces", "other", "docs")
+    mkdirSync(elsewhere, { recursive: true })
+    writeFileSync(join(elsewhere, "elsewhere.md"), "# Elsewhere\n")
+    const records = join(workspace, "spaces", "notes", "records", "tasks")
+    mkdirSync(records, { recursive: true })
+    const listed: string[] = []
+    const statted: string[] = []
+    const counting: StorageFileSystem = {
+      readdir: (path) => (listed.push(path), readdir(path)),
+      lstat: (path) => (statted.push(path), lstat(path)),
+      statfs: (path) => statfs(path),
+    }
+    stopAccounting = startStorageAccounting({ fs: counting })
+    await activeStorageAccount()!.settled()
+
+    // A bulk write of records into one collection, through Worktable's
+    // atomic publish, which notes each file.
+    listed.length = 0
+    statted.length = 0
+    const batch = 200
+    for (let index = 0; index < batch; index += 1) {
+      await atomicWriteText(join(records, `task-${index}.yaml`), `id: task-${index}\n`)
+    }
+    await activeStorageAccount()!.settled()
+    // Once, not once per file: 200 notes, one listing, one stat each.
+    expect(listed.filter((path) => path === records)).toEqual([records])
+    expect(
+      statted.filter((path) => path.startsWith(records)).length
+    ).toBeLessThanOrEqual(batch + 1)
+    await matchesDisk()
+
+    // A Doc written in one Space reads nothing in another.
+    listed.length = 0
+    statted.length = 0
+    await createDoc("more", "# More\n")
+    await activeStorageAccount()!.settled()
+    expect(listed.some((path) => path.includes(`${sep}notes`))).toBe(true)
+    expect(
+      [...listed, ...statted].filter((path) => path.includes(`${sep}other`))
+    ).toEqual([])
   })
 })

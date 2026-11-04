@@ -362,8 +362,17 @@ async function writeEntry(entryDir: string, entry: TrashEntry): Promise<void> {
 
 /** Finish one tombstone: into its trash entry, or gone. Idempotent. */
 async function settleTombstone(tombstone: Tombstone, now: number): Promise<void> {
-  noteStorageChange(tombstone.path)
-  noteStorageChange(join(deletedItemsTrashDir(), tombstone.id))
+  try {
+    await moveTombstone(tombstone, now)
+  } finally {
+    // After the copy, rename or removal, on every path: a note taken while a
+    // copy across volumes is still running would count it half done.
+    noteStorageChange(tombstone.path)
+    noteStorageChange(join(deletedItemsTrashDir(), tombstone.id))
+  }
+}
+
+async function moveTombstone(tombstone: Tombstone, now: number): Promise<void> {
   if (tombstone.erase) {
     await rm(tombstone.path, { recursive: true, force: true })
     return
@@ -586,6 +595,7 @@ async function moveOutOfWorkspace(
             testHooks.afterTombstone?.()
             for (const parent of item.emptyParents) {
               await removeEmptyDirectory(parent)
+              noteStorageChange(parent)
             }
           }
           return left

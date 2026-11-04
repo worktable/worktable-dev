@@ -25,6 +25,7 @@ import { threadQueryKeys } from "./threads-queries"
 import { refreshLive } from "./live-refresh"
 import { noteNavigationChanged } from "./personal-navigation"
 import { noteSetupChanged } from "./setup"
+import { noteStorageCounted } from "../hooks/use-server-settings"
 import { applyRecordChange } from "./record-cache"
 import { noteSocketStatus, type SocketStatus } from "./connection-status"
 import { traceTrigger } from "./trace"
@@ -792,6 +793,11 @@ function applyMessage(
   // Only the person's own sockets hear this, on whichever stream they follow.
   if (message.type === "setup_changed") {
     noteSetupChanged(queryClient)
+    return
+  }
+  // Every stream hears it; only settings still waiting on the count reload.
+  if (message.type === "storage_counted") {
+    noteStorageCounted(queryClient)
     return
   }
   if (message.type === "navigation_changed") {

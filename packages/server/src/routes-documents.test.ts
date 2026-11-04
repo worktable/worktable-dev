@@ -43,6 +43,7 @@ import {
 } from "./document-inventory.ts"
 import {
   getDocArchiveInfo,
+  listDocsDetailed,
   readDoc,
   readSpace,
   setDocArchived,
@@ -1086,6 +1087,40 @@ describe("format-neutral document route", () => {
         expect(served.status).toBe(200)
         expect(await served.text()).toBe(bytes)
       }
+      // A plain file beside a Markdown Doc of the same name leaves the Doc
+      // readable and listed.
+      expect((await upload("notes/readme.json", '{"owner":"docs"}')).status).toBe(201)
+      expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
+      expect((await listDocsDetailed(spaceId)).map((doc) => doc.path)).toContain(
+        "notes/readme"
+      )
+      // A moved Doc's alias holds its old name, not a new file's whole name.
+      await writeDoc(spaceId, "setup", "# Setup", {
+        updatedBy: "test",
+        source: "rest-api",
+        managedIdentity: true,
+      })
+      const moved = await instance.request(`/api/spaces/${spaceId}/documents/move`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: "setup", to: "archive/setup" }),
+      })
+      expect(moved.status).toBe(200)
+      expect((await resolveDocAlias(spaceId, "setup")).path).toBe("archive/setup")
+      await writeFile(join(docs, "setup.json"), '{"theme":"light"}')
+      noteSpaceChanged(spaceId)
+      const listed = (await (
+        await instance.request(`/api/spaces/${spaceId}/documents`)
+      ).json()) as { documents: Array<{ path?: string; format?: { id: string } }> }
+      expect(listed.documents).toContainEqual(
+        expect.objectContaining({
+          path: "setup.json",
+          format: expect.objectContaining({ id: "worktable.file" }),
+        })
+      )
+      expect(await (await instance.request(fileUrl("setup.json"))).text()).toBe(
+        '{"theme":"light"}'
+      )
 
       const created = await upload("design/error.png", "first")
       expect(created.status).toBe(201)

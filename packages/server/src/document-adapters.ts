@@ -214,7 +214,11 @@ async function scanLegacyDocDirectory(
         withoutSuffix(entry.name, source.extension),
       ]
       const path = logicalSegments.join("/")
-      if (reserved(path)) return []
+      // A `.json` is a Doc only when it holds Doc blocks, so the catalog
+      // decides its alias once it knows which name it goes by.
+      if (format.id !== BUILTIN_DOCUMENT_FORMATS.richText && reserved(path)) {
+        return []
+      }
       const analyzed = pathDiagnostics(path)
       return [
         {

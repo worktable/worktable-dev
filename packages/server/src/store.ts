@@ -1,7 +1,7 @@
 import { withCrossProcessLock } from "./cross-process-lock.ts";
 import { copyFile, link, mkdir, readFile, readdir, rename, rm, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { effectiveArchiveOn } from "./lifetime-rules.ts";
-import { constants, existsSync, lstatSync } from "node:fs";
+import { constants, existsSync, lstatSync, readFileSync, statSync } from "node:fs";
 import crypto from "node:crypto";
 import { dirname, join, relative, sep } from "node:path";
 import type { ArchiveInfo, DocListEntry, DocSourceCategory, DocumentId, SpaceFile } from "@worktable/types";
@@ -26,7 +26,11 @@ import {
   prepareMarkdownStorageConversion,
 } from "./markdown.ts";
 import { canonicalizeBlocksForWrite, inheritBlockIds } from "./blocknote.ts";
-import { checkRichTextBlocks, RICH_TEXT_SOURCE_BUDGET } from "./rich-text-blocks.ts";
+import {
+  checkRichTextBlocks,
+  RICH_TEXT_SOURCE_BUDGET,
+  richTextSourceIsDoc,
+} from "./rich-text-blocks.ts";
 import { extractMarkdownMermaid } from "./mermaid-document.ts";
 
 import { getSpacesDir, workspaceCacheKey } from "./workspace.ts";
@@ -65,7 +69,7 @@ import {
   endSpaceWrite,
   noteWorkspaceActivity,
 } from "./workspace-read-model.ts";
-import { FingerprintCache, readFileFingerprint } from "./file-fingerprint.ts";
+import { FingerprintCache, fingerprintOf, readFileFingerprint } from "./file-fingerprint.ts";
 import { canReuseDerived, type DerivedRevision } from "./derived-revision.ts";
 import { noteDocumentEdited } from "./activity-log.ts";
 import {
@@ -268,15 +272,79 @@ export function stableHash(value: unknown): string {
  * Resolve a doc path to its actual file on disk.
  * Tries .json first, then .md. Returns null if neither exists.
  */
+// ============================================================
+// A `.json` beside a Markdown Doc of the same name
+// ============================================================
+//
+// The catalog takes a `.json` as a Doc only when Worktable holds it as one or,
+// without an identity, when it holds Doc blocks; anything else is a plain
+// file under its whole name. Where a Markdown Doc shares its stem, reads and
+// lists here follow the same decision, so a plain JSON file never shadows or
+// hides the Doc. Both existing is rare; each decision is kept while the file
+// and the inventory keep their fingerprints.
+
+const jsonBesideMarkdown = new FingerprintCache<boolean>(10_000);
+
+function fingerprintKey(path: string): { key: string; racy: boolean } {
+  try {
+    return fingerprintOf(statSync(path, { bigint: true }));
+  } catch {
+    return { key: "missing", racy: false };
+  }
+}
+
+/** How the inventory registers a source, if it does. */
+function inventoryFormatOf(spaceId: string, relativePath: string): string | undefined {
+  try {
+    const inventory = JSON.parse(
+      readFileSync(join(spaceDir(spaceId), "documents.meta.json"), "utf8")
+    ) as { documents?: Record<string, { format?: { id?: unknown }; source?: { kind?: unknown; relativePath?: unknown } }> };
+    for (const entry of Object.values(inventory.documents ?? {})) {
+      if (entry?.source?.kind === "file" && entry.source.relativePath === relativePath) {
+        return typeof entry.format?.id === "string" ? entry.format.id : undefined;
+      }
+    }
+  } catch {
+    // No readable inventory: the content decides, as for any source without one.
+  }
+  return undefined;
+}
+
+/** Whether `<path>.json` is the Doc at `path` rather than a file beside it. */
+function jsonIsDocBesideMarkdown(spaceId: string, sanitized: string, jsonPath: string): boolean {
+  const source = fingerprintKey(jsonPath);
+  const inventory = fingerprintKey(join(spaceDir(spaceId), "documents.meta.json"));
+  const key = `${source.key}|${inventory.key}`;
+  const cached = jsonBesideMarkdown.get(jsonPath, key);
+  if (cached !== undefined) return cached;
+  const registered = inventoryFormatOf(spaceId, `docs/${sanitized}.json`);
+  let doc: boolean;
+  if (registered !== undefined) {
+    doc = registered !== "worktable.file";
+  } else {
+    try {
+      doc = richTextSourceIsDoc(readFileSync(jsonPath, "utf8"));
+    } catch {
+      doc = true;
+    }
+  }
+  if (!source.racy && !inventory.racy) jsonBesideMarkdown.set(jsonPath, key, doc);
+  return doc;
+}
+
 function resolveDocFile(
   spaceId: string,
   docPath: string
 ): { path: string; format: DocFileFormat } | null {
   const sanitized = sanitizeDocPath(docPath);
   const jsonPath = join(docsDir(spaceId), `${sanitized}.json`);
-  if (existsSync(jsonPath)) return { path: jsonPath, format: "json" };
   const mdPath = join(docsDir(spaceId), `${sanitized}.md`);
-  if (existsSync(mdPath)) return { path: mdPath, format: "md" };
+  const json = existsSync(jsonPath);
+  const md = existsSync(mdPath);
+  if (json && (!md || jsonIsDocBesideMarkdown(spaceId, sanitized, jsonPath))) {
+    return { path: jsonPath, format: "json" };
+  }
+  if (md) return { path: mdPath, format: "md" };
   return null;
 }
 
@@ -1664,23 +1732,38 @@ interface DocFile {
   file: string;
 }
 
-async function walkDir(dir: string, relDir: string, files: DocFile[]): Promise<void> {
+async function walkDir(
+  dir: string,
+  relDir: string,
+  files: DocFile[],
+  jsonIsDoc: (path: string, file: string) => boolean
+): Promise<void> {
   // Entry names never contain a separator, so joining them by hand gives the
   // same paths as join() and relative(), at less cost per entry.
   const below = (name: string) => (relDir ? `${relDir}${sep}${name}` : name);
   try {
     const entries = await readdir(dir, { withFileTypes: true });
-    // Track seen paths to avoid duplicates if both .json and .md exist (prefer .json)
+    const markdown = new Set(
+      entries.flatMap((entry) =>
+        !entry.isDirectory() && entry.name.endsWith(".md")
+          ? [entry.name.slice(0, -".md".length)]
+          : []
+      )
+    );
+    // Track seen paths to avoid duplicates if both .json and .md exist: the
+    // .json is the Doc unless it is a plain file beside the Markdown Doc.
     const seen = new Set<string>();
-    // Process .json first (takes priority)
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        await walkDir(`${dir}${sep}${entry.name}`, below(entry.name), files);
+        await walkDir(`${dir}${sep}${entry.name}`, below(entry.name), files, jsonIsDoc);
       } else if (entry.name.endsWith(".json")) {
-        const relPath = below(entry.name.slice(0, -".json".length));
+        const stem = entry.name.slice(0, -".json".length);
+        const relPath = below(stem);
+        const file = `${dir}${sep}${entry.name}`;
+        if (markdown.has(stem) && !jsonIsDoc(relPath, file)) continue;
         if (!seen.has(relPath)) {
           seen.add(relPath);
-          files.push({ path: relPath, format: "json", file: `${dir}${sep}${entry.name}` });
+          files.push({ path: relPath, format: "json", file });
         }
       }
     }
@@ -1702,7 +1785,9 @@ async function walkDir(dir: string, relDir: string, files: DocFile[]): Promise<v
 
 async function listDocFiles(spaceId: string): Promise<DocFile[]> {
   const files: DocFile[] = [];
-  await walkDir(docsDir(spaceId), "", files);
+  await walkDir(docsDir(spaceId), "", files, (path, file) =>
+    jsonIsDocBesideMarkdown(spaceId, path.split(sep).join("/"), file)
+  );
   const { aliases, error } = await readDocAliases(spaceId);
   if (!aliases) throw new Error(error ?? "Document aliases are unavailable");
   // A sync may recreate a physical file at a reserved old path. Keep that

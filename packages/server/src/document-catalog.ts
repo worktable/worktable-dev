@@ -897,7 +897,8 @@ async function inventoryClaims(
  * Doc stays a Doc, unreadable while its source isn't Doc blocks, so its
  * identity, history and comments survive. A source without an identity is
  * what its content is. Null when it is neither: a plain file where files
- * can't be, or under a name an alias holds.
+ * can't be, or anything under a name an alias holds. A Doc's alias holds
+ * the Doc's name, never the whole filename of a file beside it.
  */
 function classifiedByContent(
   claim: DocumentSourceClaim,
@@ -915,6 +916,8 @@ function classifiedByContent(
   const doc = docSourceViews.get(claim.source.relativePath)?.doc ?? true
   const registered = inventoryEntry?.format.id
   if (registered === BUILTIN_DOCUMENT_FORMATS.richText || (!inventoryEntry && doc)) {
+    // A Doc's old name an alias holds hides a stale copy, as for any Doc.
+    if (reservedByAlias(claim.path)) return null
     return doc
       ? claim
       : {
@@ -930,7 +933,7 @@ function classifiedByContent(
         }
   }
   if (registered !== undefined && registered !== BUILTIN_DOCUMENT_FORMATS.file) {
-    return claim
+    return reservedByAlias(claim.path) ? null : claim
   }
   const file = plainFileClaim(claim, registry)
   return file && !reservedByAlias(file.path) ? file : null

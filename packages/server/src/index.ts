@@ -125,7 +125,7 @@ import {
   REACHABLE_NETWORK_NOTICE,
   tlsTerminatedUpstream,
 } from "./exposure-notice.ts";
-import { WorkspaceWatcher } from "./watcher.ts";
+import { WorkspaceWatcher, type WatcherEvent } from "./watcher.ts";
 import { startSearchWarmup } from "./search-index.ts";
 import { DocumentFilesystemCoordinator } from "./document-filesystem-coordinator.ts";
 import { docAliasesRouter } from "./routes/doc-aliases.ts";
@@ -186,7 +186,6 @@ import {
   notifyWorkspaceChangeAndWait,
   notifyWorkspaceChangeAndWaitOrThrow,
   onWorkspaceChange,
-  type ChangeEvent,
 } from "./workspace-events.ts";
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts";
 import { runServerMaintenance } from "./server-maintenance.ts";
@@ -1007,7 +1006,7 @@ let replacementRestartInProgress = false
 let starterSeedScheduleHookForTests: (() => void | Promise<void>) | null = null
 let workspaceWatcherTestOptions: {
   debounceMs: number
-  onPendingChange: (event: ChangeEvent | null) => void
+  onPendingChange: (event: WatcherEvent | null) => void
 } | null = null
 let starterSeedRequestWaitHookForTests:
   | ((method: string, path: string) => void)
@@ -1038,7 +1037,7 @@ export function setStarterSeedScheduleHookForTests(
 export function setWorkspaceWatcherTestOptions(
   options: {
     debounceMs: number
-    onPendingChange: (event: ChangeEvent | null) => void
+    onPendingChange: (event: WatcherEvent | null) => void
   } | null
 ): void {
   workspaceWatcherTestOptions = options;

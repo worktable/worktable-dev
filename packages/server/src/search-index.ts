@@ -13,6 +13,7 @@ import {
   getSpaceArchiveInfo,
   listDocs,
   listSpaces,
+  NOT_DOC_BLOCKS_ERROR,
   readDoc,
   readSpace,
   type DocReadResult,
@@ -752,7 +753,10 @@ async function syncLegacyDocuments(
     if (!indexed) {
       if (previous) dropEntry(variant, previous.id);
       segment.documents.delete(docPath);
-      if (result.error) segment.retryAt = Date.now() + UNREADABLE_RETRY_MS;
+      // JSON that isn't Doc blocks stays so until it changes.
+      if (result.error && result.error !== NOT_DOC_BLOCKS_ERROR) {
+        segment.retryAt = Date.now() + UNREADABLE_RETRY_MS;
+      }
       continue;
     }
     putEntry(variant, indexed.entry, indexed.displayBody);

@@ -276,7 +276,7 @@ docsRouter.post("/", requireScope("docs:write"), async (c) => {
     );
   }
 
-  const filePath = getDocPath(spaceId, docPath);
+  const filePath = await getDocPath(spaceId, docPath);
   suppressPath(filePath);
   try {
     const result = await writeDoc(spaceId, docPath, parsed.data.content ?? [], {
@@ -638,7 +638,7 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
     const { markdownToBlocks } = await import("../markdown.ts");
     const blocks = await markdownToBlocks(result.data as string);
 
-    const filePath = getDocPath(spaceId, docPath);
+    const filePath = await getDocPath(spaceId, docPath);
     suppressPath(filePath);
     try {
       const writeResult = await writeDoc(spaceId, docPath, blocks, {
@@ -939,7 +939,7 @@ docsRouter.put("/*", requireScope("docs:write"), async (c) => {
     return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
   }
 
-  const filePath = getDocPath(spaceId, docPath);
+  const filePath = await getDocPath(spaceId, docPath);
   suppressPath(filePath);
   try {
     const result = await writeDoc(spaceId, docPath, parsed.data.content, {
@@ -1009,7 +1009,7 @@ docsRouter.delete("/*", requireScope("docs:write"), async (c) => {
     return c.json({ error: "Missing doc path", code: "BAD_REQUEST" }, 400);
   }
 
-  const filePath = getDocPath(spaceId, docPath);
+  const filePath = await getDocPath(spaceId, docPath);
   suppressPath(filePath);
   try {
     const deleteResult = await deleteDoc(spaceId, docPath);

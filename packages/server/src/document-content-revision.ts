@@ -177,7 +177,7 @@ export async function currentDocContentRevision(
   spaceId: string,
   docPath: string
 ): Promise<string | undefined> {
-  return (await docSourceRevision(getDocPath(spaceId, docPath))) ?? undefined
+  return (await docSourceRevision(await getDocPath(spaceId, docPath))) ?? undefined
 }
 
 /** The current revision of the Doc whose source a catalog handle names. */

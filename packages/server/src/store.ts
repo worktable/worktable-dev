@@ -26,6 +26,8 @@ import {
   prepareMarkdownStorageConversion,
 } from "./markdown.ts";
 import { canonicalizeBlocksForWrite, inheritBlockIds } from "./blocknote.ts";
+import { checkRichTextBlocks, RICH_TEXT_SOURCE_BUDGET } from "./rich-text-blocks.ts";
+import { jsonSourceIsDoc } from "./json-source-kind.ts";
 import { extractMarkdownMermaid } from "./mermaid-document.ts";
 
 import { getSpacesDir, getVersionsDir, workspaceCacheKey } from "./workspace.ts";
@@ -268,13 +270,40 @@ export function stableHash(value: unknown): string {
  * Resolve a doc path to its actual file on disk.
  * Tries .json first, then .md. Returns null if neither exists.
  */
-function resolveDocFile(
+// ============================================================
+// Which `.json` files are Docs
+// ============================================================
+//
+// Every read, write and list here takes a `.json` as a Doc only by the rule
+// the catalog uses (json-source-kind.ts): the inventory's claim, then its
+// content. A plain file is never read, listed or written as a Doc, never
+// shadows a Markdown Doc of the same name, and stays readable only through
+// the file API and its scope. The checks read asynchronously.
+
+/** Whether `docs/<path>.json` exists and is the Doc at `path`. */
+async function jsonDocAt(spaceId: string, sanitized: string): Promise<boolean> {
+  return (
+    existsSync(join(docsDir(spaceId), `${sanitized}.json`)) &&
+    (await jsonSourceIsDoc(spaceDir(spaceId), `docs/${sanitized}.json`))
+  );
+}
+
+/** A plain file holds `<path>.json`: no Doc may be written there. */
+async function plainJsonAt(spaceId: string, sanitized: string): Promise<boolean> {
+  return (
+    existsSync(join(docsDir(spaceId), `${sanitized}.json`)) &&
+    !(await jsonSourceIsDoc(spaceDir(spaceId), `docs/${sanitized}.json`))
+  );
+}
+
+async function resolveDocFile(
   spaceId: string,
   docPath: string
-): { path: string; format: DocFileFormat } | null {
+): Promise<{ path: string; format: DocFileFormat } | null> {
   const sanitized = sanitizeDocPath(docPath);
-  const jsonPath = join(docsDir(spaceId), `${sanitized}.json`);
-  if (existsSync(jsonPath)) return { path: jsonPath, format: "json" };
+  if (await jsonDocAt(spaceId, sanitized)) {
+    return { path: join(docsDir(spaceId), `${sanitized}.json`), format: "json" };
+  }
   const mdPath = join(docsDir(spaceId), `${sanitized}.md`);
   if (existsSync(mdPath)) return { path: mdPath, format: "md" };
   return null;
@@ -292,8 +321,8 @@ function docFilePathMd(spaceId: string, docPath: string): string {
   return join(docsDir(spaceId), `${sanitized}.md`);
 }
 
-export function getDocPath(spaceId: string, docPath: string): string {
-  const resolved = resolveDocFile(spaceId, docPath);
+export async function getDocPath(spaceId: string, docPath: string): Promise<string> {
+  const resolved = await resolveDocFile(spaceId, docPath);
   return resolved?.path ?? docFilePathJson(spaceId, docPath);
 }
 
@@ -1689,23 +1718,30 @@ interface DocFile {
   file: string;
 }
 
-async function walkDir(dir: string, relDir: string, files: DocFile[]): Promise<void> {
+async function walkDir(
+  dir: string,
+  relDir: string,
+  files: DocFile[],
+  isDoc: (path: string) => Promise<boolean>
+): Promise<void> {
   // Entry names never contain a separator, so joining them by hand gives the
   // same paths as join() and relative(), at less cost per entry.
   const below = (name: string) => (relDir ? `${relDir}${sep}${name}` : name);
   try {
     const entries = await readdir(dir, { withFileTypes: true });
-    // Track seen paths to avoid duplicates if both .json and .md exist (prefer .json)
+    // Track seen paths to avoid duplicates if both .json and .md exist: the
+    // .json is the Doc unless it is a plain file, which no Doc list holds.
     const seen = new Set<string>();
-    // Process .json first (takes priority)
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        await walkDir(`${dir}${sep}${entry.name}`, below(entry.name), files);
+        await walkDir(`${dir}${sep}${entry.name}`, below(entry.name), files, isDoc);
       } else if (entry.name.endsWith(".json")) {
         const relPath = below(entry.name.slice(0, -".json".length));
+        const file = `${dir}${sep}${entry.name}`;
+        if (!(await isDoc(relPath))) continue;
         if (!seen.has(relPath)) {
           seen.add(relPath);
-          files.push({ path: relPath, format: "json", file: `${dir}${sep}${entry.name}` });
+          files.push({ path: relPath, format: "json", file });
         }
       }
     }
@@ -1727,7 +1763,9 @@ async function walkDir(dir: string, relDir: string, files: DocFile[]): Promise<v
 
 async function listDocFiles(spaceId: string): Promise<DocFile[]> {
   const files: DocFile[] = [];
-  await walkDir(docsDir(spaceId), "", files);
+  await walkDir(docsDir(spaceId), "", files, (path) =>
+    jsonSourceIsDoc(spaceDir(spaceId), `docs/${path.split(sep).join("/")}.json`)
+  );
   const { aliases, error } = await readDocAliases(spaceId);
   if (!aliases) throw new Error(error ?? "Document aliases are unavailable");
   // A sync may recreate a physical file at a reserved old path. Keep that
@@ -2398,7 +2436,11 @@ function summarizeDocBody(data: DocReadResult["data"]): DocBodySummary {
 // clients) are seen on the next list; see derived-revision.ts for the rule.
 // Spaces listed least recently are let go first, so a deleted Space's
 // summaries do not stay.
-type CachedDocBodySummary = DocBodySummary & DerivedRevision;
+type CachedDocBodySummary = DocBodySummary &
+  DerivedRevision & {
+    /** A Doc the inventory keeps whose `.json` isn't Doc blocks. */
+    unreadable?: true;
+  };
 const DOC_BODY_SUMMARY_SPACES = 1_024;
 const docBodySummaries = new Map<string, Map<string, CachedDocBodySummary>>();
 
@@ -2412,7 +2454,7 @@ export async function listDocsDetailed(
   const summariesKey = docsDir(spaceId);
   const previous = docBodySummaries.get(summariesKey);
   const summaries = new Map<string, CachedDocBodySummary>();
-  const docs = await Promise.all(files.map(async ({ path, format, file }) => {
+  const docs = await Promise.all(files.map(async ({ path, format, file }): Promise<DocListEntry> => {
     const readAt = Date.now();
     // The walk found the file docStat would resolve, so stat it directly.
     // Paths that sanitizing changes, and files gone since the walk, keep
@@ -2426,19 +2468,30 @@ export async function listDocsDetailed(
       : "";
     const cached = previous?.get(path);
     let body: DocBodySummary;
+    // The walk listed only Docs; one whose bytes aren't Doc blocks stays
+    // listed, as unreadable, like the catalog's invalid Doc.
+    let unreadable = false;
     if (
       cached &&
       statResult &&
       canReuseDerived(cached, revision, statResult.updatedAt)
     ) {
       body = cached;
+      unreadable = cached.unreadable === true;
       summaries.set(path, cached);
     } else {
       const readResult = await readDoc(spaceId, path);
       body = summarizeDocBody(readResult.data);
-      // A failed read may be transient; read it again next time.
-      if (statResult && !readResult.error) {
-        summaries.set(path, { ...body, revision, readAt });
+      unreadable = readResult.error === NOT_DOC_BLOCKS_ERROR;
+      // A failed read may be transient; read it again next time. What the
+      // bytes are is not, until they change.
+      if (statResult && (!readResult.error || unreadable)) {
+        summaries.set(path, {
+          ...body,
+          ...(unreadable ? { unreadable: true as const } : {}),
+          revision,
+          readAt,
+        });
       }
     }
 
@@ -2456,6 +2509,7 @@ export async function listDocsDetailed(
       archived: ownedCopy(meta.docs[path]?.archived),
       ...lifetimeListFields(meta.docs[path], statResult?.updatedAt),
       provenance: ownedCopy(meta.docs[path]?.provenance),
+      ...(unreadable ? { unreadable: true as const } : {}),
     };
   }));
   docBodySummaries.delete(summariesKey);
@@ -2474,6 +2528,9 @@ export async function listDocsByPrefix(spaceId: string, prefix: string): Promise
     (path) => path === sanitizedPrefix || path.startsWith(`${sanitizedPrefix}/`)
   );
 }
+
+/** Why a `.json` doesn't open as a Doc: it is a plain file. */
+export const NOT_DOC_BLOCKS_ERROR = "Invalid document format: expected Doc blocks";
 
 export interface DocReadResult {
   data: unknown[] | string | null;
@@ -2522,7 +2579,7 @@ export async function readDocSourceSnapshot(
   spaceId: string,
   docPath: string
 ): Promise<DocSourceSnapshot> {
-  const resolved = resolveDocFile(spaceId, docPath);
+  const resolved = await resolveDocFile(spaceId, docPath);
   if (!resolved) {
     return {
       result: {
@@ -2557,14 +2614,24 @@ export async function readDocSourceSnapshot(
       };
     }
 
-    const blocks = JSON.parse(content);
-    if (!Array.isArray(blocks)) {
+    let blocks: unknown;
+    try {
+      blocks = JSON.parse(content);
+    } catch {
+      blocks = null;
+    }
+    // Whatever lists it, JSON that isn't Doc blocks never reaches the editor,
+    // a collaboration room or a Doc write: each would drop what it holds.
+    if (
+      !Array.isArray(blocks) ||
+      checkRichTextBlocks(blocks, RICH_TEXT_SOURCE_BUDGET) === "not-blocks"
+    ) {
       return {
         result: {
           data: null,
           format: null,
           storedAs: "json",
-          error: "Invalid document format: expected array",
+          error: NOT_DOC_BLOCKS_ERROR,
         },
         revision,
         bytes: new Uint8Array(bytes),
@@ -2764,7 +2831,7 @@ export async function convertDocToMarkdownStorage(
   if (pathError) {
     return {
       ok: false,
-      storedAs: resolveDocFile(spaceId, docPath)?.format ?? "json",
+      storedAs: (await resolveDocFile(spaceId, docPath))?.format ?? "json",
       error: pathError,
     };
   }
@@ -2781,7 +2848,7 @@ export async function convertDocToMarkdownStorage(
         return { ok: false, storedAs: "json", error: aliasError };
       }
 
-      const resolved = resolveDocFile(spaceId, sanitizedDocPath);
+      const resolved = await resolveDocFile(spaceId, sanitizedDocPath);
       if (!resolved) {
         return {
           ok: false,
@@ -3001,7 +3068,7 @@ export async function convertDocToMarkdownStorage(
         return {
           ok: false,
           storedAs:
-            resolveDocFile(spaceId, sanitizeDocPath(docPath))?.format ?? "json",
+            (await resolveDocFile(spaceId, sanitizeDocPath(docPath)))?.format ?? "json",
           error: error.message,
         };
       }
@@ -3031,12 +3098,11 @@ export async function writeDoc(
     return {
       ok: false,
       storedAs:
-        resolveDocFile(spaceId, sanitizedDocPath)?.format ??
+        (await resolveDocFile(spaceId, sanitizedDocPath))?.format ??
         (typeof content === "string" ? "md" : "json"),
       error: pathError,
     };
   }
-
   const writeLocked = async (
     formatFenced: boolean
   ): Promise<DocWriteResult | typeof formatFenceRequired> => {
@@ -3100,7 +3166,7 @@ export async function writeDoc(
           return {
             ok: false,
             storedAs:
-              resolveDocFile(spaceId, sanitizedDocPath)?.format ??
+              (await resolveDocFile(spaceId, sanitizedDocPath))?.format ??
               (typeof content === "string" ? "md" : "json"),
             error: error.message,
           };
@@ -3155,7 +3221,7 @@ async function writeDocTransaction(
   // writeDoc and therefore needs to acquire this lock.
   if (
     Array.isArray(content) &&
-    resolveDocFile(spaceId, sanitizedDocPath)?.format === "md" &&
+    (await resolveDocFile(spaceId, sanitizedDocPath))?.format === "md" &&
     !formatFenced
   ) {
     return formatFenceRequired;
@@ -3337,7 +3403,7 @@ export async function restoreDocVersion(
     // Avoid disrupting an active editor for an obviously stale URL. The
     // authoritative source and version checks repeat after the Yjs drain while
     // the namespace is held.
-    if (!resolveDocFile(spaceId, owner.path)) {
+    if (!(await resolveDocFile(spaceId, owner.path))) {
       return {
         ok: false,
         error: "Document not found",
@@ -3503,7 +3569,7 @@ async function writeDocUnlocked(
 ): Promise<DocWriteResult> {
   const isMarkdownContent = typeof content === "string";
   const sanitizedDocPath = sanitizeDocPath(docPath);
-  const resolved = resolveDocFile(spaceId, sanitizedDocPath);
+  const resolved = await resolveDocFile(spaceId, sanitizedDocPath);
   // Reservation is a namespace invariant, not merely a creation guard. An
   // external sync may recreate a file at an old path; API/MCP writes must not
   // update that hidden file while reads still resolve the alias elsewhere.
@@ -3700,7 +3766,14 @@ async function writeDocUnlocked(
     return finalizeWrite("md", content as string, content as string);
   }
 
-  // BlockNote blocks: always write as .json
+  // BlockNote blocks: always write as .json, never over a plain file there.
+  if (resolved?.format !== "json" && await plainJsonAt(spaceId, sanitizeDocPath(docPath))) {
+    return {
+      ok: false,
+      storedAs: "json",
+      error: `Another document already uses this path: ${sanitizeDocPath(docPath)}.json`,
+    };
+  }
   const jsonPath = docFilePathJson(spaceId, docPath);
   await mkdir(dirname(jsonPath), { recursive: true });
   const preparedBlocks = options?.canonical
@@ -3709,6 +3782,19 @@ async function writeDocUnlocked(
         content as unknown[],
         Array.isArray(before?.data) ? before.data : undefined
       );
+  // Blocks the editor can't hold, kept raw when they could not be put in its
+  // shape, would make a Doc that no reader opens.
+  if (
+    checkRichTextBlocks(preparedBlocks.content, RICH_TEXT_SOURCE_BUDGET) ===
+    "not-blocks"
+  ) {
+    return {
+      ok: false,
+      storedAs: "json",
+      error:
+        "Doc content must be Doc blocks: each a block type the editor knows, with its props, content and children.",
+    };
+  }
   // Serialized once for the file, its version and its revision.
   let serialized: string | undefined;
   const fileText = (): string =>
@@ -3888,7 +3974,7 @@ async function observedDocDeleteGeneration(
     .filter((entry) => entry.path === docPath)
     .map((entry) => entry.documentId)
     .sort();
-  const source = resolveDocFile(spaceId, docPath);
+  const source = await resolveDocFile(spaceId, docPath);
   if (source) {
     try {
       const info = lstatSync(source.path);
@@ -4092,7 +4178,7 @@ async function deleteDocLocked(
 
   const aliasError = await docAliasReservationError(spaceId, sanitized);
   if (aliasError) return { error: aliasError };
-  if (resolveDocFile(spaceId, sanitized)) {
+  if (await resolveDocFile(spaceId, sanitized)) {
     return {
       error: "Document identity could not be prepared for safe deletion",
     };
@@ -4101,7 +4187,7 @@ async function deleteDocLocked(
 }
 
 export async function docExists(spaceId: string, docPath: string): Promise<boolean> {
-  return resolveDocFile(spaceId, docPath) !== null;
+  return await resolveDocFile(spaceId, docPath) !== null;
 }
 
 export interface DocFileStat {
@@ -4134,7 +4220,7 @@ export async function docStat(
   spaceId: string,
   docPath: string
 ): Promise<DocFileStat | null> {
-  const resolved = resolveDocFile(spaceId, docPath);
+  const resolved = await resolveDocFile(spaceId, docPath);
   return resolved ? statDocFile(resolved.path, resolved.format) : null;
 }
 
@@ -4149,7 +4235,7 @@ export async function renameDoc(
 ): Promise<{ error: string | null }> {
   const sanitizedOldPath = sanitizeDocPath(oldPath);
   const sanitizedNewPath = sanitizeDocPath(newPath);
-  const resolved = resolveDocFile(spaceId, sanitizedOldPath);
+  const resolved = await resolveDocFile(spaceId, sanitizedOldPath);
   if (!resolved) {
     return { error: `Doc not found: ${sanitizedOldPath}` };
   }
@@ -4158,7 +4244,11 @@ export async function renameDoc(
     if (sourceAliasError) return { error: sourceAliasError };
   }
 
-  const newExists = resolveDocFile(spaceId, sanitizedNewPath);
+  // Either source name taken counts, plain files included: a rename never
+  // lands on a file.
+  const newExists =
+    existsSync(docFilePathJson(spaceId, sanitizedNewPath)) ||
+    existsSync(docFilePathMd(spaceId, sanitizedNewPath));
   if (newExists) {
     return { error: `Target path already exists: ${sanitizedNewPath}` };
   }

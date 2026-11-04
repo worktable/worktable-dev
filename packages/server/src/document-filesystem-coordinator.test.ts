@@ -1,8 +1,13 @@
 import { expect, it } from "bun:test"
+import { mkdir, mkdtemp, rm, truncate, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import {
   DocumentFilesystemCoordinator,
+  type DispatchedFilesystemChangeEvent,
   type DocumentFilesystemChangeEvent,
 } from "./document-filesystem-coordinator.ts"
+import { setWorkspaceRootOverride } from "./workspace.ts"
 
 it("coalesces duplicate filesystem identities before forwarding them", async () => {
   const forwarded: DocumentFilesystemChangeEvent[] = []
@@ -123,4 +128,60 @@ it("drains queued filesystem activity during graceful shutdown", async () => {
     spaceId: "alpha",
     widgetId: "saved",
   })
+})
+
+it("dispatches a changed .json as what it is, a plain file by its whole name", async () => {
+  const root = await mkdtemp(join(tmpdir(), "worktable-json-events-"))
+  setWorkspaceRootOverride(root)
+  try {
+    const docs = join(root, "spaces", "alpha", "docs")
+    await mkdir(docs, { recursive: true })
+    const blocks = '[{"type":"paragraph","content":"Hi"}]'
+    await writeFile(join(docs, "plan.md"), "# Plan")
+    await writeFile(join(docs, "plan.json"), '[{"id":1}]')
+    await writeFile(join(docs, "notes.json"), blocks)
+    // The inventory's file claim wins over Doc blocks written into it.
+    await writeFile(join(docs, "kept.json"), blocks)
+    await writeFile(
+      join(root, "spaces", "alpha", "documents.meta.json"),
+      JSON.stringify({
+        type: "worktable.document-inventory",
+        version: 1,
+        documents: {
+          doc_kept: {
+            path: "kept.json",
+            format: { id: "worktable.file", sourceVersion: 1 },
+            source: { kind: "file", relativePath: "docs/kept.json" },
+          },
+        },
+      })
+    )
+    // Larger than any Doc can be: a file, without reading it.
+    await writeFile(join(docs, "export.json"), "")
+    await truncate(join(docs, "export.json"), 65 * 1024 * 1024)
+
+    const forwarded: DispatchedFilesystemChangeEvent[] = []
+    const coordinator = new DocumentFilesystemCoordinator({
+      debounceMs: 60_000,
+      emit: (event) => forwarded.push(event),
+    })
+    for (const file of ["plan.json", "notes.json", "kept.json", "export.json"]) {
+      coordinator.note({ type: "jsonSource", spaceId: "alpha", file })
+    }
+    // A same-named Markdown Doc's change, later in the batch, absorbs nothing.
+    coordinator.note({ type: "doc", spaceId: "alpha", docPath: "plan" })
+    await coordinator.flush()
+    expect(forwarded).toEqual([
+      { type: "documentCorpus", spaceId: "alpha", paths: ["plan.json"] },
+      { type: "doc", spaceId: "alpha", docPath: "notes" },
+      { type: "documentCorpus", spaceId: "alpha", paths: ["kept.json"] },
+      { type: "documentCorpus", spaceId: "alpha", paths: ["export.json"] },
+      { type: "doc", spaceId: "alpha", docPath: "plan" },
+    ])
+
+    await coordinator.stop()
+  } finally {
+    setWorkspaceRootOverride(null)
+    await rm(root, { recursive: true, force: true })
+  }
 })

@@ -283,6 +283,17 @@ export const DocumentContributorsSchema = z.object({
   recent: z.array(ActivityActorSchema),
 })
 
+/**
+ * Why Worktable keeps no versions of a file as it is now. A file larger than
+ * one version holds still lists, opens and downloads; its history resumes
+ * once it is back within the limit.
+ */
+export const FileNoHistorySchema = z.object({
+  reason: z.literal("too-large"),
+  /** The largest file a version holds. */
+  maxBytes: z.number().int().positive(),
+})
+
 export const DocumentPageSchema = z.object({
   kind: z.literal("document"),
   document: DocumentSummarySchema,
@@ -317,6 +328,10 @@ export const DocumentPageSchema = z.object({
    * for good, and a new one comes with new bytes.
    */
   version: z.string().optional(),
+  /** For a file, its size in bytes, as Worktable last saw it on disk. */
+  byteLength: z.number().int().nonnegative().optional(),
+  /** For a file Worktable keeps no versions of now, why. */
+  noHistory: FileNoHistorySchema.optional(),
   /**
    * The document's share links, for people who may share it, while links v2
    * is on. Absent otherwise; the page then shares through today's single link.
@@ -342,6 +357,7 @@ export type DocumentPageCapabilities = z.infer<
   typeof DocumentPageCapabilitiesSchema
 >
 export type DocumentPage = z.infer<typeof DocumentPageSchema>
+export type FileNoHistory = z.infer<typeof FileNoHistorySchema>
 export type DocumentPageResult = z.infer<typeof DocumentPageResultSchema>
 export type DocumentCollaboration = z.infer<typeof DocumentCollaborationSchema>
 export type DocumentBacklink = z.infer<typeof DocumentBacklinkSchema>

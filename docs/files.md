@@ -605,14 +605,31 @@ Moving a folder takes its hidden items with it, as Finder or a shell does:
 each hidden file, and each hidden folder whole, goes to the same place in the
 new folder, byte for byte and still hidden, in the same move. A crash rolls
 them back or forward with the folder's Docs. The move is refused when one
-would land on something already there. Links and special files stay where
-they are. Moving one Doc or file doesn't touch hidden items beside it.
+would land on something already there, when a name in the folder holds a
+backslash, which Windows reads as a separator, or when something is mounted
+in the folder. Links and special files stay
+where they are. Moving one Doc or file doesn't touch hidden items beside it.
+
+Deleting a folder takes everything in it: its Docs and files, and with them
+its hidden items, links and special files, each as itself. A link is never
+followed. They leave in the same delete, so a crash leaves the folder whole or
+gone, and the folder is gone from disk. Files other Docs use stay when the
+delete keeps them. Delete is permanent: what the folder held waits in deleted
+items, outside backups and exports, until the history window ends (rule 14).
+Emptying deleted items never crosses into another filesystem: an item that
+holds one stays, logged, for an operator.
+The delete is refused, naming the item, when something in the folder can't be
+moved: a folder Worktable can't write, anything mounted inside (a bind mount
+of the same disk included), or a name with a backslash. A move or delete finds the folder on disk however its name's
+case is written, and a delete that would lose a file it keeps rolls back.
+Deleting one Doc or file doesn't touch hidden items beside it.
 
 **Enforced in:** `document-format-registry.ts` (`isHiddenName`,
 `pathIsHidden`), `document-adapters.ts` (discovery), `document-write-service.ts`
 and `document-lifecycle-journal.ts` (creates and moves refused; a folder
-move's plan carries hidden items). Listing, search, sharing and agent tools all
-read the catalog, so they inherit it.
+move's plan carries hidden items, and a folder delete's plan takes the rest of
+the folder), `deleted-items.ts` (into deleted items, then gone). Listing,
+search, sharing and agent tools all read the catalog, so they inherit it.
 
 **Proved by:**
 
@@ -629,12 +646,22 @@ read the catalog, so they inherit it.
 - `document-lifecycle-journal.test.ts` "recovers one all-or-nothing mixed
   folder generation": a crash before, during or after the hidden items move
   leaves them all in one folder.
+- `routes-documents.test.ts` "deletes mixed folders with common write
+  authority, files in them included": `.env`, `.git/HEAD`, a dot-named Doc and
+  a link leave with the folder, byte for byte and the link as itself, and the
+  folder is gone; a folder Worktable can't write refuses the delete by name.
+- `document-lifecycle-journal.test.ts` "settles one mixed document folder
+  atomically across compensation and committed recovery": after a crash at
+  any point, the folder's contents are all in the folder or all deleted.
+- `storage-usage.test.ts` "matches the disk through writes, a change on disk,
+  a delete and an emptied trash": a deleted folder's hidden items count as
+  deleted items until the window ends.
+- `deleted-items.test.ts` "a crash mid-move leaves the store consistent, and
+  the next pass finishes": a link and a FIFO reach deleted items on another
+  disk.
 
-**Gaps:**
-
-- A direct read by path of a symbolic link to a Doc still follows the link.
-- Deleting a folder deletes its Docs and files and leaves its hidden items,
-  links and special files, so the folder stays on disk.
+**Gaps:** a direct read by path of a symbolic link to a Doc still follows the
+link.
 
 ## Agents
 

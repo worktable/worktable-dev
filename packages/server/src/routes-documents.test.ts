@@ -10,13 +10,17 @@ import {
 } from "bun:test"
 import {
   access,
+  chmod,
   mkdir,
   readdir,
   mkdtemp,
   open,
   readFile,
+  readlink,
+  realpath,
   rename,
   rm,
+  rmdir,
   stat,
   symlink,
   truncate,
@@ -27,8 +31,15 @@ import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
 import { FILE_UPLOAD_MAX_BYTES } from "./file-uploads.ts"
 import { removeLeftoverStagedFiles, stagingDirectory } from "./staged-file.ts"
+import { workspaceRecoveryRequired } from "./workspace-safety.ts"
+import * as fs from "node:fs"
+import {
+  setDocumentLifecycleStepHookForTests,
+  setMountPointsForTests,
+} from "./document-lifecycle-journal.ts"
+import { renameSync } from "node:fs"
 import { FOLDER_OPERATION_MAX_ENTRIES } from "./folder-operation-limit.ts"
-import { join } from "node:path"
+import { join, sep } from "node:path"
 import { Hono } from "hono"
 import {
   DOCUMENT_ARCHIVE_REASON_MAX_LENGTH,
@@ -746,6 +757,117 @@ describe("format-neutral document route", () => {
         .map((path) => path.slice(prefix.length + 1))
     const listedBefore = await listed("notes")
 
+    // A name with a backslash, legal on disk, can't be recorded for recovery:
+    // the move refuses it by name before anything moves.
+    const unrecordable = join(docs, "notes", ".cache\\old")
+    await writeFile(unrecordable, "cached")
+    const refused = await instance.request(
+      `/api/spaces/${spaceId}/documents/move-folder`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-test-scopes": "documents:write",
+        },
+        body: JSON.stringify({ oldPath: "notes", newPath: "library" }),
+      }
+    )
+    expect(refused.status).toBe(409)
+    expect((await refused.json()).error).toContain("notes/.cache\\old")
+    expect(workspaceRecoveryRequired()).toBe(false)
+    expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
+    await rm(unrecordable)
+    // A mount below the folder, even a bind mount of the same filesystem,
+    // refuses the move by name before anything moves.
+    await mkdir(join(docs, "notes", ".mnt"))
+    setMountPointsForTests([join(await realpath(join(docs, "notes")), ".mnt")])
+    try {
+      const mounted = await instance.request(
+        `/api/spaces/${spaceId}/documents/move-folder`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-test-scopes": "documents:write",
+          },
+          body: JSON.stringify({ oldPath: "notes", newPath: "library" }),
+        }
+      )
+      expect(mounted.status).toBe(409)
+      expect((await mounted.json()).error).toContain("notes/.mnt")
+    } finally {
+      setMountPointsForTests(undefined)
+      await rmdir(join(docs, "notes", ".mnt"))
+    }
+    // Without mount points to read (as on macOS), a directory on another
+    // filesystem anywhere in what the move would take refuses it too.
+    const nested = join(docs, "notes", ".cache", "mnt")
+    await mkdir(nested, { recursive: true })
+    const realLstat = fs.lstatSync
+    setMountPointsForTests(null)
+    const elsewhere = spyOn(fs, "lstatSync").mockImplementation(((
+      path: fs.PathLike,
+      options?: fs.StatSyncOptions
+    ) => {
+      const info = realLstat(path, options) as fs.Stats
+      if (String(path) !== nested) return info
+      const moved = Object.create(info) as fs.Stats
+      Object.defineProperty(moved, "dev", { value: info.dev + 1 })
+      return moved
+    }) as typeof fs.lstatSync)
+    try {
+      const across = await instance.request(
+        `/api/spaces/${spaceId}/documents/move-folder`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-test-scopes": "documents:write",
+          },
+          body: JSON.stringify({ oldPath: "notes", newPath: "library" }),
+        }
+      )
+      expect(across.status).toBe(409)
+      expect((await across.json()).error).toContain("notes/.cache/mnt")
+    } finally {
+      elsewhere.mockRestore()
+      setMountPointsForTests(undefined)
+      await rm(join(docs, "notes", ".cache"), { recursive: true })
+    }
+    // Should the kernel still refuse a rename (EBUSY, as across mounts),
+    // the move rolls back: it never copies instead.
+    const rename = fs.renameSync
+    const refusing = spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (String(from).endsWith(`${sep}.git`)) {
+        throw Object.assign(new Error("simulated"), { code: "EBUSY" })
+      }
+      return rename(from, to)
+    })
+    try {
+      const failed = await instance.request(
+        `/api/spaces/${spaceId}/documents/move-folder`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-test-scopes": "documents:write",
+          },
+          body: JSON.stringify({ oldPath: "notes", newPath: "library" }),
+        }
+      )
+      expect(failed.status).not.toBe(200)
+    } finally {
+      refusing.mockRestore()
+    }
+    expect(workspaceRecoveryRequired()).toBe(false)
+    expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
+    expect(await readFile(join(docs, "notes", ".env"), "utf8")).toBe(
+      hidden[".env"]
+    )
+    expect(await readFile(join(docs, "notes", ".git", "HEAD"), "utf8")).toBe(
+      hidden[".git/HEAD"]
+    )
+
     const forbidden = await instance.request(
       `/api/spaces/${spaceId}/documents/move-folder`,
       {
@@ -767,7 +889,8 @@ describe("format-neutral document route", () => {
           "content-type": "application/json",
           "x-test-scopes": "documents:write",
         },
-        body: JSON.stringify({ oldPath: "notes", newPath: "library" }),
+        // Spelled otherwise than on disk: the folder there is the one moved.
+        body: JSON.stringify({ oldPath: "Notes", newPath: "library" }),
       }
     )
     expect(moved.status).toBe(200)
@@ -776,7 +899,7 @@ describe("format-neutral document route", () => {
     }
     expect(movedBody).toMatchObject({
       ok: true,
-      oldPath: "notes",
+      oldPath: "Notes",
       newPath: "library",
       renamed: expect.arrayContaining([
         { from: "notes/old", to: "library/old" },
@@ -2296,6 +2419,11 @@ describe("format-neutral document route", () => {
       await writeFile(join(docs, "notes", "readme", "shared.png"), "shared")
       await writeFile(join(docs, "notes", "readme", "own.png"), "own")
       await writeFile(join(docs, "notes", "readme", "inner.png"), "inner")
+      // Hidden items, which leave with the folder whatever it keeps.
+      await mkdir(join(docs, "notes", "readme", ".git"), { recursive: true })
+      const readme = join(docs, "notes", "readme")
+      await writeFile(join(readme, ".env"), "TOKEN=synthetic\n")
+      await writeFile(join(readme, ".git", "HEAD"), "ref: main\n")
       noteSpaceChanged(spaceId)
       await recordDocAlias(spaceId, "old-shot.png", "notes/readme/shared.png", "exact")
       const inFolderBoard = await writeWidget(
@@ -2365,7 +2493,8 @@ describe("format-neutral document route", () => {
       expect((await listed()).length).toBe(6)
 
       // Deleting it takes its folder too, except what another Doc uses,
-      // which keeps its place in the Space's order.
+      // which keeps its place in the Space's order. The path's case is
+      // written otherwise again: the folder on disk is the one it names.
       const space = await readSpace(spaceId)
       await writeSpace({
         ...space.data!,
@@ -2374,7 +2503,29 @@ describe("format-neutral document route", () => {
           docOrder: ["notes/readme", "notes/readme/own.png", "notes/readme/shared.png"],
         },
       })
-      expect((await post("delete", { path: "notes/readme" })).status).toBe(200)
+      // Should a kept file ever leave with the folder, the delete fails and
+      // rolls back instead of committing without it.
+      const shared = join(docs, "notes", "readme", "shared.png")
+      let taken = false
+      setDocumentLifecycleStepHookForTests((step) => {
+        if (step !== "remainder-retired" || taken) return
+        taken = true
+        renameSync(shared, `${shared}.away`)
+      })
+      try {
+        const failed = await post("delete", { path: "Notes/Readme" })
+        expect(failed.status).not.toBe(200)
+      } finally {
+        setDocumentLifecycleStepHookForTests(null)
+      }
+      expect(await readFile(join(readme, "own.png"), "utf8")).toBe("own")
+      expect(await readFile(join(readme, ".env"), "utf8")).toBe(
+        "TOKEN=synthetic\n"
+      )
+      await rename(`${shared}.away`, shared)
+      noteSpaceChanged(spaceId)
+      expect((await listed()).length).toBe(6)
+      expect((await post("delete", { path: "Notes/Readme" })).status).toBe(200)
       expect((await readSpace(spaceId)).data?.settings["docOrder"]).toEqual([
         "notes/readme",
         "notes/readme/shared.png",
@@ -2388,6 +2539,15 @@ describe("format-neutral document route", () => {
       expect(
         await readFile(join(docs, "notes", "readme", "shared.png"), "utf8")
       ).toBe("shared")
+      expect(
+        await readFile(join(docs, "notes", "readme", "inner.png"), "utf8")
+      ).toBe("inner")
+      expect((await readdir(join(docs, "notes", "readme"))).sort()).toEqual([
+        "board.html",
+        "details.md",
+        "inner.png",
+        "shared.png",
+      ])
       // HTML tools delete an HTML Doc alone: its folder is not theirs.
       const board = await writeWidget(
         spaceId,
@@ -2610,6 +2770,154 @@ describe("format-neutral document route", () => {
       recursive: true,
     })
     await writeFile(unclaimed, "Keep this file")
+    // Hidden items and a link, as a shell or git leaves them.
+    const folder = join(root, "spaces", spaceId, "docs", "notes")
+    const hidden = {
+      ".env": "TOKEN=synthetic\n",
+      ".git/HEAD": "ref: refs/heads/main\n",
+      ".drafts.md": "# Drafts\n",
+    }
+    for (const [path, content] of Object.entries(hidden)) {
+      await mkdir(join(folder, path, ".."), { recursive: true })
+      await writeFile(join(folder, path), content)
+    }
+    await symlink("readme.md", join(folder, ".link"))
+    // Something Worktable can't move refuses the whole delete, by name, and
+    // nothing leaves. (Root moves anything, so there is nothing to refuse.)
+    if (process.getuid?.() !== 0) {
+      const locked = join(folder, ".locked")
+      await mkdir(locked)
+      await chmod(locked, 0o500)
+      try {
+        const refused = await instance.request(
+          `/api/spaces/${spaceId}/documents/delete-folder`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-test-scopes": "documents:write",
+            },
+            body: JSON.stringify({ path: "notes" }),
+          }
+        )
+        expect(refused.status).toBe(409)
+        expect((await refused.json()).error).toContain("notes/.locked")
+        expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
+        expect(await readFile(join(folder, ".env"), "utf8")).toBe(
+          hidden[".env"]
+        )
+      } finally {
+        await chmod(locked, 0o700)
+        await rm(locked, { recursive: true })
+      }
+    }
+    // So does a name with a backslash, which recovery couldn't read back.
+    const unrecordable = join(folder, ".cache\\old")
+    await writeFile(unrecordable, "cached")
+    const unrecorded = await instance.request(
+      `/api/spaces/${spaceId}/documents/delete-folder`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-test-scopes": "documents:write",
+        },
+        body: JSON.stringify({ path: "notes" }),
+      }
+    )
+    expect(unrecorded.status).toBe(409)
+    expect((await unrecorded.json()).error).toContain("notes/.cache\\old")
+    expect(workspaceRecoveryRequired()).toBe(false)
+    expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
+    await rm(unrecordable)
+    // A mount below the folder, even a bind mount of the same filesystem,
+    // refuses the delete by name before anything moves.
+    await mkdir(join(folder, ".mnt"))
+    setMountPointsForTests([join(await realpath(folder), ".mnt")])
+    try {
+      const mounted = await instance.request(
+        `/api/spaces/${spaceId}/documents/delete-folder`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-test-scopes": "documents:write",
+          },
+          body: JSON.stringify({ path: "notes" }),
+        }
+      )
+      expect(mounted.status).toBe(409)
+      expect((await mounted.json()).error).toContain("notes/.mnt")
+    } finally {
+      setMountPointsForTests(undefined)
+      await rmdir(join(folder, ".mnt"))
+    }
+    // Without mount points to read (as on macOS), a directory on another
+    // filesystem anywhere in what the delete would take refuses it too.
+    const nested = join(folder, ".cache", "mnt")
+    await mkdir(nested, { recursive: true })
+    const realLstat = fs.lstatSync
+    setMountPointsForTests(null)
+    const elsewhere = spyOn(fs, "lstatSync").mockImplementation(((
+      path: fs.PathLike,
+      options?: fs.StatSyncOptions
+    ) => {
+      const info = realLstat(path, options) as fs.Stats
+      if (String(path) !== nested) return info
+      const moved = Object.create(info) as fs.Stats
+      Object.defineProperty(moved, "dev", { value: info.dev + 1 })
+      return moved
+    }) as typeof fs.lstatSync)
+    try {
+      const across = await instance.request(
+        `/api/spaces/${spaceId}/documents/delete-folder`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-test-scopes": "documents:write",
+          },
+          body: JSON.stringify({ path: "notes" }),
+        }
+      )
+      expect(across.status).toBe(409)
+      expect((await across.json()).error).toContain("notes/.cache/mnt")
+    } finally {
+      elsewhere.mockRestore()
+      setMountPointsForTests(undefined)
+      await rm(join(folder, ".cache"), { recursive: true })
+    }
+    // Should the kernel still refuse a rename (EXDEV, as across mounts),
+    // the delete rolls back: it never copies instead.
+    const rename = fs.renameSync
+    const refusing = spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (String(from).endsWith(`${sep}.env`)) {
+        throw Object.assign(new Error("simulated"), { code: "EXDEV" })
+      }
+      return rename(from, to)
+    })
+    try {
+      const failed = await instance.request(
+        `/api/spaces/${spaceId}/documents/delete-folder`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-test-scopes": "documents:write",
+          },
+          body: JSON.stringify({ path: "notes" }),
+        }
+      )
+      expect(failed.status).not.toBe(200)
+    } finally {
+      refusing.mockRestore()
+    }
+    expect(workspaceRecoveryRequired()).toBe(false)
+    expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
+    expect(await readFile(join(folder, ".env"), "utf8")).toBe(hidden[".env"])
+    expect(await readFile(join(folder, ".git", "HEAD"), "utf8")).toBe(
+      hidden[".git/HEAD"]
+    )
     const deleted = await instance.request(
       `/api/spaces/${spaceId}/documents/delete-folder`,
       {
@@ -2638,6 +2946,17 @@ describe("format-neutral document route", () => {
     expect((await readWidget(spaceId, "notes/status")).data).toBeNull()
     // Every file in the folder is part of it, so it goes too.
     await expect(readFile(unclaimed, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
+    // And everything else in it, the folder with it: hidden items and the
+    // link wait, as they were, beside the Docs' history for the trash.
+    await expect(access(folder)).rejects.toMatchObject({ code: "ENOENT" })
+    const retired = join(root, "versions", spaceId, ".retired", "folders")
+    const [digest] = await readdir(retired)
+    const [operation] = await readdir(join(retired, digest!))
+    const kept = join(retired, digest!, operation!)
+    for (const [path, content] of Object.entries(hidden)) {
+      expect(await readFile(join(kept, path), "utf8")).toBe(content)
+    }
+    expect(await readlink(join(kept, ".link"))).toBe("readme.md")
   }, 10_000)
 
   it("keeps HTML that was there an HTML Doc, and takes HTML added later as a file a person can open", async () => {

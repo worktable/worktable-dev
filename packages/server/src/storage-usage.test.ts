@@ -15,6 +15,7 @@ import type { SpaceFile } from "@worktable/types"
 import { setAppDirOverride } from "./app-storage.ts"
 import { atomicWriteText } from "./atomic-file.ts"
 import { runDeletedItemsPass } from "./deleted-items.ts"
+import { deleteDocumentFolder } from "./document-folder-delete.ts"
 import {
   createRegisteredDocument,
   deleteRegisteredDocument,
@@ -220,6 +221,24 @@ describe("storage usage", () => {
     const deleted = await counted()
     expect(deleted.trash.files).toBeGreaterThan(0)
     expect(deleted.history.bytes).toBeLessThan(written.history.bytes)
+
+    // A folder delete: what else the folder held, hidden items included,
+    // goes to the trash with it and counts there.
+    await createDoc("project/brief", "# Brief\n")
+    const project = join(workspace, "spaces", "notes", "docs", "project")
+    mkdirSync(join(project, ".git"), { recursive: true })
+    writeFileSync(join(project, ".env"), new Uint8Array(5_000))
+    writeFileSync(join(project, ".git", "HEAD"), "ref: refs/heads/main\n")
+    changedOnDisk(join(project, ".env"))
+    changedOnDisk(join(project, ".git", "HEAD"))
+    await matchesDisk()
+    expect(await deleteDocumentFolder("notes", "project")).toMatchObject({
+      ok: true,
+    })
+    await runDeletedItemsPass({ now: () => start })
+    await matchesDisk()
+    const folderTrash = (await counted()).trash.bytes - deleted.trash.bytes
+    expect(folderTrash).toBeGreaterThanOrEqual(5_000)
 
     // Past the window, the trash empties.
     await runDeletedItemsPass({ now: () => start + 31 * DAY })

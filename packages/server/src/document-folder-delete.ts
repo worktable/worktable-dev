@@ -1,3 +1,4 @@
+import { resolve } from "node:path"
 import { CanonicalIdSchema } from "@worktable/types"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import { DOCUMENT_DELETE_ADAPTER_IDS } from "./document-delete-adapter.ts"
@@ -21,6 +22,7 @@ import {
   documentPathKeyIsBelow,
 } from "./document-path.ts"
 import { documentStorageProfiles } from "./document-storage-profile.ts"
+import { removeEmptiedFolders } from "./document-folder-move.ts"
 import { withDocGenerationLocks } from "./doc-generation-lock.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
 import { notifyDocContentChanged } from "./content-events.ts"
@@ -285,6 +287,18 @@ export async function deleteDocumentFolder(
       console.warn(
         `[document-folder-delete] could not publish derived state for ${logDocument(spaceId, path)}`,
         logError(error)
+      )
+    }
+    // Everything else in it left with the delete, so only empty folders and
+    // the documents kept are left.
+    if (outcome.folderOnDisk) {
+      await removeEmptiedFolders(
+        resolve(
+          getWorkspaceRoot(),
+          "spaces",
+          spaceId,
+          ...outcome.folderOnDisk.split("/")
+        )
       )
     }
     return { ok: true, path, paths: outcome.deleted.map((entry) => entry.path) }

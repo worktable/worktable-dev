@@ -334,10 +334,11 @@ export async function hasDocumentsBelow(
 }
 
 /**
- * Remove the folders a move left empty, deepest first, so the Space's folder
- * matches what it lists. A folder with anything still in it stays.
+ * Remove the folders a move or delete left empty, deepest first, so the
+ * Space's folder matches what it lists. A folder with anything still in it
+ * stays.
  */
-async function removeEmptiedFolders(directory: string): Promise<void> {
+export async function removeEmptiedFolders(directory: string): Promise<void> {
   let entries
   try {
     entries = await readdir(directory, { withFileTypes: true })
@@ -433,9 +434,17 @@ export async function moveDocumentFolder(
         logError(error)
       )
     }
-    await removeEmptiedFolders(
-      resolve(getWorkspaceRoot(), "spaces", spaceId, "docs", ...fromPrefix.split("/"))
-    )
+    // The folder as spelled on disk, which a request may spell otherwise.
+    if (outcome.folderOnDisk) {
+      await removeEmptiedFolders(
+        resolve(
+          getWorkspaceRoot(),
+          "spaces",
+          spaceId,
+          ...outcome.folderOnDisk.split("/")
+        )
+      )
+    }
     return {
       ok: true,
       from: fromPrefix,

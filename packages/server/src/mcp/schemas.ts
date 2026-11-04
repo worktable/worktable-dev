@@ -1172,6 +1172,13 @@ export const DocsWriteInput = z.strictObject({
 
 const HtmlIdInput = z.string().describe("ID of the HTML doc")
 
+const HtmlUploadInput = z
+  .literal(true)
+  .optional()
+  .describe(
+    "With a shell, send the page through a link instead of html: the result gives a one-time link that takes it with curl -T within 10 minutes, up to 64 MiB, and saves it as this call would have. To replace a page this way, pass htmlId and expectedRevision."
+  )
+
 const HtmlTextEditsInput = z
   .array(
     z.object({
@@ -1217,9 +1224,15 @@ export const HtmlWriteInput = z.strictObject({
   request: z.discriminatedUnion("action", [
     actionSchema("create", {
       ...CreateWidgetInput.shape,
+      // Without html, the page comes through an upload link (upload).
+      html: CreateWidgetInput.shape.html
+        .optional()
+        .describe(CreateWidgetInput.shape.html.description!),
+      upload: HtmlUploadInput,
       preview: DocumentPreviewOptionsSchema.optional(),
     }),
     actionSchema("update", {
+      upload: HtmlUploadInput,
       preview: DocumentPreviewOptionsSchema.optional(),
       spaceId: UpdateWidgetInput.shape.spaceId,
       htmlId: HtmlIdInput,

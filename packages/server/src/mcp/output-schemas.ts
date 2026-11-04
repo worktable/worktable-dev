@@ -1713,13 +1713,35 @@ export class PublicOperationOutputError extends Error {
   }
 }
 
+/** An upload link for an HTML Doc's page, from the preview surface. */
+const HtmlUploadLinkOutputSchema = z.looseObject({
+  ok: z.literal(true),
+  htmlId: PortableHtmlIdSchema.optional(),
+  uploadUrl: z.string(),
+  method: z.literal("PUT"),
+  expiresAt: z.string(),
+  maxBytes: z.number().int().positive(),
+  command: z.string(),
+})
+
+/**
+ * Results only the preview surface returns. They are checked like the
+ * others, but stay out of the released output schemas: the preview listing
+ * declares their fields (catalog.ts PREVIEW_CHANGES).
+ */
+const HELD_OPERATION_OUTPUT_VARIANTS: Partial<Record<OperationId, readonly z.ZodObject[]>> = {
+  "html.create": [HtmlUploadLinkOutputSchema],
+  "html.update": [HtmlUploadLinkOutputSchema],
+}
+
 export function assertPublicOperationOutput(
   operationId: OperationId,
   result: unknown
 ): asserts result is Record<string, unknown> {
-  const attempts = PUBLIC_OPERATION_OUTPUT_VARIANTS[operationId].map((schema) =>
-    schema.safeParse(result)
-  )
+  const attempts = [
+    ...PUBLIC_OPERATION_OUTPUT_VARIANTS[operationId],
+    ...(HELD_OPERATION_OUTPUT_VARIANTS[operationId] ?? []),
+  ].map((schema) => schema.safeParse(result))
   if (attempts.some((attempt) => attempt.success)) return
 
   const closest = attempts

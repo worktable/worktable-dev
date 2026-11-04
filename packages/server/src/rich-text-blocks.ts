@@ -1,3 +1,4 @@
+import type { TableCellProps } from "@blocknote/core"
 import { serverSchema } from "./blocknote.ts"
 
 // ============================================================
@@ -11,8 +12,10 @@ import { serverSchema } from "./blocknote.ts"
 //
 // Blocks may be partial, as agents and earlier versions wrote them: an id,
 // props, content and children can each be left out, content can be a string,
-// and styled text can leave out its type. Unknown props are kept by writes,
-// so any primitive prop is accepted; keys the editor has no place for are not.
+// and styled text can leave out its type. A prop must be one the editor's
+// schema gives that block type, or one an earlier Worktable wrote there: the
+// editor drops any other on its next save, so a Doc holding one opens as
+// unreadable instead, and a write that holds one is refused.
 
 export type RichTextBlocksCheck =
   /** Every element is a block the editor holds as written. */
@@ -43,23 +46,84 @@ const TABLE_KEYS = new Set([
 const TABLE_ROW_KEYS = new Set(["cells"])
 const TABLE_CELL_KEYS = new Set(["type", "props", "content"])
 
+/**
+ * Props earlier Worktables wrote that today's schema no longer gives the type.
+ * The code block's and table's are in Docs AgentDash's editor wrote, always
+ * at their default values; the editor drops them on save, which changes
+ * nothing the Doc shows. Mermaid's are the pre-Worktable block's source and
+ * language, which `normalizeMermaidBlocks` turns into today's shape. Every
+ * BlockNote release Worktable shipped (0.46.2, 0.51.0, 0.51.4, 0.54.2) gives
+ * the other types the same props as today. Never remove an entry: a Doc
+ * that holds it would stop opening.
+ */
+const EARLIER_BLOCK_PROPS: Readonly<Record<string, readonly string[]>> = {
+  codeBlock: ["backgroundColor", "textColor", "textAlignment"],
+  table: ["backgroundColor", "textAlignment"],
+  mermaid: ["code", "language"],
+}
+
+/** A table cell's props, as BlockNote types them; the record keeps all. */
+const TABLE_CELL_PROPS: ReadonlySet<string> = new Set(
+  Object.keys({
+    backgroundColor: true,
+    textColor: true,
+    textAlignment: true,
+    colspan: true,
+    rowspan: true,
+  } satisfies Record<keyof TableCellProps, true>)
+)
+
 let schemaTables:
   | {
       blocks: ReadonlyMap<string, ContentKind>
-      inline: ReadonlySet<string>
+      props: ReadonlyMap<string, ReadonlySet<string>>
+      inline: ReadonlyMap<string, ReadonlySet<string>>
     }
   | undefined
 
+type SchemaConfig = { content: ContentKind; propSchema?: Record<string, unknown> }
+
 function schema(): NonNullable<typeof schemaTables> {
-  schemaTables ??= {
+  if (schemaTables) return schemaTables
+  const blockSchema = serverSchema.blockSchema as Record<string, SchemaConfig>
+  const inlineSchema = serverSchema.inlineContentSchema as Record<
+    string,
+    "text" | "link" | { propSchema?: Record<string, unknown> }
+  >
+  schemaTables = {
     blocks: new Map(
-      Object.entries(
-        serverSchema.blockSchema as Record<string, { content: ContentKind }>
-      ).map(([type, config]) => [type, config.content])
+      Object.entries(blockSchema).map(([type, config]) => [type, config.content])
     ),
-    inline: new Set(Object.keys(serverSchema.inlineContentSchema)),
+    props: new Map(
+      Object.entries(blockSchema).map(([type, config]) => [
+        type,
+        new Set([
+          ...Object.keys(config.propSchema ?? {}),
+          ...(EARLIER_BLOCK_PROPS[type] ?? []),
+        ]),
+      ])
+    ),
+    inline: new Map(
+      Object.entries(inlineSchema).map(([type, config]) => [
+        type,
+        new Set(
+          typeof config === "object" ? Object.keys(config.propSchema ?? {}) : []
+        ),
+      ])
+    ),
   }
   return schemaTables
+}
+
+/** The first prop a record holds that `known` doesn't, if any. */
+function unknownKey(
+  props: Record<string, unknown>,
+  known: ReadonlySet<string> | undefined
+): string | undefined {
+  for (const key in props) {
+    if (props[key] !== undefined && !known?.has(key)) return key
+  }
+  return undefined
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -87,7 +151,14 @@ function primitiveRecord(value: unknown): boolean {
   return true
 }
 
-class NotBlocks extends Error {}
+class NotBlocks extends Error {
+  /** What a refused write is told, when the check knows more than "not blocks". */
+  readonly problem: string | undefined
+  constructor(problem?: string) {
+    super(problem)
+    this.problem = problem
+  }
+}
 class TooLarge extends Error {}
 
 /**
@@ -100,8 +171,27 @@ export function checkRichTextBlocks(
   budget: RichTextBlocksBudget,
   signal?: AbortSignal
 ): RichTextBlocksCheck {
-  if (!Array.isArray(value)) return "not-blocks"
-  const { blocks, inline } = schema()
+  return inspectRichTextBlocks(value, budget, signal).check
+}
+
+/**
+ * Why a value isn't Doc blocks, for a refused write: a named unknown field,
+ * or null when the check has nothing more specific than "not Doc blocks".
+ */
+export function richTextBlocksProblem(
+  value: unknown,
+  budget: RichTextBlocksBudget
+): string | null {
+  return inspectRichTextBlocks(value, budget).problem ?? null
+}
+
+function inspectRichTextBlocks(
+  value: unknown,
+  budget: RichTextBlocksBudget,
+  signal?: AbortSignal
+): { check: RichTextBlocksCheck; problem?: string } {
+  if (!Array.isArray(value)) return { check: "not-blocks" }
+  const { blocks, props: blockProps, inline } = schema()
   let elements = 0
   const count = (depth: number) => {
     elements += 1
@@ -109,8 +199,18 @@ export function checkRichTextBlocks(
       throw new TooLarge()
     }
   }
-  const fail: () => never = () => {
-    throw new NotBlocks()
+  const fail: (problem?: string) => never = (problem) => {
+    throw new NotBlocks(problem)
+  }
+  const knownProps = (
+    props: unknown,
+    known: ReadonlySet<string> | undefined,
+    on: string
+  ) => {
+    if (props === undefined) return
+    if (!primitiveRecord(props)) fail()
+    const field = unknownKey(props as Record<string, unknown>, known)
+    if (field !== undefined) fail(`Unknown field \`${field}\` on ${on}`)
   }
 
   const styledText = (item: Record<string, unknown>) => {
@@ -150,12 +250,8 @@ export function checkRichTextBlocks(
         type !== "link" &&
         inline.has(type)
       ) {
-        if (
-          !onlyKeys(entry, CUSTOM_INLINE_KEYS) ||
-          (entry["props"] !== undefined && !primitiveRecord(entry["props"]))
-        ) {
-          fail()
-        }
+        if (!onlyKeys(entry, CUSTOM_INLINE_KEYS)) fail()
+        knownProps(entry["props"], inline.get(type as string), type as string)
         if (entry["content"] !== undefined) {
           inlineContent(entry["content"], depth + 1, false)
         }
@@ -191,13 +287,10 @@ export function checkRichTextBlocks(
       for (const cell of cells as unknown[]) {
         count(depth + 1)
         if (isRecord(cell)) {
-          if (
-            !onlyKeys(cell, TABLE_CELL_KEYS) ||
-            cell["type"] !== "tableCell" ||
-            (cell["props"] !== undefined && !primitiveRecord(cell["props"]))
-          ) {
+          if (!onlyKeys(cell, TABLE_CELL_KEYS) || cell["type"] !== "tableCell") {
             fail()
           }
+          knownProps(cell["props"], TABLE_CELL_PROPS, "a table cell")
           if (cell["content"] !== undefined) {
             inlineContent(cell["content"], depth + 2, true)
           }
@@ -225,11 +318,12 @@ export function checkRichTextBlocks(
           : undefined
       if (
         kind === undefined ||
-        (block["id"] !== undefined && typeof block["id"] !== "string") ||
-        (block["props"] !== undefined && !primitiveRecord(block["props"]))
+        (block["id"] !== undefined && typeof block["id"] !== "string")
       ) {
         fail()
       }
+      const type = block["type"] as string
+      knownProps(block["props"], blockProps.get(type), type)
       const content = block["content"]
       if (content !== undefined) {
         if (kind === "inline") inlineContent(content, depth + 1, true)
@@ -251,11 +345,15 @@ export function checkRichTextBlocks(
       }
     }
   } catch (error) {
-    if (error instanceof NotBlocks) return "not-blocks"
-    if (error instanceof TooLarge) return "too-large"
+    if (error instanceof NotBlocks) {
+      return error.problem === undefined
+        ? { check: "not-blocks" }
+        : { check: "not-blocks", problem: error.problem }
+    }
+    if (error instanceof TooLarge) return { check: "too-large" }
     throw error
   }
-  return "blocks"
+  return { check: "blocks" }
 }
 
 /** The structural limits of a rich-text Doc's writes. */

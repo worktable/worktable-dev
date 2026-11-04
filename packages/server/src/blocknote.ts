@@ -144,9 +144,10 @@ export function unknownPropKeys(block: unknown): string[] {
 
 /**
  * Canonicalize blocks for a write, keeping props the schema does not define
- * (written by another tool or a newer Worktable) on every block that keeps
- * its id and type. Canonicalization alone drops them. The editor cannot hold
- * them either, so a person's next edit of the open Doc still loses them.
+ * on every block that keeps its id and type. Canonicalization alone drops
+ * them. Only props an earlier Worktable wrote get this far: the write's Doc
+ * check refuses any other (rich-text-blocks.ts). The editor cannot hold them
+ * either, so a person's next edit of the open Doc still loses them.
  */
 export async function canonicalizeBlocksForWrite(blocks: unknown[]): Promise<unknown[]> {
   // Canonicalization mints ids for blocks without one; minting them first

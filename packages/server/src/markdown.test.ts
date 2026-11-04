@@ -480,11 +480,17 @@ describe("markdown support", () => {
     });
 
     it("read_doc returns markdown for a stored doc with foreign props instead of crashing", async () => {
-      // The exact shape that crashed production reads: markdown-safe
-      // types carrying props the server-side schema doesn't know.
+      // The shape that crashed production reads: markdown-safe types carrying
+      // props the server-side schema doesn't know, as an earlier Worktable
+      // wrote them. A write of any other unknown prop is refused instead.
+      const refused = await writeDoc("test-space", "foreign-props-doc", [
+        { id: "p1", type: "paragraph", props: { foreignProp: "x" }, content: text("Body text"), children: [] },
+      ]);
+      expect(refused.error).toBe("Unknown field `foreignProp` on paragraph");
       await writeDoc("test-space", "foreign-props-doc", [
         { id: "h1", type: "heading", props: { level: 1, isToggleable: true }, content: text("Title"), children: [] },
-        { id: "p1", type: "paragraph", props: { foreignProp: "x" }, content: text("Body text"), children: [] },
+        { id: "p1", type: "paragraph", props: {}, content: text("Body text"), children: [] },
+        { id: "c1", type: "codeBlock", props: { language: "ts", backgroundColor: "default", textAlignment: "left" }, content: text("const a = 1"), children: [] },
       ]);
 
       const result = (await dispatchOperation("docs.read", {

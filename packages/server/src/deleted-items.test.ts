@@ -25,9 +25,14 @@ import {
 } from "./document-lifecycle-journal.ts"
 import {
   deletedItemsTrashDir,
+  runDeletedItemsInBackground,
   runDeletedItemsPass,
   setDeletedItemsHooksForTests,
 } from "./deleted-items.ts"
+import {
+  setDeletedItemsDelaysForTests,
+  setDeletedItemsRunner,
+} from "./deleted-item-events.ts"
 import {
   invalidateServerSettingsCache,
   updateServerSettings,
@@ -41,9 +46,15 @@ import {
 } from "./store.ts"
 import {
   closeVisitorCommentStores,
+  holdVisitorCommentWrites,
   readVisitorComment,
   receiveVisitorComment,
 } from "./visitor-comment-store.ts"
+import {
+  resetWorkspaceRequestLifecycleForTests,
+  resumeWorkspaceRequestAdmission,
+  stopWorkspaceMutationsAndDrain,
+} from "./workspace-request-lifecycle.ts"
 import {
   ensureWorkspaceManifest,
   setWorkspaceRootOverride,
@@ -111,6 +122,31 @@ async function create(spaceId: string, path: string) {
   })
 }
 
+function plantComment(documentId: string, requestId = "request-1") {
+  return receiveVisitorComment({
+    worktableId: "wt_test",
+    linkId: "link_test",
+    linkLabel: "Review",
+    linkCreator: "owner",
+    documentId,
+    spaceId: "notes",
+    kind: "html",
+    visitorName: "Visitor",
+    visitorKey: "visitor-key",
+    clientKey: "client-key",
+    body: "Looks good",
+    requestId,
+  })
+}
+
+async function until(check: () => boolean, timeoutMs = 3_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error("timed out waiting")
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
+
 async function createAndDelete(spaceId: string, path: string): Promise<void> {
   await create(spaceId, path)
   await deleteRegisteredDocument({ spaceId, path })
@@ -128,6 +164,10 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  setDeletedItemsRunner(null)
+  setDeletedItemsDelaysForTests(null)
+  resumeWorkspaceRequestAdmission()
+  resetWorkspaceRequestLifecycleForTests()
   setDeletedItemsHooksForTests({})
   setDocumentLifecycleStepHookForTests(null)
   closeVisitorCommentStores()
@@ -145,20 +185,7 @@ describe("deleted items", () => {
     await writeSpace(space("notes"))
     const start = Date.now()
     const older = await create("notes", "older")
-    const comment = receiveVisitorComment({
-      worktableId: "wt_test",
-      linkId: "link_test",
-      linkLabel: "Review",
-      linkCreator: "owner",
-      documentId: older.documentId,
-      spaceId: "notes",
-      kind: "html",
-      visitorName: "Visitor",
-      visitorKey: "visitor-key",
-      clientKey: "client-key",
-      body: "Looks good",
-      requestId: "request-1",
-    })
+    const comment = plantComment(older.documentId)
     await deleteRegisteredDocument({ spaceId: "notes", path: "older" })
     // The delete erases the document's visitor comments itself.
     expect(readVisitorComment("wt_test", comment.id)).toBeNull()
@@ -298,5 +325,67 @@ describe("deleted items", () => {
     expect(trash()).toEqual(moved)
     await runDeletedItemsPass({ now: () => Date.now() + 31 * DAY })
     expect(trash()).toEqual([])
+  })
+
+  it("retry a visitor comment erase the comment store refused", async () => {
+    ensureWorkspaceManifest()
+    await writeSpace(space("notes"))
+    const doc = await create("notes", "reviewed")
+    const comment = plantComment(doc.documentId)
+    const release = holdVisitorCommentWrites()
+    try {
+      await deleteRegisteredDocument({ spaceId: "notes", path: "reviewed" })
+      await runDeletedItemsPass()
+    } finally {
+      release()
+    }
+    // The history left the workspace folder; the comment is still owed.
+    expect(retired("notes")).toEqual([])
+    expect(readVisitorComment("wt_test", comment.id)).not.toBeNull()
+
+    await runDeletedItemsPass()
+    expect(readVisitorComment("wt_test", comment.id)).toBeNull()
+  })
+
+  it("empty expired trash of a workspace that is not being served", async () => {
+    ensureWorkspaceManifest()
+    const other = join(app, "trash", "0123456789abcdef")
+    const plant = (id: string, retiredAt: number, data: boolean) => {
+      mkdirSync(join(other, id), { recursive: true })
+      writeFileSync(
+        join(other, id, "entry.json"),
+        JSON.stringify({ version: 1, origin: "", spaceId: "s", retiredAt })
+      )
+      if (data) mkdirSync(join(other, id, "data"))
+    }
+    plant("aaaaaaaaaaaaaaaa", Date.now() - 31 * DAY, true)
+    plant("bbbbbbbbbbbbbbbb", Date.now() - 10 * DAY, true)
+    // Still on its way out of that workspace: nothing to remove yet.
+    plant("cccccccccccccccc", Date.now() - 31 * DAY, false)
+
+    expect(await runDeletedItemsPass()).toMatchObject({ removed: 1 })
+    expect(readdirSync(other).sort()).toEqual([
+      "bbbbbbbbbbbbbbbb",
+      "cccccccccccccccc",
+    ])
+  })
+
+  it("run a pass a capture deferred again once the capture lets go", async () => {
+    ensureWorkspaceManifest()
+    await writeSpace(space("notes"))
+    setDeletedItemsDelaysForTests({ moveMs: 5, firstRetryMs: 20, maxRetryMs: 40 })
+    let passes = 0
+    setDeletedItemsRunner(() => {
+      passes += 1
+      void runDeletedItemsInBackground()
+    })
+    await stopWorkspaceMutationsAndDrain()
+    await createAndDelete("notes", "captured")
+    await until(() => passes >= 3)
+    expect(retired("notes")).toHaveLength(1)
+
+    resumeWorkspaceRequestAdmission()
+    await until(() => retired("notes").length === 0)
+    expect(trash()).toHaveLength(1)
   })
 })

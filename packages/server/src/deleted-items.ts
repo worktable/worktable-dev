@@ -28,7 +28,13 @@
 //
 // A deleted document's visitor comments are erased with it: by the delete
 // itself (document-data-lifecycle-v2.ts) and again when its history or Space
-// moves out, which retries an erase that could not run.
+// moves out. An erase the comment store refuses is recorded and retried by
+// every pass (pending-comment-erase.ts); the history moves out regardless.
+//
+// The trash of every workspace under app data is emptied, not only the one
+// being served, so a workspace switched away from or moved still loses its
+// deleted items on schedule. A pass that a capture or replacement deferred
+// is retried with a short backoff (deleted-item-events.ts).
 //
 // An archived Space or Doc is not deleted: its content and history stay in
 // place under the ordinary retention policy, and nothing here touches them.
@@ -88,7 +94,14 @@ import {
   RETENTION_DEFAULT,
   type RetentionPolicy,
 } from "./settings-store.ts"
-import { eraseVisitorCommentsForDocuments } from "./visitor-comment-store.ts"
+import {
+  retryDeletedItemsSoon,
+  settleDeletedItemsRetry,
+} from "./deleted-item-events.ts"
+import {
+  eraseVisitorCommentsOrRecord,
+  retryPendingCommentErase,
+} from "./pending-comment-erase.ts"
 import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
 import { admitWorkspaceRequest } from "./workspace-request-lifecycle.ts"
 import { workspaceRecoveryRequired } from "./workspace-safety.ts"
@@ -97,6 +110,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 /** Items renamed under one hold of the lifecycle lock. */
 const BATCH_SIZE = 8
 const ENTRY_ID = /^[0-9a-f]{16}$/
+const WORKSPACE_KEY = /^[0-9a-f]{16}$/
 const TOMBSTONE = /^\.(sweep|erase)-([0-9a-f]{16})$/
 const EMPTYING = /^\.empty-[0-9a-f]{16}$/
 const V2_RETIREMENT_ID = /^dsv2_[A-Za-z0-9_-]{22}$/
@@ -143,7 +157,7 @@ export interface DeletedItemsPassResult {
   removed: number
   /** Items left in place because an unsettled operation still names them. */
   protected: number
-  /** True when the pass stopped early; the next one continues. */
+  /** True when a capture or replacement held the workspace; retried soon. */
   deferred: boolean
 }
 
@@ -387,14 +401,12 @@ async function settleTombstone(tombstone: Tombstone, now: number): Promise<void>
   await rm(tombstone.path, { recursive: true, force: true })
 }
 
-/** Drop entries whose item never left its place, and finish emptying. */
+/** Drop the active workspace's entries whose item never left its place. */
 async function tidyTrash(): Promise<void> {
   const trash = deletedItemsTrashDir()
   for (const name of await childDirectories(trash)) {
     const path = join(trash, name)
-    if (EMPTYING.test(name)) {
-      await rm(path, { recursive: true, force: true })
-    } else if (ENTRY_ID.test(name) && !(await realDirectory(join(path, "data")))) {
+    if (ENTRY_ID.test(name) && !(await realDirectory(join(path, "data")))) {
       // Every tombstone was settled before this runs, so the item is still
       // in place and will be found again.
       await rm(path, { recursive: true, force: true })
@@ -402,42 +414,45 @@ async function tidyTrash(): Promise<void> {
   }
 }
 
-async function emptyTrash(now: number, window: number): Promise<number> {
-  const trash = deletedItemsTrashDir()
+/**
+ * Empty expired entries in every workspace's trash, not only the one being
+ * served: a workspace switched away from, or moved to another path (which
+ * changes its key), would otherwise keep its trash forever. Each entry
+ * carries its own retirement time. An entry without data is left alone: its
+ * item may still be on its way out of a workspace that is not served now.
+ */
+async function emptyAllTrash(now: number, window: number): Promise<number> {
+  const base = join(ensureAppDir(), "trash")
   let removed = 0
-  for (const name of await childDirectories(trash)) {
-    if (!ENTRY_ID.test(name)) continue
-    const path = join(trash, name)
-    const entry = await readEntry(path)
-    if (!entry) {
-      // Unreadable: start its window again rather than guess.
-      await writeEntry(path, { version: 1, origin: "", spaceId: "", retiredAt: now })
-      continue
+  for (const key of await childDirectories(base)) {
+    if (!WORKSPACE_KEY.test(key)) continue
+    const trash = join(base, key)
+    for (const name of await childDirectories(trash)) {
+      const path = join(trash, name)
+      if (EMPTYING.test(name)) {
+        await rm(path, { recursive: true, force: true })
+        continue
+      }
+      if (!ENTRY_ID.test(name) || !(await realDirectory(join(path, "data")))) {
+        continue
+      }
+      const entry = await readEntry(path)
+      if (!entry) {
+        // Unreadable: start its window again rather than guess.
+        await writeEntry(path, { version: 1, origin: "", spaceId: "", retiredAt: now })
+        continue
+      }
+      if (entry.retiredAt + window > now) continue
+      const emptying = join(trash, `.empty-${name}`)
+      await rename(path, emptying)
+      await rm(emptying, { recursive: true, force: true })
+      removed += 1
     }
-    if (entry.retiredAt + window > now) continue
-    const emptying = join(trash, `.empty-${name}`)
-    await rename(path, emptying)
-    await rm(emptying, { recursive: true, force: true })
-    removed += 1
   }
   return removed
 }
 
 // ── The pass ────────────────────────────────────────────────
-
-function eraseVisitorComments(documentIds: readonly string[]): boolean {
-  try {
-    return eraseVisitorCommentsForDocuments(documentIds)
-  } catch (error) {
-    // The comment store is unreadable, so nothing can read its comments
-    // either. Move the history out regardless; the next erase retries.
-    console.warn(
-      "[deleted-items] could not erase visitor comments:",
-      logError(error)
-    )
-    return true
-  }
-}
 
 /**
  * Move deleted items out of the workspace folder and empty the app-data
@@ -453,13 +468,37 @@ export async function runDeletedItemsPass(options?: {
     protected: 0,
     deferred: false,
   }
-  if (workspaceRecoveryRequired()) return { ...result, deferred: true }
+  // A workspace that needs recovery is left alone until a restart recovers
+  // it; that start's pass continues. App-data trash is emptied regardless.
+  if (!workspaceRecoveryRequired()) {
+    await moveOutOfWorkspace(now, result)
+  }
+  const window = currentWindow()
+  if (window !== null) result.removed += await emptyAllTrash(now(), window)
+
+  if (result.moved > 0 || result.removed > 0) {
+    console.log(
+      `[deleted-items] moved ${result.moved} out of the workspace folder, removed ${result.removed} past the history window`
+    )
+  }
+  return result
+}
+
+async function moveOutOfWorkspace(
+  now: () => number,
+  result: DeletedItemsPassResult
+): Promise<void> {
   const root = getWorkspaceRoot()
+  // Erases that could not run before; under the lock deletes record under.
+  await withUnsettledDocumentLifecycles(() => retryPendingCommentErase())
 
   const found = await discoverWorkspace(root)
   if (found.tombstones.length > 0) {
     const release = admitWorkspaceRequest("write")
-    if (!release) return { ...result, deferred: true }
+    if (!release) {
+      result.deferred = true
+      return
+    }
     try {
       for (const tombstone of found.tombstones) {
         await settleTombstone(tombstone, now())
@@ -505,11 +544,9 @@ export async function runDeletedItemsPass(options?: {
               continue
             }
             if (!(await realDirectory(item.path))) continue
-            // A replacement in progress holds comment writes; try later.
-            if (!eraseVisitorComments(await item.documentIds())) {
-              result.deferred = true
-              continue
-            }
+            // Recorded for the next pass when the comment store refuses, so
+            // the history still leaves the workspace folder now.
+            await eraseVisitorCommentsOrRecord(await item.documentIds())
             const retiredAt = item.deletedAt ?? now()
             const id = newEntryId()
             const erase = window !== null && retiredAt + window <= now()
@@ -545,16 +582,6 @@ export async function runDeletedItemsPass(options?: {
     }
     await new Promise<void>((resolve) => setImmediate(resolve))
   }
-
-  const window = currentWindow()
-  if (window !== null) result.removed += await emptyTrash(now(), window)
-
-  if (result.moved > 0 || result.removed > 0) {
-    console.log(
-      `[deleted-items] moved ${result.moved} out of the workspace folder, removed ${result.removed} past the history window`
-    )
-  }
-  return result
 }
 
 let running: Promise<void> | null = null
@@ -570,8 +597,13 @@ export function runDeletedItemsInBackground(): Promise<void> {
     do {
       again = false
       try {
-        await runDeletedItemsPass()
+        const result = await runDeletedItemsPass()
+        // An export, snapshot or replacement held the workspace: try again
+        // shortly after it lets go, instead of waiting for the daily pass.
+        if (result.deferred) retryDeletedItemsSoon()
+        else settleDeletedItemsRetry()
       } catch (error) {
+        // The next delete, restart or daily pass tries again.
         console.error("[deleted-items] pass failed:", logError(error))
       }
     } while (again)

@@ -1538,17 +1538,24 @@ function stagingCandidates(
   return candidates
 }
 
-/** Clone one file, checking the source and its ancestors before and after. */
+/**
+ * Clone one file, checking the source before and after, and its ancestors
+ * too unless `checkAncestors` is false. Staging before the barrier passes
+ * false, as the copy path does: live writers change directories all the
+ * time, and the barrier's own listing is what proves a staged file current.
+ */
 async function cloneSource(
   source: SourceEntry,
   destination: string,
   inventory: SourceInventory,
   directories: Map<string, SourceEntry>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  checkAncestors = true
 ): Promise<void> {
   signal?.throwIfAborted()
   const assertSource = async () => {
-    await assertSourceAncestors(source, inventory, directories)
+    if (checkAncestors)
+      await assertSourceAncestors(source, inventory, directories)
     const current = await lstat(source.absolute)
     if (
       !current.isFile() ||
@@ -1589,7 +1596,14 @@ async function stageFile(
   const output = captureOutput(staging.root, source.path)
   if (staging.method !== "copy") {
     try {
-      await cloneSource(source, output, inventory, directories, options.signal)
+      await cloneSource(
+        source,
+        output,
+        inventory,
+        directories,
+        options.signal,
+        options.checkAncestors
+      )
       staging.method ??= "reflink"
       return { source, output, sha256: null }
     } catch (error) {

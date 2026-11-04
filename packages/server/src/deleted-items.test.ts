@@ -139,14 +139,6 @@ function plantComment(documentId: string, requestId = "request-1") {
   })
 }
 
-async function until(check: () => boolean, timeoutMs = 3_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs
-  while (!check()) {
-    if (Date.now() > deadline) throw new Error("timed out waiting")
-    await new Promise((resolve) => setTimeout(resolve, 10))
-  }
-}
-
 async function createAndDelete(spaceId: string, path: string): Promise<void> {
   await create(spaceId, path)
   await deleteRegisteredDocument({ spaceId, path })
@@ -374,18 +366,25 @@ describe("deleted items", () => {
     ensureWorkspaceManifest()
     await writeSpace(space("notes"))
     setDeletedItemsDelaysForTests({ moveMs: 5, firstRetryMs: 20, maxRetryMs: 40 })
+    // Each scheduled pass says when it has finished, so the test waits on
+    // passes rather than on time.
     let passes = 0
+    let finished: (() => void) | null = null
+    const nextPassFinished = () =>
+      new Promise<void>((resolve) => {
+        finished = resolve
+      })
     setDeletedItemsRunner(() => {
       passes += 1
-      void runDeletedItemsInBackground()
+      void runDeletedItemsInBackground().finally(() => finished?.())
     })
     await stopWorkspaceMutationsAndDrain()
     await createAndDelete("notes", "captured")
-    await until(() => passes >= 3)
+    while (passes < 3) await nextPassFinished()
     expect(retired("notes")).toHaveLength(1)
 
     resumeWorkspaceRequestAdmission()
-    await until(() => retired("notes").length === 0)
+    while (retired("notes").length > 0) await nextPassFinished()
     expect(trash()).toHaveLength(1)
   })
 })

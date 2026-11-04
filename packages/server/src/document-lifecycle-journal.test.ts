@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -727,7 +728,11 @@ describe("recoverable document lifecycle", () => {
   })
 
   it("settles one mixed document folder atomically across compensation and committed recovery", async () => {
-    for (const boundary of ["source-moved", "committed"] as const) {
+    for (const boundary of [
+      "source-moved",
+      "remainder-retired",
+      "committed",
+    ] as const) {
       const workspace = join(root, `folder-delete-${boundary}`, "workspace")
       const app = join(root, `folder-delete-${boundary}`, "app")
       mkdirSync(workspace, { recursive: true })
@@ -813,6 +818,25 @@ describe("recoverable document lifecycle", () => {
         "keep.txt"
       )
       writeFileSync(unclaimed, "Unclaimed file\n")
+      // Hidden items and a link, as a shell or git leaves them.
+      const folderDir = join(workspace, "spaces", "space", "docs", "folder")
+      const hidden = {
+        ".env": "TOKEN=synthetic\n",
+        ".git/HEAD": "ref: refs/heads/main\n",
+        ".drafts.md": "# Drafts\n",
+      }
+      for (const [path, content] of Object.entries(hidden)) {
+        mkdirSync(dirname(join(folderDir, path)), { recursive: true })
+        writeFileSync(join(folderDir, path), content)
+      }
+      symlinkSync("note.md", join(folderDir, ".link"))
+      const retiredFolders = join(
+        workspace,
+        "versions",
+        "space",
+        ".retired",
+        "folders"
+      )
       const widgetManifest = join(
         workspace,
         "spaces",
@@ -833,7 +857,7 @@ describe("recoverable document lifecycle", () => {
           expect(notePathEventIfSuppressed(widgetManifest)).toBe(true)
           throw new SimulatedDocumentLifecycleCrash(boundary)
         }
-        if (boundary === "committed" && step === "committed") {
+        if (step === boundary && boundary !== "source-moved") {
           throw new SimulatedDocumentLifecycleCrash(boundary)
         }
       })
@@ -842,7 +866,7 @@ describe("recoverable document lifecycle", () => {
       )
       setDocumentLifecycleStepHookForTests(null)
 
-      if (boundary === "source-moved") {
+      if (boundary !== "committed") {
         writeFileSync(
           join(workspace, "spaces", "space", "docs", "folder", "note.md"),
           "# Edited during crash recovery\n"
@@ -940,6 +964,28 @@ describe("recoverable document lifecycle", () => {
       // A file in the folder goes with it, and comes back if the delete does.
       if (committed) expect(existsSync(unclaimed)).toBe(false)
       else expect(readFileSync(unclaimed, "utf8")).toBe("Unclaimed file\n")
+      // So does everything else in it, all in one place: retired with the
+      // delete, or back in the folder as it was.
+      const [retired] = existsSync(retiredFolders)
+        ? readdirSync(retiredFolders).flatMap((digest) =>
+            readdirSync(join(retiredFolders, digest)).map((id) =>
+              join(retiredFolders, digest, id)
+            )
+          )
+        : []
+      for (const [path, content] of Object.entries(hidden)) {
+        const kept = committed ? join(retired!, path) : join(folderDir, path)
+        expect(readFileSync(kept, "utf8")).toBe(content)
+      }
+      if (committed) {
+        expect(readlinkSync(join(retired!, ".link"))).toBe("note.md")
+        for (const name of [...Object.keys(hidden), ".link"]) {
+          expect(existsSync(join(folderDir, name))).toBe(false)
+        }
+      } else {
+        expect(readlinkSync(join(folderDir, ".link"))).toBe("note.md")
+        expect(retired).toBeUndefined()
+      }
 
       const catalog = await buildDocumentCatalog({
         workspaceRoot: workspace,

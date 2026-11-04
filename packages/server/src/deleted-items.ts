@@ -9,6 +9,9 @@
 //     the document's version generations (Storage V2)
 //   versions/<space>/.retired/<docs|widgets>/<key digest>/<dlc operation id>/
 //     legacy snapshots, moved by the document lifecycle journal
+//   versions/<space>/.retired/folders/<folder digest>/<dlc operation id>/
+//     what else a deleted folder held (hidden items, links, special files),
+//     moved by the same journal
 //
 // Deleting a Space moves `spaces/<id>` to `spaces/.trash/<id>-<ms>` and its
 // history to `versions/.trash/<id>-<ms>` (store.ts deleteSpace).
@@ -305,7 +308,16 @@ async function discoverWorkspace(root: string): Promise<Discovery> {
       for (const name of await childDirectories(retired)) {
         if (noteTombstone(retired, name, found)) continue
         const isV2 = name === "documents"
-        if (!isV2 && name !== "docs" && name !== "widgets") continue
+        // `folders` holds what else a deleted folder held: hidden items,
+        // links, special files.
+        if (
+          !isV2 &&
+          name !== "docs" &&
+          name !== "widgets" &&
+          name !== "folders"
+        ) {
+          continue
+        }
         for (const owner of await childDirectories(join(retired, name))) {
           if (
             isV2
@@ -411,6 +423,12 @@ async function moveTombstone(tombstone: Tombstone, now: number): Promise<void> {
     verbatimSymlinks: true,
     errorOnExist: true,
     force: false,
+    // A FIFO, socket or device holds no bytes and can't be copied, so it
+    // goes with the tombstone instead of stopping the move.
+    filter: async (source) => {
+      const info = await lstat(source)
+      return info.isFile() || info.isDirectory() || info.isSymbolicLink()
+    },
   })
   await rename(partial, data)
   await rm(tombstone.path, { recursive: true, force: true })

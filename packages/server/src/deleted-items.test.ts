@@ -1,13 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { spawnSync } from "node:child_process"
 import {
   copyFileSync,
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
@@ -295,6 +299,13 @@ describe("deleted items", () => {
     await createAndDelete("notes", "second")
     const before = retired("notes")
     expect(before).toHaveLength(2)
+    // A deleted folder's link and FIFO go too: the link as itself, the FIFO,
+    // which holds no bytes and can't be copied, with its tombstone.
+    for (const item of before) {
+      const path = join(workspace, "versions", "notes", ".retired", item)
+      symlinkSync("elsewhere", join(path, ".link"))
+      expect(spawnSync("mkfifo", [join(path, ".pipe")]).status).toBe(0)
+    }
 
     // App data on another filesystem: the move is a copy, then a removal.
     setDeletedItemsHooksForTests({
@@ -319,6 +330,11 @@ describe("deleted items", () => {
     expect(retired("notes")).toEqual([])
     expect(trash()).toHaveLength(2)
     expect(trash().every((entry) => entry.data)).toBe(true)
+    for (const id of readdirSync(deletedItemsTrashDir())) {
+      const data = join(deletedItemsTrashDir(), id, "data")
+      expect(readlinkSync(join(data, ".link"))).toBe("elsewhere")
+      expect(() => lstatSync(join(data, ".pipe"))).toThrow()
+    }
   })
 
   it("move a deleted Space with its history, and clear what older versions left behind", async () => {

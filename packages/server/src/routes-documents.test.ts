@@ -10,11 +10,13 @@ import {
 } from "bun:test"
 import {
   access,
+  chmod,
   mkdir,
   readdir,
   mkdtemp,
   open,
   readFile,
+  readlink,
   rename,
   rm,
   stat,
@@ -2610,6 +2612,47 @@ describe("format-neutral document route", () => {
       recursive: true,
     })
     await writeFile(unclaimed, "Keep this file")
+    // Hidden items and a link, as a shell or git leaves them.
+    const folder = join(root, "spaces", spaceId, "docs", "notes")
+    const hidden = {
+      ".env": "TOKEN=synthetic\n",
+      ".git/HEAD": "ref: refs/heads/main\n",
+      ".drafts.md": "# Drafts\n",
+    }
+    for (const [path, content] of Object.entries(hidden)) {
+      await mkdir(join(folder, path, ".."), { recursive: true })
+      await writeFile(join(folder, path), content)
+    }
+    await symlink("readme.md", join(folder, ".link"))
+    // Something Worktable can't move refuses the whole delete, by name, and
+    // nothing leaves. (Root moves anything, so there is nothing to refuse.)
+    if (process.getuid?.() !== 0) {
+      const locked = join(folder, ".locked")
+      await mkdir(locked)
+      await chmod(locked, 0o500)
+      try {
+        const refused = await instance.request(
+          `/api/spaces/${spaceId}/documents/delete-folder`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-test-scopes": "documents:write",
+            },
+            body: JSON.stringify({ path: "notes" }),
+          }
+        )
+        expect(refused.status).toBe(409)
+        expect((await refused.json()).error).toContain("notes/.locked")
+        expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
+        expect(await readFile(join(folder, ".env"), "utf8")).toBe(
+          hidden[".env"]
+        )
+      } finally {
+        await chmod(locked, 0o700)
+        await rm(locked, { recursive: true })
+      }
+    }
     const deleted = await instance.request(
       `/api/spaces/${spaceId}/documents/delete-folder`,
       {
@@ -2638,6 +2681,17 @@ describe("format-neutral document route", () => {
     expect((await readWidget(spaceId, "notes/status")).data).toBeNull()
     // Every file in the folder is part of it, so it goes too.
     await expect(readFile(unclaimed, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
+    // And everything else in it, the folder with it: hidden items and the
+    // link wait, as they were, beside the Docs' history for the trash.
+    await expect(access(folder)).rejects.toMatchObject({ code: "ENOENT" })
+    const retired = join(root, "versions", spaceId, ".retired", "folders")
+    const [digest] = await readdir(retired)
+    const [operation] = await readdir(join(retired, digest!))
+    const kept = join(retired, digest!, operation!)
+    for (const [path, content] of Object.entries(hidden)) {
+      expect(await readFile(join(kept, path), "utf8")).toBe(content)
+    }
+    expect(await readlink(join(kept, ".link"))).toBe("readme.md")
   }, 10_000)
 
   it("keeps HTML that was there an HTML Doc, and takes HTML added later as a file a person can open", async () => {

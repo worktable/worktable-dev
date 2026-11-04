@@ -25,6 +25,7 @@ import {
 } from "./preview-fonts.ts"
 import { requireWorkspaceContentEpoch } from "./workspace-content-epoch.ts"
 import { retireWorkspaceDerivedFiles } from "./workspace-reset-files.ts"
+import { removeLeftoverStagedFiles } from "./staged-file.ts"
 import { finalizeWorkspaceClearJob } from "./workspace-clear-jobs.ts"
 import { Hono } from "hono"
 import { cloudCallbackRouter, linkedRouter } from "./routes/linked.ts"
@@ -1387,6 +1388,14 @@ export function startServer(
     }
     recoveredDocumentData = discoverDocumentDataV2LifecycleRecovery()
     recoveredDocumentCreates = discoverDocumentCreateRecoveryV2()
+    // Uploads a stopped server was still receiving never became versions.
+    void removeLeftoverStagedFiles().then((removed) => {
+      if (removed > 0) {
+        console.warn(
+          `[Worktable] removed ${removed} unfinished upload${removed === 1 ? "" : "s"}`
+        )
+      }
+    })
     if (
       recoveredDocumentData.length > 0 ||
       recoveredDocumentCreates.length > 0

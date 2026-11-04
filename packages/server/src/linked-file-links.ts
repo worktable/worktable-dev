@@ -12,8 +12,12 @@ import { FileRevisionError } from "./file-revision.ts"
 import { redeemFileTicket, type FileTicket } from "./file-tickets.ts"
 import { filesEnabled } from "./files-enabled.ts"
 import { fileLinksRouter, saveFileLinkUpload } from "./routes/file-links.ts"
+import { discardStagedFile, StagingFile } from "./staged-file.ts"
 
-/** Each upload in progress holds its file in memory until it is saved. */
+/**
+ * Each upload in progress is staged on disk, a piece at a time, until it is
+ * saved; this bounds the disk they take at once.
+ */
 const UPLOADS_AT_ONCE = 2
 /**
  * Each download piece is held whole while it crosses the relay, so pieces
@@ -25,12 +29,25 @@ const UPLOAD_IDLE_MS = 2 * 60_000
 
 interface PendingUpload {
   ticket: Extract<FileTicket, { kind: "upload" }>
-  bytes: Uint8Array
+  file: StagingFile
+  total: number
+  /** Bytes taken, counted when a piece arrives, before it is written. */
   received: number
+  /** The pieces taken so far, written in order. */
+  written: Promise<void>
   touchedAt: number
 }
 
 const uploads = new Map<string, PendingUpload>()
+
+/** End an upload in progress, leaving nothing of it on disk. */
+async function dropUpload(token: string): Promise<void> {
+  const upload = uploads.get(token)
+  if (!upload) return
+  uploads.delete(token)
+  await upload.written.catch(() => undefined)
+  await upload.file.discard()
+}
 let uploadsSaving = 0
 let downloadPieces = 0
 const waitingForPiece: Array<() => void> = []
@@ -61,7 +78,7 @@ export async function receiveUploadPiece(
 ): Promise<Response> {
   if (!filesEnabled()) return answer({ error: "Not found", code: "NOT_FOUND" }, 404)
   for (const [key, upload] of uploads)
-    if (now - upload.touchedAt > UPLOAD_IDLE_MS) uploads.delete(key)
+    if (now - upload.touchedAt > UPLOAD_IDLE_MS) void dropUpload(key)
   if (total > LINKED_FILE_LINK_MAX_BYTES) {
     return answer(
       { error: "A file can be up to 64 MiB.", code: "PAYLOAD_TOO_LARGE" },
@@ -79,17 +96,32 @@ export async function receiveUploadPiece(
     }
     const ticket = redeemFileTicket(token, "upload", now)
     if (!ticket || ticket.kind !== "upload") return answer(GONE, 410)
-    upload = { ticket, bytes: new Uint8Array(total), received: 0, touchedAt: now }
+    // Held while the file is created, so the next piece finds the upload.
+    uploadsSaving++
+    let file: StagingFile
+    try {
+      file = await StagingFile.create()
+    } finally {
+      uploadsSaving--
+    }
+    upload = {
+      ticket,
+      file,
+      total,
+      received: 0,
+      written: Promise.resolve(),
+      touchedAt: now,
+    }
     uploads.set(token, upload)
   }
   if (!upload) return answer(GONE, 410)
   if (
     offset !== upload.received ||
-    total !== upload.bytes.byteLength ||
+    total !== upload.total ||
     offset + piece.byteLength > total ||
     (piece.byteLength === 0 && total > 0)
   ) {
-    uploads.delete(token)
+    await dropUpload(token)
     return answer(
       {
         error: "The upload arrived out of order. Ask for a new link.",
@@ -98,17 +130,33 @@ export async function receiveUploadPiece(
       409
     )
   }
-  upload.bytes.set(piece, offset)
-  upload.received += piece.byteLength
-  upload.touchedAt = now
-  if (upload.received < total) {
-    return answer({ ok: true, received: upload.received }, 202)
+  const pending = upload
+  pending.received += piece.byteLength
+  pending.touchedAt = now
+  pending.written = pending.written.then(() => pending.file.append(piece))
+  try {
+    await pending.written
+  } catch (error) {
+    await dropUpload(token)
+    throw error
   }
+  if (pending.received < total) {
+    return answer({ ok: true, received: pending.received }, 202)
+  }
+  if (uploads.get(token) !== pending) return answer(GONE, 410)
   uploads.delete(token)
   uploadsSaving++
   try {
-    const saved = await saveFileLinkUpload(upload.ticket, upload.bytes)
-    return answer(saved.body, saved.status)
+    const staged = await pending.file.finish()
+    try {
+      const saved = await saveFileLinkUpload(pending.ticket, staged)
+      return answer(saved.body, saved.status)
+    } finally {
+      await discardStagedFile(staged)
+    }
+  } catch (error) {
+    await pending.file.discard()
+    throw error
   } finally {
     uploadsSaving--
   }
@@ -194,5 +242,5 @@ async function readDownloadPiece(
 
 /** Drop uploads in progress, as when the link is revoked. */
 export function clearPendingUploads(): void {
-  uploads.clear()
+  for (const token of [...uploads.keys()]) void dropUpload(token)
 }

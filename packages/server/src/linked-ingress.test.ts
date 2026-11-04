@@ -1,6 +1,6 @@
 import { LinkGrantSchema, defaultSharingPolicy } from "@worktable/types"
 import { afterEach, beforeEach, expect, it } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import fc from "fast-check"
@@ -33,7 +33,8 @@ import {
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { createLinkedIngress } from "./linked-ingress.ts"
 import { issueFileTicket } from "./file-tickets.ts"
-import { writeUploadedFile } from "./file-uploads.ts"
+import { withStagedUpload, writeUploadedFile } from "./file-uploads.ts"
+import { stagingDirectory } from "./staged-file.ts"
 import { listAgentConnections } from "./agent-connection-store.ts"
 import { disconnectLink } from "./linked-runtime.ts"
 import {
@@ -1011,7 +1012,10 @@ it("carries a file link in pieces: an upload saved after its last piece, and a d
   expect(await done.json()).toMatchObject({
     path: "design/archive.bin",
     byteLength: file.byteLength,
+    contentHash: createHash("sha256").update(file).digest("base64url"),
   })
+  // Each piece went to disk as it came, and nothing is left there now.
+  expect(await readdir(stagingDirectory())).toEqual([])
   // The link worked once.
   expect((await piece(token, 0, first, file.byteLength)).status).toBe(410)
 
@@ -1020,6 +1024,7 @@ it("carries a file link in pieces: an upload saved after its last piece, and a d
   expect((await piece(broken, 0, first, file.byteLength)).status).toBe(202)
   expect((await piece(broken, 5, rest, file.byteLength)).status).toBe(409)
   expect((await piece(broken, LINKED_REQUEST_MAX_BYTES, rest, file.byteLength)).status).toBe(410)
+  expect(await readdir(stagingDirectory())).toEqual([])
 
   // A piece claiming another path or method is refused before it is read.
   const misdirected = await createLinkedRequest({
@@ -1063,14 +1068,16 @@ it("carries a file link in pieces: an upload saved after its last piece, and a d
   // one did: a later piece of a file replaced partway is refused.
   expect(head.headers.get("ETag")).toMatch(/^"/)
   expect(tail.headers.get("ETag")).toBe(head.headers.get("ETag"))
-  await writeUploadedFile({
-    spaceId: "space",
-    path: "design/archive.bin",
-    bytes: rest,
-    mode: { kind: "replace" },
-    actor: principal.id,
-    source: "mcp",
-  })
+  await withStagedUpload(new Response(rest), (file) =>
+    writeUploadedFile({
+      spaceId: "space",
+      path: "design/archive.bin",
+      file,
+      mode: { kind: "replace" },
+      actor: principal.id,
+      source: "mcp",
+    })
+  )
   const changed = await read(LINKED_REQUEST_MAX_BYTES)
   expect(changed.status).toBe(409)
   expect(await changed.json()).toMatchObject({ code: "FILE_CHANGED" })

@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto"
 import {
   lstat,
   mkdtemp,
+  open,
   opendir,
   readdir,
   rename,
@@ -37,6 +38,7 @@ import {
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { requireSafeLegacySpaceId } from "./legacy-space-id.ts"
 import { versionIdTimestamp } from "./version-store.ts"
+import { copyStagedFileInto, type StagedFile } from "./staged-file.ts"
 import {
   documentGenerationV2Directory,
   documentVersionsV2Directory,
@@ -66,6 +68,27 @@ export interface DocumentGenerationPayloadSource {
   entries: DocumentGenerationPayloadEntry[]
 }
 
+/**
+ * An entry written from a staged file: copied a chunk at a time, and
+ * recorded with the sha256 computed as the file was staged.
+ */
+export interface DocumentGenerationStagedEntry {
+  path: string
+  staged: StagedFile
+}
+
+export interface DocumentGenerationWriteSource {
+  kind: "file" | "bundle"
+  entries: Array<DocumentGenerationPayloadEntry | DocumentGenerationStagedEntry>
+}
+
+/** An entry to write, with its size and sha256. */
+type NormalizedEntry = {
+  path: string
+  size: number
+  sha256: string
+} & ({ bytes: Uint8Array } | { staged: StagedFile })
+
 export interface DocumentGenerationPayloadCompanion {
   key: string
   entries: DocumentGenerationPayloadEntry[]
@@ -91,7 +114,7 @@ export interface WriteDocumentGenerationV2Input {
     generationId: string
     checkpoint: NonNullable<DocumentGenerationManifestV2["checkpoint"]>
   }
-  authoredSource: DocumentGenerationPayloadSource
+  authoredSource: DocumentGenerationWriteSource
   companions?: DocumentGenerationPayloadCompanion[]
   registry?: DocumentFormatRegistry
   /**
@@ -219,9 +242,9 @@ function sha256(bytes: Uint8Array): string {
 }
 
 function normalizedPayloadEntries(
-  entries: DocumentGenerationPayloadEntry[],
+  entries: Array<DocumentGenerationPayloadEntry | DocumentGenerationStagedEntry>,
   expectedKind: "source" | "companion"
-): Array<DocumentGenerationPayloadEntry & { sha256: string }> {
+): NormalizedEntry[] {
   if (entries.length === 0) {
     throw new Error(`document generation ${expectedKind} is empty`)
   }
@@ -238,21 +261,25 @@ function normalizedPayloadEntries(
         throw new Error(`duplicate document generation entry: ${entry.path}`)
       }
       seen.add(entry.path)
-      if (entry.bytes.byteLength > DOCUMENT_GENERATION_MAX_ENTRY_BYTES) {
+      const size =
+        "staged" in entry ? entry.staged.byteLength : entry.bytes.byteLength
+      if (size > DOCUMENT_GENERATION_MAX_ENTRY_BYTES) {
         throw new Error(
           `document generation entry exceeds its byte limit: ${entry.path}`
         )
       }
-      return { ...entry, sha256: sha256(entry.bytes) }
+      return "staged" in entry
+        ? { path: entry.path, staged: entry.staged, size, sha256: entry.staged.sha256 }
+        : { path: entry.path, bytes: entry.bytes, size, sha256: sha256(entry.bytes) }
     })
     .sort((left, right) => compareDocumentStorageText(left.path, right.path))
 }
 
 function contentHash(input: {
-  source: Array<DocumentGenerationPayloadEntry & { sha256: string }>
+  source: Array<{ path: string; size: number; sha256: string }>
   companions: Array<{
     key: string
-    entries: Array<DocumentGenerationPayloadEntry & { sha256: string }>
+    entries: Array<{ path: string; size: number; sha256: string }>
   }>
 }): string {
   return documentGenerationManifestContentHash({
@@ -260,7 +287,7 @@ function contentHash(input: {
       kind: "bundle",
       entries: input.source.map((entry) => ({
         path: entry.path,
-        bytes: entry.bytes.byteLength,
+        bytes: entry.size,
         sha256: entry.sha256,
       })),
     },
@@ -268,7 +295,7 @@ function contentHash(input: {
       key: companion.key,
       entries: companion.entries.map((entry) => ({
         path: entry.path,
-        bytes: entry.bytes.byteLength,
+        bytes: entry.size,
         sha256: entry.sha256,
       })),
     })),
@@ -389,11 +416,8 @@ async function assertExactGenerationInventory(
 
 function preparedGeneration(input: WriteDocumentGenerationV2Input): {
   manifest: DocumentGenerationManifestV2
-  source: Array<DocumentGenerationPayloadEntry & { sha256: string }>
-  companions: Array<{
-    key: string
-    entries: Array<DocumentGenerationPayloadEntry & { sha256: string }>
-  }>
+  source: NormalizedEntry[]
+  companions: Array<{ key: string; entries: NormalizedEntry[] }>
 } {
   // Persisted owners may predate the new-name rule reserving source suffixes.
   const parsedPath = analyzeDocumentPath(input.logicalPath)
@@ -449,7 +473,7 @@ function preparedGeneration(input: WriteDocumentGenerationV2Input): {
   const totalBytes = [
     ...source,
     ...companions.flatMap((item) => item.entries),
-  ].reduce((total, entry) => total + entry.bytes.byteLength, 0)
+  ].reduce((total, entry) => total + entry.size, 0)
   if (totalBytes > DOCUMENT_GENERATION_MAX_TOTAL_BYTES) {
     throw new Error("document generation exceeds its total byte limit")
   }
@@ -474,7 +498,7 @@ function preparedGeneration(input: WriteDocumentGenerationV2Input): {
       kind: input.authoredSource.kind,
       entries: source.map((entry) => ({
         path: entry.path,
-        bytes: entry.bytes.byteLength,
+        bytes: entry.size,
         sha256: entry.sha256,
       })),
     },
@@ -482,7 +506,7 @@ function preparedGeneration(input: WriteDocumentGenerationV2Input): {
       key: companion.key,
       entries: companion.entries.map((entry) => ({
         path: entry.path,
-        bytes: entry.bytes.byteLength,
+        bytes: entry.size,
         sha256: entry.sha256,
       })),
     })),
@@ -495,11 +519,20 @@ function preparedGeneration(input: WriteDocumentGenerationV2Input): {
 async function writeEntry(
   generationRoot: string,
   relativePath: string,
-  bytes: Uint8Array
+  entry: NormalizedEntry
 ): Promise<void> {
   const path = join(generationRoot, relativePath)
   await ensureRealDocumentStorageDirectory(generationRoot, dirname(path))
-  await writeFile(path, bytes, { flag: "wx" })
+  if ("bytes" in entry) {
+    await writeFile(path, entry.bytes, { flag: "wx" })
+    return
+  }
+  const handle = await open(path, "wx")
+  try {
+    await copyStagedFileInto(entry.staged, handle)
+  } finally {
+    await handle.close()
+  }
 }
 
 async function writePreparedGeneration(
@@ -507,14 +540,14 @@ async function writePreparedGeneration(
   prepared: ReturnType<typeof preparedGeneration>
 ): Promise<void> {
   for (const entry of prepared.source) {
-    await writeEntry(staging, join("source", entry.path), entry.bytes)
+    await writeEntry(staging, join("source", entry.path), entry)
   }
   for (const companion of prepared.companions) {
     for (const entry of companion.entries) {
       await writeEntry(
         staging,
         join("companions", companion.key, entry.path),
-        entry.bytes
+        entry
       )
     }
   }
@@ -608,13 +641,15 @@ async function readGenerationAt(
     ...companions.flatMap((item) => item.entries),
   ].reduce((total, entry) => total + entry.bytes.byteLength, 0)
   const hashedSource = authoredEntries.map((entry) => ({
-    ...entry,
+    path: entry.path,
+    size: entry.bytes.byteLength,
     sha256: sha256(entry.bytes),
   }))
   const hashedCompanions = companions.map((companion) => ({
     key: companion.key,
     entries: companion.entries.map((entry) => ({
-      ...entry,
+      path: entry.path,
+      size: entry.bytes.byteLength,
       sha256: sha256(entry.bytes),
     })),
   }))
@@ -632,6 +667,52 @@ async function readGenerationAt(
       entries: authoredEntries,
     },
     companions,
+  }
+}
+
+/**
+ * Check a generation just written before it is published. Entries written
+ * from bytes are read back and hashed; one copied from a staged file keeps
+ * the hash computed as it was staged, and is checked for its whole size.
+ */
+async function verifyWrittenGeneration(
+  generationRoot: string,
+  prepared: ReturnType<typeof preparedGeneration>,
+  registry?: DocumentFormatRegistry
+): Promise<void> {
+  const staged = prepared.source.filter((entry) => "staged" in entry)
+  if (staged.length === 0) {
+    const verified = await readGenerationAt(generationRoot, registry)
+    if (verified.manifest.contentHash !== prepared.manifest.contentHash) {
+      throw new Error("staged document generation verification failed")
+    }
+    return
+  }
+  const manifest = await readGenerationManifestAt(generationRoot)
+  await assertExactGenerationInventory(generationRoot, manifest)
+  assertDocumentGenerationFormatOwnership(manifest, registry)
+  if (manifest.contentHash !== prepared.manifest.contentHash) {
+    throw new Error("staged document generation verification failed")
+  }
+  for (const entry of prepared.source) {
+    const recorded = { path: entry.path, bytes: entry.size, sha256: entry.sha256 }
+    if ("bytes" in entry) {
+      await readEntry(join(generationRoot, "source"), recorded)
+      continue
+    }
+    const info = await lstat(join(generationRoot, "source", entry.path))
+    if (!info.isFile() || info.size !== entry.size) {
+      throw new Error("staged document generation verification failed")
+    }
+  }
+  for (const companion of prepared.companions) {
+    for (const entry of companion.entries) {
+      await readEntry(join(generationRoot, "companions", companion.key), {
+        path: entry.path,
+        bytes: entry.size,
+        sha256: entry.sha256,
+      })
+    }
   }
 }
 
@@ -776,10 +857,7 @@ export async function writeDocumentGenerationV2(
         const staging = await mkdtemp(join(parent, ".pending-"))
         try {
           await writePreparedGeneration(staging, prepared)
-          const verified = await readGenerationAt(staging, input.registry)
-          if (verified.manifest.contentHash !== prepared.manifest.contentHash) {
-            throw new Error("staged document generation verification failed")
-          }
+          await verifyWrittenGeneration(staging, prepared, input.registry)
           await rename(staging, destination)
           if (input.previousGenerationCheckpoint) {
             await markDocumentGenerationCheckpointAt({

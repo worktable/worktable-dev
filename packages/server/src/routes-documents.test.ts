@@ -21,6 +21,9 @@ import {
   writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
+import { createHash } from "node:crypto"
+import { FILE_UPLOAD_MAX_BYTES } from "./file-uploads.ts"
+import { removeLeftoverStagedFiles, stagingDirectory } from "./staged-file.ts"
 import { FOLDER_OPERATION_MAX_ENTRIES } from "./folder-operation-limit.ts"
 import { join } from "node:path"
 import { Hono } from "hono"
@@ -1166,6 +1169,143 @@ describe("format-neutral document route", () => {
       else process.env["WORKTABLE_FILES"] = previous
     }
   })
+
+  it("streams an upload to disk as it arrives, and saves only a whole one", async () => {
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
+    try {
+      const instance = app()
+      const url = (path: string, query = "") =>
+        `/api/spaces/${spaceId}/documents/file?path=${encodeURIComponent(path)}${query}`
+      const staged = () => readdir(stagingDirectory()).catch(() => [])
+      const piece = 1024 * 1024
+      const pattern = new Uint8Array(piece).map((_, i) => i % 251)
+      // A body without Content-Length, a piece at a time as it is asked for.
+      // `hold` keeps back the last piece until it resolves; `failAt` cuts the
+      // body off before that piece.
+      const body = (
+        size: number,
+        options: { hold?: Promise<void>; failAt?: number } = {}
+      ) => {
+        let sent = 0
+        let reachedLast!: () => void
+        const lastAsked = new Promise<void>((resolve) => (reachedLast = resolve))
+        const stream = new ReadableStream<Uint8Array>(
+          {
+            async pull(controller) {
+              if (sent >= size) return controller.close()
+              if (options.failAt !== undefined && sent >= options.failAt) {
+                return controller.error(new Error("connection lost"))
+              }
+              const length = Math.min(piece, size - sent)
+              if (sent + length >= size) {
+                reachedLast()
+                await options.hold
+              }
+              controller.enqueue(pattern.slice(0, length))
+              sent += length
+            },
+          },
+          { highWaterMark: 0 }
+        )
+        return { stream, lastAsked }
+      }
+      const expected = (size: number) => {
+        const hash = createHash("sha256")
+        for (let at = 0; at < size; at += piece) {
+          hash.update(pattern.subarray(0, Math.min(piece, size - at)))
+        }
+        return hash.digest("base64url")
+      }
+
+      // A file at the limit is written to disk as it arrives, never gathered
+      // in memory first.
+      let release!: () => void
+      const hold = new Promise<void>((resolve) => (release = resolve))
+      const whole = body(FILE_UPLOAD_MAX_BYTES, { hold })
+      const saving = instance.request(url("data/archive.bin"), {
+        method: "PUT",
+        body: whole.stream,
+      })
+      await whole.lastAsked
+      const [inProgress] = await staged()
+      expect(inProgress).toBeDefined()
+      expect((await stat(join(stagingDirectory(), inProgress!))).size).toBeGreaterThanOrEqual(
+        FILE_UPLOAD_MAX_BYTES - 4 * piece
+      )
+      release()
+      const saved = await saving
+      expect(saved.status).toBe(201)
+      const first = (await saved.json()) as { sourceRevision: string; contentHash: string }
+      expect(first.contentHash).toBe(expected(FILE_UPLOAD_MAX_BYTES))
+      const served = await instance.request(url("data/archive.bin"))
+      expect(
+        createHash("sha256")
+          .update(new Uint8Array(await served.arrayBuffer()))
+          .digest("base64url")
+      ).toBe(first.contentHash)
+      expect(await staged()).toEqual([])
+      const versions = async () =>
+        (
+          (await (
+            await instance.request(
+              `/api/spaces/${spaceId}/documents/versions?path=data/archive.bin&all=true`
+            )
+          ).json()) as { versions: unknown[] }
+        ).versions.length
+      expect(await versions()).toBe(1)
+
+      // One byte more is refused, without Content-Length too, and leaves
+      // nothing: no file, no staged bytes.
+      const over = await instance.request(url("data/too-big.bin"), {
+        method: "PUT",
+        body: body(FILE_UPLOAD_MAX_BYTES + 1).stream,
+      })
+      expect(over.status).toBe(413)
+      expect((await instance.request(url("data/too-big.bin"))).status).toBe(404)
+      expect(await staged()).toEqual([])
+
+      // A replacement cut off partway leaves the file and its versions as
+      // they were.
+      const cut = await instance.request(url("data/archive.bin"), {
+        method: "PUT",
+        headers: { "if-match": first.sourceRevision },
+        body: body(8 * piece, { failAt: 3 * piece }).stream,
+      })
+      expect(cut.status).toBeGreaterThanOrEqual(400)
+      const after = await instance.request(url("data/archive.bin"), {
+        method: "HEAD",
+      })
+      expect(after.headers.get("etag")).toBe(`"${first.contentHash}"`)
+      expect(await versions()).toBe(1)
+      expect(await staged()).toEqual([])
+
+      // A whole replacement keeps the large file as a version of its own.
+      const replaced = await instance.request(url("data/archive.bin"), {
+        method: "PUT",
+        headers: { "if-match": first.sourceRevision },
+        body: body(2 * piece).stream,
+      })
+      expect(replaced.status).toBe(200)
+      expect(((await replaced.json()) as { contentHash: string }).contentHash).toBe(
+        expected(2 * piece)
+      )
+      expect(await versions()).toBe(2)
+      expect(await staged()).toEqual([])
+
+      // Bytes a stopped server was staging are removed when the next starts.
+      await mkdir(stagingDirectory(), { recursive: true })
+      await writeFile(
+        join(stagingDirectory(), `${2 ** 30}-${"0".repeat(32)}.staged`),
+        "partial"
+      )
+      expect(await removeLeftoverStagedFiles()).toBe(1)
+      expect(await staged()).toEqual([])
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
+    }
+  }, 60_000)
 
   it("serves ranges of a file, streamed at one revision without holding its Space", async () => {
     const previous = process.env["WORKTABLE_FILES"]

@@ -42,11 +42,18 @@ function failureForOpen(error: unknown): BoundedFileReadFailure {
   return "unreadable"
 }
 
-async function readBoundedRegularFileBuffer(
+/**
+ * A regular file's bytes, never through a symlink, a chunk at a time to
+ * `onChunk`, which is awaited before the next is read. Fails if the file
+ * grows past `maxBytes` or changes while it is read; the caller discards
+ * whatever it kept of the chunks then.
+ */
+export async function readBoundedRegularFileInChunks(
   path: string,
   maxBytes: number,
+  onChunk: (chunk: Buffer) => void | Promise<void>,
   signal?: AbortSignal
-): Promise<Buffer> {
+): Promise<number> {
   if (signal?.aborted) {
     throw new BoundedFileReadError("aborted", path)
   }
@@ -83,7 +90,6 @@ async function readBoundedRegularFileBuffer(
       throw new BoundedFileReadError("aborted", path)
     }
 
-    const chunks: Buffer[] = []
     let bytes = 0
     stream = handle.createReadStream({
       autoClose: false,
@@ -99,7 +105,7 @@ async function readBoundedRegularFileBuffer(
         if (bytes > maxBytes) {
           throw new BoundedFileReadError("too-large", path)
         }
-        chunks.push(buffer)
+        await onChunk(buffer)
       }
     } finally {
       signal?.removeEventListener("abort", abortRead)
@@ -127,7 +133,7 @@ async function readBoundedRegularFileBuffer(
     ) {
       throw new BoundedFileReadError("changed", path)
     }
-    return Buffer.concat(chunks, bytes)
+    return bytes
   } catch (error) {
     if (error instanceof BoundedFileReadError) throw error
     if (
@@ -143,6 +149,21 @@ async function readBoundedRegularFileBuffer(
     stream?.destroy()
     await handle.close()
   }
+}
+
+async function readBoundedRegularFileBuffer(
+  path: string,
+  maxBytes: number,
+  signal?: AbortSignal
+): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  const bytes = await readBoundedRegularFileInChunks(
+    path,
+    maxBytes,
+    (chunk) => void chunks.push(chunk),
+    signal
+  )
+  return Buffer.concat(chunks, bytes)
 }
 
 export async function readBoundedRegularFileBytes(

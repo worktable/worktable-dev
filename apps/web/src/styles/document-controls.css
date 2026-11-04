@@ -1,7 +1,8 @@
 /* ── Document controls ──
    Styles for controls the app adds to a Doc once it is interactive: table
-   Expand and the diagram tools. Loaded with the Markdown viewer and the
-   editor; the reading look itself is @worktable/ui/document-content.css. */
+   Expand, the diagram tools and image Full screen. Loaded with the Markdown
+   viewer and the editor; the reading look itself is
+   @worktable/ui/document-content.css. */
 
 /* In the app a table can widen to the reading pane (--doc-pane-width). */
 .worktable-table-frame {
@@ -23,9 +24,13 @@
   margin: 0;
 }
 
-/* Table and diagram tools float in one small card over the block's corner,
-   so they never move the content and stay legible over a drawing. */
-:is(.worktable-table-controls, .worktable-diagram-controls) {
+/* Table, diagram and image tools float in one small card over the block's
+   corner, so they never move the content and stay legible over a drawing. */
+:is(
+  .worktable-table-controls,
+  .worktable-diagram-controls,
+  .worktable-image-controls
+) {
   position: absolute;
   top: 0.3125rem;
   right: 0.3125rem;
@@ -77,6 +82,15 @@
   .worktable-diagram-controls {
     opacity: 1;
   }
+}
+
+/* Where a click has nothing else to do, it opens the image in the viewer:
+   in a Markdown Doc or on a file page, and in a rich text Doc read only. */
+.worktable-markdown img[data-viewable]:not(a img),
+.bn-editor[contenteditable="false"]
+  [data-content-type="image"]
+  img.bn-visual-media:not(a img) {
+  cursor: zoom-in;
 }
 
 /* Panels that open below a diagram unfold with the shared height motion.

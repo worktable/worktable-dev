@@ -76,6 +76,7 @@ import { usePaneWidth } from "@/hooks/use-pane-width"
 import { DataTooltips } from "@/components/document/data-tooltip"
 import { createRichCodeBlockSpec } from "./rich-code-block"
 import { TableExpandControl } from "./table-expand"
+import { ImageViewControl } from "@/components/viewer/image-view-control"
 
 import {
   WorktableMermaidBlock,
@@ -586,10 +587,11 @@ function EditorInner({
   // React capture handlers see events from everything in this React tree,
   // including portaled UI (the mobile toolbar portals to document.body) —
   // but NOT the app chrome outside the editor, which is what keeps a sidebar
-  // navigation click from counting as an editor gesture. The diagram viewer is
-  // portaled the same way but never edits, so its pans and zooms don't count.
+  // navigation click from counting as an editor gesture. The diagram and image
+  // viewers are portaled the same way but never edit, so their pans and zooms
+  // don't count.
   const markGesture = useCallback((event: SyntheticEvent) => {
-    if ((event.target as Element).closest?.("[data-diagram-viewer]")) return
+    if ((event.target as Element).closest?.("[data-viewer]")) return
     lastGestureAtRef.current = Date.now()
   }, [])
 
@@ -631,6 +633,10 @@ function EditorInner({
         className="worktable-editor-content worktable-document-content"
       >
         {!isMobile && <TableExpandControl frameRef={editorContainerRef} />}
+        <ImageViewControl
+          frameRef={editorContainerRef}
+          openOnClick={!editable}
+        />
         <DataTooltips rootRef={editorContainerRef} />
         <AnnotationBadges
           annotations={annotations}

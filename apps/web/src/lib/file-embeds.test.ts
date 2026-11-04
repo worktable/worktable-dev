@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "bun:test"
-import { embeddedFileName, embedSourceUrl, uploadEmbeddedFile } from "./file-embeds"
+import {
+  embeddedFileName,
+  embedSourceUrl,
+  fileSourceUrl,
+  uploadEmbeddedFile,
+} from "./file-embeds"
+import { sourceFileOf } from "./source-file"
 
 const realFetch = globalThis.fetch
 
@@ -24,6 +30,23 @@ describe("a Doc's embedded files", () => {
         versions: { "onboarding/signup-flow/error.png": "2026-10-23T14:02:00.000Z" },
       })
     ).toEndWith("error.png&v=2026-10-23T14%3A02%3A00.000Z")
+  })
+
+  it("trace a shown image back to its Space file, and nothing else", () => {
+    const file = { spaceId: "team notes", path: "onboarding/signup flow/a#1.png" }
+    expect(sourceFileOf(fileSourceUrl(file.spaceId, file.path, "abc"))).toEqual({
+      ...file,
+      version: "abc",
+    })
+    // An old version's file keeps the time it was shown at.
+    expect(
+      sourceFileOf(fileSourceUrl(file.spaceId, file.path, null, { at: "2026-10-23T14:02:00.000Z" }))
+    ).toEqual({ ...file, version: null, at: "2026-10-23T14:02:00.000Z" })
+    expect(sourceFileOf("https://example.com/api/spaces/a/documents/file?path=x.png")).toBeNull()
+    expect(sourceFileOf("data:image/png;base64,AAAA")).toBeNull()
+    expect(sourceFileOf("/api/spaces/a/documents/page?path=x.png")).toBeNull()
+    // A Doc may embed a URL that isn't validly encoded.
+    expect(sourceFileOf("/api/spaces/%E0/documents/file?path=x.png")).toBeNull()
   })
 
   afterEach(() => {

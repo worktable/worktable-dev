@@ -21,6 +21,11 @@
 // exports, captures and replacements drain it and it never runs while they
 // do; a workspace that needs recovery is left alone.
 //
+// A run first plans: it lists what it could remove now and what that frees,
+// so storage-limit.ts can tell a write that can't fit anyway from one that
+// can, and remove nothing for the first. Then it removes, oldest first,
+// only as much as is due.
+//
 // What went is recorded (storage-pruned.ts) and shown in Settings and in
 // each item's version history. Background work only, never on a request's
 // hot path; storage-limit.ts runs it and may wait a few seconds for it.
@@ -31,9 +36,11 @@ import { discoverDocumentDataV2LifecycleRecovery } from "./document-data-lifecyc
 import { withUnsettledDocumentLifecycles } from "./document-lifecycle-journal.ts"
 import { removeDocumentGenerationsV2 } from "./document-version-store-v2.ts"
 import {
-  lastDeletedItemsPassKeptSome,
-  removeOldestTrash,
+  lastDeletedItemsPassKept,
+  listTrashToPrune,
+  removeTrashEntry,
   runDeletedItemsInBackground,
+  type TrashEntryToPrune,
 } from "./deleted-items.ts"
 import { recordPruning } from "./storage-pruned.ts"
 import { versionHeld } from "./version-holds.ts"
@@ -49,52 +56,133 @@ import { workspaceRecoveryRequired } from "./workspace-safety.ts"
 /** Oldest versions removed under one admission and lifecycle lock. */
 const BATCH = 32
 
+/** What a run could remove now, oldest first, and what that frees. */
+export interface PrunePlan {
+  trash: TrashEntryToPrune[]
+  versions: PrunableVersion[]
+  bytes: number
+  /**
+   * Unsettled lifecycle operations that kept history in their Spaces for
+   * now. More becomes removable once one of them settles.
+   */
+  blockedBy: string[]
+  /**
+   * A capture, replacement, recovery or failure held the workspace or the
+   * deleted-items pass: the plan may miss what could go, so it is not
+   * remembered as all there is.
+   */
+  held: boolean
+}
+
 export interface PruneResult {
   deletedItems: number
   versions: number
   bytes: number
-  /**
-   * Something removable was kept for now: a capture, replacement or
-   * recovery held the workspace, a restore held a version, or an unsettled
-   * lifecycle operation named its Space. Try again later; this is not
-   * "nothing left to prune".
-   */
+  /** Something planned was kept after all (held, busy, gone); plan again. */
   deferred: boolean
 }
 
 let testHooks: {
-  /** Called once a pass has emptied the trash, before it prunes versions. */
+  /** Called once a run has emptied the trash, before it prunes versions. */
   beforeVersions?: () => void
 } = {}
+let plansMade = 0
 
 export function setStoragePruningHooksForTests(hooks: typeof testHooks): void {
   testHooks = hooks
 }
 
-/** Free about `wantBytes` from the oldest history; see the header. */
-export async function pruneOldestHistory(
+/** How many plans were made: each walks all history. For tests. */
+export function storagePruningPlansForTests(): number {
+  return plansMade
+}
+
+async function unsettledLifecycles(): Promise<{ ids: string[]; spaces: Set<string> }> {
+  return withUnsettledDocumentLifecycles(async (unsettled) => {
+    const jobs = discoverDocumentDataV2LifecycleRecovery()
+    return {
+      ids: [
+        ...unsettled.map((operation) => operation.operationId),
+        ...jobs.map((recovery) => recovery.job.id),
+      ],
+      spaces: new Set([
+        ...unsettled.flatMap((operation) => operation.spaceIds),
+        ...jobs.map((recovery) => recovery.job.spaceId),
+      ]),
+    }
+  })
+}
+
+/** Whether every one of these lifecycle operations is still unsettled. */
+export async function lifecyclesStillUnsettled(ids: readonly string[]): Promise<boolean> {
+  const current = new Set((await unsettledLifecycles()).ids)
+  return ids.every((id) => current.has(id))
+}
+
+/**
+ * List what could go now, oldest first: the trash, then versions. Moves
+ * retired history into the trash first, which removes nothing. Walks all
+ * history: storage-limit.ts plans only when what it knows may be stale.
+ */
+export async function planPruning(
+  stopped: () => boolean = () => false
+): Promise<PrunePlan> {
+  plansMade += 1
+  const plan: PrunePlan = { trash: [], versions: [], bytes: 0, blockedBy: [], held: false }
+  if (workspaceRecoveryRequired()) return { ...plan, held: true }
+  try {
+    await runDeletedItemsInBackground()
+    const kept = lastDeletedItemsPassKept()
+    if (kept === "held") plan.held = true
+    plan.trash = await listTrashToPrune()
+    const versions = (await listPrunableVersions(stopped)).sort(
+      (a, b) => a.at - b.at || (a.id < b.id ? -1 : 1)
+    )
+    const lifecycles = await unsettledLifecycles()
+    let blocked = kept === "named"
+    for (const version of versions) {
+      // A version a restore holds goes once it lets go, which notes it.
+      if (versionHeld(version.id)) continue
+      if (lifecycles.spaces.has(version.spaceId)) {
+        blocked = true
+        continue
+      }
+      plan.versions.push(version)
+    }
+    if (blocked) plan.blockedBy = lifecycles.ids
+  } catch (error) {
+    plan.held = true
+    console.error("[storage-limit] planning failed:", logError(error))
+  }
+  plan.bytes =
+    plan.trash.reduce((total, entry) => total + entry.bytes, 0) +
+    plan.versions.reduce((total, version) => total + version.bytes, 0)
+  return plan
+}
+
+/** Remove the oldest of a plan until `wantBytes` are freed; see the header. */
+export async function prunePlanned(
+  plan: PrunePlan,
   wantBytes: number,
   stopped: () => boolean = () => false
 ): Promise<PruneResult> {
   const result: PruneResult = { deletedItems: 0, versions: 0, bytes: 0, deferred: false }
   const items = new Map<string, number>()
   if (wantBytes <= 0) return result
-  if (workspaceRecoveryRequired()) return { ...result, deferred: true }
   try {
-    // Moves retired history into the trash, where the next step finds it.
-    await runDeletedItemsInBackground()
-    const trash = await removeOldestTrash(wantBytes, stopped)
-    result.deletedItems = trash.removed
-    result.bytes += trash.bytes
-    // One rule: anything kept for a temporary reason makes the run deferred,
-    // never "nothing left to prune".
-    if (trash.skipped > 0 || lastDeletedItemsPassKeptSome()) result.deferred = true
+    for (const entry of plan.trash) {
+      if (result.bytes >= wantBytes || stopped()) break
+      if (await removeTrashEntry(entry)) {
+        result.deletedItems += 1
+        result.bytes += entry.bytes
+      } else result.deferred = true
+    }
     testHooks.beforeVersions?.()
     if (result.bytes < wantBytes && !stopped()) {
-      await pruneOldestVersions(wantBytes - result.bytes, stopped, result, items)
+      await pruneOldestVersions(plan.versions, wantBytes - result.bytes, stopped, result, items)
     }
   } catch (error) {
-    // Failed partway: not proof that nothing is left.
+    // Failed partway: not proof of what is left.
     result.deferred = true
     console.error("[storage-limit] pruning failed:", logError(error))
   } finally {
@@ -109,15 +197,13 @@ export async function pruneOldestHistory(
 }
 
 async function pruneOldestVersions(
+  candidates: PrunableVersion[],
   wantBytes: number,
   stopped: () => boolean,
   result: PruneResult,
   items: Map<string, number>
 ): Promise<void> {
   const root = getWorkspaceRoot()
-  const candidates = (await listPrunableVersions(stopped)).sort(
-    (a, b) => a.at - b.at || (a.id < b.id ? -1 : 1)
-  )
   let freed = 0
   // The next candidate not yet tried: the cursor moves only past those a
   // batch tried, so one that turns out to be kept leaves the rest in line.
@@ -134,7 +220,7 @@ async function pruneOldestVersions(
     while (next < candidates.length && batch.length < BATCH && planned < wantBytes) {
       const candidate = candidates[next++]!
       if (versionHeld(candidate.id)) {
-        // A running restore reads it: kept now, removable once it ends.
+        // A restore began reading it since the plan.
         result.deferred = true
         continue
       }
@@ -159,14 +245,12 @@ async function pruneOldestVersions(
         for (const [owner, versions] of groupByOwner(batch)) {
           const first = versions[0]!
           if (busy.has(first.spaceId)) {
-            // A delete or move recovery could still roll back: kept for now.
+            // A delete or move began since the plan: kept for now.
             result.deferred = true
             continue
           }
           const removed = await removeVersions(first, versions)
-          if (versions.some((version) => versionHeld(version.id))) {
-            result.deferred = true
-          }
+          if (removed.count < versions.length) result.deferred = true
           if (removed.count === 0) continue
           bytes += removed.bytes
           result.versions += removed.count

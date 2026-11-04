@@ -32,14 +32,20 @@ import {
   storageSummary,
 } from "./storage-limit.ts"
 import { prunedHistoryFor, resetPrunedRecordForTests } from "./storage-pruned.ts"
-import { setStoragePruningHooksForTests } from "./storage-pruning.ts"
+import {
+  setStoragePruningHooksForTests,
+  storagePruningPlansForTests,
+} from "./storage-pruning.ts"
 import {
   activeStorageAccount,
   noteStorageChange,
   startStorageAccounting,
   storageUsage,
 } from "./storage-usage.ts"
-import { restoreDocVersion, writeSpace } from "./store.ts"
+import { restoreDocVersion, writeDoc, writeSpace } from "./store.ts"
+import { Hono } from "hono"
+import { ownerIdentity } from "./auth.ts"
+import { documentsRouter } from "./routes/documents.ts"
 import { appendThreadMessage, createThread } from "./thread-store.ts"
 import { WorkspaceWatcher } from "./watcher.ts"
 import {
@@ -112,7 +118,10 @@ const generations = async (documentId: DocumentId) =>
     })
   ).map((manifest) => manifest.id)
 
+/** Once the count, and any pruning a count started, have caught up. */
 async function settled(): Promise<number> {
+  await storagePruningSettled()
+  await activeStorageAccount()!.settled()
   await storagePruningSettled()
   await activeStorageAccount()!.settled()
   return storageUsage()!.total.bytes
@@ -162,7 +171,7 @@ afterEach(async () => {
 })
 
 describe("storage limit", () => {
-  it("prunes deleted items first, then the oldest versions, only as much as writes need", async () => {
+  it("prunes deleted items first, then the oldest versions, enough for writes asking at once and no more", async () => {
     const older = await docWithVersions("older", 3, 16 * KB)
     const newer = await docWithVersions("newer", 2, 16 * KB)
     await createDoc("gone", 16 * KB)
@@ -185,10 +194,10 @@ describe("storage limit", () => {
     expect(await generations(newer)).toEqual(newerBefore)
     expect(usage).toBeLessThanOrEqual(storageLimitBytes())
 
-    // Then the oldest version in the whole Worktable, never a current one.
-    // A second write asks while that pass runs; one version makes room for
-    // both, so no second one goes.
-    await roomForLess()
+    // Then the oldest versions in the whole Worktable, never a current one.
+    // Two writes ask at once, the second while the first one's pass runs;
+    // pruning makes room for both, from the oldest, and stops there.
+    setStorageLimitForTests((await settled()) + 2 * KB, { promptPruneMs: 10_000 })
     let second: Promise<unknown> | null = null
     setStoragePruningHooksForTests({
       beforeVersions: () => {
@@ -200,16 +209,28 @@ describe("storage limit", () => {
     setStoragePruningHooksForTests({})
     usage = await settled()
     expect(usage).toBeLessThanOrEqual(storageLimitBytes())
-    expect(await generations(older)).toEqual(olderBefore.slice(0, -1))
+    expect(await generations(older)).toEqual(olderBefore.slice(0, 1))
     expect(await generations(newer)).toEqual(newerBefore)
     expect(
       (await readRegisteredDocumentSource({ spaceId: "notes", path: "older" }))
         .bytes
     ).toEqual(bytes(16 * KB, "older2"))
 
-    // What went is recorded for the item and for Settings.
-    expect(prunedHistoryFor("notes", { documentId: older })?.versions).toBe(1)
-    expect(storageSummary()!.pruned).toMatchObject({ versions: 1, deletedItems: 1 })
+    // What went is recorded for the item, for its history route, and for
+    // Settings.
+    expect(prunedHistoryFor("notes", { documentId: older })?.versions).toBe(2)
+    const api = new Hono()
+      .use("*", async (c, next) => {
+        c.set("identity", { ...ownerIdentity(), scopes: ["*"] })
+        return next()
+      })
+      .route("/api/spaces/:spaceId/documents", documentsRouter)
+    const history = (await (
+      await api.request("/api/spaces/notes/documents/versions?path=older&all=true")
+    ).json()) as { versions: unknown[]; pruned?: { versions: number } }
+    expect(history.versions).toHaveLength(1)
+    expect(history.pruned?.versions).toBe(2)
+    expect(storageSummary()!.pruned).toMatchObject({ versions: 2, deletedItems: 1 })
   })
 
   it("admits restores and saved versions for what they keep, prunes a version once no restore holds it, and refuses when nothing is left", async () => {
@@ -237,6 +258,16 @@ describe("storage limit", () => {
     ).toBeInstanceOf(StorageLimitError)
     expect(workspaceFiles()).toEqual(before)
     expect(await generations(kept)).toContain(oldest)
+
+    // A write that couldn't fit even if all history went removes nothing,
+    // however often it is tried.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      expect(await createDoc("huge", 64 * KB).catch((error) => error)).toBeInstanceOf(
+        StorageLimitError
+      )
+    }
+    expect(await generations(kept)).toContain(oldest)
+    expect(storageSummary()!.pruned).toBeNull()
 
     // Once no restore holds it, that version goes to make room.
     await createDoc("after", 4 * KB)
@@ -334,6 +365,23 @@ describe("storage limit", () => {
     expect(await createDoc("next", 1 * KB).catch((error) => error)).toBeInstanceOf(
       StorageLimitError
     )
+    // Someone keeps typing past the limit: saves are counted, and with
+    // nothing more to remove, history isn't walked again for each of them.
+    const type = (text: string) =>
+      writeDoc("notes", "plan", `# Plan\n\n${text}\n`, {
+        updatedBy: "ptc_storage_author",
+        source: "browser-human",
+        managedIdentity: true,
+        storage: "counted",
+      })
+    expect((await type("Draft")).ok).toBe(true)
+    await settled()
+    const plans = storagePruningPlansForTests()
+    for (const text of ["Draft one", "Draft one two", "Draft one two three"]) {
+      expect((await type(text)).ok).toBe(true)
+      await settled()
+    }
+    expect(storagePruningPlansForTests()).toBe(plans)
     // A retried message is answered as before; only a new one is refused.
     const retried = await createThread("notes", {
       ...people,

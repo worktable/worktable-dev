@@ -22,6 +22,7 @@ import { dirname, join } from "node:path"
 import { type DocSourceCategory, versionIdTimestamp } from "@worktable/types"
 import { getVersionsDir } from "./workspace.ts"
 import { noteStorageChange } from "./storage-usage.ts"
+import { notePrunableHistory } from "./prunable-history.ts"
 import { assertWorkspaceAvailable } from "./workspace-safety.ts"
 
 export { versionIdTimestamp }
@@ -426,6 +427,8 @@ export async function writeVersionSnapshot(
   const path = versionFilePath(spaceId, kind, key, snapshot.id)
   await mkdir(dirname(path), { recursive: true })
   await withVersionWriteLock(path, () => atomicWriteJson(path, snapshot))
+  // The snapshot before this one is now history pruning may remove.
+  notePrunableHistory()
 }
 
 export async function markVersionCheckpoint(

@@ -49,6 +49,7 @@ import { basename, dirname, join, relative, sep } from "node:path"
 import { getAppDir } from "./app-storage.ts"
 import { readBoundedRegularFile } from "./bounded-file.ts"
 import { logError } from "./debug-log.ts"
+import { notePrunableHistory } from "./prunable-history.ts"
 import { stagedFilesInProgress } from "./staged-file.ts"
 import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
 
@@ -592,6 +593,8 @@ export class StorageAccount {
     if (this.#stopped) return
     this.#tree = tree
     this.#countedAt = this.#now()
+    // The correction for anything a note missed, history included.
+    notePrunableHistory()
     this.#appliedSequence = Math.max(this.#appliedSequence, sequence)
     await this.#sampleDisk(true)
     const first = this.#onFirstCount

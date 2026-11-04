@@ -1,6 +1,8 @@
 // Versions a running restore reads. Pruning at the storage limit
 // (storage-pruning.ts) never removes one while it is held.
 
+import { notePrunableHistory } from "./prunable-history.ts"
+
 const held = new Map<string, number>()
 
 /** Hold a version by its id until the returned release is called. */
@@ -12,7 +14,11 @@ export function holdVersion(versionId: string): () => void {
     released = true
     const count = (held.get(versionId) ?? 1) - 1
     if (count > 0) held.set(versionId, count)
-    else held.delete(versionId)
+    else {
+      held.delete(versionId)
+      // Pruning may have kept it while held.
+      notePrunableHistory()
+    }
   }
 }
 

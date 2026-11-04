@@ -40,6 +40,7 @@ import { requireSafeLegacySpaceId } from "./legacy-space-id.ts"
 import { versionIdTimestamp } from "./version-store.ts"
 import { copyStagedFileInto, type StagedFile } from "./staged-file.ts"
 import { noteStorageChange } from "./storage-usage.ts"
+import { notePrunableHistory } from "./prunable-history.ts"
 import {
   documentGenerationV2Directory,
   documentVersionsV2Directory,
@@ -850,7 +851,10 @@ export async function writeDocumentGenerationV2(
               generationId: input.coalesceWith,
             }).catch(() => null)
           : null
-        if (replaced && continuesDocumentGeneration(replaced, input)) {
+        const continues = Boolean(
+          replaced && continuesDocumentGeneration(replaced, input)
+        )
+        if (replaced && continues) {
           prepared.manifest = DocumentGenerationManifestV2Schema.parse({
             ...prepared.manifest,
             createdAt: replaced.createdAt,
@@ -871,6 +875,13 @@ export async function writeDocumentGenerationV2(
               checkpoint: input.previousGenerationCheckpoint.checkpoint,
               registry: input.registry,
             })
+          }
+          // A new ordinary version, not one continuing the open one: the
+          // version before it is now history pruning may remove. A first
+          // version, a baseline or a checkpoint leaves the one before it
+          // protected (protectedDocumentGenerations).
+          if (!continues && input.operation === "update" && !input.checkpoint) {
+            notePrunableHistory()
           }
           return prepared.manifest
         } catch (error) {

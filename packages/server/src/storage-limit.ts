@@ -20,9 +20,10 @@
 //
 // At the limit the oldest history goes first (storage-pruning.ts): a write
 // that would pass it waits a few seconds while pruning frees room, down to
-// PRUNE_TARGET_RATIO of the limit so it doesn't prune on every write. If
-// that isn't enough, or nothing prunable is left, the write is refused with
-// StorageLimitError, and pruning carries on in the background.
+// PRUNE_TARGET_RATIO of the limit so it doesn't prune on every write. A
+// write that couldn't fit even if all removable history went is refused
+// with StorageLimitError and nothing is removed for it; so is one that
+// pruning can't make room for in time.
 //
 // Writes on disk can't be refused. They are counted as the watcher sees
 // them, and once the total passes the limit the Worktable behaves as at its
@@ -46,6 +47,7 @@ import {
   storageUsage,
   type StorageUsage,
 } from "./storage-usage.ts"
+import { prunableHistoryEpoch } from "./prunable-history.ts"
 
 const GIB = 1024 * 1024 * 1024
 
@@ -112,11 +114,19 @@ export class StorageLimitError extends Error {
   readonly code = "STORAGE_LIMIT"
   readonly status = 507
   readonly details: { limitBytes: number; usedBytes: number }
+  /** What the refused write asked for; 0 when pruning can't help it. */
+  readonly requestedBytes: number
 
-  constructor(limitBytes: number, usedBytes: number, message?: string) {
+  constructor(
+    limitBytes: number,
+    usedBytes: number,
+    message?: string,
+    requestedBytes = 0
+  ) {
     super(message ?? storageLimitMessage(limitBytes))
     this.name = "StorageLimitError"
     this.details = { limitBytes, usedBytes }
+    this.requestedBytes = requestedBytes
   }
 }
 
@@ -182,8 +192,8 @@ function reserve(bytes: number): StorageReservation {
 
 /**
  * Admit a write that adds `bytes`, at the moment it publishes. It never
- * waits, so a caller holding locks may use it; pruning, if needed, starts in
- * the background. Throws StorageLimitError when there is no room.
+ * waits, so a caller holding locks may use it. Throws StorageLimitError when
+ * there is no room; `retryAfterPruning` then makes room and tries again.
  */
 export function admitStorageWrite(bytes: number): StorageReservation {
   if (!(bytes > 0)) return NO_RESERVATION
@@ -192,8 +202,7 @@ export function admitStorageWrite(bytes: number): StorageReservation {
   const limit = storageLimitBytes()
   const used = usedBytes(usage)
   if (used + bytes <= limit) return reserve(bytes)
-  void requestPruning(bytes)
-  throw new StorageLimitError(limit, used)
+  throw new StorageLimitError(limit, used, undefined, bytes)
 }
 
 /** Whether `bytes` more fit now. No side effects; nothing is reserved. */
@@ -203,28 +212,9 @@ export function storageFits(bytes: number): boolean {
 }
 
 /**
- * Before taking locks: if `bytes` more would pass the limit, prune the
- * oldest history and wait a few seconds for it. Never throws.
- */
-export async function makeStorageRoom(bytes: number): Promise<void> {
-  if (!(bytes > 0)) return
-  const usage = storageUsage()
-  if (!usage) return
-  if (usedBytes(usage) + bytes <= storageLimitBytes()) return
-  let timer: ReturnType<typeof setTimeout> | undefined
-  await Promise.race([
-    requestPruning(bytes),
-    new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, promptPruneMs)
-    }),
-  ])
-  clearTimeout(timer)
-}
-
-/**
  * Room for a write that adds `adds` bytes and takes away what `replaces`
  * reports, which is read only near the limit. Call it before taking locks:
- * it may prune first. Throws StorageLimitError when there is no room.
+ * it may wait for pruning. Throws StorageLimitError when there is no room.
  */
 export async function reserveStorage(room: {
   adds: number
@@ -241,8 +231,7 @@ export async function reserveStorage(room: {
     bytes -= await room.replaces().catch(() => 0)
     if (bytes <= 0) return NO_RESERVATION
   }
-  await makeStorageRoom(bytes)
-  return admitStorageWrite(bytes)
+  return retryAfterPruning(async () => admitStorageWrite(bytes))
 }
 
 /** Run `write` with room reserved for it; see `reserveStorage`. */
@@ -281,103 +270,143 @@ export function withAdmittedRoom<T>(
 }
 
 /**
- * Run `write`, which admits its room under its own locks. When it is
- * refused, wait a few seconds for the pruning the refusal started, then try
- * once more; a second refusal is final.
+ * The one way a refused write gets room: run `write`; when it is refused,
+ * wait while pruning makes room for it (a few seconds at most), then try
+ * once more. A second refusal is final. Every write that needs room comes
+ * through here, whether it admits before taking locks or under them.
  */
 export async function retryAfterPruning<T>(write: () => Promise<T>): Promise<T> {
   try {
     return await write()
   } catch (error) {
-    if (!(error instanceof StorageLimitError) || !pruning) throw error
-    let timer: ReturnType<typeof setTimeout> | undefined
-    await Promise.race([
-      pruning,
-      new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, promptPruneMs)
-      }),
-    ])
-    clearTimeout(timer)
+    if (!(error instanceof StorageLimitError) || !(error.requestedBytes > 0)) {
+      throw error
+    }
+    await waitForRoom(error.requestedBytes)
     return write()
   }
 }
 
 // ── Pruning at the limit ────────────────────────────────────
+//
+// One run at a time. Each pass first plans what could go now (a walk of all
+// history, storage-pruning.ts), then removes only what is due:
+//   - for writes waiting for room, in the order they asked: enough for all
+//     of them that can fit once everything plannable went, down to
+//     PRUNE_TARGET_RATIO. A write that can't fit anyway is refused and
+//     nothing is removed for it, so retrying an impossible write never
+//     empties history;
+//   - when usage is past the limit on its own (writes on disk, typing),
+//     what can go, toward the same target.
+// What a plan found is remembered, so a pass that would find the same need
+// not walk history again: until something can have become removable
+// (prunable-history.ts), or an unsettled lifecycle operation that kept some
+// of it settles.
 
 let pruning: Promise<void> | null = null
-/** The most a write waiting on this pruning asked for. */
-let pruningIncoming = 0
+let again = false
 let stopped = true
 let promptPruneMs = PROMPT_PRUNE_MS
-/** History and trash when a run found nothing to prune; skip until they change. */
-let exhausted: { history: number; trash: number } | null = null
+/** Writes waiting for room, in the order they asked. */
+const waiting = new Set<{ bytes: number }>()
+/** What the last plan could remove, still; null when it may be stale. */
+let known: {
+  epoch: number
+  reclaimable: number
+  blockedBy: readonly string[]
+} | null = null
 
-/**
- * What pruning should free now: enough to bring usage, with the largest
- * write waiting on it, down to PRUNE_TARGET_RATIO of the limit. Read from
- * the current count before every pass, so a pass never frees again what an
- * earlier one already did.
- */
-function pruningWant(): number {
+/** What is due from `reclaimable` bytes that could go; see above. */
+function dueBytes(reclaimable: number): number {
   const usage = storageUsage()
-  if (!usage) return 0
-  return (
-    usedBytes(usage) +
-    pruningIncoming -
-    Math.round(storageLimitBytes() * PRUNE_TARGET_RATIO)
-  )
+  if (!usage || reclaimable <= 0) return 0
+  const limit = storageLimitBytes()
+  const target = Math.round(limit * PRUNE_TARGET_RATIO)
+  const used = usedBytes(usage)
+  let due = used >= limit ? Math.min(used - target, reclaimable) : 0
+  let fitting = 0
+  for (const write of waiting) {
+    // One that can't fit even if all of it went isn't pruned for.
+    if (used + fitting + write.bytes - reclaimable > limit) continue
+    fitting += write.bytes
+  }
+  if (fitting > 0) {
+    due = Math.max(due, Math.min(used + fitting - target, reclaimable))
+  }
+  return Math.max(0, due)
 }
 
-/** Prune until a write of `incoming` bytes fits; 0 when already over. */
-function requestPruning(incoming: number): Promise<void> {
+async function knownIsCurrent(): Promise<boolean> {
+  if (!known || known.epoch !== prunableHistoryEpoch()) return false
+  if (known.blockedBy.length === 0) return true
+  const { lifecyclesStillUnsettled } = await import("./storage-pruning.ts")
+  return lifecyclesStillUnsettled(known.blockedBy)
+}
+
+function runPruning(): Promise<void> {
   if (stopped) return Promise.resolve()
   if (pruning) {
-    pruningIncoming = Math.max(pruningIncoming, incoming)
+    again = true
     return pruning
   }
-  const usage = storageUsage()
-  if (
-    exhausted &&
-    usage &&
-    usage.parts.history.bytes === exhausted.history &&
-    usage.parts.trash.bytes === exhausted.trash
-  ) {
-    return Promise.resolve()
-  }
-  pruningIncoming = incoming
   pruning = (async () => {
     try {
-      const { pruneOldestHistory } = await import("./storage-pruning.ts")
-      for (let target = pruningWant(); target > 0 && !stopped; target = pruningWant()) {
-        const result = await pruneOldestHistory(target, () => stopped)
-        if (result.bytes > 0) {
-          settling.push({
-            bytes: -result.bytes,
-            sequence: storageNoteSequences().noted,
-          })
+      const { planPruning, prunePlanned } = await import("./storage-pruning.ts")
+      do {
+        again = false
+        if ((await knownIsCurrent()) && dueBytes(known!.reclaimable) <= 0) continue
+        const epoch = prunableHistoryEpoch()
+        const plan = await planPruning(() => stopped)
+        const due = dueBytes(plan.bytes)
+        let freed = 0
+        let deferred = plan.held
+        if (due > 0) {
+          const result = await prunePlanned(plan, due, () => stopped)
+          freed = result.bytes
+          deferred ||= result.deferred
+          if (freed > 0) {
+            settling.push({ bytes: -freed, sequence: storageNoteSequences().noted })
+          }
         }
-        const after = storageUsage()
-        exhausted =
-          result.bytes === 0 && !result.deferred && after
-            ? { history: after.parts.history.bytes, trash: after.parts.trash.bytes }
-            : null
-        if (result.bytes === 0) break
-      }
+        known = deferred
+          ? null
+          : { epoch, reclaimable: plan.bytes - freed, blockedBy: plan.blockedBy }
+      } while (again && !stopped)
     } catch (error) {
+      known = null
       console.error("[storage-limit] pruning failed:", logError(error))
     } finally {
       pruning = null
-      pruningIncoming = 0
+      again = false
     }
   })()
   return pruning
+}
+
+/** A write of `bytes` waits, a few seconds at most, while pruning makes room. */
+async function waitForRoom(bytes: number): Promise<void> {
+  if (stopped) return
+  const write = { bytes }
+  waiting.add(write)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      runPruning(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, promptPruneMs)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+    waiting.delete(write)
+  }
 }
 
 /** After each count: past the limit, from writes on disk too, prune. */
 function pruneWhenOver(): void {
   const usage = storageUsage()
   if (!usage) return
-  if (usedBytes(usage) >= storageLimitBytes()) void requestPruning(0)
+  if (usedBytes(usage) >= storageLimitBytes()) void runPruning()
 }
 
 /** Start enforcing for the served workspace. Returns its stop. */
@@ -385,7 +414,8 @@ export function startStorageLimits(): () => Promise<void> {
   stopped = false
   inflight = 0
   settling = []
-  exhausted = null
+  waiting.clear()
+  known = null
   void loadPrunedRecord().catch(() => undefined)
   const unsubscribe = onStorageApplied(pruneWhenOver)
   return async () => {
@@ -427,7 +457,7 @@ export function setStorageLimitForTests(
   override = bytes
   configured = null
   promptPruneMs = options.promptPruneMs ?? PROMPT_PRUNE_MS
-  exhausted = null
+  known = null
 }
 
 /** Resolves once pruning started so far has finished. */

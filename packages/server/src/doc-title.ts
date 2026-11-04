@@ -47,6 +47,8 @@ export async function setDocTitle(
     source: "rest-api",
     reason: "Renamed document",
     managedIdentity: true,
+    // A rename: counted, never refused at the storage limit.
+    storage: "counted" as const,
   }
   const stored = current.base
   if (typeof stored === "string") {

@@ -49,6 +49,7 @@ import { basename, dirname, join, relative, sep } from "node:path"
 import { getAppDir } from "./app-storage.ts"
 import { readBoundedRegularFile } from "./bounded-file.ts"
 import { logError } from "./debug-log.ts"
+import { notePrunableHistory } from "./prunable-history.ts"
 import { stagedFilesInProgress } from "./staged-file.ts"
 import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
 
@@ -411,6 +412,26 @@ export interface StorageAccountOptions {
   onFirstCount?: () => void
 }
 
+/** Called after notes or a full count are applied; see storage-limit.ts. */
+type AppliedListener = () => void
+const appliedListeners = new Set<AppliedListener>()
+
+/** Run `listener` each time the count catches up. Returns its removal. */
+export function onStorageApplied(listener: AppliedListener): () => void {
+  appliedListeners.add(listener)
+  return () => appliedListeners.delete(listener)
+}
+
+function notifyApplied(): void {
+  for (const listener of appliedListeners) {
+    try {
+      listener()
+    } catch (error) {
+      console.error("[storage-usage] listener failed:", logError(error))
+    }
+  }
+}
+
 /** The running count for one served workspace. */
 export class StorageAccount {
   #tree: StorageTree | null = null
@@ -424,6 +445,9 @@ export class StorageAccount {
   #disk: StorageUsage["disk"] = null
   #diskAt = 0
   #stopped = false
+  /** Notes taken so far, and how many of them the totals include. */
+  #noteSequence = 0
+  #appliedSequence = 0
   readonly #areas: readonly StorageArea[]
   readonly #workspaceRoot: string
   readonly #skip: readonly string[]
@@ -459,6 +483,7 @@ export class StorageAccount {
   /** Something at `path` changed: fold it in shortly. No I/O here. */
   note(path: string): void {
     if (this.#stopped) return
+    this.#noteSequence += 1
     if (this.#notes.size >= MAX_NOTES) {
       this.#notes.clear()
       this.recount()
@@ -481,6 +506,18 @@ export class StorageAccount {
       this.#recountQueued = false
       await this.#recount()
     })
+  }
+
+  /**
+   * Notes taken so far. Once `appliedSequence()` reaches a value read after
+   * a write noted its paths, the totals include that write.
+   */
+  noteSequence(): number {
+    return this.#noteSequence
+  }
+
+  appliedSequence(): number {
+    return this.#appliedSequence
   }
 
   /** The totals kept in memory, or null before the first count finishes. */
@@ -546,6 +583,7 @@ export class StorageAccount {
   async #recount(): Promise<void> {
     // The fresh count reads everything noted so far; later notes wait for it.
     this.#notes.clear()
+    const sequence = this.#noteSequence
     const tree = new StorageTree(this.#areas, {
       fs: this.#fs,
       skip: this.#skip,
@@ -555,10 +593,14 @@ export class StorageAccount {
     if (this.#stopped) return
     this.#tree = tree
     this.#countedAt = this.#now()
+    // The correction for anything a note missed, history included.
+    notePrunableHistory()
+    this.#appliedSequence = Math.max(this.#appliedSequence, sequence)
     await this.#sampleDisk(true)
     const first = this.#onFirstCount
     this.#onFirstCount = undefined
     first?.()
+    notifyApplied()
   }
 
   async #applyNotes(): Promise<void> {
@@ -566,9 +608,13 @@ export class StorageAccount {
     // Before the first count, it will read these paths itself.
     if (!tree || this.#notes.size === 0) return
     const paths = [...this.#notes]
+    const sequence = this.#noteSequence
     this.#notes.clear()
     await tree.apply(paths)
+    if (this.#stopped || tree !== this.#tree) return
+    this.#appliedSequence = Math.max(this.#appliedSequence, sequence)
     await this.#sampleDisk(false)
+    notifyApplied()
   }
 
   async #sampleDisk(force: boolean): Promise<void> {
@@ -597,6 +643,14 @@ export function noteStorageChange(path: string): void {
 /** What this Worktable takes on disk, from memory; null until counted. */
 export function storageUsage(): StorageUsage | null {
   return active?.summary() ?? null
+}
+
+/** Notes taken by the running count, and how many its totals include. */
+export function storageNoteSequences(): { noted: number; applied: number } {
+  return {
+    noted: active?.noteSequence() ?? 0,
+    applied: active?.appliedSequence() ?? 0,
+  }
 }
 
 /** Start counting the served workspace. Returns its stop. */

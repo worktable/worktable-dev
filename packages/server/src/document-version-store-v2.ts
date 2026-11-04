@@ -40,6 +40,7 @@ import { requireSafeLegacySpaceId } from "./legacy-space-id.ts"
 import { versionIdTimestamp } from "./version-store.ts"
 import { copyStagedFileInto, type StagedFile } from "./staged-file.ts"
 import { noteStorageChange } from "./storage-usage.ts"
+import { notePrunableHistory } from "./prunable-history.ts"
 import {
   documentGenerationV2Directory,
   documentVersionsV2Directory,
@@ -850,7 +851,10 @@ export async function writeDocumentGenerationV2(
               generationId: input.coalesceWith,
             }).catch(() => null)
           : null
-        if (replaced && continuesDocumentGeneration(replaced, input)) {
+        const continues = Boolean(
+          replaced && continuesDocumentGeneration(replaced, input)
+        )
+        if (replaced && continues) {
           prepared.manifest = DocumentGenerationManifestV2Schema.parse({
             ...prepared.manifest,
             createdAt: replaced.createdAt,
@@ -871,6 +875,13 @@ export async function writeDocumentGenerationV2(
               checkpoint: input.previousGenerationCheckpoint.checkpoint,
               registry: input.registry,
             })
+          }
+          // A new ordinary version, not one continuing the open one: the
+          // version before it is now history pruning may remove. A first
+          // version, a baseline or a checkpoint leaves the one before it
+          // protected (protectedDocumentGenerations).
+          if (!continues && input.operation === "update" && !input.checkpoint) {
+            notePrunableHistory()
           }
           return prepared.manifest
         } catch (error) {
@@ -1258,6 +1269,107 @@ export async function pruneDocumentGenerationsV2(input: {
             input.retention ?? DOCUMENT_GENERATION_DEFAULT_RETENTION
           )
         )
+      }
+    )
+  })
+}
+
+/**
+ * Which of a document's generations pruning may never remove: the newest
+ * (the document's current version), the newest that is not a checkpoint
+ * (the one a save may continue, as count retention keeps it), and every
+ * meaningful checkpoint (restore points: saved, restored, before an agent
+ * took over, reviewed).
+ */
+export function protectedDocumentGenerations(
+  newestFirst: readonly DocumentGenerationManifestV2[]
+): Set<string> {
+  const kept = new Set<string>()
+  if (newestFirst[0]) kept.add(newestFirst[0].id)
+  const open = newestFirst.find((manifest) => !manifest.checkpoint?.meaningful)
+  if (open) kept.add(open.id)
+  for (const manifest of newestFirst) {
+    if (manifest.checkpoint?.meaningful) kept.add(manifest.id)
+  }
+  return kept
+}
+
+/**
+ * The bytes a write replacing a document's current version may count as
+ * given back under the storage limit: that version's, when afterwards
+ * pruning can remove it or the write continues it. None when it is a
+ * meaningful checkpoint, or when the write makes one, since the version
+ * before a checkpoint stays as the newest that is not one (see
+ * `protectedDocumentGenerations`). `generationId` names the current version
+ * when known; otherwise it is the newest. Read only near the limit.
+ */
+export async function reclaimableAfterReplacementV2(input: {
+  workspaceRoot: string
+  spaceId: string
+  documentId: DocumentId
+  generationId?: string
+  writesCheckpoint: boolean
+}): Promise<number> {
+  if (input.writesCheckpoint) return 0
+  const current = input.generationId
+    ? await readDocumentGenerationManifestV2({
+        ...input,
+        generationId: input.generationId,
+      }).catch(() => null)
+    : ((await listDocumentGenerationsV2(input).catch(() => []))[0] ?? null)
+  return current && !current.checkpoint?.meaningful ? current.totalBytes : 0
+}
+
+/**
+ * Remove the named generations of one document to free storage, oldest
+ * history only. Under the document's history locks it lists the generations
+ * again and skips any now protected (see `protectedDocumentGenerations`) or
+ * kept by `keep`. Each leaves the listing in one rename before it is
+ * removed, so a crash leaves no half-removed generation. Returns what went.
+ */
+export async function removeDocumentGenerationsV2(input: {
+  workspaceRoot: string
+  spaceId: string
+  documentId: DocumentId
+  generationIds: readonly string[]
+  keep?: (generationId: string) => boolean
+}): Promise<DocumentGenerationManifestV2[]> {
+  const parent = documentVersionsV2Directory(
+    input.workspaceRoot,
+    input.spaceId,
+    input.documentId
+  )
+  return withDocumentGenerationLock(parent, async () => {
+    if (!(await pathExists(parent))) return []
+    await requireRealDocumentStorageDirectory(input.workspaceRoot, parent)
+    return withCrossProcessLock(
+      join(parent, ".write-lock"),
+      { label: `Document ${input.documentId} version retention` },
+      async () => {
+        const manifests = await listDocumentGenerationsV2(input)
+        const kept = protectedDocumentGenerations(manifests)
+        const wanted = new Set(input.generationIds)
+        const removed: DocumentGenerationManifestV2[] = []
+        for (const manifest of manifests) {
+          if (!wanted.has(manifest.id) || kept.has(manifest.id)) continue
+          if (input.keep?.(manifest.id)) continue
+          const removing = join(
+            parent,
+            `.pending-pruned-${randomBytes(8).toString("hex")}`
+          )
+          await rename(
+            documentGenerationV2Directory(
+              input.workspaceRoot,
+              input.spaceId,
+              input.documentId,
+              manifest.id
+            ),
+            removing
+          )
+          await rm(removing, { recursive: true, force: true })
+          removed.push(manifest)
+        }
+        return removed
       }
     )
   })

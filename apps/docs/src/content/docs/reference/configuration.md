@@ -28,6 +28,7 @@ These environment variables and the Workspace URL control apply to local and sel
 | `WORKTABLE_MCP_PREVIEW` | Set to `1` to give agents [tool changes that aren't released yet](/reference/mcp/#preview-tools), or `0` to keep the released tools. Overrides Settings → Agents → Preview agent tools | unset |
 | `WORKTABLE_MCP_MODERN` | Set to `1` to also serve MCP revision 2026-07-28 over HTTP, or `0` to serve only the earlier revisions. Enabled by default; `0` is the off switch | unset |
 | `WORKTABLE_FILES` | Set to `0` to turn off file features: files in a Space's folder stop showing as part of the Space, and uploads are refused. Use it only as a way back if a folder's files cause trouble | unset |
+| `WORKTABLE_STORAGE_LIMIT_BYTES` | The most the Worktable may take on disk, in bytes, up to 2 GiB. See [storage](/reference/workspace-files/#storage) | 2 GiB |
 
 `WORKTABLE_REQUIRE_AUTH` is an internal launch-policy flag. Do not use it to
 bypass authentication. The effective bind, public URL, explicit credential, and

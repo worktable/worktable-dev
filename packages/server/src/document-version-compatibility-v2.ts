@@ -1,3 +1,8 @@
+import {
+  prunedHistoryFor,
+  spaceHasPrunedHistory,
+  type PrunedItem,
+} from "./storage-pruned.ts"
 import type {
   DocumentFormatClaim,
   DocumentGenerationManifestV2,
@@ -22,6 +27,7 @@ import {
   listDocumentGenerationsV2,
   markDocumentGenerationCheckpointV2,
   readDocumentGenerationV2,
+  reclaimableAfterReplacementV2,
   retireReplacedGenerationV2,
   writeDocumentGenerationV2,
   type DocumentGenerationPayloadSource,
@@ -783,6 +789,62 @@ export async function listLegacyDocVersionsV2(
   ])
   if (!owner) return []
   return listOwnedDocVersionsV2(spaceId, owner, options)
+}
+
+/**
+ * What pruning at the storage limit removed from a Doc's or HTML
+ * document's history, or null. No catalog read unless something in this
+ * Space was pruned.
+ */
+export async function prunedDocumentHistoryV2(
+  spaceId: string,
+  path: string,
+  kind: "doc" | "html"
+): Promise<PrunedItem | null> {
+  if (!spaceHasPrunedHistory(spaceId)) return null
+  const owner = await resolveOwner(
+    spaceId,
+    path,
+    kind === "html"
+      ? [BUILTIN_DOCUMENT_FORMATS.html]
+      : [BUILTIN_DOCUMENT_FORMATS.markdown, BUILTIN_DOCUMENT_FORMATS.richText],
+    { snapshot: true }
+  )
+  if (!owner) return null
+  return prunedHistoryFor(spaceId, {
+    documentId: owner.documentId,
+    legacyKey: owner.path,
+  })
+}
+
+/**
+ * The bytes of a Doc's or HTML document's current version that a write
+ * replacing it may count as given back under the storage limit; see
+ * reclaimableAfterReplacementV2. None outside Storage V2. Read only near the
+ * limit.
+ */
+export async function reclaimableDocVersionBytesV2(
+  spaceId: string,
+  path: string,
+  kind: "doc" | "html",
+  options: { writesCheckpoint: boolean }
+): Promise<number> {
+  if (options.writesCheckpoint || !(await usesDocumentVersionStoreV2())) return 0
+  const owner = await resolveOwner(
+    spaceId,
+    path,
+    kind === "html"
+      ? [BUILTIN_DOCUMENT_FORMATS.html]
+      : [BUILTIN_DOCUMENT_FORMATS.markdown, BUILTIN_DOCUMENT_FORMATS.richText],
+    { snapshot: true }
+  )
+  if (!owner) return 0
+  return reclaimableAfterReplacementV2({
+    workspaceRoot: getWorkspaceRoot(),
+    spaceId,
+    documentId: owner.documentId,
+    writesCheckpoint: false,
+  })
 }
 
 /** Versions of a Doc already resolved to its owner, newest first. */

@@ -103,6 +103,7 @@ import {
   retryPendingCommentErase,
 } from "./pending-comment-erase.ts"
 import { noteStorageChange } from "./storage-usage.ts"
+import { notePrunableHistory } from "./prunable-history.ts"
 import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
 import { admitWorkspaceRequest } from "./workspace-request-lifecycle.ts"
 import { workspaceRecoveryRequired } from "./workspace-safety.ts"
@@ -365,6 +366,8 @@ async function settleTombstone(tombstone: Tombstone, now: number): Promise<void>
   try {
     await moveTombstone(tombstone, now)
   } finally {
+    // A new trash entry is something pruning at the limit may remove.
+    if (!tombstone.erase) notePrunableHistory()
     // After the copy, rename or removal, on every path: a note taken while a
     // copy across volumes is still running would count it half done.
     noteStorageChange(tombstone.path)
@@ -466,6 +469,82 @@ async function emptyAllTrash(now: number, window: number): Promise<number> {
     }
   }
   return removed
+}
+
+/** Bytes in the regular files under a directory; links are not followed. */
+async function directoryBytes(path: string): Promise<number> {
+  let total = 0
+  const pending = [path]
+  while (pending.length > 0) {
+    const current = pending.pop()!
+    let entries
+    try {
+      entries = await readdir(current, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      const child = join(current, entry.name)
+      if (entry.isDirectory()) pending.push(child)
+      else if (entry.isFile()) {
+        try {
+          total += (await lstat(child)).size
+        } catch {
+          // Gone meanwhile.
+        }
+      }
+    }
+  }
+  return total
+}
+
+/** A trash entry pruning may remove, with what it takes. */
+export interface TrashEntryToPrune {
+  name: string
+  path: string
+  retiredAt: number
+  bytes: number
+}
+
+/**
+ * The served workspace's trash entries, oldest first, for pruning at the
+ * storage limit (storage-pruning.ts). Only entries that finished moving out
+ * of the workspace folder; nothing a lifecycle operation could still read is
+ * in this trash (see the header). Background work only.
+ */
+export async function listTrashToPrune(): Promise<TrashEntryToPrune[]> {
+  const trash = deletedItemsTrashDir()
+  const entries: TrashEntryToPrune[] = []
+  for (const name of await childDirectories(trash)) {
+    const path = join(trash, name)
+    if (!ENTRY_ID.test(name) || !(await realDirectory(join(path, "data")))) {
+      continue
+    }
+    const entry = await readEntry(path)
+    entries.push({
+      name,
+      path,
+      retiredAt: entry?.retiredAt ?? 0,
+      bytes: await directoryBytes(path),
+    })
+  }
+  return entries.sort(
+    (a, b) => a.retiredAt - b.retiredAt || (a.name < b.name ? -1 : 1)
+  )
+}
+
+/** Empty one trash entry before its window runs out. False if busy or gone. */
+export async function removeTrashEntry(entry: TrashEntryToPrune): Promise<boolean> {
+  const emptying = join(deletedItemsTrashDir(), `.empty-${entry.name}`)
+  try {
+    await rename(entry.path, emptying)
+  } catch {
+    return false
+  }
+  noteStorageChange(entry.path)
+  await rm(emptying, { recursive: true, force: true })
+  noteStorageChange(emptying)
+  return true
 }
 
 // ── The pass ────────────────────────────────────────────────
@@ -615,6 +694,16 @@ async function moveOutOfWorkspace(
 
 let running: Promise<void> | null = null
 let again = false
+let lastPassKept: "none" | "named" | "held" = "none"
+
+/**
+ * What the last pass left in the workspace folder for now: items an
+ * unsettled lifecycle operation still named (they move once it settles), or
+ * everything, because a capture, replacement or failure held the pass.
+ */
+export function lastDeletedItemsPassKept(): "none" | "named" | "held" {
+  return lastPassKept
+}
 
 /** One pass at a time; a request during a pass runs another after it. */
 export function runDeletedItemsInBackground(): Promise<void> {
@@ -627,12 +716,18 @@ export function runDeletedItemsInBackground(): Promise<void> {
       again = false
       try {
         const result = await runDeletedItemsPass()
+        lastPassKept = result.deferred
+          ? "held"
+          : result.protected > 0
+            ? "named"
+            : "none"
         // An export, snapshot or replacement held the workspace: try again
         // shortly after it lets go, instead of waiting for the daily pass.
         if (result.deferred) retryDeletedItemsSoon()
         else settleDeletedItemsRetry()
       } catch (error) {
         // The next delete, restart or daily pass tries again.
+        lastPassKept = "held"
         console.error("[deleted-items] pass failed:", logError(error))
       }
     } while (again)

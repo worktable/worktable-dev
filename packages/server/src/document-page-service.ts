@@ -1,3 +1,4 @@
+import { prunedHistoryFor, type PrunedItem } from "./storage-pruned.ts"
 import { teamsEnabled } from "./team-database.ts"
 import { canAccessSpace, commentAccess } from "./team-policy.ts"
 import { extname, resolve } from "node:path"
@@ -556,7 +557,12 @@ export async function readDocumentPage(options: {
 }
 
 export type DocumentVersionsResolution =
-  | { kind: "versions"; versions: DocumentVersionSummary[] }
+  | {
+      kind: "versions"
+      versions: DocumentVersionSummary[]
+      /** Older versions removed at the storage limit, when any were. */
+      pruned?: PrunedItem
+    }
   | Exclude<DocumentHandleResolution, { kind: "document" }>
   | { kind: "unsupported" }
 
@@ -577,9 +583,15 @@ export async function readDocumentVersions(options: {
           legacy: legacyVersionLocator(handle),
           checkpointsOnly: options.checkpointsOnly,
         })
+        // From memory: what pruning at the storage limit removed.
+        const pruned = prunedHistoryFor(options.spaceId, {
+          documentId: handle.documentId,
+          legacyKey: handle.document.path,
+        })
         return {
           kind: "versions" as const,
           versions: versions.map(publicVersion),
+          ...(pruned ? { pruned } : {}),
         }
       }
       const integration = await pageIntegration(handle)

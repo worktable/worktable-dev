@@ -1,3 +1,4 @@
+import { StorageLimitError, storageLimitBody } from "../storage-limit.ts"
 import { memberIsPayer, peopleInWorktable, requestBilling } from "../hosted-billing.ts";
 import { teamsEnabled } from "../team-database.ts"
 import { currentTeamWorktable } from "../team-database.ts";
@@ -290,6 +291,9 @@ function workspaceExportReader(c: Context): Response | null {
 }
 
 function transferError(c: Context, error: unknown): Response {
+  if (error instanceof StorageLimitError) {
+    return c.json(storageLimitBody(error), 507)
+  }
   const message = error instanceof Error ? error.message : String(error)
   const status = message.includes("not found")
     ? 404

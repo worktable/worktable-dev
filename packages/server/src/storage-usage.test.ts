@@ -25,6 +25,7 @@ import {
   updateServerSettings,
 } from "./settings-store.ts"
 import { StagingFile } from "./staged-file.ts"
+import { storageSummary } from "./storage-limit.ts"
 import {
   activeStorageAccount,
   startStorageAccounting,
@@ -266,7 +267,7 @@ describe("storage usage", () => {
         new Request("http://localhost/api/system/settings")
       )
       const body = (await response.json()) as { storage: unknown }
-      expect(body.storage).toEqual(storageUsage())
+      expect(body.storage).toEqual(storageSummary())
     }
     expect(calls).toBe(before)
     const usage = storageUsage()!

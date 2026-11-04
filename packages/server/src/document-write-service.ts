@@ -48,6 +48,7 @@ import {
   readCompatibleDocumentVersionV2,
   documentGenerationSourceEntryPathV2,
   readDocumentGenerationManifestV2,
+  reclaimableAfterReplacementV2,
   retireReplacedGenerationV2,
   writeDocumentGenerationV2,
 } from "./document-version-store-v2.ts"
@@ -132,6 +133,12 @@ import { requireWorkspaceRecovery } from "./workspace-safety.ts"
 import { validateDrawingImageMutation } from "./drawing-image-validation.ts"
 import { logDocument, logError } from "./debug-log.ts"
 import { sourceKindClaims } from "./source-kind-records.ts"
+import {
+  storageFits,
+  withAdmittedRoom,
+  withStorageRoom,
+} from "./storage-limit.ts"
+import { withVersionHeld } from "./version-holds.ts"
 
 const WRITE_ADAPTER_BUDGET = {
   maxInputBytes: DOCUMENT_GENERATION_MAX_ENTRY_BYTES,
@@ -1026,8 +1033,15 @@ async function ensurePreEditBaseline(input: {
   content: SourceContent
   beforeCreatedAt: string
   registry: DocumentFormatRegistry
+  /** Told, before anything is written, whether a baseline will be made. */
+  beforeWrite?: (baseline: { creates: boolean; generationId?: string }) => Promise<void>
 }): Promise<{ generationId: string; created: boolean }> {
   const newest = await newestVersionHolding(input)
+  await input.beforeWrite?.(
+    newest.holds
+      ? { creates: false, generationId: newest.newestId! }
+      : { creates: true }
+  )
   if (newest.holds) return { generationId: newest.newestId!, created: false }
   const baselineLabel =
     newest.count === 0 ? "Pre-tracking baseline" : "Pre-edit recovery point"
@@ -1179,7 +1193,7 @@ async function finishAgentReceipt(input: {
   )
 }
 
-export async function createRegisteredDocument(options: {
+interface CreateRegisteredDocumentOptions {
   spaceId: string
   path: string
   format: DocumentFormatClaim
@@ -1192,8 +1206,24 @@ export async function createRegisteredDocument(options: {
   registry?: DocumentFormatRegistry
   /** An uploaded `.html` is a plain file, not an HTML Doc. */
   htmlAsFile?: boolean
-}): Promise<DocumentWriteResult> {
+}
+
+/**
+ * A new document takes its bytes twice: its source and its first version.
+ * It needs that much room under the storage limit (storage-limit.ts).
+ */
+export async function createRegisteredDocument(
+  options: CreateRegisteredDocumentOptions
+): Promise<DocumentWriteResult> {
   assertSpaceAccess(options.spaceId, "edit");
+  return withStorageRoom({ adds: 2 * options.bytes.byteLength }, () =>
+    createRegisteredDocumentWithRoom(options)
+  )
+}
+
+async function createRegisteredDocumentWithRoom(
+  options: CreateRegisteredDocumentOptions
+): Promise<DocumentWriteResult> {
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   const path = requirePortablePath(
@@ -1677,7 +1707,30 @@ async function recordFileVersionLocked(
   return true
 }
 
-export async function replaceRegisteredDocument(options: {
+type ReplaceRegisteredDocumentOptions = Parameters<
+  typeof replaceRegisteredDocumentWithRoom
+>[0]
+
+/**
+ * Room under the storage limit for a replacement: the change to the source,
+ * the new version, and a pre-edit baseline when one has to be made. It
+ * counts the version it replaces as given back only when that version can
+ * go afterwards (pruning can remove it, or this save continues it), never
+ * a meaningful checkpoint, nor the version before a checkpoint this write
+ * makes, which both stay. So replacing something with something smaller
+ * passes unless what it replaces must be kept. Room is admitted under the
+ * lock, where these are known; a refusal waits a few seconds for pruning
+ * and tries once more.
+ */
+export async function replaceRegisteredDocument(
+  options: ReplaceRegisteredDocumentOptions
+): Promise<DocumentWriteResult> {
+  return withAdmittedRoom((admit) =>
+    replaceRegisteredDocumentWithRoom(options, admit)
+  )
+}
+
+async function replaceRegisteredDocumentWithRoom(options: {
   spaceId: string
   path: string
   /** The source's bytes, or a file's bytes staged on disk. */
@@ -1704,7 +1757,7 @@ export async function replaceRegisteredDocument(options: {
   separateVersion?: boolean
   /** Given the bytes being replaced, as read under the lock for the write. */
   onPrevious?: (bytes: Uint8Array, formatId: string) => void
-}): Promise<DocumentWriteResult> {
+}, admit: (bytes: number) => void = () => undefined): Promise<DocumentWriteResult> {
   assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
@@ -1825,6 +1878,23 @@ export async function replaceRegisteredDocument(options: {
         content: before,
         beforeCreatedAt: now,
         registry,
+        beforeWrite: async ({ creates, generationId }) => {
+          const adds =
+            2 * content.byteLength -
+            before.byteLength +
+            (creates ? before.byteLength : 0)
+          if (creates || storageFits(adds)) return admit(adds)
+          admit(
+            adds -
+              (await reclaimableAfterReplacementV2({
+                workspaceRoot,
+                spaceId: options.spaceId,
+                documentId,
+                generationId,
+                writesCheckpoint: Boolean(options.checkpoint),
+              }))
+          )
+        },
       })
       const agentMutation = options.agentMutation
         ? {
@@ -2027,7 +2097,19 @@ export async function replaceRegisteredDocument(options: {
   return result
 }
 
-export async function checkpointRegisteredDocument(options: {
+/**
+ * A saved version is a meaningful checkpoint, kept for good: it needs room
+ * for its whole content under the storage limit.
+ */
+export async function checkpointRegisteredDocument(
+  options: Parameters<typeof checkpointRegisteredDocumentWithRoom>[0]
+): Promise<DocumentWriteResult> {
+  return withAdmittedRoom((admit) =>
+    checkpointRegisteredDocumentWithRoom(options, admit)
+  )
+}
+
+async function checkpointRegisteredDocumentWithRoom(options: {
   spaceId: string
   path: string
   expectedRevision: string
@@ -2036,7 +2118,7 @@ export async function checkpointRegisteredDocument(options: {
   label?: string
   reason?: string
   registry?: DocumentFormatRegistry
-}): Promise<DocumentWriteResult> {
+}, admit: (bytes: number) => void): Promise<DocumentWriteResult> {
   assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
@@ -2060,6 +2142,7 @@ export async function checkpointRegisteredDocument(options: {
         "Document source changed since it was read"
       )
     }
+    admit(bytes.byteLength)
     const documentId =
       current.identity === "durable" ? current.documentId : mintDocumentId()
     if (current.identity === "provisional") {
@@ -2152,7 +2235,16 @@ export async function checkpointRegisteredDocument(options: {
   return result
 }
 
-export async function restoreRegisteredDocumentVersion(options: {
+/** Restore a version, held so pruning at the storage limit leaves it be. */
+export async function restoreRegisteredDocumentVersion(
+  options: Parameters<typeof restoreRegisteredDocumentVersionHeld>[0]
+): Promise<DocumentWriteResult> {
+  return withVersionHeld(options.versionId, () =>
+    restoreRegisteredDocumentVersionHeld(options)
+  )
+}
+
+async function restoreRegisteredDocumentVersionHeld(options: {
   spaceId: string
   path: string
   versionId: string

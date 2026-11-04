@@ -1,3 +1,6 @@
+import { prunedDocumentHistoryV2 } from "../document-version-compatibility-v2.ts";
+import { withVersionHeld } from "../version-holds.ts";
+import { withAdmittedRoom } from "../storage-limit.ts";
 import { buildWidgetCsp, canWidgetRecord, deniedWidgetQueryCollection, widgetRecordReadGuard, WidgetRecordAccessError } from "../widget-runtime-policy.ts";
 import { requireScope, requireHumanWorkspaceOwner, restWriteActor } from "../auth.ts";
 import { documentSourceDisposition } from "../content-disposition.ts";
@@ -700,7 +703,9 @@ async function handleListVersions(c: Context, spaceId: string, widgetId: string)
   }
   const all = c.req.query("all") === "true";
   const versions = await listWidgetVersions(spaceId, widgetId, { checkpointsOnly: !all });
-  return c.json({ versions });
+  // Older versions removed at the storage limit, when any were.
+  const pruned = await prunedDocumentHistoryV2(spaceId, widgetId, "html");
+  return c.json({ versions, ...(pruned ? { pruned } : {}) });
 }
 
 async function handleGetVersion(c: Context, spaceId: string, widgetId: string, versionId: string) {
@@ -757,7 +762,8 @@ async function handleRestoreVersion(c: Context, spaceId: string, widgetId: strin
   // widget.yaml may be corrupt — so use the overwrite-safe capture to snapshot
   // the existing index.html as `before`, honoring restore's save-current-first
   // promise.
-  const outcome = await withWidgetWriteLock(spaceId, widgetId, async () => {
+  // Held so pruning at the storage limit leaves the version be meanwhile.
+  const outcome = await withVersionHeld(versionId, () => withWidgetWriteLock(spaceId, widgetId, async () => {
     const { data: existing, error } = await readWidget(spaceId, widgetId);
     // A corrupt widget.yaml (external edit gone wrong) is exactly the state
     // restore exists to recover from: proceed when the widget DIRECTORY still
@@ -804,7 +810,8 @@ async function handleRestoreVersion(c: Context, spaceId: string, widgetId: strin
       updatedBy: restWriteActor(c),
     };
     const beforeContent = await captureWidgetContentForOverwrite(spaceId, widgetId);
-    const result = await writeWidget(spaceId, widget, restored.html);
+    // Recorded below as a checkpoint, so the version it replaces stays.
+    const result = await writeWidget(spaceId, widget, restored.html, { checkpoint: true });
     if (result.error || !result.data) {
       return { kind: "invalid" as const, error: result.error ?? "Restore failed" };
     }
@@ -818,7 +825,7 @@ async function handleRestoreVersion(c: Context, spaceId: string, widgetId: strin
     });
     result.release?.();
     return { kind: "ok" as const, data: result.data, provenance };
-  });
+  }));
   if (outcome.kind === "not-found") {
     return c.json({ error: outcome.error, code: "NOT_FOUND" }, 404);
   }
@@ -847,9 +854,11 @@ async function handleCreateCheckpoint(c: Context, spaceId: string, widgetId: str
   // Serialize capture→record under the per-widget lock: without it, a concurrent
   // agent/REST write can land between the capture and recordWidgetVersion's
   // internal after-capture and get stamped as this human checkpoint.
-  const result = await withWidgetWriteLock(spaceId, widgetId, async () => {
+  // A saved version is kept for good: it needs room for its whole content.
+  const result = await withAdmittedRoom((admit) => withWidgetWriteLock(spaceId, widgetId, async () => {
     const current = await captureWidgetVersionContent(spaceId, widgetId);
     if (!current) return { ok: false as const };
+    admit(current.authoredSource?.htmlBytes.byteLength ?? Buffer.byteLength(current.html));
     const provenance = await recordWidgetVersion(spaceId, widgetId, current, {
       source: "rest-api",
       updatedBy: restWriteActor(c),
@@ -864,7 +873,7 @@ async function handleCreateCheckpoint(c: Context, spaceId: string, widgetId: str
       },
     });
     return { ok: true as const, provenance };
-  });
+  }));
   if (!result.ok) return c.json({ error: "Widget content not found", code: "NOT_FOUND" }, 404);
   // A manual checkpoint changes the latest version id; broadcast so other
   // clients read fresh state.

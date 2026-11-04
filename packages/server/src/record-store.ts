@@ -3,7 +3,8 @@ import { isDeepStrictEqual } from "node:util";
 import { existsSync } from "node:fs";
 import { recordActivity } from "./activity-log.ts";
 import { assertSpaceAccess } from "./team-policy.ts";
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
+import { reserveStorage } from "./storage-limit.ts";
 import { dirname, join } from "node:path";
 import { CanonicalIdSchema, normalizeRecordFieldType, recordTitleFieldKey, TITLE_FIELD_TYPES, parseDocumentReference, RecordCollectionSchemaSchema, RecordFileSchema, RecordQuerySchema, requiresSchemaV2, WidgetIdSchema, type RecordCollectionSchema, type RecordCollectionSummary, type RecordDiagnostic, type RecordFile, type RecordQuery, type RecordQueryResult } from "@worktable/types";
 import { readDocAliases, resolveDocAliasIn } from "./doc-aliases.ts";
@@ -1040,7 +1041,20 @@ async function writeRecordValidated(
   await ensureRecordDirs(spaceId, parsed.data.collectionId);
   const path = recordPath(spaceId, parsed.data.collectionId, parsed.data.id);
   await mkdir(dirname(path), { recursive: true });
-  await atomicWriteText(path, stringifyCanonicalYaml(parsed.data));
+  const text = stringifyCanonicalYaml(parsed.data);
+  // A record's data needs room under the storage limit, less what it
+  // replaces; archiving and restoring only mark it, so they always pass.
+  const room = opts?.skipDataValidation
+    ? null
+    : await reserveStorage({
+        adds: Buffer.byteLength(text),
+        replaces: async () => (await stat(path).catch(() => null))?.size ?? 0,
+      });
+  try {
+    await atomicWriteText(path, text);
+  } finally {
+    room?.release();
+  }
   notifyRecordChanged({ kind: "write", spaceId, record: parsed.data });
   return { data: parsed.data, error: null };
 }

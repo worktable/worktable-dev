@@ -235,14 +235,29 @@ export function restoreDoc(
   });
 }
 
+/** Older versions removed at the storage limit. */
+export interface PrunedHistory {
+  versions: number
+  at: string
+}
+
+/** A Doc's versions, and what pruning at the storage limit removed. */
+export function listDocVersionHistory(
+  spaceId: string,
+  docPath: string,
+  all = false
+): Promise<{ versions: DocVersionEntry[]; pruned?: PrunedHistory }> {
+  return fetchJSON<{ versions: DocVersionEntry[]; pruned?: PrunedHistory }>(
+    `/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}/versions${all ? "?all=true" : ""}`
+  )
+}
+
 export function listDocVersions(
   spaceId: string,
   docPath: string,
   all = false
 ): Promise<DocVersionEntry[]> {
-  return fetchJSON<{ versions: DocVersionEntry[] }>(
-    `/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}/versions${all ? "?all=true" : ""}`
-  ).then((r) => r.versions);
+  return listDocVersionHistory(spaceId, docPath, all).then((r) => r.versions);
 }
 
 export function readDocVersion(

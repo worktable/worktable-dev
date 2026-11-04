@@ -442,7 +442,10 @@ documentsRouter.get("/versions", requireScope("documents:read"), async (c) => {
     checkpointsOnly: c.req.query("all") !== "true",
   })
   if (result.kind === "versions") {
-    return c.json({ versions: result.versions })
+    return c.json({
+      versions: result.versions,
+      ...(result.pruned ? { pruned: result.pruned } : {}),
+    })
   }
   if (result.kind === "not-found") {
     return c.json({ error: "Document not found.", code: "NOT_FOUND" }, 404)

@@ -49,6 +49,8 @@ export interface TokenIdentity {
   credentialClass?: "local" | "browser" | "resource"
   /** Scope strings: "*", "docs:*", "docs:read", "tokens:manage", ... */
   scopes: string[]
+  /** A signed-in person's photo from their sign-in provider, on Cloud. */
+  picture?: string
   /** Agent label ("claude-code", ...) or null for human/owner credentials. */
   agent: string | null
   principal: RequestPrincipal

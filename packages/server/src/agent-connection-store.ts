@@ -19,11 +19,12 @@ import type {
 import {
   accessFromScopes,
   AGENT_PLATFORMS,
+  agentConnectionPlatform,
   clientIdForAgentLabel,
+  clientIdForSignInPrincipal,
   defaultAgentNameForLabel,
   platformForAdapter,
   platformForClient,
-  platformForName,
   scopesForAccess,
 } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
@@ -423,7 +424,11 @@ function publicConnection(
   token: TokenMetadata,
   participants: Map<string, ParticipantRef>
 ): AgentConnection {
-  const platform = stored.platform ?? platformForTarget(stored.target)
+  const platform = agentConnectionPlatform({
+    platform: stored.platform ?? platformForTarget(stored.target),
+    target: stored.target,
+    displayName: stored.displayName ?? "",
+  })
   // The participant's current record, not the copy saved when it connected:
   // the agent itself may have renamed it since.
   const participant =
@@ -523,7 +528,14 @@ export async function noteLinkedApp(identity: TokenIdentity): Promise<void> {
         principalId,
         displayName,
         participantKey: participantKey(identity),
-        platform: platformForName(displayName),
+        platform: agentConnectionPlatform({
+          platform: "other",
+          target: {
+            kind: "mcp-client",
+            clientId: clientIdForSignInPrincipal(principalId),
+          },
+          displayName,
+        }),
         connectedAt: new Date().toISOString(),
       })
       await saveFile(file)
@@ -560,17 +572,27 @@ function linkedAppConnection(
   manageUrl: string
 ): AgentConnection {
   const participant = participants.get(app.participantKey) ?? null
+  // Its signed client id, which says which app it is better than its name.
+  const target = {
+    kind: "mcp-client" as const,
+    clientId: clientIdForSignInPrincipal(app.principalId),
+  }
+  const displayName = participant?.name ?? app.displayName
   return {
     id: `acn_link_${createHash("sha256")
       .update(`${app.workspace}\0${app.principalId}`)
       .digest("base64url")
       .slice(0, 20)}`,
     authKind: "oauth",
-    displayName: participant?.name ?? app.displayName,
-    platform: app.platform,
+    displayName,
+    platform: agentConnectionPlatform({
+      platform: app.platform,
+      target,
+      displayName,
+    }),
     icon: null,
     access: null,
-    target: { kind: "mcp-client", clientId: null },
+    target,
     mode: "on-demand",
     participant,
     machine: null,

@@ -1,14 +1,24 @@
 import type { DesktopWorktable } from "./desktop-worktables"
 import { fetchJSON, HttpError } from "./http"
+import { listedWorktableLogo } from "@worktable/types/recognition"
+import type { TileLogo } from "./recognition"
+
+/** How a listing may draw a Worktable; older listings leave both out. */
+export interface ListedMark {
+  /** Its chosen recognition color. */
+  color?: string
+  /** An icon name, or a small inline image as a data URL. */
+  logo?: unknown
+}
 
 /** A hosted Worktable in Worktable Cloud. */
-export interface HostedWorktable {
+export interface HostedWorktable extends ListedMark {
   id: string
   name: string
 }
 
 /** A folder on one of the person's devices, reachable through Worktable Link. */
-export interface LinkedWorktable {
+export interface LinkedWorktable extends ListedMark {
   id: string
   name: string
   /** The device's name. */
@@ -90,7 +100,32 @@ export function loadCloudDirectory(
   return cloudPage ? cloudTabDirectory() : localDirectory()
 }
 
-export type MenuRow =
+/**
+ * A logo another Worktable's listing carries, from Desktop or Cloud. Only an
+ * icon name or an inline raster image is drawn; anything else draws the
+ * initial.
+ */
+function listedLogo(value: unknown): TileLogo | null {
+  const logo = listedWorktableLogo(value)
+  if (!logo) return null
+  return logo.kind === "icon" ? logo : { kind: "image", src: logo.data }
+}
+
+/** What every row draws its tile with. */
+interface RowMark {
+  color?: string
+  logo: TileLogo | null
+}
+
+function mark(listed: ListedMark): RowMark {
+  return {
+    ...(typeof listed.color === "string" ? { color: listed.color } : {}),
+    logo: listedLogo(listed.logo),
+  }
+}
+
+export type MenuRow = RowMark &
+  (
   | {
       kind: "this-mac"
       id: string
@@ -114,6 +149,7 @@ export type MenuRow =
       current: boolean
       href: string
     }
+  )
 
 export interface MenuGroup {
   label: "On This Mac" | "Other Devices" | "Your Devices" | "Worktable Cloud"
@@ -168,7 +204,11 @@ export function worktableMenuGroups({
   if (thisMac?.length) {
     groups.push({
       label: "On This Mac",
-      rows: thisMac.map((worktable) => ({ kind: "this-mac", ...worktable })),
+      rows: thisMac.map((worktable) => ({
+        kind: "this-mac",
+        ...worktable,
+        ...mark(worktable),
+      })),
     })
   }
   if (!directory) return groups
@@ -192,6 +232,7 @@ export function worktableMenuGroups({
           : address
       return {
         kind: "device",
+        ...mark(row),
         id: row.id,
         name: row.name,
         device: row.device,
@@ -201,6 +242,7 @@ export function worktableMenuGroups({
     })
   const hosted: MenuRow[] = directory.worktables.map((worktable) => ({
     kind: "hosted",
+    ...mark(worktable),
     id: worktable.id,
     name: worktable.name,
     current: worktable.id === currentHostedId,

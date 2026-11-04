@@ -3,6 +3,7 @@
 - [Use Worktable](https://docs.worktable.dev): installation, workflows, agent setup, and CLI/MCP reference.
 - [Develop the application](development.md): prerequisites, local development, code map, and tests.
 - [Keep Worktable fast](performance.md): speed rules, speed guards, and where to measure.
+- [How files behave](files.md): the rules files keep, where code enforces them, and the tests that prove them.
 - [Build release artifacts](building.md): source identity, runtime materials, and packaging.
 - [Contribute](../CONTRIBUTING.md): proposals, review, sign-off, and privacy before uploading.
 - [Report a vulnerability](../SECURITY.md): private reporting and supported scope.

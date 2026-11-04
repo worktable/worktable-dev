@@ -4,11 +4,16 @@ import {
   type AgentPlatformId,
   type ParticipantRef,
 } from "@worktable/types"
-import { recognitionColor } from "@worktable/types/recognition"
+import {
+  recognitionColor,
+  type RecognitionColor,
+} from "@worktable/types/recognition"
 import { cn } from "@worktable/ui/lib/utils"
 import { NamedIcon, resolveIcon } from "@/lib/icons"
 import {
   agentLogoUrl,
+  personPhotoUrl,
+  type TileLogo,
   participantInitials,
   recognitionChip,
   recognitionSolid,
@@ -36,7 +41,10 @@ export function AgentAvatar({
   // Hermes fills its circle; OpenAI and Goose artwork include their own padding.
   const fullBleed = platform === "hermes"
   const prePadded =
-    platform === "chatgpt" || platform === "codex" || platform === "goose"
+    platform === "chatgpt" ||
+    platform === "chatgpt-desktop" ||
+    platform === "codex" ||
+    platform === "goose"
   const initials = participantInitials(name)
   const fallback = icon ? (
     <NamedIcon
@@ -106,26 +114,45 @@ function AgentLogo({
   )
 }
 
-/** A person's saved identity, shared by the profile, Threads, and activity. */
+/**
+ * A person's saved identity, shared by the profile, Threads, and activity:
+ * their photo, else their initial on their color.
+ */
 export function PersonAvatar({
   id,
   name,
+  photo,
   size = "sm",
   className,
 }: {
   id: string
   name: string
+  /** Their photo's hash, from the summary or Threads' presentations. */
+  photo?: string | null
   size?: "sm" | "md" | "lg"
   className?: string
 }) {
+  const [failed, setFailed] = useState<string | null>(null)
+  const shape = cn(
+    "flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
+    size === "md" && "size-8 text-sm",
+    size === "lg" && "size-9 text-sm",
+    className
+  )
+  if (photo && failed !== photo) {
+    return (
+      <img
+        src={personPhotoUrl(id, photo)}
+        alt={name}
+        draggable={false}
+        onError={() => setFailed(photo)}
+        className={cn(shape, "object-cover outline-1 -outline-offset-1 outline-border")}
+      />
+    )
+  }
   return (
     <span
-      className={cn(
-        "flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
-        size === "md" && "size-8 text-sm",
-        size === "lg" && "size-9 text-sm",
-        className
-      )}
+      className={shape}
       aria-label={name}
       style={recognitionSolid(recognitionColor(null, id))}
     >
@@ -167,6 +194,7 @@ export function ThreadParticipantAvatar({
       <PersonAvatar
         id={current?.id ?? participant.id}
         name={current?.name ?? participant.name}
+        photo={current?.photo}
         size="md"
         className={className}
       />
@@ -221,6 +249,57 @@ export function SpaceIcon({
       style={recognitionChip(color)}
     >
       {resolveIcon(space.icon, SIZES[size].icon)}
+    </span>
+  )
+}
+
+/**
+ * A Worktable's mark: its logo, else its initial on its color. Rounded
+ * squares, since Worktables are places and only people are round.
+ */
+export function WorktableTile({
+  name,
+  color,
+  logo,
+  className,
+}: {
+  name: string
+  color: RecognitionColor
+  logo?: TileLogo | null
+  /** Sizes other than the sidebar's 24 px. */
+  className?: string
+}) {
+  const [failed, setFailed] = useState<string | null>(null)
+  const tile = cn(
+    "flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-[25%] text-xs font-semibold",
+    className
+  )
+  if (logo?.kind === "image" && failed !== logo.src) {
+    return (
+      <img
+        src={logo.src}
+        alt=""
+        aria-hidden
+        draggable={false}
+        onError={() => setFailed(logo.src)}
+        className={cn(
+          tile,
+          "object-cover outline-1 -outline-offset-1 outline-border"
+        )}
+      />
+    )
+  }
+  return (
+    <span aria-hidden className={tile} style={recognitionSolid(color)}>
+      {logo?.kind === "icon" ? (
+        <NamedIcon
+          name={logo.icon}
+          className="size-[60%]"
+          fallback={name.trim().charAt(0).toUpperCase() || "W"}
+        />
+      ) : (
+        name.trim().charAt(0).toUpperCase() || "W"
+      )}
     </span>
   )
 }

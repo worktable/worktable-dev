@@ -10,6 +10,7 @@ import {
   type WorkspaceManifest,
 } from "./workspace.ts"
 import { calculateLocalWorkspaceContentCheckpoints } from "./workspace-transfer-v2.ts"
+import { carryWorkspaceLogo } from "./workspace-logo.ts"
 import { withWorkspaceExportSnapshot } from "./workspace-export-coordinator.ts"
 import {
   scheduleWorkspaceReplacement,
@@ -99,6 +100,8 @@ function startPreparation(id: string): void {
             "\n",
           { mode: 0o600 }
         )
+        // Clearing keeps the Worktable's identity, its logo included.
+        await carryWorkspaceLogo(getWorkspaceRoot(), paths.stagingPath, reviewed.manifest)
         const staged = await calculateLocalWorkspaceContentCheckpoints(
           paths.stagingPath
         )

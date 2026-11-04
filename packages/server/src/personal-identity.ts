@@ -1,4 +1,5 @@
 import type { Context } from "hono"
+import { adoptSignInPhoto, participantPhotoHash } from "./participant-photos.ts"
 import { authRequired, canManageUserSettings } from "./auth.ts"
 import { isHosted } from "./hosted.ts"
 import { cachedParticipantForKey, participantKey } from "./participant-store.ts"
@@ -34,6 +35,8 @@ export interface PersonSummary {
   activityId: string
   /** How this person signs out here, or null when there is no session. */
   signOut: "team" | "cloud" | "password" | null
+  /** Their photo, named by its content. */
+  photo?: string
 }
 
 /** Who is using this Worktable, for the sidebar. */
@@ -42,8 +45,12 @@ export function personSummary(c: Context): PersonSummary | null {
   const identity = c.get("identity")!
   const participant = cachedParticipantForKey(participantKey(identity))
   const member = teamsEnabled() ? teamMemberForIdentity(identity) : null
+  const photo = participant ? participantPhotoHash(participant.id) : null
+  // A Cloud sign-in's photo stands in until the person sets their own.
+  if (participant && identity.picture) adoptSignInPhoto(participant.id, identity.picture)
   if (member) {
     return {
+      ...(photo ? { photo } : {}),
       id: participant?.id ?? member.actorId,
       name: member.name,
       role: member.role,
@@ -52,6 +59,7 @@ export function personSummary(c: Context): PersonSummary | null {
     }
   }
   return {
+    ...(photo ? { photo } : {}),
     id: participant?.id ?? identity.principal.id,
     name: participant?.name ?? "Owner",
     role: "owner",

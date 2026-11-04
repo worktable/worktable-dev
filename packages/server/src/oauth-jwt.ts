@@ -2,6 +2,7 @@ import { isHosted } from "./hosted.ts";
 import { teamsEnabled } from "./team-database.ts";
 import { cloudTeamMemberForSubject } from "./team-cloud.ts";
 import { hostedOAuthPrincipalId } from "@worktable/hosted-contract";
+import { signInAgentName } from "@worktable/types";
 import { createRemoteJWKSet, jwtVerify } from "jose"
 import {
   authorizationServerMetadataCandidates,
@@ -345,7 +346,7 @@ export async function verifyAuthServerJwt(
             displayName: "Connected agent",
             authorizedBy: `workos:${delegatedBy}`,
           }
-        : team ? { id: hostedOAuthPrincipalId(payload.client_id as string, subject), type: "agent", displayName: typeof payload.client_name === "string" && payload.client_name ? payload.client_name : "Connected agent", authorizedBy: `workos:${subject}` } : {
+        : team ? { id: hostedOAuthPrincipalId(payload.client_id as string, subject), type: "agent", displayName: signInAgentName(hostedOAuthPrincipalId(payload.client_id as string, subject), typeof payload.client_name === "string" && payload.client_name ? payload.client_name : "Connected agent"), authorizedBy: `workos:${subject}` } : {
             id: `workos:${subject}`,
             type: "human",
             displayName: "Worktable user",

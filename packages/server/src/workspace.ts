@@ -14,6 +14,7 @@ import { join, resolve } from "node:path";
 import {
   validStarterSeed,
   workspaceStorageLayoutFromManifest,
+  type IdentityImageType,
 } from "@worktable/types";
 
 // ============================================================
@@ -85,6 +86,13 @@ export interface WorkspaceManifest {
   provenance?: WorkspaceProvenance;
   /** The chosen recognition color; absent means the default for `id`. */
   color?: string;
+  /**
+   * The Worktable's own mark. An image lives beside this manifest as
+   * `worktable-logo.<ext>`, so it travels with the folder.
+   */
+  logo?:
+    | { kind: "image"; hash: string; type: IdentityImageType }
+    | { kind: "icon"; icon: string };
   // NOTE: the configured public origin (`publicUrl`) is NOT a manifest field. It
   // is machine-local — a tunnel/reverse-proxy URL belongs to this install, not
   // to the portable workspace — so it lives in the settings store

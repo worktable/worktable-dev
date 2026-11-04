@@ -12,6 +12,8 @@ infrastructure and personal context out of release notes.
 ### Added
 
 - **Images:** An image in a doc, or on its file's page, opens full screen from **Full screen** on its corner or, while you read, with a click. Zoom and pan it, move through the doc's images with the arrow keys, and **Download** it or **Open** its file.
+- **Worktable logos:** Give each Worktable its own logo in Settings → General, by clicking the tile beside its name. Upload an image and crop it, or pick an icon. The logo shows in the sidebar, in the Worktable menu and on the browser tab, and it moves with the Worktable's folder.
+- **Profile photos:** Add your photo in Settings → Profile. It shows wherever you appear, such as Threads, comments and Team. On Worktable Cloud, the photo from your sign-in is used until you choose your own.
 
 ### Changed
 

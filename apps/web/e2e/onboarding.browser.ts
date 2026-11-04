@@ -384,7 +384,11 @@ test("Cloud coding agents are recognized on their own tab when they sign in", as
 }) => {
   const mcpUrl = "https://cloud.example.test/api/mcp/w/wt_fixture"
   // As Cloud lists sign-in agents: by app name, with no known platform.
-  const agent = (id: string, displayName: string) => ({
+  const agent = (
+    id: string,
+    displayName: string,
+    clientId: string | null = null
+  ) => ({
     id,
     authKind: "oauth",
     displayName,
@@ -392,7 +396,7 @@ test("Cloud coding agents are recognized on their own tab when they sign in", as
     ownership: "personal",
     icon: null,
     access: { threads: true, read: true, edit: true },
-    target: { kind: "mcp-client", clientId: null },
+    target: { kind: "mcp-client", clientId },
     mode: "on-demand",
     participant: null,
     machine: null,
@@ -445,14 +449,21 @@ test("Cloud coding agents are recognized on their own tab when they sign in", as
   const poll = page.waitForRequest((request) =>
     new URL(request.url()).pathname.endsWith("/api/agent-connections")
   )
-  connections.push(agent("agt_codex", "Codex"))
+  // Codex CLI signs in as the Codex client, which ChatGPT Desktop shares.
+  connections.push(
+    agent(
+      "agt_codex",
+      "Codex",
+      "https://chatgpt.com/oauth/codex/AbCdEf123456/client.json"
+    )
+  )
   await (await poll).response()
   await expect(page.getByText("Waiting for Claude Code")).toBeVisible()
   await expect(page.getByText(/is connected\./)).toHaveCount(0)
 
   // An agent already connected when the step opened isn't new, while one
   // that signed in since is recognized when its tab opens.
-  await page.getByRole("tab", { name: "Codex", exact: true }).click()
+  await page.getByRole("tab", { name: "Codex CLI", exact: true }).click()
   await expect(page.getByText("Codex is connected.")).toBeVisible()
   await expect(
     page.getByRole("button", { name: "Continue", exact: true })
@@ -498,7 +509,7 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     hostname: "browser-devbox",
     client: "codex",
   })
-  await expect(page.getByText("Codex is connected.")).toBeVisible({
+  await expect(page.getByText("Codex CLI is connected.")).toBeVisible({
     timeout: 10_000,
   })
 
@@ -584,7 +595,7 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     )
   ).toMatchObject({
     connections: expect.arrayContaining([
-      expect.objectContaining({ displayName: "Codex" }),
+      expect.objectContaining({ displayName: "Codex CLI" }),
       expect.objectContaining({
         target: expect.objectContaining({ adapter: "hermes" }),
         displayName: "Hermes",

@@ -41,3 +41,13 @@ Colors: black, grey, light-violet, violet, blue, light-blue, yellow, orange, gre
 
 Typed text is searchable; freehand marks require a PNG preview or browser inspection to interpret. There is no OCR or live merging. Clean idle canvases refresh after external edits, retaining compatible local undo steps. Conflicting unsaved ink can be kept with Save a copy before Reload drawing. Each autosave retains a full source version under the Worktable's history retention policy, so embedded images can grow history quickly.
 `
+
+/**
+ * Preview surface: how files behave for an agent, added to the format spec
+ * until agent directories review it.
+ */
+export const FILES_SPEC = `## Files and the folder
+
+A plain file whose name starts with a dot, such as .env or .gitignore, or that sits in a folder whose name starts with one, is hidden. Hidden files stay hidden: they aren't listed, searched, shared or sent to agents, and Worktable doesn't create or move files there.
+
+With a shell you can also write straight into a Space's folder. Those writes are never blocked or checked: the last write wins. Worktable records settled changes on disk to a plain file it already keeps as versions marked as made on disk, and may merge quick successive changes into one. A new file written on disk has no history until Worktable keeps it, a file over 64 MiB keeps no new versions while it stays that large, and a Doc changed on disk gets no version of its own. To have a replace checked against the revision you read, so a newer change is refused rather than overwritten, write through worktable_files_write or worktable_docs_write with expectedRevision.`

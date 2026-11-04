@@ -247,7 +247,7 @@ import { setDocumentFolderArchived } from "../document-folder-archive.ts"
 import { deleteDocumentFolder } from "../document-folder-delete.ts"
 import { wsManager } from "../ws.ts"
 import { docSnapshotRevision, htmlSourceRevision } from "../document-content-revision.ts"
-import { FORMAT_SPEC } from "./format-spec.ts"
+import { FILES_SPEC, FORMAT_SPEC } from "./format-spec.ts"
 import {
   isMarkdownSafe,
   extractMarkdownHeadings,
@@ -3347,7 +3347,10 @@ async function _dispatchOperationInner(
         guide: DRAWING_GUIDE,
       }
     case "guidance.format_spec": {
-      const spec = FORMAT_SPEC.trim()
+      const spec =
+        context.surface === "preview"
+          ? `${FORMAT_SPEC.trim()}\n\n${FILES_SPEC}`
+          : FORMAT_SPEC.trim()
       return {
         spec,
       }

@@ -58,7 +58,11 @@ import {
 import { fileNoHistory } from "./file-limits.ts"
 import { sourceStampSize } from "./document-catalog.ts"
 import { peekDocActivity } from "./activity-log.ts"
-import { peekDocBacklinks, peekDocOutbound } from "./link-graph.ts"
+import {
+  peekDocBacklinks,
+  peekDocOutbound,
+  type DocBacklink,
+} from "./link-graph.ts"
 import { filesEnabled } from "./files-enabled.ts"
 import { peekDocReferrers } from "./doc-referrers.ts"
 import {
@@ -130,6 +134,28 @@ async function embedVersions(
   return Object.keys(embeds).length > 0 ? embeds : undefined
 }
 
+/**
+ * The Docs linking to one, from the cached link graph, leaving out any the
+ * catalog snapshot no longer has: a graph not yet rebuilt after a delete
+ * still names the deleted Doc, with the sentence that linked.
+ */
+async function currentBacklinks(
+  spaceId: string,
+  docPath: string,
+  moves: ReturnType<typeof pathMovesFor>
+): Promise<DocBacklink[] | null> {
+  const backlinks = peekDocBacklinks(spaceId, docPath, moves)
+  if (!backlinks || backlinks.length === 0) return backlinks
+  // A page reads under the Space's lock, which this read must not take again.
+  const catalog = await readDocumentCatalogSnapshot(spaceId, { lockHeld: true })
+  const present = new Set(
+    catalog.entries.flatMap((entry) =>
+      entry.kind === "document" ? [entry.descriptor.path] : []
+    )
+  )
+  return backlinks.filter((backlink) => present.has(backlink.path))
+}
+
 interface DocumentPageIntegration {
   rendererKey: string
   renderDisposition: DocumentRenderDisposition
@@ -166,7 +192,7 @@ const PAGE_INTEGRATIONS: readonly DocumentPageIntegration[] = [
       // doc's entries instead of resolving every path in the Space.
       const path = handle.document.path
       const moves = pathMovesFor(handle.aliases)
-      const backlinks = peekDocBacklinks(spaceId, path, moves)
+      const backlinks = await currentBacklinks(spaceId, path, moves)
       const referrers = peekDocReferrers(spaceId, path, moves.current)
       const activity = peekDocActivity(spaceId, path, moves)
       return {
@@ -338,12 +364,12 @@ async function usesDocumentStorageV2(): Promise<boolean> {
 }
 
 /** A file's page names the Docs that use it, from the same cached graph. */
-function fileMetadata(
+async function fileMetadata(
   spaceId: string,
   handle: ResolvedDocumentHandle
-): DocumentPageMetadata {
+): Promise<DocumentPageMetadata> {
   const moves = pathMovesFor(handle.aliases)
-  const backlinks = peekDocBacklinks(spaceId, handle.document.path, moves)
+  const backlinks = await currentBacklinks(spaceId, handle.document.path, moves)
   // Records whose file fields name it use it too.
   const referrers = peekDocReferrers(spaceId, handle.document.path, moves.current)
   // Its size is in what the catalog saw on disk; nothing is read for it.
@@ -373,7 +399,7 @@ async function pageForHandle(
   const metadata = integration
     ? await integration.readMetadata(spaceId, handle)
     : handle.document.format.id === BUILTIN_DOCUMENT_FORMATS.file
-      ? fileMetadata(spaceId, handle)
+      ? await fileMetadata(spaceId, handle)
       : null
   const { data: space } = sharingAuthorized
     ? await readSpace(spaceId)

@@ -1198,10 +1198,10 @@ export async function searchWithStatus(
     for (const [i, hit] of hits.entries()) {
       if (!canAccessSpace(hit.spaceId)) continue;
       if (results.length >= maxResults) break;
-      if (!includeArchived) {
-        const { data: space } = await readSpace(hit.spaceId);
-        if (!space || getSpaceArchiveInfo(space)) continue;
-      }
+      // The record index keeps a deleted Space's rows until its sweep: a
+      // Space that is gone shows none of them, archived ones included.
+      const { data: space } = await readSpace(hit.spaceId);
+      if (!space || (!includeArchived && getSpaceArchiveInfo(space))) continue;
       const excerpt = makeExcerpt(recordDisplayText(hit.collectionName, hit.data), queryTerms);
       results.push({
         spaceId: hit.spaceId,

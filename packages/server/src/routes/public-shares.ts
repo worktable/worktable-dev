@@ -1,7 +1,7 @@
 import {
+  embeddedFilesUnchanged,
   inlineSharedImages,
-  stampsStillHold,
-  type FileStamp,
+  type EmbeddedFile,
 } from "../share-images.ts"
 import { createPublicVisitorCommentsRouter } from "./public-visitor-comments.ts"
 import { visitorCommentNamespace } from "../visitor-comment-access.ts"
@@ -156,8 +156,8 @@ interface RenderedPage {
   body: string
   bytes: number
   gzip?: ReturnType<typeof gzipAsync>
-  /** The images the page shows, so a page whose images changed renders again. */
-  stamps?: FileStamp[]
+  /** The files the page embeds, so a page whose images changed renders again. */
+  embeds?: EmbeddedFile[]
 }
 
 const renderedPages = new Map<string, RenderedPage>()
@@ -175,13 +175,13 @@ function rememberPage(
   key: string,
   revision: string,
   body: string,
-  stamps: FileStamp[] = []
+  embeds: EmbeddedFile[] = []
 ): RenderedPage {
   const page = {
     revision,
     body,
     bytes: Buffer.byteLength(body),
-    ...(stamps.length > 0 ? { stamps } : {}),
+    ...(embeds.length > 0 ? { embeds } : {}),
   }
   forgetPage(key)
   // One large page must not push every other share out of the cache.
@@ -265,7 +265,7 @@ async function renderLinkBody(
   if (!document) return null
   let body: string
   let revision: string | null
-  let stamps: FileStamp[] = []
+  let embeds: EmbeddedFile[] = []
   if (document.kind === "html-title") {
     body = JSON.stringify(
       PublicShareProjection.parse({
@@ -285,7 +285,7 @@ async function renderLinkBody(
       view.path,
       document.content
     )
-    stamps = inlined.stamps
+    embeds = inlined.embeds
     body = JSON.stringify(
       PublicShareProjection.parse({
         kind: "doc",
@@ -312,7 +312,7 @@ async function renderLinkBody(
     linkPageKey(view.link.id, surface, view.path, revision, view.title),
     revision,
     body,
-    stamps
+    embeds
   )
 }
 
@@ -356,7 +356,10 @@ async function renderLinkPage(
   )
   const cached = renderedPages.get(key)
   // A page's images can change while the Doc doesn't: then it renders again.
-  if (cached && (!cached.stamps || (await stampsStillHold(cached.stamps)))) {
+  if (
+    cached &&
+    (!cached.embeds || (await embeddedFilesUnchanged(view.link.spaceId, cached.embeds)))
+  ) {
     renderedPages.delete(key)
     renderedPages.set(key, cached)
     return cached

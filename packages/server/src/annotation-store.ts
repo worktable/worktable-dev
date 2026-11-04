@@ -1,7 +1,7 @@
 import { assertSpaceAccess, commentAccess } from "./team-policy.ts";
 import type { AnnotationWriteGuard } from "./annotation-origin.ts";
 import { noteCommentActivity } from "./activity-log.ts"
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
 import { NON_ENGAGING_ACTORS, noteDocumentActivity } from "./document-activity.ts"
 import { existsSync } from "node:fs";
 import crypto from "node:crypto";
@@ -24,6 +24,7 @@ import { locateMarkdownPassage, markdownPassageLines } from "./markdown-passage.
 import { withDocPathLock } from "./doc-path-lock.ts";
 import { assertWorkspaceAvailable } from "./workspace-safety.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
+import { atomicWriteText } from "./atomic-file.ts"
 import {
   assertLegacyAnnotationStoreWritable,
   withLegacyAnnotationStoreLock,
@@ -217,7 +218,8 @@ async function writeAnnotationFile(spaceId: string, key: AnnotationKey, file: An
   const path = annotationPath(spaceId, key);
   await mkdir(dirname(path), { recursive: true });
   if (beforeWrite) await beforeWrite();
-  await writeFile(path, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  // Replace, never rewrite in place: a crash keeps the previous version.
+  await atomicWriteText(path, `${JSON.stringify(next, null, 2)}\n`);
   return next;
 }
 

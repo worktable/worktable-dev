@@ -9,6 +9,7 @@ import {
 } from "./workspace-snapshot.ts"
 import { withWorkspaceExportSnapshot } from "./workspace-export-coordinator.ts"
 import { withWorkspaceExportLease } from "./workspace-replacement-coordinator.ts"
+import type { WorkspaceCaptureReport } from "./workspace-transfer-v2.ts"
 
 export const LOCAL_OPERATOR_SNAPSHOT_PATH =
   "/internal/operator/workspace-snapshot"
@@ -58,6 +59,7 @@ export async function writeLiveOperatorWorkspaceSnapshot(
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
         }
         let captureBarrierMs: number | undefined
+        let capture: WorkspaceCaptureReport | undefined
         const cancellation =
           maxCaptureMs === undefined ? undefined : new AbortController()
         const startedAt = performance.now()
@@ -66,6 +68,9 @@ export async function writeLiveOperatorWorkspaceSnapshot(
           : await writeWorkspaceSnapshot(destination, {
               captureTeamState: true,
               signal: cancellation?.signal,
+              onCaptureReport: (report) => {
+                capture = report
+              },
               withCaptureBarrier: async (capture) => {
                 const timer = cancellation
                   ? setTimeout(
@@ -103,6 +108,8 @@ export async function writeLiveOperatorWorkspaceSnapshot(
             manifest.visitorComments?.checkpoint ?? null,
           capturedAt: manifest.capturedAt,
           captureBarrierMs,
+          // How files were captured and where the time went, when captured now.
+          capture,
           publicationMs: performance.now() - startedAt,
           files: manifest.files.length,
           bytes:

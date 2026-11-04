@@ -1,6 +1,4 @@
 // Shared presentation policy; each trust boundary runs its own parser and sanitizer.
-import { mediaTypeAlternation } from "@worktable/types/file-types"
-
 export const ALLOWED_TAGS = new Set([
   "a",
   "abbr",
@@ -202,15 +200,8 @@ export const SAFE_SVG_ATTRIBUTES = new Set([
 
 export const LOCAL_SVG_URL = /^url\(\s*#[A-Za-z_][\w:.-]*\s*\)$/i
 
-/**
- * An image a shared page carries in itself: a data URL of a type the file
- * type table's share policy shows inline (PNG, JPEG, GIF and WebP). The
- * Cloud gateway enforces the same set, so it changes on both sides at once.
- */
-export const DATA_RASTER_IMAGE = new RegExp(
-  `^data:(?:${mediaTypeAlternation("share", "inline")});base64,[A-Za-z0-9+/=\\s]+$`,
-  "i"
-)
+export const DATA_RASTER_IMAGE =
+  /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/=\s]+$/i
 
 type SafeHref =
   | { kind: "fragment"; href: string }

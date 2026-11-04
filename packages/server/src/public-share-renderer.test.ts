@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { JSDOM } from "jsdom"
+import { DATA_RASTER_IMAGE } from "@worktable/hosted-contract"
+import { fileMediaTypesWhere } from "@worktable/types/file-types"
 import {
   renderPublicDocProjection,
   renderPublicHtmlProjection,
@@ -233,5 +235,20 @@ describe("public HTML-doc projection", () => {
     expect(
       document.querySelector('[data-kind="unsafe"]')?.localName
     ).toBe("span")
+  })
+})
+
+describe("shared-page images", () => {
+  it("are exactly the types the file-type table shows inline on shares", () => {
+    // The MIT share policy keeps its own list, so the file-type table (AGPL)
+    // and the Cloud gateway's copy can't drift apart unnoticed.
+    const shown = fileMediaTypesWhere("share", "inline")
+    for (const mediaType of shown) {
+      expect(DATA_RASTER_IMAGE.test(`data:${mediaType};base64,AAAA`)).toBe(true)
+    }
+    for (const mediaType of ["image/avif", "image/svg+xml", "text/html", "image/bmp"]) {
+      expect(shown).not.toContain(mediaType)
+      expect(DATA_RASTER_IMAGE.test(`data:${mediaType};base64,AAAA`)).toBe(false)
+    }
   })
 })

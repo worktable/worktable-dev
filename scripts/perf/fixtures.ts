@@ -548,7 +548,7 @@ async function writeFileProbes(spaceId: string): Promise<void> {
     [FILE_PROBE, screenshotPng()],
     [CHART_PROBE, chartPng()],
   ] as const)
-    await withStagedUpload(new Response(bytes), (file) =>
+    await withStagedUpload(new Response(new Uint8Array(bytes)), (file) =>
       writeUploadedFile({
         spaceId,
         path,

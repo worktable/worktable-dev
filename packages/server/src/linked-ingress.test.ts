@@ -32,6 +32,7 @@ import {
 } from "./share-links-store.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { createLinkedIngress } from "./linked-ingress.ts"
+import { receiveUploadPiece } from "./linked-file-links.ts"
 import { issueFileTicket } from "./file-tickets.ts"
 import { withStagedUpload, writeUploadedFile } from "./file-uploads.ts"
 import { stagingDirectory } from "./staged-file.ts"
@@ -1018,6 +1019,29 @@ it("carries a file link in pieces: an upload saved after its last piece, and a d
   expect(await readdir(stagingDirectory())).toEqual([])
   // The link worked once.
   expect((await piece(token, 0, first, file.byteLength)).status).toBe(410)
+
+  // Pieces that overlap, in order, save the whole file: only the last one
+  // saves it, once every piece is written.
+  const overlapping = issueFileTicket({
+    kind: "upload",
+    spaceId: "space",
+    path: "design/three.bin",
+    mode: { kind: "create", keepBoth: false },
+    identity: null,
+    principal,
+    actor: principal.id,
+  }).token
+  const one = (offset: number) =>
+    receiveUploadPiece(overlapping, offset, 3, new Uint8Array([offset + 1]))
+  expect((await one(0)).status).toBe(202)
+  const [second, third] = await Promise.all([one(1), one(2)])
+  expect(second.status).toBe(202)
+  expect(third.status).toBe(201)
+  expect(await third.json()).toMatchObject({
+    byteLength: 3,
+    contentHash: createHash("sha256").update(new Uint8Array([1, 2, 3])).digest("base64url"),
+  })
+  expect(await readdir(stagingDirectory())).toEqual([])
 
   // A piece out of order ends the upload, and its link with it.
   const broken = upload()

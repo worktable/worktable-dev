@@ -43,6 +43,7 @@ import {
   commitDocumentAgentMutationV2,
   listCompatibleDocumentVersionsV2,
   readCompatibleDocumentVersionV2,
+  documentGenerationSourceEntryPathV2,
   readDocumentGenerationManifestV2,
   retireReplacedGenerationV2,
   writeDocumentGenerationV2,
@@ -65,6 +66,11 @@ import {
   readDocumentFileSourceInChunks,
   readDocumentSource,
 } from "./document-source-reader.ts"
+import {
+  currentFileRevision,
+  sha256Check,
+  verifyPinnedFile,
+} from "./file-revision.ts"
 import {
   discardStagedFile,
   readStagedFile,
@@ -846,21 +852,7 @@ async function newestVersionHolding(input: {
   const latest = existing[0]
   const content = input.content
   if (latest?.store === "v2" && !(content instanceof Uint8Array)) {
-    // A staged file is compared by the hash its version recorded, without
-    // reading the version's bytes.
-    const manifest = await readDocumentGenerationManifestV2({
-      workspaceRoot: input.workspaceRoot,
-      spaceId: input.spaceId,
-      documentId: input.documentId,
-      generationId: latest.id,
-    }).catch(() => null)
-    const entry =
-      manifest?.authoredSource.kind === "file" &&
-      manifest.authoredSource.entries.length === 1
-        ? manifest.authoredSource.entries[0]!
-        : null
-    const holds =
-      entry?.bytes === content.byteLength && entry.sha256 === content.sha256
+    const holds = await newestVersionHoldsStaged(input, latest.id, content)
     return { count: existing.length, newestId: latest.id, holds }
   }
   if (latest?.store === "v2" && content instanceof Uint8Array) {
@@ -885,6 +877,54 @@ async function newestVersionHolding(input: {
     }
   }
   return { count: existing.length, newestId: latest?.id, holds: false }
+}
+
+/**
+ * Whether a version holds a staged file's bytes: its manifest records their
+ * hash, and its stored copy still matches it. The copy is read a chunk at a
+ * time, once per on-disk revision, as history reads check it. A copy that
+ * is missing or doesn't match holds nothing, so the caller keeps a fresh
+ * baseline rather than trusting it.
+ */
+async function newestVersionHoldsStaged(
+  input: { workspaceRoot: string; spaceId: string; documentId: DocumentId },
+  generationId: string,
+  content: StagedFile
+): Promise<boolean> {
+  try {
+    const manifest = await readDocumentGenerationManifestV2({
+      workspaceRoot: input.workspaceRoot,
+      spaceId: input.spaceId,
+      documentId: input.documentId,
+      generationId,
+    })
+    if (!manifest) return false
+    const recorded =
+      manifest.authoredSource.kind === "file" &&
+      manifest.authoredSource.entries.length === 1
+        ? manifest.authoredSource.entries[0]!
+        : null
+    if (
+      recorded?.bytes !== content.byteLength ||
+      recorded.sha256 !== content.sha256
+    ) {
+      return false
+    }
+    const stored = await documentGenerationSourceEntryPathV2({
+      workspaceRoot: input.workspaceRoot,
+      manifest,
+      entryPath: recorded.path,
+    })
+    if (!stored) return false
+    const now = await currentFileRevision(stored.path)
+    if (now.size !== stored.bytes) return false
+    return await verifyPinnedFile(
+      { path: stored.path, revision: now.revision, size: now.size },
+      sha256Check(stored.sha256)
+    )
+  } catch {
+    return false
+  }
 }
 
 async function ensurePreEditBaseline(input: {

@@ -1287,11 +1287,54 @@ describe("format-neutral document route", () => {
         body: body(2 * piece).stream,
       })
       expect(replaced.status).toBe(200)
-      expect(((await replaced.json()) as { contentHash: string }).contentHash).toBe(
-        expected(2 * piece)
-      )
+      const second = (await replaced.json()) as {
+        documentId: string
+        versionId: string
+        sourceRevision: string
+        contentHash: string
+      }
+      expect(second.contentHash).toBe(expected(2 * piece))
       expect(await versions()).toBe(2)
       expect(await staged()).toEqual([])
+
+      // A newest version whose stored copy was damaged isn't trusted to hold
+      // the file: replacing it first keeps what the file held as a recovery
+      // point, so those bytes stay readable.
+      const kept = join(
+        root,
+        "versions",
+        spaceId,
+        "documents",
+        second.documentId,
+        second.versionId,
+        "source"
+      )
+      const [entry] = await readdir(kept)
+      await writeFile(join(kept, entry!), "damaged")
+      const afterDamage = await instance.request(url("data/archive.bin"), {
+        method: "PUT",
+        headers: { "if-match": second.sourceRevision },
+        body: body(piece).stream,
+      })
+      expect(afterDamage.status).toBe(200)
+      const listed = (await (
+        await instance.request(
+          `/api/spaces/${spaceId}/documents/versions?path=data/archive.bin&all=true`
+        )
+      ).json()) as { versions: Array<{ reason?: string; createdAt: string }> }
+      expect(listed.versions).toHaveLength(4)
+      const recovery = listed.versions.find(
+        (version) => version.reason === "Pre-edit recovery point"
+      )
+      expect(recovery).toBeDefined()
+      const recovered = await instance.request(
+        url("data/archive.bin", `&at=${encodeURIComponent(recovery!.createdAt)}`)
+      )
+      expect(
+        createHash("sha256")
+          .update(new Uint8Array(await recovered.arrayBuffer()))
+          .digest("base64url")
+      ).toBe(expected(2 * piece))
 
       // Bytes a stopped server was staging are removed when the next starts.
       await mkdir(stagingDirectory(), { recursive: true })

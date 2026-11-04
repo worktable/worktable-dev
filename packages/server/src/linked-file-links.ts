@@ -133,15 +133,25 @@ export async function receiveUploadPiece(
   const pending = upload
   pending.received += piece.byteLength
   pending.touchedAt = now
-  pending.written = pending.written.then(() => pending.file.append(piece))
+  // Whether this piece completes the file is fixed when it is taken: later
+  // pieces may be counted before this one is written.
+  const received = pending.received
+  const last = received === total
+  const written = pending.written.then(() => pending.file.append(piece))
+  pending.written = written
   try {
-    await pending.written
+    await written
   } catch (error) {
     await dropUpload(token)
     throw error
   }
-  if (pending.received < total) {
-    return answer({ ok: true, received: pending.received }, 202)
+  if (!last) return answer({ ok: true, received }, 202)
+  // Only the last piece saves the file, once every piece queued before it is
+  // written; one that failed has ended the upload.
+  try {
+    await pending.written
+  } catch {
+    return answer(GONE, 410)
   }
   if (uploads.get(token) !== pending) return answer(GONE, 410)
   uploads.delete(token)

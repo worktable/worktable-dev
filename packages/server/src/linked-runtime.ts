@@ -713,7 +713,8 @@ function launch(): void {
             if (!response.ok && mark) markRetryAt = Date.now() + MARK_RETRY_MS
             if (!response.ok) throw new Error("HEARTBEAT_FAILED")
             const reply = LinkedHostReply.parse(await response.json())
-            cloudTakesMarks = reply.marks === true
+            // A device waiting for approval has no row to keep a mark on.
+            cloudTakesMarks = reply.marks === true && reply.state !== "pending"
             if (mark && reply.markSaved) savedMark = markKey
             if (controller.signal.aborted) break
             if (reply.state === "revoked" || reply.state === "superseded") {

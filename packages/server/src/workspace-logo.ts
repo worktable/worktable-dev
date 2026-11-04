@@ -129,7 +129,10 @@ export async function listedWorkspaceMark(
   if (logo?.kind === "icon")
     return isIconName(logo.icon) ? { color, logo: { kind: "icon", icon: logo.icon } } : { color }
   if (logo?.kind !== "image") return { color }
-  const file = await readWorkspaceLogoFile(root, manifest, logo.hash)
+  // The logo is cosmetic: a file that can't be read lists as the color.
+  const file = await readWorkspaceLogoFile(root, manifest, logo.hash).catch(
+    () => null
+  )
   if (!file) return { color }
   const data = `data:${file.type};base64,${Buffer.from(file.bytes).toString("base64")}`
   return data.length <= LISTED_LOGO_MAX_CHARS

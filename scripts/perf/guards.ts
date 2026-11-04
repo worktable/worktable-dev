@@ -393,6 +393,9 @@ export const BACKGROUND_FUNCTIONS = [
   // Keeps a version of a file changed on disk, from the watcher after the
   // change settles (file-change-recorder.ts). No request waits on it.
   "packages/server/src/document-write-service.ts#recordExternalFileChanges",
+  // Moves deleted items out of the workspace folder after a delete and at boot,
+  // and empties them after the history window from the daily retention pass.
+  "packages/server/src/deleted-items.ts#runDeletedItemsPass",
   // Indexes open comment requests and thread requests once per workspace,
   // from boot; writes then update it without reading the sources again.
   "packages/server/src/pending-list.ts#build",

@@ -1048,6 +1048,33 @@ export async function readDocumentGenerationSourceEntryV2(input: {
   return (await readEntry(join(root, "source"), entry)).bytes
 }
 
+/**
+ * Where one authored source entry of a listed generation is kept, for a
+ * reader that streams it and checks it against the manifest itself. Null
+ * when the generation has no such entry.
+ */
+export async function documentGenerationSourceEntryPathV2(input: {
+  workspaceRoot: string
+  manifest: DocumentGenerationManifestV2
+  entryPath: string
+}): Promise<{ path: string; bytes: number; sha256: string } | null> {
+  const entry = input.manifest.authoredSource.entries.find(
+    (candidate) => candidate.path === input.entryPath
+  )
+  if (!entry) return null
+  const root = documentGenerationV2Directory(
+    input.workspaceRoot,
+    input.manifest.spaceId,
+    input.manifest.documentId,
+    input.manifest.id
+  )
+  await requireRealDocumentStorageDirectory(input.workspaceRoot, root)
+  const sourceRoot = join(root, "source")
+  const path = join(sourceRoot, entry.path)
+  await requireRealDocumentStorageDirectory(sourceRoot, dirname(path))
+  return { path, bytes: entry.bytes, sha256: entry.sha256 }
+}
+
 export async function readDocumentGenerationV2(input: {
   workspaceRoot: string
   spaceId: string

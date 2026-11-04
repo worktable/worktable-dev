@@ -6,8 +6,11 @@
 // upload link takes them with `curl -T`, and a download link gives them
 // back. A link carries the right of the request that made it, for one file
 // and a few minutes: an upload link works once, a download link until it
-// expires. The link's token is the only key, so only its hash is kept, in
-// this process's memory: a restart ends every link.
+// expires. A download link reads one revision of its file: the one the
+// read that made it saw, or else the one its first use found. Once the file
+// changes, the link refuses rather than give other bytes. The link's token
+// is the only key, so only its hash is kept, in this process's memory: a
+// restart ends every link.
 
 import { createHash, randomBytes } from "node:crypto"
 import type { RequestPrincipal, TokenIdentity } from "./token-store.ts"
@@ -35,7 +38,11 @@ interface TicketBase {
 
 export type FileTicket =
   | (TicketBase & { kind: "upload"; mode: FileUploadMode })
-  | (TicketBase & { kind: "download" })
+  | (TicketBase & {
+      kind: "download"
+      /** The file's revision this link reads; set by its first use if absent. */
+      revision?: string
+    })
 
 /** A file link's ticket, before its token. */
 export type FileTicketInput =
@@ -89,6 +96,14 @@ export function redeemFileTicket(
   }
   if (ticket.kind === "upload") tickets.delete(hash)
   return ticket
+}
+
+/** Pin a download link to the revision its first use read. */
+export function pinDownloadTicket(
+  ticket: Extract<FileTicket, { kind: "download" }>,
+  revision: string
+): void {
+  ticket.revision ??= revision
 }
 
 /** Forget every link. */

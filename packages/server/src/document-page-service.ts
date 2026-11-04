@@ -47,6 +47,12 @@ import {
   DocumentSourceReadError,
   readDocumentSource,
 } from "./document-source-reader.ts"
+import { inspectDocumentSource } from "./document-inventory.ts"
+import {
+  currentFileRevision,
+  FileRevisionError,
+  type PinnedFile,
+} from "./file-revision.ts"
 import { peekDocActivity } from "./activity-log.ts"
 import { peekDocBacklinks, peekDocOutbound } from "./link-graph.ts"
 import { filesEnabled } from "./files-enabled.ts"
@@ -669,6 +675,72 @@ export async function readRawDocumentSource(options: {
       }
     }
   )
+}
+
+export interface CurrentFile {
+  fileName: string
+  /** The file at its current revision, not yet open. */
+  pinned: PinnedFile
+}
+
+export type CurrentFileResolution =
+  | { kind: "file"; current: CurrentFile }
+  | { kind: "not-found" }
+  /** At a path that can't be read safely, or not a plain file's source. */
+  | { kind: "conflict" }
+  | { kind: "too-large" }
+  /** Not at the revision asked for. */
+  | { kind: "changed" }
+  | { kind: "unavailable" }
+
+/**
+ * A plain file at its current revision, resolved under its Space's lock,
+ * which is released before any of its bytes are read. With `revision`,
+ * only that revision: a file changed since reads as changed.
+ */
+export async function resolveCurrentFile(options: {
+  spaceId: string
+  path: string
+  revision?: string
+}): Promise<CurrentFileResolution> {
+  const result = await useResolvedDocumentHandle(
+    { spaceId: options.spaceId, path: options.path, includeArchived: true, snapshot: true },
+    async (handle): Promise<CurrentFileResolution> => {
+      if (handle.document.format.id !== BUILTIN_DOCUMENT_FORMATS.file) {
+        return { kind: "not-found" }
+      }
+      if (handle.document.health === "invalid" || handle.source.kind !== "file") {
+        return { kind: "conflict" }
+      }
+      const inspected = await inspectDocumentSource(
+        resolve(getWorkspaceRoot(), "spaces", options.spaceId),
+        handle.source
+      )
+      if (!inspected.safe) return { kind: "conflict" }
+      const absolutePath = inspected.absolutePath
+      try {
+        const now = await currentFileRevision(absolutePath)
+        if (options.revision !== undefined && now.revision !== options.revision) {
+          return { kind: "changed" }
+        }
+        if (now.size > RAW_SOURCE_MAX_BYTES) return { kind: "too-large" }
+        return {
+          kind: "file",
+          current: {
+            fileName: sourceFileName(handle),
+            pinned: { path: absolutePath, ...now },
+          },
+        }
+      } catch (error) {
+        if (!(error instanceof FileRevisionError)) throw error
+        return { kind: "unavailable" }
+      }
+    }
+  )
+  if (result.kind === "alias-error" || result.kind === "conflict") {
+    return { kind: "conflict" }
+  }
+  return result
 }
 
 export type DocumentContentResolution =

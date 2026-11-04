@@ -533,6 +533,9 @@ const WORKSPACE_TRANSACTION_ARTIFACT_PATTERNS = [
   /^versions\/[^/]+\/documents\/[^/]+\/\.pending-[^/]+(?:\/.*)?$/,
   /^versions\/[^/]+\/\.retired\/documents\/[^/]+\/[^/]+\/\.write-lock(?:\.(?:candidate|stale)-[^/]+)?$/,
   /^versions\/[^/]+\/\.retired\/documents\/[^/]+\/[^/]+\/\.pending-[^/]+(?:\/.*)?$/,
+  // Deleted items on their way out of the workspace folder (deleted-items.ts).
+  /^versions\/[^/]+\/\.retired\/\.(?:sweep|erase)-[0-9a-f]{16}(?:\/.*)?$/,
+  /^(?:spaces|versions)\/\.trash\/\.(?:sweep|erase)-[0-9a-f]{16}(?:\/.*)?$/,
 ]
 
 function isWorkspaceTransactionArtifact(path: string): boolean {

@@ -58,7 +58,11 @@ import {
 import { fileNoHistory } from "./file-limits.ts"
 import { sourceStampSize } from "./document-catalog.ts"
 import { peekDocActivity } from "./activity-log.ts"
-import { peekDocBacklinks, peekDocOutbound } from "./link-graph.ts"
+import {
+  peekDocBacklinks,
+  peekDocOutbound,
+  type DocBacklink,
+} from "./link-graph.ts"
 import { filesEnabled } from "./files-enabled.ts"
 import { peekDocReferrers } from "./doc-referrers.ts"
 import {
@@ -130,6 +134,22 @@ async function embedVersions(
   return Object.keys(embeds).length > 0 ? embeds : undefined
 }
 
+/**
+ * The Docs linking to one, from the cached link graph, leaving out any the
+ * catalog the page was resolved from no longer has: a graph not yet rebuilt
+ * after a delete still names the deleted Doc, with the sentence that linked.
+ */
+function currentBacklinks(
+  spaceId: string,
+  handle: ResolvedDocumentHandle,
+  moves: ReturnType<typeof pathMovesFor>
+): DocBacklink[] | null {
+  const backlinks = peekDocBacklinks(spaceId, handle.document.path, moves)
+  const present = handle.documentPaths
+  if (!backlinks || !present) return backlinks
+  return backlinks.filter((backlink) => present.has(backlink.path))
+}
+
 interface DocumentPageIntegration {
   rendererKey: string
   renderDisposition: DocumentRenderDisposition
@@ -166,7 +186,7 @@ const PAGE_INTEGRATIONS: readonly DocumentPageIntegration[] = [
       // doc's entries instead of resolving every path in the Space.
       const path = handle.document.path
       const moves = pathMovesFor(handle.aliases)
-      const backlinks = peekDocBacklinks(spaceId, path, moves)
+      const backlinks = currentBacklinks(spaceId, handle, moves)
       const referrers = peekDocReferrers(spaceId, path, moves.current)
       const activity = peekDocActivity(spaceId, path, moves)
       return {
@@ -343,7 +363,7 @@ function fileMetadata(
   handle: ResolvedDocumentHandle
 ): DocumentPageMetadata {
   const moves = pathMovesFor(handle.aliases)
-  const backlinks = peekDocBacklinks(spaceId, handle.document.path, moves)
+  const backlinks = currentBacklinks(spaceId, handle, moves)
   // Records whose file fields name it use it too.
   const referrers = peekDocReferrers(spaceId, handle.document.path, moves.current)
   // Its size is in what the catalog saw on disk; nothing is read for it.

@@ -36,6 +36,7 @@ import {
   readFile,
   rm,
   stat,
+  utimes,
   writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -48,6 +49,10 @@ import * as collaborationEpoch from "./collaboration-epoch.ts"
 import * as documentPages from "./document-page-service.ts"
 import { readDocumentPage } from "./document-page-service.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
+import {
+  deleteRegisteredDocument,
+  setRegisteredDocumentArchived,
+} from "./document-write-service.ts"
 import { deleteHtmlDocument } from "./html-document-delete.ts"
 import { createHtmlDocument } from "./html-document-create.ts"
 import { moveHtmlDocument } from "./html-document-move.ts"
@@ -1607,6 +1612,24 @@ describe("share links", () => {
     expect((await view(late.token)).status).toBe(404)
     expect(revokedWhileReading).toHaveBeenCalledTimes(1)
     revokedWhileReading.mockRestore()
+
+    // Nor one whose Doc is deleted while it renders, nor any view after.
+    const doomed = await createLink("plan", { label: "Doomed" })
+    const deletedWhileReading = spyOn(
+      views,
+      "readShareLinkDocument"
+    ).mockImplementationOnce(async (...args) => {
+      const document = await read(...args)
+      await deleteRegisteredDocument({ spaceId: "space", path: "plan" })
+      return document
+    })
+    try {
+      expect((await view(doomed.token)).status).toBe(404)
+      expect(deletedWhileReading).toHaveBeenCalledTimes(1)
+    } finally {
+      deletedWhileReading.mockRestore()
+    }
+    expect((await view(doomed.token)).status).toBe(404)
   })
 
   it("tells the document page how many links still open, so it needs no request of its own", async () => {
@@ -1820,9 +1843,35 @@ describe("share links", () => {
 
       // A new version of the image shows without the Doc changing; its new
       // size tells it apart even within the same millisecond.
-      await writeFile(join(docs, "spec", "shot.png"), "second image, longer")
+      const shot = join(docs, "spec", "shot.png")
+      const tick = new Date("2026-01-01T00:00:00Z")
+      await writeFile(shot, "second image, longer")
+      await utimes(shot, tick, tick)
       expect(await projection()).toContain(
         Buffer.from("second image, longer").toString("base64")
+      )
+      // An edit in place that keeps its size and time, as a write within one
+      // tick of the file clock does, shows too: the page knows its bytes.
+      await writeFile(shot, "second image, LONGER")
+      await utimes(shot, tick, tick)
+      expect(await projection()).toContain(
+        Buffer.from("second image, LONGER").toString("base64")
+      )
+      // Archived, it leaves the page; restored, it shows again.
+      const archive = (archived: boolean) =>
+        setRegisteredDocumentArchived({
+          spaceId: "space",
+          path: "spec/shot.png",
+          archived,
+          archivedBy: "test",
+        })
+      await archive(true)
+      expect(await projection()).not.toContain(
+        Buffer.from("second image, LONGER").toString("base64")
+      )
+      await archive(false)
+      expect(await projection()).toContain(
+        Buffer.from("second image, LONGER").toString("base64")
       )
 
       // A rich Doc's image blocks show the same way.
@@ -1838,7 +1887,7 @@ describe("share links", () => {
       expect(
         ((await (await view(rich.token)).json()) as { projectionHtml: string })
           .projectionHtml
-      ).toContain(Buffer.from("second image, longer").toString("base64"))
+      ).toContain(Buffer.from("second image, LONGER").toString("base64"))
 
       // A code example's image is code, never read; an image missing at first
       // shows once its file arrives; an image repeated past the page's budget

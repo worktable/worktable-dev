@@ -197,6 +197,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  setSystemTime()
   setLinkedSharing(null)
   setWorkspaceRootOverride(null)
   await rm(root, { recursive: true, force: true })
@@ -1651,6 +1652,34 @@ describe("format-neutral document route", () => {
     expect(await versions()).toBe(kept + 2)
   })
 
+  it("gives two same-size writes in one clock tick their own ETags", async () => {
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
+    try {
+      const instance = app()
+      const url = `/api/spaces/${spaceId}/documents/file?path=${encodeURIComponent("data/tick.bin")}`
+      expect((await instance.request(url, { method: "PUT", body: "first!" })).status).toBe(201)
+      // Both writes keep one size and one modification time, and the clock
+      // stays within the two seconds a revision takes to settle.
+      setSystemTime(new Date())
+      const onDisk = join(root, "spaces", spaceId, "docs", "data", "tick.bin")
+      const tick = new Date("2026-01-01T00:00:00Z")
+      await utimes(onDisk, tick, tick)
+      const first = await instance.request(url)
+      expect(await first.text()).toBe("first!")
+      await writeFile(onDisk, "other!")
+      await utimes(onDisk, tick, tick)
+      noteSpaceChanged(spaceId)
+      const second = await instance.request(url)
+      expect(await second.text()).toBe("other!")
+      expect(second.headers.get("etag")).not.toBe(first.headers.get("etag"))
+    } finally {
+      setSystemTime()
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
+    }
+  })
+
   it("serves ranges of a file, streamed at one revision without holding its Space", async () => {
     const previous = process.env["WORKTABLE_FILES"]
     process.env["WORKTABLE_FILES"] = "1"
@@ -1694,6 +1723,8 @@ describe("format-neutral document route", () => {
       expect(
         (await get("data/archive.bin", { range: "bytes=0-0", "if-range": etag })).status
       ).toBe(206)
+      // Once the file's clock has moved past its write, its hash is kept.
+      setSystemTime(new Date(Date.now() + 3_000))
       const head = await get("data/archive.bin", {}, "HEAD")
       expect(head.status).toBe(200)
       expect(head.headers.get("content-length")).toBe(String(bytes.length))
@@ -1705,6 +1736,7 @@ describe("format-neutral document route", () => {
       expect(revisit.status).toBe(304)
       securityHeaders(revisit)
       expect(opens).not.toHaveBeenCalled()
+      setSystemTime()
 
       // The bytes arrive a chunk at a time, and the Space is free meanwhile.
       const whole = await get("data/archive.bin")
@@ -1954,6 +1986,32 @@ describe("format-neutral document route", () => {
       expect(filePage.page.backlinks).toEqual([
         { path: "notes/readme", context: "Signup error", count: 1 },
       ])
+      // A deleted Doc goes from them at once, its sentence with it, though
+      // the graph has yet to be rebuilt.
+      await writeDoc(spaceId, "draft", "# Draft\n\n![Private draft caption](notes/readme/error.png)", {
+        updatedBy: "test",
+        source: "rest-api",
+      })
+      await getSpaceLinkGraph(spaceId)
+      const pageBacklinks = async () =>
+        ((await (
+          await instance.request(
+            `/api/spaces/${spaceId}/documents/page?path=notes/readme/error.png`
+          )
+        ).json()) as { page: { backlinks?: Array<{ path: string }> } }).page.backlinks
+      expect((await pageBacklinks())?.map((link) => link.path).sort()).toEqual([
+        "draft",
+        "notes/readme",
+      ])
+      expect(
+        (
+          await instance.request(`/api/spaces/${spaceId}/documents/delete`, {
+            method: "POST",
+            body: JSON.stringify({ path: "draft" }),
+          })
+        ).status
+      ).toBe(200)
+      expect(JSON.stringify(await pageBacklinks())).not.toContain("Private draft")
 
       // The Doc's page gives the file's version, which loads it for good.
       const docPage = (await (

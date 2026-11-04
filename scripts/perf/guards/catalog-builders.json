@@ -167,7 +167,7 @@
       "why": "Writer: checks the current files under the write lock; writers never read snapshots."
     },
     {
-      "site": "packages/server/src/document-write-service.ts#deleteRegisteredDocumentExactly.catalog",
+      "site": "packages/server/src/document-write-service.ts#deleteRegisteredDocumentLocked.catalog",
       "kind": "buildDocumentCatalog",
       "why": "Writer: checks the current files under the write lock; writers never read snapshots."
     },

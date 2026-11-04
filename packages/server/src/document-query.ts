@@ -144,6 +144,8 @@ export interface ResolvedDocumentHandle {
   resolvedFrom?: string
   /** The Space's aliases from the same catalog, mapping old paths to current ones. */
   aliases?: DocAliases
+  /** The paths of every document in the same catalog. */
+  documentPaths?: ReadonlySet<string>
   /**
    * Invalid only because its source isn't the Doc its format names: it
    * doesn't open, but its bytes are safe to download.
@@ -462,6 +464,25 @@ export interface DocumentIdentities {
   current: ReadonlyMap<string, { path: string; title: string }>
   /** Documents that are archived. */
   archived: ReadonlySet<string>
+}
+
+const documentPathsByContext = new WeakMap<
+  DocumentQueryContext,
+  ReadonlySet<string>
+>()
+
+/** Every document path in a context's catalog, built once per snapshot. */
+function documentPathsOf(context: DocumentQueryContext): ReadonlySet<string> {
+  let paths = documentPathsByContext.get(context)
+  if (!paths) {
+    paths = new Set(
+      context.catalog.entries.flatMap((entry) =>
+        entry.kind === "document" ? [entry.descriptor.path] : []
+      )
+    )
+    documentPathsByContext.set(context, paths)
+  }
+  return paths
 }
 
 const identitiesByContext = new WeakMap<
@@ -1126,6 +1147,7 @@ function handleForPrepared(
       formatCapabilities: registration?.capabilities ?? null,
       ...(resolvedFrom ? { resolvedFrom } : {}),
       aliases: context.catalog.aliases,
+      documentPaths: documentPathsOf(context),
       ...(classified.claim.sourceNotADoc ? { sourceNotADoc: true as const } : {}),
     },
   }

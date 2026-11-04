@@ -19,12 +19,17 @@ this page in the same pull request. Paths below are relative to
 - **On disk:** anything writing the Space's folder directly, such as an agent
   with a shell.
 
-Writes on disk are never refused. Worktable notices them and records them once
-they settle. Rules that need the writer's cooperation, such as naming the
-revision a replace is based on or refusing a write over a limit, cover writes
-through Worktable only. A Doc, or a file Worktable keeps (uploaded, moved or
-otherwise managed through it), gets a version for each settled change on disk,
-marked as made on disk. A file only ever written on disk has no history yet.
+Writes on disk are never refused or checked: the last write wins. Rules that
+need the writer's cooperation, such as naming the revision a replace is based
+on or refusing a write over a limit, cover writes through Worktable only. What
+Worktable records of a change on disk depends on the file:
+
+- A plain file Worktable already keeps (uploaded, moved or otherwise managed
+  through it) gets a version once the change settles, marked as made on disk.
+- A new file written on disk has no history until Worktable keeps it.
+- A file over 64 MiB has no history.
+- A Doc gets no version when the change settles. Its next write through
+  Worktable first keeps what is on disk as a recovery point.
 
 ## Trust
 
@@ -32,8 +37,8 @@ marked as made on disk. A file only ever written on disk has no history yet.
 
 Opening, viewing, downloading, indexing, previewing, sharing and archiving never
 change a file's bytes. A file changes only when someone writes or restores it,
-or when a move rewrites links that pointed at what moved; each change is a
-version. Nothing becomes a Worktable format unless a person chooses it, and the
+or when a move rewrites links that pointed at what moved; each change through
+Worktable is a version. Nothing becomes a Worktable format unless a person chooses it, and the
 original is kept.
 
 **Why:** people and agents keep their own files in a Space. A file that changes
@@ -270,8 +275,8 @@ through Worktable names the revision it's based on: a stale one is refused as a
 conflict (409 `REVISION_CHANGED`, with the current revision) and a missing one
 as missing (428 `REVISION_REQUIRED`), never a silent overwrite. Replace Anyway
 (`replace=current`) is for people only. Changes on disk aren't checked: the last
-write wins, and the change is recorded when it settles. Worktable never claims
-versions it didn't see. Old versions are kept as the history policy says.
+write wins, and what Worktable records of it is listed under [Words](#words). It
+never claims versions it didn't see. Old versions are kept as the history policy says.
 
 **Why:** an agent and a person editing the same file shouldn't lose each other's
 work without knowing it.
@@ -297,7 +302,11 @@ work without knowing it.
 - `linked-ingress.test.ts` "carries a file link in pieces: an upload saved after
   its last piece, and a download piece by piece".
 - `routes-documents.test.ts` "keeps a version when a file with history changes
-  on disk".
+  on disk": a kept file's change becomes a version, a new file dropped on disk
+  records nothing, and a file over 64 MiB is marked as having no history.
+- `document-format-conformance.test.ts` "gives a registered writable format
+  fenced CRUD and exact versions": a Doc changed on disk is kept as a recovery
+  point before the next write.
 
 **Gaps:**
 
@@ -345,8 +354,9 @@ revision, so the proposal and the import can see different bytes
 
 ### 10. Every version says who made it
 
-Writes through Worktable record the signed-in person or agent. Changes on disk
-are recorded as made on disk (`createdBy: "external"`, `source: "filesystem"`).
+Writes through Worktable record the signed-in person or agent. A version made
+from a change on disk, which only a plain file Worktable keeps gets, is marked
+as made on disk (`createdBy: "external"`, `source: "filesystem"`).
 A name written inside a file is display text, not authorship.
 
 **Why:** history is only useful if it says who changed what.

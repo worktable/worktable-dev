@@ -26,6 +26,7 @@ import {
   waitForWorkspaceAdmission,
   WRITE_ADMISSION_WAIT_MS,
 } from "./workspace-request-lifecycle.ts"
+import { signInAgentName } from "@worktable/types"
 import { handleRemoteMcpRequest } from "./routes/mcp.ts"
 import { mcpModernEraOverLink } from "./mcp/surface.ts"
 import { setLinkServed } from "./mcp-events.ts"
@@ -368,7 +369,8 @@ export async function createLinkedIngress(options: {
         principal: {
           id: grant.principalId,
           type: "agent",
-          displayName: grant.displayName,
+          // A new agent's name; the agent label above keeps its identity.
+          displayName: signInAgentName(grant.principalId, grant.displayName),
           authorizedBy: `workos:${binding.ownerSubject}`,
           ...(!currentTeamWorktable()
             ? {

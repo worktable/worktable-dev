@@ -1329,6 +1329,7 @@ export function ConnectedAgentsGroup() {
   const [editing, setEditing] = useState<AgentConnection | null>(null)
   const [editingGrok, setEditingGrok] = useState<string | null>(null)
   const [grokOpen, setGrokOpen] = useState(false)
+  const [confirmingGrok, setConfirmingGrok] = useState(false)
   const connections = connectionsQuery.data?.connections ?? []
   const grokBots = connectionsQuery.data?.grokBots ?? []
   const candidates = connectionsQuery.data?.grokBotCandidates ?? []
@@ -1436,11 +1437,9 @@ export function ConnectedAgentsGroup() {
                             : "Not used yet"}
                       </p>
                     </div>
+                    {/* Edit holds everything else, Disconnect included. */}
                     {connection?.canManage !== false &&
-                    (grok ||
-                      connection?.authKind === "local-token" ||
-                      (connection?.authKind === "oauth" &&
-                        connection.access)) ? (
+                    (grok || (connection && !connection.link)) ? (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1478,17 +1477,6 @@ export function ConnectedAgentsGroup() {
                       >
                         Manage
                       </a>
-                    ) : connection ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={
-                          disconnect.isPending || connection.canManage === false
-                        }
-                        onClick={() => disconnect.mutate(connection.id)}
-                      >
-                        Disconnect
-                      </Button>
                     ) : null}
                   </li>
                 )
@@ -1506,6 +1494,15 @@ export function ConnectedAgentsGroup() {
         onOpenChange={(open) => {
           if (!open) setEditing(null)
         }}
+        onDisconnect={
+          editing && !editing.link && editing.canManage !== false
+            ? () =>
+                disconnect.mutate(editing.id, {
+                  onSuccess: () => setEditing(null),
+                })
+            : undefined
+        }
+        disconnecting={disconnect.isPending}
       />
       <ResponsiveDialog
         open={grokOpen}
@@ -1538,6 +1535,18 @@ export function ConnectedAgentsGroup() {
           </ResponsiveDialogBody>
           <ResponsiveDialogFooter>
             {editingConnection &&
+              !editingConnection.link &&
+              editingConnection.canManage !== false && (
+                <Button
+                  variant="destructive"
+                  className="sm:mr-auto"
+                  disabled={disconnect.isPending}
+                  onClick={() => setConfirmingGrok(true)}
+                >
+                  Disconnect
+                </Button>
+              )}
+            {editingConnection &&
               (editingConnection.authKind === "local-token" ||
                 editingConnection.access) && (
                 <Button
@@ -1554,6 +1563,28 @@ export function ConnectedAgentsGroup() {
               Close
             </Button>
           </ResponsiveDialogFooter>
+          {editingConnection && (
+            <ConfirmDialog
+              open={confirmingGrok}
+              onOpenChange={(open) => {
+                if (!disconnect.isPending) setConfirmingGrok(open)
+              }}
+              title={`Disconnect ${editingCandidate?.displayName ?? "Grok Bot"}?`}
+              description="It loses access to this Worktable."
+              confirmLabel="Disconnect"
+              variant="destructive"
+              loading={disconnect.isPending}
+              loadingLabel="Disconnecting…"
+              onConfirm={() =>
+                disconnect.mutate(editingConnection.id, {
+                  onSuccess: () => {
+                    setConfirmingGrok(false)
+                    setGrokOpen(false)
+                  },
+                })
+              }
+            />
+          )}
         </ResponsiveDialogContent>
       </ResponsiveDialog>
     </section>

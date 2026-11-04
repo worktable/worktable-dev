@@ -41,7 +41,10 @@ export function AgentAvatar({
   // Hermes fills its circle; OpenAI and Goose artwork include their own padding.
   const fullBleed = platform === "hermes"
   const prePadded =
-    platform === "chatgpt" || platform === "codex" || platform === "goose"
+    platform === "chatgpt" ||
+    platform === "chatgpt-desktop" ||
+    platform === "codex" ||
+    platform === "goose"
   const initials = participantInitials(name)
   const fallback = icon ? (
     <NamedIcon

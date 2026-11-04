@@ -1,7 +1,10 @@
 import { APIError } from "better-auth/api"
 import {
   accessFromScopes,
+  agentConnectionPlatform,
   clientIdForAgentLabel,
+  clientIdForSignInPrincipal,
+  defaultAgentNameForLabel,
   isAgentPlatformId,
   scopesForAccess,
   type AgentAccess,
@@ -117,10 +120,22 @@ export async function listTeamAgentConnections(): Promise<AgentConnection[]> {
       ]
       const scopes: string[] =
         row.scope_ceiling === null ? rawScopes : JSON.parse(row.scope_ceiling)
+      // A sign-in's signed client id says which app it is; a token's label does.
+      const target = {
+        kind: "mcp-client" as const,
+        clientId:
+          (resource?.credential_key.startsWith("oauth:")
+            ? clientIdForSignInPrincipal(resource.credential_key)
+            : null) ?? clientIdForAgentLabel(row.platform),
+      }
       return {
         id: row.id,
         displayName: row.name,
-        platform: isAgentPlatformId(row.platform) ? row.platform : "other",
+        platform: agentConnectionPlatform({
+          platform: isAgentPlatformId(row.platform) ? row.platform : "other",
+          target,
+          displayName: row.name,
+        }),
         icon: row.icon,
         ownership: row.ownership,
         memberId: row.member_id,
@@ -144,10 +159,7 @@ export async function listTeamAgentConnections(): Promise<AgentConnection[]> {
           row.owner_user_id === member?.userId
         ),
         access: accessFromScopes(scopes),
-        target: {
-          kind: "mcp-client",
-          clientId: clientIdForAgentLabel(row.platform),
-        },
+        target,
         mode: row.mode,
         participant: participants.get(row.participant_key) ?? null,
         machine: null,
@@ -189,7 +201,10 @@ export async function createTeamAgentConnection(input: {
         previous ??
         createTeamAgent(
           {
-            name: input.displayName ?? input.label ?? "My agent",
+            name:
+              input.displayName ??
+              defaultAgentNameForLabel(input.label) ??
+              "My agent",
             platform: input.label ?? "other",
             ownership: "personal",
           },

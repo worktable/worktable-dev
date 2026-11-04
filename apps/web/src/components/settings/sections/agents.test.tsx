@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { AccessTokensGroup, ConnectedAgentsGroup } from "./agents"
 
-test("connected identity and disconnect remain available when OAuth inventory is unavailable", () => {
+test("connected identity and Edit, which holds Disconnect, remain available when OAuth inventory is unavailable", () => {
   for (const unavailableAuthKinds of [[], ["oauth"]]) {
     const client = new QueryClient()
     client.setQueryData(["system", "connection"], {
@@ -90,7 +90,7 @@ test("connected identity and disconnect remain available when OAuth inventory is
           <ConnectedAgentsGroup />
         </QueryClientProvider>
       )
-      for (const label of ["OpenClaw", "Atlas", "studio-mac", "Disconnect"])
+      for (const label of ["OpenClaw", "Atlas", "studio-mac"])
         expect(html).toContain(label)
       // OpenClaw and the ready Grok Bot answer on their own; ChatGPT doesn't.
       expect(html.split('aria-label="Auto-reply on"').length - 1).toBe(2)
@@ -101,9 +101,10 @@ test("connected identity and disconnect remain available when OAuth inventory is
       expect(html).toContain(
         'href="https://cloud.example/linked/agents?destinationId=d"'
       )
-      expect(html.split(">Disconnect<").length - 1).toBe(1)
+      // Disconnect lives in Edit; Cloud manages the Link apps.
+      expect(html).not.toContain(">Disconnect<")
       expect(html.split(">Manage<").length - 1).toBe(2)
-      expect(html.split(">Edit<").length - 1).toBe(1)
+      expect(html.split(">Edit<").length - 1).toBe(2)
     } finally {
       client.clear()
     }
@@ -142,7 +143,7 @@ test("existing access tokens start collapsed, retain their identity, and omit re
     )
     for (const label of [
       "1 active token",
-      "ChatGPT / Codex",
+      "Codex CLI",
       "studio-mac",
       "wt_1234",
     ])

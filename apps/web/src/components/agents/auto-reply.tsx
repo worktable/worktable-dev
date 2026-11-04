@@ -156,9 +156,18 @@ export function CopyLine({ text }: { text: string }) {
   )
 }
 
+/** Where to paste the line: Claude Code runs in a terminal; other names say where. */
+function pasteInto(connection: AgentConnection, app: string): string {
+  return connection.autoReply?.kind === "session" &&
+    agentConnectionPlatform(connection) === "claude-code"
+    ? `Paste it into ${app} in your terminal`
+    : `Paste it into ${app}`
+}
+
 function TurnOn({ connection }: { connection: AgentConnection }) {
   const platform = agentConnectionPlatform(connection)
-  const chatgpt = platform === "chatgpt"
+  // Open ChatGPT goes to the web, which doesn't use the desktop app's MCP servers.
+  const chatgptWeb = platform === "chatgpt"
   const app = AGENT_PLATFORMS[platform].name
   return (
     <Popover>
@@ -170,15 +179,8 @@ function TurnOn({ connection }: { connection: AgentConnection }) {
           <SetupStep number={1} title="Copy this">
             <CopyLine text={AUTO_REPLY_PROMPT} />
           </SetupStep>
-          <SetupStep
-            number={2}
-            title={
-              connection.autoReply?.kind === "session"
-                ? `Paste it into ${app} in your terminal`
-                : `Paste it into ${app}`
-            }
-          >
-            {chatgpt && (
+          <SetupStep number={2} title={pasteInto(connection, app)}>
+            {chatgptWeb && (
               <a
                 href="https://chatgpt.com/"
                 target="_blank"

@@ -272,7 +272,7 @@ describe("semantic agent connections", () => {
     expect(listed).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          displayName: "Codex",
+          displayName: "Codex CLI",
           platform: "codex",
           mode: "on-demand",
         }),

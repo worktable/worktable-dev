@@ -27,6 +27,47 @@ export function fileSourceUrl(
   return `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}${version ? `&v=${encodeURIComponent(version)}` : ""}${options.download ? "&download=1" : ""}${options.at ? `&at=${encodeURIComponent(options.at)}` : ""}`
 }
 
+/** A Space's file, as a URL from fileSourceUrl names it. */
+export interface SourceFile {
+  spaceId: string
+  path: string
+  version: string | null
+  at?: string
+}
+
+/**
+ * The Space file a fileSourceUrl URL loads, or null for any other URL, such
+ * as an image a Doc embeds from the web.
+ */
+export function sourceFileOf(url: string): SourceFile | null {
+  const page = globalThis.location?.href ?? "http://localhost/"
+  let source: URL
+  let spaces: URL
+  try {
+    source = new URL(url, page)
+    spaces = new URL(`${BASE_URL}/api/spaces/`, page)
+  } catch {
+    return null
+  }
+  if (
+    source.origin !== spaces.origin ||
+    !source.pathname.startsWith(spaces.pathname)
+  )
+    return null
+  const spaceId = /^([^/]+)\/documents\/file$/.exec(
+    source.pathname.slice(spaces.pathname.length)
+  )?.[1]
+  const path = source.searchParams.get("path")
+  if (!spaceId || !path) return null
+  const at = source.searchParams.get("at")
+  return {
+    spaceId: decodeURIComponent(spaceId),
+    path,
+    version: source.searchParams.get("v"),
+    ...(at ? { at } : {}),
+  }
+}
+
 /**
  * Upload New Version: the file's new bytes, keeping the old in its history.
  * `basedOn` is the version the page loaded, or a revision a replace gave;

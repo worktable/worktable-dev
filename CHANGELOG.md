@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Images:** An image in a doc, or on its file's page, opens full screen from **Full screen** on its corner or, while you read, with a click. Zoom and pan it, move through the doc's images with the arrow keys, and **Download** it or **Open** its file.
+
 ### Changed
 
 - **Files:** Upload New Version checks that the file hasn't changed since you opened it. If someone, such as an agent, saved a newer version first, Worktable asks before replacing it, and Replace Anyway keeps that version in the file's history.

@@ -143,6 +143,34 @@ export async function readStagedFile(
   }
 }
 
+/** A staged file's first bytes, at most `maxBytes` of them. */
+export async function readStagedFilePrefix(
+  file: StagedFile,
+  maxBytes: number
+): Promise<Uint8Array> {
+  const handle = await open(file.path, READ_FLAGS)
+  try {
+    const buffer = new Uint8Array(Math.min(maxBytes, file.byteLength))
+    let filled = 0
+    while (filled < buffer.byteLength) {
+      const { bytesRead } = await handle.read(
+        buffer,
+        filled,
+        buffer.byteLength - filled,
+        filled
+      )
+      if (bytesRead === 0) break
+      filled += bytesRead
+    }
+    if (filled !== buffer.byteLength) {
+      throw new Error("staged file changed after it was staged")
+    }
+    return buffer
+  } finally {
+    await handle.close().catch(() => undefined)
+  }
+}
+
 /** Copy a staged file's bytes into a file the caller opened to write. */
 export async function copyStagedFileInto(
   file: StagedFile,

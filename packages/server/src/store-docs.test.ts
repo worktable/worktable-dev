@@ -239,7 +239,7 @@ describe("doc store", () => {
       ).toContain("not canonical")
       expect(await docExists("test-space", docPath)).toBe(true)
 
-      const sourcePath = getDocPath("test-space", docPath)
+      const sourcePath = await getDocPath("test-space", docPath)
       let removedExternally = false
       let retiredDocumentId: string | undefined
       let reportVersionLock!: () => void
@@ -954,49 +954,49 @@ describe("path security", () => {
   })
 
   it("path traversal via .. is neutralized", async () => {
-    const resolved = getDocPath("test-space", "../../etc/passwd")
+    const resolved = await getDocPath("test-space", "../../etc/passwd")
     const docsBase = resolve(spacesDir, "test-space", "docs")
     expect(resolved.startsWith(docsBase)).toBe(true)
   })
 
   it("path traversal via encoded .. is neutralized", async () => {
     // After URL decoding, ../.. should still be safe
-    const resolved = getDocPath("test-space", "../../../etc/passwd")
+    const resolved = await getDocPath("test-space", "../../../etc/passwd")
     const docsBase = resolve(spacesDir, "test-space", "docs")
     expect(resolved.startsWith(docsBase)).toBe(true)
   })
 
   it("leading slashes are stripped", async () => {
-    const resolved = getDocPath("test-space", "/etc/passwd")
+    const resolved = await getDocPath("test-space", "/etc/passwd")
     const docsBase = resolve(spacesDir, "test-space", "docs")
     expect(resolved.startsWith(docsBase)).toBe(true)
   })
 
   it("double-dot sequences in filenames are handled", async () => {
     // ....// after stripping .. should not escape
-    const resolved = getDocPath("test-space", "....//etc/passwd")
+    const resolved = await getDocPath("test-space", "....//etc/passwd")
     const docsBase = resolve(spacesDir, "test-space", "docs")
     expect(resolved.startsWith(docsBase)).toBe(true)
   })
 
   // ── Property-based: doc path always resolves within docs dir ──
 
-  it("PBT: any doc path resolves within the docs directory", () => {
+  it("PBT: any doc path resolves within the docs directory", async () => {
     const docsBase = resolve(spacesDir, "test-space", "docs")
 
-    fc.assert(
-      fc.property(fc.string({ minLength: 0, maxLength: 200 }), (input) => {
+    await fc.assert(
+      fc.asyncProperty(fc.string({ minLength: 0, maxLength: 200 }), async (input) => {
         // Skip null bytes — Bun throws on these in file paths (separate concern)
         if (input.includes("\0")) return true
 
-        const resolved = resolve(getDocPath("test-space", input))
+        const resolved = resolve(await getDocPath("test-space", input))
         return resolved.startsWith(docsBase)
       }),
       { numRuns: 500 }
     )
   })
 
-  it("PBT: path traversal sequences never escape the docs directory", () => {
+  it("PBT: path traversal sequences never escape the docs directory", async () => {
     const docsBase = resolve(spacesDir, "test-space", "docs")
 
     // Generate strings that are likely to contain traversal attempts
@@ -1011,10 +1011,10 @@ describe("path security", () => {
       fc.stringMatching(/^[.\/\\a-zA-Z0-9_ %]{1,100}$/)
     )
 
-    fc.assert(
-      fc.property(traversalArb, (input) => {
+    await fc.assert(
+      fc.asyncProperty(traversalArb, async (input) => {
         if (input.includes("\0")) return true
-        const resolved = resolve(getDocPath("test-space", input))
+        const resolved = resolve(await getDocPath("test-space", input))
         return resolved.startsWith(docsBase)
       }),
       { numRuns: 1000 }

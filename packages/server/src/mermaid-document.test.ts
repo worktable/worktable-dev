@@ -82,7 +82,7 @@ describe("automatic Mermaid document pipeline", () => {
         endLine: 6,
       })
     })
-    expect(existsSync(getDocPath(spaceId, "invalid-new"))).toBe(false)
+    expect(existsSync(await getDocPath(spaceId, "invalid-new"))).toBe(false)
   })
 
   it("repairs paired escaped fences before validation and storage", async () => {
@@ -175,7 +175,7 @@ describe("automatic Mermaid document pipeline", () => {
         ],
       })
     ).rejects.toBeInstanceOf(MermaidDocumentValidationError)
-    expect(existsSync(getDocPath(spaceId, "malformed-source"))).toBe(false)
+    expect(existsSync(await getDocPath(spaceId, "malformed-source"))).toBe(false)
   })
 
   it("does not validate literal Mermaid text inside an unmatched code fence", async () => {

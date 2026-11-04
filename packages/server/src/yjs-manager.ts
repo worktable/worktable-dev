@@ -2548,7 +2548,7 @@ export class YjsDocManager {
     // needs the full canonical round trip.
     const mermaidNormalized = !normalizeMermaidBlocks(blocks).changed;
 
-    const filePath = getDocPath(spaceId, docPath);
+    const filePath = await getDocPath(spaceId, docPath);
     suppressPath(filePath);
     try {
       const writeResult = await withAnalyticsContext(hadIntent ? { contributors } : null, () => runAsActivityActor(hadIntent ? humanActor : undefined, () => writeDoc(spaceId, docPath, blocks, {

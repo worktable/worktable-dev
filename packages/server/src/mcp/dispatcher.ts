@@ -68,7 +68,6 @@ import {
   updateWidgetMetadata,
   withWidgetReadLock,
   withWidgetWriteLock,
-  writeWidget,
 } from "../widget-store.ts"
 import {
   captureWidgetVersionContent,
@@ -78,6 +77,7 @@ import { deleteHtmlDocument } from "../html-document-delete.ts"
 import { moveHtmlDocument } from "../html-document-move.ts"
 import { createHtmlDocument } from "../html-document-create.ts"
 import { withCanonicalHtmlDocumentPath } from "../html-document-path.ts"
+import { updateHtmlDocumentLocked } from "../html-document-update.ts"
 import {
   buildRecordCollectionSchema,
   checkRecordData,
@@ -95,7 +95,6 @@ import {
   writeRecordCollectionSchema,
 } from "../record-store.ts"
 import {
-  buildWidgetFile,
   getHtmlAuthoringGuide,
   getBlockingWidgetIssue,
   validateWidgetHtml,
@@ -1262,7 +1261,7 @@ async function _dispatchOperationInner(
     case "html.guide": {
       return {
         profile: "runtime" as const,
-        guide: getHtmlAuthoringGuide(),
+        guide: getHtmlAuthoringGuide("runtime", context.surface ?? "released"),
         tokens: WIDGET_STYLE_TOKENS,
       }
     }
@@ -2332,8 +2331,11 @@ async function _dispatchOperationInner(
     case "html.update": {
       const spaceId = args["spaceId"] as string
       const widgetId = args["widgetId"] as string
-      const html = args["html"] as string
-      const expectedRevision = args["expectedRevision"] as string | undefined
+      const preview = context.surface === "preview"
+      const edits = args["edits"] as TextEdit[] | undefined
+      // Edits are held for the preview surface.
+      if (!preview && edits !== undefined)
+        throw new Error("This Worktable doesn't take edits to HTML Docs yet. Pass the whole page as html.")
       let previewSnapshot: HtmlPreviewSnapshot | undefined
       let previewError: unknown
       const updated = await withCanonicalHtmlDocumentPath(
@@ -2341,72 +2343,29 @@ async function _dispatchOperationInner(
         widgetId,
         () =>
           withWidgetWriteLock(spaceId, widgetId, async () => {
-            const { data: document, error } = await readWidgetDocument(
+            const result = await updateHtmlDocumentLocked({
               spaceId,
-              widgetId
-            )
-            if (error || !document) throw new Error(error ?? "Widget not found")
-            const existing = document.widget
-            const granted = authorizeHtmlPermissions({
-              requested: args["permissions"] as WidgetFile["permissions"],
-              existing,
-              person: false,
-              identity,
-              scopes: identity.scopes,
-            })
-            // A replace names the revision it is based on. The preview
-            // surface says so and requires it; the released one, whose
-            // listing doesn't, still refuses a stale one when given.
-            const current = htmlSourceRevision(document.sourceBytes)
-            if (expectedRevision === undefined && context.surface === "preview") {
-              throw new DocEditError(
-                "revision_required",
-                `${widgetId} already exists. Read it with worktable_html_read and pass its revision as expectedRevision to replace its html.`
-              )
-            }
-            if (expectedRevision !== undefined && expectedRevision !== current) {
-              throw new DocEditError(
-                "revision_conflict",
-                `${widgetId} changed since revision ${expectedRevision}. Read it again and reapply your change.`,
-                { currentRevision: current }
-              )
-            }
-            const permissions = granted.permissions
-            const warnings = validateWidgetHtml(html, permissions)
-            const blockingIssue = getBlockingWidgetIssue(warnings)
-            if (blockingIssue)
-              throw new Error(`${blockingIssue.code}: ${blockingIssue.message}`)
-            if (granted?.requests?.network)
-              warnings.push(NETWORK_REQUEST_WARNING)
-            const beforeContent = await captureWidgetVersionContent(
-              spaceId,
-              widgetId
-            )
-            const result = await writeWidget(
-              spaceId,
-              buildWidgetFile({
-                id: widgetId,
-                name: (args["name"] as string | undefined) ?? existing.name,
-                description:
-                  (args["description"] as string | undefined) ??
-                  existing.description,
+              htmlId: widgetId,
+              html: args["html"] as string | undefined,
+              edits,
+              expectedRevision: args["expectedRevision"] as string | undefined,
+              // The preview surface says a replace needs the revision and
+              // requires it; the released one, whose listing doesn't, still
+              // refuses a stale one when given.
+              requireRevisionToReplace: preview,
+              name: args["name"] as string | undefined,
+              description: args["description"] as string | undefined,
+              metadata: args["metadata"] as Record<string, unknown> | undefined,
+              permissions: args["permissions"] as WidgetFile["permissions"],
+              writer: {
+                // Everything over MCP is an agent's write.
+                person: false,
+                identity,
+                scopes: identity.scopes,
                 updatedBy: actorId,
-                metadata: args["metadata"] as
-                  | Record<string, unknown>
-                  | undefined,
-                permissions,
-                ...(granted ? { requests: granted.requests ?? null } : {}),
-                existing,
-              }),
-              html
-            )
-            if (result.error || !result.data)
-              throw new Error(result.error ?? "Widget write failed")
-            await recordWidgetVersion(spaceId, widgetId, beforeContent, {
-              source: "mcp",
-              updatedBy: actorId,
+              },
+              versionSource: "mcp",
             })
-            result.release?.()
             if (args["preview"]) {
               try {
                 previewSnapshot = await freezeHtmlPreviewSnapshotLocked({
@@ -2417,24 +2376,20 @@ async function _dispatchOperationInner(
                 previewError = error
               }
             }
-            // The source is stored as the html's UTF-8 bytes.
-            return {
-              data: result.data,
-              warnings,
-              revision: htmlSourceRevision(new TextEncoder().encode(html)),
-            }
+            return result
           }),
         { materialize: true }
       )
-      wsManager.broadcast(spaceId, {
-        type: "widget_update",
-        spaceId,
-        widgetId,
-        data: updated.data,
-      })
+      if (updated.changed)
+        wsManager.broadcast(spaceId, {
+          type: "widget_update",
+          spaceId,
+          widgetId,
+          data: updated.widget,
+        })
       const result = {
         widgetId,
-        widget: updated.data,
+        widget: updated.widget,
         revision: updated.revision,
         warnings: updated.warnings,
       }
@@ -2916,6 +2871,10 @@ async function _dispatchOperationInner(
         spaceIds,
         pathPrefix,
         includeArchived,
+        // HTML source is what worktable_html_read gives, under its own scope.
+        includeHtml:
+          context.surface === "preview" &&
+          hasScope(context.scopes ?? ["*"], "widgets:read"),
       })
       return {
         matches,

@@ -10,7 +10,10 @@
 // entry can never be served. Change events only release memory early.
 
 import { onDocContentChanged } from "./content-events.ts"
+import { htmlSourceRevision } from "./document-content-revision.ts"
 import { projectBlocks } from "./markdown-edit.ts"
+import { readDocumentCatalogSnapshot } from "./document-query.ts"
+import { listWidgets, readWidgetDocument } from "./widget-store.ts"
 import {
   getDocArchiveInfoMap,
   listDocs,
@@ -194,6 +197,10 @@ export const GREP_LINE_CHARS = 2_000
 /** One grep returns at most about this many characters of line text. */
 export const GREP_RESULT_CHARS = 100_000
 const LINE_TRUNCATION_MARKER = " …[line truncated]"
+/** An HTML match in a long line returns this much of the line on each side. */
+const HTML_EXCERPT_SIDE_CHARS = 200
+/** A long context line around an HTML match is cut to this many characters. */
+const HTML_EXCERPT_CHARS = 400
 const DEFAULT_GREP_TIME_LIMIT_MS = 10_000
 
 let grepTimeLimitMs = DEFAULT_GREP_TIME_LIMIT_MS
@@ -219,22 +226,39 @@ function regexWorkerMain(): void {
     postMessage: (message: unknown) => void
   }
   let regex: RegExp | undefined
+  let global: RegExp | undefined
   scope.onmessage = (event) => {
     const data = event.data
     if (typeof data.pattern === "string") {
       regex = new RegExp(data.pattern, data.flags as string)
+      global = new RegExp(data.pattern, `${data.flags as string}g`)
       return
     }
     const content = data.content as string
+    // In a line longer than this, also say where each match is, up to a few.
+    const columnsOver = data.columnsOver as number | undefined
     const hits: number[] = []
+    const columns: Array<[number, Array<[number, number]>]> = []
     let start = 0
     for (let index = 0; start < content.length; index += 1) {
       const newline = content.indexOf("\n", start)
       const end = newline === -1 ? content.length : newline
-      if (regex?.test(content.slice(start, end))) hits.push(index)
+      const line = content.slice(start, end)
+      if (regex?.test(line)) {
+        hits.push(index)
+        if (global && columnsOver !== undefined && line.length > columnsOver) {
+          const found: Array<[number, number]> = []
+          global.lastIndex = 0
+          for (let match = global.exec(line); match && found.length < 100; match = global.exec(line)) {
+            found.push([match.index, match[0].length])
+            if (match[0].length === 0) global.lastIndex += 1
+          }
+          columns.push([index, found])
+        }
+      }
       start = end + 1
     }
-    scope.postMessage({ id: data.id, hits })
+    scope.postMessage({ id: data.id, hits, columns })
   }
 }
 
@@ -252,8 +276,15 @@ class RegexLineMatcher {
     this.flags = flags
   }
 
-  /** 0-based indexes of matching lines, in order. */
-  matchingLines(content: string, deadline: number): Promise<number[]> {
+  /**
+   * 0-based indexes of matching lines, in order, and for each line longer
+   * than `columnsOver`, where its matches start and how long they are.
+   */
+  matchingLines(
+    content: string,
+    deadline: number,
+    columnsOver?: number
+  ): Promise<{ lines: number[]; columns: Map<number, Array<[number, number]>> }> {
     if (!this.worker) {
       regexWorkerUrl ??= URL.createObjectURL(
         new Blob([`(${regexWorkerMain.toString()})()`], {
@@ -274,7 +305,10 @@ class RegexLineMatcher {
       const onMessage = (event: MessageEvent) => {
         if (event.data?.id !== id) return
         finish()
-        resolve(event.data.hits as number[])
+        resolve({
+          lines: event.data.hits as number[],
+          columns: new Map(event.data.columns as Array<[number, Array<[number, number]>]>),
+        })
       }
       const onError = (event: ErrorEvent) => {
         finish()
@@ -291,7 +325,7 @@ class RegexLineMatcher {
       )
       worker.addEventListener("message", onMessage)
       worker.addEventListener("error", onError)
-      worker.postMessage({ id, content })
+      worker.postMessage({ id, content, columnsOver })
     })
   }
 
@@ -333,6 +367,10 @@ export interface DocGrepMatch {
   before: string[]
   after: string[]
   lineTruncated?: true
+  /** An HTML Doc's match, whose docPath is its htmlId. */
+  type?: "html"
+  /** 1-based column in the line where an excerpt of a long line starts. */
+  column?: number
 }
 
 export interface DocGrepSkip {
@@ -353,6 +391,8 @@ export async function grepDocs(
     includeArchived: boolean
     context: number
     maxResults: number
+    /** Also match HTML Docs' source. */
+    includeHtml?: boolean
   }
 ): Promise<{ matches: DocGrepMatch[]; total: number; skipped: DocGrepSkip[] }> {
   validateGrepPattern(options)
@@ -386,20 +426,139 @@ export async function grepDocs(
     return text
   }
 
+  const clipTo = (text: string, chars: number) => {
+    budget -= Math.min(text.length, chars)
+    return text.slice(0, chars)
+  }
+
+  /** Match one document's text, adding its matches and counting them. */
+  const scan = async (
+    spaceId: string,
+    docPath: string,
+    revision: string,
+    content: string,
+    html: boolean
+  ) => {
+    const matched =
+      regex && (await regex.matchingLines(content, deadline, html ? GREP_LINE_CHARS : undefined))
+    const hits = matched && matched.lines
+    let nextHit = 0
+    const recent: string[] = []
+    let open: Array<{ match: DocGrepMatch; remaining: number }> = []
+    // An HTML page is often one long line: each match in a long line gets
+    // its own excerpt, an exact slice of the source to copy an edit from.
+    const contextLine = (line: string, match: DocGrepMatch) =>
+      html && line.length > HTML_EXCERPT_CHARS
+        ? clipTo(line, HTML_EXCERPT_CHARS)
+        : clip(line, match)
+    const collect = (match: DocGrepMatch, text: () => string) => {
+      total += 1
+      if (matches.length >= maxResults || budget <= 0) collecting = false
+      if (!collecting) return
+      match.text = text()
+      match.before = recent.map((previous) => contextLine(previous, match))
+      matches.push(match)
+      if (context > 0) open.push({ match, remaining: context })
+    }
+    forEachLine(content, (line, index) => {
+      if ((index & 0xff) === 0 && performance.now() > deadline) {
+        throw grepTimeoutError()
+      }
+      for (const pending of open) {
+        pending.match.after.push(contextLine(line, pending.match))
+        pending.remaining -= 1
+      }
+      open = open.filter((pending) => pending.remaining > 0)
+      let hit: boolean
+      if (hits) {
+        hit = hits[nextHit] === index
+        if (hit) nextHit += 1
+      } else {
+        hit = lineMatches(line)
+      }
+      if (hit) {
+        const base = (): DocGrepMatch => ({
+          spaceId,
+          docPath,
+          revision,
+          line: index + 1,
+          text: "",
+          before: [],
+          after: [],
+          ...(html ? { type: "html" as const } : {}),
+        })
+        if (html && line.length > GREP_LINE_CHARS) {
+          const found = matched ? (matched.columns.get(index) ?? []) : occurrences(line)
+          if (found.length === 0) {
+            const match = { ...base(), lineTruncated: true as const, column: 1 }
+            collect(match, () => clipTo(line, HTML_EXCERPT_CHARS))
+          }
+          for (const [at, length] of found) {
+            const from = Math.max(0, at - HTML_EXCERPT_SIDE_CHARS)
+            const to = Math.min(line.length, at + length + HTML_EXCERPT_SIDE_CHARS)
+            const match = { ...base(), lineTruncated: true as const, column: from + 1 }
+            collect(match, () => clipTo(line.slice(from, to), to - from))
+          }
+        } else {
+          const match = base()
+          collect(match, () => clip(line, match))
+        }
+      }
+      if (context > 0) {
+        recent.push(line)
+        if (recent.length > context) recent.shift()
+      }
+    })
+  }
+
+  /** Where a literal pattern starts in a line, in order, and its length. */
+  const occurrences = (line: string): Array<[number, number]> => {
+    const haystack = options.caseSensitive ? line : line.toLowerCase()
+    const found: Array<[number, number]> = []
+    for (
+      let at = haystack.indexOf(needle);
+      at !== -1;
+      at = haystack.indexOf(needle, at + Math.max(1, needle.length))
+    ) {
+      found.push([at, needle.length])
+    }
+    return found
+  }
+
+  const inFolder = (path: string) =>
+    !pathPrefix || path === pathPrefix || path.startsWith(`${pathPrefix}/`)
+
   try {
     for (const spaceId of options.spaceIds) {
-      const paths = (await listDocs(spaceId))
-        .filter(
-          (path) =>
-            !pathPrefix ||
-            path === pathPrefix ||
-            path.startsWith(`${pathPrefix}/`)
-        )
-        .sort()
+      const paths = (await listDocs(spaceId)).filter(inFolder)
+      const htmlPaths = options.includeHtml
+        ? (
+            await listWidgets(spaceId, {
+              includeArchived: options.includeArchived,
+              // From the read model, not a fresh catalog build.
+              catalog: () => readDocumentCatalogSnapshot(spaceId),
+            })
+          )
+            .map((widget) => widget.id)
+            .filter(inFolder)
+        : []
       const archived = options.includeArchived
         ? new Map()
         : await getDocArchiveInfoMap(spaceId, paths)
-      for (const docPath of paths) {
+      const documents = [
+        ...paths.map((path) => ({ path, html: false })),
+        ...htmlPaths.map((path) => ({ path, html: true })),
+      ].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+      for (const { path: docPath, html } of documents) {
+        if (html) {
+          const { data } = await readWidgetDocument(spaceId, docPath)
+          if (!data) {
+            skipped.push({ spaceId, docPath, reason: "unreadable" })
+            continue
+          }
+          await scan(spaceId, docPath, htmlSourceRevision(data.sourceBytes), data.html, true)
+          continue
+        }
         if (archived.has(docPath)) continue
         const snapshot = await readDocSourceSnapshot(spaceId, docPath)
         if (!snapshot.revision || snapshot.result.error) {
@@ -411,51 +570,7 @@ export async function grepDocs(
           skipped.push({ spaceId, docPath, reason: "conversion-failed" })
           continue
         }
-        const revision = docRevisionId(snapshot.revision)
-        const hits = regex && (await regex.matchingLines(markdown, deadline))
-        let nextHit = 0
-        const recent: string[] = []
-        let open: Array<{ match: DocGrepMatch; remaining: number }> = []
-        forEachLine(markdown, (line, index) => {
-          if ((index & 0xff) === 0 && performance.now() > deadline) {
-            throw grepTimeoutError()
-          }
-          for (const pending of open) {
-            pending.match.after.push(clip(line, pending.match))
-            pending.remaining -= 1
-          }
-          open = open.filter((pending) => pending.remaining > 0)
-          let hit: boolean
-          if (hits) {
-            hit = hits[nextHit] === index
-            if (hit) nextHit += 1
-          } else {
-            hit = lineMatches(line)
-          }
-          if (hit) {
-            total += 1
-            if (matches.length >= maxResults || budget <= 0) collecting = false
-            if (collecting) {
-              const match: DocGrepMatch = {
-                spaceId,
-                docPath,
-                revision,
-                line: index + 1,
-                text: "",
-                before: [],
-                after: [],
-              }
-              match.text = clip(line, match)
-              match.before = recent.map((previous) => clip(previous, match))
-              matches.push(match)
-              if (context > 0) open.push({ match, remaining: context })
-            }
-          }
-          if (context > 0) {
-            recent.push(line)
-            if (recent.length > context) recent.shift()
-          }
-        })
+        await scan(spaceId, docPath, docRevisionId(snapshot.revision), markdown, false)
       }
     }
   } finally {

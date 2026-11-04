@@ -1172,6 +1172,28 @@ export const DocsWriteInput = z.strictObject({
 
 const HtmlIdInput = z.string().describe("ID of the HTML doc")
 
+const HtmlTextEditsInput = z
+  .array(
+    z.object({
+      oldText: z
+        .string()
+        .describe(
+          "Exact text copied from the html worktable_html_read returned, with enough surrounding text to match once."
+        ),
+      newText: z.string().describe("Replacement HTML."),
+      replaceAll: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Replace every occurrence instead of requiring exactly one."),
+    })
+  )
+  .min(1)
+  .max(100)
+  .describe(
+    "Exact replacements in the page, applied in order; each edit sees the previous edits' result. All apply or none do."
+  )
+
 export const HtmlReadInput = z.strictObject({
   request: z.discriminatedUnion("action", [
     actionSchema("guide", {
@@ -1203,7 +1225,9 @@ export const HtmlWriteInput = z.strictObject({
       htmlId: HtmlIdInput,
       name: UpdateWidgetInput.shape.name,
       description: UpdateWidgetInput.shape.description,
-      html: UpdateWidgetInput.shape.html,
+      // Without html or edits, an update changes only properties or permissions.
+      html: UpdateWidgetInput.shape.html.optional(),
+      edits: HtmlTextEditsInput.optional(),
       metadata: UpdateWidgetInput.shape.metadata,
       permissions: UpdateWidgetInput.shape.permissions,
       expectedRevision: z

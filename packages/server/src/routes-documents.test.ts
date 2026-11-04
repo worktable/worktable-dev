@@ -25,6 +25,7 @@ import { ownerIdentity } from "./auth.ts"
 import { createAnnotation } from "./annotation-store.ts"
 import { HOSTED_BROWSER_RUNTIME_SCOPES } from "./hosted-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
+import { docsRouter } from "./routes/docs.ts"
 import { renameDocAndSync } from "./doc-rename.ts"
 import { recordDocAlias, resolveDocAlias } from "./doc-aliases.ts"
 import { deleteHtmlDocument } from "./html-document-delete.ts"
@@ -136,6 +137,7 @@ function app() {
     return next()
   })
   instance.route("/api/spaces/:spaceId/documents", documentsRouter)
+  instance.route("/api/spaces/:spaceId/docs", docsRouter)
   return instance
 }
 
@@ -1087,6 +1089,30 @@ describe("format-neutral document route", () => {
         expect(served.status).toBe(200)
         expect(await served.text()).toBe(bytes)
       }
+      // A kept file stays a file whatever is written into it: Doc blocks in
+      // it are not a Doc the Doc scope can read or list.
+      const blocks = '[{"type":"paragraph","content":"Secret plan"}]'
+      await writeFile(join(docs, "data", "config.json"), blocks)
+      noteSpaceChanged(spaceId)
+      const docsOnly = { "x-test-scopes": "docs:read" }
+      expect(
+        (await instance.request(`/api/spaces/${spaceId}/docs/data/config`, { headers: docsOnly }))
+          .status
+      ).toBe(404)
+      const docList = (await (
+        await instance.request(`/api/spaces/${spaceId}/docs`, { headers: docsOnly })
+      ).json()) as { docs: Array<{ path: string }> }
+      expect(docList.docs.map((doc) => doc.path)).not.toContain("data/config")
+      expect(
+        (await instance.request(fileUrl("data/config.json"), { headers: docsOnly })).status
+      ).toBe(403)
+      expect(
+        await (
+          await instance.request(fileUrl("data/config.json"), {
+            headers: { "x-test-scopes": "documents:read" },
+          })
+        ).text()
+      ).toBe(blocks)
       // A plain file beside a Markdown Doc of the same name leaves the Doc
       // readable and listed.
       expect((await upload("notes/readme.json", '{"owner":"docs"}')).status).toBe(201)

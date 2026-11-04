@@ -52,7 +52,10 @@ import {
   type DocumentFormatRegistry,
 } from "./document-format-registry.ts"
 import { storedDocTitle } from "./doc-title-text.ts"
-import { richTextSourceIsDoc } from "./rich-text-blocks.ts"
+import {
+  rememberRichTextFile,
+  richTextSourceIsDoc,
+} from "./rich-text-blocks.ts"
 import { filesEnabled } from "./files-enabled.ts"
 import {
   DOCUMENT_STORAGE_PROFILE_IDS,
@@ -407,7 +410,10 @@ async function readCatalogDocSource(
       // name says; its reader reports why.
     }
   }
-  if (key !== undefined) docSources.set(file, key, view)
+  if (key !== undefined) {
+    docSources.set(file, key, view)
+    if (!markdown) rememberRichTextFile(file, key, view.doc)
+  }
   return view
 }
 

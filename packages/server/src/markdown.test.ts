@@ -537,7 +537,7 @@ describe("markdown support", () => {
       expect(result.containsMermaid).toBe(false);
     });
 
-    it("refuses inline content the editor can't hold, and read_doc reports it without crashing", async () => {
+    it("refuses inline content the editor can't hold, and read_doc takes such a file for no Doc", async () => {
       const blocks = [
         { id: "x", type: "paragraph", props: {}, content: [{ type: "alienInline", payload: { deep: true } }], children: [] },
       ];
@@ -549,7 +549,7 @@ describe("markdown support", () => {
       );
       await expect(
         dispatchOperation("docs.read", { spaceId: "test-space", docPath: "unconvertible-doc" })
-      ).rejects.toThrow("expected Doc blocks");
+      ).rejects.toThrow("Document not found: unconvertible-doc");
     });
   });
 });

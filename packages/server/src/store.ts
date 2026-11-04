@@ -29,7 +29,7 @@ import { canonicalizeBlocksForWrite, inheritBlockIds } from "./blocknote.ts";
 import {
   checkRichTextBlocks,
   RICH_TEXT_SOURCE_BUDGET,
-  richTextSourceIsDoc,
+  richTextFileIsDoc,
 } from "./rich-text-blocks.ts";
 import { extractMarkdownMermaid } from "./mermaid-document.ts";
 
@@ -273,63 +273,78 @@ export function stableHash(value: unknown): string {
  * Tries .json first, then .md. Returns null if neither exists.
  */
 // ============================================================
-// A `.json` beside a Markdown Doc of the same name
+// Which `.json` files are Docs
 // ============================================================
 //
-// The catalog takes a `.json` as a Doc only when Worktable holds it as one or,
-// without an identity, when it holds Doc blocks; anything else is a plain
-// file under its whole name. Where a Markdown Doc shares its stem, reads and
-// lists here follow the same decision, so a plain JSON file never shadows or
-// hides the Doc. Both existing is rare; each decision is kept while the file
-// and the inventory keep their fingerprints.
+// The catalog takes a `.json` as a Doc only when the inventory holds it as
+// one or, without an identity there, when it holds Doc blocks; anything else
+// is a plain file under its whole name, readable only through the file API
+// and its scope. Every read, write and list here follows the same decision,
+// so a plain file is never read, listed or written as a Doc, and never
+// shadows a Markdown Doc of the same name. An inventory claim always wins:
+// a file stays a file whatever is later written into it. Each decision costs
+// stats: the parsed inventory and each file's content check are kept while
+// their fingerprints hold, and the catalog's own reads fill the latter.
 
-const jsonBesideMarkdown = new FingerprintCache<boolean>(10_000);
+const inventoryFormats = new FingerprintCache<ReadonlyMap<string, string>>(1_024);
 
-function fingerprintKey(path: string): { key: string; racy: boolean } {
+function fingerprintKey(path: string): { key: string; racy: boolean } | null {
   try {
     return fingerprintOf(statSync(path, { bigint: true }));
   } catch {
-    return { key: "missing", racy: false };
+    return null;
   }
 }
 
-/** How the inventory registers a source, if it does. */
-function inventoryFormatOf(spaceId: string, relativePath: string): string | undefined {
+/** How the inventory registers each file source: relative path to format id. */
+function inventoryFormatsOf(spaceId: string): ReadonlyMap<string, string> {
+  const path = join(spaceDir(spaceId), "documents.meta.json");
+  const fingerprint = fingerprintKey(path);
+  if (!fingerprint) return new Map();
+  const cached = inventoryFormats.get(path, fingerprint.key);
+  if (cached) return cached;
+  const formats = new Map<string, string>();
   try {
-    const inventory = JSON.parse(
-      readFileSync(join(spaceDir(spaceId), "documents.meta.json"), "utf8")
-    ) as { documents?: Record<string, { format?: { id?: unknown }; source?: { kind?: unknown; relativePath?: unknown } }> };
+    const inventory = JSON.parse(readFileSync(path, "utf8")) as {
+      documents?: Record<string, { format?: { id?: unknown }; source?: { kind?: unknown; relativePath?: unknown } }>;
+    };
     for (const entry of Object.values(inventory.documents ?? {})) {
-      if (entry?.source?.kind === "file" && entry.source.relativePath === relativePath) {
-        return typeof entry.format?.id === "string" ? entry.format.id : undefined;
+      if (
+        entry?.source?.kind === "file" &&
+        typeof entry.source.relativePath === "string" &&
+        typeof entry.format?.id === "string"
+      ) {
+        formats.set(entry.source.relativePath, entry.format.id);
       }
     }
   } catch {
-    // No readable inventory: the content decides, as for any source without one.
+    // An unreadable inventory claims nothing; the content decides, as for any
+    // source without an identity. The catalog reports what is wrong.
   }
-  return undefined;
+  if (!fingerprint.racy) inventoryFormats.set(path, fingerprint.key, formats);
+  return formats;
 }
 
-/** Whether `<path>.json` is the Doc at `path` rather than a file beside it. */
-function jsonIsDocBesideMarkdown(spaceId: string, sanitized: string, jsonPath: string): boolean {
-  const source = fingerprintKey(jsonPath);
-  const inventory = fingerprintKey(join(spaceDir(spaceId), "documents.meta.json"));
-  const key = `${source.key}|${inventory.key}`;
-  const cached = jsonBesideMarkdown.get(jsonPath, key);
-  if (cached !== undefined) return cached;
-  const registered = inventoryFormatOf(spaceId, `docs/${sanitized}.json`);
-  let doc: boolean;
-  if (registered !== undefined) {
-    doc = registered !== "worktable.file";
-  } else {
-    try {
-      doc = richTextSourceIsDoc(readFileSync(jsonPath, "utf8"));
-    } catch {
-      doc = true;
-    }
-  }
-  if (!source.racy && !inventory.racy) jsonBesideMarkdown.set(jsonPath, key, doc);
-  return doc;
+/** Whether the `.json` at `docs/<path>.json` is the Doc at `path`. */
+function jsonIsDoc(
+  formats: ReadonlyMap<string, string>,
+  path: string,
+  jsonPath: string
+): boolean {
+  const registered = formats.get(`docs/${path}.json`);
+  if (registered !== undefined) return registered !== "worktable.file";
+  const fingerprint = fingerprintKey(jsonPath);
+  return richTextFileIsDoc(
+    jsonPath,
+    fingerprint && !fingerprint.racy ? fingerprint.key : undefined,
+    () => readFileSync(jsonPath, "utf8")
+  );
+}
+
+/** A plain file holds `<path>.json`: no Doc may be written there. */
+function plainJsonAt(spaceId: string, sanitized: string): boolean {
+  const jsonPath = join(docsDir(spaceId), `${sanitized}.json`);
+  return existsSync(jsonPath) && !jsonIsDoc(inventoryFormatsOf(spaceId), sanitized, jsonPath);
 }
 
 function resolveDocFile(
@@ -338,13 +353,11 @@ function resolveDocFile(
 ): { path: string; format: DocFileFormat } | null {
   const sanitized = sanitizeDocPath(docPath);
   const jsonPath = join(docsDir(spaceId), `${sanitized}.json`);
-  const mdPath = join(docsDir(spaceId), `${sanitized}.md`);
-  const json = existsSync(jsonPath);
-  const md = existsSync(mdPath);
-  if (json && (!md || jsonIsDocBesideMarkdown(spaceId, sanitized, jsonPath))) {
+  if (existsSync(jsonPath) && jsonIsDoc(inventoryFormatsOf(spaceId), sanitized, jsonPath)) {
     return { path: jsonPath, format: "json" };
   }
-  if (md) return { path: mdPath, format: "md" };
+  const mdPath = join(docsDir(spaceId), `${sanitized}.md`);
+  if (existsSync(mdPath)) return { path: mdPath, format: "md" };
   return null;
 }
 
@@ -1736,31 +1749,23 @@ async function walkDir(
   dir: string,
   relDir: string,
   files: DocFile[],
-  jsonIsDoc: (path: string, file: string) => boolean
+  isDoc: (path: string, file: string) => boolean
 ): Promise<void> {
   // Entry names never contain a separator, so joining them by hand gives the
   // same paths as join() and relative(), at less cost per entry.
   const below = (name: string) => (relDir ? `${relDir}${sep}${name}` : name);
   try {
     const entries = await readdir(dir, { withFileTypes: true });
-    const markdown = new Set(
-      entries.flatMap((entry) =>
-        !entry.isDirectory() && entry.name.endsWith(".md")
-          ? [entry.name.slice(0, -".md".length)]
-          : []
-      )
-    );
     // Track seen paths to avoid duplicates if both .json and .md exist: the
-    // .json is the Doc unless it is a plain file beside the Markdown Doc.
+    // .json is the Doc unless it is a plain file, which no Doc list holds.
     const seen = new Set<string>();
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        await walkDir(`${dir}${sep}${entry.name}`, below(entry.name), files, jsonIsDoc);
+        await walkDir(`${dir}${sep}${entry.name}`, below(entry.name), files, isDoc);
       } else if (entry.name.endsWith(".json")) {
-        const stem = entry.name.slice(0, -".json".length);
-        const relPath = below(stem);
+        const relPath = below(entry.name.slice(0, -".json".length));
         const file = `${dir}${sep}${entry.name}`;
-        if (markdown.has(stem) && !jsonIsDoc(relPath, file)) continue;
+        if (!isDoc(relPath, file)) continue;
         if (!seen.has(relPath)) {
           seen.add(relPath);
           files.push({ path: relPath, format: "json", file });
@@ -1785,8 +1790,9 @@ async function walkDir(
 
 async function listDocFiles(spaceId: string): Promise<DocFile[]> {
   const files: DocFile[] = [];
+  const formats = inventoryFormatsOf(spaceId);
   await walkDir(docsDir(spaceId), "", files, (path, file) =>
-    jsonIsDocBesideMarkdown(spaceId, path.split(sep).join("/"), file)
+    jsonIsDoc(formats, path.split(sep).join("/"), file)
   );
   const { aliases, error } = await readDocAliases(spaceId);
   if (!aliases) throw new Error(error ?? "Document aliases are unavailable");
@@ -3788,7 +3794,14 @@ async function writeDocUnlocked(
     return finalizeWrite("md", content as string, content as string);
   }
 
-  // BlockNote blocks: always write as .json
+  // BlockNote blocks: always write as .json, never over a plain file there.
+  if (resolved?.format !== "json" && plainJsonAt(spaceId, sanitizeDocPath(docPath))) {
+    return {
+      ok: false,
+      storedAs: "json",
+      error: `Another document already uses this path: ${sanitizeDocPath(docPath)}.json`,
+    };
+  }
   const jsonPath = docFilePathJson(spaceId, docPath);
   await mkdir(dirname(jsonPath), { recursive: true });
   const preparedBlocks = options?.canonical
@@ -4259,7 +4272,11 @@ export async function renameDoc(
     if (sourceAliasError) return { error: sourceAliasError };
   }
 
-  const newExists = resolveDocFile(spaceId, sanitizedNewPath);
+  // Either source name taken counts, plain files included: a rename never
+  // lands on a file.
+  const newExists =
+    existsSync(docFilePathJson(spaceId, sanitizedNewPath)) ||
+    existsSync(docFilePathMd(spaceId, sanitizedNewPath));
   if (newExists) {
     return { error: `Target path already exists: ${sanitizedNewPath}` };
   }

@@ -1,4 +1,5 @@
 import { serverSchema } from "./blocknote.ts"
+import { FingerprintCache } from "./file-fingerprint.ts"
 
 // ============================================================
 // Whether JSON is a rich-text Doc
@@ -277,4 +278,45 @@ export function richTextSourceIsDoc(text: string): boolean {
     return false
   }
   return checkRichTextBlocks(parsed, RICH_TEXT_SOURCE_BUDGET) !== "not-blocks"
+}
+
+/**
+ * Whether each `.json` holds Doc blocks, by file path and fingerprint. The
+ * catalog fills it from the read that gives a Doc its title, so the Doc
+ * store's own lookups rarely read anything.
+ */
+const richTextFiles = new FingerprintCache<boolean>(50_000)
+
+export function rememberRichTextFile(
+  file: string,
+  fingerprintKey: string,
+  doc: boolean
+): void {
+  richTextFiles.set(file, fingerprintKey, doc)
+}
+
+/**
+ * Whether a `.json` file holds Doc blocks, read only when its fingerprint
+ * is new. Without a key (changed too recently to identify) it is read, and
+ * the answer is not kept.
+ */
+export function richTextFileIsDoc(
+  file: string,
+  fingerprintKey: string | undefined,
+  read: () => string
+): boolean {
+  const cached =
+    fingerprintKey !== undefined
+      ? richTextFiles.get(file, fingerprintKey)
+      : undefined
+  if (cached !== undefined) return cached
+  let doc: boolean
+  try {
+    doc = richTextSourceIsDoc(read())
+  } catch {
+    // An unreadable file stays what its name says; its reader reports why.
+    doc = true
+  }
+  if (fingerprintKey !== undefined) richTextFiles.set(file, fingerprintKey, doc)
+  return doc
 }

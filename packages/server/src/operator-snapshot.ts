@@ -9,11 +9,23 @@ import {
 } from "./workspace-snapshot.ts"
 import { withWorkspaceExportSnapshot } from "./workspace-export-coordinator.ts"
 import { withWorkspaceExportLease } from "./workspace-replacement-coordinator.ts"
-import type { WorkspaceCaptureReport } from "./workspace-transfer-v2.ts"
+import type {
+  PortableContentHashCache,
+  WorkspaceCaptureReport,
+} from "./workspace-transfer-v2.ts"
 
 export const LOCAL_OPERATOR_SNAPSHOT_PATH =
   "/internal/operator/workspace-snapshot"
 export const SNAPSHOT_OPERATION_ID = /^[A-Za-z0-9_-]{8,80}$/
+
+/**
+ * Content hashes from earlier captures in this process, so an hourly backup
+ * reads only what changed. Forgotten once a day, so every file is hashed in
+ * full at least daily, as the backup audit does.
+ */
+const captureHashes: PortableContentHashCache = new Map()
+let captureHashesSince = 0
+const CAPTURE_HASHES_MAX_AGE_MS = 24 * 60 * 60_000
 
 /** No caller-selected path reaches the local maintenance capability. */
 export async function operatorSnapshotDirectory(
@@ -63,11 +75,16 @@ export async function writeLiveOperatorWorkspaceSnapshot(
         const cancellation =
           maxCaptureMs === undefined ? undefined : new AbortController()
         const startedAt = performance.now()
+        if (Date.now() - captureHashesSince >= CAPTURE_HASHES_MAX_AGE_MS) {
+          captureHashes.clear()
+          captureHashesSince = Date.now()
+        }
         const manifest = exists
           ? await inspectWorkspaceSnapshot(destination)
           : await writeWorkspaceSnapshot(destination, {
               captureTeamState: true,
               signal: cancellation?.signal,
+              hashCache: captureHashes,
               onCaptureReport: (report) => {
                 capture = report
               },

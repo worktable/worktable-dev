@@ -72,4 +72,35 @@ export interface BackupWorkerResult {
   capturedAt: string
   bytes: number
   completedAt: string
+  /** Where a backup spent its time. Optional; nothing depends on it. */
+  diagnostics?: BackupWorkerDiagnostics
+}
+
+/** Durations in milliseconds, sizes in bytes. */
+export interface BackupWorkerDiagnostics {
+  capture: {
+    ms: number
+    /** "reflink" or "copy", when the server reported how it captured. */
+    method?: string
+    files?: number
+    bytes?: number
+    /** Files whose bytes were hashed; the rest reused an earlier hash. */
+    hashedFiles?: number
+    hashedBytes?: number
+    barrierMs?: number
+  }
+  inspect: {
+    ms: number
+    hashedFiles?: number
+    hashedBytes?: number
+  }
+  upload: {
+    ms: number
+    /** Unchanged files were taken from the previous snapshot unread. */
+    incremental: boolean
+    filesNew?: number
+    filesChanged?: number
+    filesUnmodified?: number
+    bytesAdded?: number
+  }
 }

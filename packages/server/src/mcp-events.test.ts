@@ -347,23 +347,32 @@ describe("MCP Events", () => {
     expect(events(sent)).toHaveLength(2)
   })
 
-  it("retries with the same event id, and ends the subscription on 410", async () => {
+  it("retries with the same event id, keeps later events behind it, and ends the subscription on 410", async () => {
     const sent: Sent[] = []
-    const statuses = [503, 200, 410]
+    const statuses = [503, 200, 200, 410]
     const transport = callback(sent, { status: () => statuses.shift() ?? 200 })
     await subscribe(caller, params(), transport)
     await start(transport)
     await after(() => comment("pricing", "Delivered on the second try."))
+    // An item that comes while the first waits its retry goes after it.
+    await after(() => comment("pricing", "Written while it waited."))
     await stop?.()
     // The failed attempt waits its retry delay, even across a restart.
     await pastRetryDelay(() => start(transport))
     const [first, second] = events(sent)
     expect(second!.body.eventId).toBe(first!.body.eventId)
+    expect(
+      events(sent).map((e) => (e.body.data as { excerpt: string }).excerpt)
+    ).toEqual([
+      "Delivered on the second try.",
+      "Delivered on the second try.",
+      "Written while it waited.",
+    ])
 
     await after(() => comment("pricing", "The receiver is gone."))
-    expect(events(sent)).toHaveLength(3)
+    expect(events(sent)).toHaveLength(4)
     await after(() => comment("pricing", "Never sent: the subscription ended."))
-    expect(events(sent)).toHaveLength(3)
+    expect(events(sent)).toHaveLength(4)
   })
 
   it("keeps what couldn't be sent through an outage and a lapse, and sends each once when it can", async () => {
@@ -491,18 +500,19 @@ describe("MCP Events", () => {
 
   it("sends nothing more once the receiver answers 410, though events were queued", async () => {
     const sent: Sent[] = []
-    const statuses = [503, 503, 410, 200]
+    const statuses = [503, 410, 200]
     const transport = callback(sent, { status: () => statuses.shift() ?? 200 })
     await subscribe(caller, params(), transport)
     await start(transport)
     await after(() => comment("pricing", "First."))
+    // The second waits behind the first's retry.
     await after(() => comment("pricing", "Second."))
-    expect(events(sent)).toHaveLength(2)
+    expect(events(sent)).toHaveLength(1)
     await stop?.()
     // Both wait in the outbox, and one drain finds both. The first retry
     // gets 410: the second must not be sent after it.
     await pastRetryDelay(() => start(transport))
-    expect(events(sent)).toHaveLength(3)
+    expect(events(sent)).toHaveLength(2)
   })
 
   it("follows a local token: narrowed scopes and revocation apply to the next event", async () => {

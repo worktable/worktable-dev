@@ -390,12 +390,16 @@ export async function createLinkedIngress(options: {
       // Only an app's first request here waits, for the one write.
       if (!currentTeamWorktable()) await noteLinkedApp(identity)
       // MCP 2026-07-28 (events, tasks) checks the client's MCP headers against
-      // the body, so it is served only when Cloud signed them; otherwise the
-      // earlier revisions answer, as before.
-      const modernEra = grant.headers !== undefined && mcpModernEraOverLink()
+      // the body, so it is served only when Cloud signed the version and the
+      // method; otherwise the earlier revisions answer, as before.
+      const signed = grant.headers
+      const modernEra =
+        signed?.protocolVersion !== undefined &&
+        signed.method !== undefined &&
+        mcpModernEraOverLink()
       if (modernEra)
         for (const [field, name] of Object.entries(LINKED_MCP_HEADERS)) {
-          const value = grant.headers![field as keyof typeof LINKED_MCP_HEADERS]
+          const value = signed[field as keyof typeof LINKED_MCP_HEADERS]
           if (value) headers.set(name, value)
         }
       return await handleRemoteMcpRequest(

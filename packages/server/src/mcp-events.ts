@@ -1078,13 +1078,18 @@ function queueEvents(
   for (const item of items) {
     const id = eventId(subscription.id, item.itemId)
     if (file.outbox.some((queued) => queued.eventId === id)) continue
+    // Behind any retry already waiting, so a new event never passes it.
+    let heldUntil = 0
+    for (const queued of file.outbox)
+      if (queued.subscriptionId === subscription.id)
+        heldUntil = Math.max(heldUntil, queued.nextAt)
     file.outbox.push({
       eventId: id,
       subscriptionId: subscription.id,
       itemId: item.itemId,
       at: item.createdAt,
       attempts: 0,
-      nextAt: 0,
+      nextAt: heldUntil,
     })
   }
   // A bounded outbox: past the limit the oldest events give way.

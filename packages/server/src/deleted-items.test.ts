@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import {
+  copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -49,6 +51,7 @@ import {
   holdVisitorCommentWrites,
   readVisitorComment,
   receiveVisitorComment,
+  visitorCommentStoreFile,
 } from "./visitor-comment-store.ts"
 import {
   resetWorkspaceRequestLifecycleForTests,
@@ -335,8 +338,53 @@ describe("deleted items", () => {
     expect(retired("notes")).toEqual([])
     expect(readVisitorComment("wt_test", comment.id)).not.toBeNull()
 
+    // A capture holds writes: the retry waits for it, as moves do.
+    await stopWorkspaceMutationsAndDrain()
+    expect(await runDeletedItemsPass()).toMatchObject({ deferred: true })
+    expect(readVisitorComment("wt_test", comment.id)).not.toBeNull()
+    resumeWorkspaceRequestAdmission()
+
     await runDeletedItemsPass()
     expect(readVisitorComment("wt_test", comment.id)).toBeNull()
+  })
+
+  it("drop an owed comment erase when a restore brings the document back", async () => {
+    ensureWorkspaceManifest()
+    await writeSpace(space("notes"))
+    const doc = await create("notes", "reviewed")
+    const comment = plantComment(doc.documentId)
+    // A snapshot of the workspace and its comment store, taken before the
+    // delete.
+    closeVisitorCommentStores()
+    const snapshot = mkdtempSync(join(tmpdir(), "wt-deleted-snap-"))
+    cpSync(workspace, join(snapshot, "workspace"), { recursive: true })
+    copyFileSync(visitorCommentStoreFile(), join(snapshot, "comments.sqlite"))
+    try {
+      const release = holdVisitorCommentWrites()
+      try {
+        await deleteRegisteredDocument({ spaceId: "notes", path: "reviewed" })
+      } finally {
+        release()
+      }
+      const owed = join(deletedItemsTrashDir(), "pending-comment-erase.json")
+      expect(JSON.parse(readFileSync(owed, "utf8"))).toMatchObject({
+        documentIds: [doc.documentId],
+      })
+      // Restore the snapshot before the owed erase is retried.
+      closeVisitorCommentStores()
+      rmSync(workspace, { recursive: true, force: true })
+      cpSync(join(snapshot, "workspace"), workspace, { recursive: true })
+      copyFileSync(join(snapshot, "comments.sqlite"), visitorCommentStoreFile())
+
+      await runDeletedItemsPass()
+      expect(readVisitorComment("wt_test", comment.id)).not.toBeNull()
+      // The owed erase was dropped, so it never runs later either.
+      expect(JSON.parse(readFileSync(owed, "utf8"))).toMatchObject({
+        documentIds: [],
+      })
+    } finally {
+      rmSync(snapshot, { recursive: true, force: true })
+    }
   })
 
   it("empty expired trash of a workspace that is not being served", async () => {

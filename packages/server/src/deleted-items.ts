@@ -489,8 +489,19 @@ async function moveOutOfWorkspace(
   result: DeletedItemsPassResult
 ): Promise<void> {
   const root = getWorkspaceRoot()
-  // Erases that could not run before; under the lock deletes record under.
-  await withUnsettledDocumentLifecycles(() => retryPendingCommentErase())
+  // Erases that could not run before. It writes the comment store, so it is
+  // admitted like a write (a capture checks that store is unchanged), and it
+  // runs under the lock deletes record under.
+  const releaseRetry = admitWorkspaceRequest("write")
+  if (!releaseRetry) {
+    result.deferred = true
+    return
+  }
+  try {
+    await withUnsettledDocumentLifecycles(() => retryPendingCommentErase())
+  } finally {
+    releaseRetry()
+  }
 
   const found = await discoverWorkspace(root)
   if (found.tombstones.length > 0) {

@@ -3,15 +3,20 @@
 // ids wait here, in app data beside the workspace's trash, and every
 // deleted-items pass retries them (deleted-items.ts). The list is per
 // workspace because the comment store is.
+//
+// A retry erases only comments of documents that are still deleted. A
+// snapshot restore or workspace replacement can bring a document back with
+// its id and its comments; an erase owed by the earlier state is then
+// dropped, not applied. Checking at retry time covers every restore path.
 
-import { mkdir, readFile } from "node:fs/promises"
+import { mkdir, readFile, readdir } from "node:fs/promises"
 import { join } from "node:path"
 import { DocumentIdSchema } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
 import { atomicWriteText } from "./atomic-file.ts"
 import { logError } from "./debug-log.ts"
 import { eraseVisitorCommentsForDocuments } from "./visitor-comment-store.ts"
-import { workspaceCacheKey } from "./workspace.ts"
+import { getSpacesDir, workspaceCacheKey } from "./workspace.ts"
 
 function listPath(): { dir: string; file: string } {
   const dir = join(ensureAppDir(), "trash", workspaceCacheKey())
@@ -63,12 +68,51 @@ export async function eraseVisitorCommentsOrRecord(
 }
 
 /**
- * Retry every recorded erase; keeps the list when the store still refuses.
- * Callers hold the lifecycle lock, which deletes record under too.
+ * Every document id a live Space lists, or null when an inventory cannot be
+ * read, so nothing is erased on a guess.
+ */
+async function liveDocumentIds(): Promise<Set<string> | null> {
+  const ids = new Set<string>()
+  let spaces
+  try {
+    spaces = await readdir(getSpacesDir(), { withFileTypes: true })
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? ids : null
+  }
+  for (const space of spaces) {
+    if (!space.isDirectory() || space.isSymbolicLink() || space.name === ".trash") {
+      continue
+    }
+    let text: string
+    try {
+      text = await readFile(join(getSpacesDir(), space.name, "documents.meta.json"), "utf8")
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
+      return null
+    }
+    try {
+      const parsed = JSON.parse(text) as { documents?: Record<string, unknown> }
+      for (const id of Object.keys(parsed.documents ?? {})) ids.add(id)
+    } catch {
+      return null
+    }
+  }
+  return ids
+}
+
+/**
+ * Retry recorded erases of documents that are still deleted, and drop ids
+ * whose document exists again. Keeps the list when the store still refuses.
+ * Callers hold write admission and the lifecycle lock, which deletes record
+ * under too.
  */
 export async function retryPendingCommentErase(): Promise<void> {
   const pending = await readPending()
-  if (pending.length === 0 || !tryErase(pending)) return
-  const erased = new Set(pending)
-  await writePending((await readPending()).filter((id) => !erased.has(id)))
+  if (pending.length === 0) return
+  const live = await liveDocumentIds()
+  if (!live) return
+  const deleted = pending.filter((id) => !live.has(id))
+  if (deleted.length > 0 && !tryErase(deleted)) return
+  const settled = new Set(pending)
+  await writePending((await readPending()).filter((id) => !settled.has(id)))
 }

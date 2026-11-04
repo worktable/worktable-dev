@@ -7,6 +7,12 @@
 // A pass that an export, snapshot or replacement deferred asks to run again
 // with a backoff, starting at a few seconds, so the items leave the
 // workspace folder soon after the capture finishes.
+//
+// A delete also tells storage pruning that something removable appeared, so
+// a write right after it, at the limit, plans again instead of trusting a
+// plan made before the delete.
+
+import { notePrunableHistory } from "./prunable-history.ts"
 
 const delays = {
   moveMs: 1_000,
@@ -37,6 +43,7 @@ export function setDeletedItemsRunner(run: (() => void) | null): void {
 }
 
 export function noteDeletedItems(): void {
+  notePrunableHistory()
   schedule(delays.moveMs)
 }
 

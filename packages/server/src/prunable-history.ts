@@ -4,8 +4,8 @@
 // it doesn't walk every version again while nothing changed: someone typing
 // past the limit saves often, and each save changes history's size without
 // making anything removable. The count below moves only when something can
-// become removable: a version that makes the one before it old, a new trash
-// entry, a restore letting go of the version it held, a full recount.
+// become removable: a version that makes the one before it old, a delete, a
+// new trash entry, a restore letting go of the version it held, a full recount.
 
 let epoch = 0
 

@@ -318,6 +318,11 @@ describe("storage limit", () => {
       source: "test",
     })
     await deleteRegisteredDocument({ spaceId: "notes", path: "kept" })
+    // Deleting makes room for the very next write, before the deleted item
+    // has moved to the trash: one that fits only once it goes.
+    const prunedItems = storageSummary()!.pruned?.deletedItems ?? 0
+    await createDoc("after-delete", 6.5 * KB)
+    expect(storageSummary()!.pruned?.deletedItems).toBe(prunedItems + 1)
   })
 
   it("leaves transfers out, counts a write on disk past the limit, and refuses the next new write", async () => {

@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { LISTED_MARK_FIELDS } from "./listed-mark.ts"
 
 /** Separate from browser assertions and from the local owner's credentials. */
 export const LINKED_ASSERTION_HEADER = "x-worktable-linked-assertion"
@@ -150,6 +151,18 @@ export const LinkedHeartbeat = z
       .url()
       .refine((value) => /^https?:\/\//.test(value))
       .optional(),
+    /**
+     * How this Worktable looks in lists, sent once Cloud says it takes marks
+     * and again only when it changes. Absent means unchanged.
+     */
+    mark: z
+      .object({
+        name: z.string().trim().min(1).max(100).optional().catch(undefined),
+        ...LISTED_MARK_FIELDS,
+      })
+      .strict()
+      .optional()
+      .catch(undefined),
   })
   .strict()
 
@@ -179,6 +192,10 @@ const LinkedHostReplyBase = z.object({
   tunnelToken: z.string().optional(),
   ready: z.boolean().default(false),
   publicOrigin: z.string().url(),
+  /** Cloud takes a heartbeat's `mark`. */
+  marks: z.boolean().optional(),
+  /** Cloud saved the `mark` this heartbeat carried. */
+  markSaved: z.boolean().optional(),
 })
 /** MCP-only deployments need no public document-sharing origins. */
 export const LinkedHostReply = z.union([

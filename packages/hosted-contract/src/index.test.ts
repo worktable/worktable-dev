@@ -446,6 +446,28 @@ describe("linked request contract", () => {
       { ...heartbeat, version: "0.1.25" },
     ])
       expect(LinkedHeartbeat.safeParse(invalid).success).toBe(false)
+    // A mark Cloud can't use is dropped; the heartbeat still counts.
+    const mark = {
+      name: "Notes",
+      color: "teal",
+      logo: { kind: "icon" as const, icon: "book" },
+    }
+    expect(LinkedHeartbeat.parse({ ...heartbeat, mark })).toEqual({
+      ...heartbeat,
+      mark,
+    })
+    expect(
+      LinkedHeartbeat.parse({
+        ...heartbeat,
+        mark: {
+          ...mark,
+          logo: { kind: "image", data: "data:image/svg+xml;base64,PHN2Zz4=" },
+        },
+      }).mark
+    ).toEqual({ name: "Notes", color: "teal" })
+    expect(
+      LinkedHeartbeat.parse({ ...heartbeat, mark: { shape: "x" } }).mark
+    ).toBeUndefined()
   })
 })
 

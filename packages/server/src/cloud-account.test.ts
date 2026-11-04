@@ -362,6 +362,8 @@ test("the Settings toggle preserves the MCP URL and share capability, while Unli
     expect(LinkedHeartbeat.parse(heartbeats[0]).openUrl).toMatch(
       /^http:\/\/127\.0\.0\.1:\d+$/
     )
+    // A Cloud that hasn't said it takes marks never receives one.
+    expect(heartbeats[0]).not.toHaveProperty("mark")
     await updateServerSettings({
       network: { publicUrl: "https://notes.example.com" },
     })

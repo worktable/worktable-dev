@@ -24,6 +24,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Worktable menu:** Worktables on Worktable Cloud and on your other devices show their own color and logo, and a Worktable renamed on another device shows its new name.
 - **Comments:** On a phone, a second tap on Send while the comment box closes no longer sends the comment again.
 
 ## [0.1.39] - 2026-11-03

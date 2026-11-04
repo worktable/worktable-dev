@@ -28,6 +28,9 @@ import {
 } from "./workspace-storage-v2.ts"
 import { FOLDER_OPERATION_MAX_ENTRIES } from "./folder-operation-limit.ts"
 import { requireWorkspaceRecovery } from "./workspace-safety.ts"
+import { logError } from "./debug-log.ts"
+import { noteDeletedItems } from "./deleted-item-events.ts"
+import { eraseVisitorCommentsOrRecord } from "./pending-comment-erase.ts"
 
 const JOB_ID_PATTERN = /^dsv2_[A-Za-z0-9_-]{22}$/
 const JOB_MAX_BYTES = 1024 * 1024
@@ -453,6 +456,19 @@ async function applyJob(job: DocumentDataLifecycleV2Job): Promise<void> {
       )
     )
   }
+  // The deleted documents' visitor comments go with them. An erase that
+  // cannot run now is recorded, and every deleted-items pass retries it.
+  try {
+    await eraseVisitorCommentsOrRecord(
+      job.documents.map((document) => document.documentId)
+    )
+  } catch (error) {
+    console.warn(
+      "[document-data-lifecycle] could not record a visitor comment erase:",
+      logError(error)
+    )
+  }
+  noteDeletedItems()
 }
 
 async function runWithJob<T>(

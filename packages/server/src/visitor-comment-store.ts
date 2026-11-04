@@ -772,6 +772,35 @@ export function sweepVisitorComments(
   if (writes) notifyStoreChange()
   return changed
 }
+/**
+ * Erase every visitor comment and reply on deleted documents. False while a
+ * replacement holds comment writes, so the caller retries; true otherwise.
+ */
+export function eraseVisitorCommentsForDocuments(
+  documentIds: readonly string[]
+): boolean {
+  if (documentIds.length === 0) return true
+  if (writesHeld) return false
+  if (!database()) return true
+  const db = database(true)!
+  const ids = JSON.stringify(documentIds)
+  let writes = 0
+  db.transaction(() => {
+    writes += db
+      .query(
+        "DELETE FROM visitor_replies WHERE comment_id IN (SELECT id FROM visitor_comments WHERE document_id IN (SELECT value FROM json_each(?)))"
+      )
+      .run(ids).changes
+    writes += db
+      .query(
+        "DELETE FROM visitor_comments WHERE document_id IN (SELECT value FROM json_each(?))"
+      )
+      .run(ids).changes
+  }).immediate()
+  if (writes) notifyStoreChange()
+  return true
+}
+
 export function closeVisitorCommentStores(): void {
   for (const entry of stores.values()) {
     entry.reader?.close()

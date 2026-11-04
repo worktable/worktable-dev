@@ -29,13 +29,13 @@ const text = (contents: Uint8Array | string | undefined) =>
 describe("plugin repository tree", () => {
   test("carries every plugin file, including new ones, and a matching Gemini manifest", async () => {
     const source = await sourceCopy()
-    await mkdir(join(source, ".cursor-plugin"))
-    await writeFile(join(source, ".cursor-plugin/plugin.json"), "{}\n")
+    await mkdir(join(source, ".example-host-plugin"))
+    await writeFile(join(source, ".example-host-plugin/plugin.json"), "{}\n")
 
     const tree = await buildPluginRepositoryTree({ sourceDirectory: source })
     const paths = [...tree.files.keys()]
 
-    expect(paths).toContain(".cursor-plugin/plugin.json")
+    expect(paths).toContain(".example-host-plugin/plugin.json")
     expect(paths).toContain(
       "skills/worktable-find-and-synthesize-context/SKILL.md"
     )
@@ -57,9 +57,9 @@ describe("plugin repository tree", () => {
 
   test("refuses credential-shaped content in any carried file", async () => {
     const source = await sourceCopy()
-    await mkdir(join(source, ".cursor-plugin"))
+    await mkdir(join(source, ".example-host-plugin"))
     await writeFile(
-      join(source, ".cursor-plugin/plugin.json"),
+      join(source, ".example-host-plugin/plugin.json"),
       "ANTHROPIC_API_KEY=sk-ant-api03-examplecredentialvalue\n"
     )
 

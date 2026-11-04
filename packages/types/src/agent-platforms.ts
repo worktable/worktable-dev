@@ -156,52 +156,24 @@ export function platformForClient(
 /**
  * Apps that sign in with a client metadata document on their maker's domain.
  * The authorization server fetches that document and signs its URL as the
- * client id, so these ids say which app it is; names can say anything.
+ * client id, so these ids say which app it is; names can say anything. Each
+ * prefix ends in a path, so a lookalike host or plain http never matches.
  * The desktop app's MCP servers sign in through Codex, as Codex CLI does.
  */
-const CLIENT_METADATA: readonly {
-  origin: string
-  path: string
-  platform: AgentPlatformId
-}[] = [
-  {
-    origin: "https://chatgpt.com",
-    path: "/oauth/codex/",
-    platform: "chatgpt-desktop",
-  },
-  { origin: "https://chatgpt.com", path: "/oauth/", platform: "chatgpt" },
-  {
-    origin: "https://claude.ai",
-    path: "/oauth/claude-code-client-metadata",
-    platform: "claude-code",
-  },
-  {
-    origin: "https://claude.ai",
-    path: "/oauth/mcp-oauth-client-metadata",
-    platform: "claude",
-  },
-  {
-    origin: "https://nousresearch.github.io",
-    path: "/hermes-agent/",
-    platform: "hermes",
-  },
+const CLIENT_METADATA: readonly [string, AgentPlatformId][] = [
+  ["https://chatgpt.com/oauth/codex/", "chatgpt-desktop"],
+  ["https://chatgpt.com/oauth/", "chatgpt"],
+  ["https://claude.ai/oauth/claude-code-client-metadata", "claude-code"],
+  ["https://claude.ai/oauth/mcp-oauth-client-metadata", "claude"],
+  ["https://nousresearch.github.io/hermes-agent/", "hermes"],
 ]
 
 function platformForClientMetadata(
   clientId: string | null | undefined
 ): AgentPlatformId | null {
-  if (!clientId?.startsWith("https://")) return null
-  let url: URL
-  try {
-    url = new URL(clientId)
-  } catch {
-    return null
-  }
   return (
-    CLIENT_METADATA.find(
-      (entry) =>
-        url.origin === entry.origin && url.pathname.startsWith(entry.path)
-    )?.platform ?? null
+    CLIENT_METADATA.find(([prefix]) => clientId?.startsWith(prefix))?.[1] ??
+    null
   )
 }
 

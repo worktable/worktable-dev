@@ -47,6 +47,7 @@ import { tokensRouter } from "./routes/tokens.ts"
 import { commentAccess, TeamAccessError } from "./team-policy.ts"
 import { annotationsRouter } from "./routes/annotations.ts"
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test"
+import { setStartHere } from "./space-start-here.ts"
 import {
   mkdtemp,
   rm,
@@ -204,6 +205,26 @@ async function setup() {
 }
 
 describe("team foundation", () => {
+  test("Space pins are changed by people who manage the Space, never by agents", async () => {
+    const { owner, member } = await setup()
+    expect((await writeDoc("original", "brief", "# Brief")).ok).toBe(true)
+    // Every member can edit a shared Space, but only its managers keep the pins.
+    await expect(
+      runWithTeamIdentity(member, () => setStartHere("original", [{ path: "brief" }]))
+    ).rejects.toThrow(TeamAccessError)
+    const agent: TokenIdentity = {
+      ...owner,
+      agent: "codex",
+      principal: { id: "agent:codex", type: "agent", displayName: "Codex" },
+    }
+    await expect(
+      runWithTeamIdentity(agent, () => setStartHere("original", [{ path: "brief" }]))
+    ).rejects.toThrow("Pins are kept by people")
+    expect(
+      await runWithTeamIdentity(owner, () => setStartHere("original", [{ path: "brief" }]))
+    ).toMatchObject([{ path: "brief", status: "active" }])
+  })
+
   test("thread recipients require current Space access and reply capability; Pending replies belong to their author", async () => {
     const { owner, member } = await setup()
     const bob = (await resolveParticipant(member)).participant

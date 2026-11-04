@@ -7,6 +7,10 @@
 // aliases at read time, so renames and moves keep them pointing at the same
 // document. A pin whose target was archived or deleted is reported as such;
 // nothing substitutes another document.
+//
+// Pins are a Space's front page, so people keep them. An agent suggests a pin
+// to a person in a thread instead, and on a team only people who manage the
+// Space change them.
 
 import { recordActivity } from "./activity-log.ts"
 import {
@@ -22,6 +26,12 @@ import {
   listDocumentsWithAliases,
 } from "./document-query.ts"
 import { mutateSpace, readSpace, sanitizeDocPath } from "./store.ts"
+import {
+  canAccessSpace,
+  currentRequestIdentity,
+  TeamAccessError,
+} from "./team-policy.ts"
+import type { TokenIdentity } from "./token-store.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 
 export class StartHereError extends Error {
@@ -81,6 +91,26 @@ export async function resolveStartHere(
   return resolved
 }
 
+/** What an agent hears when it tries to change a Space's pins. */
+export function agentPinsRefusal(): TeamAccessError {
+  return new TeamAccessError(
+    "Pins are kept by people. Suggest the pin to a person in a thread instead.",
+    "PINS_PEOPLE_ONLY"
+  )
+}
+
+/** Refuses agents, and on a team anyone who doesn't manage the Space. */
+export function assertCanChangePins(
+  spaceId: string,
+  identity: TokenIdentity | undefined = currentRequestIdentity()
+): void {
+  if (!identity) return
+  if (identity.principal.type === "agent") throw agentPinsRefusal()
+  if (identity.principal.type === "human" && !canAccessSpace(spaceId, "manage", identity)) {
+    throw new TeamAccessError()
+  }
+}
+
 /**
  * Replace a Space's pins. A new pin must name an active document; pins that
  * were already there may stay even if their document was since archived or
@@ -90,6 +120,7 @@ export async function setStartHere(
   spaceId: string,
   pins: readonly StartHerePin[]
 ): Promise<ResolvedStartHerePin[]> {
+  assertCanChangePins(spaceId)
   const space = (await readSpace(spaceId)).data
   if (!space) {
     throw new StartHereError(`Space not found: ${spaceId}`, "not-found")

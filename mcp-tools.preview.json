@@ -1387,7 +1387,7 @@
   {
     "name": "worktable_spaces_write",
     "title": "Write a Worktable Space",
-    "description": "Create a Space, or with spaceId update its name, description, icon, group or pinned docs, or archive or restore it. Pin only the one or two docs to read first; Space Home already lists every doc. Setting pins also requires documents:write.",
+    "description": "Create a Space, or with spaceId update its name, description, icon or group, or archive or restore it. Pins are kept by people: to suggest one, tell the person in a thread.",
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -451,6 +451,7 @@ describe("released tool surface", () => {
       worktable_files_read: [],
       worktable_files_write: [],
       worktable_html_write: ["expectedRevision"],
+      worktable_spaces_write: [],
     }
     expect(preview.filter((tool) => !(tool.name in held))).toEqual(
       released.filter((tool) => !(tool.name in held))
@@ -462,6 +463,11 @@ describe("released tool surface", () => {
         )
       expect(inputs(preview)).toEqual([...inputs(released), ...added])
     }
+    // Pins are kept by people, so the preview's Space tool no longer offers them.
+    const spaces = (tools: typeof released) =>
+      tools.find((tool) => tool.name === "worktable_spaces_write")?.description ?? ""
+    expect(spaces(preview)).toContain("Pins are kept by people")
+    expect(spaces(preview)).not.toContain("pinned docs")
     // A file read says why a file keeps no history, which schema-driven
     // clients find only in the preview's output schema for now.
     const outputs = (tools: typeof released) =>

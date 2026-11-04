@@ -29,21 +29,25 @@ import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts"
 import { analyzeDocumentPath } from "./document-path.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
 import {
+  documentGenerationSourceEntryPathV2,
   listDocumentGenerationsV2,
   readDocumentGenerationV2,
 } from "./document-version-store-v2.ts"
+import type { ServedFile } from "./file-response.ts"
+import {
+  contentHashFromHex,
+  currentFileRevision,
+  FileRevisionError,
+  sha256Check,
+} from "./file-revision.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 
 /** Copies one restore makes at most, and their bytes together. */
 const RESTORE_COPIES_MAX = 50
 const RESTORE_COPY_BYTES_MAX = 256 * 1024 * 1024
 
-/** The bytes a file had at `at` (epoch ms), or null when none were kept. */
-export async function readFileAsOf(
-  spaceId: string,
-  path: string,
-  at: number
-): Promise<{ bytes: Uint8Array; fileName: string } | null> {
+/** The version that holds what a file had at `at` (epoch ms), if one was kept. */
+async function fileVersionAsOf(spaceId: string, path: string, at: number) {
   const catalog = await readDocumentCatalogSnapshot(spaceId)
   // Paths compare as the current file read compares them, so a link that
   // differs from the file's name only in case finds it here too.
@@ -87,17 +91,59 @@ export async function readFileAsOf(
     .filter((generation) => savedAt(generation) <= at)
     .sort((a, b) => savedAt(b) - savedAt(a))[0]
   if (!then) return null
-  const read = await readDocumentGenerationV2({
+  return {
     workspaceRoot,
+    manifest: then,
+    fileName: entry.descriptor.path.split("/").at(-1) ?? entry.descriptor.path,
+  }
+}
+
+/** The bytes a file had at `at` (epoch ms), or null when none were kept. */
+export async function readFileAsOf(
+  spaceId: string,
+  path: string,
+  at: number
+): Promise<{ bytes: Uint8Array; fileName: string } | null> {
+  const then = await fileVersionAsOf(spaceId, path, at)
+  if (!then) return null
+  const read = await readDocumentGenerationV2({
+    workspaceRoot: then.workspaceRoot,
     spaceId,
-    documentId: entry.descriptor.documentId,
-    generationId: then.id,
+    documentId: then.manifest.documentId,
+    generationId: then.manifest.id,
   })
   const bytes = read?.authoredSource.entries[0]?.bytes
   if (!bytes) return null
+  return { bytes, fileName: then.fileName }
+}
+
+/**
+ * What a file had at `at`, to serve: its hash from its version's manifest,
+ * and where its version's copy is. Null when none were kept.
+ */
+export async function fileAsOf(
+  spaceId: string,
+  path: string,
+  at: number
+): Promise<ServedFile | null> {
+  const then = await fileVersionAsOf(spaceId, path, at)
+  const entryPath = then?.manifest.authoredSource.entries[0]?.path
+  if (!then || entryPath === undefined) return null
+  const entry = await documentGenerationSourceEntryPathV2({
+    workspaceRoot: then.workspaceRoot,
+    manifest: then.manifest,
+    entryPath,
+  })
+  if (!entry) return null
+  const kept = await currentFileRevision(entry.path)
+  if (kept.size !== entry.bytes) {
+    throw new FileRevisionError("changed", "a kept version doesn't match its manifest")
+  }
   return {
-    bytes,
-    fileName: entry.descriptor.path.split("/").at(-1) ?? entry.descriptor.path,
+    fileName: then.fileName,
+    pinned: { path: entry.path, ...kept },
+    contentHash: contentHashFromHex(entry.sha256),
+    verify: () => sha256Check(entry.sha256),
   }
 }
 

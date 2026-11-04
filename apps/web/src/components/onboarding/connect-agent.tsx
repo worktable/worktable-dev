@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Check, Loader2 } from "lucide-react"
 import {
   AGENT_PLATFORMS,
+  agentConnectionOnCodexHost,
   DEFAULT_AGENT_ACCESS,
+  platformForClient,
   type AgentConnection,
   type AgentPlatformId,
   type ConnectorInstallableMcpClientId,
@@ -76,7 +78,7 @@ const ON_DEMAND: Row[] = [
     ...AGENT_SETUP_CATEGORIES.code,
     options: [
       { kind: "cli", tab: "Claude Code", client: "claude-code" },
-      { kind: "cli", tab: "Codex", client: "codex" },
+      { kind: "cli", tab: "Codex CLI", client: "codex" },
       { kind: "cli", tab: "Cursor", client: "cursor" },
       { kind: "cli", tab: "Other", client: null },
     ],
@@ -417,7 +419,9 @@ function TokenPanel({
     queryFn: () => getAppAgent(label!),
     enabled: Boolean(label),
   })
-  const name = existing.data?.connection?.displayName ?? agentName(option)
+  const name =
+    existing.data?.connection?.displayName ??
+    (label ? AGENT_PLATFORMS[platformForClient(label)].name : agentName(option))
   const mint = useMutation({
     mutationFn: async () => {
       if (label) {
@@ -539,7 +543,10 @@ function signedInHere(option: Option, connection: AgentConnection): boolean {
   // A named tab waits for its own agent; Other takes any that signs in.
   const expected = platformOf(option)
   return (
-    expected === "other" || agentConnectionPlatform(connection) === expected
+    expected === "other" ||
+    agentConnectionPlatform(connection) === expected ||
+    // Codex CLI signs in as the Codex client, which ChatGPT Desktop shares.
+    (expected === "codex" && agentConnectionOnCodexHost(connection))
   )
 }
 

@@ -3,13 +3,15 @@
 // ============================================================
 //
 // One state per connected agent, from what already knows it: a chat's live
-// subscription (mcp-events.ts), a session waiting right now (pending-wait.ts),
+// subscription (mcp-events.ts), a session waiting right now (pending-wait.ts,
+// Claude Code, Codex CLI, and ChatGPT Desktop),
 // or an agent Worktable calls (OpenClaw, Hermes), or a cloud task Worktable
 // fires for Claude (cloud-task-runtime.ts). A Grok Bot's comes from its own
 // status, which the list already carries. Agents with none of these see
 // what's waiting the next time someone uses them.
 
 import {
+  agentConnectionOnCodexHost,
   agentConnectionPlatform,
   type AgentConnection,
   type AutoReply,
@@ -70,7 +72,6 @@ function autoReplyFor(
     tasks: Map<string, CloudTask> | null
   }
 ): AutoReply | undefined {
-  // Cloud sign-ins record no platform; their name says which app they are.
   const platform = agentConnectionPlatform(connection)
   if (platform === "grok-bot") return undefined
   if (CALLED.has(platform)) return { kind: "called", state: "on" }
@@ -90,9 +91,12 @@ function autoReplyFor(
   if (platform === "claude" && known.tasks)
     return taskAutoReply(id ? known.tasks.get(id) : undefined)
   if (!known.modern) return undefined
+  // Codex CLI and ChatGPT Desktop can't subscribe to events, but a running
+  // chat can wait, as Claude Code's session does.
+  if (platform === "claude-code" || agentConnectionOnCodexHost(connection))
+    return { kind: "session", state: "off" }
   if (platform === "chatgpt")
     return known.watching ? { kind: "chat", state: "off" } : undefined
-  if (platform === "claude-code") return { kind: "session", state: "off" }
   return undefined
 }
 

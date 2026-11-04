@@ -58,8 +58,8 @@ function PendingRow({
           : item.kind === "visitorComments"
             ? `${item.count} visitor comment${item.count === 1 ? "" : "s"} on ${item.docTitle ?? item.docPath}`
             : item.kind === "commentRequest"
-              ? `${nameOf(item.from)} sent ${item.agent ? item.agent.name : "you"} a comment on ${item.docTitle ?? item.docPath}`
-              : `Reply to your comment on ${item.docTitle ?? item.docPath}`
+              ? `${nameOf(item.from)} sent you a comment on ${item.docTitle ?? item.docPath}`
+              : ""
   const children = (
     <>
       <Icon
@@ -99,7 +99,7 @@ function PendingRow({
       to="/spaces/$spaceId/documents/$"
       params={{ spaceId: item.spaceId, _splat: item.docPath }}
       hash={
-        item.kind === "commentReply" || item.kind === "commentRequest"
+        item.kind === "commentRequest"
           ? undefined
           : "visitors"
       }

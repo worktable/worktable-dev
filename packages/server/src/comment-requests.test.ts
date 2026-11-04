@@ -334,6 +334,25 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
       expect(items[0]).not.toHaveProperty("agent")
     })
 
+    it("leaves a comment between two of a person's agents out of that person's Pending", async () => {
+      const atlas: TokenIdentity = {
+        ...finn,
+        agent: "codex@work",
+        principal: { ...finn.principal, id: "token:atlas", displayName: "Atlas" },
+      }
+      await resolveParticipant(atlas, { name: "Atlas" })
+      caller = atlas
+      const sent = await post("", {
+        target: { type: "doc", docPath: "explorer" },
+        category: "comment",
+        body: "Can you check the Team price?",
+        to: [(await resolveParticipant(finn)).participant.id],
+      })
+      expect(sent.status).toBe(200)
+      expect(await pendingFor((await resolveParticipant(finn)).participant.id)).toHaveLength(1)
+      expect(await listPending(ownerIdentity())).toEqual({ items: [], total: 0 })
+    })
+
     it("lets the agent count, read and open what waits on it, and tells the commenter how far it got", async () => {
       await pendingList()
       const sent = await post("", {

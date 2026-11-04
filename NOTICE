@@ -6,8 +6,8 @@ Public License, version 3 only (AGPL-3.0-only). See LICENSE. Permission to use a
 later version of that license is not granted by this project notice.
 
 Files and packages with separate license notices retain those licenses. The
-MIT scopes include the exact files named in packages/ui/LICENSE,
-packages/hosted-contract, packages/config-typescript,
+MIT scopes include the exact files named in packages/ui/LICENSE and
+packages/types/LICENSE, packages/hosted-contract, packages/config-typescript,
 packages/public-analytics, and the separately licensed agent plugins.
 This is not an MIT license for the entire UI or application.
 

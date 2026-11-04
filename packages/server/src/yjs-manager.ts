@@ -15,6 +15,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getAppDir } from "./app-storage.ts";
 import { workspaceCacheKey } from "./workspace.ts";
+import { noteStorageChange } from "./storage-usage.ts";
 import {
   readDoc,
   writeDoc,
@@ -322,10 +323,12 @@ async function writeFileAtomic(path: string, data: Uint8Array): Promise<void> {
   const tmpPath = `${path}.tmp-${process.pid}-${Date.now()}`;
   await writeFile(tmpPath, data);
   await rename(tmpPath, path);
+  noteStorageChange(path);
 }
 
 async function removeFileIfExists(path: string): Promise<void> {
   await rm(path, { force: true });
+  noteStorageChange(path);
 }
 
 function isYjsStateHeader(value: unknown): value is YjsStateHeader {
@@ -2021,6 +2024,7 @@ export class YjsDocManager {
     const cacheResults = await Promise.allSettled(
       [...cachePaths].map((path) => rm(path, { force: true }))
     )
+    for (const path of cachePaths) noteStorageChange(path)
     const cacheErrors = cacheResults.flatMap((result) =>
       result.status === "rejected" ? [result.reason] : []
     )
@@ -2082,6 +2086,8 @@ export class YjsDocManager {
         logError(error)
       );
     } finally {
+      noteStorageChange(oldStatePath);
+      noteStorageChange(newStatePath);
       if (oldLiveDoc) {
         this.schedulePersist(docKey(spaceId, newPath), spaceId, newPath);
       }

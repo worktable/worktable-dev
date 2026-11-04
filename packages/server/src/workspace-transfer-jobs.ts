@@ -44,6 +44,7 @@ import {
   type WorkspaceExportV2Manifest,
 } from "./workspace-transfer-v2.ts"
 import { logError } from "./debug-log.ts"
+import { noteStorageChange } from "./storage-usage.ts"
 
 // Cloudflare's smallest documented request-body ceiling is 100 MB and a Worker
 // isolate has 128 MB of memory. Eight MiB leaves ample room for auth/proxy work,
@@ -208,6 +209,8 @@ async function writeJob(job: WorkspaceTransferJob): Promise<void> {
   })
   await rename(temporary, jobPath(job.id))
   await chmod(jobPath(job.id), 0o600)
+  // Every step of a job writes it, so its package's size is noted with it.
+  noteStorageChange(directory)
 }
 
 class ForeignWorkspaceTransferError extends Error {
@@ -320,6 +323,7 @@ async function removeExpiredJob(
     }
   }
   await rm(jobDirectory(job.id), { recursive: true, force: true })
+  noteStorageChange(jobDirectory(job.id))
 }
 
 export async function cleanupExpiredWorkspaceTransfers(): Promise<void> {
@@ -344,6 +348,7 @@ export async function cleanupExpiredWorkspaceTransfers(): Promise<void> {
           recursive: true,
           force: true,
         })
+        noteStorageChange(join(transfersRoot(), entry.name))
       }
       continue
     }

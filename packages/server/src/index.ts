@@ -37,6 +37,7 @@ import { startAutoReplyNotices } from "./auto-reply.ts"
 import { pendingList, savePendingList } from "./pending-list.ts"
 import { grokBotRouter } from "./routes/grok-bot.ts"
 import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts"
+import { startStorageAccounting } from "./storage-usage.ts"
 import {
   markBootMilestone,
   startBootPhase,
@@ -2357,6 +2358,17 @@ export function startServer(
   // Index what waits on each person and agent before anyone asks.
   if (!workspaceRejected) timeBootTask("pending list build", pendingList());
   const stopBackupNotifier = startWorkspaceBackupNotifier();
+  // What this Worktable takes on disk: counted in the background shortly
+  // after start, then kept current from notes and a slow recount. Settings
+  // read before the first count show it loading; the event tells open pages
+  // to read them again. WORKTABLE_SKIP_STORAGE_ACCOUNTING=1 exists for the
+  // test runner.
+  const stopStorageAccounting =
+    workspaceRejected || process.env["WORKTABLE_SKIP_STORAGE_ACCOUNTING"] === "1"
+      ? () => Promise.resolve()
+      : startStorageAccounting({
+          onFirstCount: () => wsManager.broadcastAll({ type: "storage_counted" }),
+        });
   if (options.resumeWorkspaceRequests !== false) {
     resumeWorkspaceRequestAdmission();
   }
@@ -2487,6 +2499,7 @@ export function startServer(
         await settle(() => mcpEventsStopping);
         await settle(() => cloudTasksStopping);
         await settle(stopBackupNotifier);
+        await settle(stopStorageAccounting);
         await settle(() => credentialCheck ?? Promise.resolve());
         credentialSockets.clear();
         await settle(async () => {

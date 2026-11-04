@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query"
-import { getSettings } from "@/lib/system-api"
+import { useQuery, type QueryClient } from "@tanstack/react-query"
+import { refreshLive } from "@/lib/live-refresh"
+import { getSettings, type ServerSettings } from "@/lib/system-api"
 
 // Single source for the server-settings query — shared by the Settings sections
 // and the editor (spellcheck). One key so an optimistic patch and the editor
@@ -14,4 +15,14 @@ export function useServerSettings() {
     // an editor) doesn't refetch on every navigation.
     staleTime: 5 * 60_000,
   })
+}
+
+/**
+ * The server finished its first storage count. Settings read before it show
+ * storage as still counting; read them again, once, so Storage fills in.
+ */
+export function noteStorageCounted(queryClient: QueryClient): void {
+  const settings = queryClient.getQueryData<ServerSettings>(SETTINGS_QUERY_KEY)
+  if (settings?.storage !== null) return
+  refreshLive(queryClient, [{ queryKey: SETTINGS_QUERY_KEY, exact: true }])
 }

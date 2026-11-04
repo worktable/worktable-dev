@@ -16,6 +16,10 @@ import { queryKeys } from "./queries"
 import { recentQueryKeys } from "./lifetime"
 import { firstHeadingText, registerLiveDocument } from "./live-documents"
 import {
+  noteStorageCounted,
+  SETTINGS_QUERY_KEY,
+} from "../hooks/use-server-settings"
+import {
   applySpaceEvent,
   applyThreadEvent,
   applyThreadActivityToQueries,
@@ -563,6 +567,24 @@ describe("Space events in the query cache", () => {
     await settle(queryClient)
     expect(docs.reads).toBe(2)
     docs.unsubscribe()
+  })
+
+  it("reads settings again once the first storage count is ready, only if they were read before it", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const counted = { storage: { total: { bytes: 1, files: 1 } } }
+    const settings = watched(queryClient, SETTINGS_QUERY_KEY, { storage: null }, () =>
+      Promise.resolve(counted)
+    )
+    noteStorageCounted(queryClient)
+    await settle(queryClient)
+    expect(settings.reads).toBe(1)
+    expect(queryClient.getQueryData(SETTINGS_QUERY_KEY)).toEqual(counted)
+
+    // Another socket's copy of the event, or one after the count: no read.
+    noteStorageCounted(queryClient)
+    await settle(queryClient)
+    expect(settings.reads).toBe(1)
+    settings.unsubscribe()
   })
 
   it("revalidates only the reconnected Space's lists on screen", async () => {

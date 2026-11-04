@@ -42,6 +42,7 @@ import {
   withVersionKeyLock,
 } from "./version-store.ts";
 import { logDocument, logError } from "./debug-log.ts";
+import { noteStorageChange } from "./storage-usage.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -296,6 +297,7 @@ async function deleteVersionFileSafely(
   }
 
   await rm(resolved, { force: true });
+  noteStorageChange(resolved);
   return { deleted: true, bytesFreed: size };
 }
 

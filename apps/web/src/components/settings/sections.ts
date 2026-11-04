@@ -148,7 +148,7 @@ const REMOTE: SettingsSection = {
   preload: CloudSection.preload,
 }
 
-// The page names its parts (History, Backups, Import & Export).
+// The page names its parts (Storage, History, Backups, Import & Export).
 const DATA: SettingsSection = {
   id: "data",
   group: "Worktable",

@@ -21,6 +21,7 @@ import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { type DocSourceCategory, versionIdTimestamp } from "@worktable/types"
 import { getVersionsDir } from "./workspace.ts"
+import { noteStorageChange } from "./storage-usage.ts"
 import { assertWorkspaceAvailable } from "./workspace-safety.ts"
 
 export { versionIdTimestamp }
@@ -181,6 +182,8 @@ export async function retireVersionHistoryLocked(
   const retired = retiredVersionGenerationDir(spaceId, kind, key, generationId)
   await mkdir(dirname(retired), { recursive: true })
   await rename(active, retired)
+  noteStorageChange(active)
+  noteStorageChange(retired)
   return retired
 }
 
@@ -389,6 +392,7 @@ async function atomicWriteJson(filePath: string, data: unknown): Promise<void> {
   const tmpPath = `${filePath}.tmp`
   await writeFile(tmpPath, JSON.stringify(data, null, 2), "utf8")
   await rename(tmpPath, filePath)
+  noteStorageChange(filePath)
 }
 
 export async function readVersionSnapshot<S extends VersionSnapshotBase>(
@@ -513,5 +517,6 @@ export async function pruneNonCheckpointVersions(
   for (const entry of excess) {
     await rm(versionFilePath(spaceId, kind, key, entry.id), { force: true })
   }
+  if (excess.length > 0) noteStorageChange(versionKeyDir(spaceId, kind, key))
   return excess.length
 }

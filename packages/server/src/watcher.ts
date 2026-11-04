@@ -11,6 +11,7 @@ import {
   PREPARED_SPACE_MARKER,
 } from "./store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
+import { noteStorageChange } from "./storage-usage.ts"
 import {
   notifyWorkspaceChange,
   onWorkspaceChange,
@@ -424,6 +425,7 @@ export class WorkspaceWatcher {
       const changedSpace = documentSpaceForPath(spacesBase, fullPath)
       if (changedSpace) noteSpaceChanged(changedSpace)
       else noteWorkspaceActivity()
+      noteStorageChange(fullPath)
       const rawSuppressed = notePathEventIfSuppressed(fullPath)
       const key = rootThreadParent
         ? "thread-root-parent"

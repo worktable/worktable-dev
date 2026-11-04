@@ -24,7 +24,23 @@ import {
 import { canManageUserSettings, canOperateHost } from "../auth.ts"
 import { memberAccess, spaceAccessKey } from "../team-access.ts"
 import { hasScope } from "../token-store.ts"
-import { isRecognitionColor } from "@worktable/types"
+import {
+  isIconName,
+  isImageHash,
+  isRecognitionColor,
+  worktableLogo,
+} from "@worktable/types"
+import {
+  acceptIdentityImage,
+  identityImageResponse,
+  IdentityImageError,
+  readImageBody,
+} from "../identity-images.ts"
+import {
+  readWorkspaceLogoFile,
+  removeWorkspaceLogoFiles,
+  writeWorkspaceLogoFile,
+} from "../workspace-logo.ts"
 import { canReadSpaceFor, personalPreferencesKey, personSummary } from "../personal-identity.ts"
 import { readPersonalNavigation } from "../personal-navigation-store.ts"
 import { cachedParticipantPresentations } from "../thread-service.ts"
@@ -71,6 +87,7 @@ function publicView(m: WorkspaceManifest, opts: { includeRoot: boolean }) {
     id: m.id,
     name: m.name,
     color: isRecognitionColor(m.color) ? m.color : null,
+    logo: worktableLogo(m.logo),
     createdAt: m.createdAt,
     storageVersion: m.version,
     mode: workspaceProvenanceMode(m),
@@ -836,6 +853,7 @@ workspaceRouter.put("/", async (c) => {
   const body = (await c.req.json().catch(() => null)) as {
     name?: unknown
     color?: unknown
+    logo?: unknown
     onboarding?: unknown
   } | null
   if (!body || typeof body !== "object") {
@@ -847,7 +865,7 @@ workspaceRouter.put("/", async (c) => {
 
 async function applyWorkspacePatch(
   c: Context,
-  body: { name?: unknown; color?: unknown; onboarding?: unknown }
+  body: { name?: unknown; color?: unknown; logo?: unknown; onboarding?: unknown }
 ): Promise<Response> {
   const current = ensureWorkspaceManifest()
   const next: WorkspaceManifest = { ...current }
@@ -875,6 +893,25 @@ async function applyWorkspacePatch(
     else return c.json({ error: "color must be a recognition color" }, 400)
   }
 
+  // An image is uploaded on its own route; here a logo becomes an icon or
+  // goes back to the Worktable's initial.
+  let removeLogoImage = false
+  if (body.logo !== undefined) {
+    if (body.logo === null) {
+      delete next.logo
+      removeLogoImage = true
+    } else if (
+      typeof body.logo === "object" &&
+      (body.logo as { kind?: unknown }).kind === "icon" &&
+      isIconName((body.logo as { icon?: unknown }).icon)
+    ) {
+      next.logo = { kind: "icon", icon: (body.logo as { icon: string }).icon }
+      removeLogoImage = true
+    } else {
+      return c.json({ error: "logo must be an icon or null" }, 400)
+    }
+  }
+
   if (body.onboarding !== undefined) {
     if (
       !body.onboarding ||
@@ -892,7 +929,47 @@ async function applyWorkspacePatch(
   }
 
   writeWorkspaceManifest(next)
+  if (removeLogoImage) await removeWorkspaceLogoFiles(getWorkspaceRoot())
   // The whole summary, so a client replacing its copy keeps the person's
   // navigation and team context. The root stays owner and same-origin only.
   return c.json(await workspaceSummary(c))
 }
+
+/** Upload a logo image: the image's bytes, already cropped by the browser. */
+workspaceRouter.put("/logo", async (c) => {
+  if (!canManageUserSettings(c)) {
+    return c.json({ error: "Forbidden", required: "owner" }, 403)
+  }
+  let image
+  try {
+    image = acceptIdentityImage(await readImageBody(c))
+  } catch (error) {
+    if (error instanceof IdentityImageError) {
+      return c.json({ error: error.message }, 400)
+    }
+    throw error
+  }
+  return chainManifestWrite(async () => {
+    const root = getWorkspaceRoot()
+    await writeWorkspaceLogoFile(root, image)
+    writeWorkspaceManifest({
+      ...ensureWorkspaceManifest(),
+      logo: { kind: "image", hash: image.hash, type: image.type },
+    })
+    return c.json(await workspaceSummary(c))
+  })
+})
+
+/** The logo image. Its address names its content, so browsers keep it. */
+workspaceRouter.get("/logo/:hash", async (c) => {
+  const hash = c.req.param("hash")
+  if (!isImageHash(hash)) return c.json({ error: "Not found" }, 404)
+  const logo = await readWorkspaceLogoFile(
+    getWorkspaceRoot(),
+    ensureWorkspaceManifest(),
+    hash
+  )
+  return logo
+    ? identityImageResponse(logo.bytes, logo.type)
+    : c.json({ error: "Not found" }, 404)
+})

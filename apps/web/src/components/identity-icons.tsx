@@ -13,6 +13,7 @@ import {
   recognitionChip,
   recognitionSolid,
 } from "@/lib/recognition"
+import { personPhotoUrl } from "@/lib/identity-images"
 import { useWorkspace } from "@/lib/queries"
 
 // Recognition graphics share one small module already loaded by the sidebar.
@@ -106,26 +107,45 @@ function AgentLogo({
   )
 }
 
-/** A person's saved identity, shared by the profile, Threads, and activity. */
+/**
+ * A person's saved identity, shared by the profile, Threads, and activity:
+ * their photo, else their initial on their color.
+ */
 export function PersonAvatar({
   id,
   name,
+  photo,
   size = "sm",
   className,
 }: {
   id: string
   name: string
+  /** Their photo's hash, from the summary or Threads' presentations. */
+  photo?: string | null
   size?: "sm" | "md" | "lg"
   className?: string
 }) {
+  const [failed, setFailed] = useState<string | null>(null)
+  const shape = cn(
+    "flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
+    size === "md" && "size-8 text-sm",
+    size === "lg" && "size-9 text-sm",
+    className
+  )
+  if (photo && failed !== photo) {
+    return (
+      <img
+        src={personPhotoUrl(id, photo)}
+        alt={name}
+        draggable={false}
+        onError={() => setFailed(photo)}
+        className={cn(shape, "object-cover outline-1 -outline-offset-1 outline-border")}
+      />
+    )
+  }
   return (
     <span
-      className={cn(
-        "flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
-        size === "md" && "size-8 text-sm",
-        size === "lg" && "size-9 text-sm",
-        className
-      )}
+      className={shape}
       aria-label={name}
       style={recognitionSolid(recognitionColor(null, id))}
     >
@@ -167,6 +187,7 @@ export function ThreadParticipantAvatar({
       <PersonAvatar
         id={current?.id ?? participant.id}
         name={current?.name ?? participant.name}
+        photo={current?.photo}
         size="md"
         className={className}
       />

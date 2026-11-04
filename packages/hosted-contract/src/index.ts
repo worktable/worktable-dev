@@ -663,6 +663,8 @@ export const BrowserAssertionClaims = z.object({
   wt: z.object({
     credential: z.literal("browser"),
     worktableName: z.string().trim().min(1).max(4096).optional(),
+    /** The person's photo from their sign-in provider, when it has one. */
+    picture: z.string().url().max(2048).optional(),
     identity: z
       .object({
         issuer: z.string().url(),

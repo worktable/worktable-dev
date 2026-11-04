@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { existsSync } from "node:fs"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
@@ -115,5 +116,71 @@ describe("recognition colors", () => {
     expect(colors[0]).toBe("violet")
     expect(new Set(colors).size).toBe(4)
     expect(await assignMissingSpaceColors()).toBe(0)
+  })
+})
+
+const PNG = Uint8Array.from(
+  atob(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+  ),
+  (char) => char.charCodeAt(0)
+)
+
+function upload(path: string, body: BodyInit, type = "image/png") {
+  const app = new Hono()
+  app.use("/api/*", trustedLocalIdentity())
+  app.route("/api/workspace", workspaceRouter)
+  return app.fetch(
+    new Request(`http://localhost${path}`, {
+      method: "PUT",
+      headers: { "Content-Type": type },
+      body,
+    })
+  )
+}
+
+function get(path: string) {
+  const app = new Hono()
+  app.use("/api/*", trustedLocalIdentity())
+  app.route("/api/workspace", workspaceRouter)
+  return app.fetch(new Request(`http://localhost${path}`))
+}
+
+describe("Worktable logos", () => {
+  it("keep an uploaded image in the Worktable folder and serve it by its content", async () => {
+    const response = await upload("/api/workspace/logo", PNG)
+    expect(response.status).toBe(200)
+    const summary = (await response.json()) as { logo: { kind: string; hash: string } }
+    expect(summary.logo).toEqual({ kind: "image", hash: expect.stringMatching(/^[a-f0-9]{32}$/) })
+    expect(await readFile(join(root, "workspace", "worktable-logo.png"))).toEqual(Buffer.from(PNG))
+
+    const served = await get(`/api/workspace/logo/${summary.logo.hash}`)
+    expect(served.status).toBe(200)
+    expect(served.headers.get("Content-Type")).toBe("image/png")
+    expect(served.headers.get("Cache-Control")).toContain("immutable")
+    expect(served.headers.get("X-Content-Type-Options")).toBe("nosniff")
+    expect(new Uint8Array(await served.arrayBuffer())).toEqual(PNG)
+    // A replaced logo's old address no longer answers.
+    expect((await get(`/api/workspace/logo/${"0".repeat(32)}`)).status).toBe(404)
+  })
+
+  it("refuse anything that is not a small raster image", async () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+    expect((await upload("/api/workspace/logo", svg, "image/svg+xml")).status).toBe(400)
+    const huge = PNG.slice()
+    new DataView(huge.buffer).setUint32(16, 5000)
+    expect((await upload("/api/workspace/logo", huge)).status).toBe(400)
+    expect((await get("/api/workspace")).status).toBe(200)
+    expect(((await (await get("/api/workspace")).json()) as { logo: unknown }).logo).toBeNull()
+  })
+
+  it("become an icon or go back to the initial, removing the image", async () => {
+    await upload("/api/workspace/logo", PNG)
+    const icon = await request("/api/workspace", { logo: { kind: "icon", icon: "leaf" } })
+    expect(((await icon.json()) as { logo: unknown }).logo).toEqual({ kind: "icon", icon: "leaf" })
+    expect(existsSync(join(root, "workspace", "worktable-logo.png"))).toBe(false)
+    expect((await request("/api/workspace", { logo: { kind: "icon", icon: "../x" } })).status).toBe(400)
+    const cleared = await request("/api/workspace", { logo: null })
+    expect(((await cleared.json()) as { logo: unknown }).logo).toBeNull()
   })
 })

@@ -4,6 +4,9 @@ import { saveOpenDrawing } from "./drawing-drafts"
 /** A Worktable on this Mac, as the Worktable menu lists it. */
 export interface DesktopWorktable {
   id: string
+  /** Its chosen color and logo; older Desktop builds leave them out. */
+  color?: string
+  logo?: unknown
   name: string
   /** Whether Worktable Link is on for it. */
   linked: boolean
@@ -44,6 +47,10 @@ export async function desktopWorktables(): Promise<ThisMac | null> {
                   name: worktable.name,
                   linked: worktable.linked === true,
                   current: worktable.current === true,
+                  ...(typeof worktable.color === "string"
+                    ? { color: worktable.color }
+                    : {}),
+                  ...(worktable.logo ? { logo: worktable.logo } : {}),
                 },
               ]
             : []

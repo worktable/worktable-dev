@@ -1,6 +1,6 @@
 import { recognitionColor, type RecognitionColor } from "@worktable/types/recognition"
 import { RecognitionSwatches } from "@/components/recognition-swatches"
-import { useEffect, useState } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "@worktable/ui/components/sonner"
 import { Callout } from "@worktable/ui/components/callout"
@@ -14,6 +14,19 @@ import { getConnection, type ConnectionInfo } from "@/lib/system-api"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { useServerSettings } from "@/hooks/use-server-settings"
 import { useSettingsPatch } from "../use-settings-patch"
+import { EditMarkButton } from "@/components/edit-mark-button"
+import { WorktableTile } from "@/components/worktable-tile"
+import {
+  tileLogo,
+  uploadWorktableLogo,
+  worktableLogoUrl,
+} from "@/lib/identity-images"
+
+const IdentityImageDialog = lazy(() =>
+  import("@/components/identity-image-dialog").then((module) => ({
+    default: module.IdentityImageDialog,
+  }))
+)
 
 // The General section: workspace identity, agent-facing URL, the on-disk root,
 // and writing preferences. The nav rail names the section, so no heading.
@@ -103,16 +116,68 @@ function WorkspaceNameField({ workspace }: { workspace: WorkspaceInfo }) {
       >
         Name
       </label>
-      <Input
-        id="workspace-name"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur()
-        }}
-      />
+      <div className="flex items-center gap-3">
+        <WorkspaceLogoButton workspace={workspace} />
+        <Input
+          id="workspace-name"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur()
+          }}
+        />
+      </div>
     </div>
+  )
+}
+
+// ── Logo ─────────────────────────────────────────────────────────────────────
+
+function WorkspaceLogoButton({ workspace }: { workspace: WorkspaceInfo }) {
+  const queryClient = useQueryClient()
+  const [picking, setPicking] = useState(false)
+  const color = recognitionColor(workspace.color, workspace.id)
+  const logo = workspace.logo ?? null
+  const accept = (info: WorkspaceInfo) => {
+    queryClient.setQueryData(queryKeys.workspace, info)
+  }
+  const tile = (
+    <WorktableTile
+      name={workspace.name}
+      color={color}
+      logo={tileLogo(logo)}
+      className="size-9 text-sm"
+    />
+  )
+  // Only those who manage the Worktable can change it.
+  if (workspace.canManage === false) return tile
+  return (
+    <>
+      <EditMarkButton label="Change Logo" onClick={() => setPicking(true)}>
+        {tile}
+      </EditMarkButton>
+      {picking ? (
+        <Suspense fallback={null}>
+          <IdentityImageDialog
+            open
+            onClose={() => setPicking(false)}
+            kind="logo"
+            currentImage={logo?.kind === "image" ? worktableLogoUrl(logo.hash) : null}
+            currentIcon={logo?.kind === "icon" ? logo.icon : null}
+            color={color}
+            name={workspace.name}
+            onSaveImage={async (image) => accept(await uploadWorktableLogo(image))}
+            onSaveIcon={async (icon) =>
+              accept(await updateWorkspace({ logo: { kind: "icon", icon } }))
+            }
+            {...(logo
+              ? { onRemove: async () => accept(await updateWorkspace({ logo: null })) }
+              : {})}
+          />
+        </Suspense>
+      ) : null}
+    </>
   )
 }
 

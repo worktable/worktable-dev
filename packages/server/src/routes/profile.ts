@@ -2,6 +2,21 @@ import { getTeamAuth } from "../team-auth.ts";
 import { requireTeamDatabase, currentTeamWorktable } from "../team-database.ts";
 import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts";
 import { Hono } from "hono"
+import type { Context } from "hono"
+import { isImageHash } from "@worktable/types"
+import {
+  acceptIdentityImage,
+  identityImageResponse,
+  IdentityImageError,
+  readImageBody,
+} from "../identity-images.ts"
+import {
+  isParticipantId,
+  readParticipantPhoto,
+  removeParticipantPhoto,
+  setParticipantPhoto,
+} from "../participant-photos.ts"
+import { hasScope } from "../token-store.ts"
 import { z } from "zod"
 import {
   SELF_REPORTED_SETUP_ITEM_IDS,
@@ -69,6 +84,65 @@ profileRouter.put("/", async (c) => {
     name,
   })
   return c.json({ id: participant.id, name: participant.name })
+})
+
+/** The caller's participant, resolved the way GET / resolves it. */
+async function ownParticipant(c: Context) {
+  const identity = c.get("identity")
+  const { participant } = await resolveParticipant(
+    identity,
+    teamsEnabled() ? { initialName: identity.principal.displayName } : {}
+  )
+  return participant
+}
+
+function canChangeOwnProfile(c: Context): boolean {
+  if (teamsEnabled()) {
+    requireTeamHuman(c.get("identity"))
+    return true
+  }
+  return canManageUserSettings(c)
+}
+
+/** Set your photo: the image's bytes, already cropped by the browser. */
+profileRouter.put("/photo", async (c) => {
+  if (!canChangeOwnProfile(c)) return c.json(forbidden(), 403)
+  let image
+  try {
+    image = acceptIdentityImage(await readImageBody(c))
+  } catch (error) {
+    if (error instanceof IdentityImageError) {
+      return c.json({ error: error.message }, 400)
+    }
+    throw error
+  }
+  const participant = await ownParticipant(c)
+  await setParticipantPhoto(participant.id, image)
+  return c.json({ id: participant.id, photo: image.hash })
+})
+
+profileRouter.delete("/photo", async (c) => {
+  if (!canChangeOwnProfile(c)) return c.json(forbidden(), 403)
+  const participant = await ownParticipant(c)
+  await removeParticipantPhoto(participant.id, c.get("identity").picture)
+  return c.json({ id: participant.id, photo: null })
+})
+
+/** A person's photo, for anyone who sees people in Threads here. */
+profileRouter.get("/photos/:participantId/:hash", async (c) => {
+  const identity = c.get("identity")
+  if (!identity || !hasScope(identity.scopes, "threads:read")) {
+    return c.json({ error: "Forbidden" }, 403)
+  }
+  const participantId = c.req.param("participantId")
+  const hash = c.req.param("hash")
+  if (!isParticipantId(participantId) || !isImageHash(hash)) {
+    return c.json({ error: "Not found" }, 404)
+  }
+  const photo = await readParticipantPhoto(participantId, hash)
+  return photo
+    ? identityImageResponse(photo.bytes, photo.type)
+    : c.json({ error: "Not found" }, 404)
 })
 
 const SaveNavigationSchema = PersonalNavigationSchema.omit({

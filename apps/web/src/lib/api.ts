@@ -10,6 +10,7 @@ import type {
   WithContentRevision,
 } from "@worktable/types"
 import type { PersonalSetup } from "@worktable/types/setup"
+import type { WorktableLogo } from "@worktable/types/recognition"
 import { fetchJSON, fetchVoid, type ReadOptions } from "./http.ts"
 
 export type SpaceView = SpaceFile & {
@@ -64,11 +65,15 @@ export interface WorkspaceInfo {
     activityId?: string
     /** How they sign out here; null without a session, such as on this computer. */
     signOut: "team" | "cloud" | "password" | null
+    /** Their photo, named by its content. */
+    photo?: string
   } | null
   id: string
   name: string
   /** The chosen recognition color, or null for the default from `id`. */
   color?: string | null
+  /** The Worktable's own logo, or null for its initial. */
+  logo?: WorktableLogo | null
   createdAt: string
   /** Absent on older servers; generic document authoring requires V2. */
   storageVersion?: 1 | 2
@@ -115,6 +120,8 @@ export function updateWorkspace(patch: {
   name?: string
   /** A recognition color, or "" for the default. */
   color?: string
+  /** An icon logo, or null for the initial. Images upload on their own. */
+  logo?: { kind: "icon"; icon: string } | null
   onboarding?: { status: "complete" }
 }) {
   return fetchJSON<WorkspaceInfo>("/api/workspace", {

@@ -55,12 +55,16 @@ export interface BackupWorkerInput {
   keep?: string[]
   /**
    * Maintain, epoch ms: a snapshot in neither list whose restic time is
-   * earlier is an uncatalogued partial, and is forgotten.
+   * earlier is an uncatalogued partial, and is forgotten. At most
+   * `expiresAt` minus 24 hours.
    */
   orphanBefore?: number
-  /** Maintain: `restic check --read-data-subset`, as "5%" or "1/30". */
+  /** Maintain: `restic check --read-data-subset`: "5%", or "n/t" with t <= 256. */
   readDataSubset?: string
-  /** Maintain: the newest catalogued checkpoint, read back after the prune. */
+  /**
+   * Maintain: the newest catalogued checkpoint, read back after the prune.
+   * Required whenever anything would be forgotten.
+   */
   verify?: { snapshotId: string; sourceCheckpoint: string }
 }
 export interface VisitorCommentsCheckpoint {
@@ -104,7 +108,8 @@ export interface BackupWorkerMaintainResult {
   orphans: string[]
   /** Snapshots left after the prune. */
   remaining: number
-  checked: "full" | "subset"
+  /** "structure" reads no file data; "subset" also read `readDataSubset`. */
+  checked: "structure" | "subset"
   /** The snapshot whose manifest was read back, or null when none was asked. */
   verified: string | null
   completedAt: string

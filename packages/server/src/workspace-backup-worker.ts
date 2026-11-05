@@ -228,6 +228,14 @@ export function snapshotManifestResult(stdout: string): unknown {
 }
 
 /**
+ * How long a stopped command has to exit after SIGTERM before SIGKILL. Restic
+ * removes its repository lock on SIGTERM; a killed restic leaves the lock,
+ * which then blocks every exclusive operation until an operator removes it.
+ * Each job's deadline ends this long before it expires.
+ */
+const STOP_GRACE_MS = 15_000
+
+/**
  * Subprocess output is bounded. Stderr is discarded unless `stderrLimit` asks
  * for its first bytes. Restic stderr is never kept: paths and backend
  * credentials can appear in it.
@@ -251,7 +259,12 @@ export async function runBackupCommand(
     let count = 0
     let errorCount = 0
     let exceeded = false
-    const kill = () => child.kill("SIGKILL")
+    let forced: ReturnType<typeof setTimeout> | undefined
+    const kill = () => {
+      if (forced) return
+      child.kill("SIGTERM")
+      forced = setTimeout(() => child.kill("SIGKILL"), STOP_GRACE_MS)
+    }
     signal.addEventListener("abort", kill, { once: true })
     if (signal.aborted) kill()
     child.stdout.on("data", (chunk: Buffer) => {
@@ -268,10 +281,12 @@ export async function runBackupCommand(
       errors.push(kept)
     })
     child.on("error", (error) => {
+      clearTimeout(forced)
       signal.removeEventListener("abort", kill)
       reject(error)
     })
     child.on("close", (code) => {
+      clearTimeout(forced)
       signal.removeEventListener("abort", kill)
       if (signal.aborted || exceeded)
         reject(
@@ -453,7 +468,7 @@ function validateInput(input: BackupWorkerInput) {
     !input.repositoryPassword ||
     !input.repository ||
     !Number.isFinite(input.expiresAt) ||
-    input.expiresAt <= Date.now()
+    input.expiresAt <= Date.now() + STOP_GRACE_MS
   )
     throw new Error("invalid or expired backup job")
   if (input.repositoryId && !DIGEST.test(input.repositoryId))
@@ -468,24 +483,32 @@ function validateInput(input: BackupWorkerInput) {
   if (input.kind === "maintain") validateMaintainInput(input)
 }
 
-/** Each list of a maintenance job, at most. Their ids fit one command line. */
+/** Each list of a maintenance job, at most. */
 const MAINTAIN_LIST_LIMIT = 10_000
+/** Ids per `restic forget`, so orphans never overflow a command line. */
+const FORGET_BATCH = 5_000
+const DAY_MS = 86_400_000
 
-/** A `restic check --read-data-subset` value: "5%", "0.5%" or "1/30". */
+/**
+ * A `restic check --read-data-subset` value: "5%", "0.5%", or "n/t" with
+ * 1 <= n <= t <= 256, restic's limit.
+ */
 function isReadDataSubset(value: unknown): value is string {
   if (typeof value !== "string") return false
   if (/^(?:0|[1-9]\d{0,2})(?:\.\d{1,2})?%$/.test(value)) {
     const percent = Number(value.slice(0, -1))
     return percent > 0 && percent <= 100
   }
-  const part = /^([1-9]\d{0,3})\/([1-9]\d{0,3})$/.exec(value)
-  return !!part && Number(part[1]) <= Number(part[2])
+  const part = /^([1-9]\d{0,2})\/([1-9]\d{0,2})$/.exec(value)
+  return !!part && Number(part[1]) <= Number(part[2]) && Number(part[2]) <= 256
 }
 
 /**
  * Maintenance forgets by the catalog's ids alone, so a list it cannot trust
  * refuses the whole job. The repository must be the catalogued one: an
  * unknown repository's old snapshots would all look uncatalogued.
+ * `orphanBefore` is in milliseconds and at least a day before the job
+ * expires, so a backup the catalog has yet to record is never an orphan.
  */
 function validateMaintainInput(input: BackupWorkerInput) {
   const ids = (value: unknown): value is string[] =>
@@ -497,7 +520,8 @@ function validateMaintainInput(input: BackupWorkerInput) {
     !ids(input.forget) ||
     !ids(input.keep) ||
     !Number.isSafeInteger(input.orphanBefore) ||
-    input.orphanBefore! <= 0
+    input.orphanBefore! <= 1_600_000_000_000 ||
+    input.orphanBefore! > input.expiresAt - DAY_MS
   )
     throw new Error("invalid maintenance job")
   const keep = new Set(input.keep)
@@ -629,10 +653,11 @@ async function runBackupSteps(
       at: Date.now(),
     })
   }
-  // A prune that repacks a whole repository can outlast an upload.
+  // A prune that repacks a whole repository can outlast an upload. A stopped
+  // command's grace ends before the job's credentials and lease expire.
   const signal = AbortSignal.timeout(
     Math.min(
-      input.expiresAt - Date.now(),
+      Math.max(0, input.expiresAt - Date.now() - STOP_GRACE_MS),
       (input.kind === "maintain" ? 120 : 30) * 60_000
     )
   )
@@ -1028,6 +1053,25 @@ async function listSnapshots(
   )
 }
 
+/** The summary line `restic check --json` prints last. */
+function checkSummary(stdout: string): {
+  num_errors?: unknown
+  broken_packs?: unknown
+  suggest_repair_index?: unknown
+  suggest_prune?: unknown
+} {
+  for (const line of stdout.split("\n").reverse()) {
+    if (!line.trim().startsWith("{")) continue
+    try {
+      const row = JSON.parse(line)
+      if (row?.message_type === "summary") return row
+    } catch {
+      // Not the summary line.
+    }
+  }
+  throw new Error("backup repository check printed no summary")
+}
+
 /**
  * Forget what the catalog let go and uncatalogued partials older than
  * `orphanBefore`, then remove every byte no snapshot still uses. Restic's
@@ -1056,10 +1100,22 @@ async function maintainRepository(
         snapshot.time < input.orphanBefore!
     )
     .map((snapshot) => snapshot.id)
-  await advance("forget")
   const removed = [...forgotten, ...orphans]
-  if (removed.length > 0) {
-    const result = await restic(["forget", "--quiet", "--", ...removed])
+  // Nothing is forgotten unless the catalog and the repository agree on what
+  // stays, and the newest restore point is there to read back.
+  if (removed.length > 0 && !input.verify)
+    throw new Error("maintenance must verify before forgetting")
+  if (input.verify) {
+    const target = before.find((row) => row.id === input.verify!.snapshotId)
+    if (target?.hostname !== input.workspaceId)
+      throw new Error("verified snapshot is not in the repository")
+  }
+  if ([...keep].some((id) => !present.has(id)))
+    throw new Error("maintenance kept snapshot missing")
+  await advance("forget")
+  for (let start = 0; start < removed.length; start += FORGET_BATCH) {
+    const batch = removed.slice(start, start + FORGET_BATCH)
+    const result = await restic(["forget", "--quiet", "--", ...batch])
     if (result.code !== 0) throw resticFailure("backup forget", result.code)
   }
   await advance("prune")
@@ -1081,12 +1137,23 @@ async function maintainRepository(
   ])
   if (checked.code !== 0)
     throw resticFailure("backup repository check", checked.code)
+  // A pack the storage refused to delete leaves prune exiting 0 and check
+  // suggesting another prune: deleted bytes are still there.
+  const summary = checkSummary(checked.stdout)
+  if (summary.suggest_prune === true)
+    throw new Error("unused data remains after prune")
+  if (
+    summary.num_errors !== 0 ||
+    summary.suggest_repair_index !== false ||
+    (Array.isArray(summary.broken_packs) && summary.broken_packs.length > 0)
+  )
+    throw new Error("backup repository check found errors")
   let verified: string | null = null
   if (input.verify) {
     await advance("verify")
     const { snapshotId, sourceCheckpoint } = input.verify
     const snapshot = after.find((row) => row.id === snapshotId)
-    if (!snapshot || snapshot.hostname !== input.workspaceId)
+    if (snapshot?.hostname !== input.workspaceId)
       throw new Error("verified snapshot is not in the repository")
     const remote = await restic(["dump", snapshotId, "/snapshot.json"])
     if (remote.code !== 0)
@@ -1114,7 +1181,7 @@ async function maintainRepository(
     missing,
     orphans,
     remaining: after.length,
-    checked: input.readDataSubset ? "subset" : "full",
+    checked: input.readDataSubset ? "subset" : "structure",
     verified,
     completedAt: new Date().toISOString(),
   }

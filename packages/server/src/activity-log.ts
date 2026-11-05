@@ -334,11 +334,15 @@ export async function drainActivity(): Promise<void> {
 export interface DocActivitySummary {
   /** Who last created or edited the doc. */
   lastEditor?: ActivityActor
+  /** Whether that last change made the doc or edited it. */
+  lastAction?: "created" | "edited"
   /**
    * People and agents who created or edited it, most recent first. Comments
    * are left out: not every reader may see who commented.
    */
   contributors: ActivityActor[]
+  /** The ids of everyone who ever created or edited it, untruncated. */
+  everyone: ReadonlySet<string>
 }
 
 /** One actor's latest work on a doc. */
@@ -349,8 +353,9 @@ interface DocWork {
 
 /** What one recorded path's history says, kept with times to merge paths. */
 interface PathSummary {
-  lastEdit?: DocWork
+  lastEdit?: DocWork & { action: "created" | "edited" }
   contributors: DocWork[]
+  everyone: Set<string>
 }
 
 const CONTRIBUTORS_KEPT = 4
@@ -372,9 +377,14 @@ function applyDocSummary(
   at: string
 ): void {
   if (action !== "doc.created" && action !== "doc.edited") return
-  const summary = summaries.get(path) ?? { contributors: [] }
-  summary.lastEdit = { actor, at }
+  const summary = summaries.get(path) ?? { contributors: [], everyone: new Set() }
+  summary.lastEdit = {
+    actor,
+    at,
+    action: action === "doc.created" ? "created" : "edited",
+  }
   if (actor.kind !== "system") {
+    summary.everyone.add(actor.id)
     summary.contributors = [
       { actor, at },
       ...summary.contributors.filter((known) => known.actor.id !== actor.id),
@@ -414,7 +424,17 @@ function mergePathSummaries(parts: readonly PathSummary[]): DocActivitySummary {
     .filter(({ actor }) => !seen.has(actor.id) && seen.add(actor.id))
     .slice(0, CONTRIBUTORS_KEPT)
     .map(({ actor }) => actor)
-  return { ...(lastEdit ? { lastEditor: lastEdit.actor } : {}), contributors }
+  const everyone =
+    parts.length === 1
+      ? parts[0]!.everyone
+      : new Set(parts.flatMap((part) => [...part.everyone]))
+  return {
+    ...(lastEdit
+      ? { lastEditor: lastEdit.actor, lastAction: lastEdit.action }
+      : {}),
+    contributors,
+    everyone,
+  }
 }
 
 async function buildDocSummaries(spaceId: string, key: string): Promise<void> {
@@ -471,6 +491,18 @@ export function peekDocActivity(
   }
   if (!summariesBuilding.has(key)) startSummaryBuild(spaceId, key)
   return null
+}
+
+/**
+ * Wait until a Space's docs are summarized. A list that names who worked on
+ * each doc reads the Space's history once, on its first use after the server
+ * starts; every later call answers at once.
+ */
+export async function docActivityReady(spaceId: string): Promise<void> {
+  const key = summaryKey(spaceId)
+  if (docSummaries.has(key)) return
+  if (!summariesBuilding.has(key)) startSummaryBuild(spaceId, key)
+  await summaryBuilds.get(key)
 }
 
 function startSummaryBuild(spaceId: string, key: string): void {

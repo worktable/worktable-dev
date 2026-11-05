@@ -59,8 +59,8 @@
       "max": 14
     },
     "cold js, open Markdown doc": {
-      "max": 31,
-      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
+      "max": 32,
+      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total. Home and Space Home answer doc comments, so the comment API now sits in its own 0.7 KB gzip chunk beside the Doc's comment code instead of inside it: one more file, fetched in parallel. Home loads it only when a comment is answered."
     },
     "requests, cold, open rich doc": {
       "max": 15
@@ -88,16 +88,16 @@
       "why": "New journey (Plan 21): a deep link to an image's file page. The page check, the app's boot reads and the image."
     },
     "cold js, open a file page": {
-      "max": 33,
-      "why": "New journey (Plan 21): a file's page loads the Doc renderer's code and its own, 2 files more than a Markdown doc."
+      "max": 34,
+      "why": "New journey (Plan 21): a file's page loads the Doc renderer's code and its own, 2 files more than a Markdown doc. Home and Space Home answer doc comments, so the comment API now sits in its own 0.7 KB gzip chunk beside the Doc's comment code instead of inside it: one more file, fetched in parallel. Home loads it only when a comment is answered."
     },
     "requests, cold, open a Doc with images": {
       "max": 16,
       "why": "New journey (Plan 21): a deep link to a Markdown Doc that embeds two images. The Markdown doc's requests plus one per image."
     },
     "cold js, open a Doc with images": {
-      "max": 31,
-      "why": "New journey (Plan 21): the same code as a Markdown doc."
+      "max": 32,
+      "why": "New journey (Plan 21): the same code as a Markdown doc. Home and Space Home answer doc comments, so the comment API now sits in its own 0.7 KB gzip chunk beside the Doc's comment code instead of inside it: one more file, fetched in parallel. Home loads it only when a comment is answered."
     },
     "requests, cold, open Threads": {
       "max": 9

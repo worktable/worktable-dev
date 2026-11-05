@@ -55,6 +55,8 @@ export interface BreadcrumbInput {
   spaceIcon?: string
   spaceColor?: RecognitionColor
   documents?: Pick<SpaceDocumentTrees, "active" | "archived">
+  /** A folder opened from Space Home. */
+  folder?: string
 }
 
 /** The space whose name and documents label the route, if any. */
@@ -106,6 +108,7 @@ export function buildBreadcrumbs({
   spaceIcon,
   spaceColor,
   documents,
+  folder,
 }: BreadcrumbInput): Breadcrumb[] {
   const crumbs: Breadcrumb[] = []
   const spaceCrumb = (spaceId: string, fallback?: string): Breadcrumb => ({
@@ -146,7 +149,9 @@ export function buildBreadcrumbs({
   crumbs.push(spaceCrumb(spaceId))
 
   const [section, ...segments] = rest
-  if (section === "threads") {
+  if (!section && folder) {
+    crumbs.push({ kind: "text", role: "folder", label: humanizeSegment(folder) })
+  } else if (section === "threads") {
     crumbs.push(
       ...threadsCrumbs(
         {

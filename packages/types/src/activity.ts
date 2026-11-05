@@ -114,6 +114,8 @@ export type PendingItem =
       threadTitle: string
       messageId: string
       from: ActivityActor
+      /** The thread identity that asked, so a reply can go back to it. */
+      fromIdentityId?: string
       excerpt: string
     }
   | {
@@ -127,6 +129,8 @@ export type PendingItem =
       docTitle?: string
       from: ActivityActor
       excerpt: string
+      /** The passage the comment is on, when it is on one. */
+      quote?: string
     }
   | {
       kind: "deliveryFailed"

@@ -205,25 +205,20 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
       .getByRole("link", { name: "Untitled" })
   ).toBeVisible()
 
+  // Home lists a temporary doc with the rest of the recent work and offers to
+  // keep it before it archives; once kept, it is ordinary recent work.
   await page.goto(`${harness.webUrl}/`)
   const recent = page.getByRole("region", { name: "Recent" })
-  const temporary = page.getByRole("region", { name: "Temporary" })
   await expect(
     recent.getByRole("link", { name: /^Product brief/i })
   ).toBeVisible()
-  await expect(recent.getByRole("link", { name: /^Untitled/ })).toHaveCount(0)
-  await expect(temporary.getByRole("link", { name: "Untitled" })).toBeVisible()
-
-  await temporary.getByRole("link", { name: "Untitled" }).hover()
-  await temporary.getByRole("button", { name: "Keep", exact: true }).click()
   await expect(recent.getByRole("link", { name: /^Untitled/ })).toBeVisible()
-  await expect(temporary).toHaveCount(0)
-  // Activity starts collapsed beside Home; once opened it stays open.
-  await expect(page.getByRole("region", { name: "Activity" })).toHaveCount(0)
-  await page.getByRole("button", { name: "Expand activity" }).click()
-  await expect(page.getByRole("region", { name: "Activity" })).toContainText(
-    "You kept Untitled"
-  )
+  await expect(recent).toContainText("Archives")
+
+  await recent.getByRole("button", { name: "Keep", exact: true }).click()
+  await expect(recent.getByRole("button", { name: "Keep", exact: true })).toHaveCount(0)
+  await expect(recent).not.toContainText("Archives")
+  await expect(recent.getByRole("link", { name: /^Untitled/ })).toBeVisible()
 
   // A document opens straight from Home: its Space's overview, titled with
   // the Space's name, never mounts on the way.
@@ -306,7 +301,7 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
   ).toBeVisible()
 
   // Opening a Space shows its real page while its details load: the title
-  // and Activity column stay in place, and the pins fill in where they sit.
+  // stays in place, and the pins fill in where they sit.
   await page.goto(`${harness.webUrl}/`)
   await expect(page.getByRole("region", { name: "Recent" })).toBeVisible()
   let releaseDetails!: () => void
@@ -325,13 +320,10 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
   await sidebar.locator('a[href="/spaces/organize"]').click()
   await expect(page).toHaveURL(/\/spaces\/organize$/)
   const title = page.getByRole("heading", { level: 1, name: "Organize" })
-  const activity = page.getByRole("region", { name: "Activity" })
   await expect(title).toBeVisible()
-  await expect(activity).toBeVisible()
+  await expect(page.getByRole("region", { name: "Recent" })).toBeVisible()
   const titleBox = await title.boundingBox()
-  const activityBox = await activity.boundingBox()
   expect(titleBox).not.toBeNull()
-  expect(activityBox).not.toBeNull()
   await expect(
     page
       .getByRole("region", { name: "Pinned" })
@@ -343,19 +335,12 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
       .getByRole("region", { name: "Pinned" })
       .getByRole("link", { name: "Untitled" })
   ).toBeVisible()
-  // Positions only: the Activity list may grow as its own entries load.
   const position = (box: { x: number; y: number } | null) =>
     box && { x: box.x, y: box.y }
   expect(position(await title.boundingBox())).toEqual(position(titleBox))
-  expect(position(await activity.boundingBox())).toEqual(position(activityBox))
 
-  // The destination fills the activity row, including its time and empty
-  // space, while remaining a native link for keyboard navigation.
-  await activity
-    .getByRole("listitem")
-    .filter({ hasText: "You pinned Untitled" })
-    .click({ position: { x: 8, y: 8 } })
-  await expect(page).toHaveURL(/\/spaces\/organize\/documents\/untitled$/)
+  // An Activity entry opens its doc from anywhere on its row, including its
+  // time and empty space, while remaining a native link for the keyboard.
   await page.goto(`${harness.webUrl}/activity?spaceId=organize`)
   const pinnedEntry = page
     .getByRole("listitem")

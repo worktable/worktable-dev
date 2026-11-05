@@ -85,6 +85,8 @@ export interface PendingThreadRequestSource {
   messageId: string
   createdAt: string
   from: PendingActor
+  /** The thread identity that asked, so a reply can go back to it. */
+  fromIdentityId?: string
   /** The identity it was assigned to, by its name in the thread. */
   recipientName: string
   excerpt: string
@@ -284,9 +286,14 @@ function replaceGroups(
   }
 }
 
+// Enough for a whole question, so it can be answered from Home.
+const EXCERPT_CHARS = 400
+
 function excerpt(text: string): string {
   const flat = text.replace(/\s+/g, " ").trim()
-  return flat.length <= 160 ? flat : `${flat.slice(0, 159).trimEnd()}…`
+  return flat.length <= EXCERPT_CHARS
+    ? flat
+    : `${flat.slice(0, EXCERPT_CHARS - 1).trimEnd()}…`
 }
 
 // ── Comments ───────────────────────────────────────────────
@@ -484,6 +491,7 @@ function threadItems(digest: ThreadDigest): Derived[] {
             id: message.authorMemberId,
             name: author?.name ?? member?.name ?? "Someone",
           },
+          ...(author ? { fromIdentityId: author.id } : {}),
           recipientName: identity.name,
           excerpt: excerpt(message.body),
         },

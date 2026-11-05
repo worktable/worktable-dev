@@ -20,6 +20,7 @@ import {
   runAsActivityActor,
 } from "./activity-log.ts"
 import { setAppDirOverride } from "./app-storage.ts"
+import { listRecentDocuments } from "./recent-documents.ts"
 import { pathMovesFor } from "./doc-aliases.ts"
 import { ownerIdentity } from "./auth.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
@@ -320,7 +321,9 @@ describe("workspace activity", () => {
     await drainActivity()
     expect(peekDocActivity("company", "plan", plan)).toEqual({
       lastEditor: maya,
+      lastAction: "edited",
       contributors: [maya, claude],
+      everyone: new Set([claude.id, maya.id]),
     })
 
     // Later saves count at once, even inside one edit session.
@@ -329,9 +332,68 @@ describe("workspace activity", () => {
     recordActivity({ spaceId: "company", action: "doc.edited", actor: maya, target: { kind: "doc", path: "plan" } })
     expect(peekDocActivity("company", "plan", plan)).toEqual({
       lastEditor: maya,
+      lastAction: "edited",
       contributors: [maya, claude],
+      everyone: new Set([claude.id, maya.id]),
     })
-    expect(peekDocActivity("company", "other")).toEqual({ contributors: [] })
+    expect(peekDocActivity("company", "other")).toEqual({ contributors: [], everyone: new Set() })
+    await drainActivity()
+  })
+
+  it("names who last worked on each recent doc, and shows the opening of what an agent just made", async () => {
+    const writeAsAgent = (docPath: string, content: string) =>
+      agentTool("worktable_docs_write", {
+        action: "write",
+        spaceId: "company",
+        docPath,
+        content,
+        lifetime: "durable",
+      })
+    await writeAsAgent("notes", "# Notes\n\nScratch.\n")
+    await writeAsAgent(
+      "brief",
+      "# Launch brief\n\nThe **launch** plan is ready. See [the plan](notes) for dates.\n"
+    )
+    await drainActivity()
+
+    // The first list after the server starts reads each Space's history.
+    const recent = await listRecentDocuments({ excerpt: true })
+    expect(recent.items.map((item) => item.document.path)).toEqual(["brief", "notes"])
+    expect(recent.items[0]).toMatchObject({
+      lastEditor: { kind: "agent" },
+      lastAction: "created",
+      excerpt: "The launch plan is ready. See the plan for dates.",
+    })
+    expect(recent.items[1]?.lastEditor?.kind).toBe("agent")
+    expect(recent.items[1]?.excerpt).toBeUndefined()
+
+    // Once a person changes it, it's their work, not an agent's to show off.
+    recordActivity({
+      spaceId: "company",
+      action: "doc.edited",
+      actor: { kind: "person", id: "local:owner" },
+      target: { kind: "doc", path: "brief" },
+    })
+    const edited = await listRecentDocuments({ excerpt: true })
+    expect(edited.items[0]).toMatchObject({
+      document: { path: "brief" },
+      lastEditor: { kind: "person" },
+      lastAction: "edited",
+    })
+    expect(edited.items.some((item) => item.excerpt)).toBe(false)
+    // Narrowed to one person, only what they worked on is listed, however
+    // many others worked on it since.
+    for (const id of ["a", "b", "c", "d"]) {
+      recordActivity({
+        spaceId: "company",
+        action: "doc.edited",
+        actor: { kind: "agent", id: `local-token:${id}`, name: id },
+        target: { kind: "doc", path: "brief" },
+      })
+    }
+    const mine = await listRecentDocuments({ actorIds: new Set(["local:owner"]) })
+    expect(mine.items.map((item) => item.document.path)).toEqual(["brief"])
+    expect(mine.items[0]?.lastEditor).toMatchObject({ kind: "agent", id: "local-token:d" })
     await drainActivity()
   })
 
@@ -340,10 +402,12 @@ describe("workspace activity", () => {
     const ownerParticipant = (
       await resolveParticipant(owner, { name: "Owner" })
     ).participant
-    await resolveParticipant(codex, {
-      name: "Codex",
-      defaultSpaceId: "company",
-    })
+    const codexParticipant = (
+      await resolveParticipant(codex, {
+        name: "Codex",
+        defaultSpaceId: "company",
+      })
+    ).participant
     const asked = await postThreadMessage(codex, {
       location: { kind: "space", spaceId: "company" },
       to: "Owner",
@@ -363,14 +427,21 @@ describe("workspace activity", () => {
       },
     ])
 
-    await postThreadMessage(owner, {
+    // Answered from Home, the reply goes back to the agent that asked.
+    const [item] = pending.items
+    const answer = await postThreadMessage(owner, {
       threadId: asked.threadId,
       body: "The shorter one.",
       idempotencyKey: "owner-answer",
       inReplyTo: asked.messageId,
       responseTo: asked.messageId,
-      expectsReply: false,
+      responseIdentityId:
+        item?.kind === "threadRequest" ? (item.fromIdentityId ?? null) : null,
+      waitSeconds: 0,
     })
+    expect(answer.activity?.identityId).toBe(
+      defaultConversationIdentityId(codexParticipant.id)
+    )
     expect((await request<PendingResult>("/api/pending")).items).toEqual([])
   })
 })

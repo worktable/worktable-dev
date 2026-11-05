@@ -1211,6 +1211,8 @@ export interface ViewerThreadRequest {
   createdAt: string
   excerpt: string
   author: { kind: ParticipantRef["kind"]; id: string; name: string }
+  /** The asking identity, for a reply that goes back to it. */
+  authorIdentityId?: string
 }
 
 export interface ViewerDeliveryFailure {
@@ -1269,6 +1271,9 @@ export async function listPendingThreadWork(
                 id: source.from.id,
                 name: source.from.name ?? "Someone",
               },
+              ...(source.fromIdentityId
+                ? { authorIdentityId: source.fromIdentityId }
+                : {}),
             },
           ]
         : []

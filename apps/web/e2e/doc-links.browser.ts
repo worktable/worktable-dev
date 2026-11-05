@@ -196,11 +196,12 @@ test("a cold rich-text doc completes its first websocket sync without refresh", 
   await page.context().tracing.stop()
   await page.context().tracing.start({ screenshots: true, snapshots: false })
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
-  // The Space's row opens it in the sidebar.
-  await page
+  // The Space's row opens it in the sidebar. Home lists the doc too.
+  const sidebar = page.locator("[data-worktable-sidebar-root]")
+  await sidebar
     .getByRole("button", { name: "Link Regression", exact: true })
     .click()
-  await page.getByRole("link", { name: "Cold Sync Proof", exact: true }).click()
+  await sidebar.getByRole("link", { name: "Cold Sync Proof", exact: true }).click()
 
   await expect(page).toHaveURL(
     /\/spaces\/link-regression\/documents\/cold-sync-proof$/

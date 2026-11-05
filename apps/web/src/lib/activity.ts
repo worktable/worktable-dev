@@ -3,6 +3,7 @@ import {
   queryOptions,
   useInfiniteQuery,
   useQuery,
+  useQueryClient,
 } from "@tanstack/react-query"
 import type {
   ActivityActor,
@@ -90,15 +91,37 @@ export function useActivityAgents(spaceId?: string) {
   })
 }
 
-/** What is waiting on the reader, across Spaces or in one. */
-export function usePending(spaceId?: string) {
+/**
+ * What is waiting on the reader, across Spaces or in one: the first 10, or
+ * with `all` up to 500.
+ */
+export function usePending(spaceId?: string, all = false) {
+  const queryClient = useQueryClient()
   return useQuery({
-    queryKey: activityQueryKeys.pendingIn(spaceId),
-    queryFn: () =>
-      fetchJSON<PendingResult>(
-        `/api/pending${spaceId ? `?spaceId=${encodeURIComponent(spaceId)}` : ""}`
-      ),
+    queryKey: [...activityQueryKeys.pendingIn(spaceId), ...(all ? ["all"] : [])],
+    queryFn: () => {
+      const query = new URLSearchParams({
+        ...(spaceId ? { spaceId } : {}),
+        ...(all ? { limit: "500" } : {}),
+      }).toString()
+      return fetchJSON<PendingResult>(`/api/pending${query ? `?${query}` : ""}`)
+    },
     staleTime: 10_000,
     refetchInterval: pollUnlessLive(spaceId),
+    placeholderData: (previous, query) => {
+      // Asking for the rest keeps the first page on screen.
+      if (query?.queryKey[1] === (spaceId ?? null)) return previous
+      // A Space starts from Home's list when that holds everything, so its
+      // page doesn't shift when its own answer arrives.
+      if (!spaceId) return undefined
+      const everywhere = queryClient.getQueryData<PendingResult>(
+        activityQueryKeys.pendingIn()
+      )
+      if (!everywhere || everywhere.total !== everywhere.items.length) {
+        return undefined
+      }
+      const items = everywhere.items.filter((item) => item.spaceId === spaceId)
+      return { items, total: items.length }
+    },
   })
 }

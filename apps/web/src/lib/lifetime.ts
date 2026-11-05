@@ -2,6 +2,7 @@ import { activityQueryKeys } from "./activity.ts"
 import { keepPreviousData, queryOptions, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useSyncExternalStore } from "react"
 import type {
+  ActivityActor,
   DocumentLifetime,
   DocumentSummary,
   ResolvedStartHerePin,
@@ -124,6 +125,12 @@ export interface RecentDocument {
   spaceName: string
   /** With the revision of the content it opens (see document-rows.ts). */
   document: WithContentRevision<DocumentSummary>
+  /** Who last created or edited it, when its history says. */
+  lastEditor?: ActivityActor
+  /** Whether that last change made the doc or edited it. */
+  lastAction?: "created" | "edited"
+  /** The opening lines, for the newest doc an agent made in the last day. */
+  excerpt?: string
 }
 
 export interface RecentDocuments {
@@ -131,6 +138,8 @@ export interface RecentDocuments {
   /** Temporary documents, soonest to archive first, when asked for. */
   temporary?: RecentDocument[]
   spaces: Array<{ spaceId: string; lastActivityAt?: string }>
+  /** A Space couldn't be read, so the lists may be missing some of its docs. */
+  incomplete?: true
 }
 
 export const recentQueryKeys = {
@@ -147,6 +156,12 @@ export interface RecentOptions {
   limit?: number
   /** Also list this many temporary docs, soonest to archive first. */
   temporaryLimit?: number
+  /** Only docs the reader or their agents created or edited. */
+  mine?: boolean
+  /** Only docs in this folder of `spaceId`. */
+  folder?: string
+  /** Give the first doc its opening lines, if an agent made it in the last day. */
+  excerpt?: boolean
 }
 
 export function recentQueryOptions(options: RecentOptions) {
@@ -162,6 +177,9 @@ export function recentQueryOptions(options: RecentOptions) {
           ? { temporaryLimit: String(options.temporaryLimit) }
           : {}),
         ...(options.spaceId ? { spaceId: options.spaceId } : {}),
+        ...(options.mine ? { scope: "mine" } : {}),
+        ...(options.folder ? { folder: options.folder } : {}),
+        ...(options.excerpt ? { excerpt: "true" } : {}),
       })
       return fetchJSON<RecentDocuments>(`/api/recent?${query}`)
     },

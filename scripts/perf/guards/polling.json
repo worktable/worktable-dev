@@ -102,6 +102,10 @@
       "why": "Reads the server's cached update check: briefly fast at start until the first check lands, then slow."
     },
     {
+      "site": "apps/web/src/components/home/home-sections.tsx#Countdown.timer",
+      "why": "Counts down the five seconds a reply waits before it sends, on screen only; no request."
+    },
+    {
       "site": "apps/web/src/lib/activity.ts#useActivity",
       "why": "Activity: 60 s check only while its Space has no live socket (Home and workspace-wide lists)."
     },
@@ -124,10 +128,6 @@
     {
       "site": "apps/web/src/lib/queries.ts#searchQueryOptions",
       "why": "Asks again every 2 s only while the server says its search index is still building."
-    },
-    {
-      "site": "apps/web/src/routes/index.tsx#useToday.timer",
-      "why": "Updates Home's date heading each minute; no request."
     },
     {
       "site": "packages/ui/src/public-share-live.js#sleep",

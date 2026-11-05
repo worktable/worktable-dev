@@ -30,8 +30,9 @@ export function applyVisitorCommentChange(
       queryKey: visitorCommentsQueryKey(spaceId, value.documentId),
       exact: true,
     },
-    { queryKey: activityQueryKeys.pendingIn(spaceId), exact: true },
-    { queryKey: activityQueryKeys.pendingIn(), exact: true },
+    // Pending, as its first page or in full.
+    { queryKey: activityQueryKeys.pendingIn(spaceId) },
+    { queryKey: activityQueryKeys.pendingIn() },
   ]
   for (const query of queryClient.getQueryCache().findAll({
     queryKey: ["spaces", spaceId, "document-page"],

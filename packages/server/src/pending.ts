@@ -126,6 +126,7 @@ async function commentRequests(
         ...(current?.title ? { docTitle: current.title } : {}),
         from: source.from,
         excerpt: source.excerpt,
+        ...(source.quote ? { quote: source.quote } : {}),
       },
     ]
   })

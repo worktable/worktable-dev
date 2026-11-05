@@ -235,5 +235,6 @@ export function plainOpening(markdown: string, title: string): string | null {
   if (!text) return null
   if (text.length <= EXCERPT_CHARS) return text
   const cut = text.slice(0, EXCERPT_CHARS)
-  return `${cut.slice(0, cut.lastIndexOf(" ") > 0 ? cut.lastIndexOf(" ") : cut.length)}…`
+  const words = cut.slice(0, cut.lastIndexOf(" ") > 0 ? cut.lastIndexOf(" ") : cut.length)
+  return `${words.replace(/[\s.,;:!?]+$/, "")}…`
 }

@@ -205,20 +205,20 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
       .getByRole("link", { name: "Untitled" })
   ).toBeVisible()
 
-  // Home keeps a temporary doc out of Recent and offers to keep it before it
-  // archives; once kept, it is ordinary recent work.
+  // Home lists a temporary doc with the rest of the recent work and offers to
+  // keep it before it archives; once kept, it is ordinary recent work.
   await page.goto(`${harness.webUrl}/`)
   const recent = page.getByRole("region", { name: "Recent" })
-  const archiving = page.getByRole("region", { name: "Archiving Soon" })
   await expect(
     recent.getByRole("link", { name: /^Product brief/i })
   ).toBeVisible()
-  await expect(recent.getByRole("link", { name: /^Untitled/ })).toHaveCount(0)
-  await expect(archiving.getByRole("link", { name: "Untitled" })).toBeVisible()
-
-  await archiving.getByRole("button", { name: "Keep", exact: true }).click()
   await expect(recent.getByRole("link", { name: /^Untitled/ })).toBeVisible()
-  await expect(archiving).toHaveCount(0)
+  await expect(recent).toContainText("Archives")
+
+  await recent.getByRole("button", { name: "Keep", exact: true }).click()
+  await expect(recent.getByRole("button", { name: "Keep", exact: true })).toHaveCount(0)
+  await expect(recent).not.toContainText("Archives")
+  await expect(recent.getByRole("link", { name: /^Untitled/ })).toBeVisible()
 
   // A document opens straight from Home: its Space's overview, titled with
   // the Space's name, never mounts on the way.

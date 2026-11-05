@@ -41,8 +41,9 @@ function personalActorIds(identity: TokenIdentity): Set<string> | undefined {
 recentRouter.get("/", async (c) => {
   const sort = c.req.query("sort") === "created" ? "created" : "updated"
   const limitRaw = Number(c.req.query("limit"))
+  // A folder lists all of its docs, up to 500.
   const limit = Number.isInteger(limitRaw)
-    ? Math.max(1, Math.min(100, limitRaw))
+    ? Math.max(1, Math.min(500, limitRaw))
     : 30
   const temporaryLimitRaw = Number(c.req.query("temporaryLimit"))
   const actorIds =

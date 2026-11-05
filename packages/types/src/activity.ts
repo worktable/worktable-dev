@@ -129,6 +129,8 @@ export type PendingItem =
       docTitle?: string
       from: ActivityActor
       excerpt: string
+      /** The passage the comment is on, when it is on one. */
+      quote?: string
     }
   | {
       kind: "deliveryFailed"

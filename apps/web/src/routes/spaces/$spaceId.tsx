@@ -163,15 +163,15 @@ function PinnedSection({
           </button>
         </p>
       ) : !pins ? (
-        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-          <div className="h-[3.375rem] animate-pulse rounded-xl bg-muted" />
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <div className="h-[2.625rem] animate-pulse rounded-xl bg-muted" />
         </div>
       ) : (
-        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {pins.map((pin) => (
             <div
               key={pin.path}
-              className="card-surface card-surface-interactive group relative rounded-xl px-4 py-3.5"
+              className="card-surface card-surface-interactive group relative min-w-0 rounded-xl px-3 py-2.5"
             >
               {pin.status === "active" && (
                 <Link
@@ -198,14 +198,14 @@ function PinnedSection({
                 {canPin && <Button
                   size="xs"
                   variant="ghost"
-                  className="relative -my-1 -mr-2 shrink-0 text-muted-foreground focus-visible:opacity-100 sm:absolute sm:top-1/2 sm:right-3 sm:my-0 sm:mr-0 sm:-translate-y-1/2 sm:bg-card sm:opacity-0 sm:group-hover:opacity-100"
+                  className="absolute top-1/2 right-2 -translate-y-1/2 bg-card text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 max-sm:hidden"
                   onClick={() => void unpin(pin.path)}
                 >
                   Unpin
                 </Button>}
               </div>
               {pin.note && (
-                <p className="mt-1.5 text-[0.8rem] leading-5 text-muted-foreground">
+                <p className="mt-0.5 truncate pl-6 text-[0.8rem] text-muted-foreground">
                   {pin.note}
                 </p>
               )}
@@ -390,13 +390,13 @@ function SpaceOverview({
 
       <MemberWelcome spaceId={spaceId} />
 
+      <PinnedSection spaceId={spaceId} pins={pins} onRetry={onRetryPins} />
+
       <PendingSection spaceId={spaceId} />
 
       <RecentSection spaceId={spaceId} />
 
       <ArchivingSoonSection spaceId={spaceId} />
-
-      <PinnedSection spaceId={spaceId} pins={pins} onRetry={onRetryPins} />
 
       <FoldersSection spaceId={spaceId} folders={folders} />
     </div>

@@ -93,7 +93,7 @@ export function useActivityAgents(spaceId?: string) {
 
 /**
  * What is waiting on the reader, across Spaces or in one: the first 10, or
- * with `all` up to 100.
+ * with `all` up to 500.
  */
 export function usePending(spaceId?: string, all = false) {
   const queryClient = useQueryClient()
@@ -102,7 +102,7 @@ export function usePending(spaceId?: string, all = false) {
     queryFn: () => {
       const query = new URLSearchParams({
         ...(spaceId ? { spaceId } : {}),
-        ...(all ? { limit: "100" } : {}),
+        ...(all ? { limit: "500" } : {}),
       }).toString()
       return fetchJSON<PendingResult>(`/api/pending${query ? `?${query}` : ""}`)
     },

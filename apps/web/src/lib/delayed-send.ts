@@ -65,10 +65,13 @@ export function undoSend(id: string): string | null {
   return state.body
 }
 
-/** The text of a reply that failed, to put back in its box. */
-export function failedBody(id: string): string | undefined {
+/**
+ * The text of a reply still on its way or that failed, so a row that
+ * remounts has it to put back in its box.
+ */
+export function unsentBody(id: string): string | undefined {
   const state = sends.get(id)
-  return state?.phase === "failed" ? state.body : undefined
+  return state && state.phase !== "sent" ? state.body : undefined
 }
 
 /** Forget a finished send, so the row can be answered again. */

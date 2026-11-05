@@ -22,9 +22,9 @@ stays in one place.
 
 ## Pinned docs
 
-Click a Space name to open Space Home: what is waiting on you there, pinned
-docs, its busiest folders, and recent docs with who last changed them. Choose a
-folder to list all of its docs.
+Click a Space name to open Space Home: its pinned docs, what is waiting on you
+there, recent docs with who last changed them, and its busiest folders. Choose
+a folder to list all of its docs.
 
 Choose **Pin** from a document's menu for entry points such as the project brief
 or current plan. Pinned docs also appear at the top of the Space in the sidebar.
@@ -52,10 +52,10 @@ Archived documents are never deleted automatically.
 - **Home** shows the questions and comments waiting on you, newest first.
   Click one to answer it in place: a reply waits five seconds before it goes,
   so you can **Undo** it. **Recent** lists the docs you and your agents changed
-  lately and who changed each; the newest doc an agent made in the last day
-  shows its opening lines. **Archiving Soon** lists temporary docs that archive
-  within the week, with **Keep**. Space Home does the same for everyone's docs
-  in one Space.
+  lately and who changed each; when the newest is a doc an agent just made, it
+  shows its opening lines. A temporary doc says when it archives and offers
+  **Keep**, and **Archiving Soon** lists any others that archive this week.
+  Space Home does the same for everyone's docs in one Space.
 - **Activity** lists what people and agents did, newest first. Filter by Space,
   by you, or by agent.
 - **Threads** lists conversations across Worktable; each Space has its own.

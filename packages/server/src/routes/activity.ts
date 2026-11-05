@@ -47,7 +47,7 @@ export const pendingRouter = new Hono()
 pendingRouter.use("*", requireScope("documents:read"))
 
 // GET /api/pending — what is waiting on the reader, optionally in one Space.
-// limit=N lists up to 100 instead of the first 10.
+// limit=N lists up to 500 instead of the first 10.
 pendingRouter.get("/", async (c) => {
   const limit = Number(c.req.query("limit"))
   return c.json(
@@ -59,7 +59,7 @@ pendingRouter.get("/", async (c) => {
         !c.get("identity").operatorVerification
         ? (spaceId) => visitorCommentReader(c, spaceId)
         : undefined,
-      Number.isInteger(limit) ? Math.max(1, Math.min(100, limit)) : undefined
+      Number.isInteger(limit) ? Math.max(1, Math.min(500, limit)) : undefined
     )
   )
 })

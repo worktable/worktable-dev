@@ -9,6 +9,12 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.41] - 2026-11-05
+
+### Changed
+
+- **Usage analytics on Worktable Cloud:** With analytics on, Cloud now also counts which kinds of screens you move through, such as Home, a Doc or Settings, never which item or what it holds. Your agents' actions are counted as they happen. Turn analytics off in Settings → Privacy.
+
 ## [0.1.40] - 2026-11-05
 
 ### Added

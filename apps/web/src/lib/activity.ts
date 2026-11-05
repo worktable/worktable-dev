@@ -90,15 +90,24 @@ export function useActivityAgents(spaceId?: string) {
   })
 }
 
-/** What is waiting on the reader, across Spaces or in one. */
-export function usePending(spaceId?: string) {
+/**
+ * What is waiting on the reader, across Spaces or in one: the first 10, or
+ * with `all` up to 100.
+ */
+export function usePending(spaceId?: string, all = false) {
   return useQuery({
-    queryKey: activityQueryKeys.pendingIn(spaceId),
-    queryFn: () =>
-      fetchJSON<PendingResult>(
-        `/api/pending${spaceId ? `?spaceId=${encodeURIComponent(spaceId)}` : ""}`
-      ),
+    queryKey: [...activityQueryKeys.pendingIn(spaceId), ...(all ? ["all"] : [])],
+    queryFn: () => {
+      const query = new URLSearchParams({
+        ...(spaceId ? { spaceId } : {}),
+        ...(all ? { limit: "100" } : {}),
+      }).toString()
+      return fetchJSON<PendingResult>(`/api/pending${query ? `?${query}` : ""}`)
+    },
     staleTime: 10_000,
     refetchInterval: pollUnlessLive(spaceId),
+    // Asking for the rest keeps the first page on screen, in the same Space.
+    placeholderData: (previous, query) =>
+      query?.queryKey[1] === (spaceId ?? null) ? previous : undefined,
   })
 }

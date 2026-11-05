@@ -28,8 +28,9 @@ export function visitorNoticeAfterRefresh(client: QueryClient, spaceId: string, 
   if (typeof window === "undefined") return () => {}
   const cache = client.getQueryCache()
   const queries = new Set([
-    ...cache.findAll({queryKey: activityQueryKeys.pendingIn(), exact: true}),
-    ...cache.findAll({queryKey: activityQueryKeys.pendingIn(spaceId), exact: true}),
+    // Pending, as its first page or in full.
+    ...cache.findAll({queryKey: activityQueryKeys.pendingIn()}),
+    ...cache.findAll({queryKey: activityQueryKeys.pendingIn(spaceId)}),
     ...cache.findAll({queryKey: ["spaces", spaceId, "document-page"]}),
   ])
   const before = [...queries].filter(query => query.isActive()).map(query => ({query, count: notice(query, documentId)?.count}))

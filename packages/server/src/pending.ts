@@ -23,13 +23,14 @@ import {
 import { hasScope, type TokenIdentity } from "./token-store.ts"
 import { pendingVisitorComments } from "./visitor-comment-pending.ts"
 
-const PENDING_LIMIT = 10
+export const PENDING_LIMIT = 10
 
 /** Everything waiting on the reader, or only what belongs to one Space. */
 export async function listPending(
   identity: TokenIdentity,
   spaceId?: string,
-  visitorAccess?: (spaceId: string) => boolean
+  visitorAccess?: (spaceId: string) => boolean,
+  limit = PENDING_LIMIT
 ): Promise<PendingResult> {
   const canReadThreads = hasScope(identity.scopes, "threads:read")
   // People write comments; a comment sent to an agent waits in its own list.
@@ -57,7 +58,7 @@ export async function listPending(
   ]
     .filter((item) => !spaceId || item.spaceId === spaceId)
     .sort((a, b) => b.at.localeCompare(a.at) || a.id.localeCompare(b.id))
-  return { items: all.slice(0, PENDING_LIMIT), total: all.length }
+  return { items: all.slice(0, limit), total: all.length }
 }
 
 function threadRequests(requests: ViewerThreadRequest[]): PendingItem[] {

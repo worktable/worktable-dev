@@ -338,7 +338,7 @@ describe("workspace activity", () => {
     await drainActivity()
   })
 
-  it("names who last worked on each recent doc, and features what an agent just made", async () => {
+  it("names who last worked on each recent doc, and shows the opening of what an agent just made", async () => {
     const writeAsAgent = (docPath: string, content: string) =>
       agentTool("worktable_docs_write", {
         action: "write",
@@ -352,19 +352,17 @@ describe("workspace activity", () => {
       "brief",
       "# Launch brief\n\nThe **launch** plan is ready. See [the plan](notes) for dates.\n"
     )
-    // The first read starts the Space's summary without waiting on it.
-    await listRecentDocuments({ featured: true })
     await drainActivity()
 
-    const recent = await listRecentDocuments({ featured: true })
-    expect(recent.featured).toMatchObject({
-      spaceId: "company",
-      document: { path: "brief" },
+    // The first list after the server starts reads each Space's history.
+    const recent = await listRecentDocuments({ excerpt: true })
+    expect(recent.items.map((item) => item.document.path)).toEqual(["brief", "notes"])
+    expect(recent.items[0]).toMatchObject({
       lastEditor: { kind: "agent" },
       excerpt: "The launch plan is ready. See the plan for dates.",
     })
-    expect(recent.items.map((item) => item.document.path)).toEqual(["notes"])
-    expect(recent.items[0]?.lastEditor?.kind).toBe("agent")
+    expect(recent.items[1]?.lastEditor?.kind).toBe("agent")
+    expect(recent.items[1]?.excerpt).toBeUndefined()
 
     // Once a person changes it, it's their work, not an agent's to show off.
     recordActivity({
@@ -373,8 +371,8 @@ describe("workspace activity", () => {
       actor: { kind: "person", id: "local:owner" },
       target: { kind: "doc", path: "brief" },
     })
-    const edited = await listRecentDocuments({ featured: true })
-    expect(edited.featured?.document.path).toBe("notes")
+    const edited = await listRecentDocuments({ excerpt: true })
+    expect(edited.items.find((item) => item.excerpt)?.document.path).toBe("notes")
     // Narrowed to one person, only what they worked on is listed, however
     // many others worked on it since.
     for (const id of ["a", "b", "c", "d"]) {

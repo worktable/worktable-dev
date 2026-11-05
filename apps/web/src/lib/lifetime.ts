@@ -125,16 +125,16 @@ export interface RecentDocument {
   spaceName: string
   /** With the revision of the content it opens (see document-rows.ts). */
   document: WithContentRevision<DocumentSummary>
-  /** Who last created or edited it, once its Space's history is summarized. */
+  /** Who last created or edited it, when its history says. */
   lastEditor?: ActivityActor
+  /** The opening lines, for the newest doc an agent made in the last day. */
+  excerpt?: string
 }
 
 export interface RecentDocuments {
   items: RecentDocument[]
   /** Temporary documents, soonest to archive first, when asked for. */
   temporary?: RecentDocument[]
-  /** The newest doc an agent made in the last day, when asked for. */
-  featured?: RecentDocument & { excerpt?: string }
   spaces: Array<{ spaceId: string; lastActivityAt?: string }>
 }
 
@@ -156,8 +156,8 @@ export interface RecentOptions {
   mine?: boolean
   /** Only docs in this folder of `spaceId`. */
   folder?: string
-  /** Also pick the newest doc an agent made in the last day. */
-  featured?: boolean
+  /** Give the newest doc an agent made in the last day its opening lines. */
+  excerpt?: boolean
 }
 
 export function recentQueryOptions(options: RecentOptions) {
@@ -175,7 +175,7 @@ export function recentQueryOptions(options: RecentOptions) {
         ...(options.spaceId ? { spaceId: options.spaceId } : {}),
         ...(options.mine ? { scope: "mine" } : {}),
         ...(options.folder ? { folder: options.folder } : {}),
-        ...(options.featured ? { featured: "true" } : {}),
+        ...(options.excerpt ? { excerpt: "true" } : {}),
       })
       return fetchJSON<RecentDocuments>(`/api/recent?${query}`)
     },

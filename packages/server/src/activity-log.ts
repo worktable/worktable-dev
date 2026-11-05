@@ -485,6 +485,18 @@ export function peekDocActivity(
   return null
 }
 
+/**
+ * Wait until a Space's docs are summarized. A list that names who worked on
+ * each doc reads the Space's history once, on its first use after the server
+ * starts; every later call answers at once.
+ */
+export async function docActivityReady(spaceId: string): Promise<void> {
+  const key = summaryKey(spaceId)
+  if (docSummaries.has(key)) return
+  if (!summariesBuilding.has(key)) startSummaryBuild(spaceId, key)
+  await summaryBuilds.get(key)
+}
+
 function startSummaryBuild(spaceId: string, key: string): void {
   const build = buildDocSummaries(spaceId, key)
     .catch((error) => {

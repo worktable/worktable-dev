@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { WorktableAppIcon } from "@/components/worktable-app-icon"
 import { HomeNewMenu } from "@/components/home/home-new-menu"
-import { PendingSection, RecentSection } from "@/components/home/home-sections"
+import {
+  ArchivingSoonSection,
+  PendingSection,
+  RecentSection,
+} from "@/components/home/home-sections"
 import { useSpaces, useWorkspace } from "@/lib/queries"
 import { getSpaceArchiveInfo } from "@/lib/spaces"
 import { isGettingStartedSpace } from "@/lib/setup"
@@ -32,37 +36,22 @@ function greetingFor(hour: number): string {
   return "Good evening"
 }
 
-/**
- * Today's date and greeting, rendered after mount so server and browser time
- * zones agree.
- */
-function useToday(): { date: string; greeting: string } | null {
-  const [today, setToday] = useState<{ date: string; greeting: string } | null>(
-    null
-  )
+/** The greeting for the reader's hour, set after mount so time zones agree. */
+function useGreeting(): string | null {
+  const [greeting, setGreeting] = useState<string | null>(null)
   useEffect(() => {
-    const update = () => {
-      const now = new Date()
-      setToday({
-        date: now.toLocaleDateString(undefined, {
-          weekday: "long",
-          month: "long",
-          day: "numeric",
-        }),
-        greeting: greetingFor(now.getHours()),
-      })
-    }
+    const update = () => setGreeting(greetingFor(new Date().getHours()))
     update()
     const timer = window.setInterval(update, 60_000)
     return () => window.clearInterval(timer)
   }, [])
-  return today
+  return greeting
 }
 
 function HomePage() {
   const { data: spaces } = useSpaces()
   const { data: workspace } = useWorkspace()
-  const today = useToday()
+  const greeting = useGreeting()
   // An unnamed owner is just greeted.
   const name = workspace?.person?.name?.trim()
   const greeted = name && name !== "Owner" ? name : undefined
@@ -87,20 +76,16 @@ function HomePage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 px-4 py-8 sm:px-8 lg:py-10">
-      <header className="flex items-start justify-between gap-4 px-0.5">
-        <div className="min-w-0">
-          <h1 className="min-h-9 font-display text-[1.9rem] leading-tight font-semibold tracking-tight text-balance text-foreground sm:min-h-11 sm:text-[2.6rem]">
-            {today ? `${today.greeting}${greeted ? `, ${greeted}` : ""}.` : null}
-          </h1>
-          <p className="mt-1.5 min-h-5 text-sm text-muted-foreground">
-            {today?.date}
-          </p>
-        </div>
+      <header className="flex items-center justify-between gap-4 px-0.5">
+        <h1 className="min-h-9 min-w-0 font-display text-[1.75rem] leading-9 font-semibold tracking-tight text-balance text-foreground sm:text-[2rem] sm:leading-10">
+          {greeting ? `${greeting}${greeted ? `, ${greeted}` : ""}.` : null}
+        </h1>
         <HomeNewMenu spaces={newMenuSpaces} />
       </header>
 
       <PendingSection />
       <RecentSection />
+      <ArchivingSoonSection />
     </div>
   )
 }

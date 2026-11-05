@@ -8,7 +8,7 @@ import {
   useRouter,
 } from "@tanstack/react-router"
 import { lazy, Suspense, useCallback, useMemo, useState } from "react"
-import { Archive, Folder, Pin, Plus, RotateCcw } from "lucide-react"
+import { Archive, Folder, Plus, RotateCcw } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { browserTeamMemberId } from "@/lib/team-context"
 import type { ResolvedStartHerePin } from "@worktable/types"
@@ -16,13 +16,18 @@ import { Button } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
 import { cn } from "@worktable/ui/lib/utils"
 import { DocumentFormatIcon } from "@/components/document-format-icon"
-import { PendingSection, RecentSection } from "@/components/home/home-sections"
+import {
+  ArchivingSoonSection,
+  PendingSection,
+  RecentSection,
+} from "@/components/home/home-sections"
 import { SpaceNewMenu } from "@/components/spaces/space-new-menu"
 import { activityQueryKeys } from "@/lib/activity"
 import { restoreSpace } from "@/lib/api"
 import { useDocuments } from "@/lib/documents-queries"
 import { setPins } from "@/lib/lifetime"
 import { spaceQueryOptions, useSpace, useSpaces } from "@/lib/queries"
+import { shortWhen } from "@/lib/activity-format"
 import { RelativeTime } from "@/lib/time"
 import { humanizeSegment } from "@/lib/tree"
 import { useSpaceSubscription } from "@/lib/ws"
@@ -133,9 +138,9 @@ function PinnedSection({
     }
   }
 
-  // Pins are kept by the people who manage the Space.
+  // Pins are kept by the people who manage the Space, from a doc's menu.
   const canPin = spaceDetail?.space.permissions?.manage !== false
-  if (pins?.length === 0 && !canPin) return null
+  if (pins?.length === 0) return null
 
   return (
     <section aria-labelledby="pinned-heading">
@@ -156,11 +161,6 @@ function PinnedSection({
       ) : !pins ? (
         <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
           <div className="h-[3.375rem] animate-pulse rounded-xl bg-muted" />
-        </div>
-      ) : pins.length === 0 ? (
-        <div className="flex h-11 items-center gap-3 rounded-xl border border-dashed border-border px-3 text-sm text-muted-foreground">
-          <Pin className="size-4 shrink-0" />
-          Pin docs from their menu
         </div>
       ) : (
         <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
@@ -213,40 +213,64 @@ function PinnedSection({
   )
 }
 
-/** Top-level folders, each narrowing Recent to its docs. */
-function FolderChips({
+interface FolderSummary {
+  name: string
+  count: number
+  /** The newest change to a doc in it. */
+  lastAt?: string
+}
+
+// Enough to show where work is happening; the sidebar lists every folder.
+const FOLDERS_SHOWN = 6
+
+/**
+ * Top-level folders, busiest first: how many docs each holds and when one
+ * last changed. Choosing one lists all of its docs under Recent.
+ */
+function FolderCards({
   folders,
   folder,
   onFolder,
 }: {
-  folders: { name: string; count: number }[]
+  folders: FolderSummary[]
   folder: string | null
   onFolder: (folder: string | null) => void
 }) {
-  if (folders.length < 2) return null
+  if (folders.length === 0) return null
   return (
-    <div className="flex flex-wrap gap-2">
-      {folders.map((entry) => {
-        const active = folder === entry.name
-        return (
-          <button
-            key={entry.name}
-            type="button"
-            aria-pressed={active}
-            onClick={() => onFolder(active ? null : entry.name)}
-            className={cn(
-              "inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[0.8rem] transition-colors",
-              active
-                ? "border-foreground/20 bg-surface-selected text-foreground"
-                : "border-border text-muted-foreground hover:border-foreground/15 hover:text-foreground"
-            )}
-          >
-            <Folder className="size-3.5" />
-            {humanizeSegment(entry.name)}
-          </button>
-        )
-      })}
-    </div>
+    <section aria-labelledby="folders-heading">
+      <h2 id="folders-heading" className="mb-2 px-0.5 text-sm font-semibold text-foreground">
+        Folders
+      </h2>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {folders.slice(0, FOLDERS_SHOWN).map((entry, index) => {
+          const active = folder === entry.name
+          return (
+            <button
+              key={entry.name}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onFolder(active ? null : entry.name)}
+              className={cn(
+                "card-surface card-surface-interactive min-w-0 rounded-xl px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                active && "bg-surface-selected ring-2 ring-primary/50",
+                // Four fit a phone without pushing Recent away.
+                index >= 4 && "max-sm:hidden"
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
+                <Folder className="size-4 shrink-0 text-muted-foreground" />
+                <span className="truncate">{humanizeSegment(entry.name)}</span>
+              </span>
+              <span className="mt-0.5 block truncate pl-6 text-[0.8rem] text-muted-foreground tabular-nums">
+                {entry.count} {entry.count === 1 ? "doc" : "docs"}
+                {entry.lastAt && ` · ${shortWhen(entry.lastAt)}`}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -272,15 +296,23 @@ function SpaceOverview({
   const { data: documentItems } = useDocuments(spaceId)
 
   const folders = useMemo(() => {
-    const counts = new Map<string, number>()
+    const byName = new Map<string, FolderSummary>()
     for (const item of documentItems ?? []) {
       if (item.kind !== "document" || item.archived) continue
       const [top, ...rest] = item.path.split("/")
-      if (top && rest.length > 0) counts.set(top, (counts.get(top) ?? 0) + 1)
+      if (!top || rest.length === 0) continue
+      const entry = byName.get(top) ?? { name: top, count: 0 }
+      entry.count += 1
+      if (item.updatedAt && (!entry.lastAt || item.updatedAt > entry.lastAt)) {
+        entry.lastAt = item.updatedAt
+      }
+      byName.set(top, entry)
     }
-    return [...counts.entries()]
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => a.name.localeCompare(b.name))
+    return [...byName.values()].sort(
+      (a, b) =>
+        (b.lastAt ?? "").localeCompare(a.lastAt ?? "") ||
+        a.name.localeCompare(b.name)
+    )
   }, [documentItems])
 
   return (
@@ -298,7 +330,7 @@ function SpaceOverview({
             </div>
           )}
           {spaceDescription && (
-            <p className="mt-2 max-w-2xl text-[0.95rem] leading-6 text-muted-foreground">
+            <p className="mt-2 line-clamp-2 max-w-2xl text-[0.95rem] leading-6 text-muted-foreground">
               {spaceDescription}
             </p>
           )}
@@ -322,14 +354,11 @@ function SpaceOverview({
 
       <PinnedSection spaceId={spaceId} pins={pins} onRetry={onRetryPins} />
 
-      <RecentSection
-        spaceId={spaceId}
-        folder={folder}
-        onClearFolder={() => setFolder(null)}
-        filters={
-          <FolderChips folders={folders} folder={folder} onFolder={setFolder} />
-        }
-      />
+      <FolderCards folders={folders} folder={folder} onFolder={setFolder} />
+
+      <RecentSection spaceId={spaceId} folder={folder} />
+
+      <ArchivingSoonSection spaceId={spaceId} />
     </div>
   )
 }

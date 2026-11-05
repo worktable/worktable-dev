@@ -9,10 +9,15 @@
 // when it is the one asked for, so its overview stays browsable.
 //
 // Each row names who last created or edited the doc, from the in-memory
-// summary of each Space's activity, so a list reads no history.
+// summary of each Space's activity. A Space's history is read once, on its
+// first list after the server starts.
+//
+// The newest doc an agent made in the last day can carry its opening lines,
+// so the reader sees what it says before opening it. It keeps its place in
+// the list.
 
 import type { ActivityActor, DocumentSummary } from "@worktable/types"
-import { peekDocActivity } from "./activity-log.ts"
+import { docActivityReady, peekDocActivity } from "./activity-log.ts"
 import { pathMovesFor } from "./doc-aliases.ts"
 import { docMarkdownProjection } from "./doc-markdown-projection.ts"
 import { listDocumentsWithAliases } from "./document-query.ts"
@@ -26,16 +31,13 @@ export interface RecentDocument {
   spaceId: string
   spaceName: string
   document: DocumentSummary
-  /** Who last created or edited the doc, once its Space is summarized. */
+  /** Who last created or edited the doc, when its history says. */
   lastEditor?: ActivityActor
-}
-
-/** The newest doc an agent made in the last day, with its opening lines. */
-export interface FeaturedDocument extends RecentDocument {
+  /** The opening lines, for the newest doc an agent made in the last day. */
   excerpt?: string
 }
 
-const FEATURED_WITHIN_MS = 24 * 60 * 60 * 1000
+const EXCERPT_WITHIN_MS = 24 * 60 * 60 * 1000
 
 export interface SpaceActivity {
   spaceId: string
@@ -62,12 +64,11 @@ export async function listRecentDocuments(options: {
   actorIds?: ReadonlySet<string>
   /** Only docs in this folder, with spaceId. */
   folder?: string
-  /** Also pick the newest doc an agent made in the last day. */
-  featured?: boolean
+  /** Give the newest listed doc an agent made in the last day its opening lines. */
+  excerpt?: boolean
 }): Promise<{
   items: RecentDocument[]
   temporary?: RecentDocument[]
-  featured?: FeaturedDocument
   spaces: SpaceActivity[]
 }> {
   const sort = options.sort ?? "updated"
@@ -87,7 +88,10 @@ export async function listRecentDocuments(options: {
         let newest: string | undefined
         const spaceItems: RecentDocument[] = []
         const spaceTemporary: RecentDocument[] = []
-        const { documents, aliases } = await listDocumentsWithAliases({ spaceId: space.id })
+        const [{ documents, aliases }] = await Promise.all([
+          listDocumentsWithAliases({ spaceId: space.id }),
+          docActivityReady(space.id),
+        ])
         const moves = pathMovesFor(aliases)
         for (const item of documents) {
           if (item.kind !== "document") continue
@@ -152,20 +156,14 @@ export async function listRecentDocuments(options: {
   const sorted = items
     .filter((item) => key(item) !== undefined)
     .sort((a, b) => key(b)!.localeCompare(key(a)!))
-  const featured = options.featured ? await featuredDocument(items) : undefined
-  return {
-    items: sorted.filter((item) => item !== featured?.from).slice(0, limit),
-    ...temporary,
-    ...(featured ? { featured: featured.document } : {}),
-    spaces: activity,
-  }
+  const listed = sorted.slice(0, limit)
+  if (options.excerpt) await addExcerpt(listed)
+  return { items: listed, ...temporary, spaces: activity }
 }
 
 /** The newest doc made in the last day whose last change was an agent's. */
-async function featuredDocument(
-  items: RecentDocument[]
-): Promise<{ from: RecentDocument; document: FeaturedDocument } | undefined> {
-  const since = new Date(Date.now() - FEATURED_WITHIN_MS).toISOString()
+async function addExcerpt(items: RecentDocument[]): Promise<void> {
+  const since = new Date(Date.now() - EXCERPT_WITHIN_MS).toISOString()
   const newest = items
     .filter(
       (item) =>
@@ -174,15 +172,15 @@ async function featuredDocument(
         item.document.createdAt >= since
     )
     .sort((a, b) => b.document.createdAt!.localeCompare(a.document.createdAt!))[0]
-  if (!newest) return undefined
+  if (!newest) return
   const excerpt = await docExcerpt(newest.spaceId, newest.document)
-  return { from: newest, document: { ...newest, ...(excerpt ? { excerpt } : {}) } }
+  if (excerpt) newest.excerpt = excerpt
 }
 
 // ---- excerpts ----
 //
-// The featured doc shows its opening lines. They come from the doc's own
-// source, read once per change and kept, so a revisit reads nothing.
+// Opening lines come from the doc's own source, read once per change and
+// kept, so a revisit reads nothing.
 
 const EXCERPT_CHARS = 240
 const EXCERPTS_KEPT = 64

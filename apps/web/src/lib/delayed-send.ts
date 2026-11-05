@@ -13,10 +13,12 @@ export const SEND_DELAY_MS = 5_000
 
 export type SendPhase = "waiting" | "sending" | "sent" | "failed"
 
-interface SendState {
+export interface SendState {
   phase: SendPhase
-  /** What is being sent, so a row that remounts can restore it. */
+  /** What is being sent, so a row that remounts can show or restore it. */
   body: string
+  /** When the reply goes, or went, in ms since the epoch. */
+  sendAt: number
   timer?: ReturnType<typeof setTimeout>
 }
 
@@ -37,20 +39,21 @@ export function scheduleSend(
   options: { onSent?: () => void; onFailed?: (error: unknown) => void } = {}
 ): void {
   if (sends.get(id)?.phase === "waiting" || sends.get(id)?.phase === "sending") return
+  const sendAt = Date.now() + SEND_DELAY_MS
   const timer = setTimeout(() => {
-    set(id, { phase: "sending", body })
+    set(id, { phase: "sending", body, sendAt })
     send().then(
       () => {
-        set(id, { phase: "sent", body })
+        set(id, { phase: "sent", body, sendAt })
         options.onSent?.()
       },
       (error: unknown) => {
-        set(id, { phase: "failed", body })
+        set(id, { phase: "failed", body, sendAt })
         options.onFailed?.(error)
       }
     )
   }, SEND_DELAY_MS)
-  set(id, { phase: "waiting", body, timer })
+  set(id, { phase: "waiting", body, sendAt, timer })
 }
 
 /** Take back a reply that hasn't gone yet, returning its text. */
@@ -79,10 +82,10 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
-export function useSendPhase(id: string): SendPhase | undefined {
+export function useSend(id: string): SendState | undefined {
   return useSyncExternalStore(
     subscribe,
-    () => sends.get(id)?.phase,
+    () => sends.get(id),
     () => undefined
   )
 }

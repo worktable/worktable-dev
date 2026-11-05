@@ -5,13 +5,16 @@ import {
   Check,
   CircleAlert,
   Clock3,
-  FilePlus2,
   MessageSquareText,
-  Pencil,
-  Reply,
 } from "lucide-react"
-import { useState, type ReactNode } from "react"
-import type { ActivityActor, PendingItem } from "@worktable/types"
+import {
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
+import type { PendingItem } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
 import { Textarea } from "@worktable/ui/components/textarea"
@@ -28,8 +31,9 @@ import {
   clearSend,
   failedBody,
   scheduleSend,
+  SEND_DELAY_MS,
   undoSend,
-  useSendPhase,
+  useSend,
 } from "@/lib/delayed-send"
 import {
   formatArchiveDate,
@@ -42,30 +46,39 @@ import { postThreadReply } from "@/lib/threads-api"
 import { humanizeSegment } from "@/lib/tree"
 import { useActorName } from "@/lib/use-actor-name"
 
-// Every row on Home and Space Home shares one grid, so the actor, the title,
-// one mark and the time line up across sections: who | what | mark | when.
+// Every row on Home and Space Home has the same two lines: what it is, then
+// who, where and when. A mark leads; one action may trail.
 const rowGrid =
-  "grid grid-cols-[1.5rem_minmax(0,1fr)_1.75rem_4.25rem] items-center gap-x-3"
-const rowClass = cn(rowGrid, "relative h-11 rounded-lg px-3 text-sm")
+  "grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-start gap-x-3"
+const rowClass = cn(rowGrid, "relative rounded-lg px-3 py-2.5 text-sm")
 const rowHover = "transition-colors hover:bg-surface-hover"
 const cardClass = "card-surface rounded-[14px] p-1.5"
-// Stretches a row's link across it; buttons in the row sit above it.
-const rowLink =
+// Stretches a row's link or button across it; links and buttons inside the
+// row sit above it.
+const rowCover =
   "absolute inset-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+const above = "relative z-10"
 
 function SectionHeader({
   id,
   title,
+  count,
   action,
 }: {
   id: string
   title: string
+  count?: number
   action?: ReactNode
 }) {
   return (
     <div className="mb-2 flex items-baseline justify-between gap-3 px-0.5">
       <h2 id={id} className="text-sm font-semibold text-foreground">
         {title}
+        {count ? (
+          <span className="ml-2 font-normal text-muted-foreground tabular-nums">
+            {count}
+          </span>
+        ) : null}
       </h2>
       {action}
     </div>
@@ -75,56 +88,55 @@ function SectionHeader({
 const quietLink =
   "inline-flex items-center gap-1 text-[0.8rem] font-medium text-muted-foreground transition-colors hover:text-foreground"
 
-function RowText({
-  title,
-  meta,
-  place,
-}: {
-  title: string
-  meta?: string
-  /** Where the doc lives; left out on phones, where the title needs the room. */
-  place?: boolean
-}) {
+/** Who, where and when, in one quiet line. */
+function Meta({ parts }: { parts: ReactNode[] }) {
+  const shown = parts.filter((part) => part !== undefined && part !== null && part !== "")
   return (
-    <span className="flex min-w-0 items-baseline gap-2 whitespace-nowrap">
-      <span className="max-w-[65%] shrink-0 truncate font-medium text-foreground max-sm:max-w-full">
-        {title}
-      </span>
-      {meta && (
-        <span
-          className={cn(
-            "min-w-0 truncate text-[0.8rem] text-muted-foreground",
-            place && "max-sm:hidden"
-          )}
-        >
-          {meta}
-        </span>
-      )}
-    </span>
+    <p className="mt-0.5 truncate text-[0.8rem] text-muted-foreground">
+      {shown.map((part, index) => (
+        <Fragment key={index}>
+          {index > 0 && <span aria-hidden="true"> · </span>}
+          {part}
+        </Fragment>
+      ))}
+    </p>
   )
 }
 
-function When({ at }: { at?: string }) {
+function Lead({ children }: { children: ReactNode }) {
+  return <span className="flex h-5 items-center justify-center">{children}</span>
+}
+
+function Skeleton({ rows }: { rows: number }) {
   return (
-    <span className="justify-self-end text-xs whitespace-nowrap text-muted-foreground tabular-nums">
-      {at ? shortWhen(at) : ""}
-    </span>
+    <div className={cn(cardClass, "space-y-1")} aria-hidden="true">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="h-[3.75rem] animate-pulse rounded-lg bg-surface-inset" />
+      ))}
+    </div>
   )
 }
 
-function Who({ actor }: { actor?: ActivityActor }) {
-  const nameOf = useActorName()
-  if (!actor) return <span />
+function LoadFailed({ what, onRetry }: { what: string; onRetry: () => void }) {
   return (
-    <span title={nameOf(actor)} className="flex">
-      <ActorBadge actor={actor} />
-    </span>
+    <p className="px-0.5 text-sm text-muted-foreground">
+      Couldn’t load {what}.{" "}
+      <button
+        type="button"
+        className="text-primary-text hover:underline"
+        onClick={onRetry}
+      >
+        Try again
+      </button>
+    </p>
   )
 }
 
 // ── Pending ────────────────────────────────────────────────
 
 const SHOWN = 3
+// Long enough to read "Sent" before the row leaves.
+const SENT_LINGER_MS = 2_000
 
 function replyable(
   item: PendingItem
@@ -157,21 +169,20 @@ function sendReply(item: PendingItem, body: string, key: string) {
   return Promise.resolve()
 }
 
-function PendingDestination({
+/** Where an item lives: its thread, or its doc. */
+function PendingSource({
   item,
-  label,
+  className,
+  children,
 }: {
   item: PendingItem
-  label: string
+  className: string
+  children: ReactNode
 }) {
   if (item.kind === "threadRequest" || item.kind === "deliveryFailed") {
     return (
-      <ThreadLink
-        spaceId={item.spaceId}
-        threadId={item.threadId}
-        className={rowLink}
-      >
-        <span className="sr-only">{label}</span>
+      <ThreadLink spaceId={item.spaceId} threadId={item.threadId} className={className}>
+        {children}
       </ThreadLink>
     )
   }
@@ -180,43 +191,81 @@ function PendingDestination({
       to="/spaces/$spaceId/documents/$"
       params={{ spaceId: item.spaceId, _splat: item.docPath }}
       hash={item.kind === "commentRequest" ? undefined : "visitors"}
-      className={rowLink}
-      aria-label={label}
-    />
+      className={className}
+    >
+      {children}
+    </Link>
   )
 }
 
-function pendingText(item: PendingItem): { title: string; meta?: string } {
+function sourceTitle(item: PendingItem): string {
   switch (item.kind) {
     case "threadRequest":
-      return { title: item.threadTitle, meta: item.excerpt }
-    case "commentRequest":
-      return { title: item.docTitle ?? item.docPath, meta: item.excerpt }
     case "deliveryFailed":
-      return { title: item.threadTitle, meta: `Not delivered to ${item.agentName}` }
+      return item.threadTitle
+    case "commentRequest":
     case "visitorComments":
-      return {
-        title: item.docTitle ?? item.docPath,
-        meta: `${item.count} visitor comment${item.count === 1 ? "" : "s"}`,
-      }
+      return item.docTitle ?? item.docPath
     case "visitorCommentsPaused":
-      return { title: item.linkLabel || "Untitled link", meta: "Comments paused" }
+      return item.linkLabel || "Untitled link"
   }
 }
 
-function PendingMark({ item }: { item: PendingItem }) {
-  if (item.kind === "threadRequest" || item.kind === "commentRequest") {
-    return <Who actor={item.from} />
+/** What the reader is asked, or what happened. */
+function pendingHeadline(item: PendingItem): string {
+  switch (item.kind) {
+    case "threadRequest":
+    case "commentRequest":
+      return item.excerpt
+    case "deliveryFailed":
+      return `Not delivered to ${item.agentName}`
+    case "visitorComments":
+      return `${item.count} visitor comment${item.count === 1 ? "" : "s"}`
+    case "visitorCommentsPaused":
+      return "Comments paused"
+  }
+}
+
+function PendingLead({ item }: { item: PendingItem }) {
+  if (replyable(item)) {
+    return (
+      <Lead>
+        <ActorBadge actor={item.from} />
+      </Lead>
+    )
   }
   return (
-    <span className="flex justify-center">
+    <Lead>
       {item.kind === "deliveryFailed" ? (
         <CircleAlert className="size-4 text-destructive" />
       ) : (
         <MessageSquareText className="size-4 text-muted-foreground" />
       )}
+    </Lead>
+  )
+}
+
+/** The wait as a filling bar, picking up where it was if the row remounts. */
+function SendProgress({ sendAt }: { sendAt: number }) {
+  const [delay] = useState(() => sendAt - SEND_DELAY_MS - Date.now())
+  return (
+    <span className="h-[3px] w-10 shrink-0 overflow-hidden rounded-full bg-surface-tint">
+      <span
+        className="block h-full w-full origin-left bg-primary motion-safe:animate-[send-wait_5s_linear_forwards]"
+        style={{ animationDelay: `${delay}ms` }}
+      />
     </span>
   )
+}
+
+/** Seconds until a waiting reply goes. */
+function Countdown({ at }: { at: number }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 250)
+    return () => window.clearInterval(timer)
+  }, [])
+  return <>{Math.max(1, Math.ceil((at - now) / 1000))}s</>
 }
 
 function PendingRow({
@@ -224,18 +273,31 @@ function PendingRow({
   spaceName,
   open,
   onOpen,
+  onClose,
 }: {
   item: PendingItem
   spaceName?: string
   open: boolean
   onOpen: () => void
+  onClose: () => void
 }) {
   const queryClient = useQueryClient()
-  const phase = useSendPhase(item.id)
+  const nameOf = useActorName()
+  const sending = useSend(item.id)
+  const phase = sending?.phase
   // A reply that failed while the row was away comes back to its box.
   const [draft, setDraft] = useState(() => failedBody(item.id) ?? "")
-  const { title, meta } = pendingText(item)
+  const box = useRef<HTMLTextAreaElement>(null)
   const canReply = replyable(item)
+  const headline = pendingHeadline(item)
+  const source = sourceTitle(item)
+  // A failed reply reopens its box with its text.
+  const composing = canReply && (phase === "failed" || (open && !phase))
+
+  useEffect(() => {
+    if (open && !phase) box.current?.focus()
+  }, [open, phase])
+
   const send = () => {
     const body = draft.trim()
     if (!body) return
@@ -244,109 +306,150 @@ function PendingRow({
     scheduleSend(item.id, body, () => sendReply(item, body, key), {
       onSent: () => {
         setDraft("")
-        for (const spaceId of [undefined, item.spaceId ?? undefined]) {
-          void queryClient.invalidateQueries({
-            queryKey: activityQueryKeys.pendingIn(spaceId),
-            exact: true,
-          })
-        }
+        onClose()
+        // The row says Sent for a moment, then leaves with the refresh.
+        window.setTimeout(() => {
+          for (const spaceId of [undefined, item.spaceId ?? undefined]) {
+            void queryClient.invalidateQueries({
+              queryKey: activityQueryKeys.pendingIn(spaceId),
+            })
+          }
+        }, SENT_LINGER_MS)
       },
       onFailed: () => toast.error("Couldn’t send your reply. Try again."),
     })
   }
 
-  if (!open || !canReply) {
-    return (
-      <div className={cn(rowClass, rowHover)}>
-        <PendingDestination item={item} label={title} />
-        <PendingMark item={item} />
-        <RowText title={title} meta={open ? undefined : (meta ?? spaceName)} />
-        <span className="relative flex justify-center">
-          {canReply && (
-            <Button
-              size="icon-xs"
-              variant="outline"
-              className="size-7"
-              aria-label="Reply"
-              title="Reply"
-              onClick={onOpen}
-            >
-              <Reply className="size-3.5" />
-            </Button>
-          )}
-        </span>
-        <When at={item.at} />
-      </div>
-    )
-  }
-
   return (
-    <div className="rounded-lg px-3 pb-3">
-      <div className={cn(rowGrid, "relative h-11 text-sm")}>
-        <PendingDestination item={item} label={title} />
-        <PendingMark item={item} />
-        <RowText title={title} meta={spaceName} place />
-        <span />
-        <When at={item.at} />
-      </div>
-      <div className="ml-9 space-y-2.5">
-        {meta && (
-          <p className="text-sm leading-relaxed text-reading-foreground">
-            {meta}
-          </p>
-        )}
-        {phase === "waiting" || phase === "sending" ? (
-          <div className="flex h-9 items-center gap-3 text-[0.8rem] text-muted-foreground">
-            <span className="h-[3px] w-24 overflow-hidden rounded-full bg-surface-tint">
-              <span className="block h-full w-full origin-left bg-primary motion-safe:animate-[send-wait_5s_linear_forwards]" />
-            </span>
-            <span>Sending</span>
-            {phase === "waiting" && (
-              <button
-                type="button"
-                className="font-medium text-primary-text hover:underline"
-                onClick={() => {
-                  const body = undoSend(item.id)
-                  if (body !== null) setDraft(body)
-                }}
+    <div className={cn(rowClass, !composing && rowHover)}>
+      {canReply ? (
+        !composing &&
+        !phase && (
+          <button
+            type="button"
+            className={rowCover}
+            aria-label={`Reply to ${nameOf(item.from)}: ${headline}`}
+            aria-expanded={open}
+            onClick={onOpen}
+          />
+        )
+      ) : (
+        <PendingSource item={item} className={rowCover}>
+          <span className="sr-only">
+            {headline} on {source}
+          </span>
+        </PendingSource>
+      )}
+      <PendingLead item={item} />
+      <div className="min-w-0">
+        <p
+          className={cn(
+            "leading-snug text-foreground",
+            canReply ? "line-clamp-2" : "truncate font-medium"
+          )}
+        >
+          {headline}
+        </p>
+        <Meta
+          parts={[
+            canReply ? nameOf(item.from) : undefined,
+            canReply ? (
+              <PendingSource
+                item={item}
+                className={cn(above, "rounded-sm hover:text-foreground hover:underline")}
               >
-                Undo
-              </button>
+                {source}
+              </PendingSource>
+            ) : (
+              source
+            ),
+            spaceName,
+            shortWhen(item.at),
+          ]}
+        />
+        {(phase === "waiting" || phase === "sending" || phase === "sent") && sending && (
+          <div className="mt-2 flex h-6 min-w-0 items-center gap-2.5 text-[0.8rem] text-muted-foreground">
+            {phase === "sent" ? (
+              <Check className="size-3.5 shrink-0 text-success" />
+            ) : (
+              <SendProgress sendAt={sending.sendAt} />
             )}
+            <span className="min-w-0 truncate text-foreground">{sending.body}</span>
+            <span className="shrink-0">
+              {phase === "waiting" ? (
+                <>
+                  Sends in <Countdown at={sending.sendAt} />
+                </>
+              ) : phase === "sending" ? (
+                "Sending"
+              ) : (
+                "Sent"
+              )}
+            </span>
           </div>
-        ) : phase === "sent" ? (
-          <div className="flex h-9 items-center gap-2 text-[0.8rem] text-muted-foreground">
-            <Check className="size-4 text-success" />
-            Sent
-          </div>
-        ) : (
+        )}
+        {composing && (
           <form
-            className="flex items-end gap-2"
+            className={cn(above, "mt-2.5 space-y-2")}
             onSubmit={(event) => {
               event.preventDefault()
               send()
             }}
           >
-            <Textarea
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                  event.preventDefault()
-                  send()
-                }
-              }}
-              placeholder="Reply"
-              aria-label={`Reply on ${title}`}
-              rows={1}
-              className="min-h-9 resize-none py-2"
-            />
-            <Button type="submit" size="sm" disabled={!draft.trim()}>
-              Send
-            </Button>
+            {phase === "failed" && (
+              <p className="text-[0.8rem] text-destructive">Couldn’t send.</p>
+            )}
+            <div className="flex items-end gap-2">
+              <Textarea
+                ref={box}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                    event.preventDefault()
+                    send()
+                  }
+                  if (event.key === "Escape" && phase !== "failed") {
+                    event.preventDefault()
+                    onClose()
+                  }
+                }}
+                placeholder="Reply"
+                aria-label={`Reply on ${source}`}
+                rows={1}
+                className="min-h-9 resize-none bg-background py-2"
+              />
+              <Button type="submit" size="sm" disabled={!draft.trim()}>
+                Send
+              </Button>
+            </div>
           </form>
         )}
       </div>
+      <span className={cn(above, "flex h-5 items-center")}>
+        {phase === "waiting" ? (
+          <button
+            type="button"
+            className="text-[0.8rem] font-medium text-primary-text hover:underline"
+            onClick={() => {
+              const body = undoSend(item.id)
+              if (body !== null) {
+                setDraft(body)
+                onOpen()
+              }
+            }}
+          >
+            Undo
+          </button>
+        ) : canReply && !composing && !phase ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none rounded-md border border-border px-2 py-0.5 text-[0.75rem] font-medium text-muted-foreground"
+          >
+            Reply
+          </span>
+        ) : null}
+      </span>
     </div>
   )
 }
@@ -354,32 +457,35 @@ function PendingRow({
 const lowerFirst = (text: string) =>
   text.charAt(0).toLowerCase() + text.slice(1)
 
-/** What only the reader can act on, answered in place. */
+/**
+ * What only the reader can act on, answered in place. Home always shows it,
+ * so its place doesn't jump; a Space shows it only when something waits.
+ */
 export function PendingSection({ spaceId }: { spaceId?: string }) {
-  const pending = usePending(spaceId)
-  const { data: spaces } = useSpaces()
   const [showAll, setShowAll] = useState(false)
-  // Undefined until the reader picks a row: the newest one they can answer opens.
-  const [chosen, setChosen] = useState<string | null>()
+  const pending = usePending(spaceId, showAll)
+  const { data: spaces } = useSpaces()
+  const [open, setOpen] = useState<string | null>(null)
   const names = new Map((spaces ?? []).map((space) => [space.id, space.name]))
   const items = pending.data?.items ?? []
   const total = pending.data?.total ?? items.length
   const failed = pending.isError && !pending.data
+  const onHome = spaceId === undefined
   // Home points to Getting Started until the person is done or unpins it.
   const shortcut = useGettingStartedShortcut(spaces)
-  const gettingStarted = !spaceId && shortcut?.progress.next ? shortcut : null
-  if (items.length === 0 && !failed && !gettingStarted) return null
+  const gettingStarted = onHome && shortcut?.progress.next ? shortcut : null
+  const empty = items.length === 0 && !gettingStarted
+  if (!onHome && (pending.isLoading || (empty && !failed))) return null
   const shown = showAll ? items : items.slice(0, SHOWN)
   const more = total - shown.length
-  const open =
-    chosen === undefined ? (items.find(replyable)?.id ?? null) : chosen
   return (
     <section aria-labelledby="pending-heading">
       <SectionHeader
         id="pending-heading"
         title="Pending"
+        count={total}
         action={
-          more > 0 && !showAll ? (
+          more > 0 && !(showAll && pending.isFetching) ? (
             <button
               type="button"
               className={quietLink}
@@ -390,16 +496,14 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
           ) : null
         }
       />
-      {failed && !gettingStarted ? (
-        <p className="px-0.5 text-sm text-muted-foreground">
-          Couldn’t load what’s pending.{" "}
-          <button
-            type="button"
-            className="text-primary-text hover:underline"
-            onClick={() => void pending.refetch()}
-          >
-            Try again
-          </button>
+      {pending.isLoading ? (
+        <Skeleton rows={2} />
+      ) : failed && !gettingStarted ? (
+        <LoadFailed what="what’s pending" onRetry={() => void pending.refetch()} />
+      ) : empty ? (
+        <p className="flex h-6 items-center gap-2 px-0.5 text-sm text-muted-foreground">
+          <Check className="size-4 text-success" />
+          Nothing waiting
         </p>
       ) : (
         <div className={cardClass}>
@@ -407,11 +511,10 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
             <PendingRow
               key={item.id}
               item={item}
-              spaceName={
-                spaceId || !item.spaceId ? undefined : names.get(item.spaceId)
-              }
+              spaceName={onHome && item.spaceId ? names.get(item.spaceId) : undefined}
               open={open === item.id}
-              onOpen={() => setChosen(item.id)}
+              onOpen={() => setOpen(item.id)}
+              onClose={() => setOpen((current) => (current === item.id ? null : current))}
             />
           ))}
           {gettingStarted && (
@@ -419,20 +522,26 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
               <Link
                 to="/spaces/$spaceId"
                 params={{ spaceId: gettingStarted.space.id }}
-                className={rowLink}
+                className={rowCover}
                 aria-label={gettingStarted.space.name}
               />
-              <span className="flex justify-center">
+              <Lead>
                 <ProgressRing
                   done={gettingStarted.progress.done}
                   total={gettingStarted.progress.total}
                 />
-              </span>
-              <RowText
-                title={gettingStarted.space.name}
-                meta={`${gettingStarted.progress.done} of ${gettingStarted.progress.total} · Next: ${lowerFirst(gettingStarted.progress.next?.title ?? "")}`}
-              />
-              <span />
+              </Lead>
+              <div className="min-w-0">
+                <p className="truncate leading-snug font-medium text-foreground">
+                  {gettingStarted.space.name}
+                </p>
+                <Meta
+                  parts={[
+                    `${gettingStarted.progress.done} of ${gettingStarted.progress.total}`,
+                    `Next: ${lowerFirst(gettingStarted.progress.next?.title ?? "")}`,
+                  ]}
+                />
+              </div>
               <span />
             </div>
           )}
@@ -444,24 +553,28 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
 
 // ── Recent ─────────────────────────────────────────────────
 
-const RECENT_ROWS = 4
-// A doc whose last change came soon after it was made reads as made.
-const CREATED_WITHIN_MS = 60 * 60 * 1000
+const RECENT_ROWS = 5
+const FOLDER_ROWS = 50
+const DAY_MS = 24 * 60 * 60 * 1000
+// Temporary docs further out than this aren't "soon".
+const SOON_DAYS = 7
+const SOON_SHOWN = 3
 
-function madeNotEdited(item: RecentDocument): boolean {
-  const { createdAt, updatedAt } = item.document
-  if (!createdAt || !updatedAt) return false
-  return Date.parse(updatedAt) - Date.parse(createdAt) < CREATED_WITHIN_MS
-}
-
-function VerbMark({ item }: { item: RecentDocument }) {
-  const made = madeNotEdited(item)
-  const Icon = made ? FilePlus2 : Pencil
-  return (
-    <span className="flex justify-center" title={made ? "Created" : "Edited"}>
-      <Icon className="size-[15px] text-muted-foreground" aria-label={made ? "Created" : "Edited"} />
-    </span>
-  )
+/**
+ * Home's and Space Home's one read of recent docs: Recent and Archiving Soon
+ * share it.
+ */
+function useRecent(spaceId?: string, folder?: string | null) {
+  return useRecentDocuments({
+    sort: "updated",
+    includeTemporary: false,
+    limit: folder ? FOLDER_ROWS : RECENT_ROWS,
+    temporaryLimit: 100,
+    excerpt: !folder,
+    ...(spaceId !== undefined
+      ? { spaceId, ...(folder ? { folder } : {}) }
+      : { mine: true }),
+  })
 }
 
 /** On Home a row says which Space; inside a Space, which folder. */
@@ -472,81 +585,130 @@ function placeOf(item: RecentDocument, inSpace: boolean | "folder"): string | un
   return top && rest.length > 0 ? humanizeSegment(top) : undefined
 }
 
-function DocLink({ item, label }: { item: RecentDocument; label: string }) {
+function DocLink({ item }: { item: RecentDocument }) {
   return (
     <Link
       to="/spaces/$spaceId/documents/$"
       params={{ spaceId: item.spaceId, _splat: item.document.path }}
-      className={rowLink}
-      aria-label={label}
+      className={rowCover}
+      aria-label={item.document.title}
     />
+  )
+}
+
+function DocLead({ item }: { item: RecentDocument }) {
+  return (
+    <Lead>
+      <DocumentFormatIcon
+        formatId={item.document.format.id}
+        name={item.document.path}
+        className="size-4 text-muted-foreground"
+      />
+    </Lead>
   )
 }
 
 function RecentRow({
   item,
   inSpace,
+  now,
 }: {
   item: RecentDocument
   inSpace: boolean | "folder"
-}) {
-  return (
-    <div className={cn(rowClass, rowHover)}>
-      <DocLink item={item} label={item.document.title} />
-      {item.lastEditor ? (
-        <Who actor={item.lastEditor} />
-      ) : (
-        <span className="flex justify-center">
-          <DocumentFormatIcon
-            formatId={item.document.format.id}
-            name={item.document.path}
-            className="size-4 text-muted-foreground"
-          />
-        </span>
-      )}
-      <RowText title={item.document.title} meta={placeOf(item, inSpace)} place />
-      <VerbMark item={item} />
-      <When at={item.document.updatedAt} />
-    </div>
-  )
-}
-
-function FeaturedRow({
-  item,
-  inSpace,
-}: {
-  item: RecentDocument & { excerpt?: string }
-  inSpace: boolean
+  now: number
 }) {
   const nameOf = useActorName()
+  const { createdAt, updatedAt } = item.document
+  const isNew = createdAt !== undefined && now - Date.parse(createdAt) < DAY_MS
   return (
-    <div className={cn("relative rounded-lg px-3 pb-3.5", rowHover)}>
-      <DocLink item={item} label={item.document.title} />
-      <div className={cn(rowGrid, "h-11 text-sm")}>
-        <Who actor={item.lastEditor} />
-        <RowText
-          title={item.lastEditor ? nameOf(item.lastEditor) : item.document.title}
-          meta={placeOf(item, inSpace)}
-          place
+    <div className={cn(rowClass, rowHover)}>
+      <DocLink item={item} />
+      <DocLead item={item} />
+      <div className="min-w-0">
+        <p className="flex min-w-0 items-center gap-2 leading-snug">
+          <span className="truncate font-medium text-foreground">
+            {item.document.title}
+          </span>
+          {isNew && (
+            <span className="shrink-0 rounded-[5px] bg-primary/10 px-1.5 text-[0.7rem] leading-[1.125rem] font-medium text-primary-text">
+              New
+            </span>
+          )}
+        </p>
+        <Meta
+          parts={[
+            item.lastEditor ? nameOf(item.lastEditor) : undefined,
+            placeOf(item, inSpace),
+            updatedAt ? shortWhen(updatedAt) : undefined,
+          ]}
         />
-        <span className="flex justify-center" title="Created">
-          <FilePlus2 className="size-[15px] text-muted-foreground" aria-label="Created" />
-        </span>
-        <When at={item.document.createdAt} />
-      </div>
-      <div className="ml-9 min-w-0">
-        <h3 className="font-display text-[1.3rem] leading-snug font-semibold tracking-tight text-balance text-foreground">
-          {item.document.title}
-        </h3>
         {item.excerpt && (
-          <p className="mt-1 truncate text-sm text-reading-foreground">
+          <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-reading-foreground">
             {item.excerpt}
           </p>
         )}
       </div>
+      <span />
     </div>
   )
 }
+
+/**
+ * What changed lately, and who changed it. On Home, the reader's and their
+ * agents' docs across Spaces; in a Space, everyone's there, or one folder's.
+ * The newest doc an agent made in the last day shows its opening lines.
+ */
+export function RecentSection({
+  spaceId,
+  folder,
+}: {
+  spaceId?: string
+  /** In a Space, every doc in this folder instead. */
+  folder?: string | null
+}) {
+  const inSpace = spaceId !== undefined
+  const recent = useRecent(spaceId, folder)
+  const [now] = useState(() => Date.now())
+  const items = recent.data?.items ?? []
+  return (
+    <section aria-labelledby="recent-heading">
+      <SectionHeader
+        id="recent-heading"
+        title="Recent"
+        action={
+          <Link
+            to="/activity"
+            search={inSpace ? { spaceId } : {}}
+            className={quietLink}
+          >
+            Activity
+            <ArrowRight className="size-3.5" />
+          </Link>
+        }
+      />
+      {recent.isLoading ? (
+        <Skeleton rows={4} />
+      ) : recent.isError && !recent.data ? (
+        <LoadFailed what="recent docs" onRetry={() => void recent.refetch()} />
+      ) : items.length === 0 ? (
+        <p className="px-0.5 text-sm text-muted-foreground">Nothing yet.</p>
+      ) : (
+        <div className={cardClass}>
+          {items.map((item) => (
+            <RecentRow
+              key={`${item.spaceId}/${item.document.path}`}
+              item={item}
+              inSpace={folder ? "folder" : inSpace}
+              now={now}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+// ── Archiving Soon ─────────────────────────────────────────
 
 /** Calendar days from today to the archive date, in the reader's time zone. */
 function daysUntil(archiveOn: string, now: number): number {
@@ -561,10 +723,10 @@ function daysUntil(archiveOn: string, now: number): number {
 
 function archiveLabel(archiveOn: string, now: number): string {
   const days = daysUntil(archiveOn, now)
-  if (days <= 0) return "Archives Today"
-  if (days === 1) return "Archives Tomorrow"
+  if (days <= 0) return "Archives today"
+  if (days === 1) return "Archives tomorrow"
   if (days < 7) {
-    return `Archives ${new Date(archiveOn).toLocaleDateString(undefined, { weekday: "short" })}`
+    return `Archives ${new Date(archiveOn).toLocaleDateString(undefined, { weekday: "long" })}`
   }
   return `Archives ${formatArchiveDate(archiveOn)}`
 }
@@ -572,181 +734,82 @@ function archiveLabel(archiveOn: string, now: number): string {
 function TemporaryRow({
   item,
   inSpace,
-  trailing,
+  now,
 }: {
   item: RecentDocument
-  inSpace: boolean | "folder"
-  trailing?: ReactNode
+  inSpace: boolean
+  now: number
 }) {
   const { keep } = useLifetimeActions(item.spaceId, item.document.path)
   const [keeping, setKeeping] = useState(false)
-  const [now] = useState(() => Date.now())
   const archiveOn = item.document.archiveOn!
   const soon = daysUntil(archiveOn, now) <= 1
-  const place = placeOf(item, inSpace)
   return (
-    <div
-      className={cn(
-        "relative grid h-11 grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] items-center gap-x-3 rounded-lg px-3 text-sm",
-        rowHover
-      )}
-    >
-      <DocLink item={item} label={item.document.title} />
-      <span className="flex justify-center">
+    <div className={cn(rowClass, rowHover)}>
+      <DocLink item={item} />
+      <Lead>
         <Clock3 className={cn("size-4", soon ? "text-warning" : "text-muted-foreground")} />
+      </Lead>
+      <div className="min-w-0">
+        <p className="truncate leading-snug font-medium text-foreground">
+          {item.document.title}
+        </p>
+        <Meta parts={[archiveLabel(archiveOn, now), placeOf(item, inSpace)]} />
+      </div>
+      <span className={cn(above, "flex h-5 items-center")}>
+        <button
+          type="button"
+          disabled={keeping}
+          className="text-[0.8rem] font-medium text-primary-text hover:underline disabled:opacity-50"
+          onClick={() => {
+            setKeeping(true)
+            void keep().finally(() => setKeeping(false))
+          }}
+        >
+          Keep
+        </button>
       </span>
-      <RowText
-        title={item.document.title}
-        meta={[archiveLabel(archiveOn, now), place].filter(Boolean).join(" · ")}
-      />
-      <button
-        type="button"
-        disabled={keeping}
-        className="relative text-[0.8rem] font-medium text-primary-text hover:underline disabled:opacity-50"
-        onClick={() => {
-          setKeeping(true)
-          void keep().finally(() => setKeeping(false))
-        }}
-      >
-        Keep
-      </button>
-      {trailing ?? <span />}
     </div>
   )
 }
 
-/** The temporary docs that archive soonest, as one line that opens. */
-function TemporaryFooter({
-  items,
-  inSpace,
-}: {
-  items: RecentDocument[]
-  inSpace: boolean | "folder"
-}) {
-  const [open, setOpen] = useState(false)
-  const sorted = items
-    .filter((item) => item.document.archiveOn)
+/** Temporary docs that archive within the week, soonest first, each with Keep. */
+export function ArchivingSoonSection({ spaceId }: { spaceId?: string }) {
+  const recent = useRecent(spaceId)
+  const [now] = useState(() => Date.now())
+  const [showAll, setShowAll] = useState(false)
+  const soon = (recent.data?.temporary ?? [])
+    .filter(
+      (item) =>
+        item.document.archiveOn &&
+        daysUntil(item.document.archiveOn, now) <= SOON_DAYS
+    )
     .sort((a, b) => a.document.archiveOn!.localeCompare(b.document.archiveOn!))
-  if (sorted.length === 0) return null
-  const [first, ...rest] = sorted
+  if (soon.length === 0) return null
+  const shown = showAll ? soon : soon.slice(0, SOON_SHOWN)
   return (
-    <div id="temporary">
-      <div className="mx-3 my-1 h-px bg-border" />
-      <TemporaryRow
-        item={first!}
-        inSpace={inSpace}
-        trailing={
-          rest.length > 0 && !open ? (
-            <button
-              type="button"
-              className={cn(quietLink, "relative")}
-              onClick={() => setOpen(true)}
-            >
-              {rest.length} More
+    <section aria-labelledby="archiving-heading">
+      <SectionHeader
+        id="archiving-heading"
+        title="Archiving Soon"
+        action={
+          soon.length > shown.length ? (
+            <button type="button" className={quietLink} onClick={() => setShowAll(true)}>
+              {soon.length - shown.length} More
             </button>
-          ) : undefined
+          ) : null
         }
       />
-      {open &&
-        rest.map((item) => (
+      <div className={cardClass}>
+        {shown.map((item) => (
           <TemporaryRow
             key={`${item.spaceId}/${item.document.path}`}
             item={item}
-            inSpace={inSpace}
+            inSpace={spaceId !== undefined}
+            now={now}
           />
         ))}
-    </div>
-  )
-}
-
-/**
- * What changed lately, and who changed it. On Home, the reader's and their
- * agents' docs across Spaces; in a Space, everyone's in that Space. The
- * newest doc an agent made in the last day leads, with its opening line.
- */
-export function RecentSection({
-  spaceId,
-  folder,
-  onClearFolder,
-  filters,
-}: {
-  spaceId?: string
-  /** In a Space, only this folder's docs. */
-  folder?: string | null
-  onClearFolder?: () => void
-  /** Ways to narrow the list, shown above it. */
-  filters?: ReactNode
-}) {
-  const inSpace = spaceId !== undefined
-  const recent = useRecentDocuments({
-    sort: "updated",
-    includeTemporary: false,
-    limit: folder ? 8 : RECENT_ROWS,
-    temporaryLimit: 100,
-    featured: !folder,
-    ...(inSpace ? { spaceId, ...(folder ? { folder } : {}) } : { mine: true }),
-  })
-  const featured = recent.data?.featured
-  const items = recent.data?.items ?? []
-  const temporary = recent.data?.temporary ?? []
-  return (
-    <section aria-labelledby="recent-heading">
-      <SectionHeader
-        id="recent-heading"
-        title={folder ? humanizeSegment(folder) : "Recent"}
-        action={
-          folder ? (
-            <button type="button" className={quietLink} onClick={onClearFolder}>
-              Clear
-            </button>
-          ) : (
-            <Link
-              to="/activity"
-              search={inSpace ? { spaceId } : {}}
-              className={quietLink}
-            >
-              Activity
-              <ArrowRight className="size-3.5" />
-            </Link>
-          )
-        }
-      />
-      {filters && <div className="mb-3">{filters}</div>}
-      {recent.isLoading ? (
-        <div className={cn(cardClass, "space-y-1")}>
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-11 animate-pulse rounded-lg bg-surface-inset" />
-          ))}
-        </div>
-      ) : recent.isError ? (
-        <p className="px-0.5 text-sm text-muted-foreground">
-          Couldn’t load recent docs.{" "}
-          <button
-            type="button"
-            className="text-primary-text hover:underline"
-            onClick={() => void recent.refetch()}
-          >
-            Try again
-          </button>
-        </p>
-      ) : !featured && items.length === 0 && temporary.length === 0 ? (
-        <p className="px-0.5 text-sm text-muted-foreground">Nothing yet.</p>
-      ) : (
-        <div className={cardClass}>
-          {featured && <FeaturedRow item={featured} inSpace={inSpace} />}
-          {featured && items.length > 0 && (
-            <div className="mx-3 my-1 h-px bg-border" />
-          )}
-          {items.map((item) => (
-            <RecentRow
-              key={`${item.spaceId}/${item.document.path}`}
-              item={item}
-              inSpace={folder ? "folder" : inSpace}
-            />
-          ))}
-          <TemporaryFooter items={temporary} inSpace={folder ? "folder" : inSpace} />
-        </div>
-      )}
+      </div>
     </section>
   )
 }

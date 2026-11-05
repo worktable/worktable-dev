@@ -36,7 +36,8 @@ function personalActorIds(identity: TokenIdentity): Set<string> | undefined {
 // temporaryLimit=N adds those as `temporary` beside the main list.
 // scope=mine keeps docs the reader or their agents created or edited.
 // folder=F, with spaceId, keeps docs in that folder.
-// featured=true adds the newest doc an agent made in the last day.
+// excerpt=true gives the newest listed doc an agent made in the last day its
+// opening lines.
 recentRouter.get("/", async (c) => {
   const sort = c.req.query("sort") === "created" ? "created" : "updated"
   const limitRaw = Number(c.req.query("limit"))
@@ -59,14 +60,10 @@ recentRouter.get("/", async (c) => {
     ...(c.req.query("spaceId") && c.req.query("folder")
       ? { folder: c.req.query("folder")! }
       : {}),
-    featured: c.req.query("featured") === "true",
+    excerpt: c.req.query("excerpt") === "true",
   })
   // Rows open their documents by content revision.
-  const listed = [
-    ...recent.items,
-    ...(recent.temporary ?? []),
-    ...(recent.featured ? [recent.featured] : []),
-  ]
+  const listed = [...recent.items, ...(recent.temporary ?? [])]
   const rows = await withContentRevisions(
     listed,
     (item) => ({ spaceId: item.spaceId, path: item.document.path }),
@@ -77,13 +74,11 @@ recentRouter.get("/", async (c) => {
       >,
     })
   )
-  const temporaryEnd = recent.items.length + (recent.temporary?.length ?? 0)
   return c.json({
     ...recent,
     items: rows.slice(0, recent.items.length),
     ...(recent.temporary
-      ? { temporary: rows.slice(recent.items.length, temporaryEnd) }
+      ? { temporary: rows.slice(recent.items.length) }
       : {}),
-    ...(recent.featured ? { featured: rows[temporaryEnd] } : {}),
   })
 })

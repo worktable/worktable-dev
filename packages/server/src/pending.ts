@@ -3,16 +3,16 @@
 // ============================================================
 //
 // Only what is addressed to the reader: thread messages assigned to them,
-// comments sent to them, their messages that could not be delivered, and
-// visitor comments on links they can answer. Work sent to their agents is the
-// agents' to do, and an agent's reply that asks nothing is not a request.
-// Each source is read only when the reader has the scope that would let them
-// open it.
+// comments sent to them, their messages that could not be delivered, visitor
+// comments on links they can answer, and their own comments that someone has
+// answered since they last wrote. Work sent to their agents is the agents' to
+// do, and an agent's reply that asks nothing is not a request. Each source is
+// read only when the reader has the scope that would let them open it.
 
 import type { PendingItem, PendingResult, SpaceFile } from "@worktable/types"
 import { readDocumentIdentities } from "./document-query.ts"
 import { resolveParticipant } from "./participant-store.ts"
-import { pendingFor } from "./pending-list.ts"
+import { answeredFor, pendingFor } from "./pending-list.ts"
 import { canAccessSpace } from "./team-policy.ts"
 import { getSpaceArchiveInfo, listSpaces } from "./store.ts"
 import {
@@ -41,16 +41,18 @@ export async function listPending(
     return { items: [], total: 0 }
   }
   const spaces = await listSpaces()
-  const [threadWork, comments] = await Promise.all([
+  const [threadWork, comments, answered] = await Promise.all([
     canReadThreads
       ? listPendingThreadWork(identity, spaces, spaceId)
       : { requests: [], failures: [] },
     canReadAnnotations ? commentRequests(spaces, spaceId, identity) : [],
+    canReadAnnotations ? answeredComments(spaces, spaceId, identity) : [],
   ])
   const all = [
     ...threadRequests(threadWork.requests),
     ...failedDeliveries(threadWork.failures),
     ...comments,
+    ...answered,
     // The private inbox is auxiliary to ordinary team work on Home.
     ...(visitorAccess
       ? await pendingVisitorComments(identity, spaces, spaceId, visitorAccess).catch(() => [])
@@ -130,6 +132,67 @@ async function commentRequests(
       },
     ]
   })
+}
+
+/**
+ * Docs where someone answered the reader's comments, one item per Doc. The
+ * answer asks nothing of them, but the comment is theirs and it is back with
+ * them until they answer it or resolve it.
+ */
+async function answeredComments(
+  allSpaces: SpaceFile[],
+  spaceId: string | undefined,
+  identity: TokenIdentity
+): Promise<PendingItem[]> {
+  const reader = (await resolveParticipant(identity)).participant
+  const active = new Set(
+    allSpaces
+      .filter((space) => (spaceId ? space.id === spaceId : !getSpaceArchiveInfo(space)))
+      .map((space) => space.id)
+  )
+  // Without Teams there is one person, so every person's comment is theirs.
+  // On a team, a comment names its author by their member or participant id.
+  const mine = identity.team ? new Set([reader.id, identity.principal.id]) : null
+  const answered = (await answeredFor((id) => !mine || mine.has(id))).filter(
+    (comment) =>
+      active.has(comment.spaceId) && canAccessSpace(comment.spaceId, "read", identity)
+  )
+  const documents = new Map(
+    await Promise.all(
+      [...new Set(answered.map((comment) => comment.spaceId))].map(
+        async (id) =>
+          [id, (await readDocumentIdentities(id).catch(() => null))?.identities] as const
+      )
+    )
+  )
+  const byDoc = new Map<string, Extract<PendingItem, { kind: "answered" }>>()
+  // Newest first, so each Doc's item takes its newest answer's time.
+  for (const comment of answered) {
+    const current = comment.documentId
+      ? documents.get(comment.spaceId)?.current.get(comment.documentId)
+      : undefined
+    // A Doc that no longer opens has nothing to show.
+    if (comment.documentId && !current) continue
+    const docPath = current?.path ?? comment.path
+    const key = `${comment.spaceId}\0${comment.documentId ?? docPath}`
+    const item = byDoc.get(key)
+    if (item) {
+      item.annotationIds.push(comment.annotationId)
+      if (!item.by.some((actor) => actor.id === comment.by.id)) item.by.push(comment.by)
+      continue
+    }
+    byDoc.set(key, {
+      kind: "answered",
+      id: `answered:${comment.spaceId}:${comment.documentId ?? docPath}`,
+      at: comment.at,
+      spaceId: comment.spaceId,
+      docPath,
+      ...(current?.title ? { docTitle: current.title } : {}),
+      annotationIds: [comment.annotationId],
+      by: [comment.by],
+    })
+  }
+  return [...byDoc.values()]
 }
 
 function failedDeliveries(failures: ViewerDeliveryFailure[]): PendingItem[] {

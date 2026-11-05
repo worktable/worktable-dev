@@ -1,15 +1,20 @@
 import { Link } from "@tanstack/react-router"
-import { useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowRight,
   Check,
+  ChevronDown,
   CircleAlert,
   Clock3,
+  FilePlus2,
   FileText,
   MessageSquareText,
   MessagesSquare,
+  Paperclip,
+  Pencil,
   Reply,
 } from "lucide-react"
+import { flushSync } from "react-dom"
 import {
   Fragment,
   useEffect,
@@ -18,7 +23,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react"
-import type { PendingItem } from "@worktable/types"
+import type { ActivityActor, Annotation, PendingItem } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
 import { Textarea } from "@worktable/ui/components/textarea"
@@ -26,6 +31,7 @@ import { cn } from "@worktable/ui/lib/utils"
 import { DocumentFormatIcon } from "@/components/document-format-icon"
 import { ActorBadge, ThreadLink } from "@/components/home/activity-feed"
 import { ProgressRing } from "@/components/getting-started/progress-ring"
+import { SpaceIcon } from "@/components/spaces/space-icon"
 import { useLifetimeActions } from "@/hooks/use-document-organize"
 import { activityQueryKeys, usePending } from "@/lib/activity"
 import { shortWhen } from "@/lib/activity-format"
@@ -48,6 +54,7 @@ import { useGettingStartedShortcut } from "@/lib/setup"
 import { postThreadReply } from "@/lib/threads-api"
 import { humanizeSegment } from "@/lib/tree"
 import { useActorName } from "@/lib/use-actor-name"
+import { plainText, readableAgentName } from "@/lib/home-text"
 import { useIsSelf } from "@/lib/use-is-self"
 
 // Every row on Home and Space Home has the same shape: a mark; what it is;
@@ -63,8 +70,24 @@ const rowCover =
   "absolute inset-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
 const above = "relative z-10"
 // A text action with a comfortable target that looks like plain text.
+// On phones the target grows to a thumb's size without moving the text.
 const textAction =
-  "-mx-1.5 -my-1 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[0.8rem] font-medium text-primary-text transition-colors hover:bg-primary/10 disabled:opacity-50"
+  "-mx-1.5 -my-1 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[0.8rem] font-medium text-primary-text transition-colors hover:bg-primary/10 disabled:opacity-50 max-sm:-my-[13px] max-sm:py-[13px]"
+const quietAction = cn(
+  textAction,
+  "text-muted-foreground hover:bg-surface-hover hover:text-foreground"
+)
+const quietLink =
+  "inline-flex items-center gap-1 text-[0.8rem] font-medium text-muted-foreground transition-colors hover:text-foreground"
+const quietButton = cn(quietLink, "-my-2 py-2 max-sm:-my-3 max-sm:py-3")
+
+// Lists show a few, then more in steps, so their height holds still as
+// items come and go.
+const STEP = 5
+const DAY_MS = 24 * 60 * 60 * 1000
+// Past this, what waits folds into one line: it has waited long enough that
+// it isn't today's work.
+const OLD_AFTER_MS = 7 * DAY_MS
 
 function SectionHeader({
   id,
@@ -91,6 +114,7 @@ function SectionHeader({
               urgent ? "text-primary-text" : "font-normal text-muted-foreground"
             )}
           >
+            <span className="sr-only">, </span>
             {count}
           </span>
         ) : null}
@@ -99,13 +123,6 @@ function SectionHeader({
     </div>
   )
 }
-
-const quietLink =
-  "inline-flex items-center gap-1 text-[0.8rem] font-medium text-muted-foreground transition-colors hover:text-foreground"
-
-// A list shows its first few, then more in steps, so its height holds still
-// as items come and go.
-const STEP = 5
 
 /** A list's first rows, then more in steps, with a way back. */
 function useSteps(first: number) {
@@ -118,37 +135,40 @@ function useSteps(first: number) {
   }
 }
 
-/** "5 More" and "Show Less", at the end of a list. */
+/** "5 More" and "Show Less", at the end of a list, with any other controls for it. */
 function MoreLess({
   more,
   less,
   loading = false,
   onMore,
   onLess,
+  children,
 }: {
   more: number
   less: boolean
   loading?: boolean
   onMore: () => void
   onLess: () => void
+  children?: ReactNode
 }) {
-  if (more <= 0 && !less && !loading) return null
+  if (more <= 0 && !less && !loading && !children) return null
   return (
-    <div className="mt-2 flex justify-center gap-5">
+    <div className="mt-2 flex items-center gap-5 px-0.5">
       {loading ? (
         <span className="text-[0.8rem] text-muted-foreground">Loading…</span>
       ) : (
         more > 0 && (
-          <button type="button" className={quietLink} onClick={onMore}>
+          <button type="button" className={quietButton} onClick={onMore}>
             {more} More
           </button>
         )
       )}
       {less && (
-        <button type="button" className={quietLink} onClick={onLess}>
+        <button type="button" className={quietButton} onClick={onLess}>
           Show Less
         </button>
       )}
+      {children}
     </div>
   )
 }
@@ -167,7 +187,8 @@ function Meta({
     (part) => part !== undefined && part !== null && part !== false && part !== ""
   )
   return (
-    <p className="mt-0.5 truncate text-[0.8rem] text-muted-foreground">
+    // On phones it wraps to a second line rather than cut who or when.
+    <p className="mt-0.5 text-[0.8rem] text-muted-foreground sm:truncate">
       {who && <span className="text-foreground/75">{who}</span>}
       {shown.map((part, index) => (
         <Fragment key={index}>
@@ -176,7 +197,7 @@ function Meta({
         </Fragment>
       ))}
       {at && (
-        <span className="sm:hidden">
+        <span className="whitespace-nowrap sm:hidden">
           {(who || shown.length > 0) && <span aria-hidden="true"> · </span>}
           {shortWhen(at)}
         </span>
@@ -248,6 +269,7 @@ function useSpaceFacts() {
   const { data: spaces } = useSpaces()
   const byId = new Map((spaces ?? []).map((space) => [space.id, space]))
   return {
+    space: (spaceId: string) => byId.get(spaceId),
     nameOf: (spaceId: string | null | undefined) =>
       spaceId ? byId.get(spaceId)?.name : undefined,
     canEdit: (spaceId: string) => byId.get(spaceId)?.permissions?.edit !== false,
@@ -257,6 +279,27 @@ function useSpaceFacts() {
 /** Rows name their Space only when the list holds more than one. */
 function oneSpace(spaceIds: Array<string | null>): boolean {
   return new Set(spaceIds).size <= 1
+}
+
+/** An actor's name as rows show it, with the full name on hover. */
+function useShownName() {
+  const nameOf = useActorName()
+  return (actor: Pick<ActivityActor, "kind" | "id" | "name">) => {
+    const full = nameOf(actor)
+    const shown = actor.kind === "agent" ? readableAgentName(full) : full
+    return { shown, full }
+  }
+}
+
+/** An actor's mark, drawn from their readable name, so an agent shows as itself. */
+function Badge({ actor }: { actor: ActivityActor }) {
+  const named = useShownName()(actor)
+  return <ActorBadge actor={actor.kind === "agent" ? { ...actor, name: named.shown } : actor} />
+}
+
+function ActorName({ actor }: { actor: Pick<ActivityActor, "kind" | "id" | "name"> }) {
+  const named = useShownName()(actor)
+  return <span title={named.full !== named.shown ? named.full : undefined}>{named.shown}</span>
 }
 
 // Each page's previous visit, read once when the page opens and replaced by
@@ -304,6 +347,10 @@ function useLastVisit(scope: string): number | null {
   )
 }
 
+// Comments are answered from Home now and then; their calls load when used,
+// not with every page.
+const annotationsApi = () => import("@/lib/annotations-api")
+
 // ── Getting Started ────────────────────────────────────────
 
 const lowerFirst = (text: string) =>
@@ -343,7 +390,7 @@ export function GettingStartedRow() {
   )
 }
 
-// ── Pending ────────────────────────────────────────────────
+// ── Your Turn ──────────────────────────────────────────────
 
 const SHOWN = 3
 // The most one request for the rest lists.
@@ -351,10 +398,21 @@ const FULL_LIST = 500
 // Long enough to read "Sent" before the row leaves.
 const SENT_LINGER_MS = 2_000
 
+type AnsweredItem = Extract<PendingItem, { kind: "answered" }>
+
 function replyable(
   item: PendingItem
 ): item is Extract<PendingItem, { kind: "threadRequest" | "commentRequest" }> {
   return item.kind === "threadRequest" || item.kind === "commentRequest"
+}
+
+function usePendingRefresh() {
+  const queryClient = useQueryClient()
+  return (spaceId: string | null | undefined) => {
+    for (const id of [undefined, spaceId ?? undefined]) {
+      void queryClient.invalidateQueries({ queryKey: activityQueryKeys.pendingIn(id) })
+    }
+  }
 }
 
 function sendReply(item: PendingItem, body: string, key: string) {
@@ -385,10 +443,6 @@ function sendReply(item: PendingItem, body: string, key: string) {
   return Promise.resolve()
 }
 
-// Comments are answered from Home now and then; their calls load when used,
-// not with every page.
-const annotationsApi = () => import("@/lib/annotations-api")
-
 /** Where an item lives: its thread, or its doc. */
 function PendingSource({
   item,
@@ -410,7 +464,11 @@ function PendingSource({
     <Link
       to="/spaces/$spaceId/documents/$"
       params={{ spaceId: item.spaceId, _splat: item.docPath }}
-      hash={item.kind === "commentRequest" ? undefined : "visitors"}
+      hash={
+        item.kind === "visitorComments" || item.kind === "visitorCommentsPaused"
+          ? "visitors"
+          : undefined
+      }
       className={className}
     >
       {children}
@@ -425,7 +483,8 @@ function sourceTitle(item: PendingItem): string {
       return item.threadTitle
     case "commentRequest":
     case "visitorComments":
-      return item.docTitle ?? item.docPath
+    case "answered":
+      return item.docTitle ?? humanizeSegment(item.docPath.split("/").at(-1) ?? item.docPath)
     case "visitorCommentsPaused":
       return item.linkLabel || "Untitled link"
   }
@@ -434,15 +493,24 @@ function sourceTitle(item: PendingItem): string {
 /** What the reader is asked, or what happened. */
 function pendingHeadline(item: PendingItem): string {
   switch (item.kind) {
-    case "threadRequest":
+    case "threadRequest": {
+      // An agent often opens with the thread's title; it shows below already.
+      const text = plainText(item.excerpt)
+      const title = plainText(item.threadTitle)
+      return text.startsWith(title) && text.length > title.length
+        ? text.slice(title.length).replace(/^[\s:.,;-]+/, "")
+        : text
+    }
     case "commentRequest":
-      return item.excerpt
+      return plainText(item.excerpt)
     case "deliveryFailed":
       return `Not delivered to ${item.agentName}`
     case "visitorComments":
       return `${item.count} visitor comment${item.count === 1 ? "" : "s"}`
     case "visitorCommentsPaused":
       return "Comments paused"
+    case "answered":
+      return sourceTitle(item)
   }
 }
 
@@ -450,7 +518,14 @@ function PendingLead({ item }: { item: PendingItem }) {
   if (replyable(item)) {
     return (
       <Lead>
-        <ActorBadge actor={item.from} />
+        <Badge actor={item.from} />
+      </Lead>
+    )
+  }
+  if (item.kind === "answered" && item.by[0]) {
+    return (
+      <Lead>
+        <Badge actor={item.by[0]} />
       </Lead>
     )
   }
@@ -478,7 +553,7 @@ function SendProgress({ sendAt }: { sendAt: number }) {
   )
 }
 
-/** Seconds until a waiting reply goes. */
+/** Seconds until a waiting send goes. */
 function Countdown({ at }: { at: number }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -488,7 +563,126 @@ function Countdown({ at }: { at: number }) {
   return <>{Math.max(1, Math.ceil((at - now) / 1000))}s</>
 }
 
-function PendingRow({
+/**
+ * A send's wait, on the row: what goes, how soon, and Undo. `label` says
+ * what is waiting ("Resolving 3"); a reply shows its own text.
+ */
+function SendStatus({
+  id,
+  label,
+  onUndo,
+}: {
+  id: string
+  label?: string
+  onUndo: (body: string) => void
+}) {
+  const sending = useSend(id)
+  const phase = sending?.phase
+  return (
+    <div role="status" aria-live="polite">
+      {(phase === "waiting" || phase === "sending" || phase === "sent") && sending && (
+        <div className="mt-2 flex min-h-7 min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.8rem] text-muted-foreground">
+          {phase === "sent" ? (
+            <Check className="size-3.5 shrink-0 text-success" />
+          ) : (
+            <SendProgress sendAt={sending.sendAt} />
+          )}
+          <span className="min-w-0 truncate text-foreground">{label ?? sending.body}</span>
+          <span className="flex shrink-0 items-center gap-2.5">
+            {phase === "waiting" ? (
+              <>
+                <span>
+                  {label ? "In" : "Sends in"} <Countdown at={sending.sendAt} />
+                </span>
+                <button
+                  type="button"
+                  className={cn(above, textAction, "mx-0")}
+                  onClick={() => {
+                    const body = undoSend(id)
+                    if (body !== null) onUndo(body)
+                  }}
+                >
+                  Undo
+                </button>
+              </>
+            ) : phase === "sending" ? (
+              label ? "…" : "Sending"
+            ) : label ? (
+              "Done"
+            ) : (
+              "Sent"
+            )}
+          </span>
+        </div>
+      )}
+      {phase === "failed" && (
+        <p className="mt-2 text-[0.8rem] text-destructive">
+          {label ? "Couldn’t finish." : "Couldn’t send."}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** A reply box: Enter sends, Shift+Enter starts a new line, Escape cancels. */
+function ReplyBox({
+  draft,
+  onDraft,
+  onSend,
+  onCancel,
+  placeholder,
+  label,
+}: {
+  draft: string
+  onDraft: (draft: string) => void
+  onSend: () => void
+  onCancel: () => void
+  placeholder: string
+  label: string
+}) {
+  const box = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => box.current?.focus(), [])
+  return (
+    <form
+      className={cn(above, "mt-2.5 flex flex-col gap-2 sm:flex-row sm:items-end")}
+      onSubmit={(event) => {
+        event.preventDefault()
+        onSend()
+      }}
+    >
+      <Textarea
+        ref={box}
+        value={draft}
+        onChange={(event) => onDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+            event.preventDefault()
+            onSend()
+          }
+          if (event.key === "Escape") {
+            event.preventDefault()
+            onCancel()
+          }
+        }}
+        placeholder={placeholder}
+        aria-label={label}
+        rows={1}
+        className="field-sizing-content max-h-40 min-h-9 resize-none bg-background py-2"
+      />
+      <div className="flex shrink-0 justify-end gap-2">
+        <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" size="sm" disabled={!draft.trim()}>
+          Send
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+/** An ask: a question, a comment sent to the reader, or something that failed. */
+function AskRow({
   item,
   spaceName,
   open,
@@ -501,34 +695,19 @@ function PendingRow({
   onOpen: () => void
   onClose: () => void
 }) {
-  const queryClient = useQueryClient()
-  const nameOf = useActorName()
+  const refresh = usePendingRefresh()
+  const named = useShownName()
   const sending = useSend(item.id)
   const phase = sending?.phase
   // A reply still on its way when the row remounts keeps its text, so Undo
   // or a failure can put it back.
   const [draft, setDraft] = useState(() => unsentBody(item.id) ?? "")
-  const [resolving, setResolving] = useState(false)
-  const box = useRef<HTMLTextAreaElement>(null)
   const canReply = replyable(item)
   const headline = pendingHeadline(item)
   const source = sourceTitle(item)
-  const asker = canReply ? nameOf(item.from) : undefined
-  // A failed reply reopens its box with its text.
+  const asker = canReply ? named(item.from) : undefined
   const composing = canReply && (phase === "failed" || (open && !phase))
   const idle = canReply && !composing && !phase
-
-  useEffect(() => {
-    if (open && !phase) box.current?.focus()
-  }, [open, phase])
-
-  const refresh = () => {
-    for (const spaceId of [undefined, item.spaceId ?? undefined]) {
-      void queryClient.invalidateQueries({
-        queryKey: activityQueryKeys.pendingIn(spaceId),
-      })
-    }
-  }
 
   const send = () => {
     const body = draft.trim()
@@ -540,7 +719,7 @@ function PendingRow({
         setDraft("")
         onClose()
         // The row says Sent for a moment, then leaves with the refresh.
-        window.setTimeout(refresh, SENT_LINGER_MS)
+        window.setTimeout(() => refresh(item.spaceId), SENT_LINGER_MS)
       },
       onFailed: () => toast.error("Couldn’t send your reply. Try again."),
     })
@@ -549,27 +728,6 @@ function PendingRow({
   const cancel = () => {
     clearSend(item.id)
     onClose()
-  }
-
-  // A comment already settled elsewhere can be resolved without an answer.
-  const resolve = async () => {
-    if (item.kind !== "commentRequest") return
-    setResolving(true)
-    try {
-      const api = await annotationsApi()
-      await api.resolveAnnotation(item.spaceId, item.annotationId)
-      refresh()
-      toast("Resolved", {
-        action: {
-          label: "Undo",
-          onClick: () =>
-            void api.reopenAnnotation(item.spaceId, item.annotationId).then(refresh),
-        },
-      })
-    } catch {
-      toast.error("Couldn’t resolve. Try again.")
-      setResolving(false)
-    }
   }
 
   const quote = item.kind === "commentRequest" ? item.quote : undefined
@@ -615,22 +773,19 @@ function PendingRow({
               composing ? "line-clamp-4" : "line-clamp-1"
             )}
           >
-            {quote}
+            {plainText(quote)}
           </p>
         )}
         <Meta
-          who={asker}
+          who={asker && <span title={asker.full !== asker.shown ? asker.full : undefined}>{asker.shown}</span>}
           at={item.at}
           parts={[
             canReply ? (
               <PendingSource
                 item={item}
-                className={cn(
-                  above,
-                  "inline-flex items-center gap-1 rounded-sm align-bottom hover:text-foreground hover:underline"
-                )}
+                className={cn(above, "rounded-sm hover:text-foreground hover:underline")}
               >
-                <SourceIcon className="size-3 shrink-0" aria-hidden="true" />
+                <SourceIcon className="mr-1 inline size-3 -translate-y-px" aria-hidden="true" />
                 {source}
               </PendingSource>
             ) : (
@@ -644,108 +799,380 @@ function PendingRow({
             <button
               type="button"
               className={textAction}
-              aria-label={`Reply to ${asker}: ${headline}`}
+              aria-label={`Reply to ${asker?.shown}: ${headline}`}
               aria-expanded={open}
               onClick={onOpen}
             >
               <Reply className="size-3.5" />
               Reply
             </button>
-            {item.kind === "commentRequest" && (
-              <button
-                type="button"
-                className={cn(textAction, "text-muted-foreground hover:bg-surface-hover hover:text-foreground")}
-                disabled={resolving}
-                onClick={() => void resolve()}
-              >
-                <Check className="size-3.5" />
-                Resolve
-              </button>
-            )}
           </Actions>
         )}
-        <div role="status" aria-live="polite">
-          {(phase === "waiting" || phase === "sending" || phase === "sent") && sending && (
-            <div className="mt-2 flex min-h-7 min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.8rem] text-muted-foreground">
-              {phase === "sent" ? (
-                <Check className="size-3.5 shrink-0 text-success" />
-              ) : (
-                <SendProgress sendAt={sending.sendAt} />
-              )}
-              <span className="min-w-0 truncate text-foreground">{sending.body}</span>
-              <span className="flex shrink-0 items-center gap-2.5">
-                {phase === "waiting" ? (
-                  <>
-                    <span>
-                      Sends in <Countdown at={sending.sendAt} />
-                    </span>
-                    <button
-                      type="button"
-                      className={cn(above, textAction, "mx-0")}
-                      onClick={() => {
-                        const body = undoSend(item.id)
-                        if (body !== null) {
-                          setDraft(body)
-                          onOpen()
-                        }
-                      }}
-                    >
-                      Undo
-                    </button>
-                  </>
-                ) : phase === "sending" ? (
-                  "Sending"
-                ) : (
-                  "Sent"
-                )}
-              </span>
-            </div>
-          )}
-          {phase === "failed" && (
-            <p className="mt-2 text-[0.8rem] text-destructive">Couldn’t send.</p>
-          )}
-        </div>
+        <SendStatus
+          id={item.id}
+          onUndo={(body) => {
+            setDraft(body)
+            onOpen()
+          }}
+        />
         {composing && (
-          <form
-            className={cn(above, "mt-2.5 flex flex-col gap-2 sm:flex-row sm:items-end")}
-            onSubmit={(event) => {
-              event.preventDefault()
-              send()
-            }}
-          >
-            <Textarea
-              ref={box}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                // Enter sends; Shift+Enter starts a new line.
-                if (
-                  event.key === "Enter" &&
-                  !event.shiftKey &&
-                  !event.nativeEvent.isComposing
-                ) {
-                  event.preventDefault()
-                  send()
-                }
-                if (event.key === "Escape") {
-                  event.preventDefault()
-                  cancel()
-                }
+          <ReplyBox
+            draft={draft}
+            onDraft={setDraft}
+            onSend={send}
+            onCancel={cancel}
+            placeholder={`Reply to ${asker?.shown}`}
+            label={`Reply on ${source}`}
+          />
+        )}
+      </div>
+      <When at={item.at} />
+    </div>
+  )
+}
+
+/** One of the reader's comments, and the answer it got. */
+function AnswerPair({
+  spaceId,
+  annotation,
+  onDone,
+  onResolved,
+}: {
+  spaceId: string
+  annotation: Annotation
+  onDone: () => void
+  onResolved: (resolved: boolean) => void
+}) {
+  const id = `answer:${annotation.id}`
+  const sending = useSend(id)
+  const [replying, setReplying] = useState(false)
+  const [draft, setDraft] = useState(() => unsentBody(id) ?? "")
+  const [resolving, setResolving] = useState(false)
+  const quote = "quote" in annotation.target ? annotation.target.quote : undefined
+  // The agent had the last word; it answers the person's latest words before
+  // it, which on a first exchange are the comment itself.
+  const answer = annotation.thread.at(-1)
+  const asked =
+    annotation.thread
+      .slice(0, -1)
+      .reverse()
+      .find((message) => message.author.type === "user")?.body ?? annotation.body
+  const send = () => {
+    const body = draft.trim()
+    if (!body) return
+    clearSend(id)
+    scheduleSend(
+      id,
+      body,
+      () => annotationsApi().then((api) => api.replyAnnotation(spaceId, annotation.id, body)),
+      {
+        onSent: () => {
+          setDraft("")
+          setReplying(false)
+          window.setTimeout(onDone, SENT_LINGER_MS)
+        },
+        onFailed: () => toast.error("Couldn’t send your reply. Try again."),
+      }
+    )
+  }
+  const resolve = async () => {
+    setResolving(true)
+    try {
+      const api = await annotationsApi()
+      await api.resolveAnnotation(spaceId, annotation.id)
+      onResolved(true)
+      onDone()
+      toast("Resolved", {
+        action: {
+          label: "Undo",
+          onClick: () =>
+            void api.reopenAnnotation(spaceId, annotation.id).then(() => {
+              onResolved(false)
+              onDone()
+            }),
+        },
+      })
+    } catch {
+      toast.error("Couldn’t resolve. Try again.")
+      setResolving(false)
+    }
+  }
+  return (
+    <li className="space-y-1.5 border-t border-border/60 py-3 first:border-t-0 first:pt-1">
+      {quote && (
+        <p className="border-l-2 border-border pl-2.5 text-[0.8rem] leading-relaxed text-muted-foreground">
+          {plainText(quote)}
+        </p>
+      )}
+      <p className="text-[0.8125rem] leading-relaxed text-muted-foreground">
+        <span className="font-medium text-foreground/75">You: </span>
+        {plainText(asked)}
+      </p>
+      {answer && (
+        <p className="text-sm leading-relaxed text-foreground">
+          <span className="font-medium">
+            <ActorName
+              actor={{
+                kind: answer.author.type === "user" ? "person" : answer.author.type,
+                id: answer.author.id,
+                ...(answer.author.name ? { name: answer.author.name } : {}),
               }}
-              placeholder={`Reply to ${asker}`}
-              aria-label={`Reply on ${source}`}
-              rows={1}
-              className="field-sizing-content max-h-40 min-h-9 resize-none bg-background py-2"
             />
-            <div className="flex shrink-0 justify-end gap-2">
-              <Button type="button" size="sm" variant="ghost" onClick={cancel}>
-                Cancel
-              </Button>
-              <Button type="submit" size="sm" disabled={!draft.trim()}>
-                Send
-              </Button>
-            </div>
-          </form>
+            :{" "}
+          </span>
+          {plainText(answer.body)}
+        </p>
+      )}
+      {!replying && !sending && (
+        <div className="flex items-center gap-4 pt-0.5">
+          <button type="button" className={textAction} onClick={() => setReplying(true)}>
+            <Reply className="size-3.5" />
+            Reply
+          </button>
+          <button
+            type="button"
+            className={quietAction}
+            disabled={resolving}
+            onClick={() => void resolve()}
+          >
+            <Check className="size-3.5" />
+            Resolve
+          </button>
+        </div>
+      )}
+      <SendStatus
+        id={id}
+        onUndo={(body) => {
+          setDraft(body)
+          setReplying(true)
+        }}
+      />
+      {(replying || sending?.phase === "failed") && !(sending && sending.phase !== "failed") && (
+        <ReplyBox
+          draft={draft}
+          onDraft={setDraft}
+          onSend={send}
+          onCancel={() => {
+            clearSend(id)
+            setReplying(false)
+          }}
+          placeholder="Reply"
+          label="Reply to this answer"
+        />
+      )}
+    </li>
+  )
+}
+
+/** The answers on one doc, loaded when the row opens. */
+function AnswerPairs({
+  item,
+  resolved,
+  onResolved,
+  onDone,
+  onHide,
+}: {
+  item: AnsweredItem
+  resolved: ReadonlySet<string>
+  onResolved: (id: string, resolved: boolean) => void
+  onDone: () => void
+  onHide: () => void
+}) {
+  const answers = useQuery({
+    // Any new answer, here or on the Doc, changes the ids or the newest time.
+    queryKey: [
+      "home-answers",
+      item.spaceId,
+      item.docPath,
+      item.annotationIds.join(","),
+      item.at,
+    ],
+    queryFn: async () => {
+      const api = await annotationsApi()
+      const { annotations } = await api.listAnnotations(item.spaceId, {
+        docPath: item.docPath,
+        status: ["open"],
+        limit: 500,
+      })
+      const order = new Map(item.annotationIds.map((id, index) => [id, index]))
+      return annotations
+        .filter((annotation) => order.has(annotation.id))
+        .sort((a, b) => order.get(a.id)! - order.get(b.id)!)
+    },
+    staleTime: Infinity,
+    // After a reply or resolve the key changes; the pairs stay until the new
+    // list arrives.
+    placeholderData: keepPreviousData,
+  })
+  if (answers.isLoading) {
+    return <div className="mt-2 h-16 animate-pulse rounded-lg bg-surface-inset" aria-hidden="true" />
+  }
+  if (answers.isError) {
+    return <LoadFailed what="the answers" onRetry={() => void answers.refetch()} />
+  }
+  // Resolved here: they leave before the list refreshes.
+  const pairs = (answers.data ?? []).filter((annotation) => !resolved.has(annotation.id))
+  return (
+    <>
+      <ul className={cn(above, "mt-2")}>
+        {pairs.map((annotation) => (
+          <AnswerPair
+            key={annotation.id}
+            spaceId={item.spaceId}
+            annotation={annotation}
+            onDone={onDone}
+            onResolved={(done) => onResolved(annotation.id, done)}
+          />
+        ))}
+      </ul>
+      {pairs.length > 3 && (
+        <Actions>
+          <button type="button" className={textAction} onClick={onHide}>
+            <ChevronDown className="size-3.5 rotate-180" />
+            Hide
+          </button>
+        </Actions>
+      )}
+    </>
+  )
+}
+
+/**
+ * A doc where agents answered the reader's comments: who, how many, when.
+ * It opens to the answers; Resolve All settles them all after a 5-second
+ * Undo.
+ */
+function AnsweredRow({
+  item,
+  spaceName,
+  open,
+  onOpen,
+  onClose,
+}: {
+  item: AnsweredItem
+  spaceName?: string
+  open: boolean
+  onOpen: () => void
+  onClose: () => void
+}) {
+  const refresh = usePendingRefresh()
+  const rowRef = useRef<HTMLDivElement>(null)
+  const resolveId = `resolve-all:${item.id}`
+  const resolving = useSend(resolveId)
+  const [resolved, setResolved] = useState<ReadonlySet<string>>(() => new Set())
+  const left = item.annotationIds.filter((id) => !resolved.has(id))
+  const count = left.length
+  const title = sourceTitle(item)
+  // Pending's refresh changes the row's ids or time, which reloads its answers.
+  const done = () => refresh(item.spaceId)
+  const resolveAll = () => {
+    clearSend(resolveId)
+    scheduleSend(
+      resolveId,
+      "",
+      async () => {
+        const api = await annotationsApi()
+        const results = await Promise.allSettled(
+          left.map((id) => api.resolveAnnotation(item.spaceId, id))
+        )
+        // Report a failure only once every resolve has settled.
+        if (results.some((result) => result.status === "rejected")) {
+          throw new Error("Some comments couldn’t be resolved")
+        }
+      },
+      {
+        onSent: () => window.setTimeout(done, SENT_LINGER_MS),
+        // Some may have resolved; the row shows what is left.
+        onFailed: () => {
+          done()
+          toast.error("Couldn’t resolve them all. Try again.")
+        },
+      }
+    )
+  }
+  const busy = resolving && resolving.phase !== "failed"
+  // Every answer resolved here: the row leaves before Pending refreshes.
+  if (count === 0) return null
+  return (
+    <div ref={rowRef} className={cn(rowClass, !open && !busy && rowHover)}>
+      {!busy && (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-hidden="true"
+          className={rowCover}
+          onClick={open ? onClose : onOpen}
+        />
+      )}
+      <PendingLead item={item} />
+      <div className="min-w-0">
+        <p className="flex min-w-0 items-start gap-1.5 leading-snug">
+          <Link
+            to="/spaces/$spaceId/documents/$"
+            params={{ spaceId: item.spaceId, _splat: item.docPath }}
+            className={cn(
+              above,
+              "min-w-0 rounded-sm font-medium text-foreground hover:underline max-sm:line-clamp-2 sm:truncate"
+            )}
+          >
+            {title}
+          </Link>
+        </p>
+        <Meta
+          who={
+            <>
+              {item.by[0] && <ActorName actor={item.by[0]} />}
+              {item.by.length > 1 && ` +${item.by.length - 1}`}{" "}
+              {count === 1 ? "answered your comment" : `answered ${count} of your comments`}
+            </>
+          }
+          at={item.at}
+          parts={[spaceName]}
+        />
+        {!busy && (
+          <Actions>
+            <button
+              type="button"
+              className={textAction}
+              aria-expanded={open}
+              onClick={open ? onClose : onOpen}
+            >
+              <ChevronDown
+                className={cn("size-3.5 transition-transform", open && "rotate-180")}
+              />
+              {open ? "Hide" : count === 1 ? "Answer" : "Answers"}
+            </button>
+            <button type="button" className={quietAction} onClick={resolveAll}>
+              <Check className="size-3.5" />
+              {count === 1 ? "Resolve" : "Resolve All"}
+            </button>
+          </Actions>
+        )}
+        <SendStatus
+          id={resolveId}
+          label={count === 1 ? "Resolving" : `Resolving ${count}`}
+          onUndo={() => {}}
+        />
+        {open && !busy && (
+          <AnswerPairs
+            item={item}
+            resolved={resolved}
+            onResolved={(id, done) =>
+              setResolved((current) => {
+                const next = new Set(current)
+                if (done) next.add(id)
+                else next.delete(id)
+                return next
+              })
+            }
+            onDone={done}
+            onHide={() => {
+              // Hiding from the bottom of a long list keeps the reader at this
+              // row: collapse it first, then bring what remains into view.
+              flushSync(onClose)
+              rowRef.current?.scrollIntoView({ block: "nearest" })
+            }}
+          />
         )}
       </div>
       <When at={item.at} />
@@ -754,34 +1181,59 @@ function PendingRow({
 }
 
 /**
- * What only the reader can act on, answered in place. Home always shows it,
- * so its place doesn't jump; a Space shows it only when something waits.
+ * What's back in the reader's court: docs where agents answered their
+ * comments, and what is asked of them, answered in place. Home always shows
+ * it, so its place doesn't jump; a Space shows it only when something waits.
  */
-export function PendingSection({ spaceId }: { spaceId?: string }) {
+export function YourTurnSection({ spaceId }: { spaceId?: string }) {
   // Past the first request's ten, one more asks for the rest.
   const [all, setAll] = useState(false)
   const pending = usePending(spaceId, all)
   const spaces = useSpaceFacts()
   const [open, setOpen] = useState<string | null>(null)
+  const [showOld, setShowOld] = useState(false)
+  const [now] = useState(() => Date.now())
   const items = pending.data?.items ?? []
   const total = pending.data?.total ?? items.length
+  const fresh = items.filter((item) => now - Date.parse(item.at) <= OLD_AFTER_MS)
+  const old = items.filter((item) => now - Date.parse(item.at) > OLD_AFTER_MS)
   const steps = useSteps(SHOWN)
   const failed = pending.isError && !pending.data
   const onHome = spaceId === undefined
-  if (!onHome && !pending.isLoading && items.length === 0 && !failed) return null
-  const shown = items.slice(0, steps.visible)
+  // A Space shows it only once something is known to wait, so its page
+  // doesn't shift.
+  if (!onHome && (pending.isLoading || (items.length === 0 && !failed))) return null
+  const shown = fresh.slice(0, steps.visible)
   // What another step could still show: everything a full list holds, until
-  // that list has come.
-  const reachable = all ? items.length : Math.min(total, FULL_LIST)
+  // that list has come. Older items wait behind their own line.
+  const reachable = (all ? items.length : Math.min(total, FULL_LIST)) - old.length
   const loadingMore = all && pending.isPlaceholderData
   const named = onHome && !oneSpace(items.map((item) => item.spaceId))
+  const row = (item: PendingItem) => {
+    const props = {
+      spaceName: named ? spaces.nameOf(item.spaceId) : undefined,
+      open: open === item.id,
+      onOpen: () => setOpen(item.id),
+      onClose: () => setOpen((current) => (current === item.id ? null : current)),
+    }
+    return item.kind === "answered" ? (
+      <AnsweredRow key={item.id} item={item} {...props} />
+    ) : (
+      <AskRow key={item.id} item={item} {...props} />
+    )
+  }
   return (
-    <section aria-labelledby="pending-heading">
-      <SectionHeader id="pending-heading" title="Pending" count={total} urgent />
+    <section aria-labelledby="your-turn-heading">
+      <SectionHeader
+        id="your-turn-heading"
+        title="Your Turn"
+        count={total - old.length}
+        urgent
+      />
       {pending.isLoading ? (
         <Skeleton rows={onHome ? 2 : 1} tall />
       ) : failed ? (
-        <LoadFailed what="what’s pending" onRetry={() => void pending.refetch()} />
+        <LoadFailed what="what’s yours to do" onRetry={() => void pending.refetch()} />
       ) : items.length === 0 ? (
         <p className="flex h-6 items-center gap-2 px-0.5 text-sm text-muted-foreground">
           <Check className="size-4 text-success" />
@@ -789,54 +1241,69 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
         </p>
       ) : (
         <>
-          <div className={cardClass}>
-            {shown.map((item) => (
-              <PendingRow
-                key={item.id}
-                item={item}
-                spaceName={named ? spaces.nameOf(item.spaceId) : undefined}
-                open={open === item.id}
-                onOpen={() => setOpen(item.id)}
-                onClose={() => setOpen((current) => (current === item.id ? null : current))}
-              />
-            ))}
-          </div>
+          {(shown.length > 0 || showOld) && (
+            <div className={cardClass}>
+              {/* Older items open below every fresher one, never above. */}
+              {(showOld ? fresh : shown).map(row)}
+              {showOld && old.map(row)}
+            </div>
+          )}
           <MoreLess
-            more={Math.min(STEP, reachable - shown.length)}
-            less={steps.expanded}
+            more={showOld ? 0 : Math.min(STEP, reachable - shown.length)}
+            less={steps.expanded && !showOld}
             loading={loadingMore}
             onMore={() => {
               if (steps.visible + STEP > items.length && total > items.length) setAll(true)
               steps.more()
             }}
             onLess={steps.less}
-          />
+          >
+            {old.length > 0 && (
+              <button
+                type="button"
+                className={quietButton}
+                aria-expanded={showOld}
+                onClick={() => {
+                  if (!showOld && total > items.length) setAll(true)
+                  setShowOld(!showOld)
+                }}
+              >
+                <ChevronDown className={cn("size-3.5 transition-transform", showOld && "rotate-180")} />
+                {old.length} older
+              </button>
+            )}
+          </MoreLess>
         </>
       )}
     </section>
   )
 }
 
-// ── Recent ─────────────────────────────────────────────────
+// ── Latest Work ────────────────────────────────────────────
 
-const RECENT_ROWS = 5
+const HOME_DOCS = 30
+const SPACE_DOCS = 20
 const FOLDER_ROWS = 500
+// Per Space section on Home, and in Space Home's one list.
+const SECTION_ROWS = 3
+const SPACE_LIST_ROWS = 8
 // Temporary docs further out than this aren't "soon".
 const SOON_DAYS = 7
 // Docs and rich docs are the usual kind; anything else says what it is.
 const PLAIN_FORMATS = new Set(["worktable.markdown", "worktable.rich-text"])
+const isFile = (item: RecentDocument) => item.document.format.id === "worktable.file"
 
 /**
- * Home's and Space Home's one read of recent docs: Recent and Archiving Soon
- * share it.
+ * Home's and Space Home's one read of recent docs: Latest Work, Archiving
+ * Soon and the summary line share it.
  */
 function useRecent(spaceId?: string) {
   return useRecentDocuments({
     sort: "updated",
     includeTemporary: true,
-    limit: RECENT_ROWS,
+    limit: spaceId !== undefined ? SPACE_DOCS : HOME_DOCS,
+    filesBeyondLimit: true,
     temporaryLimit: 100,
-    excerpt: true,
     ...(spaceId !== undefined ? { spaceId } : { mine: true }),
   })
 }
@@ -858,7 +1325,20 @@ function placeOf(
   if (place === "space") return spaceName(item.spaceId)
   const path = item.document.path.split("/")
   const within = place === "folder" ? path : path.slice(place.inFolder.split("/").length)
-  return within.length > 1 ? humanizeSegment(within[0]!) : undefined
+  return within.length > 1 ? folderName(within[0]!) : undefined
+}
+
+/**
+ * A folder's name to read. Agents often date a folder and sign it with their
+ * own name; the row already has a time and an author.
+ */
+function folderName(segment: string): string {
+  const undated = segment.replace(/^\d{4}-\d{2}-\d{2}[-_ ]*/, "")
+  const named =
+    undated === segment
+      ? segment
+      : undated.replace(/[-_ ](claude|codex|chatgpt|cursor|gemini|grok)$/i, "")
+  return humanizeSegment(named || segment)
 }
 
 /** Calendar days from today to the archive date, in the reader's time zone. */
@@ -910,6 +1390,18 @@ function FormatIcon({ item, className }: { item: RecentDocument; className: stri
   )
 }
 
+/** Made or changed, as a mark. */
+function ActionMark({ action }: { action?: "created" | "edited" }) {
+  if (!action) return null
+  const Icon = action === "created" ? FilePlus2 : Pencil
+  return (
+    <Icon
+      className="mr-1 inline size-3 -translate-y-px"
+      aria-label={action === "created" ? "Created by" : "Edited by"}
+    />
+  )
+}
+
 /**
  * A doc, led by whoever changed it last. A temporary one says when it
  * archives, beside Keep.
@@ -926,7 +1418,6 @@ function DocRow({
   /** The reader's last visit: others' changes after it are marked. */
   since?: number | null
 }) {
-  const nameOf = useActorName()
   const isSelf = useIsSelf()
   const spaces = useSpaceFacts()
   const { updatedAt, archiveOn, lifetime } = item.document
@@ -950,7 +1441,7 @@ function DocRow({
       />
       <Lead>
         {editor ? (
-          <ActorBadge actor={editor} />
+          <Badge actor={editor} />
         ) : (
           <FormatIcon item={item} className="size-4 text-muted-foreground" />
         )}
@@ -974,17 +1465,16 @@ function DocRow({
         </p>
         <Meta
           who={
-            editor &&
-            `${nameOf(editor)}${item.lastAction ? ` ${item.lastAction}` : ""}`
+            editor && (
+              <>
+                <ActionMark action={item.lastAction} />
+                <ActorName actor={editor} />
+              </>
+            )
           }
           at={updatedAt}
           parts={[placeOf(item, place, spaces.nameOf)]}
         />
-        {item.excerpt && (
-          <p className="mt-1.5 line-clamp-2 text-[0.8125rem] leading-relaxed text-muted-foreground">
-            {item.excerpt}
-          </p>
-        )}
         {temporary && (
           <Actions>
             <span
@@ -1005,28 +1495,208 @@ function DocRow({
   )
 }
 
+/** Uploaded files, as one row that opens to list them. */
+function FilesRow({
+  files,
+  place,
+  now,
+  capped,
+}: {
+  files: RecentDocument[]
+  place: Place
+  now: number
+  /** The list stopped at its limit, so there may be more. */
+  capped: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const spaces = useSpaceFacts()
+  const newest = files[0]!
+  const places = [...new Set(files.map((file) => placeOf(file, place, spaces.nameOf)))]
+  return (
+    <>
+      <div className={cn(rowClass, rowHover)}>
+        <button
+          type="button"
+          className={rowCover}
+          aria-expanded={open}
+          aria-label={`${files.length}${capped ? "+" : ""} files`}
+          onClick={() => setOpen(!open)}
+        />
+        <Lead>
+          <Paperclip className="size-4 text-muted-foreground" />
+        </Lead>
+        <div className="min-w-0">
+          <p className="flex min-w-0 items-center gap-1.5 leading-snug font-medium text-foreground">
+            {files.length}
+            {capped ? "+" : ""} files
+            <ChevronDown
+              className={cn("size-3.5 text-muted-foreground transition-transform", open && "rotate-180")}
+            />
+          </p>
+          <Meta
+            who={newest.lastEditor && <ActorName actor={newest.lastEditor} />}
+            at={newest.document.updatedAt}
+            parts={[places.length === 1 ? places[0] : undefined]}
+          />
+        </div>
+        <When at={newest.document.updatedAt} />
+      </div>
+      {open && (
+        <div className="ml-6 border-l border-border/60 pl-1">
+          {files.map((file) => (
+            <DocRow key={docKey(file)} item={file} place={place} now={now} />
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
+/** A row of Latest Work: one doc, or the uploaded files folded together. */
+type Unit =
+  | { kind: "doc"; item: RecentDocument }
+  | { kind: "files"; items: RecentDocument[] }
+
+/** Docs in order, with uploaded files folded into one row where the newest was. */
+function toUnits(items: RecentDocument[]): Unit[] {
+  const files = items.filter(isFile)
+  return items.flatMap((item): Unit[] => {
+    if (!isFile(item)) return [{ kind: "doc", item }]
+    if (item !== files[0]) return []
+    return files.length > 1 ? [{ kind: "files", items: files }] : [{ kind: "doc", item }]
+  })
+}
+
+function Units({
+  units,
+  place,
+  now,
+  since,
+  filesCapped,
+}: {
+  units: Unit[]
+  place: Place
+  now: number
+  since?: number | null
+  /** The list stopped at its file limit, so a files row may hold more. */
+  filesCapped: boolean
+}) {
+  return (
+    <>
+      {units.map((unit) =>
+        unit.kind === "doc" ? (
+          <DocRow key={docKey(unit.item)} item={unit.item} place={place} now={now} since={since} />
+        ) : (
+          <FilesRow
+            key="files"
+            files={unit.items}
+            place={place}
+            now={now}
+            capped={filesCapped}
+          />
+        )
+      )}
+    </>
+  )
+}
+
+/** Docs Latest Work shows before anything is expanded. */
+function shownInLatest(items: RecentDocument[], inSpace: boolean): Set<string> {
+  const groups = new Map<string, RecentDocument[]>()
+  for (const item of items) {
+    const key = inSpace ? "" : item.spaceId
+    groups.set(key, [...(groups.get(key) ?? []), item])
+  }
+  const keys = new Set<string>()
+  for (const group of groups.values()) {
+    for (const unit of toUnits(group).slice(0, inSpace ? SPACE_LIST_ROWS : SECTION_ROWS)) {
+      if (unit.kind === "doc") keys.add(docKey(unit.item))
+    }
+  }
+  return keys
+}
+
+/** One Space's latest docs on Home: its newest few, the rest in place. */
+function SpaceGroup({
+  spaceId,
+  items,
+  now,
+  since,
+  filesCapped,
+}: {
+  spaceId: string
+  items: RecentDocument[]
+  now: number
+  since: number | null
+  /** The response stopped at its file limit, shared by every Space. */
+  filesCapped: boolean
+}) {
+  const spaces = useSpaceFacts()
+  const [all, setAll] = useState(false)
+  const space = spaces.space(spaceId)
+  const units = toUnits(items)
+  const hidden = units.length - SECTION_ROWS
+  return (
+    <div className="py-1">
+      <div className="flex items-center justify-between gap-3 px-3 pt-1.5 pb-0.5">
+        <Link
+          to="/spaces/$spaceId"
+          params={{ spaceId }}
+          className="flex min-w-0 items-center gap-2 text-[0.8rem] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {space && <SpaceIcon space={space} size="sm" />}
+          <span className="truncate">{space?.name ?? items[0]!.spaceName}</span>
+        </Link>
+        {hidden > 0 && (
+          <button
+            type="button"
+            className={cn(quietButton, "shrink-0")}
+            aria-expanded={all}
+            onClick={() => setAll(!all)}
+          >
+            {all ? "Show Less" : `${hidden} More`}
+          </button>
+        )}
+      </div>
+      <Units
+        units={all ? units : units.slice(0, SECTION_ROWS)}
+        place="folder"
+        now={now}
+        since={since}
+        filesCapped={filesCapped}
+      />
+    </div>
+  )
+}
+
 /**
  * What changed lately, and who changed it. On Home, the reader's and their
- * agents' docs across Spaces; in a Space, everyone's there. When the newest
- * is a doc an agent just made, it shows its opening lines. Others' changes
- * since the reader's last visit are marked.
+ * agents' docs, by Space, newest Space first; in a Space, everyone's there,
+ * in one list. Uploaded files fold into one row.
  */
-export function RecentSection({ spaceId }: { spaceId?: string }) {
+export function LatestWorkSection({ spaceId }: { spaceId?: string }) {
   const inSpace = spaceId !== undefined
   const recent = useRecent(spaceId)
   const since = useLastVisit(inSpace ? `space:${spaceId}` : "home")
   const [now] = useState(() => Date.now())
+  const steps = useSteps(SPACE_LIST_ROWS)
   const items = recent.data?.items ?? []
-  const place: Place = inSpace
-    ? "folder"
-    : oneSpace(items.map((item) => item.spaceId))
-      ? "none"
-      : "space"
+  const units = toUnits(items)
+  // The server's file limit is for the whole response, so it is decided once.
+  const filesCapped =
+    items.filter(isFile).length >= (inSpace ? SPACE_DOCS : HOME_DOCS)
+  // Newest first already, so each Space's first doc places its section.
+  const groups = new Map<string, RecentDocument[]>()
+  for (const item of items) {
+    const group = groups.get(item.spaceId) ?? []
+    group.push(item)
+    groups.set(item.spaceId, group)
+  }
   return (
-    <section aria-labelledby="recent-heading">
+    <section aria-labelledby="latest-heading">
       <SectionHeader
-        id="recent-heading"
-        title="Recent"
+        id="latest-heading"
+        title="Latest Work"
         action={
           <Link
             to="/activity"
@@ -1041,23 +1711,42 @@ export function RecentSection({ spaceId }: { spaceId?: string }) {
       {recent.isLoading ? (
         <Skeleton rows={4} />
       ) : recent.isError && !recent.data ? (
-        <LoadFailed what="recent docs" onRetry={() => void recent.refetch()} />
+        <LoadFailed what="the latest work" onRetry={() => void recent.refetch()} />
       ) : items.length === 0 && !recent.data?.incomplete ? (
         <p className="px-0.5 text-sm text-muted-foreground">Nothing yet.</p>
       ) : (
         <>
           {items.length > 0 && (
-            <div className={cardClass}>
-              {items.map((item) => (
-                <DocRow
-                  key={docKey(item)}
-                  item={item}
-                  place={place}
+            <div className={cn(cardClass, !inSpace && "divide-y divide-border/60")}>
+              {inSpace ? (
+                <Units
+                  units={units.slice(0, steps.visible)}
+                  place="folder"
                   now={now}
                   since={since}
+                  filesCapped={filesCapped}
                 />
-              ))}
+              ) : (
+                [...groups].map(([id, group]) => (
+                  <SpaceGroup
+                    key={id}
+                    spaceId={id}
+                    items={group}
+                    now={now}
+                    since={since}
+                    filesCapped={filesCapped}
+                  />
+                ))
+              )}
             </div>
+          )}
+          {inSpace && (
+            <MoreLess
+              more={Math.min(STEP, units.length - steps.visible)}
+              less={steps.expanded}
+              onMore={steps.more}
+              onLess={steps.less}
+            />
           )}
           {recent.data?.incomplete && (
             <Incomplete onRetry={() => void recent.refetch()} />
@@ -1080,6 +1769,7 @@ export function FolderSection({
     sort: "updated",
     includeTemporary: true,
     limit: FOLDER_ROWS,
+    filesBeyondLimit: true,
     spaceId,
     folder,
   })
@@ -1097,14 +1787,12 @@ export function FolderSection({
         <>
           {items.length > 0 && (
             <div className={cardClass}>
-              {items.map((item) => (
-                <DocRow
-                  key={item.document.path}
-                  item={item}
-                  place={{ inFolder: folder }}
-                  now={now}
-                />
-              ))}
+              <Units
+                units={toUnits(items)}
+                place={{ inFolder: folder }}
+                now={now}
+                filesCapped={items.filter(isFile).length >= FOLDER_ROWS}
+              />
             </div>
           )}
           {docs.data?.incomplete && (
@@ -1119,44 +1807,128 @@ export function FolderSection({
 // ── Archiving Soon ─────────────────────────────────────────
 
 /**
- * Temporary docs that archive within the week and aren't already in Recent,
- * soonest first, each with Keep.
+ * Temporary docs that archive within the week and Latest Work doesn't show,
+ * as one line: the soonest, with Keep, and the rest on request.
  */
 export function ArchivingSoonSection({ spaceId }: { spaceId?: string }) {
   const recent = useRecent(spaceId)
+  const spaces = useSpaceFacts()
   const [now] = useState(() => Date.now())
-  const inRecent = new Set((recent.data?.items ?? []).map(docKey))
+  const [open, setOpen] = useState(false)
+  const shown = shownInLatest(recent.data?.items ?? [], spaceId !== undefined)
   const soon = (recent.data?.temporary ?? [])
     .filter(
       (item) =>
         item.document.archiveOn &&
-        !inRecent.has(docKey(item)) &&
+        !shown.has(docKey(item)) &&
         daysUntil(item.document.archiveOn, now) <= SOON_DAYS
     )
     .sort((a, b) => a.document.archiveOn!.localeCompare(b.document.archiveOn!))
-  const steps = useSteps(SHOWN)
-  if (soon.length === 0) return null
-  const shown = soon.slice(0, steps.visible)
+  const first = soon[0]
+  if (!first) return null
   const place: Place =
     spaceId !== undefined
       ? "folder"
       : oneSpace(soon.map((item) => item.spaceId))
         ? "none"
         : "space"
+  const soonest = daysUntil(first.document.archiveOn!, now) <= 1
   return (
-    <section aria-labelledby="archiving-heading">
-      <SectionHeader id="archiving-heading" title="Archiving Soon" count={soon.length} />
-      <div className={cardClass}>
-        {shown.map((item) => (
-          <DocRow key={docKey(item)} item={item} place={place} now={now} />
-        ))}
+    <section aria-label="Archiving Soon">
+      {/* On phones the title has its own line, so Keep says what it keeps. */}
+      <div className="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-3.5 text-sm max-sm:grid-cols-[1rem_minmax(0,1fr)]">
+        <Clock3
+          className={cn("size-4 shrink-0", soonest ? "text-warning" : "text-muted-foreground")}
+          aria-hidden="true"
+        />
+        <p className="flex min-w-0 items-baseline text-muted-foreground">
+          <Link
+            to="/spaces/$spaceId/documents/$"
+            params={{ spaceId: first.spaceId, _splat: first.document.path }}
+            className="min-w-0 truncate font-medium text-foreground hover:underline"
+          >
+            {first.document.title}
+          </Link>
+          <span className="shrink-0 whitespace-pre max-sm:hidden">
+            {" · "}
+            {archiveLabel(first.document.archiveOn!, now)}
+          </span>
+          {placeOf(first, place, spaces.nameOf) && (
+            <span className="min-w-0 truncate whitespace-pre max-sm:hidden">
+              {" · "}
+              {placeOf(first, place, spaces.nameOf)}
+            </span>
+          )}
+        </p>
+        <div className="flex items-center gap-4 max-sm:col-start-2">
+          <span className="text-muted-foreground sm:hidden">
+            {archiveLabel(first.document.archiveOn!, now)}
+          </span>
+          {spaces.canEdit(first.spaceId) && <KeepButton item={first} />}
+          {soon.length > 1 && (
+            <button
+              type="button"
+              className={cn(quietButton, "shrink-0")}
+              aria-expanded={open}
+              onClick={() => setOpen(!open)}
+            >
+              {open ? "Show Less" : `+${soon.length - 1}`}
+            </button>
+          )}
+        </div>
       </div>
-      <MoreLess
-        more={Math.min(STEP, soon.length - shown.length)}
-        less={steps.expanded}
-        onMore={steps.more}
-        onLess={steps.less}
-      />
+      {open && (
+        <div className={cn(cardClass, "mt-2")}>
+          {soon.slice(1).map((item) => (
+            <DocRow key={docKey(item)} item={item} place={place} now={now} />
+          ))}
+        </div>
+      )}
     </section>
+  )
+}
+
+// ── Summary ────────────────────────────────────────────────
+
+/**
+ * One quiet line under the greeting: how much is the reader's to do, and how
+ * much changed today. It reads what Your Turn and Latest Work already load.
+ */
+export function HomeSummary() {
+  const pending = usePending()
+  const recent = useRecent()
+  const [now] = useState(() => Date.now())
+  if (!pending.data && !recent.data) return <p className="mt-1 min-h-5" />
+  const items = recent.data?.items ?? []
+  // Older items fold away below, so they aren't counted as waiting.
+  const old = (pending.data?.items ?? []).filter(
+    (item) => now - Date.parse(item.at) > OLD_AFTER_MS
+  ).length
+  const turn = (pending.data?.total ?? 0) - old
+  // The last day, so the night's agent work counts in the morning.
+  const changed = items.filter(
+    (item) =>
+      !isFile(item) &&
+      item.document.updatedAt !== undefined &&
+      now - Date.parse(item.document.updatedAt) < DAY_MS
+  )
+  const parts = [
+    turn > 0 ? `${turn} for you` : null,
+    changed.length > 0
+      ? `${changed.length}${changed.length >= HOME_DOCS ? "+" : ""} ${changed.length === 1 ? "change" : "changes"} since yesterday`
+      : null,
+  ].filter((part) => part !== null)
+  return (
+    <p className="mt-1 min-h-5 text-sm text-muted-foreground">
+      {/* A narrow screen breaks the line between parts, never inside one. */}
+      {parts.length > 0
+        ? parts.map((part, index) => (
+            <Fragment key={part}>
+              {index > 0 && " · "}
+              <span className="whitespace-nowrap">{part}</span>
+            </Fragment>
+          ))
+        : "All quiet today"}
+    </p>
   )
 }

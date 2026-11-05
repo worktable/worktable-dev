@@ -42,6 +42,7 @@ import { readWorkspaceStorageLayoutAt } from "./workspace-storage-v2.ts"
 import { BoundedFileReadError } from "./bounded-file.ts"
 import { addRequests, requestsAfterReply, type CommentReplier } from "./annotation-requests.ts"
 import {
+  indexedComment,
   noteCommentChanged,
   noteCommentsMoved,
   type CommentPlace,
@@ -503,7 +504,8 @@ export async function openCommentsWithRequests(
     const page = await listAnnotations(spaceId, { status: ["open"], limit: 500, offset })
     for (const annotation of page.annotations) {
       const place = legacyPlace(annotation)
-      if (place && annotation.requests?.some((request) => request.status === "open")) {
+      // Answered ones too: they are back with whoever wrote the comment.
+      if (place && indexedComment(annotation)) {
         waiting.push({ annotation, place })
       }
     }

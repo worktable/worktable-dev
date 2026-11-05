@@ -129,8 +129,6 @@ export interface RecentDocument {
   lastEditor?: ActivityActor
   /** Whether that last change made the doc or edited it. */
   lastAction?: "created" | "edited"
-  /** The opening lines, for the newest doc an agent made in the last day. */
-  excerpt?: string
 }
 
 export interface RecentDocuments {
@@ -160,8 +158,8 @@ export interface RecentOptions {
   mine?: boolean
   /** Only docs in this folder of `spaceId`. */
   folder?: string
-  /** Give the first doc its opening lines, if an agent made it in the last day. */
-  excerpt?: boolean
+  /** Uploaded files don't use up `limit`, for lists that fold them. */
+  filesBeyondLimit?: boolean
 }
 
 export function recentQueryOptions(options: RecentOptions) {
@@ -179,7 +177,7 @@ export function recentQueryOptions(options: RecentOptions) {
         ...(options.spaceId ? { spaceId: options.spaceId } : {}),
         ...(options.mine ? { scope: "mine" } : {}),
         ...(options.folder ? { folder: options.folder } : {}),
-        ...(options.excerpt ? { excerpt: "true" } : {}),
+        ...(options.filesBeyondLimit ? { files: "extra" } : {}),
       })
       return fetchJSON<RecentDocuments>(`/api/recent?${query}`)
     },

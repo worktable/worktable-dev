@@ -5,8 +5,9 @@ import { HomeNewMenu } from "@/components/home/home-new-menu"
 import {
   ArchivingSoonSection,
   GettingStartedRow,
-  PendingSection,
-  RecentSection,
+  HomeSummary,
+  LatestWorkSection,
+  YourTurnSection,
 } from "@/components/home/home-sections"
 import { useSpaces, useWorkspace } from "@/lib/queries"
 import { getSpaceArchiveInfo } from "@/lib/spaces"
@@ -67,8 +68,8 @@ function HomePage() {
     [spaces]
   )
 
-  // Home does not wait for the Spaces list: Recent and Pending load on their
-  // own, and only a workspace known to be empty shows welcome.
+  // Home does not wait for the Spaces list: its sections load on their own,
+  // and only a workspace known to be empty shows welcome.
   if (spaces?.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
@@ -78,17 +79,20 @@ function HomePage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 px-4 py-8 sm:px-8 lg:py-10">
-      <header className="flex items-center justify-between gap-4 px-0.5">
-        <h1 className="min-h-9 min-w-0 font-display text-[1.75rem] leading-9 font-semibold tracking-tight text-balance text-foreground sm:text-[2rem] sm:leading-10">
-          {greeting ? `${greeting}${greeted ? `, ${greeted}` : ""}.` : null}
-        </h1>
+    <div className="mx-auto max-w-3xl space-y-7 px-4 py-6 sm:px-8 sm:py-8 lg:py-10">
+      <header className="flex items-start justify-between gap-4 px-0.5">
+        <div className="min-w-0">
+          <h1 className="min-h-8 font-display text-[1.5rem] leading-8 font-semibold tracking-tight text-balance text-foreground sm:text-[1.75rem] sm:leading-9">
+            {greeting ? `${greeting}${greeted ? `, ${greeted}` : ""}.` : null}
+          </h1>
+          <HomeSummary />
+        </div>
         <HomeNewMenu spaces={newMenuSpaces} />
       </header>
 
       <GettingStartedRow />
-      <PendingSection />
-      <RecentSection />
+      <YourTurnSection />
+      <LatestWorkSection />
       <ArchivingSoonSection />
     </div>
   )

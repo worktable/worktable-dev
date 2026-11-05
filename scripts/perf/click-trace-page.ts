@@ -196,7 +196,7 @@ export function installInstrumentation(): void {
   const outsideOpening = (element: Element) =>
     !element.closest("#worktable-opening-preview")
   const recentRows = () =>
-    all('section[aria-labelledby="recent-heading"] a[href*="/documents/"]')
+    all('section[aria-labelledby="latest-heading"] a[href*="/documents/"]')
   const predicates: Record<string, (args: Rec) => boolean> = {
     // Home: its greeting and its Recent rows.
     home: () =>
@@ -288,7 +288,7 @@ export function installInstrumentation(): void {
     // on document clicks to catch the overview rendering on the way.
     overview: (args) =>
       all("main h1").some((h1) => text(h1) === args["name"]) &&
-      document.querySelector('section[aria-labelledby="recent-heading"]') !==
+      document.querySelector('section[aria-labelledby="latest-heading"]') !==
         null,
     threads: () =>
       location.pathname.startsWith("/threads") &&

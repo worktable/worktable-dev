@@ -340,7 +340,7 @@ describe("workspace activity", () => {
     await drainActivity()
   })
 
-  it("names who last worked on each recent doc, and shows the opening of what an agent just made", async () => {
+  it("names who last worked on each recent doc, and whether they made it or changed it", async () => {
     const writeAsAgent = (docPath: string, content: string) =>
       agentTool("worktable_docs_write", {
         action: "write",
@@ -357,30 +357,26 @@ describe("workspace activity", () => {
     await drainActivity()
 
     // The first list after the server starts reads each Space's history.
-    const recent = await listRecentDocuments({ excerpt: true })
+    const recent = await listRecentDocuments({})
     expect(recent.items.map((item) => item.document.path)).toEqual(["brief", "notes"])
     expect(recent.items[0]).toMatchObject({
       lastEditor: { kind: "agent" },
       lastAction: "created",
-      excerpt: "The launch plan is ready. See the plan for dates.",
     })
     expect(recent.items[1]?.lastEditor?.kind).toBe("agent")
-    expect(recent.items[1]?.excerpt).toBeUndefined()
 
-    // Once a person changes it, it's their work, not an agent's to show off.
     recordActivity({
       spaceId: "company",
       action: "doc.edited",
       actor: { kind: "person", id: "local:owner" },
       target: { kind: "doc", path: "brief" },
     })
-    const edited = await listRecentDocuments({ excerpt: true })
+    const edited = await listRecentDocuments({})
     expect(edited.items[0]).toMatchObject({
       document: { path: "brief" },
       lastEditor: { kind: "person" },
       lastAction: "edited",
     })
-    expect(edited.items.some((item) => item.excerpt)).toBe(false)
     // Narrowed to one person, only what they worked on is listed, however
     // many others worked on it since.
     for (const id of ["a", "b", "c", "d"]) {

@@ -84,6 +84,7 @@ import {
   rename,
   rm,
   rmdir,
+  stat,
   unlink,
 } from "node:fs/promises"
 import { basename, dirname, join, relative, sep } from "node:path"
@@ -323,6 +324,15 @@ export async function removeWithinDevice(
 }
 
 /**
+ * The device of the folder that holds the Spaces, which a Space's own files
+ * are on. Followed through a link, as the Spaces folder may be one to
+ * another volume.
+ */
+export async function spacesFolderDevice(spaceRoot: string): Promise<number> {
+  return (await stat(dirname(spaceRoot))).dev
+}
+
+/**
  * Why a whole Space can't be deleted, or null when it can: something is
  * mounted in its folder, or the folder is a mount, and what is mounted there
  * isn't the Space's to delete. Mount points are read as a folder delete reads
@@ -336,7 +346,7 @@ export async function spaceDeleteRefusal(
   if (mounted !== undefined) return mounted
   const other = await holdsOtherFilesystem(
     spaceRoot,
-    (await lstat(dirname(spaceRoot))).dev
+    await spacesFolderDevice(spaceRoot)
   )
   return other === null
     ? null

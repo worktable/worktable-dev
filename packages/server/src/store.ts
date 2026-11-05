@@ -1208,7 +1208,7 @@ const SPACE_NOT_DELETED = "Worktable couldn't move this Space to the trash, so n
  */
 export async function deleteSpace(spaceId: string): Promise<{ error: string | null }> {
   assertSpaceAccess(spaceId, "manage");
-  const { removeWithinDevice, spaceDeleteRefusal } = await import("./deleted-items.ts");
+  const { removeWithinDevice, spaceDeleteRefusal, spacesFolderDevice } = await import("./deleted-items.ts");
   return withDocPathLock(spaceId, () =>
     withWriteLock(spacePath(spaceId), async () => {
       assertSpaceAccess(spaceId, "manage");
@@ -1232,8 +1232,7 @@ export async function deleteSpace(spaceId: string): Promise<{ error: string | nu
         // filesystem, the folder's own included.
         const again = await spaceDeleteRefusal(dir);
         if (again) return { error: again };
-        const device = (await lstat(dirname(dir))).dev;
-        if (!(await removeWithinDevice(dir, device))) {
+        if (!(await removeWithinDevice(dir, await spacesFolderDevice(dir)))) {
           return { error: SPACE_NOT_DELETED };
         }
       }

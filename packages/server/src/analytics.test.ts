@@ -652,20 +652,22 @@ describe("consented committed-work analytics", () => {
         })
       ).result.isError
     ).toBe(true)
-    await flushAnalytics()
-    expect(
-      events.filter((event) => event.event === "product:work_saved")
-    ).toHaveLength(1)
-    const calls = events.filter((event) => event.event === "$mcp_tool_call")
-    expect(calls).toHaveLength(4)
-    expect(calls.map((event) => event.properties.outcome).sort()).toEqual([
+    // Each call is sent as it happens, not held for a batch: a hosted
+    // Worktable sleeps soon after its last request.
+    const calls = () => events.filter((event) => event.event === "$mcp_tool_call")
+    const saves = () => events.filter((event) => event.event === "product:work_saved")
+    await eventually(
+      async () => calls().length === 4 && saves().length === 1,
+      "each event sent without waiting for a batch"
+    )
+    expect(calls().map((event) => event.properties.outcome).sort()).toEqual([
       "denied",
       "denied",
       "error",
       "success",
     ])
     expect(
-      calls.every(
+      calls().every(
         (event) =>
           ["worktable_records_write", "search"].includes(
             event.properties.$mcp_tool_name as string
@@ -677,7 +679,7 @@ describe("consented committed-work analytics", () => {
       )
     ).toBe(true)
     expect(
-      calls.filter((event) => event.properties.$mcp_error_type === "permission")
+      calls().filter((event) => event.properties.$mcp_error_type === "permission")
     ).toHaveLength(2)
     expect(events.every((event) => event.distinct_id === agentGrant.distinctId)).toBe(true)
     for (const secret of [

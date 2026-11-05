@@ -130,4 +130,7 @@ export interface ProductAnalyticsProperties {
   currency?: "usd"
   transaction_id?: string
   traffic_type?: "verification" | "internal"
+  /** account:created: how the account first reached Worktable. */
+  entry?: "web" | "desktop" | "agent"
+  entry_client?: AnalyticsClient
 }

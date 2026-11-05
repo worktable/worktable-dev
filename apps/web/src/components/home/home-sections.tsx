@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowRight,
   Check,
@@ -781,12 +781,9 @@ function AskRow({
             canReply ? (
               <PendingSource
                 item={item}
-                className={cn(
-                  above,
-                  "inline-flex items-center gap-1 rounded-sm align-bottom hover:text-foreground hover:underline"
-                )}
+                className={cn(above, "rounded-sm hover:text-foreground hover:underline")}
               >
-                <SourceIcon className="size-3 shrink-0" aria-hidden="true" />
+                <SourceIcon className="mr-1 inline size-3 -translate-y-px" aria-hidden="true" />
                 {source}
               </PendingSource>
             ) : (
@@ -990,6 +987,9 @@ function AnswerPairs({
         .sort((a, b) => order.get(a.id)! - order.get(b.id)!)
     },
     staleTime: Infinity,
+    // After a reply or resolve the key changes; the pairs stay until the new
+    // list arrives.
+    placeholderData: keepPreviousData,
   })
   if (answers.isLoading) {
     return <div className="mt-2 h-16 animate-pulse rounded-lg bg-surface-inset" aria-hidden="true" />
@@ -1041,6 +1041,7 @@ function AnsweredRow({
   onClose: () => void
 }) {
   const refresh = usePendingRefresh()
+  const rowRef = useRef<HTMLDivElement>(null)
   const resolveId = `resolve-all:${item.id}`
   const resolving = useSend(resolveId)
   const count = item.annotationIds.length
@@ -1054,9 +1055,13 @@ function AnsweredRow({
       "",
       async () => {
         const api = await annotationsApi()
-        await Promise.all(
+        const results = await Promise.allSettled(
           item.annotationIds.map((id) => api.resolveAnnotation(item.spaceId, id))
         )
+        // Report a failure only once every resolve has settled.
+        if (results.some((result) => result.status === "rejected")) {
+          throw new Error("Some comments couldn’t be resolved")
+        }
       },
       {
         onSent: () => window.setTimeout(done, SENT_LINGER_MS),
@@ -1070,7 +1075,7 @@ function AnsweredRow({
   }
   const busy = resolving && resolving.phase !== "failed"
   return (
-    <div className={cn(rowClass, !open && !busy && rowHover)}>
+    <div ref={rowRef} className={cn(rowClass, !open && !busy && rowHover)}>
       {!busy && (
         <button
           type="button"
@@ -1129,7 +1134,17 @@ function AnsweredRow({
           label={count === 1 ? "Resolving" : `Resolving ${count}`}
           onUndo={() => {}}
         />
-        {open && !busy && <AnswerPairs item={item} onDone={done} onHide={onClose} />}
+        {open && !busy && (
+          <AnswerPairs
+            item={item}
+            onDone={done}
+            onHide={() => {
+              // Hiding from the bottom of a long list keeps the reader at this row.
+              rowRef.current?.scrollIntoView({ block: "nearest" })
+              onClose()
+            }}
+          />
+        )}
       </div>
       <When at={item.at} />
     </div>
@@ -1285,9 +1300,11 @@ function placeOf(
  * own name; the row already has a time and an author.
  */
 function folderName(segment: string): string {
-  const named = segment
-    .replace(/^\d{4}-\d{2}-\d{2}[-_ ]*/, "")
-    .replace(/[-_ ](claude|codex|chatgpt|cursor|gemini|grok)$/i, "")
+  const undated = segment.replace(/^\d{4}-\d{2}-\d{2}[-_ ]*/, "")
+  const named =
+    undated === segment
+      ? segment
+      : undated.replace(/[-_ ](claude|codex|chatgpt|cursor|gemini|grok)$/i, "")
   return humanizeSegment(named || segment)
 }
 
@@ -1522,14 +1539,14 @@ function Units({
   place,
   now,
   since,
-  fileLimit,
+  filesCapped,
 }: {
   units: Unit[]
   place: Place
   now: number
   since?: number | null
-  /** The most files the list holds, to say when it stopped there. */
-  fileLimit: number
+  /** The list stopped at its file limit, so a files row may hold more. */
+  filesCapped: boolean
 }) {
   return (
     <>
@@ -1542,7 +1559,7 @@ function Units({
             files={unit.items}
             place={place}
             now={now}
-            capped={unit.items.length >= fileLimit}
+            capped={filesCapped}
           />
         )
       )}
@@ -1572,11 +1589,14 @@ function SpaceGroup({
   items,
   now,
   since,
+  filesCapped,
 }: {
   spaceId: string
   items: RecentDocument[]
   now: number
   since: number | null
+  /** The response stopped at its file limit, shared by every Space. */
+  filesCapped: boolean
 }) {
   const spaces = useSpaceFacts()
   const [all, setAll] = useState(false)
@@ -1610,7 +1630,7 @@ function SpaceGroup({
         place="folder"
         now={now}
         since={since}
-        fileLimit={HOME_DOCS}
+        filesCapped={filesCapped}
       />
     </div>
   )
@@ -1629,6 +1649,9 @@ export function LatestWorkSection({ spaceId }: { spaceId?: string }) {
   const steps = useSteps(SPACE_LIST_ROWS)
   const items = recent.data?.items ?? []
   const units = toUnits(items)
+  // The server's file limit is for the whole response, so it is decided once.
+  const filesCapped =
+    items.filter(isFile).length >= (inSpace ? SPACE_DOCS : HOME_DOCS)
   // Newest first already, so each Space's first doc places its section.
   const groups = new Map<string, RecentDocument[]>()
   for (const item of items) {
@@ -1668,11 +1691,18 @@ export function LatestWorkSection({ spaceId }: { spaceId?: string }) {
                   place="folder"
                   now={now}
                   since={since}
-                  fileLimit={SPACE_DOCS}
+                  filesCapped={filesCapped}
                 />
               ) : (
                 [...groups].map(([id, group]) => (
-                  <SpaceGroup key={id} spaceId={id} items={group} now={now} since={since} />
+                  <SpaceGroup
+                    key={id}
+                    spaceId={id}
+                    items={group}
+                    now={now}
+                    since={since}
+                    filesCapped={filesCapped}
+                  />
                 ))
               )}
             </div>
@@ -1728,7 +1758,7 @@ export function FolderSection({
                 units={toUnits(items)}
                 place={{ inFolder: folder }}
                 now={now}
-                fileLimit={FOLDER_ROWS}
+                filesCapped={items.filter(isFile).length >= FOLDER_ROWS}
               />
             </div>
           )}
@@ -1777,22 +1807,25 @@ export function ArchivingSoonSection({ spaceId }: { spaceId?: string }) {
           className={cn("size-4 shrink-0", soonest ? "text-warning" : "text-muted-foreground")}
           aria-hidden="true"
         />
-        <p className="min-w-0 flex-1 truncate text-muted-foreground">
+        {/* The date is what the line is for: the title gives way first. */}
+        <p className="flex min-w-0 flex-1 items-baseline text-muted-foreground">
           <Link
             to="/spaces/$spaceId/documents/$"
             params={{ spaceId: first.spaceId, _splat: first.document.path }}
-            className="font-medium text-foreground hover:underline"
+            className="min-w-0 truncate font-medium text-foreground hover:underline"
           >
             {first.document.title}
           </Link>
-          {[archiveLabel(first.document.archiveOn!, now), placeOf(first, place, spaces.nameOf)]
-            .filter(Boolean)
-            .map((part) => (
-              <Fragment key={part}>
-                <span aria-hidden="true"> · </span>
-                {part}
-              </Fragment>
-            ))}
+          <span className="shrink-0 whitespace-pre">
+            {" · "}
+            {archiveLabel(first.document.archiveOn!, now)}
+          </span>
+          {placeOf(first, place, spaces.nameOf) && (
+            <span className="min-w-0 truncate whitespace-pre max-sm:hidden">
+              {" · "}
+              {placeOf(first, place, spaces.nameOf)}
+            </span>
+          )}
         </p>
         {spaces.canEdit(first.spaceId) && <KeepButton item={first} />}
         {soon.length > 1 && (

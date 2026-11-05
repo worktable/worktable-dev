@@ -430,15 +430,16 @@ function answeredComment(
   }
   const requests = annotation.requests ?? []
   if (requests.some((request) => request.status === "open")) return null
-  if (
-    !requests.some(
-      (request) => request.status === "replied" && request.to.kind === "agent"
-    )
-  ) {
-    return null
-  }
   const answer = annotation.thread?.at(-1)
   if (answer?.author.type !== "agent") return null
+  // The agent with the last word must be one that answered a request, so the
+  // row names the agent a reply asks again.
+  const answeredBy = new Set(
+    requests
+      .filter((request) => request.status === "replied" && request.to.kind === "agent")
+      .map((request) => annotation.thread?.find((message) => message.id === request.replyId)?.author.id)
+  )
+  if (!answeredBy.has(answer.author.id)) return null
   const answeredAt =
     annotation.requests?.find((request) => request.replyId === answer.id)?.closedAt ??
     answer.createdAt
@@ -465,7 +466,9 @@ function answeredComment(
 export function indexedComment(annotation: Pick<IndexedComment, "requests">): boolean {
   return (
     annotation.requests?.some(
-      (request) => request.status === "open" || request.status === "replied"
+      (request) =>
+        request.status === "open" ||
+        (request.status === "replied" && request.to.kind === "agent")
     ) ?? false
   )
 }

@@ -8,6 +8,7 @@ import { DEPLOYMENT_QUERY_KEY } from "@/hooks/use-deployment-info"
 import type { DeploymentInfo } from "@/lib/system-api"
 import { WorkspaceOperationObserver } from "@/components/workspace-operation-observer"
 import { BrowserAnalyticsChoice } from "@/components/browser-analytics-choice"
+import { ScreenViews } from "@/components/screen-views"
 import { WorkspaceStorageGate } from "@/components/workspace-storage-gate"
 import appStylesheet from "@/styles/app.css?url"
 import {
@@ -615,6 +616,7 @@ function RootLayout() {
       <SidebarContext.Provider value={sidebarCtx}>
         <WorkspaceOperationObserver />
         <BrowserAnalyticsChoice />
+        <ScreenViews settingsOpen={settingsOpen} />
         <div
           data-worktable-app-shell
           data-worktable-sidebar-open={sidebarOpen ? "true" : "false"}

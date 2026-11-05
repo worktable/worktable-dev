@@ -28,6 +28,7 @@ import {
   docSourceContentRevision,
   docStoredAs,
   htmlContentRevisionOf,
+  htmlSourceRevision,
   sha256Hex,
 } from "./document-content-revision.ts"
 import { listDocumentAnnotationsForHandle } from "./document-annotation-service.ts"
@@ -95,6 +96,7 @@ type LegacyShareKind = "doc" | "html"
 interface DocumentPageMetadata {
   provenance?: DocumentProvenance
   revision?: string
+  sourceRevision?: string
   collaboration?: DocumentCollaboration
   backlinks?: DocumentBacklink[]
   referrers?: DocumentReferrer[]
@@ -236,6 +238,7 @@ const PAGE_INTEGRATIONS: readonly DocumentPageIntegration[] = [
         revision: await htmlContentRevisionOf(spaceId, path, document, {
           lockHeld: true,
         }),
+        sourceRevision: htmlSourceRevision(document.sourceBytes),
         ...(document.widget.requests?.network
           ? {
               networkRequested: true as const,
@@ -446,6 +449,9 @@ async function pageForHandle(
     ...(metadata?.provenance ? { provenance: metadata.provenance } : {}),
     // Without a renderer there is nothing to read by revision.
     ...(renderer && metadata?.revision ? { revision: metadata.revision } : {}),
+    ...(metadata?.sourceRevision
+      ? { sourceRevision: metadata.sourceRevision }
+      : {}),
     ...(renderer && metadata?.collaboration
       ? { collaboration: metadata.collaboration }
       : {}),

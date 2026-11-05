@@ -37,8 +37,10 @@ import {
 import {
   analyzeDocumentPath,
   DOC_NAME_MESSAGE,
+  HIDDEN_NAME_MESSAGE,
   pathRefusal,
 } from "../document-path.ts"
+import { pathIsHidden } from "../document-format-registry.ts"
 import { listDocuments, resolveDocumentNavigation } from "../document-query.ts"
 import {
   applyLifetimeOnCreate,
@@ -1465,6 +1467,10 @@ documentsRouter.post(
         { error: parsed.error.message, code: "VALIDATION_ERROR" },
         400
       )
+    }
+    // Refused as typed: normalizing would drop the dot.
+    if (pathIsHidden(parsed.data.newPath)) {
+      return c.json({ error: HIDDEN_NAME_MESSAGE, code: "HIDDEN_NAME" }, 400)
     }
     const newPath = slugifyDocPath(parsed.data.newPath)
     if (!newPath) {

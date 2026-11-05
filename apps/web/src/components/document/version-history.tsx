@@ -38,6 +38,8 @@ import {
   restoreDocVersion,
   type DocVersionEntry,
 } from "@/lib/docs-api"
+import { documentQueryKeys } from "@/lib/documents-queries"
+import { HttpError } from "@/lib/http"
 import { useSpace, useWorkspace } from "@/lib/queries"
 import { browserTeamMemberId } from "@/lib/team-context"
 import {
@@ -465,11 +467,14 @@ function RestoreVersionButton({
   spaceId,
   path,
   revision,
+  sourceRevision,
   version,
   onRestored,
   inline = false,
   canEdit,
 }: HistoryLocation & {
+  /** For an HTML Doc, the revision of the page the restore replaces. */
+  sourceRevision?: string
   version: DocVersionEntry
   onRestored: () => void
   inline?: boolean
@@ -503,7 +508,7 @@ function RestoreVersionButton({
           try {
             await (kind === "doc"
               ? restoreDocVersion(spaceId, path, version.id)
-              : restoreWidgetVersion(spaceId, path, version.id))
+              : restoreWidgetVersion(spaceId, path, version.id, sourceRevision))
             setConfirming(false)
             toast.success("Version restored")
             onRestored()
@@ -515,7 +520,20 @@ function RestoreVersionButton({
                 })
               )
             )
-          } catch {
+          } catch (error) {
+            if (
+              error instanceof HttpError &&
+              (error.body as { code?: unknown } | null)?.code ===
+                "REVISION_CHANGED"
+            ) {
+              setConfirming(false)
+              await queryClient.invalidateQueries({
+                queryKey: documentQueryKeys.page(spaceId, path),
+                exact: true,
+              })
+              toast.error("This HTML doc changed. Check it before restoring.")
+              return
+            }
             toast.error("Couldn’t restore this version")
           } finally {
             setRestoring(false)
@@ -535,6 +553,7 @@ export function VersionPreview({
   spaceId,
   path,
   revision,
+  sourceRevision,
   version,
   error,
   onRetry,
@@ -544,6 +563,7 @@ export function VersionPreview({
   canEdit,
   children,
 }: HistoryLocation & {
+  sourceRevision?: string
   version?: DocVersionEntry
   error: boolean
   onRetry: () => void
@@ -572,6 +592,7 @@ export function VersionPreview({
           spaceId={spaceId}
           path={path}
           revision={revision}
+          sourceRevision={sourceRevision}
           version={version}
           onRestored={onRestored}
           inline={inline}

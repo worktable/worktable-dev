@@ -33,6 +33,8 @@ import {
   type DocProvenance,
 } from "../store.ts";
 import { getDocLinks } from "../link-graph.ts";
+import { pathIsHidden } from "../document-format-registry.ts";
+import { HIDDEN_NAME_MESSAGE } from "../document-path.ts";
 import { docRevisionId } from "../doc-markdown-projection.ts";
 import { wsManager } from "../ws.ts";
 import { currentDocContentRevision } from "../document-content-revision.ts";
@@ -439,6 +441,10 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
 
     // Slugify the human-entered target per-segment so renames produce canonical
     // paths (matching create). Internal/MCP callers pass exact paths directly.
+    // A hidden name is refused as typed, since slugifying would drop the dot.
+    if (pathIsHidden(parsed.data.newPath)) {
+      return c.json({ error: HIDDEN_NAME_MESSAGE, code: "HIDDEN_NAME" }, 400);
+    }
     const newPath = slugifyDocPath(parsed.data.newPath);
     if (!newPath) {
       return c.json({ error: "New name is empty after normalization", code: "VALIDATION_ERROR" }, 400);

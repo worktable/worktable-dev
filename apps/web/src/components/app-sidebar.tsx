@@ -225,6 +225,14 @@ function folderLifecycleError(error: unknown, fallback: string): string {
     : fallback
 }
 
+/** Why a rename refused a hidden name, as the server says it, for the dialog. */
+function hiddenNameError(error: unknown): string | null {
+  return error instanceof HttpError &&
+    (error.body as { code?: unknown } | null)?.code === "HIDDEN_NAME"
+    ? error.message
+    : null
+}
+
 /** Why a rename failed when the name is already taken, for the dialog. */
 function takenNameError(
   error: unknown,
@@ -574,7 +582,12 @@ const SpaceSection = memo(function SpaceSection({
       }
       toast.success("Space moved to trash")
     } catch (err) {
-      toast.error("Failed to delete space")
+      // A refusal names what in the Space can't be deleted.
+      toast.error(
+        err instanceof HttpError && err.status === 409
+          ? err.message
+          : "Failed to delete space"
+      )
       console.error("Failed to delete space:", err)
     }
   }
@@ -1095,6 +1108,8 @@ function WidgetTreeActions({
       toast.success("HTML doc renamed")
       return true
     } catch (err) {
+      const hidden = hiddenNameError(err)
+      if (hidden) return hidden
       toast.error("Failed to rename HTML doc")
       console.error("Failed to rename HTML doc:", err)
       return false
@@ -2165,12 +2180,10 @@ function DocTreeItem({
               .renamed)
           : []
       if (moved.length > 0) await follow(moved)
-      const taken = takenNameError(
-        error,
-        newPath,
-        node.isFolder ? "folder" : "doc"
-      )
-      if (taken) return taken
+      const refused =
+        hiddenNameError(error) ??
+        takenNameError(error, newPath, node.isFolder ? "folder" : "doc")
+      if (refused) return refused
       toast.error(
         error instanceof DrawingUnsavedError
           ? error.message

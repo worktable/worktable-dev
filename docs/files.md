@@ -295,8 +295,9 @@ work without knowing it.
 
 **Enforced in:** `file-uploads.ts` (`FileReplaceRefused`), `staged-file.ts`
 (uploads stream to a staged file and publish whole), `routes/documents.ts`
-(`If-Match`), `mcp/dispatcher.ts` (`worktable_files_write`),
-`file-change-recorder.ts` (changes on disk, once they settle).
+(`If-Match`), `routes/widgets.ts` (HTML Doc replace and restore),
+`mcp/dispatcher.ts` (`worktable_files_write`), `file-change-recorder.ts`
+(changes on disk, once they settle).
 
 **Proved by:**
 
@@ -321,6 +322,9 @@ work without knowing it.
   point before the next write.
 - `routes-docs.test.ts` "replaces an existing doc only from the revision it
   read": a whole-Doc replace with no revision gets 428 and a stale one 409.
+- `widget-versions.test.ts` "restores a version round-trip including
+  permissions, bypassing the validation gate": restoring an HTML Doc version
+  with no revision gets 428 and a stale one 409.
 
 **Gaps:**
 
@@ -328,7 +332,9 @@ work without knowing it.
   released tool doesn't name one, so it refuses only a stale revision. The HTML
   Doc and whole-Doc HTTP routes (`routes/widgets.ts`, `routes/docs.ts`) refuse
   a missing or stale revision on every surface.
-- Restoring an HTML Doc version over HTTP names no revision.
+- Restoring a Doc version over HTTP (`routes/docs.ts`) names no revision.
+  Its open editors save first, and the restore keeps the current text as a
+  version.
 - The released MCP surface still describes `expectedRevision` as optional for
   `worktable_files_write`, though a replace without it is refused; the preview
   surface says it's required.
@@ -620,7 +626,9 @@ Emptying deleted items never crosses into another filesystem: an item that
 holds one stays, logged, for an operator.
 The delete is refused, naming the item, when something in the folder can't be
 moved: a folder Worktable can't write, anything mounted inside (a bind mount
-of the same disk included), or a name with a backslash. A move or delete finds the folder on disk however its name's
+of the same disk included), or a name with a backslash. Deleting a whole
+Space is refused the same way when something is mounted in it, or its folder
+is a mount. A move or delete finds the folder on disk however its name's
 case is written, and a delete that would lose a file it keeps rolls back.
 Deleting one Doc or file doesn't touch hidden items beside it.
 
@@ -628,7 +636,8 @@ Deleting one Doc or file doesn't touch hidden items beside it.
 `pathIsHidden`), `document-adapters.ts` (discovery), `document-write-service.ts`
 and `document-lifecycle-journal.ts` (creates and moves refused; a folder
 move's plan carries hidden items, and a folder delete's plan takes the rest of
-the folder), `deleted-items.ts` (into deleted items, then gone). Listing,
+the folder), `store.ts` (`deleteSpace`), `deleted-items.ts` (into deleted
+items, then gone). Listing,
 search, sharing and agent tools all read the catalog, so they inherit it.
 
 **Proved by:**
@@ -642,7 +651,8 @@ search, sharing and agent tools all read the catalog, so they inherit it.
   in-workspace destinations, overwrites, and linked content".
 - `routes-documents.test.ts` "moves mixed folders with common write authority,
   hidden items included": `.env`, `.git/HEAD` and a dot-named Doc arrive
-  byte for byte, the listing is unchanged, and a link stays behind.
+  byte for byte, the listing is unchanged, and a link stays behind; a hidden
+  new name is refused.
 - `document-lifecycle-journal.test.ts` "recovers one all-or-nothing mixed
   folder generation": a crash before, during or after the hidden items move
   leaves them all in one folder.
@@ -659,6 +669,9 @@ search, sharing and agent tools all read the catalog, so they inherit it.
 - `deleted-items.test.ts` "a crash mid-move leaves the store consistent, and
   the next pass finishes": a link and a FIFO reach deleted items on another
   disk.
+- `deleted-items.test.ts` "move a deleted Space with its history, and clear
+  what older versions left behind": a mount in the Space, or its folder being
+  one, refuses the delete by name.
 
 **Gaps:** a direct read by path of a symbolic link to a Doc still follows the
 link.

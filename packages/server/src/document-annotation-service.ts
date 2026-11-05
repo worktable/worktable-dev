@@ -482,7 +482,10 @@ export async function listWaitingCommentsV2(spaceId: string): Promise<
   return owners.flatMap((owner) =>
     owner.annotations.flatMap((annotation) =>
       annotation.status !== "resolved" &&
-      annotation.requests?.some((request) => request.status === "open")
+      // Answered ones too: they are back with whoever wrote the comment.
+      annotation.requests?.some(
+        (request) => request.status === "open" || request.status === "replied"
+      )
         ? [{ annotation, place: commentPlace(owner, annotation) }]
         : []
     )

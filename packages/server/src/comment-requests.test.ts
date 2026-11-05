@@ -208,6 +208,44 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
       ])
     })
 
+    it("brings a person's comment back to them once it is answered, until they write again or resolve it", async () => {
+      const created = await post("", {
+        target: { type: "block", docPath: "explorer", blockId: "tiers" },
+        category: "comment",
+        body: "Feels high for three people.",
+        to: ["Finn"],
+      })
+      const id = created.json.annotation.id
+      // Waiting on Finn: nothing is back with the owner yet.
+      expect((await listPending(ownerIdentity())).items).toEqual([])
+
+      caller = finn
+      await post(`/${id}/replies`, { body: "Lowered it to $39." })
+      expect((await listPending(ownerIdentity())).items).toMatchObject([
+        {
+          kind: "answered",
+          spaceId: "pricing",
+          docPath: "explorer",
+          annotationIds: [id],
+          by: [{ kind: "agent", id: "token:finn" }],
+        },
+      ])
+      // Finn's own Pending is unchanged: the answer is not an item it reads.
+      expect(await pendingFor((await resolveParticipant(finn)).participant.id)).toEqual([])
+
+      // Answering asks Finn again, so it waits on Finn, not the owner.
+      caller = ownerIdentity()
+      await post(`/${id}/replies`, { body: "Try $35 for teams under five." })
+      expect((await listPending(ownerIdentity())).items).toEqual([])
+
+      caller = finn
+      await post(`/${id}/replies`, { body: "Done." })
+      expect((await listPending(ownerIdentity())).total).toBe(1)
+      caller = ownerIdentity()
+      await post(`/${id}/resolve`, {})
+      expect(await listPending(ownerIdentity())).toEqual({ items: [], total: 0 })
+    })
+
     it("refuses an unavailable recipient and allows addressed comments on released tools", async () => {
       const refused = await post("", {
         target: { type: "doc", docPath: "explorer" },

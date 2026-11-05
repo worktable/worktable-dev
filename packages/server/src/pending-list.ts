@@ -131,6 +131,8 @@ interface MarksFile {
 interface ListState {
   root: string
   entries: Map<string, PendingEntry>
+  /** Answered comments by their comment's group. */
+  answered: Map<string, AnsweredComment>
   /** Item IDs by the source group that produced them. */
   groups: Map<string, Set<string>>
   byRecipient: Map<string, Set<string>>
@@ -390,6 +392,71 @@ function commentCloseReason(annotation: IndexedComment | null) {
   }
 }
 
+// ── Answered comments ──────────────────────────────────────
+//
+// A person's open comment that an agent answered, and that they haven't
+// answered or resolved since, is back in their court. Home lists these
+// beside what is asked of them. They come from the same pass as waiting
+// comments, so they cost no extra reads, and are kept apart from the items
+// agents read.
+
+export interface AnsweredComment {
+  spaceId: string
+  annotationId: string
+  documentId?: string
+  path: string
+  /** The person who wrote the comment, as the comment names them. */
+  askerId: string
+  /** Who answered, as their reply names them. */
+  by: PendingActor
+  /** When the answer came. */
+  at: string
+}
+
+function answeredComment(
+  spaceId: string,
+  annotation: IndexedComment,
+  { path, documentId }: CommentPlace
+): AnsweredComment | null {
+  if (annotation.status === "resolved" || annotation.author.type !== "user") {
+    return null
+  }
+  const requests = annotation.requests ?? []
+  // Still waiting on someone: their answer re-asks, so this covers it too.
+  if (requests.some((request) => request.status === "open")) return null
+  const answer = requests
+    .filter((request) => request.status === "replied" && request.to.kind === "agent")
+    .sort((a, b) => (b.closedAt ?? b.createdAt).localeCompare(a.closedAt ?? a.createdAt))[0]
+  if (!answer) return null
+  const reply = annotation.thread?.find((message) => message.id === answer.replyId)
+  if (!reply) return null
+  return {
+    spaceId,
+    annotationId: annotation.id,
+    ...(documentId ? { documentId } : {}),
+    path,
+    askerId: annotation.author.id,
+    by: {
+      kind: reply.author.type === "user" ? "person" : reply.author.type,
+      id: reply.author.id,
+      ...(reply.author.name ? { name: reply.author.name } : {}),
+    },
+    at: answer.closedAt ?? answer.createdAt,
+  }
+}
+
+function noteAnswered(
+  current: ListState,
+  spaceId: string,
+  annotation: IndexedComment,
+  place: CommentPlace
+): void {
+  const group = commentGroup(spaceId, annotation.id)
+  const answered = answeredComment(spaceId, annotation, place)
+  if (answered) current.answered.set(group, answered)
+  else current.answered.delete(group)
+}
+
 /** A comment changed: its open requests are now exactly these. */
 export function noteCommentChanged(
   spaceId: string,
@@ -407,6 +474,7 @@ export function noteCommentChanged(
       commentItems(spaceId, annotation, place),
       commentCloseReason(annotation)
     )
+    noteAnswered(current, spaceId, annotation, place)
   })
 }
 
@@ -436,13 +504,18 @@ async function rebuildSpaceComments(
   const { openCommentsWithRequests } = await import("./annotation-store.ts")
   const comments = await openCommentsWithRequests(spaceId)
   const groups = new Map<string, Derived[]>()
+  const prefix = `cmt:${spaceId}:`
+  for (const group of current.answered.keys()) {
+    if (group.startsWith(prefix)) current.answered.delete(group)
+  }
   for (const { annotation, place } of comments) {
     groups.set(
       commentGroup(spaceId, annotation.id),
       commentItems(spaceId, annotation, place)
     )
+    noteAnswered(current, spaceId, annotation, place)
   }
-  replaceGroups(current, `cmt:${spaceId}:`, groups, () => "resolved")
+  replaceGroups(current, prefix, groups, () => "resolved")
 }
 
 // ── Thread requests ────────────────────────────────────────
@@ -597,6 +670,7 @@ export function pendingList(): Promise<void> {
   const current: ListState = {
     root,
     entries: new Map(),
+    answered: new Map(),
     groups: new Map(),
     byRecipient: new Map(),
     marks: { type: "worktable.pending", version: 1, revisions: {}, items: {} },
@@ -647,6 +721,16 @@ export async function pendingFor(participantId: string): Promise<PendingEntry[]>
     .map((itemId) => current.entries.get(itemId)!)
     .filter(Boolean)
     .sort((a, b) => b.revision - a.revision)
+}
+
+/** Answered comments whose author is the reader, newest first. */
+export async function answeredFor(
+  isReader: (authorId: string) => boolean
+): Promise<AnsweredComment[]> {
+  await settled()
+  return [...state!.answered.values()]
+    .filter((answered) => isReader(answered.askerId))
+    .sort((a, b) => b.at.localeCompare(a.at))
 }
 
 /** Open items a participant asked of others, newest first. */

@@ -18,8 +18,8 @@ import { DocumentFormatIcon } from "@/components/document-format-icon"
 import {
   ArchivingSoonSection,
   FolderSection,
-  PendingSection,
-  RecentSection,
+  LatestWorkSection,
+  YourTurnSection,
 } from "@/components/home/home-sections"
 import { SpaceNewMenu } from "@/components/spaces/space-new-menu"
 import { activityQueryKeys } from "@/lib/activity"
@@ -416,11 +416,11 @@ function SpaceOverview({
 
       <MemberWelcome spaceId={spaceId} />
 
-      <PendingSection spaceId={spaceId} />
+      <YourTurnSection spaceId={spaceId} />
 
       <PinnedSection spaceId={spaceId} pins={pins} onRetry={onRetryPins} />
 
-      <RecentSection spaceId={spaceId} />
+      <LatestWorkSection spaceId={spaceId} />
 
       <ArchivingSoonSection spaceId={spaceId} />
 

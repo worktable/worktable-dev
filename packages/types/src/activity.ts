@@ -133,6 +133,23 @@ export type PendingItem =
       quote?: string
     }
   | {
+      /**
+       * A Doc where someone answered the reader's comments, and the reader
+       * hasn't answered or resolved them since. One item per Doc.
+       */
+      kind: "answered"
+      id: string
+      /** When the newest answer came. */
+      at: string
+      spaceId: string
+      docPath: string
+      docTitle?: string
+      /** The answered comments, newest answer first. */
+      annotationIds: string[]
+      /** Who answered, newest first, each once. */
+      by: ActivityActor[]
+    }
+  | {
       kind: "deliveryFailed"
       id: string
       at: string

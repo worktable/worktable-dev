@@ -208,7 +208,7 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
   // Home lists a temporary doc with the rest of the recent work and offers to
   // keep it before it archives; once kept, it is ordinary recent work.
   await page.goto(`${harness.webUrl}/`)
-  const recent = page.getByRole("region", { name: "Recent" })
+  const recent = page.getByRole("region", { name: "Latest Work" })
   await expect(
     recent.getByRole("link", { name: /^Product brief/i })
   ).toBeVisible()
@@ -303,7 +303,7 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
   // Opening a Space shows its real page while its details load: the title
   // stays in place, and the pins fill in where they sit.
   await page.goto(`${harness.webUrl}/`)
-  await expect(page.getByRole("region", { name: "Recent" })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Latest Work" })).toBeVisible()
   let releaseDetails!: () => void
   const detailsHeld = new Promise<void>((resolve) => {
     releaseDetails = resolve
@@ -321,7 +321,7 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
   await expect(page).toHaveURL(/\/spaces\/organize$/)
   const title = page.getByRole("heading", { level: 1, name: "Organize" })
   await expect(title).toBeVisible()
-  await expect(page.getByRole("region", { name: "Recent" })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Latest Work" })).toBeVisible()
   const titleBox = await title.boundingBox()
   expect(titleBox).not.toBeNull()
   await expect(

@@ -503,7 +503,13 @@ export async function openCommentsWithRequests(
     const page = await listAnnotations(spaceId, { status: ["open"], limit: 500, offset })
     for (const annotation of page.annotations) {
       const place = legacyPlace(annotation)
-      if (place && annotation.requests?.some((request) => request.status === "open")) {
+      // Answered ones too: they are back with whoever wrote the comment.
+      if (
+        place &&
+        annotation.requests?.some(
+          (request) => request.status === "open" || request.status === "replied"
+        )
+      ) {
         waiting.push({ annotation, place })
       }
     }

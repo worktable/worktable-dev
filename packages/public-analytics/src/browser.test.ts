@@ -149,7 +149,9 @@ test("consent regions count without storage, carry first touch into an allowed i
       opt_out_capturing_by_default: true,
       respect_dnt: true,
       autocapture: false,
-      disable_session_recording: true,
+      capture_pageleave: true,
+      disable_session_recording: false,
+      session_recording: { maskAllInputs: true },
     })
   )
   analytics.capturePublicPageview()

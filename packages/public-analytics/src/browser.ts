@@ -1,6 +1,10 @@
 import type { BeforeSendFn } from "posthog-js"
 import posthog from "posthog-js/dist/module.slim"
 import {
+  AnalyticsExtensions,
+  SessionReplayExtensions,
+} from "posthog-js/dist/extension-bundles"
+import {
   approvedCampaignProperties,
   isApprovedCta,
   publicAcquisitionProperties,
@@ -91,24 +95,33 @@ export function initializePublicAnalytics(
       api_host: config.apiHost ?? PUBLIC_ANALYTICS_API_HOST,
       ui_host: "https://us.posthog.com",
       defaults: "2026-05-30",
+      // Time on page, scroll depth, Core Web Vitals, and recordings of
+      // public pages with every input masked. The recorder and web-vitals
+      // code load from the analytics host only when used.
+      __extensionClasses: {
+        sessionRecording: SessionReplayExtensions.sessionRecording,
+        webVitalsAutocapture: AnalyticsExtensions.webVitalsAutocapture,
+      },
       autocapture: false,
       rageclick: false,
       capture_pageview: false,
-      capture_pageleave: false,
+      capture_pageleave: true,
       capture_exceptions: false,
-      capture_performance: false,
+      capture_performance: { web_vitals: true, network_timing: false },
       capture_heatmaps: false,
       capture_dead_clicks: false,
-      disable_session_recording: true,
+      disable_session_recording: false,
+      session_recording: { maskAllInputs: true },
       enable_recording_console_log: false,
       disable_surveys: true,
       disable_surveys_automatic_display: true,
       disable_product_tours: true,
-      disable_scroll_properties: true,
+      disable_scroll_properties: false,
       disable_capture_url_hashes: true,
       save_campaign_params: false,
       save_referrer: false,
-      advanced_disable_flags: true,
+      // Remote config stays on: it starts recording. Feature flags stay off.
+      advanced_disable_flags: false,
       advanced_disable_feature_flags: true,
       advanced_disable_feature_flags_on_first_load: true,
       person_profiles: "identified_only",

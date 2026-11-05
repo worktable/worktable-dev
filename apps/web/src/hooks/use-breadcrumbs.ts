@@ -14,6 +14,9 @@ import { useSpaces } from "@/lib/queries"
 /** Route context for the shell header, labelled from the sidebar's catalog. */
 export function useBreadcrumbs(): Breadcrumb[] {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const folder = useRouterState({
+    select: (s) => (s.location.search as { folder?: unknown }).folder,
+  })
   const pageMeta = usePageMeta()
   const spaceId = breadcrumbSpaceId(pathname)
   const { data: spaces } = useSpaces()
@@ -31,5 +34,6 @@ export function useBreadcrumbs(): Breadcrumb[] {
     spaceIcon: space?.icon,
     spaceColor: space ? recognitionColor(space.settings?.color, space.id) : undefined,
     documents: trees,
+    ...(typeof folder === "string" && folder ? { folder } : {}),
   })
 }

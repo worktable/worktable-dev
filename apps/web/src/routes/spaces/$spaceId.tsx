@@ -28,6 +28,7 @@ import { useDocuments } from "@/lib/documents-queries"
 import { setPins } from "@/lib/lifetime"
 import { spaceQueryOptions, useSpace, useSpaces } from "@/lib/queries"
 import { RelativeTime } from "@/lib/time"
+import { shortWhen } from "@/lib/activity-format"
 import { humanizeSegment } from "@/lib/tree"
 import { useSpaceSubscription } from "@/lib/ws"
 import { MemberWelcome } from "@/components/getting-started/member-welcome"
@@ -163,11 +164,11 @@ function PinnedSection({
           </button>
         </p>
       ) : !pins ? (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-3">
           <div className="h-[2.625rem] animate-pulse rounded-xl bg-muted" />
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-3">
           {pins.map((pin) => (
             <div
               key={pin.path}
@@ -232,11 +233,31 @@ const FOLDERS_SHOWN = 6
 function FoldersSection({
   spaceId,
   folders,
+  status,
+  onRetry,
 }: {
   spaceId: string
   folders: FolderSummary[]
+  status: "pending" | "error" | "success"
+  onRetry: () => void
 }) {
   const [all, setAll] = useState(false)
+  if (status === "error") {
+    return (
+      <section aria-labelledby="folders-heading">
+        <h2 id="folders-heading" className="mb-2 px-0.5 text-sm font-semibold text-foreground">
+          Folders
+        </h2>
+        <p className="px-0.5 text-sm text-muted-foreground">
+          Couldn’t load folders.{" "}
+          <button type="button" className="text-primary-text hover:underline" onClick={onRetry}>
+            Try again
+          </button>
+        </p>
+      </section>
+    )
+  }
+  // Folders come last, so loading them shifts nothing; until then, nothing.
   if (folders.length === 0) return null
   const shown = all ? folders : folders.slice(0, FOLDERS_SHOWN)
   return (
@@ -267,15 +288,16 @@ function FoldersSection({
             <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
               <Folder className="size-4 shrink-0 text-muted-foreground" />
               <span className="truncate">{humanizeSegment(entry.name)}</span>
-              <span className="ml-auto shrink-0 text-[0.8rem] font-normal text-muted-foreground tabular-nums">
-                {entry.count}
-              </span>
+              {entry.latest && (
+                <span className="ml-auto shrink-0 text-xs font-normal text-muted-foreground tabular-nums">
+                  {shortWhen(entry.latest.at)}
+                </span>
+              )}
             </span>
-            {entry.latest && (
-              <span className="mt-0.5 block truncate pl-6 text-[0.8rem] text-muted-foreground">
-                {entry.latest.title}
-              </span>
-            )}
+            <span className="mt-0.5 block truncate pl-6 text-[0.8rem] text-muted-foreground">
+              {entry.count} {entry.count === 1 ? "doc" : "docs"}
+              {entry.latest && ` · ${entry.latest.title}`}
+            </span>
           </Link>
         ))}
       </div>
@@ -333,7 +355,11 @@ function SpaceOverview({
   onRetryPins?: () => void
   canEdit: boolean
 }) {
-  const { data: documentItems } = useDocuments(spaceId)
+  const {
+    data: documentItems,
+    status: documentsStatus,
+    refetch: refetchDocuments,
+  } = useDocuments(spaceId)
 
   const folders = useMemo(() => {
     const byName = new Map<string, FolderSummary>()
@@ -370,7 +396,7 @@ function SpaceOverview({
             </div>
           )}
           {spaceDescription && (
-            <p className="mt-2 line-clamp-2 max-w-2xl text-[0.95rem] leading-6 text-muted-foreground max-sm:line-clamp-1">
+            <p className="mt-2 line-clamp-2 max-w-2xl text-[0.95rem] leading-6 text-muted-foreground">
               {spaceDescription}
             </p>
           )}
@@ -390,15 +416,20 @@ function SpaceOverview({
 
       <MemberWelcome spaceId={spaceId} />
 
-      <PinnedSection spaceId={spaceId} pins={pins} onRetry={onRetryPins} />
-
       <PendingSection spaceId={spaceId} />
+
+      <PinnedSection spaceId={spaceId} pins={pins} onRetry={onRetryPins} />
 
       <RecentSection spaceId={spaceId} />
 
       <ArchivingSoonSection spaceId={spaceId} />
 
-      <FoldersSection spaceId={spaceId} folders={folders} />
+      <FoldersSection
+        spaceId={spaceId}
+        folders={folders}
+        status={documentsStatus}
+        onRetry={() => void refetchDocuments()}
+      />
     </div>
   )
 }
@@ -465,7 +496,16 @@ function SpaceDetailPage() {
     )
   }
 
-  if (!space && !isLoading && !spacesLoading) return null
+  if (!space && !isLoading && !spacesLoading) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-16 text-center text-sm text-muted-foreground sm:px-8">
+        This Space isn’t here.{" "}
+        <Link to="/" className="text-primary-text hover:underline">
+          Home
+        </Link>
+      </div>
+    )
+  }
 
   return (
     <div className="xl:flex xl:h-full xl:flex-col">

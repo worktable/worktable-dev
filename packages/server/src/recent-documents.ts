@@ -71,6 +71,8 @@ export async function listRecentDocuments(options: {
   items: RecentDocument[]
   temporary?: RecentDocument[]
   spaces: SpaceActivity[]
+  /** A Space couldn't be read, so the lists may be missing some of its docs. */
+  incomplete?: true
 }> {
   const sort = options.sort ?? "updated"
   const limit = options.limit ?? 30
@@ -129,15 +131,19 @@ export async function listRecentDocuments(options: {
           items: spaceItems,
           temporary: spaceTemporary,
           activity: { spaceId: space.id, ...(newest ? { lastActivityAt: newest } : {}) },
+          failed: false,
         }
       } catch (error) {
         console.error(`[recent-documents] could not list ${space.id}:`, logError(error))
-        return { items: [], temporary: [], activity: { spaceId: space.id } }
+        return { items: [], temporary: [], activity: { spaceId: space.id }, failed: true }
       }
     })
   )
   const items = perSpace.flatMap((entry) => entry.items)
   const activity: SpaceActivity[] = perSpace.map((entry) => entry.activity)
+  const incomplete = perSpace.some((entry) => entry.failed)
+    ? { incomplete: true as const }
+    : {}
   const archiveOn = (item: RecentDocument) => item.document.archiveOn ?? "\uffff"
   const soonestToArchive = (list: RecentDocument[]) =>
     list.sort((a, b) => archiveOn(a).localeCompare(archiveOn(b)))
@@ -153,6 +159,7 @@ export async function listRecentDocuments(options: {
       items: soonestToArchive(items).slice(0, limit),
       ...temporary,
       spaces: activity,
+      ...incomplete,
     }
   }
   const key = (item: RecentDocument) =>
@@ -164,7 +171,7 @@ export async function listRecentDocuments(options: {
     .sort((a, b) => key(b)!.localeCompare(key(a)!))
   const listed = sorted.slice(0, limit)
   if (options.excerpt) await addExcerpt(listed)
-  return { items: listed, ...temporary, spaces: activity }
+  return { items: listed, ...temporary, spaces: activity, ...incomplete }
 }
 
 /** The first doc, if an agent made it in the last day and changed it last. */
@@ -188,7 +195,9 @@ async function addExcerpt(items: RecentDocument[]): Promise<void> {
 // Opening lines come from the doc's own source, read once per change and
 // kept, so a revisit reads nothing.
 
-const EXCERPT_CHARS = 240
+// About two lines of the page; a whole sentence when one fits.
+const EXCERPT_CHARS = 200
+const SENTENCE_AT_LEAST = 60
 const EXCERPTS_KEPT = 64
 const excerpts = new Map<string, { updatedAt: string; text: string | null }>()
 
@@ -235,6 +244,8 @@ export function plainOpening(markdown: string, title: string): string | null {
   if (!text) return null
   if (text.length <= EXCERPT_CHARS) return text
   const cut = text.slice(0, EXCERPT_CHARS)
+  const sentenceEnd = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("? "), cut.lastIndexOf("! "))
+  if (sentenceEnd >= SENTENCE_AT_LEAST) return cut.slice(0, sentenceEnd + 1)
   const words = cut.slice(0, cut.lastIndexOf(" ") > 0 ? cut.lastIndexOf(" ") : cut.length)
   return `${words.replace(/[\s.,;:!?]+$/, "")}…`
 }

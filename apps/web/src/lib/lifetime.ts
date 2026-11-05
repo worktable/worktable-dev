@@ -138,6 +138,8 @@ export interface RecentDocuments {
   /** Temporary documents, soonest to archive first, when asked for. */
   temporary?: RecentDocument[]
   spaces: Array<{ spaceId: string; lastActivityAt?: string }>
+  /** A Space couldn't be read, so the lists may be missing some of its docs. */
+  incomplete?: true
 }
 
 export const recentQueryKeys = {

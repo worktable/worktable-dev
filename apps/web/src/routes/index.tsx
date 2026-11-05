@@ -16,6 +16,7 @@ export const Route = createFileRoute("/")({
   component: HomePage,
 })
 
+/** A Worktable with no Spaces yet starts with one. */
 function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -23,10 +24,9 @@ function EmptyState() {
       <h2 className="text-base font-medium text-foreground">
         Welcome to Worktable
       </h2>
-      <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-muted-foreground">
-        Create documents in the sidebar, or ask an AI agent to create a visual
-        HTML doc.
-      </p>
+      <div className="mt-4">
+        <HomeNewMenu spaces={[]} />
+      </div>
     </div>
   )
 }

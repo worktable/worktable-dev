@@ -15,6 +15,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react"
 import type { PendingItem } from "@worktable/types"
@@ -28,7 +29,11 @@ import { ProgressRing } from "@/components/getting-started/progress-ring"
 import { useLifetimeActions } from "@/hooks/use-document-organize"
 import { activityQueryKeys, usePending } from "@/lib/activity"
 import { shortWhen } from "@/lib/activity-format"
-import { replyAnnotation } from "@/lib/annotations-api"
+import {
+  reopenAnnotation,
+  replyAnnotation,
+  resolveAnnotation,
+} from "@/lib/annotations-api"
 import { createClientId } from "@/lib/client-id"
 import {
   clearSend,
@@ -44,16 +49,17 @@ import {
   type RecentDocument,
 } from "@/lib/lifetime"
 import { useSpaces } from "@/lib/queries"
-import { isGettingStartedSpace, useGettingStartedShortcut } from "@/lib/setup"
+import { useGettingStartedShortcut } from "@/lib/setup"
 import { postThreadReply } from "@/lib/threads-api"
 import { humanizeSegment } from "@/lib/tree"
 import { useActorName } from "@/lib/use-actor-name"
+import { useIsSelf } from "@/lib/use-is-self"
 
-// Every row on Home and Space Home has the same shape: a mark; what it is,
-// then who and where; and on the right, when, with one action under it.
-const rowGrid =
-  "grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-start gap-x-3"
-const rowClass = cn(rowGrid, "relative rounded-lg px-3 py-2.5 text-sm")
+// Every row on Home and Space Home has the same shape: a mark; what it is;
+// who and where; then its actions. On wider screens the time sits on the
+// right; on phones it joins who and where, so the row keeps its width.
+const rowClass =
+  "relative grid grid-cols-[1.5rem_minmax(0,1fr)] items-start gap-x-3 rounded-lg px-3 py-2.5 text-sm sm:grid-cols-[1.5rem_minmax(0,1fr)_auto]"
 const rowHover = "transition-colors hover:bg-surface-hover"
 const cardClass = "card-surface rounded-[14px] p-1.5"
 // Stretches a row's link or button across it; links and buttons inside the
@@ -102,27 +108,47 @@ function SectionHeader({
 const quietLink =
   "inline-flex items-center gap-1 text-[0.8rem] font-medium text-muted-foreground transition-colors hover:text-foreground"
 
+// Lists this short show whole; longer ones show a few, then more in steps.
+const WHOLE = 5
 const STEP = 5
 
-/** "5 More" and "Show Less", at the end of a list shown a few at a time. */
+/** A list's first rows, then more in steps, with a way back. */
+function useSteps(length: number, first: number) {
+  const [extra, setExtra] = useState(0)
+  const base = length <= WHOLE ? WHOLE : first
+  return {
+    visible: base + extra,
+    expanded: extra > 0,
+    more: () => setExtra((current) => current + STEP),
+    less: () => setExtra(0),
+  }
+}
+
+/** "5 More" and "Show Less", at the end of a list. */
 function MoreLess({
   more,
   less,
+  loading = false,
   onMore,
   onLess,
 }: {
   more: number
   less: boolean
+  loading?: boolean
   onMore: () => void
   onLess: () => void
 }) {
-  if (more <= 0 && !less) return null
+  if (more <= 0 && !less && !loading) return null
   return (
     <div className="mt-2 flex justify-center gap-5">
-      {more > 0 && (
-        <button type="button" className={quietLink} onClick={onMore}>
-          {more} More
-        </button>
+      {loading ? (
+        <span className="text-[0.8rem] text-muted-foreground">Loading…</span>
+      ) : (
+        more > 0 && (
+          <button type="button" className={quietLink} onClick={onMore}>
+            {more} More
+          </button>
+        )
       )}
       {less && (
         <button type="button" className={quietLink} onClick={onLess}>
@@ -133,8 +159,16 @@ function MoreLess({
   )
 }
 
-/** Who, then where, in one quiet line. */
-function Meta({ who, parts }: { who?: ReactNode; parts: ReactNode[] }) {
+/** Who, then where, in one quiet line; on phones, when too. */
+function Meta({
+  who,
+  parts,
+  at,
+}: {
+  who?: ReactNode
+  parts: ReactNode[]
+  at?: string
+}) {
   const shown = parts.filter(
     (part) => part !== undefined && part !== null && part !== false && part !== ""
   )
@@ -147,6 +181,12 @@ function Meta({ who, parts }: { who?: ReactNode; parts: ReactNode[] }) {
           {part}
         </Fragment>
       ))}
+      {at && (
+        <span className="sm:hidden">
+          {(who || shown.length > 0) && <span aria-hidden="true"> · </span>}
+          {shortWhen(at)}
+        </span>
+      )}
     </p>
   )
 }
@@ -155,23 +195,28 @@ function Lead({ children }: { children: ReactNode }) {
   return <span className="flex h-5 items-center justify-center">{children}</span>
 }
 
-/** When, on the first line, and the row's action under it. */
-function Trailing({ at, children }: { at?: string; children?: ReactNode }) {
+/** When, on the right of wider screens. */
+function When({ at }: { at?: string }) {
   return (
-    <span className="flex flex-col items-end gap-1.5">
-      <span className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums">
-        {at ? shortWhen(at) : ""}
-      </span>
-      {children && <span className={above}>{children}</span>}
+    <span className="text-xs leading-5 whitespace-nowrap text-muted-foreground tabular-nums max-sm:hidden">
+      {at ? shortWhen(at) : ""}
     </span>
   )
 }
 
-function Skeleton({ rows }: { rows: number }) {
+/** A row's actions, on their own line. */
+function Actions({ children }: { children: ReactNode }) {
+  return <div className={cn(above, "mt-1.5 flex items-center gap-4")}>{children}</div>
+}
+
+function Skeleton({ rows, tall = false }: { rows: number; tall?: boolean }) {
   return (
     <div className={cn(cardClass, "space-y-1")} aria-hidden="true">
       {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="h-[3.75rem] animate-pulse rounded-lg bg-surface-inset" />
+        <div
+          key={i}
+          className={cn("animate-pulse rounded-lg bg-surface-inset", tall ? "h-[5.25rem]" : "h-[3.75rem]")}
+        />
       ))}
     </div>
   )
@@ -192,19 +237,65 @@ function LoadFailed({ what, onRetry }: { what: string; onRetry: () => void }) {
   )
 }
 
-/**
- * Names and permissions of the reader's Spaces. With one Space, rows needn't
- * say which.
- */
+/** Names and permissions of the reader's Spaces. */
 function useSpaceFacts() {
   const { data: spaces } = useSpaces()
-  const own = (spaces ?? []).filter((space) => !isGettingStartedSpace(space))
   const byId = new Map((spaces ?? []).map((space) => [space.id, space]))
   return {
     nameOf: (spaceId: string | null | undefined) =>
-      spaceId && own.length > 1 ? byId.get(spaceId)?.name : undefined,
+      spaceId ? byId.get(spaceId)?.name : undefined,
     canEdit: (spaceId: string) => byId.get(spaceId)?.permissions?.edit !== false,
   }
+}
+
+/** Rows name their Space only when the list holds more than one. */
+function oneSpace(spaceIds: Array<string | null>): boolean {
+  return new Set(spaceIds).size <= 1
+}
+
+// Each page's previous visit, read once when the page opens and replaced by
+// this one, so a visit compares against the one before it.
+const lastVisits = new Map<string, number | null>()
+const openPages = new Map<string, number>()
+
+function readLastVisit(scope: string): number | null {
+  if (!lastVisits.has(scope)) {
+    const key = `worktable:last-visit:${scope}`
+    let previous: number | null = null
+    try {
+      const stored = Number(window.localStorage.getItem(key))
+      previous = stored > 0 ? stored : null
+      window.localStorage.setItem(key, String(Date.now()))
+    } catch {
+      // Without storage there is no last visit to compare with.
+    }
+    lastVisits.set(scope, previous)
+  }
+  return lastVisits.get(scope) ?? null
+}
+
+const unchanging = () => () => {}
+
+/**
+ * When the reader last opened this page, before now; absent on a first
+ * visit, when the browser keeps nothing, and in the server's render.
+ */
+function useLastVisit(scope: string): number | null {
+  useEffect(() => {
+    openPages.set(scope, (openPages.get(scope) ?? 0) + 1)
+    return () => {
+      openPages.set(scope, (openPages.get(scope) ?? 1) - 1)
+      // Forgotten once the page is left, not when React remounts it in place.
+      window.setTimeout(() => {
+        if (!openPages.get(scope)) lastVisits.delete(scope)
+      }, 0)
+    }
+  }, [scope])
+  return useSyncExternalStore(
+    unchanging,
+    () => readLastVisit(scope),
+    () => null
+  )
 }
 
 // ── Getting Started ────────────────────────────────────────
@@ -241,7 +332,6 @@ export function GettingStartedRow() {
             ]}
           />
         </div>
-        <span />
       </div>
     </div>
   )
@@ -405,6 +495,7 @@ function PendingRow({
   // A reply still on its way when the row remounts keeps its text, so Undo
   // or a failure can put it back.
   const [draft, setDraft] = useState(() => unsentBody(item.id) ?? "")
+  const [resolving, setResolving] = useState(false)
   const box = useRef<HTMLTextAreaElement>(null)
   const canReply = replyable(item)
   const headline = pendingHeadline(item)
@@ -418,6 +509,14 @@ function PendingRow({
     if (open && !phase) box.current?.focus()
   }, [open, phase])
 
+  const refresh = () => {
+    for (const spaceId of [undefined, item.spaceId ?? undefined]) {
+      void queryClient.invalidateQueries({
+        queryKey: activityQueryKeys.pendingIn(spaceId),
+      })
+    }
+  }
+
   const send = () => {
     const body = draft.trim()
     if (!body) return
@@ -428,13 +527,7 @@ function PendingRow({
         setDraft("")
         onClose()
         // The row says Sent for a moment, then leaves with the refresh.
-        window.setTimeout(() => {
-          for (const spaceId of [undefined, item.spaceId ?? undefined]) {
-            void queryClient.invalidateQueries({
-              queryKey: activityQueryKeys.pendingIn(spaceId),
-            })
-          }
-        }, SENT_LINGER_MS)
+        window.setTimeout(refresh, SENT_LINGER_MS)
       },
       onFailed: () => toast.error("Couldn’t send your reply. Try again."),
     })
@@ -445,6 +538,27 @@ function PendingRow({
     onClose()
   }
 
+  // A comment already settled elsewhere can be resolved without an answer.
+  const resolve = async () => {
+    if (item.kind !== "commentRequest") return
+    setResolving(true)
+    try {
+      await resolveAnnotation(item.spaceId, item.annotationId)
+      refresh()
+      toast("Resolved", {
+        action: {
+          label: "Undo",
+          onClick: () =>
+            void reopenAnnotation(item.spaceId, item.annotationId).then(refresh),
+        },
+      })
+    } catch {
+      toast.error("Couldn’t resolve. Try again.")
+      setResolving(false)
+    }
+  }
+
+  const quote = item.kind === "commentRequest" ? item.quote : undefined
   const SourceIcon = item.kind === "threadRequest" ? MessagesSquare : FileText
   return (
     <div className={cn(rowClass, idle && rowHover)}>
@@ -475,13 +589,24 @@ function PendingRow({
             !canReply
               ? "truncate font-medium"
               : // The whole question shows while it is being answered.
-                !composing && "line-clamp-3 sm:line-clamp-2"
+                !composing && "line-clamp-4 sm:line-clamp-2"
           )}
         >
           {headline}
         </p>
+        {quote && (
+          <p
+            className={cn(
+              "mt-1.5 border-l-2 border-border pl-2.5 text-[0.8rem] leading-relaxed text-muted-foreground",
+              composing ? "line-clamp-4" : "line-clamp-1"
+            )}
+          >
+            {quote}
+          </p>
+        )}
         <Meta
           who={asker}
+          at={item.at}
           parts={[
             canReply ? (
               <PendingSource
@@ -500,10 +625,30 @@ function PendingRow({
             spaceName,
           ]}
         />
-        {composing && item.kind === "commentRequest" && item.quote && (
-          <p className="mt-2 line-clamp-3 border-l-2 border-border pl-2.5 text-[0.8rem] leading-relaxed text-muted-foreground">
-            {item.quote}
-          </p>
+        {idle && (
+          <Actions>
+            <button
+              type="button"
+              className={textAction}
+              aria-label={`Reply to ${asker}: ${headline}`}
+              aria-expanded={open}
+              onClick={onOpen}
+            >
+              <Reply className="size-3.5" />
+              Reply
+            </button>
+            {item.kind === "commentRequest" && (
+              <button
+                type="button"
+                className={cn(textAction, "text-muted-foreground hover:bg-surface-hover hover:text-foreground")}
+                disabled={resolving}
+                onClick={() => void resolve()}
+              >
+                <Check className="size-3.5" />
+                Resolve
+              </button>
+            )}
+          </Actions>
         )}
         <div role="status" aria-live="polite">
           {(phase === "waiting" || phase === "sending" || phase === "sent") && sending && (
@@ -589,20 +734,7 @@ function PendingRow({
           </form>
         )}
       </div>
-      <Trailing at={item.at}>
-        {idle && (
-          <button
-            type="button"
-            className={textAction}
-            aria-label={`Reply to ${asker}: ${headline}`}
-            aria-expanded={open}
-            onClick={onOpen}
-          >
-            <Reply className="size-3.5" />
-            Reply
-          </button>
-        )}
-      </Trailing>
+      <When at={item.at} />
     </div>
   )
 }
@@ -612,7 +744,6 @@ function PendingRow({
  * so its place doesn't jump; a Space shows it only when something waits.
  */
 export function PendingSection({ spaceId }: { spaceId?: string }) {
-  const [visible, setVisible] = useState(SHOWN)
   // Past the first request's ten, one more asks for the rest.
   const [all, setAll] = useState(false)
   const pending = usePending(spaceId, all)
@@ -620,20 +751,21 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
   const [open, setOpen] = useState<string | null>(null)
   const items = pending.data?.items ?? []
   const total = pending.data?.total ?? items.length
+  const steps = useSteps(total, SHOWN)
   const failed = pending.isError && !pending.data
   const onHome = spaceId === undefined
   if (!onHome && !pending.isLoading && items.length === 0 && !failed) return null
-  const shown = items.slice(0, visible)
+  const shown = items.slice(0, steps.visible)
   // What another step could still show: everything a full list holds, until
   // that list has come.
   const reachable = all ? items.length : Math.min(total, FULL_LIST)
-  const more =
-    all && pending.isPlaceholderData ? 0 : Math.min(STEP, reachable - shown.length)
+  const loadingMore = all && pending.isPlaceholderData
+  const named = onHome && !oneSpace(items.map((item) => item.spaceId))
   return (
     <section aria-labelledby="pending-heading">
       <SectionHeader id="pending-heading" title="Pending" count={total} urgent />
       {pending.isLoading ? (
-        <Skeleton rows={onHome ? 2 : 1} />
+        <Skeleton rows={onHome ? 2 : 1} tall />
       ) : failed ? (
         <LoadFailed what="what’s pending" onRetry={() => void pending.refetch()} />
       ) : items.length === 0 ? (
@@ -648,7 +780,7 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
               <PendingRow
                 key={item.id}
                 item={item}
-                spaceName={onHome ? spaces.nameOf(item.spaceId) : undefined}
+                spaceName={named ? spaces.nameOf(item.spaceId) : undefined}
                 open={open === item.id}
                 onOpen={() => setOpen(item.id)}
                 onClose={() => setOpen((current) => (current === item.id ? null : current))}
@@ -656,14 +788,14 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
             ))}
           </div>
           <MoreLess
-            more={more}
-            less={visible > SHOWN}
+            more={Math.min(STEP, reachable - shown.length)}
+            less={steps.expanded}
+            loading={loadingMore}
             onMore={() => {
-              const next = shown.length + STEP
-              if (next > items.length && total > items.length) setAll(true)
-              setVisible(next)
+              if (steps.visible + STEP > items.length && total > items.length) setAll(true)
+              steps.more()
             }}
-            onLess={() => setVisible(SHOWN)}
+            onLess={steps.less}
           />
         </>
       )}
@@ -677,7 +809,6 @@ const RECENT_ROWS = 5
 const FOLDER_ROWS = 500
 // Temporary docs further out than this aren't "soon".
 const SOON_DAYS = 7
-const SOON_SHOWN = 3
 // Docs and rich docs are the usual kind; anything else says what it is.
 const PLAIN_FORMATS = new Set(["worktable.markdown", "worktable.rich-text"])
 
@@ -698,7 +829,7 @@ function useRecent(spaceId?: string) {
 
 const docKey = (item: RecentDocument) => `${item.spaceId}/${item.document.path}`
 
-type Place = "space" | "folder" | { inFolder: string }
+type Place = "space" | "folder" | { inFolder: string } | "none"
 
 /**
  * Where a doc lives: on Home, its Space; in a Space, its folder; in a
@@ -709,6 +840,7 @@ function placeOf(
   place: Place,
   spaceName: (spaceId: string) => string | undefined
 ): string | undefined {
+  if (place === "none") return undefined
   if (place === "space") return spaceName(item.spaceId)
   const path = item.document.path.split("/")
   const within = place === "folder" ? path : path.slice(place.inFolder.split("/").length)
@@ -766,24 +898,34 @@ function FormatIcon({ item, className }: { item: RecentDocument; className: stri
 
 /**
  * A doc, led by whoever changed it last. A temporary one says when it
- * archives and offers Keep.
+ * archives, beside Keep.
  */
 function DocRow({
   item,
   place,
   now,
+  since,
 }: {
   item: RecentDocument
   place: Place
   now: number
+  /** The reader's last visit: others' changes after it are marked. */
+  since?: number | null
 }) {
   const nameOf = useActorName()
+  const isSelf = useIsSelf()
   const spaces = useSpaceFacts()
   const { updatedAt, archiveOn, lifetime } = item.document
   const editor = item.lastEditor
   const unusual = !PLAIN_FORMATS.has(item.document.format.id)
   const temporary = lifetime === "temporary" && archiveOn !== undefined
   const soon = temporary && daysUntil(archiveOn, now) <= 1
+  const fresh =
+    since != null &&
+    updatedAt !== undefined &&
+    Date.parse(updatedAt) > since &&
+    editor !== undefined &&
+    !(editor.kind === "person" && isSelf(editor))
   return (
     <div className={cn(rowClass, rowHover)}>
       <Link
@@ -801,6 +943,14 @@ function DocRow({
       </Lead>
       <div className="min-w-0">
         <p className="flex min-w-0 items-start gap-1.5 leading-snug">
+          {fresh && (
+            <span
+              className="mt-[0.45rem] size-1.5 shrink-0 rounded-full bg-primary"
+              title="Changed since your last visit"
+            >
+              <span className="sr-only">Changed since your last visit:</span>
+            </span>
+          )}
           <span className="min-w-0 font-medium text-foreground max-sm:line-clamp-2 sm:truncate">
             {item.document.title}
           </span>
@@ -813,25 +963,30 @@ function DocRow({
             editor &&
             `${nameOf(editor)}${item.lastAction ? ` ${item.lastAction}` : ""}`
           }
-          parts={[
-            temporary && (
-              <span className={cn("inline-flex items-center gap-1 align-bottom", soon && "text-warning")}>
-                <Clock3 className="size-3 shrink-0" aria-hidden="true" />
-                {archiveLabel(archiveOn, now)}
-              </span>
-            ),
-            placeOf(item, place, spaces.nameOf),
-          ]}
+          at={updatedAt}
+          parts={[placeOf(item, place, spaces.nameOf)]}
         />
         {item.excerpt && (
-          <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-reading-foreground">
+          <p className="mt-1.5 line-clamp-2 text-[0.8125rem] leading-relaxed text-muted-foreground">
             {item.excerpt}
           </p>
         )}
+        {temporary && (
+          <Actions>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 text-[0.8rem]",
+                soon ? "text-warning" : "text-muted-foreground"
+              )}
+            >
+              <Clock3 className="size-3.5 shrink-0" aria-hidden="true" />
+              {archiveLabel(archiveOn, now)}
+            </span>
+            {spaces.canEdit(item.spaceId) && <KeepButton item={item} />}
+          </Actions>
+        )}
       </div>
-      <Trailing at={updatedAt}>
-        {temporary && spaces.canEdit(item.spaceId) && <KeepButton item={item} />}
-      </Trailing>
+      <When at={updatedAt} />
     </div>
   )
 }
@@ -839,13 +994,20 @@ function DocRow({
 /**
  * What changed lately, and who changed it. On Home, the reader's and their
  * agents' docs across Spaces; in a Space, everyone's there. When the newest
- * is a doc an agent just made, it shows its opening lines.
+ * is a doc an agent just made, it shows its opening lines. Others' changes
+ * since the reader's last visit are marked.
  */
 export function RecentSection({ spaceId }: { spaceId?: string }) {
   const inSpace = spaceId !== undefined
   const recent = useRecent(spaceId)
+  const since = useLastVisit(inSpace ? `space:${spaceId}` : "home")
   const [now] = useState(() => Date.now())
   const items = recent.data?.items ?? []
+  const place: Place = inSpace
+    ? "folder"
+    : oneSpace(items.map((item) => item.spaceId))
+      ? "none"
+      : "space"
   return (
     <section aria-labelledby="recent-heading">
       <SectionHeader
@@ -866,19 +1028,36 @@ export function RecentSection({ spaceId }: { spaceId?: string }) {
         <Skeleton rows={4} />
       ) : recent.isError && !recent.data ? (
         <LoadFailed what="recent docs" onRetry={() => void recent.refetch()} />
-      ) : items.length === 0 ? (
+      ) : items.length === 0 && !recent.data?.incomplete ? (
         <p className="px-0.5 text-sm text-muted-foreground">Nothing yet.</p>
       ) : (
-        <div className={cardClass}>
-          {items.map((item) => (
-            <DocRow
-              key={docKey(item)}
-              item={item}
-              place={inSpace ? "folder" : "space"}
-              now={now}
-            />
-          ))}
-        </div>
+        <>
+          {items.length > 0 && (
+            <div className={cardClass}>
+              {items.map((item) => (
+                <DocRow
+                  key={docKey(item)}
+                  item={item}
+                  place={place}
+                  now={now}
+                  since={since}
+                />
+              ))}
+            </div>
+          )}
+          {recent.data?.incomplete && (
+            <p className="mt-2 px-0.5 text-[0.8rem] text-muted-foreground">
+              Some docs couldn’t be read.{" "}
+              <button
+                type="button"
+                className="text-primary-text hover:underline"
+                onClick={() => void recent.refetch()}
+              >
+                Try again
+              </button>
+            </p>
+          )}
+        </>
       )}
     </section>
   )
@@ -934,7 +1113,6 @@ export function FolderSection({
 export function ArchivingSoonSection({ spaceId }: { spaceId?: string }) {
   const recent = useRecent(spaceId)
   const [now] = useState(() => Date.now())
-  const [visible, setVisible] = useState(SOON_SHOWN)
   const inRecent = new Set((recent.data?.items ?? []).map(docKey))
   const soon = (recent.data?.temporary ?? [])
     .filter(
@@ -944,26 +1122,28 @@ export function ArchivingSoonSection({ spaceId }: { spaceId?: string }) {
         daysUntil(item.document.archiveOn, now) <= SOON_DAYS
     )
     .sort((a, b) => a.document.archiveOn!.localeCompare(b.document.archiveOn!))
+  const steps = useSteps(soon.length, SHOWN)
   if (soon.length === 0) return null
-  const shown = soon.slice(0, visible)
+  const shown = soon.slice(0, steps.visible)
+  const place: Place =
+    spaceId !== undefined
+      ? "folder"
+      : oneSpace(soon.map((item) => item.spaceId))
+        ? "none"
+        : "space"
   return (
     <section aria-labelledby="archiving-heading">
       <SectionHeader id="archiving-heading" title="Archiving Soon" count={soon.length} />
       <div className={cardClass}>
         {shown.map((item) => (
-          <DocRow
-            key={docKey(item)}
-            item={item}
-            place={spaceId !== undefined ? "folder" : "space"}
-            now={now}
-          />
+          <DocRow key={docKey(item)} item={item} place={place} now={now} />
         ))}
       </div>
       <MoreLess
         more={Math.min(STEP, soon.length - shown.length)}
-        less={visible > SOON_SHOWN}
-        onMore={() => setVisible(shown.length + STEP)}
-        onLess={() => setVisible(SOON_SHOWN)}
+        less={steps.expanded}
+        onMore={steps.more}
+        onLess={steps.less}
       />
     </section>
   )

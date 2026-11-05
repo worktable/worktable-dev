@@ -5,7 +5,8 @@
 // Home and Space overviews list real documents by when they changed or were
 // created. Temporary documents are supporting work, so they are left out
 // unless asked for; asking for only temporary documents lists them by when
-// they archive. Archived Spaces and documents never appear.
+// they archive. Archived documents never appear, and an archived Space only
+// when it is the one asked for, so its overview stays browsable.
 //
 // Each row names who last created or edited the doc, from the in-memory
 // summary of each Space's activity, so a list reads no history.
@@ -73,12 +74,10 @@ export async function listRecentDocuments(options: {
   const limit = options.limit ?? 30
   // Across Spaces, Recent is the person's own work: Getting Started's guides
   // are listed only when that Space is asked for.
-  const spaces = (await listSpaces()).filter(
-    (space) =>
-      !getSpaceArchiveInfo(space) &&
-      (options.spaceId === undefined
-        ? !isGettingStartedSpace(space)
-        : space.id === options.spaceId)
+  const spaces = (await listSpaces()).filter((space) =>
+    options.spaceId === undefined
+      ? !getSpaceArchiveInfo(space) && !isGettingStartedSpace(space)
+      : space.id === options.spaceId
   )
   // Spaces are listed in parallel; one unreadable Space must not hide the
   // rest of the workspace's recent work.
@@ -100,7 +99,7 @@ export async function listRecentDocuments(options: {
           const activity = peekDocActivity(space.id, item.path, moves)
           if (
             options.actorIds &&
-            !activity?.contributors.some((actor) => options.actorIds!.has(actor.id))
+            ![...options.actorIds].some((id) => activity?.everyone.has(id))
           ) {
             continue
           }

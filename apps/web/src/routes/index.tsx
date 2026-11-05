@@ -4,6 +4,7 @@ import { WorktableAppIcon } from "@/components/worktable-app-icon"
 import { HomeNewMenu } from "@/components/home/home-new-menu"
 import {
   ArchivingSoonSection,
+  GettingStartedRow,
   PendingSection,
   RecentSection,
 } from "@/components/home/home-sections"
@@ -83,6 +84,7 @@ function HomePage() {
         <HomeNewMenu spaces={newMenuSpaces} />
       </header>
 
+      <GettingStartedRow />
       <PendingSection />
       <RecentSection />
       <ArchivingSoonSection />

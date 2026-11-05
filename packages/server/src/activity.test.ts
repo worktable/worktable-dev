@@ -321,6 +321,7 @@ describe("workspace activity", () => {
     await drainActivity()
     expect(peekDocActivity("company", "plan", plan)).toEqual({
       lastEditor: maya,
+      lastAction: "edited",
       contributors: [maya, claude],
       everyone: new Set([claude.id, maya.id]),
     })
@@ -331,6 +332,7 @@ describe("workspace activity", () => {
     recordActivity({ spaceId: "company", action: "doc.edited", actor: maya, target: { kind: "doc", path: "plan" } })
     expect(peekDocActivity("company", "plan", plan)).toEqual({
       lastEditor: maya,
+      lastAction: "edited",
       contributors: [maya, claude],
       everyone: new Set([claude.id, maya.id]),
     })
@@ -359,6 +361,7 @@ describe("workspace activity", () => {
     expect(recent.items.map((item) => item.document.path)).toEqual(["brief", "notes"])
     expect(recent.items[0]).toMatchObject({
       lastEditor: { kind: "agent" },
+      lastAction: "created",
       excerpt: "The launch plan is ready. See the plan for dates.",
     })
     expect(recent.items[1]?.lastEditor?.kind).toBe("agent")
@@ -372,7 +375,12 @@ describe("workspace activity", () => {
       target: { kind: "doc", path: "brief" },
     })
     const edited = await listRecentDocuments({ excerpt: true })
-    expect(edited.items.find((item) => item.excerpt)?.document.path).toBe("notes")
+    expect(edited.items[0]).toMatchObject({
+      document: { path: "brief" },
+      lastEditor: { kind: "person" },
+      lastAction: "edited",
+    })
+    expect(edited.items.some((item) => item.excerpt)).toBe(false)
     // Narrowed to one person, only what they worked on is listed, however
     // many others worked on it since.
     for (const id of ["a", "b", "c", "d"]) {

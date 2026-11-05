@@ -12,9 +12,8 @@
 // summary of each Space's activity. A Space's history is read once, on its
 // first list after the server starts.
 //
-// The newest doc an agent made in the last day can carry its opening lines,
-// so the reader sees what it says before opening it. It keeps its place in
-// the list.
+// When the newest change is a doc an agent made in the last day, it carries
+// its opening lines, so the reader sees what it says before opening it.
 
 import type { ActivityActor, DocumentSummary } from "@worktable/types"
 import { docActivityReady, peekDocActivity } from "./activity-log.ts"
@@ -33,6 +32,8 @@ export interface RecentDocument {
   document: DocumentSummary
   /** Who last created or edited the doc, when its history says. */
   lastEditor?: ActivityActor
+  /** Whether that last change made the doc or edited it. */
+  lastAction?: "created" | "edited"
   /** The opening lines, for the newest doc an agent made in the last day. */
   excerpt?: string
 }
@@ -64,7 +65,7 @@ export async function listRecentDocuments(options: {
   actorIds?: ReadonlySet<string>
   /** Only docs in this folder, with spaceId. */
   folder?: string
-  /** Give the newest listed doc an agent made in the last day its opening lines. */
+  /** Give the first doc its opening lines, if an agent made it in the last day. */
   excerpt?: boolean
 }): Promise<{
   items: RecentDocument[]
@@ -111,7 +112,12 @@ export async function listRecentDocuments(options: {
             spaceId: space.id,
             spaceName: space.name,
             document: item,
-            ...(activity?.lastEditor ? { lastEditor: activity.lastEditor } : {}),
+            ...(activity?.lastEditor
+              ? {
+                  lastEditor: activity.lastEditor,
+                  ...(activity.lastAction ? { lastAction: activity.lastAction } : {}),
+                }
+              : {}),
           }
           if (temporary) spaceTemporary.push(entry)
           if (options.onlyTemporary ? !temporary : !options.includeTemporary && temporary) {
@@ -161,18 +167,18 @@ export async function listRecentDocuments(options: {
   return { items: listed, ...temporary, spaces: activity }
 }
 
-/** The newest doc made in the last day whose last change was an agent's. */
+/** The first doc, if an agent made it in the last day and changed it last. */
 async function addExcerpt(items: RecentDocument[]): Promise<void> {
   const since = new Date(Date.now() - EXCERPT_WITHIN_MS).toISOString()
-  const newest = items
-    .filter(
-      (item) =>
-        item.lastEditor?.kind === "agent" &&
-        item.document.createdAt !== undefined &&
-        item.document.createdAt >= since
-    )
-    .sort((a, b) => b.document.createdAt!.localeCompare(a.document.createdAt!))[0]
-  if (!newest) return
+  const newest = items[0]
+  if (
+    !newest ||
+    newest.lastEditor?.kind !== "agent" ||
+    newest.document.createdAt === undefined ||
+    newest.document.createdAt < since
+  ) {
+    return
+  }
   const excerpt = await docExcerpt(newest.spaceId, newest.document)
   if (excerpt) newest.excerpt = excerpt
 }

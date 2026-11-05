@@ -334,6 +334,8 @@ export async function drainActivity(): Promise<void> {
 export interface DocActivitySummary {
   /** Who last created or edited the doc. */
   lastEditor?: ActivityActor
+  /** Whether that last change made the doc or edited it. */
+  lastAction?: "created" | "edited"
   /**
    * People and agents who created or edited it, most recent first. Comments
    * are left out: not every reader may see who commented.
@@ -351,7 +353,7 @@ interface DocWork {
 
 /** What one recorded path's history says, kept with times to merge paths. */
 interface PathSummary {
-  lastEdit?: DocWork
+  lastEdit?: DocWork & { action: "created" | "edited" }
   contributors: DocWork[]
   everyone: Set<string>
 }
@@ -376,7 +378,11 @@ function applyDocSummary(
 ): void {
   if (action !== "doc.created" && action !== "doc.edited") return
   const summary = summaries.get(path) ?? { contributors: [], everyone: new Set() }
-  summary.lastEdit = { actor, at }
+  summary.lastEdit = {
+    actor,
+    at,
+    action: action === "doc.created" ? "created" : "edited",
+  }
   if (actor.kind !== "system") {
     summary.everyone.add(actor.id)
     summary.contributors = [
@@ -423,7 +429,9 @@ function mergePathSummaries(parts: readonly PathSummary[]): DocActivitySummary {
       ? parts[0]!.everyone
       : new Set(parts.flatMap((part) => [...part.everyone]))
   return {
-    ...(lastEdit ? { lastEditor: lastEdit.actor } : {}),
+    ...(lastEdit
+      ? { lastEditor: lastEdit.actor, lastAction: lastEdit.action }
+      : {}),
     contributors,
     everyone,
   }

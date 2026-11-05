@@ -8,16 +8,16 @@ import {
   useRouter,
 } from "@tanstack/react-router"
 import { lazy, Suspense, useCallback, useMemo, useState } from "react"
-import { Archive, Folder, Plus, RotateCcw } from "lucide-react"
+import { Archive, ArrowLeft, Folder, Plus, RotateCcw } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { browserTeamMemberId } from "@/lib/team-context"
 import type { ResolvedStartHerePin } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
-import { cn } from "@worktable/ui/lib/utils"
 import { DocumentFormatIcon } from "@/components/document-format-icon"
 import {
   ArchivingSoonSection,
+  FolderSection,
   PendingSection,
   RecentSection,
 } from "@/components/home/home-sections"
@@ -27,7 +27,6 @@ import { restoreSpace } from "@/lib/api"
 import { useDocuments } from "@/lib/documents-queries"
 import { setPins } from "@/lib/lifetime"
 import { spaceQueryOptions, useSpace, useSpaces } from "@/lib/queries"
-import { shortWhen } from "@/lib/activity-format"
 import { RelativeTime } from "@/lib/time"
 import { humanizeSegment } from "@/lib/tree"
 import { useSpaceSubscription } from "@/lib/ws"
@@ -53,6 +52,11 @@ export const Route = createFileRoute("/spaces/$spaceId")({
   beforeLoad: ({ context, params }) => {
     void context.queryClient.prefetchQuery(spaceQueryOptions(params.spaceId))
   },
+  // ?folder=F lists every doc in that top-level folder.
+  validateSearch: (search: Record<string, unknown>): { folder?: string } =>
+    typeof search["folder"] === "string" && search["folder"]
+      ? { folder: search["folder"] }
+      : {},
   component: SpaceDetailPage,
 })
 
@@ -215,62 +219,99 @@ function PinnedSection({
 
 interface FolderSummary {
   name: string
+  /** Its docs, temporary ones included, as its own list shows them. */
   count: number
-  /** The newest change to a doc in it. */
-  lastAt?: string
+  /** Its most recently changed doc. */
+  latest?: { title: string; at: string }
 }
 
-// Enough to show where work is happening; the sidebar lists every folder.
+// Where work is happening at a glance; the rest are a click away.
 const FOLDERS_SHOWN = 6
 
-/**
- * Top-level folders, busiest first: how many docs each holds and when one
- * last changed. Choosing one lists all of its docs under Recent.
- */
-function FolderCards({
+/** Top-level folders, busiest first, each opening its own list. */
+function FoldersSection({
+  spaceId,
   folders,
-  folder,
-  onFolder,
 }: {
+  spaceId: string
   folders: FolderSummary[]
-  folder: string | null
-  onFolder: (folder: string | null) => void
 }) {
+  const [all, setAll] = useState(false)
   if (folders.length === 0) return null
+  const shown = all ? folders : folders.slice(0, FOLDERS_SHOWN)
   return (
     <section aria-labelledby="folders-heading">
-      <h2 id="folders-heading" className="mb-2 px-0.5 text-sm font-semibold text-foreground">
-        Folders
-      </h2>
+      <div className="mb-2 flex items-baseline justify-between gap-3 px-0.5">
+        <h2 id="folders-heading" className="text-sm font-semibold text-foreground">
+          Folders
+        </h2>
+        {folders.length > FOLDERS_SHOWN && (
+          <button
+            type="button"
+            className="text-[0.8rem] font-medium text-muted-foreground transition-colors hover:text-foreground"
+            onClick={() => setAll(!all)}
+          >
+            {all ? "Show Less" : `All ${folders.length}`}
+          </button>
+        )}
+      </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {folders.slice(0, FOLDERS_SHOWN).map((entry, index) => {
-          const active = folder === entry.name
-          return (
-            <button
-              key={entry.name}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onFolder(active ? null : entry.name)}
-              className={cn(
-                "card-surface card-surface-interactive min-w-0 rounded-xl px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                active && "bg-surface-selected ring-2 ring-primary/50",
-                // Four fit a phone without pushing Recent away.
-                index >= 4 && "max-sm:hidden"
-              )}
-            >
-              <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
-                <Folder className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate">{humanizeSegment(entry.name)}</span>
+        {shown.map((entry) => (
+          <Link
+            key={entry.name}
+            to="/spaces/$spaceId"
+            params={{ spaceId }}
+            search={{ folder: entry.name }}
+            className="card-surface card-surface-interactive min-w-0 rounded-xl px-3 py-2.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
+              <Folder className="size-4 shrink-0 text-muted-foreground" />
+              <span className="truncate">{humanizeSegment(entry.name)}</span>
+              <span className="ml-auto shrink-0 text-[0.8rem] font-normal text-muted-foreground tabular-nums">
+                {entry.count}
               </span>
-              <span className="mt-0.5 block truncate pl-6 text-[0.8rem] text-muted-foreground tabular-nums">
-                {entry.count} {entry.count === 1 ? "doc" : "docs"}
-                {entry.lastAt && ` · ${shortWhen(entry.lastAt)}`}
+            </span>
+            {entry.latest && (
+              <span className="mt-0.5 block truncate pl-6 text-[0.8rem] text-muted-foreground">
+                {entry.latest.title}
               </span>
-            </button>
-          )
-        })}
+            )}
+          </Link>
+        ))}
       </div>
     </section>
+  )
+}
+
+/** One folder's docs, under the Space they belong to. */
+function FolderView({
+  spaceId,
+  spaceName,
+  folder,
+}: {
+  spaceId: string
+  spaceName: string | undefined
+  folder: string
+}) {
+  return (
+    <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-8 lg:py-10">
+      <header className="px-0.5">
+        <Link
+          to="/spaces/$spaceId"
+          params={{ spaceId }}
+          search={{}}
+          className="inline-flex items-center gap-1 text-[0.8rem] font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="size-3.5" />
+          {spaceName ?? "Space Home"}
+        </Link>
+        <h1 className="mt-2 flex min-w-0 items-center gap-3 font-display text-[1.65rem] leading-tight font-semibold tracking-tight text-foreground sm:text-[2rem]">
+          <Folder className="size-6 shrink-0 text-muted-foreground" />
+          <span className="truncate">{humanizeSegment(folder)}</span>
+        </h1>
+      </header>
+      <FolderSection spaceId={spaceId} folder={folder} />
+    </div>
   )
 }
 
@@ -292,7 +333,6 @@ function SpaceOverview({
   onRetryPins?: () => void
   canEdit: boolean
 }) {
-  const [folder, setFolder] = useState<string | null>(null)
   const { data: documentItems } = useDocuments(spaceId)
 
   const folders = useMemo(() => {
@@ -303,14 +343,14 @@ function SpaceOverview({
       if (!top || rest.length === 0) continue
       const entry = byName.get(top) ?? { name: top, count: 0 }
       entry.count += 1
-      if (item.updatedAt && (!entry.lastAt || item.updatedAt > entry.lastAt)) {
-        entry.lastAt = item.updatedAt
+      if (item.updatedAt && (!entry.latest || item.updatedAt > entry.latest.at)) {
+        entry.latest = { title: item.title, at: item.updatedAt }
       }
       byName.set(top, entry)
     }
     return [...byName.values()].sort(
       (a, b) =>
-        (b.lastAt ?? "").localeCompare(a.lastAt ?? "") ||
+        (b.latest?.at ?? "").localeCompare(a.latest?.at ?? "") ||
         a.name.localeCompare(b.name)
     )
   }, [documentItems])
@@ -330,7 +370,7 @@ function SpaceOverview({
             </div>
           )}
           {spaceDescription && (
-            <p className="mt-2 line-clamp-2 max-w-2xl text-[0.95rem] leading-6 text-muted-foreground">
+            <p className="mt-2 line-clamp-2 max-w-2xl text-[0.95rem] leading-6 text-muted-foreground max-sm:line-clamp-1">
               {spaceDescription}
             </p>
           )}
@@ -352,19 +392,20 @@ function SpaceOverview({
 
       <PendingSection spaceId={spaceId} />
 
-      <PinnedSection spaceId={spaceId} pins={pins} onRetry={onRetryPins} />
-
-      <FolderCards folders={folders} folder={folder} onFolder={setFolder} />
-
-      <RecentSection spaceId={spaceId} folder={folder} />
+      <RecentSection spaceId={spaceId} />
 
       <ArchivingSoonSection spaceId={spaceId} />
+
+      <PinnedSection spaceId={spaceId} pins={pins} onRetry={onRetryPins} />
+
+      <FoldersSection spaceId={spaceId} folders={folders} />
     </div>
   )
 }
 
 function SpaceDetailPage() {
   const { spaceId } = Route.useParams()
+  const { folder } = Route.useSearch()
   const { data, isLoading, isError, refetch } = useSpace(spaceId)
   // The sidebar's Space list already holds the name, description and
   // settings, so the overview renders in place while the details (pins)
@@ -439,9 +480,10 @@ function SpaceDetailPage() {
         <Suspense fallback={null}>
           <GettingStartedHome />
         </Suspense>
+      ) : folder ? (
+        <FolderView spaceId={spaceId} spaceName={space?.name} folder={folder} />
       ) : (
       <SpaceOverview
-        // A folder filter belongs to one Space; start each Space unfiltered.
         key={spaceId}
         spaceId={spaceId}
         space={space}

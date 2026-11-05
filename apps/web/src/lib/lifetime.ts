@@ -127,6 +127,8 @@ export interface RecentDocument {
   document: WithContentRevision<DocumentSummary>
   /** Who last created or edited it, when its history says. */
   lastEditor?: ActivityActor
+  /** Whether that last change made the doc or edited it. */
+  lastAction?: "created" | "edited"
   /** The opening lines, for the newest doc an agent made in the last day. */
   excerpt?: string
 }
@@ -156,7 +158,7 @@ export interface RecentOptions {
   mine?: boolean
   /** Only docs in this folder of `spaceId`. */
   folder?: string
-  /** Give the newest doc an agent made in the last day its opening lines. */
+  /** Give the first doc its opening lines, if an agent made it in the last day. */
   excerpt?: boolean
 }
 

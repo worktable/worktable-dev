@@ -3,6 +3,7 @@ import {
   queryOptions,
   useInfiniteQuery,
   useQuery,
+  useQueryClient,
 } from "@tanstack/react-query"
 import type {
   ActivityActor,
@@ -95,6 +96,7 @@ export function useActivityAgents(spaceId?: string) {
  * with `all` up to 100.
  */
 export function usePending(spaceId?: string, all = false) {
+  const queryClient = useQueryClient()
   return useQuery({
     queryKey: [...activityQueryKeys.pendingIn(spaceId), ...(all ? ["all"] : [])],
     queryFn: () => {
@@ -106,8 +108,20 @@ export function usePending(spaceId?: string, all = false) {
     },
     staleTime: 10_000,
     refetchInterval: pollUnlessLive(spaceId),
-    // Asking for the rest keeps the first page on screen, in the same Space.
-    placeholderData: (previous, query) =>
-      query?.queryKey[1] === (spaceId ?? null) ? previous : undefined,
+    placeholderData: (previous, query) => {
+      // Asking for the rest keeps the first page on screen.
+      if (query?.queryKey[1] === (spaceId ?? null)) return previous
+      // A Space starts from Home's list when that holds everything, so its
+      // page doesn't shift when its own answer arrives.
+      if (!spaceId) return undefined
+      const everywhere = queryClient.getQueryData<PendingResult>(
+        activityQueryKeys.pendingIn()
+      )
+      if (!everywhere || everywhere.total !== everywhere.items.length) {
+        return undefined
+      }
+      const items = everywhere.items.filter((item) => item.spaceId === spaceId)
+      return { items, total: items.length }
+    },
   })
 }

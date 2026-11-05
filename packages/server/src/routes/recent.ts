@@ -36,8 +36,8 @@ function personalActorIds(identity: TokenIdentity): Set<string> | undefined {
 // temporaryLimit=N adds those as `temporary` beside the main list.
 // scope=mine keeps docs the reader or their agents created or edited.
 // folder=F, with spaceId, keeps docs in that folder.
-// excerpt=true gives the newest listed doc an agent made in the last day its
-// opening lines.
+// excerpt=true gives the first doc its opening lines, when an agent made it
+// in the last day.
 recentRouter.get("/", async (c) => {
   const sort = c.req.query("sort") === "created" ? "created" : "updated"
   const limitRaw = Number(c.req.query("limit"))

@@ -286,9 +286,14 @@ function replaceGroups(
   }
 }
 
+// Enough for a whole question, so it can be answered from Home.
+const EXCERPT_CHARS = 400
+
 function excerpt(text: string): string {
   const flat = text.replace(/\s+/g, " ").trim()
-  return flat.length <= 160 ? flat : `${flat.slice(0, 159).trimEnd()}…`
+  return flat.length <= EXCERPT_CHARS
+    ? flat
+    : `${flat.slice(0, EXCERPT_CHARS - 1).trimEnd()}…`
 }
 
 // ── Comments ───────────────────────────────────────────────

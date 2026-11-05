@@ -29,11 +29,6 @@ import { ProgressRing } from "@/components/getting-started/progress-ring"
 import { useLifetimeActions } from "@/hooks/use-document-organize"
 import { activityQueryKeys, usePending } from "@/lib/activity"
 import { shortWhen } from "@/lib/activity-format"
-import {
-  reopenAnnotation,
-  replyAnnotation,
-  resolveAnnotation,
-} from "@/lib/annotations-api"
 import { createClientId } from "@/lib/client-id"
 import {
   clearSend,
@@ -108,16 +103,15 @@ function SectionHeader({
 const quietLink =
   "inline-flex items-center gap-1 text-[0.8rem] font-medium text-muted-foreground transition-colors hover:text-foreground"
 
-// Lists this short show whole; longer ones show a few, then more in steps.
-const WHOLE = 5
+// A list shows its first few, then more in steps, so its height holds still
+// as items come and go.
 const STEP = 5
 
 /** A list's first rows, then more in steps, with a way back. */
-function useSteps(length: number, first: number) {
+function useSteps(first: number) {
   const [extra, setExtra] = useState(0)
-  const base = length <= WHOLE ? WHOLE : first
   return {
-    visible: base + extra,
+    visible: first + extra,
     expanded: extra > 0,
     more: () => setExtra((current) => current + STEP),
     less: () => setExtra(0),
@@ -231,6 +225,18 @@ function LoadFailed({ what, onRetry }: { what: string; onRetry: () => void }) {
         className="text-primary-text hover:underline"
         onClick={onRetry}
       >
+        Try again
+      </button>
+    </p>
+  )
+}
+
+/** Some of a list's docs couldn't be read, so it may be missing some. */
+function Incomplete({ onRetry }: { onRetry: () => void }) {
+  return (
+    <p className="mt-2 px-0.5 text-[0.8rem] text-muted-foreground">
+      Some docs couldn’t be read.{" "}
+      <button type="button" className="text-primary-text hover:underline" onClick={onRetry}>
         Try again
       </button>
     </p>
@@ -371,10 +377,17 @@ function sendReply(item: PendingItem, body: string, key: string) {
     )
   }
   if (item.kind === "commentRequest") {
-    return replyAnnotation(item.spaceId, item.annotationId, body)
+    const { spaceId, annotationId } = item
+    return annotationsApi().then((api) =>
+      api.replyAnnotation(spaceId, annotationId, body)
+    )
   }
   return Promise.resolve()
 }
+
+// Comments are answered from Home now and then; their calls load when used,
+// not with every page.
+const annotationsApi = () => import("@/lib/annotations-api")
 
 /** Where an item lives: its thread, or its doc. */
 function PendingSource({
@@ -543,13 +556,14 @@ function PendingRow({
     if (item.kind !== "commentRequest") return
     setResolving(true)
     try {
-      await resolveAnnotation(item.spaceId, item.annotationId)
+      const api = await annotationsApi()
+      await api.resolveAnnotation(item.spaceId, item.annotationId)
       refresh()
       toast("Resolved", {
         action: {
           label: "Undo",
           onClick: () =>
-            void reopenAnnotation(item.spaceId, item.annotationId).then(refresh),
+            void api.reopenAnnotation(item.spaceId, item.annotationId).then(refresh),
         },
       })
     } catch {
@@ -751,7 +765,7 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
   const [open, setOpen] = useState<string | null>(null)
   const items = pending.data?.items ?? []
   const total = pending.data?.total ?? items.length
-  const steps = useSteps(total, SHOWN)
+  const steps = useSteps(SHOWN)
   const failed = pending.isError && !pending.data
   const onHome = spaceId === undefined
   if (!onHome && !pending.isLoading && items.length === 0 && !failed) return null
@@ -1046,16 +1060,7 @@ export function RecentSection({ spaceId }: { spaceId?: string }) {
             </div>
           )}
           {recent.data?.incomplete && (
-            <p className="mt-2 px-0.5 text-[0.8rem] text-muted-foreground">
-              Some docs couldn’t be read.{" "}
-              <button
-                type="button"
-                className="text-primary-text hover:underline"
-                onClick={() => void recent.refetch()}
-              >
-                Try again
-              </button>
-            </p>
+            <Incomplete onRetry={() => void recent.refetch()} />
           )}
         </>
       )}
@@ -1086,19 +1091,26 @@ export function FolderSection({
         <Skeleton rows={4} />
       ) : docs.isError && !docs.data ? (
         <LoadFailed what="this folder" onRetry={() => void docs.refetch()} />
-      ) : items.length === 0 ? (
+      ) : items.length === 0 && !docs.data?.incomplete ? (
         <p className="px-0.5 text-sm text-muted-foreground">Nothing here.</p>
       ) : (
-        <div className={cardClass}>
-          {items.map((item) => (
-            <DocRow
-              key={item.document.path}
-              item={item}
-              place={{ inFolder: folder }}
-              now={now}
-            />
-          ))}
-        </div>
+        <>
+          {items.length > 0 && (
+            <div className={cardClass}>
+              {items.map((item) => (
+                <DocRow
+                  key={item.document.path}
+                  item={item}
+                  place={{ inFolder: folder }}
+                  now={now}
+                />
+              ))}
+            </div>
+          )}
+          {docs.data?.incomplete && (
+            <Incomplete onRetry={() => void docs.refetch()} />
+          )}
+        </>
       )}
     </section>
   )
@@ -1122,7 +1134,7 @@ export function ArchivingSoonSection({ spaceId }: { spaceId?: string }) {
         daysUntil(item.document.archiveOn, now) <= SOON_DAYS
     )
     .sort((a, b) => a.document.archiveOn!.localeCompare(b.document.archiveOn!))
-  const steps = useSteps(soon.length, SHOWN)
+  const steps = useSteps(SHOWN)
   if (soon.length === 0) return null
   const shown = soon.slice(0, steps.visible)
   const place: Place =

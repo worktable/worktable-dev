@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useSyncExternalStore } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { WorktableAppIcon } from "@/components/worktable-app-icon"
 import { HomeNewMenu } from "@/components/home/home-new-menu"
@@ -37,16 +37,18 @@ function greetingFor(hour: number): string {
   return "Good evening"
 }
 
-/** The greeting for the reader's hour, set after mount so time zones agree. */
+const unchanging = () => () => {}
+
+/**
+ * The greeting for the reader's hour. The server's render has none, so its
+ * time zone never shows.
+ */
 function useGreeting(): string | null {
-  const [greeting, setGreeting] = useState<string | null>(null)
-  useEffect(() => {
-    const update = () => setGreeting(greetingFor(new Date().getHours()))
-    update()
-    const timer = window.setInterval(update, 60_000)
-    return () => window.clearInterval(timer)
-  }, [])
-  return greeting
+  return useSyncExternalStore(
+    unchanging,
+    () => greetingFor(new Date().getHours()),
+    () => null
+  )
 }
 
 function HomePage() {

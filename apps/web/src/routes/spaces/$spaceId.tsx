@@ -441,7 +441,12 @@ function SpaceDetailPage() {
   // The sidebar's Space list already holds the name, description and
   // settings, so the overview renders in place while the details (pins)
   // load, instead of swapping in a differently shaped placeholder.
-  const { data: spaces, isLoading: spacesLoading } = useSpaces()
+  const {
+    data: spaces,
+    isLoading: spacesLoading,
+    isError: spacesFailed,
+    refetch: refetchSpaces,
+  } = useSpaces()
   const space = data?.space ?? spaces?.find((entry) => entry.id === spaceId)
   const router = useRouter()
   const [restoring, setRestoring] = useState(false)
@@ -497,12 +502,27 @@ function SpaceDetailPage() {
   }
 
   if (!space && !isLoading && !spacesLoading) {
+    // A Space that couldn't be read is not a Space that doesn't exist.
+    const unreadable = isError || spacesFailed
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center text-sm text-muted-foreground sm:px-8">
-        This Space isn’t here.{" "}
-        <Link to="/" className="text-primary-text hover:underline">
-          Home
-        </Link>
+        {unreadable ? "Couldn’t load this Space." : "This Space isn’t here."}{" "}
+        {unreadable ? (
+          <button
+            type="button"
+            className="text-primary-text hover:underline"
+            onClick={() => {
+              void refetch()
+              void refetchSpaces()
+            }}
+          >
+            Try again
+          </button>
+        ) : (
+          <Link to="/" className="text-primary-text hover:underline">
+            Home
+          </Link>
+        )}
       </div>
     )
   }

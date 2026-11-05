@@ -336,6 +336,19 @@ export function approvedCampaignProperties(
   return properties
 }
 
+/** Events the SDK sends on its own, with no properties of ours to check. */
+const AUTOMATIC_EVENTS = ["$pageleave", "$web_vitals", "$snapshot"]
+const PAGELEAVE_MEASURES = [
+  "$prev_pageview_duration",
+  "$prev_pageview_max_scroll_percentage",
+  "$prev_pageview_last_scroll_percentage",
+  "$prev_pageview_max_content_percentage",
+  "$prev_pageview_last_content_percentage",
+]
+const WEB_VITALS = ["LCP", "INP", "CLS", "FCP"].map(
+  (metric) => `$web_vitals_${metric}_value`
+)
+
 export function sanitizePublicAnalyticsEvent(
   event: PublicAnalyticsEvent | null,
   config: Pick<
@@ -346,7 +359,9 @@ export function sanitizePublicAnalyticsEvent(
 ): PublicAnalyticsEvent | null {
   if (!event || !config.projectToken) return null
   if (!isPublicAnalyticsContextAllowed(config, location)) return null
+  const automatic = AUTOMATIC_EVENTS.includes(event.event)
   if (
+    !automatic &&
     event.event !== "$pageview" &&
     event.event !== "marketing:cta_click" &&
     event.event !== "marketing:install_command_copy"
@@ -356,14 +371,20 @@ export function sanitizePublicAnalyticsEvent(
 
   const pathname = normalizePublicAnalyticsPathname(location.pathname)
   const source = event.properties ?? {}
+  // Our own events carry the page they were made for; the SDK's are read
+  // against the page they leave from.
   if (
-    source.analytics_schema_version !== PUBLIC_ANALYTICS_SCHEMA_VERSION ||
-    source.site_surface !== config.siteSurface ||
-    source.$host !== location.hostname ||
-    source.$pathname !== pathname
+    !automatic &&
+    (source.analytics_schema_version !== PUBLIC_ANALYTICS_SCHEMA_VERSION ||
+      source.site_surface !== config.siteSurface ||
+      source.$host !== location.hostname ||
+      source.$pathname !== pathname)
   ) {
     return null
   }
+  // A recording belongs to a browser that allowed cookies.
+  if (event.event === "$snapshot" && source.$cookieless_mode === true)
+    return null
 
   const properties: Record<string, unknown> = {
     token: config.projectToken,
@@ -480,12 +501,84 @@ export function sanitizePublicAnalyticsEvent(
     properties.placement = source.placement
   }
 
+  // Leaving a page, or moving to the next one within the site, reports how
+  // long the previous page was read and how far.
+  if (event.event === "$pageleave" || event.event === "$pageview") {
+    for (const key of PAGELEAVE_MEASURES) copyNumber(source, properties, key)
+    const previous = source.$prev_pageview_pathname
+    if (typeof previous === "string" && isPublicAnalyticsPathAllowed(config, previous))
+      properties.$prev_pageview_pathname = normalizePublicAnalyticsPathname(previous)
+  }
+  if (event.event === "$web_vitals")
+    for (const key of WEB_VITALS) copyNumber(source, properties, key)
+  if (event.event === "$snapshot") {
+    if (!properties.$session_id || !properties.$window_id || !source.$snapshot_data)
+      return null
+    // Public pages only, with inputs masked by the recorder, and every page
+    // address it records cut to the counted path.
+    const data = redactRecordedUrls(source.$snapshot_data, config)
+    if (!data) return null
+    properties.$snapshot_data = data
+    copyNumber(source, properties, "$snapshot_bytes")
+    copyExactString(source, properties, "$snapshot_source", 32)
+  }
+
   return {
     uuid: event.uuid,
     event: event.event,
     properties,
     timestamp: event.timestamp,
   }
+}
+
+/**
+ * A recording names the page it was made on in its meta and URL-change
+ * events. Keep only the origin and the normalized counted path; drop the
+ * recording when the page isn't counted.
+ */
+function redactRecordedUrls(
+  data: unknown,
+  config: Pick<PublicAnalyticsConfig, "allowedPathnames">
+): unknown[] | null {
+  if (!Array.isArray(data)) return null
+  const redact = (value: unknown): string | null => {
+    if (typeof value !== "string") return null
+    try {
+      const url = new URL(value)
+      return isPublicAnalyticsPathAllowed(config, url.pathname)
+        ? `${url.origin}${normalizePublicAnalyticsPathname(url.pathname)}`
+        : null
+    } catch {
+      return null
+    }
+  }
+  const out: unknown[] = []
+  for (const item of data) {
+    if (!item || typeof item !== "object") continue
+    const event = item as { data?: Record<string, unknown> }
+    const body = event.data
+    if (body && typeof body === "object") {
+      for (const holder of [body, body.payload]) {
+        if (holder && typeof holder === "object" && "href" in holder) {
+          const href = redact((holder as { href?: unknown }).href)
+          if (!href) return null
+          ;(holder as { href?: unknown }).href = href
+        }
+      }
+    }
+    out.push(item)
+  }
+  return out
+}
+
+function copyNumber(
+  source: Record<string, unknown>,
+  target: Record<string, unknown>,
+  key: string
+) {
+  const value = source[key]
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0)
+    target[key] = value
 }
 
 function copyHostname(

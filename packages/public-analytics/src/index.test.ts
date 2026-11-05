@@ -456,3 +456,73 @@ describe("analytics consent regions", () => {
     expect(rules("apps/docs/vercel.json") ?? []).toEqual([])
   })
 })
+
+test("keeps time on page, web vitals and recordings of public pages, and nothing else they carry", () => {
+  const surface = config("worktable_docs")
+  const page = location("docs.worktable.dev", "/start/install/")
+  const browser = {
+    token: "untrusted-token",
+    distinct_id: "persistent-visitor-id",
+    $session_id: "session_0123",
+    $window_id: "window_0123",
+    $current_url: "https://docs.worktable.dev/start/install?email=private@example.com",
+    title: "A private page title",
+  }
+  const sent = (event: string, properties: Record<string, unknown>) =>
+    sanitizePublicAnalyticsEvent({ event, properties: { ...browser, ...properties } }, surface, page)?.properties
+
+  expect(
+    sent("$pageleave", {
+      $prev_pageview_duration: 42.5,
+      $prev_pageview_max_scroll_percentage: 0.8,
+      $prev_pageview_pathname: "/start/install/",
+      $prev_pageview_title: "A private page title",
+    })
+  ).toMatchObject({
+    $pathname: "/start/install",
+    site_surface: "worktable_docs",
+    $prev_pageview_duration: 42.5,
+    $prev_pageview_max_scroll_percentage: 0.8,
+    $prev_pageview_pathname: "/start/install",
+  })
+  // A page analytics doesn't count is never named, even as the page left.
+  expect(sent("$pageleave", { $prev_pageview_pathname: "/invite/private_token" })).not.toHaveProperty("$prev_pageview_pathname")
+  expect(sent("$web_vitals", { $web_vitals_LCP_value: 1234, $web_vitals_LCP_event: { url: "private" } })).toMatchObject({ $web_vitals_LCP_value: 1234 })
+
+  const recording = sent("$snapshot", {
+    $snapshot_data: [
+      { type: 4, data: { href: "https://docs.worktable.dev/start/install/?email=private@example.com#secret", width: 1200 } },
+      { type: 2, data: { node: {} } },
+      { type: 5, data: { tag: "$url_changed", payload: { href: "https://docs.worktable.dev/start/install?token=private" } } },
+    ],
+    $snapshot_bytes: 512,
+  })
+  // The recorded page address keeps only the counted path.
+  expect(recording).toMatchObject({
+    $snapshot_data: [
+      { type: 4, data: { href: "https://docs.worktable.dev/start/install", width: 1200 } },
+      { type: 2 },
+      { type: 5, data: { payload: { href: "https://docs.worktable.dev/start/install" } } },
+    ],
+    $session_id: "session_0123",
+    $window_id: "window_0123",
+  })
+  // A recording that reaches a page analytics doesn't count is dropped.
+  expect(sent("$snapshot", { $snapshot_data: [{ type: 4, data: { href: "https://docs.worktable.dev/invite/private_token" } }] })).toBeUndefined()
+  // Moving to the next page within the site reports the previous one's measures.
+  expect(sent("$pageview", { analytics_schema_version: PUBLIC_ANALYTICS_SCHEMA_VERSION, site_surface: "worktable_docs", $host: "docs.worktable.dev", $pathname: "/start/install", $prev_pageview_duration: 12 })).toMatchObject({ $prev_pageview_duration: 12 })
+  // Only a browser that allowed cookies is recorded, and only with its session.
+  expect(sent("$snapshot", { $snapshot_data: [{ type: 2 }], $cookieless_mode: true })).toBeUndefined()
+  expect(sent("$snapshot", { $snapshot_data: [{ type: 2 }], $window_id: undefined })).toBeUndefined()
+
+  for (const properties of [
+    sent("$pageleave", {}),
+    sent("$web_vitals", { $web_vitals_LCP_event: { url: "private" } }),
+    recording,
+  ])
+    for (const leaked of ["$current_url", "title", "$prev_pageview_title", "$web_vitals_LCP_event", "untrusted-token", "private@example.com", "secret", "token=private"])
+      expect(JSON.stringify(properties)).not.toContain(leaked)
+
+  // Pages outside the counted list send none of them.
+  expect(sanitizePublicAnalyticsEvent({ event: "$pageleave", properties: browser }, surface, location("docs.worktable.dev", "/invite/private_token"))).toBeNull()
+})

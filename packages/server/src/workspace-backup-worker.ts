@@ -653,14 +653,10 @@ async function runBackupSteps(
       at: Date.now(),
     })
   }
-  // A prune that repacks a whole repository can outlast an upload. A stopped
-  // command's grace ends before the job's credentials and lease expire.
-  const signal = AbortSignal.timeout(
-    Math.min(
-      Math.max(0, input.expiresAt - Date.now() - STOP_GRACE_MS),
-      (input.kind === "maintain" ? 120 : 30) * 60_000
-    )
-  )
+  // Aborted by a timer the job holds: Bun 1.3 can collect an unreferenced
+  // AbortSignal.timeout before it fires, and then nothing is ever stopped.
+  const deadline = new AbortController()
+  const signal = deadline.signal
   // No ambient cloud credentials, password-command, or restic repository env.
   const baseEnv: NodeJS.ProcessEnv = {
     PATH: process.env["PATH"],
@@ -734,6 +730,15 @@ async function runBackupSteps(
     }
   }
   await advance("lock")
+  // A prune that repacks a whole repository can outlast an upload. A stopped
+  // command's grace ends before the job's credentials and lease expire.
+  const timer = setTimeout(
+    () => deadline.abort(),
+    Math.min(
+      Math.max(0, input.expiresAt - Date.now() - STOP_GRACE_MS),
+      (input.kind === "maintain" ? 120 : 30) * 60_000
+    )
+  )
   return withCrossProcessLock(
     join(root, ".worker.lock"),
     { label: "Cloud backup worker", staleMs: 0, timeoutMs: 1000 },
@@ -1011,7 +1016,7 @@ async function runBackupSteps(
       await publishWorkerJson(directory, "result.json", result)
       return result
     }
-  )
+  ).finally(() => clearTimeout(timer))
 }
 
 type Restic = (

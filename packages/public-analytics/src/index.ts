@@ -501,7 +501,9 @@ export function sanitizePublicAnalyticsEvent(
     properties.placement = source.placement
   }
 
-  if (event.event === "$pageleave") {
+  // Leaving a page, or moving to the next one within the site, reports how
+  // long the previous page was read and how far.
+  if (event.event === "$pageleave" || event.event === "$pageview") {
     for (const key of PAGELEAVE_MEASURES) copyNumber(source, properties, key)
     const previous = source.$prev_pageview_pathname
     if (typeof previous === "string" && isPublicAnalyticsPathAllowed(config, previous))
@@ -512,8 +514,11 @@ export function sanitizePublicAnalyticsEvent(
   if (event.event === "$snapshot") {
     if (!properties.$session_id || !properties.$window_id || !source.$snapshot_data)
       return null
-    // Public pages only, with inputs masked by the recorder.
-    properties.$snapshot_data = source.$snapshot_data
+    // Public pages only, with inputs masked by the recorder, and every page
+    // address it records cut to the counted path.
+    const data = redactRecordedUrls(source.$snapshot_data, config)
+    if (!data) return null
+    properties.$snapshot_data = data
     copyNumber(source, properties, "$snapshot_bytes")
     copyExactString(source, properties, "$snapshot_source", 32)
   }
@@ -524,6 +529,46 @@ export function sanitizePublicAnalyticsEvent(
     properties,
     timestamp: event.timestamp,
   }
+}
+
+/**
+ * A recording names the page it was made on in its meta and URL-change
+ * events. Keep only the origin and the normalized counted path; drop the
+ * recording when the page isn't counted.
+ */
+function redactRecordedUrls(
+  data: unknown,
+  config: Pick<PublicAnalyticsConfig, "allowedPathnames">
+): unknown[] | null {
+  if (!Array.isArray(data)) return null
+  const redact = (value: unknown): string | null => {
+    if (typeof value !== "string") return null
+    try {
+      const url = new URL(value)
+      return isPublicAnalyticsPathAllowed(config, url.pathname)
+        ? `${url.origin}${normalizePublicAnalyticsPathname(url.pathname)}`
+        : null
+    } catch {
+      return null
+    }
+  }
+  const out: unknown[] = []
+  for (const item of data) {
+    if (!item || typeof item !== "object") continue
+    const event = item as { data?: Record<string, unknown> }
+    const body = event.data
+    if (body && typeof body === "object") {
+      for (const holder of [body, body.payload]) {
+        if (holder && typeof holder === "object" && "href" in holder) {
+          const href = redact((holder as { href?: unknown }).href)
+          if (!href) return null
+          ;(holder as { href?: unknown }).href = href
+        }
+      }
+    }
+    out.push(item)
+  }
+  return out
 }
 
 function copyNumber(

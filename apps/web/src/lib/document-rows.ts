@@ -98,7 +98,11 @@ export function documentOpenHint(
   for (const [queryKey, data] of queryClient.getQueriesData<RecentDocuments>({
     queryKey: recentQueryKeys.all,
   })) {
-    const row = [...(data?.items ?? []), ...(data?.temporary ?? [])].find(
+    const row = [
+      ...(data?.featured ? [data.featured] : []),
+      ...(data?.items ?? []),
+      ...(data?.temporary ?? []),
+    ].find(
       (item) => item.spaceId === spaceId && item.document.path === path
     )
     if (row) consider(queryKey, rowHint(row.document))

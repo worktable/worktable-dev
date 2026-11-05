@@ -322,6 +322,7 @@ describe("workspace activity", () => {
     expect(peekDocActivity("company", "plan", plan)).toEqual({
       lastEditor: maya,
       contributors: [maya, claude],
+      everyone: new Set([claude.id, maya.id]),
     })
 
     // Later saves count at once, even inside one edit session.
@@ -331,8 +332,9 @@ describe("workspace activity", () => {
     expect(peekDocActivity("company", "plan", plan)).toEqual({
       lastEditor: maya,
       contributors: [maya, claude],
+      everyone: new Set([claude.id, maya.id]),
     })
-    expect(peekDocActivity("company", "other")).toEqual({ contributors: [] })
+    expect(peekDocActivity("company", "other")).toEqual({ contributors: [], everyone: new Set() })
     await drainActivity()
   })
 
@@ -373,10 +375,19 @@ describe("workspace activity", () => {
     })
     const edited = await listRecentDocuments({ featured: true })
     expect(edited.featured?.document.path).toBe("notes")
-    // Narrowed to one person, only what they worked on is listed.
+    // Narrowed to one person, only what they worked on is listed, however
+    // many others worked on it since.
+    for (const id of ["a", "b", "c", "d"]) {
+      recordActivity({
+        spaceId: "company",
+        action: "doc.edited",
+        actor: { kind: "agent", id: `local-token:${id}`, name: id },
+        target: { kind: "doc", path: "brief" },
+      })
+    }
     const mine = await listRecentDocuments({ actorIds: new Set(["local:owner"]) })
     expect(mine.items.map((item) => item.document.path)).toEqual(["brief"])
-    expect(mine.items[0]?.lastEditor).toMatchObject({ kind: "person" })
+    expect(mine.items[0]?.lastEditor).toMatchObject({ kind: "agent", id: "local-token:d" })
     await drainActivity()
   })
 

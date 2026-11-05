@@ -26,6 +26,7 @@ import { replyAnnotation } from "@/lib/annotations-api"
 import { createClientId } from "@/lib/client-id"
 import {
   clearSend,
+  failedBody,
   scheduleSend,
   undoSend,
   useSendPhase,
@@ -231,7 +232,8 @@ function PendingRow({
 }) {
   const queryClient = useQueryClient()
   const phase = useSendPhase(item.id)
-  const [draft, setDraft] = useState("")
+  // A reply that failed while the row was away comes back to its box.
+  const [draft, setDraft] = useState(() => failedBody(item.id) ?? "")
   const { title, meta } = pendingText(item)
   const canReply = replyable(item)
   const send = () => {
@@ -239,7 +241,7 @@ function PendingRow({
     if (!body) return
     clearSend(item.id)
     const key = createClientId("home-reply")
-    scheduleSend(item.id, () => sendReply(item, body, key), {
+    scheduleSend(item.id, body, () => sendReply(item, body, key), {
       onSent: () => {
         setDraft("")
         for (const spaceId of [undefined, item.spaceId ?? undefined]) {
@@ -303,7 +305,10 @@ function PendingRow({
               <button
                 type="button"
                 className="font-medium text-primary-text hover:underline"
-                onClick={() => undoSend(item.id)}
+                onClick={() => {
+                  const body = undoSend(item.id)
+                  if (body !== null) setDraft(body)
+                }}
               >
                 Undo
               </button>

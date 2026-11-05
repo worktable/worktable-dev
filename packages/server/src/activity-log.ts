@@ -339,6 +339,8 @@ export interface DocActivitySummary {
    * are left out: not every reader may see who commented.
    */
   contributors: ActivityActor[]
+  /** The ids of everyone who ever created or edited it, untruncated. */
+  everyone: ReadonlySet<string>
 }
 
 /** One actor's latest work on a doc. */
@@ -351,6 +353,7 @@ interface DocWork {
 interface PathSummary {
   lastEdit?: DocWork
   contributors: DocWork[]
+  everyone: Set<string>
 }
 
 const CONTRIBUTORS_KEPT = 4
@@ -372,9 +375,10 @@ function applyDocSummary(
   at: string
 ): void {
   if (action !== "doc.created" && action !== "doc.edited") return
-  const summary = summaries.get(path) ?? { contributors: [] }
+  const summary = summaries.get(path) ?? { contributors: [], everyone: new Set() }
   summary.lastEdit = { actor, at }
   if (actor.kind !== "system") {
+    summary.everyone.add(actor.id)
     summary.contributors = [
       { actor, at },
       ...summary.contributors.filter((known) => known.actor.id !== actor.id),
@@ -414,7 +418,15 @@ function mergePathSummaries(parts: readonly PathSummary[]): DocActivitySummary {
     .filter(({ actor }) => !seen.has(actor.id) && seen.add(actor.id))
     .slice(0, CONTRIBUTORS_KEPT)
     .map(({ actor }) => actor)
-  return { ...(lastEdit ? { lastEditor: lastEdit.actor } : {}), contributors }
+  const everyone =
+    parts.length === 1
+      ? parts[0]!.everyone
+      : new Set(parts.flatMap((part) => [...part.everyone]))
+  return {
+    ...(lastEdit ? { lastEditor: lastEdit.actor } : {}),
+    contributors,
+    everyone,
+  }
 }
 
 async function buildDocSummaries(spaceId: string, key: string): Promise<void> {

@@ -15,6 +15,8 @@ export type SendPhase = "waiting" | "sending" | "sent" | "failed"
 
 interface SendState {
   phase: SendPhase
+  /** What is being sent, so a row that remounts can restore it. */
+  body: string
   timer?: ReturnType<typeof setTimeout>
 }
 
@@ -30,33 +32,40 @@ function set(id: string, state: SendState | null): void {
 /** Send after the delay unless undone; `send` runs at most once. */
 export function scheduleSend(
   id: string,
+  body: string,
   send: () => Promise<unknown>,
   options: { onSent?: () => void; onFailed?: (error: unknown) => void } = {}
 ): void {
   if (sends.get(id)?.phase === "waiting" || sends.get(id)?.phase === "sending") return
   const timer = setTimeout(() => {
-    set(id, { phase: "sending" })
+    set(id, { phase: "sending", body })
     send().then(
       () => {
-        set(id, { phase: "sent" })
+        set(id, { phase: "sent", body })
         options.onSent?.()
       },
       (error: unknown) => {
-        set(id, { phase: "failed" })
+        set(id, { phase: "failed", body })
         options.onFailed?.(error)
       }
     )
   }, SEND_DELAY_MS)
-  set(id, { phase: "waiting", timer })
+  set(id, { phase: "waiting", body, timer })
 }
 
-/** Take back a reply that hasn't gone yet. */
-export function undoSend(id: string): boolean {
+/** Take back a reply that hasn't gone yet, returning its text. */
+export function undoSend(id: string): string | null {
   const state = sends.get(id)
-  if (state?.phase !== "waiting") return false
+  if (state?.phase !== "waiting") return null
   clearTimeout(state.timer)
   set(id, null)
-  return true
+  return state.body
+}
+
+/** The text of a reply that failed, to put back in its box. */
+export function failedBody(id: string): string | undefined {
+  const state = sends.get(id)
+  return state?.phase === "failed" ? state.body : undefined
 }
 
 /** Forget a finished send, so the row can be answered again. */

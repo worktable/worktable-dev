@@ -9,23 +9,48 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.40] - 2026-11-05
+
 ### Added
 
 - **Images:** An image in a doc, or on its file's page, opens full screen from **Full screen** on its corner or, while you read, with a click. Zoom and pan it, move through the doc's images with the arrow keys, and **Download** it or **Open** its file.
 - **Worktable logos:** Give each Worktable its own logo in Settings → General, by clicking the tile beside its name. Upload an image and crop it, or pick an icon. The logo shows in the sidebar, in the Worktable menu and on the browser tab, and it moves with the Worktable's folder.
 - **Profile photos:** Add your photo in Settings → Profile. It shows wherever you appear, such as Threads, comments and Team. On Worktable Cloud, the photo from your sign-in is used until you choose your own.
+- **Storage:** Settings → Data → Storage shows what this Worktable takes on disk: Docs & Files, Version History, Deleted Items and Indexes & Caches, with uploads and exports in progress listed apart as Transfers.
+- **Storage limit:** Each Worktable holds up to 2 GB. At the limit, Worktable makes room by removing deleted items first, then the oldest versions across the Worktable. It never removes an item's current version or a checkpoint, such as a version saved by hand or the one before an agent took over. A write that still can't fit is refused with 507 `STORAGE_LIMIT` and nothing is removed for it, while typing in an open Doc is never refused. Settings says when you're close to the limit, and a Doc's history says when older versions were removed. A self-hosted Worktable can set a lower limit with `WORKTABLE_STORAGE_LIMIT_BYTES`.
+- **ChatGPT Desktop and Codex CLI:** ChatGPT's desktop app and Codex CLI are listed under their own names, apart from the ChatGPT connector, and both can turn on Auto-reply. Claude's desktop extension is listed as Claude Desktop.
 
 ### Changed
 
 - **Files:** Upload New Version checks that the file hasn't changed since you opened it. If someone, such as an agent, saved a newer version first, Worktable asks before replacing it, and Replace Anyway keeps that version in the file's history.
 - **Files for agents and the API:** Replacing a file names the revision it was read at, including through upload links. A replace without one, or based on a revision that is no longer current, is refused and the file stays as it is. The `replace=1` upload option is replaced by `If-Match`.
-- **Docs and HTML Docs over the API:** Replacing a whole Doc (`PUT …/docs/<path>`) or an HTML Doc (`PUT …/widgets/<id>`) needs `expectedRevision`, the revision you read: a Doc's from reading it, an HTML Doc's from the `ETag` of its source (`content?format=raw`). Without one the replace is refused with 428, and one based on a revision that is no longer current is refused with 409 and the current revision. Creating a Doc with `PUT` needs no revision.
+- **Docs and HTML Docs over the API:** Replacing a whole Doc (`PUT …/docs/<path>`) or an HTML Doc (`PUT …/widgets/<id>`) needs `expectedRevision`, the revision you read: a Doc's from reading it, an HTML Doc's from the `ETag` of its source (`content?format=raw`). Without one the replace is refused with 428, and one based on a revision that is no longer current is refused with 409 and the current revision. Creating a Doc with `PUT` needs no revision. An HTML Doc replace that leaves out `description` keeps it.
+- **HTML Doc history:** Restoring a version checks that the HTML Doc hasn't changed since you opened it. If it has, Worktable reloads it and asks you to check it before restoring. Over the API, restoring a version needs `expectedRevision`, as a replace does.
 - **Large files and agents:** An agent reading a file, a Records import and Upload New Version no longer hold up the rest of the Space while a large file is read. A file that changes during the read is read again, never mixed.
+- **Plain `.json` and `.html` files:** A `.json` is a Doc only when it holds Doc blocks. Other JSON, such as an agent's data or a `package.json`, is a plain file that lists with its extension, downloads unchanged and can be uploaded. An `.html` added from outside Worktable, by an agent writing to the folder, an upload or an import, is a plain file with a static preview until you choose **Open as HTML Doc** on its page, which keeps its history. HTML Docs you already have stay HTML Docs, and a plain file stays plain if Doc blocks are written into it later.
+- **Hidden Docs:** A Doc whose name starts with a dot, or that sits in a dot-named folder, is hidden like other dot-named files. It isn't listed, searched, shared or read by agents, and nothing on disk changes.
+- **Refused names:** A name Worktable refuses says why: it starts with a dot, it isn't a safe path, Windows can't hold it, or it's meant for a Doc. Agents and the API also get a code: `HIDDEN_NAME`, `UNSAFE_PATH`, `NOT_PORTABLE` or `DOC_NAME`. Renaming or moving a folder to a name that starts with a dot is refused, with the reason under the name field, instead of the dot being dropped.
+- **Doc blocks:** A write from an agent or the API with a block field the editor would drop is refused, naming the field, such as "Unknown field `foo` on paragraph". A Doc that gains such a field on disk opens as unreadable, with its history kept, until it's replaced with valid blocks.
+- **Folders:** Moving a folder takes its hidden items, such as `.env` or a `.git` folder, along with it. Deleting a folder takes everything in it, hidden items and links included, so the folder leaves the disk. A move that would land a hidden item on one already there is refused, and so is a delete of a folder holding something Worktable can't remove, such as another disk mounted inside. Both name the item.
+- **Deleted items:** A deleted Doc, file or Space leaves the Worktable's folder within a second, so backups and exports no longer carry it, and is removed for good when the history period set in Settings → Data ends (30 days by default). A deleted Doc's visitor comments go with it.
+- **Exports:** An export from Settings, or with `worktable export`, carries hidden items and leaves out links and special files instead of failing. The export lists what it left out, and `worktable export` prints it.
+- **Downloads:** Files stream as they're read, and range requests work, so a large download starts at once and can pick up where it stopped. Each download comes from one version of the file, and an agent's download link is refused once the file changes rather than serving other bytes.
+- **Uploads:** Uploads are written to disk as they arrive instead of being held in memory. A failed or cut-off upload leaves nothing behind, and a replace keeps the previous version current.
+- **Files over 64 MiB:** A file larger than 64 MiB placed in a Space's folder downloads for people and agents, and its page says it has no history while it's that large. Its history resumes once it's back within the limit. Uploads and versions stay limited to 64 MiB.
+- **Backups and exports:** Edits no longer wait while a large Worktable is backed up or exported.
+- **Archived Spaces:** Archived Spaces sit under an **Archived** row at the end of the Spaces list, which shows how many there are while it's closed.
+- **Disconnecting an agent:** Disconnect moved from the agent's row into its Edit dialog, and asks first.
 
 ### Fixed
 
 - **Worktable menu:** Worktables on Worktable Cloud and on your other devices show their own color and logo, and a Worktable renamed on another device shows its new name.
 - **Comments:** On a phone, a second tap on Send while the comment box closes no longer sends the comment again.
+- **Deleting a Space:** A Space with another disk mounted inside it, or that is itself a mount, is no longer deleted, and the sidebar says what's in the way. Before, the delete could remove what was on the mounted disk.
+- **Deleting a Doc:** Deleting a Doc closes it for anyone editing it, and a new Doc made later at the same path no longer opens with the deleted Doc's text. Backlinks stop listing a deleted Doc at once.
+- **Shared pages:** A shared page shows an image's current version after it's edited in place, leaves out an image once it's archived, and shows it again when it's restored.
+- **Record search:** A search that includes archived Records no longer finds Records from a deleted Space.
+- **Auto-reply:** A message for an agent whose app can't be reached is sent again until it arrives, in order, instead of being dropped after a few tries. While it can't get through, Auto-reply shows Needs attention.
+- **Worktable switcher:** The current Worktable's name has the same letter spacing as in its menu.
 
 ## [0.1.39] - 2026-11-03
 

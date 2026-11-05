@@ -303,6 +303,11 @@ export const DocumentPageSchema = z.object({
   provenance: DocumentProvenanceSchema.optional(),
   /** Present when the renderer reads its content by revision. */
   revision: DocumentContentRevisionSchema.optional(),
+  /**
+   * For an HTML Doc, the revision of its source that a replace or a restore
+   * names: the ETag of `content?format=raw`.
+   */
+  sourceRevision: z.string().optional(),
   /** Present for documents the Doc renderer opens. */
   collaboration: DocumentCollaborationSchema.optional(),
   /**

@@ -42,6 +42,13 @@ async function replaceHtml(app: Hono, path: string, body: Record<string, unknown
   return req(app, "PUT", path, { ...body, expectedRevision });
 }
 
+/** Restore a version as a client does: from the revision of the source it read. */
+async function restoreVersion(app: Hono, path: string, versionId: string) {
+  const read = await app.fetch(new Request(`http://localhost${path}/content?format=raw`));
+  const expectedRevision = (read.headers.get("etag") ?? "").replace(/"/g, "");
+  return req(app, "POST", `${path}/versions/${versionId}/restore`, { expectedRevision });
+}
+
 const HTML_V1 = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>:root{--ad-bg:#fff;--ad-text:#111}html[data-theme="dark"]{--ad-bg:#111;--ad-text:#eee}body{background:var(--ad-bg);color:var(--ad-text)}</style></head><body><p>v1</p></body></html>`;
 const HTML_V2 = HTML_V1.replace("<p>v1</p>", "<p>v2</p>");
 
@@ -186,7 +193,7 @@ describe("widget version history", () => {
     expect(full?.before?.content.html).toContain("<p>v1</p>");
     // The old content is restorable via the create version's after.
     const createVersion = versions[1]!;
-    const restore = await req(app, "POST", `/api/spaces/meta/widgets/tracker/versions/${createVersion.id}/restore`, {});
+    const restore = await restoreVersion(app, "/api/spaces/meta/widgets/tracker", createVersion.id);
     expect(restore.status).toBe(200);
     const raw = await req(app, "GET", "/api/spaces/meta/widgets/tracker/content?format=raw");
     expect(String(raw.text)).toContain("<p>v1</p>");
@@ -228,7 +235,20 @@ describe("widget version history", () => {
     const versions = (await req(app, "GET", "/api/spaces/meta/widgets/plans/q3/versions?all=true")).json.versions;
     const createVersion = versions.find((v: { operation: string }) => v.operation === "create");
 
-    const restore = await req(app, "POST", `/api/spaces/meta/widgets/plans/q3/versions/${createVersion.id}/restore`, {});
+    // A restore replaces the page, so it names the revision it is based on:
+    // none is refused as missing, a stale one with the current revision, and
+    // the page stays.
+    const restorePath = `/api/spaces/meta/widgets/plans/q3/versions/${createVersion.id}/restore`;
+    const unnamed = await req(app, "POST", restorePath, {});
+    expect(unnamed.status).toBe(428);
+    expect(unnamed.json.code).toBe("REVISION_REQUIRED");
+    const current = (await app.fetch(new Request("http://localhost/api/spaces/meta/widgets/plans/q3/content?format=raw"))).headers.get("etag")?.replace(/"/g, "");
+    const stale = await req(app, "POST", restorePath, { expectedRevision: "html:sha256:stale" });
+    expect(stale.status).toBe(409);
+    expect(stale.json).toMatchObject({ code: "REVISION_CHANGED", revision: current });
+    expect((await req(app, "GET", "/api/spaces/meta/widgets/plans/q3/content?format=raw")).text).toContain("<p>v2</p>");
+
+    const restore = await req(app, "POST", restorePath, { expectedRevision: current });
     expect(restore.status).toBe(200);
     expect(restore.json.widget.name).toBe("Q3");
     // Permissions restored with the content — old HTML runs with ITS grants.
@@ -315,7 +335,7 @@ describe("widget version history", () => {
     expect(baseline.checkpoint.meaningful).toBe(true);
 
     // The ORIGINAL content is restorable via the baseline's `after`.
-    const restore = await req(app, "POST", `/api/spaces/meta/widgets/old-timer/versions/${baseline.id}/restore`, {});
+    const restore = await restoreVersion(app, "/api/spaces/meta/widgets/old-timer", baseline.id);
     expect(restore.status).toBe(200);
     const raw = await req(app, "GET", "/api/spaces/meta/widgets/old-timer/content?format=raw");
     expect(raw.status).toBe(200);
@@ -397,7 +417,12 @@ describe("widget version history", () => {
     const versions = (await req(app, "GET", "/api/spaces/meta/widgets/tracker/versions?all=true")).json.versions;
     // Corrupt the metadata — the exact filesystem accident restore recovers from.
     await writeFile(join(testDir, "spaces", "meta", "widgets", "tracker", "widget.yaml"), "{{{ not yaml", "utf8");
-    const restore = await req(app, "POST", `/api/spaces/meta/widgets/tracker/versions/${versions[0].id}/restore`, {});
+    // Its source can't be read, so the restore learns the page's revision
+    // from the refusal.
+    const restorePath = `/api/spaces/meta/widgets/tracker/versions/${versions[0].id}/restore`;
+    const stale = await req(app, "POST", restorePath, { expectedRevision: "html:sha256:stale" });
+    expect(stale.status).toBe(409);
+    const restore = await req(app, "POST", restorePath, { expectedRevision: stale.json.revision });
     expect(restore.status).toBe(200);
     const read = await req(app, "GET", "/api/spaces/meta/widgets/tracker");
     expect(read.status).toBe(200);

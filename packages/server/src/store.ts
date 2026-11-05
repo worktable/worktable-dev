@@ -1199,12 +1199,23 @@ async function retireSpaceHistory(spaceId: string, trashName: string): Promise<v
   }
 }
 
-export async function deleteSpace(spaceId: string): Promise<void> {
+/**
+ * Move a Space into the trash. Refused, naming it, when something is mounted
+ * in its folder (or the folder is a mount): what is mounted there isn't the
+ * Space's to delete.
+ */
+export async function deleteSpace(spaceId: string): Promise<{ error: string | null }> {
   assertSpaceAccess(spaceId, "manage");
-  await withDocPathLock(spaceId, async () => {
-    await withWriteLock(spacePath(spaceId), async () => {
+  const [{ spaceDeleteRefusal }, { removeWithinDevice }] = await Promise.all([
+    import("./document-lifecycle-journal.ts"),
+    import("./deleted-items.ts"),
+  ]);
+  return withDocPathLock(spaceId, () =>
+    withWriteLock(spacePath(spaceId), async () => {
       assertSpaceAccess(spaceId, "manage");
       const dir = spaceDir(spaceId);
+      const refusal = spaceDeleteRefusal(dir);
+      if (refusal) return { error: refusal };
       const trashBase = join(baseDir(), ".trash");
       await mkdir(trashBase, { recursive: true });
       const trashName = `${spaceId}-${Date.now()}`;
@@ -1212,16 +1223,20 @@ export async function deleteSpace(spaceId: string): Promise<void> {
       try {
         await rename(dir, trashDest);
       } catch {
-        // rename fails across devices; fall back to hard delete
-        await rm(dir, { recursive: true, force: true });
+        // Should the trash be on another filesystem, delete in place, never
+        // crossing into another one.
+        if (!(await removeWithinDevice(dir))) {
+          return { error: "This Space holds something Worktable can't delete" };
+        }
       }
       await retireSpaceHistory(spaceId, trashName);
       retireTeamSpacePolicy(spaceId);
       await invalidateHostedDocumentSharesForSpace(spaceId, "removed");
       await notifyWorkspaceChangeAndWait({ type: "space", spaceId });
       noteDeletedItems();
-    });
-  });
+      return { error: null };
+    })
+  );
 }
 
 // Parsed docs.meta.json by file fingerprint. Provenance and collaboration

@@ -505,6 +505,15 @@ describe("doc routes", () => {
       await req(app, "PUT", "/api/spaces/test-space/docs/folder/two", {
         content: [para("two")],
       });
+      // A hidden name is refused as typed, not renamed without its dot.
+      const hidden = await req(
+        app,
+        "POST",
+        "/api/spaces/test-space/docs/folder/rename",
+        { newPath: ".renamed-folder", scope: "folder" }
+      );
+      expect(hidden.status).toBe(400);
+      expect((hidden.json as { code: string }).code).toBe("HIDDEN_NAME");
       const renameRes = await req(
         app,
         "POST",

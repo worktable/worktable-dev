@@ -3684,7 +3684,8 @@ function refuseMountsBelow(
   spaceRoot: string,
   folder: readonly string[],
   prefix: string,
-  verb: "move" | "delete"
+  verb: "move" | "delete",
+  holder = "folder"
 ): boolean {
   const points = readMountPoints()
   if (!points) return false
@@ -3699,11 +3700,51 @@ function refuseMountsBelow(
   )
   if (found !== undefined) {
     const below = relative(real, found).split(sep).filter(Boolean)
-    throw new DocumentLifecyclePreconditionError(
-      `This folder holds something Worktable can't ${verb}: ${[prefix, ...below].join("/")}`
-    )
+    throw cantTake(holder, verb, [prefix, ...below].filter(Boolean).join("/"))
   }
   return true
+}
+
+function cantTake(
+  holder: string,
+  verb: "move" | "delete",
+  path: string
+): DocumentLifecyclePreconditionError {
+  return new DocumentLifecyclePreconditionError(
+    path
+      ? `This ${holder} holds something Worktable can't ${verb}: ${path}`
+      : `This ${holder}'s folder is a mount point, so Worktable can't ${verb} it`
+  )
+}
+
+/**
+ * Why a whole Space can't be deleted, or null when it can. The delete moves
+ * its folder into the trash, which a mount inside (or the folder being one)
+ * would carry along or turn into a copy, so it is refused by name, as a
+ * folder delete is. Mount points are read as a folder delete reads them;
+ * without them, every directory's device is compared with the folder that
+ * holds the Spaces. Every directory is walked, whatever the count.
+ */
+export function spaceDeleteRefusal(spaceRoot: string): string | null {
+  try {
+    if (!refuseMountsBelow(spaceRoot, [], "", "delete", "Space")) {
+      const device = lstatSync(dirname(spaceRoot)).dev
+      refuseOtherDevicesBelow(
+        spaceRoot,
+        device,
+        (path) => relative(spaceRoot, path).split(sep).join("/"),
+        "delete",
+        { left: Number.POSITIVE_INFINITY },
+        "Space"
+      )
+    }
+    return null
+  } catch (error) {
+    if (error instanceof DocumentLifecyclePreconditionError) {
+      return error.message
+    }
+    throw error
+  }
 }
 
 /**
@@ -3717,7 +3758,8 @@ function refuseOtherDevicesBelow(
   device: number,
   name: (path: string) => string,
   verb: "move" | "delete",
-  budget: { left: number }
+  budget: { left: number },
+  holder = "folder"
 ): void {
   const pending = [directory]
   while (pending.length > 0) {
@@ -3727,16 +3769,14 @@ function refuseOtherDevicesBelow(
       if (lstatSync(current).dev !== device) throw new Error("other device")
       entries = readdirSync(current, { withFileTypes: true })
     } catch {
-      throw new DocumentLifecyclePreconditionError(
-        `This folder holds something Worktable can't ${verb}: ${name(current)}`
-      )
+      throw cantTake(holder, verb, name(current))
     }
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
       budget.left -= 1
       if (budget.left < 0) {
         throw new DocumentLifecyclePreconditionError(
-          `This folder holds too many items to ${verb} safely`
+          `This ${holder} holds too many items to ${verb} safely`
         )
       }
       pending.push(join(current, entry.name))

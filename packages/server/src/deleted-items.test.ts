@@ -10,11 +10,13 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
+import * as fs from "node:fs"
 import * as fsp from "node:fs/promises"
 import { join } from "node:path"
 import type { SpaceFile } from "@worktable/types"
@@ -28,6 +30,7 @@ import {
   reconcileRecoveredDocumentLifecycles,
   recoverInterruptedDocumentLifecycles,
   setDocumentLifecycleStepHookForTests,
+  setMountPointsForTests,
   SimulatedDocumentLifecycleCrash,
 } from "./document-lifecycle-journal.ts"
 import {
@@ -380,7 +383,42 @@ describe("deleted items", () => {
     ensureWorkspaceManifest()
     await writeSpace(space("plans"))
     await create("plans", "roadmap")
-    await deleteSpace("plans")
+    // Something mounted in the Space, even a bind mount of the same disk, or
+    // the Space's folder being a mount, refuses the delete by name.
+    const folder = realpathSync(join(workspace, "spaces", "plans"))
+    const mounted = join(folder, "docs", "mnt")
+    mkdirSync(mounted)
+    try {
+      setMountPointsForTests([mounted])
+      expect((await deleteSpace("plans")).error).toContain(": docs/mnt")
+      setMountPointsForTests([folder])
+      expect((await deleteSpace("plans")).error).toContain("mount point")
+      // Without mount points to read (as on macOS), a directory on another
+      // filesystem refuses it too.
+      setMountPointsForTests(null)
+      const realLstat = fs.lstatSync
+      const elsewhere = spyOn(fs, "lstatSync").mockImplementation(((
+        path: fs.PathLike,
+        options?: fs.StatSyncOptions
+      ) => {
+        const info = realLstat(path, options) as fs.Stats
+        if (!String(path).endsWith(join("plans", "docs", "mnt"))) return info
+        const moved = Object.create(info) as fs.Stats
+        Object.defineProperty(moved, "dev", { value: info.dev + 1 })
+        return moved
+      }) as typeof fs.lstatSync)
+      try {
+        expect((await deleteSpace("plans")).error).toContain(": docs/mnt")
+      } finally {
+        elsewhere.mockRestore()
+      }
+    } finally {
+      setMountPointsForTests(undefined)
+    }
+    expect(readFileSync(join(folder, "docs", "roadmap.md"), "utf8")).toBe(
+      "# roadmap\n"
+    )
+    expect(await deleteSpace("plans")).toEqual({ error: null })
     // A new Space with the same id starts without the old history.
     expect(existsSync(join(workspace, "versions", "plans"))).toBe(false)
     // A Space an older version deleted 40 days ago, still in the folder.

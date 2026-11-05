@@ -880,6 +880,24 @@ describe("format-neutral document route", () => {
       }
     )
     expect(forbidden.status).toBe(403)
+    // A hidden new name is refused as typed, a backslash counting as a
+    // separator, rather than moved under the name without its dot.
+    for (const newPath of [".library", "archive\\.library"]) {
+      const hiddenName = await instance.request(
+        `/api/spaces/${spaceId}/documents/move-folder`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-test-scopes": "documents:write",
+          },
+          body: JSON.stringify({ oldPath: "notes", newPath }),
+        }
+      )
+      expect(hiddenName.status).toBe(400)
+      expect(await hiddenName.json()).toMatchObject({ code: "HIDDEN_NAME" })
+    }
+    expect((await readDoc(spaceId, "notes/readme")).data).toBe("# Readme")
 
     const moved = await instance.request(
       `/api/spaces/${spaceId}/documents/move-folder`,

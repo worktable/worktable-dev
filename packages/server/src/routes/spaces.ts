@@ -327,6 +327,9 @@ spacesRouter.delete("/:spaceId", async (c, next) => {
     return c.json({ error: error ?? "Not found", code: "NOT_FOUND" }, 404);
   }
 
-  await deleteSpace(spaceId);
+  const deleted = await deleteSpace(spaceId);
+  if (deleted.error) {
+    return c.json({ error: deleted.error, code: "CONFLICT" }, 409);
+  }
   return new Response(null, { status: 204 });
 });

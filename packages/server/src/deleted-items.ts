@@ -285,7 +285,7 @@ async function removeTree(path: string, device: number): Promise<void> {
  * mounted there. An item that holds one is left whole for an operator, and
  * logged by its opaque name. True once the item is gone.
  */
-async function removeWithinDevice(path: string): Promise<boolean> {
+export async function removeWithinDevice(path: string): Promise<boolean> {
   let root
   try {
     root = await lstat(path)

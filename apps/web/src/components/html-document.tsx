@@ -891,6 +891,7 @@ function WidgetDetailPage({
             spaceId={spaceId}
             path={widgetId}
             revision={versionsRevision}
+            sourceRevision={page?.sourceRevision}
             version={previewVersion}
             error={versionQuery.isError}
             onRetry={() => void versionQuery.refetch()}

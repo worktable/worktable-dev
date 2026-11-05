@@ -13,7 +13,7 @@ import { DocumentLifetimeSchema, WIDGET_RESERVED_SEGMENTS, WidgetIdSchema, type 
 import { applyLifetimeOnCreate, ArchiveOnSchema, lifetimeCreateError } from "../document-lifetime.ts";
 import { readSpace, slugifyDocPath } from "../store.ts";
 import { readDocumentCatalogSnapshot } from "../document-query.ts";
-import { getWidgetPath, listWidgets, readWidget, readWidgetDocument, readWidgetHtml, setWidgetArchived, updateWidgetMetadata, withWidgetWriteLock, writeWidget } from "../widget-store.ts";
+import { getWidgetContentPath, getWidgetPath, listWidgets, readWidget, readWidgetDocument, setWidgetArchived, updateWidgetMetadata, withWidgetWriteLock, writeWidget } from "../widget-store.ts";
 import { createRecord, deleteRecord, queryRecords, readWidgetState, RecordQueryError, updateRecord, writeWidgetState } from "../record-store.ts";
 import { applyWidgetTheme, getBlockingWidgetIssue, injectWidgetHostStyles, injectWidgetRuntime, normalizeTheme, validateWidgetHtml } from "../widget-authoring.ts";
 import { htmlSpaceImagesEnabled, inlineHtmlSpaceImages } from "../html-space-images.ts";
@@ -839,11 +839,13 @@ async function handleRestoreVersion(c: Context, spaceId: string, widgetId: strin
     const granted = grantedPermissions(c, restored.widget.permissions);
     if (granted instanceof Response) return { kind: "denied" as const, response: granted };
     // A restore replaces the page, so it names the revision it is based on,
-    // as a replace does. Corrupt metadata still has a page to check; with no
-    // page at all there is nothing to replace.
+    // as a replace does. Corrupt metadata still has a page to check, by its
+    // exact bytes as the source's ETag; with no page there is nothing to replace.
     const page = existing
       ? (await readWidgetDocument(spaceId, widgetId)).data?.sourceBytes
-      : await readWidgetHtml(spaceId, widgetId).then(({ data }) => (data == null ? undefined : new TextEncoder().encode(data)));
+      : await Promise.resolve()
+          .then(() => Bun.file(getWidgetContentPath(spaceId, widgetId)).bytes())
+          .catch(() => undefined);
     if (page) {
       const currentRevision = htmlSourceRevision(page);
       if (expectedRevision === undefined) return { kind: "revision-required" as const };

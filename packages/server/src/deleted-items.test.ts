@@ -396,17 +396,16 @@ describe("deleted items", () => {
       // Without mount points to read (as on macOS), a directory on another
       // filesystem refuses it too.
       setMountPointsForTests(null)
-      const realLstat = fs.lstatSync
-      const elsewhere = spyOn(fs, "lstatSync").mockImplementation(((
-        path: fs.PathLike,
-        options?: fs.StatSyncOptions
+      const realLstat = fsp.lstat
+      const elsewhere = spyOn(fsp, "lstat").mockImplementation((async (
+        path: fs.PathLike
       ) => {
-        const info = realLstat(path, options) as fs.Stats
+        const info = await realLstat(path)
         if (!String(path).endsWith(join("plans", "docs", "mnt"))) return info
         const moved = Object.create(info) as fs.Stats
         Object.defineProperty(moved, "dev", { value: info.dev + 1 })
         return moved
-      }) as typeof fs.lstatSync)
+      }) as typeof fsp.lstat)
       try {
         expect((await deleteSpace("plans")).error).toContain(": docs/mnt")
       } finally {
@@ -414,6 +413,31 @@ describe("deleted items", () => {
       }
     } finally {
       setMountPointsForTests(undefined)
+    }
+    // A mount made on the folder after the check, even a bind mount of the
+    // same disk, fails the move. The Space then stays whole: EBUSY refuses,
+    // and EXDEV, the one reason to delete in place, checks again first.
+    const realRename = fsp.rename
+    for (const [code, refusal] of [
+      ["EBUSY", "nothing was deleted"],
+      ["EXDEV", "mount point"],
+    ]) {
+      const mounting = spyOn(fsp, "rename").mockImplementation((async (
+        from: string,
+        to: string
+      ) => {
+        if (!String(from).endsWith(join("spaces", "plans"))) {
+          return realRename(from, to)
+        }
+        setMountPointsForTests([folder])
+        throw Object.assign(new Error("simulated"), { code })
+      }) as typeof fsp.rename)
+      try {
+        expect((await deleteSpace("plans")).error).toContain(refusal)
+      } finally {
+        mounting.mockRestore()
+        setMountPointsForTests(undefined)
+      }
     }
     expect(readFileSync(join(folder, "docs", "roadmap.md"), "utf8")).toBe(
       "# roadmap\n"

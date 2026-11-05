@@ -1199,6 +1199,8 @@ async function retireSpaceHistory(spaceId: string, trashName: string): Promise<v
   }
 }
 
+const SPACE_NOT_DELETED = "Worktable couldn't move this Space to the trash, so nothing was deleted";
+
 /**
  * Move a Space into the trash. Refused, naming it, when something is mounted
  * in its folder (or the folder is a mount): what is mounted there isn't the
@@ -1206,15 +1208,12 @@ async function retireSpaceHistory(spaceId: string, trashName: string): Promise<v
  */
 export async function deleteSpace(spaceId: string): Promise<{ error: string | null }> {
   assertSpaceAccess(spaceId, "manage");
-  const [{ spaceDeleteRefusal }, { removeWithinDevice }] = await Promise.all([
-    import("./document-lifecycle-journal.ts"),
-    import("./deleted-items.ts"),
-  ]);
+  const { removeWithinDevice, spaceDeleteRefusal } = await import("./deleted-items.ts");
   return withDocPathLock(spaceId, () =>
     withWriteLock(spacePath(spaceId), async () => {
       assertSpaceAccess(spaceId, "manage");
       const dir = spaceDir(spaceId);
-      const refusal = spaceDeleteRefusal(dir);
+      const refusal = await spaceDeleteRefusal(dir);
       if (refusal) return { error: refusal };
       const trashBase = join(baseDir(), ".trash");
       await mkdir(trashBase, { recursive: true });
@@ -1222,11 +1221,20 @@ export async function deleteSpace(spaceId: string): Promise<{ error: string | nu
       const trashDest = join(trashBase, trashName);
       try {
         await rename(dir, trashDest);
-      } catch {
-        // Should the trash be on another filesystem, delete in place, never
-        // crossing into another one.
-        if (!(await removeWithinDevice(dir))) {
-          return { error: "This Space holds something Worktable can't delete" };
+      } catch (error) {
+        // Only a trash on another filesystem is a reason to delete in place.
+        // Anything else, such as a mount made on the folder since the check
+        // (EBUSY), leaves the Space as it is.
+        if ((error as NodeJS.ErrnoException).code !== "EXDEV") {
+          return { error: SPACE_NOT_DELETED };
+        }
+        // Checked again just before deleting, and never across into another
+        // filesystem, the folder's own included.
+        const again = await spaceDeleteRefusal(dir);
+        if (again) return { error: again };
+        const device = (await lstat(dirname(dir))).dev;
+        if (!(await removeWithinDevice(dir, device))) {
+          return { error: SPACE_NOT_DELETED };
         }
       }
       await retireSpaceHistory(spaceId, trashName);

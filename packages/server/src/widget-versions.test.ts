@@ -1,6 +1,7 @@
 import { writeWorkspaceManifest as writeLegacyFixtureManifest } from "./workspace.ts"
 import { ownerIdentity } from "./auth.ts";
 import { afterEach, beforeEach, describe, expect, it, setSystemTime } from "bun:test";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -418,10 +419,13 @@ describe("widget version history", () => {
     // Corrupt the metadata — the exact filesystem accident restore recovers from.
     await writeFile(join(testDir, "spaces", "meta", "widgets", "tracker", "widget.yaml"), "{{{ not yaml", "utf8");
     // Its source can't be read, so the restore learns the page's revision
-    // from the refusal.
+    // from the refusal: a hash of its exact bytes, a leading BOM included.
+    const page = new TextEncoder().encode(`\uFEFF${HTML_V2}`);
+    await writeFile(join(testDir, "spaces", "meta", "widgets", "tracker", "index.html"), page);
     const restorePath = `/api/spaces/meta/widgets/tracker/versions/${versions[0].id}/restore`;
     const stale = await req(app, "POST", restorePath, { expectedRevision: "html:sha256:stale" });
     expect(stale.status).toBe(409);
+    expect(stale.json.revision).toBe(`html:sha256:${createHash("sha256").update(page).digest("hex")}`);
     const restore = await req(app, "POST", restorePath, { expectedRevision: stale.json.revision });
     expect(restore.status).toBe(200);
     const read = await req(app, "GET", "/api/spaces/meta/widgets/tracker");

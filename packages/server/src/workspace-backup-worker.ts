@@ -1,6 +1,7 @@
 import type {
   BackupWorkerDiagnostics,
   BackupWorkerInput,
+  BackupWorkerMaintainResult,
   BackupWorkerResult,
   VisitorCommentsCheckpoint,
 } from "@worktable/hosted-contract"
@@ -227,6 +228,14 @@ export function snapshotManifestResult(stdout: string): unknown {
 }
 
 /**
+ * How long a stopped command has to exit after SIGTERM before SIGKILL. Restic
+ * removes its repository lock on SIGTERM; a killed restic leaves the lock,
+ * which then blocks every exclusive operation until an operator removes it.
+ * Each job's deadline ends this long before it expires.
+ */
+const STOP_GRACE_MS = 15_000
+
+/**
  * Subprocess output is bounded. Stderr is discarded unless `stderrLimit` asks
  * for its first bytes. Restic stderr is never kept: paths and backend
  * credentials can appear in it.
@@ -250,7 +259,12 @@ export async function runBackupCommand(
     let count = 0
     let errorCount = 0
     let exceeded = false
-    const kill = () => child.kill("SIGKILL")
+    let forced: ReturnType<typeof setTimeout> | undefined
+    const kill = () => {
+      if (forced) return
+      child.kill("SIGTERM")
+      forced = setTimeout(() => child.kill("SIGKILL"), STOP_GRACE_MS)
+    }
     signal.addEventListener("abort", kill, { once: true })
     if (signal.aborted) kill()
     child.stdout.on("data", (chunk: Buffer) => {
@@ -267,10 +281,12 @@ export async function runBackupCommand(
       errors.push(kept)
     })
     child.on("error", (error) => {
+      clearTimeout(forced)
       signal.removeEventListener("abort", kill)
       reject(error)
     })
     child.on("close", (code) => {
+      clearTimeout(forced)
       signal.removeEventListener("abort", kill)
       if (signal.aborted || exceeded)
         reject(
@@ -303,6 +319,9 @@ export type BackupWorkerStep =
   | "upload"
   | "verify"
   | "download"
+  | "forget"
+  | "prune"
+  | "check"
   | "publish"
 
 /** Secret-free failure description written to failure.json. */
@@ -445,11 +464,11 @@ function validateInput(input: BackupWorkerInput) {
     input.version !== 1 ||
     !/^[A-Za-z0-9_-]{8,80}$/.test(input.jobId) ||
     !/^ws_[A-Za-z0-9_-]+$/.test(input.workspaceId) ||
-    !["backup", "download"].includes(input.kind) ||
+    !["backup", "download", "maintain"].includes(input.kind) ||
     !input.repositoryPassword ||
     !input.repository ||
     !Number.isFinite(input.expiresAt) ||
-    input.expiresAt <= Date.now()
+    input.expiresAt <= Date.now() + STOP_GRACE_MS
   )
     throw new Error("invalid or expired backup job")
   if (input.repositoryId && !DIGEST.test(input.repositoryId))
@@ -461,6 +480,75 @@ function validateInput(input: BackupWorkerInput) {
       !input.repositoryId)
   )
     throw new Error("download requires a catalogued snapshot")
+  if (input.kind === "maintain") validateMaintainInput(input)
+}
+
+/** Each list of a maintenance job, at most. */
+const MAINTAIN_LIST_LIMIT = 10_000
+/** Ids per `restic forget`, so orphans never overflow a command line. */
+const FORGET_BATCH = 5_000
+const DAY_MS = 86_400_000
+
+/**
+ * A `restic check --read-data-subset` value: "5%", "0.5%", or "n/t" with
+ * 1 <= n <= t <= 256, restic's limit.
+ */
+function isReadDataSubset(value: unknown): value is string {
+  if (typeof value !== "string") return false
+  if (/^(?:0|[1-9]\d{0,2})(?:\.\d{1,2})?%$/.test(value)) {
+    const percent = Number(value.slice(0, -1))
+    return percent > 0 && percent <= 100
+  }
+  const part = /^([1-9]\d{0,2})\/([1-9]\d{0,2})$/.exec(value)
+  return !!part && Number(part[1]) <= Number(part[2]) && Number(part[2]) <= 256
+}
+
+/**
+ * Maintenance forgets by the catalog's ids alone, so a list it cannot trust
+ * refuses the whole job. The repository must be the catalogued one: an
+ * unknown repository's old snapshots would all look uncatalogued.
+ * `orphanBefore` is in milliseconds and at least a day before the job
+ * expires, so a backup the catalog has yet to record is never an orphan.
+ */
+function validateMaintainInput(input: BackupWorkerInput) {
+  const ids = (value: unknown): value is string[] =>
+    Array.isArray(value) &&
+    value.length <= MAINTAIN_LIST_LIMIT &&
+    value.every((id) => typeof id === "string" && DIGEST.test(id))
+  if (
+    !input.repositoryId ||
+    !ids(input.forget) ||
+    !ids(input.keep) ||
+    !Number.isSafeInteger(input.orphanBefore) ||
+    input.orphanBefore! <= 1_600_000_000_000 ||
+    input.orphanBefore! > input.expiresAt - DAY_MS
+  )
+    throw new Error("invalid maintenance job")
+  const keep = new Set(input.keep)
+  if (input.forget.some((id) => keep.has(id)))
+    throw new Error("maintenance would forget a kept snapshot")
+  if (
+    input.readDataSubset !== undefined &&
+    !isReadDataSubset(input.readDataSubset)
+  )
+    throw new Error("invalid repository check subset")
+  const verify: unknown = input.verify
+  if (verify === undefined) return
+  const { snapshotId, sourceCheckpoint } = (verify ?? {}) as Record<
+    string,
+    unknown
+  >
+  if (
+    typeof snapshotId !== "string" ||
+    !DIGEST.test(snapshotId) ||
+    typeof sourceCheckpoint !== "string" ||
+    !DIGEST.test(sourceCheckpoint)
+  )
+    throw new Error("invalid maintenance verification")
+  if (input.forget.includes(snapshotId))
+    throw new Error("maintenance would forget the verified snapshot")
+  if (!keep.has(snapshotId))
+    throw new Error("maintenance must verify a kept snapshot")
 }
 
 function backupSecrets(input: BackupWorkerInput): string[] {
@@ -519,7 +607,7 @@ async function uploadedFiles(
 export async function runBackupWorker(
   input: BackupWorkerInput,
   tools: WorkerTools
-): Promise<BackupWorkerResult> {
+): Promise<BackupWorkerResult | BackupWorkerMaintainResult> {
   const tracker = { step: "input" as BackupWorkerStep }
   try {
     return await runBackupSteps(input, tools, tracker)
@@ -543,7 +631,7 @@ async function runBackupSteps(
   input: BackupWorkerInput,
   tools: WorkerTools,
   tracker: { step: BackupWorkerStep }
-): Promise<BackupWorkerResult> {
+): Promise<BackupWorkerResult | BackupWorkerMaintainResult> {
   validateInput(input)
   tracker.step = "prepare"
   const root = join(resolve(tools.appDirectory), "operator-snapshots")
@@ -565,9 +653,10 @@ async function runBackupSteps(
       at: Date.now(),
     })
   }
-  const signal = AbortSignal.timeout(
-    Math.min(input.expiresAt - Date.now(), 30 * 60_000)
-  )
+  // Aborted by a timer the job holds: Bun 1.3 can collect an unreferenced
+  // AbortSignal.timeout before it fires, and then nothing is ever stopped.
+  const deadline = new AbortController()
+  const signal = deadline.signal
   // No ambient cloud credentials, password-command, or restic repository env.
   const baseEnv: NodeJS.ProcessEnv = {
     PATH: process.env["PATH"],
@@ -641,6 +730,15 @@ async function runBackupSteps(
     }
   }
   await advance("lock")
+  // A prune that repacks a whole repository can outlast an upload. A stopped
+  // command's grace ends before the job's credentials and lease expire.
+  const timer = setTimeout(
+    () => deadline.abort(),
+    Math.min(
+      Math.max(0, input.expiresAt - Date.now() - STOP_GRACE_MS),
+      (input.kind === "maintain" ? 120 : 30) * 60_000
+    )
+  )
   return withCrossProcessLock(
     join(root, ".worker.lock"),
     { label: "Cloud backup worker", staleMs: 0, timeoutMs: 1000 },
@@ -673,6 +771,14 @@ async function runBackupSteps(
         (input.repositoryId && repositoryId !== input.repositoryId)
       )
         throw new Error("backup repository identity changed")
+      if (input.kind === "maintain")
+        return maintainRepository(
+          input,
+          repositoryId,
+          restic,
+          advance,
+          directory
+        )
       let manifest: WorkspaceSnapshotManifest
       let snapshotId: string
       let diagnostics: BackupWorkerDiagnostics | undefined
@@ -910,7 +1016,184 @@ async function runBackupSteps(
       await publishWorkerJson(directory, "result.json", result)
       return result
     }
+  ).finally(() => clearTimeout(timer))
+}
+
+type Restic = (
+  args: string[]
+) => Promise<{ code: number; stdout: string; stderr: string }>
+
+/** Restic's exit code when the repository is locked by another process. */
+const RESTIC_LOCKED = 11
+
+function resticFailure(what: string, code: number) {
+  return new BackupCommandError(
+    code === RESTIC_LOCKED
+      ? `${what} failed: the repository is locked`
+      : `${what} failed (exit ${code})`,
+    code
   )
+}
+
+async function listSnapshots(
+  restic: Restic
+): Promise<Array<{ id: string; hostname: unknown; time: number }>> {
+  const listing = await restic(["snapshots"])
+  if (listing.code !== 0)
+    throw resticFailure("backup snapshot listing", listing.code)
+  const rows: unknown = JSON.parse(listing.stdout)
+  if (!Array.isArray(rows))
+    throw new Error("backup snapshot listing is invalid")
+  return rows.map(
+    (row: { id?: unknown; hostname?: unknown; time?: unknown }) => {
+      const time = typeof row?.time === "string" ? Date.parse(row.time) : NaN
+      if (
+        typeof row?.id !== "string" ||
+        !DIGEST.test(row.id) ||
+        !Number.isFinite(time)
+      )
+        throw new Error("backup snapshot listing is invalid")
+      return { id: row.id, hostname: row.hostname, time }
+    }
+  )
+}
+
+/** The summary line `restic check --json` prints last. */
+function checkSummary(stdout: string): {
+  num_errors?: unknown
+  broken_packs?: unknown
+  suggest_repair_index?: unknown
+  suggest_prune?: unknown
+} {
+  for (const line of stdout.split("\n").reverse()) {
+    if (!line.trim().startsWith("{")) continue
+    try {
+      const row = JSON.parse(line)
+      if (row?.message_type === "summary") return row
+    } catch {
+      // Not the summary line.
+    }
+  }
+  throw new Error("backup repository check printed no summary")
+}
+
+/**
+ * Forget what the catalog let go and uncatalogued partials older than
+ * `orphanBefore`, then remove every byte no snapshot still uses. Restic's
+ * keep rules and this machine's clock decide nothing. The operator lease
+ * keeps backups out, and restic refuses a lock another process holds; that
+ * lock is never removed here.
+ */
+async function maintainRepository(
+  input: BackupWorkerInput,
+  repositoryId: string,
+  restic: Restic,
+  advance: (step: BackupWorkerStep) => Promise<void>,
+  directory: string
+): Promise<BackupWorkerMaintainResult> {
+  const keep = new Set(input.keep)
+  const forget = new Set(input.forget)
+  const before = await listSnapshots(restic)
+  const present = new Set(before.map((snapshot) => snapshot.id))
+  const forgotten = [...forget].filter((id) => present.has(id))
+  const missing = [...forget].filter((id) => !present.has(id))
+  const uncatalogued = before.filter(
+    (snapshot) => !keep.has(snapshot.id) && !forget.has(snapshot.id)
+  )
+  // Each repository holds one workspace. Another's snapshot means it is
+  // corrupt or mixed, and none of it is this job's to forget.
+  if (uncatalogued.some((snapshot) => snapshot.hostname !== input.workspaceId))
+    throw new Error("maintenance found another workspace's snapshot")
+  const orphans = uncatalogued
+    .filter((snapshot) => snapshot.time < input.orphanBefore!)
+    .map((snapshot) => snapshot.id)
+  const removed = [...forgotten, ...orphans]
+  /** The verified snapshot is there, and its manifest is the catalog's. */
+  const readBack = async (rows: typeof before) => {
+    const { snapshotId, sourceCheckpoint } = input.verify!
+    const snapshot = rows.find((row) => row.id === snapshotId)
+    if (snapshot?.hostname !== input.workspaceId)
+      throw new Error("verified snapshot is not in the repository")
+    const remote = await restic(["dump", snapshotId, "/snapshot.json"])
+    if (remote.code !== 0)
+      throw resticFailure("backup manifest read-back", remote.code)
+    const manifest = JSON.parse(
+      remote.stdout
+    ) as Partial<WorkspaceSnapshotManifest> & { type?: unknown }
+    if (
+      manifest?.type !== "worktable.workspace-snapshot" ||
+      manifest.workspaceId !== input.workspaceId ||
+      manifest.sourceCheckpoint !== sourceCheckpoint
+    )
+      throw new Error("backup manifest read-back failed")
+  }
+  // Nothing is forgotten unless the catalog and the repository agree on what
+  // stays, and the newest restore point reads back as the catalog has it.
+  if (removed.length > 0 && !input.verify)
+    throw new Error("maintenance must verify before forgetting")
+  if (input.verify) await readBack(before)
+  if ([...keep].some((id) => !present.has(id)))
+    throw new Error("maintenance kept snapshot missing")
+  await advance("forget")
+  for (let start = 0; start < removed.length; start += FORGET_BATCH) {
+    const batch = removed.slice(start, start + FORGET_BATCH)
+    const result = await restic(["forget", "--quiet", "--", ...batch])
+    if (result.code !== 0) throw resticFailure("backup forget", result.code)
+  }
+  await advance("prune")
+  // Restic's default keeps up to 5% unused space, which can hold deleted
+  // bytes for good.
+  const pruned = await restic(["prune", "--quiet", "--max-unused", "0"])
+  if (pruned.code !== 0) throw resticFailure("backup prune", pruned.code)
+  const after = await listSnapshots(restic)
+  const gone = new Set(removed)
+  if (after.some((snapshot) => gone.has(snapshot.id)))
+    throw new Error("backup forget left a snapshot behind")
+  await advance("check")
+  const checked = await restic([
+    "check",
+    "--quiet",
+    ...(input.readDataSubset
+      ? [`--read-data-subset=${input.readDataSubset}`]
+      : []),
+  ])
+  if (checked.code !== 0)
+    throw resticFailure("backup repository check", checked.code)
+  // A pack the storage refused to delete leaves prune exiting 0 and check
+  // suggesting another prune: deleted bytes are still there.
+  const summary = checkSummary(checked.stdout)
+  if (summary.suggest_prune === true)
+    throw new Error("unused data remains after prune")
+  if (
+    summary.num_errors !== 0 ||
+    summary.suggest_repair_index !== false ||
+    (Array.isArray(summary.broken_packs) && summary.broken_packs.length > 0)
+  )
+    throw new Error("backup repository check found errors")
+  let verified: string | null = null
+  if (input.verify) {
+    await advance("verify")
+    await readBack(after)
+    verified = input.verify.snapshotId
+  }
+  await advance("publish")
+  const result: BackupWorkerMaintainResult = {
+    version: 1,
+    jobId: input.jobId,
+    kind: "maintain",
+    state: "complete",
+    workspaceId: input.workspaceId,
+    repositoryId,
+    forgotten,
+    missing,
+    orphans,
+    remaining: after.length,
+    checked: input.readDataSubset ? "subset" : "structure",
+    verified,
+    completedAt: new Date().toISOString(),
+  }
+  await publishWorkerJson(directory, "result.json", result)
+  return result
 }
 
 /**
@@ -924,8 +1207,9 @@ export async function runBackupWorkerJob(
   const directory = join(tools.appDirectory, "operator-snapshots", jobId)
   const inputPath = join(directory, "input.json")
   try {
+    // A maintenance job lists every catalogued snapshot id.
     const input = JSON.parse(
-      await readBoundedRegularFile(inputPath, 32 * 1024)
+      await readBoundedRegularFile(inputPath, 2 * 1024 * 1024)
     ) as BackupWorkerInput
     if (input.jobId !== jobId) throw new Error("backup job identity mismatch")
     await runBackupWorker(input, tools)

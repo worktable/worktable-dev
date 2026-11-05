@@ -156,6 +156,15 @@ jobs:
         # Server and compiled-package renderer tests use the pinned headless
         # shell; this job has an independent runner from browser journeys.
         run: bunx playwright@1.61.1 install --with-deps --only-shell chromium
+      - name: Install restic
+        # Backup worker tests run maintenance against a real repository, with
+        # the restic release Cloud machines install.
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/restic.bz2" https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64.bz2
+          echo "f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c  $RUNNER_TEMP/restic.bz2" | sha256sum -c
+          bunzip2 "$RUNNER_TEMP/restic.bz2"
+          chmod +x "$RUNNER_TEMP/restic"
+          echo "WORKTABLE_TEST_RESTIC=$RUNNER_TEMP/restic" >> "$GITHUB_ENV"
       - name: Run required tests
         run: bun run test:required
       - name: Bind lane evidence

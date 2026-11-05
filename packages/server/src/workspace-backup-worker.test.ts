@@ -3,10 +3,13 @@ import {
   chmod,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rm,
   writeFile,
 } from "node:fs/promises"
+import { spawn, spawnSync } from "node:child_process"
+import { createHash, randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -239,3 +242,342 @@ describe("incremental uploads", () => {
     expect(incrementalUploadArguments(parent, files)).toEqual([])
   })
 })
+
+const WORKSPACE = "ws_backup_test"
+const DAY = 86_400_000
+const digest = (text: string) => createHash("sha256").update(text).digest("hex")
+
+/** Writes a maintenance job and runs it, as the control plane would. */
+async function runMaintain(restic: string, fields: Record<string, unknown>) {
+  const appDirectory = join(root, "app")
+  const directory = join(appDirectory, "operator-snapshots", JOB)
+  await mkdir(directory, { recursive: true })
+  await rm(join(directory, "failure.json"), { force: true })
+  await writeFile(
+    join(directory, "input.json"),
+    JSON.stringify({
+      version: 1,
+      jobId: JOB,
+      kind: "maintain",
+      workspaceId: WORKSPACE,
+      repository: join(root, "repository"),
+      repositoryPassword: SECRETS.repositoryPassword,
+      repositoryId: "b".repeat(64),
+      expiresAt: Date.now() + 10 * 60_000,
+      forget: [],
+      keep: [],
+      orphanBefore: Date.now() - 2 * DAY,
+      ...fields,
+    })
+  )
+  const succeeded = await runBackupWorkerJob(JOB, {
+    appDirectory,
+    restic,
+    server: ["false"],
+  })
+  const read = async (name: string) =>
+    existsSync(join(directory, name))
+      ? JSON.parse(await readFile(join(directory, name), "utf8"))
+      : undefined
+  return {
+    succeeded,
+    result: await read("result.json"),
+    failure: await read("failure.json"),
+  }
+}
+
+describe("maintenance refusals", () => {
+  const a = "1".repeat(64)
+  const b = "2".repeat(64)
+  const c = "3".repeat(64)
+  const verify = (snapshotId: string) => ({
+    snapshotId,
+    sourceCheckpoint: "4".repeat(64),
+  })
+  const snapshot = (id: string, hostname: string, time: string) => ({
+    id,
+    hostname,
+    time,
+  })
+  // An old uncatalogued snapshot `a`, and `b`, whose manifest holds another
+  // checkpoint than the catalog's.
+  const repository = [
+    snapshot(a, WORKSPACE, "2026-01-01T00:00:00Z"),
+    snapshot(b, WORKSPACE, "2099-01-01T00:00:00Z"),
+  ]
+
+  const refusals: Array<
+    [string, Record<string, unknown>, string, string, typeof repository]
+  > = [
+    [
+      "forgets a kept snapshot",
+      { forget: [a, b], keep: [b] },
+      "input",
+      "maintenance would forget a kept snapshot",
+      repository,
+    ],
+    [
+      "forgets the verified snapshot",
+      { forget: [a], keep: [b], verify: verify(a) },
+      "input",
+      "maintenance would forget the verified snapshot",
+      repository,
+    ],
+    [
+      "checks a subset restic cannot split",
+      { readDataSubset: "1/257" },
+      "input",
+      "invalid repository check subset",
+      repository,
+    ],
+    [
+      "names no repository",
+      { repositoryId: undefined },
+      "input",
+      "invalid maintenance job",
+      repository,
+    ],
+    [
+      "verifies a snapshot the repository lacks",
+      { keep: [b, c], verify: verify(c) },
+      "repository-check",
+      "verified snapshot is not in the repository",
+      repository,
+    ],
+    [
+      "verifies a manifest of another checkpoint",
+      { keep: [b], verify: verify(b) },
+      "repository-check",
+      "backup manifest read-back failed",
+      repository,
+    ],
+    [
+      "finds another workspace's snapshot",
+      { keep: [b], verify: verify(b) },
+      "repository-check",
+      "maintenance found another workspace's snapshot",
+      [...repository, snapshot(c, "ws_other", "2026-01-01T00:00:00Z")],
+    ],
+  ]
+
+  it.each(refusals)(
+    "refuses a job that %s, before forgetting anything",
+    async (_, fields, step, message, snapshots) => {
+      const restic = await executable(
+        "restic",
+        `while [ "\${1#-}" != "$1" ]; do
+  case "$1" in --cache-dir|--stuck-request-timeout) shift 2 ;; *) shift ;; esac
+done
+case "$1" in
+  cat) printf '{"id":"${"b".repeat(64)}"}\\n' ;;
+  snapshots) printf '%s\\n' '${JSON.stringify(snapshots)}' ;;
+  dump) printf '%s' '${JSON.stringify({ type: "worktable.workspace-snapshot", workspaceId: WORKSPACE, sourceCheckpoint: "5".repeat(64) })}' ;;
+  *) touch "${root}/restic-changed"; exit 1 ;;
+esac`
+      )
+      const job = await runMaintain(restic, fields)
+      expect(job.succeeded).toBe(false)
+      expect(job.failure.detail).toEqual({ step, errorName: "Error", message })
+      expect(existsSync(join(root, "restic-changed"))).toBe(false)
+    }
+  )
+})
+
+/** CI installs a pinned restic; elsewhere one on PATH is used if present. */
+const RESTIC = process.env["WORKTABLE_TEST_RESTIC"] || Bun.which("restic")
+
+describe.skipIf(!RESTIC && !process.env["CI"])(
+  "maintenance against a real repository",
+  () => {
+    const repository = () => join(root, "repository")
+    const run = (args: string[], cwd = root) => {
+      if (!RESTIC) throw new Error("CI needs restic in WORKTABLE_TEST_RESTIC")
+      const result = spawnSync(RESTIC, ["--no-cache", ...args], {
+        cwd,
+        encoding: "utf8",
+        env: {
+          PATH: process.env["PATH"],
+          HOME: root,
+          RESTIC_REPOSITORY: repository(),
+          RESTIC_PASSWORD: SECRETS.repositoryPassword,
+        },
+      })
+      if (result.status !== 0)
+        throw new Error(`restic ${args[0]} failed: ${result.stderr}`)
+      return result.stdout
+    }
+    /** A backup laid out as the worker uploads one. Returns its full id. */
+    const backup = async (files: Record<string, string>, time?: string) => {
+      const source = join(root, "sources", randomUUID())
+      await mkdir(join(source, "workspace"), { recursive: true })
+      for (const [path, text] of Object.entries(files))
+        await writeFile(join(source, path), text)
+      return JSON.parse(
+        run(
+          [
+            "backup",
+            "--json",
+            "--quiet",
+            "--host",
+            WORKSPACE,
+            ...(time ? ["--time", time] : []),
+            "--",
+            "workspace",
+            "snapshot.json",
+          ],
+          source
+        )
+          .trim()
+          .split("\n")
+          .at(-1)!
+      ).snapshot_id as string
+    }
+    const old = "2026-01-01 00:00:00"
+    const sourceCheckpoint = "c".repeat(64)
+    const manifest = JSON.stringify({
+      type: "worktable.workspace-snapshot",
+      workspaceId: WORKSPACE,
+      sourceCheckpoint,
+    })
+    /** A repository with a kept checkpoint and an expired one only it holds. */
+    const seed = async () => {
+      run(["init", "--repository-version", "2"])
+      const kept = await backup({ "snapshot.json": manifest }, old)
+      const expired = await backup(
+        { "snapshot.json": "{}", "workspace/expired.md": randomUUID() },
+        old
+      )
+      return {
+        repositoryId: JSON.parse(run(["cat", "config"])).id as string,
+        kept,
+        expired,
+        job: {
+          forget: [expired],
+          keep: [kept],
+          verify: { snapshotId: kept, sourceCheckpoint },
+        },
+      }
+    }
+    const blobs = () => run(["list", "blobs"])
+
+    it("forgets expired and orphaned snapshots, prunes their bytes and keeps the rest", async () => {
+      run(["init", "--repository-version", "2"])
+      const repositoryId = JSON.parse(run(["cat", "config"])).id as string
+      const shared = `shared ${randomUUID()}`
+      const expiredOnly = `expired ${randomUUID()}`
+      const orphanOnly = `orphan ${randomUUID()}`
+      const expired = await backup(
+        {
+          "snapshot.json": "{}",
+          "workspace/shared.md": shared,
+          "workspace/expired.md": expiredOnly,
+        },
+        old
+      )
+      const kept = await backup(
+        { "snapshot.json": manifest, "workspace/shared.md": shared },
+        old
+      )
+      const orphan = await backup(
+        { "snapshot.json": "{}", "workspace/orphan.md": orphanOnly },
+        old
+      )
+      const partial = await backup({ "snapshot.json": "{}" })
+      const gone = "f".repeat(64)
+      const stored = blobs()
+      expect(stored).toContain(digest(expiredOnly))
+      expect(stored).toContain(digest(orphanOnly))
+
+      const job = await runMaintain(RESTIC!, {
+        repositoryId,
+        forget: [expired, gone],
+        keep: [kept],
+        readDataSubset: "50%",
+        verify: { snapshotId: kept, sourceCheckpoint },
+      })
+
+      expect(job.failure).toBeUndefined()
+      expect(job.result).toMatchObject({
+        kind: "maintain",
+        state: "complete",
+        repositoryId,
+        forgotten: [expired],
+        missing: [gone],
+        orphans: [orphan],
+        remaining: 2,
+        checked: "subset",
+        verified: kept,
+      })
+      const left = JSON.parse(run(["snapshots", "--json"])).map(
+        (row: { id: string }) => row.id
+      )
+      expect([...left].sort()).toEqual([kept, partial].sort())
+      // Only the forgotten snapshots held these bytes, and the prune removed them.
+      const pruned = blobs()
+      expect(pruned).not.toContain(digest(expiredOnly))
+      expect(pruned).not.toContain(digest(orphanOnly))
+      run(["restore", kept, "--target", join(root, "restored")])
+      expect(
+        await readFile(join(root, "restored", "workspace", "shared.md"), "utf8")
+      ).toBe(shared)
+    }, 60_000)
+
+    it("stops a command at the deadline without leaving its lock, so the next job proceeds", async () => {
+      const { repositoryId, kept, expired, job } = await seed()
+      // In place of the prune, a real restic holds the repository lock and
+      // waits until it is stopped.
+      const held = join(root, "held")
+      spawnSync("mkfifo", [held])
+      const writer = spawn("sh", ["-c", `exec sleep 600 > "${held}"`])
+      try {
+        const holding = await executable(
+          "restic-holding",
+          `case " $* " in
+  *" prune "*) exec "${RESTIC}" --no-cache backup --stdin --stdin-filename held < "${held}" ;;
+  *) exec "${RESTIC}" "$@" ;;
+esac`
+        )
+        // The deadline comes 15 seconds of stop grace before expiry.
+        const interrupted = await runMaintain(holding, {
+          repositoryId,
+          ...job,
+          expiresAt: Date.now() + 15_000 + 8_000,
+        })
+        expect(interrupted.failure.detail).toEqual({
+          step: "prune",
+          errorName: "Error",
+          message: "backup deadline exceeded",
+        })
+        expect(await readdir(join(repository(), "locks"))).toEqual([])
+      } finally {
+        writer.kill()
+      }
+
+      const retried = await runMaintain(RESTIC!, { repositoryId, ...job })
+      expect(retried.failure).toBeUndefined()
+      expect(retried.result).toMatchObject({
+        forgotten: [],
+        missing: [expired],
+        remaining: 1,
+        checked: "structure",
+        verified: kept,
+      })
+    }, 60_000)
+
+    it("fails the check when storage kept bytes the prune deleted", async () => {
+      const { repositoryId, job } = await seed()
+      // The storage refuses deletes; restic's prune warns and exits 0.
+      spawnSync("chmod", ["-R", "a-w", join(repository(), "data")])
+      try {
+        const refused = await runMaintain(RESTIC!, { repositoryId, ...job })
+        expect(refused.failure.detail).toEqual({
+          step: "check",
+          errorName: "Error",
+          message: "unused data remains after prune",
+        })
+      } finally {
+        spawnSync("chmod", ["-R", "u+w", join(repository(), "data")])
+      }
+    }, 60_000)
+  }
+)

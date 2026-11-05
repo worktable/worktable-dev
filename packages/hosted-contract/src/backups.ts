@@ -35,7 +35,7 @@ export type CloudBackupStatus = z.infer<typeof CloudBackupStatus>
 export interface BackupWorkerInput {
   version: 1
   jobId: string
-  kind: "backup" | "download"
+  kind: "backup" | "download" | "maintain"
   workspaceId: string
   repository: string
   repositoryPassword: string
@@ -49,6 +49,23 @@ export interface BackupWorkerInput {
   snapshotId?: string
   sourceCheckpoint?: string
   captureBudgetMs?: number
+  /** Maintain: catalogued snapshot ids to forget. */
+  forget?: string[]
+  /** Maintain: every snapshot id the catalog still holds. Never forgotten. */
+  keep?: string[]
+  /**
+   * Maintain, epoch ms: a snapshot in neither list whose restic time is
+   * earlier is an uncatalogued partial, and is forgotten. At most
+   * `expiresAt` minus 24 hours.
+   */
+  orphanBefore?: number
+  /** Maintain: `restic check --read-data-subset`: "5%", or "n/t" with t <= 256. */
+  readDataSubset?: string
+  /**
+   * Maintain: the newest catalogued checkpoint, read back after the prune.
+   * Required whenever anything would be forgotten.
+   */
+  verify?: { snapshotId: string; sourceCheckpoint: string }
 }
 export interface VisitorCommentsCheckpoint {
   incarnation: string
@@ -58,7 +75,7 @@ export interface VisitorCommentsCheckpoint {
 export interface BackupWorkerResult {
   version: 1
   jobId: string
-  kind: BackupWorkerInput["kind"]
+  kind: "backup" | "download"
   state: "complete"
   workspaceId: string
   repositoryId: string
@@ -74,6 +91,28 @@ export interface BackupWorkerResult {
   completedAt: string
   /** Where a backup spent its time. Optional; nothing depends on it. */
   diagnostics?: BackupWorkerDiagnostics
+}
+
+export interface BackupWorkerMaintainResult {
+  version: 1
+  jobId: string
+  kind: "maintain"
+  state: "complete"
+  workspaceId: string
+  repositoryId: string
+  /** Catalogued ids actually forgotten. */
+  forgotten: string[]
+  /** Ids in `forget` that were already gone from the repository. */
+  missing: string[]
+  /** Uncatalogued ids forgotten. */
+  orphans: string[]
+  /** Snapshots left after the prune. */
+  remaining: number
+  /** "structure" reads no file data; "subset" also read `readDataSubset`. */
+  checked: "structure" | "subset"
+  /** The snapshot whose manifest was read back, or null when none was asked. */
+  verified: string | null
+  completedAt: string
 }
 
 /** Durations in milliseconds, sizes in bytes. */

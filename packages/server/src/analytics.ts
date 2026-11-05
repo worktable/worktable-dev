@@ -294,18 +294,17 @@ function enqueue(
         !configuration()
       )
         return
-      // Sent in small batches; shutdown sends what is left.
+      // Each event is sent as it happens, never held for a batch: a hosted
+      // Worktable sleeps soon after its last request, and events waiting in
+      // memory were lost.
       client ??= new PostHog(config.token, {
         host: config.host,
-        flushAt: 20,
-        maxBatchSize: 20,
-        flushInterval: 10_000,
-        maxQueueSize: 100,
-        fetchRetryCount: 0,
-        requestTimeout: 2000,
+        fetchRetryCount: 1,
+        fetchRetryDelay: 500,
+        requestTimeout: 3000,
         disableGeoip: true,
       })
-      client.capture({
+      await client.captureImmediate({
         distinctId,
         event,
         properties: {

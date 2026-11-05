@@ -260,7 +260,10 @@ async function holdsOtherFilesystem(
     const current = pending.pop()!
     let entries
     try {
-      if ((await lstat(current)).dev !== expected) return current
+      const status = await lstat(current)
+      // Swapped for a link since it was listed: never descend through it.
+      if (!status.isDirectory()) continue
+      if (status.dev !== expected) return current
       entries = await readdir(current, { withFileTypes: true })
     } catch {
       continue
@@ -277,7 +280,13 @@ async function removeTree(path: string, device: number): Promise<void> {
   for (const entry of await readdir(path, { withFileTypes: true })) {
     const child = join(path, entry.name)
     if (entry.isDirectory()) {
-      if ((await lstat(child)).dev !== device) {
+      const status = await lstat(child)
+      if (!status.isDirectory()) {
+        // Swapped for a link since it was listed: remove the link, not its target.
+        await unlink(child)
+        continue
+      }
+      if (status.dev !== device) {
         throw new Error("a trash item holds another filesystem")
       }
       await removeTree(child, device)

@@ -944,6 +944,7 @@ export {
   type BackupWorkerDiagnostics,
   type BackupWorkerInput,
   type BackupWorkerResult,
+  type BackupWorkerMaintainResult,
   type VisitorCommentsCheckpoint,
 } from "./backups.ts"
 

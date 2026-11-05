@@ -14,6 +14,7 @@ import {
   Pencil,
   Reply,
 } from "lucide-react"
+import { flushSync } from "react-dom"
 import {
   Fragment,
   useEffect,
@@ -113,6 +114,7 @@ function SectionHeader({
               urgent ? "text-primary-text" : "font-normal text-muted-foreground"
             )}
           >
+            <span className="sr-only">, </span>
             {count}
           </span>
         ) : null}
@@ -195,7 +197,7 @@ function Meta({
         </Fragment>
       ))}
       {at && (
-        <span className="sm:hidden">
+        <span className="whitespace-nowrap sm:hidden">
           {(who || shown.length > 0) && <span aria-hidden="true"> · </span>}
           {shortWhen(at)}
         </span>
@@ -844,6 +846,7 @@ function AnswerPair({
   const [replying, setReplying] = useState(false)
   const [draft, setDraft] = useState(() => unsentBody(id) ?? "")
   const [resolving, setResolving] = useState(false)
+  const [resolved, setResolved] = useState(false)
   const quote = "quote" in annotation.target ? annotation.target.quote : undefined
   // The agent had the last word; it answers the person's latest words before
   // it, which on a first exchange are the comment itself.
@@ -876,11 +879,16 @@ function AnswerPair({
     try {
       const api = await annotationsApi()
       await api.resolveAnnotation(spaceId, annotation.id)
+      setResolved(true)
       onDone()
       toast("Resolved", {
         action: {
           label: "Undo",
-          onClick: () => void api.reopenAnnotation(spaceId, annotation.id).then(onDone),
+          onClick: () =>
+            void api.reopenAnnotation(spaceId, annotation.id).then(() => {
+              setResolved(false)
+              onDone()
+            }),
         },
       })
     } catch {
@@ -888,6 +896,8 @@ function AnswerPair({
       setResolving(false)
     }
   }
+  // Resolved here: it leaves before the list refreshes.
+  if (resolved) return null
   return (
     <li className="space-y-1.5 border-t border-border/60 py-3 first:border-t-0 first:pt-1">
       {quote && (
@@ -1139,9 +1149,10 @@ function AnsweredRow({
             item={item}
             onDone={done}
             onHide={() => {
-              // Hiding from the bottom of a long list keeps the reader at this row.
+              // Hiding from the bottom of a long list keeps the reader at this
+              // row: collapse it first, then bring what remains into view.
+              flushSync(onClose)
               rowRef.current?.scrollIntoView({ block: "nearest" })
-              onClose()
             }}
           />
         )}
@@ -1214,13 +1225,14 @@ export function YourTurnSection({ spaceId }: { spaceId?: string }) {
         <>
           {(shown.length > 0 || showOld) && (
             <div className={cardClass}>
-              {shown.map(row)}
+              {/* Older items open below every fresher one, never above. */}
+              {(showOld ? fresh : shown).map(row)}
               {showOld && old.map(row)}
             </div>
           )}
           <MoreLess
-            more={Math.min(STEP, reachable - shown.length)}
-            less={steps.expanded}
+            more={showOld ? 0 : Math.min(STEP, reachable - shown.length)}
+            less={steps.expanded && !showOld}
             loading={loadingMore}
             onMore={() => {
               if (steps.visible + STEP > items.length && total > items.length) setAll(true)
@@ -1802,13 +1814,13 @@ export function ArchivingSoonSection({ spaceId }: { spaceId?: string }) {
   const soonest = daysUntil(first.document.archiveOn!, now) <= 1
   return (
     <section aria-label="Archiving Soon">
-      <div className="flex min-w-0 items-center gap-3 px-3.5 text-sm">
+      {/* On phones the title has its own line, so Keep says what it keeps. */}
+      <div className="grid grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-3.5 text-sm max-sm:grid-cols-[1rem_minmax(0,1fr)]">
         <Clock3
           className={cn("size-4 shrink-0", soonest ? "text-warning" : "text-muted-foreground")}
           aria-hidden="true"
         />
-        {/* The date is what the line is for: the title gives way first. */}
-        <p className="flex min-w-0 flex-1 items-baseline text-muted-foreground">
+        <p className="flex min-w-0 items-baseline text-muted-foreground">
           <Link
             to="/spaces/$spaceId/documents/$"
             params={{ spaceId: first.spaceId, _splat: first.document.path }}
@@ -1816,7 +1828,7 @@ export function ArchivingSoonSection({ spaceId }: { spaceId?: string }) {
           >
             {first.document.title}
           </Link>
-          <span className="shrink-0 whitespace-pre">
+          <span className="shrink-0 whitespace-pre max-sm:hidden">
             {" · "}
             {archiveLabel(first.document.archiveOn!, now)}
           </span>
@@ -1827,17 +1839,22 @@ export function ArchivingSoonSection({ spaceId }: { spaceId?: string }) {
             </span>
           )}
         </p>
-        {spaces.canEdit(first.spaceId) && <KeepButton item={first} />}
-        {soon.length > 1 && (
-          <button
-            type="button"
-            className={cn(quietButton, "shrink-0")}
-            aria-expanded={open}
-            onClick={() => setOpen(!open)}
-          >
-            {open ? "Show Less" : `+${soon.length - 1}`}
-          </button>
-        )}
+        <div className="flex items-center gap-4 max-sm:col-start-2">
+          <span className="text-muted-foreground sm:hidden">
+            {archiveLabel(first.document.archiveOn!, now)}
+          </span>
+          {spaces.canEdit(first.spaceId) && <KeepButton item={first} />}
+          {soon.length > 1 && (
+            <button
+              type="button"
+              className={cn(quietButton, "shrink-0")}
+              aria-expanded={open}
+              onClick={() => setOpen(!open)}
+            >
+              {open ? "Show Less" : `+${soon.length - 1}`}
+            </button>
+          )}
+        </div>
       </div>
       {open && (
         <div className={cn(cardClass, "mt-2")}>

@@ -311,7 +311,7 @@ export interface IndexedComment {
   author: AnnotationAuthor
   body: string
   requests?: AnnotationRequest[]
-  thread?: Array<{ id: string; author: AnnotationAuthor; body: string }>
+  thread?: Array<{ id: string; author: AnnotationAuthor; body: string; createdAt?: string }>
   passageAuthor?: { by: string; kind: "person" | "agent"; at: string }
 }
 
@@ -413,6 +413,11 @@ export interface AnsweredComment {
   at: string
 }
 
+/**
+ * A person's open comment that an agent had the last word on, with nothing
+ * still waiting on anyone. Their own reply re-asks the agent, so it waits
+ * again until the agent answers.
+ */
 function answeredComment(
   spaceId: string,
   annotation: IndexedComment,
@@ -421,15 +426,12 @@ function answeredComment(
   if (annotation.status === "resolved" || annotation.author.type !== "user") {
     return null
   }
-  const requests = annotation.requests ?? []
-  // Still waiting on someone: their answer re-asks, so this covers it too.
-  if (requests.some((request) => request.status === "open")) return null
-  const answer = requests
-    .filter((request) => request.status === "replied" && request.to.kind === "agent")
-    .sort((a, b) => (b.closedAt ?? b.createdAt).localeCompare(a.closedAt ?? a.createdAt))[0]
-  if (!answer) return null
-  const reply = annotation.thread?.find((message) => message.id === answer.replyId)
-  if (!reply) return null
+  if (waitsOnSomeone(annotation) || !answeredByAgent(annotation)) return null
+  const answer = annotation.thread!.at(-1)!
+  const answeredAt =
+    annotation.requests?.find((request) => request.replyId === answer.id)?.closedAt ??
+    answer.createdAt
+  if (!answeredAt) return null
   return {
     spaceId,
     annotationId: annotation.id,
@@ -437,12 +439,27 @@ function answeredComment(
     path,
     askerId: annotation.author.id,
     by: {
-      kind: reply.author.type === "user" ? "person" : reply.author.type,
-      id: reply.author.id,
-      ...(reply.author.name ? { name: reply.author.name } : {}),
+      kind: "agent",
+      id: answer.author.id,
+      ...(answer.author.name ? { name: answer.author.name } : {}),
     },
-    at: answer.closedAt ?? answer.createdAt,
+    at: answeredAt,
   }
+}
+
+/** A comment some request still waits on. */
+export function waitsOnSomeone(annotation: Pick<IndexedComment, "requests">): boolean {
+  return annotation.requests?.some((request) => request.status === "open") ?? false
+}
+
+/** A person's comment an agent had the last word on. */
+export function answeredByAgent(
+  annotation: Pick<IndexedComment, "author" | "thread">
+): boolean {
+  return (
+    annotation.author.type === "user" &&
+    annotation.thread?.at(-1)?.author.type === "agent"
+  )
 }
 
 function noteAnswered(

@@ -158,6 +158,8 @@ export interface RecentOptions {
   mine?: boolean
   /** Only docs in this folder of `spaceId`. */
   folder?: string
+  /** Uploaded files don't use up `limit`, for lists that fold them. */
+  filesBeyondLimit?: boolean
 }
 
 export function recentQueryOptions(options: RecentOptions) {
@@ -175,6 +177,7 @@ export function recentQueryOptions(options: RecentOptions) {
         ...(options.spaceId ? { spaceId: options.spaceId } : {}),
         ...(options.mine ? { scope: "mine" } : {}),
         ...(options.folder ? { folder: options.folder } : {}),
+        ...(options.filesBeyondLimit ? { files: "extra" } : {}),
       })
       return fetchJSON<RecentDocuments>(`/api/recent?${query}`)
     },

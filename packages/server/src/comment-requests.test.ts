@@ -244,6 +244,18 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
       caller = ownerIdentity()
       await post(`/${id}/resolve`, {})
       expect(await listPending(ownerIdentity())).toEqual({ items: [], total: 0 })
+
+      // A comment sent to no one comes back too, once an agent answers it.
+      const plain = await post("", {
+        target: { type: "doc", docPath: "explorer" },
+        category: "comment",
+        body: "Is $49 right?",
+      })
+      caller = finn
+      await post(`/${plain.json.annotation.id}/replies`, { body: "Yes, by the survey." })
+      expect((await listPending(ownerIdentity())).items).toMatchObject([
+        { kind: "answered", annotationIds: [plain.json.annotation.id] },
+      ])
     })
 
     it("refuses an unavailable recipient and allows addressed comments on released tools", async () => {

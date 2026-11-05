@@ -58,6 +58,12 @@ export async function listRecentDocuments(options: {
   actorIds?: ReadonlySet<string>
   /** Only docs in this folder, with spaceId. */
   folder?: string
+  /**
+   * Uploaded files don't use up `limit`: up to that many docs, with the files
+   * among them on top. Lists that fold files into one row ask for this, so a
+   * burst of uploads can't push docs out.
+   */
+  filesBeyondLimit?: boolean
 }): Promise<{
   items: RecentDocument[]
   temporary?: RecentDocument[]
@@ -160,5 +166,26 @@ export async function listRecentDocuments(options: {
   const sorted = items
     .filter((item) => key(item) !== undefined)
     .sort((a, b) => key(b)!.localeCompare(key(a)!))
-  return { items: sorted.slice(0, limit), ...temporary, spaces: activity, ...incomplete }
+  const listed = options.filesBeyondLimit
+    ? docsWithFiles(sorted, limit)
+    : sorted.slice(0, limit)
+  return { items: listed, ...temporary, spaces: activity, ...incomplete }
+}
+
+/** The newest `limit` docs, with up to `limit` files among them. */
+function docsWithFiles(sorted: RecentDocument[], limit: number): RecentDocument[] {
+  const listed: RecentDocument[] = []
+  let docs = 0
+  let files = 0
+  for (const item of sorted) {
+    if (docs >= limit) break
+    if (item.document.format.id === "worktable.file") {
+      if (files >= limit) continue
+      files++
+    } else {
+      docs++
+    }
+    listed.push(item)
+  }
+  return listed
 }

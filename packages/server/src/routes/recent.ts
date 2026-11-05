@@ -36,6 +36,7 @@ function personalActorIds(identity: TokenIdentity): Set<string> | undefined {
 // temporaryLimit=N adds those as `temporary` beside the main list.
 // scope=mine keeps docs the reader or their agents created or edited.
 // folder=F, with spaceId, keeps docs in that folder.
+// files=extra lets uploaded files ride along without using up the limit.
 recentRouter.get("/", async (c) => {
   const sort = c.req.query("sort") === "created" ? "created" : "updated"
   const limitRaw = Number(c.req.query("limit"))
@@ -59,6 +60,7 @@ recentRouter.get("/", async (c) => {
     ...(c.req.query("spaceId") && c.req.query("folder")
       ? { folder: c.req.query("folder")! }
       : {}),
+    filesBeyondLimit: c.req.query("files") === "extra",
   })
   // Rows open their documents by content revision.
   const listed = [...recent.items, ...(recent.temporary ?? [])]

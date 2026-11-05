@@ -19,7 +19,12 @@ import type {
   DocumentId,
 } from "@worktable/types"
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
-import { noteCommentChanged, type CommentPlace } from "./pending-list.ts"
+import {
+  answeredByAgent,
+  noteCommentChanged,
+  waitsOnSomeone,
+  type CommentPlace,
+} from "./pending-list.ts"
 import type { PassageAuthor } from "./passage-author.ts"
 import { addRequests, requestsAfterReply, type CommentReplier } from "./annotation-requests.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
@@ -483,9 +488,7 @@ export async function listWaitingCommentsV2(spaceId: string): Promise<
     owner.annotations.flatMap((annotation) =>
       annotation.status !== "resolved" &&
       // Answered ones too: they are back with whoever wrote the comment.
-      annotation.requests?.some(
-        (request) => request.status === "open" || request.status === "replied"
-      )
+      (waitsOnSomeone(annotation) || answeredByAgent(annotation))
         ? [{ annotation, place: commentPlace(owner, annotation) }]
         : []
     )

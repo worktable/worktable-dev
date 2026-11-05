@@ -69,14 +69,16 @@ const rowCover =
   "absolute inset-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
 const above = "relative z-10"
 // A text action with a comfortable target that looks like plain text.
+// On phones the target grows to a thumb's size without moving the text.
 const textAction =
-  "-mx-1.5 -my-1 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[0.8rem] font-medium text-primary-text transition-colors hover:bg-primary/10 disabled:opacity-50"
+  "-mx-1.5 -my-1 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[0.8rem] font-medium text-primary-text transition-colors hover:bg-primary/10 disabled:opacity-50 max-sm:-my-3 max-sm:py-3"
 const quietAction = cn(
   textAction,
   "text-muted-foreground hover:bg-surface-hover hover:text-foreground"
 )
 const quietLink =
   "inline-flex items-center gap-1 text-[0.8rem] font-medium text-muted-foreground transition-colors hover:text-foreground"
+const quietButton = cn(quietLink, "-my-2 py-2 max-sm:-my-3 max-sm:py-3")
 
 // Lists show a few, then more in steps, so their height holds still as
 // items come and go.
@@ -131,37 +133,40 @@ function useSteps(first: number) {
   }
 }
 
-/** "5 More" and "Show Less", at the end of a list. */
+/** "5 More" and "Show Less", at the end of a list, with any other controls for it. */
 function MoreLess({
   more,
   less,
   loading = false,
   onMore,
   onLess,
+  children,
 }: {
   more: number
   less: boolean
   loading?: boolean
   onMore: () => void
   onLess: () => void
+  children?: ReactNode
 }) {
-  if (more <= 0 && !less && !loading) return null
+  if (more <= 0 && !less && !loading && !children) return null
   return (
-    <div className="mt-2 flex justify-center gap-5">
+    <div className="mt-2 flex items-center gap-5 px-0.5">
       {loading ? (
         <span className="text-[0.8rem] text-muted-foreground">Loading…</span>
       ) : (
         more > 0 && (
-          <button type="button" className={quietLink} onClick={onMore}>
+          <button type="button" className={quietButton} onClick={onMore}>
             {more} More
           </button>
         )
       )}
       {less && (
-        <button type="button" className={quietLink} onClick={onLess}>
+        <button type="button" className={quietButton} onClick={onLess}>
           Show Less
         </button>
       )}
+      {children}
     </div>
   )
 }
@@ -180,7 +185,8 @@ function Meta({
     (part) => part !== undefined && part !== null && part !== false && part !== ""
   )
   return (
-    <p className="mt-0.5 truncate text-[0.8rem] text-muted-foreground">
+    // On phones it wraps to a second line rather than cut who or when.
+    <p className="mt-0.5 text-[0.8rem] text-muted-foreground max-sm:line-clamp-2 sm:truncate">
       {who && <span className="text-foreground/75">{who}</span>}
       {shown.map((part, index) => (
         <Fragment key={index}>
@@ -281,6 +287,12 @@ function useShownName() {
     const shown = actor.kind === "agent" ? readableAgentName(full) : full
     return { shown, full }
   }
+}
+
+/** An actor's mark, drawn from their readable name, so an agent shows as itself. */
+function Badge({ actor }: { actor: ActivityActor }) {
+  const named = useShownName()(actor)
+  return <ActorBadge actor={actor.kind === "agent" ? { ...actor, name: named.shown } : actor} />
 }
 
 function ActorName({ actor }: { actor: Pick<ActivityActor, "kind" | "id" | "name"> }) {
@@ -479,7 +491,14 @@ function sourceTitle(item: PendingItem): string {
 /** What the reader is asked, or what happened. */
 function pendingHeadline(item: PendingItem): string {
   switch (item.kind) {
-    case "threadRequest":
+    case "threadRequest": {
+      // An agent often opens with the thread's title; it shows below already.
+      const text = plainText(item.excerpt)
+      const title = plainText(item.threadTitle)
+      return text.startsWith(title) && text.length > title.length
+        ? text.slice(title.length).replace(/^[\s:.,;-]+/, "")
+        : text
+    }
     case "commentRequest":
       return plainText(item.excerpt)
     case "deliveryFailed":
@@ -497,14 +516,14 @@ function PendingLead({ item }: { item: PendingItem }) {
   if (replyable(item)) {
     return (
       <Lead>
-        <ActorBadge actor={item.from} />
+        <Badge actor={item.from} />
       </Lead>
     )
   }
   if (item.kind === "answered" && item.by[0]) {
     return (
       <Lead>
-        <ActorBadge actor={item.by[0]} />
+        <Badge actor={item.by[0]} />
       </Lead>
     )
   }
@@ -829,10 +848,14 @@ function AnswerPair({
   const [draft, setDraft] = useState(() => unsentBody(id) ?? "")
   const [resolving, setResolving] = useState(false)
   const quote = "quote" in annotation.target ? annotation.target.quote : undefined
-  // The answer is the newest message from someone other than the commenter.
-  const answer = [...annotation.thread]
-    .reverse()
-    .find((message) => message.author.id !== annotation.author.id)
+  // The agent had the last word; it answers the person's latest words before
+  // it, which on a first exchange are the comment itself.
+  const answer = annotation.thread.at(-1)
+  const asked =
+    annotation.thread
+      .slice(0, -1)
+      .reverse()
+      .find((message) => message.author.type === "user")?.body ?? annotation.body
   const send = () => {
     const body = draft.trim()
     if (!body) return
@@ -871,16 +894,16 @@ function AnswerPair({
   return (
     <li className="space-y-1.5 border-t border-border/60 py-3 first:border-t-0 first:pt-1">
       {quote && (
-        <p className="line-clamp-2 border-l-2 border-border pl-2.5 text-[0.8rem] leading-relaxed text-muted-foreground">
+        <p className="border-l-2 border-border pl-2.5 text-[0.8rem] leading-relaxed text-muted-foreground">
           {plainText(quote)}
         </p>
       )}
-      <p className="line-clamp-3 text-[0.8125rem] leading-relaxed text-muted-foreground">
+      <p className="text-[0.8125rem] leading-relaxed text-muted-foreground">
         <span className="font-medium text-foreground/75">You: </span>
-        {plainText(annotation.body)}
+        {plainText(asked)}
       </p>
       {answer && (
-        <p className="line-clamp-4 text-sm leading-relaxed text-foreground">
+        <p className="text-sm leading-relaxed text-foreground">
           <span className="font-medium">
             <ActorName
               actor={{
@@ -938,20 +961,21 @@ function AnswerPair({
 /** The answers on one doc, loaded when the row opens. */
 function AnswerPairs({ item, onDone }: { item: AnsweredItem; onDone: () => void }) {
   const answers = useQuery({
-    queryKey: ["home-answers", item.spaceId, item.docPath, item.annotationIds],
+    // New answers change the ids; replying or resolving here refreshes them.
+    queryKey: ["home-answers", item.spaceId, item.docPath, item.annotationIds.join(",")],
     queryFn: async () => {
       const api = await annotationsApi()
       const { annotations } = await api.listAnnotations(item.spaceId, {
         docPath: item.docPath,
         status: ["open"],
-        limit: 200,
+        limit: 500,
       })
       const order = new Map(item.annotationIds.map((id, index) => [id, index]))
       return annotations
         .filter((annotation) => order.has(annotation.id))
         .sort((a, b) => order.get(a.id)! - order.get(b.id)!)
     },
-    staleTime: 10_000,
+    staleTime: Infinity,
   })
   if (answers.isLoading) {
     return <div className="mt-2 h-16 animate-pulse rounded-lg bg-surface-inset" aria-hidden="true" />
@@ -1106,7 +1130,9 @@ export function YourTurnSection({ spaceId }: { spaceId?: string }) {
   const steps = useSteps(SHOWN)
   const failed = pending.isError && !pending.data
   const onHome = spaceId === undefined
-  if (!onHome && !pending.isLoading && items.length === 0 && !failed) return null
+  // A Space shows it only once something is known to wait, so its page
+  // doesn't shift.
+  if (!onHome && (pending.isLoading || (items.length === 0 && !failed))) return null
   const shown = fresh.slice(0, steps.visible)
   // What another step could still show: everything a full list holds, until
   // that list has come. Older items wait behind their own line.
@@ -1128,7 +1154,12 @@ export function YourTurnSection({ spaceId }: { spaceId?: string }) {
   }
   return (
     <section aria-labelledby="your-turn-heading">
-      <SectionHeader id="your-turn-heading" title="Your Turn" count={total} urgent />
+      <SectionHeader
+        id="your-turn-heading"
+        title="Your Turn"
+        count={total - old.length}
+        urgent
+      />
       {pending.isLoading ? (
         <Skeleton rows={onHome ? 2 : 1} tall />
       ) : failed ? (
@@ -1155,18 +1186,19 @@ export function YourTurnSection({ spaceId }: { spaceId?: string }) {
               steps.more()
             }}
             onLess={steps.less}
-          />
-          {old.length > 0 && (
-            <button
-              type="button"
-              className={cn(quietLink, "mt-2 px-0.5")}
-              aria-expanded={showOld}
-              onClick={() => setShowOld(!showOld)}
-            >
-              <ChevronDown className={cn("size-3.5 transition-transform", showOld && "rotate-180")} />
-              {old.length} older
-            </button>
-          )}
+          >
+            {old.length > 0 && (
+              <button
+                type="button"
+                className={quietButton}
+                aria-expanded={showOld}
+                onClick={() => setShowOld(!showOld)}
+              >
+                <ChevronDown className={cn("size-3.5 transition-transform", showOld && "rotate-180")} />
+                {old.length} older
+              </button>
+            )}
+          </MoreLess>
         </>
       )}
     </section>
@@ -1196,6 +1228,7 @@ function useRecent(spaceId?: string) {
     sort: "updated",
     includeTemporary: true,
     limit: spaceId !== undefined ? SPACE_DOCS : HOME_DOCS,
+    filesBeyondLimit: true,
     temporaryLimit: 100,
     ...(spaceId !== undefined ? { spaceId } : { mine: true }),
   })
@@ -1218,7 +1251,12 @@ function placeOf(
   if (place === "space") return spaceName(item.spaceId)
   const path = item.document.path.split("/")
   const within = place === "folder" ? path : path.slice(place.inFolder.split("/").length)
-  return within.length > 1 ? humanizeSegment(within[0]!) : undefined
+  return within.length > 1 ? folderName(within[0]!) : undefined
+}
+
+/** A folder's name to read: agents often date them, and the row has a time. */
+function folderName(segment: string): string {
+  return humanizeSegment(segment.replace(/^\d{4}-\d{2}-\d{2}[-_ ]*/, "") || segment)
 }
 
 /** Calendar days from today to the archive date, in the reader's time zone. */
@@ -1321,7 +1359,7 @@ function DocRow({
       />
       <Lead>
         {editor ? (
-          <ActorBadge actor={editor} />
+          <Badge actor={editor} />
         ) : (
           <FormatIcon item={item} className="size-4 text-muted-foreground" />
         )}
@@ -1467,6 +1505,22 @@ function Units({
   )
 }
 
+/** Docs Latest Work shows before anything is expanded. */
+function shownInLatest(items: RecentDocument[], inSpace: boolean): Set<string> {
+  const groups = new Map<string, RecentDocument[]>()
+  for (const item of items) {
+    const key = inSpace ? "" : item.spaceId
+    groups.set(key, [...(groups.get(key) ?? []), item])
+  }
+  const keys = new Set<string>()
+  for (const group of groups.values()) {
+    for (const unit of toUnits(group).slice(0, inSpace ? SPACE_LIST_ROWS : SECTION_ROWS)) {
+      if (unit.kind === "doc") keys.add(docKey(unit.item))
+    }
+  }
+  return keys
+}
+
 /** One Space's latest docs on Home: its newest few, the rest in place. */
 function SpaceGroup({
   spaceId,
@@ -1498,7 +1552,7 @@ function SpaceGroup({
         {hidden > 0 && (
           <button
             type="button"
-            className={cn(quietLink, "shrink-0")}
+            className={cn(quietButton, "shrink-0")}
             aria-expanded={all}
             onClick={() => setAll(!all)}
           >
@@ -1600,6 +1654,7 @@ export function FolderSection({
     sort: "updated",
     includeTemporary: true,
     limit: FOLDER_ROWS,
+    filesBeyondLimit: true,
     spaceId,
     folder,
   })
@@ -1632,44 +1687,68 @@ export function FolderSection({
 // ── Archiving Soon ─────────────────────────────────────────
 
 /**
- * Temporary docs that archive within the week and aren't already in Latest
- * Work, as one line: the soonest, with Keep, and the rest on request.
+ * Temporary docs that archive within the week and Latest Work doesn't show,
+ * as one line: the soonest, with Keep, and the rest on request.
  */
 export function ArchivingSoonSection({ spaceId }: { spaceId?: string }) {
   const recent = useRecent(spaceId)
+  const spaces = useSpaceFacts()
   const [now] = useState(() => Date.now())
-  const steps = useSteps(1)
-  const listed = new Set((recent.data?.items ?? []).map(docKey))
+  const [open, setOpen] = useState(false)
+  const shown = shownInLatest(recent.data?.items ?? [], spaceId !== undefined)
   const soon = (recent.data?.temporary ?? [])
     .filter(
       (item) =>
         item.document.archiveOn &&
-        !listed.has(docKey(item)) &&
+        !shown.has(docKey(item)) &&
         daysUntil(item.document.archiveOn, now) <= SOON_DAYS
     )
     .sort((a, b) => a.document.archiveOn!.localeCompare(b.document.archiveOn!))
-  if (soon.length === 0) return null
-  const shown = soon.slice(0, steps.visible)
+  const first = soon[0]
+  if (!first) return null
   const place: Place =
     spaceId !== undefined
       ? "folder"
       : oneSpace(soon.map((item) => item.spaceId))
         ? "none"
         : "space"
+  const soonest = daysUntil(first.document.archiveOn!, now) <= 1
   return (
-    <section aria-labelledby="archiving-heading">
-      <SectionHeader id="archiving-heading" title="Archiving Soon" count={soon.length} />
-      <div className={cardClass}>
-        {shown.map((item) => (
-          <DocRow key={docKey(item)} item={item} place={place} now={now} />
-        ))}
+    <section aria-label="Archiving Soon">
+      <div className="flex min-w-0 items-center gap-3 px-3.5 text-sm">
+        <Clock3
+          className={cn("size-4 shrink-0", soonest ? "text-warning" : "text-muted-foreground")}
+          aria-hidden="true"
+        />
+        <p className="min-w-0 flex-1 truncate text-muted-foreground">
+          {archiveLabel(first.document.archiveOn!, now)}:{" "}
+          <Link
+            to="/spaces/$spaceId/documents/$"
+            params={{ spaceId: first.spaceId, _splat: first.document.path }}
+            className="font-medium text-foreground hover:underline"
+          >
+            {first.document.title}
+          </Link>
+        </p>
+        {spaces.canEdit(first.spaceId) && <KeepButton item={first} />}
+        {soon.length > 1 && (
+          <button
+            type="button"
+            className={cn(quietButton, "shrink-0")}
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            {open ? "Show Less" : `+${soon.length - 1}`}
+          </button>
+        )}
       </div>
-      <MoreLess
-        more={Math.min(STEP, soon.length - shown.length)}
-        less={steps.expanded}
-        onMore={steps.more}
-        onLess={steps.less}
-      />
+      {open && (
+        <div className={cn(cardClass, "mt-2")}>
+          {soon.slice(1).map((item) => (
+            <DocRow key={docKey(item)} item={item} place={place} now={now} />
+          ))}
+        </div>
+      )}
     </section>
   )
 }
@@ -1683,19 +1762,25 @@ export function ArchivingSoonSection({ spaceId }: { spaceId?: string }) {
 export function HomeSummary() {
   const pending = usePending()
   const recent = useRecent()
-  const [today] = useState(() => new Date().toDateString())
+  const [now] = useState(() => Date.now())
   if (!pending.data && !recent.data) return <p className="mt-1 min-h-5" />
-  const turn = pending.data?.total ?? 0
   const items = recent.data?.items ?? []
+  // Older items fold away below, so they aren't counted as waiting.
+  const old = (pending.data?.items ?? []).filter(
+    (item) => now - Date.parse(item.at) > OLD_AFTER_MS
+  ).length
+  const turn = (pending.data?.total ?? 0) - old
+  // The last day, so the night's agent work counts in the morning.
   const changed = items.filter(
     (item) =>
-      item.document.updatedAt &&
-      new Date(item.document.updatedAt).toDateString() === today
+      !isFile(item) &&
+      item.document.updatedAt !== undefined &&
+      now - Date.parse(item.document.updatedAt) < DAY_MS
   )
   const parts = [
     turn > 0 ? `${turn} for you` : null,
     changed.length > 0
-      ? `${changed.length}${changed.length === items.length ? "+" : ""} ${changed.length === 1 ? "change" : "changes"} today`
+      ? `${changed.length}${changed.length >= HOME_DOCS ? "+" : ""} ${changed.length === 1 ? "change" : "changes"} today`
       : null,
   ].filter(Boolean)
   return (

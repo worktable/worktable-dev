@@ -84,15 +84,20 @@ import {
   rename,
   rm,
   rmdir,
+  stat,
   unlink,
 } from "node:fs/promises"
-import { basename, join } from "node:path"
+import { basename, dirname, join, relative, sep } from "node:path"
 import { DocumentIdSchema } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
 import { atomicWriteText } from "./atomic-file.ts"
 import { logError } from "./debug-log.ts"
 import { discoverDocumentDataV2LifecycleRecovery } from "./document-data-lifecycle-v2.ts"
-import { withUnsettledDocumentLifecycles } from "./document-lifecycle-journal.ts"
+import {
+  spaceDeleteRefusalMessage,
+  spaceMountRefusal,
+  withUnsettledDocumentLifecycles,
+} from "./document-lifecycle-journal.ts"
 import {
   getServerSettings,
   RETENTION_DEFAULT,
@@ -234,24 +239,31 @@ async function removeEmptyDirectory(path: string): Promise<void> {
 // ── Removing without crossing a mount ───────────────────────
 
 /**
- * Whether any directory at or below `path` is on another filesystem than
- * `path` itself, as a mount inside it would be. Directories only; links are
- * never followed.
+ * The first directory at or below `path` on another filesystem than `device`
+ * (by default `path`'s own), as a mount inside it would be, or null.
+ * Directories only; links are never followed.
  */
-async function holdsOtherFilesystem(path: string): Promise<boolean> {
+async function holdsOtherFilesystem(
+  path: string,
+  device?: number
+): Promise<string | null> {
   let root
   try {
     root = await lstat(path)
   } catch {
-    return false
+    return null
   }
-  if (!root.isDirectory()) return false
+  if (!root.isDirectory()) return null
+  const expected = device ?? root.dev
   const pending = [path]
   while (pending.length > 0) {
     const current = pending.pop()!
     let entries
     try {
-      if ((await lstat(current)).dev !== root.dev) return true
+      const status = await lstat(current)
+      // Swapped for a link since it was listed: never descend through it.
+      if (!status.isDirectory()) continue
+      if (status.dev !== expected) return current
       entries = await readdir(current, { withFileTypes: true })
     } catch {
       continue
@@ -260,7 +272,7 @@ async function holdsOtherFilesystem(path: string): Promise<boolean> {
       if (entry.isDirectory()) pending.push(join(current, entry.name))
     }
   }
-  return false
+  return null
 }
 
 /** Remove a tree checked to be on `device`, stopping at any that isn't. */
@@ -268,7 +280,13 @@ async function removeTree(path: string, device: number): Promise<void> {
   for (const entry of await readdir(path, { withFileTypes: true })) {
     const child = join(path, entry.name)
     if (entry.isDirectory()) {
-      if ((await lstat(child)).dev !== device) {
+      const status = await lstat(child)
+      if (!status.isDirectory()) {
+        // Swapped for a link since it was listed: remove the link, not its target.
+        await unlink(child)
+        continue
+      }
+      if (status.dev !== device) {
         throw new Error("a trash item holds another filesystem")
       }
       await removeTree(child, device)
@@ -282,10 +300,14 @@ async function removeTree(path: string, device: number): Promise<void> {
 /**
  * Remove a trash item without crossing into another filesystem, which `rm`
  * with `recursive` would: a mount that reached the trash would lose what is
- * mounted there. An item that holds one is left whole for an operator, and
+ * mounted there. An item that holds one, or that isn't on `device` when one
+ * is given (a mount on the item itself), is left whole for an operator, and
  * logged by its opaque name. True once the item is gone.
  */
-async function removeWithinDevice(path: string): Promise<boolean> {
+export async function removeWithinDevice(
+  path: string,
+  device?: number
+): Promise<boolean> {
   let root
   try {
     root = await lstat(path)
@@ -293,16 +315,51 @@ async function removeWithinDevice(path: string): Promise<boolean> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return true
     throw error
   }
+  const expected = device ?? root.dev
+  if (root.dev !== expected) {
+    keptAcrossFilesystems(path)
+    return false
+  }
   if (!root.isDirectory()) {
     await rm(path, { force: true })
     return true
   }
-  if (await holdsOtherFilesystem(path)) {
+  if (await holdsOtherFilesystem(path, expected)) {
     keptAcrossFilesystems(path)
     return false
   }
-  await removeTree(path, root.dev)
+  await removeTree(path, expected)
   return true
+}
+
+/**
+ * The device of the folder that holds the Spaces, which a Space's own files
+ * are on. Followed through a link, as the Spaces folder may be one to
+ * another volume.
+ */
+export async function spacesFolderDevice(spaceRoot: string): Promise<number> {
+  return (await stat(dirname(spaceRoot))).dev
+}
+
+/**
+ * Why a whole Space can't be deleted, or null when it can: something is
+ * mounted in its folder, or the folder is a mount, and what is mounted there
+ * isn't the Space's to delete. Mount points are read as a folder delete reads
+ * them; without them, every directory's device is compared with the folder
+ * that holds the Spaces, without blocking the server.
+ */
+export async function spaceDeleteRefusal(
+  spaceRoot: string
+): Promise<string | null> {
+  const mounted = spaceMountRefusal(spaceRoot)
+  if (mounted !== undefined) return mounted
+  const other = await holdsOtherFilesystem(
+    spaceRoot,
+    await spacesFolderDevice(spaceRoot)
+  )
+  return other === null
+    ? null
+    : spaceDeleteRefusalMessage(relative(spaceRoot, other).split(sep).join("/"))
 }
 
 function keptAcrossFilesystems(path: string): void {

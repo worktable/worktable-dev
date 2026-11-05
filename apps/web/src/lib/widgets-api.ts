@@ -157,14 +157,16 @@ export function createWidgetCheckpoint(
   });
 }
 
+/** `expectedRevision`: the page's sourceRevision, which the restore replaces. */
 export function restoreWidgetVersion(
   spaceId: string,
   widgetId: string,
-  versionId: string
+  versionId: string,
+  expectedRevision: string | undefined
 ): Promise<{ ok: boolean; widget: WidgetFile; provenance?: unknown }> {
   return fetchJSON(
     `${htmlDocumentApiPath(spaceId, widgetId)}/versions/${encodeURIComponent(versionId)}/restore`,
-    { method: "POST" }
+    { method: "POST", body: JSON.stringify({ expectedRevision }) }
   );
 }
 

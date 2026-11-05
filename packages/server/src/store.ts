@@ -1199,29 +1199,51 @@ async function retireSpaceHistory(spaceId: string, trashName: string): Promise<v
   }
 }
 
-export async function deleteSpace(spaceId: string): Promise<void> {
+const SPACE_NOT_DELETED = "Worktable couldn't move this Space to the trash, so nothing was deleted";
+
+/**
+ * Move a Space into the trash. Refused, naming it, when something is mounted
+ * in its folder (or the folder is a mount): what is mounted there isn't the
+ * Space's to delete.
+ */
+export async function deleteSpace(spaceId: string): Promise<{ error: string | null }> {
   assertSpaceAccess(spaceId, "manage");
-  await withDocPathLock(spaceId, async () => {
-    await withWriteLock(spacePath(spaceId), async () => {
+  const { removeWithinDevice, spaceDeleteRefusal, spacesFolderDevice } = await import("./deleted-items.ts");
+  return withDocPathLock(spaceId, () =>
+    withWriteLock(spacePath(spaceId), async () => {
       assertSpaceAccess(spaceId, "manage");
       const dir = spaceDir(spaceId);
+      const refusal = await spaceDeleteRefusal(dir);
+      if (refusal) return { error: refusal };
       const trashBase = join(baseDir(), ".trash");
       await mkdir(trashBase, { recursive: true });
       const trashName = `${spaceId}-${Date.now()}`;
       const trashDest = join(trashBase, trashName);
       try {
         await rename(dir, trashDest);
-      } catch {
-        // rename fails across devices; fall back to hard delete
-        await rm(dir, { recursive: true, force: true });
+      } catch (error) {
+        // Only a trash on another filesystem is a reason to delete in place.
+        // Anything else, such as a mount made on the folder since the check
+        // (EBUSY), leaves the Space as it is.
+        if ((error as NodeJS.ErrnoException).code !== "EXDEV") {
+          return { error: SPACE_NOT_DELETED };
+        }
+        // Checked again just before deleting, and never across into another
+        // filesystem, the folder's own included.
+        const again = await spaceDeleteRefusal(dir);
+        if (again) return { error: again };
+        if (!(await removeWithinDevice(dir, await spacesFolderDevice(dir)))) {
+          return { error: SPACE_NOT_DELETED };
+        }
       }
       await retireSpaceHistory(spaceId, trashName);
       retireTeamSpacePolicy(spaceId);
       await invalidateHostedDocumentSharesForSpace(spaceId, "removed");
       await notifyWorkspaceChangeAndWait({ type: "space", spaceId });
       noteDeletedItems();
-    });
-  });
+      return { error: null };
+    })
+  );
 }
 
 // Parsed docs.meta.json by file fingerprint. Provenance and collaboration

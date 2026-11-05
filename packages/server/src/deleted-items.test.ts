@@ -10,11 +10,13 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
+import * as fs from "node:fs"
 import * as fsp from "node:fs/promises"
 import { join } from "node:path"
 import type { SpaceFile } from "@worktable/types"
@@ -28,6 +30,7 @@ import {
   reconcileRecoveredDocumentLifecycles,
   recoverInterruptedDocumentLifecycles,
   setDocumentLifecycleStepHookForTests,
+  setMountPointsForTests,
   SimulatedDocumentLifecycleCrash,
 } from "./document-lifecycle-journal.ts"
 import {
@@ -380,7 +383,66 @@ describe("deleted items", () => {
     ensureWorkspaceManifest()
     await writeSpace(space("plans"))
     await create("plans", "roadmap")
-    await deleteSpace("plans")
+    // Something mounted in the Space, even a bind mount of the same disk, or
+    // the Space's folder being a mount, refuses the delete by name.
+    const folder = realpathSync(join(workspace, "spaces", "plans"))
+    const mounted = join(folder, "docs", "mnt")
+    mkdirSync(mounted)
+    try {
+      setMountPointsForTests([mounted])
+      expect((await deleteSpace("plans")).error).toContain(": docs/mnt")
+      setMountPointsForTests([folder])
+      expect((await deleteSpace("plans")).error).toContain("mount point")
+      // Without mount points to read (as on macOS), a directory on another
+      // filesystem refuses it too.
+      setMountPointsForTests(null)
+      const realLstat = fsp.lstat
+      const elsewhere = spyOn(fsp, "lstat").mockImplementation((async (
+        path: fs.PathLike
+      ) => {
+        const info = await realLstat(path)
+        if (!String(path).endsWith(join("plans", "docs", "mnt"))) return info
+        const moved = Object.create(info) as fs.Stats
+        Object.defineProperty(moved, "dev", { value: info.dev + 1 })
+        return moved
+      }) as typeof fsp.lstat)
+      try {
+        expect((await deleteSpace("plans")).error).toContain(": docs/mnt")
+      } finally {
+        elsewhere.mockRestore()
+      }
+    } finally {
+      setMountPointsForTests(undefined)
+    }
+    // A mount made on the folder after the check, even a bind mount of the
+    // same disk, fails the move. The Space then stays whole: EBUSY refuses,
+    // and EXDEV, the one reason to delete in place, checks again first.
+    const realRename = fsp.rename
+    for (const [code, refusal] of [
+      ["EBUSY", "nothing was deleted"],
+      ["EXDEV", "mount point"],
+    ]) {
+      const mounting = spyOn(fsp, "rename").mockImplementation((async (
+        from: string,
+        to: string
+      ) => {
+        if (!String(from).endsWith(join("spaces", "plans"))) {
+          return realRename(from, to)
+        }
+        setMountPointsForTests([folder])
+        throw Object.assign(new Error("simulated"), { code })
+      }) as typeof fsp.rename)
+      try {
+        expect((await deleteSpace("plans")).error).toContain(refusal)
+      } finally {
+        mounting.mockRestore()
+        setMountPointsForTests(undefined)
+      }
+    }
+    expect(readFileSync(join(folder, "docs", "roadmap.md"), "utf8")).toBe(
+      "# roadmap\n"
+    )
+    expect(await deleteSpace("plans")).toEqual({ error: null })
     // A new Space with the same id starts without the old history.
     expect(existsSync(join(workspace, "versions", "plans"))).toBe(false)
     // A Space an older version deleted 40 days ago, still in the folder.

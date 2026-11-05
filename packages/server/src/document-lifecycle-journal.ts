@@ -3684,7 +3684,8 @@ function refuseMountsBelow(
   spaceRoot: string,
   folder: readonly string[],
   prefix: string,
-  verb: "move" | "delete"
+  verb: "move" | "delete",
+  holder = "folder"
 ): boolean {
   const points = readMountPoints()
   if (!points) return false
@@ -3699,11 +3700,45 @@ function refuseMountsBelow(
   )
   if (found !== undefined) {
     const below = relative(real, found).split(sep).filter(Boolean)
-    throw new DocumentLifecyclePreconditionError(
-      `This folder holds something Worktable can't ${verb}: ${[prefix, ...below].join("/")}`
-    )
+    throw cantTake(holder, verb, [prefix, ...below].filter(Boolean).join("/"))
   }
   return true
+}
+
+function cantTake(
+  holder: string,
+  verb: "move" | "delete",
+  path: string
+): DocumentLifecyclePreconditionError {
+  return new DocumentLifecyclePreconditionError(
+    path
+      ? `This ${holder} holds something Worktable can't ${verb}: ${path}`
+      : `This ${holder}'s folder is a mount point, so Worktable can't ${verb} it`
+  )
+}
+
+/**
+ * Why a whole Space can't be deleted by the mount points this process can
+ * read: the message naming what is mounted in its folder (or that the folder
+ * is a mount), null when nothing is, or undefined when there are no mount
+ * points to read (then deleted-items.ts compares devices instead).
+ */
+export function spaceMountRefusal(spaceRoot: string): string | null | undefined {
+  try {
+    return refuseMountsBelow(spaceRoot, [], "", "delete", "Space")
+      ? null
+      : undefined
+  } catch (error) {
+    if (error instanceof DocumentLifecyclePreconditionError) {
+      return error.message
+    }
+    throw error
+  }
+}
+
+/** The refusal naming what in a Space can't be deleted; "" is its folder. */
+export function spaceDeleteRefusalMessage(path: string): string {
+  return cantTake("Space", "delete", path).message
 }
 
 /**

@@ -13,7 +13,7 @@ import { DocumentLifetimeSchema, WIDGET_RESERVED_SEGMENTS, WidgetIdSchema, type 
 import { applyLifetimeOnCreate, ArchiveOnSchema, lifetimeCreateError } from "../document-lifetime.ts";
 import { readSpace, slugifyDocPath } from "../store.ts";
 import { readDocumentCatalogSnapshot } from "../document-query.ts";
-import { getWidgetPath, listWidgets, readWidget, readWidgetDocument, setWidgetArchived, updateWidgetMetadata, withWidgetWriteLock, writeWidget } from "../widget-store.ts";
+import { getWidgetContentPath, getWidgetPath, listWidgets, readWidget, readWidgetDocument, setWidgetArchived, updateWidgetMetadata, withWidgetWriteLock, writeWidget } from "../widget-store.ts";
 import { createRecord, deleteRecord, queryRecords, readWidgetState, RecordQueryError, updateRecord, writeWidgetState } from "../record-store.ts";
 import { applyWidgetTheme, getBlockingWidgetIssue, injectWidgetHostStyles, injectWidgetRuntime, normalizeTheme, validateWidgetHtml } from "../widget-authoring.ts";
 import { htmlSpaceImagesEnabled, inlineHtmlSpaceImages } from "../html-space-images.ts";
@@ -28,6 +28,8 @@ import { moveHtmlDocument } from "../html-document-move.ts";
 import { createHtmlDocument } from "../html-document-create.ts";
 import { HtmlDocumentWriteError, updateHtmlDocumentLocked } from "../html-document-update.ts";
 import { DocEditError } from "../markdown-edit.ts";
+import { pathIsHidden } from "../document-format-registry.ts";
+import { HIDDEN_NAME_MESSAGE } from "../document-path.ts";
 import { authorizeHtmlPermissions, HtmlPermissionError, isPersonWriter, NETWORK_REQUEST_WARNING } from "../html-permission-authority.ts";
 import { hasScope, type TokenIdentity } from "../token-store.ts";
 import { ManagedDocumentAdmissionError } from "../document-identity-admission.ts";
@@ -117,6 +119,15 @@ const HTML_REVISION_REQUIRED =
   "Replacing an HTML Doc needs the revision you read. Read its source, then send its ETag as expectedRevision.";
 const HTML_REVISION_CHANGED =
   "This HTML Doc changed since you read it. Read it again, then replace it with its new revision.";
+const HTML_RESTORE_REVISION_REQUIRED =
+  "Restoring a version of an HTML Doc needs the revision you read. Read its source, then send its ETag as expectedRevision.";
+const HTML_RESTORE_REVISION_CHANGED =
+  "This HTML Doc changed since you read it. Read it again, then restore from its new revision.";
+
+const RestoreWidgetVersionSchema = z.object({
+  /** The revision the restorer read: the ETag of its source (content?format=raw). */
+  expectedRevision: z.string().min(1).max(256).optional(),
+});
 
 const PatchWidgetSchema = z.object({
   /** A person allows the network access an agent asked for, for the revision they saw. */
@@ -696,6 +707,10 @@ async function handleMoveWidget(c: Context, spaceId: string, widgetId: string) {
   if (!parsed.success) {
     return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
   }
+  // Refused as typed: slugifying would drop the dot.
+  if (pathIsHidden(parsed.data.newPath)) {
+    return c.json({ error: HIDDEN_NAME_MESSAGE, code: "HIDDEN_NAME" }, 400);
+  }
   const storageV2 = await usesHtmlDocumentStorageV2();
   const newPath = storageV2
     ? parsed.data.newPath
@@ -798,6 +813,9 @@ async function handleGetVersionContent(c: Context, spaceId: string, widgetId: st
 async function handleRestoreVersion(c: Context, spaceId: string, widgetId: string, versionId: string) {
   const denied = appOnlyOr403(c, "Restoring a version");
   if (denied) return denied;
+  const parsed = RestoreWidgetVersionSchema.safeParse((await c.req.json().catch(() => null)) ?? {});
+  if (!parsed.success) return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
+  const { expectedRevision } = parsed.data;
   // Serialize capture→write→record per widget id (a concurrent edit during a
   // restore must not interleave). Restore is a recovery path — the current
   // widget.yaml may be corrupt — so use the overwrite-safe capture to snapshot
@@ -820,6 +838,19 @@ async function handleRestoreVersion(c: Context, spaceId: string, widgetId: strin
     const restored = snapshot.after.content;
     const granted = grantedPermissions(c, restored.widget.permissions);
     if (granted instanceof Response) return { kind: "denied" as const, response: granted };
+    // A restore replaces the page, so it names the revision it is based on,
+    // as a replace does. Corrupt metadata still has a page to check, by its
+    // exact bytes as the source's ETag; with no page there is nothing to replace.
+    const page = existing
+      ? (await readWidgetDocument(spaceId, widgetId)).data?.sourceBytes
+      : await Promise.resolve()
+          .then(() => Bun.file(getWidgetContentPath(spaceId, widgetId)).bytes())
+          .catch(() => undefined);
+    if (page) {
+      const currentRevision = htmlSourceRevision(page);
+      if (expectedRevision === undefined) return { kind: "revision-required" as const };
+      if (expectedRevision !== currentRevision) return { kind: "revision-changed" as const, revision: currentRevision };
+    }
     // Restore bypasses validateWidgetHtml's blocking gate on purpose: the
     // content was valid when persisted, and tightened rules must never lock
     // the user out of reverting. Archive state and creation provenance stay as
@@ -874,6 +905,12 @@ async function handleRestoreVersion(c: Context, spaceId: string, widgetId: strin
     return c.json({ error: outcome.error, code: "NOT_FOUND" }, 404);
   }
   if (outcome.kind === "denied") return outcome.response;
+  if (outcome.kind === "revision-required") {
+    return c.json({ error: HTML_RESTORE_REVISION_REQUIRED, code: "REVISION_REQUIRED" }, 428);
+  }
+  if (outcome.kind === "revision-changed") {
+    return c.json({ error: HTML_RESTORE_REVISION_CHANGED, code: "REVISION_CHANGED", revision: outcome.revision }, 409);
+  }
   if (outcome.kind === "invalid") {
     return c.json({ error: outcome.error, code: "VALIDATION_ERROR" }, 400);
   }

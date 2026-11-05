@@ -32,6 +32,7 @@ export const WORKTABLE_PLUGIN_PUBLIC_FILES = [
   "CHANGELOG.md",
   "LICENSE",
   "README.md",
+  "SECURITY.md",
   "assets/composer-icon.png",
   "assets/logo-dark.png",
   "assets/logo.png",

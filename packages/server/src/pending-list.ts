@@ -415,8 +415,10 @@ export interface AnsweredComment {
 
 /**
  * A person's open comment that an agent had the last word on, with nothing
- * still waiting on anyone. Their own reply re-asks the agent, so it waits
- * again until the agent answers.
+ * still waiting on anyone. It must have asked an agent: a person's reply asks
+ * again whoever answered a request, so a reply from Home reaches the agent,
+ * and the comment waits again until it answers. A comment sent to no one
+ * stays on its Doc.
  */
 function answeredComment(
   spaceId: string,
@@ -426,8 +428,17 @@ function answeredComment(
   if (annotation.status === "resolved" || annotation.author.type !== "user") {
     return null
   }
-  if (waitsOnSomeone(annotation) || !answeredByAgent(annotation)) return null
-  const answer = annotation.thread!.at(-1)!
+  const requests = annotation.requests ?? []
+  if (requests.some((request) => request.status === "open")) return null
+  if (
+    !requests.some(
+      (request) => request.status === "replied" && request.to.kind === "agent"
+    )
+  ) {
+    return null
+  }
+  const answer = annotation.thread?.at(-1)
+  if (answer?.author.type !== "agent") return null
   const answeredAt =
     annotation.requests?.find((request) => request.replyId === answer.id)?.closedAt ??
     answer.createdAt
@@ -447,18 +458,15 @@ function answeredComment(
   }
 }
 
-/** A comment some request still waits on. */
-export function waitsOnSomeone(annotation: Pick<IndexedComment, "requests">): boolean {
-  return annotation.requests?.some((request) => request.status === "open") ?? false
-}
-
-/** A person's comment an agent had the last word on. */
-export function answeredByAgent(
-  annotation: Pick<IndexedComment, "author" | "thread">
-): boolean {
+/**
+ * A comment the index keeps: one a request still waits on, or one someone
+ * answered, which may be back with whoever wrote it.
+ */
+export function indexedComment(annotation: Pick<IndexedComment, "requests">): boolean {
   return (
-    annotation.author.type === "user" &&
-    annotation.thread?.at(-1)?.author.type === "agent"
+    annotation.requests?.some(
+      (request) => request.status === "open" || request.status === "replied"
+    ) ?? false
   )
 }
 

@@ -245,7 +245,8 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
       await post(`/${id}/resolve`, {})
       expect(await listPending(ownerIdentity())).toEqual({ items: [], total: 0 })
 
-      // A comment sent to no one comes back too, once an agent answers it.
+      // A comment sent to no one stays on its Doc: answering it from Home
+      // would reach no agent.
       const plain = await post("", {
         target: { type: "doc", docPath: "explorer" },
         category: "comment",
@@ -253,9 +254,7 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
       })
       caller = finn
       await post(`/${plain.json.annotation.id}/replies`, { body: "Yes, by the survey." })
-      expect((await listPending(ownerIdentity())).items).toMatchObject([
-        { kind: "answered", annotationIds: [plain.json.annotation.id] },
-      ])
+      expect(await listPending(ownerIdentity())).toEqual({ items: [], total: 0 })
     })
 
     it("refuses an unavailable recipient and allows addressed comments on released tools", async () => {

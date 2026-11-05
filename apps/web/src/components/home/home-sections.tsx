@@ -186,7 +186,7 @@ function Meta({
   )
   return (
     // On phones it wraps to a second line rather than cut who or when.
-    <p className="mt-0.5 text-[0.8rem] text-muted-foreground max-sm:line-clamp-2 sm:truncate">
+    <p className="mt-0.5 text-[0.8rem] text-muted-foreground sm:truncate">
       {who && <span className="text-foreground/75">{who}</span>}
       {shown.map((part, index) => (
         <Fragment key={index}>
@@ -959,10 +959,24 @@ function AnswerPair({
 }
 
 /** The answers on one doc, loaded when the row opens. */
-function AnswerPairs({ item, onDone }: { item: AnsweredItem; onDone: () => void }) {
+function AnswerPairs({
+  item,
+  onDone,
+  onHide,
+}: {
+  item: AnsweredItem
+  onDone: () => void
+  onHide: () => void
+}) {
   const answers = useQuery({
-    // New answers change the ids; replying or resolving here refreshes them.
-    queryKey: ["home-answers", item.spaceId, item.docPath, item.annotationIds.join(",")],
+    // Any new answer, here or on the Doc, changes the ids or the newest time.
+    queryKey: [
+      "home-answers",
+      item.spaceId,
+      item.docPath,
+      item.annotationIds.join(","),
+      item.at,
+    ],
     queryFn: async () => {
       const api = await annotationsApi()
       const { annotations } = await api.listAnnotations(item.spaceId, {
@@ -983,17 +997,28 @@ function AnswerPairs({ item, onDone }: { item: AnsweredItem; onDone: () => void 
   if (answers.isError) {
     return <LoadFailed what="the answers" onRetry={() => void answers.refetch()} />
   }
+  const pairs = answers.data ?? []
   return (
-    <ul className={cn(above, "mt-2")}>
-      {(answers.data ?? []).map((annotation) => (
-        <AnswerPair
-          key={annotation.id}
-          spaceId={item.spaceId}
-          annotation={annotation}
-          onDone={onDone}
-        />
-      ))}
-    </ul>
+    <>
+      <ul className={cn(above, "mt-2")}>
+        {pairs.map((annotation) => (
+          <AnswerPair
+            key={annotation.id}
+            spaceId={item.spaceId}
+            annotation={annotation}
+            onDone={onDone}
+          />
+        ))}
+      </ul>
+      {pairs.length > 3 && (
+        <Actions>
+          <button type="button" className={textAction} onClick={onHide}>
+            <ChevronDown className="size-3.5 rotate-180" />
+            Hide
+          </button>
+        </Actions>
+      )}
+    </>
   )
 }
 
@@ -1016,15 +1041,12 @@ function AnsweredRow({
   onClose: () => void
 }) {
   const refresh = usePendingRefresh()
-  const queryClient = useQueryClient()
   const resolveId = `resolve-all:${item.id}`
   const resolving = useSend(resolveId)
   const count = item.annotationIds.length
   const title = sourceTitle(item)
-  const done = () => {
-    refresh(item.spaceId)
-    void queryClient.invalidateQueries({ queryKey: ["home-answers", item.spaceId, item.docPath] })
-  }
+  // Pending's refresh changes the row's ids or time, which reloads its answers.
+  const done = () => refresh(item.spaceId)
   const resolveAll = () => {
     clearSend(resolveId)
     scheduleSend(
@@ -1038,7 +1060,11 @@ function AnsweredRow({
       },
       {
         onSent: () => window.setTimeout(done, SENT_LINGER_MS),
-        onFailed: () => toast.error("Couldn’t resolve them all. Try again."),
+        // Some may have resolved; the row shows what is left.
+        onFailed: () => {
+          done()
+          toast.error("Couldn’t resolve them all. Try again.")
+        },
       }
     )
   }
@@ -1103,7 +1129,7 @@ function AnsweredRow({
           label={count === 1 ? "Resolving" : `Resolving ${count}`}
           onUndo={() => {}}
         />
-        {open && !busy && <AnswerPairs item={item} onDone={done} />}
+        {open && !busy && <AnswerPairs item={item} onDone={done} onHide={onClose} />}
       </div>
       <When at={item.at} />
     </div>
@@ -1254,9 +1280,15 @@ function placeOf(
   return within.length > 1 ? folderName(within[0]!) : undefined
 }
 
-/** A folder's name to read: agents often date them, and the row has a time. */
+/**
+ * A folder's name to read. Agents often date a folder and sign it with their
+ * own name; the row already has a time and an author.
+ */
 function folderName(segment: string): string {
-  return humanizeSegment(segment.replace(/^\d{4}-\d{2}-\d{2}[-_ ]*/, "") || segment)
+  const named = segment
+    .replace(/^\d{4}-\d{2}-\d{2}[-_ ]*/, "")
+    .replace(/[-_ ](claude|codex|chatgpt|cursor|gemini|grok)$/i, "")
+  return humanizeSegment(named || segment)
 }
 
 /** Calendar days from today to the archive date, in the reader's time zone. */
@@ -1418,10 +1450,13 @@ function FilesRow({
   files,
   place,
   now,
+  capped,
 }: {
   files: RecentDocument[]
   place: Place
   now: number
+  /** The list stopped at its limit, so there may be more. */
+  capped: boolean
 }) {
   const [open, setOpen] = useState(false)
   const spaces = useSpaceFacts()
@@ -1434,7 +1469,7 @@ function FilesRow({
           type="button"
           className={rowCover}
           aria-expanded={open}
-          aria-label={`${files.length} files`}
+          aria-label={`${files.length}${capped ? "+" : ""} files`}
           onClick={() => setOpen(!open)}
         />
         <Lead>
@@ -1442,7 +1477,8 @@ function FilesRow({
         </Lead>
         <div className="min-w-0">
           <p className="flex min-w-0 items-center gap-1.5 leading-snug font-medium text-foreground">
-            {files.length} files
+            {files.length}
+            {capped ? "+" : ""} files
             <ChevronDown
               className={cn("size-3.5 text-muted-foreground transition-transform", open && "rotate-180")}
             />
@@ -1486,11 +1522,14 @@ function Units({
   place,
   now,
   since,
+  fileLimit,
 }: {
   units: Unit[]
   place: Place
   now: number
   since?: number | null
+  /** The most files the list holds, to say when it stopped there. */
+  fileLimit: number
 }) {
   return (
     <>
@@ -1498,7 +1537,13 @@ function Units({
         unit.kind === "doc" ? (
           <DocRow key={docKey(unit.item)} item={unit.item} place={place} now={now} since={since} />
         ) : (
-          <FilesRow key="files" files={unit.items} place={place} now={now} />
+          <FilesRow
+            key="files"
+            files={unit.items}
+            place={place}
+            now={now}
+            capped={unit.items.length >= fileLimit}
+          />
         )
       )}
     </>
@@ -1565,6 +1610,7 @@ function SpaceGroup({
         place="folder"
         now={now}
         since={since}
+        fileLimit={HOME_DOCS}
       />
     </div>
   )
@@ -1617,7 +1663,13 @@ export function LatestWorkSection({ spaceId }: { spaceId?: string }) {
           {items.length > 0 && (
             <div className={cn(cardClass, !inSpace && "divide-y divide-border/60")}>
               {inSpace ? (
-                <Units units={units.slice(0, steps.visible)} place="folder" now={now} since={since} />
+                <Units
+                  units={units.slice(0, steps.visible)}
+                  place="folder"
+                  now={now}
+                  since={since}
+                  fileLimit={SPACE_DOCS}
+                />
               ) : (
                 [...groups].map(([id, group]) => (
                   <SpaceGroup key={id} spaceId={id} items={group} now={now} since={since} />
@@ -1672,7 +1724,12 @@ export function FolderSection({
         <>
           {items.length > 0 && (
             <div className={cardClass}>
-              <Units units={toUnits(items)} place={{ inFolder: folder }} now={now} />
+              <Units
+                units={toUnits(items)}
+                place={{ inFolder: folder }}
+                now={now}
+                fileLimit={FOLDER_ROWS}
+              />
             </div>
           )}
           {docs.data?.incomplete && (
@@ -1721,7 +1778,6 @@ export function ArchivingSoonSection({ spaceId }: { spaceId?: string }) {
           aria-hidden="true"
         />
         <p className="min-w-0 flex-1 truncate text-muted-foreground">
-          {archiveLabel(first.document.archiveOn!, now)}:{" "}
           <Link
             to="/spaces/$spaceId/documents/$"
             params={{ spaceId: first.spaceId, _splat: first.document.path }}
@@ -1729,6 +1785,14 @@ export function ArchivingSoonSection({ spaceId }: { spaceId?: string }) {
           >
             {first.document.title}
           </Link>
+          {[archiveLabel(first.document.archiveOn!, now), placeOf(first, place, spaces.nameOf)]
+            .filter(Boolean)
+            .map((part) => (
+              <Fragment key={part}>
+                <span aria-hidden="true"> · </span>
+                {part}
+              </Fragment>
+            ))}
         </p>
         {spaces.canEdit(first.spaceId) && <KeepButton item={first} />}
         {soon.length > 1 && (
@@ -1780,7 +1844,7 @@ export function HomeSummary() {
   const parts = [
     turn > 0 ? `${turn} for you` : null,
     changed.length > 0
-      ? `${changed.length}${changed.length >= HOME_DOCS ? "+" : ""} ${changed.length === 1 ? "change" : "changes"} today`
+      ? `${changed.length}${changed.length >= HOME_DOCS ? "+" : ""} ${changed.length === 1 ? "change" : "changes"} since yesterday`
       : null,
   ].filter(Boolean)
   return (

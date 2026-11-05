@@ -1097,24 +1097,41 @@ async function maintainRepository(
   const present = new Set(before.map((snapshot) => snapshot.id))
   const forgotten = [...forget].filter((id) => present.has(id))
   const missing = [...forget].filter((id) => !present.has(id))
-  const orphans = before
-    .filter(
-      (snapshot) =>
-        !keep.has(snapshot.id) &&
-        !forget.has(snapshot.id) &&
-        snapshot.time < input.orphanBefore!
-    )
+  const uncatalogued = before.filter(
+    (snapshot) => !keep.has(snapshot.id) && !forget.has(snapshot.id)
+  )
+  // Each repository holds one workspace. Another's snapshot means it is
+  // corrupt or mixed, and none of it is this job's to forget.
+  if (uncatalogued.some((snapshot) => snapshot.hostname !== input.workspaceId))
+    throw new Error("maintenance found another workspace's snapshot")
+  const orphans = uncatalogued
+    .filter((snapshot) => snapshot.time < input.orphanBefore!)
     .map((snapshot) => snapshot.id)
   const removed = [...forgotten, ...orphans]
+  /** The verified snapshot is there, and its manifest is the catalog's. */
+  const readBack = async (rows: typeof before) => {
+    const { snapshotId, sourceCheckpoint } = input.verify!
+    const snapshot = rows.find((row) => row.id === snapshotId)
+    if (snapshot?.hostname !== input.workspaceId)
+      throw new Error("verified snapshot is not in the repository")
+    const remote = await restic(["dump", snapshotId, "/snapshot.json"])
+    if (remote.code !== 0)
+      throw resticFailure("backup manifest read-back", remote.code)
+    const manifest = JSON.parse(
+      remote.stdout
+    ) as Partial<WorkspaceSnapshotManifest> & { type?: unknown }
+    if (
+      manifest?.type !== "worktable.workspace-snapshot" ||
+      manifest.workspaceId !== input.workspaceId ||
+      manifest.sourceCheckpoint !== sourceCheckpoint
+    )
+      throw new Error("backup manifest read-back failed")
+  }
   // Nothing is forgotten unless the catalog and the repository agree on what
-  // stays, and the newest restore point is there to read back.
+  // stays, and the newest restore point reads back as the catalog has it.
   if (removed.length > 0 && !input.verify)
     throw new Error("maintenance must verify before forgetting")
-  if (input.verify) {
-    const target = before.find((row) => row.id === input.verify!.snapshotId)
-    if (target?.hostname !== input.workspaceId)
-      throw new Error("verified snapshot is not in the repository")
-  }
+  if (input.verify) await readBack(before)
   if ([...keep].some((id) => !present.has(id)))
     throw new Error("maintenance kept snapshot missing")
   await advance("forget")
@@ -1156,23 +1173,8 @@ async function maintainRepository(
   let verified: string | null = null
   if (input.verify) {
     await advance("verify")
-    const { snapshotId, sourceCheckpoint } = input.verify
-    const snapshot = after.find((row) => row.id === snapshotId)
-    if (snapshot?.hostname !== input.workspaceId)
-      throw new Error("verified snapshot is not in the repository")
-    const remote = await restic(["dump", snapshotId, "/snapshot.json"])
-    if (remote.code !== 0)
-      throw resticFailure("backup manifest read-back", remote.code)
-    const manifest = JSON.parse(
-      remote.stdout
-    ) as Partial<WorkspaceSnapshotManifest> & { type?: unknown }
-    if (
-      manifest?.type !== "worktable.workspace-snapshot" ||
-      manifest.workspaceId !== input.workspaceId ||
-      manifest.sourceCheckpoint !== sourceCheckpoint
-    )
-      throw new Error("backup manifest read-back failed")
-    verified = snapshotId
+    await readBack(after)
+    verified = input.verify.snapshotId
   }
   await advance("publish")
   const result: BackupWorkerMaintainResult = {

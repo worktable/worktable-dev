@@ -289,46 +289,80 @@ async function runMaintain(restic: string, fields: Record<string, unknown>) {
 describe("maintenance refusals", () => {
   const a = "1".repeat(64)
   const b = "2".repeat(64)
+  const c = "3".repeat(64)
   const verify = (snapshotId: string) => ({
     snapshotId,
-    sourceCheckpoint: "3".repeat(64),
+    sourceCheckpoint: "4".repeat(64),
   })
+  const snapshot = (id: string, hostname: string, time: string) => ({
+    id,
+    hostname,
+    time,
+  })
+  // An old uncatalogued snapshot `a`, and `b`, whose manifest holds another
+  // checkpoint than the catalog's.
+  const repository = [
+    snapshot(a, WORKSPACE, "2026-01-01T00:00:00Z"),
+    snapshot(b, WORKSPACE, "2099-01-01T00:00:00Z"),
+  ]
 
-  it.each([
+  const refusals: Array<
+    [string, Record<string, unknown>, string, string, typeof repository]
+  > = [
     [
       "forgets a kept snapshot",
       { forget: [a, b], keep: [b] },
       "input",
       "maintenance would forget a kept snapshot",
+      repository,
     ],
     [
       "forgets the verified snapshot",
       { forget: [a], keep: [b], verify: verify(a) },
       "input",
       "maintenance would forget the verified snapshot",
+      repository,
     ],
     [
       "checks a subset restic cannot split",
       { readDataSubset: "1/257" },
       "input",
       "invalid repository check subset",
+      repository,
     ],
     [
       "names no repository",
       { repositoryId: undefined },
       "input",
       "invalid maintenance job",
+      repository,
     ],
     [
       "verifies a snapshot the repository lacks",
-      { keep: [b], verify: verify(b) },
+      { keep: [b, c], verify: verify(c) },
       "repository-check",
       "verified snapshot is not in the repository",
+      repository,
     ],
-  ])(
+    [
+      "verifies a manifest of another checkpoint",
+      { keep: [b], verify: verify(b) },
+      "repository-check",
+      "backup manifest read-back failed",
+      repository,
+    ],
+    [
+      "finds another workspace's snapshot",
+      { keep: [b], verify: verify(b) },
+      "repository-check",
+      "maintenance found another workspace's snapshot",
+      [...repository, snapshot(c, "ws_other", "2026-01-01T00:00:00Z")],
+    ],
+  ]
+
+  it.each(refusals)(
     "refuses a job that %s, before forgetting anything",
-    async (_, fields, step, message) => {
-      // The repository holds one old uncatalogued snapshot, `a`.
+    async (_, fields, step, message, snapshots) => {
       const restic = await executable(
         "restic",
         `while [ "\${1#-}" != "$1" ]; do
@@ -336,7 +370,8 @@ describe("maintenance refusals", () => {
 done
 case "$1" in
   cat) printf '{"id":"${"b".repeat(64)}"}\\n' ;;
-  snapshots) printf '[{"id":"${a}","hostname":"${WORKSPACE}","time":"2026-01-01T00:00:00Z"}]\\n' ;;
+  snapshots) printf '%s\\n' '${JSON.stringify(snapshots)}' ;;
+  dump) printf '%s' '${JSON.stringify({ type: "worktable.workspace-snapshot", workspaceId: WORKSPACE, sourceCheckpoint: "5".repeat(64) })}' ;;
   *) touch "${root}/restic-changed"; exit 1 ;;
 esac`
       )

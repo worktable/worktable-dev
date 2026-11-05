@@ -17,4 +17,8 @@ it("reads an agent's Markdown as plain text", () => {
   ).toBe("Ticket 42 grooming: Hi Sam, see the plan. one two")
   // Snake case and arithmetic aren't emphasis.
   expect(plainText("set max_retries to 2 * 3")).toBe("set max_retries to 2 * 3")
+  // An excerpt cut off inside a mark still reads as text.
+  expect(plainText("See [the verif…")).toBe("See the verif…")
+  expect(plainText("See [the plan](https://exa…")).toBe("See the plan…")
+  expect(plainText("Run `bun te…")).toBe("Run bun te…")
 })

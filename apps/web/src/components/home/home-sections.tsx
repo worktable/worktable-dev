@@ -72,7 +72,7 @@ const above = "relative z-10"
 // A text action with a comfortable target that looks like plain text.
 // On phones the target grows to a thumb's size without moving the text.
 const textAction =
-  "-mx-1.5 -my-1 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[0.8rem] font-medium text-primary-text transition-colors hover:bg-primary/10 disabled:opacity-50 max-sm:-my-3 max-sm:py-3"
+  "-mx-1.5 -my-1 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[0.8rem] font-medium text-primary-text transition-colors hover:bg-primary/10 disabled:opacity-50 max-sm:-my-[13px] max-sm:py-[13px]"
 const quietAction = cn(
   textAction,
   "text-muted-foreground hover:bg-surface-hover hover:text-foreground"
@@ -836,17 +836,18 @@ function AnswerPair({
   spaceId,
   annotation,
   onDone,
+  onResolved,
 }: {
   spaceId: string
   annotation: Annotation
   onDone: () => void
+  onResolved: (resolved: boolean) => void
 }) {
   const id = `answer:${annotation.id}`
   const sending = useSend(id)
   const [replying, setReplying] = useState(false)
   const [draft, setDraft] = useState(() => unsentBody(id) ?? "")
   const [resolving, setResolving] = useState(false)
-  const [resolved, setResolved] = useState(false)
   const quote = "quote" in annotation.target ? annotation.target.quote : undefined
   // The agent had the last word; it answers the person's latest words before
   // it, which on a first exchange are the comment itself.
@@ -879,14 +880,14 @@ function AnswerPair({
     try {
       const api = await annotationsApi()
       await api.resolveAnnotation(spaceId, annotation.id)
-      setResolved(true)
+      onResolved(true)
       onDone()
       toast("Resolved", {
         action: {
           label: "Undo",
           onClick: () =>
             void api.reopenAnnotation(spaceId, annotation.id).then(() => {
-              setResolved(false)
+              onResolved(false)
               onDone()
             }),
         },
@@ -896,8 +897,6 @@ function AnswerPair({
       setResolving(false)
     }
   }
-  // Resolved here: it leaves before the list refreshes.
-  if (resolved) return null
   return (
     <li className="space-y-1.5 border-t border-border/60 py-3 first:border-t-0 first:pt-1">
       {quote && (
@@ -968,10 +967,14 @@ function AnswerPair({
 /** The answers on one doc, loaded when the row opens. */
 function AnswerPairs({
   item,
+  resolved,
+  onResolved,
   onDone,
   onHide,
 }: {
   item: AnsweredItem
+  resolved: ReadonlySet<string>
+  onResolved: (id: string, resolved: boolean) => void
   onDone: () => void
   onHide: () => void
 }) {
@@ -1007,7 +1010,8 @@ function AnswerPairs({
   if (answers.isError) {
     return <LoadFailed what="the answers" onRetry={() => void answers.refetch()} />
   }
-  const pairs = answers.data ?? []
+  // Resolved here: they leave before the list refreshes.
+  const pairs = (answers.data ?? []).filter((annotation) => !resolved.has(annotation.id))
   return (
     <>
       <ul className={cn(above, "mt-2")}>
@@ -1017,6 +1021,7 @@ function AnswerPairs({
             spaceId={item.spaceId}
             annotation={annotation}
             onDone={onDone}
+            onResolved={(done) => onResolved(annotation.id, done)}
           />
         ))}
       </ul>
@@ -1054,7 +1059,9 @@ function AnsweredRow({
   const rowRef = useRef<HTMLDivElement>(null)
   const resolveId = `resolve-all:${item.id}`
   const resolving = useSend(resolveId)
-  const count = item.annotationIds.length
+  const [resolved, setResolved] = useState<ReadonlySet<string>>(() => new Set())
+  const left = item.annotationIds.filter((id) => !resolved.has(id))
+  const count = left.length
   const title = sourceTitle(item)
   // Pending's refresh changes the row's ids or time, which reloads its answers.
   const done = () => refresh(item.spaceId)
@@ -1066,7 +1073,7 @@ function AnsweredRow({
       async () => {
         const api = await annotationsApi()
         const results = await Promise.allSettled(
-          item.annotationIds.map((id) => api.resolveAnnotation(item.spaceId, id))
+          left.map((id) => api.resolveAnnotation(item.spaceId, id))
         )
         // Report a failure only once every resolve has settled.
         if (results.some((result) => result.status === "rejected")) {
@@ -1084,6 +1091,8 @@ function AnsweredRow({
     )
   }
   const busy = resolving && resolving.phase !== "failed"
+  // Every answer resolved here: the row leaves before Pending refreshes.
+  if (count === 0) return null
   return (
     <div ref={rowRef} className={cn(rowClass, !open && !busy && rowHover)}>
       {!busy && (
@@ -1147,6 +1156,15 @@ function AnsweredRow({
         {open && !busy && (
           <AnswerPairs
             item={item}
+            resolved={resolved}
+            onResolved={(id, done) =>
+              setResolved((current) => {
+                const next = new Set(current)
+                if (done) next.add(id)
+                else next.delete(id)
+                return next
+              })
+            }
             onDone={done}
             onHide={() => {
               // Hiding from the bottom of a long list keeps the reader at this
@@ -1245,7 +1263,10 @@ export function YourTurnSection({ spaceId }: { spaceId?: string }) {
                 type="button"
                 className={quietButton}
                 aria-expanded={showOld}
-                onClick={() => setShowOld(!showOld)}
+                onClick={() => {
+                  if (!showOld && total > items.length) setAll(true)
+                  setShowOld(!showOld)
+                }}
               >
                 <ChevronDown className={cn("size-3.5 transition-transform", showOld && "rotate-180")} />
                 {old.length} older
@@ -1896,10 +1917,18 @@ export function HomeSummary() {
     changed.length > 0
       ? `${changed.length}${changed.length >= HOME_DOCS ? "+" : ""} ${changed.length === 1 ? "change" : "changes"} since yesterday`
       : null,
-  ].filter(Boolean)
+  ].filter((part) => part !== null)
   return (
     <p className="mt-1 min-h-5 text-sm text-muted-foreground">
-      {parts.length > 0 ? parts.join(" · ") : "All quiet today"}
+      {/* A narrow screen breaks the line between parts, never inside one. */}
+      {parts.length > 0
+        ? parts.map((part, index) => (
+            <Fragment key={part}>
+              {index > 0 && " · "}
+              <span className="whitespace-nowrap">{part}</span>
+            </Fragment>
+          ))
+        : "All quiet today"}
     </p>
   )
 }

@@ -28,7 +28,11 @@ export function plainText(markdown: string): string {
   return markdown
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    // An excerpt can stop inside a link; its text reads on.
+    .replace(/\[([^\]]*)(?:\]\([^)]*)?…$/, "$1…")
     .replace(/(\*\*|__|~~|`)(.+?)\1/g, "$2")
+    // Marks whose other half was cut off.
+    .replace(/\*\*|__|~~|`/g, "")
     .replace(/(^|\s)[*_](\S.*?\S|\S)[*_](?=\s|[.,;:!?]|$)/g, "$1$2")
     .replace(/^\s{0,3}(#{1,6}|>|[-+*]|\d+\.)\s+/gm, "")
     .replace(/\s+/g, " ")

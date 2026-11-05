@@ -106,6 +106,7 @@ export const PRODUCT_ANALYTICS_EVENTS = [
   "worktable:created",
   "worktable:ready",
   "product:opened",
+  "product:screen_viewed",
   "product:work_saved",
   "$mcp_tool_call",
   "billing:subscription_changed",
@@ -133,4 +134,30 @@ export interface ProductAnalyticsProperties {
   /** account:created: how the account first reached Worktable. */
   entry?: "web" | "desktop" | "agent"
   entry_client?: AnalyticsClient
+  /** product:screen_viewed: which kind of screen, never which item. */
+  screen?: AppScreen
 }
+
+/** The app's screens as analytics names them: a kind, never a path or item. */
+export const APP_SCREENS = [
+  "home",
+  "activity",
+  "connect",
+  "space",
+  "doc",
+  "document",
+  "records",
+  "record",
+  "threads",
+  "space_threads",
+  "widget",
+  "settings",
+] as const
+export type AppScreen = (typeof APP_SCREENS)[number]
+export function isAppScreen(value: unknown): value is AppScreen {
+  return (APP_SCREENS as readonly unknown[]).includes(value)
+}
+/** Where a Cloud app page sends the screens it showed; the gateway answers. */
+export const SCREEN_VIEWS_PATH = "/api/analytics/screens"
+/** At most this many screens per send. */
+export const SCREEN_VIEWS_MAX = 50

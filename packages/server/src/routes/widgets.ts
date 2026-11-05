@@ -15,7 +15,10 @@ import { readSpace, slugifyDocPath } from "../store.ts";
 import { readDocumentCatalogSnapshot } from "../document-query.ts";
 import { getWidgetPath, listWidgets, readWidget, readWidgetDocument, setWidgetArchived, updateWidgetMetadata, withWidgetWriteLock, writeWidget } from "../widget-store.ts";
 import { createRecord, deleteRecord, queryRecords, readWidgetState, RecordQueryError, updateRecord, writeWidgetState } from "../record-store.ts";
-import { applyWidgetTheme, getBlockingWidgetIssue, injectWidgetHostStyles, injectWidgetRuntime, validateWidgetHtml } from "../widget-authoring.ts";
+import { applyWidgetTheme, getBlockingWidgetIssue, injectWidgetHostStyles, injectWidgetRuntime, normalizeTheme, validateWidgetHtml } from "../widget-authoring.ts";
+import { htmlSpaceImagesEnabled, inlineHtmlSpaceImages } from "../html-space-images.ts";
+import { builtFrame, builtFrameResponse } from "../html-frame-cache.ts";
+import { workspaceCacheKey } from "../workspace.ts";
 import { captureWidgetContentForOverwrite, captureWidgetVersionContent, getWidgetProvenance, getWidgetVersion, listWidgetVersions, recordWidgetVersion } from "../widget-version-store.ts";
 import { invalidateSearchIndex, noteRecordMutated } from "../search-index.ts";
 import { wsManager } from "../ws.ts";
@@ -26,7 +29,7 @@ import { createHtmlDocument } from "../html-document-create.ts";
 import { HtmlDocumentWriteError, updateHtmlDocumentLocked } from "../html-document-update.ts";
 import { DocEditError } from "../markdown-edit.ts";
 import { authorizeHtmlPermissions, HtmlPermissionError, isPersonWriter, NETWORK_REQUEST_WARNING } from "../html-permission-authority.ts";
-import type { TokenIdentity } from "../token-store.ts";
+import { hasScope, type TokenIdentity } from "../token-store.ts";
 import { ManagedDocumentAdmissionError } from "../document-identity-admission.ts";
 import {
   HtmlDocumentPathConflictError,
@@ -75,7 +78,7 @@ function grantedPermissions(
   c: Context,
   requested: WidgetFile["permissions"] | undefined,
   existing?: Pick<WidgetFile, "permissions" | "requests">,
-): { permissions: WidgetFile["permissions"] | undefined; requests: WidgetFile["requests"] } | Response | null {
+): { permissions: WidgetFile["permissions"] | undefined; requests: WidgetFile["requests"]; spaceImages: boolean } | Response | null {
   const identity = c.get("identity") as TokenIdentity | undefined;
   try {
     return authorizeHtmlPermissions({ requested, existing, person: isPersonWriter(identity), identity, scopes: identity?.scopes ?? [] });
@@ -362,6 +365,7 @@ widgetsRouter.post("/", async (c) => {
       metadata: parsed.data.metadata,
       permissions,
       requests: granted?.requests,
+      spaceImages: granted?.spaceImages,
       versionSource: "rest-api",
       versionUpdatedBy: restWriteActor(c, parsed.data.createdBy),
     });
@@ -386,7 +390,24 @@ widgetsRouter.post("/", async (c) => {
 
 // ---- Handlers ----------------------------------------------------------------
 
-async function handleGetContent(c: Context, spaceId: string, widgetId: string) {
+/**
+ * Whether a frame may carry the Space images its page names: only with the
+ * feature on, for a caller that may read the Space's files. A person's
+ * session may; a token needs documents:read, not only widgets:read.
+ */
+function mayShowSpaceImages(c: Context): boolean {
+  if (!htmlSpaceImagesEnabled()) return false;
+  const identity = c.get("identity") as TokenIdentity | undefined;
+  return isPersonWriter(identity) || hasScope(identity?.scopes ?? [], "documents:read");
+}
+
+/**
+ * A response, or what makes it once the Space's document path lock is
+ * released: reading images and compressing a frame must not hold the Space.
+ */
+type Deferrable = Response | (() => Promise<Response>);
+
+async function handleGetContent(c: Context, spaceId: string, widgetId: string): Promise<Deferrable> {
   const { data: document, error } = await readWidgetDocument(spaceId, widgetId);
   if (error || !document) return c.json({ error: error ?? "Widget not found", code: "NOT_FOUND" }, 404);
   const { widget, html: data } = document;
@@ -406,21 +427,36 @@ async function handleGetContent(c: Context, spaceId: string, widgetId: string) {
       },
     });
   }
-  const themedHtml = injectWidgetRuntime(applyWidgetTheme(data, c.req.query("theme")), spaceId, widgetId);
+  const theme = normalizeTheme(c.req.query("theme"));
+  // Space images go only to a caller that may read the Space's files; any
+  // other gets the page as it is, and a frame its revision doesn't name.
+  const images = widget.spaceImages === true && mayShowSpaceImages(c);
   // A frame asked for by its current revision never changes: the browser
   // keeps it. Any other request revalidates, so it never holds old content.
-  const current = c.req.query("rev") === htmlContentRevisionOf(document);
-  return new Response(themedHtml, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy": buildWidgetCsp(widget.permissions?.network ?? false, new URL(c.req.url).origin),
-      "X-Content-Type-Options": "nosniff",
-      "Cache-Control": current
-        ? "private, max-age=31536000, immutable"
-        : "private, no-cache",
-      ...(current ? { Vary: "Cookie, Authorization" } : {}),
-    },
-  });
+  const revision = await htmlContentRevisionOf(spaceId, widgetId, document, { lockHeld: true });
+  const withheld = htmlSpaceImagesEnabled() && widget.spaceImages === true && !images;
+  const current = !withheld && c.req.query("rev") === revision;
+  const headers: Record<string, string> = {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Security-Policy": buildWidgetCsp(widget.permissions?.network ?? false, new URL(c.req.url).origin),
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": current
+      ? "private, max-age=31536000, immutable"
+      : "private, no-cache",
+    ...(current ? { Vary: "Cookie, Authorization" } : {}),
+  };
+  const themedHtml = () => injectWidgetRuntime(applyWidgetTheme(data, theme), spaceId, widgetId);
+  if (!images) return new Response(themedHtml(), { headers });
+  // A frame with Space images is kept built and compressed by its revision.
+  const key = `${workspaceCacheKey()}\0${spaceId}\0${widgetId}\0${revision}\0${theme}`;
+  return async () => {
+    const frame = await builtFrame(key, async () => {
+      const page = await inlineHtmlSpaceImages(spaceId, widgetId, themedHtml());
+      // Kept once built when it names Space images, shown or not.
+      return { html: page.html, keep: page.named };
+    });
+    return builtFrameResponse(c.req.raw, frame, headers);
+  };
 }
 
 async function handleGetState(c: Context, spaceId: string, widgetId: string) {
@@ -601,7 +637,7 @@ async function handlePatchWidget(c: Context, spaceId: string, widgetId: string) 
     if (parsed.data.allowNetwork) {
       // The person allowed the code they saw, not whatever an agent wrote since.
       const document = (await readWidgetDocument(spaceId, widgetId)).data;
-      if (!document || htmlContentRevisionOf(document) !== parsed.data.revision) return { changed: true as const };
+      if (!document || (await htmlContentRevisionOf(spaceId, widgetId, document, { lockHeld: true })) !== parsed.data.revision) return { changed: true as const };
       current = document.widget;
     }
     const result = await updateWidgetMetadata(spaceId, widgetId, {
@@ -731,7 +767,7 @@ async function handleGetVersion(c: Context, spaceId: string, widgetId: string, v
 // endpoint but WITHOUT the runtime bridge — historical code must not make live
 // records/state calls, so worktable.* is simply absent and the snapshot renders
 // as a static view under the no-network CSP.
-async function handleGetVersionContent(c: Context, spaceId: string, widgetId: string, versionId: string) {
+async function handleGetVersionContent(c: Context, spaceId: string, widgetId: string, versionId: string): Promise<Deferrable> {
   // Same corrupt-metadata tolerance as handleGetVersion: the compare pane must
   // render historical snapshots even when the live widget.yaml no longer parses.
   const { data: widget } = await readWidget(spaceId, widgetId);
@@ -748,13 +784,15 @@ async function handleGetVersionContent(c: Context, spaceId: string, widgetId: st
   const snapshotCsp = buildWidgetCsp(false, new URL(c.req.url).origin)
     .replace(/script-src [^;]+/, "script-src 'none'")
     .replace(/connect-src [^;]+/, "connect-src 'none'");
-  return new Response(themedHtml, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy": snapshotCsp,
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
+  const headers = {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Security-Policy": snapshotCsp,
+    "X-Content-Type-Options": "nosniff",
+  };
+  if (widget?.spaceImages !== true || !mayShowSpaceImages(c)) return new Response(themedHtml, { headers });
+  // An old version shows the images now at the paths it names.
+  return async () =>
+    new Response((await inlineHtmlSpaceImages(spaceId, widgetId, themedHtml)).html, { headers });
 }
 
 async function handleRestoreVersion(c: Context, spaceId: string, widgetId: string, versionId: string) {
@@ -801,12 +839,15 @@ async function handleRestoreVersion(c: Context, spaceId: string, widgetId: strin
     const existingWithoutDescription = { ...base };
     delete existingWithoutDescription.description;
     if (granted) delete existingWithoutDescription.requests;
+    // The restorer's authority, as any writer's, decides Space images.
+    delete existingWithoutDescription.spaceImages;
     const widget = {
       ...existingWithoutDescription,
       name: restored.widget.name,
       ...(restored.widget.description !== undefined ? { description: restored.widget.description } : {}),
       permissions: granted?.permissions ?? restored.widget.permissions,
       ...(granted?.requests ? { requests: granted.requests } : {}),
+      ...(granted?.spaceImages ? { spaceImages: true as const } : {}),
       metadata: restored.widget.metadata,
       runtime: restored.widget.runtime,
       updatedAt: new Date().toISOString(),
@@ -932,15 +973,24 @@ widgetsRouter.get("/*", async (c) => {
   const target = parseWidgetTarget(c);
   if (!target) return widgetNotFound(c);
   const { widgetId, rest } = target;
-  return atCanonicalHtmlPath(c, spaceId, widgetId, async () => {
+  let finish: (() => Promise<Response>) | null = null;
+  const deferred = (result: Deferrable): Response => {
+    if (result instanceof Response) return result;
+    finish = result;
+    return new Response(null);
+  };
+  const response = await atCanonicalHtmlPath(c, spaceId, widgetId, async () => {
     if (rest.length === 0) return handleGetWidget(c, spaceId, widgetId);
-    if (rest.length === 1 && rest[0] === "content") return handleGetContent(c, spaceId, widgetId);
+    if (rest.length === 1 && rest[0] === "content") return deferred(await handleGetContent(c, spaceId, widgetId));
     if (rest.length === 1 && rest[0] === "state") return handleGetState(c, spaceId, widgetId);
     if (rest.length === 1 && rest[0] === "versions") return handleListVersions(c, spaceId, widgetId);
     if (rest.length === 2 && rest[0] === "versions" && rest[1]) return handleGetVersion(c, spaceId, widgetId, rest[1]);
-    if (rest.length === 3 && rest[0] === "versions" && rest[1] && rest[2] === "content") return handleGetVersionContent(c, spaceId, widgetId, rest[1]);
+    if (rest.length === 3 && rest[0] === "versions" && rest[1] && rest[2] === "content") return deferred(await handleGetVersionContent(c, spaceId, widgetId, rest[1]));
     return widgetNotFound(c);
   }, rest.length === 1 && rest[0] === "content");
+  // Outside the Space's lock: images are read and frames compressed here.
+  const finishing = finish as (() => Promise<Response>) | null;
+  return finishing ? finishing() : response;
 });
 
 widgetsRouter.put("/*", async (c) => {

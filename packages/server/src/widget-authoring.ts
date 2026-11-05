@@ -2,6 +2,7 @@ import { DRAWING_FONTS, previewFontCss } from "./preview-fonts.ts"
 import { buildWidgetShareRuntimeScript, SHARE_FONT_CSS } from "./widget-share-runtime.ts"
 import type { WidgetFile } from "@worktable/types"
 import { parseDocument, Parser } from "htmlparser2"
+import { filesEnabled } from "./files-enabled.ts"
 
 export type WidgetTheme = "light" | "dark"
 
@@ -67,6 +68,8 @@ export type BuildWidgetFileInput = {
   permissions?: WidgetFile["permissions"]
   /** Omit to keep the existing requests; null drops them. */
   requests?: WidgetFile["requests"] | null
+  /** Whether this writer could read the Space's files; omit to keep it as it is. */
+  spaceImages?: boolean
   existing?: WidgetFile
   now?: string
 }
@@ -149,6 +152,15 @@ With a shell, a large page can move outside the call. worktable_html_read gives 
 
 Name, description and permissions change without html. Every agent change to the page or its permissions turns network access off until a person allows it again.`
 
+/** Space images in HTML Docs, taught on the preview surface (html-space-images.ts). */
+export const HTML_GUIDE_SPACE_IMAGES = `## Images from the Space
+
+Show an image kept in the Space with a plain img element, such as <img src="img/hero.jpg" alt="Hero">. The path resolves from the HTML Doc's folder, or from the Space root with a leading /, as Markdown Docs embed images. Upload images with worktable_files_write, for example to an img folder beside the HTML Doc. PNG, JPEG, GIF and WebP files show.
+
+Worktable places each named image in the page as a data URL whenever the page is served: for people, in previews, in old versions and on share links. An image can be up to 2 MiB, and a page's images up to 4 MiB together. An image that is missing, archived, over a cap or of another type shows broken, and the write warns about it. A page shows Space images only when it was last saved by someone who can read the Space's files: a person, or a connection with documents:read. Only literal src attributes in the markup count: images built by code, such as img.src = path, srcset or CSS backgrounds, don't show. In page code, img.src returns the data URL, and data-worktable-src holds the path.
+
+The page loads whole, with all its images, and loads them again after any change, so nothing loads lazily. Put a large gallery in a Markdown Doc, which loads images separately and opens them full screen.`
+
 export function getHtmlAuthoringGuide(
   _profile: HtmlGuideProfile = "runtime",
   surface: "released" | "preview" = "released"
@@ -157,7 +169,10 @@ export function getHtmlAuthoringGuide(
     surface === "preview"
       ? `${HTML_GUIDE_SHARED_PREVIEW}\n\n${HTML_GUIDE_CHANGES}`
       : HTML_GUIDE_SHARED
-  return `${intro}\n\n${HTML_GUIDE_RUNTIME}\n\n${HTML_GUIDE_SHARE_LINKS}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
+  // Space images follow the file features too (htmlSpaceImagesEnabled).
+  const images =
+    surface === "preview" && filesEnabled() ? `\n\n${HTML_GUIDE_SPACE_IMAGES}` : ""
+  return `${intro}\n\n${HTML_GUIDE_RUNTIME}\n\n${HTML_GUIDE_SHARE_LINKS}${images}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
 }
 
 function hasRecordPermission(
@@ -352,15 +367,18 @@ export function buildWidgetFile({
   metadata,
   permissions,
   requests,
+  spaceImages,
   existing,
   now = new Date().toISOString(),
 }: BuildWidgetFileInput): WidgetFile {
   if (existing) {
-    const { requests: existingRequests, ...rest } = existing
+    const { requests: existingRequests, spaceImages: existingImages, ...rest } = existing
     const nextRequests = requests === undefined ? existingRequests : (requests ?? undefined)
+    const nextImages = spaceImages === undefined ? existingImages : spaceImages
     return {
       ...rest,
       ...(nextRequests ? { requests: nextRequests } : {}),
+      ...(nextImages ? { spaceImages: true as const } : {}),
       name,
       description,
       updatedAt: now,
@@ -388,10 +406,12 @@ export function buildWidgetFile({
       state: { read: true, write: true },
     },
     ...(requests ? { requests } : {}),
+    ...(spaceImages ? { spaceImages: true as const } : {}),
   }
 }
 
-function normalizeTheme(theme: string | null | undefined): WidgetTheme {
+/** The theme a frame is served in, as applyWidgetTheme reads it. */
+export function normalizeTheme(theme: string | null | undefined): WidgetTheme {
   return theme === "light" ? "light" : "dark"
 }
 

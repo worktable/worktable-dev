@@ -374,6 +374,8 @@ export async function writeWidget(
     documentId?: DocumentId;
     /** The caller records this write as a checkpoint, such as a restore. */
     checkpoint?: boolean;
+    /** Counted toward the storage limit, never refused, as Docs' link rewrites. */
+    storage?: "counted";
   }
 ): Promise<{ data: WidgetFile | null; error: string | null; release?: () => void }> {
   assertSpaceAccess(spaceId, "edit");
@@ -412,14 +414,17 @@ export async function writeWidget(
       };
     }
     const htmlPath = join(spaceDir(spaceId), owner.sourceRelativePath);
-    const room = await reserveHtmlRoom(htmlPath, html, () =>
-      reclaimableAfterReplacementV2({
-        workspaceRoot: getWorkspaceRoot(),
-        spaceId,
-        documentId: owner.documentId,
-        writesCheckpoint: options?.checkpoint === true,
-      })
-    );
+    const room =
+      options?.storage === "counted"
+        ? { release: () => {} }
+        : await reserveHtmlRoom(htmlPath, html, () =>
+            reclaimableAfterReplacementV2({
+              workspaceRoot: getWorkspaceRoot(),
+              spaceId,
+              documentId: owner.documentId,
+              writesCheckpoint: options?.checkpoint === true,
+            })
+          );
     const release = holdSuppression([htmlPath]);
     try {
       await writeHtmlDocumentStorageV2({

@@ -232,7 +232,10 @@ const PAGE_INTEGRATIONS: readonly DocumentPageIntegration[] = [
       const provenance = await getWidgetProvenance(spaceId, path)
       return {
         ...(provenance ? { provenance } : {}),
-        revision: htmlContentRevisionOf(document),
+        // A page reads under the Space's lock.
+        revision: await htmlContentRevisionOf(spaceId, path, document, {
+          lockHeld: true,
+        }),
         ...(document.widget.requests?.network
           ? {
               networkRequested: true as const,

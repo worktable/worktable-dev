@@ -78,7 +78,7 @@ export const FILE_SURFACE_NOTES: {
   },
   share: {
     where:
-      "packages/server/src/share-images.ts, packages/ui/src/markdown-document.ts, and the literal list in packages/hosted-contract/src/public-share-policy.ts",
+      "packages/server/src/space-images.ts, packages/ui/src/markdown-document.ts, and the literal list in packages/hosted-contract/src/public-share-policy.ts",
     note: "The MIT share policy keeps its own list, which the Cloud gateway enforces too; a server test checks it against this table, so changing it is a change on both sides.",
   },
   drawing: {

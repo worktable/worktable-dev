@@ -6,7 +6,8 @@
 // inline links, resolves them against the space's docs root, and
 // caches each Doc's links and the resulting graph, refreshing only
 // the Docs that changed. The graph is derived, in-memory, and
-// rebuildable — never written to the workspace.
+// rebuildable — never written to the workspace. With Space images in
+// HTML Docs on, the images an HTML Doc names are embeds of it too.
 //
 // Link semantics: a leading `/` resolves from the space docs root
 // (the recommended, rename-stable form); anything else resolves
@@ -35,7 +36,15 @@ import {
 import { onWorkspaceChange } from "./workspace-events.ts";
 import { canReuseDerived, type DerivedRevision } from "./derived-revision.ts";
 import { readDocumentCatalogSnapshot } from "./document-query.ts";
+import type { DocumentCatalog } from "./document-catalog.ts";
+import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts";
 import { filesEnabled } from "./files-enabled.ts";
+import { onHtmlContentChanged } from "./content-events.ts";
+import {
+  htmlImageTargets,
+  htmlSpaceImagesEnabled,
+} from "./html-space-images.ts";
+import { readWidgetHtml } from "./widget-store.ts";
 
 export { resolveDocLink } from "@worktable/types";
 
@@ -351,6 +360,10 @@ interface DocTargets extends DerivedRevision {
 
 interface SpaceLinks {
   docs: Map<string, DocTargets>;
+  /** HTML Docs' images, while Space images in HTML Docs are on. */
+  html: Map<string, DocTargets>;
+  /** Whether the graph was built with Space images in HTML Docs on. */
+  htmlImages: boolean;
   graph: SpaceLinkGraph | null;
   dirty: boolean;
   /** Doc paths to re-read even when their revision looks unchanged. */
@@ -379,10 +392,16 @@ export function invalidateLinkGraph(): void {
 onDocContentChanged((spaceId, docPath) => {
   markSpace(spaceId, docPath);
 });
+onHtmlContentChanged((spaceId, path) => {
+  markSpace(spaceId, path);
+});
 onWorkspaceChange((event) => {
   switch (event.type) {
     case "doc":
       markSpace(event.spaceId, event.docPath);
+      break;
+    case "widget":
+      markSpace(event.spaceId, event.widgetId);
       break;
     case "space":
     case "docAliases":
@@ -409,6 +428,8 @@ function resolveSpaceLinkGraph(
   docs: ReadonlyMap<string, DocTargets>,
   aliases: DocAliases,
   filePaths: ReadonlySet<string> | null,
+  /** Other documents whose links count, such as HTML Docs' images. */
+  otherSources: readonly string[] = [],
 ): SpaceLinkGraph {
   // Embeds count only once files are part of the Space; until then a doc's
   // images are none of the graph's business.
@@ -418,7 +439,7 @@ function resolveSpaceLinkGraph(
   const broken: SpaceLinkGraph["broken"] = [];
   const inboundContext: SpaceLinkGraph["inboundContext"] = new Map();
 
-  for (const docPath of docPaths) {
+  for (const docPath of [...docPaths, ...otherSources]) {
     const extracted = docs.get(docPath)?.links;
     if (!extracted) continue;
 
@@ -460,14 +481,12 @@ function resolveSpaceLinkGraph(
   return { outbound, inbound, orphans, broken, inboundContext };
 }
 
-/** The Space's files, from the catalog snapshot rather than its folder. */
 /**
  * Every document a link can reach, from the catalog snapshot rather than the
  * Space's folder: files, drawings and HTML Docs as well as Docs, so what
  * uses one counts wherever it is, such as before its folder is deleted.
  */
-async function spaceFilePaths(spaceId: string): Promise<Set<string>> {
-  const catalog = await readDocumentCatalogSnapshot(spaceId);
+function spaceFilePaths(catalog: DocumentCatalog): Set<string> {
   return new Set(
     catalog.entries.flatMap((entry) =>
       // One whose source is gone, as after a rename on disk, isn't there to
@@ -517,20 +536,81 @@ async function buildSpaceLinks(spaceId: string, space: SpaceLinks): Promise<void
       });
     }
 
+    const htmlImages = htmlSpaceImagesEnabled();
+    const catalog =
+      filesEnabled() || htmlImages
+        ? await readDocumentCatalogSnapshot(spaceId)
+        : null;
+    const html =
+      htmlImages && catalog
+        ? await readHtmlImageLinks(spaceId, space, catalog, forced)
+        : new Map<string, DocTargets>();
     const graph = resolveSpaceLinkGraph(
       docPaths,
-      docs,
+      new Map([...html, ...docs]),
       aliases,
-      filesEnabled() ? await spaceFilePaths(spaceId) : null,
+      filesEnabled() && catalog ? spaceFilePaths(catalog) : null,
+      [...html.keys()],
     );
     await rebuildHookForTests?.();
     space.docs = docs;
+    space.html = html;
+    space.htmlImages = htmlImages;
     space.graph = graph;
   } catch (error) {
     space.dirty = true;
     for (const docPath of forced) space.forced.add(docPath);
     throw error;
   }
+}
+
+/**
+ * The images each HTML Doc in the catalog names, read again only for those
+ * whose source changed or that an event named.
+ */
+async function readHtmlImageLinks(
+  spaceId: string,
+  space: SpaceLinks,
+  catalog: DocumentCatalog,
+  forced: ReadonlySet<string>,
+): Promise<Map<string, DocTargets>> {
+  const html = new Map<string, DocTargets>();
+  for (const entry of catalog.entries) {
+    if (
+      entry.kind !== "document" ||
+      entry.descriptor.format.id !== BUILTIN_DOCUMENT_FORMATS.html
+    ) {
+      continue;
+    }
+    const path = entry.descriptor.path;
+    const readAt = Date.now();
+    const updatedAt = entry.descriptor.updatedAt
+      ? Date.parse(entry.descriptor.updatedAt)
+      : undefined;
+    const revision = `html:${entry.handle.sourceStamp ?? entry.descriptor.updatedAt ?? ""}`;
+    const cached = space.html.get(path);
+    if (
+      cached &&
+      space.htmlImages &&
+      !forced.has(path) &&
+      canReuseDerived(cached, revision, updatedAt)
+    ) {
+      html.set(path, cached);
+      continue;
+    }
+    const { data } = await readWidgetHtml(spaceId, path, { catalog });
+    if (data === null) continue;
+    html.set(path, {
+      revision,
+      readAt,
+      links: htmlImageTargets(data).map((target) => ({
+        target,
+        embed: true,
+        context: "",
+      })),
+    });
+  }
+  return html;
 }
 
 function rebuildSpaceLinks(spaceId: string, space: SpaceLinks): Promise<void> {
@@ -551,9 +631,19 @@ export async function getSpaceLinkGraph(spaceId: string): Promise<SpaceLinkGraph
     const epoch = resetEpoch;
     let space = spaces.get(spaceId);
     if (!space) {
-      space = { docs: new Map(), graph: null, dirty: true, forced: new Set(), building: null };
+      space = {
+        docs: new Map(),
+        html: new Map(),
+        htmlImages: false,
+        graph: null,
+        dirty: true,
+        forced: new Set(),
+        building: null,
+      };
       spaces.set(spaceId, space);
     }
+    // Turning Space images in HTML Docs on or off changes what counts.
+    if (space.htmlImages !== htmlSpaceImagesEnabled()) space.dirty = true;
     if (space.graph && !space.dirty && !space.building) return space.graph;
     await rebuildSpaceLinks(spaceId, space);
     // A workspace reset retired this cache: never answer from another
@@ -584,13 +674,22 @@ export async function getDocLinks(
  * never built answers null until its first build lands. Page reads use this so
  * opening a doc never waits on re-reading the Space.
  */
+/** Whether a Space's graph is missing or out of date. */
+function outOfDate(space: SpaceLinks | undefined): boolean {
+  return (
+    !space?.graph ||
+    space.dirty ||
+    space.htmlImages !== htmlSpaceImagesEnabled()
+  );
+}
+
 export function peekDocBacklinks(
   spaceId: string,
   docPath: string,
   moves: DocPathMoves = NO_DOC_PATH_MOVES
 ): DocBacklink[] | null {
   const space = spaces.get(spaceId);
-  if (!space?.graph || space.dirty) warmLinkGraph(spaceId);
+  if (outOfDate(space)) warmLinkGraph(spaceId);
   const graph = space?.graph;
   if (!graph) return null;
   // A graph built before a move still names the old paths: `moves` maps
@@ -615,7 +714,7 @@ export function peekDocBacklinks(
  */
 export function peekDocOutbound(spaceId: string, docPath: string): string[] | null {
   const space = spaces.get(spaceId);
-  if (!space?.graph || space.dirty) warmLinkGraph(spaceId);
+  if (outOfDate(space)) warmLinkGraph(spaceId);
   const graph = space?.graph;
   if (!graph) return null;
   return (graph.outbound.get(docPath) ?? []).flatMap((link) =>

@@ -4,7 +4,8 @@
 //
 // Before a Doc and its folder are deleted, people see which of the files
 // in it other Docs still use, and keep those by default. Agents get the same
-// default. Uses come from the link graph: links and embeds.
+// default. Uses come from the link graph: links and embeds, and the images
+// HTML Docs name while Space images in HTML Docs are on.
 
 import { analyzeDocumentPath, documentPathKeyIsAtOrBelow } from "./document-path.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"

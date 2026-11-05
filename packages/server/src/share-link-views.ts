@@ -179,7 +179,14 @@ export type ShareLinkDocument =
       format: "markdown" | "blocknote"
       content: unknown[] | string
     }
-  | { kind: "html"; title: string; revision: string; html: string }
+  | {
+      kind: "html"
+      title: string
+      revision: string
+      html: string
+      /** Whether its writer could read the Space's files, so it shows their images. */
+      spaceImages: boolean
+    }
   /** An HTML Doc's outer page needs only its title. */
   | { kind: "html-title"; title: string }
 
@@ -217,8 +224,14 @@ export async function readShareLinkDocument(
           document: {
             kind: "html",
             title,
-            revision: htmlContentRevisionOf(data),
+            revision: await htmlContentRevisionOf(
+              link.spaceId,
+              handle.document.path,
+              data,
+              { lockHeld: true }
+            ),
             html: data.html,
+            spaceImages: data.widget.spaceImages === true,
           },
         }
       }

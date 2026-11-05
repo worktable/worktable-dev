@@ -100,6 +100,9 @@ import {
   validateWidgetHtml,
   WIDGET_STYLE_TOKENS,
 } from "../widget-authoring.ts"
+import { htmlImageWarnings, htmlNamesSpaceImages } from "../html-space-images.ts"
+import { logError } from "../debug-log.ts"
+import type { WidgetValidationIssue } from "../widget-authoring.ts"
 import {
   authorizeHtmlPermissions,
   NETWORK_REQUEST_WARNING,
@@ -956,6 +959,36 @@ function htmlUploadLinkResult(
     maxBytes: FILE_UPLOAD_MAX_BYTES,
     command: `curl --fail-with-body -T <local file> '${link.uploadUrl}'`,
   }
+}
+
+/**
+ * What a saved HTML Doc's Space images warn about, for a caller that may read
+ * the Space's files: otherwise the warnings would say which files exist. The
+ * write is already saved, so a failed lookup warns about nothing.
+ */
+async function imageWarningsFor(
+  scopes: string[],
+  spaceId: string,
+  htmlPath: string,
+  html: string
+): Promise<WidgetValidationIssue[]> {
+  if (!hasScope(scopes, "documents:read")) {
+    // Said without naming which of them exist.
+    return htmlNamesSpaceImages(html)
+      ? [
+          {
+            severity: "warning",
+            code: "space_images_need_file_access",
+            message:
+              "Its Space images don't show: this connection can't read the Space's files. They show once someone who can saves the HTML Doc.",
+          },
+        ]
+      : []
+  }
+  return htmlImageWarnings({ spaceId, htmlPath, html }).catch((error) => {
+    console.warn("[html] Space image warnings unavailable:", logError(error))
+    return []
+  })
 }
 
 const AGENT_FILE_REVISION_REQUIRED =
@@ -2340,6 +2373,7 @@ async function _dispatchOperationInner(
         metadata,
         permissions,
         requests: granted?.requests,
+        spaceImages: granted.spaceImages,
         versionSource: "mcp",
         versionUpdatedBy: actorId,
       })
@@ -2357,6 +2391,7 @@ async function _dispatchOperationInner(
         widgetId,
         data: created.data,
       })
+      warnings.push(...(await imageWarningsFor(identity.scopes, spaceId, widgetId, html)))
       const result = {
         widgetId,
         widget: created.data,
@@ -2485,7 +2520,10 @@ async function _dispatchOperationInner(
         widgetId,
         widget: updated.widget,
         revision: updated.revision,
-        warnings: updated.warnings,
+        warnings: [
+          ...updated.warnings,
+          ...(await imageWarningsFor(identity.scopes, spaceId, widgetId, updated.html)),
+        ],
       }
       if (!args["preview"]) return result
       return previewSnapshot

@@ -54,8 +54,11 @@ export function authorizeHtmlPermissions(input: {
   person: boolean
   identity: Pick<TokenIdentity, "principal"> | undefined
   scopes: string[]
-}): { permissions: Permissions | undefined; requests: Requests } {
+}): { permissions: Permissions | undefined; requests: Requests; spaceImages: boolean } {
   const { requested, existing, person, identity, scopes } = input
+  // A page shows the Space images it names only when its writer could read
+  // the Space's files itself.
+  const spaceImages = person || hasScope(scopes, "documents:read")
   const permissions = requested ?? existing?.permissions
   for (const [collectionId, grant] of Object.entries(permissions?.records ?? {})) {
     for (const action of RECORD_ACTIONS) {
@@ -74,6 +77,7 @@ export function authorizeHtmlPermissions(input: {
     return {
       permissions,
       requests: requested === undefined && !permissions?.network ? existing?.requests : undefined,
+      spaceImages,
     }
   }
   const wantsNetwork = Boolean(
@@ -82,6 +86,7 @@ export function authorizeHtmlPermissions(input: {
   return {
     permissions: permissions && { ...permissions, network: false },
     requests: wantsNetwork ? { network: true, ...requester(identity) } : undefined,
+    spaceImages,
   }
 }
 

@@ -205,6 +205,10 @@ function capture(
     latestExternalSource = acquisition.acquisition_source
   const identified = posthog.has_opted_in_capturing()
   if (identified) registerJourney()
+  // The SDK's own events (time on page, web vitals, recordings) carry the
+  // test marker too, so verification visits never count as visitors.
+  if (acquisition.traffic_type === "verification")
+    posthog.register({ traffic_type: "verification" })
   posthog.capture(
     event,
     {

@@ -31,6 +31,10 @@ export function noteScreen(screen: AppScreen | null): void {
   }
 }
 
+/** Failed sends in a row; after the last try the screens are let go. */
+let failures = 0
+const TRIES = 3
+
 export function sendScreens(): void {
   if (queue.length === 0) return
   const screens = queue.splice(0, SCREEN_VIEWS_MAX)
@@ -40,7 +44,18 @@ export function sendScreens(): void {
     keepalive: true,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ screens }),
-  }).catch(() => undefined)
+  })
+    .then((response) => response.ok)
+    .catch(() => false)
+    .then((sent) => {
+      if (sent || ++failures >= TRIES) {
+        failures = 0
+        return
+      }
+      // Sent again with the next batch, never holding more than one send's worth.
+      queue.unshift(...screens)
+      queue.splice(SCREEN_VIEWS_MAX)
+    })
 }
 
 /**

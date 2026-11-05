@@ -31,4 +31,20 @@ it("sends the screens a person moved through in one request, kinds only, with th
   expect((sent[0]!.body as { screens: Array<{ screen: string }> }).screens.map((view) => view.screen)).toEqual(["home", "doc", "doc", "settings"])
   sendScreens()
   expect(sent).toHaveLength(1)
+
+  // A refused send keeps its screens for the next one.
+  let refuse = true
+  const realSend = globalThis.fetch
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (refuse) return new Response(null, { status: 503 })
+    return realSend(input, init)
+  }) as typeof fetch
+  noteScreen("home")
+  sendScreens()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  refuse = false
+  noteScreen("records")
+  sendScreens()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect((sent.at(-1)!.body as { screens: Array<{ screen: string }> }).screens.map((view) => view.screen)).toEqual(["home", "records"])
 })

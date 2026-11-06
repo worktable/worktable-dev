@@ -46,6 +46,7 @@ import {
   htmlDocumentFrameInputsStorageV2,
   usesHtmlDocumentStorageV2,
 } from "./html-document-storage-v2.ts"
+import { HTML_ICONS_SOURCE, htmlIconsEnabled } from "./html-icons.ts"
 import { previewFontVersion } from "./preview-fonts.ts"
 import { showableSpaceFiles } from "./space-images.ts"
 import { servedBuildId } from "./static-assets.ts"
@@ -89,7 +90,8 @@ export function docContentRevision(input: {
  * An HTML Doc frame's revision. The frame also carries the preview fonts'
  * CSS, which changes when the product font is provisioned or replaced, and
  * the Space images it names (`images`, from htmlImagesStamp), which only a
- * page that names one has.
+ * page that names one has, and while icons are drawn, the library they come
+ * from (html-icons.ts).
  */
 export function htmlContentRevision(input: {
   sourceSha256: string
@@ -102,6 +104,7 @@ export function htmlContentRevision(input: {
     previewFontVersion(),
     input.sourceSha256,
     ...(input.images === undefined ? [] : [`images\0${input.images}`]),
+    ...(htmlIconsEnabled() ? [`icons\0${HTML_ICONS_SOURCE}`] : []),
   ])
 }
 

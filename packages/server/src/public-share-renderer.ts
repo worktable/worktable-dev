@@ -1,4 +1,5 @@
 import { buildHtmlDocThemeCss } from "./html-doc-theme.ts"
+import { expandHtmlIcons } from "./html-icons.ts"
 import { JSDOM } from "jsdom"
 import { renderToStaticMarkup } from "react-dom/server"
 import { markdownDocument } from "@worktable/ui/markdown-document"
@@ -351,7 +352,8 @@ export async function renderPublicDocProjection(
  * isolated frame; CSP remains the authoritative network backstop.
  */
 export function renderPublicHtmlProjection(source: string): string {
-  const dom = new JSDOM(source)
+  // Icons are drawn before sanitizing, as plain shapes the sanitizer keeps.
+  const dom = new JSDOM(expandHtmlIcons(source))
   const { document } = dom.window
   sanitizeTree(document, {
     allowStyles: true,

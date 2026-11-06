@@ -4,6 +4,7 @@ import type { WidgetFile } from "@worktable/types"
 import { parseDocument, Parser } from "htmlparser2"
 import { filesEnabled } from "./files-enabled.ts"
 import { buildHtmlDocThemeCss, HTML_DOC_COLOR_SCHEME_CSS } from "./html-doc-theme.ts"
+import { expandHtmlIcons, HTML_ICON_GROUPS } from "./html-icons.ts"
 import { configuredMcpSurface } from "./mcp/surface.ts"
 
 export type WidgetTheme = "light" | "dark"
@@ -196,6 +197,15 @@ Worktable places each named image in the page as a data URL whenever the page is
 
 The page loads whole, with all its images, and loads them again after any change, so nothing loads lazily. Put a large gallery in a Markdown Doc, which loads images separately and opens them full screen.`
 
+/** Library icons in HTML Docs, taught on the preview surface (html-icons.ts). */
+export const HTML_GUIDE_ICONS = `## Icons
+
+Where a word only labels, such as a status, a type, a direction or a step, use an icon from Worktable's library: the Lucide icons the app uses. Write an empty svg with its name, such as <svg data-icon="circle-check"></svg>. Worktable draws it whenever the page is served, 1em square in the text color, so font-size or width sizes it and color colors it. Give an icon that stands alone an aria-label. Use these instead of emoji or SVG icons you draw yourself.
+
+${HTML_ICON_GROUPS.map(([job, names]) => `- ${job}: ${names.join(", ")}`).join("\n")}
+
+Any Lucide name works, and the write warns about a name the library lacks, with close ones. Only svg elements in the markup are drawn; for icons page code adds, put each once in a <template> and clone it.`
+
 export function getHtmlAuthoringGuide(
   _profile: HtmlGuideProfile = "runtime",
   surface: "released" | "preview" = "released"
@@ -207,12 +217,13 @@ export function getHtmlAuthoringGuide(
   // Space images follow the file features too (htmlSpaceImagesEnabled).
   const images =
     surface === "preview" && filesEnabled() ? `\n\n${HTML_GUIDE_SPACE_IMAGES}` : ""
+  const icons = surface === "preview" ? `\n\n${HTML_GUIDE_ICONS}` : ""
   // The preview surface teaches the served theme in its own section.
   const runtime =
     surface === "preview"
       ? `${HTML_GUIDE_THEME}\n\n${htmlGuideRuntime("")}`
       : htmlGuideRuntime(`${HTML_GUIDE_THEME_RELEASED}\n\n`)
-  return `${intro}\n\n${runtime}\n\n${HTML_GUIDE_SHARE_LINKS}${images}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
+  return `${intro}\n\n${runtime}\n\n${HTML_GUIDE_SHARE_LINKS}${images}${icons}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
 }
 
 function hasRecordPermission(
@@ -756,7 +767,8 @@ export function injectWidgetRuntime(
 
 /** The same typography and host styles are used for live and static previews. */
 export function injectWidgetHostStyles(html: string, options?: { fontStyles: string }): string {
-  let output = html
+  // Library icons are drawn in with the theme, on every path that serves it.
+  let output = expandHtmlIcons(html)
   let shell = inspectWidgetHtmlShell(output)
   if (!shell.hasViewport) {
     const viewport = `<meta name="viewport" content="width=device-width, initial-scale=1">`

@@ -83,7 +83,8 @@ th{text-align:start;color:color-mix(in oklch,currentColor 70%,transparent);font-
 button:not(:disabled):hover,select:not(:disabled):hover{background:color-mix(in oklch,currentColor 9%,transparent);border-color:color-mix(in oklch,currentColor 26%,transparent)}
 :disabled{color:color-mix(in oklch,currentColor 50%,transparent);cursor:default}
 input::placeholder,textarea::placeholder{color:color-mix(in oklch,currentColor 55%,transparent)}
-input,select,textarea,progress,meter{accent-color:var(--primary)}`
+input,select,textarea,progress,meter{accent-color:var(--primary)}
+svg[data-icon]{vertical-align:-0.125em;flex-shrink:0}`
 
 /**
  * The theme and base styles every HTML Doc gets, in the lowest cascade layer,

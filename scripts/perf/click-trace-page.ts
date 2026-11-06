@@ -203,19 +203,34 @@ export function installInstrumentation(): void {
     }
     return parts.join(">")
   }
-  const shown = (element: Element) => {
-    if (!element.isConnected) return null
-    if (element.closest("[inert]")) return null
+  // A fade-in that has started shows its content: an element at opacity 0
+  // because an opacity animation runs on it or an ancestor counts as shown.
+  const fadingIn = (element: Element) => {
+    for (let node: Element | null = element; node; node = node.parentElement)
+      for (const animation of node.getAnimations()) {
+        if (animation.playState !== "running") continue
+        const effect = animation.effect as KeyframeEffect | null
+        if ((effect?.getKeyframes() ?? []).some((frame) => "opacity" in frame))
+          return true
+      }
+    return false
+  }
+  // Rendered, not hidden and not transparent, or fading in.
+  const visibleNow = (element: Element) => {
     const check = (
       element as Element & {
         checkVisibility?: (options: Record<string, boolean>) => boolean
       }
     ).checkVisibility
-    if (
-      check &&
-      !check.call(element, { opacityProperty: true, visibilityProperty: true })
-    )
-      return null
+    if (!check) return true
+    if (check.call(element, { opacityProperty: true, visibilityProperty: true }))
+      return true
+    return check.call(element, { visibilityProperty: true }) && fadingIn(element)
+  }
+  const shown = (element: Element) => {
+    if (!element.isConnected) return null
+    if (element.closest("[inert]")) return null
+    if (!visibleNow(element)) return null
     const box = element.getBoundingClientRect()
     const width =
       Math.min(box.right, innerWidth) - Math.max(box.left, 0)
@@ -488,19 +503,12 @@ export function installInstrumentation(): void {
     Array.from(root.querySelectorAll(selector))
   const outsideOpening = (element: Element) =>
     !element.closest("#worktable-opening-preview")
-  // On screen: rendered, not transparent or hidden, with a size. Content
-  // that is still at opacity 0 (a panel about to fade in) is not shown yet.
-  const seen = (element: Element | null | undefined) => {
-    if (!element || element.getBoundingClientRect().height <= 0) return false
-    const check = (
-      element as Element & {
-        checkVisibility?: (options: Record<string, boolean>) => boolean
-      }
-    ).checkVisibility
-    return check
-      ? check.call(element, { opacityProperty: true, visibilityProperty: true })
-      : true
-  }
+  // On screen: rendered with a size, not hidden, and not transparent unless
+  // it is fading in (see visibleNow).
+  const seen = (element: Element | null | undefined) =>
+    !!element &&
+    element.getBoundingClientRect().height > 0 &&
+    visibleNow(element)
   const recentRows = () =>
     all('section[aria-labelledby="recent-heading"] a[href*="/documents/"]')
   const predicates: Record<string, (args: Rec) => boolean> = {

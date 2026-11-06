@@ -22,6 +22,8 @@
  * - HTTP redirects;
  * - JavaScript files a cold page load fetches before its content;
  * - elements in the page once a screen settles;
+ * - on revisits, frames that add visible content after a screen's content
+ *   showed (pop-in), and loading indicators shown on the way;
  * - file stats, file reads and SQL statements per hot server request.
  *
  * Needs what click-trace.ts and io-count.ts need: a web build of the checkout
@@ -68,6 +70,8 @@ export type Metric =
   | "redirects"
   | "cold js"
   | "dom"
+  | "popin"
+  | "indicators"
   | "io stat"
   | "io read"
   | "io sql"
@@ -127,6 +131,15 @@ export function measureClicks(result: ClickTraceResult): {
       failures.push(`${name}: the screen's content never appeared`)
       continue
     }
+    // The completion contract: a settled screen still shows its content.
+    if (click.settleCapped)
+      failures.push(`${name}: the screen never settled`)
+    if (click.experience && !click.experience.contentHeld)
+      failures.push(`${name}: the content was gone once the screen settled`)
+    if (click.experience?.loadingAtSettle.length)
+      failures.push(
+        `${name}: still loading once the screen settled: ${click.experience.loadingAtSettle.join(", ")}`
+      )
     const requests = apiRequests(click)
     measurements.push({
       key: `requests, ${name}`,
@@ -160,6 +173,28 @@ export function measureClicks(result: ClickTraceResult): {
         key: `cold js, ${click.journey}`,
         metric: "cold js",
         value: scripts.length,
+      })
+    }
+    // What the screen did on a revisit: pop-in and loading indicators. A
+    // revisit renders from what the tab holds, so these counts do not depend
+    // on when responses land; on first visits they do, and the click report
+    // shows them without a budget.
+    if (click.experience && click.pass === "revisit") {
+      measurements.push({
+        key: `popin, ${name}`,
+        metric: "popin",
+        value: click.experience.popin,
+        detail: click.experience.late.map(
+          (frame) => `${frame.ms} ms, ${Math.round(frame.area * 1000) / 10}% of the screen: ${frame.largest}`
+        ),
+      })
+      measurements.push({
+        key: `indicators, ${name}`,
+        metric: "indicators",
+        value: click.experience.indicators.count,
+        detail: click.experience.indicators.items.map(
+          (item) => `${item.kind} ${item.ms} ms at ${item.startMs} ms: ${item.path}`
+        ),
       })
     }
     if (

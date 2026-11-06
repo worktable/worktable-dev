@@ -23,6 +23,12 @@
       "why": "Elements once a screen settles. Long lists render only what is visible (W3-05); layout cost grows with the element count.",
       "headroom": 0.1
     },
+    "popin": {
+      "why": "On revisits, frames in which content becomes visible (0.1% of the screen or more) after the screen's content showed, until it settles. A revisit renders from what the tab holds and should show its final screen at once."
+    },
+    "indicators": {
+      "why": "On revisits, loading episodes (skeletons, spinners, busy regions; parts that appear together count once) from the click until the screen settles. A revisit should show none."
+    },
     "io stat": {
       "why": "File stats per hot request, solo owner. Plan 16 gate D4 and the Plan 17 per-request I/O work.",
       "slack": 0.5
@@ -406,8 +412,8 @@
       "max": 0
     },
     "requests, reopen, open the app at Home": {
-      "max": 19,
-      "why": "The sidebar reopens the Spaces a person left open, and each loads its tree (Space, docs, documents, records). The journey leaves two Spaces open."
+      "max": 21,
+      "why": "The quick-click journey leaves a third Space open in the sidebar, so the reopened app also loads its contents. The sidebar reopens the Spaces a person left open, and each loads its tree (Space, docs, documents, records). The journey leaves two Spaces open."
     },
     "chain, reopen, open the app at Home": {
       "max": 1
@@ -517,6 +523,344 @@
       "max": 6
     },
     "io sql, workspace": {
+      "max": 0
+    },
+    "requests, first, open a Space in the sidebar, quick click": {
+      "max": 4,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, first, open a Space in the sidebar, quick click": {
+      "max": 1,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "dom, first, open a Space in the sidebar, quick click": {
+      "max": 2298,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "requests, first, open Settings": {
+      "max": 1,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, first, open Settings": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "dom, first, open Settings": {
+      "max": 2507,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "requests, first, open Settings Team": {
+      "max": 1,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, first, open Settings Team": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "dom, first, open Settings Team": {
+      "max": 2518,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "requests, first, open Settings Agents": {
+      "max": 5,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, first, open Settings Agents": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "dom, first, open Settings Agents": {
+      "max": 2866,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "requests, first, open Settings Remote": {
+      "max": 2,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, first, open Settings Remote": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "dom, first, open Settings Remote": {
+      "max": 2897,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "requests, first, open Settings Data": {
+      "max": 4,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, first, open Settings Data": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "dom, first, open Settings Data": {
+      "max": 2996,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "requests, first, open Settings Profile": {
+      "max": 1,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, first, open Settings Profile": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "dom, first, open Settings Profile": {
+      "max": 3013,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "requests, first, open Settings Appearance": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, first, open Settings Appearance": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "dom, first, open Settings Appearance": {
+      "max": 3042,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "requests, first, open Settings Help": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, first, open Settings Help": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "dom, first, open Settings Help": {
+      "max": 3093,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "requests, first, open Settings System": {
+      "max": 3,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, first, open Settings System": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "dom, first, open Settings System": {
+      "max": 3145,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "popin, revisit, open a Space in the sidebar": {
+      "max": 0
+    },
+    "indicators, revisit, open a Space in the sidebar": {
+      "max": 0
+    },
+    "popin, revisit, open Space": {
+      "max": 0
+    },
+    "indicators, revisit, open Space": {
+      "max": 0
+    },
+    "popin, revisit, open Markdown doc": {
+      "max": 1
+    },
+    "indicators, revisit, open Markdown doc": {
+      "max": 0
+    },
+    "popin, revisit, open rich doc": {
+      "max": 1
+    },
+    "indicators, revisit, open rich doc": {
+      "max": 1
+    },
+    "popin, revisit, open rich doc (2,000 blocks)": {
+      "max": 3
+    },
+    "indicators, revisit, open rich doc (2,000 blocks)": {
+      "max": 1
+    },
+    "popin, revisit, open HTML doc": {
+      "max": 0
+    },
+    "indicators, revisit, open HTML doc": {
+      "max": 1
+    },
+    "popin, revisit, open a file page": {
+      "max": 0
+    },
+    "indicators, revisit, open a file page": {
+      "max": 0
+    },
+    "popin, revisit, open a Doc with images": {
+      "max": 0
+    },
+    "indicators, revisit, open a Doc with images": {
+      "max": 0
+    },
+    "popin, revisit, open an HTML Doc with images": {
+      "max": 0
+    },
+    "indicators, revisit, open an HTML Doc with images": {
+      "max": 1
+    },
+    "popin, revisit, back to Home": {
+      "max": 0
+    },
+    "indicators, revisit, back to Home": {
+      "max": 0
+    },
+    "popin, revisit, open Threads": {
+      "max": 1
+    },
+    "indicators, revisit, open Threads": {
+      "max": 0
+    },
+    "popin, revisit, open a thread": {
+      "max": 0
+    },
+    "indicators, revisit, open a thread": {
+      "max": 0
+    },
+    "popin, revisit, search": {
+      "max": 0
+    },
+    "indicators, revisit, search": {
+      "max": 0
+    },
+    "requests, revisit, open a Space in the sidebar, quick click": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, revisit, open a Space in the sidebar, quick click": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "popin, revisit, open a Space in the sidebar, quick click": {
+      "max": 0
+    },
+    "indicators, revisit, open a Space in the sidebar, quick click": {
+      "max": 0
+    },
+    "requests, revisit, open Settings": {
+      "max": 1,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, revisit, open Settings": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "popin, revisit, open Settings": {
+      "max": 0
+    },
+    "indicators, revisit, open Settings": {
+      "max": 0
+    },
+    "requests, revisit, open Settings Team": {
+      "max": 1,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, revisit, open Settings Team": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "popin, revisit, open Settings Team": {
+      "max": 0
+    },
+    "indicators, revisit, open Settings Team": {
+      "max": 0
+    },
+    "requests, revisit, open Settings Agents": {
+      "max": 5,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, revisit, open Settings Agents": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "popin, revisit, open Settings Agents": {
+      "max": 0
+    },
+    "indicators, revisit, open Settings Agents": {
+      "max": 0
+    },
+    "requests, revisit, open Settings Remote": {
+      "max": 2,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, revisit, open Settings Remote": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "popin, revisit, open Settings Remote": {
+      "max": 0
+    },
+    "indicators, revisit, open Settings Remote": {
+      "max": 0
+    },
+    "requests, revisit, open Settings Data": {
+      "max": 4,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, revisit, open Settings Data": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "popin, revisit, open Settings Data": {
+      "max": 0
+    },
+    "indicators, revisit, open Settings Data": {
+      "max": 0
+    },
+    "requests, revisit, open Settings Profile": {
+      "max": 1,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, revisit, open Settings Profile": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "popin, revisit, open Settings Profile": {
+      "max": 0
+    },
+    "indicators, revisit, open Settings Profile": {
+      "max": 0
+    },
+    "requests, revisit, open Settings Appearance": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, revisit, open Settings Appearance": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "popin, revisit, open Settings Appearance": {
+      "max": 0
+    },
+    "indicators, revisit, open Settings Appearance": {
+      "max": 0
+    },
+    "requests, revisit, open Settings Help": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, revisit, open Settings Help": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "popin, revisit, open Settings Help": {
+      "max": 0
+    },
+    "indicators, revisit, open Settings Help": {
+      "max": 0
+    },
+    "requests, revisit, open Settings System": {
+      "max": 3,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "chain, revisit, open Settings System": {
+      "max": 0,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+    },
+    "popin, revisit, open Settings System": {
+      "max": 0
+    },
+    "indicators, revisit, open Settings System": {
       "max": 0
     }
   }

@@ -16,6 +16,8 @@ const budgets: SmokeBudgets = {
     redirects: { why: "" },
     "cold js": { why: "" },
     dom: { why: "", headroom: 0.1 },
+    popin: { why: "" },
+    indicators: { why: "" },
     "io stat": { why: "", slack: 0.5 },
     "io read": { why: "", slack: 0.5 },
     "io sql": { why: "", slack: 0.5 },

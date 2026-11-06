@@ -34,6 +34,37 @@ export interface ArmedResult {
   results: Record<string, { at: number; paint: number } | null>
 }
 
+/**
+ * What the screen did between an action and its settle, in page time. See
+ * `installInstrumentation` for how each is detected.
+ */
+export interface ExperienceData {
+  /** Frames in which visible content was inserted, removed or revealed. */
+  frames: {
+    at: number
+    /** Visible nodes added or revealed this frame (top-most only). */
+    added: number
+    /** Visible nodes removed this frame. */
+    removed: number
+    /** Viewport fraction covered by what was added, 0 to 1. */
+    area: number
+    /** The largest addition, as a short selector path. */
+    largest: string
+  }[]
+  /** Every layout shift, including those within 500 ms of input. */
+  shifts: { at: number; value: number; recentInput: boolean }[]
+  /** Visible loading indicators: skeletons, spinners, busy regions. */
+  indicators: { kind: string; path: string; start: number; end: number | null }[]
+  /** Event Timing entries for discrete input (click, pointer, key). */
+  events: {
+    name: string
+    at: number
+    duration: number
+    processingStart: number
+    processingEnd: number
+  }[]
+}
+
 export function installInstrumentation(): void {
   type Rec = Record<string, unknown>
   const w = window as unknown as Rec
@@ -45,6 +76,7 @@ export function installInstrumentation(): void {
     loaf: [] as Rec[],
     ws: [] as Rec[],
     clicks: [] as number[],
+    pointerdowns: [] as number[],
     inputs: [] as number[],
     hovers: [] as number[],
     lastMutation: 0,
@@ -114,6 +146,13 @@ export function installInstrumentation(): void {
     true
   )
   addEventListener(
+    "pointerdown",
+    (event) => {
+      wt.pointerdowns.push(event.timeStamp)
+    },
+    true
+  )
+  addEventListener(
     "input",
     (event) => {
       wt.inputs.push(event.timeStamp)
@@ -129,14 +168,283 @@ export function installInstrumentation(): void {
     true
   )
 
+  // ── What the screen does: pop-in, shifts, loading indicators ─────────
+  // Counts content when it becomes visible, not when it is inserted.
+  // Mutations are batched per animation frame. In the frame callback, a
+  // node counts when it is connected, rendered (checkVisibility with
+  // opacity and visibility, outside inert regions) and intersects the
+  // viewport. One that is not visible yet (inserted at opacity 0, in a
+  // closed panel, below a hidden ancestor) waits in a pending set that is
+  // checked every frame until it shows, so a fade or a class flip that
+  // reveals it counts in the frame it appears. Only the top-most node of a
+  // change counts, so a list rendering at once is one addition, and its
+  // area says how much of the screen it covers.
+  const exp = {
+    frames: [] as Rec[],
+    shifts: [] as Rec[],
+    indicators: [] as Rec[],
+    events: [] as Rec[],
+  }
+  ;(wt as Rec)["exp"] = exp
+  const INDICATOR =
+    '[data-slot="skeleton"], .animate-pulse, .animate-spin, [aria-busy="true"], [role="progressbar"]'
+  const pathOf = (element: Element) => {
+    const parts: string[] = []
+    let node: Element | null = element
+    while (node && node !== document.body && parts.length < 4) {
+      const label =
+        node.getAttribute("aria-label") ??
+        node.getAttribute("data-slot") ??
+        (node.id ? `#${node.id}` : null)
+      parts.unshift(
+        `${node.tagName.toLowerCase()}${label ? `[${label.slice(0, 32)}]` : ""}`
+      )
+      node = node.parentElement
+    }
+    return parts.join(">")
+  }
+  // A fade-in that has started shows its content: an element at opacity 0
+  // because an opacity animation runs on it or an ancestor counts as shown.
+  const fadingIn = (element: Element) => {
+    for (let node: Element | null = element; node; node = node.parentElement)
+      for (const animation of node.getAnimations()) {
+        if (animation.playState !== "running") continue
+        const effect = animation.effect as KeyframeEffect | null
+        if ((effect?.getKeyframes() ?? []).some((frame) => "opacity" in frame))
+          return true
+      }
+    return false
+  }
+  // Rendered, not hidden and not transparent, or fading in.
+  const visibleNow = (element: Element) => {
+    const check = (
+      element as Element & {
+        checkVisibility?: (options: Record<string, boolean>) => boolean
+      }
+    ).checkVisibility
+    if (!check) return true
+    if (check.call(element, { opacityProperty: true, visibilityProperty: true }))
+      return true
+    return check.call(element, { visibilityProperty: true }) && fadingIn(element)
+  }
+  const shown = (element: Element) => {
+    if (!element.isConnected) return null
+    if (element.closest("[inert]")) return null
+    if (!visibleNow(element)) return null
+    const box = element.getBoundingClientRect()
+    const width =
+      Math.min(box.right, innerWidth) - Math.max(box.left, 0)
+    const height =
+      Math.min(box.bottom, innerHeight) - Math.max(box.top, 0)
+    if (width <= 0 || height <= 0) return null
+    return (width * height) / (innerWidth * innerHeight)
+  }
+  // Indicators currently on screen, so each appearance is one record.
+  const liveIndicators = new Map<Element, Rec>()
+  const scanIndicators = (now: number) => {
+    const seen = new Set<Element>()
+    for (const element of Array.from(document.querySelectorAll(INDICATOR))) {
+      // A nested indicator inside another is the same one.
+      if (element.parentElement?.closest(INDICATOR)) continue
+      if (shown(element) === null) continue
+      seen.add(element)
+      if (!liveIndicators.has(element)) {
+        const kind = element.matches('[data-slot="skeleton"], .animate-pulse')
+          ? "skeleton"
+          : element.matches(".animate-spin")
+            ? "spinner"
+            : "busy"
+        const rec: Rec = { kind, path: pathOf(element), start: now, end: null }
+        liveIndicators.set(element, rec)
+        exp.indicators.push(rec)
+      }
+    }
+    for (const [element, rec] of liveIndicators)
+      if (!seen.has(element)) {
+        rec["end"] = now
+        liveIndicators.delete(element)
+      }
+  }
+  let pendingAdded = new Set<Node>()
+  let pendingRemoved = 0
+  // Inserted or changed but not visible yet; checked each frame.
+  const waiting = new Map<Element, number>()
+  const WAIT_LIMIT = 4000
+  const WAIT_MS = 10_000
+  // Whether an element was visible when last checked.
+  const wasShown = new WeakMap<Element, boolean>()
+  let frameScheduled = false
+  let indicatorCheck = false
+  const flushFrame = () => {
+    frameScheduled = false
+    const now = performance.now()
+    const added = pendingAdded
+    const removed = pendingRemoved
+    pendingAdded = new Set()
+    pendingRemoved = 0
+    const elements = new Set<Element>()
+    for (const node of added) {
+      const element =
+        node.nodeType === Node.ELEMENT_NODE
+          ? (node as Element)
+          : node.parentElement
+      if (element) elements.add(element)
+    }
+    for (const [element, since] of waiting)
+      if (!element.isConnected || now - since > WAIT_MS) waiting.delete(element)
+      else elements.add(element)
+    let count = 0
+    let area = 0
+    let largest = ""
+    let largestArea = 0
+    for (const element of elements) {
+      // Counted through its changed ancestor.
+      let parent = element.parentElement
+      let nested = false
+      while (parent) {
+        if (elements.has(parent)) {
+          nested = true
+          break
+        }
+        parent = parent.parentElement
+      }
+      if (nested) continue
+      // The harness's own nodes and HTML document frames' insides don't count.
+      if (element.closest("#worktable-opening-preview")) continue
+      const fraction = shown(element)
+      if (fraction === null) {
+        wasShown.set(element, false)
+        if (!waiting.has(element) && waiting.size < WAIT_LIMIT)
+          waiting.set(element, now)
+        continue
+      }
+      waiting.delete(element)
+      // Already on screen: a re-render or a style change, not new content.
+      const before = wasShown.get(element)
+      wasShown.set(element, true)
+      if (before === true) continue
+      count++
+      area += fraction
+      if (fraction > largestArea) {
+        largestArea = fraction
+        largest = pathOf(element)
+      }
+    }
+    if (waiting.size > 0) schedule()
+    if (count > 0 || removed > 0)
+      exp.frames.push({
+        at: now,
+        added: count,
+        removed,
+        area: Math.min(1, Math.round(area * 1e4) / 1e4),
+        largest,
+      })
+    if (indicatorCheck || count > 0 || removed > 0) scanIndicators(now)
+    indicatorCheck = false
+  }
+  const schedule = () => {
+    if (frameScheduled) return
+    frameScheduled = true
+    requestAnimationFrame(flushFrame)
+  }
+  const recordMutations = (records: MutationRecord[]) => {
+    for (const record of records) {
+      if (record.type === "childList") {
+        for (const node of Array.from(record.addedNodes))
+          if (
+            node.nodeType === Node.ELEMENT_NODE ||
+            (node.nodeType === Node.TEXT_NODE &&
+              (node.textContent ?? "").trim() !== "")
+          )
+            pendingAdded.add(node)
+        for (const node of Array.from(record.removedNodes))
+          if (
+            node.nodeType === Node.ELEMENT_NODE ||
+            (node.nodeType === Node.TEXT_NODE &&
+              (node.textContent ?? "").trim() !== "")
+          )
+            pendingRemoved++
+      } else if (record.type === "characterData") {
+        if (record.target.parentElement)
+          pendingAdded.add(record.target.parentElement)
+      } else if (record.type === "attributes") {
+        // A class or state change can reveal or hide what was already in
+        // the DOM; the indicator scan and a frame diff catch those.
+        indicatorCheck = true
+        const name = record.attributeName ?? ""
+        const old = record.oldValue
+        const target = record.target as Element
+        // A state change that can reveal what was already in the DOM: it
+        // counts if the element shows afterwards. Style and class changes
+        // count only on an element last seen hidden, so hover states and
+        // re-renders of what is on screen are not new content.
+        const revealing =
+          (name === "hidden" && old !== null) ||
+          (name === "inert" && old !== null) ||
+          (name === "aria-hidden" && old === "true") ||
+          (name === "open" && old === null) ||
+          (name === "data-state" &&
+            (old === "closed" || old === "hidden" || old === "inactive")) ||
+          ((name === "class" || name === "style") &&
+            wasShown.get(target) === false)
+        if (revealing) {
+          wasShown.set(target, false)
+          pendingAdded.add(target)
+        }
+      }
+    }
+    schedule()
+  }
+
+  try {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries() as unknown as Rec[])
+        exp.shifts.push({
+          at: entry["startTime"],
+          value: entry["value"],
+          recentInput: entry["hadRecentInput"],
+        })
+    }).observe({ type: "layout-shift", buffered: true })
+  } catch {
+    // Not supported.
+  }
+  try {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries() as unknown as Rec[]) {
+        const name = String(entry["name"])
+        if (
+          !/^(click|pointerdown|pointerup|keydown|keyup|keypress|input|touchstart|touchend)$/.test(
+            name
+          )
+        )
+          continue
+        exp.events.push({
+          name,
+          at: entry["startTime"],
+          duration: entry["duration"],
+          processingStart: entry["processingStart"],
+          processingEnd: entry["processingEnd"],
+        })
+      }
+    }).observe({
+      type: "event",
+      buffered: true,
+      durationThreshold: 16,
+    } as PerformanceObserverInit)
+  } catch {
+    // Not supported.
+  }
+
   const observeMutations = () => {
-    new MutationObserver(() => {
+    new MutationObserver((records) => {
       wt.lastMutation = performance.now()
+      recordMutations(records)
     }).observe(document.documentElement, {
       subtree: true,
       childList: true,
       characterData: true,
       attributes: true,
+      attributeOldValue: true,
     })
   }
   if (document.documentElement) observeMutations()
@@ -195,6 +503,12 @@ export function installInstrumentation(): void {
     Array.from(root.querySelectorAll(selector))
   const outsideOpening = (element: Element) =>
     !element.closest("#worktable-opening-preview")
+  // On screen: rendered with a size, not hidden, and not transparent unless
+  // it is fading in (see visibleNow).
+  const seen = (element: Element | null | undefined) =>
+    !!element &&
+    element.getBoundingClientRect().height > 0 &&
+    visibleNow(element)
   const recentRows = () =>
     all('section[aria-labelledby="recent-heading"] a[href*="/documents/"]')
   const predicates: Record<string, (args: Rec) => boolean> = {
@@ -214,9 +528,7 @@ export function installInstrumentation(): void {
       const id = String(args["spaceId"])
       const doc = root?.querySelector(`a[href^="/spaces/${id}/documents/"]`)
       return (
-        root?.querySelector(`a[href="/spaces/${id}"]`) != null &&
-        doc != null &&
-        doc.getBoundingClientRect().height > 0
+        root?.querySelector(`a[href="/spaces/${id}"]`) != null && seen(doc)
       )
     },
     // Markdown: the rendered article shows the document's first heading.
@@ -298,6 +610,30 @@ export function installInstrumentation(): void {
       all(
         '[aria-label="Thread conversation"] [data-slot="message-scroller-item"]'
       ).length >= 3,
+    // Settings: the named section is selected and shows its own content,
+    // not its loading fallback.
+    settings: (args) => {
+      const dialog = document.querySelector('[role="dialog"]')
+      if (!dialog) return false
+      const label = String(args["label"])
+      const selected =
+        all("h3", dialog).some((heading) => text(heading) === label) ||
+        all('button[aria-pressed="true"]', dialog).some(
+          (button) => text(button) === label
+        )
+      const panel = dialog.querySelector(
+        "[data-settings-section]:not([hidden])"
+      )
+      return (
+        selected &&
+        seen(panel) &&
+        panel !== null &&
+        // Its loading fallback is a skeleton; a status message the section
+        // shows for good (a connection's state) is content.
+        panel.querySelector('[data-slot="skeleton"]') === null &&
+        text(panel).length > 0
+      )
+    },
     // Search: highlighted matches for the current query in the sidebar.
     search: (args) => {
       const tokens = (args["tokens"] as string[]).map((token) =>
@@ -357,6 +693,15 @@ export function installInstrumentation(): void {
           attributes: true,
         })
         interval = window.setInterval(check, 50)
+        // A fade or slide changes what is visible without a mutation; check
+        // every frame too, so content that shows by opacity is seen in the
+        // frame it shows.
+        const frame = () => {
+          if (done) return
+          check()
+          requestAnimationFrame(frame)
+        }
+        requestAnimationFrame(frame)
         check()
       }
       if (document.documentElement) start()
@@ -387,6 +732,20 @@ export function installInstrumentation(): void {
     })
   }
   ;(wt as Rec)["arm"] = arm
+  // The completion contract at settle: content still holds, nothing loading.
+  ;(wt as Rec)["holds"] = (expectation: { name: string; args: Rec }) => {
+    let ok = false
+    try {
+      ok = predicates[expectation.name]?.(expectation.args) ?? false
+    } catch {
+      ok = false
+    }
+    const loading = Array.from(document.querySelectorAll(INDICATOR))
+      .filter((element) => !element.parentElement?.closest(INDICATOR))
+      .filter((element) => shown(element) !== null)
+      .map(pathOf)
+    return { ok, loading }
+  }
 
   // A page load is armed by another init script that sets __wtExpect, so it
   // starts before the app's own scripts (see click-trace.ts). Playwright does

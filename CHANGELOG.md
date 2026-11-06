@@ -16,6 +16,7 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **HTML Docs:** Worktable now gives every HTML Doc its theme, so pages from any agent match Worktable without picking their own colors. In dark mode HTML Docs sit on black; light mode matches the rest of Worktable. Pages also get readable defaults for text, headings, links, tables, code and form controls, and CSS a page writes itself overrides any of these defaults.
+- **HTML Docs:** Page titles and code in HTML Docs now use Worktable's heading and code fonts in the app and in previews.
 - **Threads:** In dark mode, an open thread now sits on black, with the thread list beside it unchanged. The selected thread uses the same highlight as the sidebar, and **Thread** in the header is now the page's main button.
 - **Threads:** In light mode, an open thread now sits a step brighter than the thread list.
 - **Sidebar:** Spaces show their icon in the Space's color, without the colored square behind it. In dark mode the selected item uses a lighter blue that is easier to read.

@@ -27,6 +27,7 @@ import {
 import { recordIndex } from "./record-index.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import { buildWidgetCsp } from "./widget-runtime-policy.ts"
+import { fulfillPreviewFont } from "./preview-fonts.ts"
 import {
   injectWidgetHostStyles,
   injectWidgetRuntime,
@@ -275,7 +276,7 @@ test("postwrite snapshot can freeze a new identity before inventory publication 
   expect(captured?.state).toEqual({})
 })
 
-test("normal and preview HTML share font defaults while policy keeps authored network assets blocked", () => {
+test("normal and preview HTML share font defaults while policy keeps authored network assets blocked", async () => {
   const live = injectWidgetRuntime(
     "<html><head></head><body>مرحبا 😀</body></html>",
     spaceId,
@@ -287,7 +288,13 @@ test("normal and preview HTML share font defaults while policy keeps authored ne
   for (const html of [live, history]) {
     expect(html).toContain("/worktable-preview/fonts/")
     expect(html).toContain(`--font-sans:"General Sans","Noto Sans",`)
+    // The theme's display and code faces are served alongside.
+    expect(html).toContain('font-family:"Fraunces"')
+    expect(html).toContain('font-family:"JetBrains Mono"')
   }
+  expect(
+    (await fulfillPreviewFont("/fonts/fraunces-variable-latin.woff2"))?.byteLength
+  ).toBeGreaterThan(10_000)
   const csp = buildWidgetCsp(false, "https://workspace.invalid")
   expect(csp).toContain(
     "font-src data: https://workspace.invalid/worktable-preview/fonts/"

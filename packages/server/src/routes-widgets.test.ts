@@ -176,6 +176,33 @@ describe("widget REST routes", () => {
     expect(severitiesByCode.missing_dark_theme).toBe("hint");
   });
 
+  it("on the preview surface, points pages that step outside the served theme back to it", async () => {
+    const previous = process.env["WORKTABLE_MCP_PREVIEW"];
+    process.env["WORKTABLE_MCP_PREVIEW"] = "1";
+    try {
+      const codes = async (id: string, style: string) => {
+        const res = await req(app, "POST", "/api/spaces/meta/widgets", {
+          id,
+          name: id,
+          html: `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${style}</style></head><body><p>Hi</p></body></html>`,
+        });
+        expect(res.status).toBe(201);
+        return res.json.warnings.map((issue: { code: string }) => issue.code);
+      };
+      const outside = await codes(
+        "outside-theme",
+        "body{background:#fff;color:hsl(var(--foreground))}@media (prefers-color-scheme: dark){body{background:#000}}"
+      );
+      expect(outside).toEqual(expect.arrayContaining(["fixed_page_colors", "system_color_scheme", "wrapped_theme_color"]));
+      // A page that only uses the theme needs no colors of its own.
+      const themed = await codes("on-theme", "body{background:var(--background)}.card{background:var(--card)}");
+      expect(themed.filter((code: string) => /theme|color|token/.test(code))).toEqual([]);
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_MCP_PREVIEW"];
+      else process.env["WORKTABLE_MCP_PREVIEW"] = previous;
+    }
+  });
+
   it("injects a runtime that prevents unsafe form navigation and reports diagnostics", async () => {
     const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>:root{--ad-bg:#fff;--ad-surface:#fff;--ad-text:#111;--ad-muted:#666;--ad-border:#ddd;--ad-accent:#2563eb}html[data-theme="dark"]{--ad-bg:#111;--ad-surface:#222;--ad-text:#fff;--ad-muted:#aaa;--ad-border:#333;--ad-accent:#8ab4ff}</style></head><body><form id="task-form"><input name="title"><button>Save</button></form></body></html>`;
     await req(app, "POST", "/api/spaces/meta/widgets", {

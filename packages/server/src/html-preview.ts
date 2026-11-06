@@ -36,6 +36,7 @@ import { previewFontVersion, fulfillPreviewFont } from "./preview-fonts.ts"
 import { inlineHtmlSpaceImages } from "./html-space-images.ts"
 import { withPreviewPage } from "./document-preview-browser.ts"
 import { productFontIssue } from "./product-fonts.ts"
+import { configuredMcpSurface } from "./mcp/surface.ts"
 
 export interface HtmlPreviewSnapshot {
   spaceId: string
@@ -844,6 +845,38 @@ window.addEventListener('message',async event=>{
   )
   if (bytes.byteLength > MAX_DOCUMENT_PREVIEW_BYTES)
     throw new Error("HTML preview image exceeds its output budget")
+  // After the image, so the capture is never changed: report text that sits
+  // on the frame's edge, at the captured width and at phone width, since a
+  // centered column with no padding of its own runs flush only when narrow.
+  if (configuredMcpSurface() === "preview" && !options.clip && !snapshot.historical) {
+    // Informational only: it has its own short budget and never fails or
+    // delays a capture that already has its image.
+    const check = async () => {
+      for (const width of [...new Set([viewport.width, PHONE_WIDTH])]) {
+        if (width !== viewport.width) {
+          await page.setViewportSize({ width, height: viewport.height })
+          await frame.evaluate(() => new Promise(requestAnimationFrame))
+        }
+        const edge = await frame.evaluate(textOnFrameEdge)
+        if (edge) return { ...edge, width }
+      }
+      return null
+    }
+    let edgeTimer: ReturnType<typeof setTimeout> | undefined
+    const found = await Promise.race([
+      check().catch(() => null),
+      new Promise<null>((resolve) => {
+        edgeTimer = setTimeout(() => resolve(null), Math.max(0, Math.min(EDGE_CHECK_MS, remaining() - 250)))
+      }),
+    ])
+    clearTimeout(edgeTimer)
+    if (found)
+      diagnostic(
+        "content_touches_edge",
+        `Text touches the ${found.side} edge at ${found.width}px wide (${found.element}). Worktable adds no outer margin: pad the page's content, as main{padding:32px 24px} does. A full-bleed layout should pad the regions that hold text.`,
+        "info"
+      )
+  }
   return {
     mimeType: "image/png",
     bytes,
@@ -870,6 +903,41 @@ window.addEventListener('message',async event=>{
     fontVersion: previewFontVersion(),
     ...(input.observeRecordReads ? { observed } : {}),
   }
+}
+
+const PHONE_WIDTH = 390
+const EDGE_CHECK_MS = 1500
+
+/** The first frame edge that visible, normal-flow text sits on, if any. Text
+ * in fixed or sticky regions and in scrolling regions is left out: it sits
+ * there on purpose. Runs in the page. */
+function textOnFrameEdge(): { side: string; element: string } | null {
+  const skip = (element: Element | null) => {
+    for (let e = element; e && e !== document.body; e = e.parentElement) {
+      const style = getComputedStyle(e)
+      if (style.position === "fixed" || style.position === "sticky") return true
+      if (style.visibility === "hidden" || style.display === "none") return true
+      if (/(auto|scroll)/.test(style.overflowX) && e.scrollWidth > e.clientWidth + 1) return true
+    }
+    return false
+  }
+  const width = document.documentElement.clientWidth
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!node.textContent?.trim() || skip(node.parentElement)) continue
+    const range = document.createRange()
+    range.selectNodeContents(node)
+    for (const rect of range.getClientRects()) {
+      if (!rect.width || !rect.height || rect.right <= 0 || rect.left >= width) continue
+      const side =
+        rect.left < 4 ? "left" : width - rect.right < 4 && rect.right <= width ? "right" : rect.top + window.scrollY < 4 ? "top" : null
+      if (!side) continue
+      const parent = node.parentElement!
+      const name = parent.localName + (parent.classList[0] ? `.${parent.classList[0]}` : "")
+      return { side, element: `in ${name}` }
+    }
+  }
+  return null
 }
 
 /**

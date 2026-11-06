@@ -4,6 +4,7 @@ import type { WidgetFile } from "@worktable/types"
 import { parseDocument, Parser } from "htmlparser2"
 import { filesEnabled } from "./files-enabled.ts"
 import { buildHtmlDocThemeCss, HTML_DOC_COLOR_SCHEME_CSS } from "./html-doc-theme.ts"
+import { configuredMcpSurface } from "./mcp/surface.ts"
 
 export type WidgetTheme = "light" | "dark"
 
@@ -97,16 +98,49 @@ export const HTML_GUIDE_SHARED = `# Worktable HTML Doc Authoring
 
 HTML Docs are complete, self-contained documents rendered in a sandbox inside a Worktable Space. Each document includes doctype, html, head, viewport metadata, and body. External scripts, stylesheets, fonts, images, and other http/https assets are not supported; ordinary links are supported, and inline SVG, CSS, data URLs, and local HTML/JavaScript remain inside the artifact.`
 
-export const HTML_GUIDE_RUNTIME = `## Runtime and data contract
+const HTML_GUIDE_THEME_RELEASED = `The parent theme is available through these semantic variables:
+${WIDGET_STYLE_TOKENS.join(", ")}.
+
+Documents can define default/light values and html[data-theme="dark"] overrides, and can declare color-scheme: light dark.`
+
+/** The theme Worktable serves every HTML Doc (html-doc-theme.ts), taught on
+ * the preview surface. */
+export const HTML_GUIDE_THEME = `## Theme
+
+Worktable themes every HTML Doc for light and dark mode and sets html[data-theme] to the one shown; a share link viewed without scripts follows the visitor's system theme and applies html[data-theme="dark"] rules to match. Use its variables instead of fixed colors; don't define a palette or add a theme switch.
+- Surfaces: --background (the page), --card, --popover, --muted, --surface-hover, --surface-selected
+- Text: --foreground, --muted-foreground, --primary-text (links and accents)
+- Lines: --border, --card-border, --input
+- Actions: --primary, with --primary-foreground on it
+- Status: --success, --warning, --destructive, --info
+- Charts: --chart-1 to --chart-5, in that order
+- Shape and type: --radius, --shadow, --font-sans, --font-display, --font-mono
+
+Body text, the page title (h1, in the display font), links, code, tables and form controls are already styled, and any CSS the page writes overrides them. The variables are complete colors: write var(--primary), never hsl(var(--primary)). Don't use prefers-color-scheme, which follows the computer rather than Worktable. For a palette of the page's own, set the variables on :root and again under html[data-theme="dark"]. Chart and canvas code reads a value with getComputedStyle(document.documentElement).getPropertyValue("--chart-1"): an oklch() color, which canvas and CSS accept but some chart libraries' color parsers don't. Read it again when html's data-theme changes, as it can on a share link.
+
+The page fills its pane edge to edge and Worktable adds no outer margin, so pad the page's content, as main does below; a full-bleed layout pads the regions that hold text. Previews report text that touches an edge.
+
+A page needs only its layout:
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipeline</title>
+<style>
+main{max-width:960px;margin:0 auto;padding:32px 24px}
+.card{background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:16px}
+</style>
+</head>
+<body><main><h1>Pipeline</h1><section class="card">…</section></main></body>
+</html>`
+
+const htmlGuideRuntime = (theme: string) => `## Runtime and data contract
 
 Records hold canonical shared data. worktable.state holds HTML-Doc-local UI state such as filters, drafts, preferences, and selections. Browser storage is not a supported persistence contract, and direct /api fetches are not a supported Worktable data interface.
 
-The parent theme is available through these semantic variables:
-${WIDGET_STYLE_TOKENS.join(", ")}.
-
-Documents can define default/light values and html[data-theme="dark"] overrides, and can declare color-scheme: light dark.
-
-Available APIs:
+${theme}Available APIs:
 - worktable.records.query(collectionId, query?)
 - worktable.records.queryDetailed(collectionId, query?)
 - worktable.records.create(collectionId, data, options?) (options.id never overwrites: an id that already exists rejects with CONFLICT; use update)
@@ -173,7 +207,12 @@ export function getHtmlAuthoringGuide(
   // Space images follow the file features too (htmlSpaceImagesEnabled).
   const images =
     surface === "preview" && filesEnabled() ? `\n\n${HTML_GUIDE_SPACE_IMAGES}` : ""
-  return `${intro}\n\n${HTML_GUIDE_RUNTIME}\n\n${HTML_GUIDE_SHARE_LINKS}${images}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
+  // The preview surface teaches the served theme in its own section.
+  const runtime =
+    surface === "preview"
+      ? `${HTML_GUIDE_THEME}\n\n${htmlGuideRuntime("")}`
+      : htmlGuideRuntime(`${HTML_GUIDE_THEME_RELEASED}\n\n`)
+  return `${intro}\n\n${runtime}\n\n${HTML_GUIDE_SHARE_LINKS}${images}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
 }
 
 function hasRecordPermission(
@@ -258,6 +297,66 @@ function addRecordPermissionWarnings(
   }
 }
 
+const DARK_THEME_RULE_RE = /html\s*\[\s*data-theme\s*=\s*["']dark["']\s*\]/i
+// A page background set to a fixed color, in a rule for html, body or :root.
+// A value built from a variable follows the theme.
+const FIXED_PAGE_BACKGROUND_RE =
+  /(?:^|[{};\s])(?::root|html|body)(?:\s*,\s*(?::root|html|body))*\s*\{[^}]*\bbackground(?:-color)?\s*:(?![^;}]*var\()\s*(?!(?:transparent|inherit|initial|unset|none|canvas)\b)[^;}]+/i
+
+function addReleasedThemeHints(html: string, issues: WidgetValidationIssue[]) {
+  if (!DARK_THEME_RULE_RE.test(html)) {
+    issues.push({
+      severity: "hint",
+      code: "missing_dark_theme",
+      message: 'Widget should include html[data-theme="dark"] CSS overrides.',
+    })
+  }
+  for (const token of REQUIRED_THEME_TOKENS) {
+    if (!html.includes(token)) {
+      issues.push({
+        severity: "hint",
+        code: `missing_token_${token.slice(5)}`,
+        message: `Widget should define and use ${token}.`,
+      })
+    }
+  }
+}
+
+/** Hints for pages that step outside the theme Worktable serves them. */
+// The same, set in a style attribute on html or body.
+const FIXED_INLINE_PAGE_BACKGROUND_RE =
+  /<(?:html|body)\b[^>]*\bstyle\s*=\s*(["'])(?:(?!\1).)*?\bbackground(?:-color)?\s*:(?![^;"']*var\()\s*(?!(?:transparent|inherit|initial|unset|none|canvas)\b)[^;"']+/i
+
+function addThemeHints(html: string, issues: WidgetValidationIssue[]) {
+  if (
+    (FIXED_PAGE_BACKGROUND_RE.test(html) || FIXED_INLINE_PAGE_BACKGROUND_RE.test(html)) &&
+    !DARK_THEME_RULE_RE.test(html)
+  ) {
+    issues.push({
+      severity: "hint",
+      code: "fixed_page_colors",
+      message: "The page background is a fixed color, so the page won't follow dark mode.",
+      hint: "Use var(--background) and the theme's other variables, or add html[data-theme=\"dark\"] rules.",
+    })
+  }
+  if (/prefers-color-scheme/i.test(html)) {
+    issues.push({
+      severity: "hint",
+      code: "system_color_scheme",
+      message: "prefers-color-scheme follows the computer, not the theme Worktable shows.",
+      hint: 'Use the theme\'s variables, or html[data-theme="dark"] rules.',
+    })
+  }
+  if (/\bhsla?\(\s*var\(\s*--/i.test(html)) {
+    issues.push({
+      severity: "hint",
+      code: "wrapped_theme_color",
+      message: "Worktable's theme variables are complete colors; hsl(var(--...)) works only with a palette the page defines itself.",
+      hint: "Write var(--primary), not hsl(var(--primary)).",
+    })
+  }
+}
+
 export function validateWidgetHtml(
   html: string,
   permissions?: WidgetFile["permissions"]
@@ -333,22 +432,8 @@ export function validateWidgetHtml(
         "Prefer addEventListener over inline on* handlers for maintainability and CSP compatibility.",
     })
   }
-  if (!/html\s*\[\s*data-theme\s*=\s*["']dark["']\s*\]/i.test(html)) {
-    issues.push({
-      severity: "hint",
-      code: "missing_dark_theme",
-      message: 'Widget should include html[data-theme="dark"] CSS overrides.',
-    })
-  }
-  for (const token of REQUIRED_THEME_TOKENS) {
-    if (!html.includes(token)) {
-      issues.push({
-        severity: "hint",
-        code: `missing_token_${token.slice(5)}`,
-        message: `Widget should define and use ${token}.`,
-      })
-    }
-  }
+  if (configuredMcpSurface() === "preview") addThemeHints(html, issues)
+  else addReleasedThemeHints(html, issues)
   addRecordPermissionWarnings(html, permissions, issues)
   return issues
 }

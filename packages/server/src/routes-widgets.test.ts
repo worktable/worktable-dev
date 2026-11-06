@@ -1,3 +1,4 @@
+import { getHtmlAuthoringGuide } from "./widget-authoring.ts";
 import { ownerIdentity } from "./auth.ts";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
@@ -174,6 +175,44 @@ describe("widget REST routes", () => {
     expect(severitiesByCode.missing_viewport).toBe("hint");
     expect(severitiesByCode.inline_event_handler).toBe("hint");
     expect(severitiesByCode.missing_dark_theme).toBe("hint");
+  });
+
+  it("teaches the served theme on the preview surface only", () => {
+    const released = getHtmlAuthoringGuide("runtime", "released");
+    expect(released).toContain("The parent theme is available");
+    expect(released).not.toContain("## Theme");
+    const preview = getHtmlAuthoringGuide("runtime", "preview");
+    expect(preview).toContain("## Theme");
+    expect(preview).not.toContain("The parent theme is available");
+  });
+
+  it("on the preview surface, points pages that step outside the served theme back to it", async () => {
+    const previous = process.env["WORKTABLE_MCP_PREVIEW"];
+    process.env["WORKTABLE_MCP_PREVIEW"] = "1";
+    try {
+      const codes = async (id: string, style: string, body = "") => {
+        const res = await req(app, "POST", "/api/spaces/meta/widgets", {
+          id,
+          name: id,
+          html: `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${style}</style></head><body${body}><p>Hi</p></body></html>`,
+        });
+        expect(res.status).toBe(201);
+        return res.json.warnings.map((issue: { code: string }) => issue.code);
+      };
+      const outside = await codes(
+        "outside-theme",
+        "body{background:#fff;color:hsl(var(--foreground))}@media (prefers-color-scheme: dark){body{background:#000}}"
+      );
+      expect(outside).toEqual(expect.arrayContaining(["fixed_page_colors", "system_color_scheme", "wrapped_theme_color"]));
+      // A page that only uses the theme needs no colors of its own.
+      const themed = await codes("on-theme", "body{background:color-mix(in oklch,var(--background) 90%,transparent)}.card{background:var(--card)}");
+      expect(themed.filter((code: string) => /theme|color|token/.test(code))).toEqual([]);
+      expect(await codes("inline-fixed", "", ' style="background:#fff"')).toContain("fixed_page_colors");
+      expect(await codes("inline-themed", "", ' style="background:var(--background)"')).not.toContain("fixed_page_colors");
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_MCP_PREVIEW"];
+      else process.env["WORKTABLE_MCP_PREVIEW"] = previous;
+    }
   });
 
   it("injects a runtime that prevents unsafe form navigation and reports diagnostics", async () => {

@@ -27,6 +27,7 @@ import {
 import { recordIndex } from "./record-index.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import { buildWidgetCsp } from "./widget-runtime-policy.ts"
+import { fulfillPreviewFont } from "./preview-fonts.ts"
 import {
   injectWidgetHostStyles,
   injectWidgetRuntime,
@@ -275,7 +276,7 @@ test("postwrite snapshot can freeze a new identity before inventory publication 
   expect(captured?.state).toEqual({})
 })
 
-test("normal and preview HTML share font defaults while policy keeps authored network assets blocked", () => {
+test("normal and preview HTML share font defaults while policy keeps authored network assets blocked", async () => {
   const live = injectWidgetRuntime(
     "<html><head></head><body>مرحبا 😀</body></html>",
     spaceId,
@@ -287,7 +288,13 @@ test("normal and preview HTML share font defaults while policy keeps authored ne
   for (const html of [live, history]) {
     expect(html).toContain("/worktable-preview/fonts/")
     expect(html).toContain(`--font-sans:"General Sans","Noto Sans",`)
+    // The theme's display and code faces are served alongside.
+    expect(html).toContain('font-family:"Fraunces"')
+    expect(html).toContain('font-family:"JetBrains Mono"')
   }
+  expect(
+    (await fulfillPreviewFont("/fonts/fraunces-variable-latin.woff2"))?.byteLength
+  ).toBeGreaterThan(10_000)
   const csp = buildWidgetCsp(false, "https://workspace.invalid")
   expect(csp).toContain(
     "font-src data: https://workspace.invalid/worktable-preview/fonts/"
@@ -588,3 +595,40 @@ previewTest(
     ).toEqual([0, 255, 0])
   }
 )
+
+previewTest("on the preview surface, reports text on the frame's edge, at phone width too", async () => {
+  const previous = process.env["WORKTABLE_MCP_PREVIEW"]
+  process.env["WORKTABLE_MCP_PREVIEW"] = "1"
+  try {
+    const snapshot = await freezeHtmlPreviewSnapshot({ spaceId, path })
+    const edge = async (html: string) =>
+      (
+        await captureHtmlPreview({
+          snapshot: { ...snapshot, html },
+          scopes: ["documents:read"],
+          options: { width: 800, height: 300 },
+        })
+      ).diagnostics.find((item) => item.code === "content_touches_edge")?.message
+    const page = (style: string) =>
+      `<html><head><style>body{margin:0}${style}</style></head><body><main><h1>Report</h1><p>Body text.</p></main></body></html>`
+    expect(await edge(page(""))).toContain("left edge at 800px")
+    // A centered column with no padding of its own is flush only when narrow.
+    expect(await edge(page("main{max-width:600px;margin:0 auto;padding-top:24px}"))).toContain("left edge at 390px")
+    expect(await edge(page("main{max-width:600px;margin:0 auto;padding:32px 24px}"))).toBeUndefined()
+    // An old version renders without page scripts; the check stays out of its way.
+    const history = await captureHtmlPreview({
+      snapshot: { ...snapshot, historical: true, html: page("") },
+      scopes: ["documents:read"],
+      options: { width: 800, height: 300 },
+    })
+    expect(history.status).toBe("complete")
+    expect(history.diagnostics.map((item) => item.code)).not.toContain("content_touches_edge")
+    // Text in a fixed bar sits on the edge on purpose.
+    expect(
+      await edge(`<html><head><style>body{margin:0}nav{position:fixed;top:0;left:0}main{padding:48px 24px}</style></head><body><nav>Menu</nav><main>Body text.</main></body></html>`)
+    ).toBeUndefined()
+  } finally {
+    if (previous === undefined) delete process.env["WORKTABLE_MCP_PREVIEW"]
+    else process.env["WORKTABLE_MCP_PREVIEW"] = previous
+  }
+})

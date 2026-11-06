@@ -25,9 +25,19 @@
 /* base-ui Collapsible.Panel sets --collapsible-panel-height
    as a CSS variable. We transition height for smooth expand/collapse. */
 [data-slot="collapsible-content"] {
+  /* Clip, but never scroll: scrolling a control into view while the panel
+     is still growing (focus, find in page, automation) would otherwise
+     scroll the panel's own content, which then slides under the pointer
+     as the panel finishes opening. Engines without clip keep hidden. */
   overflow: hidden;
+  overflow: clip;
   height: var(--collapsible-panel-height);
   transition: height 250ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+/* The formatting context overflow: hidden gave, so child margins stay in. */
+[data-slot="collapsible-content"]:not([hidden]) {
+  display: flow-root;
 }
 
 [data-slot="collapsible-content"][data-starting-style],

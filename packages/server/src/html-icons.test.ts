@@ -96,7 +96,7 @@ describe("Icons in HTML Docs", () => {
     const served = await frame("status")
     // The page's attributes stay; Worktable adds what's missing.
     expect(served).toContain(
-      '<svg data-icon="circle-check" class="ok" width="20" viewBox="0 0 24 24" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg> Shipped'
+      '<svg data-icon="circle-check" class="ok" width="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg> Shipped'
     )
     expect(served).toMatch(
       /<svg data-icon="AlertTriangle" aria-label="Blocked" [^>]*role="img"><path d="m21\.73 18-8-14/

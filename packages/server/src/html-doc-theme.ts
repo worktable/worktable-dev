@@ -64,7 +64,9 @@ function declarations(tokens: Tokens): string {
 // smoothing match the app's body text (globals.css) and Docs; the title
 // matches the app's page titles (Fraunces, semibold, tracking-tight). Fills and lines mix from
 // the text color, so they suit a page that paints its own palette in only
-// one mode.
+// one mode. A library icon (html-icons.ts) is 1em square even before it is
+// drawn, so a name the library lacks leaves an icon-sized gap, not an svg's
+// default 300 by 150.
 const BASE = `:root{color:var(--foreground);font-family:var(--font-sans);font-weight:480;letter-spacing:0.02em;line-height:1.6;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;scrollbar-color:color-mix(in oklch,currentColor 22%,transparent) transparent}
 body{background:var(--background);font-size:15px}
 h1,h2,h3,h4,h5,h6{font-weight:600;letter-spacing:-0.005em;text-wrap:balance}
@@ -84,7 +86,9 @@ button:not(:disabled):hover,select:not(:disabled):hover{background:color-mix(in 
 :disabled{color:color-mix(in oklch,currentColor 50%,transparent);cursor:default}
 input::placeholder,textarea::placeholder{color:color-mix(in oklch,currentColor 55%,transparent)}
 input,select,textarea,progress,meter{accent-color:var(--primary)}
-svg[data-icon]{vertical-align:-0.125em;flex-shrink:0}`
+svg[data-icon]{vertical-align:-0.125em;flex-shrink:0}
+svg[data-icon]:not([width]){width:1em}
+svg[data-icon]:not([height]){height:1em}`
 
 /**
  * The theme and base styles every HTML Doc gets, in the lowest cascade layer,

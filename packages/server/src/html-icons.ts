@@ -10,8 +10,9 @@
 // it names, about 350 bytes each.
 //
 // - The element keeps everything the page wrote on it; Worktable adds only
-//   the attributes it lacks: a 24-unit viewBox, 1em square, currentColor
-//   stroke, and aria-hidden unless the page labels it.
+//   the attributes it lacks: a 24-unit viewBox, currentColor stroke, and
+//   aria-hidden unless the page labels it. The theme makes it 1em square
+//   unless the page sizes it (html-doc-theme.ts).
 // - An svg that already has content is the page's own drawing and stays.
 // - Names ignore case, dashes and underscores, and Lucide's former names
 //   still answer, so check_circle and CheckCircle draw circle-check.
@@ -130,8 +131,6 @@ export function htmlIconName(written: string): string | null {
 /** Attributes an icon gets unless the page set them. */
 const DEFAULTS: Array<[string, string]> = [
   ["viewBox", "0 0 24 24"],
-  ["width", "1em"],
-  ["height", "1em"],
   ["fill", "none"],
   ["stroke", "currentColor"],
   ["stroke-width", "2"],

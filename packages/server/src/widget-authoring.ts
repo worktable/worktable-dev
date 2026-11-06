@@ -200,7 +200,7 @@ The page loads whole, with all its images, and loads them again after any change
 /** Library icons in HTML Docs, taught on the preview surface (html-icons.ts). */
 export const HTML_GUIDE_ICONS = `## Icons
 
-Where a word only labels, such as a status, a type, a direction or a step, use an icon from Worktable's library: the Lucide icons the app uses. Write an empty svg with its name, such as <svg data-icon="circle-check"></svg>. Worktable draws it whenever the page is served, 1em square in the text color, so font-size or width sizes it and color colors it. Give an icon that stands alone an aria-label. Use these instead of emoji or SVG icons you draw yourself.
+Where a word only labels, such as a status, a type, a direction or a step, use an icon from Worktable's library: the Lucide icons the app uses. Write an empty svg with its name, such as <svg data-icon="circle-check"></svg>. Worktable draws it whenever the page is served, 1em square in the text color, so font-size sizes it and color colors it. Give an icon that stands alone an aria-label. Use these instead of emoji or SVG icons you draw yourself.
 
 ${HTML_ICON_GROUPS.map(([job, names]) => `- ${job}: ${names.join(", ")}`).join("\n")}
 

@@ -9,6 +9,8 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.42] - 2026-11-06
+
 ### Added
 
 - **Agents:** Agents can change part of an HTML Doc with exact edits instead of rewriting the whole page, and a replace names the revision it read, so a newer change is never overwritten.

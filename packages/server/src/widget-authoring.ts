@@ -118,6 +118,8 @@ Worktable themes every HTML Doc for light and dark mode and sets html[data-theme
 
 Body text, the page title (h1, in the display font), links, code, tables and form controls are already styled, and any CSS the page writes overrides them. The variables are complete colors: write var(--primary), never hsl(var(--primary)). Don't use prefers-color-scheme, which follows the computer rather than Worktable. For a palette of the page's own, set the variables on :root and again under html[data-theme="dark"]. Chart and canvas code reads a value with getComputedStyle(document.documentElement).getPropertyValue("--chart-1"): an oklch() color, which canvas and CSS accept but some chart libraries' color parsers don't. Read it again when html's data-theme changes, as it can on a share link.
 
+The page fills its pane edge to edge and Worktable adds no outer margin, so pad the page's content, as main does below; a full-bleed layout pads the regions that hold text. Previews report text that touches an edge.
+
 A page needs only its layout:
 
 <!doctype html>

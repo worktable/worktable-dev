@@ -595,3 +595,32 @@ previewTest(
     ).toEqual([0, 255, 0])
   }
 )
+
+previewTest("on the preview surface, reports text on the frame's edge, at phone width too", async () => {
+  const previous = process.env["WORKTABLE_MCP_PREVIEW"]
+  process.env["WORKTABLE_MCP_PREVIEW"] = "1"
+  try {
+    const snapshot = await freezeHtmlPreviewSnapshot({ spaceId, path })
+    const edge = async (html: string) =>
+      (
+        await captureHtmlPreview({
+          snapshot: { ...snapshot, html },
+          scopes: ["documents:read"],
+          options: { width: 800, height: 300 },
+        })
+      ).diagnostics.find((item) => item.code === "content_touches_edge")?.message
+    const page = (style: string) =>
+      `<html><head><style>body{margin:0}${style}</style></head><body><main><h1>Report</h1><p>Body text.</p></main></body></html>`
+    expect(await edge(page(""))).toContain("left edge at 800px")
+    // A centered column with no padding of its own is flush only when narrow.
+    expect(await edge(page("main{max-width:600px;margin:0 auto;padding-top:24px}"))).toContain("left edge at 390px")
+    expect(await edge(page("main{max-width:600px;margin:0 auto;padding:32px 24px}"))).toBeUndefined()
+    // Text in a fixed bar sits on the edge on purpose.
+    expect(
+      await edge(`<html><head><style>body{margin:0}nav{position:fixed;top:0;left:0}main{padding:48px 24px}</style></head><body><nav>Menu</nav><main>Body text.</main></body></html>`)
+    ).toBeUndefined()
+  } finally {
+    if (previous === undefined) delete process.env["WORKTABLE_MCP_PREVIEW"]
+    else process.env["WORKTABLE_MCP_PREVIEW"] = previous
+  }
+})

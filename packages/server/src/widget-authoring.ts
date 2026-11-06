@@ -323,8 +323,15 @@ function addReleasedThemeHints(html: string, issues: WidgetValidationIssue[]) {
 }
 
 /** Hints for pages that step outside the theme Worktable serves them. */
+// The same, set in a style attribute on html or body.
+const FIXED_INLINE_PAGE_BACKGROUND_RE =
+  /<(?:html|body)\b[^>]*\bstyle\s*=\s*(["'])(?:(?!\1).)*?\bbackground(?:-color)?\s*:(?![^;"']*var\()\s*(?!(?:transparent|inherit|initial|unset|none|canvas)\b)[^;"']+/i
+
 function addThemeHints(html: string, issues: WidgetValidationIssue[]) {
-  if (FIXED_PAGE_BACKGROUND_RE.test(html) && !DARK_THEME_RULE_RE.test(html)) {
+  if (
+    (FIXED_PAGE_BACKGROUND_RE.test(html) || FIXED_INLINE_PAGE_BACKGROUND_RE.test(html)) &&
+    !DARK_THEME_RULE_RE.test(html)
+  ) {
     issues.push({
       severity: "hint",
       code: "fixed_page_colors",

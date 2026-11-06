@@ -848,22 +848,34 @@ window.addEventListener('message',async event=>{
   // After the image, so the capture is never changed: report text that sits
   // on the frame's edge, at the captured width and at phone width, since a
   // centered column with no padding of its own runs flush only when narrow.
-  if (configuredMcpSurface() === "preview" && !options.clip) {
-    for (const width of [...new Set([viewport.width, PHONE_WIDTH])]) {
-      if (remaining() < 500) break
-      if (width !== viewport.width) {
-        await bounded(() => page.setViewportSize({ width, height: viewport.height }))
-        await bounded(() => frame.evaluate(() => new Promise(requestAnimationFrame)))
+  if (configuredMcpSurface() === "preview" && !options.clip && !snapshot.historical) {
+    // Informational only: it has its own short budget and never fails or
+    // delays a capture that already has its image.
+    const check = async () => {
+      for (const width of [...new Set([viewport.width, PHONE_WIDTH])]) {
+        if (width !== viewport.width) {
+          await page.setViewportSize({ width, height: viewport.height })
+          await frame.evaluate(() => new Promise(requestAnimationFrame))
+        }
+        const edge = await frame.evaluate(textOnFrameEdge)
+        if (edge) return { ...edge, width }
       }
-      const edge = await bounded(() => frame.evaluate(textOnFrameEdge)).catch(() => null)
-      if (!edge) continue
+      return null
+    }
+    let edgeTimer: ReturnType<typeof setTimeout> | undefined
+    const found = await Promise.race([
+      check().catch(() => null),
+      new Promise<null>((resolve) => {
+        edgeTimer = setTimeout(() => resolve(null), Math.max(0, Math.min(EDGE_CHECK_MS, remaining() - 250)))
+      }),
+    ])
+    clearTimeout(edgeTimer)
+    if (found)
       diagnostic(
         "content_touches_edge",
-        `Text touches the ${edge.side} edge at ${width}px wide (${edge.element}). Worktable adds no outer margin: pad the page's content, as main{padding:32px 24px} does. A full-bleed layout should pad the regions that hold text.`,
+        `Text touches the ${found.side} edge at ${found.width}px wide (${found.element}). Worktable adds no outer margin: pad the page's content, as main{padding:32px 24px} does. A full-bleed layout should pad the regions that hold text.`,
         "info"
       )
-      break
-    }
   }
   return {
     mimeType: "image/png",
@@ -894,6 +906,7 @@ window.addEventListener('message',async event=>{
 }
 
 const PHONE_WIDTH = 390
+const EDGE_CHECK_MS = 1500
 
 /** The first frame edge that visible, normal-flow text sits on, if any. Text
  * in fixed or sticky regions and in scrolling regions is left out: it sits

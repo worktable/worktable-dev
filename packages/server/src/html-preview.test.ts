@@ -615,6 +615,14 @@ previewTest("on the preview surface, reports text on the frame's edge, at phone 
     // A centered column with no padding of its own is flush only when narrow.
     expect(await edge(page("main{max-width:600px;margin:0 auto;padding-top:24px}"))).toContain("left edge at 390px")
     expect(await edge(page("main{max-width:600px;margin:0 auto;padding:32px 24px}"))).toBeUndefined()
+    // An old version renders without page scripts; the check stays out of its way.
+    const history = await captureHtmlPreview({
+      snapshot: { ...snapshot, historical: true, html: page("") },
+      scopes: ["documents:read"],
+      options: { width: 800, height: 300 },
+    })
+    expect(history.status).toBe("complete")
+    expect(history.diagnostics.map((item) => item.code)).not.toContain("content_touches_edge")
     // Text in a fixed bar sits on the edge on purpose.
     expect(
       await edge(`<html><head><style>body{margin:0}nav{position:fixed;top:0;left:0}main{padding:48px 24px}</style></head><body><nav>Menu</nav><main>Body text.</main></body></html>`)

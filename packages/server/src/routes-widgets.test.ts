@@ -190,11 +190,11 @@ describe("widget REST routes", () => {
     const previous = process.env["WORKTABLE_MCP_PREVIEW"];
     process.env["WORKTABLE_MCP_PREVIEW"] = "1";
     try {
-      const codes = async (id: string, style: string) => {
+      const codes = async (id: string, style: string, body = "") => {
         const res = await req(app, "POST", "/api/spaces/meta/widgets", {
           id,
           name: id,
-          html: `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${style}</style></head><body><p>Hi</p></body></html>`,
+          html: `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${style}</style></head><body${body}><p>Hi</p></body></html>`,
         });
         expect(res.status).toBe(201);
         return res.json.warnings.map((issue: { code: string }) => issue.code);
@@ -207,6 +207,8 @@ describe("widget REST routes", () => {
       // A page that only uses the theme needs no colors of its own.
       const themed = await codes("on-theme", "body{background:color-mix(in oklch,var(--background) 90%,transparent)}.card{background:var(--card)}");
       expect(themed.filter((code: string) => /theme|color|token/.test(code))).toEqual([]);
+      expect(await codes("inline-fixed", "", ' style="background:#fff"')).toContain("fixed_page_colors");
+      expect(await codes("inline-themed", "", ' style="background:var(--background)"')).not.toContain("fixed_page_colors");
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_MCP_PREVIEW"];
       else process.env["WORKTABLE_MCP_PREVIEW"] = previous;

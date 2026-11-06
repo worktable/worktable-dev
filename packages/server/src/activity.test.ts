@@ -352,8 +352,6 @@ describe("workspace activity", () => {
       "brief",
       "# Launch brief\n\nThe **launch** plan is ready. See [the plan](notes) for dates.\n"
     )
-    // The first read starts the Space's summary without waiting on it.
-    await listRecentDocuments({ featured: true })
     await drainActivity()
 
     const recent = await listRecentDocuments({ featured: true })

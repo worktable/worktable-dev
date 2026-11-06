@@ -12,7 +12,7 @@
 // summary of each Space's activity, so a list reads no history.
 
 import type { ActivityActor, DocumentSummary } from "@worktable/types"
-import { peekDocActivity } from "./activity-log.ts"
+import { docActivityReady, peekDocActivity } from "./activity-log.ts"
 import { pathMovesFor } from "./doc-aliases.ts"
 import { docMarkdownProjection } from "./doc-markdown-projection.ts"
 import { listDocumentsWithAliases } from "./document-query.ts"
@@ -87,7 +87,12 @@ export async function listRecentDocuments(options: {
         let newest: string | undefined
         const spaceItems: RecentDocument[] = []
         const spaceTemporary: RecentDocument[] = []
-        const { documents, aliases } = await listDocumentsWithAliases({ spaceId: space.id })
+        // After a restart, the first list waits for the Space's history so
+        // each doc still names who changed it.
+        const [{ documents, aliases }] = await Promise.all([
+          listDocumentsWithAliases({ spaceId: space.id }),
+          docActivityReady(space.id),
+        ])
         const moves = pathMovesFor(aliases)
         for (const item of documents) {
           if (item.kind !== "document") continue

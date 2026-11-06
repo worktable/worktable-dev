@@ -1688,6 +1688,13 @@ function settingsTabButton(session: Session, label: string): Locator {
     .first()
 }
 
+/**
+ * What Settings waits for before it shows its first section: the
+ * deployment's capabilities, which decide the sections. Sections show their
+ * own data as it arrives, so other requests are not on the path to content.
+ */
+const SETTINGS_GATE = /\/api\/system\/deployment\b/
+
 /** Settings opens at its first section, then each section in turn. */
 function settingsJourney(pass: Pass, targets: Targets): Action[] {
   const [first, ...rest] = targets.settings
@@ -1702,7 +1709,7 @@ function settingsJourney(pass: Pass, targets: Targets): Action[] {
     target: first,
     expect: [{ name: "settings", key: "content", args: { label: first } }],
     contentKey: "content",
-    gate: null,
+    gate: SETTINGS_GATE,
     prepare: showSidebar,
     act: (session) =>
       press(session, '[data-worktable-sidebar-root] button[aria-label^="Settings"]'),
@@ -1718,7 +1725,9 @@ function settingsJourney(pass: Pass, targets: Targets): Action[] {
         target: label,
         expect: [{ name: "settings", key: "content", args: { label } }],
         contentKey: "content",
-        gate: null,
+        // A section shows its own data as it arrives; nothing it requests
+        // holds back its content, so its chain is empty by definition.
+        gate: /(?!)/,
         act: (session) => press(session, settingsTabButton(session, label)),
         t0: "click",
         ...(index === rest.length - 1 ? { cleanup: close } : {}),

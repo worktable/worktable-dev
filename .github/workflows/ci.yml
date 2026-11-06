@@ -69,6 +69,7 @@ jobs:
         run: |-
           bun run check:tools
           bun run check:theme
+          bun run check:icons
           bun run check:brand
           bun run check:previews
           bun run typecheck

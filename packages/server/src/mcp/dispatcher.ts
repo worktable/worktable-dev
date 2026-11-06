@@ -101,6 +101,7 @@ import {
   WIDGET_STYLE_TOKENS,
 } from "../widget-authoring.ts"
 import { htmlImageWarnings, htmlNamesSpaceImages } from "../html-space-images.ts"
+import { htmlIconWarnings } from "../html-icons.ts"
 import { logError } from "../debug-log.ts"
 import type { WidgetValidationIssue } from "../widget-authoring.ts"
 import {
@@ -2399,7 +2400,10 @@ async function _dispatchOperationInner(
         widgetId,
         data: created.data,
       })
-      warnings.push(...(await imageWarningsFor(identity.scopes, spaceId, widgetId, html)))
+      warnings.push(
+        ...(await imageWarningsFor(identity.scopes, spaceId, widgetId, html)),
+        ...htmlIconWarnings(html)
+      )
       const result = {
         widgetId,
         widget: created.data,
@@ -2531,6 +2535,7 @@ async function _dispatchOperationInner(
         warnings: [
           ...updated.warnings,
           ...(await imageWarningsFor(identity.scopes, spaceId, widgetId, updated.html)),
+          ...htmlIconWarnings(updated.html),
         ],
       }
       if (!args["preview"]) return result

@@ -54,6 +54,15 @@ export function htmlSpaceImagesEnabled(): boolean {
   return filesEnabled() && configuredMcpSurface() === "preview"
 }
 
+/**
+ * Whether HTML Docs draw the library icons they name with
+ * <svg data-icon="..."> (html-icons.ts). Held behind the preview, with the
+ * warnings and guidance that teach it.
+ */
+export function htmlIconsEnabled(): boolean {
+  return configuredMcpSurface() === "preview"
+}
+
 function envSwitch(name: string): boolean | null {
   const env = process.env[name]?.trim().toLowerCase()
   if (env === "1" || env === "true") return true

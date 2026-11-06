@@ -1,9 +1,16 @@
 import { previewFontCss } from "./preview-fonts.ts"
-import { buildWidgetShareRuntimeScript, SHARE_FONT_CSS } from "./widget-share-runtime.ts"
+import {
+  buildWidgetShareRuntimeScript,
+  SHARE_FONT_CSS,
+} from "./widget-share-runtime.ts"
 import type { WidgetFile } from "@worktable/types"
 import { parseDocument, Parser } from "htmlparser2"
 import { filesEnabled } from "./files-enabled.ts"
-import { buildHtmlDocThemeCss, HTML_DOC_COLOR_SCHEME_CSS } from "./html-doc-theme.ts"
+import {
+  buildHtmlDocThemeCss,
+  HTML_DOC_COLOR_SCHEME_CSS,
+} from "./html-doc-theme.ts"
+import { expandHtmlIcons } from "./html-icons.ts"
 import { configuredMcpSurface } from "./mcp/surface.ts"
 
 export type WidgetTheme = "light" | "dark"
@@ -196,6 +203,11 @@ Worktable places each named image in the page as a data URL whenever the page is
 
 The page loads whole, with all its images, and loads them again after any change, so nothing loads lazily. Put a large gallery in a Markdown Doc, which loads images separately and opens them full screen.`
 
+/** Library icons in HTML Docs, taught on the preview surface (html-icons.ts). */
+export const HTML_GUIDE_ICONS = `## Icons
+
+Where a word only labels, such as a status, a type, a direction or a step, use an icon instead: any Lucide icon, by its name on lucide.dev. Write an empty svg with the name, such as <svg data-icon="circle-check"></svg>, and Worktable draws it whenever the page is served, 1em square in the text color, so font-size sizes it and color colors it. Give an icon that stands alone an aria-label. Use these rather than emoji or SVG icons you draw yourself. A write warns about a name Lucide lacks. Only svg elements in the markup are drawn; for icons page code adds, put each once in a <template> and clone it.`
+
 export function getHtmlAuthoringGuide(
   _profile: HtmlGuideProfile = "runtime",
   surface: "released" | "preview" = "released"
@@ -206,13 +218,16 @@ export function getHtmlAuthoringGuide(
       : HTML_GUIDE_SHARED
   // Space images follow the file features too (htmlSpaceImagesEnabled).
   const images =
-    surface === "preview" && filesEnabled() ? `\n\n${HTML_GUIDE_SPACE_IMAGES}` : ""
+    surface === "preview" && filesEnabled()
+      ? `\n\n${HTML_GUIDE_SPACE_IMAGES}`
+      : ""
+  const icons = surface === "preview" ? `\n\n${HTML_GUIDE_ICONS}` : ""
   // The preview surface teaches the served theme in its own section.
   const runtime =
     surface === "preview"
       ? `${HTML_GUIDE_THEME}\n\n${htmlGuideRuntime("")}`
       : htmlGuideRuntime(`${HTML_GUIDE_THEME_RELEASED}\n\n`)
-  return `${intro}\n\n${runtime}\n\n${HTML_GUIDE_SHARE_LINKS}${images}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
+  return `${intro}\n\n${runtime}\n\n${HTML_GUIDE_SHARE_LINKS}${images}${icons}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
 }
 
 function hasRecordPermission(
@@ -329,21 +344,24 @@ const FIXED_INLINE_PAGE_BACKGROUND_RE =
 
 function addThemeHints(html: string, issues: WidgetValidationIssue[]) {
   if (
-    (FIXED_PAGE_BACKGROUND_RE.test(html) || FIXED_INLINE_PAGE_BACKGROUND_RE.test(html)) &&
+    (FIXED_PAGE_BACKGROUND_RE.test(html) ||
+      FIXED_INLINE_PAGE_BACKGROUND_RE.test(html)) &&
     !DARK_THEME_RULE_RE.test(html)
   ) {
     issues.push({
       severity: "hint",
       code: "fixed_page_colors",
-      message: "The page background is a fixed color, so the page won't follow dark mode.",
-      hint: "Use var(--background) and the theme's other variables, or add html[data-theme=\"dark\"] rules.",
+      message:
+        "The page background is a fixed color, so the page won't follow dark mode.",
+      hint: 'Use var(--background) and the theme\'s other variables, or add html[data-theme="dark"] rules.',
     })
   }
   if (/prefers-color-scheme/i.test(html)) {
     issues.push({
       severity: "hint",
       code: "system_color_scheme",
-      message: "prefers-color-scheme follows the computer, not the theme Worktable shows.",
+      message:
+        "prefers-color-scheme follows the computer, not the theme Worktable shows.",
       hint: 'Use the theme\'s variables, or html[data-theme="dark"] rules.',
     })
   }
@@ -351,7 +369,8 @@ function addThemeHints(html: string, issues: WidgetValidationIssue[]) {
     issues.push({
       severity: "hint",
       code: "wrapped_theme_color",
-      message: "Worktable's theme variables are complete colors; hsl(var(--...)) works only with a palette the page defines itself.",
+      message:
+        "Worktable's theme variables are complete colors; hsl(var(--...)) works only with a palette the page defines itself.",
       hint: "Write var(--primary), not hsl(var(--primary)).",
     })
   }
@@ -458,8 +477,13 @@ export function buildWidgetFile({
   now = new Date().toISOString(),
 }: BuildWidgetFileInput): WidgetFile {
   if (existing) {
-    const { requests: existingRequests, spaceImages: existingImages, ...rest } = existing
-    const nextRequests = requests === undefined ? existingRequests : (requests ?? undefined)
+    const {
+      requests: existingRequests,
+      spaceImages: existingImages,
+      ...rest
+    } = existing
+    const nextRequests =
+      requests === undefined ? existingRequests : (requests ?? undefined)
     const nextImages = spaceImages === undefined ? existingImages : spaceImages
     return {
       ...rest,
@@ -522,7 +546,9 @@ function escapeClosingScript(value: string): string {
   return value.replace(/<\/script/gi, "<\\/script")
 }
 
-export function buildWidgetHostStyles(fontStyles = previewFontCss("/worktable-preview")): string {
+export function buildWidgetHostStyles(
+  fontStyles = previewFontCss("/worktable-preview")
+): string {
   return `<style data-worktable-runtime="host-smoothness">
 ${fontStyles}
 ${HTML_DOC_COLOR_SCHEME_CSS}
@@ -751,12 +777,19 @@ export function injectWidgetRuntime(
   const runtime = buildWidgetRuntimeScript(spaceId, widgetId, options)
   const runtimeInsertionIndex = trustedRuntimeInsertionIndex(html)
   let output = `${html.slice(0, runtimeInsertionIndex)}${runtime}${html.slice(runtimeInsertionIndex)}`
-  return injectWidgetHostStyles(output, options?.mode === "share" ? { fontStyles: SHARE_FONT_CSS } : undefined)
+  return injectWidgetHostStyles(
+    output,
+    options?.mode === "share" ? { fontStyles: SHARE_FONT_CSS } : undefined
+  )
 }
 
 /** The same typography and host styles are used for live and static previews. */
-export function injectWidgetHostStyles(html: string, options?: { fontStyles: string }): string {
-  let output = html
+export function injectWidgetHostStyles(
+  html: string,
+  options?: { fontStyles: string }
+): string {
+  // Library icons are drawn in with the theme, on every path that serves it.
+  let output = expandHtmlIcons(html)
   let shell = inspectWidgetHtmlShell(output)
   if (!shell.hasViewport) {
     const viewport = `<meta name="viewport" content="width=device-width, initial-scale=1">`

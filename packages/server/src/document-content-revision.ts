@@ -46,6 +46,7 @@ import {
   htmlDocumentFrameInputsStorageV2,
   usesHtmlDocumentStorageV2,
 } from "./html-document-storage-v2.ts"
+import { HTML_ICONS_SOURCE, htmlIconsEnabled } from "./html-icons.ts"
 import { previewFontVersion } from "./preview-fonts.ts"
 import { showableSpaceFiles } from "./space-images.ts"
 import { servedBuildId } from "./static-assets.ts"
@@ -89,7 +90,8 @@ export function docContentRevision(input: {
  * An HTML Doc frame's revision. The frame also carries the preview fonts'
  * CSS, which changes when the product font is provisioned or replaced, and
  * the Space images it names (`images`, from htmlImagesStamp), which only a
- * page that names one has.
+ * page that names one has, and while icons are drawn, the library they come
+ * from (html-icons.ts).
  */
 export function htmlContentRevision(input: {
   sourceSha256: string
@@ -102,6 +104,7 @@ export function htmlContentRevision(input: {
     previewFontVersion(),
     input.sourceSha256,
     ...(input.images === undefined ? [] : [`images\0${input.images}`]),
+    ...(htmlIconsEnabled() ? [`icons\0${HTML_ICONS_SOURCE}`] : []),
   ])
 }
 
@@ -305,13 +308,14 @@ const ROW_CONCURRENCY = 16
 // from changed, every source's fingerprint included, and builds a new one
 // when anything did. A Space's revisions are therefore listed once per
 // catalog, and again only when the fonts HTML frames carry change, or
-// whether they carry Space images. The catalog stamps those images too.
+// whether they carry Space images or draw icons. The catalog stamps those images too.
 const listedRevisions = new WeakMap<
   DocumentCatalog,
   {
     fonts: string
     htmlFiles: boolean
     images: boolean
+    icons: boolean
     revisions: Promise<Map<string, string>>
   }
 >()
@@ -339,11 +343,13 @@ export async function documentContentRevisions(
   const htmlFiles = await usesHtmlDocumentStorageV2()
   const fonts = previewFontVersion()
   const images = htmlSpaceImagesEnabled()
+  const icons = htmlIconsEnabled()
   const listed = listedRevisions.get(catalog)
   if (
     listed?.fonts === fonts &&
     listed.htmlFiles === htmlFiles &&
-    listed.images === images
+    listed.images === images &&
+    listed.icons === icons
   ) {
     const all = await listed.revisions
     return wanted
@@ -359,7 +365,13 @@ export async function documentContentRevisions(
   // what it read for the next one.
   if (wanted) return catalogRevisions(spaceId, catalog, htmlFiles, wanted)
   const revisions = catalogRevisions(spaceId, catalog, htmlFiles)
-  listedRevisions.set(catalog, { fonts, htmlFiles, images, revisions })
+  listedRevisions.set(catalog, {
+    fonts,
+    htmlFiles,
+    images,
+    icons,
+    revisions,
+  })
   return revisions
 }
 

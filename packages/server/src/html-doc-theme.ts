@@ -1,5 +1,6 @@
 import { HTML_DOC_THEME } from "@worktable/ui/lib/html-doc-theme.generated"
 import { DRAWING_FONTS } from "@worktable/ui/lib/drawing-fonts"
+import { htmlIconsEnabled } from "./mcp/surface.ts"
 
 type Mode = keyof typeof HTML_DOC_THEME
 type Tokens = Record<string, string>
@@ -85,6 +86,14 @@ button:not(:disabled):hover,select:not(:disabled):hover{background:color-mix(in 
 input::placeholder,textarea::placeholder{color:color-mix(in oklch,currentColor 55%,transparent)}
 input,select,textarea,progress,meter{accent-color:var(--primary)}`
 
+// While icons are drawn (html-icons.ts), one is 1em square even before it is
+// drawn, so a name the library lacks leaves an icon-sized gap, not an svg's
+// default 300 by 150.
+const ICONS = `
+svg[data-icon]{vertical-align:-0.125em;flex-shrink:0}
+svg[data-icon]:not([width]){width:1em}
+svg[data-icon]:not([height]){height:1em}`
+
 /**
  * The theme and base styles every HTML Doc gets, in the lowest cascade layer,
  * so any rule the page writes wins. `attribute` follows the data-theme
@@ -92,7 +101,10 @@ input,select,textarea,progress,meter{accent-color:var(--primary)}`
  * without a script to set it. Dark values apply on screen only, so a page
  * always prints light.
  */
-function renderHtmlDocThemeCss(variant: "attribute" | "system"): string {
+function renderHtmlDocThemeCss(
+  variant: "attribute" | "system",
+  icons: boolean
+): string {
   const light = declarations({
     ...modeTokens("light"),
     ...FONTS,
@@ -104,16 +116,20 @@ function renderHtmlDocThemeCss(variant: "attribute" | "system"): string {
     variant === "attribute"
       ? `@media screen{html[data-theme="dark"]{${dark}}}`
       : `@media screen and (prefers-color-scheme:dark){:root{${dark}}}`
-  return `@layer worktable{:root{${light}}\n${darkRule}\n${BASE}}`
+  return `@layer worktable{:root{${light}}\n${darkRule}\n${BASE}${icons ? ICONS : ""}}`
 }
 
 const THEME_CSS = {
-  attribute: renderHtmlDocThemeCss("attribute"),
-  system: renderHtmlDocThemeCss("system"),
+  attribute: renderHtmlDocThemeCss("attribute", false),
+  system: renderHtmlDocThemeCss("system", false),
+}
+const THEME_CSS_WITH_ICONS = {
+  attribute: renderHtmlDocThemeCss("attribute", true),
+  system: renderHtmlDocThemeCss("system", true),
 }
 
 export function buildHtmlDocThemeCss(variant: "attribute" | "system"): string {
-  return THEME_CSS[variant]
+  return (htmlIconsEnabled() ? THEME_CSS_WITH_ICONS : THEME_CSS)[variant]
 }
 
 /** Native controls and scrollbars follow the theme the page is shown in, even

@@ -4,6 +4,7 @@ import {
 } from "./link-schema-generation.ts"
 import { createHash } from "node:crypto"
 import { createLinkKey, type LinkKey } from "./link-grant-view.ts"
+import { htmlIconsEnabled } from "./html-icons.ts"
 import { injectWidgetRuntime } from "./widget-authoring.ts"
 import {
   htmlImagesStamp,
@@ -78,7 +79,9 @@ export async function readLinkTool(
   const schemaGeneration = linkSchemaGeneration(view.link.spaceId, collections)
   // Whether pages show Space images is part of what one is built as.
   const imageMode = htmlSpaceImagesEnabled() ? "images" : "plain"
-  const key = `${workspaceCacheKey()}\0${view.link.id}\0${view.link.spaceId}\0${view.link.documentId}\0${view.path}\0${view.link.grantRevision}\0${generation}\0${schemaGeneration}\0${imageMode}`
+  // So is whether they draw the icons they name.
+  const iconMode = htmlIconsEnabled() ? "icons" : "plain"
+  const key = `${workspaceCacheKey()}\0${view.link.id}\0${view.link.spaceId}\0${view.link.documentId}\0${view.path}\0${view.link.grantRevision}\0${generation}\0${schemaGeneration}\0${imageMode}\0${iconMode}`
   const cached = tools.get(key)
   if (cached && (await imagesUnchanged(view, cached))) return cached.value
   // Another request may have replaced the stale entry while this one checked.

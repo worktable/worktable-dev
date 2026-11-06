@@ -71,14 +71,48 @@ function openedWhen(iso: string, now: number): string {
   return formatArchiveDate(iso)
 }
 
+/**
+ * When a link was last opened: for a link that counts views, its last view;
+ * for any other, its last fetch.
+ */
+function lastOpenedAt(link: Pick<ShareLink, "lastUsedAt" | "views">): string | null {
+  return link.views ? link.views.lastViewAt : link.lastUsedAt
+}
+
 /** A link's Last opened cell: "Today", "3 days ago", or "Never". */
 export function shareLinkLastOpened(
-  link: Pick<ShareLink, "lastUsedAt">,
+  link: Pick<ShareLink, "lastUsedAt" | "views">,
   now = Date.now()
 ): string {
-  if (!link.lastUsedAt) return "Never"
-  const when = openedWhen(link.lastUsedAt, now)
+  const at = lastOpenedAt(link)
+  if (!at) return "Never"
+  const when = openedWhen(at, now)
   return when.charAt(0).toUpperCase() + when.slice(1)
+}
+
+/**
+ * What the share dialog says under its default link about views: "4 views ·
+ * 2 people · Viewed today", or "No views yet". Empty for a link that doesn't
+ * count views.
+ */
+export function shareLinkViewsLine(
+  link: ShareLink,
+  now = Date.now()
+): ShareLinkDetail[] {
+  if (!link.views || link.status === "revoked") return []
+  const parts = viewParts(link.views)
+  if (link.views.lastViewAt)
+    parts.push({ text: `Viewed ${openedWhen(link.views.lastViewAt, now)}` })
+  return parts
+}
+
+/** "4 views · 2 people", or "No views yet", for a link that counts views. */
+function viewParts(views: NonNullable<ShareLink["views"]>): ShareLinkDetail[] {
+  if (views.count === 0) return [{ text: "No views yet" }]
+  return [
+    { text: views.count === 1 ? "1 view" : `${views.count} views` },
+    { text: views.people === 1 ? "1 person" : `${views.people} people` },
+  ]
 }
 
 export interface ShareLinkDetail {
@@ -112,11 +146,13 @@ export function shareLinkDetails(
     parts.push({ text: BLOCKED_LABELS[link.blockedBy], stopped: true })
   }
   if (link.hasPassword) parts.push({ text: "Password" })
-  parts.push({
-    text: link.lastUsedAt
-      ? `Last opened ${openedWhen(link.lastUsedAt, now)}`
-      : "Not opened yet",
-  })
+  if (link.views) parts.push(...viewParts(link.views))
+  else
+    parts.push({
+      text: link.lastUsedAt
+        ? `Last opened ${openedWhen(link.lastUsedAt, now)}`
+        : "Not opened yet",
+    })
   return parts
 }
 
@@ -201,7 +237,11 @@ export function shareLinkSummary(
     parts.push({ text: BLOCKED_LABELS[link.blockedBy], stopped: true })
   if (link.level === "comment" && link.comments.autoPaused)
     parts.push({ text: "Comments paused", stopped: true })
-  if (opened && link.lastUsedAt) {
+  if (opened && link.views) {
+    parts.push(...viewParts(link.views))
+    if (link.views.lastViewAt)
+      parts.push({ text: `Viewed ${openedWhen(link.views.lastViewAt, now)}` })
+  } else if (opened && link.lastUsedAt) {
     const when = openedWhen(link.lastUsedAt, now)
     parts.push({ text: `Opened ${when}` })
   }

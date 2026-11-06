@@ -5158,6 +5158,15 @@
           "description": "When downloadUrl stops working.",
           "type": "string"
         },
+        "shareLinks": {
+          "description": "For a live HTML Doc shared by link on Worktable Cloud: each link's label, views and estimated people over the last 90 days, its last view and last fetch, its recent views (time, visible seconds, whether it was a reload or looks automated, a per-link browser label, country, browser, phone or desktop, cloud network) and the apps whose link previews fetched it. Best effort: people is an estimate, and a fetch with no view may be a scanner or a reader who blocks counting.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {}
+          }
+        },
         "notices": {
           "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
           "type": "string"

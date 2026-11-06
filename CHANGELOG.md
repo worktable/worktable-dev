@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Share link views:** On Worktable Cloud, the link to a live tool shows how many times people viewed it and roughly how many people did, such as "4 views · 2 people". Link scanners, chat previews, reloads and visits that look automated don't count.
+
 ### Changed
 
 - **Threads:** In dark mode, an open thread now sits on black, with the thread list beside it unchanged. The selected thread uses the same highlight as the sidebar, and **Thread** in the header is now the page's main button.

@@ -124,6 +124,7 @@ import {
   usesHtmlDocumentStorageV2,
 } from "../html-document-storage-v2.ts"
 import { DEFAULT_AGENT_PRINCIPAL } from "./helpers.ts"
+import { htmlShareLinkViews } from "./share-link-views.ts"
 import {
   noteAgentCallForSetup,
   noteAgentPairedForSetup,
@@ -1868,7 +1869,7 @@ async function _dispatchOperationInner(
       const spaceId = args["spaceId"] as string
       const requestedWidgetId = args["widgetId"] as string
       const includeHtml = (args["includeHtml"] as boolean | undefined) ?? true
-      return withDocPathLock(spaceId, async () => {
+      const read = await withDocPathLock(spaceId, async () => {
         const aliasResolution = await resolveDocAlias(
           spaceId,
           requestedWidgetId
@@ -1909,6 +1910,13 @@ async function _dispatchOperationInner(
           }
         })
       })
+      // Views of the page's share links, for the preview surface.
+      if (context.surface !== "preview") return read
+      // Views are extra: the page reads the same without them.
+      const shareLinks = await htmlShareLinkViews(spaceId, read.widget.id).catch(
+        () => []
+      )
+      return shareLinks.length ? { ...read, shareLinks } : read
     }
     case "records.list_collections": {
       const spaceId = args["spaceId"] as string

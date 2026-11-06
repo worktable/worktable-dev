@@ -36,6 +36,12 @@ import {
   linkSpaceSchemaGeneration,
 } from "../link-schema-generation.ts"
 import { readSharingPolicy } from "../share-links-store.ts"
+import {
+  shareViewsReported,
+  shareViewSummaries,
+  type ShareViewSummary,
+} from "../share-views.ts"
+import { countsViews } from "./public-share-views.ts"
 import { readLinkGrantSchemas, validateLinkGrant } from "../link-grant.ts"
 import { mapWithConcurrency } from "../bounded-concurrency.ts"
 import { getWorkspaceCollaborationEpoch } from "../collaboration-epoch.ts"
@@ -133,7 +139,8 @@ function publicLink(
   policy: SharingPolicy,
   now = Date.now(),
   autoPaused = false,
-  url?: string
+  url?: string,
+  views?: ShareViewSummary | null
 ): ShareLink {
   const level = ShareLinkLevelSchema.safeParse(link.level)
   const blockedBy =
@@ -161,6 +168,15 @@ function publicLink(
     hasPassword: link.hasPassword,
     ...(link.grant ? { grant: link.grant } : {}),
     lastUsedAt: iso(link.lastUsedAt),
+    ...(views !== undefined
+      ? {
+          views: {
+            count: views?.views ?? 0,
+            people: views?.people ?? 0,
+            lastViewAt: iso(views?.lastViewAt ?? null),
+          },
+        }
+      : {}),
     status,
     ...(status === "blocked" && blockedBy ? { blockedBy } : {}),
     tokenHint: link.tokenHint,
@@ -168,6 +184,21 @@ function publicLink(
     canManage,
     comments: { ...link.comments, autoPaused },
   }
+}
+
+/**
+ * Each link's views, for links that count them, in one read. A counting link
+ * with no views yet maps to null; links that don't count views are absent.
+ */
+function viewsOf(
+  links: readonly StoredShareLink[]
+): Map<string, ShareViewSummary | null> {
+  // Until a gateway that reports views is in front, links keep Last opened.
+  const counting = shareViewsReported() ? links.filter(countsViews) : []
+  const summaries = shareViewSummaries(counting.map((link) => link.id))
+  return new Map(
+    counting.map((link) => [link.id, summaries.get(link.id) ?? null])
+  )
 }
 
 /** Where each link's document is now, one snapshot read per Space. */
@@ -308,6 +339,7 @@ shareLinksRouter.get("/", async (c) => {
     }).allowed,
   }))
   const urls = manageableUrls(managed)
+  const views = viewsOf(links)
   const toolReads =
     kind === "html" && resolution.shareable
       ? await toolReadCollections(spaceId, path).catch(() => [])
@@ -321,7 +353,8 @@ shareLinksRouter.get("/", async (c) => {
         policy,
         now,
         pauses.get(link.id) === "spike",
-        urls.get(link.id)
+        urls.get(link.id),
+        views.get(link.id)
       )
     ),
     canCreate,
@@ -593,7 +626,8 @@ shareLinksRouter.post("/", async (c) => {
       currentSharingPolicy(),
       Date.now(),
       false,
-      url
+      url,
+      viewsOf([created.link]).get(created.link.id)
     ),
     url,
   }
@@ -723,7 +757,8 @@ shareLinksRouter.patch("/:linkId", async (c) => {
       currentSharingPolicy(),
       Date.now(),
       pauses.get(updated.id) === "spike",
-      manageableUrls([{ link: updated, canManage: true }]).get(updated.id)
+      manageableUrls([{ link: updated, canManage: true }]).get(updated.id),
+      viewsOf([updated]).get(updated.id)
     ),
   })
 })
@@ -808,6 +843,7 @@ shareLinksRouter.get("/all", async (c) => {
       }).allowed,
     }))
   const urls = manageableUrls(managed)
+  const views = viewsOf(managed.map(({ link }) => link))
   const body: ShareLinksPage = {
     links: managed.map(({ link, canManage }) =>
       publicLink(
@@ -817,7 +853,8 @@ shareLinksRouter.get("/all", async (c) => {
         policy,
         now,
         pauses.get(link.id) === "spike",
-        urls.get(link.id)
+        urls.get(link.id),
+        views.get(link.id)
       )
     ),
     nextCursor: page.nextCursor,

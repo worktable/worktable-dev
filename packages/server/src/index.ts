@@ -88,6 +88,7 @@ import { agentConnectionsRouter } from "./routes/agent-connections.ts"
 import { sharesRouter } from "./routes/shares.ts"
 import { publicSharesRouter } from "./routes/public-shares.ts"
 import { flushShareLinkUse, refreshShareLinkGrantProofs, sweepRevokedShareLinks } from "./share-links-store.ts"
+import { sweepShareViews } from "./share-views.ts"
 import { sweepVisitorComments, closeVisitorCommentStores, prepareVisitorCommentStore } from "./visitor-comment-store.ts"
 import { notifyRetainedVisitorComments } from "./visitor-comment-access.ts"
 import { settleShareLinkReconciles } from "./share-links-lifecycle.ts"
@@ -1477,6 +1478,11 @@ export function startServer(
         sweepRevokedShareLinks();
       } catch (err) {
         console.error("[share-links] revoked link sweep error:", logError(err));
+      }
+      try {
+        sweepShareViews();
+      } catch (err) {
+        console.error("[share-views] sweep error:", logError(err));
       }
       // Retention still erases prior data after the preview is disabled.
       try {

@@ -288,6 +288,82 @@ export const PUBLIC_SHARE_STATUS = {
 } as const
 
 /**
+ * What the gateway knows about a view of a shared page, sent to the
+ * Worktable's `POST /public/share/visit` beside a ShareViewMessage. Set only
+ * by the gateway, never copied from the visitor; a Worktable reads them only
+ * on requests the gateway admitted. None carries an address or a full user
+ * agent.
+ */
+export const SHARE_VIEW_HEADERS = {
+  /** The visitor key's digest, bound to the link, where a key may be kept. */
+  VISITOR: "x-worktable-view-visitor",
+  /** A digest for one link and UTC day, for views without a key. */
+  DAY: "x-worktable-view-day",
+  /** Two-letter country code. */
+  COUNTRY: "x-worktable-view-country",
+  /** `cloud` when the request came from a hosting or security network. */
+  NETWORK: "x-worktable-view-network",
+  /** A browser family from SHARE_VIEW_BROWSERS. */
+  BROWSER: "x-worktable-view-browser",
+  /** `phone` or `desktop`. */
+  DEVICE: "x-worktable-view-device",
+  /**
+   * The app whose link preview fetched the page, from SHARE_PREVIEW_APPS: on
+   * a preview message, and on the page fetch itself so it isn't noted as a
+   * use.
+   */
+  PREVIEW: "x-worktable-view-preview",
+} as const
+
+export const SHARE_VIEW_BROWSERS = [
+  "chrome",
+  "safari",
+  "firefox",
+  "edge",
+  "other",
+] as const
+export const SHARE_PREVIEW_APPS = [
+  "slack",
+  "teams",
+  "discord",
+  "whatsapp",
+] as const
+export const SHARE_VIEW_NETWORKS = ["cloud", "other"] as const
+export const SHARE_VIEW_DEVICES = ["phone", "desktop"] as const
+
+/** One page load, named by a random id the page keeps only in memory. */
+const ShareViewLoad = z.string().regex(/^[A-Za-z0-9_-]{16,32}$/)
+const ShareViewMeasure = {
+  load: ShareViewLoad,
+  /** Seconds the page has been visible since it loaded. */
+  visible: z.number().int().min(0).max(24 * 60 * 60),
+  /** Whether the visitor has pointed, tapped, typed or scrolled with a wheel. */
+  input: z.boolean(),
+  /** What `navigator.webdriver` reported. */
+  webdriver: z.boolean(),
+}
+
+/**
+ * A page's report of its own view, as the gateway forwards it, or the
+ * gateway's own note of a link preview. `start` is sent once the page has
+ * been visible for a few seconds; `update` carries the running totals when
+ * the tab hides. Either may arrive first, more than once, or not at all.
+ */
+export const ShareViewMessage = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("start"), ...ShareViewMeasure }),
+  z.strictObject({ kind: z.literal("update"), ...ShareViewMeasure }),
+  z.strictObject({ kind: z.literal("preview") }),
+])
+export type ShareViewMessage = z.infer<typeof ShareViewMessage>
+
+/** A Worktable's answer: whether this message counted a new view, and whether it was the link's first. */
+export const ShareViewReply = z.strictObject({
+  counted: z.boolean(),
+  first: z.boolean(),
+})
+export type ShareViewReply = z.infer<typeof ShareViewReply>
+
+/**
  * What the gateway sends a Worktable's `POST /public/share/unlock`, with the
  * link token in SHARE_CAPABILITY_HEADER.
  */

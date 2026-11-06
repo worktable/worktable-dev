@@ -119,6 +119,17 @@ export const UpdateShareLinkInputSchema = z.strictObject({
 })
 export type UpdateShareLinkInput = z.input<typeof UpdateShareLinkInputSchema>
 
+/**
+ * A link's views over the last 90 days, best effort: a view is a page load
+ * that ran and was visible for a few seconds, not counting reloads or what
+ * looks automated. `people` is an estimate.
+ */
+export interface ShareLinkViews {
+  count: number
+  people: number
+  lastViewAt: string | null
+}
+
 export interface ShareLink {
   id: string
   spaceId: string
@@ -136,7 +147,13 @@ export interface ShareLink {
   hasPassword: boolean
   /** The human-approved live access, absent for static links. */
   grant?: LinkGrant
+  /** When the link was last fetched, by anyone or anything. */
   lastUsedAt: string | null
+  /**
+   * Views by people, for links that count them: live HTML links on Worktable
+   * Cloud. Absent for other links, which show only when they were last opened.
+   */
+  views?: ShareLinkViews
   status: ShareLinkStatus
   /** Present when `status` is `blocked`. */
   blockedBy?: ShareLinkBlockedBy

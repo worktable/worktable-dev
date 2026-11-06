@@ -132,7 +132,9 @@ export const advanceGenerationOnWrite: MiddlewareHandler = async (c, next) => {
   if (
     method === "POST" &&
     (c.req.path === "/public/share/bridge" ||
-      c.req.path === "/public/share/unlock")
+      c.req.path === "/public/share/unlock" ||
+      // A view is counted beside the links, never in the workspace.
+      c.req.path === "/public/share/visit")
   )
     return next()
   if (

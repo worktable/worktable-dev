@@ -119,7 +119,7 @@ describe("changing an HTML Doc", () => {
     expect((await read()).html).toBe(page)
   })
 
-  it("changes permissions without the page, and keeps whole-page writes where edits aren't offered", async () => {
+  it("changes permissions without the page, on both surfaces", async () => {
     const write = catalogTools("preview").find((tool) => tool.name === "worktable_html_write")!
     const routed = routeCatalogCall(write, { spaceId: "meta", htmlId: "plan", permissions: { network: false, records: { tasks: { read: true } } } })
     expect(routed.operations.map((operation) => operation.id)).toEqual(["html.update"])
@@ -132,11 +132,11 @@ describe("changing an HTML Doc", () => {
     })
     expect((await read()).html).toBe(page)
 
-    // The released surface lists neither edits nor revisions.
+    // The released surface takes edits, and a replace names its revision.
     const released = catalogTools("released").find((tool) => tool.name === "worktable_html_write")!
-    expect(Object.keys(released.inputSchema.shape)).not.toContain("edits")
-    expect(await failure(mcp("html.update", { widgetId: "plan", edits: [{ oldText: "Q3", newText: "Q4" }] }, "released"))).not.toBeNull()
-    await mcp("html.update", { widgetId: "plan", html: page.replace("Q3", "Q4") }, "released")
+    expect(Object.keys(released.inputSchema.shape)).toContain("edits")
+    expect((await failure(mcp("html.update", { widgetId: "plan", html: page.replace("Q3", "Q4") }, "released")))?.code).toBe("revision_required")
+    await mcp("html.update", { widgetId: "plan", edits: [{ oldText: "Q3", newText: "Q4" }] }, "released")
     expect((await mcp("html.read", { widgetId: "plan" }, "released")).html).toBe(page.replace("Q3", "Q4"))
   })
 
@@ -150,7 +150,7 @@ describe("changing an HTML Doc", () => {
     expect(match!.text).toContain('<p class="status">Status: draft</p>')
     expect((match!.text as string).length).toBeLessThan(600)
     expect(page.slice((match!.column as number) - 1).startsWith(match!.text as string)).toBe(true)
-    expect((await grep("released")).matches).toHaveLength(0)
+    expect((await grep("released")).matches).toHaveLength(1)
 
     // A regex match gets its excerpt too, around where it matched.
     const pattern = await mcp("docs.grep", { pattern: "Status: (draft|final)", regex: true }) as { matches: Array<Record<string, unknown>> }

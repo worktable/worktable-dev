@@ -634,7 +634,8 @@ export async function getSpaceLinkGraph(spaceId: string): Promise<SpaceLinkGraph
       space = {
         docs: new Map(),
         html: new Map(),
-        htmlImages: false,
+        // As readers find it, so one arriving mid-build doesn't mark it dirty.
+        htmlImages: htmlSpaceImagesEnabled(),
         graph: null,
         dirty: true,
         forced: new Set(),

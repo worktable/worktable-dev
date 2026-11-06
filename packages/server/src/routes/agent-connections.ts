@@ -38,7 +38,6 @@ import {
   signalCloudTaskChange,
   updateCloudTask,
 } from "../cloud-task-store.ts"
-import { configuredMcpSurface } from "../mcp/surface.ts"
 import { postThreadMessageWithStored } from "../thread-service.ts"
 
 export const agentConnectionsRouter = new Hono()
@@ -311,10 +310,9 @@ async function claudeAgent(
   id: string,
   { removing = false } = {}
 ): Promise<{ connection: AgentConnection; participantId: string } | Response> {
-  const connection =
-    configuredMcpSurface() === "preview"
-      ? (await listAgentConnections()).find((entry) => entry.id === id)
-      : undefined
+  const connection = (await listAgentConnections()).find(
+    (entry) => entry.id === id
+  )
   // Removing goes by the agent, so a renamed one can still let go of its task.
   if (
     !connection ||

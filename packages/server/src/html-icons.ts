@@ -22,8 +22,6 @@
 //   returned as it is, and one that does is scanned once with a regular
 //   expression, which skips comments and the text of script, style, title and
 //   textarea as the browser does. Only each icon's own tag is parsed.
-//
-// Held behind the MCP preview surface (htmlIconsEnabled).
 
 import { Parser } from "htmlparser2"
 import library from "./html-icons.generated.json" with { type: "json" }

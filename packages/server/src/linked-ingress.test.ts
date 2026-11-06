@@ -664,14 +664,19 @@ it("serves MCP 2026-07-28, events included, only with the client's MCP headers C
   // A gateway that doesn't sign them gets the earlier revisions, as before.
   const unsigned = await call("server/discover", {})
   expect(unsigned.result?.capabilities?.events).toBeUndefined()
-  // With the preview off, signed headers change nothing.
+  // It doesn't wait on the preview; with MCP 2026-07-28 off, signed headers
+  // change nothing.
   delete process.env["WORKTABLE_MCP_PREVIEW"]
   const released = await call(
     "server/discover",
     {},
     signed("server/discover")
   )
-  expect(released.result?.capabilities?.events).toBeUndefined()
+  expect(released.result?.capabilities?.events).toBeDefined()
+  process.env["WORKTABLE_MCP_MODERN"] = "0"
+  const off = await call("server/discover", {}, signed("server/discover"))
+  delete process.env["WORKTABLE_MCP_MODERN"]
+  expect(off.result?.capabilities?.events).toBeUndefined()
   // Let the pending list a tool result reads finish before cleanup.
   await pendingList()
 })

@@ -267,7 +267,7 @@ describe("consolidated MCP registry", () => {
     expect(JSON.parse(content[0]!.text)).toEqual(result.structuredContent)
   })
 
-  it("tells agents on the preview surface how files in the folder behave", async () => {
+  it("tells agents how files in the folder behave", async () => {
     const spec = async (surface?: "preview") => {
       const client = await connectedClient(["*"], surface)
       const result = await client.callTool({
@@ -277,12 +277,10 @@ describe("consolidated MCP registry", () => {
       return String((result.structuredContent as { spec?: unknown }).spec)
     }
     const released = await spec()
-    const preview = await spec("preview")
-    expect(preview).toStartWith(released)
-    expect(released).not.toContain("hidden")
-    expect(preview).toContain("starts with a dot")
-    expect(preview).toContain("the last write wins")
-    expect(preview).toContain("expectedRevision")
+    expect(await spec("preview")).toBe(released)
+    expect(released).toContain("starts with a dot")
+    expect(released).toContain("the last write wins")
+    expect(released).toContain("expectedRevision")
   })
 
   it("returns the technical HTML runtime contract", async () => {
@@ -444,16 +442,9 @@ describe("released tool surface", () => {
     const preview = (await listTools("preview")).tools
     const names = (tools: typeof released) => tools.map((tool) => tool.name)
     expect(names(preview)).toEqual(names(released))
-    // Preview holds changes until agent directories review them: wording,
-    // output fields, HTML Doc edits, uploads and the revision a replace
-    // names. Every other tool is identical.
-    const held: Record<string, string[]> = {
-      worktable_search: [],
-      worktable_files_read: [],
-      worktable_files_write: [],
-      worktable_html_read: [],
-      worktable_html_write: ["edits", "expectedRevision", "upload"],
-    }
+    // Preview holds changes until agent directories review them, each with
+    // the inputs it adds. Every other tool is identical.
+    const held: Record<string, string[]> = {}
     expect(preview.filter((tool) => !(tool.name in held))).toEqual(
       released.filter((tool) => !(tool.name in held))
     )
@@ -464,14 +455,12 @@ describe("released tool surface", () => {
         )
       expect(inputs(preview)).toEqual([...inputs(released), ...added])
     }
-    // A file read says why a file keeps no history, which schema-driven
-    // clients find only in the preview's output schema for now.
+    // A file read says why a file keeps no history, in its output schema.
     const outputs = (tools: typeof released) =>
       tools.find((tool) => tool.name === "worktable_files_read")?.outputSchema
         ?.properties ?? {}
-    expect(outputs(preview)).toHaveProperty("noHistory")
-    expect(outputs(preview)).toHaveProperty("byteLength")
-    expect(outputs(released)).not.toHaveProperty("noHistory")
+    expect(outputs(released)).toHaveProperty("noHistory")
+    expect(outputs(released)).toHaveProperty("byteLength")
     expect(released.map((tool) => tool.name)).toEqual([...PUBLIC_TOOL_NAMES])
     const byName = Object.fromEntries(released.map((tool) => [tool.name, tool]))
     // ChatGPT passes a file the user attached as a link to it.

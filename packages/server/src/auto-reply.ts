@@ -17,7 +17,7 @@ import {
   type AutoReply,
 } from "@worktable/types"
 import { readCloudTasks, type CloudTask } from "./cloud-task-store.ts"
-import { configuredMcpSurface, mcpModernEraEnabled } from "./mcp/surface.ts"
+import { mcpModernEraEnabled } from "./mcp/surface.ts"
 import { onWatchingChange, watchingParticipants } from "./mcp-events.ts"
 import { isWaiting, onWaitingChange } from "./pending-wait.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
@@ -28,7 +28,7 @@ const CALLED: ReadonlySet<string> = new Set(["openclaw", "hermes"])
 export async function withAutoReply(
   connections: AgentConnection[]
 ): Promise<AgentConnection[]> {
-  // Chats and sessions answer through MCP 2026-07-28, served with the preview.
+  // Chats and sessions answer through MCP 2026-07-28.
   const modern = mcpModernEraEnabled()
   // Unreadable state leaves those agents unknown, never the list unloaded.
   const watching = modern
@@ -38,7 +38,6 @@ export async function withAutoReply(
       })
     : new Map()
   const tasks =
-    configuredMcpSurface() === "preview" &&
     connections.some(
       (connection) => agentConnectionPlatform(connection) === "claude"
     )

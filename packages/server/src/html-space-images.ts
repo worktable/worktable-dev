@@ -21,7 +21,7 @@
 //   The images a source names are kept by its hash, so lists and page checks
 //   read no source to stamp them.
 //
-// Held behind the MCP preview surface (htmlSpaceImagesEnabled).
+// They follow the file features (htmlSpaceImagesEnabled).
 
 import { createHash } from "node:crypto"
 import { resolveDocLink } from "@worktable/types"

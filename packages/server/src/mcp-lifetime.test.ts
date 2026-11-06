@@ -67,6 +67,10 @@ async function tool(
   }
 }
 
+/** The revision a replace of an HTML Doc's html names. */
+const htmlRevision = async (spaceId: string, htmlId: string) =>
+  (await tool("worktable_html_read", { action: "read", spaceId, htmlId, includeHtml: false })).data["revision"] as string
+
 const writeDoc = (docPath: string, extra: Record<string, unknown> = {}) =>
   tool("worktable_docs_write", {
     action: "write",
@@ -282,6 +286,7 @@ describe("agent document lifetimes over MCP", () => {
       spaceId,
       htmlId: "views/status",
       html: "<!doctype html><html><body><h1>Status: done</h1></body></html>",
+      expectedRevision: await htmlRevision(spaceId, "views/status"),
     })
     expect(updated.ok).toBe(true)
     const edited = await tool("worktable_html_read", {

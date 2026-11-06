@@ -93,6 +93,9 @@ describe("who may grant an HTML Doc its permissions", () => {
     const revision = async () => (await req("GET", "/api/spaces/meta/documents/page?path=feed")).json.page.revision as string;
     const allow = async (checked: string) => (await req("PATCH", "/api/spaces/meta/widgets/feed", { allowNetwork: true, revision: checked })).status;
     const seen = await revision();
+    // The source revision an agent's replace names.
+    const sourceRevision = async () =>
+      ((await dispatchOperation("html.read", { spaceId: "meta", widgetId: "feed", includeHtml: false }, { surface: "released" })) as { revision: string }).revision;
     caller = agent(["*"]);
     expect(await allow(seen)).toBe(403);
     // A token is never a person, even without an agent label.
@@ -102,7 +105,7 @@ describe("who may grant an HTML Doc its permissions", () => {
 
     // A person allows the code they saw, not code an agent wrote since.
     caller = ownerIdentity();
-    await dispatchOperation("html.update", { spaceId: "meta", widgetId: "feed", html: `${html}<!-- newer -->` }, { surface: "released" });
+    await dispatchOperation("html.update", { spaceId: "meta", widgetId: "feed", html: `${html}<!-- newer -->`, expectedRevision: await sourceRevision() }, { surface: "released" });
     expect(await allow(seen)).toBe(409);
     expect(await allow(await revision())).toBe(200);
     expect(await opened("feed")).toEqual({ networkRequested: false, network: true });
@@ -111,7 +114,7 @@ describe("who may grant an HTML Doc its permissions", () => {
     await dispatchOperation("html.rename", { spaceId: "meta", widgetId: "feed", name: "Feed v2" }, { surface: "released" });
     expect((await opened("feed")).network).toBe(true);
 
-    await dispatchOperation("html.update", { spaceId: "meta", widgetId: "feed", html: `${html}<!-- edit -->` }, { surface: "released" });
+    await dispatchOperation("html.update", { spaceId: "meta", widgetId: "feed", html: `${html}<!-- edit -->`, expectedRevision: await sourceRevision() }, { surface: "released" });
     expect(await opened("feed")).toEqual({ networkRequested: true, network: false });
 
     // Over REST too, an agent's write only asks.

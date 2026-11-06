@@ -94,10 +94,12 @@ it("keeps HTML saved when preview runtime is unavailable and fences standalone c
   expect(new TextDecoder().decode(source.bytes)).toContain("First")
   expect(first.content).toHaveLength(1)
 
+  const read = await call(client, "worktable_html_read", { action: "read", htmlId: "dashboard", includeHtml: false })
   const second = await call(client, "worktable_html_write", {
     action: "update",
     htmlId: "dashboard",
     html: "<!doctype html><html><body><h1>Second</h1></body></html>",
+    expectedRevision: (read.structuredContent as { revision: string }).revision,
     preview: {},
   })
   expect(second.isError).not.toBe(true)

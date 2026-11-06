@@ -42,10 +42,7 @@ Colors: black, grey, light-violet, violet, blue, light-blue, yellow, orange, gre
 Typed text is searchable; freehand marks require a PNG preview or browser inspection to interpret. There is no OCR or live merging. Clean idle canvases refresh after external edits, retaining compatible local undo steps. Conflicting unsaved ink can be kept with Save a copy before Reload drawing. Each autosave retains a full source version under the Worktable's history retention policy, so embedded images can grow history quickly.
 `
 
-/**
- * Preview surface: how files behave for an agent, added to the format spec
- * until agent directories review it.
- */
+/** How files behave for an agent, added to the format spec. */
 export const FILES_SPEC = `## Files and the folder
 
 A file or Doc whose name starts with a dot, such as .env or .gitignore, or that sits in a folder whose name starts with one, is hidden. Hidden items stay hidden: they aren't listed, searched, shared or sent to agents, and Worktable doesn't create or move anything there.

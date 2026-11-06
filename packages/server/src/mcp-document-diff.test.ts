@@ -196,6 +196,8 @@ describe("document diffs over MCP", () => {
       spaceId,
       htmlId: "board",
       html: "<h1>Board</h1>\n<p>Closed</p>\n",
+      // The revision a replace names, as the create saved it.
+      expectedRevision: created.data["revision"],
     })
     const versions = await tool("worktable_documents_read", {
       action: "versions",
@@ -247,7 +249,7 @@ describe("document diffs over MCP", () => {
   })
 
   it("resolves revisions from stored source alone and reports unknown ones", async () => {
-    await tool("worktable_html_write", {
+    const created = await tool("worktable_html_write", {
       action: "create",
       lifetime: "durable",
       spaceId,
@@ -258,7 +260,7 @@ describe("document diffs over MCP", () => {
     const lastRead = (
       await tool("worktable_documents_read", { action: "read_source", spaceId, path: "status" })
     ).data["sourceRevision"] as string
-    await tool("worktable_html_write", { action: "update", spaceId, htmlId: "status", html: "<p>Closed</p>\n" })
+    await tool("worktable_html_write", { action: "update", spaceId, htmlId: "status", html: "<p>Closed</p>\n", expectedRevision: created.data["revision"] })
 
     // Revision lookup reads only each version's source, never its companions.
     const documents = join(root, "versions", spaceId, "documents")

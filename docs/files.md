@@ -328,10 +328,6 @@ work without knowing it.
 
 **Gaps:**
 
-- `worktable_html_write` requires a revision on the preview surface only; the
-  released tool doesn't name one, so it refuses only a stale revision. The HTML
-  Doc and whole-Doc HTTP routes (`routes/widgets.ts`, `routes/docs.ts`) refuse
-  a missing or stale revision on every surface.
 - Restoring a Doc version over HTTP (`routes/docs.ts`) names no revision.
   Its open editors save first, and the restore keeps the current text as a
   version.
@@ -679,8 +675,8 @@ link.
 ## Agents
 
 Agents learn these rules from the tools' descriptions and from
-`worktable_guidance` topic `format_spec`. On the preview surface, `format_spec`
-also says that hidden files stay hidden, and that a write straight to disk is
+`worktable_guidance` topic `format_spec`. `format_spec` also says that hidden
+files stay hidden, and that a write straight to disk is
 last writer wins while a write through Worktable's tools with
 `expectedRevision` is checked (`FILES_SPEC` in `mcp/format-spec.ts`). Any change to what agents receive is
 an MCP change: hold it on the preview surface (`PREVIEW_CHANGES` in

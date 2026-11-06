@@ -36,7 +36,6 @@ import { previewFontVersion, fulfillPreviewFont } from "./preview-fonts.ts"
 import { inlineHtmlSpaceImages } from "./html-space-images.ts"
 import { withPreviewPage } from "./document-preview-browser.ts"
 import { productFontIssue } from "./product-fonts.ts"
-import { configuredMcpSurface } from "./mcp/surface.ts"
 
 export interface HtmlPreviewSnapshot {
   spaceId: string
@@ -848,7 +847,7 @@ window.addEventListener('message',async event=>{
   // After the image, so the capture is never changed: report text that sits
   // on the frame's edge, at the captured width and at phone width, since a
   // centered column with no padding of its own runs flush only when narrow.
-  if (configuredMcpSurface() === "preview" && !options.clip && !snapshot.historical) {
+  if (!options.clip && !snapshot.historical) {
     // Informational only: it has its own short budget and never fails or
     // delays a capture that already has its image.
     const check = async () => {

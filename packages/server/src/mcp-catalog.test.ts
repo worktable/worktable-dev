@@ -145,7 +145,7 @@ describe("the listed tools", () => {
     expect(rejects("worktable_annotations_write", { spaceId: "s", annotationId: "a1", replyTo: "a2", body: "x" })).toContain("not both")
     expect(rejects("worktable_threads_update", { location: { kind: "space", spaceId: "s" }, threadId: "t", title: "T", assignResponse: { messageId: "msg_0123456789ab", identityId: null } })).toContain("separate calls")
     expect(rejects("worktable_delete", { spaceId: "s" })).toContain("Pass path")
-    expect(rejects("worktable_html_write", { spaceId: "s", htmlId: "app", permissions: {} })).toContain("needs html")
+    expect(rejects("worktable_html_write", { spaceId: "s", htmlId: "app", html: "<p>", edits: [] })).toContain("one of html, edits or upload")
     // Fields of a different operation are refused by that operation's schema.
     expect(rejects("worktable_files_update", { ...file, newPath: "a.md", reason: "tidy" })).toContain("reason")
     // So are missing fields, named as the caller sent them.

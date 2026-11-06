@@ -11,6 +11,14 @@ infrastructure and personal context out of release notes.
 
 ### Added
 
+- **Agents:** Agents can change part of an HTML Doc with exact edits instead of rewriting the whole page, and a replace names the revision it read, so a newer change is never overwritten.
+- **Agents:** Agents with a shell can send or fetch a large HTML Doc through a one-time link, outside the tool call.
+- **Agents:** Exact search now finds text in HTML Docs too, with a short excerpt around each match.
+- **HTML Docs:** A page can show an image kept in its Space with a plain `<img src="img/hero.jpg">`, in the app, in previews and on share links.
+- **Agents:** Agents learn Worktable's theme for HTML Docs, and get hints when a page uses fixed colors.
+- **HTML Docs:** A page can show a library icon with `<svg data-icon="circle-check">`, drawn when the page is served.
+- **Auto-reply:** Claude on claude.ai can answer comments through a Claude Code cloud task, and ChatGPT can answer comments on a Worktable reached through Worktable Link.
+- **Share link views:** Agents can read how a live HTML Doc's share links were viewed.
 - **Share link views:** On Worktable Cloud, the link to a live tool shows how many times people viewed it and roughly how many people did, such as "4 views · 2 people". Link scanners, chat previews, reloads and visits that look automated don't count.
 
 ### Changed

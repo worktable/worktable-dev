@@ -28,7 +28,7 @@ import {
 } from "./workspace.ts"
 
 const SPACE = "meta"
-const previousPreview = process.env["WORKTABLE_MCP_PREVIEW"]
+const previousFiles = process.env["WORKTABLE_FILES"]
 let root = ""
 let app: Hono
 let caller: TokenIdentity | null = null
@@ -74,8 +74,9 @@ async function call(
   })
 }
 
-function preview(on: boolean): void {
-  process.env["WORKTABLE_MCP_PREVIEW"] = on ? "1" : "0"
+/** Space images follow the file features. */
+function files(on: boolean): void {
+  process.env["WORKTABLE_FILES"] = on ? "1" : "0"
 }
 
 const docs = () => join(root, "workspace", "spaces", SPACE, "docs")
@@ -145,13 +146,13 @@ beforeEach(async () => {
     201
   )
   invalidateLinkGraph()
-  preview(true)
+  files(true)
 })
 
 afterEach(async () => {
   await settleLinkRewrites()
-  if (previousPreview === undefined) delete process.env["WORKTABLE_MCP_PREVIEW"]
-  else process.env["WORKTABLE_MCP_PREVIEW"] = previousPreview
+  if (previousFiles === undefined) delete process.env["WORKTABLE_FILES"]
+  else process.env["WORKTABLE_FILES"] = previousFiles
   setWorkspaceRootOverride(null)
   setAppDirOverride(null)
   rmSync(root, { recursive: true, force: true })
@@ -192,16 +193,16 @@ describe("Space images in HTML Docs", () => {
     caller = null
 
     // Off, the frame is what it always was.
-    preview(false)
+    files(false)
     expect(await frame("report/summary")).not.toContain(base64("chart bytes"))
   })
 
   it("gives a page a new frame revision when an image it names changes, in its rows too", async () => {
     putFile("gallery/one.png", "first version")
     await createHtml("gallery", '<img src="gallery/one.png" alt="One">')
-    preview(false)
+    files(false)
     const off = await pageRevision("gallery")
-    preview(true)
+    files(true)
     const first = await pageRevision("gallery")
     expect(first).not.toBe(off)
     // Rows name the frame the page check names, so it loads once.
@@ -241,7 +242,7 @@ describe("Space images in HTML Docs", () => {
     )
 
     // Off, an image's changes leave the revision as it always was.
-    preview(false)
+    files(false)
     const offAgain = await pageRevision("gallery")
     putFile("gallery/one.png", "third")
     expect(await pageRevision("gallery")).toBe(offAgain)
@@ -320,26 +321,31 @@ describe("Space images in HTML Docs", () => {
         "The page's images pass 4 MiB together, so these show as broken images: c.png.",
       ],
     ])
+    // The revision each replace names.
+    const revision = async () =>
+      ((await dispatchOperation("html.read", { spaceId: SPACE, widgetId: "deck/slides", includeHtml: false })) as { revision: string }).revision
     const updated = await dispatchOperation("html.update", {
       spaceId: SPACE,
       widgetId: "deck/slides",
       html: page('<img src="ok.png" alt="">'),
+      expectedRevision: await revision(),
     })
     expect(await codes(updated)).toEqual([])
     // Without file read access, one notice, which names no file: the
     // warnings would otherwise say which files exist.
     const unread = await dispatchOperation(
       "html.update",
-      { spaceId: SPACE, widgetId: "deck/slides", html },
+      { spaceId: SPACE, widgetId: "deck/slides", html, expectedRevision: await revision() },
       { scopes: ["widgets:write", "widgets:read"] }
     )
     expect((await codes(unread)).map(([code]) => code)).toEqual(["space_images_need_file_access"])
 
-    preview(false)
+    files(false)
     const off = await dispatchOperation("html.update", {
       spaceId: SPACE,
       widgetId: "deck/slides",
-      html,
+      html: page('<img src="gone.png" alt="">'),
+      expectedRevision: await revision(),
     })
     expect(await codes(off)).toEqual([])
   })
@@ -420,15 +426,5 @@ describe("Space images in HTML Docs", () => {
     expect(await source("site/old/home")).toContain(
       '<img src="../../assets/logo.png" alt="Logo">'
     )
-
-    // Off, HTML Docs are left as written.
-    preview(false)
-    await moveRegisteredDocument({
-      spaceId: SPACE,
-      path: "assets/logo.png",
-      to: "logo.png",
-    })
-    await settleLinkRewrites()
-    expect(await source("site/old/home")).toContain('src="../../assets/logo.png"')
   }, 30_000)
 })

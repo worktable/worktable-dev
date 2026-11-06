@@ -72,7 +72,8 @@ import { DocumentPreview } from "@/components/editor/document-preview"
 import { useDocName, useNameFromTitleOnLeave } from "@/hooks/use-doc-name"
 import { takeJustCreated } from "@/hooks/use-new-doc"
 import { DocumentByline } from "@/components/document/document-byline"
-import { useBylineState } from "@/hooks/use-byline-state"
+import { useBylineState, type BylineState } from "@/hooks/use-byline-state"
+import { useTemporaryArchiveLabel } from "@/hooks/use-document-organize"
 import { useEditorFiles } from "@/hooks/use-editor-files"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
@@ -1186,6 +1187,9 @@ function sendIntentFrame(provider: WebsocketProvider | null): boolean {
   return false
 }
 
+const POINTER_PRESS_ENDS = ["pointerup", "pointercancel"] as const
+const KEY_PRESS_ENDS = ["keyup"] as const
+
 function BlockNoteDocPage({
   spaceId,
   docPath,
@@ -1285,8 +1289,56 @@ function BlockNoteDocPage({
     },
     [provider]
   )
+  // The preview and the editor each show the byline; one state keeps what
+  // is open when the editor takes over.
+  const bylineState = useBylineState()
+  // The archive date is open only while the Doc is temporary: keeping it
+  // here or elsewhere removes the chip without closing its popover, and a
+  // stale open state would otherwise hold the editor back below.
+  const archivable = useTemporaryArchiveLabel(spaceId, docPath) !== null
+  const { lifetimeOpen, setLifetimeOpen } = bylineState
+  useEffect(() => {
+    if (!archivable && lifetimeOpen) setLifetimeOpen(false)
+  }, [archivable, lifetimeOpen, setLifetimeOpen])
+  // The editor takes over once the reader is done with the stand-in: not
+  // between pointer down and up, which would send the click to neither,
+  // and not while the archive date it opened is open, which the editor's
+  // copy would reopen from its first step.
+  const [standInPressed, setStandInPressed] = useState(false)
+  // A pointer press ends at pointer up; a key press (Space activates a
+  // button on key up) ends at key up. Leaving the window ends either, since
+  // a press released outside it never reports its end.
+  const holdStandIn = useCallback((ends: readonly string[]) => {
+    setStandInPressed(true)
+    const release = () => {
+      for (const type of ends) window.removeEventListener(type, release, true)
+      window.removeEventListener("blur", release)
+      // After this press's click has reached the stand-in.
+      window.setTimeout(() => setStandInPressed(false))
+    }
+    for (const type of ends) window.addEventListener(type, release, true)
+    window.addEventListener("blur", release)
+  }, [])
+  // Once the editor shows for a room, opening the archive date from it
+  // never brings the stand-in back.
+  const [shownProvider, setShownProvider] = useState<WebsocketProvider | null>(
+    null
+  )
+  if (
+    provider &&
+    readyEditor === provider &&
+    readyContent === provider &&
+    shownProvider !== provider &&
+    !standInPressed &&
+    !(archivable && lifetimeOpen)
+  ) {
+    setShownProvider(provider)
+  }
   const editorReadable = Boolean(
-    provider && readyEditor === provider && readyContent === provider
+    provider &&
+    readyEditor === provider &&
+    readyContent === provider &&
+    shownProvider === provider
   )
   // The saved content shows until the editor is readable, following the
   // revision until then; after that, the room brings every change.
@@ -1642,12 +1694,11 @@ function BlockNoteDocPage({
   )
   useNameFromTitleOnLeave(spaceId, docPath, !readOnly && !archived)
 
-  // The preview and the editor each show the byline; one state keeps what
-  // is open when the editor takes over.
-  const bylineState = useBylineState()
-  const byline = (
+  // The editor mounts hidden behind the stand-in first, so only the byline
+  // in view may show the archive date.
+  const bylineWith = (state: BylineState) => (
     <DocumentByline
-      state={bylineState}
+      state={state}
       spaceId={spaceId}
       docPath={docPath}
       provenance={page?.provenance}
@@ -1658,6 +1709,11 @@ function BlockNoteDocPage({
       onVersionHistory={openVersions}
     />
   )
+  const byline = bylineWith(bylineState)
+  const editorByline = bylineWith({
+    ...bylineState,
+    lifetimeOpen: bylineState.lifetimeOpen && editorReadable,
+  })
 
   return (
     <div className="flex h-full flex-col">
@@ -1686,7 +1742,12 @@ function BlockNoteDocPage({
           className={`relative min-w-0 overflow-hidden ${previewVersionId ? "hidden xl:block xl:flex-[1_1_50%] xl:border-r xl:border-border print:block print:flex-1 print:border-r-0" : "flex-1"}`}
         >
           {!editorReadable && (
-            <div ref={standInRef} className="absolute inset-0 z-10">
+            <div
+              ref={standInRef}
+              className="absolute inset-0 z-10"
+              onPointerDown={() => holdStandIn(POINTER_PRESS_ENDS)}
+              onKeyDown={() => holdStandIn(KEY_PRESS_ENDS)}
+            >
               {opening ? (
                 <MarkdownViewer
                   content={opening.markdown}
@@ -1731,7 +1792,7 @@ function BlockNoteDocPage({
                   }}
                   editable={!convertingToMarkdown}
                   title={editorTitle}
-                  afterTitle={byline}
+                  afterTitle={editorByline}
                   files={editingFiles}
                   annotations={annotations}
                   activeAnnotationId={activeAnnotationId}

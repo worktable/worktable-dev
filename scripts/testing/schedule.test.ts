@@ -10,7 +10,7 @@ const ids = [
   "control-plane",
   "gateway-bun",
   "gateway-worker",
-  "web-browser",
+  "web-1-browser",
   "desktop-contracts",
   "unknown-future-lane",
 ]
@@ -22,7 +22,7 @@ describe("canonical suite scheduling", () => {
         const active = new Set<string>()
         const seen: string[] = []
         const exclusive = new Set([
-          "web-browser",
+          "web-1-browser",
           "desktop-contracts",
           "unknown-future-lane",
         ])
@@ -59,7 +59,7 @@ describe("canonical suite scheduling", () => {
           "bun-server",
           "cli-boundary",
           "control-plane",
-          "web-browser",
+          "web-1-browser",
         ].map((id) => ({ id })),
         async ({ id }, signal) => {
           seen.push(id)
@@ -83,17 +83,16 @@ describe("canonical suite scheduling", () => {
         // The cloud lane can complete while the server remains blocked; a failed
         // companion must instead prevent that lane and the exclusive browser lane.
         expect(seen.includes("control-plane")).toBe(!shouldFail)
-        expect(seen).not.toContain("web-browser")
+        expect(seen).not.toContain("web-1-browser")
       } finally {
         server.resolve()
       }
       expect(await run).toBe(shouldFail)
       expect(seen.includes("control-plane")).toBe(!shouldFail)
-      expect(seen.includes("web-browser")).toBe(!shouldFail)
+      expect(seen.includes("web-1-browser")).toBe(!shouldFail)
     }
   )
 })
-
 
 test("a known failure stops pending lanes before the failing lane finishes cleanup", async () => {
   const started = Promise.withResolvers<void>()

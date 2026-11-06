@@ -7,6 +7,7 @@ import { runSuiteSchedule } from "./schedule.ts"
 import { runCommand, processTreeRssMb, type Command } from "./command.ts"
 import { aggregateResults, writeLaneResult, type LaneResult } from "./report.ts"
 import { CANONICAL_PORTFOLIO_REVISION } from "./health-policy.ts"
+import { webBrowserSuiteIds } from "./public-suites.ts"
 import {
   bunTestArguments,
   hasExecutedGoTests,
@@ -58,7 +59,10 @@ function parseArgs(argv: string[]): Options {
       options.files.push(value)
       index += 1
     } else if (arg === "--suite" && value) {
-      options.suites.push(value)
+      // web-browser names every web browser shard.
+      options.suites.push(
+        ...(value === "web-browser" ? webBrowserSuiteIds : [value])
+      )
       index += 1
     } else if (arg === "--test-file" && value) {
       options.testFiles.push(value)
@@ -175,7 +179,7 @@ function commandForSuite(
   }
   if (suite.runner === "playwright") {
     const config =
-      suite.id === "web-browser"
+      suite.cwd === "apps/web"
         ? ["--config", "playwright.doc-links.config.ts"]
         : []
     return {
@@ -286,6 +290,18 @@ if (indivisibleFilteredSuites.length > 0) {
     `These suites do not support file filters: ${indivisibleFilteredSuites
       .map((suite) => suite.id)
       .join(", ")}. Select the suite without --test-file/--test-path-prefix.`
+  )
+}
+// A runner given no files runs its whole directory, so an empty suite (a
+// browser shard whose files all moved, say) is a configuration error.
+const emptySuites = suites.filter(
+  (suite) =>
+    !["go", "host-go", "desktop"].includes(suite.runner) &&
+    ownedTestFiles(suite).length === 0
+)
+if (emptySuites.length > 0) {
+  throw new Error(
+    `These suites own no test files: ${emptySuites.map((suite) => suite.id).join(", ")}`
   )
 }
 const targeted = isTargetedSelection(options)

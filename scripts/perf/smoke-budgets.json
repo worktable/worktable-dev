@@ -472,8 +472,7 @@
       "max": 0
     },
     "io stat, recent": {
-      "max": 68,
-      "why": "Worktable Teams checks the selected Worktable's team state once per request: one stat each of the team marker, the workspace manifest and the team database (Plan 16 gate D4 allows exactly these 3 on solo)."
+      "max": 38
     },
     "io read, recent": {
       "max": 15
@@ -502,8 +501,7 @@
       "max": 0
     },
     "io stat, search": {
-      "max": 28,
-      "why": "Worktable Teams checks the selected Worktable's team state once per request: one stat each of the team marker, the workspace manifest and the team database (Plan 16 gate D4 allows exactly these 3 on solo)."
+      "max": 19
     },
     "io read, search": {
       "max": 3

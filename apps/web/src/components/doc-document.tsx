@@ -1298,11 +1298,15 @@ function BlockNoteDocPage({
     const release = () => {
       window.removeEventListener("pointerup", release, true)
       window.removeEventListener("pointercancel", release, true)
+      window.removeEventListener("blur", release)
       // After this press's click has reached the stand-in.
       window.setTimeout(() => setStandInPressed(false))
     }
     window.addEventListener("pointerup", release, true)
     window.addEventListener("pointercancel", release, true)
+    // A press released outside the window never reports its pointerup;
+    // leaving the window ends the hold, so the editor still takes over.
+    window.addEventListener("blur", release)
   }, [])
   // Once the editor shows for a room, opening the archive date from it
   // never brings the stand-in back.

@@ -1,4 +1,4 @@
-// How a file reads for an agent on the preview surface, as the file type
+// How a file reads for an agent, as the file type
 // table's agent policy says: an image as an image, text as text, and an
 // overwritten CSV or TSV with what changed in it.
 

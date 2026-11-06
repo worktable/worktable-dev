@@ -174,21 +174,18 @@ describe("widget REST routes", () => {
     const severitiesByCode = Object.fromEntries(createRes.json.warnings.map((issue: { code: string; severity: string }) => [issue.code, issue.severity]));
     expect(severitiesByCode.missing_viewport).toBe("hint");
     expect(severitiesByCode.inline_event_handler).toBe("hint");
-    expect(severitiesByCode.missing_dark_theme).toBe("hint");
+    expect(severitiesByCode.missing_dark_theme).toBeUndefined();
   });
 
-  it("teaches the served theme on the preview surface only", () => {
-    const released = getHtmlAuthoringGuide("runtime", "released");
-    expect(released).toContain("The parent theme is available");
-    expect(released).not.toContain("## Theme");
-    const preview = getHtmlAuthoringGuide("runtime", "preview");
-    expect(preview).toContain("## Theme");
-    expect(preview).not.toContain("The parent theme is available");
+  it("teaches the served theme", () => {
+    const guide = getHtmlAuthoringGuide("runtime");
+    expect(guide).toContain("## Theme");
+    expect(guide).not.toContain("The parent theme is available");
   });
 
-  it("on the preview surface, points pages that step outside the served theme back to it", async () => {
+  it("points pages that step outside the served theme back to it", async () => {
     const previous = process.env["WORKTABLE_MCP_PREVIEW"];
-    process.env["WORKTABLE_MCP_PREVIEW"] = "1";
+    delete process.env["WORKTABLE_MCP_PREVIEW"];
     try {
       const codes = async (id: string, style: string, body = "") => {
         const res = await req(app, "POST", "/api/spaces/meta/widgets", {

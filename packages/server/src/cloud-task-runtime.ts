@@ -31,7 +31,6 @@ import {
   updateCloudTask,
   type CloudTask,
 } from "./cloud-task-store.ts"
-import { configuredMcpSurface } from "./mcp/surface.ts"
 import {
   onPendingChange,
   pendingFor,
@@ -96,7 +95,6 @@ export function startCloudTaskRuntime(
   const detached = AsyncLocalStorage.snapshot()
   const workspace = workspaceCacheKey()
   const live = () => !stopped && workspace === workspaceCacheKey()
-  const enabled = () => configuredMcpSurface() === "preview"
   // Agents with a task, as of the last pass, so events for others cost nothing.
   let targets = new Set<string>()
 
@@ -198,7 +196,6 @@ export function startCloudTaskRuntime(
   async function drain(): Promise<void> {
     const tasks = await readCloudTasks()
     targets = new Set(tasks.map((task) => task.participantId))
-    if (!enabled()) return
     let nextAt = Infinity
     const schedule = (at: number) => {
       nextAt = Math.min(nextAt, at)
@@ -263,7 +260,7 @@ export function startCloudTaskRuntime(
   // Changes being recorded. Stopping waits for them.
   const recording = new Set<Promise<void>>()
   function record(participantId: string, work: () => Promise<boolean>) {
-    if (!live() || !enabled() || !targets.has(participantId)) return
+    if (!live() || !targets.has(participantId)) return
     const done: Promise<void> = detached(work)
       .then((changed) => {
         if (changed) nudge()

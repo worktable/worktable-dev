@@ -1713,7 +1713,7 @@ export class PublicOperationOutputError extends Error {
   }
 }
 
-/** An upload link for an HTML Doc's page, from the preview surface. */
+/** An upload link for an HTML Doc's page. */
 const HtmlUploadLinkOutputSchema = z.looseObject({
   ok: z.literal(true),
   htmlId: PortableHtmlIdSchema.optional(),
@@ -1725,9 +1725,8 @@ const HtmlUploadLinkOutputSchema = z.looseObject({
 })
 
 /**
- * Results only the preview surface returns. They are checked like the
- * others, but stay out of the released output schemas: the preview listing
- * declares their fields (catalog.ts PREVIEW_CHANGES).
+ * Results checked like the others that stay out of the listed variants: the
+ * tool declares their fields with outputFields (catalog.ts).
  */
 const HELD_OPERATION_OUTPUT_VARIANTS: Partial<Record<OperationId, readonly z.ZodObject[]>> = {
   "html.create": [HtmlUploadLinkOutputSchema],

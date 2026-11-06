@@ -185,8 +185,6 @@ const docsWrite = fieldsOf("worktable_docs_write", "write")
 const docsEdit = fieldsOf("worktable_docs_write", "edit")
 const htmlCreate = fieldsOf("worktable_html_write", "create")
 const htmlUpdate = fieldsOf("worktable_html_write", "update")
-/** HTML Doc update fields held for the preview surface. */
-const HTML_HELD_FIELDS = ["expectedRevision", "edits", "upload"] as const
 const drawingsInspect = fieldsOf("worktable_drawings_read", "inspect")
 const drawingsCreate = fieldsOf("worktable_drawings_write", "create")
 const drawingsEdit = fieldsOf("worktable_drawings_write", "edit")
@@ -238,12 +236,14 @@ const TOOLS: CatalogTool[] = [
     name: "worktable_search",
     title: "Search Worktable context",
     description:
-      "Search workspace content by meaning, with fuzzy matching and relevance ranking, optionally scoped to a Space or folder. Returns matching items with their sources. Set exact to find exact text, or a regex with regex, line by line in Docs instead.",
+      "Search workspace content by meaning, with fuzzy matching and relevance ranking, optionally scoped to a Space or folder. Returns matching items with their sources. Set exact to find exact text, or a regex with regex, line by line in Docs and HTML Docs instead.",
     annotations: READ,
     inputSchema: flatInput(["query"], [search, without(grep, "pattern", "spaceId", "pathPrefix", "includeArchived")], {
       exact: z
         .boolean()
-        .describe("When true, match query as exact text line by line in Docs, returning each match's Doc, line number and revision, plus any Docs it could not search."),
+        .describe(
+          "When true, match query as exact text line by line in Docs and HTML Docs, returning each match's Doc, line number and revision, plus any Docs it could not search. An HTML Doc's match has type html; in a long line, each match returns an excerpt around it, with the column it starts at."
+        ),
     }),
     runs: [
       ["worktable_discover", "search"],
@@ -311,6 +311,20 @@ const TOOLS: CatalogTool[] = [
       source: z.boolean().describe("When true, return the file's content."),
       versions: z.boolean().describe("When true, list the file's saved versions and checkpoints."),
     }),
+    outputFields: {
+      byteLength: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe("The file's size in bytes."),
+      noHistory: z
+        .looseObject({ ...FileNoHistorySchema.shape, message: z.string() })
+        .optional()
+        .describe(
+          "Present when the file's current content isn't kept as a version, with why: content larger than maxBytes isn't versioned. Versions from before the file grew stay in its history."
+        ),
+    },
     runs: [
       ["worktable_documents_read", "list"],
       ["worktable_documents_read", "read"],
@@ -348,11 +362,22 @@ const TOOLS: CatalogTool[] = [
     name: "worktable_files_write",
     title: "Write a Worktable file",
     description:
-      "Create a file, or replace one's content when expectedRevision is given, from source, from an earlier version with fromVersionId, or from an uploaded file. A new file needs format (worktable.file for a plain file) and lifetime. In ChatGPT, pass the user's attached file as file. With a shell and no source, the result gives a one-time link that takes the bytes with curl -T within 10 minutes, up to 64 MiB. Replacing a CSV or TSV reports what changed row by row. Replaced content stays in version history.",
+      "Create a file, or replace one's content, from source, from an earlier version with fromVersionId, or from an uploaded file. A new file needs format (worktable.file for a plain file) and lifetime. Every replace needs expectedRevision, the sourceRevision from your latest worktable_files_read; one the file is no longer at is refused. In ChatGPT, pass the user's attached file as file. With a shell and no source, the result gives a one-time link that takes the bytes with curl -T within 10 minutes, up to 64 MiB; to replace a file through it, pass ifExists replace with expectedRevision. Replacing a CSV or TSV reports what changed row by row. Replaced content stays in version history.",
     annotations: writes({ destructiveHint: true }),
     inputSchema: flatInput(["spaceId", "path"], [filesCreate, filesReplace, filesUpload, without(filesRestoreVersion, "versionId")], {
       lifetime: described(filesCreate.lifetime!, LIFETIME_DESCRIPTION),
-      expectedRevision: z.string().min(1).max(256).describe("The revision from your latest read. Required to replace or restore an existing file; omit when creating."),
+      ifExists: z
+        .enum(["fail", "keep_both", "replace"])
+        .describe(
+          "When the path is taken: fail, keep_both (saves name-2.ext) or replace, which needs expectedRevision from your latest read (a new version; the old one stays in the file's history)"
+        ),
+      expectedRevision: z
+        .string()
+        .min(1)
+        .max(256)
+        .describe(
+          "The sourceRevision from your latest worktable_files_read. Required to replace or restore an existing file; omit when creating."
+        ),
       fromVersionId: z.string().min(1).max(256).describe("Instead of source: restore this earlier version or checkpoint as the new content."),
       file: ChatGptFileInput.describe("In ChatGPT: a file the user attached. Worktable fetches it and saves it at path."),
     }),
@@ -468,9 +493,20 @@ const TOOLS: CatalogTool[] = [
     name: "worktable_html_read",
     title: "Read a Worktable HTML Doc",
     description:
-      "Read an HTML Doc's details, permissions and revision; set includeHtml for its source. List HTML Docs with worktable_files_read and see one with worktable_files_render.",
+      "Read an HTML Doc's details, permissions, revision and source; with includeHtml false, no source. The revision is what worktable_html_write takes as expectedRevision. With a shell, downloadUrl gives the source outside the call. List HTML Docs with worktable_files_read, find text in them with worktable_search exact, and see one with worktable_files_render.",
     annotations: READ,
     inputSchema: flatInput(["spaceId", "htmlId"], [fieldsOf("worktable_html_read", "read")]),
+    outputFields: {
+      revision: z.string().optional().describe("The source's revision, for expectedRevision in worktable_html_write."),
+      downloadUrl: z.string().optional().describe("Where a shell can fetch this revision of the source with curl, outside the call, until downloadExpiresAt. It refuses once the page changes."),
+      downloadExpiresAt: z.string().optional().describe("When downloadUrl stops working."),
+      shareLinks: z
+        .array(z.looseObject({}))
+        .optional()
+        .describe(
+          "For a live HTML Doc shared by link on Worktable Cloud: each link's label, views and estimated people over the last 90 days, its last view and last fetch, its recent views (time, visible seconds, whether it was a reload or looks automated, a per-link browser label, country, browser, phone or desktop, cloud network) and the apps whose link previews fetched it. Best effort: people is an estimate, and a fetch with no view may be a scanner or a reader who blocks counting."
+        ),
+    },
     runs: [["worktable_html_read", "read"]],
     route: (args) => step("worktable_html_read", "read", args),
   },
@@ -478,14 +514,16 @@ const TOOLS: CatalogTool[] = [
     name: "worktable_html_write",
     title: "Write a Worktable HTML Doc",
     description:
-      "Create an HTML Doc, or with htmlId change one's HTML, name, description or permissions. A new HTML Doc needs name, lifetime and html. Create and update may return an opt-in PNG preview; a failed preview never undoes the save. Read worktable_guidance topic html before writing one.",
+      "Create an HTML Doc, or with htmlId change one. To change part of a page, pass edits: read it with worktable_html_read first, copy each oldText exactly from its html, and pass its revision as expectedRevision; on no_match or ambiguous, read again and never guess. To replace the whole page, pass html; that needs expectedRevision, and one the HTML Doc is no longer at is refused. With a shell, a large page can go through a one-time link instead: pass upload, and send the file with the command it returns. Name, description and permissions change without html. A new HTML Doc needs name, lifetime and html. Worktable themes the page for light and dark: use var(--background), var(--foreground), var(--primary) and its other variables, not fixed colors. Create and update may return an opt-in PNG preview; a failed preview never undoes the save. Read worktable_guidance topic html before writing one.",
     annotations: writes({ destructiveHint: true }),
-    // The released listing holds back edits, revisions and uploads (PREVIEW_CHANGES).
-    inputSchema: flatInput(["spaceId"], [without(htmlCreate, "upload"), without(htmlUpdate, ...HTML_HELD_FIELDS)], {
+    inputSchema: flatInput(["spaceId"], [without(htmlCreate, "upload"), without(htmlUpdate, "expectedRevision", "edits", "upload")], {
       htmlId: z.string().describe("HTML Doc to change. Omit to create one."),
       // Renaming clears a description with null; create and update take text.
       description: described(fieldsOf("worktable_html_write", "rename").description!, "Short description shown in Worktable; null clears it."),
       lifetime: described(htmlCreate.lifetime!, LIFETIME_DESCRIPTION),
+      edits: htmlUpdate.edits!,
+      expectedRevision: htmlUpdate.expectedRevision!,
+      upload: htmlUpdate.upload!,
     }),
     runs: [
       ["worktable_html_write", "create"],
@@ -493,17 +531,31 @@ const TOOLS: CatalogTool[] = [
       ["worktable_html_write", "rename"],
     ],
     route: (args) => {
+      const pages = ["html", "edits", "upload"].filter((key) => args[key] !== undefined)
+      if (pages.length > 1)
+        throw new ToolArgumentError("Pass one of html, edits or upload.")
+      if (args.upload !== undefined && args.preview !== undefined)
+        throw new ToolArgumentError("A page sent through a link has no preview; render it with worktable_files_render once it is saved.")
       if (args.htmlId === undefined) {
-        if (args.expectedRevision !== undefined)
-          throw new ToolArgumentError("expectedRevision applies when changing an existing HTML Doc's html.")
+        if (args.expectedRevision !== undefined || args.edits !== undefined)
+          throw new ToolArgumentError("expectedRevision and edits apply when changing an existing HTML Doc: pass its htmlId.")
         return step("worktable_html_write", "create", args)
       }
-      if (args.html === undefined && (args.permissions !== undefined || args.preview !== undefined))
-        throw new ToolArgumentError("Changing permissions or asking for a preview needs html too.")
-      // A rename replaces no content, so it names no revision.
-      return args.html !== undefined
+      const updates = ["html", "edits", "upload", "expectedRevision", "permissions", "preview"]
+      // A rename needs a name, and only a rename clears a description with
+      // null; any other change of properties is an update.
+      const renames = args.name !== undefined || args.description === null
+      return updates.some((key) => args[key] !== undefined) || !renames
         ? step("worktable_html_write", "update", args)
-        : step("worktable_html_write", "rename", without(args, "expectedRevision"))
+        : step("worktable_html_write", "rename", args)
+    },
+    outputFields: {
+      revision: z.string().optional().describe("The saved page's revision, for expectedRevision on the next write."),
+      uploadUrl: z.string().optional().describe("With upload: the one-time link that takes the page, with curl -T."),
+      method: z.literal("PUT").optional().describe("With upload: the method the link takes."),
+      expiresAt: z.string().optional().describe("With upload: when the link stops working."),
+      maxBytes: z.number().int().positive().optional().describe("With upload: the largest page the link takes."),
+      command: z.string().optional().describe("With upload: the command that sends a local file to the link."),
     },
   },
   {
@@ -879,119 +931,7 @@ export const CATALOG_TOOLS: readonly CatalogTool[] = TOOLS
  * Listing changes held for the preview surface (mcp-tools.preview.json)
  * until agent directories review them. Each takes a released tool's place.
  */
-const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
-  // A file read's size, and why a file keeps no history, as results give them.
-  worktable_files_read: (tool) => ({
-    ...tool,
-    outputFields: {
-      byteLength: z
-        .number()
-        .int()
-        .nonnegative()
-        .optional()
-        .describe("The file's size in bytes."),
-      noHistory: z
-        .looseObject({ ...FileNoHistorySchema.shape, message: z.string() })
-        .optional()
-        .describe(
-          "Present when the file's current content isn't kept as a version, with why: content larger than maxBytes isn't versioned. Versions from before the file grew stay in its history."
-        ),
-    },
-  }),
-  // A replace through an upload link names the revision it is based on.
-  worktable_files_write: (tool) => ({
-    ...tool,
-    description:
-      "Create a file, or replace one's content, from source, from an earlier version with fromVersionId, or from an uploaded file. A new file needs format (worktable.file for a plain file) and lifetime. Every replace needs expectedRevision, the sourceRevision from your latest worktable_files_read; one the file is no longer at is refused. In ChatGPT, pass the user's attached file as file. With a shell and no source, the result gives a one-time link that takes the bytes with curl -T within 10 minutes, up to 64 MiB; to replace a file through it, pass ifExists replace with expectedRevision. Replacing a CSV or TSV reports what changed row by row. Replaced content stays in version history.",
-    inputSchema: z.strictObject({
-      ...tool.inputSchema.shape,
-      ifExists: z
-        .enum(["fail", "keep_both", "replace"])
-        .optional()
-        .describe(
-          "When the path is taken: fail, keep_both (saves name-2.ext) or replace, which needs expectedRevision from your latest read (a new version; the old one stays in the file's history)"
-        ),
-      expectedRevision: z
-        .string()
-        .min(1)
-        .max(256)
-        .optional()
-        .describe(
-          "The sourceRevision from your latest worktable_files_read. Required to replace or restore an existing file; omit when creating."
-        ),
-    }),
-  }),
-  // Change part of a page with edits; a whole replace names the revision it
-  // is based on; name, description and permissions change without html.
-  worktable_html_write: (tool) => ({
-    ...tool,
-    description:
-      "Create an HTML Doc, or with htmlId change one. To change part of a page, pass edits: read it with worktable_html_read first, copy each oldText exactly from its html, and pass its revision as expectedRevision; on no_match or ambiguous, read again and never guess. To replace the whole page, pass html; that needs expectedRevision, and one the HTML Doc is no longer at is refused. With a shell, a large page can go through a one-time link instead: pass upload, and send the file with the command it returns. Name, description and permissions change without html. A new HTML Doc needs name, lifetime and html. Worktable themes the page for light and dark: use var(--background), var(--foreground), var(--primary) and its other variables, not fixed colors. Create and update may return an opt-in PNG preview; a failed preview never undoes the save. Read worktable_guidance topic html before writing one.",
-    inputSchema: z.strictObject({
-      ...tool.inputSchema.shape,
-      edits: htmlUpdate.edits!.optional(),
-      expectedRevision: htmlUpdate.expectedRevision!.optional(),
-      upload: htmlUpdate.upload!,
-    }),
-    route: (args) => {
-      const pages = ["html", "edits", "upload"].filter((key) => args[key] !== undefined)
-      if (pages.length > 1)
-        throw new ToolArgumentError("Pass one of html, edits or upload.")
-      if (args.upload !== undefined && args.preview !== undefined)
-        throw new ToolArgumentError("A page sent through a link has no preview; render it with worktable_files_render once it is saved.")
-      if (args.htmlId === undefined) {
-        if (args.expectedRevision !== undefined || args.edits !== undefined)
-          throw new ToolArgumentError("expectedRevision and edits apply when changing an existing HTML Doc: pass its htmlId.")
-        return step("worktable_html_write", "create", args)
-      }
-      const updates = ["html", "edits", "upload", "expectedRevision", "permissions", "preview"]
-      // A rename needs a name, and only a rename clears a description with
-      // null; any other change of properties is an update.
-      const renames = args.name !== undefined || args.description === null
-      return updates.some((key) => args[key] !== undefined) || !renames
-        ? step("worktable_html_write", "update", args)
-        : step("worktable_html_write", "rename", args)
-    },
-    outputFields: {
-      revision: z.string().optional().describe("The saved page's revision, for expectedRevision on the next write."),
-      uploadUrl: z.string().optional().describe("With upload: the one-time link that takes the page, with curl -T."),
-      method: z.literal("PUT").optional().describe("With upload: the method the link takes."),
-      expiresAt: z.string().optional().describe("With upload: when the link stops working."),
-      maxBytes: z.number().int().positive().optional().describe("With upload: the largest page the link takes."),
-      command: z.string().optional().describe("With upload: the command that sends a local file to the link."),
-    },
-  }),
-  worktable_html_read: (tool) => ({
-    ...tool,
-    description:
-      "Read an HTML Doc's details, permissions, revision and source; with includeHtml false, no source. The revision is what worktable_html_write takes as expectedRevision. With a shell, downloadUrl gives the source outside the call. List HTML Docs with worktable_files_read, find text in them with worktable_search exact, and see one with worktable_files_render.",
-    outputFields: {
-      revision: z.string().optional().describe("The source's revision, for expectedRevision in worktable_html_write."),
-      downloadUrl: z.string().optional().describe("Where a shell can fetch this revision of the source with curl, outside the call, until downloadExpiresAt. It refuses once the page changes."),
-      downloadExpiresAt: z.string().optional().describe("When downloadUrl stops working."),
-      shareLinks: z
-        .array(z.looseObject({}))
-        .optional()
-        .describe(
-          "For a live HTML Doc shared by link on Worktable Cloud: each link's label, views and estimated people over the last 90 days, its last view and last fetch, its recent views (time, visible seconds, whether it was a reload or looks automated, a per-link browser label, country, browser, phone or desktop, cloud network) and the apps whose link previews fetched it. Best effort: people is an estimate, and a fetch with no view may be a scanner or a reader who blocks counting."
-        ),
-    },
-  }),
-  worktable_search: (tool) => ({
-    ...tool,
-    description:
-      "Search workspace content by meaning, with fuzzy matching and relevance ranking, optionally scoped to a Space or folder. Returns matching items with their sources. Set exact to find exact text, or a regex with regex, line by line in Docs and HTML Docs instead.",
-    inputSchema: z.strictObject({
-      ...tool.inputSchema.shape,
-      exact: z
-        .boolean()
-        .optional()
-        .describe(
-          "When true, match query as exact text line by line in Docs and HTML Docs, returning each match's Doc, line number and revision, plus any Docs it could not search. An HTML Doc's match has type html; in a long line, each match returns an excerpt around it, with the column it starts at."
-        ),
-    }),
-  }),
-}
+const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {}
 
 /** The tools a surface lists, in order. */
 export function catalogTools(surface: McpSurface): readonly CatalogTool[] {

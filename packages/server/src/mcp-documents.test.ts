@@ -1072,6 +1072,8 @@ describe("format-neutral document access", () => {
           htmlId: "Team Board/state",
           name: "Team state",
           html: "<!doctype html><title>Team state</title><p>After agent edit</p>",
+          // A replace names the revision it is based on.
+          expectedRevision: (read.structuredContent as { revision: string }).revision,
         },
       },
     })
@@ -1085,7 +1087,7 @@ describe("format-neutral document access", () => {
     )
 
     // A read names the revision a replace of its html is based on, and a
-    // write the revision it saved. The released surface refuses a stale one.
+    // write the revision it saved. A stale one is refused.
     const readRevision = (read.structuredContent as { revision: string }).revision
     const savedRevision = (updated.structuredContent as { revision: string }).revision
     expect(readRevision).toMatch(/^html:sha256:/)

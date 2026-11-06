@@ -133,9 +133,9 @@ describe("HTML Docs through file links", () => {
     expect((await app.request(new URL(downloadUrl).pathname)).status).toBe(409)
   })
 
-  it("keeps links off the released surface", async () => {
-    expect(await failure(mcp("html.create", { id: "plan", name: "Plan", lifetime: "durable", upload: true }, "released"))).not.toBeNull()
-    await mcp("html.create", { id: "plan", name: "Plan", lifetime: "durable", html: page("Q3") }, "released")
-    expect((await mcp("html.read", { widgetId: "plan" }, "released")).downloadUrl).toBeUndefined()
+  it("gives links on the released surface too", async () => {
+    expect(await mcp("html.create", { id: "plan", name: "Plan", lifetime: "durable", upload: true }, "released")).toHaveProperty("uploadUrl")
+    await mcp("html.create", { id: "notes", name: "Notes", lifetime: "durable", html: page("Q3") }, "released")
+    expect((await mcp("html.read", { widgetId: "notes" }, "released")).downloadUrl).toBeDefined()
   })
 })

@@ -947,8 +947,6 @@ function htmlUploadLinkResult(
   call: HtmlUploadCall,
   widgetId?: string
 ) {
-  if (context.surface !== "preview")
-    throw new Error("This Worktable doesn't take HTML Docs through upload links yet. Pass the page as html.")
   if (!filesEnabled()) throw new Error("File features are turned off on this Worktable.")
   if (!context.fileLinkOrigin)
     throw new Error("This connection can't take upload links. Pass the page as html, or change part of it with edits.")
@@ -1336,7 +1334,7 @@ async function _dispatchOperationInner(
     case "html.guide": {
       return {
         profile: "runtime" as const,
-        guide: getHtmlAuthoringGuide("runtime", context.surface ?? "released"),
+        guide: getHtmlAuthoringGuide("runtime"),
         tokens: WIDGET_STYLE_TOKENS,
       }
     }
@@ -1897,10 +1895,7 @@ async function _dispatchOperationInner(
           // The revision a replace of its html names, with or without it.
           const revision = htmlSourceRevision(data.sourceBytes)
           // With a shell, a large page moves through a link, outside the call.
-          const download =
-            context.surface === "preview"
-              ? htmlDownloadLink(context.fileLinkOrigin, principal, spaceId, widgetId, revision)
-              : {}
+          const download = htmlDownloadLink(context.fileLinkOrigin, principal, spaceId, widgetId, revision)
           if (!includeHtml) return { widget, revision, ...download }
           return {
             widget,
@@ -1911,9 +1906,8 @@ async function _dispatchOperationInner(
           }
         })
       })
-      // Views of the page's share links, for the preview surface.
-      if (context.surface !== "preview") return read
-      // Views are extra: the page reads the same without them.
+      // Views of the page's share links. They are extra: the page reads the
+      // same without them.
       const shareLinks = await htmlShareLinkViews(spaceId, read.widget.id).catch(
         () => []
       )
@@ -2434,11 +2428,7 @@ async function _dispatchOperationInner(
     case "html.update": {
       const spaceId = args["spaceId"] as string
       const widgetId = args["widgetId"] as string
-      const preview = context.surface === "preview"
       const edits = args["edits"] as TextEdit[] | undefined
-      // Edits are held for the preview surface.
-      if (!preview && edits !== undefined)
-        throw new Error("This Worktable doesn't take edits to HTML Docs yet. Pass the whole page as html.")
       if (args["upload"]) {
         if (args["html"] !== undefined || edits !== undefined)
           throw new Error("Pass upload to send the page through a link, or html or edits, not both.")
@@ -2490,10 +2480,8 @@ async function _dispatchOperationInner(
               html: args["html"] as string | undefined,
               edits,
               expectedRevision: args["expectedRevision"] as string | undefined,
-              // The preview surface says a replace needs the revision and
-              // requires it; the released one, whose listing doesn't, still
-              // refuses a stale one when given.
-              requireRevisionToReplace: preview,
+              // A replace names the revision it is based on.
+              requireRevisionToReplace: true,
               name: args["name"] as string | undefined,
               description: args["description"] as string | undefined,
               metadata: args["metadata"] as Record<string, unknown> | undefined,
@@ -3017,9 +3005,7 @@ async function _dispatchOperationInner(
         pathPrefix,
         includeArchived,
         // HTML source is what worktable_html_read gives, under its own scope.
-        includeHtml:
-          context.surface === "preview" &&
-          hasScope(context.scopes ?? ["*"], "widgets:read"),
+        includeHtml: hasScope(context.scopes ?? ["*"], "widgets:read"),
       })
       return {
         matches,
@@ -3456,10 +3442,7 @@ async function _dispatchOperationInner(
         guide: DRAWING_GUIDE,
       }
     case "guidance.format_spec": {
-      const spec =
-        context.surface === "preview"
-          ? `${FORMAT_SPEC.trim()}\n\n${FILES_SPEC}`
-          : FORMAT_SPEC.trim()
+      const spec = `${FORMAT_SPEC.trim()}\n\n${FILES_SPEC}`
       return {
         spec,
       }

@@ -1130,7 +1130,7 @@ export const ChatGptFileInput = z
   )
 
 /**
- * On the preview surface, files_write also makes a one-time upload link, so
+ * files_write also makes a one-time upload link, so
  * an agent with a shell sends a file's bytes outside the tool call. In
  * ChatGPT, upload takes a file the user attached instead.
  */

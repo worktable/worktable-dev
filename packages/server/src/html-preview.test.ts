@@ -596,9 +596,9 @@ previewTest(
   }
 )
 
-previewTest("on the preview surface, reports text on the frame's edge, at phone width too", async () => {
+previewTest("reports text on the frame's edge, at phone width too", async () => {
   const previous = process.env["WORKTABLE_MCP_PREVIEW"]
-  process.env["WORKTABLE_MCP_PREVIEW"] = "1"
+  delete process.env["WORKTABLE_MCP_PREVIEW"]
   try {
     const snapshot = await freezeHtmlPreviewSnapshot({ spaceId, path })
     const edge = async (html: string) =>

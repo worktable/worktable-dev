@@ -262,12 +262,9 @@ describe("Claude's cloud task", () => {
     expect(text).not.toContain(TOKEN)
     expect(text).not.toContain("trig_")
 
-    // The preview holds it back, and only Claude has one.
+    // It doesn't wait on the preview.
     process.env["WORKTABLE_MCP_PREVIEW"] = "0"
-    expect((await listed()).autoReply).toBeUndefined()
-    expect((await api("POST", `/${connectionId}/cloud-task/test`)).status).toBe(
-      404
-    )
+    expect((await listed()).autoReply).toEqual({ kind: "task", state: "off", testing: true })
     process.env["WORKTABLE_MCP_PREVIEW"] = "1"
 
     expect((await api("DELETE", `/${connectionId}/cloud-task`)).status).toBe(

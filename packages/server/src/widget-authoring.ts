@@ -6,12 +6,16 @@ import {
 import type { WidgetFile } from "@worktable/types"
 import { parseDocument, Parser } from "htmlparser2"
 import { filesEnabled } from "./files-enabled.ts"
+<<<<<<< HEAD
 import {
   buildHtmlDocThemeCss,
   HTML_DOC_COLOR_SCHEME_CSS,
 } from "./html-doc-theme.ts"
 import { expandHtmlIcons } from "./html-icons.ts"
 import { configuredMcpSurface } from "./mcp/surface.ts"
+=======
+import { buildHtmlDocThemeCss, HTML_DOC_COLOR_SCHEME_CSS } from "./html-doc-theme.ts"
+>>>>>>> 3e7509e2 (Release the preview agent tools to every agent)
 
 export type WidgetTheme = "light" | "dark"
 
@@ -58,15 +62,6 @@ const RECORD_ACTION_PERMISSIONS: Record<string, WidgetRecordAction[]> = {
   delete: ["delete"],
 }
 
-const REQUIRED_THEME_TOKENS = [
-  "--ad-bg",
-  "--ad-surface",
-  "--ad-text",
-  "--ad-muted",
-  "--ad-border",
-  "--ad-accent",
-] as const
-
 export type BuildWidgetFileInput = {
   id: string
   name: string
@@ -101,17 +96,8 @@ export const WIDGET_STYLE_TOKENS = [
 
 export type HtmlGuideProfile = "runtime"
 
-export const HTML_GUIDE_SHARED = `# Worktable HTML Doc Authoring
 
-HTML Docs are complete, self-contained documents rendered in a sandbox inside a Worktable Space. Each document includes doctype, html, head, viewport metadata, and body. External scripts, stylesheets, fonts, images, and other http/https assets are not supported; ordinary links are supported, and inline SVG, CSS, data URLs, and local HTML/JavaScript remain inside the artifact.`
-
-const HTML_GUIDE_THEME_RELEASED = `The parent theme is available through these semantic variables:
-${WIDGET_STYLE_TOKENS.join(", ")}.
-
-Documents can define default/light values and html[data-theme="dark"] overrides, and can declare color-scheme: light dark.`
-
-/** The theme Worktable serves every HTML Doc (html-doc-theme.ts), taught on
- * the preview surface. */
+/** The theme Worktable serves every HTML Doc (html-doc-theme.ts). */
 export const HTML_GUIDE_THEME = `## Theme
 
 Worktable themes every HTML Doc for light and dark mode and sets html[data-theme] to the one shown; a share link viewed without scripts follows the visitor's system theme and applies html[data-theme="dark"] rules to match. Use its variables instead of fixed colors; don't define a palette or add a theme switch.
@@ -178,9 +164,9 @@ const HTML_GUIDE_SHARE_LINKS = `## Share links
 
 Someone can share an HTML Doc by link with people outside the team, including its live data. Visitors run the same HTML with the same SDK, read-only: records create, update and delete reject with LINK_READ_ONLY, state writes last only for that visitor's browser tab, and openDocument is unavailable. Visitors can read only the collections and fields the link grants, so handle a rejected query the way you handle a missing permission. Write one tool for members and visitors; don't detect visitors or build a separate version.`
 
-// The preview tool surface changes part of a page with edits, so its guide
-// doesn't ask for a complete page on every write.
-const HTML_GUIDE_SHARED_PREVIEW = `# Worktable HTML Doc Authoring
+// Agents change part of a page with edits, so the guide doesn't ask for a
+// complete page on every write.
+export const HTML_GUIDE_SHARED = `# Worktable HTML Doc Authoring
 
 An HTML Doc is one HTML document rendered in a sandbox inside a Worktable Space. It includes doctype, html, head, viewport metadata, and body. External scripts, stylesheets, fonts, images, and other http/https assets are not supported; ordinary links are supported, and inline SVG, CSS, data URLs, and local HTML/JavaScript remain inside the artifact.`
 
@@ -194,7 +180,7 @@ With a shell, a large page can move outside the call. worktable_html_read gives 
 
 Name, description and permissions change without html. Every agent change to the page or its permissions turns network access off until a person allows it again.`
 
-/** Space images in HTML Docs, taught on the preview surface (html-space-images.ts). */
+/** Space images in HTML Docs (html-space-images.ts). */
 export const HTML_GUIDE_SPACE_IMAGES = `## Images from the Space
 
 Show an image kept in the Space with a plain img element, such as <img src="img/hero.jpg" alt="Hero">. The path resolves from the HTML Doc's folder, or from the Space root with a leading /, as Markdown Docs embed images. Upload images with worktable_files_write, for example to an img folder beside the HTML Doc. PNG, JPEG, GIF and WebP files show.
@@ -209,9 +195,9 @@ export const HTML_GUIDE_ICONS = `## Icons
 Where a word only labels, such as a status, a type, a direction or a step, use an icon instead: any Lucide icon, by its name on lucide.dev. Write an empty svg with the name, such as <svg data-icon="circle-check"></svg>, and Worktable draws it whenever the page is served, 1em square in the text color, so font-size sizes it and color colors it. Give an icon that stands alone an aria-label. Use these rather than emoji or SVG icons you draw yourself. A write warns about a name Lucide lacks. Only svg elements in the markup are drawn; for icons page code adds, put each once in a <template> and clone it.`
 
 export function getHtmlAuthoringGuide(
-  _profile: HtmlGuideProfile = "runtime",
-  surface: "released" | "preview" = "released"
+  _profile: HtmlGuideProfile = "runtime"
 ): string {
+<<<<<<< HEAD
   const intro =
     surface === "preview"
       ? `${HTML_GUIDE_SHARED_PREVIEW}\n\n${HTML_GUIDE_CHANGES}`
@@ -228,6 +214,14 @@ export function getHtmlAuthoringGuide(
       ? `${HTML_GUIDE_THEME}\n\n${htmlGuideRuntime("")}`
       : htmlGuideRuntime(`${HTML_GUIDE_THEME_RELEASED}\n\n`)
   return `${intro}\n\n${runtime}\n\n${HTML_GUIDE_SHARE_LINKS}${images}${icons}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
+=======
+  const intro = `${HTML_GUIDE_SHARED}\n\n${HTML_GUIDE_CHANGES}`
+  // Space images follow the file features (htmlSpaceImagesEnabled).
+  const images = filesEnabled() ? `\n\n${HTML_GUIDE_SPACE_IMAGES}` : ""
+  // The served theme has its own section.
+  const runtime = `${HTML_GUIDE_THEME}\n\n${htmlGuideRuntime("")}`
+  return `${intro}\n\n${runtime}\n\n${HTML_GUIDE_SHARE_LINKS}${images}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
+>>>>>>> 3e7509e2 (Release the preview agent tools to every agent)
 }
 
 function hasRecordPermission(
@@ -318,30 +312,11 @@ const DARK_THEME_RULE_RE = /html\s*\[\s*data-theme\s*=\s*["']dark["']\s*\]/i
 const FIXED_PAGE_BACKGROUND_RE =
   /(?:^|[{};\s])(?::root|html|body)(?:\s*,\s*(?::root|html|body))*\s*\{[^}]*\bbackground(?:-color)?\s*:(?![^;}]*var\()\s*(?!(?:transparent|inherit|initial|unset|none|canvas)\b)[^;}]+/i
 
-function addReleasedThemeHints(html: string, issues: WidgetValidationIssue[]) {
-  if (!DARK_THEME_RULE_RE.test(html)) {
-    issues.push({
-      severity: "hint",
-      code: "missing_dark_theme",
-      message: 'Widget should include html[data-theme="dark"] CSS overrides.',
-    })
-  }
-  for (const token of REQUIRED_THEME_TOKENS) {
-    if (!html.includes(token)) {
-      issues.push({
-        severity: "hint",
-        code: `missing_token_${token.slice(5)}`,
-        message: `Widget should define and use ${token}.`,
-      })
-    }
-  }
-}
-
-/** Hints for pages that step outside the theme Worktable serves them. */
 // The same, set in a style attribute on html or body.
 const FIXED_INLINE_PAGE_BACKGROUND_RE =
   /<(?:html|body)\b[^>]*\bstyle\s*=\s*(["'])(?:(?!\1).)*?\bbackground(?:-color)?\s*:(?![^;"']*var\()\s*(?!(?:transparent|inherit|initial|unset|none|canvas)\b)[^;"']+/i
 
+/** Hints for pages that step outside the theme Worktable serves them. */
 function addThemeHints(html: string, issues: WidgetValidationIssue[]) {
   if (
     (FIXED_PAGE_BACKGROUND_RE.test(html) ||
@@ -451,8 +426,7 @@ export function validateWidgetHtml(
         "Prefer addEventListener over inline on* handlers for maintainability and CSP compatibility.",
     })
   }
-  if (configuredMcpSurface() === "preview") addThemeHints(html, issues)
-  else addReleasedThemeHints(html, issues)
+  addThemeHints(html, issues)
   addRecordPermissionWarnings(html, permissions, issues)
   return issues
 }

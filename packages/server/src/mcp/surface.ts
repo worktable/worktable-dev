@@ -39,19 +39,19 @@ export function mcpModernEraEnabled(): boolean {
 
 /**
  * Whether Link also serves MCP 2026-07-28, so a chat app reaching this
- * device through Cloud gets events and tasks. Held behind the preview.
+ * device through Cloud gets events and tasks.
  */
 export function mcpModernEraOverLink(): boolean {
-  return mcpModernEraEnabled() && configuredMcpSurface() === "preview"
+  return mcpModernEraEnabled()
 }
 
 /**
  * Whether HTML Docs show the Space images they name with <img src>, placed
- * in the page when it is served (html-space-images.ts). Held behind the
- * preview, with the warnings and guidance that teach it.
+ * in the page when it is served (html-space-images.ts). They follow the file
+ * features, with the warnings and guidance that teach them.
  */
 export function htmlSpaceImagesEnabled(): boolean {
-  return filesEnabled() && configuredMcpSurface() === "preview"
+  return filesEnabled()
 }
 
 /**

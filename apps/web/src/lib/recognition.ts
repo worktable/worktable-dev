@@ -28,9 +28,15 @@ export function recognitionChip(color: RecognitionColor): CSSProperties {
 
 /** Initials used by person and agent avatars without loading Thread schemas. */
 export function participantInitials(name: string): string {
-  const words = name.trim().split(/\s+/)
+  // "Sage (Claude)" is Sage: what's in brackets and stray marks aren't the name.
+  const words = name
+    .replace(/\([^()]*\)/g, " ")
+    .split(/\s+/)
+    .map((word) => word.replace(/[^\p{L}\p{N}]/gu, ""))
+    .filter(Boolean)
+  if (words.length === 0) return name.trim().charAt(0).toUpperCase()
   return (
-    (words[0]?.[0] ?? "") + (words.length > 1 ? (words.at(-1)?.[0] ?? "") : "")
+    words[0]![0]! + (words.length > 1 ? words.at(-1)![0]! : "")
   ).toUpperCase()
 }
 

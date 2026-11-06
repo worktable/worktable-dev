@@ -14,6 +14,9 @@ describe("agent platforms", () => {
     expect(clientIdForAgentLabel("managed:claude-code")).toBe("claude-code")
     expect(platformForName("Hermes Agent")).toBe("hermes")
     expect(platformForName("ChatGPT")).toBe("chatgpt")
+    expect(platformForName("claude-code@work-laptop")).toBe("claude-code")
+    expect(platformForName("Sage (Codex)")).toBe("codex")
+    expect(platformForName("Sage (a helper)")).toBe("other")
   })
 
   it("knows a sign-in's app from its signed client id, not its name", () => {

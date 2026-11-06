@@ -258,7 +258,20 @@ export function platformForName(
   name: string | null | undefined
 ): AgentPlatformId {
   if (!name) return "other"
-  const slug = name.trim().toLowerCase().replace(/\s+/g, "-")
+  const named = platformForSlug(name)
+  // "Sage (Claude)": an agent with its own name gives its platform in brackets.
+  const bracketed = /\(([^()]+)\)\s*$/.exec(name)?.[1]
+  return named === "other" && bracketed ? platformForSlug(bracketed) : named
+}
+
+function platformForSlug(name: string): AgentPlatformId {
+  // "claude-code@laptop", "managed:codex": the app, on a machine or service.
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/^managed:/, "")
+    .replace(/@.*$/, "")
+    .replace(/\s+/g, "-")
   const client = clientPlatform(slug)
   if (client) return client
   // "Hermes Agent", "OpenClaw Studio": a platform's id followed by more words.

@@ -1187,6 +1187,9 @@ function sendIntentFrame(provider: WebsocketProvider | null): boolean {
   return false
 }
 
+const POINTER_PRESS_ENDS = ["pointerup", "pointercancel"] as const
+const KEY_PRESS_ENDS = ["keyup"] as const
+
 function BlockNoteDocPage({
   spaceId,
   docPath,
@@ -1302,19 +1305,18 @@ function BlockNoteDocPage({
   // and not while the archive date it opened is open, which the editor's
   // copy would reopen from its first step.
   const [standInPressed, setStandInPressed] = useState(false)
-  const holdStandIn = useCallback(() => {
+  // A pointer press ends at pointer up; a key press (Space activates a
+  // button on key up) ends at key up. Leaving the window ends either, since
+  // a press released outside it never reports its end.
+  const holdStandIn = useCallback((ends: readonly string[]) => {
     setStandInPressed(true)
     const release = () => {
-      window.removeEventListener("pointerup", release, true)
-      window.removeEventListener("pointercancel", release, true)
+      for (const type of ends) window.removeEventListener(type, release, true)
       window.removeEventListener("blur", release)
       // After this press's click has reached the stand-in.
       window.setTimeout(() => setStandInPressed(false))
     }
-    window.addEventListener("pointerup", release, true)
-    window.addEventListener("pointercancel", release, true)
-    // A press released outside the window never reports its pointerup;
-    // leaving the window ends the hold, so the editor still takes over.
+    for (const type of ends) window.addEventListener(type, release, true)
     window.addEventListener("blur", release)
   }, [])
   // Once the editor shows for a room, opening the archive date from it
@@ -1743,7 +1745,8 @@ function BlockNoteDocPage({
             <div
               ref={standInRef}
               className="absolute inset-0 z-10"
-              onPointerDown={holdStandIn}
+              onPointerDown={() => holdStandIn(POINTER_PRESS_ENDS)}
+              onKeyDown={() => holdStandIn(KEY_PRESS_ENDS)}
             >
               {opening ? (
                 <MarkdownViewer

@@ -50,28 +50,28 @@ function declarations(tokens: Tokens): string {
 // page's own design keeps its shape. Inherited text styles sit on :root, so
 // a page's own html or body rules still reach every element. Font size stays
 // on body, so rem keeps its meaning. Only the page title takes the display
-// font: lower headings are often labels in a tool.
-const BASE = `:root{color:var(--foreground);font-family:var(--font-sans);line-height:1.55}
+// font: lower headings are often labels in a tool. Fills and lines mix from
+// the text color, so they suit a page that paints its own palette in only
+// one mode.
+const BASE = `:root{color:var(--foreground);font-family:var(--font-sans);line-height:1.55;scrollbar-color:color-mix(in oklch,currentColor 22%,transparent) transparent}
 body{background:var(--background);font-size:15px}
 h1{font-family:var(--font-display);font-weight:600;line-height:1.2;text-wrap:balance}
 h2,h3,h4,h5,h6{font-weight:600;text-wrap:balance}
 a{color:var(--primary-text)}
 ::selection{background:color-mix(in oklch,var(--primary) 28%,transparent)}
 mark{background:color-mix(in oklch,var(--warning) 30%,transparent);color:inherit}
-hr{border:0;border-top:1px solid var(--border)}
+hr{border:0;border-top:1px solid color-mix(in oklch,currentColor 16%,transparent)}
 code,kbd,samp,pre{font-family:var(--font-mono);font-size:0.9em}
-:not(pre)>code,kbd{background:var(--muted);border-radius:0.3em;padding:0.1em 0.3em}
-pre{background:var(--muted);border-radius:calc(var(--radius) * 0.8);padding:0.75em 1em;overflow:auto}
+:not(pre)>code,kbd{background:color-mix(in oklch,currentColor 10%,transparent);border-radius:0.3em;padding:0.1em 0.3em}
+pre{background:color-mix(in oklch,currentColor 8%,transparent);border-radius:calc(var(--radius) * 0.8);padding:0.75em 1em;overflow:auto}
 table{border-collapse:collapse}
-th,td{border-bottom:1px solid var(--border);padding:0.45em 1em 0.45em 0}
-th{text-align:start}
-th{color:var(--muted-foreground);font-weight:600}
-:where(button,select,textarea,input:not([type=checkbox],[type=radio],[type=range],[type=color],[type=file],[type=image])){color:inherit;background:var(--well-bg);border:1px solid var(--input);border-radius:calc(var(--radius) * 0.6);padding:0.35em 0.75em}
-button:not(:disabled):hover,select:not(:disabled):hover{background:var(--well-hover-bg);border-color:var(--input-hover)}
-:disabled{color:var(--muted-foreground);cursor:default}
-input::placeholder,textarea::placeholder{color:var(--muted-foreground)}
-input,select,textarea,progress,meter{accent-color:var(--primary)}
-:root{scrollbar-color:color-mix(in oklch,var(--foreground) 22%,transparent) transparent}`
+th,td{border-bottom:1px solid color-mix(in oklch,currentColor 14%,transparent);padding:0.45em 1em 0.45em 0}
+th{text-align:start;color:color-mix(in oklch,currentColor 70%,transparent);font-weight:600}
+:where(button,select,textarea,input:not([type=checkbox],[type=radio],[type=range],[type=color],[type=file],[type=image])){color:inherit;background:color-mix(in oklch,currentColor 5%,transparent);border:1px solid color-mix(in oklch,currentColor 16%,transparent);border-radius:calc(var(--radius) * 0.6);padding:0.35em 0.75em}
+button:not(:disabled):hover,select:not(:disabled):hover{background:color-mix(in oklch,currentColor 9%,transparent);border-color:color-mix(in oklch,currentColor 26%,transparent)}
+:disabled{color:color-mix(in oklch,currentColor 50%,transparent);cursor:default}
+input::placeholder,textarea::placeholder{color:color-mix(in oklch,currentColor 55%,transparent)}
+input,select,textarea,progress,meter{accent-color:var(--primary)}`
 
 /**
  * The theme and base styles every HTML Doc gets, in the lowest cascade layer,

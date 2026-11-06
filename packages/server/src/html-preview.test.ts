@@ -560,6 +560,12 @@ previewTest(
         )
       ).toEqual([0, 0, 255])
     }
+    // A page with only a light palette keeps light code blocks in dark mode.
+    const [codeRed] = await corner(
+      `<html><head><style>body{margin:0;background:#fff;color:#222}pre{margin:0;height:120px}</style></head><body><pre>const total = 1</pre></body></html>`,
+      "dark"
+    )
+    expect(codeRed).toBeGreaterThan(200)
     // A disabled field reads as disabled.
     expect(
       await corner(

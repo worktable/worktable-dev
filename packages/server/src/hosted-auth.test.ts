@@ -137,6 +137,40 @@ describe("hosted browser assertions", () => {
     expect(trustedGatewayScopeCeiling(malformed)).toEqual([])
   })
 
+  it("expands admitted permission groups with this Worktable's own table", () => {
+    // An agent whose stored scopes predate documents:* still gets it from its group.
+    const stale = new Request(`${origin}/api/mcp`, {
+      headers: {
+        [GATEWAY_HEADER]: admission,
+        [ACTOR_HEADERS.ID]: "oauth:client_1:owner",
+        [ACTOR_HEADERS.TYPE]: "agent",
+        [ACTOR_HEADERS.NAME]: "Claude",
+        [ACTOR_HEADERS.SCOPES]: JSON.stringify(["docs:read", "widgets:read"]),
+        [ACTOR_HEADERS.PERMISSION_GROUPS]: JSON.stringify([
+          "workspace-read",
+          "group-from-a-newer-gateway",
+        ]),
+      },
+    })
+    const ceiling = trustedGatewayScopeCeiling(stale)
+    expect(ceiling).toContain("documents:read")
+    expect(ceiling).not.toContain("documents:write")
+    expect(ceiling).not.toContain("threads:read")
+    for (const groups of ['{"workspace-read":true}', "not json"]) {
+      const malformed = new Request(stale, {
+        headers: {
+          ...Object.fromEntries(stale.headers),
+          [ACTOR_HEADERS.PERMISSION_GROUPS]: groups,
+        },
+      })
+      expect(trustedGatewayScopeCeiling(malformed)).toEqual([])
+    }
+    const unadmitted = new Request(stale, {
+      headers: { ...Object.fromEntries(stale.headers), [GATEWAY_HEADER]: "x" },
+    })
+    expect(trustedGatewayScopeCeiling(unadmitted)).toBeNull()
+  })
+
   it("accepts an admitted, owner- and request-bound assertion", async () => {
     const request = admittedRequest(`${origin}/api/spaces?after=a%2Fb`)
     const identity = await verifyHostedBrowserAssertion(

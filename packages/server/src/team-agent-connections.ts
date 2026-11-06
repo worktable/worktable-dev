@@ -21,6 +21,7 @@ import {
   requireTeamHuman,
   resolveTeamAgentCredential,
   teamMemberForIdentity,
+  teamScopeCeiling,
   updateTeamAgent,
 } from "./team-policy.ts"
 import {
@@ -118,8 +119,7 @@ export async function listTeamAgentConnections(): Promise<AgentConnection[]> {
       const rawScopes = [
         ...new Set(credentials.flatMap((token) => token.scopes)),
       ]
-      const scopes: string[] =
-        row.scope_ceiling === null ? rawScopes : JSON.parse(row.scope_ceiling)
+      const scopes: string[] = teamScopeCeiling(row.scope_ceiling) ?? rawScopes
       // A sign-in's signed client id says which app it is; a token's label does.
       const target = {
         kind: "mcp-client" as const,

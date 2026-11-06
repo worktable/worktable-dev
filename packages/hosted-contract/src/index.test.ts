@@ -160,6 +160,7 @@ describe("buildTenantEnv", () => {
       NAME: "x-worktable-actor-name",
       AUTHORIZED_BY: "x-worktable-actor-authorized-by",
       SCOPES: "x-worktable-actor-scopes",
+      PERMISSION_GROUPS: "x-worktable-actor-permission-groups",
       REAUTHORIZED_AT: "x-worktable-actor-reauthorized-at",
     })
   })

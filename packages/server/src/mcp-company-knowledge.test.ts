@@ -241,7 +241,7 @@ describe("ChatGPT Company Knowledge tools", () => {
     })
   })
 
-  it("enforces the fetched item's scope with an OAuth challenge", async () => {
+  it("enforces the fetched item's scope and names the missing access", async () => {
     const client = await connectedClient(["records:read"])
     const id = encodeCompanyKnowledgeId({
       kind: "doc",
@@ -254,13 +254,10 @@ describe("ChatGPT Company Knowledge tools", () => {
     })
 
     expect(result.isError).toBe(true)
-    expect(JSON.stringify(result.content)).toContain("docs:read")
-    expect(JSON.stringify(result._meta?.["mcp/www_authenticate"])).toContain(
-      "/.well-known/oauth-protected-resource"
+    expect(JSON.stringify(result.content)).toContain(
+      "fetch needs Read workspace access"
     )
-    expect(JSON.stringify(result._meta?.["mcp/www_authenticate"])).toContain(
-      'error=\\"insufficient_scope\\"'
-    )
+    expect(result._meta?.["mcp/www_authenticate"]).toBeUndefined()
 
     const common = await client.callTool({
       name: "fetch",
@@ -273,7 +270,7 @@ describe("ChatGPT Company Knowledge tools", () => {
       },
     })
     expect(common.isError).toBe(true)
-    expect(JSON.stringify(common.content)).toContain("documents:read")
+    expect(JSON.stringify(common.content)).toContain("Read workspace")
   })
 
   it("round-trips Unicode paths and rejects malformed or unsafe ids", () => {

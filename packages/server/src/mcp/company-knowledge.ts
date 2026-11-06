@@ -22,7 +22,7 @@ import {
 } from "../store.ts"
 import { hasScope } from "../token-store.ts"
 import { docUrlToSendInChat, recordUrlToSendInChat, mcpContentUrl } from "./chat-links.ts"
-import { mkAuthErr, mkErr, ok } from "./helpers.ts"
+import { mkAccessErr, mkErr, ok } from "./helpers.ts"
 import { oauthToolMetadata } from "./openai-tool-auth.ts"
 
 const SearchInput = z
@@ -148,13 +148,8 @@ export function decodeCompanyKnowledgeId(
   }
 }
 
-function requireScope(
-  scopes: string[],
-  scope: string,
-  urlOrigin: string,
-  message: string
-) {
-  return hasScope(scopes, scope) ? null : mkAuthErr(message, urlOrigin, scope)
+function requireScope(scopes: string[], scope: string, toolName: string) {
+  return hasScope(scopes, scope) ? null : mkAccessErr(toolName, scope)
 }
 
 async function ensureVisibleSpace(spaceId: string): Promise<string | null> {
@@ -198,12 +193,7 @@ export function registerCompanyKnowledgeTools(
       ...oauthToolMetadata(),
     },
     async ({ query }) => measureMcpCall("search", "search.query", async () => {
-      const denied = requireScope(
-        options.scopes,
-        "search:read",
-        options.urlOrigin,
-        "Searching Worktable requires the search:read scope."
-      )
+      const denied = requireScope(options.scopes, "search:read", "search")
       if (denied) return denied
       try {
         const commonDocuments = hasScope(options.scopes, "documents:read")
@@ -308,12 +298,7 @@ export function registerCompanyKnowledgeTools(
             : target.kind === "doc"
               ? "docs:read"
               : "records:read"
-        const denied = requireScope(
-          options.scopes,
-          requiredScope,
-          options.urlOrigin,
-          `Fetching this Worktable ${target.kind} requires the ${requiredScope} scope.`
-        )
+        const denied = requireScope(options.scopes, requiredScope, "fetch")
         if (denied) return denied
 
         const spaceError = await ensureVisibleSpace(target.spaceId)

@@ -1,6 +1,10 @@
 import { z } from "zod"
 import { ShareTicket } from "./linked-access.ts"
 import { LISTED_MARK_FIELDS } from "./listed-mark.ts"
+import {
+  AGENT_PERMISSION_GROUP_SCOPES,
+  type AgentPermissionGroup,
+} from "@worktable/types/agent-connections"
 
 export * from "@worktable/types/analytics"
 /** Gateway-owned context; it conveys no authorization to product APIs. */
@@ -489,6 +493,12 @@ export const ACTOR_HEADERS = {
   /** JSON array of exact scopes, applied only as a ceiling to the bearer. */
   SCOPES: "x-worktable-actor-scopes",
   /**
+   * JSON array of the agent's permission groups. When present it replaces
+   * SCOPES: the Worktable expands each group with its own table, so a scope
+   * added to a group reaches every agent that has the group.
+   */
+  PERMISSION_GROUPS: "x-worktable-actor-permission-groups",
+  /**
    * When this agent's sign-in crossed a disconnect fence with a new
    * authorization, the fence's time in milliseconds. A disconnected agent
    * reconnects on its own only after a fence set after its disconnect.
@@ -588,34 +598,19 @@ export const HOSTED_AGENT_SCOPES = [
   "workspace:export",
 ] as const
 
-export const HOSTED_AGENT_PERMISSION_SCOPES = {
-  "workspace-read": [
-    "annotations:read",
-    "documents:read",
-    "docs:read",
-    "records:read",
-    "search:read",
-    "widgets:read",
-  ],
-  "workspace-write": [
-    "annotations:read",
-    "annotations:write",
-    "documents:read",
-    "documents:write",
-    "docs:read",
-    "docs:write",
-    "records:read",
-    "records:write",
-    "search:read",
-    "widgets:read",
-    "widgets:write",
-  ],
-  conversations: ["threads:participate", "threads:read", "threads:write"],
-  export: ["workspace:export"],
-} as const
+/** One table for Cloud and local Worktables; see AGENT_PERMISSION_GROUP_SCOPES. */
+export const HOSTED_AGENT_PERMISSION_SCOPES = AGENT_PERMISSION_GROUP_SCOPES
 
-export type HostedAgentPermissionGroup =
-  keyof typeof HOSTED_AGENT_PERMISSION_SCOPES
+export type HostedAgentPermissionGroup = AgentPermissionGroup
+
+/** The groups in a list that this build knows, in table order. Unknown names grant nothing. */
+export function knownHostedPermissionGroups(
+  groups: readonly unknown[]
+): HostedAgentPermissionGroup[] {
+  return (
+    Object.keys(HOSTED_AGENT_PERMISSION_SCOPES) as HostedAgentPermissionGroup[]
+  ).filter((group) => groups.includes(group))
+}
 
 export function scopesForHostedPermissionGroups(
   groups: readonly HostedAgentPermissionGroup[]

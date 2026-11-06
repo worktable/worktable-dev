@@ -20,6 +20,11 @@ infrastructure and personal context out of release notes.
 - **Threads:** In light mode, an open thread now sits a step brighter than the thread list.
 - **Sidebar:** Spaces show their icon in the Space's color, without the colored square behind it. In dark mode the selected item uses a lighter blue that is easier to read.
 
+### Fixed
+
+- **Agent access:** Agents connected before a feature was added now get it with the access they already have, instead of being refused, and that holds for features added later.
+- **Agent access:** When an agent's access doesn't cover a tool, the message names the access to turn on in Settings → Agents, instead of asking to reconnect it.
+
 ## [0.1.41] - 2026-11-05
 
 ### Changed

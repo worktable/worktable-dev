@@ -16,6 +16,7 @@ import {
 } from "@worktable/hosted-contract"
 import { gatewayAdmits, isHosted, trustedGatewayPrincipal } from "./hosted.ts"
 import type { TokenIdentity } from "./token-store.ts"
+import { isAccessRefusal } from "./mcp/helpers.ts"
 
 /**
  * Marks a hosted app page as sending no product analytics of its own, so the
@@ -255,10 +256,7 @@ export async function measureMcpCall<T>(
       typeof result === "object" &&
       "isError" in result &&
       result.isError
-        ? "_meta" in result &&
-          result._meta &&
-          typeof result._meta === "object" &&
-          "mcp/www_authenticate" in result._meta
+        ? isAccessRefusal(result)
           ? "denied"
           : "error"
         : "success"

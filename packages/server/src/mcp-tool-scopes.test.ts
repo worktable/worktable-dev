@@ -1,6 +1,28 @@
 import { describe, expect, it } from "bun:test"
+import {
+  HOSTED_AGENT_SCOPES,
+  HOSTED_OAUTH_SCOPES,
+} from "@worktable/hosted-contract"
+import {
+  DEFAULT_AGENT_ACCESS,
+  scopesForAccess,
+} from "@worktable/types/agent-connections"
 import { mcpToolAuthorized } from "./mcp/tools.ts"
-import type { WorktableToolName } from "./mcp/operations.ts"
+import {
+  OPERATION_DEFINITIONS,
+  type WorktableToolName,
+} from "./mcp/operations.ts"
+import { AS_BEARER_SCOPES } from "./oauth-jwt.ts"
+import { hasScope } from "./token-store.ts"
+
+/**
+ * What a Cloud agent with every access group holds: the hosted vocabulary,
+ * within what a sign-in bearer carries and what the groups grant.
+ */
+const HOSTED_FULL_ACCESS = HOSTED_AGENT_SCOPES.filter(
+  (scope) =>
+    hasScope(AS_BEARER_SCOPES, scope) && hasScope(HOSTED_OAUTH_SCOPES, scope)
+)
 
 const MANAGED = [
   "documents:read",
@@ -96,6 +118,27 @@ describe("MCP action-level scope enforcement", () => {
     for (const item of ACTIONS) {
       expect(mcpToolAuthorized(item.tool, item.request, ["*"])).toBe(true)
       expect(mcpToolAuthorized(item.tool, item.request, MANAGED)).toBe(true)
+    }
+  })
+
+  // A scope a tool needs but no access grants would refuse every agent:
+  // add it to a group (or a new one) when adding the tool.
+  it("lets an agent with full access use every action, locally and on Cloud", () => {
+    const local = scopesForAccess(DEFAULT_AGENT_ACCESS)
+    for (const item of ACTIONS) {
+      expect(mcpToolAuthorized(item.tool, item.request, local)).toBe(true)
+      expect(
+        mcpToolAuthorized(item.tool, item.request, HOSTED_FULL_ACCESS)
+      ).toBe(true)
+    }
+    for (const [id, definition] of Object.entries(OPERATION_DEFINITIONS)) {
+      if (!definition.scope) continue
+      expect({ id, local: hasScope(local, definition.scope) }).toEqual({
+        id,
+        local: true,
+      })
+      expect({ id, cloud: hasScope(HOSTED_FULL_ACCESS, definition.scope) })
+        .toEqual({ id, cloud: true })
     }
   })
 

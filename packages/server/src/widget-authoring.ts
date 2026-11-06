@@ -297,8 +297,9 @@ function addRecordPermissionWarnings(
 
 const DARK_THEME_RULE_RE = /html\s*\[\s*data-theme\s*=\s*["']dark["']\s*\]/i
 // A page background set to a fixed color, in a rule for html, body or :root.
+// A value built from a variable follows the theme.
 const FIXED_PAGE_BACKGROUND_RE =
-  /(?:^|[{};\s])(?::root|html|body)(?:\s*,\s*(?::root|html|body))*\s*\{[^}]*\bbackground(?:-color)?\s*:\s*(?!\s*(?:var\(|transparent|inherit|initial|unset|none))[^;}]+/i
+  /(?:^|[{};\s])(?::root|html|body)(?:\s*,\s*(?::root|html|body))*\s*\{[^}]*\bbackground(?:-color)?\s*:(?![^;}]*var\()\s*(?!(?:transparent|inherit|initial|unset|none)\b)[^;}]+/i
 
 function addReleasedThemeHints(html: string, issues: WidgetValidationIssue[]) {
   if (!DARK_THEME_RULE_RE.test(html)) {

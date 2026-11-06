@@ -195,7 +195,7 @@ describe("widget REST routes", () => {
       );
       expect(outside).toEqual(expect.arrayContaining(["fixed_page_colors", "system_color_scheme", "wrapped_theme_color"]));
       // A page that only uses the theme needs no colors of its own.
-      const themed = await codes("on-theme", "body{background:var(--background)}.card{background:var(--card)}");
+      const themed = await codes("on-theme", "body{background:color-mix(in oklch,var(--background) 90%,transparent)}.card{background:var(--card)}");
       expect(themed.filter((code: string) => /theme|color|token/.test(code))).toEqual([]);
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_MCP_PREVIEW"];

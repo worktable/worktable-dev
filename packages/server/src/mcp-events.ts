@@ -20,6 +20,7 @@
 // can, and then gets what was waiting and what came while it was lapsed.
 // Events for a subscription made through Link wait while Link is off.
 
+import { currentScopesForStored } from "@worktable/types/agent-connections"
 import {
   createHash,
   createHmac,
@@ -94,7 +95,8 @@ function checkedAtSend(reader: Pick<Reader, "principal" | "team">): boolean {
  * event; a team agent's binding is checked inside the access check.
  */
 async function currentAuthority(reader: Reader): Promise<Reader | null> {
-  if (!reader.principal.id.startsWith(LOCAL_TOKEN)) return reader
+  if (!reader.principal.id.startsWith(LOCAL_TOKEN))
+    return { ...reader, scopes: currentScopesForStored(reader.scopes) }
   const id = reader.principal.id.slice(LOCAL_TOKEN.length)
   const token = (await listTokens()).find((candidate) => candidate.id === id)
   if (

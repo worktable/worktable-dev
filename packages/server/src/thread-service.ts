@@ -4,7 +4,7 @@ import { grokBotPolicy, observeGrokBotCandidate, readGrokBots } from "./grok-bot
 import { currentTeamWorktable, requireTeamDatabase } from "./team-database.ts"
 import { findTeamMemberById, listTeamMembers } from "./team-members.ts"
 import { identityForTeamMember } from "./team-identity.ts"
-import { agentWorktableThreadAccess, canAccessSpace, canAccessWorktableThreads, resolveTeamAgentCredential, TeamAccessError, teamAgentForParticipantKey, teamAgentHasSpaceAccess } from "./team-policy.ts"
+import { agentWorktableThreadAccess, canAccessSpace, canAccessWorktableThreads, resolveTeamAgentCredential, TeamAccessError, teamAgentForParticipantKey, teamAgentHasSpaceAccess, teamScopeCeiling } from "./team-policy.ts"
 import { currentActivityActor, recordActivity } from "./activity-log.ts"
 import type {
   AgentPlatformId,
@@ -889,8 +889,7 @@ export async function listThreadParticipants(
           (!replyRequired || hasScope(resolved.scopes, "threads:write"))
         )
       })
-      const ceiling: string[] | null =
-        agent.scope_ceiling === null ? null : JSON.parse(agent.scope_ceiling)
+      const ceiling = teamScopeCeiling(agent.scope_ceiling)
       return (
         local ||
         Boolean(

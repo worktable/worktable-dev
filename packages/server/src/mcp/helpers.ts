@@ -1,3 +1,4 @@
+import { accessForScope } from "@worktable/types/agent-connections"
 import type { RequestPrincipal } from "../token-store.ts"
 
 export const AGENT_ID = "worktable-agent"
@@ -36,21 +37,39 @@ export function mkErr(message: string) {
   }
 }
 
-export function mkAuthErr(
-  message: string,
-  origin: string,
-  requiredScope: string
+const ACCESS_LABELS = {
+  threads: "Threads",
+  read: "Read workspace",
+  edit: "Edit workspace",
+} as const
+
+const accessRefusals = new WeakSet<object>()
+
+/**
+ * A call refused for the agent's access, naming the access that allows it.
+ * No OAuth challenge: signing in again never adds access here, turning it on
+ * for the agent does. `threadsOnly` is an agent whose connection grants
+ * threads and nothing else.
+ */
+export function mkAccessErr(
+  toolName: string,
+  requiredScope: string,
+  options: { threadsOnly?: boolean } = {}
 ) {
-  const resourceMetadata = new URL(
-    "/.well-known/oauth-protected-resource" + (/^\/api\/mcp\/d\/[a-f0-9]{32}$/.test(new URL(origin).pathname) ? new URL(origin).pathname : ""),
-    origin
-  ).toString()
-  return {
-    ...mkErr(message),
-    _meta: {
-      "mcp/www_authenticate": [
-        `Bearer resource_metadata="${resourceMetadata}", error="insufficient_scope", error_description="Additional authorization is required for this Worktable action.", scope="${requiredScope}"`,
-      ],
-    },
-  }
+  const access = accessForScope(requiredScope)
+  const label = access ? ACCESS_LABELS[access] : null
+  const result = mkErr(
+    !label
+      ? `${toolName} isn't available to agents here.`
+      : options.threadsOnly && access !== "threads"
+        ? `${toolName} needs ${label} access. Agents connected this way can use threads only.`
+        : `${toolName} needs ${label} access, which this agent doesn't have here. Turn on ${label} for this agent in Settings → Agents.`
+  )
+  accessRefusals.add(result)
+  return result
+}
+
+/** Whether a tool result is a refusal for the agent's access. */
+export function isAccessRefusal(result: unknown): boolean {
+  return typeof result === "object" && result !== null && accessRefusals.has(result)
 }

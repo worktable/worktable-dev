@@ -10,6 +10,7 @@ import type {
   WorktableThreadAccess,
 } from "@worktable/types"
 import { hasScope, type TokenIdentity } from "./token-store.ts"
+import { currentScopesForStored } from "@worktable/types/agent-connections"
 import {
   advanceTeamPolicy,
   currentTeamWorktable,
@@ -203,11 +204,20 @@ function parseAgent(row: AgentRow): TeamAgent {
     spaceIds,
     active: row.active === 1,
     mode: row.mode,
-    scopeCeiling:
-      row.scope_ceiling === null ? null : JSON.parse(row.scope_ceiling),
+    scopeCeiling: teamScopeCeiling(row.scope_ceiling),
     icon: row.icon,
     worktableThreads: row.worktable_threads ?? "none",
   }
+}
+
+/**
+ * A team agent's stored ceiling as it applies now: a ceiling made from a
+ * choice of access follows the access groups as they stand today.
+ */
+export function teamScopeCeiling(stored: string | null): string[] | null {
+  return stored === null
+    ? null
+    : currentScopesForStored(JSON.parse(stored) as string[])
 }
 
 export function teamAgentForIdentity(

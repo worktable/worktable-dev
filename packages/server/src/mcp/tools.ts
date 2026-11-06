@@ -4,7 +4,7 @@ import { ambientNotices } from "../pending-ambient.ts"
 import { currentRequestIdentity } from "../team-policy.ts"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { McpSurface } from "./surface.ts"
-import { ok, mkAuthErr, mkErr } from "./helpers.ts"
+import { ok, mkAccessErr, mkErr } from "./helpers.ts"
 import {
   hasScope,
   type RequestPrincipal,
@@ -273,11 +273,11 @@ export function registerTools(
       const missingScope = missingOperationScope(operation, scopes)
       if (missingScope) {
         captureMcpCall(toolName, analyticsOperation, "denied", performance.now() - analyticsStarted)
-        return mkAuthErr(
-          `Insufficient scope: ${toolName} requires "${missingScope}" here. The workspace owner can grant it by reconnecting this agent with broader access.`,
-          urlOriginFor(),
-          missingScope
-        )
+        return mkAccessErr(toolName, missingScope, {
+          threadsOnly: (callerIdentity?.principal ?? callerPrincipal)?.id.startsWith(
+            "workos-agent:"
+          ),
+        })
       }
     }
     try {

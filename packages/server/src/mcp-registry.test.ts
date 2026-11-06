@@ -340,7 +340,7 @@ describe("consolidated MCP registry", () => {
       arguments: { spaceId: "s", docPath: "d", content: "# D" },
     })
     expect(denied.isError).toBe(true)
-    expect(JSON.stringify(denied.content)).toContain("docs:write")
+    expect(JSON.stringify(denied.content)).toContain("needs Edit workspace access")
   })
 
   it("uses strict action schemas and the public HTML vocabulary", () => {

@@ -29,7 +29,15 @@ export type AgentPermissionGroup =
   | "conversations"
   | "export"
 
-/** Scopes each access group grants. Read includes export: an agent that can read everything can already copy it. */
+/**
+ * Scopes each access group grants. Read includes export: an agent that can read everything can already copy it.
+ *
+ * Agents hold groups, and every Worktable expands them with this table on each
+ * request, so a scope added here reaches every connected agent with the group.
+ * Add a scope to a group only when it fits what the group's checkbox promises.
+ * A new kind of authority gets a new group, which no existing agent has until
+ * someone turns it on. `agent-connections.test.ts` pins this table.
+ */
 export const AGENT_PERMISSION_GROUP_SCOPES: Record<
   AgentPermissionGroup,
   readonly string[]
@@ -82,14 +90,114 @@ export function permissionGroupsForAccess(
   return groups
 }
 
-export function scopesForAccess(access: AgentAccess): string[] {
+type PermissionGroupTable = Readonly<
+  Record<AgentPermissionGroup, readonly string[]>
+>
+
+/**
+ * The table as it stood before each change, newest first. When a scope joins a
+ * group, add the table from before the change here: access stored as a scope
+ * list is then still recognized as the access it was made from.
+ */
+const EARLIER_AGENT_PERMISSION_GROUP_SCOPES: readonly PermissionGroupTable[] = [
+  // Before 28 Aug 2026, when documents:* joined the read and edit groups.
+  {
+    conversations: ["threads:read", "threads:write", "threads:participate"],
+    "workspace-read": [
+      "annotations:read",
+      "docs:read",
+      "records:read",
+      "search:read",
+      "widgets:read",
+    ],
+    "workspace-write": [
+      "annotations:read",
+      "annotations:write",
+      "docs:read",
+      "docs:write",
+      "records:read",
+      "records:write",
+      "search:read",
+      "widgets:read",
+      "widgets:write",
+    ],
+    export: ["workspace:export"],
+  },
+]
+
+function scopesForAccessIn(
+  table: PermissionGroupTable,
+  access: AgentAccess
+): string[] {
   return [
     ...new Set(
-      permissionGroupsForAccess(access).flatMap(
-        (group) => AGENT_PERMISSION_GROUP_SCOPES[group]
-      )
+      permissionGroupsForAccess(access).flatMap((group) => table[group])
     ),
   ]
+}
+
+export function scopesForAccess(access: AgentAccess): string[] {
+  return scopesForAccessIn(AGENT_PERMISSION_GROUP_SCOPES, access)
+}
+
+/** The access checkbox that grants a scope, or null for a scope no access grants. */
+export function accessForScope(scope: string): keyof AgentAccess | null {
+  if (AGENT_PERMISSION_GROUP_SCOPES.conversations.includes(scope))
+    return "threads"
+  if (
+    AGENT_PERMISSION_GROUP_SCOPES["workspace-read"].includes(scope) ||
+    AGENT_PERMISSION_GROUP_SCOPES.export.includes(scope)
+  )
+    return "read"
+  if (AGENT_PERMISSION_GROUP_SCOPES["workspace-write"].includes(scope))
+    return "edit"
+  return null
+}
+
+/** Every access an owner can choose that grants anything. */
+const ACCESS_CHOICES: readonly AgentAccess[] = [false, true].flatMap(
+  (threads) =>
+    [
+      { read: false, edit: false },
+      { read: true, edit: false },
+      { read: true, edit: true },
+    ]
+      .map((choice) => ({ threads, ...choice }))
+      .filter((access) => access.threads || access.read)
+)
+
+function sameScopes(a: readonly string[], b: readonly string[]): boolean {
+  const left = new Set(a)
+  const right = new Set(b)
+  return left.size === right.size && [...left].every((scope) => right.has(scope))
+}
+
+/**
+ * The access a stored scope list was made from: the list is exactly what one
+ * choice of access granted under this table or an earlier one. Null for any
+ * other list, such as a token minted with chosen scopes.
+ */
+export function accessForStoredScopes(
+  scopes: readonly string[]
+): AgentAccess | null {
+  for (const table of [
+    AGENT_PERMISSION_GROUP_SCOPES,
+    ...EARLIER_AGENT_PERMISSION_GROUP_SCOPES,
+  ])
+    for (const access of ACCESS_CHOICES)
+      if (sameScopes(scopes, scopesForAccessIn(table, access))) return access
+  return null
+}
+
+/**
+ * What a stored scope list grants now. A list made from a choice of access
+ * grants that access as the table defines it today, so a scope added to a
+ * group reaches agents connected before it. Any other list grants exactly
+ * what it names.
+ */
+export function currentScopesForStored(scopes: readonly string[]): string[] {
+  const access = accessForStoredScopes(scopes)
+  return access ? scopesForAccess(access) : [...scopes]
 }
 
 function grants(scopes: readonly string[], required: string): boolean {

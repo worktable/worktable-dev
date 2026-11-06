@@ -83,7 +83,7 @@ function acceptedAudiences(audience: string): string | string[] {
  *
  * Wildcards, so a new content tool is covered without a fleet-wide re-issue.
  */
-const AS_BEARER_SCOPES = [
+export const AS_BEARER_SCOPES = [
   "documents:*",
   "docs:*",
   "widgets:*",

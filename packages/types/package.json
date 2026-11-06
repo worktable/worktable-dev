@@ -13,6 +13,7 @@
     "./doc-source": "./src/doc-source.ts",
     "./setup": "./src/setup.ts",
     "./analytics": "./src/analytics.ts",
+    "./agent-connections": "./src/agent-connections.ts",
     "./file-types": "./src/file-types.ts"
   },
   "scripts": {

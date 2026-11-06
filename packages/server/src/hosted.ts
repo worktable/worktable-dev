@@ -3,6 +3,8 @@ import {
   AGENT_ROUTE_HEADERS,
   GATEWAY_HEADER,
   HOSTED_AGENT_SCOPES,
+  knownHostedPermissionGroups,
+  scopesForHostedPermissionGroups,
   SHARE_CAPABILITY_HEADER,
 } from "@worktable/hosted-contract"
 import type { RequestPrincipal } from "./token-store.ts"
@@ -157,11 +159,14 @@ export function trustedGatewayPrincipal(req: Request): RequestPrincipal | null {
 
 /**
  * A gateway policy can only remove authority already present in the bearer.
- * Missing scope context preserves the pre-policy rollout behavior; malformed
- * context fails closed to no agent scopes.
+ * Permission groups, when sent, are the policy; a gateway that sends only
+ * scopes predates them. Missing scope context preserves the pre-policy rollout
+ * behavior; malformed context fails closed to no agent scopes.
  */
 export function trustedGatewayScopeCeiling(req: Request): string[] | null {
   if (!isHosted() || !gatewaySecret() || !gatewayAdmits(req)) return null
+  const groups = req.headers.get(ACTOR_HEADERS.PERMISSION_GROUPS)
+  if (groups !== null) return ceilingFromGroups(groups)
   const raw = req.headers.get(ACTOR_HEADERS.SCOPES)
   if (raw === null) return null
   if (raw.length > 2048) return []
@@ -175,6 +180,21 @@ export function trustedGatewayScopeCeiling(req: Request): string[] | null {
     }
     const allowed = new Set<string>(HOSTED_AGENT_SCOPES)
     return [...new Set(parsed.filter((scope) => allowed.has(scope)))]
+  } catch {
+    return []
+  }
+}
+
+/**
+ * The ceiling for the agent's permission groups, expanded with this build's
+ * table. Malformed context fails closed to no agent scopes.
+ */
+function ceilingFromGroups(raw: string): string[] {
+  if (raw.length > 512) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return scopesForHostedPermissionGroups(knownHostedPermissionGroups(parsed))
   } catch {
     return []
   }

@@ -274,7 +274,7 @@ describe("drawing tools through MCP", () => {
     expect(read.objects[0].pts).toBeUndefined()
   })
 
-  it("requires both scopes for drawing writes and supplies an authorization challenge", async () => {
+  it("requires both scopes for drawing writes and names the missing access", async () => {
     const client = await connect(["documents:write"])
     const denied = await call(client, "write", {
       action: "create",
@@ -283,8 +283,9 @@ describe("drawing tools through MCP", () => {
       requestId: "denied",
     })
     expect(denied.isError).toBe(true)
-    expect(JSON.stringify(denied.content)).toContain("documents:read")
-    expect(denied._meta?.["mcp/www_authenticate"]).toBeDefined()
+    expect(JSON.stringify(denied.content)).toContain("needs Read workspace access")
+    // Signing in again can't add access, so no OAuth challenge sends it there.
+    expect(denied._meta?.["mcp/www_authenticate"]).toBeUndefined()
     const guide = await client.callTool({
       name: "worktable_guidance",
       arguments: { request: { action: "drawings" } },

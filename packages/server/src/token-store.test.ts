@@ -71,6 +71,29 @@ describe("token store", () => {
     })
   })
 
+  it("gives a token made from a choice of access what that access grants now", async () => {
+    // Read workspace, as minted before documents:* joined the group. A token
+    // minted with chosen scopes keeps exactly those.
+    const august = [
+      "annotations:read",
+      "docs:read",
+      "records:read",
+      "search:read",
+      "widgets:read",
+      "workspace:export",
+    ]
+    const chosen = ["docs:read", "records:*"]
+    const grouped = await createToken({ scopes: august, agent: "openclaw" })
+    const exact = await createToken({ scopes: chosen, agent: "cli" })
+    for (const scopes of [
+      (await verifyToken(grouped.token))?.scopes,
+      (await listTokens()).find((token) => token.id === grouped.metadata.id)
+        ?.scopes,
+    ])
+      expect(scopes).toContain("documents:read")
+    expect((await verifyToken(exact.token))?.scopes).toEqual(chosen)
+  })
+
   it("rejects tampered, truncated, and unknown tokens", async () => {
     const { token } = await createToken({ scopes: ["*"] })
 

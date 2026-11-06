@@ -138,7 +138,7 @@ describe("agent document lifetimes over MCP", () => {
     await connect(["docs:write"])
     const denied = await tool("worktable_spaces_update", { spaceId: id, pins: [] })
     expect(denied.ok).toBe(false)
-    expect(denied.text).toContain("documents:write")
+    expect(denied.text).toContain("needs Edit workspace access")
     await connect()
     const mismatch = await tool("worktable_spaces_update", { spaceId: id, pins: [], startHere: [{ path: "missing.md" }] })
     expect(mismatch.ok).toBe(false)
@@ -470,9 +470,8 @@ describe("agent document lifetimes over MCP", () => {
       spaceId,
     })
     expect(readOnly.ok).toBe(false)
-    expect(readOnly.text).toContain('requires "docs:write"')
     expect(readOnly.text).toContain(
-      "reconnecting this agent with broader access"
+      "needs Edit workspace access, which this agent doesn't have here. Turn on Edit workspace for this agent in Settings → Agents."
     )
 
     await connect(["search:read", "docs:read"])
@@ -493,7 +492,7 @@ describe("agent document lifetimes over MCP", () => {
         [field]: [],
       })
       expect(denied.ok).toBe(false)
-      expect(denied.text).toContain('requires "documents:write"')
+      expect(denied.text).toContain("needs Edit workspace access")
     }
     const renamed = await tool("worktable_spaces", {
       action: "update",

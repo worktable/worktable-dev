@@ -7,6 +7,7 @@ import { listSpaces } from "./store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
 import { logError } from "./debug-log.ts"
+import { currentScopesForStored } from "@worktable/types/agent-connections"
 
 // ============================================================
 // Access tokens
@@ -232,7 +233,7 @@ function toMetadata(
     id: token.id,
     user: token.user,
     workspace: token.workspace,
-    scopes: token.scopes,
+    scopes: currentScopesForStored(token.scopes),
     agent: token.agent,
     createdAt: token.createdAt,
     revokedAt: token.revokedAt,
@@ -557,7 +558,7 @@ export async function verifyToken(raw: string): Promise<TokenIdentity | null> {
     user: stored.user,
     workspace: stored.workspace,
     credentialClass: "local",
-    scopes: stored.scopes,
+    scopes: currentScopesForStored(stored.scopes),
     agent: stored.agent,
     principal: principalForStoredToken(stored),
   }

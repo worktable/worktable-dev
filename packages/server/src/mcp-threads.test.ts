@@ -437,7 +437,7 @@ describe("thread MCP operations", () => {
       arguments: { request: { action: "claim", waitSeconds: 0 } },
     })
     expect(response.isError).toBe(true)
-    expect(JSON.stringify(response.content)).toContain("threads:participate")
+    expect(JSON.stringify(response.content)).toContain("needs Threads access")
   })
 
   it("binds a managed participant to its credential rather than client metadata", async () => {

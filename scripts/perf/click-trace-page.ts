@@ -620,8 +620,9 @@ export function installInstrumentation(): void {
         selected &&
         seen(panel) &&
         panel !== null &&
-        panel.querySelector('[data-slot="skeleton"], [role="status"]') ===
-          null &&
+        // Its loading fallback is a skeleton; a status message the section
+        // shows for good (a connection's state) is content.
+        panel.querySelector('[data-slot="skeleton"]') === null &&
         text(panel).length > 0
       )
     },

@@ -1165,6 +1165,9 @@ async function measure(
     }
   }
 
+  // What the screen did is read up to when it was read, not to the last
+  // mutation: a change shows in the frame after it.
+  const observedEnd = Math.max(t0 + settledMs, data.now)
   const record: ClickRecord = {
     network: session.network.name,
     round: run.round,
@@ -1251,7 +1254,7 @@ async function measure(
         data.exp,
         t0,
         content && contentMs !== null ? content.paint : null,
-        t0 + settledMs
+        observedEnd
       ),
       contentHeld: atSettle.ok,
       loadingAtSettle: atSettle.loading,
@@ -1261,7 +1264,7 @@ async function measure(
             frames,
             data.wallOffset,
             t0,
-            t0 + settledMs,
+            observedEnd,
             join(
               run.outDir,
               "frames",
@@ -2593,15 +2596,16 @@ async function setup(
     console.log(`[clicks] setup page events:\n${notes.join("\n")}`)
     throw error
   }
-  // A third Space with documents that no other journey opens.
-  const spaceC =
-    fixture.spaces[2] ??
-    spaces
-      .map((space) => space.id)
-      .find(
-        (id) =>
-          id !== spaceA && id !== fixture.spaces[1] && id !== fixture.htmlSpace
-      )!
+  // A third Space with documents that no other journey opens, among those
+  // the person clicking can see.
+  const visible = new Set(spaces.map((space) => space.id))
+  const spaceC = [...fixture.spaces.slice(2), ...visible].find(
+    (id) =>
+      visible.has(id) &&
+      id !== spaceA &&
+      id !== fixture.spaces[1] &&
+      id !== fixture.htmlSpace
+  )!
   // Settings sections, as the dialog lists them for this person.
   await page.goto(base + "/", { waitUntil: "commit" })
   await page.locator('button[aria-label^="Settings"]').first().click()

@@ -136,6 +136,10 @@ export function measureClicks(result: ClickTraceResult): {
       failures.push(`${name}: the screen never settled`)
     if (click.experience && !click.experience.contentHeld)
       failures.push(`${name}: the content was gone once the screen settled`)
+    if (click.experience?.loadingAtSettle.length)
+      failures.push(
+        `${name}: still loading once the screen settled: ${click.experience.loadingAtSettle.join(", ")}`
+      )
     const requests = apiRequests(click)
     measurements.push({
       key: `requests, ${name}`,

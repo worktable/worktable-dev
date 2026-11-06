@@ -4,6 +4,7 @@ import {
   defaultShareLink,
   defaultShareLinkExpiry,
   shareLinkSummary,
+  shareLinkViewsLine,
 } from "./share-links"
 
 const DAY = 86_400_000
@@ -79,4 +80,11 @@ test("a link that counts views says how many people viewed it, not when anything
   ).toBe("Never expires · 4 views · 2 people · Viewed today")
   // A link that doesn't count views keeps when it was last opened.
   expect(text({ lastUsedAt: fetched })).toBe("Never expires · Opened today")
+  // The default link says it on its own line.
+  expect(
+    shareLinkViewsLine(
+      link("live", 1, { views: { count: 1, people: 1, lastViewAt: fetched } }),
+      now
+    ).map((part) => part.text)
+  ).toEqual(["1 view", "1 person", "Viewed today"])
 })

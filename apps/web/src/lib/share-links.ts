@@ -90,6 +90,22 @@ export function shareLinkLastOpened(
   return when.charAt(0).toUpperCase() + when.slice(1)
 }
 
+/**
+ * What the share dialog says under its default link about views: "4 views ·
+ * 2 people · Viewed today", or "No views yet". Empty for a link that doesn't
+ * count views.
+ */
+export function shareLinkViewsLine(
+  link: ShareLink,
+  now = Date.now()
+): ShareLinkDetail[] {
+  if (!link.views || link.status === "revoked") return []
+  const parts = viewParts(link.views)
+  if (link.views.lastViewAt)
+    parts.push({ text: `Viewed ${openedWhen(link.views.lastViewAt, now)}` })
+  return parts
+}
+
 /** "4 views · 2 people", or "No views yet", for a link that counts views. */
 function viewParts(views: NonNullable<ShareLink["views"]>): ShareLinkDetail[] {
   if (views.count === 0) return [{ text: "No views yet" }]

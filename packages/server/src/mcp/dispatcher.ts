@@ -1912,7 +1912,10 @@ async function _dispatchOperationInner(
       })
       // Views of the page's share links, for the preview surface.
       if (context.surface !== "preview") return read
-      const shareLinks = await htmlShareLinkViews(spaceId, read.widget.id)
+      // Views are extra: the page reads the same without them.
+      const shareLinks = await htmlShareLinkViews(spaceId, read.widget.id).catch(
+        () => []
+      )
       return shareLinks.length ? { ...read, shareLinks } : read
     }
     case "records.list_collections": {

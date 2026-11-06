@@ -171,8 +171,10 @@ export function recordShareView(
       visitor || digest
         ? db
             .query<{ one: number }, [string, string, number]>(
+              // A load that looks automated never makes a person's view a reload.
               `SELECT 1 AS one FROM share_views
-               WHERE link_id = ? AND counted = 1 AND started_at > ?3 AND ${
+               WHERE link_id = ? AND counted = 1 AND started_at > ?3
+                 AND NOT ${AUTOMATED} AND ${
                  visitor ? "visitor = ?2" : "visitor IS NULL AND day_digest = ?2"
                } LIMIT 1`
             )
@@ -349,7 +351,8 @@ export function sweepShareViews(now = Date.now()): void {
     ).run(digestsBefore)
     db.query("DELETE FROM share_views WHERE started_at < ?").run(before)
     db.query("DELETE FROM share_previews WHERE at < ?").run(before)
-    db.query("DELETE FROM share_view_days WHERE day < ?").run(utcDay(before))
+    // The boundary day goes too, so expired visitors never add to people.
+    db.query("DELETE FROM share_view_days WHERE day <= ?").run(utcDay(before))
     for (const table of ["share_views", "share_previews", "share_view_days"]) {
       db.exec(
         `DELETE FROM ${table} WHERE link_id NOT IN (SELECT id FROM share_links)`
@@ -379,11 +382,16 @@ export function shareViewsForAgent(linkId: string): {
   previews: Array<{ app: string; at: string }>
 } {
   const { views, previews } = shareViewDetail(linkId)
+  // Numbered by first view over every retained view, not just these, so a
+  // browser keeps its label from one read to the next.
   const labels = new Map<string, string>()
-  // Oldest first, so "Browser 1" is the first browser that viewed the link.
-  for (const view of [...views].reverse())
-    if (view.visitor && !labels.has(view.visitor))
-      labels.set(view.visitor, `Browser ${labels.size + 1}`)
+  for (const { visitor } of readableDatabase()
+    ?.query<{ visitor: string }, [string]>(
+      `SELECT visitor FROM share_views WHERE link_id = ? AND visitor IS NOT NULL
+       GROUP BY visitor ORDER BY MIN(started_at), visitor`
+    )
+    .all(linkId) ?? [])
+    labels.set(visitor, `Browser ${labels.size + 1}`)
   return {
     views: views.map((view) => ({
       at: new Date(view.startedAt).toISOString(),

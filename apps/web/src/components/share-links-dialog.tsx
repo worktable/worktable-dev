@@ -64,6 +64,7 @@ import {
   shareLinkExpiry,
   shareLinkExpiryChoices,
   shareLinkSummary,
+  shareLinkViewsLine,
   type ShareLinkDetail,
   type ShareLinkExpiry,
   unsharedCollections,
@@ -1239,6 +1240,7 @@ export function DefaultLink({
   const stopped = shareLinkSummary(link, { opened: false }).filter(
     (part) => part.stopped
   )
+  const viewed = shareLinkViewsLine(link)
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
@@ -1263,6 +1265,7 @@ export function DefaultLink({
         {menu}
       </div>
       {stopped.length > 0 ? <DetailLine parts={stopped} /> : null}
+      {viewed.length > 0 ? <DetailLine parts={viewed} /> : null}
     </div>
   )
 }

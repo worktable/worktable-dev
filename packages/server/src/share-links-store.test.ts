@@ -2989,6 +2989,16 @@ describe("share link views", () => {
       "x-worktable-view-visitor": digest("scanner"),
       "x-worktable-view-network": "cloud",
     })
+    // A scanner's quick load never makes a real reader's view a reload.
+    const proxied = {
+      "x-worktable-view-visitor": digest("behind a proxy"),
+      "x-worktable-view-network": "cloud",
+    }
+    await report(token, start("proxy-scan"), proxied)
+    expect(
+      (await (await report(token, start("proxy-read", { input: true }), proxied)).json())
+        .counted
+    ).toBe(true)
     // A preview is noted once per app and day, never as a view.
     for (let sent = 0; sent < 2; sent++)
       await report(token, { kind: "preview" }, {
@@ -2997,8 +3007,8 @@ describe("share link views", () => {
 
     const { shareViewSummaries } = await import("./share-views.ts")
     expect(shareViewSummaries([id]).get(id)).toEqual({
-      views: 3,
-      people: 2,
+      views: 4,
+      people: 3,
       lastViewAt: expect.any(Number),
     })
     // Off Cloud, where nothing reports views yet, links say only when they
@@ -3012,9 +3022,9 @@ describe("share link views", () => {
     const { htmlShareLinkViews } = await import("./mcp/share-link-views.ts")
     const forAgent = await htmlShareLinkViews("space", "board/signals")
     expect(forAgent).toHaveLength(1)
-    expect(forAgent[0]).toMatchObject({ viewCount: 3, people: 2 })
-    expect(forAgent[0]!.recentViews).toHaveLength(6)
-    expect(forAgent[0]!.recentViews.filter((v) => v.automated)).toHaveLength(2)
+    expect(forAgent[0]).toMatchObject({ viewCount: 4, people: 3 })
+    expect(forAgent[0]!.recentViews).toHaveLength(8)
+    expect(forAgent[0]!.recentViews.filter((v) => v.automated)).toHaveLength(3)
     expect(
       forAgent[0]!.recentViews.find((v) => v.visibleSeconds === 240)?.browserId
     ).toBe("Browser 1")

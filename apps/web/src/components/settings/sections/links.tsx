@@ -855,7 +855,7 @@ function LinkRow({
       <TableCell
         className={cn(
           "px-2 align-middle whitespace-nowrap",
-          !link.lastUsedAt && "text-muted-foreground"
+          shareLinkLastOpened(link) === "Never" && "text-muted-foreground"
         )}
       >
         {shareLinkLastOpened(link)}

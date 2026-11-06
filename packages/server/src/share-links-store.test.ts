@@ -2870,3 +2870,185 @@ describe("owner policy", () => {
     }
   })
 })
+
+describe("share link views", () => {
+  const GATEWAY = "gateway-secret-for-views"
+  const digest = (seed: string) =>
+    createHash("sha256").update(seed).digest("hex")
+
+  async function liveLink(): Promise<{ id: string; token: string }> {
+    await useHtmlStorageV2()
+    const policy = (await (await send("GET", "/api/shares/policy")).json())
+      .policy as SharingPolicy
+    expect(
+      (await send("PUT", "/api/shares/policy", { ...policy, liveLinks: true }))
+        .status
+    ).toBe(200)
+    const written = await createHtmlDocument({
+      spaceId: "space",
+      explicitId: "board/signals",
+      name: "Signals",
+      html: "<main><h1>Signals</h1></main>",
+      versionSource: "test",
+      versionUpdatedBy: "test",
+    })
+    expect(written.error).toBeUndefined()
+    const created = await createLink(
+      "board/signals",
+      { grant: { version: 1 } },
+      "html"
+    )
+    // Views count on Worktable Cloud, from the gateway.
+    process.env["WORKTABLE_HOSTED"] = "1"
+    process.env["WORKTABLE_GATEWAY_SECRET"] = GATEWAY
+    return { id: created.link.id, token: created.token }
+  }
+
+  async function report(
+    token: string,
+    message: Record<string, unknown>,
+    seen: Record<string, string> = {},
+    gateway = GATEWAY
+  ): Promise<Response> {
+    const body = JSON.stringify(message)
+    return await app().request("/public/share/visit", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": String(Buffer.byteLength(body)),
+        "x-worktable-gateway": gateway,
+        "x-worktable-share-capability": token,
+        ...seen,
+      },
+      body,
+    })
+  }
+
+  const start = (load: string, extra: Record<string, unknown> = {}) => ({
+    kind: "start",
+    load: load.padEnd(16, "x"),
+    visible: 5,
+    input: false,
+    webdriver: false,
+    ...extra,
+  })
+
+  it("counts people's views of a live link, not fetches, reloads, previews or automation", async () => {
+    const { id, token } = await liveLink()
+    const a = { "x-worktable-view-visitor": digest("browser a") }
+    const b = { "x-worktable-view-visitor": digest("browser b") }
+
+    // Only the gateway reports views.
+    expect((await report(token, start("forged"), a, "wrong")).status).toBe(403)
+
+    // A HEAD request and a chat app's preview fetch aren't someone opening it.
+    await app().request("/public/share", {
+      method: "HEAD",
+      headers: { "x-worktable-share-capability": token },
+    })
+    await app().request("/public/share", {
+      headers: {
+        "x-worktable-share-capability": token,
+        "x-worktable-view-preview": "slack",
+      },
+    })
+    flushShareLinkUse()
+    expect(getShareLink(id)?.lastUsedAt).toBeNull()
+
+    const first = await report(token, start("a-first"), a)
+    expect(await first.json()).toEqual({ counted: true, first: true })
+    // A repeat, a later update and a reload within 30 minutes add no view.
+    expect(await (await report(token, start("a-first"), a)).json()).toEqual({
+      counted: false,
+      first: false,
+    })
+    await report(
+      token,
+      { ...start("a-first"), kind: "update", visible: 240, input: true },
+      a
+    )
+    expect(await (await report(token, start("a-reload"), a)).json()).toEqual({
+      counted: false,
+      first: false,
+    })
+    // A second browser counts, even from the same office on the same day.
+    const day = { "x-worktable-view-day": digest("office today") }
+    expect(
+      (await (await report(token, start("b-first"), { ...b, ...day })).json())
+        .counted
+    ).toBe(true)
+    // Do Not Track or GPC: a view with no identifier, never another person.
+    expect((await (await report(token, start("private"))).json()).counted).toBe(
+      true
+    )
+    // What looks automated is kept, but left out of the counts.
+    await report(token, start("bot", { webdriver: true }), {
+      "x-worktable-view-visitor": digest("headless"),
+    })
+    await report(token, start("scan", { visible: 6 }), {
+      "x-worktable-view-visitor": digest("scanner"),
+      "x-worktable-view-network": "cloud",
+    })
+    // A preview is noted once per app and day, never as a view.
+    for (let sent = 0; sent < 2; sent++)
+      await report(token, { kind: "preview" }, {
+        "x-worktable-view-preview": "slack",
+      })
+
+    const { shareViewSummaries } = await import("./share-views.ts")
+    expect(shareViewSummaries([id]).get(id)).toEqual({
+      views: 3,
+      people: 2,
+      lastViewAt: expect.any(Number),
+    })
+    // Off Cloud, where nothing reports views yet, links say only when they
+    // were last opened.
+    delete process.env["WORKTABLE_HOSTED"]
+    const listed = (await documentLinks("board/signals", "html")).links
+    expect(listed.find((link) => link.id === id)).not.toHaveProperty("views")
+    process.env["WORKTABLE_HOSTED"] = "1"
+
+    // Agents get the evidence without digests or names.
+    const { htmlShareLinkViews } = await import("./mcp/share-link-views.ts")
+    const forAgent = await htmlShareLinkViews("space", "board/signals")
+    expect(forAgent).toHaveLength(1)
+    expect(forAgent[0]).toMatchObject({ viewCount: 3, people: 2 })
+    expect(forAgent[0]!.recentViews).toHaveLength(6)
+    expect(forAgent[0]!.recentViews.filter((v) => v.automated)).toHaveLength(2)
+    expect(
+      forAgent[0]!.recentViews.find((v) => v.visibleSeconds === 240)?.browserId
+    ).toBe("Browser 1")
+    expect(forAgent[0]!.previews.map((p) => p.app)).toEqual(["slack"])
+    expect(JSON.stringify(forAgent)).not.toContain(digest("browser a"))
+  })
+
+  it("keeps keyless visitors as a daily count once their digests are gone", async () => {
+    const { id, token } = await liveLink()
+    // Two visitors in a consent region, who get no key.
+    for (const who of ["first", "second"]) {
+      const reply = await report(token, start(who), {
+        "x-worktable-view-day": digest(`visitor ${who}`),
+      })
+      expect((await reply.json()).counted).toBe(true)
+    }
+    const { shareViewSummaries, sweepShareViews } = await import(
+      "./share-views.ts"
+    )
+    expect(shareViewSummaries([id]).get(id)?.people).toBe(2)
+    const db = new Database(shareLinksDatabasePath())
+    const digests = () =>
+      db
+        .query<{ n: number }, []>(
+          "SELECT COUNT(*) AS n FROM share_views WHERE day_digest IS NOT NULL"
+        )
+        .get()!.n
+    // Three days on, the digests are gone and the day keeps its count.
+    sweepShareViews(Date.now() + 3 * 24 * 60 * 60 * 1000)
+    expect(digests()).toBe(0)
+    expect(shareViewSummaries([id]).get(id)?.people).toBe(2)
+    // After 90 days nothing about the views is left.
+    sweepShareViews(Date.now() + 91 * 24 * 60 * 60 * 1000)
+    expect(shareViewSummaries([id]).get(id)).toBeUndefined()
+    db.close()
+  })
+})

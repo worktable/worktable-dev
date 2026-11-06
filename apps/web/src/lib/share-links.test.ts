@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test"
 import { defaultSharingPolicy, type ShareLink } from "@worktable/types"
-import { defaultShareLink, defaultShareLinkExpiry } from "./share-links"
+import {
+  defaultShareLink,
+  defaultShareLinkExpiry,
+  shareLinkSummary,
+} from "./share-links"
 
 const DAY = 86_400_000
 
@@ -54,4 +58,25 @@ test("new links expire in two weeks, or sooner when the owner policy says so", (
   expect(
     defaultShareLinkExpiry({ ...defaultSharingPolicy(), maxExpiryDays: 7 })
   ).toBe("7")
+})
+
+test("a link that counts views says how many people viewed it, not when anything fetched it", () => {
+  const now = Date.now()
+  const fetched = new Date(now - 60_000).toISOString()
+  const text = (overrides: Partial<ShareLink>) =>
+    shareLinkSummary(link("live", 1, overrides), { now })
+      .map((part) => part.text)
+      .join(" · ")
+  // Only a scanner fetched it: no views yet, whatever the last fetch says.
+  expect(
+    text({ lastUsedAt: fetched, views: { count: 0, people: 0, lastViewAt: null } })
+  ).toBe("Never expires · No views yet")
+  expect(
+    text({
+      lastUsedAt: fetched,
+      views: { count: 4, people: 2, lastViewAt: fetched },
+    })
+  ).toBe("Never expires · 4 views · 2 people · Viewed today")
+  // A link that doesn't count views keeps when it was last opened.
+  expect(text({ lastUsedAt: fetched })).toBe("Never expires · Opened today")
 })

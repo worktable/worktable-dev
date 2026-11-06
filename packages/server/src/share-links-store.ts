@@ -439,6 +439,14 @@ function openDatabase(create: boolean): Database | null {
   return db
 }
 
+/**
+ * The links store's database, for tables that sit beside its links (share
+ * views). Null when there is no store yet and `create` is false.
+ */
+export function openShareLinksDatabase(create = false): Database | null {
+  return openDatabase(create)
+}
+
 /** Close every open store; the next use opens its file again. */
 export function closeShareLinkStores(): void {
   flushShareLinkUse()

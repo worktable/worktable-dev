@@ -5,12 +5,14 @@ import {
 } from "../share-images.ts"
 import { inlineHtmlSpaceImages } from "../html-space-images.ts"
 import { createPublicVisitorCommentsRouter } from "./public-visitor-comments.ts"
+import { createPublicShareViewsRouter } from "./public-share-views.ts"
 import { visitorCommentNamespace } from "../visitor-comment-access.ts"
 import { commentPause } from "../visitor-comment-store.ts"
 import { linkBridge } from "../link-bridge.ts"
 import { LinkToolChanged, readLinkTool } from "../link-tool.ts"
 import {
   SHARE_UNLOCK_HEADER,
+  SHARE_VIEW_HEADERS,
   ShareUnlockRequest,
 } from "@worktable/hosted-contract"
 import {
@@ -478,6 +480,9 @@ export function createPublicSharesRouter(
     "/comments",
     createPublicVisitorCommentsRouter(options.trustedLinkIngress)
   )
+  // Views come only from the gateway; Link ingress doesn't carry them yet.
+  if (!options.trustedLinkIngress)
+    router.route("/visit", createPublicShareViewsRouter())
   router.post("/bridge", linkBridge(getShareOrigin))
   router.onError((error, c) => {
     if (error instanceof SharePasswordLimited) {
@@ -609,7 +614,12 @@ export function createPublicSharesRouter(
       })
     )
       return unavailable(c.req.raw, content, shareOrigin)
-    noteShareLinkUsed(view.link)
+    // A HEAD request or a chat app's link preview isn't someone opening it.
+    if (
+      c.req.method !== "HEAD" &&
+      !c.req.header(SHARE_VIEW_HEADERS.PREVIEW)
+    )
+      noteShareLinkUsed(view.link)
     return response
   }
 

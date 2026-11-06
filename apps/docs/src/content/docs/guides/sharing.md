@@ -73,6 +73,14 @@ can read.
 Record rules filter Records reads only. Text or data written into the tool
 itself is visible to every reader.
 
+On Worktable Cloud, a live tool's link counts its views, and **Share** shows
+them under the link, such as "4 views · 2 people". A view is a reader's
+browser showing the page for a few seconds, so link scanners and chat previews
+don't count, and neither do reloads within half an hour or visits that look
+automated. People is an estimate. Views are kept for 90 days, never with the
+reader's address. Readers who send Do Not Track or Global Privacy Control are
+counted without anything that tells them apart.
+
 ### Visitor comments
 
 Open **Comments** in **Share** and turn on **Allow comments**. Each visitor sees

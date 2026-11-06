@@ -969,6 +969,12 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
       revision: z.string().optional().describe("The source's revision, for expectedRevision in worktable_html_write."),
       downloadUrl: z.string().optional().describe("Where a shell can fetch this revision of the source with curl, outside the call, until downloadExpiresAt. It refuses once the page changes."),
       downloadExpiresAt: z.string().optional().describe("When downloadUrl stops working."),
+      shareLinks: z
+        .array(z.looseObject({}))
+        .optional()
+        .describe(
+          "For a live HTML Doc shared by link on Worktable Cloud: each link's label, views and estimated people over the last 90 days, its last view and last fetch, its recent views (time, visible seconds, whether it was a reload or looks automated, a per-link browser label, country, browser, phone or desktop, cloud network) and the apps whose link previews fetched it. Best effort: people is an estimate, and a fetch with no view may be a scanner or a reader who blocks counting."
+        ),
     },
   }),
   worktable_search: (tool) => ({

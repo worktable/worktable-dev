@@ -105,7 +105,6 @@ export async function cloudAccountStatus() {
     account.workspaceEpoch === epoch &&
     !account.accessToken
   ) {
-    const recoveringAttempt = attempt
     account = await withCrossProcessLock(
       `${file}.lock`,
       { label: "Cloud account" },
@@ -120,9 +119,7 @@ export async function cloudAccountStatus() {
         )
           return current
         try {
-          const recovered = await refresh(file)
-          if (attempt === recoveringAttempt) signInError = undefined
-          return recovered
+          return await refresh(file)
         } catch {
           // Keep the continuation available for the next Settings poll; a
           // definitive provider rejection has already removed the account.
@@ -262,6 +259,7 @@ export async function completeCloudSignIn(
 
 /** Caller holds the account lock; rotated refresh tokens are saved even on a verification outage. */
 async function refresh(file: string): Promise<Account> {
+  const refreshingAttempt = attempt
   const account = await read(file)
   if (
     !account ||
@@ -295,6 +293,12 @@ async function refresh(file: string): Promise<Account> {
   const updated = { ...account, ...Tokens.parse(body) }
   if (updated.user.id !== account.user.id)
     throw new Error("Cloud account changed. Sign in again.")
+  // An account without an access token is the continuation kept through an
+  // outage. Its outage message ends here, whichever request recovered it, and
+  // before the account is saved: a status read that sees the account must
+  // never see that message beside it.
+  if (!account.accessToken && attempt === refreshingAttempt)
+    signInError = undefined
   await save(file, updated)
   return updated
 }

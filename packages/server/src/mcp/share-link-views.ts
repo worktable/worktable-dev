@@ -4,7 +4,11 @@ import {
   listDocumentShareLinks,
   ShareLinksStoreError,
 } from "../share-links-store.ts"
-import { shareViewSummaries, shareViewsForAgent } from "../share-views.ts"
+import {
+  shareViewsForAgent,
+  shareViewsReported,
+  shareViewSummaries,
+} from "../share-views.ts"
 
 /**
  * The views of an HTML Doc's share links that count them, for an agent that
@@ -28,6 +32,7 @@ export async function htmlShareLinkViews(
     }
   >
 > {
+  if (!shareViewsReported()) return []
   const resolved = await useResolvedDocumentHandle(
     { spaceId, path, snapshot: true },
     async (handle) => handle.documentId

@@ -36,7 +36,11 @@ import {
   linkSpaceSchemaGeneration,
 } from "../link-schema-generation.ts"
 import { readSharingPolicy } from "../share-links-store.ts"
-import { shareViewSummaries, type ShareViewSummary } from "../share-views.ts"
+import {
+  shareViewsReported,
+  shareViewSummaries,
+  type ShareViewSummary,
+} from "../share-views.ts"
 import { countsViews } from "./public-share-views.ts"
 import { readLinkGrantSchemas, validateLinkGrant } from "../link-grant.ts"
 import { mapWithConcurrency } from "../bounded-concurrency.ts"
@@ -189,7 +193,8 @@ function publicLink(
 function viewsOf(
   links: readonly StoredShareLink[]
 ): Map<string, ShareViewSummary | null> {
-  const counting = links.filter(countsViews)
+  // Until a gateway that reports views is in front, links keep Last opened.
+  const counting = shareViewsReported() ? links.filter(countsViews) : []
   const summaries = shareViewSummaries(counting.map((link) => link.id))
   return new Map(
     counting.map((link) => [link.id, summaries.get(link.id) ?? null])

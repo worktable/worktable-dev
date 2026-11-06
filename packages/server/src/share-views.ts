@@ -225,6 +225,15 @@ export function recordSharePreview(
   ).run(linkId, app, utcDay(now), now)
 }
 
+/**
+ * Whether this Worktable has ever been told of a view or preview, which
+ * means the gateway in front of it reports them. Until then links keep
+ * showing when they were last opened.
+ */
+export function shareViewsReported(): boolean {
+  return readableDatabase() !== null
+}
+
 /** Each link's views, in one indexed read. Links without views are absent. */
 export function shareViewSummaries(
   linkIds: readonly string[]

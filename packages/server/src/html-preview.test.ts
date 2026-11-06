@@ -27,7 +27,6 @@ import {
 import { recordIndex } from "./record-index.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import { buildWidgetCsp } from "./widget-runtime-policy.ts"
-import { DRAWING_FONTS } from "./preview-fonts.ts"
 import {
   injectWidgetHostStyles,
   injectWidgetRuntime,

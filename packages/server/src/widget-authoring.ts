@@ -1,10 +1,16 @@
 import { previewFontCss } from "./preview-fonts.ts"
-import { buildWidgetShareRuntimeScript, SHARE_FONT_CSS } from "./widget-share-runtime.ts"
+import {
+  buildWidgetShareRuntimeScript,
+  SHARE_FONT_CSS,
+} from "./widget-share-runtime.ts"
 import type { WidgetFile } from "@worktable/types"
 import { parseDocument, Parser } from "htmlparser2"
 import { filesEnabled } from "./files-enabled.ts"
-import { buildHtmlDocThemeCss, HTML_DOC_COLOR_SCHEME_CSS } from "./html-doc-theme.ts"
-import { expandHtmlIcons, HTML_ICON_GROUPS } from "./html-icons.ts"
+import {
+  buildHtmlDocThemeCss,
+  HTML_DOC_COLOR_SCHEME_CSS,
+} from "./html-doc-theme.ts"
+import { expandHtmlIcons } from "./html-icons.ts"
 import { configuredMcpSurface } from "./mcp/surface.ts"
 
 export type WidgetTheme = "light" | "dark"
@@ -200,11 +206,7 @@ The page loads whole, with all its images, and loads them again after any change
 /** Library icons in HTML Docs, taught on the preview surface (html-icons.ts). */
 export const HTML_GUIDE_ICONS = `## Icons
 
-Where a word only labels, such as a status, a type, a direction or a step, use an icon from Worktable's library: the Lucide icons the app uses. Write an empty svg with its name, such as <svg data-icon="circle-check"></svg>. Worktable draws it whenever the page is served, 1em square in the text color, so font-size sizes it and color colors it. Give an icon that stands alone an aria-label. Use these instead of emoji or SVG icons you draw yourself.
-
-${HTML_ICON_GROUPS.map(([job, names]) => `- ${job}: ${names.join(", ")}`).join("\n")}
-
-Any Lucide name works, and the write warns about a name the library lacks, with close ones. Only svg elements in the markup are drawn; for icons page code adds, put each once in a <template> and clone it.`
+Where a word only labels, such as a status, a type, a direction or a step, use an icon instead: any Lucide icon, by its name on lucide.dev. Write an empty svg with the name, such as <svg data-icon="circle-check"></svg>, and Worktable draws it whenever the page is served, 1em square in the text color, so font-size sizes it and color colors it. Give an icon that stands alone an aria-label. Use these rather than emoji or SVG icons you draw yourself. A write warns about a name Lucide lacks. Only svg elements in the markup are drawn; for icons page code adds, put each once in a <template> and clone it.`
 
 export function getHtmlAuthoringGuide(
   _profile: HtmlGuideProfile = "runtime",
@@ -216,7 +218,9 @@ export function getHtmlAuthoringGuide(
       : HTML_GUIDE_SHARED
   // Space images follow the file features too (htmlSpaceImagesEnabled).
   const images =
-    surface === "preview" && filesEnabled() ? `\n\n${HTML_GUIDE_SPACE_IMAGES}` : ""
+    surface === "preview" && filesEnabled()
+      ? `\n\n${HTML_GUIDE_SPACE_IMAGES}`
+      : ""
   const icons = surface === "preview" ? `\n\n${HTML_GUIDE_ICONS}` : ""
   // The preview surface teaches the served theme in its own section.
   const runtime =
@@ -340,21 +344,24 @@ const FIXED_INLINE_PAGE_BACKGROUND_RE =
 
 function addThemeHints(html: string, issues: WidgetValidationIssue[]) {
   if (
-    (FIXED_PAGE_BACKGROUND_RE.test(html) || FIXED_INLINE_PAGE_BACKGROUND_RE.test(html)) &&
+    (FIXED_PAGE_BACKGROUND_RE.test(html) ||
+      FIXED_INLINE_PAGE_BACKGROUND_RE.test(html)) &&
     !DARK_THEME_RULE_RE.test(html)
   ) {
     issues.push({
       severity: "hint",
       code: "fixed_page_colors",
-      message: "The page background is a fixed color, so the page won't follow dark mode.",
-      hint: "Use var(--background) and the theme's other variables, or add html[data-theme=\"dark\"] rules.",
+      message:
+        "The page background is a fixed color, so the page won't follow dark mode.",
+      hint: 'Use var(--background) and the theme\'s other variables, or add html[data-theme="dark"] rules.',
     })
   }
   if (/prefers-color-scheme/i.test(html)) {
     issues.push({
       severity: "hint",
       code: "system_color_scheme",
-      message: "prefers-color-scheme follows the computer, not the theme Worktable shows.",
+      message:
+        "prefers-color-scheme follows the computer, not the theme Worktable shows.",
       hint: 'Use the theme\'s variables, or html[data-theme="dark"] rules.',
     })
   }
@@ -362,7 +369,8 @@ function addThemeHints(html: string, issues: WidgetValidationIssue[]) {
     issues.push({
       severity: "hint",
       code: "wrapped_theme_color",
-      message: "Worktable's theme variables are complete colors; hsl(var(--...)) works only with a palette the page defines itself.",
+      message:
+        "Worktable's theme variables are complete colors; hsl(var(--...)) works only with a palette the page defines itself.",
       hint: "Write var(--primary), not hsl(var(--primary)).",
     })
   }
@@ -469,8 +477,13 @@ export function buildWidgetFile({
   now = new Date().toISOString(),
 }: BuildWidgetFileInput): WidgetFile {
   if (existing) {
-    const { requests: existingRequests, spaceImages: existingImages, ...rest } = existing
-    const nextRequests = requests === undefined ? existingRequests : (requests ?? undefined)
+    const {
+      requests: existingRequests,
+      spaceImages: existingImages,
+      ...rest
+    } = existing
+    const nextRequests =
+      requests === undefined ? existingRequests : (requests ?? undefined)
     const nextImages = spaceImages === undefined ? existingImages : spaceImages
     return {
       ...rest,
@@ -533,7 +546,9 @@ function escapeClosingScript(value: string): string {
   return value.replace(/<\/script/gi, "<\\/script")
 }
 
-export function buildWidgetHostStyles(fontStyles = previewFontCss("/worktable-preview")): string {
+export function buildWidgetHostStyles(
+  fontStyles = previewFontCss("/worktable-preview")
+): string {
   return `<style data-worktable-runtime="host-smoothness">
 ${fontStyles}
 ${HTML_DOC_COLOR_SCHEME_CSS}
@@ -762,11 +777,17 @@ export function injectWidgetRuntime(
   const runtime = buildWidgetRuntimeScript(spaceId, widgetId, options)
   const runtimeInsertionIndex = trustedRuntimeInsertionIndex(html)
   let output = `${html.slice(0, runtimeInsertionIndex)}${runtime}${html.slice(runtimeInsertionIndex)}`
-  return injectWidgetHostStyles(output, options?.mode === "share" ? { fontStyles: SHARE_FONT_CSS } : undefined)
+  return injectWidgetHostStyles(
+    output,
+    options?.mode === "share" ? { fontStyles: SHARE_FONT_CSS } : undefined
+  )
 }
 
 /** The same typography and host styles are used for live and static previews. */
-export function injectWidgetHostStyles(html: string, options?: { fontStyles: string }): string {
+export function injectWidgetHostStyles(
+  html: string,
+  options?: { fontStyles: string }
+): string {
   // Library icons are drawn in with the theme, on every path that serves it.
   let output = expandHtmlIcons(html)
   let shell = inspectWidgetHtmlShell(output)

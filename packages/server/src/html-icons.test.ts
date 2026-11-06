@@ -34,6 +34,7 @@ const BODY = [
   '<svg data-icon="mine"><circle cx="5" cy="5" r="3"/></svg>',
   '<svg data-icon="tick-mark"></svg>',
   "<script>const tag = '<svg data-icon=\"x\"></svg>'</script>",
+  '<!-- <svg data-icon="info"></svg> -->',
 ].join("")
 
 async function frame(path: string): Promise<string> {
@@ -106,6 +107,7 @@ describe("Icons in HTML Docs", () => {
     )
     expect(served).toContain('<svg data-icon="tick-mark"></svg>')
     expect(served).toContain("const tag = '<svg data-icon=\"x\"></svg>'")
+    expect(served).toContain('<!-- <svg data-icon="info"></svg> -->')
 
     // The scriptless share view keeps the drawing through its sanitizer.
     const shared = renderPublicHtmlProjection(page(BODY))

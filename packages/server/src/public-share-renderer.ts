@@ -1,3 +1,4 @@
+import { buildHtmlDocThemeCss } from "./html-doc-theme.ts"
 import { JSDOM } from "jsdom"
 import { renderToStaticMarkup } from "react-dom/server"
 import { markdownDocument } from "@worktable/ui/markdown-document"
@@ -362,6 +363,11 @@ export function renderPublicHtmlProjection(source: string): string {
   for (const node of [...document.head.childNodes])
     if (node.nodeName !== "STYLE") node.remove()
   appendSystemThemeCompatibility(document)
+  // Worktable's theme goes first, below every style the page writes.
+  const theme = document.createElement("style")
+  theme.setAttribute("data-worktable-shared-theme", "base")
+  theme.textContent = buildHtmlDocThemeCss("system")
+  document.head.prepend(theme)
   const charset = document.createElement("meta")
   charset.setAttribute("charset", "utf-8")
   const viewport = document.createElement("meta")

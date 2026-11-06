@@ -27,7 +27,6 @@ import {
 import { recordIndex } from "./record-index.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import { buildWidgetCsp } from "./widget-runtime-policy.ts"
-import { DRAWING_FONTS } from "./preview-fonts.ts"
 import {
   injectWidgetHostStyles,
   injectWidgetRuntime,
@@ -287,7 +286,7 @@ test("normal and preview HTML share font defaults while policy keeps authored ne
   )
   for (const html of [live, history]) {
     expect(html).toContain("/worktable-preview/fonts/")
-    expect(html).toContain(`font-family: ${DRAWING_FONTS.sans}`)
+    expect(html).toContain(`--font-sans:"General Sans","Noto Sans",`)
   }
   const csp = buildWidgetCsp(false, "https://workspace.invalid")
   expect(csp).toContain(
@@ -513,5 +512,79 @@ previewTest(
       )
     ).toBe(false)
     expect(JSON.stringify(access)).not.toContain("Initial task")
+  }
+)
+
+previewTest(
+  "pages sit on Worktable's theme, and anything a page sets itself wins",
+  async () => {
+    const snapshot = await freezeHtmlPreviewSnapshot({ spaceId, path })
+    const corner = async (html: string, theme: "light" | "dark") => {
+      const capture = await captureHtmlPreview({
+        snapshot: { ...snapshot, html },
+        scopes: ["documents:read"],
+        options: { width: 300, height: 200, theme },
+      })
+      return [
+        ...(await sharp(capture.bytes)
+          .extract({ left: 10, top: 10, width: 1, height: 1 })
+          .removeAlpha()
+          .raw()
+          .toBuffer()),
+      ]
+    }
+    const bare = "<html><head></head><body><p>Plain</p></body></html>"
+    expect(await corner(bare, "dark")).toEqual([0, 0, 0])
+    const [red, green, blue] = await corner(bare, "light")
+    // The app's light canvas: a cool near-white.
+    expect(red).toBeGreaterThan(230)
+    expect(blue).toBeGreaterThan(red!)
+    expect(green).toBeGreaterThan(230)
+
+    // Pages written before the theme read its values through the old names.
+    expect(
+      await corner(
+        "<html><head><style>body{background:var(--ad-bg,rgb(255,0,0))}</style></head><body></body></html>",
+        "dark"
+      )
+    ).toEqual([0, 0, 0])
+    // A page's own colors win, even from inside its own cascade layer, and
+    // when it leaves out the head.
+    for (const head of [true, false]) {
+      const style = "<style>@layer page{body{background:rgb(0,0,255)}}</style>"
+      expect(
+        await corner(
+          `<html>${head ? `<head>${style}</head>` : style}<body></body></html>`,
+          "dark"
+        )
+      ).toEqual([0, 0, 255])
+    }
+    // A page with only a light palette keeps light code blocks in dark mode.
+    const [codeRed] = await corner(
+      `<html><head><style>body{margin:0;background:#fff;color:#222}pre{margin:0;height:120px}</style></head><body><pre>const total = 1</pre></body></html>`,
+      "dark"
+    )
+    expect(codeRed).toBeGreaterThan(200)
+    // A disabled field reads as disabled.
+    expect(
+      await corner(
+        `<html><head></head><body><div style="height:60px"></div><input id="on"><input id="off" disabled><script>const c=id=>getComputedStyle(document.getElementById(id)).color;document.body.style.background=c("on")!==c("off")?"rgb(0,255,0)":"rgb(255,0,0)"</script></body></html>`,
+        "dark"
+      )
+    ).toEqual([0, 255, 0])
+    // Text styles a page sets on its root still reach every element.
+    expect(
+      await corner(
+        `<html><head><style>:root{color:rgb(1,2,3);font-family:Georgia}</style></head><body><h2>Title</h2><script>const h=getComputedStyle(document.querySelector("h2"));document.body.style.background=h.color==="rgb(1, 2, 3)"&&h.fontFamily==="Georgia"?"rgb(0,255,0)":"rgb(255,0,0)"</script></body></html>`,
+        "dark"
+      )
+    ).toEqual([0, 255, 0])
+    // Native controls follow the theme shown, even when a page declares both.
+    expect(
+      await corner(
+        `<html><head><style>:root{color-scheme:light dark}</style></head><body><script>document.body.style.background=getComputedStyle(document.documentElement).colorScheme==="dark"?"rgb(0,255,0)":"rgb(255,0,0)"</script></body></html>`,
+        "dark"
+      )
+    ).toEqual([0, 255, 0])
   }
 )

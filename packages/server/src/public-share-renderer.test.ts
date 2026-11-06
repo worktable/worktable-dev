@@ -192,6 +192,11 @@ describe("public HTML-doc projection", () => {
       "light dark"
     )
     expect(darkRoot?.style.getPropertyValue("--ad-bg")).toBe("#111")
+    // Worktable's theme leads the head, below the page's own styles, and
+    // follows the visitor's system theme on screen.
+    expect(
+      document.head.querySelector("style")?.getAttribute("data-worktable-shared-theme")
+    ).toBe("base")
     expect(darkLabel?.style.getPropertyValue("color")).toBe("white")
     expect(html).toContain("color:red")
     expect(html).toContain("Chart")

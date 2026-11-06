@@ -516,7 +516,9 @@
 }
 
 .dark [data-surface="conversation"],
-:root[data-theme="dark"] [data-surface="conversation"] {
+.dark [data-surface="html-doc"],
+:root[data-theme="dark"] [data-surface="conversation"],
+:root[data-theme="dark"] [data-surface="html-doc"] {
   --background: oklch(0 0 0);
   --card: oklch(0.13 0.004 250);
   --secondary: oklch(0.215 0.006 250);

@@ -88,6 +88,19 @@ const ink = {
   },
 } as const
 
+// An open thread's pane in dark mode: black, with the fills that sit on it.
+const conversationDark = {
+  background: "oklch(0 0 0)",
+  card: "oklch(0.13 0.004 250)",
+  secondary: "oklch(0.215 0.006 250)",
+  muted: "oklch(0.215 0.006 250)",
+  accent: "oklch(0.19 0.006 250)",
+  "surface-tint": "oklch(0.19 0.006 250)",
+  "surface-selected": "oklch(0.2 0.006 250)",
+  "well-bg": "oklch(1 0 0 / 5%)",
+  "well-hover-bg": "oklch(1 0 0 / 7%)",
+} as const
+
 // Hex adapters for libraries that cannot read CSS variables. Surfaces derive
 // from the semantic roles above so third-party chrome cannot drift from them.
 const hex = {
@@ -319,17 +332,39 @@ export const themeConfig = {
     light: {
       background: "oklch(0.963 0.005 250)",
     },
-    dark: {
-      background: "oklch(0 0 0)",
-      card: "oklch(0.13 0.004 250)",
-      secondary: "oklch(0.215 0.006 250)",
-      muted: "oklch(0.215 0.006 250)",
-      accent: "oklch(0.19 0.006 250)",
-      "surface-tint": "oklch(0.19 0.006 250)",
-      "surface-selected": "oklch(0.2 0.006 250)",
-      "well-bg": "oklch(1 0 0 / 5%)",
-      "well-hover-bg": "oklch(1 0 0 / 7%)",
+    dark: conversationDark,
+  },
+  // Worktable serves these roles to every HTML Doc. Each value restates an app
+  // role for the page: dark mode sits on black, with cards lifted to the app's
+  // canvas and borders a step stronger, since shadows do not show on black.
+  // Light statuses darken to read as text, which agents set them in.
+  htmlDoc: {
+    light: {
+      success: "oklch(0.50 0.13 148)",
+      warning: "oklch(0.52 0.12 70)",
     },
+    // The thread pane's black, with cards lifted to the app's canvas and the
+    // fills on them a step up to match.
+    dark: {
+      background: conversationDark.background,
+      secondary: conversationDark.secondary,
+      muted: conversationDark.muted,
+      "well-bg": conversationDark["well-bg"],
+      "well-hover-bg": conversationDark["well-hover-bg"],
+      card: neutralSurfaces.dark.canvas,
+      accent: conversationDark.muted,
+      "surface-selected": neutralSurfaces.dark.muted,
+      border: "oklch(1 0 0 / 10%)",
+      "card-border": "oklch(1 0 0 / 8%)",
+      input: "oklch(1 0 0 / 10%)",
+      "input-hover": "oklch(1 0 0 / 14%)",
+      info: "oklch(0.72 0.10 186)",
+    },
+    // A categorical series: primary first, then recognition hues far apart
+    // on the wheel. Recognition glyphs already show without a fill.
+    chartHues: ["orange", "teal", "violet", "green"],
+    // Light mode keeps the floating elevation; dark mode draws a ring.
+    darkShadow: "0 0 0 1px oklch(1 0 0 / 6%)",
   },
   sidebar: {
     itemRadius: "0.6rem",

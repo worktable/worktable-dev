@@ -183,6 +183,42 @@ For each click it records:
   (script, style and layout, paint) from a Chrome trace (`--no-trace` skips
   it).
 
+The first and revisit passes then open a third Space with a quick click
+(no rest on its row, so nothing loads before the press; on a phone, a tap)
+and Settings, followed by each of its sections in the order it lists them.
+
+### What the screen did
+
+Every click also records what the screen did between the press and its
+settle (`experience` in `result.json`, from `experience.ts` and the page
+script):
+
+- **pop-in:** animation frames after the content showed in which content
+  became visible: added, or revealed by a state, class or opacity change,
+  covering 0.1% of the screen or more and inside the viewport. A list that
+  renders at once is one frame. Frames before content are kept apart
+  (`stepsToContent`);
+- **indicators:** loading episodes (skeletons, spinners and busy regions;
+  parts that appear in the same frame count once), each with when it showed
+  and for how long; one under 200 ms is a flash;
+- **layout shifts**, including those within 500 ms of input, which
+  Cumulative Layout Shift leaves out;
+- **input delay** and input to next paint, from Event Timing;
+- **the completion contract:** once settled, the content predicate still
+  holds and no indicator is on screen. A click that never settled, or whose
+  content went away, fails perf-smoke.
+
+A click starts at its press (pointerdown), since the app can start loading
+then. `--frames` adds a screencast of each action: when the screen first
+changed, when it was visually complete (from then on every frame matches
+the final one), in how many separate visible steps (an animation counted
+once), and a strip of those frames in `frames/` to compare by eye. Frames
+are compared after the action settles, in a page without throttling. Frame
+times and steps depend on the machine, so compare them paired. On first
+visits the pop-in and indicator counts depend on when responses land, so
+they are reported without a budget; on revisits, which render from what the
+tab holds, they do not, and perf-smoke budgets them.
+
 Two optional passes run after the others, in the same tab, as revisits:
 
 - **`--churn`** (with `--as member`): before each click the owner makes one

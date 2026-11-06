@@ -111,6 +111,7 @@ import {
   installInstrumentation,
   type ArmedResult,
   type Expectation,
+  type ExperienceData,
 } from "./click-trace-page.ts"
 import {
   RAW_TRACE_CATEGORIES,
@@ -120,6 +121,12 @@ import {
   type Breakdown,
 } from "./trace-breakdown.ts"
 import { writeReport } from "./click-trace-report.ts"
+import {
+  analyzeFrames,
+  startFrames,
+  summarizeExperience,
+  type ExperienceSummary,
+} from "./experience.ts"
 import {
   api,
   enableTeam,
@@ -290,6 +297,8 @@ export interface ClickRecord {
   navigation: Record<string, number> | null
   /** Elements in the app's document once settled (frames not included). */
   domNodes?: number
+  /** What the screen did: pop-in, shifts, indicators, input delay, frames. */
+  experience?: ExperienceSummary
   screenshot?: string
 }
 
@@ -426,6 +435,10 @@ interface ThreadTarget {
 export interface Targets {
   spaceA: SpaceTarget
   spaceB: SpaceTarget
+  /** Opened only by the quick click, so its first open is cold. */
+  spaceC: SpaceTarget
+  /** Settings sections in the order the dialog lists them. */
+  settings: string[]
   mdA: DocTarget
   mdB: DocTarget
   richA: DocTarget
@@ -716,12 +729,16 @@ interface PageData {
   }[]
   ws: WsRec[]
   clicks: number[]
+  pointerdowns: number[]
   inputs: number[]
   hovers: number[]
   lastMutation: number
   marks: { name: string; at: number }[]
   navigation: Record<string, number> | null
   domNodes: number
+  exp: ExperienceData
+  /** Date.now() - performance.now() when read. */
+  wallOffset: number
 }
 
 async function readPage(session: Session, from: number): Promise<PageData> {
@@ -764,11 +781,21 @@ async function readPage(session: Session, from: number): Promise<PageData> {
       loaf: wt.loaf,
       ws: wt.ws,
       clicks: wt.clicks,
+      pointerdowns: wt.pointerdowns,
       inputs: wt.inputs,
       hovers: wt.hovers,
       lastMutation: wt.lastMutation,
       marks: wt.marks,
       domNodes: document.getElementsByTagName("*").length,
+      wallOffset: Date.now() - performance.now(),
+      exp: {
+        frames: wt.exp.frames.filter((frame: { at: number }) => frame.at >= from - 1),
+        shifts: wt.exp.shifts.filter((shift: { at: number }) => shift.at >= from - 1),
+        indicators: wt.exp.indicators.filter(
+          (item: { end: number | null }) => item.end === null || item.end >= from - 1
+        ),
+        events: wt.exp.events.filter((event: { at: number }) => event.at >= from - 1),
+      },
       navigation:
         from <= 0 && navigation
           ? {
@@ -976,6 +1003,8 @@ interface RunContext {
   round: number
   outDir: string
   screenshots: boolean
+  /** Record screencast frames per action (visual timeline and strips). */
+  frames: boolean
 }
 
 async function measure(
@@ -1001,6 +1030,9 @@ async function measure(
     await run.browser.startTracing(page, {
       categories: run.rawTraces ? RAW_TRACE_CATEGORIES : TRACE_CATEGORIES,
     })
+  const stopFrames = run.frames
+    ? await startFrames(session.cdp, session.network.phone)
+    : null
   await action.act(session)
   let results: ArmedResult["results"]
   try {
@@ -1013,6 +1045,23 @@ async function measure(
     throw new Error(`${action.journey} (${action.target}): ${error}`)
   }
   const capped = await waitSettled(session)
+  const frames = stopFrames ? await stopFrames() : null
+  // The completion contract: once settled, the content still shows and
+  // nothing is still loading.
+  const contentExpectation = action.expect.find(
+    (item) => item.key === action.contentKey
+  )
+  const atSettle = contentExpectation
+    ? await page
+        .evaluate(
+          (expectation) =>
+            (window as unknown as Record<string, any>)["__wt"].holds(
+              expectation
+            ) as { ok: boolean; loading: string[] },
+          contentExpectation
+        )
+        .catch(() => ({ ok: false, loading: [] as string[] }))
+    : { ok: true, loading: [] as string[] }
   const traceBuffer = run.trace ? await run.browser.stopTracing() : null
   const from =
     action.t0 === "navigation"
@@ -1022,12 +1071,20 @@ async function measure(
             (window as unknown as Record<string, any>)["__wt"].armedAt as number
         )
   const data = await readPage(session, from)
+  // A click starts at its press: the app can start loading on pointerdown,
+  // before the click event (the phone's tap, a held mouse button).
+  const firstAfter = (times: number[]) =>
+    times.find((time) => time >= data.armedAt)
+  const clickAt = firstAfter(data.clicks)
+  const pressAt = firstAfter(data.pointerdowns)
   const t0 =
     action.t0 === "navigation"
       ? 0
-      : ((action.t0 === "click" ? data.clicks : data.inputs).find(
-          (time) => time >= data.armedAt
-        ) ?? data.armedAt)
+      : action.t0 === "click"
+        ? (pressAt !== undefined && clickAt !== undefined && pressAt <= clickAt
+            ? pressAt
+            : clickAt) ?? data.armedAt
+        : (firstAfter(data.inputs) ?? data.armedAt)
   const hover = data.hovers.find((time) => time >= data.armedAt)
   const requests = buildRequests(session, data, from, t0)
   const content = results[action.contentKey]
@@ -1189,6 +1246,30 @@ async function measure(
     mainThread,
     navigation: data.navigation,
     domNodes: data.domNodes,
+    experience: {
+      ...summarizeExperience(
+        data.exp,
+        t0,
+        content && contentMs !== null ? content.paint : null,
+        t0 + settledMs
+      ),
+      contentHeld: atSettle.ok,
+      loadingAtSettle: atSettle.loading,
+      visual: frames
+        ? await analyzeFrames(
+            run.browser,
+            frames,
+            data.wallOffset,
+            t0,
+            t0 + settledMs,
+            join(
+              run.outDir,
+              "frames",
+              `${session.network.name}-${action.pass}-${action.journey.replace(/\W+/g, "-")}-r${run.round}.jpg`
+            )
+          )
+        : null,
+    },
   }
   if (run.screenshots) {
     const name = `${session.network.name}-${action.pass}-${action.journey.replace(/\W+/g, "-")}.jpg`
@@ -1202,7 +1283,7 @@ async function measure(
   }
   const status = contentMs === null ? "NO CONTENT" : `${contentMs} ms`
   console.log(
-    `[clicks] r${run.round} ${session.network.name} ${action.pass} ${action.journey}: ${status}, settled ${settledMs} ms, ${requests.filter((request) => request.kind === "api").length} API, ${requests.filter((request) => request.kind === "script" && !request.cached).length} JS`
+    `[clicks] r${run.round} ${session.network.name} ${action.pass} ${action.journey}: ${status}, settled ${settledMs} ms, ${requests.filter((request) => request.kind === "api").length} API, ${requests.filter((request) => request.kind === "script" && !request.cached).length} JS, pop-in ${record.experience?.popin ?? "?"}, indicators ${record.experience?.indicators.count ?? "?"}${record.experience?.visual ? `, visually complete ${record.experience.visual.completeMs} ms in ${record.experience.visual.steps} steps` : ""}`
   )
   if (action.cleanup) {
     await action.cleanup(session)
@@ -1577,6 +1658,72 @@ function search(pass: Pass, query: string): Action {
   }
 }
 
+/**
+ * Opening a closed Space with a quick click: no rest on the row first, so
+ * nothing loads before the press, as a fast hand or a trackpad tap opens
+ * it. The phone taps, as in every journey.
+ */
+function quickSpaceInSidebar(pass: Pass, space: SpaceTarget): Action {
+  return {
+    ...openSpaceInSidebar(pass, space),
+    journey: "open a Space in the sidebar, quick click",
+    act: async (session) => {
+      const row = spaceToggle(session, space.name)
+      if (session.network.phone) await row.tap()
+      else await row.click()
+    },
+  }
+}
+
+const settingsDialog = (session: Session) =>
+  session.page.locator('[role="dialog"]').first()
+
+function settingsTabButton(session: Session, label: string): Locator {
+  return settingsDialog(session)
+    .locator("button")
+    .filter({ hasText: new RegExp(`^\\s*${escapeRegExp(label)}\\s*$`) })
+    .first()
+}
+
+/** Settings opens at its first section, then each section in turn. */
+function settingsJourney(pass: Pass, targets: Targets): Action[] {
+  const [first, ...rest] = targets.settings
+  if (!first) return []
+  const close = async (session: Session) => {
+    await session.page.keyboard.press("Escape")
+    await settingsDialog(session).waitFor({ state: "detached" })
+  }
+  const open: Action = {
+    pass,
+    journey: "open Settings",
+    target: first,
+    expect: [{ name: "settings", key: "content", args: { label: first } }],
+    contentKey: "content",
+    gate: null,
+    prepare: showSidebar,
+    act: (session) =>
+      press(session, '[data-worktable-sidebar-root] button[aria-label^="Settings"]'),
+    t0: "click",
+    ...(rest.length === 0 ? { cleanup: close } : {}),
+  }
+  return [
+    open,
+    ...rest.map(
+      (label, index): Action => ({
+        pass,
+        journey: `open Settings ${label}`,
+        target: label,
+        expect: [{ name: "settings", key: "content", args: { label } }],
+        contentKey: "content",
+        gate: null,
+        act: (session) => press(session, settingsTabButton(session, label)),
+        t0: "click",
+        ...(index === rest.length - 1 ? { cleanup: close } : {}),
+      })
+    ),
+  ]
+}
+
 function clickJourney(pass: Pass, targets: Targets, second: boolean): Action[] {
   const pick = <T>(a: T, b: T) => (second ? b : a)
   return [
@@ -1605,6 +1752,14 @@ function clickJourney(pass: Pass, targets: Targets, second: boolean): Action[] {
     openThreads(pass, targets),
     openThread(pass, pick(targets.threadA, targets.threadB)),
     search(pass, pick(targets.searchA, targets.searchB)),
+    // What the person meets for the first time, and again: a Space opened
+    // with no hover lead, and Settings.
+    ...(pass === "first" || pass === "revisit"
+      ? [
+          quickSpaceInSidebar(pass, targets.spaceC),
+          ...settingsJourney(pass, targets),
+        ]
+      : []),
   ]
 }
 
@@ -2438,6 +2593,30 @@ async function setup(
     console.log(`[clicks] setup page events:\n${notes.join("\n")}`)
     throw error
   }
+  // A third Space with documents that no other journey opens.
+  const spaceC =
+    fixture.spaces[2] ??
+    spaces
+      .map((space) => space.id)
+      .find(
+        (id) =>
+          id !== spaceA && id !== fixture.spaces[1] && id !== fixture.htmlSpace
+      )!
+  // Settings sections, as the dialog lists them for this person.
+  await page.goto(base + "/", { waitUntil: "commit" })
+  await page.locator('button[aria-label^="Settings"]').first().click()
+  await page
+    .locator('[role="dialog"] nav[aria-label="Settings"] button')
+    .first()
+    .waitFor()
+  const settings = (
+    await page
+      .locator('[role="dialog"] nav[aria-label="Settings"] button')
+      .allInnerTexts()
+  )
+    .map((label) => label.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+  await page.keyboard.press("Escape")
   const thread = (href: string): ThreadTarget => ({
     href,
     id: new URL(href, base).pathname.split("/").filter(Boolean).at(-1)!,
@@ -2450,6 +2629,8 @@ async function setup(
     targets: {
       spaceA: { id: spaceA, name: nameOf(spaceA) },
       spaceB: { id: fixture.spaces[1]!, name: nameOf(fixture.spaces[1]!) },
+      spaceC: { id: spaceC, name: nameOf(spaceC) },
+      settings,
       ...documentTargets,
       threadsHref: threadsHref!,
       threadA: thread(hrefs[0]!),
@@ -2611,6 +2792,7 @@ async function main() {
   if (rawTraces && args.has("no-trace"))
     throw new Error("--raw-traces needs tracing; drop --no-trace")
   const trace = !args.has("no-trace")
+  const frames = args.has("frames")
   const networks = (args.get("networks") ?? "local,desktop,phone,phone-h1")
     .split(",")
     .map((name) => {
@@ -2666,7 +2848,7 @@ async function main() {
   const outDir = resolve(
     args.get("out") ?? join(PERF_ROOT, "results", `${stamp}-clicks-${profile}`)
   )
-  for (const sub of ["", "screenshots", "traces"])
+  for (const sub of ["", "screenshots", "traces", "frames"])
     mkdirSync(join(outDir, sub), { recursive: true })
 
   const { workspace, app } = restoreFixture(dir)
@@ -2825,6 +3007,7 @@ async function main() {
           round,
           outDir,
           screenshots: round === 1,
+          frames,
         }
         result.clicks.push(
           ...(await runNetwork(

@@ -23,6 +23,12 @@
       "why": "Elements once a screen settles. Long lists render only what is visible (W3-05); layout cost grows with the element count.",
       "headroom": 0.1
     },
+    "popin": {
+      "why": "On revisits, frames in which content becomes visible (0.1% of the screen or more) after the screen's content showed, until it settles. A revisit renders from what the tab holds and should show its final screen at once."
+    },
+    "indicators": {
+      "why": "On revisits, loading episodes (skeletons, spinners, busy regions; parts that appear together count once) from the click until the screen settles. A revisit should show none."
+    },
     "io stat": {
       "why": "File stats per hot request, solo owner. Plan 16 gate D4 and the Plan 17 per-request I/O work.",
       "slack": 0.5

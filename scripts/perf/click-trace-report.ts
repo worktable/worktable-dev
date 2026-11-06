@@ -339,6 +339,7 @@ export function summary(result: ClickTraceResult): string {
       ),
       ""
     )
+    lines.push(...experienceSection(result, name, passes))
   }
   lines.push(
     ...revisitContent(result),
@@ -346,6 +347,48 @@ export function summary(result: ClickTraceResult): string {
     ...backupSection(result)
   )
   return lines.join("\n")
+}
+
+/**
+ * What the screen did per journey and pass, from experience.ts: frames that
+ * added visible content after content showed (pop-in), loading indicators
+ * (flashes under 200 ms), layout shifts, and with --frames the time the
+ * screen was visually complete and in how many visible steps it got there.
+ */
+function experienceSection(
+  result: ClickTraceResult,
+  network: string,
+  passes: { pass: string; label: string }[]
+): string[] {
+  const clicks = result.clicks.filter(
+    (click) => click.network === network && click.experience
+  )
+  if (clicks.length === 0) return []
+  const journeys = [...new Set(clicks.map((click) => click.journey))]
+  const framed = clicks.some((click) => click.experience?.visual)
+  return [
+    `### What the screen did: pop-in / indicators (flashes) / shifts${framed ? " / visually complete ms in steps" : ""}`,
+    "",
+    markdownTable(
+      ["Journey", ...passes.map((pass) => pass.label)],
+      journeys.map((journey) => [
+        journey,
+        ...passes.map(({ pass }) => {
+          const found = clicks.filter(
+            (click) => click.pass === pass && click.journey === journey
+          )
+          if (found.length === 0) return ""
+          const pick = (value: (click: ClickRecord) => number | null | undefined) =>
+            med(found.map(value))
+          const cell = `${pick((click) => click.experience!.popin)} / ${pick((click) => click.experience!.indicators.count)} (${pick((click) => click.experience!.indicators.flashes)}) / ${pick((click) => click.experience!.shifts.count)}`
+          return framed
+            ? `${cell} / ${pick((click) => click.experience!.visual?.completeMs)} in ${pick((click) => click.experience!.visual?.steps)}`
+            : cell
+        }),
+      ])
+    ),
+    "",
+  ]
 }
 
 function revisitContent(result: ClickTraceResult): string[] {

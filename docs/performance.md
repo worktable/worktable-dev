@@ -78,6 +78,8 @@ fails when one of these rises above its budget:
 - redirects (zero);
 - JavaScript files a cold page load fetches before its content;
 - elements on each screen once it settles (10% headroom);
+- on revisits, frames in which content becomes visible after the screen's
+  content showed (pop-in), and loading indicators shown on the way;
 - file stats, file reads and SQL statements per hot server request.
 
 These counts do not depend on the machine, so the gate has no timing noise.

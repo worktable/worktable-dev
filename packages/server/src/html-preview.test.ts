@@ -287,7 +287,7 @@ test("normal and preview HTML share font defaults while policy keeps authored ne
   )
   for (const html of [live, history]) {
     expect(html).toContain("/worktable-preview/fonts/")
-    expect(html).toContain(`--font-sans:${DRAWING_FONTS.sans}`)
+    expect(html).toContain(`--font-sans:"General Sans","Noto Sans",`)
   }
   const csp = buildWidgetCsp(false, "https://workspace.invalid")
   expect(csp).toContain(

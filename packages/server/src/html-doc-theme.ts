@@ -4,8 +4,18 @@ import { DRAWING_FONTS } from "@worktable/ui/lib/drawing-fonts"
 type Mode = keyof typeof HTML_DOC_THEME
 type Tokens = Record<string, string>
 
+// Noto Sans goes ahead of the shared fallbacks, whose first face is the emoji
+// font. Where the served fonts don't load, a system emoji font answers for
+// digits too, and numbers come out widely spaced.
+const SANS = DRAWING_FONTS.sans.replace(
+  /^"General Sans",/,
+  '"General Sans","Noto Sans",'
+)
+if (SANS === DRAWING_FONTS.sans)
+  throw new Error("The sans stack no longer starts with General Sans")
+
 const FONTS = {
-  "font-sans": DRAWING_FONTS.sans,
+  "font-sans": SANS,
   "font-display": `"Fraunces",${DRAWING_FONTS.serif}`,
   "font-mono": `"JetBrains Mono",${DRAWING_FONTS.mono}`,
 }

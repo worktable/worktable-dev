@@ -26,7 +26,10 @@ export function pageShareTarget(
 }
 
 export interface PagePrimaryAction {
+  /** Full action name used for accessibility and the tooltip. */
   label: string
+  /** Optional compact visible label. */
+  displayLabel?: string
   icon?: LucideIcon
   pendingLabel?: string
   pending?: boolean

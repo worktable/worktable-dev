@@ -43,6 +43,7 @@ outputs without rewriting them.
 | Role                     | Tailwind/CSS contract                             | Usage                                                               |
 | ------------------------ | ------------------------------------------------- | ------------------------------------------------------------------- |
 | Canvas                   | `bg-background`, `--background`                   | Application and page background                                     |
+| Conversation             | `data-surface="conversation"`                     | An open thread's pane; dark mode only, restates canvas and fills on black |
 | Desktop sidebar          | `.desktop-sidebar-surface`, `--sidebar-desktop`   | Recessed side-by-side navigation glass                              |
 | Sidebar space text       | `text-sidebar-space-foreground`                   | Medium-emphasis workspace and space labels                          |
 | Sidebar item text        | `text-sidebar-item-foreground`                    | Resting file, folder, record, widget, and navigation labels         |

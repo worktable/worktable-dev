@@ -194,7 +194,21 @@ ${renderMode("light")}
 :root[data-theme="dark"] {
 ${renderMode("dark")}
 }
+
+${renderConversationScope()}
 `
+}
+
+// The open thread marks itself; the list and header keep the canvas.
+function renderConversationScope(): string {
+  const scope = '[data-surface="conversation"]'
+  const selectors = [".dark", ':root[data-theme="dark"]'].map(
+    (mode) => `${mode} ${scope}`
+  )
+  const lines = Object.entries(themeConfig.conversation.dark).map(
+    ([cssName, value]) => `  --${cssName}: ${value};`
+  )
+  return `${selectors.join(",\n")} {\n${lines.join("\n")}\n}`
 }
 
 export function renderBlockNoteCss(): string {

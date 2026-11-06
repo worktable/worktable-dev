@@ -232,7 +232,8 @@ function ThreadsLayout({
       </aside>
 
       <section
-        className={`min-h-0 min-w-0 flex-1 ${
+        data-surface="conversation"
+        className={`min-h-0 min-w-0 flex-1 bg-background ${
           showMobileDetail ? "flex" : "hidden md:flex"
         } flex-col`}
       >
@@ -619,7 +620,7 @@ function ThreadDetail({
               },
             ]
           : [],
-      secondaryAction: {
+      primaryAction: {
         label: "New thread",
         displayLabel: "Thread",
         icon: PlusIcon,

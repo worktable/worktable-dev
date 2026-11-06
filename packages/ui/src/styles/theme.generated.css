@@ -474,3 +474,16 @@
   --outline-button-shadow: none;
   --outline-button-image: none;
 }
+
+.dark [data-surface="conversation"],
+:root[data-theme="dark"] [data-surface="conversation"] {
+  --background: oklch(0 0 0);
+  --card: oklch(0.13 0.004 250);
+  --secondary: oklch(0.215 0.006 250);
+  --muted: oklch(0.215 0.006 250);
+  --accent: oklch(0.19 0.006 250);
+  --surface-tint: oklch(0.19 0.006 250);
+  --surface-selected: oklch(0.2 0.006 250);
+  --well-bg: oklch(1 0 0 / 5%);
+  --well-hover-bg: oklch(1 0 0 / 7%);
+}

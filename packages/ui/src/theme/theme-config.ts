@@ -312,6 +312,22 @@ export const themeConfig = {
       washColor: "oklch(0.26 0.008 250 / 8%)",
     },
   },
+  // An open thread reads as a conversation: in dark mode its pane drops to
+  // black. Each value restates a semantic role inside that scope; light mode
+  // keeps the canvas.
+  conversation: {
+    dark: {
+      background: "oklch(0 0 0)",
+      card: "oklch(0.13 0.004 250)",
+      secondary: "oklch(0.215 0.006 250)",
+      muted: "oklch(0.215 0.006 250)",
+      accent: "oklch(0.19 0.006 250)",
+      "surface-tint": "oklch(0.19 0.006 250)",
+      "surface-selected": "oklch(0.2 0.006 250)",
+      "well-bg": "oklch(1 0 0 / 5%)",
+      "well-hover-bg": "oklch(1 0 0 / 7%)",
+    },
+  },
   sidebar: {
     itemRadius: "0.6rem",
     spaceForegroundOpacity: "82%",

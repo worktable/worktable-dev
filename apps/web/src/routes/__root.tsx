@@ -882,7 +882,7 @@ const PageHeaderActions = memo(function PageHeaderActions({
           <span className="hidden sm:inline">
             {primaryAction.pending
               ? (primaryAction.pendingLabel ?? primaryAction.label)
-              : primaryAction.label}
+              : (primaryAction.displayLabel ?? primaryAction.label)}
           </span>
         </Button>
       )}

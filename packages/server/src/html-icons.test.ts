@@ -35,6 +35,11 @@ const BODY = [
   '<svg data-icon="tick-mark"></svg>',
   "<script>const tag = '<svg data-icon=\"x\"></svg>'</script>",
   '<!-- <svg data-icon="info"></svg> -->',
+  // Markup inside another tag's attribute, other tags named svg-something,
+  // and object properties are not icons.
+  `<div title="<svg data-icon='info'></svg>">x</div>`,
+  '<svg-icon data-icon="info"></svg-icon>',
+  '<svg data-icon="toString"></svg>',
 ].join("")
 
 async function frame(path: string): Promise<string> {
@@ -89,9 +94,9 @@ describe("Icons in HTML Docs", () => {
     expect(unknown.map((warning) => warning.code)).toEqual([
       "html_icon_unknown",
     ])
-    // Only the name the library lacks, with close ones to try.
+    // Only the names the library lacks, with close ones to try.
     expect(unknown[0]!.message).toMatch(
-      /stays empty: "tick-mark" \(try [a-z-]+(, [a-z-]+)*\)\.$/
+      /stays empty: "tick-mark" \(try [a-z-]+(, [a-z-]+)*\); "toString"[^;]*\.$/
     )
 
     const served = await frame("status")
@@ -108,6 +113,9 @@ describe("Icons in HTML Docs", () => {
     expect(served).toContain('<svg data-icon="tick-mark"></svg>')
     expect(served).toContain("const tag = '<svg data-icon=\"x\"></svg>'")
     expect(served).toContain('<!-- <svg data-icon="info"></svg> -->')
+    expect(served).toContain(
+      `<div title="<svg data-icon='info'></svg>">x</div><svg-icon data-icon="info"></svg-icon><svg data-icon="toString"></svg>`
+    )
 
     // The scriptless share view keeps the drawing through its sanitizer.
     const shared = renderPublicHtmlProjection(page(BODY))

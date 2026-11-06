@@ -46,16 +46,22 @@ const COMMON = new Set(
   )
 )
 
+/** Names a warning suggests others for, and lists. */
+const UNKNOWN_LISTED = 10
+
 /** A page's icons past this many stay empty. */
 export const HTML_ICONS_MAX = 2_000
 
 const HINT = /data-icon/i
 
-// One pass over the page: a comment, an element whose text is never markup
-// (skipped whole), or an svg start tag. Quoted attribute values may hold ">".
+// One pass over the page, a tag at a time: a comment, an element whose text
+// is never markup (skipped whole), an svg start tag, or any other start tag,
+// read whole so an "<svg" inside its attribute values never counts. Quoted
+// attribute values may hold ">". Names end where the browser ends them, so
+// <svg-icon> and <title-bar> are other tags.
 const TAG = `(?:[^>"']|"[^"]*"|'[^']*')*>`
 const SCAN = new RegExp(
-  `<!--[\\s\\S]*?(?:-->|$)|<(script|style|title|textarea)\\b${TAG}[\\s\\S]*?(?:<\\/\\1\\s*>|$)|(<svg\\b${TAG})`,
+  `<!--[\\s\\S]*?(?:-->|$)|<(script|style|title|textarea)(?=[\\s/>])${TAG}[\\s\\S]*?(?:<\\/\\1\\s*>|$)|(<svg(?=[\\s/>])${TAG})|<[a-z][^\\s/>]*${TAG}`,
   "gi"
 )
 const NAMED = /\sdata-icon\s*=/i
@@ -70,7 +76,7 @@ let byKey: Map<string, string> | null = null
 
 /** The library's name for what a page wrote, or null when it has none. */
 export function htmlIconName(written: string): string | null {
-  if (ICONS[written]) return written
+  if (Object.hasOwn(ICONS, written)) return written
   if (!byKey) {
     byKey = new Map(Object.keys(ICONS).map((name) => [iconKey(name), name]))
     for (const [key, name] of Object.entries(library.aliases)) {
@@ -216,19 +222,25 @@ export function htmlIconWarnings(html: string): WidgetValidationIssue[] {
       message: `The page names more than ${HTML_ICONS_MAX} icons; those past that stay empty.`,
     })
   }
-  const unknown = new Map<string, string[]>()
+  const unknown = new Set<string>()
   for (const element of elements.slice(0, HTML_ICONS_MAX)) {
-    if (htmlIconName(element.name) || unknown.has(element.name)) continue
-    unknown.set(element.name, suggestHtmlIcons(element.name))
+    if (!htmlIconName(element.name)) unknown.add(element.name)
   }
   if (unknown.size > 0) {
-    const list = [...unknown]
+    const listed = [...unknown].slice(0, UNKNOWN_LISTED)
+    const more =
+      unknown.size > listed.length
+        ? `; and ${unknown.size - listed.length} more`
+        : ""
+    const list = listed
+      .map((name): [string, string[]] => [name, suggestHtmlIcons(name)])
       .map(([name, close]) =>
         close.length > 0
           ? `${JSON.stringify(name.slice(0, 60))} (try ${close.join(", ")})`
           : JSON.stringify(name.slice(0, 60))
       )
       .join("; ")
+      .concat(more)
     issues.push({
       severity: "warning",
       code: "html_icon_unknown",

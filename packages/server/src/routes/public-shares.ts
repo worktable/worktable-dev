@@ -3,6 +3,7 @@ import {
   inlineSharedImages,
   type EmbeddedFile,
 } from "../share-images.ts"
+import { htmlIconsEnabled } from "../html-icons.ts"
 import { inlineHtmlSpaceImages } from "../html-space-images.ts"
 import { createPublicVisitorCommentsRouter } from "./public-visitor-comments.ts"
 import { createPublicShareViewsRouter } from "./public-share-views.ts"
@@ -704,8 +705,12 @@ export function createPublicSharesRouter(
     if (!resolved || artifact?.kind !== "html") {
       return unavailable(c.req.raw, true, shareOrigin)
     }
-    const page = await renderedPage(`content:${resolved.token}`, resolved, () =>
-      renderPublicHtmlProjection(artifact.html)
+    // Whether icons are drawn is part of the render.
+    const icons = htmlIconsEnabled() ? "icons" : "plain"
+    const page = await renderedPage(
+      `content:${resolved.token}:${icons}`,
+      resolved,
+      () => renderPublicHtmlProjection(artifact.html)
     )
     if (!page) return unavailable(c.req.raw, true, shareOrigin)
     const response = await pageResponse(

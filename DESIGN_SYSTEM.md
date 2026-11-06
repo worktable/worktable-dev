@@ -15,6 +15,7 @@ Run `bun run generate:theme` after changing the configuration. It generates thes
 - `apps/web/src/styles/blocknote-theme.generated.css`, BlockNote-compatible hardcoded colors.
 - `packages/ui/src/theme/mermaid-theme.generated.ts`, Mermaid-compatible constants, consumed by `packages/ui/src/theme/mermaid-config.ts`.
 - `packages/types/src/drawing-theme.generated.ts`, shared Quickdraw canvas and ink palettes for the editor and agent previews.
+- `packages/ui/src/lib/html-doc-theme.generated.ts`, the roles Worktable serves to every HTML Doc, by mode.
 
 The browser shell color, the drawing and Mermaid canvases, drawing handles, and the BlockNote menu, hover, selection, and text colors derive from the semantic surface and text roles through `oklchToHex`; do not hand-type hex values for these. Content palettes stay explicit in the configuration: drawing inks, Mermaid node fills, and Mermaid line and text colors.
 
@@ -44,6 +45,7 @@ outputs without rewriting them.
 | ------------------------ | ------------------------------------------------- | ------------------------------------------------------------------- |
 | Canvas                   | `bg-background`, `--background`                   | Application and page background                                     |
 | Conversation             | `data-surface="conversation"`                     | An open thread's pane; a step brighter than the canvas in light mode, black with restated fills in dark mode |
+| HTML Doc pane            | `data-surface="html-doc"`                         | An HTML Doc's pane; black in dark mode, as the page inside it is; unchanged in light mode |
 | Desktop sidebar          | `.desktop-sidebar-surface`, `--sidebar-desktop`   | Recessed side-by-side navigation glass                              |
 | Sidebar space text       | `text-sidebar-space-foreground`                   | Medium-emphasis workspace and space labels                          |
 | Sidebar item text        | `text-sidebar-item-foreground`                    | Resting file, folder, record, widget, and navigation labels         |
@@ -141,6 +143,10 @@ Long-form prose uses `--reading-foreground`, which is deliberately softer than U
 
 
 Operational state titles such as empty states, errors, and recovery prompts use the body font at a larger semibold weight. Reserve the display font for major page and artifact headings where its character has enough size and space to read clearly.
+
+### HTML Docs
+
+Worktable serves every HTML Doc a theme generated from `themeConfig.htmlDoc` into `packages/ui/src/lib/html-doc-theme.generated.ts`, and `packages/server/src/html-doc-theme.ts` turns it into the page's first style. Pages use the app's role names (`--background`, `--card`, `--foreground`, `--muted-foreground`, `--border`, `--primary`, `--primary-text`, `--chart-1` to `--chart-5`, `--radius`, `--shadow`, `--font-sans`, `--font-display`, `--font-mono`); pages written earlier keep working through the `--ad-*` names, which carry the same values. Dark mode sits on black with cards at the app's canvas, and light mode is the app's light theme with statuses dark enough to read as text. The theme and its base styles (body text, the page title in the display font, links, code, tables, controls) sit in the `worktable` cascade layer, so any rule a page writes wins. Printing always uses the light values.
 
 ### Document content
 

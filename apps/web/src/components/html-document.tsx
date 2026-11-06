@@ -815,6 +815,7 @@ function WidgetDetailPage({
       data-document-ready={
         frameSrc !== null && loadedFrameSrc === frameSrc ? "true" : undefined
       }
+      data-surface="html-doc"
       className="flex h-full min-h-0 flex-col bg-background"
     >
       <WidgetPageMeta

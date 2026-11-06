@@ -1,8 +1,9 @@
-import { DRAWING_FONTS, previewFontCss } from "./preview-fonts.ts"
+import { previewFontCss } from "./preview-fonts.ts"
 import { buildWidgetShareRuntimeScript, SHARE_FONT_CSS } from "./widget-share-runtime.ts"
 import type { WidgetFile } from "@worktable/types"
 import { parseDocument, Parser } from "htmlparser2"
 import { filesEnabled } from "./files-enabled.ts"
+import { buildHtmlDocThemeCss, HTML_DOC_COLOR_SCHEME_CSS } from "./html-doc-theme.ts"
 
 export type WidgetTheme = "light" | "dark"
 
@@ -439,8 +440,7 @@ function escapeClosingScript(value: string): string {
 export function buildWidgetHostStyles(fontStyles = previewFontCss("/worktable-preview")): string {
   return `<style data-worktable-runtime="host-smoothness">
 ${fontStyles}
-:where(html) { font-family: ${DRAWING_FONTS.sans}; }
-:root { color-scheme: light dark; }
+${HTML_DOC_COLOR_SCHEME_CSS}
 html { min-height: 100%; }
 body { min-height: 100%; -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; }
 *, *::before, *::after { box-sizing: border-box; }
@@ -683,6 +683,7 @@ export function injectWidgetHostStyles(html: string, options?: { fontStyles: str
     shell = inspectWidgetHtmlShell(output)
   }
   const hostStyles = buildWidgetHostStyles(options?.fontStyles)
+  const theme = `<style data-worktable-runtime="theme">${buildHtmlDocThemeCss("attribute")}</style>`
   if (shell.headOpenEnd !== null) {
     // Host styles remain last so their safety rails keep the existing cascade.
     if (shell.headCloseStart !== null) {
@@ -690,9 +691,11 @@ export function injectWidgetHostStyles(html: string, options?: { fontStyles: str
     } else {
       output = `${output}${hostStyles}`
     }
-    return output
+    // The theme comes first in the head, so its layer sorts below any layer
+    // the page declares.
+    return `${output.slice(0, shell.headOpenEnd)}${theme}${output.slice(shell.headOpenEnd)}`
   }
-  return `${output}${hostStyles}`
+  return `${output}${theme}${hostStyles}`
 }
 
 function trustedRuntimeInsertionIndex(html: string): number {

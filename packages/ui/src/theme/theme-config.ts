@@ -331,6 +331,36 @@ export const themeConfig = {
       "well-hover-bg": "oklch(1 0 0 / 7%)",
     },
   },
+  // Worktable serves these roles to every HTML Doc. Each value restates an app
+  // role for the page: dark mode sits on black, with cards lifted to the app's
+  // canvas and borders a step stronger, since shadows do not show on black.
+  // Light statuses darken to read as text, which agents set them in.
+  htmlDoc: {
+    light: {
+      success: "oklch(0.50 0.13 148)",
+      warning: "oklch(0.52 0.12 70)",
+    },
+    dark: {
+      background: "oklch(0 0 0)",
+      card: neutralSurfaces.dark.canvas,
+      secondary: "oklch(0.215 0.006 250)",
+      muted: "oklch(0.215 0.006 250)",
+      accent: "oklch(0.215 0.006 250)",
+      "surface-selected": neutralSurfaces.dark.muted,
+      "well-bg": "oklch(1 0 0 / 5%)",
+      "well-hover-bg": "oklch(1 0 0 / 7%)",
+      border: "oklch(1 0 0 / 10%)",
+      "card-border": "oklch(1 0 0 / 8%)",
+      input: "oklch(1 0 0 / 10%)",
+      "input-hover": "oklch(1 0 0 / 14%)",
+      info: "oklch(0.72 0.10 186)",
+    },
+    // A categorical series: primary first, then recognition hues far apart
+    // on the wheel. Recognition glyphs already show without a fill.
+    chartHues: ["orange", "teal", "violet", "green"],
+    // Light mode keeps the floating elevation; dark mode draws a ring.
+    darkShadow: "0 0 0 1px oklch(1 0 0 / 6%)",
+  },
   sidebar: {
     itemRadius: "0.6rem",
     spaceForegroundOpacity: "82%",

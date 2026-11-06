@@ -196,6 +196,8 @@ ${renderMode("dark")}
 }
 
 ${renderConversationScope()}
+
+${renderHtmlDocScope()}
 `
 }
 
@@ -851,6 +853,82 @@ export function renderDocumentContentTs(): string {
   return `// ${generatedNote}\n// Source: packages/ui/src/styles/document-content.css\nexport const DOCUMENT_CONTENT_CSS = ${JSON.stringify(shared)}\n`
 }
 
+// The app roles an HTML Doc can use, in the app's own names.
+const HTML_DOC_ROLES = [
+  "background",
+  "foreground",
+  "reading-foreground",
+  "card",
+  "card-foreground",
+  "card-border",
+  "popover",
+  "popover-foreground",
+  "primary",
+  "primary-foreground",
+  "primary-text",
+  "secondary",
+  "secondary-foreground",
+  "muted",
+  "muted-foreground",
+  "accent",
+  "accent-foreground",
+  "border",
+  "input",
+  "input-hover",
+  "ring",
+  "surface-hover",
+  "surface-inset",
+  "surface-selected",
+  "well-bg",
+  "well-hover-bg",
+  "destructive",
+  "success",
+  "warning",
+  "info",
+] as const
+
+function htmlDocModeTokens(mode: ThemeMode): Record<string, string> {
+  const app = getModeVariables(mode)
+  const overrides: Record<string, string> = themeConfig.htmlDoc[mode]
+  const tokens: Record<string, string> = {}
+  for (const role of HTML_DOC_ROLES) tokens[role] = app[role]
+  for (const [role, value] of Object.entries(overrides)) {
+    if (!(role in tokens)) throw new Error(`htmlDoc.${mode}.${role} is not an HTML Doc role`)
+    tokens[role] = value
+  }
+  const series = [
+    themeConfig.accents.primaryText[mode],
+    ...themeConfig.htmlDoc.chartHues.map(
+      (hue) => themeConfig.recognition[hue][mode].glyph
+    ),
+  ]
+  series.forEach((value, index) => {
+    tokens[`chart-${index + 1}`] = value
+  })
+  tokens.shadow =
+    mode === "dark"
+      ? themeConfig.htmlDoc.darkShadow
+      : themeConfig.elevation.light.floatingShadow
+  return tokens
+}
+
+/** The theme Worktable serves to every HTML Doc, by mode. */
+export function renderHtmlDocThemeTs(): string {
+  const theme = Object.fromEntries(
+    THEME_MODES.map((mode) => [mode, htmlDocModeTokens(mode)])
+  )
+  return `// ${generatedNote}\n// Source: themeConfig.htmlDoc in packages/ui/src/theme/theme-config.ts\nexport const HTML_DOC_THEME = ${JSON.stringify(theme, null, 2)} as const\n`
+}
+
+/** An HTML Doc's pane drops to the page's black in dark mode, as the page does. */
+function renderHtmlDocScope(): string {
+  const scope = '[data-surface="html-doc"]'
+  const dark = [".dark", ':root[data-theme="dark"]']
+    .map((mode) => `${mode} ${scope}`)
+    .join(",\n")
+  return `${dark} {\n  --background: ${themeConfig.htmlDoc.dark.background};\n}`
+}
+
 export const generatedThemeOutputs = new Map([
   ["packages/ui/src/styles/theme.generated.css", renderThemeCss()],
   ["apps/web/src/styles/blocknote-theme.generated.css", renderBlockNoteCss()],
@@ -859,6 +937,7 @@ export const generatedThemeOutputs = new Map([
     renderAuthKitCss(),
   ]),
   ["packages/ui/src/theme/mermaid-theme.generated.ts", renderMermaidTs()],
+  ["packages/ui/src/lib/html-doc-theme.generated.ts", renderHtmlDocThemeTs()],
   ["packages/types/src/drawing-theme.generated.ts", renderDrawingTs()],
   [
     "packages/ui/src/styles/document-content.generated.ts",

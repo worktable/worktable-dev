@@ -287,7 +287,7 @@ test("normal and preview HTML share font defaults while policy keeps authored ne
   )
   for (const html of [live, history]) {
     expect(html).toContain("/worktable-preview/fonts/")
-    expect(html).toContain(`font-family: ${DRAWING_FONTS.sans}`)
+    expect(html).toContain(`--font-sans:${DRAWING_FONTS.sans}`)
   }
   const csp = buildWidgetCsp(false, "https://workspace.invalid")
   expect(csp).toContain(
@@ -513,5 +513,55 @@ previewTest(
       )
     ).toBe(false)
     expect(JSON.stringify(access)).not.toContain("Initial task")
+  }
+)
+
+previewTest(
+  "pages sit on Worktable's theme, and anything a page sets itself wins",
+  async () => {
+    const snapshot = await freezeHtmlPreviewSnapshot({ spaceId, path })
+    const corner = async (html: string, theme: "light" | "dark") => {
+      const capture = await captureHtmlPreview({
+        snapshot: { ...snapshot, html },
+        scopes: ["documents:read"],
+        options: { width: 300, height: 200, theme },
+      })
+      return [
+        ...(await sharp(capture.bytes)
+          .extract({ left: 10, top: 10, width: 1, height: 1 })
+          .removeAlpha()
+          .raw()
+          .toBuffer()),
+      ]
+    }
+    const bare = "<html><head></head><body><p>Plain</p></body></html>"
+    expect(await corner(bare, "dark")).toEqual([0, 0, 0])
+    const [red, green, blue] = await corner(bare, "light")
+    // The app's light canvas: a cool near-white.
+    expect(red).toBeGreaterThan(230)
+    expect(blue).toBeGreaterThan(red!)
+    expect(green).toBeGreaterThan(230)
+
+    // Pages written before the theme read its values through the old names.
+    expect(
+      await corner(
+        "<html><head><style>body{background:var(--ad-bg,rgb(255,0,0))}</style></head><body></body></html>",
+        "dark"
+      )
+    ).toEqual([0, 0, 0])
+    // A page's own colors win, even from inside its own cascade layer.
+    expect(
+      await corner(
+        "<html><head><style>@layer page{body{background:rgb(0,0,255)}}</style></head><body></body></html>",
+        "dark"
+      )
+    ).toEqual([0, 0, 255])
+    // Native controls follow the theme shown, even when a page declares both.
+    expect(
+      await corner(
+        `<html><head><style>:root{color-scheme:light dark}</style></head><body><script>document.body.style.background=getComputedStyle(document.documentElement).colorScheme==="dark"?"rgb(0,255,0)":"rgb(255,0,0)"</script></body></html>`,
+        "dark"
+      )
+    ).toEqual([0, 255, 0])
   }
 )

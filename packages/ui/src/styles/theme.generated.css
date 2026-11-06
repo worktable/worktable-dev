@@ -527,3 +527,8 @@
   --well-bg: oklch(1 0 0 / 5%);
   --well-hover-bg: oklch(1 0 0 / 7%);
 }
+
+.dark [data-surface="html-doc"],
+:root[data-theme="dark"] [data-surface="html-doc"] {
+  --background: oklch(0 0 0);
+}

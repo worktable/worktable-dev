@@ -318,6 +318,15 @@ test("an expired account is cleared only on provider rejection, not a transient 
   }
   expect(refreshes).toBe(failedRefreshes + 1)
   expect(exchanges).toBe(1)
+  // A Cloud request that recovers the account ends the outage message too.
+  refreshStatus = 503
+  await startCloudSignIn(origin)
+  expect(await completeCloudSignIn(callback())).toBe(false)
+  refreshStatus = 200
+  await cloudLinkRequest(cloud, { action: "pause" })
+  const recoveredByLink = await cloudAccountStatus()
+  expect(recoveredByLink.user?.id).toBe("owner")
+  expect(recoveredByLink.error).toBeUndefined()
   exchangeStatus = 200
   expiry = new Date(0).toISOString()
   await startCloudSignIn(origin)

@@ -61,13 +61,14 @@ function declarations(tokens: Tokens): string {
 // a page's own html or body rules still reach every element. Font size stays
 // on body, so rem keeps its meaning. Only the page title takes the display
 // font: lower headings are often labels in a tool. Weight, tracking and
-// smoothing match the app's body text (globals.css) and Docs. Fills and lines mix from
+// smoothing match the app's body text (globals.css) and Docs; the title
+// matches the app's page titles (Fraunces, semibold, tracking-tight). Fills and lines mix from
 // the text color, so they suit a page that paints its own palette in only
 // one mode.
 const BASE = `:root{color:var(--foreground);font-family:var(--font-sans);font-weight:480;letter-spacing:0.02em;line-height:1.6;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;scrollbar-color:color-mix(in oklch,currentColor 22%,transparent) transparent}
 body{background:var(--background);font-size:15px}
 h1,h2,h3,h4,h5,h6{font-weight:600;letter-spacing:-0.005em;text-wrap:balance}
-h1{font-family:var(--font-display);line-height:1.2}
+h1{font-family:var(--font-display);font-size:clamp(1.65rem,1.3rem + 1.2vw,2rem);letter-spacing:-0.025em;line-height:1.25}
 a{color:var(--primary-text)}
 ::selection{background:color-mix(in oklch,var(--primary) 28%,transparent)}
 mark{background:color-mix(in oklch,var(--warning) 30%,transparent);color:inherit}

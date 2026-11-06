@@ -7,6 +7,7 @@ import { runSuiteSchedule } from "./schedule.ts"
 import { runCommand, processTreeRssMb, type Command } from "./command.ts"
 import { aggregateResults, writeLaneResult, type LaneResult } from "./report.ts"
 import { CANONICAL_PORTFOLIO_REVISION } from "./health-policy.ts"
+import { webBrowserSuiteIds } from "./public-suites.ts"
 import {
   bunTestArguments,
   hasExecutedGoTests,
@@ -58,7 +59,10 @@ function parseArgs(argv: string[]): Options {
       options.files.push(value)
       index += 1
     } else if (arg === "--suite" && value) {
-      options.suites.push(value)
+      // web-browser names every web browser shard.
+      options.suites.push(
+        ...(value === "web-browser" ? webBrowserSuiteIds : [value])
+      )
       index += 1
     } else if (arg === "--test-file" && value) {
       options.testFiles.push(value)
@@ -175,7 +179,7 @@ function commandForSuite(
   }
   if (suite.runner === "playwright") {
     const config =
-      suite.id === "web-browser"
+      suite.cwd === "apps/web"
         ? ["--config", "playwright.doc-links.config.ts"]
         : []
     return {

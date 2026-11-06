@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process"
 import { appendFileSync } from "node:fs"
-import { publicTestSuites } from "./public-suites.ts"
+import { publicTestSuites, webBrowserSuiteIds } from "./public-suites.ts"
 import { repositoryDocsOnly } from "../repository-docs.ts"
 
 const allSuites = publicTestSuites.map((suite) => suite.id)
@@ -23,12 +23,13 @@ export function selectPublicSuiteIds(paths: string[]): string[] {
   if (paths.length === 0) return [...allSuites]
   const selected = new Set(required)
   for (const path of paths) {
-    if (path.startsWith("apps/web/")) selected.add("web-browser")
+    if (path.startsWith("apps/web/"))
+      for (const id of webBrowserSuiteIds) selected.add(id)
     else if (path.startsWith("apps/desktop/")) {
       selected.add("desktop-contracts")
       selected.add("desktop-browser")
     } else if (path.startsWith("packages/ui/")) {
-      selected.add("web-browser")
+      for (const id of webBrowserSuiteIds) selected.add(id)
       selected.add("desktop-browser")
     } else if (
       /^(?:apps\/(?:cli|skill-installer|docs)\/|packages\/(?:openclaw|hermes)-plugin\/|plugins\/worktable\/|scripts\/lab\/)/.test(
@@ -41,6 +42,18 @@ export function selectPublicSuiteIds(paths: string[]): string[] {
     } else return [...allSuites]
   }
   return allSuites.filter((id) => selected.has(id))
+}
+
+/**
+ * The browser job's runners: each web shard on its own, with the short Desktop
+ * browser suite riding along on the first.
+ */
+export function browserGroups(suites: string[]): string[] {
+  const browsers = suites.filter((id) => id.endsWith("-browser"))
+  const web = browsers.filter((id) => webBrowserSuiteIds.includes(id))
+  const rest = browsers.filter((id) => !web.includes(id))
+  if (web.length === 0) return rest.length ? [rest.join(",")] : []
+  return web.map((id, index) => (index === 0 ? [id, ...rest] : [id]).join(","))
 }
 
 export function needsPluginPackaging(paths: string[]): boolean {
@@ -115,6 +128,7 @@ if (import.meta.main) {
           ? "full"
           : "selected",
     browser: !documentation && suites.some((id) => id.endsWith("-browser")),
+    browser_groups: JSON.stringify(browserGroups(suites)),
     desktop: !documentation && suites.includes("desktop-contracts"),
     plugin: needsPluginPackaging(paths),
     hermes: needsHermesPlugin(paths),

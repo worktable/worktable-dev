@@ -15,6 +15,7 @@ import {
   type HealthPortfolio,
 } from "./health-policy.ts"
 import type { LaneResult } from "./report.ts"
+import { webBrowserSuiteIds } from "./public-suites.ts"
 import { repositoryRoot, testSuites } from "./suites.ts"
 
 interface Sample {
@@ -80,7 +81,7 @@ const requiredSuiteIds = new Set(
     .filter((suite) => suite.profiles.includes("required"))
     .map((suite) => suite.id)
 )
-const browserSuiteIds = new Set(["web-browser", "desktop-browser"])
+const browserSuiteIds = new Set([...webBrowserSuiteIds, "desktop-browser"])
 const byDirectory = new Map<string, LaneResult[]>()
 const portfolios = await portfoliosBelow(inputRoot)
 for (const [directory] of portfolios) byDirectory.set(directory, [])

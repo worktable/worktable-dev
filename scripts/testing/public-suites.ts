@@ -30,6 +30,37 @@ const packagedBoundaryTest =
 const serverTest = /^packages\/server\/.+\.(?:test|spec)\.[cm]?[jt]sx?$/
 const bunTest = /\.(?:test|spec)\.[cm]?[jt]sx?$/
 
+// Web browser journeys run as three suites on separate CI runners, each with
+// one worker as before. The shards are balanced by measured duration (about
+// five minutes each on a GitHub runner); the last one also owns every file not
+// listed here. `--suite web-browser` still selects all of them.
+const webBrowserShards: string[][] = [
+  [
+    "visitor-comments.browser.ts",
+    "onboarding.browser.ts",
+    "doc-links.browser.ts",
+    "version-history.browser.ts",
+    "account.browser.ts",
+    "document-layout.browser.ts",
+    "sidebar-organization.browser.ts",
+  ],
+  [
+    "drawing.browser.ts",
+    "agents.browser.ts",
+    "threads.browser.ts",
+    "annotations.browser.ts",
+    "update-notifications.browser.ts",
+    "worktable-menu.browser.ts",
+    "public-share-comments.browser.ts",
+    "share-runtime.browser.ts",
+    "share-broker.browser.ts",
+  ],
+  [],
+]
+export const webBrowserSuiteIds = webBrowserShards.map(
+  (_, index) => `web-${index + 1}-browser`
+)
+
 export const publicTestSuites: TestSuite[] = [
   {
     id: "bun-standard",
@@ -77,15 +108,27 @@ export const publicTestSuites: TestSuite[] = [
     profiles: ["changed", "full"],
     owns: (path) => desktopTest.test(path),
   },
-  {
-    id: "web-browser",
-    title: "Web browser behavior",
-    runner: "playwright",
-    classification: "boundary",
-    profiles: ["changed", "full"],
-    cwd: "apps/web",
-    owns: (path) => webBrowserTest.test(path),
-  },
+  ...webBrowserShards.map(
+    (files, index): TestSuite => ({
+      id: webBrowserSuiteIds[index]!,
+      title: `Web browser behavior (${index + 1} of ${webBrowserShards.length})`,
+      runner: "playwright",
+      classification: "boundary",
+      profiles: ["changed", "full"],
+      cwd: "apps/web",
+      owns: (path) => {
+        if (!webBrowserTest.test(path)) return false
+        const name = path.slice("apps/web/e2e/".length)
+        const listed = webBrowserShards.findIndex((shard) =>
+          shard.includes(name)
+        )
+        // Unlisted files, including new ones, belong to the last shard.
+        return listed === -1
+          ? index === webBrowserShards.length - 1
+          : listed === index
+      },
+    })
+  ),
   {
     id: "desktop-browser",
     title: "Desktop onboarding browser behavior",

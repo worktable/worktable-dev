@@ -1,6 +1,6 @@
 // Increment when canonical suite membership or execution scheduling changes
 // enough that historical health samples are no longer comparable.
-export const CANONICAL_PORTFOLIO_REVISION = "foundation-v2"
+export const CANONICAL_PORTFOLIO_REVISION = "foundation-v3"
 
 export interface HealthPortfolio {
   revision?: string

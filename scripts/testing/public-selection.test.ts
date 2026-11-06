@@ -3,8 +3,9 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { execFileSync } from "node:child_process"
-import { publicTestSuites } from "./public-suites.ts"
+import { publicTestSuites, webBrowserSuiteIds } from "./public-suites.ts"
 import {
+  browserGroups,
   needsHermesPlugin,
   needsPluginPackaging,
   productDocsOnly,
@@ -23,9 +24,12 @@ describe("public evidence ownership", () => {
       ["apps/cli/src/config.ts", []],
       ["packages/openclaw-plugin/src/connector.ts", []],
       ["packages/hermes-plugin/worktable_hermes/connector.py", []],
-      ["apps/web/src/routes/index.tsx", ["web-browser"]],
+      ["apps/web/src/routes/index.tsx", webBrowserSuiteIds],
       ["apps/desktop/ui/main.ts", ["desktop-contracts", "desktop-browser"]],
-      ["packages/ui/src/button.tsx", ["web-browser", "desktop-browser"]],
+      [
+        "packages/ui/src/button.tsx",
+        [...webBrowserSuiteIds, "desktop-browser"],
+      ],
     ] as const)
       expect(new Set(selectPublicSuiteIds([path]))).toEqual(
         new Set([...required, ...extra])
@@ -33,6 +37,22 @@ describe("public evidence ownership", () => {
     expect(
       selectPublicSuiteIds(["apps/web/a.ts", "apps/desktop/b.ts"])
     ).toEqual(all)
+  })
+
+  test("every selected browser suite runs on exactly one browser runner", () => {
+    for (const paths of [
+      [],
+      ["apps/web/a.ts"],
+      ["apps/desktop/b.ts"],
+      ["packages/ui/src/button.tsx"],
+      ["apps/cli/src/config.ts"],
+    ]) {
+      const suites = selectPublicSuiteIds(paths)
+      const placed = browserGroups(suites).flatMap((group) => group.split(","))
+      expect(placed.sort()).toEqual(
+        suites.filter((id) => id.endsWith("-browser")).sort()
+      )
+    }
   })
 
   test("unknown and shared inputs fail closed, including either side of a rename", () => {

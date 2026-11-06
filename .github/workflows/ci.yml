@@ -24,6 +24,7 @@ jobs:
       required: ${{ steps.scope.outputs.required }}
       desktop: ${{ steps.scope.outputs.desktop }}
       browser: ${{ steps.scope.outputs.browser }}
+      browser_groups: ${{ steps.scope.outputs.browser_groups }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -234,6 +235,12 @@ jobs:
   browsers:
     needs: plan
     if: needs.plan.outputs.browser == 'true'
+    # Each selected browser suite runs once, on one of these runners, with one
+    # Playwright worker. verify requires evidence from every selected suite.
+    strategy:
+      fail-fast: false
+      matrix:
+        suites: ${{ fromJSON(needs.plan.outputs.browser_groups) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -258,25 +265,26 @@ jobs:
       - name: Provision pinned product font
         # Journeys render with the General Sans that releases ship.
         run: bun scripts/provision-product-font.ts
+      - name: Name the evidence
+        id: evidence
+        env:
+          GROUP_SUITES: ${{ matrix.suites }}
+        run: echo "name=${GROUP_SUITES%%,*}" >> "$GITHUB_OUTPUT"
       - name: Run selected browser journeys
         env:
-          SELECTED_SUITES: ${{ needs.plan.outputs.suites }}
+          GROUP_SUITES: ${{ matrix.suites }}
         run: |-
           args=()
-          IFS=',' read -r -a suites <<< "$SELECTED_SUITES"
-          selected=()
-          for suite in "${suites[@]}"; do
-            if [[ "$suite" == *-browser ]]; then args+=(--suite "$suite"); selected+=("$suite"); fi
-          done
+          IFS=',' read -r -a selected <<< "$GROUP_SUITES"
           test "${#selected[@]}" -gt 0
+          for suite in "${selected[@]}"; do args+=(--suite "$suite"); done
           bun run test:full "${args[@]}"
-          expected=$(IFS=,; echo "${selected[*]}")
-          bun scripts/testing/aggregate-ci.ts stamp --root test-results/canonical --expected "$expected" --source "$GITHUB_SHA" --tree "$(git rev-parse 'HEAD^{tree}')" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+          bun scripts/testing/aggregate-ci.ts stamp --root test-results/canonical --expected "$GROUP_SUITES" --source "$GITHUB_SHA" --tree "$(git rev-parse 'HEAD^{tree}')" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
       - name: Upload lane evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: lanes-browsers-${{ github.run_attempt }}
+          name: lanes-browsers-${{ steps.evidence.outputs.name }}-${{ github.run_attempt }}
           path: test-results/canonical/
           if-no-files-found: error
           retention-days: 14

@@ -1010,7 +1010,7 @@ describe("importing a file into Records", () => {
         },
       })
       expect(unscoped.isError).toBe(true)
-      expect(JSON.stringify(unscoped.content)).toContain("documents:read")
+      expect(JSON.stringify(unscoped.content)).toContain("needs Read workspace access")
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES"]
       else process.env["WORKTABLE_FILES"] = previous

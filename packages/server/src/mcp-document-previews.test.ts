@@ -141,7 +141,7 @@ it("does not grant preview reads to a write-only HTML connection", async () => {
     preview: {},
   })
   expect(denied.isError).toBe(true)
-  expect(JSON.stringify(denied)).toContain("widgets:read")
+  expect(JSON.stringify(denied)).toContain("needs Read workspace access")
   const allowed = await call(client, "worktable_html_write", {
     action: "create",
     lifetime: "durable",

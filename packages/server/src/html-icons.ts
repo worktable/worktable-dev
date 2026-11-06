@@ -58,8 +58,10 @@ const HINT = /data-icon/i
 // is never markup (skipped whole), an svg start tag, or any other start tag,
 // read whole so an "<svg" inside its attribute values never counts. Quoted
 // attribute values may hold ">". Names end where the browser ends them, so
-// <svg-icon> and <title-bar> are other tags.
-const TAG = `(?:[^>"']|"[^"]*"|'[^']*')*>`
+// <svg-icon> and <title-bar> are other tags. Outside quotes a tag stops at
+// the next "<", so a page of tags that never close is still read in one
+// pass, not once from each of them.
+const TAG = `(?:[^>"'<]|"[^"]*"|'[^']*')*>`
 const SCAN = new RegExp(
   `<!--[\\s\\S]*?(?:-->|$)|<(script|style|title|textarea)(?=[\\s/>])${TAG}[\\s\\S]*?(?:<\\/\\1\\s*>|$)|(<svg(?=[\\s/>])${TAG})|<[a-z][^\\s/>]*${TAG}`,
   "gi"

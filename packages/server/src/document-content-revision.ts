@@ -308,13 +308,14 @@ const ROW_CONCURRENCY = 16
 // from changed, every source's fingerprint included, and builds a new one
 // when anything did. A Space's revisions are therefore listed once per
 // catalog, and again only when the fonts HTML frames carry change, or
-// whether they carry Space images. The catalog stamps those images too.
+// whether they carry Space images or draw icons. The catalog stamps those images too.
 const listedRevisions = new WeakMap<
   DocumentCatalog,
   {
     fonts: string
     htmlFiles: boolean
     images: boolean
+    icons: boolean
     revisions: Promise<Map<string, string>>
   }
 >()
@@ -342,11 +343,13 @@ export async function documentContentRevisions(
   const htmlFiles = await usesHtmlDocumentStorageV2()
   const fonts = previewFontVersion()
   const images = htmlSpaceImagesEnabled()
+  const icons = htmlIconsEnabled()
   const listed = listedRevisions.get(catalog)
   if (
     listed?.fonts === fonts &&
     listed.htmlFiles === htmlFiles &&
-    listed.images === images
+    listed.images === images &&
+    listed.icons === icons
   ) {
     const all = await listed.revisions
     return wanted
@@ -362,7 +365,13 @@ export async function documentContentRevisions(
   // what it read for the next one.
   if (wanted) return catalogRevisions(spaceId, catalog, htmlFiles, wanted)
   const revisions = catalogRevisions(spaceId, catalog, htmlFiles)
-  listedRevisions.set(catalog, { fonts, htmlFiles, images, revisions })
+  listedRevisions.set(catalog, {
+    fonts,
+    htmlFiles,
+    images,
+    icons,
+    revisions,
+  })
   return revisions
 }
 

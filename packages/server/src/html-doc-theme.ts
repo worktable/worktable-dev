@@ -66,7 +66,7 @@ table{border-collapse:collapse}
 th,td{border-bottom:1px solid var(--border);padding:0.45em 1em 0.45em 0}
 th{text-align:start}
 th{color:var(--muted-foreground);font-weight:600}
-button,select,textarea,input:not([type=checkbox],[type=radio],[type=range],[type=color],[type=file],[type=image]){color:inherit;background:var(--well-bg);border:1px solid var(--input);border-radius:calc(var(--radius) * 0.6);padding:0.35em 0.75em}
+:where(button,select,textarea,input:not([type=checkbox],[type=radio],[type=range],[type=color],[type=file],[type=image])){color:inherit;background:var(--well-bg);border:1px solid var(--input);border-radius:calc(var(--radius) * 0.6);padding:0.35em 0.75em}
 button:not(:disabled):hover,select:not(:disabled):hover{background:var(--well-hover-bg);border-color:var(--input-hover)}
 :disabled{color:var(--muted-foreground);cursor:default}
 input::placeholder,textarea::placeholder{color:var(--muted-foreground)}

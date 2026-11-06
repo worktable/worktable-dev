@@ -560,6 +560,13 @@ previewTest(
         )
       ).toEqual([0, 0, 255])
     }
+    // A disabled field reads as disabled.
+    expect(
+      await corner(
+        `<html><head></head><body><div style="height:60px"></div><input id="on"><input id="off" disabled><script>const c=id=>getComputedStyle(document.getElementById(id)).color;document.body.style.background=c("on")!==c("off")?"rgb(0,255,0)":"rgb(255,0,0)"</script></body></html>`,
+        "dark"
+      )
+    ).toEqual([0, 255, 0])
     // Text styles a page sets on its root still reach every element.
     expect(
       await corner(

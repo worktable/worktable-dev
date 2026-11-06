@@ -72,7 +72,7 @@ import { DocumentPreview } from "@/components/editor/document-preview"
 import { useDocName, useNameFromTitleOnLeave } from "@/hooks/use-doc-name"
 import { takeJustCreated } from "@/hooks/use-new-doc"
 import { DocumentByline } from "@/components/document/document-byline"
-import { useBylineState } from "@/hooks/use-byline-state"
+import { useBylineState, type BylineState } from "@/hooks/use-byline-state"
 import { useEditorFiles } from "@/hooks/use-editor-files"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
@@ -1285,8 +1285,45 @@ function BlockNoteDocPage({
     },
     [provider]
   )
+  // The preview and the editor each show the byline; one state keeps what
+  // is open when the editor takes over.
+  const bylineState = useBylineState()
+  // The editor takes over once the reader is done with the stand-in: not
+  // between pointer down and up, which would send the click to neither,
+  // and not while the archive date it opened is open, which the editor's
+  // copy would reopen from its first step.
+  const [standInPressed, setStandInPressed] = useState(false)
+  const holdStandIn = useCallback(() => {
+    setStandInPressed(true)
+    const release = () => {
+      window.removeEventListener("pointerup", release, true)
+      window.removeEventListener("pointercancel", release, true)
+      // After this press's click has reached the stand-in.
+      window.setTimeout(() => setStandInPressed(false))
+    }
+    window.addEventListener("pointerup", release, true)
+    window.addEventListener("pointercancel", release, true)
+  }, [])
+  // Once the editor shows for a room, opening the archive date from it
+  // never brings the stand-in back.
+  const [shownProvider, setShownProvider] = useState<WebsocketProvider | null>(
+    null
+  )
+  if (
+    provider &&
+    readyEditor === provider &&
+    readyContent === provider &&
+    shownProvider !== provider &&
+    !standInPressed &&
+    !bylineState.lifetimeOpen
+  ) {
+    setShownProvider(provider)
+  }
   const editorReadable = Boolean(
-    provider && readyEditor === provider && readyContent === provider
+    provider &&
+    readyEditor === provider &&
+    readyContent === provider &&
+    shownProvider === provider
   )
   // The saved content shows until the editor is readable, following the
   // revision until then; after that, the room brings every change.
@@ -1642,12 +1679,11 @@ function BlockNoteDocPage({
   )
   useNameFromTitleOnLeave(spaceId, docPath, !readOnly && !archived)
 
-  // The preview and the editor each show the byline; one state keeps what
-  // is open when the editor takes over.
-  const bylineState = useBylineState()
-  const byline = (
+  // The editor mounts hidden behind the stand-in first, so only the byline
+  // in view may show the archive date.
+  const bylineWith = (state: BylineState) => (
     <DocumentByline
-      state={bylineState}
+      state={state}
       spaceId={spaceId}
       docPath={docPath}
       provenance={page?.provenance}
@@ -1658,6 +1694,11 @@ function BlockNoteDocPage({
       onVersionHistory={openVersions}
     />
   )
+  const byline = bylineWith(bylineState)
+  const editorByline = bylineWith({
+    ...bylineState,
+    lifetimeOpen: bylineState.lifetimeOpen && editorReadable,
+  })
 
   return (
     <div className="flex h-full flex-col">
@@ -1686,7 +1727,11 @@ function BlockNoteDocPage({
           className={`relative min-w-0 overflow-hidden ${previewVersionId ? "hidden xl:block xl:flex-[1_1_50%] xl:border-r xl:border-border print:block print:flex-1 print:border-r-0" : "flex-1"}`}
         >
           {!editorReadable && (
-            <div ref={standInRef} className="absolute inset-0 z-10">
+            <div
+              ref={standInRef}
+              className="absolute inset-0 z-10"
+              onPointerDown={holdStandIn}
+            >
               {opening ? (
                 <MarkdownViewer
                   content={opening.markdown}
@@ -1731,7 +1776,7 @@ function BlockNoteDocPage({
                   }}
                   editable={!convertingToMarkdown}
                   title={editorTitle}
-                  afterTitle={byline}
+                  afterTitle={editorByline}
                   files={editingFiles}
                   annotations={annotations}
                   activeAnnotationId={activeAnnotationId}

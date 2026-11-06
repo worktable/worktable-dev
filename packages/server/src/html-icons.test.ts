@@ -123,18 +123,10 @@ describe("Icons in HTML Docs", () => {
       /<svg data-icon="circle-check"[^>]*viewBox="0 0 24 24"[^>]*><circle cx="12" cy="12" r="10"><\/circle><path d="m9 12 2 2 4-4"><\/path><\/svg>/
     )
 
-    // Off outside the preview: the page as written, and no warning.
+    // Drawn without the preview too.
     preview(false)
-    expect(await frame("status")).toContain(
+    expect(await frame("status")).not.toContain(
       '<svg data-icon="circle-check" class="ok" width="20"></svg>'
     )
-    const off = (await dispatchOperation("html.update", {
-      spaceId: SPACE,
-      widgetId: "status",
-      html: page(BODY),
-    })) as { warnings: Array<{ code: string }> }
-    expect(
-      off.warnings.filter((warning) => warning.code.startsWith("html_icon"))
-    ).toEqual([])
   })
 })

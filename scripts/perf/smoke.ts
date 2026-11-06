@@ -4,6 +4,7 @@
  *
  *   bun scripts/perf/smoke.ts [--checkout <dir>] [--network desktop]
  *     [--out <dir>] [--update]
+ *   bun scripts/perf/smoke.ts --lane clicks|io [--checkout <dir>] [--out <dir>]
  *   bun scripts/perf/smoke.ts --clicks <result.json> --io <result.json> [--update]
  *     [--prune]
  *
@@ -29,7 +30,9 @@
  * Needs what click-trace.ts and io-count.ts need: a web build of the checkout
  * (`WORKTABLE_BUILD_ID=smoke bun run --cwd apps/web build`), Playwright's
  * Chromium, Caddy and strace. It generates the fixture if missing. With `--clicks`
- * and `--io` it only checks existing results. `--update` rewrites the budgets
+ * and `--io` it only checks existing results. With `--lane` it only runs that
+ * lane into `<out>/<lane>`, so CI can run the two on separate machines and then
+ * check both results together. `--update` rewrites the budgets
  * to the measured values, keeping each unchanged budget's `why`; a budget
  * that rises needs a new `why`, which `bun run perf:guards` checks. A budget
  * the run did not measure fails the check, and `--update` keeps refusing
@@ -531,6 +534,11 @@ async function main() {
   const budgets = JSON.parse(readFileSync(budgetsPath, "utf8")) as SmokeBudgets
   let clicksPath = args.get("clicks")
   let ioPath = args.get("io")
+  const lane = args.get("lane")
+  if (lane !== undefined && lane !== "clicks" && lane !== "io")
+    throw new Error("--lane is clicks or io")
+  if (lane && (clicksPath || ioPath || args.has("update")))
+    throw new Error("--lane only runs a lane; check its result separately")
   if (!clicksPath !== !ioPath)
     throw new Error("pass both --clicks and --io, or neither")
   if (!clicksPath || !ioPath) {
@@ -540,52 +548,55 @@ async function main() {
       args.get("out") ?? join(PERF_ROOT, "results", `${stamp}-smoke`)
     )
     run(["bun", "scripts/perf/fixtures.ts", "--profile", PROFILE], "fixture")
-    run(
-      [
-        "bun",
-        "scripts/perf/click-trace.ts",
-        "--profile",
-        PROFILE,
-        "--checkout",
-        checkout,
-        "--rounds",
-        "1",
-        "--networks",
-        network,
-        "--passes",
-        SMOKE_PASSES.join(","),
-        "--idle-window",
-        String(IDLE_WINDOW_SECONDS),
-        "--content-timeout",
-        "60",
-        "--no-trace",
-        "--out",
-        join(out, "clicks"),
-      ],
-      "clicks"
-    )
-    run(
-      [
-        "bun",
-        "scripts/perf/io-count.ts",
-        "--profile",
-        PROFILE,
-        "--checkout",
-        checkout,
-        "--requests",
-        "10",
-        "--attempts",
-        "3",
-        "--idle-seconds",
-        "3",
-        "--sockets",
-        "2",
-        "--no-timing",
-        "--out",
-        join(out, "io"),
-      ],
-      "io-count"
-    )
+    if (lane !== "io")
+      run(
+        [
+          "bun",
+          "scripts/perf/click-trace.ts",
+          "--profile",
+          PROFILE,
+          "--checkout",
+          checkout,
+          "--rounds",
+          "1",
+          "--networks",
+          network,
+          "--passes",
+          SMOKE_PASSES.join(","),
+          "--idle-window",
+          String(IDLE_WINDOW_SECONDS),
+          "--content-timeout",
+          "60",
+          "--no-trace",
+          "--out",
+          join(out, "clicks"),
+        ],
+        "clicks"
+      )
+    if (lane !== "clicks")
+      run(
+        [
+          "bun",
+          "scripts/perf/io-count.ts",
+          "--profile",
+          PROFILE,
+          "--checkout",
+          checkout,
+          "--requests",
+          "10",
+          "--attempts",
+          "3",
+          "--idle-seconds",
+          "3",
+          "--sockets",
+          "2",
+          "--no-timing",
+          "--out",
+          join(out, "io"),
+        ],
+        "io-count"
+      )
+    if (lane) return
     clicksPath = join(out, "clicks", "result.json")
     ioPath = join(out, "io", "result.json")
   }

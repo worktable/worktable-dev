@@ -1,6 +1,7 @@
 # Structural speed budgets (Plan 17 Speed): the click lane once, untimed, on
 # the 100-document fixture, and io-count's counting run, against
-# scripts/perf/smoke-budgets.json. Counts, not timings, so it does not depend
+# scripts/perf/smoke-budgets.json. The two lanes run on separate runners at
+# once; the perf-smoke job checks both results together. Counts, not timings, so it does not depend
 # on the runner's speed. Pull requests that leave the product alone pass at
 # once; a dispatch measures another commit with this ref's tooling.
 name: perf-smoke
@@ -23,12 +24,11 @@ concurrency:
   group: perf-smoke-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: true
 jobs:
-  perf-smoke:
-    name: perf-smoke
+  select:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    env:
-      CI: "true"
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -48,26 +48,35 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "No product change; perf-smoke has nothing to measure." >> "$GITHUB_STEP_SUMMARY"
           fi
+  lane:
+    needs: select
+    if: needs.select.outputs.run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [clicks, io]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: "true"
+    steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-        if: steps.scope.outputs.run == 'true' && inputs.sha != ''
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        if: inputs.sha != ''
         with:
           ref: ${{ inputs.sha }}
           path: .local-dev/product
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
-        if: steps.scope.outputs.run == 'true'
         with:
           bun-version: 1.3.14
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        if: steps.scope.outputs.run == 'true'
         with:
           node-version: 24.15.0
       - name: Use Ubuntu archive mirrors
-        if: steps.scope.outputs.run == 'true'
         # The runner's preferred Azure mirror can stall package downloads.
         run: sudo sed -i '\|^http://azure\.archive\.ubuntu\.com/ubuntu/|d' /etc/apt/apt-mirrors.txt
       - name: Install dependencies, Chromium, Caddy and strace
-        if: steps.scope.outputs.run == 'true'
         env:
           CADDY_VERSION: 2.11.7
         run: |-
@@ -78,13 +87,11 @@ jobs:
           curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" | tar -xz -C "$RUNNER_TEMP/caddy" caddy
           echo "$RUNNER_TEMP/caddy" >> "$GITHUB_PATH"
       - name: Restore the perf fixture
-        if: steps.scope.outputs.run == 'true'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: .local-dev/perf/fixtures
           key: perf-fixtures-100-${{ hashFiles('scripts/perf/fixtures.ts') }}
       - name: Build the web app
-        if: steps.scope.outputs.run == 'true'
         env:
           PRODUCT_SHA: ${{ inputs.sha }}
         run: |-
@@ -95,11 +102,54 @@ jobs:
           fi
           echo "PERF_CHECKOUT=$checkout" >> "$GITHUB_ENV"
           WORKTABLE_BUILD_ID="perf-smoke-$(git -C "$checkout" rev-parse HEAD)" bun run --cwd "$checkout/apps/web" build
+      - name: Run the ${{ matrix.lane }} lane
+        run: bun scripts/perf/smoke.ts --lane "${{ matrix.lane }}" --checkout "$PERF_CHECKOUT" --out perf-smoke-results
+      - name: Upload the lane result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: perf-smoke-${{ matrix.lane }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: perf-smoke-results/
+          if-no-files-found: warn
+          retention-days: 14
+  perf-smoke:
+    name: perf-smoke
+    needs: [select, lane]
+    # Runs on every event so the required check always reports.
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SELECTED: ${{ needs.select.outputs.run }}
+      SELECT_RESULT: ${{ needs.select.result }}
+      LANE_RESULT: ${{ needs.lane.result }}
+    steps:
+      - name: Require the selected lanes
+        run: |-
+          test "$SELECT_RESULT" = success
+          if [ "$SELECTED" != true ]; then echo "No product change; perf-smoke has nothing to measure."; exit 0; fi
+          test "$LANE_RESULT" = success
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        if: needs.select.outputs.run == 'true'
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        if: needs.select.outputs.run == 'true'
+        with:
+          bun-version: 1.3.14
+      - name: Install locked dependencies
+        if: needs.select.outputs.run == 'true'
+        run: bun install --frozen-lockfile
+      - name: Download both lane results
+        if: needs.select.outputs.run == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: perf-smoke-*-${{ github.run_id }}-${{ github.run_attempt }}
+          path: perf-smoke-results
+          merge-multiple: true
       - name: Check structural budgets
-        if: steps.scope.outputs.run == 'true'
-        run: bun scripts/perf/smoke.ts --checkout "$PERF_CHECKOUT" --out perf-smoke-results
+        if: needs.select.outputs.run == 'true'
+        run: bun scripts/perf/smoke.ts --clicks perf-smoke-results/clicks/result.json --io perf-smoke-results/io/result.json
       - name: Upload results
-        if: always() && steps.scope.outputs.run == 'true'
+        if: always() && needs.select.outputs.run == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: perf-smoke-${{ github.run_id }}-${{ github.run_attempt }}

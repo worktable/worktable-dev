@@ -695,7 +695,10 @@ export function injectWidgetHostStyles(html: string, options?: { fontStyles: str
     // the page declares.
     return `${output.slice(0, shell.headOpenEnd)}${theme}${output.slice(shell.headOpenEnd)}`
   }
-  return `${output}${theme}${hostStyles}`
+  // Without a head, the theme goes where the SDK does, which the parser
+  // places in the head ahead of the page's own styles.
+  const themeIndex = trustedRuntimeInsertionIndex(output)
+  return `${output.slice(0, themeIndex)}${theme}${output.slice(themeIndex)}${hostStyles}`
 }
 
 function trustedRuntimeInsertionIndex(html: string): number {

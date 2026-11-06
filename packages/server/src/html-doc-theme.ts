@@ -47,11 +47,14 @@ function declarations(tokens: Tokens): string {
 }
 
 // Paint, type and the padding bare tables and controls need; no layout, so a
-// page's own design keeps its shape. Only the page title takes the display
+// page's own design keeps its shape. Inherited text styles sit on :root, so
+// a page's own html or body rules still reach every element. Font size stays
+// on body, so rem keeps its meaning. Only the page title takes the display
 // font: lower headings are often labels in a tool.
-const BASE = `body{background:var(--background);color:var(--foreground);font-family:var(--font-sans);font-size:15px;line-height:1.55}
+const BASE = `:root{color:var(--foreground);font-family:var(--font-sans);line-height:1.55}
+body{background:var(--background);font-size:15px}
 h1{font-family:var(--font-display);font-weight:600;line-height:1.2;text-wrap:balance}
-h2,h3,h4,h5,h6{font-family:var(--font-sans);font-weight:600;line-height:1.3;text-wrap:balance}
+h2,h3,h4,h5,h6{font-weight:600;text-wrap:balance}
 a{color:var(--primary-text)}
 ::selection{background:color-mix(in oklch,var(--primary) 28%,transparent)}
 mark{background:color-mix(in oklch,var(--warning) 30%,transparent);color:inherit}
@@ -60,10 +63,12 @@ code,kbd,samp,pre{font-family:var(--font-mono);font-size:0.9em}
 :not(pre)>code,kbd{background:var(--muted);border-radius:0.3em;padding:0.1em 0.3em}
 pre{background:var(--muted);border-radius:calc(var(--radius) * 0.8);padding:0.75em 1em;overflow:auto}
 table{border-collapse:collapse}
-th,td{border-bottom:1px solid var(--border);padding:0.45em 1em 0.45em 0;text-align:left}
+th,td{border-bottom:1px solid var(--border);padding:0.45em 1em 0.45em 0}
+th{text-align:start}
 th{color:var(--muted-foreground);font-weight:600}
 button,select,textarea,input:not([type=checkbox],[type=radio],[type=range],[type=color],[type=file],[type=image]){color:inherit;background:var(--well-bg);border:1px solid var(--input);border-radius:calc(var(--radius) * 0.6);padding:0.35em 0.75em}
-button:hover,select:hover{background:var(--well-hover-bg);border-color:var(--input-hover)}
+button:not(:disabled):hover,select:not(:disabled):hover{background:var(--well-hover-bg);border-color:var(--input-hover)}
+:disabled{color:var(--muted-foreground);cursor:default}
 input::placeholder,textarea::placeholder{color:var(--muted-foreground)}
 input,select,textarea,progress,meter{accent-color:var(--primary)}
 :root{scrollbar-color:color-mix(in oklch,var(--foreground) 22%,transparent) transparent}`

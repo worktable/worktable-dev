@@ -196,12 +196,12 @@ ${renderMode("dark")}
 }
 
 ${renderConversationScope()}
-
-${renderHtmlDocScope()}
 `
 }
 
-// The open thread marks itself; the list and header keep the canvas.
+// The open thread marks itself; the list and header keep the canvas. An
+// HTML Doc's pane takes the same black in dark mode, as the page in it does,
+// and keeps the canvas in light mode.
 function renderConversationScope(): string {
   const scope = '[data-surface="conversation"]'
   const block = (values: Record<string, string>) =>
@@ -211,7 +211,7 @@ function renderConversationScope(): string {
   // Light values apply first; the dark selectors are more specific and
   // restate each of them.
   const dark = [".dark", ':root[data-theme="dark"]']
-    .map((mode) => `${mode} ${scope}`)
+    .flatMap((mode) => [scope, '[data-surface="html-doc"]'].map((surface) => `${mode} ${surface}`))
     .join(",\n")
   return `${scope} {\n${block(themeConfig.conversation.light)}\n}\n\n${dark} {\n${block(themeConfig.conversation.dark)}\n}`
 }
@@ -891,7 +891,11 @@ function htmlDocModeTokens(mode: ThemeMode): Record<string, string> {
   const app = getModeVariables(mode)
   const overrides: Record<string, string> = themeConfig.htmlDoc[mode]
   const tokens: Record<string, string> = {}
-  for (const role of HTML_DOC_ROLES) tokens[role] = app[role]
+  for (const role of HTML_DOC_ROLES) {
+    const value = app[role]
+    if (value === undefined) throw new Error(`HTML Doc role ${role} is not an app role`)
+    tokens[role] = value
+  }
   for (const [role, value] of Object.entries(overrides)) {
     if (!(role in tokens)) throw new Error(`htmlDoc.${mode}.${role} is not an HTML Doc role`)
     tokens[role] = value
@@ -920,14 +924,6 @@ export function renderHtmlDocThemeTs(): string {
   return `// ${generatedNote}\n// Source: themeConfig.htmlDoc in packages/ui/src/theme/theme-config.ts\nexport const HTML_DOC_THEME = ${JSON.stringify(theme, null, 2)} as const\n`
 }
 
-/** An HTML Doc's pane drops to the page's black in dark mode, as the page does. */
-function renderHtmlDocScope(): string {
-  const scope = '[data-surface="html-doc"]'
-  const dark = [".dark", ':root[data-theme="dark"]']
-    .map((mode) => `${mode} ${scope}`)
-    .join(",\n")
-  return `${dark} {\n  --background: ${themeConfig.htmlDoc.dark.background};\n}`
-}
 
 export const generatedThemeOutputs = new Map([
   ["packages/ui/src/styles/theme.generated.css", renderThemeCss()],

@@ -549,13 +549,24 @@ previewTest(
         "dark"
       )
     ).toEqual([0, 0, 0])
-    // A page's own colors win, even from inside its own cascade layer.
+    // A page's own colors win, even from inside its own cascade layer, and
+    // when it leaves out the head.
+    for (const head of [true, false]) {
+      const style = "<style>@layer page{body{background:rgb(0,0,255)}}</style>"
+      expect(
+        await corner(
+          `<html>${head ? `<head>${style}</head>` : style}<body></body></html>`,
+          "dark"
+        )
+      ).toEqual([0, 0, 255])
+    }
+    // Text styles a page sets on its root still reach every element.
     expect(
       await corner(
-        "<html><head><style>@layer page{body{background:rgb(0,0,255)}}</style></head><body></body></html>",
+        `<html><head><style>:root{color:rgb(1,2,3);font-family:Georgia}</style></head><body><h2>Title</h2><script>const h=getComputedStyle(document.querySelector("h2"));document.body.style.background=h.color==="rgb(1, 2, 3)"&&h.fontFamily==="Georgia"?"rgb(0,255,0)":"rgb(255,0,0)"</script></body></html>`,
         "dark"
       )
-    ).toEqual([0, 0, 255])
+    ).toEqual([0, 255, 0])
     // Native controls follow the theme shown, even when a page declares both.
     expect(
       await corner(

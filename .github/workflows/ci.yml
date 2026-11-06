@@ -78,7 +78,9 @@ jobs:
       - name: Check speed guards
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: bun run perf:guards --base "$BASE_SHA"
+        # Scheduled and manual runs have no base commit. `bun run` drops an
+        # empty argument, which left a bare `--base` that read as "true".
+        run: bun run perf:guards ${BASE_SHA:+--base "$BASE_SHA"}
       - name: Lint changed files
         # A pull request checks out its merge commit, whose first parent is
         # the base branch; main compares with the previous commit.

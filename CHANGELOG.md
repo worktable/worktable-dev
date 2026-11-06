@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Threads:** In dark mode, an open thread now sits on black, with the thread list beside it unchanged. The selected thread uses the same highlight as the sidebar, and **Thread** in the header is now the page's main button.
+
 ## [0.1.41] - 2026-11-05
 
 ### Changed

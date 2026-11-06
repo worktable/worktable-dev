@@ -73,6 +73,7 @@ import { useDocName, useNameFromTitleOnLeave } from "@/hooks/use-doc-name"
 import { takeJustCreated } from "@/hooks/use-new-doc"
 import { DocumentByline } from "@/components/document/document-byline"
 import { useBylineState, type BylineState } from "@/hooks/use-byline-state"
+import { useTemporaryArchiveLabel } from "@/hooks/use-document-organize"
 import { useEditorFiles } from "@/hooks/use-editor-files"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
@@ -1288,6 +1289,14 @@ function BlockNoteDocPage({
   // The preview and the editor each show the byline; one state keeps what
   // is open when the editor takes over.
   const bylineState = useBylineState()
+  // The archive date is open only while the Doc is temporary: keeping it
+  // here or elsewhere removes the chip without closing its popover, and a
+  // stale open state would otherwise hold the editor back below.
+  const archivable = useTemporaryArchiveLabel(spaceId, docPath) !== null
+  const { lifetimeOpen, setLifetimeOpen } = bylineState
+  useEffect(() => {
+    if (!archivable && lifetimeOpen) setLifetimeOpen(false)
+  }, [archivable, lifetimeOpen, setLifetimeOpen])
   // The editor takes over once the reader is done with the stand-in: not
   // between pointer down and up, which would send the click to neither,
   // and not while the archive date it opened is open, which the editor's
@@ -1319,7 +1328,7 @@ function BlockNoteDocPage({
     readyContent === provider &&
     shownProvider !== provider &&
     !standInPressed &&
-    !bylineState.lifetimeOpen
+    !(archivable && lifetimeOpen)
   ) {
     setShownProvider(provider)
   }

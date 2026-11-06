@@ -320,6 +320,19 @@ const listedRevisions = new WeakMap<
   }
 >()
 
+// Revisions found for a few rows at a time, by catalog, on the same terms.
+// Only revisions found are kept: a source that could not be read is tried
+// again on the next request.
+const rowRevisions = new WeakMap<
+  DocumentCatalog,
+  {
+    fonts: string
+    htmlFiles: boolean
+    images: boolean
+    known: Map<string, string>
+  }
+>()
+
 /**
  * Content revisions of documents the app opens by revision (Markdown, rich
  * text and HTML Docs), by path, from the Space's catalog snapshot, or from
@@ -361,9 +374,36 @@ export async function documentContentRevisions(
         )
       : all
   }
-  // A few rows (Recent, search, pins) read only theirs; a whole list keeps
+  // A few rows (Recent, search, pins) read only theirs, and keep what they
+  // found for the next request on the same catalog; a whole list keeps
   // what it read for the next one.
-  if (wanted) return catalogRevisions(spaceId, catalog, htmlFiles, wanted)
+  if (wanted) {
+    let rows = rowRevisions.get(catalog)
+    if (
+      rows?.fonts !== fonts ||
+      rows.htmlFiles !== htmlFiles ||
+      rows.images !== images
+    ) {
+      rows = { fonts, htmlFiles, images, known: new Map() }
+      rowRevisions.set(catalog, rows)
+    }
+    const known = rows.known
+    const missing = new Set([...wanted].filter((path) => !known.has(path)))
+    if (missing.size > 0)
+      for (const [path, revision] of await catalogRevisions(
+        spaceId,
+        catalog,
+        htmlFiles,
+        missing
+      ))
+        known.set(path, revision)
+    return new Map(
+      [...wanted].flatMap((path) => {
+        const revision = known.get(path)
+        return revision ? [[path, revision] as const] : []
+      })
+    )
+  }
   const revisions = catalogRevisions(spaceId, catalog, htmlFiles)
   listedRevisions.set(catalog, {
     fonts,

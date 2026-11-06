@@ -25,6 +25,10 @@ import {
   readDocumentAnnotationsV2,
   writeDocumentAnnotationsV2,
 } from "./document-data-v2.ts"
+import {
+  currentDocContentRevision,
+  documentContentRevisions,
+} from "./document-content-revision.ts"
 import { readDocumentPage } from "./document-page-service.ts"
 import { usesDocumentVersionStoreV2 } from "./document-version-compatibility-v2.ts"
 import { createRegisteredDocument } from "./document-write-service.ts"
@@ -312,6 +316,31 @@ describe("workspace read model", () => {
     now += SPACE_SNAPSHOT_MAX_AGE_MS
     setSystemTime(new Date(now))
     expect([...(await listed()).keys()]).toEqual(["notes/a", "notes/unseen"])
+  })
+
+  it("gives rows the revision of an edit nothing reported once the snapshot checks again", async () => {
+    const note = spacePath(spaceId, "docs", "notes", "a.md")
+    let now = Date.now() + 60_000
+    setSystemTime(new Date(now))
+    const row = async () =>
+      (await documentContentRevisions(spaceId, ["notes/a"])).get("notes/a")
+    const before = await row()
+    expect(before).toBeString()
+    expect(await row()).toBe(before)
+
+    // An editor saves the file in place; no watcher is running.
+    await appendFile(note, "\nEdited elsewhere.\n")
+    const edited = new Date("2020-01-02T03:04:05.000Z")
+    await utimes(note, edited, edited)
+    now += SPACE_SNAPSHOT_MAX_AGE_MS
+    setSystemTime(new Date(now))
+    const after = await row()
+    expect(after).not.toBe(before)
+    // The same revision the whole list and the document itself report.
+    expect(after).toBe(
+      (await documentContentRevisions(spaceId)).get("notes/a")
+    )
+    expect(after).toBe(await currentDocContentRevision(spaceId, "notes/a"))
   })
 
   it("lists an HTML Doc renamed only in its saved properties", async () => {

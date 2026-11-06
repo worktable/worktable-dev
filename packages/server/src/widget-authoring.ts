@@ -116,7 +116,7 @@ Worktable themes every HTML Doc for light and dark mode and sets html[data-theme
 - Charts: --chart-1 to --chart-5, in that order
 - Shape and type: --radius, --shadow, --font-sans, --font-display, --font-mono
 
-Body text, the page title (h1, in the display font), links, code, tables and form controls are already styled, and any CSS the page writes overrides them. The variables are complete colors: write var(--primary), never hsl(var(--primary)). Don't use prefers-color-scheme, which follows the computer rather than Worktable. For a palette of the page's own, set the variables on :root and again under html[data-theme="dark"]. Chart and canvas code reads a value with getComputedStyle(document.documentElement).getPropertyValue("--chart-1").
+Body text, the page title (h1, in the display font), links, code, tables and form controls are already styled, and any CSS the page writes overrides them. The variables are complete colors: write var(--primary), never hsl(var(--primary)). Don't use prefers-color-scheme, which follows the computer rather than Worktable. For a palette of the page's own, set the variables on :root and again under html[data-theme="dark"]. Chart and canvas code reads a value with getComputedStyle(document.documentElement).getPropertyValue("--chart-1"): an oklch() color, which canvas and CSS accept but some chart libraries' color parsers don't. Read it again when html's data-theme changes, as it can on a share link.
 
 A page needs only its layout:
 
@@ -299,7 +299,7 @@ const DARK_THEME_RULE_RE = /html\s*\[\s*data-theme\s*=\s*["']dark["']\s*\]/i
 // A page background set to a fixed color, in a rule for html, body or :root.
 // A value built from a variable follows the theme.
 const FIXED_PAGE_BACKGROUND_RE =
-  /(?:^|[{};\s])(?::root|html|body)(?:\s*,\s*(?::root|html|body))*\s*\{[^}]*\bbackground(?:-color)?\s*:(?![^;}]*var\()\s*(?!(?:transparent|inherit|initial|unset|none)\b)[^;}]+/i
+  /(?:^|[{};\s])(?::root|html|body)(?:\s*,\s*(?::root|html|body))*\s*\{[^}]*\bbackground(?:-color)?\s*:(?![^;}]*var\()\s*(?!(?:transparent|inherit|initial|unset|none|canvas)\b)[^;}]+/i
 
 function addReleasedThemeHints(html: string, issues: WidgetValidationIssue[]) {
   if (!DARK_THEME_RULE_RE.test(html)) {

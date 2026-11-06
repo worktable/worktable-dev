@@ -49,7 +49,6 @@ const webBrowserShards: string[][] = [
     "agents.browser.ts",
     "threads.browser.ts",
     "annotations.browser.ts",
-    "update-notifications.browser.ts",
     "worktable-menu.browser.ts",
     "public-share-comments.browser.ts",
     "share-runtime.browser.ts",

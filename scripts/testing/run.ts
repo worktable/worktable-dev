@@ -292,6 +292,18 @@ if (indivisibleFilteredSuites.length > 0) {
       .join(", ")}. Select the suite without --test-file/--test-path-prefix.`
   )
 }
+// A runner given no files runs its whole directory, so an empty suite (a
+// browser shard whose files all moved, say) is a configuration error.
+const emptySuites = suites.filter(
+  (suite) =>
+    !["go", "host-go", "desktop"].includes(suite.runner) &&
+    ownedTestFiles(suite).length === 0
+)
+if (emptySuites.length > 0) {
+  throw new Error(
+    `These suites own no test files: ${emptySuites.map((suite) => suite.id).join(", ")}`
+  )
+}
 const targeted = isTargetedSelection(options)
 const resultDirectory = canonicalResultDirectory(
   resolve(repositoryRoot, "test-results/canonical"),

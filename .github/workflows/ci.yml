@@ -265,11 +265,6 @@ jobs:
       - name: Provision pinned product font
         # Journeys render with the General Sans that releases ship.
         run: bun scripts/provision-product-font.ts
-      - name: Name the evidence
-        id: evidence
-        env:
-          GROUP_SUITES: ${{ matrix.suites }}
-        run: echo "name=${GROUP_SUITES%%,*}" >> "$GITHUB_OUTPUT"
       - name: Run selected browser journeys
         env:
           GROUP_SUITES: ${{ matrix.suites }}
@@ -284,7 +279,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: lanes-browsers-${{ steps.evidence.outputs.name }}-${{ github.run_attempt }}
+          name: lanes-browsers-${{ strategy.job-index }}-${{ github.run_attempt }}
           path: test-results/canonical/
           if-no-files-found: error
           retention-days: 14

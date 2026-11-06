@@ -39,6 +39,21 @@ describe("public evidence ownership", () => {
     ).toEqual(all)
   })
 
+  test("every web browser file, including a new nested one, has exactly one shard", () => {
+    const web = publicTestSuites.filter((s) =>
+      webBrowserSuiteIds.includes(s.id)
+    )
+    for (const path of [
+      "apps/web/e2e/agents.browser.ts",
+      "apps/web/e2e/organize.browser.ts",
+      "apps/web/e2e/nested/new-journey.browser.ts",
+    ])
+      expect(web.filter((s) => s.owns(path)).length).toBe(1)
+    expect(
+      web.find((s) => s.owns("apps/web/e2e/nested/new-journey.browser.ts"))?.id
+    ).toBe(webBrowserSuiteIds.at(-1))
+  })
+
   test("every selected browser suite runs on exactly one browser runner", () => {
     for (const paths of [
       [],

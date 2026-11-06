@@ -329,8 +329,7 @@
       "max": 5
     },
     "chain, revisit, open a Space in the sidebar": {
-      "max": 1,
-      "why": "The Settings journeys lengthen the pass, so the revisit now comes more than 5 minutes after the first open. By then the closed Space's contents were collected (React Query's default 5-minute gcTime), and opening it waits for them again, as on a real instance. The next performance round targets this (Plan 15e)."
+      "max": 0
     },
     "requests, revisit, open Space": {
       "max": 7

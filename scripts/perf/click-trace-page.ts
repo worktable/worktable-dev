@@ -685,6 +685,15 @@ export function installInstrumentation(): void {
           attributes: true,
         })
         interval = window.setInterval(check, 50)
+        // A fade or slide changes what is visible without a mutation; check
+        // every frame too, so content that shows by opacity is seen in the
+        // frame it shows.
+        const frame = () => {
+          if (done) return
+          check()
+          requestAnimationFrame(frame)
+        }
+        requestAnimationFrame(frame)
         check()
       }
       if (document.documentElement) start()

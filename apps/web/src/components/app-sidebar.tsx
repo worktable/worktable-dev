@@ -666,7 +666,7 @@ const SpaceSection = memo(function SpaceSection({
               if (!expanded) preload()
             }}
           >
-            <SpaceIcon space={space} />
+            <SpaceIcon space={space} variant="glyph" />
             <TruncatedText text={space.name} />
           </CollapsibleTrigger>
           {/* Always visible on touch (no hover exists) and on keyboard focus;
@@ -2360,9 +2360,9 @@ function DocTreeItem({
                 render={<button type="button" />}
               >
                 {open ? (
-                  <FolderOpen className="size-4 shrink-0 text-sidebar-primary/60" />
+                  <FolderOpen className="size-4 shrink-0 text-primary/60" />
                 ) : (
-                  <Folder className="size-4 shrink-0 text-sidebar-primary/60" />
+                  <Folder className="size-4 shrink-0 text-primary/60" />
                 )}
                 <TruncatedText text={node.label} />
               </CollapsibleTrigger>

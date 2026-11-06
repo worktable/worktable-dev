@@ -12,6 +12,8 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **Threads:** In dark mode, an open thread now sits on black, with the thread list beside it unchanged. The selected thread uses the same highlight as the sidebar, and **Thread** in the header is now the page's main button.
+- **Threads:** In light mode, an open thread now sits a step brighter than the thread list.
+- **Sidebar:** Spaces show their icon in the Space's color, without the colored square behind it. In dark mode the selected item uses a lighter blue that is easier to read.
 
 ## [0.1.41] - 2026-11-05
 

@@ -64,7 +64,7 @@ function getModeVariables(mode: ThemeMode): Record<string, string> {
     "sidebar-foreground": colors.sidebarForeground,
     "sidebar-space-foreground": `color-mix(in oklch, ${colors.sidebarForeground} ${themeConfig.sidebar.spaceForegroundOpacity}, transparent)`,
     "sidebar-item-foreground": `color-mix(in oklch, ${colors.sidebarForeground} ${themeConfig.sidebar.itemForegroundOpacity}, transparent)`,
-    "sidebar-primary": accents.primary,
+    "sidebar-primary": accents.primaryText,
     "sidebar-primary-foreground": colors.contrastForeground,
     "sidebar-hover": colors.sidebarHover,
     "sidebar-accent": colors.sidebarAccent,
@@ -202,13 +202,16 @@ ${renderConversationScope()}
 // The open thread marks itself; the list and header keep the canvas.
 function renderConversationScope(): string {
   const scope = '[data-surface="conversation"]'
-  const selectors = [".dark", ':root[data-theme="dark"]'].map(
-    (mode) => `${mode} ${scope}`
-  )
-  const lines = Object.entries(themeConfig.conversation.dark).map(
-    ([cssName, value]) => `  --${cssName}: ${value};`
-  )
-  return `${selectors.join(",\n")} {\n${lines.join("\n")}\n}`
+  const block = (values: Record<string, string>) =>
+    Object.entries(values)
+      .map(([cssName, value]) => `  --${cssName}: ${value};`)
+      .join("\n")
+  // Light values apply first; the dark selectors are more specific and
+  // restate each of them.
+  const dark = [".dark", ':root[data-theme="dark"]']
+    .map((mode) => `${mode} ${scope}`)
+    .join(",\n")
+  return `${scope} {\n${block(themeConfig.conversation.light)}\n}\n\n${dark} {\n${block(themeConfig.conversation.dark)}\n}`
 }
 
 export function renderBlockNoteCss(): string {

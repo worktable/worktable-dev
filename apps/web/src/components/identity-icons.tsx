@@ -231,13 +231,17 @@ const SIZES = {
 export function SpaceIcon({
   space,
   size = "sm",
+  variant = "chip",
   className,
 }: {
   space: { id: string; icon?: string; settings?: Record<string, unknown> }
   size?: keyof typeof SIZES
+  /** `glyph` draws the icon in its color with no fill behind it. */
+  variant?: "chip" | "glyph"
   className?: string
 }) {
   const color = recognitionColor(space.settings?.color, space.id)
+  const glyph = variant === "glyph"
   return (
     <span
       aria-hidden
@@ -246,9 +250,13 @@ export function SpaceIcon({
         SIZES[size].chip,
         className
       )}
-      style={recognitionChip(color)}
+      style={
+        glyph
+          ? { color: `var(--recognition-${color}-glyph)` }
+          : recognitionChip(color)
+      }
     >
-      {resolveIcon(space.icon, SIZES[size].icon)}
+      {resolveIcon(space.icon, glyph ? "size-4" : SIZES[size].icon)}
     </span>
   )
 }

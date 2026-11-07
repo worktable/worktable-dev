@@ -70,6 +70,7 @@ import { existsSync, lstatSync, statSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { healthRouter } from "./routes/health.ts"
 import { spacesRouter } from "./routes/spaces.ts"
+import { sidebarRouter } from "./routes/sidebar.ts"
 import { docsRouter } from "./routes/docs.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { widgetsRouter } from "./routes/widgets.ts"
@@ -560,6 +561,7 @@ app.route("/api/diagnostics", diagnosticsRouter);
 app.route("/api/system", systemRouter);
 app.route("/api/shares", sharesRouter);
 app.route("/api/linked", linkedRouter);
+app.route("/api/sidebar", sidebarRouter);
 app.route("/api/spaces", spacesRouter);
 app.route("/api/spaces/:spaceId/documents", documentsRouter);
 app.route("/api/spaces/:spaceId/docs", docsRouter);

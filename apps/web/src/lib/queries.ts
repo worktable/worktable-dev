@@ -6,6 +6,7 @@ import {
   searchWorkspace,
 } from "./api"
 import { getWidget } from "./widgets-api"
+import { SPACE_CONTENTS_GC_MS } from "./space-contents-cache"
 import { abandonableRead } from "./http"
 import { getRecordCollectionHealth, listRecordCollections, listRecords, queryRecords } from "./records-api"
 import type { RecordQuery, SearchResult } from "@worktable/types"
@@ -68,6 +69,7 @@ export const spaceQueryOptions = (spaceId: string) =>
     queryKey: queryKeys.space(spaceId),
     queryFn: () => getSpace(spaceId),
     staleTime: 2 * 60_000,
+    gcTime: SPACE_CONTENTS_GC_MS,
   })
 
 export const widgetQueryOptions = (spaceId: string, widgetId: string) =>
@@ -83,6 +85,7 @@ export const recordCollectionsQueryOptions = (spaceId: string) =>
     queryKey: queryKeys.recordCollections(spaceId),
     queryFn: () => listRecordCollections(spaceId),
     staleTime: 30_000,
+    gcTime: SPACE_CONTENTS_GC_MS,
   })
 
 export const recordsQueryOptions = (spaceId: string, collectionId: string) =>

@@ -15,6 +15,7 @@ import {
   readDocumentPage,
 } from "./documents-api.ts"
 import { abandonableRead } from "./http.ts"
+import { SPACE_CONTENTS_GC_MS } from "./space-contents-cache.ts"
 import {
   spaceReadMark,
   spaceUnchangedSince,
@@ -45,6 +46,7 @@ export const documentsQueryOptions = (spaceId: string) =>
     queryKey: documentQueryKeys.list(spaceId),
     queryFn: () => listDocuments(spaceId, true),
     staleTime: 30_000,
+    gcTime: SPACE_CONTENTS_GC_MS,
   })
 
 export function useDocuments(spaceId: string) {

@@ -775,6 +775,12 @@ function PreloadScreensWhenIdle() {
       router.loadRouteChunk(router.routesById[id])
     return preloadWhenIdle(
       [
+        // Every Space's tree, so opening one in the sidebar shows it at once.
+        // Its loader is only ever needed here, so it loads with it.
+        () =>
+          import("@/lib/sidebar-contents").then((module) =>
+            module.loadSidebarContents(queryClient)
+          ),
         route("/spaces/$spaceId"),
         route("/spaces/$spaceId/documents/$"),
         ...rendererPreloads,

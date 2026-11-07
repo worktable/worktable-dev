@@ -59,11 +59,21 @@ async function ensureSpace(spaceId: string) {
   return error || !space ? error ?? "Space not found" : null;
 }
 
+/**
+ * A Space's record collections, as GET /api/spaces/:spaceId/records sends
+ * them and the sidebar bundle carries them.
+ */
+export async function listSpaceCollections(spaceId: string) {
+  const error = await ensureSpace(spaceId);
+  if (error) return { error } as const;
+  return { collections: await listRecordCollections(spaceId) } as const;
+}
+
 recordsRouter.get("/", requireScope("records:read"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
-  const error = await ensureSpace(spaceId);
-  if (error) return c.json({ error, code: "NOT_FOUND" }, 404);
-  return c.json({ collections: await listRecordCollections(spaceId) });
+  const result = await listSpaceCollections(spaceId);
+  if ("error" in result) return c.json({ error: result.error, code: "NOT_FOUND" }, 404);
+  return c.json(result);
 });
 
 recordsRouter.post("/", requireScope("records:write"), async (c) => {

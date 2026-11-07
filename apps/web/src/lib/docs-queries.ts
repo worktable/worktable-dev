@@ -1,6 +1,7 @@
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { listDocs, resolveDocumentReferences } from "./docs-api";
 import { abandonableRead } from "./http";
+import { SPACE_CONTENTS_GC_MS } from "./space-contents-cache";
 
 // ── Query Keys ──────────────────────────────────────────────
 
@@ -33,6 +34,7 @@ export const spaceDocsQueryOptions = (spaceId: string) =>
     queryKey: docQueryKeys.docs(spaceId),
     queryFn: () => listDocs(spaceId, true),
     staleTime: 30_000,
+    gcTime: SPACE_CONTENTS_GC_MS,
   });
 
 // ── Hooks ───────────────────────────────────────────────────

@@ -732,6 +732,14 @@ describe("consented committed-work analytics", () => {
         identity
       )
     ).not.toBeNull()
+    // The gateway issues a grant for a full minute by its own clock; a
+    // Worktable whose clock runs minutes behind still accepts it, and only a
+    // grant meant to last far longer is refused.
+    for (const [lead, accepted] of [[60_000, true], [60_000 + 445_000, true], [60 * 60_000, false]] as const) {
+      const skewed = new Headers(headers)
+      skewed.set(ANALYTICS_HEADER, JSON.stringify({ ...grant(), expiresAt: Date.now() + lead }))
+      expect(requestAnalyticsContext(new Request("https://app.worktable.cloud/api", { headers: skewed }), identity) !== null).toBe(accepted)
+    }
     identity.team = { worktableId: "local-worktable", memberId: "member", userId: "local-user" }
     identity.principal = { ...identity.principal, id: "human:local-actor" }
     // Local provenance alone cannot establish the consenting Cloud person.

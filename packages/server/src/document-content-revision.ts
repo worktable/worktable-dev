@@ -46,7 +46,7 @@ import {
   htmlDocumentFrameInputsStorageV2,
   usesHtmlDocumentStorageV2,
 } from "./html-document-storage-v2.ts"
-import { HTML_ICONS_SOURCE, htmlIconsEnabled } from "./html-icons.ts"
+import { htmlIconsRevision } from "./html-icons.ts"
 import { previewFontVersion } from "./preview-fonts.ts"
 import { showableSpaceFiles } from "./space-images.ts"
 import { servedBuildId } from "./static-assets.ts"
@@ -90,21 +90,23 @@ export function docContentRevision(input: {
  * An HTML Doc frame's revision. The frame also carries the preview fonts'
  * CSS, which changes when the product font is provisioned or replaced, and
  * the Space images it names (`images`, from htmlImagesStamp), which only a
- * page that names one has, and while icons are drawn, the library they come
- * from (html-icons.ts).
+ * page that names one has, and while icons are drawn, what they depend on:
+ * the library, and the runtime that draws those page code adds
+ * (html-icons.ts).
  */
 export function htmlContentRevision(input: {
   sourceSha256: string
   network: boolean
   images?: string
 }): string {
+  const icons = htmlIconsRevision()
   return revisionOf([
     "html",
     input.network ? "network" : "local",
     previewFontVersion(),
     input.sourceSha256,
     ...(input.images === undefined ? [] : [`images\0${input.images}`]),
-    ...(htmlIconsEnabled() ? [`icons\0${HTML_ICONS_SOURCE}`] : []),
+    ...(icons === undefined ? [] : [`icons\0${icons}`]),
   ])
 }
 
@@ -315,7 +317,7 @@ const listedRevisions = new WeakMap<
     fonts: string
     htmlFiles: boolean
     images: boolean
-    icons: boolean
+    icons: string | undefined
     revisions: Promise<Map<string, string>>
   }
 >()
@@ -329,6 +331,7 @@ const rowRevisions = new WeakMap<
     fonts: string
     htmlFiles: boolean
     images: boolean
+    icons: string | undefined
     known: Map<string, string>
   }
 >()
@@ -356,7 +359,7 @@ export async function documentContentRevisions(
   const htmlFiles = await usesHtmlDocumentStorageV2()
   const fonts = previewFontVersion()
   const images = htmlSpaceImagesEnabled()
-  const icons = htmlIconsEnabled()
+  const icons = htmlIconsRevision()
   const listed = listedRevisions.get(catalog)
   if (
     listed?.fonts === fonts &&
@@ -382,9 +385,10 @@ export async function documentContentRevisions(
     if (
       rows?.fonts !== fonts ||
       rows.htmlFiles !== htmlFiles ||
-      rows.images !== images
+      rows.images !== images ||
+      rows.icons !== icons
     ) {
-      rows = { fonts, htmlFiles, images, known: new Map() }
+      rows = { fonts, htmlFiles, images, icons, known: new Map() }
       rowRevisions.set(catalog, rows)
     }
     const known = rows.known

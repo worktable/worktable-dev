@@ -10,7 +10,11 @@ import {
   buildHtmlDocThemeCss,
   HTML_DOC_COLOR_SCHEME_CSS,
 } from "./html-doc-theme.ts"
-import { expandHtmlIcons } from "./html-icons.ts"
+import {
+  expandHtmlIcons,
+  htmlCodeIconsEnabled,
+  htmlCodeIconsScript,
+} from "./html-icons.ts"
 
 export type WidgetTheme = "light" | "dark"
 
@@ -90,7 +94,6 @@ export const WIDGET_STYLE_TOKENS = [
 ] as const
 
 export type HtmlGuideProfile = "runtime"
-
 
 /** The theme Worktable serves every HTML Doc (html-doc-theme.ts). */
 export const HTML_GUIDE_THEME = `## Theme
@@ -201,13 +204,25 @@ export const HTML_GUIDE_ICONS = `## Icons
 
 Where a word only labels, such as a status, a type, a direction or a step, use an icon instead: any Lucide icon, by its name on lucide.dev. Write an empty svg with the name, such as <svg data-icon="circle-check"></svg>, and Worktable draws it whenever the page is served, 1em square in the text color, so font-size sizes it and color colors it. Beside text in a flex row, use align-items:center for one line; for text that can wrap, use align-items:start and give the icon margin-top:calc((1lh - 1em) / 2) so it stays on the first line. Don't align icons to the baseline. Give an icon that stands alone an aria-label. Use these rather than emoji or SVG icons you draw yourself. A write warns about a name Lucide lacks. Only svg elements in the markup are drawn; for icons page code adds, put each once in a <template> and clone it.`
 
+/** How icons page code adds work, taught on the preview surface (html-icons.ts). */
+const HTML_GUIDE_ICONS_FROM_CODE =
+  "Icons page code adds are drawn too, such as row.innerHTML = '<svg data-icon=\"circle-check\"></svg>', when the page writes the name out in its scripts, in a data-icon attribute or as a quoted name such as a status map's \"circle-x\"; a name built from pieces isn't found. Create an svg with innerHTML or createElementNS, not createElement."
+
 export function getHtmlAuthoringGuide(
   _profile: HtmlGuideProfile = "runtime"
 ): string {
   const intro = `${HTML_GUIDE_SHARED}\n\n${HTML_GUIDE_CHANGES}`
   // Space images follow the file features (htmlSpaceImagesEnabled).
   const images = filesEnabled() ? `\n\n${HTML_GUIDE_SPACE_IMAGES}` : ""
-  const icons = `\n\n${HTML_GUIDE_ICONS}`
+  // Icons page code adds follow the preview (htmlCodeIconsEnabled).
+  const icons = `\n\n${
+    htmlCodeIconsEnabled()
+      ? HTML_GUIDE_ICONS.replace(
+          "Only svg elements in the markup are drawn; for icons page code adds, put each once in a <template> and clone it.",
+          HTML_GUIDE_ICONS_FROM_CODE
+        )
+      : HTML_GUIDE_ICONS
+  }`
   // The served theme has its own section.
   const runtime = `${HTML_GUIDE_THEME}\n\n${htmlGuideRuntime("")}`
   return `${intro}\n\n${HTML_GUIDE_DESIGN}\n\n${runtime}\n\n${HTML_GUIDE_SHARE_LINKS}${images}${icons}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
@@ -737,7 +752,10 @@ export function injectWidgetRuntime(
   widgetId: string,
   options?: { mode: "share" }
 ): string {
-  const runtime = buildWidgetRuntimeScript(spaceId, widgetId, options)
+  // Icons page code adds come from the page as written, not the runtime.
+  const runtime =
+    buildWidgetRuntimeScript(spaceId, widgetId, options) +
+    htmlCodeIconsScript(html)
   const runtimeInsertionIndex = trustedRuntimeInsertionIndex(html)
   let output = `${html.slice(0, runtimeInsertionIndex)}${runtime}${html.slice(runtimeInsertionIndex)}`
   return injectWidgetHostStyles(

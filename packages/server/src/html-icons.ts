@@ -25,14 +25,29 @@
 
 import { Parser } from "htmlparser2"
 import library from "./html-icons.generated.json" with { type: "json" }
-import { htmlIconsEnabled } from "./mcp/surface.ts"
+import { htmlCodeIconsEnabled, htmlIconsEnabled } from "./mcp/surface.ts"
 import { applySpanEdits } from "./html-media-sources.ts"
 import type { WidgetValidationIssue } from "./widget-authoring.ts"
 
-export { htmlIconsEnabled }
+export { htmlCodeIconsEnabled, htmlIconsEnabled }
 
-/** Names the library a frame's icons come from, for its revision. */
+/** Names the library a frame's icons come from. */
 export const HTML_ICONS_SOURCE: string = library.source
+
+/** Changes whenever what drawing icons in page code does changes. */
+const CODE_ICONS_VERSION = "code-1"
+
+/**
+ * What a frame's icons depend on, for its revision and the caches built from
+ * it: the library, and whether and how icons page code adds are drawn.
+ * Undefined while icons are off.
+ */
+export function htmlIconsRevision(): string | undefined {
+  if (!htmlIconsEnabled()) return undefined
+  return htmlCodeIconsEnabled()
+    ? `${HTML_ICONS_SOURCE}\0${CODE_ICONS_VERSION}`
+    : HTML_ICONS_SOURCE
+}
 
 const ICONS: Record<string, string> = library.icons
 const TAGS: Record<string, string[]> = library.tags
@@ -61,7 +76,7 @@ const HINT = /data-icon/i
 // pass, not once from each of them.
 const TAG = `(?:[^>"'<]|"[^"]*"|'[^']*')*>`
 const SCAN = new RegExp(
-  `<!--[\\s\\S]*?(?:-->|$)|<(script|style|title|textarea)(?=[\\s/>])${TAG}[\\s\\S]*?(?:<\\/\\1\\s*>|$)|(<svg(?=[\\s/>])${TAG})|<[a-z][^\\s/>]*${TAG}`,
+  `<!--[\\s\\S]*?(?:-->|$)|<(script|style|title|textarea)(?=[\\s/>])${TAG}([\\s\\S]*?)(?:<\\/\\1\\s*>|$)|(<svg(?=[\\s/>])${TAG})|<[a-z][^\\s/>]*${TAG}`,
   "gi"
 )
 const NAMED = /\sdata-icon\s*=/i
@@ -127,7 +142,7 @@ function iconElements(html: string, max: number): IconElement[] {
   // A page repeats the same few tags; each is parsed once.
   const parsed = new Map<string, Record<string, string>>()
   for (const match of html.matchAll(SCAN)) {
-    const openTag = match[2]
+    const openTag = match[3]
     if (!openTag || !NAMED.test(openTag)) continue
     if (found.length >= max) break
     let attributes = parsed.get(openTag)
@@ -226,6 +241,7 @@ export function htmlIconWarnings(html: string): WidgetValidationIssue[] {
   for (const element of elements.slice(0, HTML_ICONS_MAX)) {
     if (!htmlIconName(element.name)) unknown.add(element.name)
   }
+  for (const name of unknownCodeIcons(html)) unknown.add(name)
   if (unknown.size > 0) {
     const listed = [...unknown].slice(0, UNKNOWN_LISTED)
     const more =
@@ -249,4 +265,174 @@ export function htmlIconWarnings(html: string): WidgetValidationIssue[] {
     })
   }
   return issues
+}
+
+// ── Icons page code adds ─────────────────────────────────────
+//
+// A page's code can add icons after it is served, as when a Records tool
+// renders rows: row.innerHTML = '<svg data-icon="circle-check"></svg>', or a
+// status map { done: "circle-check" }. Those svgs are empty when served, so
+// the page also gets the drawings its code may need, in a small script after
+// the runtime that fills such icons as code adds them. Only names written out
+// in the page's scripts count: in a data-icon attribute, or as a quoted
+// string that names a Lucide icon as data-icon would. Nothing is evaluated,
+// and a name
+// built from pieces isn't found. The drawings live in the script's closure,
+// so the page's own template and querySelector calls never see them.
+//
+// - Only pages whose scripts say data-icon, dataIcon or dataset.icon get it.
+// - At most 64 names, those in data-icon attributes first.
+// - Only the live frames run it: the member frame, current previews and live
+//   share links. Old versions and the scriptless share view run no script.
+// - The runtime draws an empty svg[data-icon] that code adds, draws again
+//   when code changes data-icon (a write of the same name changes nothing)
+//   or a framework empties a drawn icon, and
+//   clears an icon whose name it doesn't have, reporting that once. Shapes
+//   go into the page's own svg element, which keeps its attributes and
+//   listeners. Icons inside shadow roots aren't drawn.
+//
+// Held behind the MCP preview surface (htmlCodeIconsEnabled).
+
+/** Names page code may draw past this many stay empty. */
+export const HTML_CODE_ICONS_MAX = 64
+
+const CODE_HINT = /data-icon|dataIcon|dataset\.icon/
+// A whole attribute and a whole name: not metadata-icon, and not a name
+// built from pieces, such as "arrow-${dir}".
+const CODE_NAMED =
+  /(?<![\w-])data-icon\s*=\s*\\?["'`]?([A-Za-z0-9_-]+)(?=\\?["'`]|[\s>\\]|$)/g
+const LITERAL = /(["'`])([A-Za-z0-9][A-Za-z0-9_-]*)\1/g
+
+/** The text of the page's own scripts, as written. */
+function scriptTexts(html: string): string[] {
+  const texts: string[] = []
+  for (const match of html.matchAll(SCAN)) {
+    if (match[1]?.toLowerCase() === "script" && match[2]) texts.push(match[2])
+  }
+  return texts
+}
+
+/**
+ * The icons a page's scripts name, in data-icon attributes or as Lucide
+ * names in quotes, those in attributes first; and the names in attributes
+ * the library lacks. Null when no script says data-icon.
+ */
+function codeIcons(
+  html: string
+): { names: string[]; unknown: string[] } | null {
+  if (!CODE_HINT.test(html)) return null
+  // Scripts that place icons first, so a bundled library's strings can't
+  // take the places of the names they use.
+  const all = scriptTexts(html)
+  const texts = [
+    ...all.filter((text) => CODE_HINT.test(text)),
+    ...all.filter((text) => !CODE_HINT.test(text)),
+  ]
+  if (!CODE_HINT.test(texts[0] ?? "")) return null
+  const names = new Set<string>()
+  const unknown = new Set<string>()
+  for (const text of texts) {
+    for (const match of text.matchAll(CODE_NAMED)) {
+      const name = htmlIconName(match[1]!)
+      if (name) names.add(name)
+      else unknown.add(match[1]!)
+    }
+  }
+  for (const text of texts) {
+    for (const match of text.matchAll(LITERAL)) {
+      // Spelled as a data-icon may spell it: case, dashes and underscores
+      // aside, a current or former Lucide name.
+      const name = htmlIconName(match[2]!)
+      if (name) names.add(name)
+    }
+  }
+  return { names: [...names], unknown: [...unknown] }
+}
+
+// Runs after the runtime and before the page's scripts. __DATA__ is the
+// drawings by name, and each spelling's key to its name.
+const CODE_ICONS_RUNTIME = `(function(){
+const data=__DATA__;
+const SVG='http://www.w3.org/2000/svg';
+const defaults=__DEFAULTS__;
+const diagnostics=window.worktable&&window.worktable.diagnostics;
+const report=diagnostics&&typeof diagnostics.report==='function'?diagnostics.report.bind(diagnostics):function(){};
+const owned=new WeakSet();
+const reported=new Set();
+function keyOf(name){return String(name).toLowerCase().replace(/[^a-z0-9]/g,'')}
+function tell(code,name,message){const id=code+'\\0'+name;if(reported.has(id)||reported.size>=20)return;reported.add(id);try{report({level:'warning',code:code,message:message})}catch(e){}}
+function clear(svg){if(owned.has(svg)){svg.replaceChildren();owned.delete(svg)}}
+function draw(svg,changed,quiet){
+const written=svg.getAttribute('data-icon');
+if(written===null){clear(svg);return}
+if(svg.namespaceURI!==SVG){tell('html_icon_not_svg',written,'Icon '+JSON.stringify(written)+' stays empty: createElement("svg") makes an HTML element. Use createElementNS("'+SVG+'", "svg") or innerHTML.');return}
+const name=Object.prototype.hasOwnProperty.call(data.keys,keyOf(written))?data.keys[keyOf(written)]:null;
+if(!name){if(changed)svg.replaceChildren();clear(svg);if(!quiet)tell('html_icon_not_on_page',written,'Icon '+JSON.stringify(written)+' stays empty: page code adds it, but the page never writes its name out.');return}
+const holder=document.createElementNS(SVG,'svg');
+holder.innerHTML=data.shapes[name];
+svg.replaceChildren.apply(svg,Array.from(holder.childNodes));
+for(const pair of defaults)if(!svg.hasAttribute(pair[0]))svg.setAttribute(pair[0],pair[1]);
+const labelled=svg.hasAttribute('aria-label')||svg.hasAttribute('aria-labelledby');
+if(!labelled&&!svg.hasAttribute('aria-hidden'))svg.setAttribute('aria-hidden','true');
+if(labelled&&!svg.hasAttribute('role'))svg.setAttribute('role','img');
+owned.add(svg);
+}
+function isIcon(node){return node.nodeType===1&&node.localName==='svg'&&node.hasAttribute('data-icon')}
+function empty(node){return node.firstElementChild===null}
+function fill(svg,seen,quiet){if(!seen.has(svg)&&empty(svg)){seen.add(svg);draw(svg,false,quiet)}}
+const observer=new MutationObserver(function(records){
+const seen=new Set();
+for(const record of records){
+const target=record.target;
+if(record.type==='attributes'){if(record.oldValue!==target.getAttribute('data-icon')&&(isIcon(target)||owned.has(target))&&!seen.has(target)){seen.add(target);draw(target,true)}continue}
+if(isIcon(target))fill(target,seen);
+for(const node of record.addedNodes){
+if(node.nodeType!==1)continue;
+if(isIcon(node)){fill(node,seen);continue}
+if(empty(node))continue;
+for(const svg of node.querySelectorAll('svg[data-icon]'))fill(svg,seen);
+}
+}
+});
+function start(){
+const seen=new Set();
+// Markup icons still empty here were warned about when written.
+for(const svg of document.querySelectorAll('svg[data-icon]'))fill(svg,seen,true);
+observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeOldValue:true,attributeFilter:['data-icon']});
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
+})();`
+
+/**
+ * The script that draws the icons a page's code adds, to go right after the
+ * runtime in a live frame, or "" when the page needs none. `html` is the
+ * page as written, before Worktable adds anything.
+ */
+export function htmlCodeIconsScript(html: string): string {
+  if (!htmlIconsEnabled() || !htmlCodeIconsEnabled()) return ""
+  const found = codeIcons(html)
+  if (!found) return ""
+  const shapes: Record<string, string> = {}
+  const keys: Record<string, string> = {}
+  for (const name of found.names.slice(0, HTML_CODE_ICONS_MAX)) {
+    shapes[name] = ICONS[name]!
+    keys[iconKey(name)] = name
+  }
+  for (const [key, name] of Object.entries(library.aliases)) {
+    if (Object.hasOwn(shapes, name) && !Object.hasOwn(keys, key))
+      keys[key] = name
+  }
+  // Library data only; "<" is escaped so nothing in it can end the script.
+  const data = JSON.stringify({ shapes, keys }).replace(/</g, "\\u003c")
+  const script = CODE_ICONS_RUNTIME.replace("__DATA__", () => data).replace(
+    "__DEFAULTS__",
+    () => JSON.stringify(DEFAULTS)
+  )
+  return `<script data-worktable-runtime="icons">${script}</script>`
+}
+
+/** The data-icon names a page's scripts write that the library lacks. */
+function unknownCodeIcons(html: string): string[] {
+  if (!htmlIconsEnabled() || !htmlCodeIconsEnabled()) return []
+  return codeIcons(html)?.unknown ?? []
 }

@@ -3,8 +3,10 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
+import { JSDOM } from "jsdom"
 import { setAppDirOverride } from "./app-storage.ts"
 import { ownerIdentity } from "./auth.ts"
+import { htmlContentRevision } from "./document-content-revision.ts"
 import { dispatchOperation } from "./mcp/dispatcher.ts"
 import { renderPublicHtmlProjection } from "./public-share-renderer.ts"
 import { spacesRouter } from "./routes/spaces.ts"
@@ -128,5 +130,113 @@ describe("Icons in HTML Docs", () => {
     expect(await frame("status")).not.toContain(
       '<svg data-icon="circle-check" class="ok" width="20"></svg>'
     )
+  })
+
+  it("draws the icons page code adds, from the names its scripts write out", async () => {
+    // A Records-style tool: rows rendered by code, icons from a status map.
+    const tool = page(
+      `<ul id="rows"></ul><script>
+const STATUS = { done: "CircleCheck", blocked: "circle-x" }
+const arrow = (dir) => \`<svg data-icon="arrow-\${dir}"></svg>\`
+window.render = (rows) => {
+  document.getElementById("rows").innerHTML = rows
+    .map((row) => '<li><svg data-icon="' + STATUS[row] + '"></svg>' + row + "</li>")
+    .join("")
+}
+render(["done"])
+const typo = '<svg data-icon="circle-chek"></svg>'
+const other = '<div metadata-icon="not-an-icon"></div>'
+</script>`
+    )
+    const created = (await dispatchOperation("html.create", {
+      spaceId: SPACE,
+      id: "tool",
+      name: "Tool",
+      html: tool,
+    })) as { warnings: Array<{ code: string; message: string }> }
+    // A data-icon name in code the library lacks is warned about; the
+    // status map's other strings are not.
+    expect(
+      created.warnings
+        .filter((warning) => warning.code === "html_icon_unknown")
+        .map((warning) => warning.message)
+    ).toEqual([expect.stringMatching(/stays empty: "circle-chek" \(try /)])
+
+    // The live frame carries the drawings its code may need, run from the
+    // script Worktable serves, ahead of the page's own.
+    const served = await frame("tool")
+    const script = served.match(
+      /<script data-worktable-runtime="icons">([\s\S]*?)<\/script>/
+    )?.[1]
+    expect(script).toBeDefined()
+    const dom = new JSDOM(
+      tool.replace(
+        "<head>",
+        `<head><script>window.reports = []; window.worktable = { diagnostics: { report: (d) => window.reports.push(d.code) } }</script><script>${script}</script>`
+      ),
+      { runScripts: "dangerously" } as ConstructorParameters<typeof JSDOM>[1]
+    )
+    const { window } = dom
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+    const icons = () =>
+      [...window.document.querySelectorAll("#rows svg")].map(
+        (svg) => `${svg.getAttribute("data-icon")}:${svg.children.length}`
+      )
+    await settle()
+    expect(icons()).toEqual(["CircleCheck:2"])
+    ;(window as unknown as { render(rows: string[]): void }).render([
+      "blocked",
+      "done",
+    ])
+    await settle()
+    expect(icons()).toEqual(["circle-x:3", "CircleCheck:2"])
+    // Code changing an icon's name redraws it; a name the page never writes
+    // out clears it and is reported once.
+    const first = window.document.querySelector("#rows svg")!
+    first.setAttribute("data-icon", "circle-check")
+    await settle()
+    expect(icons()).toEqual(["circle-check:2", "CircleCheck:2"])
+    // A framework writing the same name again leaves the page's own drawing.
+    const drawing = window.document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "svg"
+    )
+    drawing.setAttribute("data-icon", "mine")
+    drawing.innerHTML = '<circle r="3"/>'
+    window.document.body.append(drawing)
+    await settle()
+    drawing.setAttribute("data-icon", "mine")
+    await settle()
+    expect(drawing.children.length).toBe(1)
+    for (const name of ["rocket", "circle-x", "rocket"]) {
+      first.setAttribute("data-icon", name)
+      await settle()
+    }
+    expect(icons()).toEqual(["rocket:0", "CircleCheck:2"])
+    // A framework that empties a drawn icon gets it drawn again, once.
+    window.document.querySelectorAll("#rows svg")[1]!.replaceChildren()
+    await settle()
+    expect(icons()).toEqual(["rocket:0", "CircleCheck:2"])
+    expect((window as unknown as { reports: string[] }).reports).toEqual([
+      "html_icon_not_on_page",
+    ])
+
+    // A page whose code never says data-icon gets no script; nor does any
+    // page with the preview off.
+    await dispatchOperation("html.create", {
+      spaceId: SPACE,
+      id: "plain",
+      name: "Plain",
+      html: page('<script>const mark = "circle-check"</script>'),
+    })
+    expect(await frame("plain")).not.toContain('data-worktable-runtime="icons"')
+    // Turning it off gives frames a new revision, so a browser never keeps
+    // one built the other way.
+    const revision = () =>
+      htmlContentRevision({ sourceSha256: "0".repeat(64), network: false })
+    const on = revision()
+    preview(false)
+    expect(revision()).not.toBe(on)
+    expect(await frame("tool")).not.toContain('data-worktable-runtime="icons"')
   })
 })

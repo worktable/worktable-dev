@@ -27,16 +27,30 @@ const appFontLicenses = [
   "apps/desktop/ui/fonts/Fraunces-OFL.txt",
   "apps/desktop/ui/fonts/JetBrainsMono-OFL.txt",
 ]
+// The server draws HTML Docs' icons from its copy of Lucide's.
+const iconLicenses = ["packages/server/src/html-icons-LICENSE.txt"]
 const skillLicense = "plugins/worktable/LICENSE"
 export const releaseLicenses = {
-  cli: [...appLicenses, skillLicense, ...drawingLicenses, ...appFontLicenses],
-  server: [...appLicenses, ...drawingLicenses, ...appFontLicenses],
+  cli: [
+    ...appLicenses,
+    skillLicense,
+    ...drawingLicenses,
+    ...appFontLicenses,
+    ...iconLicenses,
+  ],
+  server: [
+    ...appLicenses,
+    ...drawingLicenses,
+    ...appFontLicenses,
+    ...iconLicenses,
+  ],
   skills: [skillLicense],
   desktop: [
     ...appLicenses,
     skillLicense,
     ...drawingLicenses,
     ...appFontLicenses,
+    ...iconLicenses,
   ],
 } as const
 export type ReleaseLicenseKind = keyof typeof releaseLicenses

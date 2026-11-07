@@ -157,15 +157,14 @@ spacesRouter.get("/:spaceId/index", requireScope("docs:read"), async (c) => {
 });
 
 // GET /api/spaces/:spaceId — space + resolved pins
-spacesRouter.get("/:spaceId", requireScope("docs:read"), async (c) => {
-  const spaceId = c.req.param("spaceId") ?? "";
+/**
+ * A Space and its pins, as GET /api/spaces/:spaceId sends them and the
+ * sidebar bundle carries them. Null when the Space can't be read.
+ */
+export async function readSpacePage(spaceId: string, scopes: string[]) {
   const { data: space, error } = await readSpace(spaceId);
-
-  if (error || !space) {
-    return c.json({ error: error ?? "Not found", code: "NOT_FOUND" }, 404);
-  }
-
-  const pins = hasScope(c.get("identity").scopes, "documents:read")
+  if (error || !space) return { error: error ?? "Not found" } as const;
+  const pins = hasScope(scopes, "documents:read")
     ? await withContentRevisions(
         await resolveStartHere(spaceId, space),
         (pin) => (pin.status === "missing" ? null : { spaceId, path: pin.path }),
@@ -175,7 +174,16 @@ spacesRouter.get("/:spaceId", requireScope("docs:read"), async (c) => {
         })
       )
     : [];
-  return c.json({ space: spaceView(space), pins });
+  return { page: { space: spaceView(space), pins } } as const;
+}
+
+spacesRouter.get("/:spaceId", requireScope("docs:read"), async (c) => {
+  const spaceId = c.req.param("spaceId") ?? "";
+  const result = await readSpacePage(spaceId, c.get("identity").scopes);
+  if ("error" in result) {
+    return c.json({ error: result.error, code: "NOT_FOUND" }, 404);
+  }
+  return c.json(result.page);
 });
 
 // PUT /api/spaces/:spaceId/doc-order — persist common document-tree ordering.

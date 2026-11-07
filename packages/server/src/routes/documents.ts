@@ -1379,18 +1379,20 @@ documentsRouter.post(
   }
 )
 
-documentsRouter.get("/", requireScope("documents:read"), async (c) => {
-  const spaceId = c.req.param("spaceId") ?? ""
+/**
+ * A Space's documents with their content revisions, as GET
+ * /api/spaces/:spaceId/documents sends them and the sidebar bundle carries
+ * them. Null when the Space can't be read.
+ */
+export async function listSpaceDocuments(
+  spaceId: string,
+  includeArchived: boolean
+) {
   const { data: space, error } = await readSpace(spaceId)
-  if (error || !space) {
-    return c.json({ error: error ?? "Not found", code: "NOT_FOUND" }, 404)
-  }
-  const documents = await listDocuments({
-    spaceId,
-    includeArchived: c.req.query("includeArchived") === "true",
-  })
+  if (error || !space) return { error: error ?? "Not found" } as const
+  const documents = await listDocuments({ spaceId, includeArchived })
   const revisions = await documentContentRevisions(spaceId)
-  return c.json({
+  return {
     documents: documents.map(
       (item): WithContentRevision<DocumentListItem> => {
         const revision =
@@ -1398,7 +1400,19 @@ documentsRouter.get("/", requireScope("documents:read"), async (c) => {
         return revision ? { ...item, revision } : item
       }
     ),
-  })
+  } as const
+}
+
+documentsRouter.get("/", requireScope("documents:read"), async (c) => {
+  const spaceId = c.req.param("spaceId") ?? ""
+  const result = await listSpaceDocuments(
+    spaceId,
+    c.req.query("includeArchived") === "true"
+  )
+  if ("error" in result) {
+    return c.json({ error: result.error, code: "NOT_FOUND" }, 404)
+  }
+  return c.json(result)
 })
 
 const MoveFolderSchema = z.strictObject({

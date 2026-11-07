@@ -111,6 +111,7 @@ import { TraceProfiler } from "@/components/trace-profiler"
 import { onBrowserLogout } from "@/lib/auth-events"
 import { rendererPreloads } from "@/lib/document-renderers"
 import { preloadWhenIdle } from "@/lib/idle-preload"
+import { loadSidebarContents } from "@/lib/sidebar-contents"
 import { useUpdateWaiting } from "@/hooks/use-update-availability"
 // Only Worktable Desktop offers to move agents, so browsers never load it.
 // Desktop injects its bridge before any page script runs.
@@ -775,6 +776,8 @@ function PreloadScreensWhenIdle() {
       router.loadRouteChunk(router.routesById[id])
     return preloadWhenIdle(
       [
+        // Every Space's tree, so opening one in the sidebar shows it at once.
+        () => loadSidebarContents(queryClient),
         route("/spaces/$spaceId"),
         route("/spaces/$spaceId/documents/$"),
         ...rendererPreloads,

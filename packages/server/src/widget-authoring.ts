@@ -1,4 +1,4 @@
-import { previewFontCss } from "./preview-fonts.ts"
+import { documentFontPreloads, previewFontCss } from "./preview-fonts.ts"
 import {
   buildWidgetShareRuntimeScript,
   SHARE_FONT_CSS,
@@ -752,7 +752,11 @@ export function injectWidgetHostStyles(
     shell = inspectWidgetHtmlShell(output)
   }
   const hostStyles = buildWidgetHostStyles(options?.fontStyles)
-  const theme = `<style data-worktable-runtime="theme">${buildHtmlDocThemeCss("attribute")}</style>`
+  // The fonts the page uses start loading with it; share links bring their own.
+  const preloads = options?.fontStyles
+    ? ""
+    : documentFontPreloads("/worktable-preview", output)
+  const theme = `${preloads}<style data-worktable-runtime="theme">${buildHtmlDocThemeCss("attribute")}</style>`
   if (shell.headOpenEnd !== null) {
     // Host styles remain last so their safety rails keep the existing cascade.
     if (shell.headCloseStart !== null) {

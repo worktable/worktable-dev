@@ -171,7 +171,7 @@ const typo = '<svg data-icon="circle-chek"></svg>'
         "<head>",
         `<head><script>window.reports = []; window.worktable = { diagnostics: { report: (d) => window.reports.push(d.code) } }</script><script>${script}</script>`
       ),
-      { runScripts: "dangerously" }
+      { runScripts: "dangerously" } as ConstructorParameters<typeof JSDOM>[1]
     )
     const { window } = dom
     const settle = () => new Promise((resolve) => setTimeout(resolve, 0))

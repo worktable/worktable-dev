@@ -275,7 +275,8 @@ export function htmlIconWarnings(html: string): WidgetValidationIssue[] {
 // the page also gets the drawings its code may need, in a small script after
 // the runtime that fills such icons as code adds them. Only names written out
 // in the page's scripts count: in a data-icon attribute, or as a quoted
-// string that is exactly a Lucide name. Nothing is evaluated, and a name
+// string that names a Lucide icon as data-icon would. Nothing is evaluated,
+// and a name
 // built from pieces isn't found. The drawings live in the script's closure,
 // so the page's own template and querySelector calls never see them.
 //
@@ -295,7 +296,9 @@ export function htmlIconWarnings(html: string): WidgetValidationIssue[] {
 export const HTML_CODE_ICONS_MAX = 64
 
 const CODE_HINT = /data-icon|dataIcon|dataset\.icon/
-const CODE_NAMED = /data-icon\s*=\s*\\?["'`]?([A-Za-z0-9_-]+)/g
+// A whole name: one built from pieces, such as "arrow-${dir}", isn't one.
+const CODE_NAMED =
+  /data-icon\s*=\s*\\?["'`]?([A-Za-z0-9_-]+)(?=\\?["'`]|[\s>\\]|$)/g
 const LITERAL = /(["'`])([A-Za-z0-9][A-Za-z0-9_-]*)\1/g
 
 /** The text of the page's own scripts, as written. */
@@ -307,15 +310,6 @@ function scriptTexts(html: string): string[] {
   return texts
 }
 
-/** A quoted string that is exactly a Lucide name, current or former. */
-function literalIconName(text: string): string | null {
-  if (Object.hasOwn(ICONS, text)) return text
-  const key = iconKey(text)
-  return Object.hasOwn(library.aliases, key)
-    ? (library.aliases as Record<string, string>)[key]!
-    : null
-}
-
 /**
  * The icons a page's scripts name, in data-icon attributes or as Lucide
  * names in quotes, those in attributes first; and the names in attributes
@@ -325,8 +319,14 @@ function codeIcons(
   html: string
 ): { names: string[]; unknown: string[] } | null {
   if (!CODE_HINT.test(html)) return null
-  const texts = scriptTexts(html)
-  if (!texts.some((text) => CODE_HINT.test(text))) return null
+  // Scripts that place icons first, so a bundled library's strings can't
+  // take the places of the names they use.
+  const all = scriptTexts(html)
+  const texts = [
+    ...all.filter((text) => CODE_HINT.test(text)),
+    ...all.filter((text) => !CODE_HINT.test(text)),
+  ]
+  if (!CODE_HINT.test(texts[0] ?? "")) return null
   const names = new Set<string>()
   const unknown = new Set<string>()
   for (const text of texts) {
@@ -338,7 +338,9 @@ function codeIcons(
   }
   for (const text of texts) {
     for (const match of text.matchAll(LITERAL)) {
-      const name = literalIconName(match[2]!)
+      // Spelled as a data-icon may spell it: case, dashes and underscores
+      // aside, a current or former Lucide name.
+      const name = htmlIconName(match[2]!)
       if (name) names.add(name)
     }
   }
@@ -358,12 +360,12 @@ const reported=new Set();
 function keyOf(name){return String(name).toLowerCase().replace(/[^a-z0-9]/g,'')}
 function tell(code,name,message){const id=code+'\\0'+name;if(reported.has(id)||reported.size>=20)return;reported.add(id);try{report({level:'warning',code:code,message:message})}catch(e){}}
 function clear(svg){if(owned.has(svg)){svg.replaceChildren();owned.delete(svg)}}
-function draw(svg,changed){
+function draw(svg,changed,quiet){
 const written=svg.getAttribute('data-icon');
 if(written===null){clear(svg);return}
 if(svg.namespaceURI!==SVG){tell('html_icon_not_svg',written,'Icon '+JSON.stringify(written)+' stays empty: createElement("svg") makes an HTML element. Use createElementNS("'+SVG+'", "svg") or innerHTML.');return}
 const name=Object.prototype.hasOwnProperty.call(data.keys,keyOf(written))?data.keys[keyOf(written)]:null;
-if(!name){if(changed)svg.replaceChildren();clear(svg);tell('html_icon_not_on_page',written,'Icon '+JSON.stringify(written)+' stays empty: page code adds it, but the page never writes its name out.');return}
+if(!name){if(changed)svg.replaceChildren();clear(svg);if(!quiet)tell('html_icon_not_on_page',written,'Icon '+JSON.stringify(written)+' stays empty: page code adds it, but the page never writes its name out.');return}
 const holder=document.createElementNS(SVG,'svg');
 holder.innerHTML=data.shapes[name];
 svg.replaceChildren.apply(svg,Array.from(holder.childNodes));
@@ -375,7 +377,7 @@ owned.add(svg);
 }
 function isIcon(node){return node.nodeType===1&&node.localName==='svg'&&node.hasAttribute('data-icon')}
 function empty(node){return node.firstElementChild===null}
-function fill(svg,seen){if(!seen.has(svg)&&empty(svg)){seen.add(svg);draw(svg,false)}}
+function fill(svg,seen,quiet){if(!seen.has(svg)&&empty(svg)){seen.add(svg);draw(svg,false,quiet)}}
 const observer=new MutationObserver(function(records){
 const seen=new Set();
 for(const record of records){
@@ -392,7 +394,8 @@ for(const svg of node.querySelectorAll('svg[data-icon]'))fill(svg,seen);
 });
 function start(){
 const seen=new Set();
-for(const svg of document.querySelectorAll('svg[data-icon]'))fill(svg,seen);
+// Markup icons still empty here were warned about when written.
+for(const svg of document.querySelectorAll('svg[data-icon]'))fill(svg,seen,true);
 observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['data-icon']});
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();

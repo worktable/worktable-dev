@@ -6,6 +6,7 @@ import { Hono } from "hono"
 import { JSDOM } from "jsdom"
 import { setAppDirOverride } from "./app-storage.ts"
 import { ownerIdentity } from "./auth.ts"
+import { htmlContentRevision } from "./document-content-revision.ts"
 import { dispatchOperation } from "./mcp/dispatcher.ts"
 import { renderPublicHtmlProjection } from "./public-share-renderer.ts"
 import { spacesRouter } from "./routes/spaces.ts"
@@ -135,7 +136,8 @@ describe("Icons in HTML Docs", () => {
     // A Records-style tool: rows rendered by code, icons from a status map.
     const tool = page(
       `<ul id="rows"></ul><script>
-const STATUS = { done: "circle-check", blocked: "circle-x" }
+const STATUS = { done: "CircleCheck", blocked: "circle-x" }
+const arrow = (dir) => \`<svg data-icon="arrow-\${dir}"></svg>\`
 window.render = (rows) => {
   document.getElementById("rows").innerHTML = rows
     .map((row) => '<li><svg data-icon="' + STATUS[row] + '"></svg>' + row + "</li>")
@@ -180,28 +182,28 @@ const typo = '<svg data-icon="circle-chek"></svg>'
         (svg) => `${svg.getAttribute("data-icon")}:${svg.children.length}`
       )
     await settle()
-    expect(icons()).toEqual(["circle-check:2"])
+    expect(icons()).toEqual(["CircleCheck:2"])
     ;(window as unknown as { render(rows: string[]): void }).render([
       "blocked",
       "done",
     ])
     await settle()
-    expect(icons()).toEqual(["circle-x:3", "circle-check:2"])
+    expect(icons()).toEqual(["circle-x:3", "CircleCheck:2"])
     // Code changing an icon's name redraws it; a name the page never writes
     // out clears it and is reported once.
     const first = window.document.querySelector("#rows svg")!
     first.setAttribute("data-icon", "circle-check")
     await settle()
-    expect(icons()).toEqual(["circle-check:2", "circle-check:2"])
+    expect(icons()).toEqual(["circle-check:2", "CircleCheck:2"])
     for (const name of ["rocket", "circle-x", "rocket"]) {
       first.setAttribute("data-icon", name)
       await settle()
     }
-    expect(icons()).toEqual(["rocket:0", "circle-check:2"])
+    expect(icons()).toEqual(["rocket:0", "CircleCheck:2"])
     // A framework that empties a drawn icon gets it drawn again, once.
     window.document.querySelectorAll("#rows svg")[1]!.replaceChildren()
     await settle()
-    expect(icons()).toEqual(["rocket:0", "circle-check:2"])
+    expect(icons()).toEqual(["rocket:0", "CircleCheck:2"])
     expect((window as unknown as { reports: string[] }).reports).toEqual([
       "html_icon_not_on_page",
     ])
@@ -215,7 +217,13 @@ const typo = '<svg data-icon="circle-chek"></svg>'
       html: page('<script>const mark = "circle-check"</script>'),
     })
     expect(await frame("plain")).not.toContain('data-worktable-runtime="icons"')
+    // Turning it off gives frames a new revision, so a browser never keeps
+    // one built the other way.
+    const revision = () =>
+      htmlContentRevision({ sourceSha256: "0".repeat(64), network: false })
+    const on = revision()
     preview(false)
+    expect(revision()).not.toBe(on)
     expect(await frame("tool")).not.toContain('data-worktable-runtime="icons"')
   })
 })

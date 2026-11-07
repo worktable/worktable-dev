@@ -331,6 +331,7 @@ const rowRevisions = new WeakMap<
     fonts: string
     htmlFiles: boolean
     images: boolean
+    icons: string | undefined
     known: Map<string, string>
   }
 >()
@@ -384,9 +385,10 @@ export async function documentContentRevisions(
     if (
       rows?.fonts !== fonts ||
       rows.htmlFiles !== htmlFiles ||
-      rows.images !== images
+      rows.images !== images ||
+      rows.icons !== icons
     ) {
-      rows = { fonts, htmlFiles, images, known: new Map() }
+      rows = { fonts, htmlFiles, images, icons, known: new Map() }
       rowRevisions.set(catalog, rows)
     }
     const known = rows.known

@@ -195,6 +195,18 @@ const typo = '<svg data-icon="circle-chek"></svg>'
     first.setAttribute("data-icon", "circle-check")
     await settle()
     expect(icons()).toEqual(["circle-check:2", "CircleCheck:2"])
+    // A framework writing the same name again leaves the page's own drawing.
+    const drawing = window.document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "svg"
+    )
+    drawing.setAttribute("data-icon", "mine")
+    drawing.innerHTML = '<circle r="3"/>'
+    window.document.body.append(drawing)
+    await settle()
+    drawing.setAttribute("data-icon", "mine")
+    await settle()
+    expect(drawing.children.length).toBe(1)
     for (const name of ["rocket", "circle-x", "rocket"]) {
       first.setAttribute("data-icon", name)
       await settle()

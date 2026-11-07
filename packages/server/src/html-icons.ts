@@ -285,7 +285,8 @@ export function htmlIconWarnings(html: string): WidgetValidationIssue[] {
 // - Only the live frames run it: the member frame, current previews and live
 //   share links. Old versions and the scriptless share view run no script.
 // - The runtime draws an empty svg[data-icon] that code adds, draws again
-//   when code changes data-icon or a framework empties a drawn icon, and
+//   when code changes data-icon (a write of the same name changes nothing)
+//   or a framework empties a drawn icon, and
 //   clears an icon whose name it doesn't have, reporting that once. Shapes
 //   go into the page's own svg element, which keeps its attributes and
 //   listeners. Icons inside shadow roots aren't drawn.
@@ -382,7 +383,7 @@ const observer=new MutationObserver(function(records){
 const seen=new Set();
 for(const record of records){
 const target=record.target;
-if(record.type==='attributes'){if((isIcon(target)||owned.has(target))&&!seen.has(target)){seen.add(target);draw(target,true)}continue}
+if(record.type==='attributes'){if(record.oldValue!==target.getAttribute('data-icon')&&(isIcon(target)||owned.has(target))&&!seen.has(target)){seen.add(target);draw(target,true)}continue}
 if(isIcon(target))fill(target,seen);
 for(const node of record.addedNodes){
 if(node.nodeType!==1)continue;
@@ -396,7 +397,7 @@ function start(){
 const seen=new Set();
 // Markup icons still empty here were warned about when written.
 for(const svg of document.querySelectorAll('svg[data-icon]'))fill(svg,seen,true);
-observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['data-icon']});
+observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeOldValue:true,attributeFilter:['data-icon']});
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();`

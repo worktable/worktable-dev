@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.8] - 2026-11-07
+
+### Changed
+
+- The HTML skill changes an existing HTML Doc with exact edits and the revision it read, and replaces the whole page only when most of it changes.
+- The HTML skill exercises controls that change or delete Records only on Records it created, and asks before touching the user's own.
+- The HTML skill points to the guide's advice on pages a reader can take in at a glance.
+- The plugin ships a security policy, and is listed in Cursor's marketplace.
+
 ## [0.1.7] - 2026-10-28
 
 ### Changed

@@ -97,9 +97,9 @@ describe("GET /api/sidebar", () => {
           "documents"
         ]
       )
-      expect(entry["collections"]).toEqual(
-        (await get(`/api/spaces/${id}/records`))["collections"]
-      )
+      // No record index runs here: collections would be counted by reading
+      // every record file, so the opened Space reads its own instead.
+      expect(entry["collections"]).toBeUndefined()
       expect((entry["documents"] as unknown[]).length).toBeGreaterThan(0)
     }
   })

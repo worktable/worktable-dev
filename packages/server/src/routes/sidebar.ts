@@ -13,6 +13,7 @@
 import { Hono } from "hono"
 import { requireScope } from "../auth.ts"
 import { mapWithConcurrency } from "../bounded-concurrency.ts"
+import { recordIndex, recordIndexEnabled } from "../record-index.ts"
 import { listSpaces } from "../store.ts"
 import { teamsEnabled } from "../team-database.ts"
 import { canAccessSpace } from "../team-policy.ts"
@@ -35,9 +36,17 @@ sidebarRouter.get("/", requireScope("docs:read"), async (c) => {
   const identity = c.get("identity")
   const scopes = identity.scopes
   const spaces = await listSpaces()
+  // Collections are counted from the record index; without it they would be
+  // counted by reading every record file, so an opened Space reads its own.
+  const collectionsReady =
+    hasScope(scopes, "records:read") &&
+    recordIndexEnabled() &&
+    recordIndex.isReady()
   const entries = await mapWithConcurrency(
     spaces,
     SPACE_CONCURRENCY,
+    // A Space that fails to read (its access revoked meanwhile, a file that
+    // can't be read) is left to its own routes, which say what went wrong.
     async ({ id }) => {
       const [page, docs, documents, collections] = await Promise.all([
         readSpacePage(id, scopes),
@@ -45,8 +54,9 @@ sidebarRouter.get("/", requireScope("docs:read"), async (c) => {
         hasScope(scopes, "documents:read")
           ? listSpaceDocuments(id, true)
           : null,
-        hasScope(scopes, "records:read") ? listSpaceCollections(id) : null,
-      ])
+        collectionsReady ? listSpaceCollections(id) : null,
+      ]).catch(() => [null, null, null, null] as const)
+      if (!page || !docs) return null
       return {
         id,
         ...("page" in page ? { page: page.page } : {}),
@@ -62,9 +72,10 @@ sidebarRouter.get("/", requireScope("docs:read"), async (c) => {
   )
   // Access can change while the Spaces are read; send only what the caller
   // can still read, as each Space's own routes check again on the way out.
+  const read = entries.filter((entry) => entry !== null)
   return c.json({
     spaces: teamsEnabled()
-      ? entries.filter((entry) => canAccessSpace(entry.id, "read", identity))
-      : entries,
+      ? read.filter((entry) => canAccessSpace(entry.id, "read", identity))
+      : read,
   })
 })

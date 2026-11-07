@@ -124,6 +124,18 @@ main{max-width:960px;margin:0 auto;padding:32px 24px}
 <body><main><h1>Pipeline</h1><section class="card">…</section></main></body>
 </html>`
 
+/** How an HTML Doc should read, taught on the preview surface. */
+export const HTML_GUIDE_DESIGN = `## Make the page easy to take in
+
+A reader glances at a page for a few seconds before deciding to read it. Build it around what they need, not the order of the source.
+- Open with the point: the title, then the decision, blocker or outcome that changes what the reader does, with its owner and date. Use the source's own title and words: no tagline, eyebrow or subtitle.
+- Show, don't narrate: a sequence as a timeline with its problem point marked, amounts as bars against their target or budget, options as a grid on the same rows with check and cross icons, a change as the old value struck through and the new one, a problem and its fix on one row. Write sentences only for reasoning, never to narrate a visual beside them.
+- Use icons (see Icons) for status, type and direction, with a short fragment beside each rather than a sentence.
+- Say each fact once. Cut labels that restate a heading or what sits below it, lead paragraphs that summarize the page, chart captions, repeated next steps, empty slots like "Not noted", source footers and timestamps.
+- Keep the hierarchy simple: one title, a few sections, one big number or mark per section, labels of one to three words, body text at least 15px, color only where it means something. Pair blocks of similar size; leave no half-empty card or row.
+- Stay exact: keep qualifiers with their numbers (median, first session, time window), keep who said what, use one date format in order, and invent nothing. A target is not a commitment, and a gap in the source is not a finding.
+- Render at a wide and a phone width and look. On a phone, stack rather than squeeze and keep names with their values. Then cut what a reader would skip.`
+
 const htmlGuideRuntime = (theme: string) => `## Runtime and data contract
 
 Records hold canonical shared data. worktable.state holds HTML-Doc-local UI state such as filters, drafts, preferences, and selections. Browser storage is not a supported persistence contract, and direct /api fetches are not a supported Worktable data interface.
@@ -187,7 +199,7 @@ The page loads whole, with all its images, and loads them again after any change
 /** Library icons in HTML Docs, taught on the preview surface (html-icons.ts). */
 export const HTML_GUIDE_ICONS = `## Icons
 
-Where a word only labels, such as a status, a type, a direction or a step, use an icon instead: any Lucide icon, by its name on lucide.dev. Write an empty svg with the name, such as <svg data-icon="circle-check"></svg>, and Worktable draws it whenever the page is served, 1em square in the text color, so font-size sizes it and color colors it. Give an icon that stands alone an aria-label. Use these rather than emoji or SVG icons you draw yourself. A write warns about a name Lucide lacks. Only svg elements in the markup are drawn; for icons page code adds, put each once in a <template> and clone it.`
+Where a word only labels, such as a status, a type, a direction or a step, use an icon instead: any Lucide icon, by its name on lucide.dev. Write an empty svg with the name, such as <svg data-icon="circle-check"></svg>, and Worktable draws it whenever the page is served, 1em square in the text color, so font-size sizes it and color colors it. Beside text in a flex row, use align-items:center for one line; for text that can wrap, use align-items:start and give the icon margin-top:calc((1lh - 1em) / 2) so it stays on the first line. Don't align icons to the baseline. Give an icon that stands alone an aria-label. Use these rather than emoji or SVG icons you draw yourself. A write warns about a name Lucide lacks. Only svg elements in the markup are drawn; for icons page code adds, put each once in a <template> and clone it.`
 
 export function getHtmlAuthoringGuide(
   _profile: HtmlGuideProfile = "runtime"
@@ -198,7 +210,7 @@ export function getHtmlAuthoringGuide(
   const icons = `\n\n${HTML_GUIDE_ICONS}`
   // The served theme has its own section.
   const runtime = `${HTML_GUIDE_THEME}\n\n${htmlGuideRuntime("")}`
-  return `${intro}\n\n${runtime}\n\n${HTML_GUIDE_SHARE_LINKS}${images}${icons}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
+  return `${intro}\n\n${HTML_GUIDE_DESIGN}\n\n${runtime}\n\n${HTML_GUIDE_SHARE_LINKS}${images}${icons}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
 }
 
 function hasRecordPermission(

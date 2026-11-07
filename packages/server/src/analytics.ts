@@ -7,6 +7,7 @@ import {
 } from "@worktable/types/mcp-clients"
 import {
   ANALYTICS_CLIENT_NAMES,
+  ANALYTICS_GRANT_TTL_MS,
   ANALYTICS_HEADER,
   ANALYTICS_SCHEMA_VERSION,
   isAnalyticsClient,
@@ -52,6 +53,13 @@ const deliveries = new Set<Promise<void>>()
 // An account's consent, rechecked at most once a minute: the same window the
 // gateway's grant allows, so a withdrawal still stops collection within it.
 const CONSENT_TTL_MS = 60_000
+/**
+ * How far a hosted Worktable's clock may differ from the gateway's. A Sprite
+ * resumed from sleep can run minutes behind; with no allowance it refused
+ * every grant, which the gateway issues for exactly ANALYTICS_GRANT_TTL_MS.
+ * The consent recheck at delivery still bounds how long a withdrawal takes.
+ */
+const GRANT_CLOCK_SKEW_MS = 15 * 60_000
 const consents = new Map<string, { enabled: boolean; until: number }>()
 
 function configuration() {
@@ -114,8 +122,8 @@ export function requestAnalyticsContext(
         grant.trafficType !== "internal" &&
         grant.trafficType !== "verification") ||
       !Number.isSafeInteger(grant.expiresAt) ||
-      grant.expiresAt <= Date.now() ||
-      grant.expiresAt > Date.now() + 60_000
+      grant.expiresAt <= Date.now() - GRANT_CLOCK_SKEW_MS ||
+      grant.expiresAt > Date.now() + ANALYTICS_GRANT_TTL_MS + GRANT_CLOCK_SKEW_MS
     )
       return null
     const protocolVersion = request.headers.get("mcp-protocol-version")

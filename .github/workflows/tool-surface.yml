@@ -46,7 +46,9 @@ jobs:
           # gh-readonly-queue/<base>/pr-<number>-<sha>
           number=$(printf '%s\n' "$QUEUE_REF" | sed -nE 's#^refs/heads/gh-readonly-queue/[^/]+/pr-([0-9]+)-[0-9a-f]+$#\1#p')
           test -n "$number"
-          if gh api "repos/$GITHUB_REPOSITORY/issues/$number/labels" --jq '.[].name' | grep -qx tool-surface-change; then
+          # A failed request stops here rather than reading as no label.
+          labels=$(gh api "repos/$GITHUB_REPOSITORY/issues/$number/labels" --jq '.[].name')
+          if printf '%s\n' "$labels" | grep -qx tool-surface-change; then
             echo "flag=--approved" >> "$GITHUB_OUTPUT"
             echo "Pull request #$number has the tool-surface-change label."
           fi

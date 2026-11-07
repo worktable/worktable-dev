@@ -125,6 +125,9 @@ repository and site checks. Product changes retain build, typecheck, and require
 tests; shared contracts and unknown paths select all lanes. Public `main`, manual
 runs, and the weekly schedule run full verification. The required `verify` result
 checks the selected jobs and their evidence for the same source and run.
+Pull requests merge through the merge queue, which runs the required checks
+once more on the change on top of current `main`, so a pull request does not
+need rebasing when `main` moves.
 See [CI](../.github/workflows/ci.yml) for lane selection and job details.
 
 ## Generated files

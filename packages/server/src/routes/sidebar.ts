@@ -13,15 +13,20 @@
 import { Hono } from "hono"
 import { requireScope } from "../auth.ts"
 import { mapWithConcurrency } from "../bounded-concurrency.ts"
-import { listDocsDetailed, listSpaces } from "../store.ts"
+import { listSpaces } from "../store.ts"
 import { teamsEnabled } from "../team-database.ts"
 import { canAccessSpace } from "../team-policy.ts"
 import { hasScope } from "../token-store.ts"
+import { listSpaceDocs } from "./docs.ts"
 import { listSpaceDocuments } from "./documents.ts"
 import { listSpaceCollections } from "./records.ts"
 import { readSpacePage } from "./spaces.ts"
 
-/** Spaces read at once; each read goes through its catalog snapshot. */
+/**
+ * Spaces read at once. Each part is kept with the Space's catalog snapshot
+ * or read through it, so a tab that opens while nothing changed costs a
+ * check of each Space's snapshot, not a read of its files.
+ */
 const SPACE_CONCURRENCY = 4
 
 export const sidebarRouter = new Hono()
@@ -36,7 +41,7 @@ sidebarRouter.get("/", requireScope("docs:read"), async (c) => {
     async ({ id }) => {
       const [page, docs, documents, collections] = await Promise.all([
         readSpacePage(id, scopes),
-        listDocsDetailed(id, { includeArchived: true }),
+        listSpaceDocs(id, true),
         hasScope(scopes, "documents:read")
           ? listSpaceDocuments(id, true)
           : null,

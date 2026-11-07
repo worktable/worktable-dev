@@ -33,6 +33,9 @@ import {
   type DocProvenance,
 } from "../store.ts";
 import { getDocLinks } from "../link-graph.ts";
+import type { DocumentCatalog } from "../document-catalog.ts";
+import { readDocumentCatalogSnapshot } from "../document-query.ts";
+import type { DocListEntry } from "@worktable/types";
 import { pathIsHidden } from "../document-format-registry.ts";
 import { HIDDEN_NAME_MESSAGE } from "../document-path.ts";
 import { docRevisionId } from "../doc-markdown-projection.ts";
@@ -186,6 +189,44 @@ function extractDocPath(rawPath: string, spaceId: string, stripSuffix?: string):
 // GET /api/spaces/:spaceId/docs — list all doc paths. Unlike the agents' list,
 // it carries no backlink counts: the app does not show them, and they would
 // rebuild the Space's link graph after every edit.
+// A Space's Docs list walks its docs folder and checks every Doc file. The
+// read model publishes the same catalog snapshot again while none of the
+// files it was built from changed, the docs folder and docs.meta.json
+// included, so a list is kept with the snapshot it was read under, as the
+// documents list's revisions are, and read again once the snapshot is new.
+const docsByCatalog = new WeakMap<
+  DocumentCatalog,
+  Map<boolean, Promise<DocListEntry[]>>
+>();
+
+/**
+ * A Space's Docs, as GET /api/spaces/:spaceId/docs sends them and the
+ * sidebar bundle carries them, as fresh as the Space's catalog snapshot.
+ */
+export async function listSpaceDocs(
+  spaceId: string,
+  includeArchived: boolean
+): Promise<DocListEntry[]> {
+  let catalog: DocumentCatalog;
+  try {
+    catalog = await readDocumentCatalogSnapshot(spaceId);
+  } catch {
+    return listDocsDetailed(spaceId, { includeArchived });
+  }
+  let lists = docsByCatalog.get(catalog);
+  if (!lists) {
+    lists = new Map();
+    docsByCatalog.set(catalog, lists);
+  }
+  const kept = lists.get(includeArchived);
+  if (kept) return kept;
+  const list = listDocsDetailed(spaceId, { includeArchived });
+  lists.set(includeArchived, list);
+  // A failed read is tried again by the next request.
+  list.catch(() => lists.delete(includeArchived));
+  return list;
+}
+
 docsRouter.get("/", requireScope("docs:read"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
   const includeArchived = c.req.query("includeArchived") === "true";
@@ -193,7 +234,7 @@ docsRouter.get("/", requireScope("docs:read"), async (c) => {
     return c.json({ error: "Missing spaceId", code: "BAD_REQUEST" }, 400);
   }
 
-  const docs = await listDocsDetailed(spaceId, { includeArchived });
+  const docs = await listSpaceDocs(spaceId, includeArchived);
   return c.json({ docs });
 });
 

@@ -30,6 +30,7 @@ import {
   documentContentRevisions,
 } from "./document-content-revision.ts"
 import { readDocumentPage } from "./document-page-service.ts"
+import { listSpaceDocs } from "./routes/docs.ts"
 import { usesDocumentVersionStoreV2 } from "./document-version-compatibility-v2.ts"
 import { createRegisteredDocument } from "./document-write-service.ts"
 import { listDocuments } from "./document-query.ts"
@@ -341,6 +342,25 @@ describe("workspace read model", () => {
       (await documentContentRevisions(spaceId)).get("notes/a")
     )
     expect(after).toBe(await currentDocContentRevision(spaceId, "notes/a"))
+  })
+
+  it("lists an edit to a Doc nothing reported once the snapshot checks again", async () => {
+    const note = spacePath(spaceId, "docs", "notes", "a.md")
+    let now = Date.now() + 60_000
+    setSystemTime(new Date(now))
+    const headings = async () =>
+      (await listSpaceDocs(spaceId, true))
+        .find((doc) => doc.path === "notes/a")
+        ?.headings
+    expect(await headings()).toEqual(["A"])
+
+    // An editor saves the file in place; no watcher is running.
+    await appendFile(note, "\n## Added elsewhere\n")
+    const edited = new Date("2020-01-02T03:04:05.000Z")
+    await utimes(note, edited, edited)
+    now += SPACE_SNAPSHOT_MAX_AGE_MS
+    setSystemTime(new Date(now))
+    expect(await headings()).toEqual(["A", "Added elsewhere"])
   })
 
   it("lists an HTML Doc renamed only in its saved properties", async () => {

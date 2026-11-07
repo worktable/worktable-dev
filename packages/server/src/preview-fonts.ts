@@ -76,6 +76,29 @@ export async function fulfillPreviewFont(
   const asset = byId.get(id)
   return asset ? readFile(new URL(asset.url, import.meta.url)) : null
 }
+/** What in a page uses each document font, as the served theme sets them. */
+const DOCUMENT_FONT_USES: Record<string, RegExp> = {
+  Fraunces: /<h1[\s>]|--font-display\b/i,
+  "JetBrains Mono": /<(?:code|pre|kbd|samp)[\s>]|--font-mono\b/i,
+}
+
+/**
+ * Preload links for the document fonts a page uses, for the top of its head.
+ * A font is otherwise fetched only once layout reaches text set in it, after
+ * the page is parsed, and the frame's load event waits for it.
+ */
+export function documentFontPreloads(baseUrl: string, html: string): string {
+  const version = previewFontVersion()
+  return DOCUMENT_FONT_ASSETS.filter((asset) =>
+    DOCUMENT_FONT_USES[asset.family]?.test(html)
+  )
+    .map(
+      (asset) =>
+        `<link rel="preload" as="font" type="font/woff2" crossorigin href=${JSON.stringify(`${baseUrl}/fonts/${asset.id}?v=${version}`)}>`
+    )
+    .join("")
+}
+
 export function previewFontCss(baseUrl: string): string {
   const version = previewFontVersion()
   return [...previewFontAssets(), ...DOCUMENT_FONT_ASSETS]

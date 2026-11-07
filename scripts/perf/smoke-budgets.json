@@ -69,29 +69,32 @@
       "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
     },
     "requests, cold, open rich doc": {
-      "max": 15
+      "max": 16,
+      "why": "Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
     },
     "cold js, open rich doc": {
       "max": 39,
       "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk. The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file. Configured avatars share one additional 1.1 KB gzip graphics module; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
     },
     "requests, cold, open rich doc (2,000 blocks)": {
-      "max": 15
+      "max": 16,
+      "why": "Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
     },
     "cold js, open rich doc (2,000 blocks)": {
       "max": 39,
       "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk. The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file. Configured avatars share one additional 1.1 KB gzip graphics module; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
     },
     "requests, cold, open HTML doc": {
-      "max": 14
+      "max": 15,
+      "why": "Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
     },
     "cold js, open HTML doc": {
       "max": 30,
       "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
     },
     "requests, cold, open a file page": {
-      "max": 12,
-      "why": "New journey (Plan 21): a deep link to an image's file page. The page check, the app's boot reads and the image."
+      "max": 13,
+      "why": "New journey (Plan 21): a deep link to an image's file page. The page check, the app's boot reads and the image. Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
     },
     "cold js, open a file page": {
       "max": 33,
@@ -102,8 +105,8 @@
       "why": "New journey (Plan 21): a deep link to a Markdown Doc that embeds two images. The Markdown doc's requests plus one per image."
     },
     "requests, cold, open an HTML Doc with images": {
-      "max": 14,
-      "why": "New journey: a deep link to an HTML Doc that names two Space images. The HTML doc's requests: the images come inside its frame."
+      "max": 17,
+      "why": "New journey: a deep link to an HTML Doc that names two Space images. The HTML doc's requests: the images come inside its frame. Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
     },
     "cold js, open a Doc with images": {
       "max": 31,
@@ -114,14 +117,16 @@
       "why": "New journey: the same code as an HTML doc."
     },
     "requests, cold, open Threads": {
-      "max": 9
+      "max": 10,
+      "why": "Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
     },
     "cold js, open Threads": {
       "max": 33,
       "why": "Comments show their messages with the Threads Markdown renderer, so the bundler moves that renderer out of the Threads chunk into one both share: one more small chunk on a cold open of Threads, preloaded with the rest, and none on revisits. Before that, removing the single-link share dialog split its inputs, dialog shell and clipboard helper into five small shared chunks."
     },
     "requests, cold, open a thread": {
-      "max": 10
+      "max": 11,
+      "why": "Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
     },
     "cold js, open a thread": {
       "max": 33,
@@ -138,7 +143,7 @@
       "why": "Each Space icon and person avatar sits on its recognition color, one more element per Space row and avatar."
     },
     "requests, first, open a Space in the sidebar": {
-      "max": 4
+      "max": 0
     },
     "chain, first, open a Space in the sidebar": {
       "max": 0
@@ -272,7 +277,7 @@
       "max": 1724
     },
     "requests, warm, open a Space in the sidebar": {
-      "max": 4
+      "max": 3
     },
     "chain, warm, open a Space in the sidebar": {
       "max": 0
@@ -412,8 +417,8 @@
       "max": 0
     },
     "requests, reopen, open the app at Home": {
-      "max": 21,
-      "why": "The quick-click journey leaves a third Space open in the sidebar, so the reopened app also loads its contents. The sidebar reopens the Spaces a person left open, and each loads its tree (Space, docs, documents, records). The journey leaves two Spaces open."
+      "max": 22,
+      "why": "The quick-click journey leaves a third Space open in the sidebar, so the reopened app also loads its contents. The sidebar reopens the Spaces a person left open, and each loads its tree (Space, docs, documents, records). The journey leaves two Spaces open. Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
     },
     "chain, reopen, open the app at Home": {
       "max": 1
@@ -526,11 +531,11 @@
       "max": 0
     },
     "requests, first, open a Space in the sidebar, quick click": {
-      "max": 4,
+      "max": 3,
       "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
     },
     "chain, first, open a Space in the sidebar, quick click": {
-      "max": 1,
+      "max": 0,
       "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
     },
     "dom, first, open a Space in the sidebar, quick click": {

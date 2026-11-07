@@ -297,9 +297,10 @@ export function htmlIconWarnings(html: string): WidgetValidationIssue[] {
 export const HTML_CODE_ICONS_MAX = 64
 
 const CODE_HINT = /data-icon|dataIcon|dataset\.icon/
-// A whole name: one built from pieces, such as "arrow-${dir}", isn't one.
+// A whole attribute and a whole name: not metadata-icon, and not a name
+// built from pieces, such as "arrow-${dir}".
 const CODE_NAMED =
-  /data-icon\s*=\s*\\?["'`]?([A-Za-z0-9_-]+)(?=\\?["'`]|[\s>\\]|$)/g
+  /(?<![\w-])data-icon\s*=\s*\\?["'`]?([A-Za-z0-9_-]+)(?=\\?["'`]|[\s>\\]|$)/g
 const LITERAL = /(["'`])([A-Za-z0-9][A-Za-z0-9_-]*)\1/g
 
 /** The text of the page's own scripts, as written. */

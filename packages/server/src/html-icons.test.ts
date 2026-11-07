@@ -145,6 +145,7 @@ window.render = (rows) => {
 }
 render(["done"])
 const typo = '<svg data-icon="circle-chek"></svg>'
+const other = '<div metadata-icon="not-an-icon"></div>'
 </script>`
     )
     const created = (await dispatchOperation("html.create", {

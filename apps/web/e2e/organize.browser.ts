@@ -307,6 +307,9 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
 
   // Opening a Space shows its real page while its details load: the title
   // and Activity column stay in place, and the pins fill in where they sit.
+  // The tab would otherwise have them from the sidebar bundle it loads once
+  // idle; without it, as before that lands, the Space loads its own.
+  await page.route(/\/api\/sidebar(\?.*)?$/, (route) => route.abort())
   await page.goto(`${harness.webUrl}/`)
   await expect(page.getByRole("region", { name: "Recent" })).toBeVisible()
   let releaseDetails!: () => void

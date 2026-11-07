@@ -1046,6 +1046,20 @@ async function measure(
   }
   const capped = await waitSettled(session)
   const frames = stopFrames ? await stopFrames() : null
+  // The screencast sends a frame when the page's own compositor changes, and
+  // can miss paints inside a document's frame (an HTML Doc). A screenshot
+  // once settled is the screen as it ended.
+  if (frames) {
+    const shot = await page
+      .screenshot({ type: "jpeg", quality: 60, scale: "css" })
+      .catch(() => null)
+    if (shot)
+      frames.push({
+        data: shot.toString("base64"),
+        wallMs: Date.now(),
+        settled: true,
+      })
+  }
   // The completion contract: once settled, the content still shows and
   // nothing is still loading.
   const contentExpectation = action.expect.find(

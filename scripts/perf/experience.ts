@@ -36,6 +36,12 @@ export interface VisualSummary {
   steps: number
   /** The first changed frame already shows the final screen. */
   firstFrameFinal: boolean | null
+  /**
+   * The screencast's last frame differs from the screen at settle: a paint
+   * it never sent (inside an HTML Doc's frame), so completeMs is the settle
+   * screenshot's time, an upper bound.
+   */
+  missedPaint?: boolean
   /** Contact sheet of the frames around each step, in the run's frames/. */
   strip?: string
 }
@@ -170,6 +176,8 @@ interface Frame {
   data: string
   /** Wall time, ms since the epoch. */
   wallMs: number
+  /** A screenshot taken once the action settled: the screen as it ended. */
+  settled?: boolean
 }
 
 /** Starts a screencast; the returned function stops it and hands the frames over. */
@@ -343,7 +351,7 @@ export async function analyzeFrames(
 ): Promise<VisualSummary | null> {
   const timed = frames
     .map((frame) => ({ ...frame, ms: frame.wallMs - wallOffset - t0 }))
-    .filter((frame) => frame.ms <= end - t0 + 50)
+    .filter((frame) => frame.settled || frame.ms <= end - t0 + 50)
   if (timed.length === 0)
     return { frames: 0, firstChangeMs: null, completeMs: null, steps: 0, firstFrameFinal: null }
   // The screen as the action met it: the last frame at or before it (the
@@ -383,7 +391,11 @@ export async function analyzeFrames(
       complete = index + 1
       break
     }
+  const last = used.length - 1
   const summary: VisualSummary = {
+    ...(used[last]!.settled && used.length > 2 && final[last - 1]! > FRAME_DELTA
+      ? { missedPaint: true }
+      : {}),
     frames: used.length,
     firstChangeMs: firstChange === null ? null : round1(Math.max(0, used[firstChange]!.ms)),
     completeMs:

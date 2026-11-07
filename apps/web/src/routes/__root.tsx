@@ -780,6 +780,9 @@ function PreloadScreensWhenIdle() {
         ...rendererPreloads,
         route("/spaces/$spaceId/threads/$"),
         route("/threads/$"),
+        // Settings' dialog and its first section, so a first open waits
+        // on nothing it could have had.
+        () => import("@/components/settings/settings-dialog"),
       ],
       () =>
         router.state.status === "pending" ||

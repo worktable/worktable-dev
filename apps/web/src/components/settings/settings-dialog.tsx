@@ -2,6 +2,7 @@ import { markSettingsSectionVisible } from "@/lib/settings-open"
 import {
   Suspense,
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useLayoutEffect,
@@ -426,6 +427,15 @@ function SettingsTabsMobile({
 }) {
   const fadeRef = useScrollFadeX<HTMLDivElement>()
   const stripRef = useRef<HTMLDivElement | null>(null)
+  // One ref for the life of the strip: a new callback each render would
+  // detach and attach the fade on every render.
+  const setStrip = useCallback(
+    (el: HTMLDivElement | null) => {
+      stripRef.current = el
+      fadeRef(el)
+    },
+    [fadeRef]
+  )
   const itemRefs = useRef(new Map<SettingsSectionId, HTMLButtonElement>())
   // The horizontal twin of the desktop rail's sliding pill (measured, not
   // index math — chip widths vary with their labels).
@@ -446,10 +456,7 @@ function SettingsTabsMobile({
 
   return (
     <div
-      ref={(el) => {
-        stripRef.current = el
-        fadeRef(el)
-      }}
+      ref={setStrip}
       className="scroll-fade-x scrollbar-none -mx-5 shrink-0 overflow-x-auto px-5 pb-3"
     >
       <div className="relative flex w-max items-center gap-1.5">

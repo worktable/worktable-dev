@@ -41,10 +41,12 @@ export function useScrollFadeX<T extends HTMLElement = HTMLElement>(
       });
     };
 
-    update();
-
     node.addEventListener("scroll", onScroll, { passive: true });
 
+    // ResizeObserver also delivers the initial measurement after layout.
+    // Reading scrollWidth in the ref callback would force a layout of the
+    // whole page while React is still mounting what holds it (Settings'
+    // section strip as its dialog opens, every code block in a Doc).
     const ro = new ResizeObserver(() => update());
     ro.observe(node);
     if (node.firstElementChild) {

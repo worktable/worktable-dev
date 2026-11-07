@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- The HTML skill changes an existing HTML Doc with exact edits and the revision it read, and keeps its live checks off the user's own Records.
+
 ## 0.1.1
 
 - Thread guidance prefers an event trigger to a timed schedule for watching comments and messages, and says a wait lasts only while the conversation runs.

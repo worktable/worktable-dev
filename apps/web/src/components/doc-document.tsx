@@ -162,14 +162,24 @@ export function DocDocumentRenderer({
 
 type SyncState = "connecting" | "synced" | "disconnected"
 
-function SyncStatusPill({
-  provider,
-  ready,
-}: {
-  provider: WebsocketProvider | null
-  ready: boolean
-}) {
+/** How long the reader's own edits wait unsent before "Syncing" shows. */
+const UNSENT_EDITS_MS = 1000
+
+/**
+ * Speaks up only when the reader needs to know: "Offline" when the
+ * connection drops, "Syncing" when their own edits have waited a second to
+ * reach the server, and "Synced" once either clears. Opening a Doc says
+ * nothing: its content, or the skeleton that names itself, is already on
+ * screen, and edits made before the room connects are kept and sent.
+ */
+function SyncStatusPill({ provider }: { provider: WebsocketProvider | null }) {
   const [state, setState] = useState<SyncState>("connecting")
+  // When the reader's first edit not yet on the server was made.
+  const [unsentSince, setUnsentSince] = useState<number | null>(null)
+  // The unsent edit that has waited long enough to mention.
+  const [slowSince, setSlowSince] = useState<number | null>(null)
+  // A problem was shown, so its end is worth saying.
+  const [troubled, setTroubled] = useState(false)
 
   useEffect(() => {
     if (!provider) {
@@ -178,6 +188,7 @@ function SyncStatusPill({
     }
     const onSync = (isSynced: boolean) => {
       setState(isSynced ? "synced" : "connecting")
+      if (isSynced) setUnsentSince(null)
     }
     const onStatus = ({ status }: { status: string }) => {
       if (status === "connected") {
@@ -188,9 +199,16 @@ function SyncStatusPill({
         setState("disconnected")
       }
     }
+    // An update the provider did not bring is the reader's own edit (the
+    // browser cache has loaded before the provider exists).
+    const onUpdate = (_update: Uint8Array, origin: unknown) => {
+      if (origin === provider || provider.synced) return
+      setUnsentSince((since) => since ?? Date.now())
+    }
 
     provider.on("sync", onSync)
     provider.on("status", onStatus)
+    provider.doc.on("update", onUpdate)
 
     // Set initial state
     if (provider.synced) {
@@ -202,28 +220,40 @@ function SyncStatusPill({
     return () => {
       provider.off("sync", onSync)
       provider.off("status", onStatus)
+      provider.doc.off("update", onUpdate)
     }
   }, [provider])
 
-  // A synced socket is not proof that the editor is visible yet.
-  const displayState: DocumentStatusState =
+  useEffect(() => {
+    if (unsentSince === null || state === "synced") return
+    const timer = setTimeout(
+      () => setSlowSince(unsentSince),
+      Math.max(0, unsentSince + UNSENT_EDITS_MS - Date.now())
+    )
+    return () => clearTimeout(timer)
+  }, [unsentSince, state])
+  const slow = unsentSince !== null && slowSince === unsentSince
+
+  const displayState: DocumentStatusState | null =
     state === "disconnected"
       ? "offline"
-      : !ready
-        ? "opening"
-        : state === "synced"
+      : state === "synced"
+        ? troubled
           ? "synced"
-          : "syncing"
+          : null
+        : slow
+          ? "syncing"
+          : null
 
-  const [visible, setVisible] = useState(true)
+  if ((displayState === "offline" || displayState === "syncing") && !troubled)
+    setTroubled(true)
   useEffect(() => {
-    setVisible(true)
     if (displayState !== "synced") return
-    const timer = setTimeout(() => setVisible(false), 1800)
+    const timer = setTimeout(() => setTroubled(false), 1800)
     return () => clearTimeout(timer)
   }, [displayState])
 
-  if (!visible && displayState === "synced") return null
+  if (displayState === null) return null
   return <DocumentStatus state={displayState} />
 }
 
@@ -2010,7 +2040,7 @@ function BlockNoteDocPage({
       )}
 
       {!readOnly && !previewVersionId && (
-        <SyncStatusPill provider={provider} ready={editorReadable} />
+        <SyncStatusPill provider={provider} />
       )}
     </div>
   )

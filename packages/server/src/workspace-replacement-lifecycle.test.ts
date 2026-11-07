@@ -77,6 +77,7 @@ import { onWorkspaceChange, notifyWorkspaceChangeAndWaitOrThrow } from "./worksp
 import { createDocumentShare, resolveDocumentShare } from "./share-store.ts"
 import { operatorSnapshotDirectory } from "./operator-snapshot.ts"
 import { writeWorkspaceSnapshot } from "./workspace-snapshot.ts"
+import { withWorkspaceExportSnapshot } from "./workspace-export-coordinator.ts"
 import { restoreLiveWorkspaceSnapshot, readWorkspaceSnapshotRestoreStatus } from "./workspace-snapshot-restore.ts"
 import { closeShareLinkStores, createShareLink, findShareLinkByToken, getShareLink } from "./share-links-store.ts"
 import { drainV1ShareLinks } from "./share-links-drain.ts"
@@ -218,7 +219,10 @@ describe("live workspace replacement", () => {
     })(), 10_000, "workspace did not become ready")
     const operationId = "restore_restart_links"
     const download = join(await operatorSnapshotDirectory(operationId), "download")
-    const snapshot = await writeWorkspaceSnapshot(download)
+    // Capture the live workspace as the server's own callers do: inside its
+    // barrier, after its background work (such as recording which files are
+    // HTML Docs at boot) has drained. A bare capture races those writes.
+    const snapshot = await writeWorkspaceSnapshot(download, { withCaptureBarrier: withWorkspaceExportSnapshot })
     const before = await createDocumentShare({ kind: "doc", spaceId: "notes", artifactKey: "note" })
     const request = {
       operationId,

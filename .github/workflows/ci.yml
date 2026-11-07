@@ -2,6 +2,8 @@
 name: Verify
 "on":
   pull_request: null
+  # The merge queue checks each queued change on top of main before it merges.
+  merge_group: null
   push:
     branches:
       - main
@@ -35,9 +37,11 @@ jobs:
       - name: Classify immutable change
         id: scope
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          FULL_VERIFY: ${{ github.event_name != 'pull_request' }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+          # A queued merge selects lanes like its pull request; main, manual
+          # and scheduled runs verify everything.
+          FULL_VERIFY: ${{ github.event_name != 'pull_request' && github.event_name != 'merge_group' }}
         run: bun scripts/testing/public-selection.ts
   checks:
     needs: plan
@@ -78,13 +82,14 @@ jobs:
           bun run test:policy
       - name: Check speed guards
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         # Scheduled and manual runs have no base commit. `bun run` drops an
         # empty argument, which left a bare `--base` that read as "true".
         run: bun run perf:guards ${BASE_SHA:+--base "$BASE_SHA"}
       - name: Lint changed files
         # A pull request checks out its merge commit, whose first parent is
-        # the base branch; main compares with the previous commit.
+        # the base branch; a queued merge's parent is the change before it in
+        # the queue; main compares with the previous commit.
         run: bun run lint:changed --base HEAD^1
   build:
     needs: plan

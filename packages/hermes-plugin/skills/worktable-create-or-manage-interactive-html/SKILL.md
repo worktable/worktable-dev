@@ -30,7 +30,7 @@ Use the Worktable tools the connection lists. On a Worktable that lists the earl
 ## Verify the result
 
 - **Comprehension:** use descriptive headings and a clear next action. Remove controls, metrics, and decoration that do not help the task.
-- **Visual craft:** refine typography, line length, spacing rhythm, alignment, contrast, and negative space. Use real content, responsive composition, and coherent light and dark themes through Worktable semantic variables.
+- **Visual craft:** follow "Make the page easy to take in" in the HTML guide: lead with the point, show rather than tell, say each fact once, and cut what a reader would skip. Use Worktable's theme variables, and render the page to look at it before you hand off.
 - **Interaction:** give every control a purpose and legible loading, saving, success, empty, and failure states where relevant. Record-backed actions must update canonical Records, not only local HTML.
 - **Accessibility:** use semantic headings and native controls, visible focus, keyboard operation, comfortable targets, reduced-motion support, and a non-drag path for drag-and-drop workflows.
 - **Continuity:** explain the artifact without relying on the transcript, link supporting durable work, preserve user-owned content, and make the next update straightforward.

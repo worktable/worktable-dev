@@ -199,7 +199,7 @@ The page loads whole, with all its images, and loads them again after any change
 /** Library icons in HTML Docs, taught on the preview surface (html-icons.ts). */
 export const HTML_GUIDE_ICONS = `## Icons
 
-Where a word only labels, such as a status, a type, a direction or a step, use an icon instead: any Lucide icon, by its name on lucide.dev. Write an empty svg with the name, such as <svg data-icon="circle-check"></svg>, and Worktable draws it whenever the page is served, 1em square in the text color, so font-size sizes it and color colors it. Give an icon that stands alone an aria-label. Use these rather than emoji or SVG icons you draw yourself. A write warns about a name Lucide lacks. Only svg elements in the markup are drawn; for icons page code adds, put each once in a <template> and clone it.`
+Where a word only labels, such as a status, a type, a direction or a step, use an icon instead: any Lucide icon, by its name on lucide.dev. Write an empty svg with the name, such as <svg data-icon="circle-check"></svg>, and Worktable draws it whenever the page is served, 1em square in the text color, so font-size sizes it and color colors it. Beside text in a flex row, use align-items:center for one line; for text that can wrap, use align-items:start and give the icon margin-top:calc((1lh - 1em) / 2) so it stays on the first line. Don't align icons to the baseline. Give an icon that stands alone an aria-label. Use these rather than emoji or SVG icons you draw yourself. A write warns about a name Lucide lacks. Only svg elements in the markup are drawn; for icons page code adds, put each once in a <template> and clone it.`
 
 export function getHtmlAuthoringGuide(
   _profile: HtmlGuideProfile = "runtime"

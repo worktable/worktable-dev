@@ -9,6 +9,17 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.43] - 2026-11-10
+
+### Changed
+
+- **Sidebar:** A Space opens with its tree already in place, on desktop and phone, instead of filling in a moment after.
+- **Agents:** Agents learn how to make an HTML Doc easy to take in: the outcome first, a visual where one shows it better than a sentence, and each fact said once.
+
+### Fixed
+
+- **Usage analytics on Worktable Cloud:** With analytics on, your agents' actions and saves are counted again. Worktables whose clock ran behind Cloud's had stopped sending them.
+
 ## [0.1.42] - 2026-11-06
 
 ### Added

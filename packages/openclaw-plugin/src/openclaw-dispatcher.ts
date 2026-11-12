@@ -108,7 +108,9 @@ export class OpenClawAgentDispatcher implements AgentDispatcher {
       GroupSystemPrompt: WORKTABLE_COLLABORATION_PROMPT,
       OriginatingChannel: "worktable",
       OriginatingTo: threadTarget,
-      CommandAuthorized: true,
+      // Commands and directives are the operator's: OpenClaw reads them only
+      // in a message from the person who connected it.
+      CommandAuthorized: input.commandAuthorized === true,
       Timestamp: Date.now(),
       ChannelContext: {
         sender: { id: input.sender.id },

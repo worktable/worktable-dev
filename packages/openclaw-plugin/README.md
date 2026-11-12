@@ -33,7 +33,9 @@ run this and approve the agent at the link it prints:
 openclaw worktable connect --server https://app.worktable.cloud
 ```
 
-Then start or restart the OpenClaw Gateway. Learn more in the Worktable docs for
+Then start or restart the OpenClaw Gateway. The agent answers thread messages
+from the person who approved it; see [Who can direct the agent](#who-can-direct-the-agent).
+Learn more in the Worktable docs for
 [connections](https://docs.worktable.dev/agents/connections/) and
 [threads](https://docs.worktable.dev/guides/threads/).
 
@@ -42,28 +44,94 @@ the plugin is enabled. A same-named skill in an agent workspace,
 `~/.agents/skills`, or another higher-priority location overrides the plugin
 copy; remove an older standalone copy if you want the plugin to provide it.
 
+## Who can direct the agent
+
+A thread message that the plugin runs is a full OpenClaw turn, with the agent's
+tools on the computer OpenClaw runs on.
+
+| Author of the message | Runs as a turn |
+| --- | --- |
+| The person who approved the connection | Yes |
+| Another member of the Worktable | Only with `trustAllMembers` |
+| Another agent in the Worktable | Only with `trustAllAgents` |
+
+Both settings are off by default. The plugin refuses everyone else before the
+message reaches OpenClaw, and the author sees the refusal on their message in
+the thread. Worktable identifies each author; the plugin compares that with the
+member recorded when you connected. An author the thread does not list is
+always refused. The plugin does not consult OpenClaw's allowlists, pairing
+approvals or access groups, so none of them lets in an author this rule refuses.
+
+To let others in, as the person who connected it:
+
+```sh
+openclaw config set channels.worktable.trustAllMembers true
+openclaw config set channels.worktable.trustAllAgents true
+```
+
+A change applies to the next message, without restarting the Gateway.
+`trustAllMembers` covers every person in the Worktable, now and later.
+`trustAllAgents` covers every agent connected to it, whoever connected that
+agent, so anyone who can direct one of those agents can reach this one through
+it. Connecting to another Worktable, or having someone else approve the
+connection, turns both off again.
+
+OpenClaw reads commands and directives in a message, such as `/new` or
+`/model`, only from the person who approved the connection: the plugin sets
+`CommandAuthorized` for that author alone. From anyone else you let in, a
+command is not run: a message that is only a command is refused on the message,
+and any other message reaches the agent as ordinary text. If you set OpenClaw's
+own `commands.allowFrom`, OpenClaw uses that list for commands instead, among
+the authors the plugin has already let through.
+
+The agent can still read what others wrote in a thread when the person it takes
+direction from asks it to. Limit its tools in OpenClaw, and disconnect it in
+Worktable's **Settings → Agents** to stop it receiving messages.
+
+### Updating from 0.0.19 or earlier
+
+A connection made before 0.0.20 has no record of who approved it, so it refuses
+every thread message, yours included, and says so on the message. Connect again
+to record the approver, then restart the OpenClaw Gateway; the agent keeps its
+name and its threads:
+
+```sh
+openclaw worktable connect --server https://worktable.example.com
+```
+
+This needs Worktable 0.1.44 or later. An older Worktable does not say who
+approved, the command tells you so, and the connection stays closed until that
+Worktable is updated and you connect again. `--agent-registration` is gone,
+since that sign-up could not say who connected OpenClaw; a connection made with
+it connects again the same way.
+
+## What pairing sends and stores
+
+To pair, the plugin sends the Worktable you named this computer's hostname, a
+random installation ID, and the agent name if you gave one. Worktable answers
+with a token, the agent's name, and the member who approved. When you approve
+in the browser, Worktable also answers with the address of the workspace you
+approved the agent into; the plugin accepts it only on the host you gave or on
+Worktable Cloud (`app.worktable.cloud`), and never a plain-HTTP address for an
+HTTPS one.
+
+A connection made by Agent Registration before 0.0.20 also sends its
+registration ID and this computer's hostname with each request, and refreshes
+its credential at the authorization endpoints that Worktable named when it
+registered.
+
+- The token, the approving member's ID and the two trust settings are under
+  `channels.worktable` in OpenClaw's configuration.
+- The installation ID and any replies not yet posted are in
+  `plugins/worktable/` under OpenClaw's state directory.
+- Delivered messages are recorded in OpenClaw's plugin state so a restart does
+  not handle them twice.
+
 ## Security
 
-The plugin connects only to the Worktable server you configure and its discovered
-authorization endpoints. Credentials are stored in OpenClaw's sensitive plugin
-configuration. The plugin has no postinstall script, native binary, shell
-execution, or telemetry.
-
-The plugin starts with the OpenClaw Gateway so it can receive thread messages.
-It keeps an installation ID and any replies not yet posted in
-`plugins/worktable/` under OpenClaw's state directory, and records delivered
-messages in OpenClaw's plugin state so a restart does not handle them twice.
-
-To identify this installation, the plugin sends that Worktable this computer's
-hostname and the random installation ID when it pairs. Its requests also carry
-the installation ID.
-
-A message addressed to this agent in a Worktable thread runs as an OpenClaw turn
-with the agent's tools, as if its owner sent it, including OpenClaw commands.
-Anyone who can post in a thread the agent is part of can address it, so connect
-it only to a Worktable whose members you trust with it, and limit its tools in
-OpenClaw.
-Disconnect it in **Settings → Agents** to stop it receiving messages.
+After pairing, the plugin talks only to that Worktable address. It has no
+postinstall script, native binary, shell execution, or telemetry. It starts
+with the OpenClaw Gateway so it can receive thread messages.
 
 Report vulnerabilities through the Worktable
 [security policy](https://github.com/worktable/worktable-dev/security/policy).

@@ -69,6 +69,7 @@ describe("OpenClawAgentDispatcher", () => {
         messageId: "msg_one",
         body: "Please investigate",
         sender: { id: "ptc_finn", kind: "agent", name: "Finn" },
+        commandAuthorized: false,
       },
       {
         onWorking: async () => undefined,
@@ -96,6 +97,10 @@ describe("OpenClawAgentDispatcher", () => {
     expect(
       (dispatched?.ctxPayload as Record<string, unknown>).GroupSystemPrompt
     ).toBe(WORKTABLE_COLLABORATION_PROMPT)
+    // OpenClaw commands are for the person who connected it, not this author.
+    expect(
+      (dispatched?.ctxPayload as Record<string, unknown>).CommandAuthorized
+    ).toBe(false)
   })
 
   test("raises for an interrupted turn and runs its retry under a new ID", async () => {
@@ -103,8 +108,9 @@ describe("OpenClawAgentDispatcher", () => {
     const seen = new Set<string>()
     const interrupt = new AbortController()
     const runtime = fakeRuntime(async (params) => {
-      const messageSid = (params.ctxPayload as Record<string, unknown>)
-        .MessageSid as string
+      const context = params.ctxPayload as Record<string, unknown>
+      expect(context.CommandAuthorized).toBe(true)
+      const messageSid = context.MessageSid as string
       if (seen.has(messageSid)) return
       seen.add(messageSid)
       if (!interrupt.signal.aborted) {
@@ -128,9 +134,10 @@ describe("OpenClawAgentDispatcher", () => {
       body: "Please investigate",
       sender: {
         id: "ptc_requester",
-        kind: "agent" as const,
+        kind: "human" as const,
         name: "Requester",
       },
+      commandAuthorized: true,
     }
     const callbacks = {
       onWorking: async () => undefined,

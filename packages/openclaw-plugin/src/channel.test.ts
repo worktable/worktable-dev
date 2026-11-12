@@ -7,6 +7,7 @@ import {
   pendingAgentRegistrationToPromote,
   resolveWorktableAccount,
   resolveWorktableThreadTarget,
+  worktableAccess,
   worktableThreadHandle,
   worktableChannel,
 } from "./channel.js"
@@ -36,13 +37,18 @@ describe("Worktable channel account setup", () => {
     expect(unpaired).toEqual([])
   })
 
-  it("keeps running when it clears its pairing code, and restarts for other channel settings", () => {
+  it("keeps running when it clears its pairing code or its owner changes whom to trust, and restarts for other channel settings", () => {
     // The channel removes the code itself once Worktable confirms pairing.
     // OpenClaw used to replace the plugin for that write, which left the
-    // channel stopped until the next Gateway restart.
+    // channel stopped until the next Gateway restart. The trust settings are
+    // read from storage for every message, so they need no restart either.
     expect(worktableChannel.reload).toEqual({
       configPrefixes: ["channels.worktable"],
-      noopPrefixes: ["channels.worktable.pendingPairingCode"],
+      noopPrefixes: [
+        "channels.worktable.pendingPairingCode",
+        "channels.worktable.trustAllMembers",
+        "channels.worktable.trustAllAgents",
+      ],
     })
   })
 
@@ -72,6 +78,8 @@ describe("Worktable channel account setup", () => {
       authMode: "agent-registration" as const,
       agentAuth: active,
       pendingAgentAuth: pending,
+      trustAllMembers: false,
+      trustAllAgents: false,
     }
 
     expect(agentCredentialForConnection(account)).toEqual(pending)
@@ -227,13 +235,15 @@ describe("Worktable channel account setup", () => {
     ).toBe("thread:thr_abcdefghijkl")
   })
 
-  it("preserves a paired home Space when standard setup rotates the token", () => {
+  it("preserves a paired home Space and its owner when standard setup rotates the token", () => {
     const pairedCfg = {
       channels: {
         worktable: {
           server: "http://worktable.test",
           token: "old-token",
           defaultSpaceId: "connected-agents",
+          ownerMemberId: "ptc_ownerownerowner",
+          trustAllMembers: true,
         },
       },
     } as OpenClawConfig
@@ -260,6 +270,42 @@ describe("Worktable channel account setup", () => {
       defaultSpaceId: "connected-agents",
     })
     expect(worktableChannel.config!.isConfigured!(account, updated)).toBe(true)
+    expect(worktableAccess(account)).toEqual({
+      ownerMemberId: "ptc_ownerownerowner",
+      trustAllMembers: true,
+      trustAllAgents: false,
+    })
+
+    // A token for another Worktable names no approver there, so nobody is.
+    const moved = worktableChannel.setup!.applyAccountConfig({
+      cfg: pairedCfg,
+      accountId: "default",
+      input: { url: "http://other.test", token: "other-token" },
+    })
+    expect(worktableAccess(resolveWorktableAccount(moved))).toEqual({
+      ownerMemberId: undefined,
+      trustAllMembers: false,
+      trustAllAgents: false,
+    })
+  })
+
+  it("reads a connection as closed unless its settings say otherwise exactly", () => {
+    const account = resolveWorktableAccount({
+      channels: {
+        worktable: {
+          server: "http://worktable.test",
+          token: "token",
+          ownerMemberId: "*",
+          trustAllMembers: "true",
+          trustAllAgents: 1,
+        },
+      },
+    } as unknown as OpenClawConfig)
+    expect(worktableAccess(account)).toEqual({
+      ownerMemberId: undefined,
+      trustAllMembers: false,
+      trustAllAgents: false,
+    })
   })
 
   it("lists every thread before falling back to a legacy default Space", async () => {

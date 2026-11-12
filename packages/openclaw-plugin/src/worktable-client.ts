@@ -238,14 +238,6 @@ export class McpWorktableClient implements WorktableClient {
     }
   }
 
-  async registerParticipant(name: string): Promise<WorktableParticipant> {
-    const result = await this.#call("worktable_thread_delivery", {
-      action: "register_participant",
-      name,
-    })
-    return result.participant as WorktableParticipant
-  }
-
   async #post(
     message: Record<string, unknown>,
     signal?: AbortSignal

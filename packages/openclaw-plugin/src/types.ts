@@ -90,6 +90,11 @@ export interface AgentDispatchInput {
   messageId: string
   body: string
   sender: WorktableParticipant
+  /**
+   * Whether OpenClaw may read commands in this message. Only the person who
+   * connected this OpenClaw gets them; anyone else is plain text to the agent.
+   */
+  commandAuthorized: boolean
 }
 
 export interface AgentDispatchCallbacks {
@@ -164,6 +169,10 @@ export interface WorktableChannelAccount {
   participantName?: string
   defaultSpaceId?: string
   pendingPairingCode?: string
+  /** The Worktable member who approved this connection. */
+  ownerMemberId?: string
+  trustAllMembers: boolean
+  trustAllAgents: boolean
 }
 
 export interface WorktableAgentAuth {

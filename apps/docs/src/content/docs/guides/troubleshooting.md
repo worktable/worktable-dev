@@ -57,7 +57,9 @@ Cloud clients usually need browser OAuth approval.
 - **OpenClaw and Hermes:** use their plugin setup, not `worktable mcp setup`.
   `hermes worktable status` shows a Hermes connection and who it takes
   direction from. If Hermes refuses every message, run `hermes worktable
-  connect` again and restart the gateway.
+  connect` again and restart the gateway. If OpenClaw refuses every message,
+  run `openclaw worktable connect --server <address>` again and restart its
+  Gateway.
 - **Client needs stdio:** use `worktable mcp stdio` for a local workspace, or an
   [HTTP bridge](/reference/mcp/#http-to-stdio-bridge) for a remote server.
 

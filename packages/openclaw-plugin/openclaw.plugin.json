@@ -2,7 +2,7 @@
   "id": "worktable",
   "name": "Worktable",
   "description": "Connect OpenClaw to a persistent workspace shared with your agents—local, self-hosted, or in the cloud.",
-  "version": "0.0.19",
+  "version": "0.0.20",
   "icon": "https://www.worktable.dev/favicon.svg",
   "skills": ["./skills"],
   "channels": ["worktable"],
@@ -118,6 +118,16 @@
           "pendingPairingCode": {
             "type": "string",
             "minLength": 1
+          },
+          "ownerMemberId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "trustAllMembers": {
+            "type": "boolean"
+          },
+          "trustAllAgents": {
+            "type": "boolean"
           }
         },
         "required": ["server"],
@@ -156,6 +166,19 @@
         "pendingPairingCode": {
           "label": "Pending pairing completion",
           "sensitive": true
+        },
+        "ownerMemberId": {
+          "label": "Connected By",
+          "help": "The Worktable member who approved this connection. Set by openclaw worktable connect.",
+          "advanced": true
+        },
+        "trustAllMembers": {
+          "label": "Trust All Members",
+          "help": "Let every person in this Worktable direct this agent."
+        },
+        "trustAllAgents": {
+          "label": "Trust All Agents",
+          "help": "Let every other agent in this Worktable direct this agent."
         }
       }
     }

@@ -29,6 +29,7 @@ export class FakeWorktableClient implements WorktableClient {
     messageId: string
     retryable: boolean
     code: string
+    message: string
   }> = []
   readonly accepted = new Set<string>()
   participantsList: WorktableParticipant[] = []
@@ -70,9 +71,10 @@ export class FakeWorktableClient implements WorktableClient {
     messageId: string,
     _leaseId: string,
     retryable: boolean,
-    code: string
+    code: string,
+    message: string
   ): Promise<void> {
-    this.failed.push({ messageId, retryable, code })
+    this.failed.push({ messageId, retryable, code, message })
     return Promise.resolve()
   }
 

@@ -3,7 +3,13 @@ import {
   createChatChannelPlugin,
   type OpenClawConfig,
 } from "openclaw/plugin-sdk/channel-core"
+import { getRuntimeConfig } from "openclaw/plugin-sdk/runtime-config-snapshot"
 import { hostname } from "node:os"
+import {
+  accessSettingsToKeep,
+  memberId,
+  type WorktableAccess,
+} from "./access.js"
 import {
   parseWorktableAgentAuth,
   WorktableAgentCredentialProvider,
@@ -58,7 +64,35 @@ export function resolveWorktableAccount(
       typeof section.pendingPairingCode === "string"
         ? section.pendingPairingCode
         : undefined,
+    ownerMemberId: memberId(section.ownerMemberId),
+    trustAllMembers: section.trustAllMembers === true,
+    trustAllAgents: section.trustAllAgents === true,
   }
+}
+
+/** Who this connection takes direction from, as its settings stand. */
+export function worktableAccess(
+  account: WorktableChannelAccount
+): WorktableAccess {
+  return {
+    ownerMemberId: account.ownerMemberId,
+    trustAllMembers: account.trustAllMembers,
+    trustAllAgents: account.trustAllAgents,
+  }
+}
+
+/**
+ * The rule as saved now, read from storage for each message. The owner's
+ * trust settings do not restart the channel, so a change, above all turning
+ * one off, must hold for the very next message.
+ */
+export function savedWorktableAccess(accountId?: string): WorktableAccess {
+  return worktableAccess(
+    resolveWorktableAccount(
+      getRuntimeConfig({ pin: false, skipPluginValidation: true }),
+      accountId
+    )
+  )
 }
 
 export function agentCredentialForConnection(
@@ -227,14 +261,28 @@ const base = createChannelPluginBase<WorktableChannelAccount>({
   setup: {
     applyAccountConfig({ cfg, input }) {
       const section = { ...channelSection(cfg) }
+      const server = input.url ?? input.baseUrl
+      // A token given by hand names no approver. The one on record stays only
+      // for the same Worktable address.
+      const access =
+        section.server === server
+          ? accessSettingsToKeep(section, {
+              server,
+              ownerMemberId: section.ownerMemberId,
+            })
+          : {}
       delete section.agentAuth
       delete section.pendingAgentAuth
+      delete section.ownerMemberId
+      delete section.trustAllMembers
+      delete section.trustAllAgents
       const channels = {
         ...(cfg.channels as Record<string, unknown> | undefined),
         [CHANNEL_ID]: {
           ...section,
+          ...access,
           enabled: true,
-          server: input.url ?? input.baseUrl,
+          server,
           token: input.token,
           authMode: "local-token",
         },
@@ -259,7 +307,12 @@ export const worktableChannel = createChatChannelPlugin({
       // The running channel clears its pairing code once Worktable confirms
       // it. Nothing reads the code after that, and replacing the plugin for
       // that write left the channel stopped until the Gateway restarted.
-      noopPrefixes: [`channels.${CHANNEL_ID}.pendingPairingCode`],
+      // The trust settings are read from storage for every message instead.
+      noopPrefixes: [
+        `channels.${CHANNEL_ID}.pendingPairingCode`,
+        `channels.${CHANNEL_ID}.trustAllMembers`,
+        `channels.${CHANNEL_ID}.trustAllAgents`,
+      ],
     },
     gateway: {
       async startAccount(ctx) {
@@ -288,9 +341,16 @@ export const worktableChannel = createChatChannelPlugin({
             })
           }
         )
+        if (!ctx.account.ownerMemberId) {
+          ctx.log?.warn?.(
+            "Nobody is on record as having connected this OpenClaw, so it refuses every Worktable thread message. Run: openclaw worktable connect --server <address>"
+          )
+        }
         const connector = new WorktableConnector({
           client: await worktableClient(ctx.account, connectedCredential),
           dispatcher: new OpenClawAgentDispatcher(ctx.cfg),
+          access: () => savedWorktableAccess(ctx.accountId),
+          name: ctx.account.participantName,
           replyOutbox: createOpenClawReplyOutbox(),
           accountId: ctx.accountId,
           worktableOrigin: ctx.account.server,

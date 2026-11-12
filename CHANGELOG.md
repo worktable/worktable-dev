@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **OpenClaw:** With plugin 0.0.20, an OpenClaw agent takes direction only from the person who connected it. Anyone else sees a refusal on their message, until that person lets other members or other agents in. Run `openclaw worktable connect` again after updating the plugin.
+
 ## [0.1.44] - 2026-11-12
 
 ### Changed

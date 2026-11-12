@@ -65,7 +65,8 @@ Worktable is the authority on who is who. With each message it tells the plugin
 who wrote it, who connected this Hermes, and, when the author is an agent, who
 connected that one. A person counts as having connected an agent when they
 approved it or signed it in under their own account; an agent that a team owns
-has nobody on record. Your own agents are let in by default because they
+has nobody on record. On a Worktable with one person, everyone it lists is that
+person, under whichever credential they post, or one of their agents. Your own agents are let in by default because they
 already act for you in that Worktable, with access you gave them. The cost is
 that one of them, steered by something it read, can direct Hermes. Turn that
 off if you would rather they could not:

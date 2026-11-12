@@ -17,7 +17,8 @@ OWNER_TELLING_WORKTABLE_VERSION = "0.1.45"
 # A Worktable thread member id, as deliveries name people and agents.
 MEMBER_ID = re.compile(r"ptc_[A-Za-z0-9_-]{12,}")
 # Every person and agent a Worktable lists is its one person, or that
-# person's: an older Worktable that has no teammates.
+# person's: a Worktable that has no teammates. Its person may post as more
+# than one thread member, so no single member id stands for them.
 ONE_PERSON = object()
 
 
@@ -51,11 +52,14 @@ async def resolve_ownership(
     """Who connected this Hermes and the message's author.
 
     Worktable is the authority and says so with each delivery, so a connection
-    made by any earlier plugin has its owner without connecting again. An
-    older Worktable does not say: with one person in it everyone is that
-    person or theirs, and otherwise the owner recorded at pairing stands.
+    made by any earlier plugin has its owner without connecting again: that it
+    has one person, or who connected each agent. An older Worktable does not
+    say: asked whether it has one person, it is treated the same way, and
+    otherwise the owner recorded at pairing stands.
     """
     if isinstance(connected_by, dict):
+        if connected_by.get("onePerson") is True:
+            return Ownership(told=True, owner=ONE_PERSON)
         return Ownership(
             told=True,
             # An agent the team owns has nobody; its pairing recorded who approved.

@@ -144,6 +144,7 @@ def said(author=None, recipient=OWNER):
 
 # A connection made by a plugin that recorded no owner.
 UNRECORDED = Access(None)
+ONE_PERSON_SAID = {"onePerson": True, "recipient": None, "author": None}
 
 
 @pytest.mark.parametrize(
@@ -170,6 +171,12 @@ UNRECORDED = Access(None)
         # approver recorded at pairing stands in, and without one nobody does.
         (Access(OWNER), OWNER, said(recipient=None), None),
         (Access(None, trust_all_members=True, trust_all_agents=True), OWNER, said(recipient=None), "OWNER_UNKNOWN"),
+        # A Worktable with one person says so. That person may post as more
+        # than one thread member, and every agent in it is theirs.
+        (UNRECORDED, OWNER, ONE_PERSON_SAID, None),
+        (UNRECORDED, SAM, ONE_PERSON_SAID, None),
+        (UNRECORDED, ATLAS, ONE_PERSON_SAID, None),
+        (Access(None, trust_own_agents=False), ATLAS, ONE_PERSON_SAID, "AGENT_NOT_TRUSTED"),
         # An older Worktable says nothing. With teammates, the recorded
         # approver stands and no agent counts as the owner's own.
         (Access(OWNER), OWNER, None, None),

@@ -148,6 +148,28 @@ function sessionHeaders(headers: Headers): Headers {
   })
 }
 
+/** Connect an agent with a credential of its own, as `by`. */
+async function connectTeamAgent(
+  name: string,
+  ownership: "personal" | "team",
+  by: TokenIdentity,
+  owner: TokenIdentity
+): Promise<TokenIdentity> {
+  const { createToken } = await import("./token-store.ts")
+  const agent = createTeamAgent({ name, platform: "codex", ownership }, by)
+  const credential = await createToken({
+    agent: "codex",
+    scopes: ["threads:read", "threads:write"],
+  })
+  bindTeamAgentCredential(agent.id, credential.metadata.principal.id, by)
+  if (ownership === "team")
+    updateTeamAgent(agent.id, { worktableThreads: "edit" }, owner)
+  return resolveTeamAgentCredential({
+    ...credential.metadata,
+    credentialClass: "local",
+  } as TokenIdentity)!
+}
+
 async function setup() {
   const now = new Date().toISOString()
   await writeSpace({
@@ -364,25 +386,11 @@ describe("team foundation", () => {
   test("a delivery says who connected its agent and who connected an agent author", async () => {
     const { owner, member } = await setup()
     const worktable = { kind: "worktable" as const }
-    const { createToken } = await import("./token-store.ts")
-    const connect = async (
+    const connect = (
       name: string,
       ownership: "personal" | "team",
       by: TokenIdentity
-    ) => {
-      const agent = createTeamAgent({ name, platform: "codex", ownership }, by)
-      const credential = await createToken({
-        agent: "codex",
-        scopes: ["threads:read", "threads:write"],
-      })
-      bindTeamAgentCredential(agent.id, credential.metadata.principal.id, by)
-      if (ownership === "team")
-        updateTeamAgent(agent.id, { worktableThreads: "edit" }, owner)
-      return resolveTeamAgentCredential({
-        ...credential.metadata,
-        credentialClass: "local",
-      } as TokenIdentity)!
-    }
+    ) => connectTeamAgent(name, ownership, by, owner)
     const resident = await connect("Resident", "personal", owner)
     const authors = {
       "the owner's other agent": await connect("Sibling", "personal", owner),
@@ -411,11 +419,16 @@ describe("team foundation", () => {
     }
     // Each person is named as the thread member they post as. An agent the
     // team owns, and an author who is a person, have nobody who connected them.
+    const said = (author: string | null) => ({
+      onePerson: false,
+      recipient: alice,
+      author,
+    })
     expect(told).toEqual({
-      "the owner's other agent": { recipient: alice, author: alice },
-      "a teammate's agent": { recipient: alice, author: bob },
-      "an agent the team owns": { recipient: alice, author: null },
-      "the owner": { recipient: alice, author: null },
+      "the owner's other agent": said(alice),
+      "a teammate's agent": said(bob),
+      "an agent the team owns": said(null),
+      "the owner": said(null),
     })
 
     // An agent the team owns has nobody on record for itself either.
@@ -432,7 +445,11 @@ describe("team foundation", () => {
     const forShared = await runWithTeamIdentity(shared, () =>
       claimNextThreadDelivery(shared, 0, 2)
     )
-    expect(forShared?.connectedBy).toEqual({ recipient: null, author: null })
+    expect(forShared?.connectedBy).toEqual({
+      onePerson: false,
+      recipient: null,
+      author: null,
+    })
   })
 
   test("agents use threads outside Spaces only when their access reaches that far", async () => {

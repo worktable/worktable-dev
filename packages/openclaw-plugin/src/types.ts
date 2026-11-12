@@ -54,11 +54,16 @@ export interface ClaimedWorktableDelivery {
   thread: WorktableThread
   message: WorktableMessage
   /**
-   * Who connected this agent, and who connected the author when that is an
-   * agent, each as a thread member id; null where nobody is on record. Absent
-   * from a Worktable too old to say.
+   * Whether this Worktable has one person, or else who connected this agent
+   * and who connected the author when that is an agent, each as a thread
+   * member id; null where nobody is on record. Absent from a Worktable too
+   * old to say.
    */
-  connectedBy?: { recipient?: string | null; author?: string | null }
+  connectedBy?: {
+    onePerson?: boolean
+    recipient?: string | null
+    author?: string | null
+  }
 }
 
 export interface WorktablePostResult {

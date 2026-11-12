@@ -34,7 +34,8 @@ export interface WorktableAccess {
 
 /**
  * Every person and agent a Worktable lists is its one person, or that
- * person's: an older Worktable that has no teammates.
+ * person's: a Worktable that has no teammates. Its person may post as more
+ * than one thread member, so no single member id stands for them.
  */
 export const ONE_PERSON = Symbol("one person")
 
@@ -51,9 +52,10 @@ export interface Ownership {
 /**
  * Who connected this OpenClaw and the message's author. Worktable is the
  * authority and says so with each delivery, so a connection made by any
- * earlier plugin has its owner without connecting again. An older Worktable
- * does not say: with one person in it everyone is that person or theirs, and
- * otherwise the owner recorded at pairing stands.
+ * earlier plugin has its owner without connecting again: that it has one
+ * person, or who connected each agent. An older Worktable does not say: asked
+ * whether it has one person, it is treated the same way, and otherwise the
+ * owner recorded at pairing stands.
  */
 export async function resolveOwnership(
   connectedBy: unknown,
@@ -62,6 +64,7 @@ export async function resolveOwnership(
 ): Promise<Ownership> {
   if (connectedBy && typeof connectedBy === "object") {
     const said = connectedBy as Record<string, unknown>
+    if (said.onePerson === true) return { told: true, owner: ONE_PERSON }
     return {
       told: true,
       // An agent the team owns has nobody; its pairing recorded who approved.

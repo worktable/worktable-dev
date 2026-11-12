@@ -6,7 +6,7 @@ import { findTeamMemberById, listTeamMembers } from "./team-members.ts"
 import { identityForTeamMember } from "./team-identity.ts"
 import { agentWorktableThreadAccess, canAccessSpace, canAccessWorktableThreads, resolveTeamAgentCredential, TeamAccessError, teamAgentForParticipantKey, teamAgentHasSpaceAccess, teamScopeCeiling } from "./team-policy.ts"
 import { currentActivityActor, recordActivity } from "./activity-log.ts"
-import { agentConnectedBy } from "./agent-owner.ts"
+import { deliveryConnectedBy, type ConnectedBy } from "./agent-owner.ts"
 import type {
   AgentPlatformId,
   ParticipantRef,
@@ -1653,11 +1653,10 @@ export async function claimNextThreadDelivery(
       message: ThreadReadResult["messages"][number]
       /**
        * Who connected the agent this delivery is for, and who connected the
-       * author when that is an agent, each as a thread member id. An adapter
-       * that acts on its own machine decides from these whose messages it
-       * runs. null means nobody is on record.
+       * author when that is an agent. An adapter that acts on its own machine
+       * decides from these whose messages it runs.
        */
-      connectedBy: { recipient: string | null; author: string | null }
+      connectedBy: ConnectedBy
     })
   | null
 > {
@@ -1767,15 +1766,12 @@ export async function claimNextThreadDelivery(
       const author = thread.members.find(
         (candidate) => candidate.id === message.authorMemberId
       )
-      let connectedBy: { recipient: string | null; author: string | null }
+      let connectedBy: ConnectedBy
       try {
-        connectedBy = {
-          recipient: await agentConnectedBy(participant.id),
-          author:
-            author?.kind === "agent"
-              ? await agentConnectedBy(author.id)
-              : null,
-        }
+        connectedBy = await deliveryConnectedBy(
+          participant.id,
+          author?.kind === "agent" ? author.id : null
+        )
       } catch (error) {
         // Not knowing is not the same as nobody: hand the claim back unspent
         // rather than deliver it without its facts, and let this claim fail

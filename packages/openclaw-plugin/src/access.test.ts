@@ -144,11 +144,22 @@ describe("who connected this OpenClaw", () => {
     })
   })
 
-  it("treats everyone an older one-person Worktable lists as that person or theirs", async () => {
+  it("treats everyone a one-person Worktable lists as that person or theirs", async () => {
+    // A current Worktable says it has one person: its owner may post as more
+    // than one thread member, such as under a bearer token of their own.
+    expect(
+      await resolveOwnership(
+        { onePerson: true, recipient: null, author: null },
+        undefined,
+        never
+      )
+    ).toEqual({ told: true, owner: ONE_PERSON })
+    // An older one is asked.
     const onePerson = await resolveOwnership(undefined, undefined, () =>
       Promise.resolve(true)
     )
     expect(onePerson).toEqual({ told: false, owner: ONE_PERSON })
+    expect(outcome(access(), onePerson, person(TEAMMATE))).toBe("owner")
     expect(outcome(access(), onePerson, person(OWNER))).toBe("owner")
     expect(outcome(access(), onePerson, agent)).toBe("trusted")
     expect(outcome(access({ trustOwnAgents: false }), onePerson, agent)).toBe(

@@ -28,6 +28,8 @@ export const OPENCLAW_PUBLIC_FILES = [
   "scripts/verify-packed-discovery.ts",
   "scripts/verify-third-party-notices.ts",
   "setup-entry.ts",
+  "src/access.test.ts",
+  "src/access.ts",
   "src/agent-auth-config.ts",
   "src/agent-auth.test.ts",
   "src/agent-auth.ts",

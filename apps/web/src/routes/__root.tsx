@@ -311,16 +311,15 @@ function AppSidebarWhenQuiet() {
   const [Sidebar, setSidebar] = useState<ComponentType | null>(null)
   useEffect(() => {
     let current = true
-    const code = import("@/components/app-sidebar")
+    const sidebar = import("@/components/app-sidebar").then(
+      (module): ComponentType => memo(module.AppSidebar),
+      // Code that can't load fails the page, as a lazy component's does.
+      (error: unknown): ComponentType => () => {
+        throw error
+      }
+    )
     void whenQuiet(() => screenBusy(router), SIDEBAR_WAIT_MS)
-      .then(() => code)
-      .then(
-        (module): ComponentType => memo(module.AppSidebar),
-        // Code that can't load fails the page, as a lazy component's does.
-        (error: unknown): ComponentType => () => {
-          throw error
-        }
-      )
+      .then(() => sidebar)
       .then((component) => {
         if (current) startTransition(() => setSidebar(() => component))
       })

@@ -23,10 +23,12 @@ import {
   Suspense,
   lazy,
   memo,
+  startTransition,
   useState,
   useCallback,
   useEffect,
   useMemo,
+  type ComponentType,
 } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import {
@@ -65,11 +67,6 @@ import {
   DropdownMenuSeparator,
 } from "@worktable/ui/components/dropdown-menu"
 import { Toaster } from "@worktable/ui/components/sonner"
-const AppSidebar = lazy(() =>
-  import("@/components/app-sidebar").then((module) => ({
-    default: memo(module.AppSidebar),
-  }))
-)
 // Only header actions that explain themselves load the tooltip.
 const HeaderActionTooltip = lazy(() => import("@/components/header-action-tooltip"))
 const SettingsDialog = lazy(() =>
@@ -110,7 +107,7 @@ import type { PageMeta } from "@/hooks/use-page-meta"
 import { TraceProfiler } from "@/components/trace-profiler"
 import { onBrowserLogout } from "@/lib/auth-events"
 import { rendererPreloads } from "@/lib/document-renderers"
-import { preloadWhenIdle } from "@/lib/idle-preload"
+import { preloadWhenIdle, whenQuiet } from "@/lib/idle-preload"
 import { useUpdateWaiting } from "@/hooks/use-update-availability"
 // Only Worktable Desktop offers to move agents, so browsers never load it.
 // Desktop injects its bridge before any page script runs.
@@ -281,6 +278,67 @@ function RouteLoadingBar() {
   )
 }
 
+// ── Sidebar ──────────────────────────────────────────────────
+
+/** Whether the open screen is still loading what it shows. */
+function screenBusy(router: ReturnType<typeof useRouter>): boolean {
+  const { queryClient } = router.options.context
+  return (
+    router.state.status === "pending" ||
+    // The renderer can still be opening after its requests finish.
+    document.querySelector("[data-document-loading]") !== null ||
+    queryClient.isFetching() > 0 ||
+    queryClient.isMutating() > 0
+  )
+}
+
+/**
+ * The longest the sidebar waits for the screen. React held it this long
+ * after the page first showed while it sat behind Suspense.
+ */
+const SIDEBAR_WAIT_MS = 300
+
+/**
+ * The sidebar, whose code loads apart from the page's so that no screen
+ * waits for it. Mounting it keeps the main thread for a while, so it follows
+ * what the screen is loading instead of landing on it: behind Suspense it
+ * appeared a fixed 300 ms after the page, just as a slower screen's content
+ * arrived, and that content then waited for the sidebar. It mounts as a
+ * transition, which the screen's own updates interrupt.
+ */
+function AppSidebarWhenQuiet() {
+  const router = useRouter()
+  const [Sidebar, setSidebar] = useState<ComponentType | null>(null)
+  useEffect(() => {
+    let current = true
+    const code = import("@/components/app-sidebar")
+    void whenQuiet(() => screenBusy(router), SIDEBAR_WAIT_MS)
+      .then(() => code)
+      .then(
+        (module): ComponentType => memo(module.AppSidebar),
+        // Code that can't load fails the page, as a lazy component's does.
+        (error: unknown): ComponentType => () => {
+          throw error
+        }
+      )
+      .then((component) => {
+        if (current) startTransition(() => setSidebar(() => component))
+      })
+    return () => {
+      current = false
+    }
+  }, [router])
+  if (!Sidebar) return null
+  return (
+    // For what the sidebar itself loads late.
+    <Suspense fallback={null}>
+      <TraceProfiler id="sidebar">
+        <Sidebar />
+      </TraceProfiler>
+    </Suspense>
+  )
+}
+
 // ── Mobile Sidebar Overlay ───────────────────────────────────
 
 function MobileSidebarOverlay({
@@ -319,11 +377,7 @@ function MobileSidebarOverlay({
           open ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <Suspense fallback={null}>
-          <TraceProfiler id="sidebar">
-            <AppSidebar />
-          </TraceProfiler>
-        </Suspense>
+        <AppSidebarWhenQuiet />
       </div>
     </>
   )
@@ -643,11 +697,7 @@ function RootLayout() {
                 className="glass h-full"
                 style={{ width: sidebarResize.size }}
               >
-                <Suspense fallback={null}>
-                  <TraceProfiler id="sidebar">
-                    <AppSidebar />
-                  </TraceProfiler>
-                </Suspense>
+                <AppSidebarWhenQuiet />
               </div>
             </aside>
           )}
@@ -790,12 +840,7 @@ function PreloadScreensWhenIdle() {
         // on nothing it could have had.
         () => import("@/components/settings/settings-dialog"),
       ],
-      () =>
-        router.state.status === "pending" ||
-        // The renderer can still be opening after its requests finish.
-        document.querySelector("[data-document-loading]") !== null ||
-        queryClient.isFetching() > 0 ||
-        queryClient.isMutating() > 0
+      () => screenBusy(router)
     )
   }, [router])
   return null

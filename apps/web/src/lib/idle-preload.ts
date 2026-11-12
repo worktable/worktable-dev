@@ -18,6 +18,8 @@ const IDLE_TIMEOUT_MS = 2_000
 const IDLE_FALLBACK_MS = 200
 // How often to look again while requests are in flight.
 const BUSY_RETRY_MS = 500
+// The same for work the person is waiting to see.
+const QUIET_RETRY_MS = 20
 
 function idle(delayMs: number): Promise<void> {
   return new Promise((resolve) =>
@@ -66,4 +68,21 @@ export function preloadWhenIdle(
   return () => {
     stopped = true
   }
+}
+
+/**
+ * Resolves once `busy` is false, or after `maxMs` when it stays true. For
+ * work that keeps the main thread and so should follow what the screen is
+ * loading, without waiting on a request that stalls. It first looks a
+ * moment later, so requests the screen starts as it mounts count.
+ */
+export function whenQuiet(busy: () => boolean, maxMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const deadline = performance.now() + maxMs
+    const look = () => {
+      if (!busy() || performance.now() >= deadline) resolve()
+      else setTimeout(look, QUIET_RETRY_MS)
+    }
+    setTimeout(look, 0)
+  })
 }

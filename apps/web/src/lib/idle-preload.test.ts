@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test"
-import { preloadWhenIdle } from "./idle-preload"
+import { preloadWhenIdle, whenQuiet } from "./idle-preload"
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -87,4 +87,22 @@ test("loads nothing ahead when the browser saves data or is on 2G", async () => 
   )
   await wait(50)
   expect(later).toBe(false)
+})
+
+test("waits for the screen's requests, but not for one that stalls", async () => {
+  let busy = true
+  let quiet = false
+  void whenQuiet(() => busy, 5_000).then(() => (quiet = true))
+  await wait(100)
+  expect(quiet).toBe(false)
+
+  busy = false
+  await wait(100)
+  expect(quiet).toBe(true)
+
+  const started = performance.now()
+  await whenQuiet(() => true, 150)
+  const waited = performance.now() - started
+  expect(waited).toBeGreaterThanOrEqual(140)
+  expect(waited).toBeLessThan(1_000)
 })

@@ -42,7 +42,16 @@ def _host(parts) -> str:
 def known_address(given: str, returned: str) -> str:
     """An address Worktable answered with, accepted only on the host the user
     gave or on Worktable Cloud. The token and every later request go there."""
-    asked, answer = urlsplit(given), urlsplit(returned)
+    asked = urlsplit(given)
+    try:
+        answer = urlsplit(returned)
+        answer.hostname
+    except ValueError:
+        # Not an address at all, such as an unclosed IPv6 bracket.
+        raise PairingError(
+            f"Worktable at {asked.netloc} answered with an address Hermes can't read.",
+            "ADDRESS_MISMATCH",
+        ) from None
     same_host = bool(answer.hostname) and _host(answer) == _host(asked)
     # Never from an encrypted address to a plain one.
     downgraded = asked.scheme == "https" and answer.scheme != "https"

@@ -137,6 +137,7 @@ def test_accepts_an_address_on_the_host_the_user_gave_or_on_worktable_cloud(give
         ("https://worktable.example", "http://app.worktable.cloud/api/mcp"),
         ("https://worktable.example", "file:///etc/passwd"),
         ("https://worktable.example", "/api/mcp"),
+        ("https://worktable.example", "https://[::1/api/mcp"),
     ],
 )
 def test_refuses_an_address_somewhere_else(given, returned):

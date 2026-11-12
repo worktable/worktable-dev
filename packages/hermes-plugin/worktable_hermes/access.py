@@ -33,9 +33,10 @@ class Access:
                 "OWNER_UNKNOWN",
                 f"Connect {name} to Worktable again before it can answer: hermes worktable connect",
             )
-        if sender.get("id") == self.owner_id:
-            return None
         kind = sender.get("kind")
+        # The owner is a person the thread lists; an id alone is not enough.
+        if sender.get("id") == self.owner_id and kind == "human":
+            return None
         if kind == "agent":
             if self.trust_all_agents:
                 return None

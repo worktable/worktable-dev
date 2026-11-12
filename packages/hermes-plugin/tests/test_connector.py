@@ -167,10 +167,12 @@ async def test_runs_a_message_only_for_an_author_the_owner_allows(access, author
         assert "Hermes" in tools.messages[0]
 
 
-async def test_an_author_the_thread_does_not_list_is_never_trusted():
+@pytest.mark.parametrize("author", [SAM, OWNER])
+async def test_an_author_the_thread_does_not_list_is_never_trusted(author):
+    # Not even under the owner's id: the owner is a person the thread lists.
     tools, dispatcher = FakeTools(), FakeDispatcher()
-    delivery = claimed(author=SAM)
-    delivery["thread"]["members"] = [member for member in delivery["thread"]["members"] if member["id"] != SAM]
+    delivery = claimed(author=author)
+    delivery["thread"]["members"] = [member for member in delivery["thread"]["members"] if member["id"] != author]
     everyone = Access(OWNER, trust_all_members=True, trust_all_agents=True)
 
     await connector(tools, dispatcher, access=everyone).handle(delivery)

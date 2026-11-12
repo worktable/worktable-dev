@@ -71,12 +71,6 @@ class WorktableTools:
         result = await self._request("worktable_threads_read", {"action": "participants"})
         return list(result.get("participants") or [])
 
-    async def register_participant(self, name: str) -> dict:
-        result = await self._request(
-            "worktable_thread_delivery", {"action": "register_participant", "name": name}
-        )
-        return dict(result.get("participant") or {})
-
     async def claim(self, wait_seconds: int = CLAIM_WAIT_SECONDS) -> Optional[dict]:
         result = await self._request(
             "worktable_thread_delivery",

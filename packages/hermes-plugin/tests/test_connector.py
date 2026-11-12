@@ -1,12 +1,23 @@
 import asyncio
 from typing import Optional
 
+import pytest
+
+from worktable_hermes.access import Access
 from worktable_hermes.client import WorktableError
 from worktable_hermes.connector import Connector, Turn, TurnError
 from worktable_hermes.store import DeliveryStore, MemoryState
 
 
-def claimed(message_id="msg_1", lease_id="lease_1", body="Summarize the launch plan"):
+OWNER = "ptc_maya_owner_01"
+MEMBERS = {
+    OWNER: ("human", "Maya"),
+    "ptc_sam_member_01": ("human", "Sam"),
+    "ptc_atlas_agent_1": ("agent", "Atlas"),
+}
+
+
+def claimed(message_id="msg_1", lease_id="lease_1", body="Summarize the launch plan", author=OWNER):
     return {
         "messageId": message_id,
         "threadId": "thr_1",
@@ -19,15 +30,18 @@ def claimed(message_id="msg_1", lease_id="lease_1", body="Summarize the launch p
             "version": 3,
             "title": "Launch",
             "members": [
-                {"id": "ptc_maya", "kind": "human", "name": "Maya"},
+                *({"id": id, "kind": kind, "name": name} for id, (kind, name) in MEMBERS.items()),
                 {"id": "ptc_hermes", "kind": "agent", "name": "Hermes"},
             ],
             "identities": [
                 {"id": "idt_hermes", "memberId": "ptc_hermes", "name": "Hermes", "default": True, "status": "active"},
-                {"id": "idt_maya", "memberId": "ptc_maya", "name": "Maya", "default": True, "status": "active"},
+                *(
+                    {"id": f"idt_{id}", "memberId": id, "name": name, "default": True, "status": "active"}
+                    for id, (_kind, name) in MEMBERS.items()
+                ),
             ],
         },
-        "message": {"id": message_id, "body": body, "authorMemberId": "ptc_maya", "authorIdentityId": "idt_maya"},
+        "message": {"id": message_id, "body": body, "authorMemberId": author, "authorIdentityId": f"idt_{author}"},
     }
 
 
@@ -36,6 +50,7 @@ class FakeTools:
         self.calls = []
         self.replies = []
         self.failures = []
+        self.messages = []
         self.lose_lease = False
 
     async def participants(self):
@@ -51,6 +66,7 @@ class FakeTools:
 
     async def fail(self, message_id, lease_id, retryable, code, message):
         self.failures.append({"messageId": message_id, "retryable": retryable, "code": code})
+        self.messages.append(message)
 
     async def reply(self, reply):
         self.replies.append(reply)
@@ -78,10 +94,12 @@ class FakeDispatcher:
 
 
 def connector(tools, dispatcher, store=None, **options):
+    access = options.pop("access", Access(OWNER))
     return Connector(
         tools,
         dispatcher,
         store or DeliveryStore(MemoryState()),
+        access=lambda: access,
         worktable_origin="https://worktable.example",
         heartbeat_seconds=options.pop("heartbeat_seconds", 60),
         resume_wait_seconds=options.pop("resume_wait_seconds", 0.05),
@@ -112,6 +130,53 @@ async def test_answers_a_message_once_and_rejects_its_redelivery():
         }
     ]
     assert tools.failures == [{"messageId": "msg_1", "retryable": False, "code": "DUPLICATE_EVENT"}]
+
+
+SAM, ATLAS = "ptc_sam_member_01", "ptc_atlas_agent_1"
+
+
+@pytest.mark.parametrize(
+    "access, author, refused",
+    [
+        # Only the person who connected Hermes, until that person opts into more.
+        (Access(OWNER), OWNER, None),
+        (Access(OWNER), SAM, "NOT_OWNER"),
+        (Access(OWNER), ATLAS, "AGENT_NOT_TRUSTED"),
+        # Trusting the Worktable's members lets people in, not their agents.
+        (Access(OWNER, trust_all_members=True), SAM, None),
+        (Access(OWNER, trust_all_members=True), ATLAS, "AGENT_NOT_TRUSTED"),
+        # Agents are their own opt-in.
+        (Access(OWNER, trust_all_agents=True), ATLAS, None),
+        (Access(OWNER, trust_all_agents=True), SAM, "NOT_OWNER"),
+        # A connection with nobody on record lets nobody in, whatever it trusts.
+        (Access(None, trust_all_members=True, trust_all_agents=True), OWNER, "OWNER_UNKNOWN"),
+    ],
+)
+async def test_runs_a_message_only_for_an_author_the_owner_allows(access, author, refused):
+    tools, dispatcher = FakeTools(), FakeDispatcher()
+
+    await connector(tools, dispatcher, access=access).handle(claimed(author=author))
+
+    if refused is None:
+        assert [turn.sender["id"] for turn in dispatcher.turns] == [author]
+        assert len(tools.replies) == 1 and tools.failures == []
+    else:
+        # Nothing reaches Hermes, and the author sees why on their message.
+        assert dispatcher.turns == [] and tools.replies == [] and tools.calls == []
+        assert tools.failures == [{"messageId": "msg_1", "retryable": False, "code": refused}]
+        assert "Hermes" in tools.messages[0]
+
+
+async def test_an_author_the_thread_does_not_list_is_never_trusted():
+    tools, dispatcher = FakeTools(), FakeDispatcher()
+    delivery = claimed(author=SAM)
+    delivery["thread"]["members"] = [member for member in delivery["thread"]["members"] if member["id"] != SAM]
+    everyone = Access(OWNER, trust_all_members=True, trust_all_agents=True)
+
+    await connector(tools, dispatcher, access=everyone).handle(delivery)
+
+    assert dispatcher.turns == []
+    assert [failure["code"] for failure in tools.failures] == ["NOT_OWNER"]
 
 
 async def test_rewrites_links_to_this_worktables_docs_as_portable_paths():

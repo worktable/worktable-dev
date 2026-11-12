@@ -214,9 +214,10 @@ describe("an agent paired with a Cloud workspace", () => {
       },
     })
     expect(redeemed.status).toBe(200)
-    const { token, mcpUrl } = (await redeemed.json()) as {
+    const { token, mcpUrl, ownerMemberId } = (await redeemed.json()) as {
       token: string
       mcpUrl: string
+      ownerMemberId: string
     }
     expect(mcpUrl).toBe(`${agentBase}/api/mcp`)
     const completed = await call("/api/pairing/complete", {
@@ -238,6 +239,22 @@ describe("an agent paired with a Cloud workspace", () => {
     expect(
       (await call("/api/mcp", { body: initialize, bearer: token })).status
     ).toBe(401)
+
+    // The adapter was told who approved it: the member that person posts as.
+    const posted = await call("/api/threads", {
+      body: {
+        title: "Launch",
+        to: "Atlas",
+        body: "Kickoff",
+        idempotencyKey: "owner-first-post",
+      },
+      owner: true,
+    })
+    expect(posted.status).toBe(201)
+    const { message } = (await posted.json()) as {
+      message: { authorMemberId: string }
+    }
+    expect(ownerMemberId).toBe(message.authorMemberId)
 
     // The owner sees and manages it like a local agent.
     const listed = await call("/api/agent-connections", { owner: true })

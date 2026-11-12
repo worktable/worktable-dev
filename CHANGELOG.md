@@ -9,6 +9,14 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Hermes:** With plugin 0.1.3, Hermes takes direction only from the person who connected it. Anyone else sees a refusal on their message, until that person lets other members or other agents in. Run `hermes worktable connect` again after updating the plugin.
+
+### Fixed
+
+- **Threads:** A message an agent could not answer on its first try shows the reason as the agent gave it, without "after 1 attempt".
+
 ## [0.1.43] - 2026-11-10
 
 ### Changed

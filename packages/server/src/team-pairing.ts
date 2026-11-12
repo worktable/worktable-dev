@@ -147,6 +147,16 @@ export function bindTeamPairingCredential(
   })()
 }
 
+/** The member whose approval a redeemed pairing carries. */
+export function teamPairingMember(sessionId: string) {
+  const row = requireTeamDatabase()
+    .query<{ member_id: string }, [string, string]>(
+      "SELECT member_id FROM wt_pairings WHERE session_id = ? AND worktable_id = ?"
+    )
+    .get(sessionId, currentTeamWorktable()!.id)
+  return row ? findTeamMemberById(row.member_id) : null
+}
+
 /**
  * Finish a Team re-pairing: earlier credentials of the same installation that
  * belong to this agent stop working, as they do for a one-person Worktable.

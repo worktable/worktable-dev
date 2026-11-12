@@ -30,6 +30,8 @@ import { authSessionRouter } from "./routes/auth-session.ts";
 import { SESSION_COOKIE_NAME, setOwnerPassword } from "./session-store.ts";
 import { createPairingSession, remoteMcpUrl } from "./pairing-store.ts";
 import { listParticipantBindings } from "./participant-store.ts";
+import { postThreadMessageWithStored } from "./thread-service.ts";
+import { ownerIdentity } from "./auth.ts";
 import { writeSpace } from "./store.ts";
 import {
   createToken,
@@ -43,6 +45,13 @@ import {
 // (tokens-style stack) and code-authenticated redeem/progress that must work
 // with NO cookie and NO bearer — that asymmetry is the core behavior under
 // test, alongside the full pair -> redeem -> mint -> progress lifecycle.
+
+/** Agents' thread members. Pairing also resolves the approving person's. */
+async function agentBindings() {
+  return (await listParticipantBindings()).filter(
+    (binding) => binding.participant.kind === "agent"
+  );
+}
 
 function buildApp() {
   const app = new Hono();
@@ -199,7 +208,7 @@ describe("create (owner surface)", () => {
       })
     );
     expect(completed.status).toBe(200);
-    const bindings = await listParticipantBindings();
+    const bindings = await agentBindings();
     expect(bindings).toMatchObject([
       {
         participant: { kind: "agent", name: "Atlas" },
@@ -402,6 +411,7 @@ describe("create (owner surface)", () => {
     const payload = (await redeemed.json()) as {
       token: string;
       participantName: string;
+      ownerMemberId: string;
       defaultSpaceId: string;
       client: string | null;
     };
@@ -412,7 +422,7 @@ describe("create (owner surface)", () => {
     const identity = await verifyToken(payload.token);
     expect(identity?.agent).toBe("openclaw@oci_personal_install");
     expect(identity?.scopes).toEqual(scopesForAccess(DEFAULT_AGENT_ACCESS));
-    const bindings = await listParticipantBindings();
+    const bindings = await agentBindings();
     expect(bindings).toHaveLength(1);
     expect(bindings[0]).toMatchObject({
       participant: { kind: "agent", name: "Atlas" },
@@ -420,13 +430,23 @@ describe("create (owner surface)", () => {
     });
     expect(bindings[0]).not.toHaveProperty("threadLocationVersion");
 
+    // The adapter learns who approved it: the member its owner posts as.
+    const { message } = await postThreadMessageWithStored(ownerIdentity(), {
+      location: { kind: "space", spaceId: homeSpace.id },
+      title: "Launch",
+      to: bindings[0]!.participant.id,
+      body: "Kickoff",
+      idempotencyKey: "owner-first-post",
+    });
+    expect(payload.ownerMemberId).toBe(message.authorMemberId);
+
     const adapterToken = (await listTokens()).find(
       (token) =>
         token.agent === "openclaw@oci_personal_install" && !token.revokedAt
     );
     expect(adapterToken).toBeDefined();
     await revokeToken(adapterToken!.id);
-    expect(await listParticipantBindings()).toHaveLength(0);
+    expect(await agentBindings()).toHaveLength(0);
   });
 
   it("keeps agent-adapter pairing provider-neutral while validating adapter ids", async () => {
@@ -606,7 +626,7 @@ describe("create (owner surface)", () => {
     expect((await verifyToken(secondToken))?.agent).toBe(
       "openclaw@oci_installation_beta"
     );
-    expect(await listParticipantBindings()).toHaveLength(2);
+    expect(await agentBindings()).toHaveLength(2);
 
     const rotatedFirst = await redeemAdapter("oci_installation_alpha", {
       kind: "agent-adapter",
@@ -618,7 +638,7 @@ describe("create (owner surface)", () => {
       "openclaw@oci_installation_alpha"
     );
     expect(await verifyToken(secondToken)).not.toBeNull();
-    const rotatedBindings = await listParticipantBindings();
+    const rotatedBindings = await agentBindings();
     expect(rotatedBindings).toHaveLength(2);
     expect(
       rotatedBindings.filter(
@@ -681,7 +701,7 @@ describe("create (owner surface)", () => {
       code: "PAIRING_TARGET_UNAVAILABLE",
     });
     expect(await listTokens()).toHaveLength(0);
-    expect(await listParticipantBindings()).toHaveLength(0);
+    expect(await agentBindings()).toHaveLength(0);
 
     await writeSpace(homeSpace);
     const retried = await app.fetch(

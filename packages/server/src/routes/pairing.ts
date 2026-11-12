@@ -12,6 +12,7 @@ import {
   retireFailedTeamPairingCredential,
   requireTeamPairingAdministrator,
   finalizeTeamCredentialRotation,
+  teamPairingMember,
 } from "../team-pairing.ts"
 import {
   requireTeamAgentAdministrator,
@@ -32,7 +33,7 @@ import {
   platformForClient,
   scopesForAccess,
 } from "@worktable/types"
-import { requireAgentManager } from "../auth.ts"
+import { ownerIdentity, requireAgentManager } from "../auth.ts"
 import {
   CONNECTOR_PROGRESS_EVENTS,
   completePairingSession,
@@ -71,7 +72,7 @@ import {
 } from "../connection-request-store.ts";
 import { readSpace } from "../store.ts";
 import { getWorkspaceRoot } from "../workspace.ts";
-import { hostedAgentBase } from "../hosted.ts";
+import { hostedAgentBase, isHosted } from "../hosted.ts";
 import { resolveOrigin } from "./system.ts";
 
 // ============================================================
@@ -251,6 +252,25 @@ function agentEndpoint(c: Context): {
   }
   const { origin, originSource } = resolveOrigin(c);
   return { origin, originSource, mcpUrl: remoteMcpUrl(origin) };
+}
+
+/**
+ * The person who approved a pairing, as the thread member they post as. With
+ * Teams that is the approving member; a one-person Worktable has its owner.
+ */
+async function approvingMemberId(sessionId: string): Promise<string | undefined> {
+  if (teamsEnabled()) {
+    const member = teamPairingMember(sessionId);
+    if (!member) return undefined;
+    return (
+      await resolveParticipant(identityForTeamMember(member), {
+        initialName: member.name,
+      })
+    ).participant.id;
+  }
+  // A hosted Worktable that is not yet a Team has no local owner to name.
+  if (isHosted()) return undefined;
+  return (await resolveParticipant(ownerIdentity())).participant.id;
 }
 
 // ---- Owner surface -------------------------------------------------------
@@ -699,6 +719,10 @@ pairingRouter.post("/redeem", async (c) => {
   // The pairing's name only names a new agent. Reconnecting an installation
   // keeps the name its owner gave it, and the adapter learns that name here.
   let participantName = adapterTarget?.participantName;
+  // The thread member who approved this agent. An adapter that acts on its
+  // own machine takes direction from this person unless its operator opts
+  // into more.
+  let ownerMemberId: string | undefined;
   let teamBinding: ReturnType<typeof bindTeamPairingCredential> | null = null;
   try {
     if (teamsEnabled()) {
@@ -731,6 +755,7 @@ pairingRouter.post("/redeem", async (c) => {
           }
         )
       ).participant.name;
+      ownerMemberId = await approvingMemberId(session.id);
     }
   } catch {
     const setupTarget = adapterTarget
@@ -761,6 +786,7 @@ pairingRouter.post("/redeem", async (c) => {
     ...(adapterTarget
       ? {
           participantName,
+          ...(ownerMemberId ? { ownerMemberId } : {}),
           ...(adapterTarget.defaultSpaceId
             ? { defaultSpaceId: adapterTarget.defaultSpaceId }
             : {}),

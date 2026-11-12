@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import http.client
 import json
-import re
 import time
 from datetime import datetime
 import urllib.error
@@ -14,7 +13,10 @@ from urllib.parse import urlsplit
 
 TIMEOUT_SECONDS = 15
 # Worktable Cloud's edge refuses requests without a product User-Agent.
-USER_AGENT = "worktable-hermes/0.1.2"
+USER_AGENT = "worktable-hermes/0.1.3"
+# Worktable Cloud serves every workspace from this host.
+CLOUD_HOST = "app.worktable.cloud"
+_LOOPBACK = {"localhost", "127.0.0.1", "::1"}
 
 
 class PairingError(Exception):
@@ -30,6 +32,28 @@ def worktable_origin(server: str) -> str:
     if parts.scheme not in ("http", "https") or not parts.netloc:
         raise PairingError(f"Not a Worktable address: {server}", "BAD_SERVER")
     return f"{parts.scheme}://{parts.netloc}{parts.path.rstrip('/')}"
+
+
+def _host(parts) -> str:
+    host = (parts.hostname or "").lower()
+    return "loopback" if host in _LOOPBACK else host
+
+
+def known_address(given: str, returned: str) -> str:
+    """An address Worktable answered with, accepted only on the host the user
+    gave or on Worktable Cloud. The token and every later request go there."""
+    asked, answer = urlsplit(given), urlsplit(returned)
+    same_host = bool(answer.hostname) and _host(answer) == _host(asked)
+    # Never from an encrypted address to a plain one.
+    downgraded = asked.scheme == "https" and answer.scheme != "https"
+    cloud = answer.scheme == "https" and (answer.hostname or "").lower() == CLOUD_HOST
+    if answer.scheme in ("http", "https") and ((same_host and not downgraded) or cloud):
+        return returned
+    raise PairingError(
+        f"Worktable at {asked.netloc} answered with an address somewhere else: "
+        f"{answer.scheme}://{answer.netloc}. If that is your Worktable, run connect with that address.",
+        "ADDRESS_MISMATCH",
+    )
 
 
 # Consecutive failed checks tolerated when a request has no expiry.
@@ -81,27 +105,6 @@ def _request(url: str, body: Optional[dict] = None, token: Optional[str] = None)
         raise PairingError(f"Could not reach Worktable at {url}: {error}", "UNREACHABLE") from None
 
 
-def mcp_resource(origin: str) -> Optional[str]:
-    """The MCP endpoint a Worktable advertises for OAuth sign-in, if any."""
-    try:
-        parts = urlsplit(origin)
-        # A Cloud Worktable's own endpoint, also when given its browser address
-        # (/t/<id>, or /w/<id>): the shared host endpoint names another one.
-        endpoint = re.fullmatch(r"/api/mcp/[wd]/[A-Za-z0-9_-]+/?", parts.path)
-        browser = re.fullmatch(r"/[tw]/([A-Za-z0-9_-]+)/?", parts.path)
-        resource_path = (
-            parts.path.rstrip("/") if endpoint else f"/api/mcp/w/{browser.group(1)}" if browser else ""
-        )
-        metadata = _request(f"{parts.scheme}://{parts.netloc}/.well-known/oauth-protected-resource{resource_path}")
-    except PairingError:
-        return None
-    resource = metadata.get("resource")
-    servers = metadata.get("authorization_servers")
-    if resource_path and resource != f"{parts.scheme}://{parts.netloc}{resource_path}":
-        return None
-    return resource if isinstance(resource, str) and isinstance(servers, list) and servers else None
-
-
 def redeem(origin: str, code: str, hostname: str, installation_id: str) -> dict:
     result = _request(
         f"{origin}/api/pairing/redeem",
@@ -109,6 +112,12 @@ def redeem(origin: str, code: str, hostname: str, installation_id: str) -> dict:
     )
     if not isinstance(result.get("token"), str) or not isinstance(result.get("mcpUrl"), str):
         raise PairingError("Worktable returned an incomplete pairing", "INVALID_PAIRING")
+    try:
+        known_address(origin, result["mcpUrl"])
+    except PairingError:
+        # The token is dropped here, so Worktable can retire it.
+        report(origin, code, "failed_no_config", "Hermes refused a Worktable address on another host.")
+        raise
     return result
 
 
@@ -175,7 +184,9 @@ def request_approval(
         status = result.get("status")
         if status == "approved" and isinstance(result.get("code"), str):
             server = result.get("server")
-            return result["code"], worktable_origin(server) if isinstance(server, str) else origin
+            if not isinstance(server, str):
+                return result["code"], origin
+            return result["code"], known_address(origin, worktable_origin(server))
         if status == "denied":
             raise PairingError("The Worktable owner declined this connection.", "DENIED")
         if status == "expired" or (deadline is not None and time.time() >= deadline):

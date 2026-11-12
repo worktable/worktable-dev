@@ -112,19 +112,58 @@ def test_a_cut_off_error_answer_keeps_its_status(monkeypatch):
     assert error.value.status == 503
 
 
-def test_oauth_discovery_preserves_the_selected_worktable_and_refuses_a_different_resource(monkeypatch):
-    endpoint = "https://app.worktable.cloud/api/mcp/w/team_one"
-    urls = []
-    resource = endpoint
-    def request(url):
-        urls.append(url)
-        return {"resource": resource, "authorization_servers": ["https://auth.example"]}
-    monkeypatch.setattr(pairing, "_request", request)
-    assert pairing.mcp_resource(endpoint) == endpoint
-    assert urls == ["https://app.worktable.cloud/.well-known/oauth-protected-resource/api/mcp/w/team_one"]
-    resource = "https://app.worktable.cloud/api/mcp/w/another_team"
-    assert pairing.mcp_resource(endpoint) is None
-    # The Worktable's browser address finds the same endpoint.
-    resource = endpoint
-    assert pairing.mcp_resource("https://app.worktable.cloud/t/team_one") == endpoint
-    assert urls[-1] == "https://app.worktable.cloud/.well-known/oauth-protected-resource/api/mcp/w/team_one"
+@pytest.mark.parametrize(
+    "given, returned",
+    [
+        ("https://worktable.example", "https://worktable.example/api/mcp"),
+        # A Worktable behind its own proxy answers with its encrypted address.
+        ("http://worktable.example:7480", "https://worktable.example/api/mcp"),
+        ("http://localhost:7480", "http://127.0.0.1:7480/api/mcp"),
+        # Worktable Cloud serves each workspace under its own path.
+        ("https://app.worktable.cloud", "https://app.worktable.cloud/w/ws_1/api/mcp"),
+        ("https://worktable.example", "https://app.worktable.cloud/w/ws_1/api/mcp"),
+    ],
+)
+def test_accepts_an_address_on_the_host_the_user_gave_or_on_worktable_cloud(given, returned):
+    assert pairing.known_address(given, returned) == returned
+
+
+@pytest.mark.parametrize(
+    "given, returned",
+    [
+        ("https://worktable.example", "https://elsewhere.example/api/mcp"),
+        ("https://worktable.example", "https://worktable.example.elsewhere.example/api/mcp"),
+        ("https://worktable.example", "http://worktable.example/api/mcp"),
+        ("https://worktable.example", "http://app.worktable.cloud/api/mcp"),
+        ("https://worktable.example", "file:///etc/passwd"),
+        ("https://worktable.example", "/api/mcp"),
+    ],
+)
+def test_refuses_an_address_somewhere_else(given, returned):
+    with pytest.raises(pairing.PairingError) as error:
+        pairing.known_address(given, returned)
+    assert error.value.code == "ADDRESS_MISMATCH"
+
+
+def test_pairing_stops_before_a_token_goes_to_another_host(monkeypatch):
+    # The approval names a workspace on another host.
+    serve(monkeypatch, [{"status": "approved", "code": "T83PD-NSQDP", "server": "https://elsewhere.example/w/ws_1"}])
+    with pytest.raises(pairing.PairingError) as error:
+        pairing.request_approval(
+            "https://worktable.example", "hci_test_install", "studio", None, lambda *_: None, sleep=lambda _: None
+        )
+    assert error.value.code == "ADDRESS_MISMATCH"
+
+    # The redeemed pairing names an MCP endpoint on another host. Worktable
+    # hears that its token was dropped.
+    calls = []
+
+    def answer(url, body=None, token=None):
+        calls.append((url, (body or {}).get("event")))
+        return {"token": "wt_secret", "mcpUrl": "https://elsewhere.example/api/mcp"}
+
+    monkeypatch.setattr(pairing, "_request", answer)
+    with pytest.raises(pairing.PairingError) as error:
+        pairing.redeem("https://worktable.example", "T83PD-NSQDP", "studio", "hci_test_install")
+    assert error.value.code == "ADDRESS_MISMATCH"
+    assert calls[-1] == ("https://worktable.example/api/pairing/progress", "failed_no_config")

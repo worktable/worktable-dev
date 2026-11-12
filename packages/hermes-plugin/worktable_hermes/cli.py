@@ -9,10 +9,12 @@ import shutil
 import socket
 import subprocess
 import sys
+from dataclasses import replace
 from typing import Any, Optional
 
 from . import pairing
-from .settings import DEFAULT_PARTICIPANT_NAME, MCP_SERVER, PLATFORM, TOKEN_ENV, Settings
+from .access import Access
+from .settings import DEFAULT_PARTICIPANT_NAME, MCP_SERVER, PLATFORM, TOKEN_ENV, Settings, member_id
 from .store import DeliveryStore
 
 # `hermes config unset` and `mcp remove` on an entry that is already gone.
@@ -62,32 +64,43 @@ def _save_token(token: str) -> None:
         raise RuntimeError(f"Hermes did not save {TOKEN_ENV} to the profile's .env")
 
 
-def _mcp_server(url: str, auth: str) -> dict:
-    server: dict[str, Any] = {"url": url, "tools": {"exclude": list(DELIVERY_TOOLS)}}
-    if auth == "oauth":
-        server["auth"] = "oauth"
-    else:
-        server["headers"] = {"Authorization": "Bearer ${%s}" % TOKEN_ENV}
-    return server
+def _mcp_server(url: str) -> dict:
+    return {
+        "url": url,
+        "headers": {"Authorization": "Bearer ${%s}" % TOKEN_ENV},
+        "tools": {"exclude": list(DELIVERY_TOOLS)},
+    }
 
 
-def _enable(url: str, auth: str) -> None:
-    _config_set(f"mcp_servers.{MCP_SERVER}", _mcp_server(url, auth))
+def _enable(url: str) -> None:
+    _config_set(f"mcp_servers.{MCP_SERVER}", _mcp_server(url))
     _config_set(f"plugins.entries.{PLATFORM}.mcp_allowlist", [MCP_SERVER])
     _config_set(f"platforms.{PLATFORM}.enabled", "true")
     # Restart notices would otherwise be posted into every Worktable thread.
     _config_set(f"platforms.{PLATFORM}.gateway_restart_notification", "false")
 
 
+def _who(access: Access) -> str:
+    """Whose messages this Hermes runs, in the words `status` and `connect` print."""
+    if not access.owner_id:
+        return "nobody"
+    who = ["the person who connected it"]
+    if access.trust_all_members:
+        who.append("every member of the Worktable")
+    if access.trust_all_agents:
+        who.append("other agents")
+    return ", ".join(who)
+
+
 def connect(ctx: Any, args: Any) -> int:
     settings = Settings(ctx)
-    origin = pairing.worktable_origin(args.server)
+    given = pairing.worktable_origin(args.server)
+    origin = given
     name = (args.name or DEFAULT_PARTICIPANT_NAME).strip()
     code: Optional[str] = (args.pairing_code or "").strip() or None
-    resource: Optional[str] = None
+    store = DeliveryStore(ctx.state)
     if not code:
-        # Ask Worktable to connect; its owner approves Hermes there. A Cloud
-        # whose gateway cannot pair agents yet answers with a sign-in instead.
+        # Ask Worktable to connect; a person approves Hermes there.
         def show(user_code: str, approval_url: str) -> None:
             print(
                 f"Approve this Hermes in Worktable:\n{approval_url}\n"
@@ -97,58 +110,56 @@ def connect(ctx: Any, args: Any) -> int:
 
         try:
             code, origin = pairing.request_approval(
-                origin,
-                DeliveryStore(ctx.state).installation_id(),
+                given,
+                store.installation_id(),
                 socket.gethostname()[:64],
                 (args.name or "").strip() or None,
                 show,
             )
         except pairing.PairingError as error:
-            resource = pairing.mcp_resource(origin) if error.status in (401, 403, 404, 405) else None
-            if not resource:
-                raise
-
-    if code:
-        store = DeliveryStore(ctx.state)
-        redeemed = pairing.redeem(origin, code, socket.gethostname()[:64], store.installation_id())
-        try:
-            _save_token(redeemed["token"])
-        except Exception:
-            # Nothing holds the new credential, so Worktable may revoke it.
-            pairing.report(origin, code, "failed_no_config", "Hermes could not save the Worktable connection.")
-            raise
-        try:
-            _enable(redeemed["mcpUrl"], "token")
-            settings.save(
-                server=origin,
-                auth="token",
-                participant_name=redeemed.get("participantName") or name,
-                pending_pairing_code=code,
-            )
-        except Exception:
-            # The token is saved; running connect again finishes the setup.
-            pairing.report(origin, code, "failed", "Hermes saved the token but not the rest of the connection.")
-            raise
-        pairing.report(origin, code, "config_written", "Worktable connection saved in Hermes.")
-        pairing.report(origin, code, "verifying", "Waiting for the Hermes gateway to connect.")
-        print(f"Connected Hermes to {redeemed.get('workspaceName') or origin} as {redeemed.get('participantName') or name}.")
-    else:
-        assert resource  # Approval was unavailable and this Worktable offers sign-in.
-        _enable(resource, "oauth")
-        settings.save(server=origin, auth="oauth", participant_name=name, pending_pairing_code=None)
-        try:
-            _hermes_run("mcp", "test", MCP_SERVER)
-        except RuntimeError:
-            print("Sign in to Worktable to let Hermes use your workspace.", flush=True)
-            _hermes_run("mcp", "login", MCP_SERVER, interactive=True)
-            # `hermes mcp login` reports a failed or expired sign-in without failing.
-            try:
-                _hermes_run("mcp", "test", MCP_SERVER)
-            except RuntimeError:
-                raise RuntimeError(
-                    "Hermes is not signed in to Worktable. Run this command again to sign in."
+            if error.status in (404, 405):
+                raise pairing.PairingError(
+                    f"{given} did not answer as a Worktable that connects agents. "
+                    "Check the address, or update that Worktable.",
+                    error.code,
+                    error.status,
                 ) from None
-        print(f"Connected Hermes to {origin} as {name}.")
+            raise
+
+    redeemed = pairing.redeem(origin, code, socket.gethostname()[:64], store.installation_id())
+    try:
+        _save_token(redeemed["token"])
+    except Exception:
+        # Nothing holds the new credential, so Worktable may revoke it.
+        pairing.report(origin, code, "failed_no_config", "Hermes could not save the Worktable connection.")
+        raise
+    owner = member_id(redeemed.get("ownerMemberId"))
+    participant = redeemed.get("participantName") or name
+    trusted = settings.access()
+    try:
+        _enable(redeemed["mcpUrl"])
+        kept_trust = settings.save(
+            server=origin,
+            participant_name=participant,
+            owner_id=owner,
+            pending_pairing_code=code,
+        )
+    except Exception:
+        # The token is saved; running connect again finishes the setup.
+        pairing.report(origin, code, "failed", "Hermes saved the token but not the rest of the connection.")
+        raise
+    pairing.report(origin, code, "config_written", "Worktable connection saved in Hermes.")
+    pairing.report(origin, code, "verifying", "Waiting for the Hermes gateway to connect.")
+    print(f"Connected Hermes to {redeemed.get('workspaceName') or origin} as {participant}.")
+    if not owner:
+        print(
+            "This Worktable did not say who approved the connection, so Hermes will refuse "
+            "thread messages. Update that Worktable, then run this command again.",
+            file=sys.stderr,
+        )
+    else:
+        access = replace(trusted, owner_id=owner) if kept_trust else Access(owner)
+        print(f"It takes direction from: {_who(access)}. Everyone else is refused.")
     print("Restart the gateway so Hermes starts answering Worktable messages: hermes gateway restart")
     return 0
 
@@ -158,12 +169,17 @@ def status(ctx: Any, _args: Any) -> int:
     if not settings.server:
         print("Worktable is not connected. Run `hermes worktable connect <address>`.")
         return 1
-    sign_in = "Worktable sign-in" if settings.auth == "oauth" else "paired token"
     print(f"Worktable: {settings.server}")
     print(f"Participant: {settings.participant_name}")
-    print(f"Credential: {sign_in}")
+    print(f"Takes direction from: {_who(settings.access())}")
     if settings.pairing_error:
         print(f"Pairing did not finish ({settings.pairing_error}). Run `hermes worktable connect` with a new code.")
+        return 1
+    if not settings.owner_id:
+        print(
+            "This connection has no record of who approved it, so Hermes refuses thread messages. "
+            f"Run `hermes worktable connect {settings.server}` again."
+        )
         return 1
     if settings.pending_pairing_code:
         print("Waiting for the gateway to finish pairing. Restart it with: hermes gateway restart")

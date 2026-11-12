@@ -435,15 +435,28 @@ describe("OpenClaw Worktable connector", () => {
     const busy = new Promise<void>((resolve) => {
       release = resolve
     })
-    dispatcher.before = () => busy
+    const ownerTurnStarted = new Promise<void>((resolve) => {
+      dispatcher.before = () => {
+        resolve()
+        return busy
+      }
+    })
     client.deliveries.push(from("msg_owner_busy", OWNER, byOwner))
     const first = connector.processOne()
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    await ownerTurnStarted
+    dispatcher.before = undefined
+    // Accepting a delivery is what follows being let in.
+    const teammateLetIn = new Promise<void>((resolve) => {
+      const accept = client.accept.bind(client)
+      client.accept = (messageId) => {
+        if (messageId === "msg_teammate_waiting") resolve()
+        return accept(messageId)
+      }
+    })
     client.deliveries.push(from("msg_teammate_waiting", TEAMMATE, byOwner))
     const second = connector.processOne()
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    await teammateLetIn
     rule = {}
-    dispatcher.before = undefined
     release()
     await Promise.all([first, second])
     expect(dispatcher.calls.at(-1)?.messageId).toBe("msg_owner_busy")

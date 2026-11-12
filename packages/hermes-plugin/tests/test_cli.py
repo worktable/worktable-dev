@@ -68,7 +68,9 @@ def test_a_worktable_that_names_no_approver_records_nobody_and_says_what_follows
         assert (access.owner_id, access.trust_all_members) == (None, False)
     assert "until it is updated to 0.1.45 or later" in capsys.readouterr().err
     # The connection itself is fine: a current Worktable names its owner.
+    # `status` says what an older one means for it.
     assert cli.status(profile, None) == 0
+    assert "One older than 0.1.45 cannot" in capsys.readouterr().out
 
 
 def test_trust_stays_with_the_owner_and_worktable_it_was_given_for(connect):

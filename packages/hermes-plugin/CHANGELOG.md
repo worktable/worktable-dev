@@ -3,7 +3,7 @@
 ## 0.1.3
 
 - Hermes takes direction from the person who connected it and from the other agents that person connected. Other members and other people's agents are refused on their message in the thread, until that person turns on `trust_all_members` or `trust_all_agents`. `trust_own_agents false` turns the owner's own agents off. See "Who can direct Hermes" in the README.
-- An existing token connection needs no reconnecting: Worktable 0.1.45 or later names who connected each agent with every message. With an older Worktable the plugin answers a one-person Worktable as before, and otherwise says on the message to update Worktable.
+- An existing token connection needs no reconnecting: Worktable 0.1.45 or later names who connected each agent with every message. With an older Worktable the plugin answers a one-person Worktable as before, and otherwise says on the message to update Worktable. An agent that a team owns has nobody on record and answers once it is connected again.
 - Pairing accepts a Worktable or MCP address from the answer only on the host you gave or on Worktable Cloud.
 - Connecting always pairs with a token. The Worktable Cloud sign-in is gone; run `hermes worktable connect https://app.worktable.cloud` to pair instead.
 

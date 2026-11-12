@@ -179,6 +179,11 @@ def status(ctx: Any, _args: Any) -> int:
     if settings.pairing_error:
         print(f"Pairing did not finish ({settings.pairing_error}). Run `hermes worktable connect` with a new code.")
         return 1
+    if not settings.owner_id:
+        print(
+            "Worktable names that person with each message. One older than "
+            f"{OWNER_TELLING_WORKTABLE_VERSION} cannot, and is answered only if it has one person."
+        )
     if settings.pending_pairing_code:
         print("Waiting for the gateway to finish pairing. Restart it with: hermes gateway restart")
     return 0

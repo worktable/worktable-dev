@@ -236,11 +236,16 @@ async def test_a_turn_that_waited_for_its_thread_meets_the_rule_as_it_stands_the
         resume_wait_seconds=0.05,
     )
 
+    async def until(condition):
+        while not condition():
+            await asyncio.sleep(0)
+
     running = asyncio.create_task(subject.handle(claimed(connected_by=said())))
-    await asyncio.sleep(0.01)
-    # Let in while the thread was busy; the owner closes the door meanwhile.
+    await until(lambda: dispatcher.turns)
+    # Let in while the thread was busy, which accepting the delivery shows;
+    # the owner closes the door before its turn comes.
     queued = asyncio.create_task(subject.handle(claimed("msg_2", "lease_2", author=SAM, connected_by=said())))
-    await asyncio.sleep(0.01)
+    await until(lambda: ("accept", "msg_2", "lease_2") in tools.calls)
     rule["now"] = Access(None)
     dispatcher.gate.set()
     await asyncio.gather(running, queued)

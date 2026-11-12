@@ -96,6 +96,10 @@ A connection paired with a token keeps working with nothing to do: Worktable
 0.1.45 or later names who connected Hermes with each message, so the plugin
 needs no reconnecting and refuses nobody it should answer.
 
+The exception is an agent that a team owns. Nobody is on record as having
+connected it, so it answers only after you connect it again with this version,
+which records you as its approver.
+
 With an older Worktable the plugin cannot be told. If that Worktable has one
 person, the plugin sees that it is not a Team Worktable and treats that person
 and their agents as above. If it has teammates, Hermes answers only when its

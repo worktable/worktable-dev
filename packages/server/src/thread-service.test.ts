@@ -1019,6 +1019,26 @@ describe("thread service", () => {
     ).toEqual([archived.threadId])
   })
 
+  it("hands a claim back unspent when it cannot tell who connected its agent", async () => {
+    const posted = await postThreadMessage(finn, {
+      to: "Atlas",
+      body: "Research the connector shape.",
+      idempotencyKey: "finn-unattributed",
+    })
+    // The owner has not taken part yet, and naming them as a thread member
+    // needs every portable thread to be readable.
+    const corruptPath = threadPath("connected-agents", "thr_corrupt")
+    await writeFile(corruptPath, '{"type":', "utf8")
+    await expect(claimNextThreadDelivery(atlas, 0)).rejects.toMatchObject({
+      code: "THREAD_STORE_INCOMPLETE",
+    })
+    await rm(corruptPath)
+    // Nothing was delivered without its facts, and the failure cost no attempt.
+    const claim = await claimNextThreadDelivery(atlas, 0)
+    expect(claim).toMatchObject({ messageId: posted.messageId, attempt: 1 })
+    expect(claim?.connectedBy.recipient).toMatch(/^ptc_/)
+  })
+
   it("rebinds a durable delivery when a portable edit changes its recipient", async () => {
     const first = await postThreadMessage(finn, {
       to: "Atlas",

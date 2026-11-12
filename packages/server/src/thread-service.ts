@@ -1767,18 +1767,31 @@ export async function claimNextThreadDelivery(
       const author = thread.members.find(
         (candidate) => candidate.id === message.authorMemberId
       )
-      return {
-        ...claim,
-        thread,
-        message,
-        connectedBy: {
+      let connectedBy: { recipient: string | null; author: string | null }
+      try {
+        connectedBy = {
           recipient: await agentConnectedBy(participant.id),
           author:
             author?.kind === "agent"
               ? await agentConnectedBy(author.id)
               : null,
-        },
+        }
+      } catch (error) {
+        // Not knowing is not the same as nobody: hand the claim back unspent
+        // rather than deliver it without its facts, and let this claim fail
+        // so the agent comes back for it.
+        await failThreadDelivery({
+          messageId: claim.messageId,
+          leaseId: claim.leaseId,
+          participantId: participant.id,
+          retryable: true,
+          spendAttempt: false,
+          code: "CONNECTED_BY_UNAVAILABLE",
+          message: "Worktable could not tell who connected this agent.",
+        })
+        throw error
       }
+      return { ...claim, thread, message, connectedBy }
     }
     const remaining = deadline - Date.now()
     if (remaining <= 0) return null

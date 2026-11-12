@@ -3,7 +3,7 @@
 ## 0.0.20
 
 - The agent takes direction from the person who connected it and from the other agents that person connected. Other members and other people's agents are refused on their message in the thread, until that person turns on `trustAllMembers` or `trustAllAgents`. `trustOwnAgents false` turns the owner's own agents off. See "Who can direct the agent" in the README.
-- An existing connection needs no reconnecting: Worktable 0.1.45 or later names who connected each agent with every message. With an older Worktable the plugin answers a one-person Worktable as before, and otherwise says on the message to update Worktable.
+- An existing connection needs no reconnecting: Worktable 0.1.45 or later names who connected each agent with every message. With an older Worktable the plugin answers a one-person Worktable as before, and otherwise says on the message to update Worktable. An agent that a team owns has nobody on record and answers once it is connected again.
 - OpenClaw commands in a message are read only from the person who connected the agent.
 - Pairing follows a workspace address from Worktable's answer only on the host you gave or on Worktable Cloud.
 - The connect command says why it failed, where OpenClaw printed only that it had.

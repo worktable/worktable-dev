@@ -223,6 +223,32 @@ async def test_an_older_worktable_with_one_person_answers_that_person_and_their_
     assert tools.messages == ["Only the person who connected Hermes can direct it."]
 
 
+async def test_a_turn_that_waited_for_its_thread_meets_the_rule_as_it_stands_then():
+    tools, dispatcher = FakeTools(), FakeDispatcher()
+    dispatcher.gate = asyncio.Event()
+    rule = {"now": Access(None, trust_all_members=True)}
+    subject = Connector(
+        tools,
+        dispatcher,
+        DeliveryStore(MemoryState()),
+        access=lambda: rule["now"],
+        heartbeat_seconds=60,
+        resume_wait_seconds=0.05,
+    )
+
+    running = asyncio.create_task(subject.handle(claimed(connected_by=said())))
+    await asyncio.sleep(0.01)
+    # Let in while the thread was busy; the owner closes the door meanwhile.
+    queued = asyncio.create_task(subject.handle(claimed("msg_2", "lease_2", author=SAM, connected_by=said())))
+    await asyncio.sleep(0.01)
+    rule["now"] = Access(None)
+    dispatcher.gate.set()
+    await asyncio.gather(running, queued)
+
+    assert [turn.message_id for turn in dispatcher.turns] == ["msg_1"]
+    assert tools.failures == [{"messageId": "msg_2", "retryable": False, "code": "NOT_OWNER"}]
+
+
 @pytest.mark.parametrize("author", [SAM, OWNER])
 async def test_an_author_the_thread_does_not_list_is_never_trusted(author):
     # Not even under the owner's id: the owner is a person the thread lists.

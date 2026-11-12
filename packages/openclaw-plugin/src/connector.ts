@@ -663,16 +663,13 @@ export class WorktableConnector {
       // start a turn, and the refusal shows on their message.
       const author = deliveryAuthor(delivery)
       const access = this.#access()
-      const decision = decideAccess(
-        access,
-        await resolveOwnership(
-          delivery.connectedBy,
-          access.ownerMemberId,
-          this.#isOnePersonWorktable
-        ),
-        { id: author.id, kind: author.listed?.kind },
-        this.#name
+      const ownership = await resolveOwnership(
+        delivery.connectedBy,
+        access.ownerMemberId,
+        this.#isOnePersonWorktable
       )
+      const authorRef = { id: author.id, kind: author.listed?.kind }
+      const decision = decideAccess(access, ownership, authorRef, this.#name)
       if (!decision.allowed) {
         this.#logger.warn?.(
           `Refused Worktable message ${delivery.messageId} from ${author.id || "an unnamed author"} (${decision.code})`
@@ -723,6 +720,21 @@ export class WorktableConnector {
         let retained = await this.#replyOutbox.get(eventId)
         if (retained) retained = upgradeRetainedReply(delivery, retained)
         if (!retained) {
+          // The turn may have waited behind another in its thread. The rule
+          // it meets is the one saved now, not the one it was claimed under.
+          const current = decideAccess(
+            this.#access(),
+            ownership,
+            authorRef,
+            this.#name
+          )
+          if (!current.allowed) {
+            terminalAfterDispatch = true
+            throw Object.assign(
+              new Error("Refused after waiting for its thread"),
+              { code: current.code, authorMessage: current.message }
+            )
+          }
           const reply = await this.#dispatcher.dispatch(
             {
               accountId: this.#accountId,
@@ -736,7 +748,7 @@ export class WorktableConnector {
               messageId: delivery.messageId,
               body: delivery.message.body,
               sender,
-              commandAuthorized: decision.owner,
+              commandAuthorized: current.owner,
             },
             {
               onWorking: () => renewLease(),
@@ -751,7 +763,7 @@ export class WorktableConnector {
             terminalAfterDispatch = true
             // OpenClaw answers nothing to a command from someone it does not
             // take commands from. Say so, rather than report a failed turn.
-            if (!decision.owner && /^\s*[/!]/.test(delivery.message.body)) {
+            if (!current.owner && /^\s*[/!]/.test(delivery.message.body)) {
               throw Object.assign(
                 new Error("OpenClaw did not run a command from this author"),
                 {

@@ -142,9 +142,13 @@ registered.
 
 ## Security
 
-After pairing, the plugin talks only to that Worktable address. It has no
-postinstall script, native binary, shell execution, or telemetry. It starts
-with the OpenClaw Gateway so it can receive thread messages.
+After pairing, the plugin talks only to that Worktable address. With a
+Worktable older than 0.1.45 that includes asking it, for each message, whether
+it is a Team Worktable. The one exception is a connection made by Agent
+Registration, which also refreshes its credential at the authorization
+endpoints named above. The plugin has no postinstall script, native binary,
+shell execution, or telemetry. It starts with the OpenClaw Gateway so it can
+receive thread messages.
 
 Report vulnerabilities through the Worktable
 [security policy](https://github.com/worktable/worktable-dev/security/policy).

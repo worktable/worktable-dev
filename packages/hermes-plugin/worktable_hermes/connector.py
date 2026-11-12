@@ -180,7 +180,16 @@ class Connector:
                     # Dispatching now would replace the pending turn Hermes
                     # resumes after the restart.
                     return
-                reply = self._store.retained(event) or await self._produce(claimed, conversation, event)
+                reply = self._store.retained(event)
+                if reply is None:
+                    # The turn may have waited behind another in its thread.
+                    # The rule it meets is the one saved now.
+                    refusal = self._access().refusal(ownership, author, self._name)
+                    if refusal:
+                        logger.warning("Refused Worktable message %s after its wait (%s)", message_id, refusal.code)
+                        await self._fail(claimed, False, refusal.code, refusal.message)
+                        return
+                    reply = await self._produce(claimed, conversation, event)
                 if stop is not None and stop.is_set():
                     return
                 if lost_lease is not None:

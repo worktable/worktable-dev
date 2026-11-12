@@ -143,6 +143,13 @@ export function decideAccess(
   }
 }
 
+/** Whether two saved Worktable addresses are the same, trailing slashes aside. */
+export function sameAddress(a: unknown, b: unknown): boolean {
+  const bare = (value: unknown) =>
+    typeof value === "string" ? value.replace(/\/+$/, "") : undefined
+  return bare(a) !== undefined && bare(a) === bare(b)
+}
+
 /**
  * The owner and trust settings a connection keeps when its address or token
  * is replaced. The two opt-ins describe one Worktable's members as one person
@@ -158,7 +165,8 @@ export function accessSettingsToKeep(
   const owner = memberId(next.ownerMemberId)
   if (!owner) return restricted
   const sameConnection =
-    section?.server === next.server && section?.ownerMemberId === owner
+    sameAddress(section?.server, next.server) &&
+    section?.ownerMemberId === owner
   return {
     ownerMemberId: owner,
     ...restricted,

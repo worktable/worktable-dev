@@ -201,7 +201,8 @@ describe("who connected this OpenClaw", () => {
     }
     expect(
       accessSettingsToKeep(section, {
-        server: section.server,
+        // The same address, written with a trailing slash.
+        server: `${section.server}/`,
         ownerMemberId: OWNER,
       })
     ).toEqual({

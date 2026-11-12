@@ -121,7 +121,9 @@ HTTPS one.
 - Delivery state (replies not yet posted and recently answered messages) is in
   the plugin's data directory.
 
-After pairing, the plugin talks only to that Worktable address.
+After pairing, the plugin talks only to that Worktable address. With a
+Worktable older than 0.1.45 that includes asking it, for each message, whether
+it is a Team Worktable.
 
 ## How replies work
 

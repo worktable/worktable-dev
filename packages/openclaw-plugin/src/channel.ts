@@ -8,6 +8,7 @@ import { hostname } from "node:os"
 import {
   accessSettingsToKeep,
   memberId,
+  sameAddress,
   type WorktableAccess,
 } from "./access.js"
 import {
@@ -292,7 +293,7 @@ const base = createChannelPluginBase<WorktableChannelAccount>({
       // A token given by hand names no approver. The one on record stays only
       // for the same Worktable address.
       const access =
-        section.server === server
+        sameAddress(section.server, server)
           ? accessSettingsToKeep(section, {
               server,
               ownerMemberId: section.ownerMemberId,

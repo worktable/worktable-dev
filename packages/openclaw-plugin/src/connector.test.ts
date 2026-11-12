@@ -98,6 +98,8 @@ class RecordingDispatcher implements AgentDispatcher {
   readonly calls: AgentDispatchInput[] = []
   /** Set to make every later turn answer with this instead. */
   reply: string | undefined
+  /** Set to hold a turn open until the returned promise settles. */
+  before: (() => Promise<void>) | undefined
   readonly turnsByThread = new Map<string, number>()
 
   async dispatch(
@@ -105,6 +107,7 @@ class RecordingDispatcher implements AgentDispatcher {
     callbacks: Parameters<AgentDispatcher["dispatch"]>[1]
   ): Promise<string> {
     this.calls.push(input)
+    await this.before?.()
     const conversationId =
       input.conversationId ??
       (input.spaceId ? `${input.spaceId}/${input.threadId}` : input.threadId)
@@ -423,6 +426,32 @@ describe("OpenClaw Worktable connector", () => {
     expect(client.failed.at(-1)).toMatchObject({
       messageId: "msg_own_agent_off",
       code: "AGENT_NOT_TRUSTED",
+    })
+
+    // A message let in while its thread was busy meets the rule again when
+    // its turn comes: the owner closed the door while it waited.
+    rule = { trustAllMembers: true }
+    let release: () => void = () => undefined
+    const busy = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    dispatcher.before = () => busy
+    client.deliveries.push(from("msg_owner_busy", OWNER, byOwner))
+    const first = connector.processOne()
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    client.deliveries.push(from("msg_teammate_waiting", TEAMMATE, byOwner))
+    const second = connector.processOne()
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    rule = {}
+    dispatcher.before = undefined
+    release()
+    await Promise.all([first, second])
+    expect(dispatcher.calls.at(-1)?.messageId).toBe("msg_owner_busy")
+    expect(client.failed.at(-1)).toMatchObject({
+      messageId: "msg_teammate_waiting",
+      retryable: false,
+      code: "NOT_OWNER",
+      message: "Only the person who connected Atlas can direct it.",
     })
 
     // OpenClaw answers nothing to a command it will not take from this

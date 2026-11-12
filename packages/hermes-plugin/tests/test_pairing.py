@@ -168,3 +168,29 @@ def test_pairing_stops_before_a_token_goes_to_another_host(monkeypatch):
         pairing.redeem("https://worktable.example", "T83PD-NSQDP", "studio", "hci_test_install")
     assert error.value.code == "ADDRESS_MISMATCH"
     assert calls[-1] == ("https://worktable.example/api/pairing/progress", "failed_no_config")
+
+
+def test_knows_an_older_worktable_has_one_person_only_when_it_says_it_is_not_a_team_worktable(monkeypatch):
+    asked = []
+
+    def answer(url, body=None, token=None):
+        asked.append((url, token))
+        if isinstance(team, Exception):
+            raise team
+        return team
+
+    monkeypatch.setattr(pairing, "_request", answer)
+    team = {"enabled": False}
+    assert pairing.is_one_person("https://worktable.example/", "wt_secret") is True
+    assert asked == [("https://worktable.example/api/team", "wt_secret")]
+    for team in (
+        {"enabled": True},
+        {},
+        pairing.PairingError("Not found", "HTTP_404", 404),
+        pairing.PairingError("Could not reach Worktable", "UNREACHABLE"),
+    ):
+        assert pairing.is_one_person("https://worktable.example", "wt_secret") is False
+    # Without a token of its own it does not ask.
+    team = {"enabled": False}
+    assert pairing.is_one_person("https://worktable.example", None) is False
+    assert len(asked) == 5

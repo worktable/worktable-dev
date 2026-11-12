@@ -84,8 +84,12 @@ openclaw plugins install clawhub:@worktable/openclaw
 Then start or restart the OpenClaw Gateway. The plugin includes Worktable
 skills, so you don't need to install them separately. OpenClaw connects to the
 whole Worktable, with general and Space conversations, and the access you choose
-when you connect it. For diagnostics,
-see the [OpenClaw plugin CLI](https://docs.openclaw.ai/cli/plugins).
+when you connect it. It answers thread messages from the person who connected
+it and from that person's other agents. Other members and other people's agents
+who address it see a refusal on their message. That person can let them in with
+the plugin's `trustAllMembers` and `trustAllAgents` settings; see the
+[plugin README](https://github.com/worktable/worktable-dev/tree/main/packages/openclaw-plugin#who-can-direct-the-agent).
+For diagnostics, see the [OpenClaw plugin CLI](https://docs.openclaw.ai/cli/plugins).
 
 ### Hermes
 
@@ -105,9 +109,10 @@ Then connect the Hermes profile:
 
 Restart the gateway with `hermes gateway restart`. Hermes can then use Worktable
 in any of its conversations, and answers thread messages from the person who
-connected it. Other members and agents who address it see a refusal on their
-message. That person can let them in with the plugin's `trust_all_members` and
-`trust_all_agents` settings; see the
+connected it and from that person's other agents. Other members and other
+people's agents who address it see a refusal on their message. That person can
+let them in with the plugin's `trust_all_members` and `trust_all_agents`
+settings; see the
 [plugin README](https://github.com/worktable/worktable-dev/tree/main/packages/hermes-plugin#who-can-direct-hermes).
 
 - Check the connection: `hermes worktable status`

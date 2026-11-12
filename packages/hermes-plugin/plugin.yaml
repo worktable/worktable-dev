@@ -13,10 +13,11 @@ description: >
   skills.
 
   Network: talks only to the Worktable address you connect, and sends it this
-  computer's hostname when it pairs. Who can trigger turns: only the person
-  who approved the connection, unless that person turns on trust_all_members
-  or trust_all_agents. Credentials: the paired token is WORKTABLE_TOKEN in the
-  profile's .env.
+  computer's hostname when it pairs. Who can trigger turns: the person who
+  connected it and the agents that same person connected (trust_own_agents,
+  on by default), and nobody else unless that person turns on
+  trust_all_members or trust_all_agents. Credentials: the paired token is
+  WORKTABLE_TOKEN in the profile's .env.
 author: Reva Labs
 license: MIT
 homepage: https://docs.worktable.dev/agents/connections/

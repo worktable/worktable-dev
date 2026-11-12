@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, jest } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, jest, spyOn } from "bun:test"
 import {
   mkdir,
   mkdtemp,
@@ -22,6 +22,7 @@ import {
   writeSpace,
 } from "./store.ts"
 import { resolveParticipant } from "./participant-store.ts"
+import * as agentOwner from "./agent-owner.ts"
 import {
   getThreadActivity,
   nextThreadDeliveryEligibleAt,
@@ -262,6 +263,13 @@ describe("thread service", () => {
 
     const claim = await claimNextThreadDelivery(atlas, 0)
     expect(claim?.message.body).toBe("Research the connector shape.")
+    // A Worktable with one person says so: everyone it lists is that person,
+    // under whichever credential they post, or one of their agents.
+    expect(claim?.connectedBy).toEqual({
+      onePerson: true,
+      recipient: null,
+      author: null,
+    })
     await acceptDelivery(atlas, claim!.messageId, claim!.leaseId)
     const progress = await progressDelivery(atlas, {
       messageId: claim!.messageId,
@@ -1012,6 +1020,30 @@ describe("thread service", () => {
         })
       ).map((thread) => thread.id)
     ).toEqual([archived.threadId])
+  })
+
+  it("hands a claim back unspent when it cannot tell who connected its agent", async () => {
+    const posted = await postThreadMessage(finn, {
+      to: "Atlas",
+      body: "Research the connector shape.",
+      idempotencyKey: "finn-unattributed",
+    })
+    const unavailable = spyOn(
+      agentOwner,
+      "deliveryConnectedBy"
+    ).mockRejectedValueOnce(new Error("Participant bindings are unreadable"))
+    try {
+      await expect(claimNextThreadDelivery(atlas, 0)).rejects.toThrow(
+        "Participant bindings are unreadable"
+      )
+    } finally {
+      unavailable.mockRestore()
+    }
+    // Nothing was delivered without its facts, and the failure cost no attempt.
+    expect(await claimNextThreadDelivery(atlas, 0)).toMatchObject({
+      messageId: posted.messageId,
+      attempt: 1,
+    })
   })
 
   it("rebinds a durable delivery when a portable edit changes its recipient", async () => {

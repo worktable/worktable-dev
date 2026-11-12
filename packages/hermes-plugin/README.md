@@ -52,14 +52,28 @@ and `/update` stay off for every thread author.
 
 | Author of the message | Runs as a turn |
 | --- | --- |
-| The person who approved the connection | Yes |
+| The person who connected this Hermes | Yes |
+| An agent that same person connected | Yes, unless `trust_own_agents` is `false` |
 | Another member of the Worktable | Only with `trust_all_members` |
-| Another agent in the Worktable | Only with `trust_all_agents` |
+| An agent someone else connected, or one with nobody on record | Only with `trust_all_agents` |
+| An author the thread does not list | Never |
 
-Both settings are off by default. Hermes refuses everyone else before the
-message reaches it, and the author sees the refusal on their message in the
-thread. Worktable identifies each author; the plugin compares that with the
-member recorded when you connected.
+Hermes refuses everyone else before the message reaches it, and the author sees
+the refusal on their message in the thread.
+
+Worktable is the authority on who is who. With each message it tells the plugin
+who wrote it, who connected this Hermes, and, when the author is an agent, who
+connected that one. A person counts as having connected an agent when they
+approved it or signed it in under their own account; an agent that a team owns
+has nobody on record. On a Worktable with one person, everyone it lists is that
+person, under whichever credential they post, or one of their agents. Your own agents are let in by default because they
+already act for you in that Worktable, with access you gave them. The cost is
+that one of them, steered by something it read, can direct Hermes. Turn that
+off if you would rather they could not:
+
+```sh
+hermes config set plugins.entries.worktable.settings.trust_own_agents false
+```
 
 To let others in, as the person who connected it:
 
@@ -71,11 +85,31 @@ hermes config set plugins.entries.worktable.settings.trust_all_agents true
 A change applies to the next message. `trust_all_members` covers every person
 in the Worktable, now and later. `trust_all_agents` covers every agent connected
 to it, whoever connected that agent, so anyone who can direct one of those
-agents can reach Hermes through it. Connecting to another Worktable, or having
-someone else approve the connection, turns both off again.
+agents can reach Hermes through it. Connecting again turns both off, unless the
+plugin already had the same approver on record for the same Worktable.
 
-Hermes can still read what others wrote in a thread when the person it takes
+Hermes can still read what others wrote in a thread when someone it takes
 direction from asks it to.
+
+### Updating from 0.1.2 or earlier
+
+A connection paired with a token keeps working with nothing to do: Worktable
+0.1.45 or later names who connected Hermes with each message, so the plugin
+needs no reconnecting and refuses nobody it should answer.
+
+The exception is an agent that a team owns. Nobody is on record as having
+connected it, so it answers only after you connect it again with this version,
+which records you as its approver.
+
+With an older Worktable the plugin cannot be told. If that Worktable has one
+person, the plugin sees that it is not a Team Worktable and treats that person
+and their agents as above. If it has teammates, Hermes answers only when its
+approver was recorded at pairing (Worktable 0.1.44), and counts no agent as
+your own. Otherwise it refuses with "Update this Worktable to 0.1.45 or later"
+on the message, and answers again once that Worktable is updated.
+
+A connection made by signing in to Worktable Cloud has no token to keep. Pair
+it once with `hermes worktable connect https://app.worktable.cloud`.
 
 ## What pairing sends and stores
 
@@ -87,12 +121,14 @@ Worktable Cloud (`app.worktable.cloud`), and never a plain-HTTP address for an
 HTTPS one.
 
 - The token is `WORKTABLE_TOKEN` in the profile's `.env`.
-- The connection, the approving member's ID and the two trust settings are
+- The connection, the approving member's ID and the three trust settings are
   under `plugins.entries.worktable.settings` in `config.yaml`.
 - Delivery state (replies not yet posted and recently answered messages) is in
   the plugin's data directory.
 
-After pairing, the plugin talks only to that Worktable address.
+After pairing, the plugin talks only to that Worktable address. With a
+Worktable older than 0.1.45 that includes asking it, for each message, whether
+it is a Team Worktable.
 
 ## How replies work
 

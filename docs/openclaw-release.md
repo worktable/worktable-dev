@@ -19,6 +19,10 @@ generated package outputs.
    and its matching `.tgz.sha256` checksum file. The packaging command prints
    both file paths.
 
+When a plugin release relies on a Worktable change, release Worktable first and
+confirm the change on Worktable Cloud before creating the tag. The plugin tells
+people which Worktable version it needs; check that number against the release.
+
 The package version, plugin manifest version, and tag version must match. A
 ClawHub version is immutable; a failed or withdrawn version is replaced by a
 new patch version rather than overwritten.

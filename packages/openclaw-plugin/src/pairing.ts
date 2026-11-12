@@ -6,19 +6,7 @@ import { withFileLock } from "openclaw/plugin-sdk/file-lock"
 import { writeJsonFileAtomically } from "openclaw/plugin-sdk/json-store"
 import { readJsonFileWithFallback } from "./json-store.js"
 import { resolveStateDir } from "openclaw/plugin-sdk/state-paths"
-import {
-  beginServiceAuthRegistration,
-  completeServiceAuthRegistration,
-  discoverAgentAuth,
-  WorktableAgentCredentialProvider,
-} from "./agent-auth.js"
-import {
-  loadAgentCredential,
-  promotePendingAgentAuth,
-  saveAgentCredential,
-  stagePendingAgentAuth,
-} from "./agent-auth-config.js"
-import { McpWorktableClient } from "./worktable-client.js"
+import { accessSettingsToKeep, type WorktableAccess } from "./access.js"
 
 interface RedeemResult {
   mcpUrl: string
@@ -27,6 +15,19 @@ interface RedeemResult {
   workspaceName: string
   participantName?: string
   defaultSpaceId?: string
+  /** The thread member who approved this connection. */
+  ownerMemberId?: string
+}
+
+/** What a finished pairing saved, for the command to report. */
+export interface PairedWorktable {
+  workspaceName: string
+  participantName?: string
+  /**
+   * Who the connection takes direction from. No owner means Worktable did not
+   * name one, and the connection refuses every thread message.
+   */
+  access: Partial<WorktableAccess>
 }
 
 interface InstallationIdentityFile {
@@ -249,6 +250,47 @@ interface ConnectionRequestCreated {
   interval?: number
 }
 
+const CLOUD_HOST = "app.worktable.cloud"
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"])
+
+function hostOf(url: URL): string {
+  const host = url.hostname.toLowerCase()
+  return LOOPBACK.has(host) ? "loopback" : host
+}
+
+/**
+ * An address Worktable answered with, accepted only on the host the user gave
+ * or on Worktable Cloud, and never a plain-HTTP address for an HTTPS one. The
+ * pairing code, the token and every later request go there.
+ */
+export function knownWorktableAddress(given: string, answered: string): string {
+  const asked = new URL(given)
+  let answer: URL
+  try {
+    answer = new URL(answered)
+  } catch {
+    throw Object.assign(
+      new Error(
+        `Worktable at ${asked.host} answered with an address OpenClaw can't read.`
+      ),
+      { code: "ADDRESS_MISMATCH" }
+    )
+  }
+  const downgraded = asked.protocol === "https:" && answer.protocol !== "https:"
+  const sameHost = hostOf(answer) === hostOf(asked) && !downgraded
+  const cloud =
+    answer.protocol === "https:" && answer.hostname.toLowerCase() === CLOUD_HOST
+  if (["http:", "https:"].includes(answer.protocol) && (sameHost || cloud)) {
+    return answered
+  }
+  throw Object.assign(
+    new Error(
+      `Worktable at ${asked.host} answered with an address somewhere else: ${answer.origin}. If that is your Worktable, run connect with that address.`
+    ),
+    { code: "ADDRESS_MISMATCH" }
+  )
+}
+
 type ConnectionRequestPoll =
   | { status: "pending" | "denied" | "expired" }
   /** On Worktable Cloud, `server` is the workspace the owner approved into. */
@@ -263,7 +305,7 @@ export async function requestWorktablePairing(options: {
   participantName?: string
   onApprovalNeeded(request: { code: string; approvalUrl: string }): void
   sleep?: (ms: number) => Promise<void>
-}): Promise<{ workspaceName: string; participantName?: string }> {
+}): Promise<PairedWorktable> {
   const origin = worktableOrigin(options.server)
   const installationId = await ensureOpenClawInstallationId()
   const request = await jsonRequest<ConnectionRequestCreated>(
@@ -307,7 +349,9 @@ export async function requestWorktablePairing(options: {
     }
     if (poll.status === "approved") {
       return pairWorktableChannel({
-        server: poll.server ?? origin,
+        server: poll.server
+          ? knownWorktableAddress(origin, poll.server)
+          : origin,
         pairingCode: poll.code,
       })
     }
@@ -325,7 +369,7 @@ export async function requestWorktablePairing(options: {
 export async function pairWorktableChannel(options: {
   server: string
   pairingCode: string
-}): Promise<{ workspaceName: string; participantName?: string }> {
+}): Promise<PairedWorktable> {
   const origin = worktableOrigin(options.server)
   const installationId = await ensureOpenClawInstallationId()
   const redeemed = await jsonRequest<RedeemResult>(
@@ -337,10 +381,18 @@ export async function pairWorktableChannel(options: {
     }
   )
 
+  let access: Partial<WorktableAccess> = {}
   try {
     await mutateConfigFile({
       mutate: (draft) => {
         const channels = (draft.channels ?? {}) as Record<string, unknown>
+        // The person who approved is the one this OpenClaw takes direction
+        // from. What that person chose to trust stays only while both the
+        // Worktable and the approver are the same.
+        access = accessSettingsToKeep(
+          channels.worktable as Record<string, unknown> | undefined,
+          { server: origin, ownerMemberId: redeemed.ownerMemberId }
+        )
         channels.worktable = {
           enabled: true,
           server: origin,
@@ -349,6 +401,7 @@ export async function pairWorktableChannel(options: {
           ...(redeemed.defaultSpaceId
             ? { defaultSpaceId: redeemed.defaultSpaceId }
             : {}),
+          ...access,
           pendingPairingCode: options.pairingCode,
         }
         draft.channels = channels as typeof draft.channels
@@ -380,67 +433,6 @@ export async function pairWorktableChannel(options: {
   return {
     workspaceName: redeemed.workspaceName,
     participantName: redeemed.participantName,
-  }
-}
-
-export async function registerWorktableAgent(options: {
-  server: string
-  email: string
-  participantName: string
-  readUserCode(verificationUri: string): Promise<string>
-}): Promise<{ participantName: string }> {
-  const participantName = options.participantName.trim()
-  if (!participantName) {
-    throw new Error("The Worktable participant name is required")
-  }
-  if (participantName.length > 120) {
-    throw new Error(
-      "The Worktable participant name must be 120 characters or fewer"
-    )
-  }
-  const origin = worktableOrigin(options.server)
-  const discovery = await discoverAgentAuth(origin)
-  const registration = await beginServiceAuthRegistration(
-    discovery,
-    options.email.trim()
-  )
-  const userCode = (
-    await options.readUserCode(registration.verificationUri)
-  ).trim()
-  if (!userCode) {
-    throw new Error("The Agent Registration claim code is required")
-  }
-  const credential = await completeServiceAuthRegistration(
-    discovery,
-    registration,
-    userCode
-  )
-
-  // The claim response is delivered exactly once. Stage it durably before any
-  // token exchange or MCP verification that can fail independently.
-  await stagePendingAgentAuth({
-    server: origin,
-    participantName,
-    credential,
-  })
-
-  const provider = new WorktableAgentCredentialProvider({
-    credential,
-    load: () => loadAgentCredential(credential.registrationId),
-    save: (next) => saveAgentCredential(credential.registrationId, next),
-  })
-  const client = new McpWorktableClient(origin, {
-    provider,
-    adapter: "openclaw",
-    installationId: credential.registrationId,
-    label: `OpenClaw · ${participantName}`,
-    machine: hostname(),
-  })
-  try {
-    const participant = await client.registerParticipant(participantName)
-    await promotePendingAgentAuth(credential.registrationId)
-    return { participantName: participant.name }
-  } finally {
-    await client.close()
+    access,
   }
 }

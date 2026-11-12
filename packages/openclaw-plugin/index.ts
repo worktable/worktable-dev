@@ -1,12 +1,39 @@
 import { defineChannelPluginEntry } from "openclaw/plugin-sdk/channel-core"
-import { createInterface } from "node:readline/promises"
+import { OWNER_TELLING_WORKTABLE_VERSION } from "./src/access.js"
 import {
   pairWorktableChannel,
-  registerWorktableAgent,
   requestWorktablePairing,
+  type PairedWorktable,
 } from "./src/pairing.js"
 import { worktableChannel } from "./src/channel.js"
 import { setWorktableRuntime } from "./src/runtime.js"
+
+/** Say what was connected and who it now takes direction from. */
+function reportPaired(result: PairedWorktable): void {
+  const participant = result.participantName
+    ? ` as ${result.participantName}`
+    : ""
+  console.log(`Configured Worktable ${result.workspaceName}${participant}.`)
+  if (!result.access.ownerMemberId) {
+    console.error(
+      `This Worktable did not say who approved the connection. Unless it has one person, OpenClaw will refuse thread messages until it is updated to ${OWNER_TELLING_WORKTABLE_VERSION} or later.`
+    )
+  } else {
+    const also = [
+      result.access.trustOwnAgents === false
+        ? ""
+        : "the agents that person connected",
+      result.access.trustAllMembers ? "all members" : "",
+      result.access.trustAllAgents ? "all agents" : "",
+    ].filter(Boolean)
+    console.log(
+      `It takes direction from the person who approved it${also.length > 0 ? ` and ${also.join(", ")}` : ""}. Everyone else is refused.`
+    )
+  }
+  console.log(
+    "Start or restart the OpenClaw Gateway to verify and start the channel."
+  )
+}
 
 export default defineChannelPluginEntry({
   id: "worktable",
@@ -27,99 +54,55 @@ export default defineChannelPluginEntry({
           )
           .requiredOption("--server <url>", "Worktable server origin")
           .option("--pairing-code <code>", "Single-use Worktable pairing code")
+          .option("--participant-name <name>", "Worktable participant name")
           .option(
             "--agent-registration",
-            "Register this OpenClaw installation with Worktable Cloud"
+            "No longer supported; approve the connection in Worktable instead"
           )
-          .option("--email <email>", "Worktable Cloud account email")
-          .option("--participant-name <name>", "Worktable participant name")
           .action(
             async (options: {
               server: string
               pairingCode?: string
-              agentRegistration?: boolean
-              email?: string
               participantName?: string
+              agentRegistration?: boolean
             }) => {
-              if (options.pairingCode && options.agentRegistration) {
-                throw new Error(
-                  "Choose one of --pairing-code or --agent-registration"
-                )
-              }
-              if (!options.pairingCode && !options.agentRegistration) {
-                // Ask Worktable; its owner approves this installation there.
-                const result = await requestWorktablePairing({
-                  server: options.server,
-                  participantName: options.participantName,
-                  onApprovalNeeded({ code, approvalUrl }) {
-                    // Written directly: OpenClaw masks token-like console text.
-                    process.stdout.write(
-                      `Approve this OpenClaw in Worktable:\n${approvalUrl}\nCheck that Worktable shows ${code}. Waiting for approval…\n`
-                    )
-                  },
-                })
-                const participant = result.participantName
-                  ? ` as ${result.participantName}`
-                  : ""
-                console.log(
-                  `Configured Worktable ${result.workspaceName}${participant}.`
-                )
-                console.log(
-                  "Start or restart the OpenClaw Gateway to verify and start the channel."
-                )
-                return
-              }
-              if (options.agentRegistration) {
-                const prompt = createInterface({
-                  input: process.stdin,
-                  output: process.stdout,
-                })
-                try {
-                  const email =
-                    options.email ??
-                    (await prompt.question("Worktable Cloud email: "))
-                  const participantName =
-                    options.participantName ??
-                    (await prompt.question(
-                      "Participant name: "
-                    ))
-                  const result = await registerWorktableAgent({
-                    server: options.server,
-                    email,
-                    participantName,
-                    async readUserCode(verificationUri) {
-                      // OpenClaw masks token-like text in console output, which
-                      // would make the claim link unusable.
-                      process.stdout.write(
-                        `Open this URL, sign in, and view the claim code:\n${verificationUri}\n`
-                      )
-                      return prompt.question("Claim code: ")
-                    },
-                  })
-                  console.log(
-                    `Configured Worktable Cloud as ${result.participantName}.`
+              // OpenClaw reports a rejected command without its reason, so
+              // say why here.
+              try {
+                if (options.agentRegistration) {
+                  // That sign-up could not say who connected OpenClaw.
+                  throw new Error(
+                    "Agent Registration is no longer supported. Run this command without --agent-registration and approve the connection in Worktable."
                   )
-                  console.log(
-                    "Start or restart the OpenClaw Gateway to start the channel."
+                }
+                if (options.pairingCode) {
+                  reportPaired(
+                    await pairWorktableChannel({
+                      server: options.server,
+                      pairingCode: options.pairingCode,
+                    })
                   )
                   return
-                } finally {
-                  prompt.close()
                 }
+                // Ask Worktable; its owner approves this installation there.
+                reportPaired(
+                  await requestWorktablePairing({
+                    server: options.server,
+                    participantName: options.participantName,
+                    onApprovalNeeded({ code, approvalUrl }) {
+                      // Written directly: OpenClaw masks token-like console text.
+                      process.stdout.write(
+                        `Approve this OpenClaw in Worktable:\n${approvalUrl}\nCheck that Worktable shows ${code}. Waiting for approval…\n`
+                      )
+                    },
+                  })
+                )
+              } catch (error) {
+                console.error(
+                  error instanceof Error ? error.message : String(error)
+                )
+                process.exitCode = 1
               }
-              const result = await pairWorktableChannel({
-                server: options.server,
-                pairingCode: options.pairingCode!,
-              })
-              const participant = result.participantName
-                ? ` as ${result.participantName}`
-                : ""
-              console.log(
-                `Configured Worktable ${result.workspaceName}${participant}.`
-              )
-              console.log(
-                "Start or restart the OpenClaw Gateway to verify and start the channel."
-              )
             }
           )
       },

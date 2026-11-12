@@ -2,11 +2,13 @@ import { describe, expect, it } from "bun:test"
 import type { OpenClawConfig } from "openclaw/plugin-sdk/channel-core"
 import {
   agentCredentialForConnection,
+  isOnePersonWorktable,
   listDirectoryThreads,
   pairingCompletionOnce,
   pendingAgentRegistrationToPromote,
   resolveWorktableAccount,
   resolveWorktableThreadTarget,
+  worktableAccess,
   worktableThreadHandle,
   worktableChannel,
 } from "./channel.js"
@@ -36,13 +38,19 @@ describe("Worktable channel account setup", () => {
     expect(unpaired).toEqual([])
   })
 
-  it("keeps running when it clears its pairing code, and restarts for other channel settings", () => {
+  it("keeps running when it clears its pairing code or its owner changes whom to trust, and restarts for other channel settings", () => {
     // The channel removes the code itself once Worktable confirms pairing.
     // OpenClaw used to replace the plugin for that write, which left the
-    // channel stopped until the next Gateway restart.
+    // channel stopped until the next Gateway restart. The trust settings are
+    // read from storage for every message, so they need no restart either.
     expect(worktableChannel.reload).toEqual({
       configPrefixes: ["channels.worktable"],
-      noopPrefixes: ["channels.worktable.pendingPairingCode"],
+      noopPrefixes: [
+        "channels.worktable.pendingPairingCode",
+        "channels.worktable.trustOwnAgents",
+        "channels.worktable.trustAllMembers",
+        "channels.worktable.trustAllAgents",
+      ],
     })
   })
 
@@ -72,6 +80,9 @@ describe("Worktable channel account setup", () => {
       authMode: "agent-registration" as const,
       agentAuth: active,
       pendingAgentAuth: pending,
+      trustOwnAgents: true,
+      trustAllMembers: false,
+      trustAllAgents: false,
     }
 
     expect(agentCredentialForConnection(account)).toEqual(pending)
@@ -227,13 +238,15 @@ describe("Worktable channel account setup", () => {
     ).toBe("thread:thr_abcdefghijkl")
   })
 
-  it("preserves a paired home Space when standard setup rotates the token", () => {
+  it("preserves a paired home Space and its owner when standard setup rotates the token", () => {
     const pairedCfg = {
       channels: {
         worktable: {
           server: "http://worktable.test",
           token: "old-token",
           defaultSpaceId: "connected-agents",
+          ownerMemberId: "ptc_ownerownerowner",
+          trustAllMembers: true,
         },
       },
     } as OpenClawConfig
@@ -260,6 +273,81 @@ describe("Worktable channel account setup", () => {
       defaultSpaceId: "connected-agents",
     })
     expect(worktableChannel.config!.isConfigured!(account, updated)).toBe(true)
+    expect(worktableAccess(account)).toEqual({
+      ownerMemberId: "ptc_ownerownerowner",
+      trustOwnAgents: true,
+      trustAllMembers: true,
+      trustAllAgents: false,
+    })
+
+    // A token for another Worktable names no approver there, so nobody is.
+    const moved = worktableChannel.setup!.applyAccountConfig({
+      cfg: pairedCfg,
+      accountId: "default",
+      input: { url: "http://other.test", token: "other-token" },
+    })
+    expect(worktableAccess(resolveWorktableAccount(moved))).toEqual({
+      ownerMemberId: undefined,
+      trustOwnAgents: true,
+      trustAllMembers: false,
+      trustAllAgents: false,
+    })
+  })
+
+  it("reads the owner's opt-ins as off unless set exactly, and the owner's own agents as on unless turned off", () => {
+    const read = (section: Record<string, unknown>) =>
+      worktableAccess(
+        resolveWorktableAccount({
+          channels: {
+            worktable: { server: "http://worktable.test", token: "t", ...section },
+          },
+        } as unknown as OpenClawConfig)
+      )
+    expect(
+      read({ ownerMemberId: "*", trustAllMembers: "true", trustAllAgents: 1 })
+    ).toEqual({
+      ownerMemberId: undefined,
+      trustOwnAgents: true,
+      trustAllMembers: false,
+      trustAllAgents: false,
+    })
+    expect(read({ trustOwnAgents: false }).trustOwnAgents).toBe(false)
+  })
+
+  it("knows an older Worktable has one person only when it says it is not a Team Worktable", async () => {
+    let answer: () => Response = () => Response.json({ enabled: false })
+    const bearers: Array<string | null> = []
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        bearers.push(request.headers.get("authorization"))
+        return new URL(request.url).pathname === "/api/team"
+          ? answer()
+          : Response.json({}, { status: 404 })
+      },
+    })
+    try {
+      const origin = `http://127.0.0.1:${server.port}`
+      expect(await isOnePersonWorktable(`${origin}/`, "wtb_token")).toBe(true)
+      expect(bearers).toEqual(["Bearer wtb_token"])
+      for (const other of [
+        () => Response.json({ enabled: true }),
+        () => Response.json({}),
+        () => Response.json({ enabled: false }, { status: 401 }),
+        () => new Response("not json"),
+      ]) {
+        answer = other
+        expect(await isOnePersonWorktable(origin, "wtb_token")).toBe(false)
+      }
+      // Without a token of its own it does not ask.
+      answer = () => Response.json({ enabled: false })
+      expect(await isOnePersonWorktable(origin, "")).toBe(false)
+    } finally {
+      await server.stop(true)
+    }
+    expect(await isOnePersonWorktable("http://127.0.0.1:9", "wtb_token")).toBe(
+      false
+    )
   })
 
   it("lists every thread before falling back to a legacy default Space", async () => {

@@ -1,9 +1,15 @@
 import { createClaimableDedupe } from "openclaw/plugin-sdk/persistent-dedupe"
+import {
+  decideAccess,
+  resolveOwnership,
+  type WorktableAccess,
+} from "./access.js"
 import type { ReplyOutbox, RetainedWorktableReply } from "./reply-outbox.js"
 import type {
   AgentDispatcher,
   ClaimedWorktableDelivery,
   WorktableClient,
+  WorktableParticipant,
   WorktableThreadLocation,
 } from "./types.js"
 
@@ -79,6 +85,15 @@ function localStateFailure(error: unknown): boolean {
 }
 
 function safeErrorMessage(error: unknown): string {
+  // A reason this connector wrote for the author to read.
+  if (
+    error &&
+    typeof error === "object" &&
+    "authorMessage" in error &&
+    typeof error.authorMessage === "string"
+  ) {
+    return error.authorMessage
+  }
   const code = errorCode(error)
   return `OpenClaw could not complete this message (${code}).`
 }
@@ -123,6 +138,26 @@ function deliveryThreadTarget(delivery: ClaimedWorktableDelivery): string {
 
 function deliveryEventId(delivery: ClaimedWorktableDelivery): string {
   return `${deliveryConversationId(delivery)}/${delivery.messageId}`
+}
+
+/**
+ * The message's author as the thread lists them, under the name they posted
+ * as. An author the thread does not list is nobody this OpenClaw answers.
+ */
+function deliveryAuthor(
+  delivery: ClaimedWorktableDelivery
+): { id: string; listed?: WorktableParticipant } {
+  const id = delivery.message.authorMemberId ?? delivery.message.authorId ?? ""
+  const member = delivery.thread.members.find(
+    (participant) => participant.id === id
+  )
+  if (!id || !member) return { id }
+  const identity = delivery.thread.identities.find(
+    (candidate) =>
+      candidate.id === delivery.message.authorIdentityId &&
+      candidate.memberId === id
+  )
+  return { id, listed: { ...member, name: identity?.name ?? member.name } }
 }
 
 function upgradeRetainedReply(
@@ -373,10 +408,26 @@ export class WorktableConnector {
   ) => ReturnType<typeof setInterval>
   readonly #stopHeartbeat: (timer: ReturnType<typeof setInterval>) => void
   readonly #worktableOrigin?: string
+  readonly #access: () => WorktableAccess
+  readonly #isOnePersonWorktable: () => Promise<boolean>
+  readonly #name: string
 
   constructor(options: {
     client: WorktableClient
     dispatcher: AgentDispatcher
+    /**
+     * Who may direct this OpenClaw, asked for every message so a change holds
+     * for the next one. Everyone else is refused.
+     */
+    access: () => WorktableAccess
+    /**
+     * Asked only of a Worktable too old to say who connected its agents:
+     * whether it has one person, so that everyone it lists is that person or
+     * theirs. Unknown is no.
+     */
+    isOnePersonWorktable?: () => Promise<boolean>
+    /** What this agent is called in Worktable, for a refusal's wording. */
+    name?: string
     dedupe?: DeliveryDedupe
     replyOutbox: ReplyOutbox
     accountId: string
@@ -410,6 +461,10 @@ export class WorktableConnector {
     this.#stopHeartbeat =
       options.heartbeatTimer?.stop ?? ((timer) => clearInterval(timer))
     this.#worktableOrigin = options.worktableOrigin
+    this.#access = options.access
+    this.#isOnePersonWorktable =
+      options.isOnePersonWorktable ?? (() => Promise.resolve(false))
+    this.#name = options.name?.trim() || "OpenClaw"
   }
 
   async processOne(): Promise<boolean> {
@@ -604,6 +659,40 @@ export class WorktableConnector {
       }
     }
     try {
+      // Before anything reaches OpenClaw: a refused author's words never
+      // start a turn, and the refusal shows on their message.
+      const author = deliveryAuthor(delivery)
+      const access = this.#access()
+      const ownership = await resolveOwnership(
+        delivery.connectedBy,
+        access.ownerMemberId,
+        this.#isOnePersonWorktable
+      )
+      const authorRef = { id: author.id, kind: author.listed?.kind }
+      const decision = decideAccess(access, ownership, authorRef, this.#name)
+      if (!decision.allowed) {
+        this.#logger.warn?.(
+          `Refused Worktable message ${delivery.messageId} from ${author.id || "an unnamed author"} (${decision.code})`
+        )
+        await this.#client
+          .fail(
+            delivery.messageId,
+            delivery.leaseId,
+            false,
+            decision.code,
+            decision.message
+          )
+          .catch(() => undefined)
+        return
+      }
+      const sender = author.listed
+      if (!sender) {
+        // Unreachable: the rule lets in no author the thread does not list.
+        throw Object.assign(
+          new Error("Worktable delivery has no listed author"),
+          { code: "INVALID_DELIVERY" }
+        )
+      }
       await this.#client.accept(delivery.messageId, delivery.leaseId)
       await reportProgress("working")
       heartbeat = this.#startHeartbeat(heartbeatTick, this.#heartbeatMs)
@@ -631,32 +720,21 @@ export class WorktableConnector {
         let retained = await this.#replyOutbox.get(eventId)
         if (retained) retained = upgradeRetainedReply(delivery, retained)
         if (!retained) {
-          const authorMemberId =
-            delivery.message.authorMemberId ?? delivery.message.authorId
-          if (!authorMemberId) {
+          // The turn may have waited behind another in its thread. The rule
+          // it meets is the one saved now, not the one it was claimed under.
+          const current = decideAccess(
+            this.#access(),
+            ownership,
+            authorRef,
+            this.#name
+          )
+          if (!current.allowed) {
+            terminalAfterDispatch = true
             throw Object.assign(
-              new Error("Worktable delivery has no message author"),
-              { code: "INVALID_DELIVERY" }
+              new Error("Refused after waiting for its thread"),
+              { code: current.code, authorMessage: current.message }
             )
           }
-          const authorIdentity = delivery.thread.identities.find(
-            (identity) =>
-              identity.id === delivery.message.authorIdentityId &&
-              identity.memberId === authorMemberId
-          )
-          const authorMember = delivery.thread.members.find(
-            (participant) => participant.id === authorMemberId
-          )
-          const sender = authorMember
-            ? {
-                ...authorMember,
-                name: authorIdentity?.name ?? authorMember.name,
-              }
-            : {
-                id: authorMemberId,
-                kind: "agent" as const,
-                name: authorIdentity?.name ?? authorMemberId,
-              }
           const reply = await this.#dispatcher.dispatch(
             {
               accountId: this.#accountId,
@@ -670,6 +748,7 @@ export class WorktableConnector {
               messageId: delivery.messageId,
               body: delivery.message.body,
               sender,
+              commandAuthorized: current.owner,
             },
             {
               onWorking: () => renewLease(),
@@ -682,6 +761,17 @@ export class WorktableConnector {
           if (turnAbort.signal.aborted) throw channelStoppedError()
           if (!reply.trim()) {
             terminalAfterDispatch = true
+            // OpenClaw answers nothing to a command from someone it does not
+            // take commands from. Say so, rather than report a failed turn.
+            if (!current.owner && /^\s*[/!]/.test(delivery.message.body)) {
+              throw Object.assign(
+                new Error("OpenClaw did not run a command from this author"),
+                {
+                  code: "COMMANDS_OWNER_ONLY",
+                  authorMessage: `Only the person who connected ${this.#name} can use OpenClaw commands.`,
+                }
+              )
+            }
             throw Object.assign(new Error("OpenClaw returned an empty reply"), {
               code: "EMPTY_REPLY",
             })

@@ -15,6 +15,10 @@ skills; regenerate it with `bun run generate:hermes-skills` rather than editing
    create a GitHub Release, because Worktable's installer uses the repository's
    latest application release.
 
+When a plugin release relies on a Worktable change, release Worktable first and
+confirm the change on Worktable Cloud before creating the tag. The plugin tells
+people which Worktable version it needs; check that number against the release.
+
 `hermes plugins install worktable/worktable-dev#packages/hermes-plugin` installs
 the default branch. Users can pin a release with `--ref <commit>`.
 

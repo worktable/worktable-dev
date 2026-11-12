@@ -19,12 +19,13 @@ import {
   saveAgentCredential,
 } from "./agent-auth-config.js"
 import { WorktableAgentCredentialProvider } from "./agent-auth.js"
+import { savedWorktableAccess } from "./channel.js"
 import type { WorktableAgentAuth } from "./types.js"
 import {
   completePairingWithRetry,
   ensureOpenClawInstallationId,
+  knownWorktableAddress,
   pairWorktableChannel,
-  registerWorktableAgent,
   requestWorktablePairing,
   resumePendingPairingCompletion,
 } from "./pairing.js"
@@ -146,6 +147,45 @@ describe("OpenClaw asking Worktable to connect", () => {
       path: "/w/ws_approved/api/pairing/redeem",
       body: { code: "T83PD-NSQDP" },
     })
+  })
+
+  it("pairs only on the host it was given or on Worktable Cloud", async () => {
+    // The approval answer names where the code, the token and every later
+    // request go, so an address somewhere else is never followed.
+    const { server, seen } = await serveRequests([
+      {
+        status: "approved",
+        code: "T83PD-NSQDP",
+        server: "https://elsewhere.example/w/ws_approved",
+      },
+    ])
+    await expect(
+      requestWorktablePairing({
+        server,
+        onApprovalNeeded: () => undefined,
+        sleep: () => Promise.resolve(),
+      })
+    ).rejects.toThrow(
+      "answered with an address somewhere else: https://elsewhere.example"
+    )
+    expect(seen.at(-1)?.path).toBe("/api/pairing/requests/poll")
+
+    const given = "https://worktable.example.com"
+    expect(knownWorktableAddress(given, `${given}/w/ws_one`)).toBe(
+      `${given}/w/ws_one`
+    )
+    expect(
+      knownWorktableAddress(given, "https://app.worktable.cloud/w/ws_one")
+    ).toBe("https://app.worktable.cloud/w/ws_one")
+    for (const elsewhere of [
+      "http://worktable.example.com/w/ws_one",
+      "http://app.worktable.cloud/w/ws_one",
+      "https://app.worktable.cloud.elsewhere.example",
+      "file:///etc/hosts",
+      "not an address",
+    ]) {
+      expect(() => knownWorktableAddress(given, elsewhere)).toThrow()
+    }
   })
 
   it("keeps waiting through a brief outage, but not past a refusal", async () => {
@@ -272,24 +312,6 @@ describe("OpenClaw Worktable pairing completion", () => {
     OPENCLAW_RUNTIME_TIMEOUT_MS
   )
 
-  it("rejects an empty participant name before starting Agent Registration", async () => {
-    let requested = false
-    globalThis.fetch = (async () => {
-      requested = true
-      return Response.json({})
-    }) as unknown as typeof fetch
-
-    await expect(
-      registerWorktableAgent({
-        server: "https://app.worktable.cloud",
-        email: "owner@example.com",
-        participantName: " \t ",
-        readUserCode: () => Promise.resolve("BCDF-GHJK"),
-      })
-    ).rejects.toThrow("participant name is required")
-    expect(requested).toBe(false)
-  })
-
   it("keeps CLI pairing pending until the Gateway proves the channel connection", async () => {
     const configDir = await mkdtemp(join(tmpdir(), "worktable-pairing-"))
     tempDirs.push(configDir)
@@ -353,6 +375,7 @@ describe("OpenClaw Worktable pairing completion", () => {
     expect(result).toEqual({
       workspaceName: "Worktable",
       participantName: "Atlas",
+      access: {},
     })
     expect(progress).toEqual(["config_written", "verifying"])
     expect(completionRequests).toBe(0)
@@ -370,6 +393,110 @@ describe("OpenClaw Worktable pairing completion", () => {
       },
     })
   }, OPENCLAW_RUNTIME_TIMEOUT_MS)
+
+  it("records who approved the connection, and keeps what that person trusted only for the same Worktable and approver", async () => {
+    const configDir = await mkdtemp(join(tmpdir(), "worktable-owner-"))
+    tempDirs.push(configDir)
+    const configPath = join(configDir, "openclaw.json")
+    const pluginDir = await createDiscoveredPluginFixture(configDir)
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        plugins: { allow: ["worktable"], load: { paths: [pluginDir] } },
+      })
+    )
+    process.env.OPENCLAW_CONFIG_PATH = configPath
+    process.env.OPENCLAW_STATE_DIR = configDir
+    const owner = "ptc_ownerownerowner"
+    const teammate = "ptc_teammateteammate"
+    let approver: unknown = owner
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        if (!request.url.endsWith("/api/pairing/redeem")) {
+          return Response.json({ ok: true })
+        }
+        return Response.json({
+          mcpUrl: `${new URL(request.url).origin}/mcp`,
+          token: "wtb_bearer",
+          scopes: ["threads:read"],
+          workspaceName: "Worktable",
+          participantName: "Atlas",
+          ...(approver === undefined ? {} : { ownerMemberId: approver }),
+        })
+      },
+    })
+    servers.push(server)
+    const pair = () =>
+      pairWorktableChannel({
+        server: `http://127.0.0.1:${server.port}`,
+        pairingCode: "PAIR1-CODE2",
+      })
+    const saved = async () =>
+      JSON.parse(await readFile(configPath, "utf8")).channels.worktable as {
+        ownerMemberId?: string
+        trustAllMembers?: boolean
+        trustAllAgents?: boolean
+      }
+    const trustEveryone = async () => {
+      const config = JSON.parse(await readFile(configPath, "utf8"))
+      config.channels.worktable.trustAllMembers = true
+      config.channels.worktable.trustAllAgents = true
+      await writeFile(configPath, JSON.stringify(config))
+    }
+
+    // A first connection takes direction from its approver alone.
+    expect((await pair()).access).toEqual({ ownerMemberId: owner })
+    expect(await saved()).toMatchObject({ ownerMemberId: owner })
+    expect((await saved()).trustAllMembers).toBeUndefined()
+
+    // The same person connecting the same Worktable again keeps their choices.
+    await trustEveryone()
+    expect((await pair()).access).toEqual({
+      ownerMemberId: owner,
+      trustAllMembers: true,
+      trustAllAgents: true,
+    })
+
+    // The channel does not restart for these settings, so each message reads
+    // them from storage: turning one off holds even while OpenClaw's runtime
+    // snapshot still has it on.
+    setRuntimeConfigSnapshot(JSON.parse(await readFile(configPath, "utf8")))
+    const config = JSON.parse(await readFile(configPath, "utf8"))
+    config.channels.worktable.trustAllAgents = false
+    await writeFile(configPath, JSON.stringify(config))
+    expect(savedWorktableAccess()).toEqual({
+      ownerMemberId: owner,
+      trustOwnAgents: true,
+      trustAllMembers: true,
+      trustAllAgents: false,
+    })
+    clearRuntimeConfigSnapshot()
+
+    // Someone else approving starts without those choices, under their name.
+    // Having turned the owner's own agents off is a restriction, and stays.
+    const restricted = JSON.parse(await readFile(configPath, "utf8"))
+    restricted.channels.worktable.trustOwnAgents = false
+    await writeFile(configPath, JSON.stringify(restricted))
+    approver = teammate
+    expect((await pair()).access).toEqual({
+      ownerMemberId: teammate,
+      trustOwnAgents: false,
+    })
+    expect(await saved()).toMatchObject({ ownerMemberId: teammate })
+    expect((await saved()).trustAllAgents).toBeUndefined()
+
+    // An older Worktable names nobody, and anything but a member id is nobody.
+    await trustEveryone()
+    for (const unnamed of [undefined, "everyone", "*"]) {
+      approver = unnamed
+      expect((await pair()).access).toEqual({ trustOwnAgents: false })
+      const section = await saved()
+      expect(section.ownerMemberId).toBeUndefined()
+      expect(section.trustAllMembers).toBeUndefined()
+      expect(section.trustAllAgents).toBeUndefined()
+    }
+  }, OPENCLAW_RUNTIME_TIMEOUT_MS * 4)
 
   it("retries the idempotent completion request with the retained bearer", async () => {
     const requests: Array<{

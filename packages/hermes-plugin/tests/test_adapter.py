@@ -24,6 +24,8 @@ OWNER, TEAMMATE = "ptc_maya_owner_01", "ptc_sam_member_01"
 
 def delivery(message_id, author):
     return {
+        # Worktable names who connected this Hermes with every delivery.
+        "connectedBy": {"recipient": OWNER, "author": None},
         "messageId": message_id,
         "threadId": "thr_1",
         "location": {"kind": "space", "spaceId": "atlas"},
@@ -116,7 +118,9 @@ def subject(monkeypatch):
 async def test_a_teammate_reaches_hermes_only_once_the_owner_trusts_the_worktables_members(subject):
     adapter, events = subject
     profile = adapter._ctx
-    profile.settings.update(owner_id=OWNER, participant_name="Ada")
+    # Nothing about the owner is recorded here, as on a connection made by an
+    # earlier plugin: Worktable's word with the delivery is what counts.
+    profile.settings.update(participant_name="Ada")
     profile.offered.append(delivery("msg_1", TEAMMATE))
     assert await adapter.connect()
     try:
@@ -137,14 +141,6 @@ async def test_a_teammate_reaches_hermes_only_once_the_owner_trusts_the_worktabl
         assert profile.sent("post")[0]["body"] == "Released."
     finally:
         await adapter.disconnect()
-
-
-def test_a_connection_without_a_recorded_owner_starts_closed(subject):
-    adapter, _events = subject
-    # As a connection made before owners were recorded reads after an update.
-    adapter._ctx.settings.update(trust_all_members=True, trust_all_agents=True)
-    access = adapter._settings.access()
-    assert access.refusal({"id": OWNER, "kind": "human"}, "Ada").code == "OWNER_UNKNOWN"
 
 
 async def test_a_turn_ends_with_hermes_final_reply_and_ignores_notices(subject):

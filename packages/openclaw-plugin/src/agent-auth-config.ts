@@ -3,33 +3,6 @@ import { getRuntimeConfig } from "openclaw/plugin-sdk/runtime-config-snapshot"
 import { parseWorktableAgentAuth } from "./agent-auth.js"
 import type { WorktableAgentAuth } from "./types.js"
 
-export async function stagePendingAgentAuth(input: {
-  server: string
-  participantName: string
-  credential: WorktableAgentAuth
-}): Promise<void> {
-  await mutateConfigFile({
-    mutate: (draft) => {
-      const channels = (draft.channels ?? {}) as Record<string, unknown>
-      const current =
-        channels.worktable &&
-        typeof channels.worktable === "object" &&
-        !Array.isArray(channels.worktable)
-          ? (channels.worktable as Record<string, unknown>)
-          : {}
-      channels.worktable = {
-        ...current,
-        enabled: true,
-        server: input.server,
-        authMode: "agent-registration",
-        participantName: input.participantName,
-        pendingAgentAuth: input.credential,
-      }
-      draft.channels = channels as typeof draft.channels
-    },
-  })
-}
-
 export async function saveAgentCredential(
   registrationId: string,
   credential: WorktableAgentAuth

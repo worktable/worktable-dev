@@ -21,9 +21,19 @@ import type {
   AgentDispatcher,
   ClaimedWorktableDelivery,
   WorktableClient,
+  WorktableParticipant,
 } from "./types.js"
 
 const tempDirs: string[] = []
+
+const OWNER = "ptc_ownerownerowner"
+/** These deliveries come from another agent, which this owner has let in. */
+const TRUSTS_AGENTS = {
+  ownerMemberId: OWNER,
+  trustOwnAgents: true,
+  trustAllMembers: false,
+  trustAllAgents: true,
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -86,6 +96,10 @@ function delivery(
 
 class RecordingDispatcher implements AgentDispatcher {
   readonly calls: AgentDispatchInput[] = []
+  /** Set to make every later turn answer with this instead. */
+  reply: string | undefined
+  /** Set to hold a turn open until the returned promise settles. */
+  before: (() => Promise<void>) | undefined
   readonly turnsByThread = new Map<string, number>()
 
   async dispatch(
@@ -93,6 +107,7 @@ class RecordingDispatcher implements AgentDispatcher {
     callbacks: Parameters<AgentDispatcher["dispatch"]>[1]
   ): Promise<string> {
     this.calls.push(input)
+    await this.before?.()
     const conversationId =
       input.conversationId ??
       (input.spaceId ? `${input.spaceId}/${input.threadId}` : input.threadId)
@@ -100,7 +115,7 @@ class RecordingDispatcher implements AgentDispatcher {
     this.turnsByThread.set(conversationId, turn)
     await callbacks.onWorking()
     await callbacks.onReceiving(12)
-    return `Reply ${turn} in ${input.threadId}`
+    return this.reply ?? `Reply ${turn} in ${input.threadId}`
   }
 }
 
@@ -226,6 +241,7 @@ describe("OpenClaw Worktable connector", () => {
       alternateIdentity
     )
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe: memoryDedupe(),
@@ -284,6 +300,188 @@ describe("OpenClaw Worktable connector", () => {
     ).toBe(true)
   })
 
+  it("runs only messages its owner would, refusing the rest before anything reaches OpenClaw", async () => {
+    const client = new FakeWorktableClient()
+    const dispatcher = new RecordingDispatcher()
+    const TEAMMATE = "ptc_teammateteammate"
+    const members: WorktableParticipant[] = [
+      { id: OWNER, kind: "human", name: "Owner" },
+      { id: TEAMMATE, kind: "human", name: "Teammate" },
+      { id: "ptc_finn", kind: "agent", name: "Finn" },
+      { id: "ptc_atlas", kind: "agent", name: "Atlas" },
+    ]
+    // What Worktable says with a delivery, or nothing from an older one.
+    type Said = ClaimedWorktableDelivery["connectedBy"]
+    const from = (
+      messageId: string,
+      authorId: string,
+      connectedBy: Said,
+      listed = true
+    ) => {
+      const claimed = delivery(messageId, "thr_access")
+      claimed.thread.members = members.filter(
+        (member) => listed || member.id !== authorId
+      )
+      claimed.thread.identities = []
+      claimed.message.authorMemberId = authorId
+      claimed.message.authorIdentityId = undefined
+      if (connectedBy) claimed.connectedBy = connectedBy
+      return claimed
+    }
+    // One running connector, made by a plugin that recorded no owner: the
+    // rule and the Worktable's answers are read again for every message.
+    let rule: Partial<typeof TRUSTS_AGENTS> = {}
+    let onePerson = false
+    const connector = new WorktableConnector({
+      access: () => ({
+        trustOwnAgents: true,
+        trustAllMembers: false,
+        trustAllAgents: false,
+        ...rule,
+      }),
+      isOnePersonWorktable: () => Promise.resolve(onePerson),
+      name: "Atlas",
+      client,
+      dispatcher,
+      dedupe: memoryDedupe(),
+      replyOutbox: createMemoryReplyOutbox(),
+      accountId: "default",
+    })
+    const run = async (claimed: ClaimedWorktableDelivery) => {
+      client.deliveries.push(claimed)
+      await connector.processOne()
+    }
+    const byOwner = { recipient: OWNER, author: null }
+
+    await run(from("msg_teammate", TEAMMATE, byOwner))
+    await run(
+      from("msg_their_agent", "ptc_finn", { recipient: OWNER, author: TEAMMATE })
+    )
+    // The owner's id on an author the thread does not list is not the owner.
+    await run(from("msg_unlisted", OWNER, byOwner, false))
+    // An older Worktable with teammates cannot say who connected this one.
+    await run(from("msg_older", OWNER, undefined))
+    expect(dispatcher.calls).toEqual([])
+    expect(client.accepted.size).toBe(0)
+    expect(client.replies).toEqual([])
+    expect(client.failed).toEqual([
+      {
+        messageId: "msg_teammate",
+        retryable: false,
+        code: "NOT_OWNER",
+        message: "Only the person who connected Atlas can direct it.",
+      },
+      {
+        messageId: "msg_their_agent",
+        retryable: false,
+        code: "AGENT_NOT_TRUSTED",
+        message: "Atlas does not take direction from this agent.",
+      },
+      {
+        messageId: "msg_unlisted",
+        retryable: false,
+        code: "NOT_OWNER",
+        message: "Only the person who connected Atlas can direct it.",
+      },
+      {
+        messageId: "msg_older",
+        retryable: false,
+        code: "WORKTABLE_TOO_OLD",
+        message:
+          "Update this Worktable to 0.1.45 or later before Atlas can answer.",
+      },
+    ])
+
+    // Worktable names the owner, so the owner is answered with no
+    // reconnecting, and so is an agent the owner connected. Only the owner's
+    // message may carry OpenClaw commands.
+    await run(from("msg_owner", OWNER, byOwner))
+    await run(
+      from("msg_own_agent", "ptc_finn", { recipient: OWNER, author: OWNER })
+    )
+    // An older Worktable with one person lists only that person and theirs.
+    onePerson = true
+    await run(from("msg_older_one_person", OWNER, undefined))
+    onePerson = false
+    rule = { trustAllMembers: true }
+    await run(from("msg_trusted_teammate", TEAMMATE, byOwner))
+    // Turning a setting off again closes the door for the next message.
+    rule = { trustOwnAgents: false }
+    await run(
+      from("msg_own_agent_off", "ptc_finn", { recipient: OWNER, author: OWNER })
+    )
+    expect(
+      dispatcher.calls.map((call) => [
+        call.messageId,
+        call.sender.id,
+        call.commandAuthorized,
+      ])
+    ).toEqual([
+      ["msg_owner", OWNER, true],
+      ["msg_own_agent", "ptc_finn", false],
+      ["msg_older_one_person", OWNER, true],
+      ["msg_trusted_teammate", TEAMMATE, false],
+    ])
+    expect(client.replies).toHaveLength(4)
+    expect(client.failed.at(-1)).toMatchObject({
+      messageId: "msg_own_agent_off",
+      code: "AGENT_NOT_TRUSTED",
+    })
+
+    // A message let in while its thread was busy meets the rule again when
+    // its turn comes: the owner closed the door while it waited.
+    rule = { trustAllMembers: true }
+    let release: () => void = () => undefined
+    const busy = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const ownerTurnStarted = new Promise<void>((resolve) => {
+      dispatcher.before = () => {
+        resolve()
+        return busy
+      }
+    })
+    client.deliveries.push(from("msg_owner_busy", OWNER, byOwner))
+    const first = connector.processOne()
+    await ownerTurnStarted
+    dispatcher.before = undefined
+    // Accepting a delivery is what follows being let in.
+    const teammateLetIn = new Promise<void>((resolve) => {
+      const accept = client.accept.bind(client)
+      client.accept = (messageId) => {
+        if (messageId === "msg_teammate_waiting") resolve()
+        return accept(messageId)
+      }
+    })
+    client.deliveries.push(from("msg_teammate_waiting", TEAMMATE, byOwner))
+    const second = connector.processOne()
+    await teammateLetIn
+    rule = {}
+    release()
+    await Promise.all([first, second])
+    expect(dispatcher.calls.at(-1)?.messageId).toBe("msg_owner_busy")
+    expect(client.failed.at(-1)).toMatchObject({
+      messageId: "msg_teammate_waiting",
+      retryable: false,
+      code: "NOT_OWNER",
+      message: "Only the person who connected Atlas can direct it.",
+    })
+
+    // OpenClaw answers nothing to a command it will not take from this
+    // author; the author reads why instead of a failed turn.
+    dispatcher.reply = ""
+    rule = { trustAllMembers: true }
+    const command = from("msg_teammate_command", TEAMMATE, byOwner)
+    command.message.body = "/status"
+    await run(command)
+    expect(client.failed.at(-1)).toEqual({
+      messageId: "msg_teammate_command",
+      retryable: false,
+      code: "COMMANDS_OWNER_ONLY",
+      message: "Only the person who connected Atlas can use OpenClaw commands.",
+    })
+  })
+
   it("preserves a migrated V1 Space conversation key", async () => {
     const client = new FakeWorktableClient()
     const dispatcher = new RecordingDispatcher()
@@ -291,6 +489,7 @@ describe("OpenClaw Worktable connector", () => {
     migrated.thread.spaceId = "connected-agents"
     client.deliveries.push(migrated)
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe: memoryDedupe(),
@@ -317,6 +516,7 @@ describe("OpenClaw Worktable connector", () => {
     namedAuthor.message.authorIdentityId = "idt_finnresearch"
     client.deliveries.push(namedAuthor)
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe: memoryDedupe(),
@@ -352,6 +552,7 @@ describe("OpenClaw Worktable connector", () => {
       },
     }
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe: memoryDedupe(),
@@ -400,6 +601,7 @@ describe("OpenClaw Worktable connector", () => {
       },
     }
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe: memoryDedupe(),
@@ -436,6 +638,7 @@ describe("OpenClaw Worktable connector", () => {
     })
     client.deliveries.push(groupDelivery)
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher: new RecordingDispatcher(),
       dedupe: memoryDedupe(),
@@ -459,6 +662,7 @@ describe("OpenClaw Worktable connector", () => {
     const dedupe = memoryDedupe()
     client.deliveries.push(delivery("msg_duplicate", "thr_alpha"))
     const first = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe,
@@ -469,6 +673,7 @@ describe("OpenClaw Worktable connector", () => {
 
     client.deliveries.push(delivery("msg_duplicate", "thr_alpha"))
     const restarted = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe,
@@ -503,6 +708,7 @@ describe("OpenClaw Worktable connector", () => {
     }
     client.deliveries.push(delivery("msg_reclaimed", "thr_alpha"))
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe,
@@ -532,6 +738,7 @@ describe("OpenClaw Worktable connector", () => {
     }
     client.deliveries.push(delivery("msg_committed_elsewhere", "thr_alpha"))
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe,
@@ -575,6 +782,7 @@ describe("OpenClaw Worktable connector", () => {
       )
     )
     const first = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe,
@@ -596,6 +804,7 @@ describe("OpenClaw Worktable connector", () => {
 
     client.deliveries.push(delivery("msg_retained", "thr_retained"))
     const restarted = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe,
@@ -630,6 +839,7 @@ describe("OpenClaw Worktable connector", () => {
     )
     client.deliveries.push(claimed)
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe: memoryDedupe(),
@@ -662,6 +872,7 @@ describe("OpenClaw Worktable connector", () => {
     const replyOutbox = createMemoryReplyOutbox()
     client.deliveries.push(delivery("msg_empty", "thr_empty"))
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe,
@@ -689,6 +900,7 @@ describe("OpenClaw Worktable connector", () => {
       delivery("msg_copied", "thr_beta")
     )
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe,
@@ -730,6 +942,7 @@ describe("OpenClaw Worktable connector", () => {
     }
     client.deliveries.push(first, second)
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe: memoryDedupe(),
@@ -778,6 +991,7 @@ describe("OpenClaw Worktable connector", () => {
       },
     }
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe: memoryDedupe(),
@@ -842,6 +1056,7 @@ describe("OpenClaw Worktable connector", () => {
     client.deliveries.push(delivery("msg_interrupted", "thr_interrupted"))
     const stop = new AbortController()
     const running = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher: interrupted,
       dedupe,
@@ -855,6 +1070,7 @@ describe("OpenClaw Worktable connector", () => {
     client.deliveries.push(delivery("msg_interrupted", "thr_interrupted"))
     const dispatcher = new RecordingDispatcher()
     await new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe,
@@ -925,6 +1141,7 @@ describe("OpenClaw Worktable connector", () => {
       return result
     }
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe,
@@ -980,6 +1197,7 @@ describe("OpenClaw Worktable connector", () => {
       return Promise.resolve()
     }
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client: client as WorktableClient,
       dispatcher: new RecordingDispatcher(),
       dedupe: memoryDedupe(),
@@ -1016,6 +1234,7 @@ describe("OpenClaw Worktable connector", () => {
     }
     const abort = new AbortController()
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher: new RecordingDispatcher(),
       dedupe,
@@ -1041,6 +1260,7 @@ describe("OpenClaw Worktable connector", () => {
     const abort = new AbortController()
     const states: Array<{ connected: boolean; errorCode?: string }> = []
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher: new RecordingDispatcher(),
       dedupe: memoryDedupe(),
@@ -1078,6 +1298,7 @@ describe("OpenClaw Worktable connector", () => {
       errorCode?: string
     }> = []
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher: new RecordingDispatcher(),
       dedupe: memoryDedupe(),
@@ -1170,6 +1391,7 @@ describe("OpenClaw Worktable connector", () => {
         }
       }
       const connector = new WorktableConnector({
+        access: () => TRUSTS_AGENTS,
         client,
         dispatcher,
         dedupe,
@@ -1222,6 +1444,7 @@ describe("OpenClaw Worktable connector", () => {
     }
     const warnings: string[] = []
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe: memoryDedupe(),
@@ -1269,6 +1492,7 @@ describe("OpenClaw Worktable connector", () => {
       },
     }
     const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
       client,
       dispatcher,
       dedupe: memoryDedupe(),

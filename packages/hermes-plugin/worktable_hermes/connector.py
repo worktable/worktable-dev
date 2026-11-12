@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from typing import Awaitable, Callable, Optional, Protocol
 
 from . import delivery as deliveries
-from .access import Access
+from .access import Access, resolve_ownership
 from .client import WorktableError, WorktableTools
 from .store import DeliveryStore
 
@@ -56,6 +56,10 @@ def _code(error: BaseException) -> str:
     return code[:100] if isinstance(code, str) and code else "HERMES_DISPATCH_FAILED"
 
 
+async def _unknown() -> bool:
+    return False
+
+
 def _public_message(code: str) -> str:
     return f"Hermes could not complete this message ({code})."
 
@@ -68,6 +72,7 @@ class Connector:
         store: DeliveryStore,
         *,
         access: Callable[[], Access],
+        is_one_person_worktable: Optional[Callable[[], Awaitable[bool]]] = None,
         name: str = "Hermes",
         worktable_origin: Optional[str] = None,
         on_connected: Optional[Callable[[], Awaitable[None]]] = None,
@@ -78,6 +83,9 @@ class Connector:
         self._dispatcher = dispatcher
         self._store = store
         self._access = access
+        # Asked only of a Worktable too old to say who connected its agents.
+        # Unknown is no.
+        self._is_one_person_worktable = is_one_person_worktable or _unknown
         self._name = name
         self._origin = worktable_origin
         self._on_connected = on_connected
@@ -151,7 +159,11 @@ class Connector:
             # Before anything reaches Hermes: a refused author's words never
             # start a turn, and the refusal shows on their message.
             author = deliveries.sender(claimed)
-            refusal = self._access().refusal(author, self._name)
+            access = self._access()
+            ownership = await resolve_ownership(
+                claimed.get("connectedBy"), access.owner_id, self._is_one_person_worktable
+            )
+            refusal = access.refusal(ownership, author, self._name)
             if refusal:
                 logger.warning("Refused Worktable message %s from %s (%s)", message_id, author["id"], refusal.code)
                 await self._fail(claimed, False, refusal.code, refusal.message)
@@ -168,7 +180,16 @@ class Connector:
                     # Dispatching now would replace the pending turn Hermes
                     # resumes after the restart.
                     return
-                reply = self._store.retained(event) or await self._produce(claimed, conversation, event)
+                reply = self._store.retained(event)
+                if reply is None:
+                    # The turn may have waited behind another in its thread.
+                    # The rule it meets is the one saved now.
+                    refusal = self._access().refusal(ownership, author, self._name)
+                    if refusal:
+                        logger.warning("Refused Worktable message %s after its wait (%s)", message_id, refusal.code)
+                        await self._fail(claimed, False, refusal.code, refusal.message)
+                        return
+                    reply = await self._produce(claimed, conversation, event)
                 if stop is not None and stop.is_set():
                     return
                 if lost_lease is not None:

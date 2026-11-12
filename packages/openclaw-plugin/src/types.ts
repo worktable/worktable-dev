@@ -53,6 +53,17 @@ export interface ClaimedWorktableDelivery {
   identityId: string
   thread: WorktableThread
   message: WorktableMessage
+  /**
+   * Whether this Worktable has one person, or else who connected this agent
+   * and who connected the author when that is an agent, each as a thread
+   * member id; null where nobody is on record. Absent from a Worktable too
+   * old to say.
+   */
+  connectedBy?: {
+    onePerson?: boolean
+    recipient?: string | null
+    author?: string | null
+  }
 }
 
 export interface WorktablePostResult {
@@ -90,6 +101,11 @@ export interface AgentDispatchInput {
   messageId: string
   body: string
   sender: WorktableParticipant
+  /**
+   * Whether OpenClaw may read commands in this message. Only the person who
+   * connected this OpenClaw gets them; anyone else is plain text to the agent.
+   */
+  commandAuthorized: boolean
 }
 
 export interface AgentDispatchCallbacks {
@@ -164,6 +180,11 @@ export interface WorktableChannelAccount {
   participantName?: string
   defaultSpaceId?: string
   pendingPairingCode?: string
+  /** The Worktable member who approved this connection, where recorded. */
+  ownerMemberId?: string
+  trustOwnAgents: boolean
+  trustAllMembers: boolean
+  trustAllAgents: boolean
 }
 
 export interface WorktableAgentAuth {

@@ -9,6 +9,8 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.45] - 2026-11-12
+
 ### Changed
 
 - **OpenClaw and Hermes:** An OpenClaw agent (plugin 0.0.20) or Hermes (plugin 0.1.3) takes direction from the person who connected it and from that person's other agents. Other members and other people's agents see a refusal on their message until that person lets them in.

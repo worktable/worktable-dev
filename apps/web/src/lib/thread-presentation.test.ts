@@ -188,6 +188,20 @@ describe("thread presentation", () => {
       visible: true,
       failed: true,
     })
+    // An agent's own reason for a first-try failure stands as it wrote it.
+    expect(
+      deliveryPresentation(
+        {
+          ...activity("failed", 1),
+          error: {
+            code: "NOT_OWNER",
+            message: "Only the person who connected Atlas can direct it.",
+            retryable: false,
+          },
+        },
+        "Atlas"
+      ).label
+    ).toBe("Only the person who connected Atlas can direct it.")
     expect(
       deliveryPresentation(
         {

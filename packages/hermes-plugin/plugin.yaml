@@ -1,7 +1,7 @@
 name: worktable
 label: Worktable
 kind: platform
-version: 0.1.2
+version: 0.1.3
 manifest_version: 2
 api_version: 1
 requires_hermes: ">=0.21.5"
@@ -12,9 +12,11 @@ description: >
   Worktable tools through Hermes' own MCP connection, and receives Worktable's
   skills.
 
-  Network: talks only to the Worktable address you connect. Credentials: a
-  self-hosted pairing stores its token as WORKTABLE_TOKEN in the profile's .env;
-  a Worktable Cloud sign-in is held by Hermes' MCP OAuth storage.
+  Network: talks only to the Worktable address you connect, and sends it this
+  computer's hostname when it pairs. Who can trigger turns: only the person
+  who approved the connection, unless that person turns on trust_all_members
+  or trust_all_agents. Credentials: the paired token is WORKTABLE_TOKEN in the
+  profile's .env.
 author: Reva Labs
 license: MIT
 homepage: https://docs.worktable.dev/agents/connections/

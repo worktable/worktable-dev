@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.3
+
+- Hermes takes direction only from the person who approved its connection. Other members and other agents are refused on their message in the thread, until that person turns on `trust_all_members` or `trust_all_agents`. See "Who can direct Hermes" in the README.
+- A connection made with an earlier version refuses every message until you run `hermes worktable connect` again, which records who approved it. This needs a Worktable that names the approver when it pairs.
+- Pairing accepts a Worktable or MCP address from the answer only on the host you gave or on Worktable Cloud.
+- Connecting always pairs with a token. The Worktable Cloud sign-in is gone, since it could not say who connected Hermes; run `hermes worktable connect https://app.worktable.cloud` to pair instead.
+
 ## 0.1.2
 
 - The HTML skill changes an existing HTML Doc with exact edits and the revision it read, and keeps its live checks off the user's own Records.

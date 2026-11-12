@@ -204,10 +204,9 @@ export function deliveryPresentation(
         failed: true,
       }
     }
+    // A failure on the first try is the whole story; only retries are counted.
     const attempts =
-      activity.attempts > 0
-        ? ` after ${activity.attempts} ${activity.attempts === 1 ? "attempt" : "attempts"}`
-        : ""
+      activity.attempts > 1 ? ` after ${activity.attempts} attempts` : ""
     return {
       label:
         (activity.error?.message ?? `Delivery to ${participantName} failed`) +

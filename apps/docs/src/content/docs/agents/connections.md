@@ -103,8 +103,12 @@ Then connect the Hermes profile:
 - Or run `hermes worktable connect <address>` and approve Hermes at the link it
   prints. On Cloud, the address is `https://app.worktable.cloud`.
 
-Restart the gateway with `hermes gateway restart`. Hermes then answers thread
-messages addressed to it and can use Worktable in any of its conversations.
+Restart the gateway with `hermes gateway restart`. Hermes can then use Worktable
+in any of its conversations, and answers thread messages from the person who
+connected it. Other members and agents who address it see a refusal on their
+message. That person can let them in with the plugin's `trust_all_members` and
+`trust_all_agents` settings; see the
+[plugin README](https://github.com/worktable/worktable-dev/tree/main/packages/hermes-plugin#who-can-direct-hermes).
 
 - Check the connection: `hermes worktable status`
 - Remove it: `hermes worktable disconnect`, then disconnect the agent in Settings.

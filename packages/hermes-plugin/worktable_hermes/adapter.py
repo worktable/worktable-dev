@@ -18,7 +18,7 @@ from . import delivery as deliveries
 from . import pairing
 from .client import WorktableTools, parse_envelope
 from .connector import Connector, Turn, TurnError
-from .settings import MCP_SERVER, PLATFORM, TOKEN_ENV, Settings
+from .settings import MCP_SERVER, PLATFORM, Settings
 from .store import DeliveryStore
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,10 @@ class WorktableAdapter(BasePlatformAdapter):
 
     @property
     def authorization_is_upstream(self) -> bool:
-        # Worktable authenticates every author and decides who is addressed.
+        # Worktable authenticates each author, and the connector checks that
+        # author against this profile's own rule (access.py) before a message
+        # reaches Hermes: the person who approved the connection, plus whoever
+        # that person opted to trust. Everyone else is refused in the thread.
         return True
 
     async def _call(self, tool: str, arguments: dict, timeout: float) -> dict:
@@ -86,12 +89,20 @@ class WorktableAdapter(BasePlatformAdapter):
         if not server:
             logger.error("Worktable is not set up. Run `hermes worktable connect`.")
             return False
+        if not self._settings.owner_id:
+            logger.error(
+                "Worktable has no record of who connected this Hermes, so it refuses every "
+                "thread message. Run `hermes worktable connect %s` again.",
+                server,
+            )
         self._stop = asyncio.Event()
         self._tools = WorktableTools(self._call)
         self._connector = Connector(
             self._tools,
             self,
             DeliveryStore(self._ctx.state),
+            access=self._settings.access,
+            name=self._settings.participant_name,
             worktable_origin=server,
             on_connected=self._on_connected,
         )
@@ -130,9 +141,6 @@ class WorktableAdapter(BasePlatformAdapter):
                 )
                 raise
             self._settings.clear_pending_pairing_code()
-        if self._settings.auth == "oauth" and not self._settings.participant_registered:
-            await self._tools.register_participant(self._settings.participant_name)
-            self._settings.mark_participant_registered()
 
     # -- Dispatcher -------------------------------------------------------
 

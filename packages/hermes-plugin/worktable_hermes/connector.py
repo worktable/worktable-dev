@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from typing import Awaitable, Callable, Optional, Protocol
 
 from . import delivery as deliveries
+from .access import Access
 from .client import WorktableError, WorktableTools
 from .store import DeliveryStore
 
@@ -66,6 +67,8 @@ class Connector:
         dispatcher: Dispatcher,
         store: DeliveryStore,
         *,
+        access: Callable[[], Access],
+        name: str = "Hermes",
         worktable_origin: Optional[str] = None,
         on_connected: Optional[Callable[[], Awaitable[None]]] = None,
         heartbeat_seconds: float = HEARTBEAT_SECONDS,
@@ -74,6 +77,8 @@ class Connector:
         self._tools = tools
         self._dispatcher = dispatcher
         self._store = store
+        self._access = access
+        self._name = name
         self._origin = worktable_origin
         self._on_connected = on_connected
         self._heartbeat_seconds = heartbeat_seconds
@@ -143,6 +148,14 @@ class Connector:
 
         beating: Optional[asyncio.Task] = None
         try:
+            # Before anything reaches Hermes: a refused author's words never
+            # start a turn, and the refusal shows on their message.
+            author = deliveries.sender(claimed)
+            refusal = self._access().refusal(author, self._name)
+            if refusal:
+                logger.warning("Refused Worktable message %s from %s (%s)", message_id, author["id"], refusal.code)
+                await self._fail(claimed, False, refusal.code, refusal.message)
+                return
             await self._tools.accept(message_id, lease_id)
             await self._tools.progress(message_id, lease_id)
             beating = asyncio.create_task(heartbeat())

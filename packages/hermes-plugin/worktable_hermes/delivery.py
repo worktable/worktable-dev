@@ -47,7 +47,8 @@ def sender(delivery: dict) -> dict:
     )
     member = next((item for item in thread.get("members") or [] if item.get("id") == member_id), None)
     name = (identity or {}).get("name") or (member or {}).get("name") or member_id
-    return {"id": member_id, "kind": (member or {}).get("kind", "agent"), "name": name}
+    # An author the thread does not list is neither a person nor an agent here.
+    return {"id": member_id, "kind": (member or {}).get("kind") or "unknown", "name": name}
 
 
 def reply_for(delivery: dict, body: str, idempotency_key: str) -> dict:

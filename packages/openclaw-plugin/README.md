@@ -51,16 +51,29 @@ tools on the computer OpenClaw runs on.
 
 | Author of the message | Runs as a turn |
 | --- | --- |
-| The person who approved the connection | Yes |
+| The person who connected this agent | Yes |
+| An agent that same person connected | Yes, unless `trustOwnAgents` is `false` |
 | Another member of the Worktable | Only with `trustAllMembers` |
-| Another agent in the Worktable | Only with `trustAllAgents` |
+| An agent someone else connected, or one with nobody on record | Only with `trustAllAgents` |
+| An author the thread does not list | Never |
 
-Both settings are off by default. The plugin refuses everyone else before the
-message reaches OpenClaw, and the author sees the refusal on their message in
-the thread. Worktable identifies each author; the plugin compares that with the
-member recorded when you connected. An author the thread does not list is
-always refused. The plugin does not consult OpenClaw's allowlists, pairing
-approvals or access groups, so none of them lets in an author this rule refuses.
+The plugin refuses everyone else before the message reaches OpenClaw, and the
+author sees the refusal on their message in the thread. It does not consult
+OpenClaw's allowlists, pairing approvals or access groups, so none of them lets
+in an author this rule refuses.
+
+Worktable is the authority on who is who. With each message it tells the plugin
+who wrote it, who connected this agent, and, when the author is an agent, who
+connected that one. A person counts as having connected an agent when they
+approved it or signed it in under their own account; an agent that a team owns
+has nobody on record. Your own agents are let in by default because they
+already act for you in that Worktable, with access you gave them. The cost is
+that one of them, steered by something it read, can direct this one. Turn that
+off if you would rather they could not:
+
+```sh
+openclaw config set channels.worktable.trustOwnAgents false
+```
 
 To let others in, as the person who connected it:
 
@@ -73,37 +86,37 @@ A change applies to the next message, without restarting the Gateway.
 `trustAllMembers` covers every person in the Worktable, now and later.
 `trustAllAgents` covers every agent connected to it, whoever connected that
 agent, so anyone who can direct one of those agents can reach this one through
-it. Connecting to another Worktable, or having someone else approve the
-connection, turns both off again.
+it. Connecting again turns both off, unless the plugin already had the same
+approver on record for the same Worktable.
 
 OpenClaw reads commands and directives in a message, such as `/new` or
-`/model`, only from the person who approved the connection: the plugin sets
-`CommandAuthorized` for that author alone. From anyone else you let in, a
-command is not run: a message that is only a command is refused on the message,
-and any other message reaches the agent as ordinary text. If you set OpenClaw's
-own `commands.allowFrom`, OpenClaw uses that list for commands instead, among
-the authors the plugin has already let through.
+`/model`, only from the person who connected the agent: the plugin sets
+`CommandAuthorized` for that author alone. From anyone else it lets in, agents
+included, a command is not run: a message that is only a command is refused on
+the message, and any other message reaches the agent as ordinary text. If you
+set OpenClaw's own `commands.allowFrom`, OpenClaw uses that list for commands
+instead, among the authors the plugin has already let through.
 
-The agent can still read what others wrote in a thread when the person it takes
+The agent can still read what others wrote in a thread when someone it takes
 direction from asks it to. Limit its tools in OpenClaw, and disconnect it in
 Worktable's **Settings → Agents** to stop it receiving messages.
 
 ### Updating from 0.0.19 or earlier
 
-A connection made before 0.0.20 has no record of who approved it, so it refuses
-every thread message, yours included, and says so on the message. Connect again
-to record the approver, then restart the OpenClaw Gateway; the agent keeps its
-name and its threads:
+Nothing to do. A connection made with an earlier version keeps working:
+Worktable 0.1.45 or later names who connected it with each message, so the
+plugin needs no reconnecting and refuses nobody it should answer.
 
-```sh
-openclaw worktable connect --server https://worktable.example.com
-```
+With an older Worktable the plugin cannot be told. If that Worktable has one
+person, the plugin sees that it is not a Team Worktable and treats that person
+and their agents as above. If it has teammates, the plugin answers only when
+its approver was recorded at pairing (Worktable 0.1.44), and counts no agent as
+your own. Otherwise it refuses with "Update this Worktable to 0.1.45 or later"
+on the message, and answers again once that Worktable is updated.
 
-This needs Worktable 0.1.44 or later. An older Worktable does not say who
-approved, the command tells you so, and the connection stays closed until that
-Worktable is updated and you connect again. `--agent-registration` is gone,
-since that sign-up could not say who connected OpenClaw; a connection made with
-it connects again the same way.
+`--agent-registration` is gone: connect with
+`openclaw worktable connect --server <address>` and approve the agent in
+Worktable. A connection already made that way keeps working.
 
 ## What pairing sends and stores
 
@@ -120,7 +133,7 @@ registration ID and this computer's hostname with each request, and refreshes
 its credential at the authorization endpoints that Worktable named when it
 registered.
 
-- The token, the approving member's ID and the two trust settings are under
+- The token, the approving member's ID and the three trust settings are under
   `channels.worktable` in OpenClaw's configuration.
 - The installation ID and any replies not yet posted are in
   `plugins/worktable/` under OpenClaw's state directory.

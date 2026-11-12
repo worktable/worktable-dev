@@ -2,12 +2,12 @@
 
 ## 0.0.20
 
-- The agent takes direction only from the person who approved its connection. Other members and other agents are refused on their message in the thread, until that person turns on `trustAllMembers` or `trustAllAgents`. See "Who can direct the agent" in the README.
-- OpenClaw commands in a message are read only from the person who approved the connection.
-- A connection made with an earlier version refuses every message until you run `openclaw worktable connect --server <address>` again, which records who approved it. This needs Worktable 0.1.44 or later.
+- The agent takes direction from the person who connected it and from the other agents that person connected. Other members and other people's agents are refused on their message in the thread, until that person turns on `trustAllMembers` or `trustAllAgents`. `trustOwnAgents false` turns the owner's own agents off. See "Who can direct the agent" in the README.
+- An existing connection needs no reconnecting: Worktable 0.1.45 or later names who connected each agent with every message. With an older Worktable the plugin answers a one-person Worktable as before, and otherwise says on the message to update Worktable.
+- OpenClaw commands in a message are read only from the person who connected the agent.
 - Pairing follows a workspace address from Worktable's answer only on the host you gave or on Worktable Cloud.
 - The connect command says why it failed, where OpenClaw printed only that it had.
-- `--agent-registration` is gone, since that sign-up could not say who connected OpenClaw. Run `openclaw worktable connect --server https://app.worktable.cloud` and approve the agent in Worktable instead.
+- `--agent-registration` is gone. Run `openclaw worktable connect --server https://app.worktable.cloud` and approve the agent in Worktable instead. A connection already made with it keeps working.
 
 ## 0.0.19
 

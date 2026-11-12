@@ -76,8 +76,9 @@ class WorktableAdapter(BasePlatformAdapter):
     def authorization_is_upstream(self) -> bool:
         # Worktable authenticates each author, and the connector checks that
         # author against this profile's own rule (access.py) before a message
-        # reaches Hermes: the person who approved the connection, plus whoever
-        # that person opted to trust. Everyone else is refused in the thread.
+        # reaches Hermes: the person who connected it, the agents that person
+        # connected, plus whoever that person opted to trust. Everyone else is
+        # refused in the thread.
         return True
 
     async def _call(self, tool: str, arguments: dict, timeout: float) -> dict:
@@ -89,12 +90,6 @@ class WorktableAdapter(BasePlatformAdapter):
         if not server:
             logger.error("Worktable is not set up. Run `hermes worktable connect`.")
             return False
-        if not self._settings.owner_id:
-            logger.error(
-                "Worktable has no record of who connected this Hermes, so it refuses every "
-                "thread message. Run `hermes worktable connect %s` again.",
-                server,
-            )
         self._stop = asyncio.Event()
         self._tools = WorktableTools(self._call)
         self._connector = Connector(
@@ -102,6 +97,7 @@ class WorktableAdapter(BasePlatformAdapter):
             self,
             DeliveryStore(self._ctx.state),
             access=self._settings.access,
+            is_one_person_worktable=lambda: asyncio.to_thread(pairing.is_one_person, server, Settings.token()),
             name=self._settings.participant_name,
             worktable_origin=server,
             on_connected=self._on_connected,

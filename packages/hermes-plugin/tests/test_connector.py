@@ -17,8 +17,10 @@ MEMBERS = {
 }
 
 
-def claimed(message_id="msg_1", lease_id="lease_1", body="Summarize the launch plan", author=OWNER):
+def claimed(message_id="msg_1", lease_id="lease_1", body="Summarize the launch plan", author=OWNER, connected_by=None):
     return {
+        # What a current Worktable says with a delivery; an older one says nothing.
+        **({"connectedBy": connected_by} if connected_by is not None else {}),
         "messageId": message_id,
         "threadId": "thr_1",
         "location": {"kind": "space", "spaceId": "atlas"},
@@ -135,27 +137,51 @@ async def test_answers_a_message_once_and_rejects_its_redelivery():
 SAM, ATLAS = "ptc_sam_member_01", "ptc_atlas_agent_1"
 
 
+def said(author=None, recipient=OWNER):
+    """Worktable naming who connected this Hermes and, for an agent, the author."""
+    return {"recipient": recipient, "author": author}
+
+
+# A connection made by a plugin that recorded no owner.
+UNRECORDED = Access(None)
+
+
 @pytest.mark.parametrize(
-    "access, author, refused",
+    "access, author, connected_by, refused",
     [
-        # Only the person who connected Hermes, until that person opts into more.
-        (Access(OWNER), OWNER, None),
-        (Access(OWNER), SAM, "NOT_OWNER"),
-        (Access(OWNER), ATLAS, "AGENT_NOT_TRUSTED"),
-        # Trusting the Worktable's members lets people in, not their agents.
-        (Access(OWNER, trust_all_members=True), SAM, None),
-        (Access(OWNER, trust_all_members=True), ATLAS, "AGENT_NOT_TRUSTED"),
-        # Agents are their own opt-in.
-        (Access(OWNER, trust_all_agents=True), ATLAS, None),
-        (Access(OWNER, trust_all_agents=True), SAM, "NOT_OWNER"),
-        # A connection with nobody on record lets nobody in, whatever it trusts.
-        (Access(None, trust_all_members=True, trust_all_agents=True), OWNER, "OWNER_UNKNOWN"),
+        # Worktable names the owner with each message, so a connection made
+        # by an earlier plugin answers its owner without connecting again.
+        (UNRECORDED, OWNER, said(), None),
+        (UNRECORDED, SAM, said(), "NOT_OWNER"),
+        # An agent the owner connected is the owner's own, until turned off.
+        (UNRECORDED, ATLAS, said(author=OWNER), None),
+        (Access(None, trust_own_agents=False), ATLAS, said(author=OWNER), "AGENT_NOT_TRUSTED"),
+        (Access(None, trust_own_agents=False), OWNER, said(), None),
+        # Another person's agent, or one with nobody on record, is not.
+        (UNRECORDED, ATLAS, said(author=SAM), "AGENT_NOT_TRUSTED"),
+        (UNRECORDED, ATLAS, said(), "AGENT_NOT_TRUSTED"),
+        (Access(None, trust_all_agents=True), ATLAS, said(author=SAM), None),
+        (Access(None, trust_all_agents=True), ATLAS, said(), None),
+        # Each opt-in covers its own kind of author only.
+        (Access(None, trust_all_members=True), SAM, said(), None),
+        (Access(None, trust_all_members=True), ATLAS, said(author=SAM), "AGENT_NOT_TRUSTED"),
+        (Access(None, trust_all_agents=True), SAM, said(), "NOT_OWNER"),
+        # Worktable has nobody on record for an agent a team owns: the
+        # approver recorded at pairing stands in, and without one nobody does.
+        (Access(OWNER), OWNER, said(recipient=None), None),
+        (Access(None, trust_all_members=True, trust_all_agents=True), OWNER, said(recipient=None), "OWNER_UNKNOWN"),
+        # An older Worktable says nothing. With teammates, the recorded
+        # approver stands and no agent counts as the owner's own.
+        (Access(OWNER), OWNER, None, None),
+        (Access(OWNER), SAM, None, "NOT_OWNER"),
+        (Access(OWNER), ATLAS, None, "AGENT_NOT_TRUSTED"),
+        (Access(None, trust_all_members=True, trust_all_agents=True), OWNER, None, "WORKTABLE_TOO_OLD"),
     ],
 )
-async def test_runs_a_message_only_for_an_author_the_owner_allows(access, author, refused):
+async def test_runs_a_message_only_for_an_author_the_owner_allows(access, author, connected_by, refused):
     tools, dispatcher = FakeTools(), FakeDispatcher()
 
-    await connector(tools, dispatcher, access=access).handle(claimed(author=author))
+    await connector(tools, dispatcher, access=access).handle(claimed(author=author, connected_by=connected_by))
 
     if refused is None:
         assert [turn.sender["id"] for turn in dispatcher.turns] == [author]
@@ -167,11 +193,41 @@ async def test_runs_a_message_only_for_an_author_the_owner_allows(access, author
         assert "Hermes" in tools.messages[0]
 
 
+async def test_an_older_worktable_with_one_person_answers_that_person_and_their_agents():
+    # It cannot say who connected whom, but it has nobody else in it.
+    asked = []
+
+    async def one_person():
+        asked.append(True)
+        return True
+
+    for access, author, refused in [
+        (UNRECORDED, OWNER, None),
+        (UNRECORDED, ATLAS, None),
+        (Access(None, trust_own_agents=False), ATLAS, "AGENT_NOT_TRUSTED"),
+    ]:
+        tools, dispatcher = FakeTools(), FakeDispatcher()
+        await connector(tools, dispatcher, access=access, is_one_person_worktable=one_person).handle(
+            claimed(author=author)
+        )
+        assert [failure["code"] for failure in tools.failures] == ([refused] if refused else [])
+        assert len(dispatcher.turns) == (0 if refused else 1)
+    assert len(asked) == 3
+
+    # A Worktable that says who connected whom is never asked.
+    tools, dispatcher = FakeTools(), FakeDispatcher()
+    await connector(tools, dispatcher, access=UNRECORDED, is_one_person_worktable=one_person).handle(
+        claimed(author=SAM, connected_by=said())
+    )
+    assert len(asked) == 3 and [failure["code"] for failure in tools.failures] == ["NOT_OWNER"]
+    assert tools.messages == ["Only the person who connected Hermes can direct it."]
+
+
 @pytest.mark.parametrize("author", [SAM, OWNER])
 async def test_an_author_the_thread_does_not_list_is_never_trusted(author):
     # Not even under the owner's id: the owner is a person the thread lists.
     tools, dispatcher = FakeTools(), FakeDispatcher()
-    delivery = claimed(author=author)
+    delivery = claimed(author=author, connected_by=said(author=OWNER))
     delivery["thread"]["members"] = [member for member in delivery["thread"]["members"] if member["id"] != author]
     everyone = Access(OWNER, trust_all_members=True, trust_all_agents=True)
 

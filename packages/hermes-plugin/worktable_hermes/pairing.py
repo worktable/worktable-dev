@@ -114,6 +114,21 @@ def _request(url: str, body: Optional[dict] = None, token: Optional[str] = None)
         raise PairingError(f"Could not reach Worktable at {url}: {error}", "UNREACHABLE") from None
 
 
+def is_one_person(origin: str, token: Optional[str]) -> bool:
+    """Whether a Worktable too old to say who connected its agents has one person.
+
+    It answers that it is not a Team Worktable. Then every person it lists is
+    its owner and every agent is the owner's. Anything else, an unreachable
+    Worktable included, is not known to be one person's.
+    """
+    if not origin or not token:
+        return False
+    try:
+        return _request(f"{origin.rstrip('/')}/api/team", token=token).get("enabled") is False
+    except PairingError:
+        return False
+
+
 def redeem(origin: str, code: str, hostname: str, installation_id: str) -> dict:
     result = _request(
         f"{origin}/api/pairing/redeem",

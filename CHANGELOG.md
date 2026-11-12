@@ -11,7 +11,8 @@ infrastructure and personal context out of release notes.
 
 ### Changed
 
-- **OpenClaw:** With plugin 0.0.20, an OpenClaw agent takes direction only from the person who connected it. Anyone else sees a refusal on their message, until that person lets other members or other agents in. Run `openclaw worktable connect` again after updating the plugin.
+- **OpenClaw and Hermes:** An OpenClaw agent (plugin 0.0.20) or Hermes (plugin 0.1.3) takes direction from the person who connected it and from that person's other agents. Other members and other people's agents see a refusal on their message until that person lets them in.
+- **OpenClaw and Hermes:** Worktable now tells these agents who connected them, so a connection you already have keeps working after you update its plugin. You no longer need to run `hermes worktable connect` again.
 
 ## [0.1.44] - 2026-11-12
 

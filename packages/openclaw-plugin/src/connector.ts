@@ -1,5 +1,9 @@
 import { createClaimableDedupe } from "openclaw/plugin-sdk/persistent-dedupe"
-import { decideAccess, type WorktableAccess } from "./access.js"
+import {
+  decideAccess,
+  resolveOwnership,
+  type WorktableAccess,
+} from "./access.js"
 import type { ReplyOutbox, RetainedWorktableReply } from "./reply-outbox.js"
 import type {
   AgentDispatcher,
@@ -405,6 +409,7 @@ export class WorktableConnector {
   readonly #stopHeartbeat: (timer: ReturnType<typeof setInterval>) => void
   readonly #worktableOrigin?: string
   readonly #access: () => WorktableAccess
+  readonly #isOnePersonWorktable: () => Promise<boolean>
   readonly #name: string
 
   constructor(options: {
@@ -415,6 +420,12 @@ export class WorktableConnector {
      * for the next one. Everyone else is refused.
      */
     access: () => WorktableAccess
+    /**
+     * Asked only of a Worktable too old to say who connected its agents:
+     * whether it has one person, so that everyone it lists is that person or
+     * theirs. Unknown is no.
+     */
+    isOnePersonWorktable?: () => Promise<boolean>
     /** What this agent is called in Worktable, for a refusal's wording. */
     name?: string
     dedupe?: DeliveryDedupe
@@ -451,6 +462,8 @@ export class WorktableConnector {
       options.heartbeatTimer?.stop ?? ((timer) => clearInterval(timer))
     this.#worktableOrigin = options.worktableOrigin
     this.#access = options.access
+    this.#isOnePersonWorktable =
+      options.isOnePersonWorktable ?? (() => Promise.resolve(false))
     this.#name = options.name?.trim() || "OpenClaw"
   }
 
@@ -649,8 +662,14 @@ export class WorktableConnector {
       // Before anything reaches OpenClaw: a refused author's words never
       // start a turn, and the refusal shows on their message.
       const author = deliveryAuthor(delivery)
+      const access = this.#access()
       const decision = decideAccess(
-        this.#access(),
+        access,
+        await resolveOwnership(
+          delivery.connectedBy,
+          access.ownerMemberId,
+          this.#isOnePersonWorktable
+        ),
         { id: author.id, kind: author.listed?.kind },
         this.#name
       )

@@ -22,6 +22,7 @@ import {
   writeSpace,
 } from "./store.ts"
 import { resolveParticipant } from "./participant-store.ts"
+import { ownerIdentity } from "./auth.ts"
 import {
   getThreadActivity,
   nextThreadDeliveryEligibleAt,
@@ -262,6 +263,10 @@ describe("thread service", () => {
 
     const claim = await claimNextThreadDelivery(atlas, 0)
     expect(claim?.message.body).toBe("Research the connector shape.")
+    // On a one-person Worktable its owner connected every agent, the
+    // recipient and an agent author alike.
+    const person = (await resolveParticipant(ownerIdentity())).participant.id
+    expect(claim?.connectedBy).toEqual({ recipient: person, author: person })
     await acceptDelivery(atlas, claim!.messageId, claim!.leaseId)
     const progress = await progressDelivery(atlas, {
       messageId: claim!.messageId,

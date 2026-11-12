@@ -21,6 +21,7 @@ import type {
   AgentDispatcher,
   ClaimedWorktableDelivery,
   WorktableClient,
+  WorktableParticipant,
 } from "./types.js"
 
 const tempDirs: string[] = []
@@ -29,6 +30,7 @@ const OWNER = "ptc_ownerownerowner"
 /** These deliveries come from another agent, which this owner has let in. */
 const TRUSTS_AGENTS = {
   ownerMemberId: OWNER,
+  trustOwnAgents: true,
   trustAllMembers: false,
   trustAllAgents: true,
 }
@@ -295,34 +297,46 @@ describe("OpenClaw Worktable connector", () => {
     ).toBe(true)
   })
 
-  it("refuses an author the owner has not let in before anything reaches OpenClaw", async () => {
+  it("runs only messages its owner would, refusing the rest before anything reaches OpenClaw", async () => {
     const client = new FakeWorktableClient()
     const dispatcher = new RecordingDispatcher()
+    const TEAMMATE = "ptc_teammateteammate"
+    const members: WorktableParticipant[] = [
+      { id: OWNER, kind: "human", name: "Owner" },
+      { id: TEAMMATE, kind: "human", name: "Teammate" },
+      { id: "ptc_finn", kind: "agent", name: "Finn" },
+      { id: "ptc_atlas", kind: "agent", name: "Atlas" },
+    ]
+    // What Worktable says with a delivery, or nothing from an older one.
+    type Said = ClaimedWorktableDelivery["connectedBy"]
     const from = (
       messageId: string,
-      author: { id: string; kind?: "human" | "agent" }
+      authorId: string,
+      connectedBy: Said,
+      listed = true
     ) => {
       const claimed = delivery(messageId, "thr_access")
-      claimed.thread.members = [
-        { id: OWNER, kind: "human", name: "Owner" },
-        { id: "ptc_teammateteammate", kind: "human", name: "Teammate" },
-        { id: "ptc_finn", kind: "agent", name: "Finn" },
-        { id: "ptc_atlas", kind: "agent", name: "Atlas" },
-      ].filter((member) => author.kind || member.id !== author.id) as never
+      claimed.thread.members = members.filter(
+        (member) => listed || member.id !== authorId
+      )
       claimed.thread.identities = []
-      claimed.message.authorMemberId = author.id
+      claimed.message.authorMemberId = authorId
       claimed.message.authorIdentityId = undefined
+      if (connectedBy) claimed.connectedBy = connectedBy
       return claimed
     }
-    // One running connector: a change to the rule holds for the next message.
+    // One running connector, made by a plugin that recorded no owner: the
+    // rule and the Worktable's answers are read again for every message.
     let rule: Partial<typeof TRUSTS_AGENTS> = {}
+    let onePerson = false
     const connector = new WorktableConnector({
       access: () => ({
-        ownerMemberId: OWNER,
+        trustOwnAgents: true,
         trustAllMembers: false,
         trustAllAgents: false,
         ...rule,
       }),
+      isOnePersonWorktable: () => Promise.resolve(onePerson),
       name: "Atlas",
       client,
       dispatcher,
@@ -330,28 +344,20 @@ describe("OpenClaw Worktable connector", () => {
       replyOutbox: createMemoryReplyOutbox(),
       accountId: "default",
     })
-    const run = async (
-      access: Partial<typeof TRUSTS_AGENTS>,
-      claimed: ClaimedWorktableDelivery
-    ) => {
-      rule = access
+    const run = async (claimed: ClaimedWorktableDelivery) => {
       client.deliveries.push(claimed)
       await connector.processOne()
     }
-    const teammate = { id: "ptc_teammateteammate", kind: "human" as const }
-    const agent = { id: "ptc_finn", kind: "agent" as const }
+    const byOwner = { recipient: OWNER, author: null }
 
-    await run({}, from("msg_teammate", teammate))
-    await run({}, from("msg_agent", agent))
+    await run(from("msg_teammate", TEAMMATE, byOwner))
+    await run(
+      from("msg_their_agent", "ptc_finn", { recipient: OWNER, author: TEAMMATE })
+    )
     // The owner's id on an author the thread does not list is not the owner.
-    await run(
-      { trustAllMembers: true, trustAllAgents: true },
-      from("msg_unlisted", { id: OWNER })
-    )
-    await run(
-      { ownerMemberId: undefined, trustAllMembers: true },
-      from("msg_no_owner", { id: OWNER, kind: "human" })
-    )
+    await run(from("msg_unlisted", OWNER, byOwner, false))
+    // An older Worktable with teammates cannot say who connected this one.
+    await run(from("msg_older", OWNER, undefined))
     expect(dispatcher.calls).toEqual([])
     expect(client.accepted.size).toBe(0)
     expect(client.replies).toEqual([])
@@ -363,10 +369,10 @@ describe("OpenClaw Worktable connector", () => {
         message: "Only the person who connected Atlas can direct it.",
       },
       {
-        messageId: "msg_agent",
+        messageId: "msg_their_agent",
         retryable: false,
         code: "AGENT_NOT_TRUSTED",
-        message: "Atlas does not take direction from other agents.",
+        message: "Atlas does not take direction from this agent.",
       },
       {
         messageId: "msg_unlisted",
@@ -375,20 +381,32 @@ describe("OpenClaw Worktable connector", () => {
         message: "Only the person who connected Atlas can direct it.",
       },
       {
-        messageId: "msg_no_owner",
+        messageId: "msg_older",
         retryable: false,
-        code: "OWNER_UNKNOWN",
+        code: "WORKTABLE_TOO_OLD",
         message:
-          "Connect Atlas to Worktable again before it can answer. This needs Worktable 0.1.44 or later.",
+          "Update this Worktable to 0.1.45 or later before Atlas can answer.",
       },
     ])
 
-    // The owner runs with OpenClaw commands; those the owner let in run without.
-    await run({}, from("msg_owner", { id: OWNER, kind: "human" }))
-    await run({ trustAllMembers: true }, from("msg_trusted_teammate", teammate))
-    await run({ trustAllAgents: true }, from("msg_trusted_agent", agent))
+    // Worktable names the owner, so the owner is answered with no
+    // reconnecting, and so is an agent the owner connected. Only the owner's
+    // message may carry OpenClaw commands.
+    await run(from("msg_owner", OWNER, byOwner))
+    await run(
+      from("msg_own_agent", "ptc_finn", { recipient: OWNER, author: OWNER })
+    )
+    // An older Worktable with one person lists only that person and theirs.
+    onePerson = true
+    await run(from("msg_older_one_person", OWNER, undefined))
+    onePerson = false
+    rule = { trustAllMembers: true }
+    await run(from("msg_trusted_teammate", TEAMMATE, byOwner))
     // Turning a setting off again closes the door for the next message.
-    await run({}, from("msg_agent_again", agent))
+    rule = { trustOwnAgents: false }
+    await run(
+      from("msg_own_agent_off", "ptc_finn", { recipient: OWNER, author: OWNER })
+    )
     expect(
       dispatcher.calls.map((call) => [
         call.messageId,
@@ -397,24 +415,23 @@ describe("OpenClaw Worktable connector", () => {
       ])
     ).toEqual([
       ["msg_owner", OWNER, true],
-      ["msg_trusted_teammate", teammate.id, false],
-      ["msg_trusted_agent", agent.id, false],
+      ["msg_own_agent", "ptc_finn", false],
+      ["msg_older_one_person", OWNER, true],
+      ["msg_trusted_teammate", TEAMMATE, false],
     ])
-    expect(client.replies).toHaveLength(3)
-    expect(client.failed.map((failure) => failure.messageId)).toEqual([
-      "msg_teammate",
-      "msg_agent",
-      "msg_unlisted",
-      "msg_no_owner",
-      "msg_agent_again",
-    ])
+    expect(client.replies).toHaveLength(4)
+    expect(client.failed.at(-1)).toMatchObject({
+      messageId: "msg_own_agent_off",
+      code: "AGENT_NOT_TRUSTED",
+    })
 
     // OpenClaw answers nothing to a command it will not take from this
     // author; the author reads why instead of a failed turn.
     dispatcher.reply = ""
-    const command = from("msg_teammate_command", teammate)
+    rule = { trustAllMembers: true }
+    const command = from("msg_teammate_command", TEAMMATE, byOwner)
     command.message.body = "/status"
-    await run({ trustAllMembers: true }, command)
+    await run(command)
     expect(client.failed.at(-1)).toEqual({
       messageId: "msg_teammate_command",
       retryable: false,

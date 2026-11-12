@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import type { OpenClawConfig } from "openclaw/plugin-sdk/channel-core"
 import {
   agentCredentialForConnection,
+  isOnePersonWorktable,
   listDirectoryThreads,
   pairingCompletionOnce,
   pendingAgentRegistrationToPromote,
@@ -46,6 +47,7 @@ describe("Worktable channel account setup", () => {
       configPrefixes: ["channels.worktable"],
       noopPrefixes: [
         "channels.worktable.pendingPairingCode",
+        "channels.worktable.trustOwnAgents",
         "channels.worktable.trustAllMembers",
         "channels.worktable.trustAllAgents",
       ],
@@ -78,6 +80,7 @@ describe("Worktable channel account setup", () => {
       authMode: "agent-registration" as const,
       agentAuth: active,
       pendingAgentAuth: pending,
+      trustOwnAgents: true,
       trustAllMembers: false,
       trustAllAgents: false,
     }
@@ -272,6 +275,7 @@ describe("Worktable channel account setup", () => {
     expect(worktableChannel.config!.isConfigured!(account, updated)).toBe(true)
     expect(worktableAccess(account)).toEqual({
       ownerMemberId: "ptc_ownerownerowner",
+      trustOwnAgents: true,
       trustAllMembers: true,
       trustAllAgents: false,
     })
@@ -284,28 +288,66 @@ describe("Worktable channel account setup", () => {
     })
     expect(worktableAccess(resolveWorktableAccount(moved))).toEqual({
       ownerMemberId: undefined,
+      trustOwnAgents: true,
       trustAllMembers: false,
       trustAllAgents: false,
     })
   })
 
-  it("reads a connection as closed unless its settings say otherwise exactly", () => {
-    const account = resolveWorktableAccount({
-      channels: {
-        worktable: {
-          server: "http://worktable.test",
-          token: "token",
-          ownerMemberId: "*",
-          trustAllMembers: "true",
-          trustAllAgents: 1,
-        },
-      },
-    } as unknown as OpenClawConfig)
-    expect(worktableAccess(account)).toEqual({
+  it("reads the owner's opt-ins as off unless set exactly, and the owner's own agents as on unless turned off", () => {
+    const read = (section: Record<string, unknown>) =>
+      worktableAccess(
+        resolveWorktableAccount({
+          channels: {
+            worktable: { server: "http://worktable.test", token: "t", ...section },
+          },
+        } as unknown as OpenClawConfig)
+      )
+    expect(
+      read({ ownerMemberId: "*", trustAllMembers: "true", trustAllAgents: 1 })
+    ).toEqual({
       ownerMemberId: undefined,
+      trustOwnAgents: true,
       trustAllMembers: false,
       trustAllAgents: false,
     })
+    expect(read({ trustOwnAgents: false }).trustOwnAgents).toBe(false)
+  })
+
+  it("knows an older Worktable has one person only when it says it is not a Team Worktable", async () => {
+    let answer: () => Response = () => Response.json({ enabled: false })
+    const bearers: Array<string | null> = []
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        bearers.push(request.headers.get("authorization"))
+        return new URL(request.url).pathname === "/api/team"
+          ? answer()
+          : Response.json({}, { status: 404 })
+      },
+    })
+    try {
+      const origin = `http://127.0.0.1:${server.port}`
+      expect(await isOnePersonWorktable(`${origin}/`, "wtb_token")).toBe(true)
+      expect(bearers).toEqual(["Bearer wtb_token"])
+      for (const other of [
+        () => Response.json({ enabled: true }),
+        () => Response.json({}),
+        () => Response.json({ enabled: false }, { status: 401 }),
+        () => new Response("not json"),
+      ]) {
+        answer = other
+        expect(await isOnePersonWorktable(origin, "wtb_token")).toBe(false)
+      }
+      // Without a token of its own it does not ask.
+      answer = () => Response.json({ enabled: false })
+      expect(await isOnePersonWorktable(origin, "")).toBe(false)
+    } finally {
+      await server.stop(true)
+    }
+    expect(await isOnePersonWorktable("http://127.0.0.1:9", "wtb_token")).toBe(
+      false
+    )
   })
 
   it("lists every thread before falling back to a legacy default Space", async () => {

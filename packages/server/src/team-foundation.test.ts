@@ -361,6 +361,80 @@ describe("team foundation", () => {
     expect(delivered?.message.body).toBe("Please reply when you can")
   })
 
+  test("a delivery says who connected its agent and who connected an agent author", async () => {
+    const { owner, member } = await setup()
+    const worktable = { kind: "worktable" as const }
+    const { createToken } = await import("./token-store.ts")
+    const connect = async (
+      name: string,
+      ownership: "personal" | "team",
+      by: TokenIdentity
+    ) => {
+      const agent = createTeamAgent({ name, platform: "codex", ownership }, by)
+      const credential = await createToken({
+        agent: "codex",
+        scopes: ["threads:read", "threads:write"],
+      })
+      bindTeamAgentCredential(agent.id, credential.metadata.principal.id, by)
+      if (ownership === "team")
+        updateTeamAgent(agent.id, { worktableThreads: "edit" }, owner)
+      return resolveTeamAgentCredential({
+        ...credential.metadata,
+        credentialClass: "local",
+      } as TokenIdentity)!
+    }
+    const resident = await connect("Resident", "personal", owner)
+    const authors = {
+      "the owner's other agent": await connect("Sibling", "personal", owner),
+      "a teammate's agent": await connect("Visitor", "personal", member),
+      "an agent the team owns": await connect("Shared", "team", owner),
+      "the owner": owner,
+    }
+    const alice = (await resolveParticipant(owner)).participant.id
+    const bob = (await resolveParticipant(member)).participant.id
+    const to = (await resolveParticipant(resident)).participant.id
+    const told: Record<string, unknown> = {}
+    for (const [who, author] of Object.entries(authors)) {
+      await runWithTeamIdentity(author, () =>
+        postThreadMessage(author, {
+          location: worktable,
+          to,
+          body: `From ${who}`,
+          idempotencyKey: crypto.randomUUID(),
+        })
+      )
+      const claimed = await runWithTeamIdentity(resident, () =>
+        claimNextThreadDelivery(resident, 0, 2)
+      )
+      expect(claimed?.message.body).toBe(`From ${who}`)
+      told[who] = claimed?.connectedBy
+    }
+    // Each person is named as the thread member they post as. An agent the
+    // team owns, and an author who is a person, have nobody who connected them.
+    expect(told).toEqual({
+      "the owner's other agent": { recipient: alice, author: alice },
+      "a teammate's agent": { recipient: alice, author: bob },
+      "an agent the team owns": { recipient: alice, author: null },
+      "the owner": { recipient: alice, author: null },
+    })
+
+    // An agent the team owns has nobody on record for itself either.
+    const shared = authors["an agent the team owns"]
+    const sharedId = (await resolveParticipant(shared)).participant.id
+    await runWithTeamIdentity(owner, () =>
+      postThreadMessage(owner, {
+        location: worktable,
+        to: sharedId,
+        body: "To the shared agent",
+        idempotencyKey: crypto.randomUUID(),
+      })
+    )
+    const forShared = await runWithTeamIdentity(shared, () =>
+      claimNextThreadDelivery(shared, 0, 2)
+    )
+    expect(forShared?.connectedBy).toEqual({ recipient: null, author: null })
+  })
+
   test("agents use threads outside Spaces only when their access reaches that far", async () => {
     const { owner, member } = await setup()
     const bob = (await resolveParticipant(member)).participant

@@ -53,6 +53,12 @@ export interface ClaimedWorktableDelivery {
   identityId: string
   thread: WorktableThread
   message: WorktableMessage
+  /**
+   * Who connected this agent, and who connected the author when that is an
+   * agent, each as a thread member id; null where nobody is on record. Absent
+   * from a Worktable too old to say.
+   */
+  connectedBy?: { recipient?: string | null; author?: string | null }
 }
 
 export interface WorktablePostResult {
@@ -169,8 +175,9 @@ export interface WorktableChannelAccount {
   participantName?: string
   defaultSpaceId?: string
   pendingPairingCode?: string
-  /** The Worktable member who approved this connection. */
+  /** The Worktable member who approved this connection, where recorded. */
   ownerMemberId?: string
+  trustOwnAgents: boolean
   trustAllMembers: boolean
   trustAllAgents: boolean
 }

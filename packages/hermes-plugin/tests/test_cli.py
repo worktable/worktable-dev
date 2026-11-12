@@ -44,21 +44,31 @@ def connect(monkeypatch):
     return profile, run
 
 
-def test_connecting_records_the_person_who_approved_and_trusts_nobody_else(connect, capsys):
+def test_connecting_records_the_person_who_approved_and_opts_into_nobody_else(connect, capsys):
     _profile, run = connect
     access = run(ownerMemberId=OWNER)
-    assert (access.owner_id, access.trust_all_members, access.trust_all_agents) == (OWNER, False, False)
-    assert "takes direction from: the person who connected it" in capsys.readouterr().out
+    assert (access.owner_id, access.trust_own_agents, access.trust_all_members, access.trust_all_agents) == (
+        OWNER,
+        True,
+        False,
+        False,
+    )
+    assert (
+        "takes direction from: the person who connected it, the agents that person connected. Everyone else"
+        in capsys.readouterr().out
+    )
 
 
-def test_a_worktable_that_names_no_approver_leaves_hermes_closed(connect, capsys):
+def test_a_worktable_that_names_no_approver_records_nobody_and_says_what_follows(connect, capsys):
     profile, run = connect
     profile.settings.update(trust_all_members=True)
     for answer in ({}, {"ownerMemberId": "everyone"}, {"ownerMemberId": None}):
         access = run(**answer)
-        assert access.refusal({"id": OWNER, "kind": "human"}, "Hermes").code == "OWNER_UNKNOWN"
-    assert "Update that Worktable" in capsys.readouterr().err
-    assert cli.status(profile, None) == 1
+        # Nobody is recorded, and no opt-in outlives that.
+        assert (access.owner_id, access.trust_all_members) == (None, False)
+    assert "until it is updated to 0.1.45 or later" in capsys.readouterr().err
+    # The connection itself is fine: a current Worktable names its owner.
+    assert cli.status(profile, None) == 0
 
 
 def test_trust_stays_with_the_owner_and_worktable_it_was_given_for(connect):
@@ -77,6 +87,7 @@ def test_trust_stays_with_the_owner_and_worktable_it_was_given_for(connect):
         False,
         False,
     )
-    profile.settings.update(trust_all_members=True)
+    # Having turned the owner's own agents off is a restriction, and stays.
+    profile.settings.update(trust_all_members=True, trust_own_agents=False)
     moved = run(server="https://other.example", ownerMemberId=SOMEONE_ELSE)
-    assert not moved.trust_all_members
+    assert not moved.trust_all_members and not moved.trust_own_agents

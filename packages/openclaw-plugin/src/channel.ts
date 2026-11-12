@@ -65,6 +65,8 @@ export function resolveWorktableAccount(
         ? section.pendingPairingCode
         : undefined,
     ownerMemberId: memberId(section.ownerMemberId),
+    // On unless the owner turned it off.
+    trustOwnAgents: section.trustOwnAgents !== false,
     trustAllMembers: section.trustAllMembers === true,
     trustAllAgents: section.trustAllAgents === true,
   }
@@ -76,6 +78,7 @@ export function worktableAccess(
 ): WorktableAccess {
   return {
     ownerMemberId: account.ownerMemberId,
+    trustOwnAgents: account.trustOwnAgents,
     trustAllMembers: account.trustAllMembers,
     trustAllAgents: account.trustAllAgents,
   }
@@ -93,6 +96,30 @@ export function savedWorktableAccess(accountId?: string): WorktableAccess {
       accountId
     )
   )
+}
+
+/**
+ * Whether a Worktable too old to say who connected its agents has one
+ * person: it answers that it is not a Team Worktable. Then every person it
+ * lists is its owner and every agent is the owner's. Anything else, an
+ * unreachable Worktable included, is not known to be one person's.
+ */
+export async function isOnePersonWorktable(
+  server: string,
+  token: string
+): Promise<boolean> {
+  if (!server || !token) return false
+  try {
+    const response = await fetch(`${server.replace(/\/+$/, "")}/api/team`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!response.ok) return false
+    const team = (await response.json()) as { enabled?: unknown } | null
+    return team?.enabled === false
+  } catch {
+    return false
+  }
 }
 
 export function agentCredentialForConnection(
@@ -310,6 +337,7 @@ export const worktableChannel = createChatChannelPlugin({
       // The trust settings are read from storage for every message instead.
       noopPrefixes: [
         `channels.${CHANNEL_ID}.pendingPairingCode`,
+        `channels.${CHANNEL_ID}.trustOwnAgents`,
         `channels.${CHANNEL_ID}.trustAllMembers`,
         `channels.${CHANNEL_ID}.trustAllAgents`,
       ],
@@ -341,15 +369,12 @@ export const worktableChannel = createChatChannelPlugin({
             })
           }
         )
-        if (!ctx.account.ownerMemberId) {
-          ctx.log?.warn?.(
-            "Nobody is on record as having connected this OpenClaw, so it refuses every Worktable thread message. Run: openclaw worktable connect --server <address>"
-          )
-        }
         const connector = new WorktableConnector({
           client: await worktableClient(ctx.account, connectedCredential),
           dispatcher: new OpenClawAgentDispatcher(ctx.cfg),
           access: () => savedWorktableAccess(ctx.accountId),
+          isOnePersonWorktable: () =>
+            isOnePersonWorktable(ctx.account.server, ctx.account.token),
           name: ctx.account.participantName,
           replyOutbox: createOpenClawReplyOutbox(),
           accountId: ctx.accountId,

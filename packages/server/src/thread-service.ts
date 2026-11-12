@@ -6,6 +6,7 @@ import { findTeamMemberById, listTeamMembers } from "./team-members.ts"
 import { identityForTeamMember } from "./team-identity.ts"
 import { agentWorktableThreadAccess, canAccessSpace, canAccessWorktableThreads, resolveTeamAgentCredential, TeamAccessError, teamAgentForParticipantKey, teamAgentHasSpaceAccess, teamScopeCeiling } from "./team-policy.ts"
 import { currentActivityActor, recordActivity } from "./activity-log.ts"
+import { agentConnectedBy } from "./agent-owner.ts"
 import type {
   AgentPlatformId,
   ParticipantRef,
@@ -1650,6 +1651,13 @@ export async function claimNextThreadDelivery(
   | (ClaimedDelivery & {
       thread: ThreadReadResult["thread"]
       message: ThreadReadResult["messages"][number]
+      /**
+       * Who connected the agent this delivery is for, and who connected the
+       * author when that is an agent, each as a thread member id. An adapter
+       * that acts on its own machine decides from these whose messages it
+       * runs. null means nobody is on record.
+       */
+      connectedBy: { recipient: string | null; author: string | null }
     })
   | null
 > {
@@ -1756,7 +1764,21 @@ export async function claimNextThreadDelivery(
         })
         continue
       }
-      return { ...claim, thread, message }
+      const author = thread.members.find(
+        (candidate) => candidate.id === message.authorMemberId
+      )
+      return {
+        ...claim,
+        thread,
+        message,
+        connectedBy: {
+          recipient: await agentConnectedBy(participant.id),
+          author:
+            author?.kind === "agent"
+              ? await agentConnectedBy(author.id)
+              : null,
+        },
+      }
     }
     const remaining = deadline - Date.now()
     if (remaining <= 0) return null

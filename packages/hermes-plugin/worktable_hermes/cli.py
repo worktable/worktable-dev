@@ -13,7 +13,7 @@ from dataclasses import replace
 from typing import Any, Optional
 
 from . import pairing
-from .access import Access
+from .access import OWNER_TELLING_WORKTABLE_VERSION, Access
 from .settings import DEFAULT_PARTICIPANT_NAME, MCP_SERVER, PLATFORM, TOKEN_ENV, Settings, member_id
 from .store import DeliveryStore
 
@@ -82,13 +82,13 @@ def _enable(url: str) -> None:
 
 def _who(access: Access) -> str:
     """Whose messages this Hermes runs, in the words `status` and `connect` print."""
-    if not access.owner_id:
-        return "nobody"
     who = ["the person who connected it"]
+    if access.trust_own_agents:
+        who.append("the agents that person connected")
     if access.trust_all_members:
         who.append("every member of the Worktable")
     if access.trust_all_agents:
-        who.append("other agents")
+        who.append("other people's agents")
     return ", ".join(who)
 
 
@@ -153,12 +153,16 @@ def connect(ctx: Any, args: Any) -> int:
     print(f"Connected Hermes to {redeemed.get('workspaceName') or origin} as {participant}.")
     if not owner:
         print(
-            "This Worktable did not say who approved the connection, so Hermes will refuse "
-            "thread messages. Update that Worktable, then run this command again.",
+            "This Worktable did not say who approved the connection. Unless it has one person, "
+            f"Hermes will refuse thread messages until it is updated to {OWNER_TELLING_WORKTABLE_VERSION} or later.",
             file=sys.stderr,
         )
     else:
-        access = replace(trusted, owner_id=owner) if kept_trust else Access(owner)
+        access = (
+            replace(trusted, owner_id=owner)
+            if kept_trust
+            else replace(trusted, owner_id=owner, trust_all_members=False, trust_all_agents=False)
+        )
         print(f"It takes direction from: {_who(access)}. Everyone else is refused.")
     print("Restart the gateway so Hermes starts answering Worktable messages: hermes gateway restart")
     return 0
@@ -174,12 +178,6 @@ def status(ctx: Any, _args: Any) -> int:
     print(f"Takes direction from: {_who(settings.access())}")
     if settings.pairing_error:
         print(f"Pairing did not finish ({settings.pairing_error}). Run `hermes worktable connect` with a new code.")
-        return 1
-    if not settings.owner_id:
-        print(
-            "This connection has no record of who approved it, so Hermes refuses thread messages. "
-            f"Run `hermes worktable connect {settings.server}` again."
-        )
         return 1
     if settings.pending_pairing_code:
         print("Waiting for the gateway to finish pairing. Restart it with: hermes gateway restart")

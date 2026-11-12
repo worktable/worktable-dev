@@ -467,14 +467,22 @@ describe("OpenClaw Worktable pairing completion", () => {
     await writeFile(configPath, JSON.stringify(config))
     expect(savedWorktableAccess()).toEqual({
       ownerMemberId: owner,
+      trustOwnAgents: true,
       trustAllMembers: true,
       trustAllAgents: false,
     })
     clearRuntimeConfigSnapshot()
 
-    // Someone else approving starts closed again, under their name.
+    // Someone else approving starts without those choices, under their name.
+    // Having turned the owner's own agents off is a restriction, and stays.
+    const restricted = JSON.parse(await readFile(configPath, "utf8"))
+    restricted.channels.worktable.trustOwnAgents = false
+    await writeFile(configPath, JSON.stringify(restricted))
     approver = teammate
-    expect((await pair()).access).toEqual({ ownerMemberId: teammate })
+    expect((await pair()).access).toEqual({
+      ownerMemberId: teammate,
+      trustOwnAgents: false,
+    })
     expect(await saved()).toMatchObject({ ownerMemberId: teammate })
     expect((await saved()).trustAllAgents).toBeUndefined()
 
@@ -482,7 +490,7 @@ describe("OpenClaw Worktable pairing completion", () => {
     await trustEveryone()
     for (const unnamed of [undefined, "everyone", "*"]) {
       approver = unnamed
-      expect((await pair()).access).toEqual({})
+      expect((await pair()).access).toEqual({ trustOwnAgents: false })
       const section = await saved()
       expect(section.ownerMemberId).toBeUndefined()
       expect(section.trustAllMembers).toBeUndefined()

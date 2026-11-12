@@ -7,23 +7,19 @@ Hermes through it. The paired token is an environment secret in the profile's
 
 from __future__ import annotations
 
-import re
 from typing import Any, Optional
 
-from .access import Access
+from .access import Access, member_id
 
 PLATFORM = "worktable"
 MCP_SERVER = "worktable"
 TOKEN_ENV = "WORKTABLE_TOKEN"
 DEFAULT_PARTICIPANT_NAME = "Hermes"
-# A Worktable thread member id, as deliveries name their authors.
-MEMBER_ID = re.compile(r"ptc_[A-Za-z0-9_-]{12,}")
-# The owner's opt-ins, set with `hermes config set`.
+# The owner's opt-ins, set with `hermes config set`. `trust_own_agents` is on
+# unless the owner sets it to false, and is never changed by connecting.
 TRUST_SETTINGS = ("trust_all_members", "trust_all_agents")
 
-
-def member_id(value: Any) -> Optional[str]:
-    return value if isinstance(value, str) and MEMBER_ID.fullmatch(value) else None
+__all__ = ["Settings", "member_id"]
 
 
 class Settings:
@@ -40,13 +36,14 @@ class Settings:
 
     @property
     def owner_id(self) -> Optional[str]:
-        """The thread member who approved this connection."""
+        """The thread member who approved this connection, where pairing recorded one."""
         return member_id(self._get("owner_id"))
 
     def access(self) -> Access:
         """Read on every message, so a changed setting applies to the next one."""
         return Access(
             owner_id=self.owner_id,
+            trust_own_agents=self._get("trust_own_agents") is not False,
             trust_all_members=self._get("trust_all_members") is True,
             trust_all_agents=self._get("trust_all_agents") is True,
         )
@@ -75,8 +72,9 @@ class Settings:
         pending_pairing_code: Optional[str],
     ) -> bool:
         """Save a connection. Returns whether it kept the owner's trust settings."""
-        # Trust is given to one Worktable's members by one owner. A connection
-        # to another Worktable, or approved by someone else, starts closed.
+        # The opt-ins are given to one Worktable's members by one owner. A
+        # connection to another Worktable, or approved by someone else, starts
+        # without them.
         same = bool(owner_id) and owner_id == self.owner_id and server == self.server
         if not same:
             for key in TRUST_SETTINGS:

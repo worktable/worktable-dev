@@ -1,5 +1,5 @@
 import { defineChannelPluginEntry } from "openclaw/plugin-sdk/channel-core"
-import { OWNER_NAMING_WORKTABLE_VERSION } from "./src/access.js"
+import { OWNER_TELLING_WORKTABLE_VERSION } from "./src/access.js"
 import {
   pairWorktableChannel,
   requestWorktablePairing,
@@ -16,17 +16,18 @@ function reportPaired(result: PairedWorktable): void {
   console.log(`Configured Worktable ${result.workspaceName}${participant}.`)
   if (!result.access.ownerMemberId) {
     console.error(
-      `This Worktable did not say who approved the connection, so OpenClaw will refuse thread messages. Update Worktable to ${OWNER_NAMING_WORKTABLE_VERSION} or later, then run this command again.`
+      `This Worktable did not say who approved the connection. Unless it has one person, OpenClaw will refuse thread messages until it is updated to ${OWNER_TELLING_WORKTABLE_VERSION} or later.`
     )
   } else {
-    const others = [
+    const also = [
+      result.access.trustOwnAgents === false
+        ? ""
+        : "the agents that person connected",
       result.access.trustAllMembers ? "all members" : "",
       result.access.trustAllAgents ? "all agents" : "",
     ].filter(Boolean)
     console.log(
-      others.length > 0
-        ? `It takes direction from the person who approved it and, as set before, ${others.join(" and ")}.`
-        : "It takes direction from the person who approved it. Everyone else is refused."
+      `It takes direction from the person who approved it${also.length > 0 ? ` and ${also.join(", ")}` : ""}. Everyone else is refused.`
     )
   }
   console.log(

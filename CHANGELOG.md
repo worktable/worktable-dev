@@ -9,16 +9,12 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
-## [0.1.46] - 2026-11-13
-
 ### Changed
 
-- **HTML Docs:** Icons a page's own code adds, such as rows a Records tool draws with a status icon, are now drawn for everyone, not only with preview tools on.
 - **Files:** JavaScript, TypeScript and CSS files show their text on their page, with a code icon, instead of a card with only Download.
 
 ### Fixed
 
-- **OpenClaw:** On Worktable Cloud, the command in **Settings → Agents → OpenClaw** works with plugin 0.0.20. Run it, then open the link it prints and approve OpenClaw.
 - **Search:** A Doc you just deleted no longer turns up in search, with its text, while the search index is still catching up.
 - **Docs:** A record you delete no longer shows under Used in on the Docs it pointed at.
 - **Activity:** Deleting a Doc removes what its comments said from Activity.
@@ -26,6 +22,16 @@ infrastructure and personal context out of release notes.
 - **Files:** Restoring an earlier version of a large file, moving a file, and an agent reading a large binary file no longer load the whole file into the server's memory.
 - **Records:** A new field can no longer use a name records use for themselves, such as `kind`, `id` or `createdAt`. Worktable says which name to change, and the field's display name can still say it. Collections that already have such a field keep it, and filtering, sorting and grouping by it now read the field instead of the record's own value.
 - **Share links:** When a link can't be saved, the share dialog says why instead of asking you to try again. A field links can't show is marked in the field list instead of offering a box that can never be saved.
+
+## [0.1.46] - 2026-11-13
+
+### Changed
+
+- **HTML Docs:** Icons a page's own code adds, such as rows a Records tool draws with a status icon, are now drawn for everyone, not only with preview tools on.
+
+### Fixed
+
+- **OpenClaw:** On Worktable Cloud, the command in **Settings → Agents → OpenClaw** works with plugin 0.0.20. Run it, then open the link it prints and approve OpenClaw.
 
 ## [0.1.45] - 2026-11-12
 

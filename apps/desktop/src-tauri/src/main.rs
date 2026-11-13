@@ -718,6 +718,9 @@ struct DesktopHostState {
     cloud_connection_commit: Mutex<()>,
     cloud_connection_started_with_profile: AtomicBool,
     trusted_shell_ready: AtomicBool,
+    /// The workspace is showing over a start-up page that has not reported
+    /// ready yet; the page is hidden once it does.
+    shell_hide_deferred: AtomicBool,
     connections_loaded: AtomicBool,
     connections_migration_pending: AtomicBool,
     healthy_boot_completed: AtomicBool,
@@ -758,6 +761,7 @@ impl Default for DesktopHostState {
             cloud_connection_commit: Mutex::new(()),
             cloud_connection_started_with_profile: AtomicBool::new(false),
             trusted_shell_ready: AtomicBool::new(false),
+            shell_hide_deferred: AtomicBool::new(false),
             connections_loaded: AtomicBool::new(false),
             connections_migration_pending: AtomicBool::new(false),
             healthy_boot_completed: AtomicBool::new(false),
@@ -1054,6 +1058,7 @@ fn desktop_mark_shell_ready(webview: Webview, app: AppHandle) -> Result<(), Stri
         .trusted_shell_ready
         .store(true, Ordering::SeqCst);
     eprintln!("[Worktable Desktop] start-up page ready");
+    hide_shell_deferred_behind_workspace(&app);
     if let Err(error) = complete_healthy_desktop_boot(&app) {
         eprintln!("[Worktable Desktop] failed to finish the healthy boot transition: {error}");
     }
@@ -6566,6 +6571,9 @@ fn reveal_cloud_workspace_if_ready<R: Runtime>(app: &AppHandle<R>) {
 }
 
 fn show_updater_surface<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    app.state::<DesktopHostState>()
+        .shell_hide_deferred
+        .store(false, Ordering::SeqCst);
     if let Some(shell) = app.get_webview(TRUSTED_WEBVIEW_LABEL) {
         shell
             .show()
@@ -7663,6 +7671,10 @@ fn close_workspace_webview<R: Runtime>(app: &AppHandle<R>) {
 }
 
 fn show_trusted_shell_surface<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    // The start-up page is wanted on screen now, so nothing hides it later.
+    app.state::<DesktopHostState>()
+        .shell_hide_deferred
+        .store(false, Ordering::SeqCst);
     if let Some(shell) = app.get_webview(TRUSTED_WEBVIEW_LABEL) {
         shell
             .show()
@@ -7683,6 +7695,14 @@ fn show_workspace_surface<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> 
     workspace
         .show()
         .map_err(|error| format!("failed to show the workspace surface: {error}"))?;
+    let state = app.state::<DesktopHostState>();
+    if !shell_hides_with_workspace(state.trusted_shell_ready.load(Ordering::SeqCst)) {
+        // A hidden page may never load. The start-up page has to run once to
+        // report Desktop ready (the healthy boot, update checks), so it stays
+        // under the workspace until it has.
+        state.shell_hide_deferred.store(true, Ordering::SeqCst);
+        return Ok(());
+    }
     if let Some(shell) = app.get_webview(TRUSTED_WEBVIEW_LABEL) {
         if let Err(error) = shell.hide() {
             let _ = workspace.hide();
@@ -7692,6 +7712,31 @@ fn show_workspace_surface<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> 
         }
     }
     Ok(())
+}
+
+/// Whether showing the workspace hides the start-up page at once: only after
+/// that page has reported ready.
+fn shell_hides_with_workspace(trusted_shell_ready: bool) -> bool {
+    trusted_shell_ready
+}
+
+/// Hide the start-up page left under the workspace while it loaded.
+fn hide_shell_deferred_behind_workspace<R: Runtime>(app: &AppHandle<R>) {
+    if !app
+        .state::<DesktopHostState>()
+        .shell_hide_deferred
+        .swap(false, Ordering::SeqCst)
+    {
+        return;
+    }
+    if app.get_webview(WORKSPACE_WEBVIEW_LABEL).is_none() {
+        return;
+    }
+    if let Some(shell) = app.get_webview(TRUSTED_WEBVIEW_LABEL) {
+        if let Err(error) = shell.hide() {
+            eprintln!("[Worktable Desktop] failed to hide the start-up page: {error}");
+        }
+    }
 }
 
 fn size_webviews<R: Runtime>(app: &AppHandle<R>, width: u32, height: u32) {
@@ -8478,6 +8523,14 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_start_up_page_stays_until_it_has_reported_ready() {
+        // Showing the workspace hides the start-up page only once that page
+        // has run; a page hidden before it loads may never report ready.
+        assert!(!shell_hides_with_workspace(false));
+        assert!(shell_hides_with_workspace(true));
+    }
 
     #[test]
     fn desktop_agent_skill_commands_are_fixed_and_allowlisted() {

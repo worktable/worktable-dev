@@ -11,6 +11,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Desktop:** On a busy Mac, opening straight into a self-hosted Worktable could leave Desktop without its automatic update checks and without saving the connection's current name. Desktop's start-up page now finishes loading before the workspace covers it.
 - **Usage analytics on Worktable Cloud:** With analytics on, your agents' actions and saves are counted again. A hosted Worktable went to sleep before it could send them, so Worktable Cloud now sends them for it. What is counted, and your choice in Settings → Privacy, stay the same.
 
 ## [0.1.48] - 2026-11-13

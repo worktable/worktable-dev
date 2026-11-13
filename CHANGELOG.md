@@ -9,8 +9,11 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.47] - 2026-11-13
+
 ### Changed
 
+- **HTML Docs:** Icons a page's own code adds, such as rows a Records tool draws with a status icon, are now drawn for everyone, not only with preview tools on.
 - **Agents (preview):** With preview tools on, agents read source code such as Python or Go files and Dockerfiles as text, and AVIF pictures as images they can see.
 - **Files:** JavaScript, TypeScript and CSS files show their text on their page, with a code icon, instead of a card with only Download.
 - **Docs:** Restoring an earlier version of a Doc or HTML Doc that someone changed after you opened it asks first, as Upload New Version does. **Restore Anyway** keeps their version in history.
@@ -18,6 +21,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **OpenClaw:** On Worktable Cloud, the command in **Settings → Agents → OpenClaw** works with plugin 0.0.20. Run it, then open the link it prints and approve OpenClaw.
 - **Search:** A Doc you just deleted no longer turns up in search, with its text, while the search index is still catching up.
 - **Docs:** A record you delete no longer shows under Used in on the Docs it pointed at.
 - **Files:** Moving or renaming a file larger than 64 MiB works instead of failing with an error after the file had already moved.
@@ -25,16 +29,6 @@ infrastructure and personal context out of release notes.
 - **Records:** A new field can no longer use a name records use for themselves, such as `kind`, `id` or `createdAt`. Worktable says which name to change, and the field's display name can still say it. Collections that already have such a field keep it, and filtering, sorting and grouping by it now read the field instead of the record's own value.
 - **Share links:** When a link can't be saved, the share dialog says why instead of asking you to try again. A field links can't show is marked in the field list instead of offering a box that can never be saved.
 - **Activity:** Deleting a Doc erases what its comments said from Activity. A new Doc made at the same path never shows them.
-
-## [0.1.46] - 2026-11-13
-
-### Changed
-
-- **HTML Docs:** Icons a page's own code adds, such as rows a Records tool draws with a status icon, are now drawn for everyone, not only with preview tools on.
-
-### Fixed
-
-- **OpenClaw:** On Worktable Cloud, the command in **Settings → Agents → OpenClaw** works with plugin 0.0.20. Run it, then open the link it prints and approve OpenClaw.
 
 ## [0.1.45] - 2026-11-12
 

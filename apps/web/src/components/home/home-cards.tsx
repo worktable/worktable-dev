@@ -122,11 +122,7 @@ function Tracker({
         <span
           key={index}
           onPointerEnter={() => setHovered(index)}
-          className={cn(
-            "aspect-square rounded-[3px] transition-shadow",
-            LEVELS[level(dayCount)],
-            hovered === index && "ring-2 ring-ring"
-          )}
+          className={cn("aspect-square rounded-[3px]", LEVELS[level(dayCount)])}
         />
       ))}
       {hovered !== null && (

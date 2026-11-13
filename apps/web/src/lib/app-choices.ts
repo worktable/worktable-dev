@@ -78,10 +78,10 @@ export function worktableLabel(worktable: NonNullable<AppChoice["worktable"]>) {
 }
 
 /**
- * Use here: the app works in this Worktable from its next request. The toast
+ * Move here: the app works in this Worktable from its next request. The toast
  * offers Undo, which puts it back where it was.
  */
-export function useUseHere() {
+export function useMoveHere() {
   const queryClient = useQueryClient()
   const choose = (clientId: string, worktableId?: string) =>
     fetchJSON<AppChoices>("/api/app-choices", {

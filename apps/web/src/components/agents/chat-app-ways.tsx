@@ -12,7 +12,7 @@ import { Button, buttonVariants } from "@worktable/ui/components/button"
 import {
   appOfFamily,
   useAppChoices,
-  useUseHere,
+  useMoveHere,
   worktableLabel,
 } from "@/lib/app-choices"
 import { fetchJSON } from "@/lib/http"
@@ -35,7 +35,7 @@ const OPEN_APP: Record<ChatApp, { label: string; href: string }> = {
 
 /**
  * The official app's steps once this Worktable is reachable through Cloud:
- * where the app works now, with Use Here when it works elsewhere, then, for
+ * where the app works now, with Move Here when it works elsewhere, then, for
  * ChatGPT, the line that turns on auto-reply. Without word from Cloud they
  * read as before. `first` numbers the first of them.
  */
@@ -49,7 +49,7 @@ export function OfficialAppSteps({
   active?: boolean
 }) {
   const choices = useAppChoices(active)
-  const useHere = useUseHere()
+  const moveHere = useMoveHere()
   const official = appOfFamily(choices.data, app)
   const known = choices.data != null
   const here = official?.worktable?.here === true
@@ -92,10 +92,10 @@ export function OfficialAppSteps({
           <div>
             <Button
               size="sm"
-              disabled={useHere.isPending}
-              onClick={() => useHere.mutate(official)}
+              disabled={moveHere.isPending}
+              onClick={() => moveHere.mutate(official)}
             >
-              Use Here
+              Move Here
             </Button>
           </div>
         </SetupStep>

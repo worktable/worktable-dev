@@ -1,12 +1,12 @@
 import { Button } from "@worktable/ui/components/button"
-import { useUseHere, worktableLabel, type AppChoice } from "@/lib/app-choices"
+import { useMoveHere, worktableLabel, type AppChoice } from "@/lib/app-choices"
 
 /**
- * Which Worktable an app reached through Cloud works in. Use Here moves it
+ * Which Worktable an app reached through Cloud works in. Move Here moves it
  * here; Change opens Cloud's page for that app, which lists every choice.
  */
 export function WorksInSetting({ app }: { app: AppChoice }) {
-  const useHere = useUseHere()
+  const moveHere = useMoveHere()
   if (!app.worktable) return null
   const here = app.worktable.here
   return (
@@ -29,10 +29,10 @@ export function WorksInSetting({ app }: { app: AppChoice }) {
       ) : (
         <Button
           size="sm"
-          disabled={useHere.isPending}
-          onClick={() => useHere.mutate(app)}
+          disabled={moveHere.isPending}
+          onClick={() => moveHere.mutate(app)}
         >
-          Use Here
+          Move Here
         </Button>
       )}
     </div>

@@ -9,9 +9,12 @@ import {
   ANALYTICS_CLIENT_NAMES,
   ANALYTICS_GRANT_TTL_MS,
   ANALYTICS_HEADER,
+  ANALYTICS_REPORT_HEADER,
+  ANALYTICS_REPORT_MAX,
   ANALYTICS_SCHEMA_VERSION,
   isAnalyticsClient,
   type AnalyticsGrant,
+  type AnalyticsReport,
   type ProductAnalyticsEvent,
   type ProductAnalyticsProperties,
 } from "@worktable/hosted-contract"
@@ -25,26 +28,35 @@ import { isAccessRefusal } from "./mcp/helpers.ts"
  */
 export const PRODUCT_OPENED_HEADER = "x-worktable-product-opened"
 
+function withHeader(response: Response, name: string, value: string): Response {
+  try {
+    response.headers.set(name, value)
+    return response
+  } catch {
+    const copy = new Response(response.body, response)
+    copy.headers.set(name, value)
+    return copy
+  }
+}
+
 export function countedByGateway(response: Response): Response {
   if (
     !isHosted() ||
     !(response.headers.get("Content-Type") ?? "").startsWith("text/html")
   )
     return response
-  try {
-    response.headers.set(PRODUCT_OPENED_HEADER, "gateway")
-    return response
-  } catch {
-    const counted = new Response(response.body, response)
-    counted.headers.set(PRODUCT_OPENED_HEADER, "gateway")
-    return counted
-  }
+  return withHeader(response, PRODUCT_OPENED_HEADER, "gateway")
 }
 
 export interface SaveAnalyticsContext {
   contributors: Array<AnalyticsGrant | null>
   protocolVersion?: string
   clientName?: string
+  /**
+   * An MCP request whose events the gateway sends: what it did so far. Gone
+   * once the response carries it.
+   */
+  report?: AnalyticsReport
 }
 const context = new AsyncLocalStorage<SaveAnalyticsContext | null>()
 let client: PostHog | null = null
@@ -147,6 +159,50 @@ export function requestAnalyticsContext(
   }
 }
 
+/**
+ * An MCP request's context. A hosted Worktable sleeps within a second of its
+ * answer, before an event sent after it can leave, so when the gateway's
+ * grant says the gateway sends them, the request's events are gathered for
+ * the response instead.
+ */
+export function mcpAnalyticsContext(
+  request: Request,
+  identity: TokenIdentity
+): SaveAnalyticsContext | null {
+  const value = requestAnalyticsContext(request, identity)
+  if (value?.contributors[0]?.sender === "gateway")
+    value.report = { calls: [], saved: [] }
+  return value
+}
+
+/** Hands the gateway what the request did. Anything later is sent from here. */
+export function reportedToGateway(
+  response: Response,
+  value: SaveAnalyticsContext | null
+): Response {
+  const report = value?.report
+  if (!value || !report) return response
+  delete value.report
+  if (report.calls.length === 0 && report.saved.length === 0) return response
+  const release = configuredRelease()
+  return withHeader(
+    response,
+    ANALYTICS_REPORT_HEADER,
+    JSON.stringify({
+      ...report,
+      ...(value.protocolVersion
+        ? { protocolVersion: value.protocolVersion }
+        : {}),
+      ...(release ? { release } : {}),
+    } satisfies AnalyticsReport)
+  )
+}
+
+function configuredRelease(): string | undefined {
+  const release = process.env["WORKTABLE_VERSION"]
+  return release?.match(/^\d[\w.+-]{0,63}$/) ? release : undefined
+}
+
 export function withAnalyticsContext<T>(
   value: SaveAnalyticsContext | null,
   action: () => T
@@ -215,6 +271,11 @@ export function captureWorkSaved(
       value.contributors.map((grant) => [grant!.distinctId, grant!])
     ).values(),
   ]
+  if (value.report) {
+    if (value.report.saved.length < ANALYTICS_REPORT_MAX)
+      value.report.saved.push(contentType)
+    return
+  }
   const multiple = unique.length > 1
   enqueue(
     "product:work_saved",
@@ -234,8 +295,15 @@ export function captureMcpCall(
   outcome: "success" | "error" | "denied",
   durationMs: number
 ): void {
-  const grants = currentAnalyticsContext()?.contributors
+  const value = currentAnalyticsContext()
+  const grants = value?.contributors
   if (!grants || grants.length !== 1 || !grants[0]) return
+  const duration = Math.max(0, Math.round(durationMs))
+  if (value?.report) {
+    if (value.report.calls.length < ANALYTICS_REPORT_MAX)
+      value.report.calls.push({ tool, operation, outcome, durationMs: duration })
+    return
+  }
   enqueue(
     "$mcp_tool_call",
     [grants[0]],
@@ -245,7 +313,7 @@ export function captureMcpCall(
       tool,
       operation,
       outcome,
-      duration_ms: Math.max(0, Math.round(durationMs)),
+      duration_ms: duration,
     },
     grants[0].distinctId
   )
@@ -290,6 +358,7 @@ function enqueue(
   const trafficType =
     grants.find((grant) => grant.trafficType === "verification")?.trafficType ??
     grants.find((grant) => grant.trafficType === "internal")?.trafficType
+  const release = configuredRelease()
   const delivery = (async () => {
     try {
       // Recheck at delivery, including long-lived Yjs connections and account revocation.
@@ -319,9 +388,7 @@ function enqueue(
           worktable_id: config.worktableId,
           environment: "production",
           ...(trafficType ? { traffic_type: trafficType } : {}),
-          ...(process.env["WORKTABLE_VERSION"]?.match(/^\d[\w.+-]{0,63}$/)
-            ? { release: process.env["WORKTABLE_VERSION"] }
-            : {}),
+          ...(release ? { release } : {}),
           $process_person_profile: properties.actor_type === "human",
           ...(event === "$mcp_tool_call"
             ? {

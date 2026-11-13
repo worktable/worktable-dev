@@ -98,7 +98,7 @@ export async function listTeamAgentConnections(): Promise<AgentConnection[]> {
             row.owner_user_id === member.userId &&
             db
               .query(
-                "SELECT credential_key FROM wt_agent_credentials WHERE agent_id = ? AND (credential_key LIKE 'oauth:%' OR credential_key LIKE 'workos-agent:%')"
+                "SELECT credential_key FROM wt_agent_credentials WHERE agent_id = ? AND credential_key LIKE 'oauth:%'"
               )
               .get(row.id)
           )
@@ -110,12 +110,17 @@ export async function listTeamAgentConnections(): Promise<AgentConnection[]> {
           !token.revokedAt &&
           credentialAgentId(token.principal.id) === row.id
       )
+      // A row from WorkOS Agent Registration (retired) is still read, so an
+      // agent with nothing else lists as what it was. Nothing can sign in
+      // with it, so an agent that also has a token is that token's agent.
       const resource = db
         .query<
           { credential_key: string; active: number },
           [string]
-        >("SELECT credential_key, active FROM wt_agent_credentials WHERE agent_id = ? AND (credential_key LIKE 'oauth:%' OR credential_key LIKE 'workos-agent:%') ORDER BY active DESC LIMIT 1")
+        >("SELECT credential_key, active FROM wt_agent_credentials WHERE agent_id = ? AND (credential_key LIKE 'oauth:%' OR credential_key LIKE 'workos-agent:%') ORDER BY credential_key LIKE 'oauth:%' DESC, active DESC LIMIT 1")
         .get(row.id)
+      const signIn = resource?.credential_key.startsWith("oauth:") ?? false
+      const retiredOnly = Boolean(resource) && !signIn && !credentials.length
       const rawScopes = [
         ...new Set(credentials.flatMap((token) => token.scopes)),
       ]
@@ -124,7 +129,7 @@ export async function listTeamAgentConnections(): Promise<AgentConnection[]> {
       const target = {
         kind: "mcp-client" as const,
         clientId:
-          (resource?.credential_key.startsWith("oauth:")
+          (resource && signIn
             ? clientIdForSignInPrincipal(resource.credential_key)
             : null) ?? clientIdForAgentLabel(row.platform),
       }
@@ -147,13 +152,14 @@ export async function listTeamAgentConnections(): Promise<AgentConnection[]> {
             ? row.member_id === member.id
             : member.role === "owner")
         ),
-        authKind: resource
-          ? resource.credential_key.startsWith("oauth:")
-            ? "oauth"
-            : "agent-registration"
-          : "local-token",
+        authKind: signIn
+          ? "oauth"
+          : retiredOnly
+            ? "agent-registration"
+            : "local-token",
         canReconnect: Boolean(
           resource &&
+          signIn &&
           (!resource.active || !row.active) &&
           row.ownership === "personal" &&
           row.owner_user_id === member?.userId

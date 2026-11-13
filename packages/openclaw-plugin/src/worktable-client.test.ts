@@ -3,7 +3,6 @@ import { createServer, type Socket } from "node:net"
 import {
   claimWithThreadLocations,
   McpWorktableClient,
-  worktableAgentPresentationHeaders,
 } from "./worktable-client.js"
 
 describe("OpenClaw Worktable client", () => {
@@ -164,23 +163,6 @@ describe("OpenClaw Worktable client", () => {
         server.close((error) => (error ? reject(error) : resolve()))
       )
     }
-  })
-
-  it("keeps Unicode participant names out of ByteString headers", () => {
-    const headers = worktableAgentPresentationHeaders({
-      adapter: "openclaw",
-      installationId: "agent_reg_1",
-      label: "OpenClaw · 智能助手 😀",
-      machine: "máquina-一",
-    })
-
-    expect(headers).toEqual({
-      "x-worktable-agent-adapter": "openclaw",
-      "x-worktable-agent-installation": "agent_reg_1",
-      "x-worktable-agent-label": "OpenClaw",
-      "x-worktable-agent-machine": "maquina-",
-    })
-    expect(() => new Headers(headers)).not.toThrow()
   })
 
   it("advertises location support while claiming deliveries", async () => {

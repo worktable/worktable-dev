@@ -19,7 +19,8 @@ import { createRequire } from "node:module"
 import { dirname, join, resolve, sep } from "node:path"
 import type { Browser, BrowserContext, Page } from "playwright-core"
 
-export type PreviewKind = "drawing" | "html"
+/** What a preview browser worker is for; an image converts a picture for agents. */
+export type PreviewKind = "drawing" | "html" | "image"
 export type PreviewBrowserErrorCode =
   | "PREVIEW_UNAVAILABLE"
   | "PREVIEW_BUSY"

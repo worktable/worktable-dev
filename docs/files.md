@@ -490,8 +490,16 @@ the type table allows), `packages/types/src/file-types.ts`,
 - `mcp-documents.test.ts` "reads supported formats through one bounded inert
   projection": scripts and styles in a file never surface or run.
 
+The one binary format Worktable decodes is AVIF, for agents on the MCP preview
+surface: the sandboxed preview browser converts it to PNG, with no network,
+within 15 seconds, for a file up to 5 MiB whose container declares pictures up
+to 8192 pixels a side and 40 million pixels (read from its box headers before
+anything decodes it), and a PNG up to 5 MiB (`agent-image-conversion.ts`).
+Past any limit, or with `WORKTABLE_AGENT_IMAGE_CONVERSION=off`, the agent gets
+the file's bytes as before.
+
 **Gaps:** no test covers the web page's `sandbox=""` frame. Worktable has no
-container or binary parsers yet; the first one must follow this rule.
+container parsers yet; the first one must follow this rule.
 
 ## Cost
 
@@ -615,15 +623,20 @@ reason for both), `mcp/file-results.ts`.
   on disk": the page's no-history reason.
 - `mcp-document-previews.test.ts` "keeps HTML saved when preview runtime is
   unavailable and fences standalone captures to the source revision".
+- `mcp-documents.test.ts` "reads code the type table doesn't list and a
+  Dockerfile as text, and an AVIF as an image": on the preview surface only.
 
 Code files the table knows (`.js`, `.ts`, `.css`) show as text on their page,
 as agents read them. Plain text and logs are text to both; CSV and TSV are a
-table to people and text to agents, which carries the same content.
+table to people and text to agents, which carries the same content. On the MCP
+preview surface, source code the table doesn't list (such as `.py` or `.go`)
+and a `Dockerfile` read as text, and an AVIF as a PNG agents can see
+(`mcp/file-results.ts`).
 
-**Gaps:** a code type the table doesn't list (such as `.py`), and a
-`Dockerfile`, is a card to people and base64 to agents. AVIF is an image to
-people but base64 to agents. No test checks that the HTTP API and agent tools
-report the same identity and revision for one file.
+**Gaps:** a code type the table doesn't list, and a `Dockerfile`, is a card to
+people, and base64 to agents on the released surface. AVIF is an image to
+people but base64 to agents on the released surface. No test checks that the
+HTTP API and agent tools report the same identity and revision for one file.
 
 ### 16. Everything can be taken out
 

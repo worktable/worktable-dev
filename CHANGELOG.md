@@ -11,6 +11,12 @@ infrastructure and personal context out of release notes.
 
 ### Changed
 
+- **Agents (preview):** With preview tools on, agents read source code such as Python or Go files and Dockerfiles as text, and AVIF pictures as images they can see.
+
+## [0.1.46] - 2026-11-13
+
+### Changed
+
 - **Files:** JavaScript, TypeScript and CSS files show their text on their page, with a code icon, instead of a card with only Download.
 
 ### Fixed

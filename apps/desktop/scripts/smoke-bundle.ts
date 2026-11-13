@@ -462,6 +462,37 @@ function bundleWindowVisible(pid: number): boolean {
   )
 }
 
+/**
+ * Waits the way waitFor does, while keeping this Desktop process in front.
+ * Its window's page has to run for these checks (the shell marks Desktop
+ * ready, the workspace page reports its boundary), and on a Mac someone is
+ * using, another app can take the front and macOS then holds a background
+ * window's page back. The process is brought forward by its pid, never by
+ * name, so another Worktable on the same Mac is left alone.
+ */
+async function waitInFront<T>(
+  description: string,
+  pid: number,
+  probe: () => T | null | Promise<T | null>
+): Promise<T> {
+  let fronted = 0
+  return waitFor(description, async () => {
+    const value = await probe()
+    if (value !== null) return value
+    if (Date.now() - fronted > 3_000) {
+      fronted = Date.now()
+      try {
+        runSystemEventsScript(
+          `tell application "System Events" to set frontmost of (first application process whose unix id is ${pid}) to true`
+        )
+      } catch {
+        // The process may be starting or stopping; the wait decides.
+      }
+    }
+    return null
+  })
+}
+
 async function verifySecondLaunchDelegates(): Promise<void> {
   const duplicate = startDuplicateDesktop()
   const exitCode = await Promise.race([
@@ -742,7 +773,7 @@ try {
     remoteDesktopAppData,
     "desktop-connections.json"
   )
-  await waitFor("remote profile identity refresh", () => {
+  await waitInFront("remote profile identity refresh", running.appPid, () => {
     const saved = JSON.parse(readFileSync(remoteConnectionsPath, "utf8")) as {
       schemaVersion?: unknown
       connections?: Array<{ label?: unknown }>
@@ -752,14 +783,18 @@ try {
       ? true
       : null
   })
-  await waitFor("remote native-command denial probe", () => {
-    if (!running) return null
-    return desktopLaunchOutput(running).includes(
-      "workspace native command boundary: denied"
-    )
-      ? true
-      : null
-  })
+  await waitInFront(
+    "remote native-command denial probe",
+    running.appPid,
+    () => {
+      if (!running) return null
+      return desktopLaunchOutput(running).includes(
+        "workspace native command boundary: denied"
+      )
+        ? true
+        : null
+    }
+  )
   if (
     desktopOwnsLocalSidecar(running.appPid) ||
     existsSync(join(remoteDesktopLocalAppData, "local-runtime"))
@@ -779,14 +814,18 @@ try {
     remoteDesktopAppData,
     remoteDesktopLocalAppData
   )
-  await waitFor("remote profile reconnect after restart", () => {
-    if (!running) return null
-    return desktopLaunchOutput(running).includes(
-      "workspace native command boundary: denied"
-    )
-      ? true
-      : null
-  })
+  await waitInFront(
+    "remote profile reconnect after restart",
+    running.appPid,
+    () => {
+      if (!running) return null
+      return desktopLaunchOutput(running).includes(
+        "workspace native command boundary: denied"
+      )
+        ? true
+        : null
+    }
+  )
   if (
     desktopOwnsLocalSidecar(running.appPid) ||
     existsSync(join(remoteDesktopLocalAppData, "local-runtime"))
@@ -862,6 +901,12 @@ try {
     remoteOwner.process.kill("SIGTERM")
     await remoteOwner.process.exited
     await finishCliLogs("Failed remote owner", remoteOwner, true)
+  }
+  for (const dir of [appData, remoteDesktopAppData]) {
+    const saved = join(dir, "desktop-connections.json")
+    if (existsSync(saved)) {
+      console.error(`${saved}:\n${readFileSync(saved, "utf8").trim()}`)
+    }
   }
   console.error(`Desktop smoke root: ${root}`)
   throw error

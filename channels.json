@@ -9,10 +9,10 @@
       "held": false
     },
     "beta": {
-      "version": "0.1.47-dev.442+d2bc1ad",
-      "tag": "v0.1.47-dev.442",
-      "commit": "d2bc1ad0c4cb555982c7aacd35b3eaf51aa4ab21",
-      "publishedAt": "2026-11-13T12:27:00.249Z",
+      "version": "0.1.47-dev.443+ddd13b2",
+      "tag": "v0.1.47-dev.443",
+      "commit": "ddd13b26fe88f2f258639bd2600d144812fc9938",
+      "publishedAt": "2026-11-13T12:47:35.173Z",
       "held": false,
       "desktop": {
         "version": "0.1.45-dev.436+9a8ea16",

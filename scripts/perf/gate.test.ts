@@ -108,7 +108,7 @@ describe("paired speed gate", () => {
     ).toEqual(["server:p95:workspace"])
   })
 
-  test("sides that do not pair cannot be judged; keys only the head has are noted", () => {
+  test("sides that do not pair cannot be judged; a screen only one side has is noted", () => {
     const verdict = compare(
       [
         run("aaaa", 1, QUIET[0]!),
@@ -124,6 +124,70 @@ describe("paired speed gate", () => {
     expect(
       compare([old, run("bbbb", 1, QUIET[0]!)], "aaaa", "bbbb").headOnly
     ).toEqual(["click phone:cold:thread"])
+
+    // A renamed screen leaves one name on each side. Both are noted and the
+    // rest is judged, also when two networks' results are judged together,
+    // as the nightly does.
+    const renamed = (commit: string, network: string, name: string) =>
+      QUIET.map((jitter) => {
+        const item = run(commit, 1, jitter, network)
+        item.clicks[5]!.journey = name
+        return item
+      })
+    const both = compare(
+      ["phone", "desktop"].flatMap((network) => [
+        ...renamed("aaaa", network, "General"),
+        ...renamed("bbbb", network, "Profile"),
+      ]),
+      "aaaa",
+      "bbbb"
+    )
+    expect(both.incomplete).toEqual([])
+    expect(both.baseOnly).toEqual([
+      "click phone:cold:general",
+      "click desktop:cold:general",
+    ])
+    expect(both.headOnly).toEqual([
+      "click phone:cold:profile",
+      "click desktop:cold:profile",
+    ])
+    expect(
+      both.comparisons.filter((item) => item.kind === "click")
+    ).toHaveLength(10)
+    // A screen missing from only some of a side's runs still cannot be judged.
+    const partial = renamed("bbbb", "phone", "General")
+    partial[0]!.clicks.pop()
+    expect(
+      compare(
+        [...renamed("aaaa", "phone", "General"), ...partial],
+        "aaaa",
+        "bbbb"
+      ).incomplete
+    ).toEqual(["click phone:cold:general: 3 base runs, 2 head runs"])
+    // So does a route in only some of a side's server runs, even when the
+    // others measured nothing.
+    const route = (commit: string, endpoints: string[]) => ({
+      commit,
+      timing: {
+        timings: endpoints.map((endpoint) => ({
+          role: "solo",
+          endpoint,
+          p95: 5,
+        })),
+      },
+    })
+    expect(
+      compare(
+        [
+          route("aaaa", ["spaces"]),
+          route("aaaa", []),
+          route("bbbb", ["spaces", "recent"]),
+          route("bbbb", []),
+        ],
+        "aaaa",
+        "bbbb"
+      ).incomplete
+    ).toEqual(["server recent: 0 base runs, 1 head runs"])
 
     // A journey the base runs but can't show (it predates the screen) is
     // new in the head too, and the rest are still judged.

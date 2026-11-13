@@ -5407,6 +5407,9 @@ async fn run_remote_probe(app: AppHandle, generation: u64, verify_service: bool)
             .remote_probe_in_progress
             .swap(true, Ordering::SeqCst)
     {
+        eprintln!(
+            "[Worktable Desktop] self-hosted check skipped: another connection or check is current"
+        );
         return;
     }
     let result = perform_remote_probe(&app, generation, verify_service).await;
@@ -5414,6 +5417,7 @@ async fn run_remote_probe(app: AppHandle, generation: u64, verify_service: bool)
         .remote_probe_in_progress
         .store(false, Ordering::SeqCst);
     if !connection_generation_is_active(&app, generation) {
+        eprintln!("[Worktable Desktop] self-hosted check ended after another connection started");
         return;
     }
     if let Err(error) = result {
@@ -5467,6 +5471,7 @@ async fn perform_remote_probe(
             if !connection_generation_is_active(app, generation) {
                 return Ok(());
             }
+            eprintln!("[Worktable Desktop] self-hosted Worktable asked for sign-in");
             set_status(
                 app,
                 DesktopBootstrapStatus::remote_progress(
@@ -5556,6 +5561,7 @@ fn finish_remote_connection(
         app,
         DesktopBootstrapStatus::remote_ready(ready_origin, profile_id.clone(), summary),
     );
+    eprintln!("[Worktable Desktop] self-hosted Worktable connected");
     start_remote_monitor(app.clone(), generation);
     Ok(())
 }
@@ -5603,6 +5609,10 @@ fn desktop_remote_profile_id() -> Result<String, String> {
 }
 
 fn set_remote_connection_error(app: &AppHandle, error: RemoteConnectionError) {
+    eprintln!(
+        "[Worktable Desktop] self-hosted connection failed ({}): {}",
+        error.code, error.message
+    );
     let pending = app
         .state::<DesktopHostState>()
         .pending_remote

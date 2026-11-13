@@ -151,6 +151,8 @@ export type PendingItem =
       /** The library's Space; null for the Worktable's library and agents' own. */
       spaceId: string | null
       entryId: string
+      /** The entry's revision; approving or discarding names it. */
+      revision: number
       skillName: string
       libraryLabel: string
       agentName: string

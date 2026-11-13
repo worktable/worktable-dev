@@ -30,7 +30,8 @@ export const WORKTABLE_TOOL_NAMES = [
 ] as const
 
 export type WorktableToolName = (typeof WORKTABLE_TOOL_NAMES)[number]
-export type MutationClass = "none" | "workspace" | "records"
+/** "library" changes skill libraries: it needs Edit, but no search index refresh. */
+export type MutationClass = "none" | "workspace" | "records" | "library"
 export type ResultLinkKind =
   | "none"
   | "doc"
@@ -132,7 +133,7 @@ export const OPERATION_DEFINITIONS = {
   "mermaid.preview": tool(null, "none"),
   // Preview only. A proposal saves a version of the Doc it proposes (see tools.ts).
   "skills.read": tool("documents:read", "none"),
-  "skills.propose": tool("documents:write", "workspace"),
+  "skills.propose": tool("documents:write", "library"),
 } as const
 
 export type OperationId = keyof typeof OPERATION_DEFINITIONS

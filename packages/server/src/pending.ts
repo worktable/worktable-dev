@@ -10,6 +10,7 @@
 // Each source is read only when the reader has the scope that would let them
 // open it.
 
+import { configuredMcpSurface } from "./mcp/surface.ts"
 import type { PendingItem, PendingResult, SpaceFile } from "@worktable/types"
 import { readDocumentIdentities } from "./document-query.ts"
 import { resolveParticipant } from "./participant-store.ts"
@@ -38,7 +39,7 @@ export async function listPending(
   const canReadAnnotations =
     identity.principal.type === "human" &&
     hasScope(identity.scopes, "annotations:read")
-  const canReviewSkills = isPerson(identity)
+  const canReviewSkills = isPerson(identity) && configuredMcpSurface() === "preview"
   if (!canReadThreads && !canReadAnnotations && !visitorAccess && !canReviewSkills) {
     return { items: [], total: 0 }
   }
@@ -54,7 +55,6 @@ export async function listPending(
     ...threadRequests(threadWork.requests),
     ...failedDeliveries(threadWork.failures),
     ...comments,
-    ...skills,
     // The private inbox is auxiliary to ordinary team work on Home.
     ...(visitorAccess
       ? await pendingVisitorComments(identity, spaces, spaceId, visitorAccess).catch(() => [])
@@ -62,7 +62,15 @@ export async function listPending(
   ]
     .filter((item) => !spaceId || item.spaceId === spaceId)
     .sort((a, b) => b.at.localeCompare(a.at) || a.id.localeCompare(b.id))
-  return { items: all.slice(0, PENDING_LIMIT), total: all.length }
+  // Skill proposals come after the rows Home shows, so they never push one
+  // out, and Home counts them on their own.
+  return {
+    items: [
+      ...all.slice(0, PENDING_LIMIT),
+      ...skills.sort((a, b) => b.at.localeCompare(a.at)),
+    ],
+    total: all.length,
+  }
 }
 
 function threadRequests(requests: ViewerThreadRequest[]): PendingItem[] {

@@ -661,9 +661,17 @@ export async function saveLibrarySkill(
 }
 
 /** Approve an agent's proposal: it goes live, or the skill is removed. */
+/** The proposal a person reviewed is still the one waiting. */
+function assertReviewed(entry: LibraryEntry, revision: number): void {
+  if (entry.revision !== revision) {
+    throw new LibraryError("conflict", "This proposal changed since you reviewed it. Review it again.")
+  }
+}
+
 export async function approveLibraryProposal(
   identity: TokenIdentity,
-  id: string
+  id: string,
+  revision: number
 ): Promise<LibraryEntryView> {
   const before = entryById(readLibrary(), id)
   await requirePersonMayChange(before.library, identity)
@@ -676,6 +684,7 @@ export async function approveLibraryProposal(
     if (!proposal || entry.removed) {
       throw new LibraryError("conflict", "Nothing waits on approval for this skill.")
     }
+    assertReviewed(entry, revision)
     if (proposal.kind === "remove") {
       entry.removed = { at: now, by: identity.principal.id }
     } else {
@@ -694,12 +703,14 @@ export async function approveLibraryProposal(
 /** Discard an agent's proposal. A skill only proposed is gone with it. */
 export async function discardLibraryProposal(
   identity: TokenIdentity,
-  id: string
+  id: string,
+  revision: number
 ): Promise<{ entry: LibraryEntryView | null }> {
   await requirePersonMayChange(entryById(readLibrary(), id).library, identity)
   const entry = await changeLibrary((file) => {
     const entry = entryById(file, id)
     if (!entry.proposal) throw new LibraryError("conflict", "Nothing waits on approval for this skill.")
+    assertReviewed(entry, revision)
     if (!entry.live && !entry.removed) {
       file.entries = file.entries.filter((other) => other.id !== id)
       return null
@@ -756,6 +767,7 @@ export async function pendingSkillProposals(
       at: proposal.at,
       spaceId: entry.library.kind === "space" ? entry.library.spaceId : null,
       entryId: entry.id,
+      revision: entry.revision,
       skillName: entry.name,
       libraryLabel: label(entry.library),
       agentName: proposal.by.displayName,
@@ -807,6 +819,31 @@ function libraryApplies(library: LibraryRef, reader: SkillReader): boolean {
   if (library.kind === "space") return reader.canAccess(library.spaceId, "read")
   return reader.participantId !== null && library.participantId === reader.participantId
 }
+
+/**
+ * What applies to an agent, from the in-memory index alone: each entry's live
+ * version, or "removed" for one removed within 30 days. It reads no files, so
+ * a tool call can compare it with what the agent last saw at no cost. It
+ * doesn't check that each Doc still opens; skillsForAgent does.
+ */
+export function applicableVersions(reader: SkillReader): Map<string, string> {
+  const versions = new Map<string, string>()
+  const file = readLibrary()
+  if (file.entries.length === 0 || !hasScope([...reader.scopes], "documents:read")) return versions
+  const now = Date.now()
+  for (const entry of file.entries) {
+    if (!libraryApplies(entry.library, reader) || !reader.canAccess(entry.doc.spaceId, "read")) continue
+    if (entry.removed) {
+      if (now - Date.parse(entry.removed.at) < REMOVED_VISIBLE_MS) versions.set(entry.id, REMOVED_MARK)
+    } else if (entry.live) {
+      versions.set(entry.id, entry.live.generationId)
+    }
+  }
+  return versions
+}
+
+/** The seen mark for a skill removed from its library. */
+export const REMOVED_MARK = "removed"
 
 function inScope(library: LibraryRef, spaceId: string | undefined): boolean {
   return !spaceId || library.kind !== "space" || library.spaceId === spaceId

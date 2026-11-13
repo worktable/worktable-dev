@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, setSystemTime } from "bun:test"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import type { PendingResult } from "@worktable/types"
@@ -20,6 +20,7 @@ import {
   skillsForAgent,
   type SkillReader,
 } from "./skill-libraries.ts"
+import { SESSION_GAP_MS } from "./skill-notices.ts"
 import { writeDoc, writeSpace } from "./store.ts"
 import type { RequestPrincipal, TokenIdentity } from "./token-store.ts"
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
@@ -117,6 +118,12 @@ async function space(id: string, name: string): Promise<void> {
   })
 }
 
+/** The revision a person reviews before approving or discarding. */
+async function reviewed(id: string): Promise<{ revision: number }> {
+  const entries = (await rest("GET", "/api/library")).body.entries as Array<{ id: string; revision: number }>
+  return { revision: entries.find((entry) => entry.id === id)!.revision }
+}
+
 const RELEASE = "# Release checklist\n\nTag the build, then run the smoke test.\n"
 
 async function addRelease(library: Record<string, unknown> = { kind: "worktable" }) {
@@ -131,6 +138,7 @@ async function addRelease(library: Record<string, unknown> = { kind: "worktable"
 }
 
 beforeEach(async () => {
+  process.env["WORKTABLE_MCP_PREVIEW"] = "1"
   root = await mkdtemp(join(tmpdir(), "worktable-skills-"))
   appDir = await mkdtemp(join(tmpdir(), "worktable-skills-app-"))
   setWorkspaceRootOverride(root)
@@ -145,6 +153,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  delete process.env["WORKTABLE_MCP_PREVIEW"]
   await Promise.all(clients.splice(0).map((client) => client.close()))
   setWorkspaceRootOverride(null)
   setAppDirOverride(null)
@@ -214,22 +223,27 @@ describe("skill libraries", () => {
     const id = (pending.items[0] as { entryId: string }).entryId
     const forAgent = (await rest<PendingResult>("GET", "/api/pending", undefined, helperIdentity)).body
     expect(forAgent.items.filter((item) => item.kind === "skillProposal")).toEqual([])
-    expect((await rest("POST", `/api/library/${id}/approve`, undefined, helperIdentity)).status).toBe(403)
+    expect((await rest("POST", `/api/library/${id}/approve`, await reviewed(id), helperIdentity)).status).toBe(403)
 
-    expect((await rest("POST", `/api/library/${id}/approve`)).status).toBe(200)
+    expect((await rest("POST", `/api/library/${id}/approve`, await reviewed(id))).status).toBe(200)
     expect((await call(agent, "worktable_skills_read", { name: "release-checklist" })).library).toBe("Space: Ops")
 
     // An update proposes the Doc's content as it is now; the live one stays until approved.
     await writeDoc("ops", "release-checklist", `${RELEASE}\nAnnounce in the channel.\n`)
     await call(agent, "worktable_skills_write", { name: "release-checklist" })
     expect((await call(agent, "worktable_skills_read", { name: "release-checklist" })).content).not.toContain("Announce")
-    await rest("POST", `/api/library/${id}/approve`)
-    expect((await call(agent, "worktable_skills_read", { name: "release-checklist" })).content).toContain("Announce")
+    // Approval names the proposal reviewed: one replaced since is refused.
+    const first = await reviewed(id)
+    await writeDoc("ops", "release-checklist", `${RELEASE}\nAnnounce in the channel.\nThank the team.\n`)
+    await call(agent, "worktable_skills_write", { name: "release-checklist" })
+    expect((await rest("POST", `/api/library/${id}/approve`, first)).status).toBe(409)
+    await rest("POST", `/api/library/${id}/approve`, await reviewed(id))
+    expect((await call(agent, "worktable_skills_read", { name: "release-checklist" })).content).toContain("Thank the team")
 
     // A removal too, after which the skill is gone even by its exact name.
     await call(agent, "worktable_skills_write", { name: "release-checklist", remove: true })
     expect((await call(agent, "worktable_state")).skills).toHaveLength(1)
-    await rest("POST", `/api/library/${id}/approve`)
+    await rest("POST", `/api/library/${id}/approve`, await reviewed(id))
     const state = await call(agent, "worktable_state")
     expect(state.skills).toEqual([])
     expect(state.removedSkills).toEqual([
@@ -248,7 +262,7 @@ describe("skill libraries", () => {
     const waiting = (await rest<PendingResult>("GET", "/api/pending")).body.items
     const mine = waiting.find((item) => item.kind === "skillProposal") as { entryId: string; libraryLabel: string }
     expect(mine.libraryLabel).toBe("Agent: Helper")
-    expect((await rest("POST", `/api/library/${mine.entryId}/discard`)).status).toBe(200)
+    expect((await rest("POST", `/api/library/${mine.entryId}/discard`, await reviewed(mine.entryId))).status).toBe(200)
     const listed = (await rest("GET", "/api/library")).body.entries as Array<{ name: string }>
     expect(listed.map((entry) => entry.name)).toEqual(["release-checklist"])
   })
@@ -314,10 +328,27 @@ describe("skill libraries", () => {
     )
     expect(await notices()).toBeUndefined()
 
+    // After a break, the next call starts a session and names the skills again.
+    setSystemTime(new Date(Date.now() + SESSION_GAP_MS + 1000))
+    try {
+      expect(await notices()).toBe(
+        "Skills from your team's Worktable libraries apply to you: release-checklist. worktable_skills_read returns the current ones."
+      )
+      expect(await notices()).toBeUndefined()
+    } finally {
+      setSystemTime()
+    }
+
     await rest("DELETE", `/api/library/${entry.id}`)
     expect(await notices()).toBe(
       "Your team's Worktable skills changed: removed release-checklist (removed from its library, so it no longer applies). worktable_skills_read returns the current ones."
     )
     expect(await notices()).toBeUndefined()
+  })
+
+  it("keeps libraries off while the preview tools are off", async () => {
+    delete process.env["WORKTABLE_MCP_PREVIEW"]
+    process.env["WORKTABLE_MCP_PREVIEW"] = "0"
+    expect((await rest("GET", "/api/library")).status).toBe(404)
   })
 })

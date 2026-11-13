@@ -2,6 +2,7 @@ import { Hono, type Context, type Next } from "hono"
 import { z } from "zod"
 import { requireScope } from "../auth.ts"
 import { DocumentWriteError } from "../document-write-service.ts"
+import { configuredMcpSurface } from "../mcp/surface.ts"
 import {
   addToLibrary,
   approveLibraryProposal,
@@ -27,7 +28,13 @@ async function requirePerson(c: Context, next: Next) {
   await next()
 }
 
-libraryRouter.use("*", requireScope("documents:read"), requirePerson)
+/** Libraries ride with the preview agent tools until they are released. */
+async function requirePreview(c: Context, next: Next) {
+  if (configuredMcpSurface() !== "preview") return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
+  await next()
+}
+
+libraryRouter.use("*", requirePreview, requireScope("documents:read"), requirePerson)
 
 const STATUS: Record<LibraryError["code"], 400 | 403 | 404 | 409 | 503> = {
   invalid: 400,
@@ -101,16 +108,24 @@ libraryRouter.post("/:id/save", requireScope("documents:write"), async (c) => {
 })
 
 // POST /api/library/:id/approve: an agent's proposal goes live.
-libraryRouter.post("/:id/approve", requireScope("documents:write"), (c) =>
-  answer(c, async () => ({
-    entry: await approveLibraryProposal(c.get("identity"), c.req.param("id")!),
+// The person names the revision they reviewed, so a proposal changed since
+// can't go live in its place.
+const ReviewSchema = z.strictObject({ revision: z.number().int().nonnegative() })
+
+libraryRouter.post("/:id/approve", requireScope("documents:write"), async (c) => {
+  const input = await body(c, ReviewSchema)
+  if (input instanceof Response) return input
+  return answer(c, async () => ({
+    entry: await approveLibraryProposal(c.get("identity"), c.req.param("id")!, input.revision),
   }))
-)
+})
 
 // POST /api/library/:id/discard: drop an agent's proposal.
-libraryRouter.post("/:id/discard", requireScope("documents:write"), (c) =>
-  answer(c, () => discardLibraryProposal(c.get("identity"), c.req.param("id")!))
-)
+libraryRouter.post("/:id/discard", requireScope("documents:write"), async (c) => {
+  const input = await body(c, ReviewSchema)
+  if (input instanceof Response) return input
+  return answer(c, () => discardLibraryProposal(c.get("identity"), c.req.param("id")!, input.revision))
+})
 
 // DELETE /api/library/:id: remove a skill from its library.
 libraryRouter.delete("/:id", requireScope("documents:write"), (c) =>

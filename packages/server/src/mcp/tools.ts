@@ -159,6 +159,20 @@ function publicizeAnnotationResult(result: unknown): unknown {
   return output
 }
 
+/**
+ * An HTML Doc as agents read it. Whether its page shows its Space's images
+ * is how Worktable serves the page, decided by who wrote it last; it is
+ * not part of the HTML Doc an agent reads or writes.
+ */
+function publicizeHtmlDoc(widget: unknown): unknown {
+  if (!widget || typeof widget !== "object" || Array.isArray(widget)) {
+    return widget
+  }
+  const htmlDoc = { ...(widget as Record<string, unknown>) }
+  delete htmlDoc.spaceImages
+  return htmlDoc
+}
+
 function publicizeResult(
   operationId: keyof typeof OPERATION_DEFINITIONS,
   result: unknown
@@ -184,12 +198,12 @@ function publicizeResult(
     return result
   }
   const record = { ...(result as Record<string, unknown>) }
-  if ("widgets" in record) {
-    record.htmlDocs = record.widgets
+  if (Array.isArray(record.widgets)) {
+    record.htmlDocs = record.widgets.map(publicizeHtmlDoc)
     delete record.widgets
   }
   if ("widget" in record) {
-    record.htmlDoc = record.widget
+    record.htmlDoc = publicizeHtmlDoc(record.widget)
     delete record.widget
   }
   if (typeof record.widgetId === "string") {

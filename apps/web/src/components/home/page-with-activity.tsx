@@ -76,7 +76,7 @@ export function PageWithActivity({
         className="scroll-fade min-w-0 xl:flex-1 xl:overflow-y-auto"
       >
         {wide ? (
-          <div className="mx-auto max-w-[75rem] px-4 py-8 sm:px-8 lg:px-10 lg:py-11">
+          <div className="mx-auto max-w-[72rem] px-4 py-8 sm:px-8 lg:px-10 lg:py-11">
             <div className="@container/page space-y-9">{children}</div>
           </div>
         ) : (

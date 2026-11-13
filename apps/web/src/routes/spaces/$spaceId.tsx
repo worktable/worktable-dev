@@ -177,7 +177,8 @@ function SpaceOverview({
     .map((document) => ({ spaceId, document }))
   const runs = feed.data?.runs ?? []
   const shownPins = pins ?? []
-  const hasSide = shownPins.length > 0 || temporary.length > 0 || Boolean(onRetryPins)
+  // Pins make the side column; Archiving alone sits under the page.
+  const hasSide = shownPins.length > 0 || Boolean(onRetryPins)
   const tint = recognitionChip(recognitionColor(space?.settings?.color, spaceId))
   const chooseFolder = (name: string) =>
     setFolder((current) => (current === name ? null : name))
@@ -239,17 +240,17 @@ function SpaceOverview({
 
       <MemberWelcome spaceId={spaceId} />
 
-      <PendingSection spaceId={spaceId} />
-
       <div
         className={cn(
           "flex flex-col gap-9",
           hasSide &&
-            "@4xl/page:grid @4xl/page:grid-cols-[minmax(0,1fr)_20rem] @4xl/page:items-start @4xl/page:gap-x-14 @4xl/page:gap-y-10"
+            "@4xl/page:grid @4xl/page:grid-cols-[minmax(0,1fr)_23rem] @4xl/page:items-start @4xl/page:gap-x-12 @4xl/page:gap-y-11"
         )}
       >
-        <section aria-labelledby="recent-heading" className="order-1 min-w-0">
-          <div className="mb-2 flex items-baseline gap-2">
+        <div className="order-1 flex min-w-0 flex-col gap-9">
+          <PendingSection spaceId={spaceId} />
+          <section aria-labelledby="recent-heading" className="min-w-0">
+          <div className="mb-2.5 flex items-baseline gap-2">
             <h2 id="recent-heading" className={sectionHeading}>
               {folder ? humanizeSegment(folder) : "Latest"}
             </h2>
@@ -304,7 +305,8 @@ function SpaceOverview({
               }}
             />
           )}
-        </section>
+          </section>
+        </div>
 
         <aside
           className={cn(
@@ -314,7 +316,7 @@ function SpaceOverview({
         >
           {(shownPins.length > 0 || onRetryPins) && (
             <section aria-labelledby="pinned-heading" className="order-2 min-w-0">
-              <h2 id="pinned-heading" className={cn(sectionHeading, "mb-2")}>
+              <h2 id="pinned-heading" className={cn(sectionHeading, "mb-2.5")}>
                 Pinned
               </h2>
               {!pins && onRetryPins ? (
@@ -329,7 +331,7 @@ function SpaceOverview({
                   </button>
                 </p>
               ) : (
-                <div className="grid grid-cols-2 gap-2.5 @2xl/page:grid-cols-4 @4xl/page:grid-cols-2">
+                <div className="grid grid-cols-2 gap-3 @2xl/page:grid-cols-4 @4xl/page:grid-cols-2">
                   {shownPins.map((pin) => {
                     const name = folderOf(pin.path)
                     return (
@@ -367,7 +369,7 @@ function SpaceOverview({
             </section>
           )}
           <div className="order-4 empty:hidden">
-            <ArchivingWeek items={temporary} />
+            <ArchivingWeek items={temporary} side={hasSide} />
           </div>
         </aside>
 
@@ -376,11 +378,11 @@ function SpaceOverview({
             aria-labelledby="folders-heading"
             className="order-3 min-w-0 @4xl/page:col-span-2"
           >
-            <h2 id="folders-heading" className={cn(sectionHeading, "mb-2")}>
+            <h2 id="folders-heading" className={cn(sectionHeading, "mb-2.5")}>
               Folders
             </h2>
             {cards.length > 0 && (
-              <div className="mb-2.5 grid grid-cols-2 gap-2.5 @4xl/page:grid-cols-4">
+              <div className="mb-2.5 grid grid-cols-2 gap-3 @4xl/page:grid-cols-4">
                 {cards.map((place) => (
                   <PlaceCard
                     key={place.id}
@@ -435,7 +437,7 @@ function SpaceOverview({
             aria-labelledby="records-heading"
             className="order-3 min-w-0 @4xl/page:col-span-2"
           >
-            <h2 id="records-heading" className={cn(sectionHeading, "mb-2")}>
+            <h2 id="records-heading" className={cn(sectionHeading, "mb-2.5")}>
               Records
             </h2>
             <div className="flex flex-wrap gap-2">

@@ -234,7 +234,7 @@ export function PinTile({
   disabled?: string
 }) {
   return (
-    <div className="group card-surface card-surface-interactive relative flex min-w-0 flex-col rounded-xl p-2 pb-2.5">
+    <div className="group card-surface card-surface-interactive relative flex min-w-0 flex-col rounded-xl p-2 pb-3">
       {!disabled && (
         <Link
           to="/spaces/$spaceId/documents/$"
@@ -258,10 +258,10 @@ export function PinTile({
           />
         </span>
       )}
-      <span className="mt-2.5 truncate px-1 text-[0.8125rem] font-medium text-foreground">
+      <span className="mt-3 line-clamp-2 px-1 text-[0.8125rem] leading-[1.125rem] font-medium text-foreground">
         {title}
       </span>
-      <span className="mt-0.5 flex h-5 min-w-0 items-center gap-1.5 px-1 text-xs text-muted-foreground">
+      <span className="mt-auto flex h-5 min-w-0 items-center gap-1.5 px-1 pt-1.5 text-xs text-muted-foreground">
         {disabled ?? place}
       </span>
       {onUnpin && (
@@ -329,7 +329,14 @@ function daysUntil(iso: string): number {
  * How many temporary docs archive on each of the next seven days. A day with
  * docs opens them, with Keep.
  */
-export function ArchivingWeek({ items }: { items: ArchivingItem[] }) {
+export function ArchivingWeek({
+  items,
+  side = false,
+}: {
+  items: ArchivingItem[]
+  /** Beside the page on a wide screen, where it reads as a section. */
+  side?: boolean
+}) {
   const days = Array.from({ length: 7 }, (_, index) => ({
     date: dayFromToday(index + 1),
     items: [] as ArchivingItem[],
@@ -344,13 +351,20 @@ export function ArchivingWeek({ items }: { items: ArchivingItem[] }) {
   return (
     <section
       aria-labelledby="archiving-heading"
-      className="flex items-center justify-between gap-4 border-t border-border pt-5 @4xl/page:flex-col @4xl/page:items-stretch @4xl/page:gap-3 @4xl/page:border-t-0 @4xl/page:pt-0"
+      className={cn(
+        "flex items-center justify-between gap-4 border-t border-border pt-5",
+        side && "@4xl/page:border-t-0 @4xl/page:pt-0"
+      )}
     >
       <h2
         id="archiving-heading"
-        className="flex items-center gap-2 text-[0.8125rem] text-muted-foreground @4xl/page:text-sm @4xl/page:font-semibold @4xl/page:text-foreground"
+        className={cn(
+          "flex items-center gap-2 self-start pt-1 text-[0.8125rem] text-muted-foreground",
+          side &&
+            "@4xl/page:text-sm @4xl/page:font-semibold @4xl/page:text-foreground"
+        )}
       >
-        <Clock3 className="size-4 @4xl/page:hidden" />
+        <Clock3 className={cn("size-4", side && "@4xl/page:hidden")} />
         Archiving
       </h2>
       <div className="flex gap-1.5">
@@ -362,17 +376,17 @@ export function ArchivingWeek({ items }: { items: ArchivingItem[] }) {
             day: "numeric",
           })
           const cell = cn(
-            "flex h-6 w-6 items-center justify-center rounded-md text-[0.72rem] font-semibold tabular-nums @4xl/page:h-8 @4xl/page:w-full @4xl/page:rounded-lg",
+            "flex size-7 items-center justify-center rounded-md text-[0.72rem] font-medium tabular-nums",
             count === 0
               ? LEVELS[0]
               : count > 4
-                ? cn(LEVELS[3], "text-background")
-                : cn(LEVELS[2], "text-foreground")
+                ? cn(LEVELS[2], "text-foreground")
+                : cn(LEVELS[1], "text-foreground")
           )
           return (
             <div
               key={day.date.getTime()}
-              className="flex flex-col items-center gap-1 @4xl/page:flex-1"
+              className="flex flex-col items-center gap-1.5"
             >
               {count === 0 ? (
                 <span className={cell} />

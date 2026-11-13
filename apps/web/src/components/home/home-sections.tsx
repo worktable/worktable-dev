@@ -1,11 +1,5 @@
 import { Link } from "@tanstack/react-router"
-import {
-  AtSign,
-  CircleAlert,
-  Clock3,
-  MessageSquareText,
-  Reply,
-} from "lucide-react"
+import { CircleAlert, Clock3, MessageSquareText } from "lucide-react"
 import { useState } from "react"
 import type { DocumentSummary, PendingItem } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
@@ -15,6 +9,7 @@ import {
   DocumentFormatIcon,
 } from "@/components/document-format-icon"
 import { ThreadLink } from "@/components/home/activity-feed"
+import { ActorAvatar } from "@/components/home/home-latest"
 import { useLifetimeActions } from "@/hooks/use-document-organize"
 import { usePending } from "@/lib/activity"
 import { shortWhen } from "@/lib/activity-format"
@@ -29,6 +24,13 @@ const rowClass =
 
 // ── Pending ────────────────────────────────────────────────
 
+/** Pending items shown before the rest fold behind More. */
+const PENDING_ROWS = 3
+
+/**
+ * One thing waiting on the reader, in the rhythm of Latest's rows: what was
+ * asked, then who asked and where.
+ */
 function PendingRow({
   item,
   spaceName,
@@ -37,52 +39,76 @@ function PendingRow({
   spaceName?: string
 }) {
   const nameOf = useActorName()
-  const where = spaceName ? (
-    <span className="shrink-0 text-muted-foreground/70">{spaceName}</span>
-  ) : null
+  const from =
+    item.kind === "threadRequest" || item.kind === "commentRequest"
+      ? item.from
+      : null
+  // The thread or doc names the row; a message's own words can be long, and
+  // carry their formatting marks.
+  const title =
+    item.kind === "threadRequest" || item.kind === "deliveryFailed"
+      ? item.threadTitle
+      : item.kind === "visitorCommentsPaused"
+        ? item.linkLabel || "Untitled link"
+        : (item.docTitle ?? item.docPath)
+  const detail =
+    item.kind === "visitorComments"
+      ? item.linkLabel || "Untitled link"
+      : spaceName
+  const what =
+    item.kind === "threadRequest"
+      ? "asked you"
+      : item.kind === "commentRequest"
+        ? "commented"
+        : item.kind === "deliveryFailed"
+          ? `Not delivered to ${item.agentName}`
+          : item.kind === "visitorCommentsPaused"
+            ? "Comments paused"
+            : `${item.count} visitor comment${item.count === 1 ? "" : "s"}`
   const Icon =
-    item.kind === "threadRequest"
-      ? AtSign
-      : item.kind === "deliveryFailed"
-        ? CircleAlert
-        : item.kind === "commentRequest"
-          ? MessageSquareText
-          : Reply
-  const text =
-    item.kind === "threadRequest"
-      ? `${item.from.name ?? "Someone"} asked you in ${item.threadTitle}`
-      : item.kind === "deliveryFailed"
-        ? `Message to ${item.agentName} wasn’t delivered`
-        : item.kind === "visitorCommentsPaused"
-          ? `Comments paused on ${item.linkLabel || "Untitled link"}`
-          : item.kind === "visitorComments"
-            ? `${item.count} visitor comment${item.count === 1 ? "" : "s"} on ${item.docTitle ?? item.docPath}`
-            : item.kind === "commentRequest"
-              ? `${nameOf(item.from)} sent you a comment on ${item.docTitle ?? item.docPath}`
-              : ""
+    item.kind === "deliveryFailed" ? CircleAlert : MessageSquareText
+  const className =
+    "group grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 rounded-xl px-2.5 py-2 transition-colors hover:bg-surface-hover"
   const children = (
     <>
-      <Icon
-        className={cn(
-          "size-4 shrink-0",
-          item.kind === "deliveryFailed"
-            ? "text-destructive"
-            : "text-muted-foreground"
-        )}
-      />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium text-foreground">
-          {text}
+      {from ? (
+        <ActorAvatar
+          actor={from}
+          className="row-span-2 size-7 self-start text-xs @lg/page:self-center"
+        />
+      ) : (
+        <span
+          className={cn(
+            "row-span-2 flex size-7 items-center justify-center self-start rounded-full bg-surface-tint @lg/page:self-center",
+            item.kind === "deliveryFailed"
+              ? "text-destructive"
+              : "text-muted-foreground"
+          )}
+        >
+          <Icon className="size-3.5" />
         </span>
-        {item.kind === "visitorComments" && (
-          <span className="block truncate text-xs text-muted-foreground">
-            {item.linkLabel || "Untitled link"}
+      )}
+      <span className="line-clamp-2 min-w-0 text-sm leading-5 font-medium text-foreground @lg/page:line-clamp-none @lg/page:truncate">
+        {title}
+      </span>
+      <span className="row-span-2 shrink-0 self-start pt-0.5 text-xs text-muted-foreground tabular-nums">
+        {shortWhen(item.at)}
+      </span>
+      <span className="col-start-2 flex min-w-0 items-center gap-1.5 text-[0.8rem] leading-5 text-muted-foreground">
+        {from && (
+          <span className="shrink-0 font-medium text-reading-foreground">
+            {nameOf(from)}
           </span>
         )}
-      </span>
-      {where}
-      <span className="shrink-0 text-xs text-muted-foreground">
-        {shortWhen(item.at)}
+        <span className="shrink-0">{what}</span>
+        {detail && (
+          <>
+            <span aria-hidden className="shrink-0 opacity-50">
+              ·
+            </span>
+            <span className="min-w-0 truncate">{detail}</span>
+          </>
+        )}
       </span>
     </>
   )
@@ -90,7 +116,7 @@ function PendingRow({
     <ThreadLink
       spaceId={item.spaceId}
       threadId={item.threadId}
-      className={rowClass}
+      className={className}
     >
       {children}
     </ThreadLink>
@@ -98,12 +124,8 @@ function PendingRow({
     <Link
       to="/spaces/$spaceId/documents/$"
       params={{ spaceId: item.spaceId, _splat: item.docPath }}
-      hash={
-        item.kind === "commentRequest"
-          ? undefined
-          : "visitors"
-      }
-      className={rowClass}
+      hash={item.kind === "commentRequest" ? undefined : "visitors"}
+      className={className}
     >
       {children}
     </Link>
@@ -117,6 +139,7 @@ const lowerFirst = (text: string) =>
 export function PendingSection({ spaceId }: { spaceId?: string }) {
   const pending = usePending(spaceId)
   const { data: spaces } = useSpaces()
+  const [showAll, setShowAll] = useState(false)
   const names = new Map((spaces ?? []).map((space) => [space.id, space.name]))
   const items = pending.data?.items ?? []
   const failed = pending.isError && !pending.data
@@ -124,11 +147,12 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
   const shortcut = useGettingStartedShortcut(spaces)
   const gettingStarted = !spaceId && shortcut?.progress.next ? shortcut : null
   if (items.length === 0 && !failed && !gettingStarted) return null
+  const shown = showAll ? items : items.slice(0, PENDING_ROWS)
   return (
-    <section aria-labelledby="pending-heading">
+    <section aria-labelledby="pending-heading" className="min-w-0">
       <h2
         id="pending-heading"
-        className="mb-2 text-sm font-semibold text-foreground"
+        className="mb-2.5 text-sm font-semibold text-foreground"
       >
         Pending
       </h2>
@@ -144,8 +168,8 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
           </button>
         </p>
       ) : (
-        <div className="rounded-xl card-surface p-1">
-          {items.map((item) => (
+        <div className="-mx-2.5">
+          {shown.map((item) => (
             <PendingRow
               key={item.id}
               item={item}
@@ -154,6 +178,15 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
               }
             />
           ))}
+          {items.length > shown.length && (
+            <button
+              type="button"
+              onClick={() => setShowAll(true)}
+              className="ml-[3.125rem] flex h-8 items-center text-[0.8125rem] text-muted-foreground hover:text-foreground"
+            >
+              {items.length - shown.length} More
+            </button>
+          )}
           {gettingStarted && (
             <Link
               to="/spaces/$spaceId"

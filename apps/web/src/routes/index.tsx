@@ -104,7 +104,8 @@ function HomePage() {
     .slice(0, SPACE_CARDS)
   const pins = feed.data?.pins ?? []
   const temporary = recent.data?.temporary ?? []
-  const hasSide = pins.length > 0 || temporary.length > 0
+  // Pins make the side column; Archiving alone sits under the page.
+  const hasSide = pins.length > 0
 
   const unpin = (pin: { spaceId: string; path: string }) =>
     void homePins.unpin(pin).catch((error: unknown) => {
@@ -123,17 +124,17 @@ function HomePage() {
         />
       </header>
 
-      <PendingSection />
-
       <div
         className={cn(
           "flex flex-col gap-9",
           hasSide &&
-            "@4xl/page:grid @4xl/page:grid-cols-[minmax(0,1fr)_20rem] @4xl/page:items-start @4xl/page:gap-x-14 @4xl/page:gap-y-10"
+            "@4xl/page:grid @4xl/page:grid-cols-[minmax(0,1fr)_23rem] @4xl/page:items-start @4xl/page:gap-x-12 @4xl/page:gap-y-11"
         )}
       >
-        <section aria-labelledby="recent-heading" className="order-1 min-w-0">
-          <div className="mb-2 flex items-baseline justify-between gap-3">
+        <div className="order-1 flex min-w-0 flex-col gap-9">
+          <PendingSection />
+          <section aria-labelledby="recent-heading" className="min-w-0">
+          <div className="mb-2.5 flex items-baseline justify-between gap-3">
             <h2 id="recent-heading" className={sectionHeading}>
               Latest
             </h2>
@@ -176,7 +177,8 @@ function HomePage() {
               }}
             />
           )}
-        </section>
+          </section>
+        </div>
 
         <aside
           className={cn(
@@ -186,10 +188,10 @@ function HomePage() {
         >
           {pins.length > 0 && (
             <section aria-labelledby="pinned-heading" className="order-2 min-w-0">
-              <h2 id="pinned-heading" className={cn(sectionHeading, "mb-2")}>
+              <h2 id="pinned-heading" className={cn(sectionHeading, "mb-2.5")}>
                 Pinned
               </h2>
-              <div className="grid grid-cols-2 gap-2.5 @2xl/page:grid-cols-4 @4xl/page:grid-cols-2">
+              <div className="grid grid-cols-2 gap-3 @2xl/page:grid-cols-4 @4xl/page:grid-cols-2">
                 {pins.map((pin) => {
                   const space = byId.get(pin.spaceId)
                   return (
@@ -224,7 +226,7 @@ function HomePage() {
             </section>
           )}
           <div className="order-4 empty:hidden">
-            <ArchivingWeek items={temporary} />
+            <ArchivingWeek items={temporary} side={hasSide} />
           </div>
         </aside>
 
@@ -233,10 +235,10 @@ function HomePage() {
             aria-labelledby="spaces-heading"
             className="order-3 min-w-0 @4xl/page:col-span-2"
           >
-            <h2 id="spaces-heading" className={cn(sectionHeading, "mb-2")}>
+            <h2 id="spaces-heading" className={cn(sectionHeading, "mb-2.5")}>
               Spaces
             </h2>
-            <div className="grid grid-cols-2 gap-2.5 @4xl/page:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 @4xl/page:grid-cols-4">
               {places.map((place) => {
                 const space = byId.get(place.id)!
                 return (

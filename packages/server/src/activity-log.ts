@@ -775,6 +775,30 @@ export async function listActivity(
   }
 }
 
+/**
+ * Doc creations and edits by people and agents since a time, newest first,
+ * for Home's digest of recent work.
+ */
+export async function listDocEvents(options: {
+  spaces: (string | null)[]
+  visibleSpaces: ReadonlySet<string>
+  since: string
+}): Promise<ActivityEvent[]> {
+  await drainWrites()
+  return (await Promise.all(options.spaces.map(readLog)))
+    .flat()
+    .filter(
+      (event) =>
+        (event.action === "doc.created" || event.action === "doc.edited") &&
+        event.target.kind === "doc" &&
+        event.actor.kind !== "system" &&
+        event.spaceId !== null &&
+        options.visibleSpaces.has(event.spaceId) &&
+        event.at >= options.since
+    )
+    .sort(newestFirst)
+}
+
 /** Agents with visible activity, most recently active first. */
 export async function listActivityAgents(
   options: VisibilityOptions & Pick<ListActivityOptions, "spaces">

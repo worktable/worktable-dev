@@ -85,6 +85,7 @@ import { threadsRouter } from "./routes/threads.ts"
 import { searchRouter } from "./routes/search.ts"
 import { recentRouter } from "./routes/recent.ts"
 import { activityRouter, pendingRouter } from "./routes/activity.ts"
+import { homeRouter } from "./routes/home.ts";
 import { tokensRouter } from "./routes/tokens.ts"
 import { wellKnownRouter } from "./routes/well-known.ts"
 import { mcpRouter } from "./routes/mcp.ts"
@@ -581,6 +582,7 @@ app.route("/api/search", searchRouter);
 app.route("/api/recent", recentRouter);
 app.route("/api/activity", activityRouter);
 app.route("/api/pending", pendingRouter);
+app.route("/api/home", homeRouter);
 app.route("/.well-known", wellKnownRouter);
 app.route("/mcp", mcpRouter);
 // Version-matched, secret-free provider integration packages. Mounted before

@@ -51,17 +51,23 @@ function useActivityOpen(): [boolean, (open: boolean) => void] {
 export function PageWithActivity({
   spaceId,
   className,
+  wide = false,
   children,
 }: {
   spaceId?: string
   className?: string
+  /**
+   * A page that lays itself out by the room it has (`@container/page`) and
+   * carries its own Latest list, so Activity stays in the side panel.
+   */
+  wide?: boolean
   children: ReactNode
 }) {
   const scrollRef = useScrollFade<HTMLDivElement>(8, { top: false })
   // The panel matches other side panels, with more room on wide screens.
   const panelWidth = useMediaQuery("(min-width: 1600px)") ? 448 : 384
   // Both placements stay in the layout; only the visible one loads.
-  const wide = useMediaQuery("(min-width: 1280px)")
+  const wideScreen = useMediaQuery("(min-width: 1280px)")
   const [activityOpen, setActivityOpen] = useActivityOpen()
   return (
     <div className={cn("xl:flex xl:h-full", className)}>
@@ -69,15 +75,21 @@ export function PageWithActivity({
         ref={scrollRef}
         className="scroll-fade min-w-0 xl:flex-1 xl:overflow-y-auto"
       >
-        <div className="mx-auto max-w-3xl space-y-9 px-4 py-8 sm:px-8 lg:py-10">
-          {children}
-          <ActivityPanel
-            spaceId={spaceId}
-            limit={8}
-            enabled={wide === false}
-            className="border-t border-border pt-8 xl:hidden"
-          />
-        </div>
+        {wide ? (
+          <div className="mx-auto max-w-[75rem] px-4 py-8 sm:px-8 lg:px-10 lg:py-11">
+            <div className="@container/page space-y-9">{children}</div>
+          </div>
+        ) : (
+          <div className="mx-auto max-w-3xl space-y-9 px-4 py-8 sm:px-8 lg:py-10">
+            {children}
+            <ActivityPanel
+              spaceId={spaceId}
+              limit={8}
+              enabled={wideScreen === false}
+              className="border-t border-border pt-8 xl:hidden"
+            />
+          </div>
+        )}
       </div>
       <DesktopContextPanel
         open
@@ -87,7 +99,7 @@ export function PageWithActivity({
           <ActivityPanel
             spaceId={spaceId}
             limit={40}
-            enabled={wide === true}
+            enabled={wideScreen === true}
             onCollapse={() => setActivityOpen(false)}
             className="h-full p-5 pr-4"
           />

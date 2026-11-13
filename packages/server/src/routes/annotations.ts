@@ -5,7 +5,7 @@ import { z } from "zod";
 import { AnnotationTargetSchema, WidgetIdSchema, type Annotation, type AnnotationAuthor, type AnnotationTarget } from "@worktable/types";
 import {
   createAnnotation,
-  getAnnotationContext,
+  readAnnotationContext,
   listAnnotations,
   readAnnotation,
   replyAnnotation,
@@ -206,8 +206,9 @@ annotationsRouter.get("/:annotationId", requireScope("annotations:read"), async 
   const annotationId = c.req.param("annotationId") ?? "";
   const annotation = await readAnnotation(spaceId, annotationId);
   const includeTargetContext = c.req.query("includeTargetContext") === "true";
-  const context = includeTargetContext ? await getAnnotationContext(spaceId, annotationId) : undefined;
-  return c.json({ annotation: withMarks(annotation), context });
+  // Left out for a reader who may read comments but not what they are about.
+  const read = includeTargetContext ? await readAnnotationContext(spaceId, annotationId, c.get("identity").scopes) : undefined;
+  return c.json({ annotation: withMarks(annotation), context: read && "context" in read ? read.context : undefined });
 });
 
 annotationsRouter.patch("/:annotationId", requireScope("annotations:write"), async (c) => {
@@ -254,5 +255,9 @@ annotationsRouter.post("/:annotationId/resolve", requireScope("annotations:write
 annotationsRouter.get("/:annotationId/context", requireScope("annotations:read"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
   const annotationId = c.req.param("annotationId") ?? "";
-  return c.json({ context: await getAnnotationContext(spaceId, annotationId) });
+  const read = await readAnnotationContext(spaceId, annotationId, c.get("identity").scopes);
+  if ("missingScope" in read) {
+    return c.json({ error: `Reading what a comment is about needs ${read.missingScope}.`, code: "FORBIDDEN", missingScope: read.missingScope }, 403);
+  }
+  return c.json({ context: read.context });
 });

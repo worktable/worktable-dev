@@ -21,6 +21,7 @@ import { AnnotationFileSchema, WidgetIdSchema, findPassageBlock } from "@worktab
 import { getSpacesBaseDir, readDoc } from "./store.ts";
 import { readWidget, readWidgetHtml } from "./widget-store.ts";
 import { locateHtmlElement } from "./html-element-locate.ts";
+import { hasScope } from "./token-store.ts";
 import { locateMarkdownPassage, markdownPassageLines } from "./markdown-passage.ts";
 import { withDocPathLock } from "./doc-path-lock.ts";
 import { assertWorkspaceAvailable } from "./workspace-safety.ts"
@@ -721,6 +722,26 @@ export async function getAnnotationContext(spaceId: string, annotationOrTarget: 
     return { targetExists: false, selectorMatch: "stale", docPath: target.docPath };
   }
   return { targetExists: false, selectorMatch: "missing", docPath: target.docPath };
+}
+
+/**
+ * What a comment is about, for a reader who may read it. The context quotes
+ * the Doc or the HTML Doc's page, so it takes the scope that reads those;
+ * reading comments alone does not show what they are about.
+ */
+export async function readAnnotationContext(
+  spaceId: string,
+  annotationId: string,
+  scopes: readonly string[]
+): Promise<{ context: AnnotationContext } | { missingScope: string }> {
+  const { target } = await readAnnotation(spaceId, annotationId);
+  const granted = [...scopes];
+  if (target.type === "widget") {
+    if (!hasScope(granted, "widgets:read")) return { missingScope: "widgets:read" };
+  } else if ("docPath" in target && !hasScope(granted, "docs:read") && !hasScope(granted, "documents:read")) {
+    return { missingScope: "docs:read" };
+  }
+  return { context: await getAnnotationContext(spaceId, target) };
 }
 
 export class AnnotationPathMoveConflictError extends Error {}

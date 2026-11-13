@@ -9,7 +9,7 @@ import { setAppDirOverride } from "./app-storage.ts";
 import { spacesRouter } from "./routes/spaces.ts";
 import { widgetsRouter } from "./routes/widgets.ts";
 import { annotationsRouter } from "./routes/annotations.ts";
-import { getAnnotationContext, listAnnotations } from "./annotation-store.ts";
+import { getAnnotationContext, readAnnotationContext, listAnnotations } from "./annotation-store.ts";
 
 function buildTestApp() {
   const app = new Hono();
@@ -131,6 +131,13 @@ describe("HTML doc (widget) annotations", () => {
       startLine: 3,
       endLine: 3,
       excerpt: '<div class="price">$49 <small>per month</small></div>',
+    });
+
+    // The context quotes the page: reading comments alone does not give it.
+    const annotationId = created.json.annotation.id;
+    expect(await readAnnotationContext("meta", annotationId, ["annotations:read"])).toEqual({ missingScope: "widgets:read" });
+    expect(await readAnnotationContext("meta", annotationId, ["annotations:read", "widgets:read"])).toMatchObject({
+      context: { startLine: 3 },
     });
 
     // An element a script draws is not in the page as written: the agent is

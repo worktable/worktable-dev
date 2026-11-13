@@ -1,5 +1,6 @@
 import { parseDocument } from "htmlparser2"
 import {
+  HTML_ELEMENT_CONTEXT_LENGTH,
   HTML_ELEMENT_QUOTE_LENGTH,
   matchHtmlElement,
   type HtmlElement,
@@ -43,17 +44,43 @@ function children(node: ParsedNode | ParsedElement): ParsedNode[] {
   return "children" in node ? (node.children as ParsedNode[]) : []
 }
 
-/** An element's words, as the page's runtime reads them: see textOf there. */
-function textOf(element: ParsedElement, length: number): string {
+/** An element in the page, and where its words are in the page's text. */
+interface Read {
+  element: ParsedElement
+  /** Its words run from here to `end` in the text. */
+  start: number
+  end: number
+  /** The last heading before it. */
+  heading: string
+}
+
+/**
+ * Reads the page as its runtime does: the text is every piece of text in
+ * order, each trimmed and with its spaces collapsed, joined by single
+ * spaces; scripts and styles are not text. An element's words, and the text
+ * before and after it, are parts of that.
+ */
+function readPage(roots: ParsedNode[]): { text: string; elements: Read[] } {
   let text = ""
-  const walk = (node: ParsedNode): boolean => {
-    if (node.type === "text") text += `${node.data} `
-    else if (isElement(node) && !UNREAD.has(node.name))
-      for (const child of children(node)) if (!walk(child)) return false
-    return text.length < length * 2
+  let heading = ""
+  const elements: Read[] = []
+  const walk = (node: ParsedNode) => {
+    if (node.type === "text") {
+      const piece = node.data.replace(/\s+/g, " ").trim()
+      if (piece) text += text ? ` ${piece}` : piece
+      return
+    }
+    if (!isElement(node) || UNREAD.has(node.name)) return
+    const read: Read = { element: node, start: text.length, end: 0, heading }
+    elements.push(read)
+    for (const child of children(node)) walk(child)
+    read.end = text.length
+    // A heading is the one before whatever follows it, not what is in it.
+    if (/^h[1-6]$/.test(node.name))
+      heading = text.slice(read.start, read.end).trim().slice(0, 120)
   }
-  for (const child of children(element)) if (!walk(child)) break
-  return text.replace(/\s+/g, " ").trim().slice(0, length)
+  for (const node of roots) walk(node)
+  return { text, elements }
 }
 
 function segment(element: ParsedElement): string {
@@ -69,25 +96,20 @@ function segment(element: ParsedElement): string {
 }
 
 function describe(
-  element: ParsedElement,
-  body: ParsedElement | null,
-  heading: string
+  { element, start, end, heading }: Read,
+  page: string,
+  body: ParsedElement | null
 ): HtmlElementCandidate {
-  const text = textOf(element, HTML_ELEMENT_QUOTE_LENGTH)
+  const text = page.slice(start, end).trim().slice(0, HTML_ELEMENT_QUOTE_LENGTH)
+  const before = page.slice(0, start).slice(-HTML_ELEMENT_CONTEXT_LENGTH)
+  const after = page.slice(end).trim().slice(0, HTML_ELEMENT_CONTEXT_LENGTH)
   const path: string[] = []
-  let within = ""
-  let depth = 0
   for (
     let node: ParsedNode | null = element;
     isElement(node) && node !== body && node.name !== "html";
     node = node.parent as ParsedNode | null
-  ) {
+  )
     path.unshift(segment(node))
-    if (node !== element && !within && depth++ < 4) {
-      const around = textOf(node, 120)
-      if (around && around !== text.slice(0, 120)) within = around
-    }
-  }
   const attrs: Record<string, string> = {}
   for (const [name, value] of Object.entries(element.attribs)) {
     if (Object.keys(attrs).length >= 8) break
@@ -103,7 +125,8 @@ function describe(
       .slice(0, 6),
     attrs,
     ...(text ? { text } : {}),
-    ...(within ? { within } : {}),
+    ...(before ? { before } : {}),
+    ...(after ? { after } : {}),
     ...(heading ? { heading } : {}),
     path: path.slice(-12).join(" > "),
   }
@@ -137,39 +160,32 @@ export function locateHtmlElement(
     withStartIndices: true,
     withEndIndices: true,
   })
-  const tagged: ParsedElement[] = []
-  const candidates: HtmlElementCandidate[] = []
-  const byId = new Map<string, ParsedElement>()
   let body: ParsedElement | null = null
-  let heading = ""
   const find = (node: ParsedNode) => {
     if (isElement(node) && node.name === "body" && !body) body = node
     else for (const child of children(node)) find(child)
   }
   for (const node of document.children) find(node)
-  const walk = (node: ParsedNode) => {
-    if (!isElement(node) || UNREAD.has(node.name)) return
-    const id = node.attribs["id"]
-    if (id && !byId.has(id)) byId.set(id, node)
-    if (node.name === anchor.element.tag && tagged.length < CANDIDATE_LIMIT) {
-      tagged.push(node)
-      candidates.push(describe(node, body, heading))
-    }
-    if (/^h[1-6]$/.test(node.name)) heading = textOf(node, 120)
-    for (const child of children(node)) walk(child)
+  const page = readPage(body ? children(body) : document.children)
+  const tagged = page.elements
+    .filter((read) => read.element.name === anchor.element.tag)
+    .slice(0, CANDIDATE_LIMIT)
+  const byId = new Map<string, ParsedElement>()
+  for (const { element } of page.elements) {
+    const id = element.attribs["id"]
+    if (id && !byId.has(id)) byId.set(id, element)
   }
-  for (const node of body ? children(body) : document.children) walk(node)
 
-  const { id, classes, attrs, within, heading: under, path } = anchor.element
+  const { id, classes, attrs, before, after, heading, path } = anchor.element
   const match = matchHtmlElement(
-    { id, classes, attrs, within, heading: under, path, text: anchor.quote },
-    candidates
+    { id, classes, attrs, before, after, heading, path, text: anchor.quote },
+    tagged.map((read) => describe(read, page.text, body))
   )
   if (match) {
     return {
       kind: "element",
       match: match.match,
-      ...place(html, tagged[match.index]!),
+      ...place(html, tagged[match.index]!.element),
     }
   }
   // Nearest first: the last part of the path that names an id still there.

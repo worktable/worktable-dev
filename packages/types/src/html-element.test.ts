@@ -1,62 +1,67 @@
 import { describe, expect, it } from "bun:test"
 import { matchHtmlElement, type HtmlElementCandidate } from "./html-element"
 
-const row = (
-  name: string,
-  place: number,
-  text = "Edit"
-): HtmlElementCandidate => ({
-  classes: ["action"],
-  text,
-  within: `${name} $400 ${text}`,
-  heading: "Customers",
-  path: `main > table > tbody > tr:nth-of-type(${place}) > td:nth-of-type(3) > button`,
-})
+/** A table's rows as a page describes their Edit buttons. */
+const buttons = (names: string[]): HtmlElementCandidate[] =>
+  names.map((name, at) => ({
+    classes: ["action"],
+    text: "Edit",
+    before: `${names[at - 1] ? `${names[at - 1]} Ltd $400 Edit ` : ""}${name} Ltd $400`,
+    after: names[at + 1] ? `${names[at + 1]} Ltd $400 Edit` : "",
+    heading: "Customers",
+    path: `main > table > tbody > tr:nth-of-type(${at + 1}) > td:nth-of-type(3) > button`,
+  }))
+
+/** One row's cells, in a table with a row above and a row below. */
+const cells = (label: string, values: string[]): HtmlElementCandidate[] =>
+  values.map((text, at) => ({
+    text,
+    before: ["Version history 30 days 1 year Forever", label, ...values.slice(0, at)].join(" "),
+    after: [...values.slice(at + 1), "Single sign-on No No Yes"].join(" "),
+    heading: "Plans",
+    path: `main > table > tbody > tr:nth-of-type(4) > td:nth-of-type(${at + 2})`,
+  }))
+
+/** A list's items. */
+const items = (texts: string[]): HtmlElementCandidate[] =>
+  texts.map((text, at) => ({
+    text,
+    before: texts.slice(0, at).join(" "),
+    after: texts.slice(at + 1).join(" "),
+    heading: "Checklist",
+    path: `main > ul > li:nth-of-type(${at + 1})`,
+  }))
 
 describe("matchHtmlElement", () => {
   it("finds an element that kept its place and words", () => {
-    const page = [row("Acme", 1), row("Birch", 2), row("Cedar", 3)]
-    expect(matchHtmlElement(row("Birch", 2), page)).toEqual({
+    const page = buttons(["Acme", "Birch", "Cedar"])
+    expect(matchHtmlElement(page[1]!, page)).toEqual({
       index: 1,
       match: "exact",
     })
   })
 
-  it("follows an element a rewrite moved, by what surrounds it", () => {
+  it("follows an element a rewrite moved, by the text beside it", () => {
     // A row was added above: the old place now holds another row's button.
-    const page = [row("Aspen", 1), row("Acme", 2), row("Birch", 3)]
-    expect(matchHtmlElement(row("Birch", 2), page)).toEqual({
+    const before = buttons(["Acme", "Birch", "Cedar"])
+    const after = buttons(["Aspen", "Acme", "Birch", "Cedar"])
+    expect(matchHtmlElement(before[1]!, after)).toEqual({
       index: 2,
       match: "exact",
     })
   })
 
-  it("finds a reworded element and says its words changed", () => {
-    const page: HtmlElementCandidate[] = [
-      { text: "Plans", path: "main > section:nth-of-type(1) > h2" },
-      {
-        text: "What you get on each plan",
-        heading: "Plans",
-        path: "main > section:nth-of-type(2) > h2",
-      },
-    ]
+  it("stays with an element whose words changed", () => {
+    // A cell that said No now says Yes; the cell beside it still says No.
+    const [, team] = cells("Audit log", ["No", "No", "Yes"])
     expect(
-      matchHtmlElement(
-        {
-          text: "What each plan includes",
-          heading: "Plans",
-          path: "main > section:nth-of-type(2) > h2",
-        },
-        page
-      )
+      matchHtmlElement(team!, cells("Audit log", ["No", "Yes", "Yes"]))
     ).toEqual({ index: 1, match: "fuzzy" })
-  })
-
-  it("finds an element whose words changed in a small card", () => {
     const price = (text: string): HtmlElementCandidate => ({
       classes: ["price"],
       text,
-      within: `Team ${text} Up to 12 people.`,
+      before: "Plans Team",
+      after: "Up to 12 people. Choose Team",
       heading: "Team",
       path: "main > section#plans > article > div",
     })
@@ -67,17 +72,16 @@ describe("matchHtmlElement", () => {
     ).toEqual({ index: 0, match: "fuzzy" })
   })
 
-  it("follows an item when another is added before it", () => {
-    const list = (items: string[]) =>
-      items.map((text, at) => ({
-        text,
-        within: items.join(" "),
-        path: `main > ul > li:nth-of-type(${at + 1})`,
-      }))
-    const [, beta] = list(["Alpha", "Beta", "Gamma"])
+  it("follows an item moved within its list by its words", () => {
+    const list = [
+      "Finish the migration guide",
+      "Load test the sync service",
+      "Record the product demo video",
+    ]
+    const [, , video] = items(list)
     expect(
-      matchHtmlElement(beta!, list(["Aardvark", "Alpha", "Beta", "Gamma"]))
-    ).toEqual({ index: 2, match: "exact" })
+      matchHtmlElement(video!, items([list[2]!, list[0]!, list[1]!]))
+    ).toEqual({ index: 0, match: "exact" })
   })
 
   it("keeps an element by its id through any rewrite", () => {
@@ -93,36 +97,73 @@ describe("matchHtmlElement", () => {
     ).toEqual({ index: 1, match: "fuzzy" })
   })
 
-  it("does not guess between a cell that changed and its neighbor that reads the same", () => {
-    const cell = (place: number, text: string, row: string) => ({
-      text,
-      within: row,
-      heading: "Plans",
-      path: `main > table > tbody > tr:nth-of-type(4) > td:nth-of-type(${place})`,
+  it("does not move a short cell to a new row put where its row was", () => {
+    // Audit log moved up and its cell changed; Guest access, with the same
+    // values, now sits between the rows Audit log was between.
+    const row = (label: string, above: string, below: string) => ({
+      text: "No",
+      before: `${above} ${label}`,
+      after: `Yes Yes ${below}`,
+      heading: "What each plan includes",
+      path: "main > table > tbody > tr:nth-of-type(4) > td:nth-of-type(2)",
     })
-    // The commented cell said No and now says Yes; the one beside it still says No.
-    const page = [cell(2, "No", "Audit log No Yes Yes"), cell(3, "Yes", "Audit log No Yes Yes")]
-    expect(matchHtmlElement(cell(3, "No", "Audit log No No Yes"), page)).toBeNull()
-    // With words long enough to count, the neighbor that kept them still
-    // does not win: the comment stays with its cell or goes nowhere.
-    const found = matchHtmlElement(
-      cell(3, "Unlimited", "Agents 3 Unlimited Unlimited"),
-      [
-        cell(3, "50", "Agents 3 50 Unlimited"),
-        cell(4, "Unlimited", "Agents 3 50 Unlimited"),
-      ]
-    )
-    expect(found === null || found.index === 0).toBe(true)
+    const history = "Version history 30 days 1 year Forever"
+    const signOn = "Single sign-on No No Yes"
+    expect(
+      matchHtmlElement(
+        { ...row("Audit log", history, signOn), after: `No Yes ${signOn}` },
+        [
+          {
+            ...row("Audit log", "Share links Yes Yes Yes", history),
+            path: "main > table > tbody > tr:nth-of-type(3) > td:nth-of-type(2)",
+          },
+          {
+            ...row("Guest access", history, signOn),
+            path: "main > table > tbody > tr:nth-of-type(5) > td:nth-of-type(2)",
+          },
+        ]
+      )
+    ).toBeNull()
   })
 
-  it("does not move a comment to a look-alike or to something else", () => {
-    // The row is gone; the button now in its place belongs to another row.
-    expect(matchHtmlElement(row("Birch", 2), [row("Cedar", 2)])).toBeNull()
+  it("does not move a comment to what took a removed element's place", () => {
+    // The second testimonial was removed; the third is now second.
+    const quotes = [
+      "We cut our stockouts by half in the first season.",
+      "It paid for itself in six weeks, I can't imagine going back.",
+      "Transfers between our three shops used to take a phone call.",
+    ]
+    const cards = (texts: string[]) =>
+      items(texts).map((item, at) => ({
+        ...item,
+        heading: "What Retailers Say",
+        path: `main > section > blockquote:nth-of-type(${at + 1})`,
+      }))
+    const [, removed] = cards(quotes)
     expect(
-      matchHtmlElement(row("Birch", 2), [row("Acme", 1), row("Cedar", 2)])
+      matchHtmlElement(removed!, cards([quotes[0]!, quotes[2]!]))
+    ).toBeNull()
+  })
+
+  it("does not move a comment to the same words somewhere else", () => {
+    // The row is gone; the buttons left belong to other rows.
+    const [, birch] = buttons(["Acme", "Birch", "Cedar"])
+    expect(matchHtmlElement(birch!, buttons(["Acme", "Cedar"]))).toBeNull()
+    // The line was taken out of one plan; another plan still has it.
+    const line = (plan: string): HtmlElementCandidate => ({
+      text: "Priority support",
+      before: "Low-stock forecasts Smart alerts Weekly margin reports",
+      after: "Choose plan",
+      heading: plan,
+      path: `main > section > div:nth-of-type(${plan === "Starter" ? 1 : 2}) > ul > li:nth-of-type(4)`,
+    })
+    expect(
+      matchHtmlElement(line("Starter"), [
+        { ...line("Growth"), before: "Smart alerts Weekly margin reports Supplier sync" },
+      ])
     ).toBeNull()
     expect(
-      matchHtmlElement(row("Birch", 2), [
+      matchHtmlElement(birch!, [
         { text: "Sign out", path: "header > nav > button" },
       ])
     ).toBeNull()

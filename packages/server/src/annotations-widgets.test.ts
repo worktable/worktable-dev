@@ -114,7 +114,7 @@ describe("HTML doc (widget) annotations", () => {
         tag: "div",
         classes: ["price"],
         attrs: {},
-        within: "Plans $49 per month",
+        before: "Plans",
         heading: "Plans",
         path: "main > section#plans > div",
         html: '<div class="price">',

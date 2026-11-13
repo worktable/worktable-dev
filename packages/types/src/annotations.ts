@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { HTML_ELEMENT_QUOTE_LENGTH, type HtmlElement } from "./html-element";
+import {
+  HTML_ELEMENT_CONTEXT_LENGTH,
+  HTML_ELEMENT_QUOTE_LENGTH,
+  type HtmlElement,
+} from "./html-element";
 
 export const AnnotationCategorySchema = z.enum(["comment", "instruction"]);
 
@@ -17,7 +21,8 @@ export const HtmlElementSchema: z.ZodType<HtmlElement> = z.object({
   id: z.string().min(1).max(200).optional(),
   classes: z.array(z.string().min(1).max(80)).max(6).optional(),
   attrs: z.record(z.string().max(40), z.string().max(160)).optional(),
-  within: z.string().max(120).optional(),
+  before: z.string().max(HTML_ELEMENT_CONTEXT_LENGTH).optional(),
+  after: z.string().max(HTML_ELEMENT_CONTEXT_LENGTH).optional(),
   heading: z.string().max(120).optional(),
   path: z.string().min(1).max(600),
   html: z.string().max(300).optional(),

@@ -286,9 +286,9 @@ function quoteOf(annotation: Annotation): string | undefined {
   const target = annotation.target;
   const element = target.type === "widget" ? target.element : undefined;
   if ("quote" in target && target.quote) {
-    // A word or a number alone says little: show what it sits in too.
-    return element?.within && target.quote.length < 8
-      ? `${target.quote} · ${element.within}`
+    // A word or a number alone says little: show what it is under too.
+    return element?.heading && target.quote.length < 8
+      ? `${target.quote} · ${element.heading}`
       : target.quote;
   }
   return element ? htmlElementName(element) : undefined;

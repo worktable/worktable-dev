@@ -1,4 +1,8 @@
-import { HTML_ELEMENT_QUOTE_LENGTH, matchHtmlElement } from "@worktable/types"
+import {
+  HTML_ELEMENT_CONTEXT_LENGTH,
+  HTML_ELEMENT_QUOTE_LENGTH,
+  matchHtmlElement,
+} from "@worktable/types"
 import { HTML_DOC_THEME } from "@worktable/ui/lib/html-doc-theme.generated"
 import { themeConfig } from "@worktable/ui/theme"
 
@@ -30,25 +34,50 @@ export const WIDGET_COMMENT_RUNTIME = String.raw`
 (function(){
 const matchElement=${matchHtmlElement.toString()};
 const QUOTE=${HTML_ELEMENT_QUOTE_LENGTH};
+const CONTEXT=${HTML_ELEMENT_CONTEXT_LENGTH};
 const COLORS=${COLORS};
 const NAMING=/^(data-(?!worktable)[\w-]+|role|aria-label|name|href|src|alt|title|type|placeholder|for)$/;
 const BLOCKED=['pointerdown','mousedown','pointerup','mouseup','dblclick','auxclick','contextmenu','dragstart','submit'];
 function send(type,payload){try{postToParent(Object.assign({type:'worktable.comment.'+type,widgetId:cfg.widgetId,spaceId:cfg.spaceId,navigationToken:navigationToken},payload),'*')}catch{}}
 let host=null,cursor=null,hoverBox=null,markBox=null,pinLayer=null;
 let mode=false,hovered=null,picked=null,pinHover=null,pins=[],activeId=null;
-let frame=0,settle=0,watching=false,observer=null,resizes=null,reported='',lastRect='';
+let frame=0,settle=0,searched=0,watching=false,observer=null,resizes=null,reported='',lastRect='';
 const buttons=new Map();
 
-// The same reading of the page as html-element-locate.ts has of its source.
+// The same reading of the page as html-element-locate.ts has of its source:
+// the text is every piece of text in order, each trimmed and with its spaces
+// collapsed, joined by single spaces; scripts and styles are not text.
+function piece(node){
+  const parent=node.parentElement;
+  if(parent&&parent.closest('script,style,noscript'))return '';
+  return node.nodeValue.replace(/\s+/g,' ').trim();
+}
 function textOf(el,length){
   let text='';
   const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
-  for(let node=walker.nextNode();node&&text.length<length*2;node=walker.nextNode()){
-    const parent=node.parentElement;
-    if(parent&&parent.closest('script,style,noscript'))continue;
-    text+=node.nodeValue+' ';
+  for(let node=walker.nextNode();node&&text.length<length;node=walker.nextNode()){
+    const next=piece(node);
+    if(next)text+=text?' '+next:next;
   }
-  return text.replace(/\s+/g,' ').trim().slice(0,length);
+  return text.slice(0,length);
+}
+// The page's text just before an element, and just after it.
+function beside(el){
+  const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
+  let before='',after='';
+  walker.currentNode=el;
+  for(let node=walker.previousNode();node&&before.length<CONTEXT;node=walker.previousNode()){
+    const next=piece(node);
+    if(next)before=before?next+' '+before:next;
+  }
+  let last=el;
+  while(last.lastChild)last=last.lastChild;
+  walker.currentNode=last;
+  for(let node=walker.nextNode();node&&after.length<CONTEXT;node=walker.nextNode()){
+    const next=piece(node);
+    if(next)after+=after?' '+next:next;
+  }
+  return [before.slice(-CONTEXT),after.slice(0,CONTEXT)];
 }
 function segment(el){
   let same=0,at=0;
@@ -60,17 +89,13 @@ function headingBefore(el,headings){
   let low=0,high=headings.length;
   while(low<high){
     const mid=(low+high)>>1,heading=headings[mid];
-    if(heading!==el&&(heading.compareDocumentPosition(el)&Node.DOCUMENT_POSITION_FOLLOWING))low=mid+1;else high=mid;
+    if(heading!==el&&!heading.contains(el)&&(heading.compareDocumentPosition(el)&Node.DOCUMENT_POSITION_FOLLOWING))low=mid+1;else high=mid;
   }
   return low?textOf(headings[low-1],120):'';
 }
 function describe(el,headings){
-  const text=textOf(el,QUOTE),path=[];
-  let within='',depth=0;
-  for(let node=el;node&&node!==document.body&&node!==document.documentElement;node=node.parentElement){
-    path.unshift(segment(node));
-    if(node!==el&&!within&&depth++<4){const around=textOf(node,120);if(around&&around!==text.slice(0,120))within=around}
-  }
+  const text=textOf(el,QUOTE),path=[],around=document.body.contains(el)?beside(el):['',''];
+  for(let node=el;node&&node!==document.body&&node!==document.documentElement;node=node.parentElement)path.unshift(segment(node));
   const attrs={};let count=0;
   for(const attr of el.attributes){
     if(count>=8)break;
@@ -79,7 +104,8 @@ function describe(el,headings){
   const out={tag:el.localName,classes:(el.getAttribute('class')||'').split(/\s+/).filter(function(name){return name&&name.length<=80}).slice(0,6),attrs:attrs,path:path.slice(-12).join(' > ').slice(-600)};
   if(el.id&&el.id.length<=200)out.id=el.id;
   if(text)out.text=text;
-  if(within)out.within=within;
+  if(around[0])out.before=around[0];
+  if(around[1])out.after=around[1];
   const heading=headingBefore(el,headings);
   if(heading)out.heading=heading;
   return out;
@@ -168,21 +194,31 @@ function paint(){
 }
 function draw(){if(!frame)frame=requestAnimationFrame(paint)}
 
-// Finds each comment's element again, and tells the app which are gone.
-function locate(){
-  settle=0;
+// Finds each comment's element again, and tells the app which are gone. An
+// element still where it was is confirmed cheaply. Looking through the page
+// for one that moved or changed costs more, so a page that keeps changing
+// is searched at most every two seconds.
+function locate(now){
+  clearTimeout(settle);settle=0;
+  const search=now===true||Date.now()-searched>=2000;
   const headings=pins.length?headingsNow():[],groups={},states={};
+  let waiting=false;
   for(const pin of pins){
     const anchor=pin.anchor,element=anchor&&anchor.element;
     let hit=null;
     if(element&&typeof element.tag==='string'&&typeof element.path==='string'){
       const target=Object.assign({},element);
       if(typeof anchor.quote==='string')target.text=anchor.quote;
-      if(pin.el&&pin.el.isConnected&&pin.el.localName===element.tag){
+      const kept=pin.el&&pin.el.isConnected&&pin.el.localName===element.tag;
+      if(kept){
         const still=matchElement(target,[describe(pin.el,headings)]);
         if(still&&still.match==='exact')hit={el:pin.el,match:'exact'};
       }
-      if(!hit){
+      if(!hit&&!search){
+        waiting=true;
+        if(kept&&pin.state==='changed')hit={el:pin.el,match:'fuzzy'};
+      }else if(!hit){
+        searched=Date.now();
         let group=groups[element.tag];
         if(!group){
           group=groups[element.tag]={els:[],described:[]};
@@ -194,10 +230,11 @@ function locate(){
       }
     }
     pin.el=hit?hit.el:null;
-    states[pin.id]=hit?(hit.match==='exact'?'found':'changed'):'gone';
+    pin.state=states[pin.id]=hit?(hit.match==='exact'?'found':'changed'):'gone';
   }
   const report=JSON.stringify(states);
   if(report!==reported){reported=report;send('status',{states:states})}
+  if(waiting)settle=setTimeout(locate,2000,true);
   watch();draw();
 }
 function relocate(){if(!settle)settle=setTimeout(locate,250)}
@@ -272,10 +309,9 @@ window.addEventListener('message',function(event){
     setMode(data.mode===true);
     if(!data.draft)picked=null;
     activeId=typeof data.activeId==='string'?data.activeId:null;
-    const before=new Map(pins.map(function(pin){return [pin.id,pin.el]}));
-    pins=(Array.isArray(data.pins)?data.pins:[]).slice(0,200).filter(function(pin){return pin&&typeof pin.id==='string'}).map(function(pin){return {id:pin.id,anchor:pin.anchor,el:before.get(pin.id)||null}});
-    clearTimeout(settle);
-    locate();
+    const before=new Map(pins.map(function(pin){return [pin.id,pin]}));
+    pins=(Array.isArray(data.pins)?data.pins:[]).slice(0,200).filter(function(pin){return pin&&typeof pin.id==='string'}).map(function(pin){const was=before.get(pin.id);return {id:pin.id,anchor:pin.anchor,el:was?was.el:null,state:was?was.state:''}});
+    locate(true);
   }else if(data.type==='worktable.comment.reveal'){
     const pin=pins.find(function(other){return other.id===data.id});
     if(!pin||!pin.el||!pin.el.isConnected)return;

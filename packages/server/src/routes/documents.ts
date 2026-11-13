@@ -40,7 +40,7 @@ import {
   HIDDEN_NAME_MESSAGE,
   pathRefusal,
 } from "../document-path.ts"
-import { pathIsHidden } from "../document-format-registry.ts"
+import { BUILTIN_DOCUMENT_FORMATS, pathIsHidden } from "../document-format-registry.ts"
 import { listDocuments, resolveDocumentNavigation } from "../document-query.ts"
 import {
   applyLifetimeOnCreate,
@@ -923,12 +923,15 @@ documentsRouter.post(
         source: attribution.source,
         reason: parsed.data.reason,
       })
-      const kept = await keepEarlierImagesAfterRestore(
-        c.req.param("spaceId") ?? "",
-        result.path,
-        parsed.data.versionId,
-        attribution.actor
-      )
+      const kept =
+        result.format.id === BUILTIN_DOCUMENT_FORMATS.file
+          ? []
+          : await keepEarlierImagesAfterRestore(
+              c.req.param("spaceId") ?? "",
+              result.path,
+              parsed.data.versionId,
+              attribution.actor
+            )
       return c.json({
         ok: true,
         ...result,

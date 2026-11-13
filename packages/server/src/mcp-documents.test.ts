@@ -477,6 +477,23 @@ describe("file links for agents", () => {
       const bigRead = await read({ action: "read_source", spaceId, path: "data/archive.bin" })
       expect(bigRead.structuredContent).toMatchObject({ encoding: "download", byteLength: 1_500_000 })
       expect(bigRead.structuredContent).not.toHaveProperty("source")
+      // It names the revision a replace is based on, and its link gives the
+      // bytes it described.
+      const bigLink = bigRead.structuredContent as { downloadUrl: string; sourceRevision: string }
+      expect(
+        (await (await fileLinksRouter.request(`/${token(bigLink.downloadUrl)}`)).arrayBuffer())
+          .byteLength
+      ).toBe(1_500_000)
+      const bigAgain = await write({
+        action: "upload",
+        spaceId,
+        path: "data/archive.bin",
+        ifExists: "replace",
+        expectedRevision: bigLink.sourceRevision,
+      })
+      expect(
+        (await send((bigAgain.structuredContent as { uploadUrl: string }).uploadUrl, new Uint8Array(8))).status
+      ).toBe(200)
 
       // A file written on disk past what a version holds is described by its
       // size and linked, never read into the result, and says why it has no

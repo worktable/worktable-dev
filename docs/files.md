@@ -494,15 +494,31 @@ lock, hashes kept per revision), `staged-file.ts` and `file-uploads.ts`
   succeeds while a download streams.
 - `routes-documents.test.ts` "streams an upload to disk as it arrives, and saves
   only a whole one".
+- `routes-documents.test.ts` "keeps a version when a file with history changes
+  on disk": a file past 64 MiB moves, and its move names no revision.
+- `mcp-documents.test.ts` "sends a file to a one-time upload link and reads it
+  back from a download link": a 1.5 MB binary read comes by link with the
+  revision a replace is based on.
 - `workspace-snapshot.test.ts` "hashes only files whose identity changed since
   the last capture".
 - `perf-smoke` file reads and stats per request, in
   `scripts/perf/smoke-budgets.json`. See [Keep Worktable fast](performance.md).
 
-**Gaps:** an agent's read of a large binary file still loads the whole file into
-memory before returning its download link, though outside the Space lock
-(`current-file-source.ts`). No test shows that listing opens no file; only the
-perf budget does.
+An agent's read of a file that comes by link alone, a binary file over 1 MiB,
+is decided from its name and size and hashed a chunk at a time for its
+revision, never held whole (`mcp/file-results.ts` `fileReadsAs`). Moving a
+plain file names its new revision from a chunked hash after the Space's lock
+is released, and a file past 64 MiB moves without being read. Restoring a
+plain file's version copies it from where it is kept to a staged file, a chunk
+at a time, checked against the hash its version recorded.
+
+**Gaps:**
+
+- Where an agent gets no download link (a local stdio connection), a binary
+  read still comes back whole as base64, up to 64 MiB.
+- A full download carries no `Content-Length`: Bun 1.3 drops it from every
+  streamed response body. HEAD and range responses carry sizes.
+- No test shows that listing opens no file; only the perf budget does.
 
 ### 14. Storage is accounted, bounded and recoverable
 

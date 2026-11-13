@@ -191,6 +191,7 @@ import type { McpSurface } from "./surface.ts"
 import {
   delimitedChanges,
   isDelimitedFile,
+  fileReadsAs,
   readableFileSource,
 } from "./file-results.ts"
 import { withResultMedia } from "./media.ts"
@@ -1457,14 +1458,36 @@ async function _dispatchOperationInner(
         }
       }
       // A plain file's bytes are read once the Space's lock is released,
-      // all at one revision; anything else is read as before.
+      // all at one revision; anything else is read as before. A file that
+      // comes by link alone is hashed for its revision, never held whole.
+      const linked = !context.legacyFileRead && Boolean(context.fileLinkOrigin)
       const file = namesAFile(args["path"] as string)
         ? await readCurrentFileSource({
             spaceId: args["spaceId"] as string,
             path: args["path"] as string,
-            bytes: true,
+            bytes: (current) =>
+              !linked ||
+              current.pinned.size <= FILE_INLINE_BINARY_MAX_BYTES ||
+              fileReadsAs(current.path, current.pinned.size) !== null,
           })
         : null
+      if (file && !file.bytes) {
+        return {
+          documentId: file.current.documentId,
+          path: file.current.path,
+          format: file.current.format,
+          byteLength: file.current.pinned.size,
+          sourceRevision: file.sourceRevision,
+          ...fileDownloadLink(
+            context.fileLinkOrigin,
+            principal,
+            args["spaceId"] as string,
+            file.current.path,
+            file.current.pinned.revision
+          ),
+          encoding: "download" as const,
+        }
+      }
       const result = file?.bytes
         ? {
             documentId: file.current.documentId,
@@ -1501,14 +1524,6 @@ async function _dispatchOperationInner(
           ),
         }
         const readable = readableFileSource(result.path, result.bytes)
-        // A binary file past what a tool result carries well comes by link.
-        if (
-          !readable &&
-          "downloadUrl" in fields &&
-          result.bytes.byteLength > FILE_INLINE_BINARY_MAX_BYTES
-        ) {
-          return { ...fields, encoding: "download" as const }
-        }
         if (!readable) {
           return {
             ...fields,
@@ -1760,12 +1775,15 @@ async function _dispatchOperationInner(
         reason: args["reason"] as string | undefined,
       })
       // An image changed since keeps its earlier copy with the restored Doc.
-      const kept = await keepEarlierImagesAfterRestore(
-        args["spaceId"] as string,
-        result.path,
-        args["versionId"] as string,
-        actorId
-      )
+      const kept =
+        result.format.id === BUILTIN_DOCUMENT_FORMATS.file
+          ? []
+          : await keepEarlierImagesAfterRestore(
+              args["spaceId"] as string,
+              result.path,
+              args["versionId"] as string,
+              actorId
+            )
       return {
         ok: true,
         ...result,

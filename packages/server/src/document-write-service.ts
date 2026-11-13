@@ -76,8 +76,12 @@ import {
   readDocumentFileSourceInChunks,
   readDocumentSource,
 } from "./document-source-reader.ts"
+import { DocumentSourceReadError } from "./document-source-errors.ts"
 import {
   currentFileRevision,
+  FILE_READ_CHUNK_BYTES,
+  FileRevisionError,
+  OpenFileRevision,
   sha256Check,
   verifyPinnedFile,
 } from "./file-revision.ts"
@@ -246,7 +250,11 @@ export interface DocumentMoveResult {
   documentId: DocumentId
   from: string
   to: string
-  sourceRevision: string
+  /**
+   * The revision it has at its new path. A plain file past what a version
+   * holds has none: it can't be replaced, so nothing is based on one.
+   */
+  sourceRevision?: string
 }
 
 interface ManagedFileDocument {
@@ -2304,6 +2312,32 @@ async function restoreRegisteredDocumentVersionHeld(options: {
         "This document has no compatible legacy version history"
       )
     }
+    // A plain file's version is staged from where it is kept once the lock
+    // is released, a chunk at a time, never held whole. The version is held
+    // until the restore ends, so pruning can't take it meanwhile.
+    if (store === "v2" && current.format.id === BUILTIN_DOCUMENT_FORMATS.file) {
+      const manifest = await readDocumentGenerationManifestV2({
+        workspaceRoot,
+        spaceId: options.spaceId,
+        documentId: current.documentId,
+        generationId: options.versionId,
+      })
+      if (!manifest) {
+        throw new DocumentWriteError("not-found", "Document version not found")
+      }
+      if (
+        manifest.format.id !== current.format.id ||
+        manifest.format.sourceVersion !== current.format.sourceVersion ||
+        manifest.authoredSource.kind !== "file" ||
+        manifest.authoredSource.entries.length !== 1
+      ) {
+        throw new DocumentWriteError(
+          "conflict",
+          "Document version is not compatible with the current source"
+        )
+      }
+      return { kind: "replace-file" as const, manifest }
+    }
     const generation = await readCompatibleDocumentVersionV2({
       workspaceRoot,
       spaceId: options.spaceId,
@@ -2453,21 +2487,77 @@ async function restoreRegisteredDocumentVersionHeld(options: {
       versionId: restored.provenance?.versionId ?? options.versionId,
     }
   }
-  return replaceRegisteredDocument({
-    spaceId: options.spaceId,
-    path: options.path,
-    bytes: plan.bytes,
-    expectedRevision: options.expectedRevision,
-    updatedBy: options.restoredBy,
-    source: options.source,
-    reason: options.reason ?? `Restored ${basename(options.versionId)}`,
-    checkpoint: {
-      meaningful: true,
-      kind: "restore",
-      label: `Restored ${basename(options.versionId)}`,
-    },
-    registry,
+  const staged =
+    plan.kind === "replace-file"
+      ? await stageKeptVersion(workspaceRoot, plan.manifest)
+      : null
+  try {
+    return await replaceRegisteredDocument({
+      spaceId: options.spaceId,
+      path: options.path,
+      bytes: staged ?? (plan as { bytes: Uint8Array }).bytes,
+      expectedRevision: options.expectedRevision,
+      updatedBy: options.restoredBy,
+      source: options.source,
+      reason: options.reason ?? `Restored ${basename(options.versionId)}`,
+      checkpoint: {
+        meaningful: true,
+        kind: "restore",
+        label: `Restored ${basename(options.versionId)}`,
+      },
+      ...(staged ? { expectedFormatId: BUILTIN_DOCUMENT_FORMATS.file } : {}),
+      registry,
+    })
+  } finally {
+    if (staged) await discardStagedFile(staged)
+  }
+}
+
+/**
+ * A plain file's kept version copied to a staged file a chunk at a time,
+ * checked against the hash its manifest recorded, so restoring a large file
+ * never holds it in memory.
+ */
+async function stageKeptVersion(
+  workspaceRoot: string,
+  manifest: DocumentGenerationManifestV2
+): Promise<StagedFile> {
+  const unavailable = () =>
+    new DocumentWriteError("conflict", "This version can't be read safely")
+  const entry = await documentGenerationSourceEntryPathV2({
+    workspaceRoot,
+    manifest,
+    entryPath: manifest.authoredSource.entries[0]!.path,
   })
+  if (!entry) throw unavailable()
+  const staging = await StagingFile.create()
+  try {
+    const kept = await OpenFileRevision.open(entry.path).catch(() => {
+      throw unavailable()
+    })
+    try {
+      if (kept.size !== entry.bytes) throw unavailable()
+      for (let position = 0; position < kept.size; ) {
+        const chunk = await kept.read(
+          position,
+          Math.min(FILE_READ_CHUNK_BYTES, kept.size - position)
+        )
+        await staging.append(chunk)
+        position += chunk.byteLength
+      }
+    } finally {
+      await kept.close()
+    }
+    const staged = await staging.finish()
+    if (staged.sha256 !== entry.sha256) {
+      await discardStagedFile(staged)
+      throw unavailable()
+    }
+    return staged
+  } catch (error) {
+    await staging.discard()
+    throw error instanceof FileRevisionError ? unavailable() : error
+  }
 }
 
 export async function moveRegisteredDocument(options: {
@@ -2486,7 +2576,7 @@ export async function moveRegisteredDocument(options: {
   // A Doc's folder belongs to it: sub-Docs and files under it move with it,
   // as one folder move, which takes its own lock. A first child created while
   // this decides is seen under the lock, and the move starts again.
-  let result: DocumentMoveResult | null = null
+  let result: LockedMove | null = null
   let withFolder = false
   for (let pass = 0; pass < 2 && !result; pass += 1) {
     withFolder =
@@ -2519,6 +2609,7 @@ export async function moveRegisteredDocument(options: {
       "The Doc's folder changed during the move. Try again."
     )
   }
+  const { plainFile, ...moved } = result
   await noteDocumentActivity(options.spaceId, [to])
   await publishMutation(options.spaceId)
   await notifyWorkspaceChangeAndWait({
@@ -2538,11 +2629,43 @@ export async function moveRegisteredDocument(options: {
         path: to,
         registry,
       })
-      return { ...result, sourceRevision: current.sourceRevision }
+      return { ...moved, sourceRevision: current.sourceRevision }
     }
   }
-  return result
+  if (!plainFile) return moved
+  const sourceRevision = await movedFileRevision(options.spaceId, to)
+  return { ...moved, ...(sourceRevision !== undefined ? { sourceRevision } : {}) }
 }
+
+/**
+ * A moved plain file's revision at its new path, hashed a chunk at a time
+ * once its Space's lock is released, so a large file's move neither holds
+ * the file in memory nor holds up the Space. Undefined for a file past what
+ * a version holds, and for one that keeps changing: the move stands, and
+ * the file's next read names its revision.
+ */
+async function movedFileRevision(
+  spaceId: string,
+  path: string
+): Promise<string | undefined> {
+  // Loaded here: that module reads through this one.
+  const { readCurrentFileSource } = await import("./current-file-source.ts")
+  try {
+    return (await readCurrentFileSource({ spaceId, path }))?.sourceRevision
+  } catch (error) {
+    if (
+      error instanceof DocumentSourceReadError ||
+      error instanceof FileRevisionError ||
+      error instanceof DocumentWriteError
+    ) {
+      return undefined
+    }
+    throw error
+  }
+}
+
+/** A move as the lock made it: a plain file's revision is read after. */
+type LockedMove = DocumentMoveResult & { plainFile: boolean }
 
 /** The move under the lock; null when the Doc gained a folder meanwhile. */
 function moveRegisteredDocumentLocked(
@@ -2550,8 +2673,30 @@ function moveRegisteredDocumentLocked(
   to: string,
   registry: DocumentFormatRegistry,
   withFolder: boolean
-): Promise<DocumentMoveResult | null> {
+): Promise<LockedMove | null> {
   const workspaceRoot = getWorkspaceRoot()
+  // A plain file's bytes are never read under the lock: only its move is
+  // made here.
+  const movedTo = async (
+    document: ManagedFileDocument,
+    from: string
+  ): Promise<LockedMove> => {
+    const plainFile = document.format.id === BUILTIN_DOCUMENT_FORMATS.file
+    return {
+      documentId: document.documentId,
+      from,
+      to,
+      plainFile,
+      ...(plainFile
+        ? {}
+        : {
+            sourceRevision: await registeredDocumentSourceRevision({
+              ...document,
+              bytes: await readSource(workspaceRoot, options.spaceId, document),
+            }),
+          }),
+    }
+  }
   return withDocPathLock(options.spaceId, async () => {
     assertSpaceAccess(options.spaceId, "edit");
     await requireV2Workspace(workspaceRoot)
@@ -2561,17 +2706,10 @@ function moveRegisteredDocumentLocked(
       registry,
     })
     if (withFolder) {
-      const moved = resolveManagedFileDocument(catalog, to, registry)
-      const bytes = await readSource(workspaceRoot, options.spaceId, moved)
-      return {
-        documentId: moved.documentId,
-        from: options.path,
-        to,
-        sourceRevision: await registeredDocumentSourceRevision({
-          ...moved,
-          bytes,
-        }),
-      }
+      return movedTo(
+        resolveManagedFileDocument(catalog, to, registry),
+        options.path
+      )
     }
     const current = resolveManagedFileDocument(catalog, options.path, registry)
     if (current.path !== to && catalogHasDocumentsBelow(catalog, current.path)) {
@@ -2600,16 +2738,7 @@ function moveRegisteredDocumentLocked(
       to,
       registry
     )
-    const bytes = await readSource(workspaceRoot, options.spaceId, refreshed)
-    return {
-      documentId: moved.documentId,
-      from: current.path,
-      to,
-      sourceRevision: await registeredDocumentSourceRevision({
-        ...refreshed,
-        bytes,
-      }),
-    }
+    return { ...(await movedTo(refreshed, current.path)), documentId: moved.documentId }
   })
 }
 

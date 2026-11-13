@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Comments:** A comment on a path with no Doc, such as `readme.md` for the Doc `readme`, now says the Doc was not found and that a Doc's path has no extension, instead of failing with "Something went wrong". Replying to or resolving a comment that is gone says so too.
+
 ## [0.1.47] - 2026-11-13
 
 ### Changed

@@ -6,6 +6,7 @@ import { Hono } from "hono"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import type { Annotation } from "@worktable/types"
+import { apiErrorResponse } from "./api-error-response.ts"
 import { setAppDirOverride } from "./app-storage.ts"
 import { ownerIdentity } from "./auth.ts"
 import { resolveParticipant } from "./participant-store.ts"
@@ -54,6 +55,7 @@ app.use("*", async (c, next) => {
   await next()
 })
 app.route("/api/spaces/:spaceId/annotations", annotationsRouter)
+app.onError(apiErrorResponse)
 
 async function list() {
   const response = await app.fetch(
@@ -72,7 +74,11 @@ async function post(path: string, body: unknown) {
   )
   return {
     status: response.status,
-    json: (await response.json()) as { annotation: Annotation; code?: string },
+    json: (await response.json()) as {
+      annotation: Annotation
+      code?: string
+      error?: string
+    },
   }
 }
 
@@ -394,6 +400,26 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
         Array.from({ length: 22 }, (_, index) => `Point ${index + 1}`)
       )
     })
+
+    if (layout === "Storage V2") {
+      it("says when a comment names a Doc or a comment that is not there", async () => {
+        // The file is explorer.md; the Doc's path is explorer.
+        const fileName = await post("", {
+          target: { type: "doc", docPath: "explorer.md" },
+          category: "comment",
+          body: "Which tier is this?",
+        })
+        expect(fileName.status).toBe(404)
+        expect(fileName.json.code).toBe("NOT_FOUND")
+        expect(fileName.json.error).toBe(
+          "Document not found: explorer.md. A Doc's path has no extension. Leave out the extension, such as .md."
+        )
+        const gone = await post("/ann_gone/replies", { body: "Still there?" })
+        expect(gone.status).toBe(404)
+        expect(gone.json.code).toBe("NOT_FOUND")
+        expect(await list()).toEqual([])
+      })
+    }
 
     it("finds a comment by its Doc's full path, however long", async () => {
       await pendingList()

@@ -1473,6 +1473,20 @@ describe("team foundation", () => {
       canManage: true,
     })
     expect((await withAutoReply([inert]))[0]?.autoReply).toBeUndefined()
+    // Connected again with a token, it is a working agent like any other,
+    // whatever Agent Registration left on it.
+    const { createToken } = await import("./token-store.ts")
+    const replacement = await createToken({
+      agent: "openclaw",
+      scopes: ["threads:read", "threads:write"],
+    })
+    bindTeamAgentCredential(retired.id, replacement.metadata.principal.id, member)
+    const working = (await retiredListing())!
+    expect(working.authKind).toBe("local-token")
+    expect((await withAutoReply([working]))[0]?.autoReply).toEqual({
+      kind: "called",
+      state: "on",
+    })
     await runWithTeamIdentity(member, () =>
       disconnectTeamAgentConnection(retired.id)
     )

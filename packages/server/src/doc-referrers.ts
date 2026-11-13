@@ -17,6 +17,7 @@ import {
   type RecordFile,
 } from "@worktable/types"
 import { onHtmlContentChanged } from "./content-events.ts"
+import { onRecordChanged } from "./record-events.ts"
 import { logError } from "./debug-log.ts"
 import { createDocAliasResolver, readDocAliases } from "./doc-aliases.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
@@ -455,6 +456,31 @@ onHtmlContentChanged((spaceId, path) => {
   if (!space) return
   space.stale.html.add(path)
   markChanged(spaceId, space)
+})
+
+// A record deleted or archived leaves the Docs it pointed at at once, as it
+// is told: a page shows no name of a record that is gone while the
+// collection is read again.
+onRecordChanged((event) => {
+  const gone =
+    event.kind === "delete"
+      ? { collectionId: event.collectionId, recordId: event.recordId }
+      : event.kind === "write" && event.record.archive
+        ? { collectionId: event.record.collectionId, recordId: event.record.id }
+        : null
+  if (!gone) return
+  const { collectionId, recordId } = gone
+  const space = spaces.get(spaceKey(event.spaceId))
+  const byDoc = space?.collections.get(collectionId)
+  if (!space || !byDoc) return
+  for (const [path, records] of byDoc) {
+    const kept = records.filter((record) => record.recordId !== recordId)
+    if (kept.length === records.length) continue
+    if (kept.length > 0) byDoc.set(path, kept)
+    else byDoc.delete(path)
+  }
+  space.stale.collections.add(collectionId)
+  markChanged(event.spaceId, space)
 })
 
 onWorkspaceChange((event) => {

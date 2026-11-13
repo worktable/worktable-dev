@@ -23,6 +23,7 @@ import { recordIndex, recordIndexEnabled } from "./record-index.ts";
 import {
   DocumentSpaceNotFoundError,
   projectDocumentsForSearch,
+  readDocumentCatalogSnapshot,
   type DocumentReadWithView,
 } from "./document-query.ts";
 import { analyzeDocumentPath } from "./document-path.ts";
@@ -1134,14 +1135,43 @@ export async function searchWithStatus(
     return reading;
   };
 
+  // An index that answered before its sync finished can still hold a Doc
+  // deleted since: each common Doc hit is checked against its Space's
+  // catalog snapshot, read once per Space. A complete index needs no check.
+  const listed = new Map<string, Promise<ReadonlySet<string>>>();
+  const stillListed = (entry: DocEntry): Promise<boolean> => {
+    let paths = listed.get(entry.spaceId);
+    if (!paths) {
+      paths = readDocumentCatalogSnapshot(entry.spaceId).then(
+        (catalog) =>
+          new Set(
+            catalog.entries.map((item) =>
+              item.kind === "document" ? item.descriptor.path : item.pathKey,
+            ),
+          ),
+        () => new Set<string>(),
+      );
+      listed.set(entry.spaceId, paths);
+    }
+    return paths.then((known) => known.has(entry.path));
+  };
+
   const filtered: typeof hits = [];
   for (const hit of hits) {
+    const entry = hit.result as unknown as IndexEntry;
+    if (
+      !indexComplete &&
+      entry.type === "doc" &&
+      documentAccess === "common" &&
+      !(await stillListed(entry))
+    ) {
+      continue;
+    }
     if (includeArchived) {
       filtered.push(hit);
       continue;
     }
 
-    const entry = hit.result as unknown as IndexEntry;
     if (entry.type === "doc" && documentAccess === "common") {
       // Common candidates were filtered before projection and ranking.
       filtered.push(hit);

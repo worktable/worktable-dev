@@ -418,12 +418,26 @@ checks, and stale output presented as current misleads.
 - `deleted-items.test.ts` "take their live editing state with them".
 - `routes-documents.test.ts` "names the Docs that use a file on the file's
   page": a deleted Doc leaves Used in.
+- `search-excerpt.test.ts` "answers within its time budget while the index
+  builds, then completes": a Doc deleted while a sync stalls isn't found.
+- `doc-referrers.test.ts` "finds records by their document fields and HTML
+  Docs by the docs they open": a deleted record leaves at once.
+- `activity.test.ts` "tells people who did what, newest first, without
+  repeating itself": a deleted Doc's comment lines lose their words.
 - `html-preview.test.ts` "captures live data, diagnoses forbidden on-load writes
   and bad assets, and bounds unsettled/static HTML".
 
-**Gaps:** one search mode can show a deleted Doc's excerpt while a slow index
-sync runs; activity-feed comment quotes outlive their Doc. No test uses a
-download link after its maker lost access to the Space.
+A search that answers before its index sync finishes checks each Doc hit
+against the Space's catalog snapshot, so a deleted Doc's excerpt never shows
+(`search-index.ts`). A record deleted or archived leaves the Docs it pointed
+at as the store says so (`doc-referrers.ts`). A comment's words leave the
+activity feed when its Doc is deleted (`activity-feed.ts`).
+
+**Gaps:** the activity log keeps a comment's first 280 characters in app data
+after its Doc is deleted, until the log is compacted; the feed matches events
+to Docs by path, so a new Doc at a deleted Doc's path shows the old comments'
+words again. No test uses a download link after its maker lost access to the
+Space.
 
 ## Safety
 

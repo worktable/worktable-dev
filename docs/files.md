@@ -338,8 +338,10 @@ work without knowing it.
   with no revision gets 428 and a stale one 409.
 - `routes-docs.test.ts` "restores only versions owned by the active Doc
   generation": restoring a Doc version with no revision gets 428 and a stale
-  one 409 with the current revision; the page's revision holds, checked
-  before open editors save. In the app, a changed Doc or HTML Doc asks before
+  one 409 with the current revision; the page's revision holds, as does a
+  save the restorer's own editing room made since. The check runs under the
+  namespace lock once open editors have saved, so no write lands between it
+  and the restore. In the app, a changed Doc or HTML Doc asks before
   restoring (`version-history.browser.ts`).
 
 **Gaps:**

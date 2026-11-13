@@ -9,6 +9,7 @@ import {
   getDocCollaborationCacheEpochHistory,
   getDocPath,
   getDocProvenance,
+  writeDoc,
   writeSpace,
 } from "./store.ts";
 import {
@@ -761,11 +762,14 @@ describe("doc routes", () => {
         await getDocCollaborationCacheEpoch("test-space", "folder/doc")
       ).toBe(cacheEpoch);
 
-      // The page names the content revision it loaded, which holds as well.
-      const restoreRes = await restore(
-        "folder/doc",
-        await currentDocContentRevision("test-space", "folder/doc")
-      );
+      // The page names the content revision it loaded, which holds as well,
+      // and so does it once the restorer's own editing room saved since.
+      const pageLoaded = await currentDocContentRevision("test-space", "folder/doc");
+      await writeDoc("test-space", "folder/doc", [para("second, typed")], {
+        updatedBy: "user",
+        source: "browser-yjs",
+      });
+      const restoreRes = await restore("folder/doc", pageLoaded);
       expect(restoreRes.status).toBe(200);
       // Restoring retires the room; browsers must also leave its old cache.
       expect(

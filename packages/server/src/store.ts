@@ -3358,19 +3358,18 @@ async function writeDocTransaction(
 }
 
 /**
- * Whether a Doc has left the revision a restore names: the content revision
- * its page loaded, or the revision a read of its source gives
- * (`md:sha256:…`). Null while it is still there, else the revision it is at
- * now, in the form the restore named.
+ * Whether a Doc at `source` has left the revision a restore names: the
+ * content revision its page loaded, or the revision a read of its source
+ * gives (`md:sha256:…`). Null while it is still there or its own editing
+ * room saved it since, else the revision it is at now, in the form the
+ * restore named.
  */
 async function docRestoreRevisionChanged(
   spaceId: string,
   docPath: string,
-  expected: string
+  expected: string,
+  source: DocSourceRevision
 ): Promise<{ revision: string } | null> {
-  const snapshot = await readDocSourceSnapshot(spaceId, docPath);
-  const source = snapshot.revision;
-  if (!source) return null;
   const [{ docContentRevision }, { docRevisionId }] = await Promise.all([
     import("./document-content-revision.ts"),
     import("./doc-markdown-projection.ts"),
@@ -3381,8 +3380,15 @@ async function docRestoreRevisionChanged(
     sha256: source.sha256,
   });
   if (expected === read || expected === page) return null;
+  // The restorer's own editing room saved since: their typing, or what the
+  // room took in from others while they watched.
+  const provenance = await getDocProvenance(spaceId, docPath);
+  if (provenance?.source && EDITOR_SAVE_SOURCES.has(provenance.source)) return null;
   return { revision: /^(md|json):sha256:/.test(expected) ? read : page };
 }
+
+/** The sources a Doc's open editing room saves under (yjs-manager.ts). */
+const EDITOR_SAVE_SOURCES = new Set(["browser-yjs", "browser-yjs-sync"]);
 
 const DOC_RESTORE_REVISION_CHANGED =
   "This Doc changed since you opened it. Open it again, then restore from its new revision.";
@@ -3409,9 +3415,9 @@ export type DocVersionRestoreResult =
 export interface RestoreDocVersionOptions {
   expectedSourceRevision?: DocSourceRevision;
   /**
-   * The content revision the restorer loaded, as the Doc's page gives it
-   * (`md:sha256:…`). Checked before open editors save, so only a change
-   * someone else made since refuses the restore.
+   * The revision the restorer loaded: the content revision the Doc's page
+   * gives, or `md:sha256:…`. Checked once open editors have saved, under
+   * the namespace lock; only a change someone else made since refuses it.
    */
   expectedRevision?: string;
   updatedBy?: string;
@@ -3580,21 +3586,6 @@ async function restoreDocVersionWithRoom(
         errorCode: "NOT_FOUND",
       };
     }
-    if (options.expectedRevision !== undefined) {
-      const changed = await docRestoreRevisionChanged(
-        spaceId,
-        owner.path,
-        options.expectedRevision
-      );
-      if (changed) {
-        return {
-          ok: false,
-          error: DOC_RESTORE_REVISION_CHANGED,
-          errorCode: "REVISION_CHANGED",
-          revision: changed.revision,
-        };
-      }
-    }
     const candidateVersion = await withVersionKeyLock(
       spaceId,
       "docs",
@@ -3659,6 +3650,25 @@ async function restoreDocVersionWithRoom(
                   activeSource.result.error ?? "Document changed while restoring",
                 errorCode: "CONFLICT",
               };
+            }
+            // Checked under the namespace lock, after open editors saved,
+            // so no write can land between the check and the restore. Only
+            // a save its own editing room made since may move the Doc on.
+            if (options.expectedRevision !== undefined) {
+              const changed = await docRestoreRevisionChanged(
+                spaceId,
+                owner.path,
+                options.expectedRevision,
+                activeSource.revision
+              );
+              if (changed) {
+                return {
+                  ok: false,
+                  error: DOC_RESTORE_REVISION_CHANGED,
+                  errorCode: "REVISION_CHANGED",
+                  revision: changed.revision,
+                };
+              }
             }
             if (
               options.expectedSourceRevision &&

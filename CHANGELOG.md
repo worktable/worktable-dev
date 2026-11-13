@@ -12,6 +12,12 @@ infrastructure and personal context out of release notes.
 ### Added
 
 - **HTML Docs:** Comment on one part of a page. Press **Comment** on the page, point at a heading, a number, a chart or a table cell, and write. The comment stays pinned to that part when an agent rewrites the page, moves to **Page Changed** when the part is gone, and tells the agent which lines of the page it is about.
+### Fixed
+
+- **Comments:** A comment on a path with no Doc, such as `readme.md` for the Doc `readme`, now says the Doc was not found and that a Doc's path has no extension, instead of failing with "Something went wrong". Replying to or resolving a comment that is gone says so too.
+### Changed
+
+- **Agents:** What agents read about an HTML Doc no longer includes `spaceImages`, an internal mark of how Worktable serves its page. Pages show their Space's images as before.
 
 ## [0.1.47] - 2026-11-13
 

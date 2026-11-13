@@ -12,6 +12,7 @@ import {
 } from "./mcp/catalog.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
+import { readWidgetDocument } from "./widget-store.ts"
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
 
 function tool(name: string) {
@@ -263,7 +264,7 @@ describe("listed tools through MCP", () => {
     await call("worktable_spaces_write", { spaceId, archived: false })
   })
 
-  it("renames an HTML Doc without its HTML", async () => {
+  it("renames an HTML Doc without its HTML, and keeps how its page is served to itself", async () => {
     const { spaceId } = await call("worktable_spaces_write", { name: "Apps" })
     const created = await call("worktable_html_write", {
       spaceId,
@@ -272,8 +273,18 @@ describe("listed tools through MCP", () => {
       html: "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width\"></head><body>Hi</body></html>",
     })
     const htmlId = created.htmlId as string
-    await call("worktable_html_write", { spaceId, htmlId, name: "Team tracker" })
-    expect(await call("worktable_html_read", { spaceId, htmlId })).toMatchObject({ htmlDoc: { name: "Team tracker" } })
+    const renamed = await call("worktable_html_write", { spaceId, htmlId, name: "Team tracker" })
+    const read = await call("worktable_html_read", { spaceId, htmlId })
+    expect(read).toMatchObject({ htmlDoc: { name: "Team tracker" } })
+    // How Worktable serves the page is kept with it, and stays out of what
+    // agents read.
+    expect((await readWidgetDocument(spaceId as string, htmlId)).data?.widget.spaceImages).toBe(true)
+    // Listing HTML Docs is answered in the earlier surface's shape.
+    const listed = await call("worktable_html_read", { request: { action: "list", spaceId } })
+    expect(listed.htmlDocs).toHaveLength(1)
+    for (const result of [created, renamed, read, listed]) {
+      expect(JSON.stringify(result)).not.toContain("spaceImages")
+    }
   })
 
   it("still answers calls in the earlier surface's shape, unlisted", async () => {

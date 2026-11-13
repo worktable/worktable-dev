@@ -3,6 +3,7 @@ import { checkRichTextBlocks, richTextBlocksProblem } from "./rich-text-blocks.t
 import {
   DocumentCompanionKeySchema,
   DocumentFormatIdSchema,
+  foldFileName,
   type DocumentFormatClaim,
   type DocumentFormatId,
   type DocumentHealth,
@@ -262,7 +263,8 @@ export class DocumentFormatRegistry {
   }
 
   forFilename(filename: string): ServerDocumentFormatRegistration | undefined {
-    const lower = filename.toLowerCase()
+    // The file type table's case rule: ASCII letters fold, nothing else.
+    const lower = foldFileName(filename)
     for (const [extension, adapter] of this.#byExtension) {
       if (lower.endsWith(extension)) return adapter
     }

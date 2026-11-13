@@ -267,15 +267,18 @@ name, A to Z folded, no other Unicode folding), `packages/types/src/file-type-no
 - `packages/types/src/file-types.test.ts` "decides by the base name under one
   case rule", "records why wherever surfaces disagree, and nowhere else" and
   "gives every type a policy on every surface, and every surface a default".
+- `document-format-registry.test.ts` "normalizes extensions and resolves
+  filenames deterministically": a Kelvin sign doesn't stand for "k".
 - `document-format-registry.test.ts` "takes JSON as a rich-text Doc only when it
   holds Doc blocks".
 - `routes-documents.test.ts` "keeps HTML that was there an HTML Doc, and takes
   HTML added later as a file a person can open".
 
-**Gaps:** the Doc format registry folds case with full Unicode lowercasing
-(`document-format-registry.ts`), not the table's rule; no Doc extension differs
-under the two today. Nothing yet decides between parts of Worktable on
-different versions.
+The Doc format registry matches names under the same rule
+(`document-format-registry.ts` uses the table's `foldFileName`).
+
+**Gaps:** nothing yet decides between parts of Worktable on different
+versions.
 
 ## Writes and versions
 
@@ -562,11 +565,14 @@ reason for both), `mcp/file-results.ts`.
 - `mcp-document-previews.test.ts` "keeps HTML saved when preview runtime is
   unavailable and fences standalone captures to the source revision".
 
-**Gaps:** a code file (such as `.py` or `.ts`) is a card to people but text to
-agents. Plain text and logs are text to both; CSV and TSV are a table to people
-and text to agents, which carries the same content. No test
-checks that the HTTP API and agent tools report the same identity and revision
-for one file.
+Code files the table knows (`.js`, `.ts`, `.css`) show as text on their page,
+as agents read them. Plain text and logs are text to both; CSV and TSV are a
+table to people and text to agents, which carries the same content.
+
+**Gaps:** a code type the table doesn't list (such as `.py`), and a
+`Dockerfile`, is a card to people and base64 to agents. AVIF is an image to
+people but base64 to agents. No test checks that the HTTP API and agent tools
+report the same identity and revision for one file.
 
 ### 16. Everything can be taken out
 

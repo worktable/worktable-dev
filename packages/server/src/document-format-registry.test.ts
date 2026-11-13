@@ -136,9 +136,13 @@ describe("document format registry", () => {
   it("normalizes extensions and resolves filenames deterministically", () => {
     const registry = new DocumentFormatRegistry([
       adapter("future.canvas", ["canvas"]),
+      adapter("future.kit", ["kit"]),
     ])
-    expect(registry.extensions()).toEqual([".canvas"])
+    expect(registry.extensions()).toEqual([".canvas", ".kit"])
     expect(registry.forFilename("PLAN.CANVAS")?.id).toBe("future.canvas")
+    // The file type table's case rule: the Kelvin sign is no "k".
+    expect(registry.forFilename("set.KIT")?.id).toBe("future.kit")
+    expect(registry.forFilename("set.\u212AIT")).toBeUndefined()
   })
 
   it("enforces projection budgets and preserves format text semantics", async () => {

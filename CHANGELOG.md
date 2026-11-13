@@ -14,6 +14,7 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **HTML Docs:** Icons a page's own code adds, such as rows a Records tool draws with a status icon, are now drawn for everyone, not only with preview tools on.
+- **Files:** JavaScript, TypeScript and CSS files show their text on their page, with a code icon, instead of a card with only Download.
 
 ### Fixed
 

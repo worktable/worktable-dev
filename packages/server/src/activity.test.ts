@@ -10,7 +10,7 @@ import {
   type SpaceFile,
 } from "@worktable/types"
 import { Hono } from "hono"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
@@ -122,6 +122,17 @@ async function agentTool(
   const result = await client.callTool({ name, arguments: { request: args } })
   if (result.isError) throw new Error(JSON.stringify(result.content))
   return (result.structuredContent ?? {}) as Record<string, unknown>
+}
+
+/** A Doc at `path` in the company Space, written by the agent. */
+async function writeDocAt(path: string): Promise<void> {
+  await agentTool("worktable_docs_write", {
+    action: "write",
+    spaceId: "company",
+    docPath: path,
+    content: "# Pulse\n",
+    lifetime: "durable",
+  })
 }
 
 beforeEach(async () => {
@@ -237,16 +248,43 @@ describe("workspace activity", () => {
     expect(rest.entries.map((entry) => entry.action)).toEqual(["doc.created"])
     expect(rest.nextCursor).toBeNull()
 
-    // A deleted Doc keeps its lines, but its comments' words leave with it.
+    // A comment names its Doc. Deleting the Doc erases what its comments
+    // said, from the history kept on disk too, and keeps each line.
+    const stored = async () => {
+      await drainActivity()
+      const dir = join(appDir, "activity")
+      const [key] = await readdir(dir)
+      return readFile(join(dir, key!, "company.jsonl"), "utf8")
+    }
+    const comment = page.entries.find((entry) => entry.action === "comment.created")
+    expect(comment?.target).toMatchObject({ documentId: expect.any(String) })
+    // A line written before comments named their Doc has only a path.
+    recordActivity({
+      spaceId: "company",
+      action: "comment.created",
+      actor: { kind: "person", id: "local:owner" },
+      target: { kind: "doc", path: "pulse" },
+      quote: "An older note on the plan.",
+    })
+    expect(await stored()).toContain("An older note on the plan.")
     await agentTool("worktable_delete", { action: "document", spaceId: "company", path: "pulse" })
-    const afterDelete = await request<ActivityPage>("/api/activity")
+    const kept = await stored()
+    expect(kept).not.toContain("Add the hiring risks.")
+    expect(kept).not.toContain("An older note on the plan.")
+    expect(kept).toContain('"comment.created"')
+
+    // A new Doc at the same path shows its own comments' words only.
+    await writeDocAt("pulse")
+    await request("/api/spaces/company/annotations", {
+      method: "POST",
+      body: { target: { type: "doc", docPath: "pulse" }, category: "comment", body: "A fresh start." },
+    })
+    const fresh = await request<ActivityPage>("/api/activity?spaceId=company")
     expect(
-      afterDelete.entries.map((entry) => [entry.action, entry.quote ?? null])
-    ).toEqual([
-      ["comment.resolved", null],
-      ["comment.created", null],
-      ["doc.created", null],
-    ])
+      fresh.entries
+        .filter((entry) => entry.action.startsWith("comment."))
+        .map((entry) => entry.quote ?? null)
+    ).toEqual(["A fresh start.", null, null, null])
   })
 
   it("names moved docs and record collections as they are called now", async () => {

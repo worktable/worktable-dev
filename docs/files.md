@@ -416,6 +416,10 @@ checks, and stale output presented as current misleads.
 - `share-links-store.test.ts` "opens several links to one document on their
   own, and revoking one leaves the rest": a Doc deleted mid-render answers 404.
 - `deleted-items.test.ts` "take their live editing state with them".
+- `activity.test.ts` "tells people who did what, newest first, without
+  repeating itself": a deleted Doc's comment words leave the history on disk,
+  an older path-only line's too, and a new Doc at the same path shows only its
+  own.
 - `routes-documents.test.ts` "names the Docs that use a file on the file's
   page": a deleted Doc leaves Used in.
 - `search-excerpt.test.ts` "answers within its time budget while the index
@@ -430,14 +434,17 @@ checks, and stale output presented as current misleads.
 A search that answers before its index sync finishes checks each Doc hit
 against the Space's catalog snapshot, so a deleted Doc's excerpt never shows
 (`search-index.ts`). A record deleted or archived leaves the Docs it pointed
-at as the store says so (`doc-referrers.ts`). A comment's words leave the
-activity feed when its Doc is deleted (`activity-feed.ts`).
+at as the store says so (`doc-referrers.ts`). A comment's event in Activity
+names its Doc's id. Deleting a Doc erases what its comments said from the
+stored history, keeping each line, and the feed shows a comment's words only
+with that same Doc (`activity-log.ts`, `activity-feed.ts`, called from
+`share-lifecycle.ts` on every removal). An older event with only a path goes
+with the Doc deleted at that path.
 
-**Gaps:** the activity log keeps a comment's first 280 characters in app data
-after its Doc is deleted, until the log is compacted; the feed matches events
-to Docs by path, so a new Doc at a deleted Doc's path shows the old comments'
-words again. No test uses a download link after its maker lost access to the
-Space.
+**Gaps:** a Doc deleted on disk, outside Worktable, keeps its comments' words
+in the stored history; the feed hides them, but an older event with only a
+path shows again for a new Doc at that path. No test uses a download link
+after its maker lost access to the Space.
 
 ## Safety
 

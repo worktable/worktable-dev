@@ -22,6 +22,9 @@ infrastructure and personal context out of release notes.
 - **Files:** Restoring an earlier version of a large file, moving a file, and an agent reading a large binary file no longer load the whole file into the server's memory.
 - **Records:** A new field can no longer use a name records use for themselves, such as `kind`, `id` or `createdAt`. Worktable says which name to change, and the field's display name can still say it. Collections that already have such a field keep it, and filtering, sorting and grouping by it now read the field instead of the record's own value.
 - **Share links:** When a link can't be saved, the share dialog says why instead of asking you to try again. A field links can't show is marked in the field list instead of offering a box that can never be saved.
+### Fixed
+
+- **Activity:** Deleting a Doc erases what its comments said from Activity. A new Doc made at the same path never shows them.
 
 ## [0.1.46] - 2026-11-13
 

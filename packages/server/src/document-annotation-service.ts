@@ -327,14 +327,14 @@ export async function createDocumentAnnotationForPath(options: {
           annotation.idempotencyKey === options.input.idempotencyKey
       )
       if (existing) {
-        return { annotation: existing, created: false, path: owner.document.path }
+        return { annotation: existing, created: false, path: owner.document.path, documentId: owner.document.documentId }
       }
     }
     const annotation = newAnnotation(options.spaceId, owner, options.input)
     owner.annotations.push(annotation)
     await writeOwner(options.spaceId, owner)
     noteChanged(options.spaceId, owner, annotation)
-    return { annotation, created: true, path: owner.document.path }
+    return { annotation, created: true, path: owner.document.path, documentId: owner.document.documentId }
   }, { materializeIdentity: true })
   if (result.created && options.input.author?.type !== "system") {
     await noteDocumentActivity(options.spaceId, [result.path])
@@ -342,6 +342,7 @@ export async function createDocumentAnnotationForPath(options: {
       spaceId: options.spaceId,
       action: "comment.created",
       path: result.path,
+      documentId: result.documentId,
       author: result.annotation.author,
       body: result.annotation.body,
       category: result.annotation.category,
@@ -611,7 +612,7 @@ export async function replyDocumentAnnotation(options: {
     found.owner.annotations[found.index] = annotation
     await writeOwner(options.spaceId, found.owner)
     noteChanged(options.spaceId, found.owner, annotation)
-    return { annotation, replyId, path: found.owner.document.path }
+    return { annotation, replyId, path: found.owner.document.path, documentId: found.owner.document.documentId }
   })
   if (author.type !== "system") {
     await noteDocumentActivity(options.spaceId, [result.path], { access: commentAccess() })
@@ -619,6 +620,7 @@ export async function replyDocumentAnnotation(options: {
       spaceId: options.spaceId,
       action: "comment.replied",
       path: result.path,
+      documentId: result.documentId,
       author,
       body: options.body,
       category: result.annotation.category,
@@ -652,7 +654,7 @@ export async function resolveDocumentAnnotation(options: {
     found.owner.annotations[found.index] = annotation
     await writeOwner(options.spaceId, found.owner)
     noteChanged(options.spaceId, found.owner, annotation)
-    return { annotation, path: found.owner.document.path }
+    return { annotation, path: found.owner.document.path, documentId: found.owner.document.documentId }
   })
   if (!NON_ENGAGING_ACTORS.has(options.resolvedBy)) {
     await noteDocumentActivity(options.spaceId, [result.path])
@@ -660,6 +662,7 @@ export async function resolveDocumentAnnotation(options: {
       spaceId: options.spaceId,
       action: "comment.resolved",
       path: result.path,
+      documentId: result.documentId,
       author: resolverAuthor(options.resolvedBy),
       body: result.annotation.body,
       category: result.annotation.category,
@@ -752,7 +755,7 @@ export async function createLegacyCompatibleAnnotationV2(
     passageAuthor?: PassageAuthor | null
   },
   beforeWrite?: AnnotationWriteGuard
-): Promise<{ annotation: Annotation; created: boolean }> {
+): Promise<{ annotation: Annotation; created: boolean; documentId: string }> {
   const requestedPath =
     input.target.type === "widget"
       ? input.target.widgetId
@@ -772,7 +775,7 @@ export async function createLegacyCompatibleAnnotationV2(
         if (!projected) {
           throw new Error("Annotation selector requires the common API")
         }
-        return { annotation: projected, created: false }
+        return { annotation: projected, created: false, documentId: owner.document.documentId }
       }
     }
     const target = translateLegacyDocumentAnnotationTarget(
@@ -794,7 +797,7 @@ export async function createLegacyCompatibleAnnotationV2(
     if (!projected) {
       throw new Error("Annotation selector requires the common API")
     }
-    return { annotation: projected, created: true }
+    return { annotation: projected, created: true, documentId: owner.document.documentId }
     // The first comment on a Doc gives it its ID; commenting needs no more.
   }, { materializeIdentity: true, identityAccess: commentAccess() })
 }

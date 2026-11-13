@@ -18,7 +18,7 @@ import {
   resolveDocAliasIn,
   type DocAliases,
 } from "./doc-aliases.ts"
-import { listDocuments } from "./document-query.ts"
+import { listDocuments, readDocumentCatalogSnapshot } from "./document-query.ts"
 import { listRecordCollectionNames } from "./record-store.ts"
 import { getSpaceArchiveInfo, listSpaces } from "./store.ts"
 import { hasScope } from "./token-store.ts"
@@ -150,11 +150,15 @@ async function withCurrentNames(
             current = byPath?.get(moved)
           }
         }
-        // A comment's words leave with its Doc: a deleted Doc keeps its line
-        // in the feed, but not what was said in it.
+        // A comment's words show only with its Doc: never for a deleted
+        // Doc, and, where the event names its Doc, never for a new one at
+        // the same path. Deleting a Doc also erases them from the log.
         const { quote, ...rest } = entry
+        const sameDoc =
+          current !== undefined &&
+          (target.documentId === undefined || target.documentId === current.documentId)
         return {
-          ...(current && quote !== undefined ? { ...rest, quote } : rest),
+          ...(sameDoc && quote !== undefined ? { ...rest, quote } : rest),
           actor,
           target: {
             ...target,
@@ -178,19 +182,36 @@ async function withCurrentNames(
   )
 }
 
+interface NamedDocument {
+  title: string
+  formatId: string
+  documentId?: string
+}
+
 async function namedDocuments(
   spaceIds: string[]
-): Promise<Map<string, Map<string, { title: string; formatId: string }>>> {
+): Promise<Map<string, Map<string, NamedDocument>>> {
   const pairs = await Promise.all(
     spaceIds.map(async (spaceId) => {
-      const items = await listDocuments({
-        spaceId,
-        includeArchived: true,
-      }).catch(() => [])
-      const byPath = new Map<string, { title: string; formatId: string }>()
+      const [items, catalog] = await Promise.all([
+        listDocuments({ spaceId, includeArchived: true }).catch(() => []),
+        readDocumentCatalogSnapshot(spaceId).catch(() => null),
+      ])
+      const ids = new Map<string, string>()
+      for (const entry of catalog?.entries ?? []) {
+        if (entry.kind === "document") {
+          ids.set(entry.descriptor.path, entry.descriptor.documentId)
+        }
+      }
+      const byPath = new Map<string, NamedDocument>()
       for (const item of items) {
         if (item.kind === "document") {
-          byPath.set(item.path, { title: item.title, formatId: item.format.id })
+          const documentId = ids.get(item.path)
+          byPath.set(item.path, {
+            title: item.title,
+            formatId: item.format.id,
+            ...(documentId ? { documentId } : {}),
+          })
         }
       }
       return [spaceId, byPath] as const

@@ -253,6 +253,8 @@ export function noteCommentActivity(options: {
   spaceId: string
   action: "comment.created" | "comment.replied" | "comment.resolved"
   path: string
+  /** The Doc's durable id, where the store has one. */
+  documentId?: string
   author: { type: "user" | "agent" | "system"; id: string; name?: string }
   body?: string
   category?: "comment" | "instruction"
@@ -271,7 +273,11 @@ export function noteCommentActivity(options: {
       id: options.author.id,
       ...(options.author.name ? { name: options.author.name } : {}),
     },
-    target: { kind: "doc", path: options.path },
+    target: {
+      kind: "doc",
+      path: options.path,
+      ...(options.documentId ? { documentId: options.documentId } : {}),
+    },
     ...(options.body ? { quote: options.body } : {}),
     ...(options.category ? { category: options.category } : {}),
   })
@@ -310,6 +316,83 @@ async function appendEvent(event: ActivityEvent): Promise<void> {
     }
     await atomicWriteText(path, `${kept.reverse().join("\n")}\n`)
   })
+}
+
+/** A Doc that was deleted, as its removal names it. */
+export interface DeletedDocQuoteTarget {
+  spaceId: string
+  path: string
+  documentId?: string
+}
+
+/**
+ * Erase the words of comments on Docs that were deleted, keeping each line
+ * of history. An event that names its Doc's id goes with that Doc only; one
+ * recorded before ids were, with only a path, goes with the Doc deleted at
+ * that path. Runs in the background and never fails the delete.
+ */
+export function forgetDeletedDocQuotes(
+  targets: readonly DeletedDocQuoteTarget[]
+): void {
+  const bySpace = new Map<string, DeletedDocQuoteTarget[]>()
+  for (const target of targets) {
+    bySpace.set(target.spaceId, [...(bySpace.get(target.spaceId) ?? []), target])
+  }
+  for (const [spaceId, inSpace] of bySpace) {
+    const ids = new Set(inSpace.flatMap((target) => (target.documentId ? [target.documentId] : [])))
+    const paths = new Set(inSpace.map((target) => target.path))
+    // A target without an id is matched by its path alone.
+    const unnamed = new Set(
+      inSpace.flatMap((target) => (target.documentId ? [] : [target.path]))
+    )
+    forgetQuotes(spaceId, (target) =>
+      target.documentId !== undefined
+        ? ids.has(target.documentId) || unnamed.has(target.path)
+        : paths.has(target.path)
+    )
+  }
+}
+
+/** Erase every comment's words in a deleted Space's history. */
+export function forgetSpaceQuotes(spaceId: string): void {
+  forgetQuotes(spaceId, () => true)
+}
+
+function forgetQuotes(
+  spaceId: string,
+  matches: (target: Extract<ActivityEvent["target"], { kind: "doc" }>) => boolean
+): void {
+  const path = logPath(spaceId)
+  const work = withLogLock(path, async () => {
+    let text: string
+    try {
+      text = await readFile(path, "utf8")
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+      throw error
+    }
+    let changed = false
+    const lines = text.split("\n").map((line) => {
+      if (!line.includes('"quote"')) return line
+      let event: ActivityEvent
+      try {
+        event = JSON.parse(line) as ActivityEvent
+      } catch {
+        return line
+      }
+      if (event.quote === undefined || event.target?.kind !== "doc") return line
+      if (!matches(event.target)) return line
+      const kept: Partial<ActivityEvent> = { ...event }
+      delete kept.quote
+      changed = true
+      return JSON.stringify(kept)
+    })
+    if (changed) await atomicWriteText(path, lines.join("\n"))
+  }).catch((error) => {
+    console.error("[activity] could not erase deleted comments:", logError(error))
+  })
+  pending.add(work)
+  void work.finally(() => pending.delete(work))
 }
 
 async function drainWrites(): Promise<void> {

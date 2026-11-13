@@ -351,7 +351,7 @@ export async function readAnnotation(spaceId: string, annotationId: string): Pro
   return (await findAnnotation(spaceId, annotationId)).annotation;
 }
 
-async function createAnnotationRecord(spaceId: string, input: CreateAnnotationInput, beforeWrite?: AnnotationWriteGuard): Promise<{ annotation: Annotation; created: boolean }> {
+async function createAnnotationRecord(spaceId: string, input: CreateAnnotationInput, beforeWrite?: AnnotationWriteGuard): Promise<{ annotation: Annotation; created: boolean; documentId?: string }> {
   if (await usesDocumentDataV2()) {
     return createLegacyCompatibleAnnotationV2(spaceId, input, beforeWrite)
   }
@@ -538,6 +538,7 @@ export async function createAnnotation(spaceId: string, input: CreateAnnotationI
         spaceId,
         action: "comment.created",
         path,
+        ...(result.documentId ? { documentId: result.documentId } : {}),
         author: result.annotation.author,
         body: result.annotation.body,
         category: result.annotation.category,

@@ -1,3 +1,4 @@
+import { forgetDeletedDocQuotes, forgetSpaceQuotes } from "./activity-log.ts"
 import { isHosted } from "./hosted.ts"
 import {
   revokeLinksForDocuments,
@@ -14,6 +15,24 @@ import {
 } from "./share-store.ts"
 
 export type { DocumentShareChange, DocumentShareTarget }
+
+/**
+ * What a removed document's comments said leaves Activity with it. Every
+ * document removal names its targets here, so this is where it goes.
+ */
+function forgetRemovedComments(
+  targets: readonly DocumentShareTarget[],
+  change: DocumentShareChange
+): void {
+  if (change !== "removed" || targets.length === 0) return
+  forgetDeletedDocQuotes(
+    targets.map((target) => ({
+      spaceId: target.spaceId,
+      path: target.artifactKey,
+      ...(target.documentId ? { documentId: target.documentId } : {}),
+    }))
+  )
+}
 
 function artifactOf(target: DocumentShareTarget): ShareArtifact {
   return {
@@ -38,6 +57,7 @@ export async function invalidateHostedDocumentShares(
     await invalidateDocumentShares(targets.map(artifactOf))
   }
   await revokeLinksForDocuments(targets, change)
+  forgetRemovedComments(targets, change)
 }
 
 /**
@@ -55,6 +75,7 @@ export function withHostedDocumentShareLifecycle<T>(
   if (!isHosted()) {
     return operation(async (targets, change) => {
       await revokeLinksForDocuments(targets, change)
+      forgetRemovedComments(targets, change)
       return 0
     })
   }
@@ -64,6 +85,7 @@ export function withHostedDocumentShareLifecycle<T>(
         targets.map(artifactOf)
       )
       await revokeLinksForDocuments(targets, change)
+      forgetRemovedComments(targets, change)
       return invalidated
     })
   )
@@ -75,4 +97,5 @@ export async function invalidateHostedDocumentSharesForSpace(
 ): Promise<void> {
   if (isHosted()) await invalidateDocumentSharesForSpace(spaceId)
   await revokeLinksForSpace(spaceId, change)
+  if (change === "removed") forgetSpaceQuotes(spaceId)
 }

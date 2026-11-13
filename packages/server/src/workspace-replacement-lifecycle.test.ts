@@ -148,6 +148,25 @@ async function uploadAndPrepareImport(
   expect((await waitForWorkspaceImportJob(id)).state).toBe("ready")
 }
 
+/**
+ * Waits until the server answers again after a replacement. Its job reads
+ * settled a moment before that, while the replacement still clears its own
+ * files, and until then every request but /health is refused. A person's
+ * browser only ever sees the job through the server, so it waits the same way.
+ */
+async function serving(origin: string): Promise<void> {
+  await withDeadline(
+    (async () => {
+      while ((await fetch(`${origin}/api/workspace`)).status === 503) {
+        // test-policy: external-readiness-backoff
+        await Bun.sleep(20)
+      }
+    })(),
+    10_000,
+    "the server did not answer again after the replacement"
+  )
+}
+
 async function withDeadline<T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -578,6 +597,7 @@ describe("live workspace replacement", () => {
       await Bun.sleep(20)
     }
     expect(state).toBe("complete")
+    await serving(origin)
     if (agentIdentity) expect(canAccessSpace("notes", "read", agentIdentity)).toBe(false)
     const replacementCollaborationEpoch = await getWorkspaceCollaborationEpoch()
     expect(replacementCollaborationEpoch).not.toBe(originalCollaborationEpoch)
@@ -684,10 +704,10 @@ describe("live workspace replacement", () => {
     }
     expect(state).toBe("complete")
     expect(seedSchedules).toBe(1)
-    const body = (await (
-      await fetch(`${origin}/api/spaces?includeArchived=true`)
-    ).json()) as { spaces: unknown[] }
-    expect(body.spaces).toEqual([])
+    await serving(origin)
+    const listed = await fetch(`${origin}/api/spaces?includeArchived=true`)
+    expect(listed.status).toBe(200)
+    expect(((await listed.json()) as { spaces: unknown[] }).spaces).toEqual([])
   }, 15_000)
 
   it("keeps writes closed through rollback and reopens after status failure", async () => {
@@ -1147,6 +1167,7 @@ describe("live workspace clear", () => {
       ).state
     ).toBe("replacing")
     expect((await waitForClear(reviewed.id, true)).state).toBe("complete")
+    await serving(origin)
     expect(downloadDuringReplacement).toBe(503)
     expect(ensureWorkspaceManifest()).toMatchObject({
       id: original.id,

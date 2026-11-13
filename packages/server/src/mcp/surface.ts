@@ -63,15 +63,6 @@ export function htmlIconsEnabled(): boolean {
   return true
 }
 
-/**
- * Whether HTML Docs also draw the library icons their own code adds, from
- * the names their scripts write out (html-icons.ts). Held behind the
- * preview, with the guidance that teaches it.
- */
-export function htmlCodeIconsEnabled(): boolean {
-  return configuredMcpSurface() === "preview"
-}
-
 function envSwitch(name: string): boolean | null {
   const env = process.env[name]?.trim().toLowerCase()
   if (env === "1" || env === "true") return true

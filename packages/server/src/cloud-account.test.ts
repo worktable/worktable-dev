@@ -2,6 +2,7 @@ import {
   setLinkEnabled,
   disconnectLink,
   noteAppSetup,
+  linkedAppChoices,
   startLinkedRuntime,
   linkedStatus,
   linkedOpenUrl,
@@ -40,6 +41,8 @@ let linkRequests: {
 }[] = []
 let intents: { app: string; enrollment: { controlHash: string } }[] = []
 let intentStatus = 200
+let appChoicesServed = true
+let chosenHere: string | null = null
 let namesWorktable = true
 let expiry = new Date(Date.now() + 300_000).toISOString()
 let refreshStatus = 200
@@ -59,6 +62,8 @@ beforeEach(async () => {
   linkRequests = []
   intents = []
   intentStatus = 200
+  appChoicesServed = true
+  chosenHere = null
   namesWorktable = true
   expiry = new Date(Date.now() + 300_000).toISOString()
   refreshStatus = 200
@@ -135,6 +140,26 @@ beforeEach(async () => {
       if (body.action === "enable")
         expect(body.workspaceId).toBe("subscription_one")
       if (body.action === "pause") paused = body.paused
+      if (body.action === "apps" || body.action === "choose") {
+        if (!appChoicesServed) return Response.json({}, { status: 400 })
+        if (body.action === "choose") chosenHere = body.clientId
+        return Response.json({
+          apps: [
+            {
+              clientId: "chatgpt-app",
+              name: "ChatGPT",
+              family: "chatgpt",
+              changeUrl: `${cloud}/gateway/worktables/app?app=chatgpt-app`,
+              worktable:
+                chosenHere === "chatgpt-app"
+                  ? { id: `wl_${"b".repeat(32)}`, name: "Notes", here: true }
+                  : { id: "hosted_one", name: "Studio", here: false },
+              extra: "ignored",
+            },
+          ],
+          appsUrl: `${cloud}/gateway/worktables/apps`,
+        })
+      }
       if (body.action === "worktables")
         return Response.json({
           worktables: [
@@ -421,3 +446,45 @@ test("turning on Link from a chat app's steps tells Cloud once per action, and t
     "claude",
   ])
 })
+
+test("Settings learns where the owner's apps work through Link, and moves one to this device", async () => {
+  await startCloudSignIn(origin)
+  await completeCloudSignIn(callback())
+  // Before Link is on, Cloud can't say.
+  expect(await linkedAppChoices()).toBeNull()
+  await setLinkEnabled(true, "subscription_one")
+  const enrollment = linkRequests[0]?.enrollment
+  const listed = await linkedAppChoices()
+  expect(linkRequests.at(-1) as unknown).toEqual({ action: "apps", enrollment })
+  // Only the fields Settings reads, whatever Cloud adds.
+  expect(listed).toEqual({
+    apps: [
+      {
+        clientId: "chatgpt-app",
+        name: "ChatGPT",
+        family: "chatgpt",
+        changeUrl: `${cloud}/gateway/worktables/app?app=chatgpt-app`,
+        worktable: { id: "hosted_one", name: "Studio", here: false },
+      },
+    ],
+    appsUrl: `${cloud}/gateway/worktables/apps`,
+  })
+  // Moving names the app and this device's link, never a Worktable.
+  const moved = await linkedAppChoices("chatgpt-app")
+  expect(linkRequests.at(-1) as unknown).toEqual({
+    action: "choose",
+    enrollment,
+    clientId: "chatgpt-app",
+  })
+  expect(moved?.apps[0]?.worktable).toEqual({
+    id: `wl_${"b".repeat(32)}`,
+    name: "Notes",
+    here: true,
+  })
+  // A Cloud without app choices refuses, and Settings falls back.
+  appChoicesServed = false
+  await expect(linkedAppChoices()).rejects.toMatchObject({
+    code: "LINKED_UNAVAILABLE",
+  })
+})
+

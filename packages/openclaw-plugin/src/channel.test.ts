@@ -1,11 +1,9 @@
 import { describe, expect, it } from "bun:test"
 import type { OpenClawConfig } from "openclaw/plugin-sdk/channel-core"
 import {
-  agentCredentialForConnection,
   isOnePersonWorktable,
   listDirectoryThreads,
   pairingCompletionOnce,
-  pendingAgentRegistrationToPromote,
   resolveWorktableAccount,
   resolveWorktableThreadTarget,
   worktableAccess,
@@ -54,84 +52,14 @@ describe("Worktable channel account setup", () => {
     })
   })
 
-  it("verifies a staged credential before promoting that exact registration", () => {
-    const active = {
-      registrationId: "agent_reg_active",
-      authorizationServer: "https://example.authkit.app",
-      identityEndpoint: "https://example.authkit.app/agent/identity",
-      tokenEndpoint: "https://example.authkit.app/oauth2/token",
-      resource: "https://app.worktable.cloud/api/mcp",
-      assertion: "active-assertion",
-      assertionExpiresAt: "2030-01-01T00:00:00.000Z",
-      refreshToken: "active-refresh",
-      refreshTokenExpiresAt: "2030-02-01T00:00:00.000Z",
-    }
-    const pending = {
-      ...active,
-      registrationId: "agent_reg_pending",
-      assertion: "pending-assertion",
-      refreshToken: "pending-refresh",
-    }
-    const account = {
-      accountId: "default",
-      enabled: true,
-      server: "https://app.worktable.cloud",
-      token: "",
-      authMode: "agent-registration" as const,
-      agentAuth: active,
-      pendingAgentAuth: pending,
-      trustOwnAgents: true,
-      trustAllMembers: false,
-      trustAllAgents: false,
-    }
-
-    expect(agentCredentialForConnection(account)).toEqual(pending)
-    expect(
-      pendingAgentRegistrationToPromote(account, active.registrationId)
-    ).toBeUndefined()
-    expect(
-      pendingAgentRegistrationToPromote(account, pending.registrationId)
-    ).toBe(pending.registrationId)
-  })
-
-  it("treats a staged Agent Registration credential as configured without a static token", () => {
+  it("tells a connection made with Agent Registration to connect again, and setup clears it", () => {
+    // What 0.0.19 and earlier saved for `--agent-registration`.
     const credential = {
       registrationId: "agent_reg_1",
       authorizationServer: "https://example.authkit.app",
-      identityEndpoint: "https://example.authkit.app/agent/identity",
-      tokenEndpoint: "https://example.authkit.app/oauth2/token",
       resource: "https://app.worktable.cloud/api/mcp",
       assertion: "assertion",
-      assertionExpiresAt: "2030-01-01T00:00:00.000Z",
       refreshToken: "refresh",
-      refreshTokenExpiresAt: "2030-02-01T00:00:00.000Z",
-    }
-    const cfg = {
-      channels: {
-        worktable: {
-          server: "https://app.worktable.cloud",
-          authMode: "agent-registration",
-          pendingAgentAuth: credential,
-        },
-      },
-    } as unknown as OpenClawConfig
-    const account = resolveWorktableAccount(cfg)
-    expect(account.token).toBe("")
-    expect(account.pendingAgentAuth).toEqual(credential)
-    expect(worktableChannel.config!.isConfigured!(account, cfg)).toBe(true)
-  })
-
-  it("clears stale Agent Registration credentials when setup switches to a local token", () => {
-    const credential = {
-      registrationId: "agent_reg_stale",
-      authorizationServer: "https://example.authkit.app",
-      identityEndpoint: "https://example.authkit.app/agent/identity",
-      tokenEndpoint: "https://example.authkit.app/oauth2/token",
-      resource: "https://app.worktable.cloud/api/mcp",
-      assertion: "assertion",
-      assertionExpiresAt: "2030-01-01T00:00:00.000Z",
-      refreshToken: "refresh",
-      refreshTokenExpiresAt: "2030-02-01T00:00:00.000Z",
     }
     const cfg = {
       channels: {
@@ -143,6 +71,22 @@ describe("Worktable channel account setup", () => {
         },
       },
     } as unknown as OpenClawConfig
+    const account = resolveWorktableAccount(cfg)
+    expect(account).toMatchObject({ token: "", needsReconnect: true })
+    expect(worktableChannel.config!.isConfigured!(account, cfg)).toBe(false)
+    // OpenClaw does not start it, and shows this as the reason in its
+    // channel status.
+    const reason =
+      "This connection was made with Agent Registration, which Worktable no longer accepts. Connect again: openclaw worktable connect --server https://app.worktable.cloud"
+    expect(worktableChannel.config!.inspectAccount!(cfg, "default")).toEqual({
+      enabled: true,
+      configured: false,
+      tokenStatus: "missing",
+      stateReason: reason,
+    })
+    expect(worktableChannel.config!.unconfiguredReason!(account, cfg)).toBe(
+      reason
+    )
 
     const updated = worktableChannel.setup!.applyAccountConfig({
       cfg,
@@ -152,15 +96,18 @@ describe("Worktable channel account setup", () => {
         token: "local-token",
       },
     })
-    const account = resolveWorktableAccount(updated)
-    expect(account).toMatchObject({
+    expect(resolveWorktableAccount(updated)).toMatchObject({
       server: "http://worktable.test",
       token: "local-token",
-      authMode: "local-token",
-      agentAuth: undefined,
-      pendingAgentAuth: undefined,
+      needsReconnect: false,
     })
-    expect(agentCredentialForConnection(account)).toBeUndefined()
+    expect(
+      (updated.channels as Record<string, unknown>).worktable
+    ).toEqual({
+      enabled: true,
+      server: "http://worktable.test",
+      token: "local-token",
+    })
   })
 
   it("configures an account without a default Space", () => {

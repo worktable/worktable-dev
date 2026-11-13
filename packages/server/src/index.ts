@@ -28,7 +28,11 @@ import { retireWorkspaceDerivedFiles } from "./workspace-reset-files.ts"
 import { removeLeftoverStagedFiles } from "./staged-file.ts"
 import { finalizeWorkspaceClearJob } from "./workspace-clear-jobs.ts"
 import { Hono } from "hono"
-import { cloudCallbackRouter, linkedRouter } from "./routes/linked.ts"
+import {
+  appChoicesRouter,
+  cloudCallbackRouter,
+  linkedRouter,
+} from "./routes/linked.ts"
 import { startLinkedRuntime } from "./linked-runtime.ts"
 import { startGrokBotRuntime } from "./grok-bot-runtime.ts"
 import { startMcpEventsRuntime } from "./mcp-events.ts"
@@ -561,6 +565,7 @@ app.route("/api/diagnostics", diagnosticsRouter);
 app.route("/api/system", systemRouter);
 app.route("/api/shares", sharesRouter);
 app.route("/api/linked", linkedRouter);
+app.route("/api/app-choices", appChoicesRouter);
 app.route("/api/sidebar", sidebarRouter);
 app.route("/api/spaces", spacesRouter);
 app.route("/api/spaces/:spaceId/documents", documentsRouter);

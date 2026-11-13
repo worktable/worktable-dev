@@ -319,18 +319,14 @@ export async function verifyAuthServerJwt(
       requiredClaims: ["exp", "sub"],
     })
     if (typeof payload.sub !== "string") return null
+    // A token that carries `act` was issued to an agent acting for someone
+    // (WorkOS Agent Registration, retired). Its `sub` names that agent, so
+    // it is refused whatever `act` says, and never read as a person.
+    if (payload.act !== undefined) return null
     const subject = payload.sub
-    const delegatedBy =
-      payload.act &&
-      typeof payload.act === "object" &&
-      typeof (payload.act as { sub?: unknown }).sub === "string"
-        ? (payload.act as { sub: string }).sub
-        : null
-    const workspaceOwner = delegatedBy ?? subject
     const team = isHosted() && teamsEnabled();
-    if (team ? !cloudTeamMemberForSubject(authServer, workspaceOwner) : workspaceOwner !== ownerSubject) return null
-    if (team && !delegatedBy && (typeof payload.client_id !== "string" || !payload.client_id)) return null
-    const isDelegatedAgent = delegatedBy !== null
+    if (team ? !cloudTeamMemberForSubject(authServer, subject) : subject !== ownerSubject) return null
+    if (team && (typeof payload.client_id !== "string" || !payload.client_id)) return null
     return {
       user: "owner",
       workspace: getWorkspaceRoot(),
@@ -338,15 +334,8 @@ export async function verifyAuthServerJwt(
       credentialExpiresAt: (payload.exp as number) * 1000,
       ...(typeof payload.iat === "number" ? { credentialIssuedAt: payload.iat * 1000 } : {}),
       scopes: AS_BEARER_SCOPES,
-      agent: isDelegatedAgent ? subject : team ? payload.client_id as string : null,
-      principal: isDelegatedAgent
-        ? {
-            id: `workos-agent:${subject}`,
-            type: "agent",
-            displayName: "Connected agent",
-            authorizedBy: `workos:${delegatedBy}`,
-          }
-        : team ? { id: hostedOAuthPrincipalId(payload.client_id as string, subject), type: "agent", displayName: signInAgentName(hostedOAuthPrincipalId(payload.client_id as string, subject), typeof payload.client_name === "string" && payload.client_name ? payload.client_name : "Connected agent"), authorizedBy: `workos:${subject}` } : {
+      agent: team ? payload.client_id as string : null,
+      principal: team ? { id: hostedOAuthPrincipalId(payload.client_id as string, subject), type: "agent", displayName: signInAgentName(hostedOAuthPrincipalId(payload.client_id as string, subject), typeof payload.client_name === "string" && payload.client_name ? payload.client_name : "Connected agent"), authorizedBy: `workos:${subject}` } : {
             id: `workos:${subject}`,
             type: "human",
             displayName: "Worktable user",

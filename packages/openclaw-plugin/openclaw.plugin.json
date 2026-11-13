@@ -2,7 +2,7 @@
   "id": "worktable",
   "name": "Worktable",
   "description": "Connect OpenClaw to a persistent workspace shared with your agents—local, self-hosted, or in the cloud.",
-  "version": "0.0.20",
+  "version": "0.0.21",
   "icon": "https://www.worktable.dev/favicon.svg",
   "skills": ["./skills"],
   "channels": ["worktable"],
@@ -44,68 +44,10 @@
             "enum": ["local-token", "agent-registration"]
           },
           "agentAuth": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "registrationId": { "type": "string", "minLength": 1 },
-              "authorizationServer": { "type": "string", "format": "uri" },
-              "identityEndpoint": { "type": "string", "format": "uri" },
-              "tokenEndpoint": { "type": "string", "format": "uri" },
-              "resource": { "type": "string", "format": "uri" },
-              "assertion": { "type": "string", "minLength": 1 },
-              "assertionExpiresAt": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "refreshToken": { "type": "string", "minLength": 1 },
-              "refreshTokenExpiresAt": {
-                "type": "string",
-                "format": "date-time"
-              }
-            },
-            "required": [
-              "registrationId",
-              "authorizationServer",
-              "identityEndpoint",
-              "tokenEndpoint",
-              "resource",
-              "assertion",
-              "assertionExpiresAt",
-              "refreshToken",
-              "refreshTokenExpiresAt"
-            ]
+            "type": "object"
           },
           "pendingAgentAuth": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "registrationId": { "type": "string", "minLength": 1 },
-              "authorizationServer": { "type": "string", "format": "uri" },
-              "identityEndpoint": { "type": "string", "format": "uri" },
-              "tokenEndpoint": { "type": "string", "format": "uri" },
-              "resource": { "type": "string", "format": "uri" },
-              "assertion": { "type": "string", "minLength": 1 },
-              "assertionExpiresAt": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "refreshToken": { "type": "string", "minLength": 1 },
-              "refreshTokenExpiresAt": {
-                "type": "string",
-                "format": "date-time"
-              }
-            },
-            "required": [
-              "registrationId",
-              "authorizationServer",
-              "identityEndpoint",
-              "tokenEndpoint",
-              "resource",
-              "assertion",
-              "assertionExpiresAt",
-              "refreshToken",
-              "refreshTokenExpiresAt"
-            ]
+            "type": "object"
           },
           "participantName": {
             "type": "string",
@@ -149,12 +91,14 @@
           "sensitive": true
         },
         "agentAuth": {
-          "label": "Worktable Agent Registration",
+          "label": "Retired Agent Registration",
+          "help": "No longer used. Connect again with openclaw worktable connect --server <address>.",
           "sensitive": true,
           "advanced": true
         },
         "pendingAgentAuth": {
-          "label": "Pending Agent Registration",
+          "label": "Retired Agent Registration",
+          "help": "No longer used. Connect again with openclaw worktable connect --server <address>.",
           "sensitive": true,
           "advanced": true
         },

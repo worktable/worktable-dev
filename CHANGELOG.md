@@ -12,12 +12,22 @@ infrastructure and personal context out of release notes.
 ### Added
 
 - **HTML Docs:** Comment on one part of a page. Press **Comment** on the page, point at a heading, a number, a chart or a table cell, and write. The comment stays pinned to that part when an agent rewrites the page, moves to **Page Changed** when the part is gone, and tells the agent which lines of the page it is about.
+- **Chat apps:** **Settings → Agents** shows which Worktable ChatGPT, Claude or Grok works in, and **Move Here** moves it to the Worktable you're in after asking.
+
+### Changed
+
+- **ChatGPT auto-reply:** **Turn On** says to paste the line into a Work chat, on chatgpt.com or in the desktop app with Cloud selected.
+- **Worktable Link:** An app that reaches this Worktable through Link opens from **Edit** with its auto-reply, and **Manage in Cloud** replaces Disconnect.
+- **Agents:** What agents read about an HTML Doc no longer includes `spaceImages`, an internal mark of how Worktable serves its page. Pages show their Space's images as before.
+- **Agents:** Auto-reply for a chat app connected through Link, such as ChatGPT, reads On only once Link is online. While Link is still connecting, or has lost its connection, it reads as needing attention, and what you send the agent waits until the agent can reach this computer instead of going out early.
+
+### Removed
+
+- **Agents:** Worktable no longer accepts a connection made through Agent Registration, which Worktable Cloud has stopped offering. An agent connected that way still shows in **Settings → Agents**, answers nothing, and can only be disconnected. Connect an OpenClaw agent again with `openclaw worktable connect --server <address>` and approve it in Worktable. OpenClaw plugin 0.0.21 says so when it starts.
+
 ### Fixed
 
 - **Comments:** A comment on a path with no Doc, such as `readme.md` for the Doc `readme`, now says the Doc was not found and that a Doc's path has no extension, instead of failing with "Something went wrong". Replying to or resolving a comment that is gone says so too.
-### Changed
-
-- **Agents:** What agents read about an HTML Doc no longer includes `spaceImages`, an internal mark of how Worktable serves its page. Pages show their Space's images as before.
 
 ## [0.1.47] - 2026-11-13
 

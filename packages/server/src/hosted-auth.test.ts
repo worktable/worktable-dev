@@ -110,7 +110,7 @@ describe("hosted browser assertions", () => {
     const request = new Request(`${origin}/api/mcp`, {
       headers: {
         [GATEWAY_HEADER]: admission,
-        [ACTOR_HEADERS.ID]: "workos-agent:agent_1",
+        [ACTOR_HEADERS.ID]: "oauth:test:agent_1",
         [ACTOR_HEADERS.TYPE]: "agent",
         [ACTOR_HEADERS.NAME]: "OpenClaw",
         [ACTOR_HEADERS.AUTHORIZED_BY]: `workos:${owner}`,

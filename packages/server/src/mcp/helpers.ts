@@ -48,22 +48,15 @@ const accessRefusals = new WeakSet<object>()
 /**
  * A call refused for the agent's access, naming the access that allows it.
  * No OAuth challenge: signing in again never adds access here, turning it on
- * for the agent does. `threadsOnly` is an agent whose connection grants
- * threads and nothing else.
+ * for the agent does.
  */
-export function mkAccessErr(
-  toolName: string,
-  requiredScope: string,
-  options: { threadsOnly?: boolean } = {}
-) {
+export function mkAccessErr(toolName: string, requiredScope: string) {
   const access = accessForScope(requiredScope)
   const label = access ? ACCESS_LABELS[access] : null
   const result = mkErr(
     !label
       ? `${toolName} isn't available to agents here.`
-      : options.threadsOnly && access !== "threads"
-        ? `${toolName} needs ${label} access. Agents connected this way can use threads only.`
-        : `${toolName} needs ${label} access, which this agent doesn't have here. Turn on ${label} for this agent in Settings → Agents.`
+      : `${toolName} needs ${label} access, which this agent doesn't have here. Turn on ${label} for this agent in Settings → Agents.`
   )
   accessRefusals.add(result)
   return result

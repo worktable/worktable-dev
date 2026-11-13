@@ -94,7 +94,9 @@ runs on the same machine, more than the 10% limit. The nightly and release
 gates pair a base and a head on one machine in alternating rounds and judge
 them with `scripts/perf/gate.ts`. A change fails only when it exceeds both
 its floor and k standard errors of the change, where the standard error
-comes from the run-to-run spread in the same runs:
+comes from the run-to-run spread in the same runs. A screen only one side
+has, such as a Settings section added, renamed or removed since the base, is
+listed and not judged:
 
 | Measure                            | Floor                          |
 | ---------------------------------- | ------------------------------ |

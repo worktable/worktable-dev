@@ -55,6 +55,44 @@ export function appFamily(name: string): AppFamily | null {
 }
 
 /**
+ * Where each app the person connected at the shared address works, as
+ * Settings → Agents shows it in one Worktable. `here` marks the Worktable
+ * asking: the one open on Cloud, or a linked device's own. A device asks
+ * through its Link session with `{action: "apps", enrollment}`, and moves an
+ * app to itself with `{action: "choose", enrollment, clientId}`; the browser
+ * on Cloud uses `/api/app-choices` in its Worktable. Older Clouds answer 400
+ * or 404, and Settings then shows the setup steps without them.
+ */
+export const AppChoice = z
+  .object({
+    clientId: z.string().min(1).max(512),
+    name: z.string().max(200),
+    family: z.enum(APP_FAMILIES).nullable(),
+    /** Cloud's page that changes where this app works. */
+    changeUrl: z.string().url().max(2048),
+    /** Null until the person has a Worktable the app can work in. */
+    worktable: z
+      .object({
+        id: z.string().min(1).max(200),
+        name: z.string().max(200),
+        /** The device a linked Worktable is on. */
+        device: z.string().max(200).optional(),
+        here: z.boolean(),
+      })
+      .nullable(),
+  })
+  .strip()
+export type AppChoice = z.infer<typeof AppChoice>
+export const AppChoices = z
+  .object({
+    apps: z.array(AppChoice).max(200),
+    /** Cloud's Apps page, which lists every app and moves one anywhere. */
+    appsUrl: z.string().url().max(2048),
+  })
+  .strip()
+export type AppChoices = z.infer<typeof AppChoices>
+
+/**
  * The person turned on Link from a chat app's setup steps in this linked
  * Worktable, so the app works in it: sent once per such action by the device
  * with its owner's Cloud session. Viewing the steps sends nothing. Cloud

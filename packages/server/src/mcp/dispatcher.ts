@@ -190,10 +190,13 @@ import {
 import type { McpSurface } from "./surface.ts"
 import {
   delimitedChanges,
+  IMAGE_MAX_BYTES,
+  isAvifFile,
   isDelimitedFile,
   fileReadsAs,
   readableFileSource,
 } from "./file-results.ts"
+import { avifAsPng } from "../agent-image-conversion.ts"
 import { withResultMedia } from "./media.ts"
 import { filesEnabled } from "../files-enabled.ts"
 import {
@@ -1461,6 +1464,7 @@ async function _dispatchOperationInner(
       // all at one revision; anything else is read as before. A file that
       // comes by link alone is hashed for its revision, never held whole.
       const linked = !context.legacyFileRead && Boolean(context.fileLinkOrigin)
+      const preview = context.surface === "preview"
       const file = namesAFile(args["path"] as string)
         ? await readCurrentFileSource({
             spaceId: args["spaceId"] as string,
@@ -1468,7 +1472,11 @@ async function _dispatchOperationInner(
             bytes: (current) =>
               !linked ||
               current.pinned.size <= FILE_INLINE_BINARY_MAX_BYTES ||
-              fileReadsAs(current.path, current.pinned.size) !== null,
+              fileReadsAs(current.path, current.pinned.size, { preview }) !== null ||
+              // An AVIF the preview surface may convert into an image.
+              (preview &&
+                isAvifFile(current.path) &&
+                current.pinned.size <= IMAGE_MAX_BYTES),
           })
         : null
       if (file && !file.bytes) {
@@ -1523,7 +1531,34 @@ async function _dispatchOperationInner(
             result.fileRevision
           ),
         }
-        const readable = readableFileSource(result.path, result.bytes)
+        const readable = readableFileSource(result.path, result.bytes, { preview })
+        // On the preview surface an AVIF comes as a PNG the agent can see,
+        // converted in the sandboxed preview browser.
+        const converted =
+          !readable && preview && isAvifFile(result.path)
+            ? await avifAsPng(result.bytes)
+            : null
+        if (converted) {
+          return withResultMedia(
+            { ...fields, encoding: "image" as const, mediaType: "image/png" },
+            [
+              {
+                type: "image",
+                data: Buffer.from(converted).toString("base64"),
+                mimeType: "image/png",
+              },
+            ]
+          )
+        }
+        // An AVIF that couldn't be converted, past what a tool result
+        // carries well, comes by link like any other binary file.
+        if (
+          !readable &&
+          "downloadUrl" in fields &&
+          result.bytes.byteLength > FILE_INLINE_BINARY_MAX_BYTES
+        ) {
+          return { ...fields, encoding: "download" as const }
+        }
         if (!readable) {
           return {
             ...fields,

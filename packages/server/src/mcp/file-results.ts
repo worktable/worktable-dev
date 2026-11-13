@@ -8,6 +8,7 @@ import {
   fileDelimiter,
   fileTypeFor,
   fileTypePolicy,
+  foldFileName,
   parseDelimitedText,
 } from "@worktable/types"
 
@@ -17,9 +18,52 @@ export function isDelimitedFile(path: string): boolean {
 }
 
 /** Images up to this size travel as images; larger ones as base64. */
-const IMAGE_MAX_BYTES = 5 * 1024 * 1024
+export const IMAGE_MAX_BYTES = 5 * 1024 * 1024
 /** Text up to this size travels as text. */
 const TEXT_MAX_BYTES = 1024 * 1024
+
+/**
+ * Source code the file type table doesn't list, by extension, which agents
+ * on the preview surface read as text. Its page still shows it as a file.
+ */
+const PREVIEW_CODE_EXTENSIONS = new Set([
+  "py", "pyi", "rb", "go", "rs", "java", "kt", "kts", "scala", "swift", "m",
+  "c", "h", "cc", "cpp", "cxx", "hpp", "hh", "cs", "fs", "php", "pl", "pm",
+  "lua", "r", "jl", "dart", "ex", "exs", "erl", "hrl", "hs", "clj", "cljs",
+  "ml", "mli", "nim", "zig", "sh", "bash", "zsh", "fish", "ps1", "sql",
+  "graphql", "gql", "proto", "tsx", "jsx", "mjs", "cjs", "mts", "cts", "vue",
+  "svelte", "scss", "sass", "less", "tf", "hcl", "gradle", "cmake", "mk",
+])
+
+/** A path's extension under the file type table's case rule, or "". */
+function extensionOf(path: string): string {
+  const base = path.slice(path.lastIndexOf("/") + 1)
+  const dot = base.lastIndexOf(".")
+  return dot <= 0 ? "" : foldFileName(base.slice(dot + 1))
+}
+
+/**
+ * How an agent reads a file of this type: on the preview surface, source
+ * code the table doesn't list and a Dockerfile come as text.
+ */
+function agentReads(path: string, preview: boolean) {
+  const type = fileTypeFor(path)
+  const reads = fileTypePolicy(type, "agent")
+  if (
+    preview &&
+    reads === "bytes" &&
+    (type === "dockerfile" ||
+      (type === null && PREVIEW_CODE_EXTENSIONS.has(extensionOf(path))))
+  ) {
+    return { type, reads: "text" as const }
+  }
+  return { type, reads }
+}
+
+/** Whether a file is an AVIF, which the preview surface converts for agents. */
+export function isAvifFile(path: string): boolean {
+  return fileTypeFor(path) === "avif"
+}
 
 /**
  * How a file of this name and size may read: as an image or as text when it
@@ -28,10 +72,10 @@ const TEXT_MAX_BYTES = 1024 * 1024
  */
 export function fileReadsAs(
   path: string,
-  byteLength: number
+  byteLength: number,
+  options: { preview?: boolean } = {}
 ): "image" | "text" | null {
-  const type = fileTypeFor(path)
-  const reads = fileTypePolicy(type, "agent")
+  const { type, reads } = agentReads(path, options.preview === true)
   if (type !== null && reads === "image") {
     return byteLength <= IMAGE_MAX_BYTES ? "image" : null
   }
@@ -41,12 +85,13 @@ export function fileReadsAs(
 /** A file as an image or as text, when it is one and small enough. */
 export function readableFileSource(
   path: string,
-  bytes: Uint8Array
+  bytes: Uint8Array,
+  options: { preview?: boolean } = {}
 ):
   | { kind: "image"; mediaType: string }
   | { kind: "text"; text: string }
   | null {
-  const reads = fileReadsAs(path, bytes.byteLength)
+  const reads = fileReadsAs(path, bytes.byteLength, options)
   if (reads === null) return null
   if (reads === "image") {
     return { kind: "image", mediaType: FILE_TYPES[fileTypeFor(path)!].mediaType }

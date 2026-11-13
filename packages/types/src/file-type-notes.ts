@@ -30,8 +30,8 @@ export const FILE_TYPE_NOTES: {
 } = {
   avif: {
     agent: {
-      why: "Agents take images as PNG, JPEG, GIF or WebP, so an AVIF comes as base64.",
-      fix: "Convert it to PNG when an agent reads it, so it arrives as an image.",
+      why: "Agents take images as PNG, JPEG, GIF or WebP, so an AVIF comes as base64. On the MCP preview surface it is converted to PNG in the sandboxed preview browser.",
+      fix: "Release the preview surface's conversion.",
     },
     share: {
       why: "The shared-page policy, which the Cloud gateway enforces too, accepts PNG, JPEG, GIF and WebP data URLs only.",

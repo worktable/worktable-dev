@@ -413,6 +413,17 @@ export function registerTools(
   registerCompanyKnowledgeTools(server, {
     scopes,
     urlOrigin: urlOriginFor(),
+    preview: surface === "preview",
+    // Agents often start with search, so it carries the skills line too.
+    ...(surface === "preview" && callerIdentity
+      ? {
+          notice: (operationId: string) =>
+            skillChangeNotice(
+              skillReaderFor({ ...callerIdentity, ...sameCaller(callerIdentity), scopes }),
+              operationId
+            ),
+        }
+      : {}),
   })
 
   for (const tool of catalogTools(surface)) {

@@ -328,10 +328,11 @@ describe("skill libraries", () => {
     )
     expect(await notices()).toBeUndefined()
 
-    // After a break, the next call starts a session and names the skills again.
+    // After a break, the next call starts a session and names the skills
+    // again, even when that call is a search.
     setSystemTime(new Date(Date.now() + SESSION_GAP_MS + 1000))
     try {
-      expect(await notices()).toBe(
+      expect((await call(agent, "search", { query: "release" })).notices).toBe(
         "Skills from your team's Worktable libraries apply to you: release-checklist. worktable_skills_read returns the current ones."
       )
       expect(await notices()).toBeUndefined()

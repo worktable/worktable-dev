@@ -44,6 +44,9 @@
             ],
             "additionalProperties": false
           }
+        },
+        "notices": {
+          "type": "string"
         }
       },
       "required": [
@@ -115,6 +118,9 @@
             "type": "string"
           },
           "additionalProperties": {}
+        },
+        "notices": {
+          "type": "string"
         }
       },
       "required": [

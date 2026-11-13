@@ -446,7 +446,8 @@ describe("released tool surface", () => {
     expect(names(preview)).toEqual([...names(released), ...previewOnly])
     // Preview holds changes until agent directories review them, each with
     // the inputs it adds. Every other tool is identical.
-    const held: Record<string, string[]> = { worktable_state: [] }
+    // search and fetch only add notices to their output on preview.
+    const held: Record<string, string[]> = { worktable_state: [], search: [], fetch: [] }
     expect(
       preview.filter((tool) => !(tool.name in held) && !previewOnly.includes(tool.name))
     ).toEqual(released.filter((tool) => !(tool.name in held)))

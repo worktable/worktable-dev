@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { HTML_ELEMENT_QUOTE_LENGTH, HtmlElementSchema } from "./html-element";
+import { HTML_ELEMENT_QUOTE_LENGTH, type HtmlElement } from "./html-element";
 
 export const AnnotationCategorySchema = z.enum(["comment", "instruction"]);
 
@@ -9,6 +9,19 @@ export const AnnotationAuthorSchema = z.object({
   type: z.enum(["user", "agent", "system"]),
   id: z.string(),
   name: z.string().optional(),
+});
+
+/** An element of an HTML Doc's page, as a comment keeps it: see HtmlElement. */
+export const HtmlElementSchema: z.ZodType<HtmlElement> = z.object({
+  tag: z.string().min(1).max(40),
+  id: z.string().min(1).max(200).optional(),
+  classes: z.array(z.string().min(1).max(80)).max(6).optional(),
+  attrs: z.record(z.string().max(40), z.string().max(160)).optional(),
+  within: z.string().max(120).optional(),
+  heading: z.string().max(120).optional(),
+  path: z.string().min(1).max(600),
+  html: z.string().max(300).optional(),
+  pin: z.number().min(0).max(1).optional(),
 });
 
 export const AnnotationTargetSchema = z.discriminatedUnion("type", [

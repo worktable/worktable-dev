@@ -7,7 +7,7 @@ import {
 } from "react"
 import {
   HTML_ELEMENT_QUOTE_LENGTH,
-  HtmlElementSchema,
+  readHtmlElement,
   type Annotation,
   type HtmlElement,
 } from "@worktable/types"
@@ -137,14 +137,14 @@ export function useElementComments({
       const anchor = data["anchor"] as
         | { quote?: unknown; element?: unknown }
         | undefined
-      const element = HtmlElementSchema.safeParse(anchor?.element)
+      const element = readHtmlElement(anchor?.element)
       const rect = rectFrom(data["rect"])
-      if (!mode || !element.success || !rect) return
+      if (!mode || !element || !rect) return
       const quote =
         typeof anchor?.quote === "string"
           ? anchor.quote.slice(0, HTML_ELEMENT_QUOTE_LENGTH)
           : ""
-      setPicked({ ...(quote ? { quote } : {}), element: element.data, rect })
+      setPicked({ ...(quote ? { quote } : {}), element, rect })
       onPick()
     } else if (data.type === "worktable.comment.rect") {
       const rect = rectFrom(data["rect"])

@@ -1,35 +1,65 @@
-import { z } from "zod"
-
 /**
  * An element of an HTML Doc a comment is about. Agents rewrite these pages,
  * so nothing here is a position: the element is found again by what it is
  * and where it sits, as a passage is found by its words. The page matches it
  * against the elements on screen and the server against the page as written;
  * both use matchHtmlElement so they agree on where a comment belongs.
+ *
+ * This module has no dependencies: the app loads it with an HTML Doc.
+ * HtmlElementSchema, beside the other comment schemas, is its saved form.
  */
-export const HtmlElementSchema = z.object({
+export interface HtmlElement {
   /** Lowercase tag name. */
-  tag: z.string().min(1).max(40),
-  id: z.string().min(1).max(200).optional(),
-  classes: z.array(z.string().min(1).max(80)).max(6).optional(),
+  tag: string
+  id?: string
+  classes?: string[]
   /** Attributes that name the element: data-*, role, href, src, alt and the like. */
-  attrs: z.record(z.string().max(40), z.string().max(160)).optional(),
+  attrs?: Record<string, string>
   /** Text of the nearest ancestor that says more than the element does. */
-  within: z.string().max(120).optional(),
+  within?: string
   /** The last heading before the element. */
-  heading: z.string().max(120).optional(),
+  heading?: string
   /** Tags from the body down, as `section#pricing > table > tr:nth-of-type(3)`. */
-  path: z.string().min(1).max(600),
+  path: string
   /** Its opening tag as the browser had it. */
-  html: z.string().max(300).optional(),
+  html?: string
   /**
    * How far along the element's width the comment was pinned, from 0 to 1.
    * Places the pin only; it never helps find the element.
    */
-  pin: z.number().min(0).max(1).optional(),
-})
+  pin?: number
+}
 
-export type HtmlElement = z.infer<typeof HtmlElementSchema>
+/**
+ * Reads an element as a page's runtime describes it, dropping anything that
+ * is not the expected kind. The server checks sizes when the comment is saved.
+ */
+export function readHtmlElement(value: unknown): HtmlElement | null {
+  if (!value || typeof value !== "object") return null
+  const from = value as Record<string, unknown>
+  if (typeof from["tag"] !== "string" || typeof from["path"] !== "string")
+    return null
+  const element: HtmlElement = { tag: from["tag"], path: from["path"] }
+  for (const name of ["id", "within", "heading", "html"] as const) {
+    const text = from[name]
+    if (typeof text === "string" && text) element[name] = text
+  }
+  const classes = from["classes"]
+  if (Array.isArray(classes))
+    element.classes = classes.filter(
+      (name): name is string => typeof name === "string" && name.length > 0
+    )
+  const attrs = from["attrs"]
+  if (attrs && typeof attrs === "object")
+    element.attrs = Object.fromEntries(
+      Object.entries(attrs).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string"
+      )
+    )
+  const pin = from["pin"]
+  if (typeof pin === "number" && pin >= 0 && pin <= 1) element.pin = pin
+  return element
+}
 
 /** How much of an element's text a comment keeps as its quote. */
 export const HTML_ELEMENT_QUOTE_LENGTH = 200

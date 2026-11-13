@@ -107,8 +107,17 @@ export function matchHtmlElement(
   candidates: readonly HtmlElementCandidate[]
 ): HtmlElementMatch | null {
   const text = anchor.text ?? ""
+  const named = Object.entries(anchor.attrs ?? {})
+  /**
+   * Says the same thing; or, for an element with no words such as an image,
+   * is named the same by its attributes.
+   */
   const same = (candidate: HtmlElementCandidate) =>
-    (candidate.text ?? "") === text
+    (candidate.text ?? "") === text &&
+    (text !== "" ||
+      named.every(([name, value]) => candidate.attrs?.[name] === value))
+  /** Whether what it says, or how it is named, is enough to know it by. */
+  const telling = text.length >= 12 || (!text && named.length > 0)
   const found = (index: number): HtmlElementMatch => ({
     index,
     match: same(candidates[index]!) ? "exact" : "fuzzy",
@@ -198,8 +207,9 @@ export function matchHtmlElement(
   }
 
   // The one element that still says the same thing under the same heading
-  // is it, wherever it moved. A few words could be anything's.
-  if (text.length >= 16) {
+  // is it, wherever it moved; so is the one image still named the same. A
+  // few words could be anything's.
+  if (text.length >= 16 || (!text && named.length > 0)) {
     const worded = candidates.flatMap((candidate, index) =>
       same(candidate) ? [index] : []
     )
@@ -266,15 +276,27 @@ export function matchHtmlElement(
     (candidate, index) =>
       candidate.path === anchor.path && placedLike(candidate, index)
   )
-  if (placed >= 0 && context >= 24 && measured[placed]!.nearby >= 0.8)
+  // Unless what it was known by is now on another element nearby: then
+  // either could be it, and that is settled below.
+  const knownElsewhere =
+    telling &&
+    placed >= 0 &&
+    !same(candidates[placed]!) &&
+    candidates.some(
+      (candidate, index) =>
+        index !== placed && same(candidate) && placedLike(candidate, index)
+    )
+  if (
+    placed >= 0 &&
+    !knownElsewhere &&
+    context >= 24 &&
+    measured[placed]!.nearby >= 0.8
+  )
     return found(placed)
 
   // A word or a number says little about which element it is: "No" is in
   // every other cell. Short text counts for less, and less is then needed.
   const textWeight = 0.35 * Math.min(1, text.length / 12)
-  /** Whether what it says, or how it is named, is enough to know it by. */
-  const telling =
-    text.length >= 12 || (!text && Object.keys(anchor.attrs ?? {}).length > 0)
   const score = (candidate: HtmlElementCandidate, index: number) => {
     // Look-alikes are other elements: among other text, under another
     // heading, or saying something else.

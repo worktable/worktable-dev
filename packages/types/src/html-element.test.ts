@@ -84,6 +84,24 @@ describe("matchHtmlElement", () => {
     ).toEqual({ index: 0, match: "exact" })
   })
 
+  it("knows an element with no words by how it is named", () => {
+    const image = (name: string, place: number): HtmlElementCandidate => ({
+      attrs: { src: `${name}.png`, alt: name },
+      before: "Our partners, in the order they joined.",
+      after: "Become a partner by writing to us.",
+      heading: "Partners",
+      path: `main > section > img:nth-of-type(${place})`,
+    })
+    // Two logos swapped: the comment stays with its logo, not its place.
+    expect(
+      matchHtmlElement(image("acme", 1), [image("birch", 1), image("acme", 2)])
+    ).toEqual({ index: 1, match: "exact" })
+    // The logo was replaced where it stood: that is the element, changed.
+    expect(
+      matchHtmlElement(image("acme", 1), [image("acme-new", 1), image("birch", 2)])
+    ).toEqual({ index: 0, match: "fuzzy" })
+  })
+
   it("keeps an element by its id through any rewrite", () => {
     const page: HtmlElementCandidate[] = [
       { text: "Other", path: "main > div:nth-of-type(1)" },

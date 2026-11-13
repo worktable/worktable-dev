@@ -100,7 +100,16 @@ import { AgentEditDialog } from "@/components/agents/agent-edit-dialog"
 import { AutoReplyDot } from "@/components/agents/auto-reply"
 import { DesktopAgentSkillsGroup } from "./desktop-agent-skills"
 import { GrokBotSetupPanel } from "@/components/agents/grok-bot-setup"
-import { ChatAppWays, LocalChatSteps } from "@/components/agents/chat-app-ways"
+import {
+  ChatAppWays,
+  LocalChatSteps,
+  OfficialAppSteps,
+} from "@/components/agents/chat-app-ways"
+import {
+  appForClient,
+  useAppChoices,
+  worktableLabel,
+} from "@/lib/app-choices"
 import { GROK_BOT_STATUS_LABELS, grokAutoReply } from "@/lib/grok-bot-status"
 import {
   AGENT_SETUP_CATEGORIES,
@@ -282,6 +291,10 @@ function CloudNativeAppsPanel({
       />
       {app === "grok-bot" ? (
         <GrokBotSetupPanel connection={connection} open={active} />
+      ) : app === "chatgpt" ? (
+        <ol className="space-y-1">
+          <OfficialAppSteps app="chatgpt" first={1} active={active} />
+        </ol>
       ) : (
         <>
           <p className="text-sm text-muted-foreground">
@@ -1330,6 +1343,7 @@ export function ConnectedAgentsGroup() {
   const [editingGrok, setEditingGrok] = useState<string | null>(null)
   const [grokOpen, setGrokOpen] = useState(false)
   const [confirmingGrok, setConfirmingGrok] = useState(false)
+  const appChoices = useAppChoices(sectionActive)
   const connections = connectionsQuery.data?.connections ?? []
   const grokBots = connectionsQuery.data?.grokBots ?? []
   const candidates = connectionsQuery.data?.grokBotCandidates ?? []
@@ -1403,6 +1417,13 @@ export function ConnectedAgentsGroup() {
                   ? "grok-bot"
                   : agentConnectionPlatform(connection!)
                 const platformName = AGENT_PLATFORMS[platform].name
+                // An app working in another Worktable says so in place of when it was seen.
+                const app =
+                  connection?.target.kind === "mcp-client"
+                    ? appForClient(appChoices.data, connection.target.clientId)
+                    : undefined
+                const elsewhere =
+                  app?.worktable && !app.worktable.here ? app.worktable : null
                 return (
                   <li
                     key={connection?.id ?? grok!.connectionId}
@@ -1432,14 +1453,16 @@ export function ConnectedAgentsGroup() {
                         {connection?.link ? "Worktable Link · " : ""}
                         {grok
                           ? GROK_BOT_STATUS_LABELS[grok.status]
-                          : connection?.lastSeenAt
+                          : elsewhere
+                            ? `Works in ${worktableLabel(elsewhere)}`
+                            : connection?.lastSeenAt
                             ? `Last seen ${timeAgo(connection.lastSeenAt)}`
                             : "Not used yet"}
                       </p>
                     </div>
                     {/* Edit holds everything else, Disconnect included. */}
                     {connection?.canManage !== false &&
-                    (grok || (connection && !connection.link)) ? (
+                    (grok || connection) ? (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1463,21 +1486,7 @@ export function ConnectedAgentsGroup() {
                         Reconnect
                       </Button>
                     )}
-                    {connection?.link ? (
-                      // Cloud holds its sign-in, so it disconnects there.
-                      <a
-                        href={connection.link.manageUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={buttonVariants({
-                          variant: "ghost",
-                          size: "sm",
-                        })}
-                        aria-label={`Manage ${name} in Worktable Cloud`}
-                      >
-                        Manage
-                      </a>
-                    ) : null}
+
                   </li>
                 )
               })}

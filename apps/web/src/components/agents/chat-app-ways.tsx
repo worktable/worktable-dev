@@ -7,15 +7,139 @@ import {
   type ReactNode,
 } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Button } from "@worktable/ui/components/button"
+import type { AgentConnectionInventory } from "@worktable/types"
+import { Button, buttonVariants } from "@worktable/ui/components/button"
+import {
+  appOfFamily,
+  useAppChoices,
+  useUseHere,
+  worktableLabel,
+} from "@/lib/app-choices"
 import { fetchJSON } from "@/lib/http"
+import { AUTO_REPLY_PROMPT, CopyLine, WORK_CHAT_HINT } from "./auto-reply"
 import { SetupStep } from "./setup-step"
 
 type ChatApp = "chatgpt" | "claude"
 
+const APP_NAME: Record<ChatApp, string> = { chatgpt: "ChatGPT", claude: "Claude" }
+
 const OFFICIAL_APP: Record<ChatApp, string> = {
   chatgpt: "Add the official Worktable app in ChatGPT.",
   claude: "Add the official Worktable connector in Claude.",
+}
+
+const OPEN_APP: Record<ChatApp, { label: string; href: string }> = {
+  chatgpt: { label: "Open ChatGPT", href: "https://chatgpt.com/" },
+  claude: { label: "Open Claude", href: "https://claude.ai/" },
+}
+
+/**
+ * The official app's steps once this Worktable is reachable through Cloud:
+ * where the app works now, with Use Here when it works elsewhere, then, for
+ * ChatGPT, the line that turns on auto-reply. Without word from Cloud they
+ * read as before. `first` numbers the first of them.
+ */
+export function OfficialAppSteps({
+  app,
+  first,
+  active = true,
+}: {
+  app: ChatApp
+  first: number
+  active?: boolean
+}) {
+  const choices = useAppChoices(active)
+  const useHere = useUseHere()
+  const official = appOfFamily(choices.data, app)
+  const known = choices.data != null
+  const here = official?.worktable?.here === true
+  // Its row here, to show auto-reply on once the chat is watching.
+  const connections = useQuery({
+    queryKey: ["agent-connections", "official-app"],
+    queryFn: () =>
+      fetchJSON<AgentConnectionInventory>("/api/agent-connections"),
+    enabled: active && here && app === "chatgpt",
+  })
+  const autoReply = connections.data?.connections.find(
+    (connection) =>
+      connection.target.kind === "mcp-client" &&
+      connection.target.clientId === official?.clientId
+  )?.autoReply
+  const open = (
+    <a
+      href={OPEN_APP[app].href}
+      target="_blank"
+      rel="noreferrer"
+      className={buttonVariants({ variant: "outline", size: "sm" })}
+    >
+      {OPEN_APP[app].label}
+    </a>
+  )
+  const name = APP_NAME[app]
+  return (
+    <>
+      {!known || !official ? (
+        <SetupStep number={first} title={OFFICIAL_APP[app]}>
+          {known ? <div>{open}</div> : null}
+        </SetupStep>
+      ) : !official.worktable || official.worktable.here ? (
+        <SetupStep number={first} title={`${name} works here`} complete />
+      ) : (
+        <SetupStep
+          number={first}
+          title={`${name} works in ${worktableLabel(official.worktable)}.`}
+        >
+          <div>
+            <Button
+              size="sm"
+              disabled={useHere.isPending}
+              onClick={() => useHere.mutate(official)}
+            >
+              Use Here
+            </Button>
+          </div>
+        </SetupStep>
+      )}
+      {app === "chatgpt" &&
+        (autoReply?.state === "on" ? (
+          <SetupStep number={first + 1} title="Auto-reply is on" complete />
+        ) : (
+          <SetupStep
+            number={first + 1}
+            title={
+              known && !here ? (
+                <span className="text-muted-foreground">
+                  Turn on auto-reply
+                </span>
+              ) : (
+                "Turn on auto-reply"
+              )
+            }
+          >
+            {!known || here ? (
+              <>
+                <CopyLine text={AUTO_REPLY_PROMPT} />
+                <p className="text-sm text-muted-foreground">
+                  {WORK_CHAT_HINT}
+                </p>
+              </>
+            ) : null}
+          </SetupStep>
+        ))}
+      {known && choices.data ? (
+        <li className="pt-1 pl-9">
+          <a
+            href={choices.data.appsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            All Apps
+          </a>
+        </li>
+      ) : null}
+    </>
+  )
 }
 
 // Loaded when asked for, as Grok Bot's setup does.
@@ -152,7 +276,7 @@ export function ChatAppWays({
               </div>
             )}
           </SetupStep>
-          <SetupStep number={2} title={OFFICIAL_APP[app]} />
+          <OfficialAppSteps app={app} first={2} active={active && linkOn} />
         </ol>
       </section>
       <section
@@ -165,6 +289,11 @@ export function ChatAppWays({
         >
           On this computer
         </h3>
+        {app === "chatgpt" ? (
+          <p className="text-sm text-muted-foreground">
+            For Local chats in the ChatGPT desktop app.
+          </p>
+        ) : null}
         {local}
       </section>
     </div>

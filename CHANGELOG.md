@@ -15,15 +15,13 @@ infrastructure and personal context out of release notes.
 
 ### Changed
 
-- **ChatGPT auto-reply:** **Turn On** says to paste the line into a Work chat, on chatgpt.com or in the desktop app with Work and Cloud selected, and Auto-reply shows On once ChatGPT is watching.
-- **Worktable Link:** An app that reaches this Worktable through Link opens from **Edit** like other agents, with its auto-reply, and **Manage in Cloud** in place of Disconnect.
-- **Worktable Cloud:** **Settings → Agents → Chat apps → ChatGPT** leads with the official Worktable app instead of creating a custom app.
+- **ChatGPT auto-reply:** **Turn On** says to paste the line into a Work chat, on chatgpt.com or in the desktop app with Cloud selected.
+- **Worktable Link:** An app that reaches this Worktable through Link opens from **Edit** with its auto-reply, and **Manage in Cloud** replaces Disconnect.
+- **Agents:** What agents read about an HTML Doc no longer includes `spaceImages`, an internal mark of how Worktable serves its page. Pages show their Space's images as before.
+
 ### Fixed
 
 - **Comments:** A comment on a path with no Doc, such as `readme.md` for the Doc `readme`, now says the Doc was not found and that a Doc's path has no extension, instead of failing with "Something went wrong". Replying to or resolving a comment that is gone says so too.
-### Changed
-
-- **Agents:** What agents read about an HTML Doc no longer includes `spaceImages`, an internal mark of how Worktable serves its page. Pages show their Space's images as before.
 
 ## [0.1.47] - 2026-11-13
 

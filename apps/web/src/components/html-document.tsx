@@ -323,10 +323,17 @@ function WidgetDetailPage({
     annotations,
     activeAnnotationId,
     composing: composerOpen,
-    onPick: () => setComposerOpen(true),
+    // The comment box and the comments panel are beside the page, not in
+    // it: a page filling the screen gives it back for them.
+    onPick: () => {
+      leaveFullscreen()
+      setComposerOpen(true)
+    },
     onOpenComment: (annotationId) => {
       const annotation = annotations.find((item) => item.id === annotationId)
-      if (annotation) selectAnnotation(annotation)
+      if (!annotation) return
+      leaveFullscreen()
+      selectAnnotation(annotation)
     },
   })
   const onFrameComment = useEffectEvent(elementComments.onFrameMessage)
@@ -665,6 +672,11 @@ function WidgetDetailPage({
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [overlayFullscreen])
+
+  const leaveFullscreen = useCallback(() => {
+    if (document.fullscreenElement) void document.exitFullscreen()
+    setOverlayFullscreen(false)
+  }, [])
 
   const toggleFullscreen = useCallback(() => {
     const el = wrapperRef.current

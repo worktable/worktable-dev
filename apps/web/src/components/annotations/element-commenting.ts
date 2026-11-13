@@ -147,8 +147,11 @@ export function useElementComments({
       setPicked({ ...(quote ? { quote } : {}), element, rect })
       onPick()
     } else if (data.type === "worktable.comment.rect") {
+      // A page that draws itself again replaces the element's node. What
+      // was chosen is still what the comment is about: only where it was
+      // on screen is kept as it last was.
       const rect = rectFrom(data["rect"])
-      setPicked((current) => (current && rect ? { ...current, rect } : null))
+      setPicked((current) => (current && rect ? { ...current, rect } : current))
     } else if (data.type === "worktable.comment.status") {
       const states = data["states"]
       if (!states || typeof states !== "object") return

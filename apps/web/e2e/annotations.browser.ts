@@ -428,6 +428,9 @@ ${note}</main></body></html>`
         await choose(element)
         await expect(composer.getByRole("textbox")).toBeVisible()
         if (mobile) await settled(composer)
+        // A page that draws itself again while the comment is written
+        // replaces the element; the comment is still about it.
+        await element.evaluate((node) => node.replaceWith(node.cloneNode(true)))
         await composer.getByRole("textbox").fill(text)
         await composer
           .getByRole("button", { name: "Send comment", exact: true })
@@ -493,7 +496,16 @@ ${note}</main></body></html>`
         await page.request.get(
           `${harness.apiUrl}/api/spaces/annotations/annotations?widgetId=${id}`
         )
-      ).json()) as { annotations: Array<{ id: string; body: string }> }
+      ).json()) as {
+        annotations: Array<{
+          id: string
+          body: string
+          target: { quote?: string }
+        }>
+      }
+      expect(
+        annotations.map((annotation) => annotation.target.quote).sort()
+      ).toEqual(["$49 per month", "Prices exclude tax."])
       const context = async (body: string) =>
         (
           (await (

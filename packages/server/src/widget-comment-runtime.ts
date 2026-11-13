@@ -159,7 +159,8 @@ function paint(){
   frame=0;
   if(!mode&&!pins.length&&!picked){if(host)host.remove();return}
   ensure();
-  cursor.media=mode?'all':'not all';
+  const media=mode?'all':'not all';
+  if(cursor.media!==media)cursor.media=media;
   const origin=host.getBoundingClientRect();
   const active=pins.find(function(pin){return pin.id===activeId});
   const marked=picked||pinHover||(active&&active.el)||null;
@@ -240,10 +241,10 @@ function locate(now){
 function relocate(){if(!settle)settle=setTimeout(locate,250)}
 function ours(records){
   for(const record of records){
-    if(record.target===host)continue;
+    if(host&&host.contains(record.target))continue;
+    if(record.type!=='childList')return false;
     for(const node of record.addedNodes)if(node!==host)return false;
     for(const node of record.removedNodes)if(node!==host)return false;
-    if(record.type!=='childList')return false;
   }
   return true;
 }
@@ -255,12 +256,22 @@ function watch(){
   if(wanted){
     window.addEventListener('scroll',draw,true);
     window.addEventListener('resize',draw);
-    observer=new MutationObserver(function(records){if(ours(records))return;if(pins.length)relocate();draw()});
-    observer.observe(document.documentElement,{childList:true,subtree:true,characterData:true});
+    // A class, a style or hidden moves or hides things without changing what
+    // the page says: the marks are drawn again, and nothing is looked for.
+    observer=new MutationObserver(function(records){
+      if(ours(records))return;
+      if(pins.length&&records.some(function(record){return record.type!=='attributes'}))relocate();
+      draw();
+    });
+    observer.observe(document.documentElement,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class','style','hidden','open']});
+    window.addEventListener('transitionend',draw,true);
+    window.addEventListener('animationend',draw,true);
     if(typeof ResizeObserver==='function'){resizes=new ResizeObserver(draw);resizes.observe(document.documentElement);if(document.body)resizes.observe(document.body)}
   }else{
     window.removeEventListener('scroll',draw,true);
     window.removeEventListener('resize',draw);
+    window.removeEventListener('transitionend',draw,true);
+    window.removeEventListener('animationend',draw,true);
     if(observer)observer.disconnect();
     if(resizes)resizes.disconnect();
     observer=resizes=null;

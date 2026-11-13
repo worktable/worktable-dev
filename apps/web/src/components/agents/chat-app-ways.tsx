@@ -12,12 +12,12 @@ import { Button, buttonVariants } from "@worktable/ui/components/button"
 import {
   appOfFamily,
   useAppChoices,
-  useMoveHere,
   worktableLabel,
 } from "@/lib/app-choices"
 import { fetchJSON } from "@/lib/http"
 import { AUTO_REPLY_PROMPT, CopyLine, WORK_CHAT_HINT } from "./auto-reply"
 import { SetupStep } from "./setup-step"
+import { MoveHereButton } from "./works-in"
 
 type ChatApp = "chatgpt" | "claude"
 
@@ -49,7 +49,6 @@ export function OfficialAppSteps({
   active?: boolean
 }) {
   const choices = useAppChoices(active)
-  const moveHere = useMoveHere()
   const official = appOfFamily(choices.data, app)
   const known = choices.data != null
   const here = official?.worktable?.here === true
@@ -90,13 +89,7 @@ export function OfficialAppSteps({
           title={`${name} works in ${worktableLabel(official.worktable)}.`}
         >
           <div>
-            <Button
-              size="sm"
-              disabled={moveHere.isPending}
-              onClick={() => moveHere.mutate(official)}
-            >
-              Move Here
-            </Button>
+            <MoveHereButton app={official} />
           </div>
         </SetupStep>
       )}

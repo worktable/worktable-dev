@@ -78,44 +78,21 @@ export function worktableLabel(worktable: NonNullable<AppChoice["worktable"]>) {
 }
 
 /**
- * Move here: the app works in this Worktable from its next request. The toast
- * offers Undo, which puts it back where it was.
+ * Move here: the app works in this Worktable from its next request, and no
+ * longer in the one it leaves. The button asks first.
  */
 export function useMoveHere() {
   const queryClient = useQueryClient()
-  const choose = (clientId: string, worktableId?: string) =>
-    fetchJSON<AppChoices>("/api/app-choices", {
-      method: "POST",
-      body: JSON.stringify({ clientId, ...(worktableId ? { worktableId } : {}) }),
-    })
-  const settle = (choices: AppChoices) => {
-    queryClient.setQueryData(["app-choices"], choices)
-    void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
-  }
   return useMutation({
-    mutationFn: (app: AppChoice) => choose(app.clientId),
+    mutationFn: (app: AppChoice) =>
+      fetchJSON<AppChoices>("/api/app-choices", {
+        method: "POST",
+        body: JSON.stringify({ clientId: app.clientId }),
+      }),
     onSuccess: (choices, app) => {
-      settle(choices)
-      const before = app.worktable
-      toast.success(
-        `${app.name} now works here.`,
-        before && !before.here
-          ? {
-              action: {
-                label: "Undo",
-                onClick: () =>
-                  void choose(app.clientId, before.id)
-                    .then((restored) => {
-                      settle(restored)
-                      toast.success(
-                        `${app.name} works in ${worktableLabel(before)} again.`
-                      )
-                    })
-                    .catch(() => toast.error(`Couldn’t move ${app.name} back.`)),
-              },
-            }
-          : undefined
-      )
+      queryClient.setQueryData(["app-choices"], choices)
+      void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
+      toast.success(`${app.name} now works here.`)
     },
     onError: (_error, app) => toast.error(`Couldn’t move ${app.name} here.`),
   })

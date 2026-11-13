@@ -122,7 +122,8 @@ on the message, and answers again once that Worktable is updated.
 `--agent-registration` is gone, and Worktable Cloud no longer accepts a
 connection made with it. Connect it again with
 `openclaw worktable connect --server <address>` and approve the agent in
-Worktable. Until then the Gateway does not start the channel, and says so.
+Worktable. Until then OpenClaw does not start the channel, and
+`openclaw channels status` says why.
 
 ## What pairing sends and stores
 

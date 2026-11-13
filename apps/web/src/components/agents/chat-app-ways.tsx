@@ -77,11 +77,11 @@ export function OfficialAppSteps({
   const name = APP_NAME[app]
   return (
     <>
-      {!known || !official ? (
+      {!known || !official?.worktable ? (
         <SetupStep number={first} title={OFFICIAL_APP[app]}>
           {known ? <div>{open}</div> : null}
         </SetupStep>
-      ) : !official.worktable || official.worktable.here ? (
+      ) : official.worktable.here ? (
         <SetupStep number={first} title={`${name} works here`} complete />
       ) : (
         <SetupStep

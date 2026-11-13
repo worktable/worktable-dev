@@ -9,6 +9,16 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Chat apps:** **Settings → Agents** shows which Worktable ChatGPT, Claude or Grok works in, and **Move Here** moves it to the Worktable you're in after asking.
+
+### Changed
+
+- **ChatGPT auto-reply:** **Turn On** says to paste the line into a Work chat, on chatgpt.com or in the desktop app with Work and Cloud selected, and Auto-reply shows On once ChatGPT is watching.
+- **Worktable Link:** An app that reaches this Worktable through Link opens from **Edit** like other agents, with its auto-reply, and **Manage in Cloud** in place of Disconnect.
+- **Worktable Cloud:** **Settings → Agents → Chat apps → ChatGPT** leads with the official Worktable app instead of creating a custom app.
+
 ## [0.1.47] - 2026-11-13
 
 ### Changed

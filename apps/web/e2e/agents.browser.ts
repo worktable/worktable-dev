@@ -769,3 +769,66 @@ test("a failed connection refetch preserves a newly minted one-time token", asyn
     settings.getByText("Couldn’t read the agent connection settings.")
   ).toHaveCount(0)
 })
+
+test("Move Here asks before moving ChatGPT into this Worktable, then shows the auto-reply step", async ({
+  page,
+}) => {
+  const chatgpt = "https://chatgpt.com/oauth/client.json"
+  let here = false
+  const moves: unknown[] = []
+  const choices = () => ({
+    apps: [
+      {
+        clientId: chatgpt,
+        name: "ChatGPT",
+        family: "chatgpt",
+        changeUrl: "https://cloud.example.test/gateway/worktables/app?app=chatgpt",
+        worktable: here
+          ? { id: `wl_${"b".repeat(32)}`, name: "Notes", here: true }
+          : { id: "hosted_one", name: "Studio", here: false },
+      },
+    ],
+    appsUrl: "https://cloud.example.test/gateway/worktables/apps",
+  })
+  await page.route("**/api/system/connection", (route) =>
+    route.fulfill({ json: { ...connection, mcpAuthMode: "local-token" } })
+  )
+  await page.route("**/api/linked", (route) =>
+    route.fulfill({ json: { enabled: true, state: "online", account: { user: null } } })
+  )
+  await page.route("**/api/app-choices", async (route) => {
+    if (route.request().method() === "POST") {
+      moves.push(route.request().postDataJSON())
+      here = true
+    }
+    await route.fulfill({ json: choices() })
+  })
+
+  await openAgents(page)
+  const dialog = page.getByRole("dialog").first()
+  await dialog.getByRole("button", { name: /^Chat apps/ }).click()
+  await dialog.getByRole("tab", { name: "ChatGPT", exact: true }).click()
+  await expect(dialog.getByText("ChatGPT works in Studio.")).toBeVisible()
+
+  // It asks first, and Cancel leaves ChatGPT where it was.
+  await dialog.getByRole("button", { name: "Move Here" }).click()
+  const confirm = page.getByRole("dialog", { name: "Move ChatGPT here?" })
+  await expect(confirm).toContainText("Move ChatGPT here?")
+  await expect(confirm).toContainText(
+    "It stops working in Studio, including any auto-reply there."
+  )
+  await confirm.getByRole("button", { name: "Cancel" }).click()
+  expect(moves).toEqual([])
+  await expect(dialog.getByText("ChatGPT works in Studio.")).toBeVisible()
+
+  // Confirming moves it here, naming only the app.
+  await dialog.getByRole("button", { name: "Move Here" }).click()
+  await page
+    .getByRole("dialog", { name: "Move ChatGPT here?" })
+    .getByRole("button", { name: "Move Here" })
+    .click()
+  await expect(dialog.getByText("ChatGPT works here")).toBeVisible()
+  expect(moves).toEqual([{ clientId: chatgpt }])
+  await expect(page.getByText("ChatGPT now works here.")).toBeVisible()
+  await expect(dialog.getByText("a Work chat on chatgpt.com", { exact: false })).toBeVisible()
+})

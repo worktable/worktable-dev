@@ -98,13 +98,11 @@ test("connected identity and Edit, which holds Disconnect, remain available when
         unavailableAuthKinds.length > 0
       )
       expect(html).toContain("Worktable Link")
-      expect(html).toContain(
-        'href="https://cloud.example/linked/agents?destinationId=d"'
-      )
-      // Disconnect lives in Edit; Cloud manages the Link apps.
+      // Disconnect lives in Edit. Link apps open it too, where Manage in
+      // Cloud replaces Disconnect, since Cloud holds their sign-in.
       expect(html).not.toContain(">Disconnect<")
-      expect(html.split(">Manage<").length - 1).toBe(2)
-      expect(html.split(">Edit<").length - 1).toBe(2)
+      expect(html).not.toContain(">Manage<")
+      expect(html.split(">Edit<").length - 1).toBe(3)
     } finally {
       client.clear()
     }

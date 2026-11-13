@@ -186,8 +186,19 @@ For local or self-hosted Worktable, open **Settings → Agents → Chat apps**.
 Turn on [Worktable Link](/guides/remote-access/#worktable-link) with **Set Up**,
 then add the official Worktable app in ChatGPT or Claude. Turning Link on there
 makes the app work in this Worktable: one already connected moves here, and the
-next one added starts here. If Link was already on, or to move an app later,
-use **Apps** in Cloud.
+next one added starts here.
+
+The same steps show where ChatGPT, Claude or Grok works now. When it works in
+another Worktable, **Move Here** moves it to this one after asking: it stops
+working in the other Worktable, including any auto-reply there. Its row under
+**Connected agents** says the same. **All Apps** opens Cloud's
+[Apps page](https://app.worktable.cloud/gateway/worktables/apps), which moves
+an app to any of your Worktables.
+
+ChatGPT answers comments and messages on its own once it works in this
+Worktable and you paste the line from **Turn On** into a Work chat, on
+chatgpt.com or in the desktop app with Work and Cloud selected. Auto-reply
+shows On when ChatGPT is watching.
 
 Claude Desktop on macOS, on this computer, uses the downloadable `.mcpb`
 extension. Open it in Claude, approve installation, and enter the endpoint and

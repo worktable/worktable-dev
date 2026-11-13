@@ -100,8 +100,8 @@ for availability. A remote self-hosted installation needs an HTTPS address.
 2. Choose a payer-owned **Worktable subscription** and turn on
    **Worktable Link**. Signing in alone does not enable access.
 3. For ChatGPT or Claude, choose **Set Up** in that app's steps in
-   **Settings → Agents → Chat apps**, then add the official Worktable app. To
-   move an app later, or if Link was already on, use **Apps** in Cloud. For
+   **Settings → Agents → Chat apps**, then add the official Worktable app. If
+   the app already works in another Worktable, use **Move Here** there. For
    another AI app, open **Connect another app**, copy the device's
    **MCP URL** into its connector setup and choose OAuth.
 4. Sign in with the same Cloud account and approve the connection.

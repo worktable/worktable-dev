@@ -3,7 +3,7 @@
 // granted field that disappears, or turns into something a link can't show,
 // closes the collection rather than widening it.
 
-import { normalizeRecordFieldType, RecordFieldTypeSchema, type LinkGrant, type RecordCollectionSchema, type RecordPredicate, type SharingPolicy, type WidgetFile } from "@worktable/types";
+import { isReservedRecordFieldKey, normalizeRecordFieldType, RecordFieldTypeSchema, type LinkGrant, type RecordCollectionSchema, type RecordPredicate, type SharingPolicy, type WidgetFile } from "@worktable/types";
 import { readRecordCollectionSchema } from "./record-store.ts";
 import { parsePredicate, RecordQueryShapeError } from "./record-query.ts";
 import { canWidgetRecord } from "./widget-runtime-policy.ts";
@@ -13,11 +13,6 @@ export interface LinkGrantIssue {
   message: string;
 }
 
-/** Keys a link's record already has beside `data`. Queries read these from
- *  the record before its data, so a data field under one of them would be
- *  filtered, sorted and grouped by the wrong value. */
-const VIEW_RECORD_KEYS = new Set(["id", "version", "kind", "collectionId", "createdAt", "updatedAt", "data"]);
-export const isRecordKey = (name: string) => VIEW_RECORD_KEYS.has(name) || name in Object.prototype;
 const recordKeyIssue = (name: string) => `Field "${name}" has a name records use for themselves, so links can't show it.`;
 
 /**
@@ -81,7 +76,7 @@ export function validateLinkGrant(grant: LinkGrant, schemas: ReadonlyMap<string,
       const spec = field(name);
       const type = typeOf(name);
       if (!spec) add(`Field "${name}" doesn't exist.`);
-      else if (isRecordKey(name)) add(recordKeyIssue(name));
+      else if (isReservedRecordFieldKey(name)) add(recordKeyIssue(name));
       else if (type === "document") add(`Field "${name}" holds document links, which links can't show yet.`);
       else if (type === "file") add(`Field "${name}" holds file paths, which links can't show yet.`);
       // A type from a newer Worktable may hold paths or ids this one can't hide.

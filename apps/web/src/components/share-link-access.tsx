@@ -5,7 +5,7 @@ import type {
   RecordCollectionSchema,
   ShareLinkAccess,
 } from "@worktable/types"
-import { countedRecordsName } from "@worktable/types"
+import { countedRecordsName, isReservedRecordFieldKey } from "@worktable/types"
 import { LINK_GRANT_MAX_FIELDS } from "@worktable/types/constants"
 import { ExternalLink, Loader2 } from "lucide-react"
 import { Badge } from "@worktable/ui/components/badge"
@@ -41,7 +41,8 @@ function Choice({
   )
 }
 
-/** Keep persisted choices removable even when their schema field is gone. */
+/** Keep persisted choices removable even when their schema field is gone.
+ *  A field under a name records use for themselves can't be shared. */
 function FieldSelection({
   columns,
   selected,
@@ -61,11 +62,12 @@ function FieldSelection({
       {keys.map((key) => {
         const column = columns.find((entry) => entry.key === key)
         const checked = selected.includes(key)
+        const reserved = isReservedRecordFieldKey(key)
         return (
           <Choice
             key={key}
             checked={checked}
-            disabled={!checked && selected.length >= limit}
+            disabled={!checked && (reserved || selected.length >= limit)}
             onChange={(enabled) =>
               onChange(
                 enabled
@@ -75,7 +77,7 @@ function FieldSelection({
             }
           >
             {column?.field?.name || key}
-            {!column ? " (unavailable)" : ""}
+            {!column ? " (unavailable)" : reserved ? " (can’t be shared)" : ""}
           </Choice>
         )
       })}

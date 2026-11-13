@@ -78,6 +78,7 @@ import {
 } from "@/lib/share-link-management-api"
 import {
   checkShareLinkAccess,
+  refusalReason,
   retryOnPreviewChange,
 } from "@/lib/share-link-access-api"
 
@@ -652,13 +653,22 @@ export function ShareLinksDialog({
           ) : null}
 
           {create.isError ? (
-            <InlineError>Couldn’t create the link. Try again.</InlineError>
+            <InlineError>
+              {refusalReason(create.error) ??
+                "Couldn’t create the link. Try again."}
+            </InlineError>
           ) : null}
           {update.isError ? (
-            <InlineError>Couldn’t save the link. Try again.</InlineError>
+            <InlineError>
+              {refusalReason(update.error) ??
+                "Couldn’t save the link. Try again."}
+            </InlineError>
           ) : null}
           {turnOn.isError ? (
-            <InlineError>Couldn’t turn on live data. Try again.</InlineError>
+            <InlineError>
+              {refusalReason(turnOn.error) ??
+                "Couldn’t turn on live data. Try again."}
+            </InlineError>
           ) : null}
 
           {links && (defaultLink || moreShown) ? (

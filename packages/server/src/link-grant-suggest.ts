@@ -4,6 +4,7 @@
 
 import {
   CanonicalIdSchema,
+  isReservedRecordFieldKey,
   LinkGrantSchema,
   normalizeRecordFieldType,
   RecordFieldTypeSchema,
@@ -16,7 +17,7 @@ import {
 } from "@worktable/types";
 import { LINK_SEARCH_MAX_LENGTH } from "./link-query-limits.ts";
 import type { ObservedRecordQuery } from "./html-preview.ts";
-import { forEachLeaf, isRecordKey } from "./link-grant.ts";
+import { forEachLeaf } from "./link-grant.ts";
 import { compareText } from "./link-grant-view.ts";
 import { flatWhereToPredicate, isPredicateTree, parsePredicate, referencedCollections, RecordQueryShapeError } from "./record-query.ts";
 import { parseRecordQuery, RecordQueryError } from "./record-store.ts";
@@ -189,7 +190,7 @@ export function suggestLinkGrant(input: {
       });
     }
     const fields = [...names].filter((name) => {
-      if (!Object.hasOwn(schema.fields, name) || isRecordKey(name)) return false;
+      if (!Object.hasOwn(schema.fields, name) || isReservedRecordFieldKey(name)) return false;
       if (!RecordFieldTypeSchema.safeParse(schema.fields[name]!.type).success) return false;
       const type = normalizeRecordFieldType(schema.fields[name]!.type);
       // Document and file fields hold paths in the Space, which links don't show.

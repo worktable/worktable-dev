@@ -115,6 +115,18 @@ export const RecordFileSchema = z.looseObject({
   data: z.record(z.string(), z.unknown()).default({}),
 });
 
+/**
+ * Keys every record carries beside its `data`, a share link's records too.
+ * A field can't take one, or a name every object has: readers of the record
+ * would meet two values under one name. Collections saved before keep
+ * theirs, and queries read such a field rather than the record's own value.
+ */
+export const RESERVED_RECORD_FIELD_KEYS = ["id", "version", "kind", "collectionId", "createdAt", "updatedAt", "data"] as const;
+
+export function isReservedRecordFieldKey(key: string): boolean {
+  return (RESERVED_RECORD_FIELD_KEYS as readonly string[]).includes(key) || key in Object.prototype;
+}
+
 // The one query grammar for records. Enforced inside the record store so every
 // caller — REST, widget bridge, MCP — shares identical caps and semantics.
 export const RECORD_QUERY_MAX_LIMIT = 1000;

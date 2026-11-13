@@ -8,6 +8,7 @@ import { readLinkGrantSchemas, validateLinkGrant } from "./link-grant.ts";
 import { createLinkKey, linkQueryFailure, openLinkReadView, type LinkKey } from "./link-grant-view.ts";
 import { recordIndex } from "./record-index.ts";
 import { buildRecordCollectionSchema, queryRecords, writeRecord, writeRecordCollectionSchema } from "./record-store.ts";
+import { writeEarlierRecordSchema } from "./test-support/earlier-record-schema.ts";
 import { setWorkspaceRootOverride } from "./workspace.ts";
 
 // ---- Two workspaces that differ only in what the grant hides -------------
@@ -192,8 +193,10 @@ let labelledKeys: Record<"a" | "b", LinkKey>;
 async function seed(v: "a" | "b") {
   const spaceId = SPACES[v];
   for (const [collectionId, fields] of Object.entries(SCHEMAS)) {
-    const result = await writeRecordCollectionSchema(spaceId, buildRecordCollectionSchema({ id: collectionId, name: collectionId, fields: fields as never }));
-    expect(result.error).toBeNull();
+    const schema = buildRecordCollectionSchema({ id: collectionId, name: collectionId, fields: fields as never });
+    // Activities has a field named "kind", which only an earlier Worktable could save.
+    if (collectionId === "activities") await writeEarlierRecordSchema(spaceId, schema);
+    else expect((await writeRecordCollectionSchema(spaceId, schema)).error).toBeNull();
   }
   const labels = new Map<string, string>();
   for (const row of variant(v)) {
@@ -407,14 +410,13 @@ describe("link grants against live schemas", () => {
   });
 
   it("rejects grants that would show what a link can't", async () => {
-    await writeRecordCollectionSchema("probe-a", buildRecordCollectionSchema({
+    await writeEarlierRecordSchema("probe-a", buildRecordCollectionSchema({
       id: "notes",
       name: "notes",
       fields: { title: { type: "text" }, page: { type: "document" }, shot: { type: "file" }, deal: { type: "relation", references: "deals" }, kind: { type: "text" }, later: { type: "hologram" }, constructor: { type: "text" } },
     }));
     // A row condition reads a data field named like the envelope ("kind"),
-    // and never the envelope itself ("updatedBy"). Showing "kind" is refused:
-    // a link's queries would read the record's own kind instead.
+    // and never the envelope itself ("updatedBy"). Showing "kind" is refused.
     const grant = LinkGrantSchema.parse({
       version: 1,
       collections: {

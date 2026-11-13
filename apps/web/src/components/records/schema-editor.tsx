@@ -35,7 +35,11 @@ import type {
   RecordCollectionSummary,
   RecordField,
 } from "@worktable/types"
-import { normalizeRecordFieldType, TITLE_FIELD_TYPES } from "@worktable/types"
+import {
+  isReservedRecordFieldKey,
+  normalizeRecordFieldType,
+  TITLE_FIELD_TYPES,
+} from "@worktable/types"
 import { queryKeys } from "@/lib/queries"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { updateRecordCollection } from "@/lib/records-api"
@@ -143,11 +147,13 @@ function clearInapplicableMetadata(spec: RecordField): RecordField {
 }
 
 /** Unique key with numeric suffix; the add-row preview and addField share
- *  this so the preview always shows the key that will actually be created. */
+ *  this so the preview always shows the key that will actually be created.
+ *  A key records use for themselves, such as kind, takes a suffix too. */
 function dedupeFieldKey(base: string, existing: string[]): string {
   let key = base
   let n = 2
-  while (existing.includes(key)) key = `${base}-${n++}`
+  while (existing.includes(key) || isReservedRecordFieldKey(key))
+    key = `${base}-${n++}`
   return key
 }
 

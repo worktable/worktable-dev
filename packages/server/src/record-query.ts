@@ -111,8 +111,14 @@ export function isMissing(value: unknown): boolean {
   return value === undefined || value === null;
 }
 
-export function fieldValue(record: RecordFile, key: string): unknown {
-  return key in record ? (record as unknown as Record<string, unknown>)[key] : record.data[key];
+/** A record's value for a field name. A field the collection declares is read
+ *  from the record's data, even under a name the record uses for itself
+ *  (collections written before such names were refused can have one). Other
+ *  names read the record's own keys, such as createdAt, then its data. */
+export function fieldValue(record: RecordFile, key: string, fields?: FieldTypeMap): unknown {
+  const own = (source: Record<string, unknown>) => (Object.hasOwn(source, key) ? source[key] : undefined);
+  if ((fields && Object.hasOwn(fields, key)) || !Object.hasOwn(record, key)) return own(record.data);
+  return own(record as unknown as Record<string, unknown>);
 }
 
 // ---- Query shape ------------------------------------------------------
@@ -267,7 +273,7 @@ function pathValues(record: RecordFile, path: string, ctx: EvalContext): { value
   if (!path.includes(".")) {
     const spec = ctx.fields?.[path];
     return {
-      values: [fieldValue(record, path)],
+      values: [fieldValue(record, path, ctx.fields)],
       fieldType: spec ? normalizeType(spec.type) : undefined,
       document: spec ? normalizeRecordFieldType(spec.type) === "document" : false,
     };
@@ -283,7 +289,7 @@ function pathValues(record: RecordFile, path: string, ctx: EvalContext): { value
   const values: unknown[] = [];
   for (const id of ids) {
     const target = typeof id === "string" ? targets.get(id) : undefined;
-    if (target) values.push(fieldValue(target, rest));
+    if (target) values.push(fieldValue(target, rest, ctx.targetFields.get(spec.references)));
   }
   const targetSpec = ctx.targetFields.get(spec.references)?.[rest];
   return {
@@ -375,6 +381,8 @@ export function filterRows(rows: RecordFile[], predicate: RecordPredicate, field
 interface SortKey {
   field: string;
   dir: 1 | -1;
+  /** The record's own value, even when a field shares its name. */
+  own?: true;
 }
 
 function sortKeys(query: RecordQuery): SortKey[] {
@@ -382,13 +390,17 @@ function sortKeys(query: RecordQuery): SortKey[] {
     return query.orderBy.map((entry) => ({ field: entry.field, dir: entry.dir === "desc" ? -1 : 1 }));
   }
   if (typeof query.orderBy === "string") return [{ field: query.orderBy, dir: query.order === "desc" ? -1 : 1 }];
-  return [{ field: "updatedAt", dir: -1 }];
+  return [{ field: "updatedAt", dir: -1, own: true }];
 }
+
+/** The fields a sort key reads through: none for the record's own value. */
+const sortFields = (key: SortKey, fields: FieldTypeMap | undefined) => (key.own ? undefined : fields);
 
 function buildComparator(keys: SortKey[], fields: FieldTypeMap | undefined): (a: RecordFile, b: RecordFile) => number {
   return (a, b) => {
     for (const key of keys) {
-      const cmp = compareFieldValues(fieldValue(a, key.field), fieldValue(b, key.field), fields?.[key.field]) * key.dir;
+      const keyFields = sortFields(key, fields);
+      const cmp = compareFieldValues(fieldValue(a, key.field, keyFields), fieldValue(b, key.field, keyFields), keyFields?.[key.field]) * key.dir;
       if (cmp !== 0) return cmp;
     }
     // Deterministic tiebreak so keyset cursors are stable.
@@ -396,8 +408,8 @@ function buildComparator(keys: SortKey[], fields: FieldTypeMap | undefined): (a:
   };
 }
 
-function encodeCursor(record: RecordFile, keys: SortKey[]): string {
-  const payload = { k: keys.map((key) => fieldValue(record, key.field) ?? null), id: record.id };
+function encodeCursor(record: RecordFile, keys: SortKey[], fields: FieldTypeMap | undefined): string {
+  const payload = { k: keys.map((key) => fieldValue(record, key.field, sortFields(key, fields)) ?? null), id: record.id };
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
 }
 
@@ -437,7 +449,7 @@ function aggregateGroups(
   };
   const groups = new Map<string, { key: unknown; rows: RecordFile[] }>();
   for (const record of records) {
-    const key = aggregate.groupBy ? resolveGroupValue(fieldValue(record, aggregate.groupBy) ?? null) : null;
+    const key = aggregate.groupBy ? resolveGroupValue(fieldValue(record, aggregate.groupBy, fields) ?? null) : null;
     const keys = splitValues && Array.isArray(key) ? (key.length > 0 ? [...new Set(key)] : [null]) : [key];
     for (const groupKey of keys) {
       const mapKey = JSON.stringify(groupKey);
@@ -455,7 +467,7 @@ function aggregateGroups(
       }
       const field = spec.field;
       if (!field) throw new RecordQueryShapeError(`Aggregate "${spec.fn}" requires a field`);
-      const values = group.rows.map((record) => fieldValue(record, field)).filter((value) => !isMissing(value));
+      const values = group.rows.map((record) => fieldValue(record, field, fields)).filter((value) => !isMissing(value));
       if (spec.fn === "unique") {
         row[alias] = new Set(values.map((value) => JSON.stringify(value))).size;
       } else if (spec.fn === "sum" || spec.fn === "avg") {
@@ -530,7 +542,8 @@ export async function runQueryV2(
     // then id, exactly mirroring buildComparator's key order.
     rows = rows.filter((record) => {
       for (const [i, key] of keys.entries()) {
-        const cmp = compareFieldValues(fieldValue(record, key.field), cursor.k[i], fields?.[key.field]) * key.dir;
+        const keyFields = sortFields(key, fields);
+        const cmp = compareFieldValues(fieldValue(record, key.field, keyFields), cursor.k[i], keyFields?.[key.field]) * key.dir;
         if (cmp !== 0) return cmp > 0;
       }
       return record.id.localeCompare(marker.id) > 0;
@@ -540,7 +553,7 @@ export async function runQueryV2(
   let nextCursor: string | undefined;
   if (typeof query.limit === "number" && rows.length > query.limit) {
     rows = rows.slice(0, Math.max(0, query.limit));
-    if (rows.length > 0) nextCursor = encodeCursor(rows[rows.length - 1]!, keys);
+    if (rows.length > 0) nextCursor = encodeCursor(rows[rows.length - 1]!, keys, fields);
   }
 
   const result: RecordQueryResult = { records: rows, total };

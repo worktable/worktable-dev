@@ -1,5 +1,6 @@
 import { parseDocument } from "htmlparser2"
 import {
+  HTML_ELEMENT_ATTRIBUTES,
   HTML_ELEMENT_CONTEXT_LENGTH,
   HTML_ELEMENT_QUOTE_LENGTH,
   matchHtmlElement,
@@ -112,7 +113,7 @@ function describe(
     path.unshift(segment(node))
   const attrs: Record<string, string> = {}
   for (const [name, value] of Object.entries(element.attribs)) {
-    if (Object.keys(attrs).length >= 8) break
+    if (Object.keys(attrs).length >= HTML_ELEMENT_ATTRIBUTES) break
     if (NAMING_ATTRIBUTE.test(name) && !value.startsWith("data:"))
       attrs[name] = value.slice(0, 160)
   }

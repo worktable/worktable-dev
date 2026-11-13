@@ -133,6 +133,20 @@ describe("HTML doc (widget) annotations", () => {
       excerpt: '<div class="price">$49 <small>per month</small></div>',
     });
 
+    // A description holds no more attributes than a page's runtime keeps.
+    const crowded = await req(app, "POST", "/api/spaces/meta/annotations", {
+      target: {
+        ...target,
+        element: {
+          ...target.element,
+          attrs: Object.fromEntries(Array.from({ length: 9 }, (_, at) => [`data-n${at}`, "x"])),
+        },
+      },
+      category: "comment",
+      body: "Too many",
+    });
+    expect(crowded.status).toBe(400);
+
     // The context quotes the page: reading comments alone does not give it.
     const annotationId = created.json.annotation.id;
     expect(await readAnnotationContext("meta", annotationId, ["annotations:read"])).toEqual({ missingScope: "widgets:read" });

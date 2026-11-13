@@ -1,4 +1,5 @@
 import {
+  HTML_ELEMENT_ATTRIBUTES,
   HTML_ELEMENT_CONTEXT_LENGTH,
   HTML_ELEMENT_QUOTE_LENGTH,
   matchHtmlElement,
@@ -35,6 +36,7 @@ export const WIDGET_COMMENT_RUNTIME = String.raw`
 const matchElement=${matchHtmlElement.toString()};
 const QUOTE=${HTML_ELEMENT_QUOTE_LENGTH};
 const CONTEXT=${HTML_ELEMENT_CONTEXT_LENGTH};
+const ATTRIBUTES=${HTML_ELEMENT_ATTRIBUTES};
 const COLORS=${COLORS};
 const NAMING=/^(data-(?!worktable)[\w-]+|role|aria-label|name|href|src|alt|title|type|placeholder|for)$/;
 const BLOCKED=['pointerdown','mousedown','pointerup','mouseup','dblclick','auxclick','contextmenu','dragstart','submit'];
@@ -98,7 +100,7 @@ function describe(el,headings){
   for(let node=el;node&&node!==document.body&&node!==document.documentElement;node=node.parentElement)path.unshift(segment(node));
   const attrs={};let count=0;
   for(const attr of el.attributes){
-    if(count>=8)break;
+    if(count>=ATTRIBUTES)break;
     if(attr.name.length<=40&&NAMING.test(attr.name)&&attr.value.indexOf('data:')!==0){attrs[attr.name]=attr.value.slice(0,160);count++}
   }
   const out={tag:el.localName,classes:(el.getAttribute('class')||'').split(/\s+/).filter(function(name){return name&&name.length<=80}).slice(0,6),attrs:attrs,path:path.slice(-12).join(' > ').slice(-600)};

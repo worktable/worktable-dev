@@ -65,6 +65,9 @@ export function readHtmlElement(value: unknown): HtmlElement | null {
 /** How much of an element's text a comment keeps as its quote. */
 export const HTML_ELEMENT_QUOTE_LENGTH = 200
 
+/** How many naming attributes an element's description keeps. */
+export const HTML_ELEMENT_ATTRIBUTES = 8
+
 /** How much text either side of an element its description keeps. */
 export const HTML_ELEMENT_CONTEXT_LENGTH = 64
 

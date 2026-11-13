@@ -164,7 +164,7 @@ Build and package the plugin from this directory:
 
 ```sh
 bun run pack:dogfood
-openclaw plugins install npm-pack:/absolute/path/to/worktable-openclaw-<version>.tgz --pin
+openclaw plugins install npm-pack:/absolute/path/to/worktable-openclaw-<version>.tgz --accept-capabilities --force
 ```
 
 Use the archive path printed by `pack:dogfood`. See the

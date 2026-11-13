@@ -532,7 +532,7 @@ function TokenPanel({
 function signedInHere(option: Option, connection: AgentConnection): boolean {
   if (
     option.kind === "always-on" &&
-    option.agent.cloudAuth === "agent-registration"
+    option.agent.cloudAuth === "approval"
   ) {
     return (
       connection.target.kind === "agent-adapter" &&
@@ -598,7 +598,7 @@ function SignInPanel({
           ? "In Claude, open Settings, then Connectors, and add a custom connector. Paste this address and sign in."
           : "In ChatGPT on the web, open Settings, then Apps, and create an app. Paste this address and sign in."
         : option.kind === "always-on"
-          ? `Run this on the machine where ${option.agent.name} runs${option.agent.cloudAuth === "oauth" ? ", then sign in" : ""}.`
+          ? `Run this on the machine where ${option.agent.name} runs, then ${option.agent.cloudAuth === "oauth" ? "sign in" : "open the link it prints to approve it"}.`
           : "Add this address as a custom connector or MCP server, then sign in."
   const value =
     option.kind === "cli"

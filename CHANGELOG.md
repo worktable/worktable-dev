@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **OpenClaw:** On Worktable Cloud, the command in **Settings → Agents → OpenClaw** works with plugin 0.0.20. Run it, then open the link it prints and approve OpenClaw.
+
 ## [0.1.45] - 2026-11-12
 
 ### Changed

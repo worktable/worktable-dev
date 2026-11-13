@@ -36,8 +36,9 @@
  * stdout and the GitHub step summary. `--check` exits 1 when a regression
  * remains. It exits 2 when it cannot judge: no comparable runs, a measure
  * with more runs on one side than the other, or a measure named by
- * `--require` without results. Keys only the head measured (a base too old
- * for them) are listed and not judged.
+ * `--require` without results. A screen only one side has, in every run of
+ * its network and pass there, is listed and not judged: the base predates
+ * it, or the head renamed or removed it.
  */
 import {
   appendFileSync,
@@ -91,6 +92,8 @@ export interface Verdict {
   incomplete: string[]
   /** Keys only the head measured (a base too old for them); not judged. */
   headOnly: string[]
+  /** Keys only the base measured (the head no longer has them); not judged. */
+  baseOnly: string[]
   /** How many standard errors a change had to exceed. */
   k: number
   /** Set when a --confirm verdict filtered the regressions. */
@@ -235,6 +238,7 @@ export function compare(
         `${measure}: ${baseRuns.get(measure) ?? 0} base runs, ${headRuns.get(measure) ?? 0} head runs`
     )
   const headOnly: string[] = []
+  const baseOnly: string[] = []
 
   const labels = new Map<string, string>()
   // One run per result and round (a result can hold several rounds). The
@@ -262,23 +266,43 @@ export function compare(
         )
     )
 
-  // Every key measured on one side must be on the other, in as many runs;
-  // a key only the head has is noted (the base predates it), not judged.
-  const pairKeys = (kind: string, left: Run[], right: Run[]) => {
+  // Every key measured on one side must be on the other, in as many runs.
+  // A key one side never has, while the other has it in every run of its
+  // group (a network and pass; the server is one group), is a screen the
+  // base predates or the head renamed or removed: noted, not judged. The
+  // results of several networks are judged together, so a side's runs are
+  // counted per group.
+  const pairKeys = (
+    kind: string,
+    left: Run[],
+    right: Run[],
+    groupOf: (key: string) => string
+  ) => {
     const coverage = (runs: Run[]) => {
       const counts = new Map<string, number>()
-      for (const run of runs)
+      const groups = new Map<string, number>()
+      for (const run of runs) {
         for (const key of run.keys())
           counts.set(key, (counts.get(key) ?? 0) + 1)
-      return counts
+        for (const group of new Set([...run.keys()].map(groupOf)))
+          groups.set(group, (groups.get(group) ?? 0) + 1)
+      }
+      return { counts, groups }
     }
     const leftKeys = coverage(left)
     const rightKeys = coverage(right)
     const keys: string[] = []
-    for (const key of new Set([...leftKeys.keys(), ...rightKeys.keys()])) {
-      const l = leftKeys.get(key) ?? 0
-      const r = rightKeys.get(key) ?? 0
-      if (l === 0 && r === right.length) headOnly.push(`${kind} ${key}`)
+    for (const key of new Set([
+      ...leftKeys.counts.keys(),
+      ...rightKeys.counts.keys(),
+    ])) {
+      const l = leftKeys.counts.get(key) ?? 0
+      const r = rightKeys.counts.get(key) ?? 0
+      const group = groupOf(key)
+      if (l === 0 && r === rightKeys.groups.get(group))
+        headOnly.push(`${kind} ${key}`)
+      else if (r === 0 && l === leftKeys.groups.get(group))
+        baseOnly.push(`${kind} ${key}`)
       else if (l !== r)
         incomplete.push(`${kind} ${key}: ${l} base runs, ${r} head runs`)
       else keys.push(key)
@@ -300,9 +324,10 @@ export function compare(
   // Clicks, grouped by network and pass for their noise.
   const baseClicks = clickRuns(sides.base.clicks)
   const headClicks = clickRuns(sides.head.clicks)
+  const passOf = (key: string) => key.split(":").slice(0, 2).join(":")
   const groups = new Map<string, string[]>()
-  for (const key of pairKeys("click", baseClicks, headClicks)) {
-    const group = key.split(":").slice(0, 2).join(":")
+  for (const key of pairKeys("click", baseClicks, headClicks, passOf)) {
+    const group = passOf(key)
     groups.set(group, [...(groups.get(group) ?? []), key])
   }
   for (const [group, groupKeys] of groups) {
@@ -418,7 +443,7 @@ export function compare(
   // spread, since a 1 ms route and a 30 ms one move differently.
   const baseServer = serverRuns(sides.base.io)
   const headServer = serverRuns(sides.head.io)
-  for (const endpoint of pairKeys("server", baseServer, headServer)) {
+  for (const endpoint of pairKeys("server", baseServer, headServer, () => "")) {
     const baseLogs = logs(baseServer, endpoint)
     const headLogs = logs(headServer, endpoint)
     if (baseLogs.length === 0 || headLogs.length === 0) continue
@@ -455,6 +480,7 @@ export function compare(
     regressions: comparisons.filter((item) => item.regressed),
     incomplete,
     headOnly,
+    baseOnly,
     k,
   }
 }
@@ -521,6 +547,11 @@ export function report(verdict: Verdict): string {
   if (verdict.headOnly.length)
     lines.push(
       `Only the head measured ${verdict.headOnly.join("; ")}; the base predates them, so they are not judged.`,
+      ""
+    )
+  if (verdict.baseOnly.length)
+    lines.push(
+      `Only the base measured ${verdict.baseOnly.join("; ")}; the head no longer has them, so they are not judged.`,
       ""
     )
   if (verdict.comparisons.length === 0)

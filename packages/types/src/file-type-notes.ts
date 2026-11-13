@@ -24,11 +24,6 @@ export interface FileTypeNote {
   fix?: string
 }
 
-const CODE_PAGE: FileTypeNote = {
-  why: "Agents read source as text; the page has no source view yet.",
-  fix: "Show it as text on its page, as agents read it.",
-}
-
 /** Each type's notes, by the surfaces that break an agreement rule. */
 export const FILE_TYPE_NOTES: {
   readonly [K in FileTypeId]?: { readonly [S in FileSurface]?: FileTypeNote }
@@ -51,15 +46,11 @@ export const FILE_TYPE_NOTES: {
       why: "SVG can carry script and outside references, so shared pages, which carry only raster data URLs, show a placeholder.",
     },
   },
-  markdown: { page: CODE_PAGE },
   html: {
     serve: {
       why: "Served inline as text/html, unlike other text, because its page shows it in a frame. The response's sandbox policy and the frame's sandbox keep its scripts off and load nothing, so it shows as a static page until a person opens it as an HTML Doc.",
     },
   },
-  css: { page: CODE_PAGE },
-  javascript: { page: CODE_PAGE },
-  typescript: { page: CODE_PAGE },
 }
 
 /** Each surface: where it lives, and what holds for it across types. */

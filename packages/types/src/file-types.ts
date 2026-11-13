@@ -128,8 +128,8 @@ const RASTER = {
 const CODE = {
   ...NONE,
   serve: "bytes",
-  page: "card",
-  icon: "file",
+  page: "text",
+  icon: "code",
   agent: "text",
 } as const
 
@@ -500,8 +500,11 @@ for (const id of Object.keys(ENTRIES) as FileTypeId[]) {
   for (const name of ENTRIES[id].names ?? []) BY_NAME.set(name, id)
 }
 
-/** ASCII A-Z to a-z; every other character stays as it is. */
-function foldFileName(name: string): string {
+/**
+ * ASCII A-Z to a-z; every other character stays as it is. The one case rule
+ * for file names, which the server's Doc format registry uses too.
+ */
+export function foldFileName(name: string): string {
   return name.replace(/[A-Z]+/g, (letters) => letters.toLowerCase())
 }
 

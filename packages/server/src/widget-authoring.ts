@@ -3,6 +3,7 @@ import {
   buildWidgetShareRuntimeScript,
   SHARE_FONT_CSS,
 } from "./widget-share-runtime.ts"
+import { WIDGET_COMMENT_RUNTIME } from "./widget-comment-runtime.ts"
 import type { WidgetFile } from "@worktable/types"
 import { parseDocument, Parser } from "htmlparser2"
 import { filesEnabled } from "./files-enabled.ts"
@@ -721,6 +722,7 @@ const ui={
   getViewport:()=>({width:window.innerWidth,height:window.innerHeight}),
 };
 window.worktable={version:cfg.runtimeVersion,records,state,navigation,ui,diagnostics:{list:ui.getDiagnostics,report:ui.reportDiagnostic},toast:ui.notify};
+${WIDGET_COMMENT_RUNTIME}
 // Interaction ping: user gestures inside the sandboxed frame never bubble to
 // the parent window, so inferred review ("reading = review" needs dwell AND an
 // interaction) would otherwise never fire for HTML docs. Post a throttled,

@@ -11,6 +11,7 @@ export * from "./delimited-text";
 export * from "./file-types";
 export * from "./annotations";
 export * from "./passage";
+export * from "./html-element";
 export * from "./widgets";
 export * from "./records";
 export * from "./link-grants";

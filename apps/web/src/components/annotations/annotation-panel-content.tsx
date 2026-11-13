@@ -6,7 +6,7 @@ import {
   RotateCcw,
   X,
 } from "lucide-react"
-import type { Annotation } from "@worktable/types"
+import { htmlElementName, type Annotation } from "@worktable/types"
 import { Badge } from "@worktable/ui/components/badge"
 import { Button } from "@worktable/ui/components/button"
 import { InfoTip } from "@worktable/ui/components/info-tip"
@@ -97,6 +97,8 @@ export interface AnnotationPanelContentProps {
   emptyHint?: string;
   /** Comments whose passage is no longer in the Doc. */
   detachedIds?: ReadonlySet<string>;
+  /** Names that group where it isn't text that changed. */
+  detachedLabel?: string;
   /** Shows the version of the Doc that still has a comment's passage. */
   onOriginal?: (annotation: Annotation) => void;
   className?: string;
@@ -118,6 +120,7 @@ export function AnnotationPanelContent({
   composeLabel,
   emptyHint,
   detachedIds,
+  detachedLabel = "Text Changed",
   onOriginal,
   className,
 }: AnnotationPanelContentProps) {
@@ -231,7 +234,7 @@ export function AnnotationPanelContent({
                   <section aria-labelledby={changedHeading} className="mt-3 border-t border-border pt-2">
                     <div className="flex min-h-8 items-center justify-between gap-2 px-3">
                       <h3 id={changedHeading} className="text-xs font-medium text-muted-foreground">
-                        Text Changed <span className="tabular-nums">{changed.length}</span>
+                        {detachedLabel} <span className="tabular-nums">{changed.length}</span>
                       </h3>
                       {!readOnly && changed.length > 1 && (
                         <Button
@@ -275,6 +278,22 @@ function messagesOf(annotation: Annotation): ThreadMessageLike[] {
   ];
 }
 
+/**
+ * What a comment is about, in the page's own words: the passage, or the
+ * element's text, or the element's name when it has no words.
+ */
+function quoteOf(annotation: Annotation): string | undefined {
+  const target = annotation.target;
+  const element = target.type === "widget" ? target.element : undefined;
+  if ("quote" in target && target.quote) {
+    // A word or a number alone says little: show what it sits in too.
+    return element?.within && target.quote.length < 8
+      ? `${target.quote} · ${element.within}`
+      : target.quote;
+  }
+  return element ? htmlElementName(element) : undefined;
+}
+
 /** A message as one line of plain text, for the list. */
 function previewText(body: string): string {
   return body
@@ -311,7 +330,7 @@ function ThreadRow({
   detached: boolean
   onOpen: () => void
 }) {
-  const quote = "quote" in annotation.target ? annotation.target.quote : undefined;
+  const quote = quoteOf(annotation);
   const messages = messagesOf(annotation);
   const latest = messages[messages.length - 1]!;
   const people = [
@@ -416,7 +435,7 @@ function CommentThread({
   const notShown = isResolved ? [] : agentsNotShown(annotation);
   // Replying to a resolved comment opens it again, which needs the right to.
   const mayReply = canReply && (!isResolved || !readOnly);
-  const quote = "quote" in annotation.target ? annotation.target.quote : undefined;
+  const quote = quoteOf(annotation);
   const replies = annotation.thread;
   // Links in messages resolve in the comment's Space, as in a Thread there.
   const location = useMemo(

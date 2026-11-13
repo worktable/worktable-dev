@@ -20,6 +20,7 @@ import {
   DocumentGenerationEntrySchema,
   DocumentPortableStateManifestV2Schema,
   DocumentPortableStatePointerV2Schema,
+  HtmlElementSchema,
   type AnnotationTarget,
   type DocumentAnnotationFileV2,
   type DocumentAnnotationTargetV2,
@@ -69,6 +70,8 @@ export const LEGACY_DOCUMENT_SELECTOR_TYPES = {
   richTextRange: "worktable.rich-text-range",
   /** A passage found by its quote and the text either side; see findPassage. */
   passage: "worktable.passage",
+  /** An element of an HTML Doc's page; see matchHtmlElement. */
+  htmlElement: "worktable.html-element",
 } as const
 
 export const DOCUMENT_ANNOTATIONS_V2_MAX_BYTES = 16 * 1024 * 1024
@@ -236,7 +239,18 @@ export function translateLegacyDocumentAnnotationTarget(
   }
   if (target.type === "widget") {
     if (target.widgetId !== input.logicalPath) return null
-    return base
+    if (!target.element) return base
+    return DocumentAnnotationTargetV2Schema.parse({
+      ...base,
+      selector: {
+        type: LEGACY_DOCUMENT_SELECTOR_TYPES.htmlElement,
+        version: 1,
+        data: {
+          ...(target.quote !== undefined ? { quote: target.quote } : {}),
+          element: target.element,
+        },
+      },
+    })
   }
   if (target.type === "block") {
     if (target.docPath !== input.logicalPath) return null
@@ -300,6 +314,13 @@ const PassageSelectorDataSchema = z
   })
   .passthrough()
 
+const HtmlElementSelectorDataSchema = z
+  .object({
+    quote: z.string().min(1).optional(),
+    element: HtmlElementSchema,
+  })
+  .passthrough()
+
 const RangeSelectorDataSchema = z
   .object({
     blockId: z.string().min(1),
@@ -325,6 +346,23 @@ export function translateDocumentAnnotationTargetV2ToLegacy(
     }
   }
   if (legacyKind !== "docs") {
+    if (
+      target.selector.type === LEGACY_DOCUMENT_SELECTOR_TYPES.htmlElement &&
+      target.selector.version === 1
+    ) {
+      const data = HtmlElementSelectorDataSchema.safeParse(target.selector.data)
+      if (data.success) {
+        return {
+          kind: "resolved",
+          target: {
+            type: "widget",
+            widgetId: target.path,
+            ...(data.data.quote !== undefined ? { quote: data.data.quote } : {}),
+            element: data.data.element,
+          },
+        }
+      }
+    }
     return {
       kind: "unresolved",
       reason: "incompatible-legacy-target",

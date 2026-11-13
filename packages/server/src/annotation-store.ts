@@ -20,6 +20,7 @@ import type {
 import { AnnotationFileSchema, WidgetIdSchema, findPassageBlock } from "@worktable/types";
 import { getSpacesBaseDir, readDoc } from "./store.ts";
 import { readWidget, readWidgetHtml } from "./widget-store.ts";
+import { locateHtmlElement } from "./html-element-locate.ts";
 import { locateMarkdownPassage, markdownPassageLines } from "./markdown-passage.ts";
 import { withDocPathLock } from "./doc-path-lock.ts";
 import { assertWorkspaceAvailable } from "./workspace-safety.ts"
@@ -656,6 +657,16 @@ export async function getAnnotationContext(spaceId: string, annotationOrTarget: 
     const { data: widget } = await readWidget(spaceId, target.widgetId);
     if (!widget) return { targetExists: false, selectorMatch: "missing" };
     const { data: html } = await readWidgetHtml(spaceId, target.widgetId);
+    if (target.element) {
+      // The element's own lines in the page as written, numbered as
+      // worktable_html_read returns them.
+      const place = locateHtmlElement(html ?? "", { element: target.element, quote: target.quote });
+      if (!place) return { targetExists: false, selectorMatch: "stale" };
+      const { kind, ...lines } = place;
+      return kind === "element"
+        ? { targetExists: true, selectorMatch: place.match, startLine: lines.startLine, endLine: lines.endLine, excerpt: lines.excerpt }
+        : { targetExists: false, selectorMatch: "stale", ...lines };
+    }
     const excerpt = [widget.name, widget.description, (html ?? "").slice(0, 4000)]
       .filter(Boolean)
       .join("\n");

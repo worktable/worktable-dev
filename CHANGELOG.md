@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **HTML Docs:** Comment on one part of a page. Press **Comment** on the page, point at a heading, a number, a chart or a table cell, and write. The comment stays pinned to that part when an agent rewrites the page, moves to **Page Changed** when the part is gone, and tells the agent which lines of the page it is about.
+
 ## [0.1.47] - 2026-11-13
 
 ### Changed

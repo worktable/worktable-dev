@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { HTML_ELEMENT_QUOTE_LENGTH, HtmlElementSchema } from "./html-element";
 
 export const AnnotationCategorySchema = z.enum(["comment", "instruction"]);
 
@@ -42,11 +43,15 @@ export const AnnotationTargetSchema = z.discriminatedUnion("type", [
     suffix: z.string().optional(),
   }),
   z.object({
-    // HTML doc (widget) annotations are DOC-LEVEL only: the sandboxed iframe's
-    // cross-origin wall makes block/span anchoring impossible, so the target
-    // carries just the widget id (slash-joined segments, like the storage id).
+    // An HTML doc (widget), by its id (slash-joined segments, like the
+    // storage id), or one element of its page: the page's runtime describes
+    // the element from inside the sandboxed frame. Readers that don't know
+    // elements still show the comment as one on the whole HTML doc.
     type: z.literal("widget"),
     widgetId: z.string().min(1),
+    /** The element's text, as a passage's quote is the selected text. */
+    quote: z.string().min(1).max(HTML_ELEMENT_QUOTE_LENGTH).optional(),
+    element: HtmlElementSchema.optional(),
   }),
   z.object({
     type: z.literal("view"),
@@ -176,7 +181,16 @@ export interface AnnotationContext {
   beforeBlocks?: unknown[];
   afterBlocks?: unknown[];
   excerpt?: string;
-  /** For a passage in a Markdown file: the source lines it spans, from 1. */
+  /**
+   * For a passage in a Markdown file or an element of an HTML Doc: the
+   * source lines it spans, from 1.
+   */
   startLine?: number;
   endLine?: number;
+  /**
+   * For an element that is not in an HTML Doc's page as written, because it
+   * was removed or a script draws it: the nearest thing around it that is,
+   * which the lines and excerpt then show.
+   */
+  container?: string;
 }

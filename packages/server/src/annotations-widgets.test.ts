@@ -95,6 +95,62 @@ describe("HTML doc (widget) annotations", () => {
     expect(context.excerpt).toContain("<h2>Burndown</h2>");
   });
 
+  it("keeps a comment on an element of the page and gives its lines in the page as written", async () => {
+    const html = [
+      "<!doctype html><html><head><title>Plan</title></head><body><main>",
+      '<section id="plans"><h2>Plans</h2>',
+      '<div class="price">$49 <small>per month</small></div>',
+      "</section>",
+      '<ul id="rows"></ul>',
+      "<script>rows.innerHTML = '<li>Drawn later</li>'</script>",
+      "</main></body></html>",
+    ].join("\n");
+    await req(app, "POST", "/api/spaces/meta/widgets", { id: "pricing", name: "Pricing", html });
+    const target = {
+      type: "widget",
+      widgetId: "pricing",
+      quote: "$49 per month",
+      element: {
+        tag: "div",
+        classes: ["price"],
+        attrs: {},
+        within: "Plans $49 per month",
+        heading: "Plans",
+        path: "main > section#plans > div",
+        html: '<div class="price">',
+        pin: 0.25,
+      },
+    };
+    const created = await req(app, "POST", "/api/spaces/meta/annotations", { target, category: "comment", body: "Yearly price" });
+    expect(created.status).toBe(200);
+    const listed = await req(app, "GET", "/api/spaces/meta/annotations?widgetId=pricing");
+    expect(listed.json.annotations[0].target).toEqual(target);
+    expect(await getAnnotationContext("meta", created.json.annotation.id)).toEqual({
+      targetExists: true,
+      selectorMatch: "exact",
+      startLine: 3,
+      endLine: 3,
+      excerpt: '<div class="price">$49 <small>per month</small></div>',
+    });
+
+    // An element a script draws is not in the page as written: the agent is
+    // shown what holds it.
+    const drawn = await getAnnotationContext("meta", {
+      type: "widget",
+      widgetId: "pricing",
+      quote: "Drawn later",
+      element: { tag: "li", path: "main > ul#rows > li" },
+    });
+    expect(drawn).toEqual({
+      targetExists: false,
+      selectorMatch: "stale",
+      container: "ul#rows",
+      startLine: 5,
+      endLine: 5,
+      excerpt: '<ul id="rows"></ul>',
+    });
+  });
+
   it("reports missing context when the widget is gone, and rejects malformed widget ids", async () => {
     const missing = await getAnnotationContext("meta", { type: "widget", widgetId: "nope" });
     expect(missing).toEqual({ targetExists: false, selectorMatch: "missing" });

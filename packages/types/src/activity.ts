@@ -40,6 +40,11 @@ export const ActivityTargetSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("doc"),
     path: z.string().min(1),
+    /**
+     * The Doc's durable id, recorded on comment events, so its words go with
+     * that Doc and never show for a new one at the same path.
+     */
+    documentId: z.string().optional(),
     title: z.string().optional(),
     formatId: z.string().optional(),
   }),

@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto"
+import { forgetDeletedDocQuotes } from "./activity-log.ts"
 import { lstat, mkdir, open, rename, rm } from "node:fs/promises"
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { basename, dirname, join } from "node:path"
@@ -459,6 +460,15 @@ async function applyJob(job: DocumentDataLifecycleV2Job): Promise<void> {
       )
     )
   }
+  // What their comments said leaves Activity with them, now the delete has
+  // committed.
+  forgetDeletedDocQuotes(
+    job.documents.map((document) => ({
+      spaceId: job.spaceId,
+      path: document.from,
+      documentId: document.documentId,
+    }))
+  )
   // The deleted documents' visitor comments go with them. An erase that
   // cannot run now is recorded, and every deleted-items pass retries it.
   try {

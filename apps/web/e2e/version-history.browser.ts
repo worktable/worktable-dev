@@ -227,8 +227,24 @@ for (const kind of ["doc", "html"] as const) {
     ).toBeVisible()
     await confirm.getByRole("button", { name: "Cancel", exact: true }).click()
     await page.unroute(restoreRoute)
+    // A restore based on a revision someone has since replaced is refused
+    // by the server, and the page asks, as Upload New Version does.
+    await page.route(restoreRoute, (route) =>
+      route.continue({
+        postData: JSON.stringify({ expectedRevision: "stale" }),
+      })
+    )
     await preview.getByRole("button", { name: "Restore", exact: true }).click()
     await confirm.getByRole("button", { name: "Restore", exact: true }).click()
+    const changedDialog = page.getByRole("dialog", {
+      name: kind === "doc" ? "This Doc changed" : "This HTML Doc changed",
+      exact: true,
+    })
+    await expect(changedDialog).toBeVisible()
+    await page.unroute(restoreRoute)
+    await changedDialog
+      .getByRole("button", { name: "Restore Anyway", exact: true })
+      .click()
     await expect(preview).toBeHidden()
     await expect(
       current.getByText("Original paragraph", { exact: true })

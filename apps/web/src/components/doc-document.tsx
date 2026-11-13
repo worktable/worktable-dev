@@ -1001,6 +1001,7 @@ function MarkdownDocPage({
             canEdit={validated && !readOnly}
             key={previewVersionId}
             kind="doc"
+            sourceRevision={revision}
             spaceId={spaceId}
             path={docPath}
             revision={
@@ -1843,6 +1844,7 @@ function BlockNoteDocPage({
             canEdit={validated && !readOnly}
             key={previewVersionId}
             kind="doc"
+            sourceRevision={revision}
             spaceId={spaceId}
             path={docPath}
             revision={

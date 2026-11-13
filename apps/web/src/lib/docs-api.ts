@@ -281,12 +281,15 @@ export function createDocCheckpoint(
   });
 }
 
+/** `expectedRevision`: the revision the page loaded, which the restore replaces. */
 export function restoreDocVersion(
   spaceId: string,
   docPath: string,
-  versionId: string
+  versionId: string,
+  expectedRevision: string | undefined
 ): Promise<{ ok: boolean; provenance?: DocProvenance; updatedAt: number }> {
   return fetchJSON(`/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}/versions/${encodeURIComponent(versionId)}/restore`, {
     method: "POST",
+    body: JSON.stringify({ expectedRevision }),
   });
 }

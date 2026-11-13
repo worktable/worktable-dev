@@ -1856,6 +1856,8 @@ describe("format-neutral document route", () => {
       document: { path: "plan", health: "invalid" },
       renderer: null,
       capabilities: { rawSource: true, versions: true },
+      // Its page says which check it failed.
+      unreadable: { reason: "Its contents aren’t Doc blocks." },
     })
     const current = await readRegisteredDocumentSource({ spaceId, path: "plan" })
     expect(current.documentId).toBe(created.documentId)
@@ -1897,11 +1899,11 @@ describe("format-neutral document route", () => {
       updatedBy: "test",
       source: "test",
     })
-    expect(
-      ((await (await request("page?path=plan")).json()) as {
-        page: { document: { health: string } }
-      }).page.document.health
-    ).toBe("supported")
+    const repaired = ((await (await request("page?path=plan")).json()) as {
+      page: { document: { health: string } }
+    }).page
+    expect(repaired.document.health).toBe("supported")
+    expect(repaired).not.toHaveProperty("unreadable")
     expect(
       (await readRegisteredDocumentSource({ spaceId, path: "plan" })).documentId
     ).toBe(created.documentId)
@@ -1914,10 +1916,11 @@ describe("format-neutral document route", () => {
     await writeFile(join(root, "spaces", spaceId, "docs", "plan.json"), flagged)
     noteSpaceChanged(spaceId)
     expect(
-      ((await (await request("page?path=plan")).json()) as {
-        page: { document: { health: string } }
-      }).page.document.health
-    ).toBe("invalid")
+      ((await (await request("page?path=plan")).json()) as { page: unknown }).page
+    ).toMatchObject({
+      document: { health: "invalid" },
+      unreadable: { reason: "Unknown field `reviewState` on paragraph." },
+    })
     expect(
       (await listDocsDetailed(spaceId)).find((doc) => doc.path === "plan")
     ).toMatchObject({ unreadable: true })

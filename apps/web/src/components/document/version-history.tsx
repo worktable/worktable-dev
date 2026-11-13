@@ -473,7 +473,7 @@ function RestoreVersionButton({
   inline = false,
   canEdit,
 }: HistoryLocation & {
-  /** For an HTML Doc, the revision of the page the restore replaces. */
+  /** The revision of the page the restore replaces, as the page loaded it. */
   sourceRevision?: string
   version: DocVersionEntry
   onRestored: () => void
@@ -484,7 +484,49 @@ function RestoreVersionButton({
   const queryClient = useQueryClient()
   const [confirming, setConfirming] = useState(false)
   const [restoring, setRestoring] = useState(false)
+  // The revision it is at now, once a restore found it changed, until the
+  // person decides.
+  const [changedTo, setChangedTo] = useState<string | null>(null)
   if (!canEdit || !space || space.space.permissions?.edit === false) return null
+  const restore = async (basedOn: string | undefined) => {
+    setRestoring(true)
+    try {
+      await (kind === "doc"
+        ? restoreDocVersion(spaceId, path, version.id, basedOn)
+        : restoreWidgetVersion(spaceId, path, version.id, basedOn))
+      setConfirming(false)
+      setChangedTo(null)
+      toast.success("Version restored")
+      onRestored()
+      await Promise.all(
+        [false, true].map((all) =>
+          queryClient.invalidateQueries({
+            queryKey: listKey({ kind, spaceId, path, revision }, all),
+            exact: true,
+          })
+        )
+      )
+    } catch (error) {
+      const body =
+        error instanceof HttpError
+          ? (error.body as { code?: unknown; revision?: unknown } | null)
+          : null
+      if (body?.code === "REVISION_CHANGED" && typeof body.revision === "string") {
+        // Show the newer version behind the question.
+        setConfirming(false)
+        setChangedTo(body.revision)
+        void queryClient.invalidateQueries({
+          queryKey: documentQueryKeys.page(spaceId, path),
+          exact: true,
+        })
+        return
+      }
+      setChangedTo(null)
+      toast.error("Couldn’t restore this version")
+    } finally {
+      setRestoring(false)
+    }
+  }
   return (
     <>
       <Button
@@ -503,47 +545,26 @@ function RestoreVersionButton({
         confirmLabel="Restore"
         loading={restoring}
         icon={<RotateCcw className="size-5 text-primary" />}
-        onConfirm={async () => {
-          setRestoring(true)
-          try {
-            await (kind === "doc"
-              ? restoreDocVersion(spaceId, path, version.id)
-              : restoreWidgetVersion(spaceId, path, version.id, sourceRevision))
-            setConfirming(false)
-            toast.success("Version restored")
-            onRestored()
-            await Promise.all(
-              [false, true].map((all) =>
-                queryClient.invalidateQueries({
-                  queryKey: listKey({ kind, spaceId, path, revision }, all),
-                  exact: true,
-                })
-              )
-            )
-          } catch (error) {
-            if (
-              error instanceof HttpError &&
-              (error.body as { code?: unknown } | null)?.code ===
-                "REVISION_CHANGED"
-            ) {
-              setConfirming(false)
-              await queryClient.invalidateQueries({
-                queryKey: documentQueryKeys.page(spaceId, path),
-                exact: true,
-              })
-              toast.error("This HTML doc changed. Check it before restoring.")
-              return
-            }
-            toast.error("Couldn’t restore this version")
-          } finally {
-            setRestoring(false)
-          }
-        }}
+        onConfirm={() => void restore(sourceRevision)}
       >
         <p className="text-sm text-muted-foreground">
           Your current version will be saved first, so you can return to it.
         </p>
       </ConfirmDialog>
+      <ConfirmDialog
+        open={changedTo !== null}
+        onOpenChange={(open) => {
+          if (!open) setChangedTo(null)
+        }}
+        title={kind === "doc" ? "This Doc changed" : "This HTML Doc changed"}
+        description="A newer version was saved after you opened it. Restoring keeps that version in history."
+        confirmLabel="Restore Anyway"
+        loadingLabel="Restoring…"
+        loading={restoring}
+        onConfirm={() => {
+          if (changedTo !== null) void restore(changedTo)
+        }}
+      />
     </>
   )
 }

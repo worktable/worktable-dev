@@ -337,6 +337,8 @@ export const DocumentPageSchema = z.object({
   byteLength: z.number().int().nonnegative().optional(),
   /** For a file Worktable keeps no versions of now, why. */
   noHistory: FileNoHistorySchema.optional(),
+  /** For a Doc that doesn't open, the check it failed, in a sentence. */
+  unreadable: z.object({ reason: z.string() }).optional(),
   /**
    * The document's share links, for people who may share it, while links v2
    * is on. Absent otherwise; the page then shares through today's single link.

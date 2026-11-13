@@ -219,6 +219,9 @@ describe("rapid edits coalesce into one version", () => {
     setSystemTime(minutes(4))
     await call("POST", `notes/versions/${versions[2]!.id}/restore`, {
       actor: "writer",
+      body: {
+        expectedRevision: (await call<{ revision: string }>("GET", "notes")).revision,
+      },
     })
     await save(minutes(5), "writer", "after restore")
     versions = await history()

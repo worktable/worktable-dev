@@ -3,7 +3,7 @@ import { noteCommentActivity } from "./activity-log.ts"
 import type { AnnotationWriteGuard } from "./annotation-origin.ts"
 import { nanoid } from "nanoid"
 import { NON_ENGAGING_ACTORS, noteDocumentActivity } from "./document-activity.ts"
-import { analyzeDocumentPath } from "./document-path.ts"
+import { analyzeDocumentPath, newPathRefusal } from "./document-path.ts"
 import { lstat, opendir } from "node:fs/promises"
 import { join } from "node:path"
 import { DocumentIdSchema } from "@worktable/types"
@@ -111,6 +111,17 @@ function legacyKind(document: AnnotationDocument): "docs" | "widgets" {
   return document.formatId === "worktable.html" ? "widgets" : "docs"
 }
 
+/**
+ * Names the path nothing was found at. A path that ends in a Doc's own
+ * extension is most often the file's name, so it says how a Doc is named.
+ */
+function documentNotFoundMessage(path: string): string {
+  const refusal = newPathRefusal(path)
+  return refusal?.reason === "doc-name"
+    ? `Document not found: ${path}. ${refusal.message}`
+    : `Document not found: ${path}`
+}
+
 async function useDurableDocument<T>(
   spaceId: string,
   path: string,
@@ -155,7 +166,7 @@ async function useDurableDocument<T>(
     throw new DocumentAnnotationError(
       resolution.kind === "not-found" ? "not-found" : "conflict",
       resolution.kind === "not-found"
-        ? "Document not found"
+        ? documentNotFoundMessage(path)
         : "Document path cannot be resolved"
     )
   }

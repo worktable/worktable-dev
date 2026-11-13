@@ -9,6 +9,7 @@
 import { APIError } from "better-auth/api"
 import type { Context } from "hono"
 import { SpaceTooLargeError } from "./document-adapters.ts"
+import { DocumentAnnotationError } from "./document-annotation-service.ts"
 import { unexpectedErrorResponse } from "./request-timing.ts"
 import { StorageLimitError, storageLimitBody } from "./storage-limit.ts"
 import { TeamStateError } from "./team-database.ts"
@@ -30,6 +31,12 @@ export function apiErrorResponse(err: Error, c: Context): Response {
     return c.json({ error: err.message, code: err.code }, 503)
   if (err instanceof WorkspaceUnavailableError) {
     return c.json({ error: err.message, code: err.code }, 503)
+  }
+  // A comment on a Doc that is not there, or a comment that is gone.
+  if (err instanceof DocumentAnnotationError) {
+    return err.reason === "not-found"
+      ? c.json({ error: err.message, code: "NOT_FOUND" }, 404)
+      : c.json({ error: err.message, code: "CONFLICT" }, 409)
   }
   if (err instanceof SpaceTooLargeError) {
     return c.json({ error: err.message, code: err.code }, 413)

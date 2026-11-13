@@ -1,14 +1,19 @@
-import { useSyncExternalStore } from "react"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { useEffect, useSyncExternalStore } from "react"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { ArrowRight } from "lucide-react"
 import { toast } from "@worktable/ui/components/sonner"
 import { cn } from "@worktable/ui/lib/utils"
 import { WorktableAppIcon } from "@/components/worktable-app-icon"
 import {
   ArchivingWeek,
+  pageColumns,
+  pinGrid,
   PinTile,
+  PinTilesSkeleton,
   PlaceCard,
+  PlaceCardsSkeleton,
   sectionHeading,
+  sideColumn,
 } from "@/components/home/home-cards"
 import { LatestRuns, LatestSkeleton } from "@/components/home/home-latest"
 import { HomeNewMenu } from "@/components/home/home-new-menu"
@@ -48,6 +53,18 @@ function EmptyState() {
 
 const noChange = () => () => {}
 
+// How many pins Home showed last time, so a cold load holds their place
+// instead of moving the page when they arrive.
+const PIN_COUNT_KEY = "worktable-home-pins"
+
+function rememberedPinCount(): number {
+  try {
+    return Math.max(0, Math.min(8, Number(localStorage.getItem(PIN_COUNT_KEY)) || 0))
+  } catch {
+    return 0
+  }
+}
+
 function greetingNow(): string {
   const hour = new Date().getHours()
   return hour >= 5 && hour < 12
@@ -75,6 +92,17 @@ function HomePage() {
   const greeting = useGreeting(workspace?.person?.name)
   const feed = useHomeFeed()
   const homePins = useHomePins()
+  const navigate = useNavigate()
+  const expectedPins = useSyncExternalStore(noChange, rememberedPinCount, () => 0)
+  const pinCount = feed.data?.pins?.length
+  useEffect(() => {
+    if (pinCount === undefined) return
+    try {
+      localStorage.setItem(PIN_COUNT_KEY, String(pinCount))
+    } catch {
+      // The page still loads; it only moves once when pins arrive.
+    }
+  }, [pinCount])
   // Home's temporary docs, soonest to archive first; the docs themselves
   // are listed by Latest.
   const recent = useRecentDocuments({
@@ -105,7 +133,8 @@ function HomePage() {
   const pins = feed.data?.pins ?? []
   const temporary = recent.data?.temporary ?? []
   // Pins make the side column; Archiving alone sits under the page.
-  const hasSide = pins.length > 0
+  const loadingPins = feed.isPending && expectedPins > 0
+  const hasSide = pins.length > 0 || loadingPins
 
   const unpin = (pin: { spaceId: string; path: string }) =>
     void homePins.unpin(pin).catch((error: unknown) => {
@@ -127,8 +156,7 @@ function HomePage() {
       <div
         className={cn(
           "flex flex-col gap-9",
-          hasSide &&
-            "@4xl/page:grid @4xl/page:grid-cols-[minmax(0,1fr)_23rem] @4xl/page:items-start @4xl/page:gap-x-12 @4xl/page:gap-y-11"
+          hasSide && pageColumns
         )}
       >
         <div className="order-1 flex min-w-0 flex-col gap-9">
@@ -183,15 +211,21 @@ function HomePage() {
         <aside
           className={cn(
             "order-2 contents",
-            hasSide && "@4xl/page:flex @4xl/page:flex-col @4xl/page:gap-9"
+            hasSide && sideColumn
           )}
         >
+          {loadingPins && (
+            <section aria-hidden className="order-2 min-w-0">
+              <h2 className={cn(sectionHeading, "mb-2.5")}>Pinned</h2>
+              <PinTilesSkeleton count={expectedPins} />
+            </section>
+          )}
           {pins.length > 0 && (
             <section aria-labelledby="pinned-heading" className="order-2 min-w-0">
               <h2 id="pinned-heading" className={cn(sectionHeading, "mb-2.5")}>
                 Pinned
               </h2>
-              <div className="grid grid-cols-2 gap-3 @2xl/page:grid-cols-4 @4xl/page:grid-cols-2">
+              <div className={pinGrid}>
                 {pins.map((pin) => {
                   const space = byId.get(pin.spaceId)
                   return (
@@ -230,15 +264,21 @@ function HomePage() {
           </div>
         </aside>
 
+        {feed.isPending && (
+          <section aria-hidden className="order-3 min-w-0 @3xl/page:col-span-2">
+            <h2 className={cn(sectionHeading, "mb-2.5")}>Spaces</h2>
+            <PlaceCardsSkeleton />
+          </section>
+        )}
         {places.length > 0 && (
           <section
             aria-labelledby="spaces-heading"
-            className="order-3 min-w-0 @4xl/page:col-span-2"
+            className="order-3 min-w-0 @3xl/page:col-span-2"
           >
             <h2 id="spaces-heading" className={cn(sectionHeading, "mb-2.5")}>
               Spaces
             </h2>
-            <div className="grid grid-cols-2 gap-3 @4xl/page:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 @3xl/page:grid-cols-4">
               {places.map((place) => {
                 const space = byId.get(place.id)!
                 return (
@@ -247,8 +287,15 @@ function HomePage() {
                     icon={<SpaceIcon space={space} />}
                     name={space.name}
                     days={place.days}
+                    who={place.who}
                     actors={place.actors}
                     lastAt={place.lastAt}
+                    onOpen={() =>
+                      void navigate({
+                        to: "/spaces/$spaceId",
+                        params: { spaceId: place.id },
+                      })
+                    }
                   >
                     <Link
                       to="/spaces/$spaceId"

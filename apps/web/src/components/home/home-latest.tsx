@@ -28,6 +28,25 @@ export function ActorAvatar({
   )
 }
 
+/** A short time that says the full one when pointed at. */
+export function When({ at, className }: { at: string; className?: string }) {
+  return (
+    <time
+      dateTime={at}
+      title={new Date(at).toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })}
+      className={cn(
+        "shrink-0 text-xs text-muted-foreground tabular-nums",
+        className
+      )}
+    >
+      {shortWhen(at)}
+    </time>
+  )
+}
+
 function RunRow({
   run,
   place,
@@ -48,7 +67,7 @@ function RunRow({
       type="button"
       aria-expanded={open}
       onClick={() => setOpen((value) => !value)}
-      className="relative inline-flex h-5 shrink-0 items-center gap-0.5 rounded-md bg-surface-tint pr-1 pl-1.5 text-[0.72rem] font-medium text-muted-foreground tabular-nums transition-colors hover:text-foreground aria-expanded:text-foreground"
+      className="relative inline-flex h-5 shrink-0 cursor-pointer items-center gap-0.5 rounded-md bg-surface-tint pr-1 pl-1.5 text-[0.72rem] font-medium text-muted-foreground tabular-nums outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
     >
       {others} More
       <ChevronDown
@@ -75,9 +94,7 @@ function RunRow({
           </span>
           <span className="hidden shrink-0 @lg/page:inline-flex">{more}</span>
         </div>
-        <span className="row-span-2 shrink-0 self-start pt-0.5 text-xs text-muted-foreground tabular-nums">
-          {shortWhen(run.at)}
-        </span>
+        <When at={run.at} className="relative row-span-2 self-start pt-0.5" />
         <div className="col-start-2 flex min-w-0 items-center gap-1.5 text-[0.8rem] leading-5 text-muted-foreground">
           <span className="shrink-0 font-medium text-reading-foreground">
             {nameOf(run.actor)}
@@ -93,13 +110,13 @@ function RunRow({
         )}
       </div>
       {open && others > 0 && (
-        <ul className="pb-1.5 pl-[3.125rem]">
+        <ul className="pb-1.5 pl-[2.625rem]">
           {rest.map((doc) => (
             <li key={doc.path}>
               <Link
                 to="/spaces/$spaceId/documents/$"
                 params={{ spaceId: run.spaceId, _splat: doc.path }}
-                className="group flex h-8 min-w-0 items-center gap-2.5 rounded-lg pr-2.5 text-[0.8125rem] text-reading-foreground transition-colors hover:text-foreground"
+                className="group flex h-8 min-w-0 items-center gap-2.5 rounded-lg px-2 text-[0.8125rem] text-reading-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
               >
                 <DocumentFormatIcon
                   formatId={doc.formatId}
@@ -107,14 +124,12 @@ function RunRow({
                   className="size-3.5 shrink-0 text-muted-foreground"
                 />
                 <span className="min-w-0 flex-1 truncate">{doc.title}</span>
-                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                  {shortWhen(doc.at)}
-                </span>
+                <When at={doc.at} />
               </Link>
             </li>
           ))}
           {run.more > 0 && (
-            <li className="flex h-8 items-center text-[0.8125rem] text-muted-foreground">
+            <li className="flex h-8 items-center px-2 text-[0.8125rem] text-muted-foreground">
               And {run.more} more
             </li>
           )}

@@ -467,6 +467,7 @@ describe("workspace activity", () => {
     // Across Spaces a place is a Space: who worked there, most recent first.
     expect(home.places.map((place) => place.id)).toEqual(["company"])
     expect(home.places[0]!.days).toHaveLength(14)
+    expect(home.places[0]!.who.at(-1)!.map((actor) => actor.kind)).toEqual(["person", "agent"])
     expect(home.places[0]!.days.at(-1)).toBeGreaterThanOrEqual(3)
     expect(home.places[0]!.actors.map((actor) => actor.kind)).toEqual(["person", "agent"])
 

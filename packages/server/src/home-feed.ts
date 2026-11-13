@@ -56,6 +56,7 @@ interface OpenRun {
 
 interface OpenPlace {
   days: Set<string>[]
+  who: Map<string, ActivityActor>[]
   actors: Map<string, ActivityActor>
   lastAt: string
 }
@@ -134,12 +135,22 @@ export async function readHomeFeed(
       if (!place) {
         place = {
           days: Array.from({ length: HOME_DAYS }, () => new Set<string>()),
+          who: Array.from({ length: HOME_DAYS }, () => new Map()),
           actors: new Map(),
           lastAt: event.at,
         }
         places.set(placeId, place)
       }
-      place.days[HOME_DAYS - 1 - (today - dayOf(time))]?.add(path)
+      const day = HOME_DAYS - 1 - (today - dayOf(time))
+      place.days[day]?.add(path)
+      const dayActors = place.who[day]
+      if (
+        dayActors &&
+        dayActors.size < PLACE_ACTORS &&
+        !dayActors.has(event.actor.id)
+      ) {
+        dayActors.set(event.actor.id, named(event.actor))
+      }
       if (
         place.actors.size < PLACE_ACTORS &&
         !place.actors.has(event.actor.id)
@@ -201,6 +212,7 @@ export async function readHomeFeed(
         ([id, place]): HomePlace => ({
           id,
           days: place.days.map((docs) => docs.size),
+          who: place.who.map((actors) => [...actors.values()]),
           actors: [...place.actors.values()],
           lastAt: place.lastAt,
         })

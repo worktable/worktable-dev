@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router"
-import { Clock3 } from "lucide-react"
+import { Clock3, PinOff } from "lucide-react"
 import {
   useEffect,
   useRef,
@@ -16,10 +16,10 @@ import {
 } from "@worktable/ui/components/popover"
 import { cn } from "@worktable/ui/lib/utils"
 import { DocumentFormatIcon } from "@/components/document-format-icon"
-import { ActorAvatar } from "@/components/home/home-latest"
+import { ActorAvatar, When } from "@/components/home/home-latest"
 import { useTheme } from "@/components/theme-provider"
 import { useLifetimeActions } from "@/hooks/use-document-organize"
-import { shortWhen } from "@/lib/activity-format"
+import { useActorName } from "@/lib/use-actor-name"
 import { spaceAccessKey } from "@/lib/team-access"
 import { widgetContentUrl } from "@/lib/widgets-api"
 
@@ -61,27 +61,110 @@ function dayName(date: Date, today: boolean): string {
       })
 }
 
-/** Docs touched on each of the last days, oldest first; the last is today. */
-function Tracker({ days }: { days: number[] }) {
+/** A small label over the thing the pointer is on. */
+const tipClass =
+  "pointer-events-none absolute z-20 flex flex-col gap-0.5 rounded-md bg-foreground px-2.5 py-1.5 text-xs leading-4 whitespace-nowrap text-background"
+
+/** Shows `label` over its child while the pointer is on it. */
+function Tip({
+  label,
+  align = "center",
+  children,
+}: {
+  label: string
+  /** `start` keeps the label inside a card's left edge. */
+  align?: "center" | "start"
+  children: ReactNode
+}) {
+  return (
+    <span className="group/tip relative flex">
+      {children}
+      <span
+        role="tooltip"
+        className={cn(
+          tipClass,
+          "bottom-full mb-2 hidden group-hover/tip:flex",
+          align === "start" ? "-left-1" : "left-1/2 -translate-x-1/2"
+        )}
+      >
+        {label}
+      </span>
+    </span>
+  )
+}
+
+/**
+ * Docs touched on each of the last days, oldest first; the last is today.
+ * Pointing at a day says which day, how much, and who.
+ */
+function Tracker({
+  days,
+  who,
+  onOpen,
+}: {
+  days: number[]
+  who?: ActivityActor[][]
+  onOpen?: () => void
+}) {
+  const nameOf = useActorName()
+  const [hovered, setHovered] = useState<number | null>(null)
+  const count = hovered === null ? 0 : (days[hovered] ?? 0)
+  const names =
+    hovered === null ? [] : (who?.[hovered] ?? []).map((actor) => nameOf(actor))
   return (
     <span
-      className="grid gap-[3px]"
+      className={cn("relative grid gap-[3px]", onOpen && "cursor-pointer")}
       style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
+      onClick={onOpen}
+      onPointerLeave={() => setHovered(null)}
     >
-      {days.map((count, index) => {
-        const ago = days.length - 1 - index
-        return (
-          <span
-            key={index}
-            title={
-              count > 0
-                ? `${dayName(dayFromToday(-ago), ago === 0)} · ${count} ${count === 1 ? "doc" : "docs"}`
-                : undefined
-            }
-            className={cn("aspect-square rounded-[3px]", LEVELS[level(count)])}
-          />
-        )
-      })}
+      {days.map((dayCount, index) => (
+        <span
+          key={index}
+          onPointerEnter={() => setHovered(index)}
+          className={cn(
+            "aspect-square rounded-[3px] transition-shadow",
+            LEVELS[level(dayCount)],
+            hovered === index && "ring-2 ring-ring"
+          )}
+        />
+      ))}
+      {hovered !== null && (
+        <span
+          role="tooltip"
+          className={cn(
+            tipClass,
+            // Under the row, so the place's name stays readable; and inside
+            // the card at either end of the row.
+            "top-full mt-2",
+            hovered < 3
+              ? "left-0"
+              : hovered > days.length - 4
+                ? "right-0"
+                : "-translate-x-1/2"
+          )}
+          style={
+            hovered >= 3 && hovered <= days.length - 4
+              ? { left: `${((hovered + 0.5) / days.length) * 100}%` }
+              : undefined
+          }
+        >
+          <span className="opacity-70">
+            {dayName(
+              dayFromToday(hovered - (days.length - 1)),
+              hovered === days.length - 1
+            )}
+          </span>
+          {count > 0 && (
+            <span>
+              <span className="font-medium">
+                {count} {count === 1 ? "doc" : "docs"}
+              </span>
+              {names.length > 0 && ` · ${names.join(", ")}`}
+            </span>
+          )}
+        </span>
+      )}
     </span>
   )
 }
@@ -95,19 +178,25 @@ export function PlaceCard({
   name,
   count,
   days,
+  who,
   actors,
   lastAt,
+  onOpen,
   children,
 }: {
   icon: ReactNode
   name: string
   count?: number
   days: number[]
+  who?: ActivityActor[][]
   actors: ActivityActor[]
   lastAt?: string
+  /** What the card's link or button does, for the parts that sit over it. */
+  onOpen?: () => void
   /** The link or button that covers the card. */
   children: ReactNode
 }) {
+  const nameOf = useActorName()
   return (
     <div className="card-surface card-surface-interactive relative flex min-w-0 flex-col gap-3.5 rounded-xl p-3.5">
       {children}
@@ -122,30 +211,66 @@ export function PlaceCard({
           </span>
         )}
       </span>
-      <Tracker days={days} />
+      <Tracker days={days} who={who} onOpen={onOpen} />
       <span className="flex h-6 items-center justify-between gap-2">
-        <span className="-ml-0.5 flex items-center">
+        <span
+          className={cn(
+            "relative -ml-0.5 flex items-center",
+            onOpen && "cursor-pointer"
+          )}
+          onClick={onOpen}
+        >
           {actors.map((actor, index) => (
             <span
               key={actor.id}
               className={cn(
-                "relative flex rounded-full bg-card p-0.5",
+                "relative flex rounded-full bg-card p-0.5 hover:z-10",
                 index > 0 && "-ml-1.5"
               )}
             >
-              <ActorAvatar actor={actor} className="size-5 text-[0.625rem]" />
+              <Tip label={nameOf(actor)} align="start">
+                <ActorAvatar actor={actor} className="size-5 text-[0.625rem]" />
+              </Tip>
             </span>
           ))}
         </span>
-        {lastAt && (
-          <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-            {shortWhen(lastAt)}
-          </span>
-        )}
+        {lastAt && <When at={lastAt} />}
       </span>
     </div>
   )
 }
+
+/** Cards' shape while the page loads, so nothing below them moves. */
+export function PlaceCardsSkeleton({ count = 4 }: { count?: number }) {
+  return (
+    <div className="grid grid-cols-2 gap-3 @3xl/page:grid-cols-4">
+      {Array.from({ length: count }).map((_, index) => (
+        <div key={index} className="h-[7.375rem] animate-pulse rounded-xl bg-muted" />
+      ))}
+    </div>
+  )
+}
+
+export function PinTilesSkeleton({ count }: { count: number }) {
+  return (
+    <div className={pinGrid}>
+      {Array.from({ length: count }).map((_, index) => (
+        <div key={index} className="aspect-[5/4] animate-pulse rounded-xl bg-muted" />
+      ))}
+    </div>
+  )
+}
+
+/** Pin tiles: four across a wide single column, two across beside the page. */
+export const pinGrid =
+  "grid grid-cols-2 gap-3 @2xl/page:grid-cols-4 @3xl/page:grid-cols-2"
+
+/** The page beside its side column, once it has the room. */
+export const pageColumns =
+  "@3xl/page:grid @3xl/page:grid-cols-[minmax(0,1fr)_19rem] @3xl/page:items-start @3xl/page:gap-x-10 @3xl/page:gap-y-11 @4xl/page:grid-cols-[minmax(0,1fr)_23rem] @4xl/page:gap-x-12"
+
+/** The side column: in the page's flow until there is room beside it. */
+export const sideColumn = "@3xl/page:flex @3xl/page:flex-col @3xl/page:gap-9"
 
 // ── Pinned ─────────────────────────────────────────────────
 
@@ -265,14 +390,18 @@ export function PinTile({
         {disabled ?? place}
       </span>
       {onUnpin && (
-        <Button
-          size="xs"
-          variant="outline"
-          className="absolute top-3 right-3 opacity-100 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-          onClick={onUnpin}
-        >
-          Unpin
-        </Button>
+        <span className="absolute top-3.5 right-3.5 hidden opacity-0 transition-opacity group-hover:opacity-100 has-[:focus-visible]:opacity-100 [@media(hover:hover)]:flex">
+          <Tip label="Unpin">
+            <button
+              type="button"
+              aria-label="Unpin"
+              onClick={onUnpin}
+              className="flex size-7 cursor-pointer items-center justify-center rounded-md border border-card-border bg-card text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <PinOff className="size-3.5" />
+            </button>
+          </Tip>
+        </span>
       )}
     </div>
   )
@@ -353,7 +482,7 @@ export function ArchivingWeek({
       aria-labelledby="archiving-heading"
       className={cn(
         "flex items-center justify-between gap-4 border-t border-border pt-5",
-        side && "@4xl/page:border-t-0 @4xl/page:pt-0"
+        side && "@3xl/page:border-t-0 @3xl/page:pt-0"
       )}
     >
       <h2
@@ -361,10 +490,10 @@ export function ArchivingWeek({
         className={cn(
           "flex items-center gap-2 self-start pt-1 text-[0.8125rem] text-muted-foreground",
           side &&
-            "@4xl/page:text-sm @4xl/page:font-semibold @4xl/page:text-foreground"
+            "@3xl/page:text-sm @3xl/page:font-semibold @3xl/page:text-foreground"
         )}
       >
-        <Clock3 className={cn("size-4", side && "@4xl/page:hidden")} />
+        <Clock3 className={cn("size-4", side && "@3xl/page:hidden")} />
         Archiving
       </h2>
       <div className="flex gap-1.5">
@@ -389,18 +518,22 @@ export function ArchivingWeek({
               className="flex flex-col items-center gap-1.5"
             >
               {count === 0 ? (
-                <span className={cell} />
+                <Tip label={label}>
+                  <span className={cell} />
+                </Tip>
               ) : (
                 <Popover>
-                  <PopoverTrigger
-                    aria-label={`${label}: ${count} archiving`}
-                    className={cn(
-                      cell,
-                      "cursor-pointer outline-none hover:ring-2 hover:ring-ring focus-visible:ring-2 focus-visible:ring-ring"
-                    )}
-                  >
-                    {count}
-                  </PopoverTrigger>
+                  <Tip label={`${label} · ${count} ${count === 1 ? "doc" : "docs"}`}>
+                    <PopoverTrigger
+                      aria-label={`${label}: ${count} archiving`}
+                      className={cn(
+                        cell,
+                        "cursor-pointer outline-none hover:ring-2 hover:ring-ring focus-visible:ring-2 focus-visible:ring-ring"
+                      )}
+                    >
+                      {count}
+                    </PopoverTrigger>
+                  </Tip>
                   <PopoverContent align="end" className="w-80 gap-1">
                     <p className="px-0.5 text-xs font-medium text-muted-foreground">
                       {label}

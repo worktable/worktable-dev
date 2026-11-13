@@ -182,6 +182,8 @@ export interface HomePlace {
   id: string
   /** Docs touched on each of the last 14 days, oldest first; the last is today. */
   days: number[]
+  /** Who touched them on each of those days, most recent first. */
+  who: ActivityActor[][]
   /** Who worked there, most recent first. */
   actors: ActivityActor[]
   lastAt: string

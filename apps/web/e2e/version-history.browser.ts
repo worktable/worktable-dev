@@ -236,13 +236,13 @@ for (const kind of ["doc", "html"] as const) {
     )
     await preview.getByRole("button", { name: "Restore", exact: true }).click()
     await confirm.getByRole("button", { name: "Restore", exact: true }).click()
-    const changed = page.getByRole("dialog", {
+    const changedDialog = page.getByRole("dialog", {
       name: kind === "doc" ? "This Doc changed" : "This HTML Doc changed",
       exact: true,
     })
-    await expect(changed).toBeVisible()
+    await expect(changedDialog).toBeVisible()
     await page.unroute(restoreRoute)
-    await changed
+    await changedDialog
       .getByRole("button", { name: "Restore Anyway", exact: true })
       .click()
     await expect(preview).toBeHidden()

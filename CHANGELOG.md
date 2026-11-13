@@ -9,6 +9,8 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.48] - 2026-11-13
+
 ### Added
 
 - **Chat apps:** **Settings → Agents** shows which Worktable ChatGPT, Claude or Grok works in, and **Move Here** moves it to the Worktable you're in after asking.

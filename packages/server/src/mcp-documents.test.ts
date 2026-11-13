@@ -778,7 +778,8 @@ describe("importing a file into Records", () => {
           // The text column with the most different values names a record.
           titleColumn: "code",
           columns: [
-            { column: "id", field: "id", type: "text" },
+            // Records use id for themselves, so the field takes another key.
+            { column: "id", field: "id_2", type: "text" },
             // A leading zero would be lost as a number.
             { column: "code", field: "code", type: "text" },
             { column: "score", field: "score", type: "number" },
@@ -880,7 +881,7 @@ describe("importing a file into Records", () => {
       expect(people.structuredContent).toMatchObject({
         proposal: {
           columns: [
-            { column: "id", field: "id" },
+            { column: "id", field: "id_2" },
             { column: "First Name", field: "first_name" },
             { column: "first_name", field: "first_name_2" },
             { column: "account", type: "text" },
@@ -907,6 +908,15 @@ describe("importing a file into Records", () => {
         idColumn: "id",
       })
       expect(JSON.stringify(noId.content)).toContain("row 2: no id in id")
+      const reserved = await write("worktable_records_write", {
+        action: "import",
+        spaceId,
+        collectionId: "people",
+        path: "research/people.csv",
+        columns: [{ column: "account", field: "kind", type: "text" }],
+      })
+      expect(reserved.isError).toBe(true)
+      expect(JSON.stringify(reserved.content)).toContain('Field key \\"kind\\" is a name records use for themselves.')
 
       // A blank line is no row; a row longer than its header, an empty
       // column choice and a file past the row limit are refused.

@@ -15,6 +15,7 @@ import {
   delimiterForFilename,
   fileTypeFor,
   fileTypePolicy,
+  isReservedRecordFieldKey,
   parseDelimitedText,
   type FileTypesWhere,
   type RecordCollectionSchema,
@@ -286,14 +287,18 @@ export async function proposeImport(
   const idColumns = idColumnsOf(table)
   const idColumn = idColumns[0]
   // Columns whose names make one key, such as First Name and first_name,
-  // are proposed distinct fields.
+  // are proposed distinct fields. A key records use for themselves, such as
+  // id, gets a suffix too unless the collection already has that field.
   const taken = new Set<string>()
+  const unavailable = (field: string) =>
+    taken.has(field) ||
+    (isReservedRecordFieldKey(field) && !(existing && Object.hasOwn(existing.fields, field)))
   const nextSuffix = new Map<string, number>()
   const columns = table.columns.map((column) => {
     const key = fieldKeyFor(column)
     let field = key
     // Each key remembers its next suffix, so many clashes stay quick.
-    for (let n = nextSuffix.get(key) ?? 2; taken.has(field); n++) {
+    for (let n = nextSuffix.get(key) ?? 2; unavailable(field); n++) {
       field = `${key}_${n}`
       nextSuffix.set(key, n + 1)
     }

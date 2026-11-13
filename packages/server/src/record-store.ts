@@ -6,7 +6,7 @@ import { assertSpaceAccess } from "./team-policy.ts";
 import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { reserveStorage } from "./storage-limit.ts";
 import { dirname, join } from "node:path";
-import { CanonicalIdSchema, normalizeRecordFieldType, recordTitleFieldKey, TITLE_FIELD_TYPES, parseDocumentReference, RecordCollectionSchemaSchema, RecordFileSchema, RecordQuerySchema, requiresSchemaV2, WidgetIdSchema, type RecordCollectionSchema, type RecordCollectionSummary, type RecordDiagnostic, type RecordFile, type RecordQuery, type RecordQueryResult } from "@worktable/types";
+import { CanonicalIdSchema, isReservedRecordFieldKey, normalizeRecordFieldType, recordTitleFieldKey, TITLE_FIELD_TYPES, parseDocumentReference, RecordCollectionSchemaSchema, RecordFileSchema, RecordQuerySchema, requiresSchemaV2, WidgetIdSchema, type RecordCollectionSchema, type RecordCollectionSummary, type RecordDiagnostic, type RecordFile, type RecordQuery, type RecordQueryResult } from "@worktable/types";
 import { readDocAliases, resolveDocAliasIn } from "./doc-aliases.ts";
 import { compareFieldValues, compareForOrder, fieldValue, isMissing, recordMatchesSearch, RecordQueryShapeError, referencedCollections, runQueryV2 } from "./record-query.ts";
 import { notifyRecordChanged } from "./record-events.ts";
@@ -282,6 +282,12 @@ export async function readRecordCollectionSchema(spaceId: string, collectionId: 
   }
 }
 
+/** Why new fields can't use these keys, naming each one. */
+function reservedFieldKeysError(keys: string[]): string {
+  const named = keys.map((key) => `"${key}"`).join(", ");
+  return `${keys.length === 1 ? "Field key" : "Field keys"} ${named} ${keys.length === 1 ? "is a name" : "are names"} records use for themselves. Choose another key; the field's display name can still say ${keys.length === 1 ? "it" : "them"}.`;
+}
+
 export async function writeRecordCollectionSchema(
   spaceId: string,
   schema: RecordCollectionSchema,
@@ -347,6 +353,14 @@ export async function writeRecordCollectionSchema(
     // (REST + MCP) via this single writer; direct file edits still bypass
     // by design and surface as diagnostics.
     const previous = (await readRecordCollectionSchema(spaceId, parsed.data.id)).data;
+    // A field can't take a name the record uses for itself. A collection
+    // that already has one keeps it, so its data and edits go on working.
+    const reserved = Object.keys(parsed.data.fields).filter((key) =>
+      isReservedRecordFieldKey(key) && !(previous && Object.hasOwn(previous.fields, key)));
+    if (reserved.length > 0) {
+      gateError = reservedFieldKeysError(reserved);
+      return;
+    }
     const changedKeys = Object.keys(parsed.data.fields).filter((key) => {
       const next = validationProjection(parsed.data.fields[key]!);
       const prev = previous?.fields[key] ? validationProjection(previous.fields[key]!) : null;
@@ -927,7 +941,7 @@ function filterRecords(
   let next = records;
   if (query.where) {
     next = next.filter((record) => Object.entries(query.where ?? {}).every(([key, expected]) => {
-      const rawValue = fieldValue(record, key);
+      const rawValue = fieldValue(record, key, fields);
       const fieldType = fields?.[key]?.type;
       const documentField = fieldType && normalizeRecordFieldType(fieldType) === "document";
       const resolveValue = (value: unknown): unknown => {
@@ -972,7 +986,7 @@ function filterRecords(
   if (typeof query.orderBy === "string") {
     const key = query.orderBy;
     const dir = query.order === "desc" ? -1 : 1;
-    next = [...next].sort((a, b) => compareFieldValues(fieldValue(a, key), fieldValue(b, key), fields?.[key]) * dir || a.id.localeCompare(b.id));
+    next = [...next].sort((a, b) => compareFieldValues(fieldValue(a, key, fields), fieldValue(b, key, fields), fields?.[key]) * dir || a.id.localeCompare(b.id));
   } else {
     next = [...next].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
   }

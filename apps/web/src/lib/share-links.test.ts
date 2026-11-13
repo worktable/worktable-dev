@@ -6,6 +6,8 @@ import {
   shareLinkSummary,
   shareLinkViewsLine,
 } from "./share-links"
+import { HttpError } from "./http"
+import { refusalReason } from "./share-link-access-api"
 
 const DAY = 86_400_000
 
@@ -87,4 +89,22 @@ test("a link that counts views says how many people viewed it, not when anything
       now
     ).map((part) => part.text)
   ).toEqual(["1 view", "1 person", "Viewed today"])
+})
+
+test("a refused link change says the server's reason; a failure says none", () => {
+  const issue = 'Field "kind" has a name records use for themselves, so links can\'t show it.'
+  expect(
+    refusalReason(
+      new HttpError(400, {
+        error: "This access doesn't fit the collections it names",
+        code: "LINK_GRANT_INVALID",
+        issues: [{ collectionId: "jobs", message: issue }],
+      }, "This access doesn't fit the collections it names")
+    )
+  ).toBe(issue)
+  expect(
+    refusalReason(new HttpError(400, { error: "Live links aren't allowed here" }, ""))
+  ).toBe("Live links aren't allowed here")
+  expect(refusalReason(new HttpError(500, { error: "boom" }, "boom"))).toBeNull()
+  expect(refusalReason(new TypeError("Failed to fetch"))).toBeNull()
 })

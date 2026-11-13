@@ -11,7 +11,8 @@ import { recordsRouter } from "./routes/records.ts";
 import { widgetsRouter } from "./routes/widgets.ts";
 import { setAppDirOverride } from "./app-storage.ts";
 import { recordIndex } from "./record-index.ts";
-import { buildRecordFile } from "./record-store.ts";
+import { buildRecordCollectionSchema, buildRecordFile } from "./record-store.ts";
+import { writeEarlierRecordSchema } from "./test-support/earlier-record-schema.ts";
 import { stringifyCanonicalYaml } from "./yaml.ts";
 
 function buildTestApp() {
@@ -567,6 +568,23 @@ describe("record REST routes", () => {
     expect(tighten.json.error).toContain("Field url can't be unique yet: 1 value(s) are held by more than one record");
     const multi = await req(app, "POST", "/api/spaces/meta/records", { id: "tags", fields: { tags: { type: "multi_select", values: ["a"], unique: true } } });
     expect(multi.status).toBe(400);
+  });
+
+  it("refuses new fields under names records use for themselves, and keeps ones saved before", async () => {
+    const refused = await req(app, "POST", "/api/spaces/meta/records", { id: "jobs", name: "Jobs", fields: { title: { type: "string" }, kind: { type: "string" }, constructor: { type: "string" } } });
+    expect(refused.status).toBe(400);
+    expect(refused.json.error).toBe('Field keys "kind", "constructor" are names records use for themselves. Choose another key; the field\'s display name can still say them.');
+    expect((await req(app, "GET", "/api/spaces/meta/records/jobs")).json.schema).toBeNull();
+
+    // A collection saved before keeps its field, its values and its edits.
+    await writeEarlierRecordSchema("meta", buildRecordCollectionSchema({ id: "jobs", name: "Jobs", fields: { title: { type: "string" }, kind: { type: "string" } } }));
+    expect((await req(app, "POST", "/api/spaces/meta/records/jobs", { id: "j1", data: { title: "One", kind: "build" } })).status).toBe(201);
+    const widened = await req(app, "POST", "/api/spaces/meta/records", { id: "jobs", fields: { title: { type: "string" }, kind: { type: "string", name: "Kind" }, due: { type: "date" } } });
+    expect(widened.status).toBe(200);
+    expect((await req(app, "GET", "/api/spaces/meta/records/jobs/j1")).json.record.data).toEqual({ title: "One", kind: "build" });
+    const added = await req(app, "POST", "/api/spaces/meta/records", { id: "jobs", fields: { title: { type: "string" }, kind: { type: "string" }, createdAt: { type: "date" } } });
+    expect(added.status).toBe(400);
+    expect(added.json.error).toContain('Field key "createdAt" is a name records use for themselves.');
   });
 
   it("lets an existing id win over a unique match, and matches odd field keys exactly", async () => {

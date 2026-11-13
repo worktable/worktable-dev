@@ -17,6 +17,28 @@ export function previewChanged(error: unknown): boolean {
   )
 }
 
+/**
+ * Why the server refused a link change, as it said it, so the dialog can
+ * show it instead of asking to try again. Null when the request didn't reach
+ * a refusal (offline, or the server failed).
+ */
+export function refusalReason(error: unknown): string | null {
+  if (
+    !(error instanceof HttpError) ||
+    error.status < 400 ||
+    error.status >= 500
+  )
+    return null
+  const body = error.body as { error?: unknown; issues?: unknown } | null
+  const messages = Array.isArray(body?.issues)
+    ? body.issues.flatMap((issue: { message?: unknown } | null) =>
+        typeof issue?.message === "string" ? [issue.message] : []
+      )
+    : []
+  if (messages.length > 0) return messages.join(" ")
+  return typeof body?.error === "string" && body.error ? body.error : null
+}
+
 /** Runs `request`, and once more after a pause if the tool had just changed. */
 export async function retryOnPreviewChange<T>(
   request: () => Promise<T>

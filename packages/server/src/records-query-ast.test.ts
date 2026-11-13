@@ -9,6 +9,7 @@ import { spacesRouter } from "./routes/spaces.ts";
 import { recordsRouter } from "./routes/records.ts";
 import { widgetsRouter } from "./routes/widgets.ts";
 import { buildRecordCollectionSchema, buildRecordFile, queryRecords, writeRecord, writeRecordCollectionSchema } from "./record-store.ts";
+import { writeEarlierRecordSchema } from "./test-support/earlier-record-schema.ts";
 
 function buildTestApp() {
   const app = new Hono();
@@ -291,6 +292,26 @@ describe("record query AST", () => {
     const res = await query({ aggregate: { select: { latest: { fn: "max", field: "due" }, earliest: { fn: "min", field: "due" } } } });
     expect(res.status).toBe(200);
     expect(res.json.groups).toEqual([{ latest: "2026-10-5", earliest: "2026-2-1" }]);
+  });
+
+  it("reads a field named like the record's own keys from the field", async () => {
+    // Collections saved before such keys were refused can have one.
+    await writeEarlierRecordSchema("meta", buildRecordCollectionSchema({
+      id: "jobs",
+      name: "Jobs",
+      fields: { title: { type: "string" }, kind: { type: "select", values: ["build", "review"] } },
+    }));
+    for (const [title, kind] of [["J1", "review"], ["J2", "build"], ["J3", "build"]]) {
+      expect((await req(app, "POST", "/api/spaces/meta/records/jobs", { data: { title, kind } })).status).toBe(201);
+    }
+    const ask = (body: unknown) => req(app, "POST", "/api/spaces/meta/records/jobs/query", body);
+    const titles = (res: { json: { records: { data: { title: string } }[] } }) => res.json.records.map((r) => r.data.title);
+    expect(titles(await ask({ where: { kind: "build" }, orderBy: "title" }))).toEqual(["J2", "J3"]);
+    expect(titles(await ask({ where: { field: "kind", op: "eq", value: "review" } }))).toEqual(["J1"]);
+    expect(titles(await ask({ orderBy: [{ field: "kind" }, { field: "title" }] }))).toEqual(["J2", "J3", "J1"]);
+    const grouped = await ask({ aggregate: { groupBy: "kind", select: { n: { fn: "count" } } } });
+    expect(grouped.json.groups).toHaveLength(2);
+    expect(grouped.json.groups).toEqual(expect.arrayContaining([{ key: "review", n: 1 }, { key: "build", n: 2 }]));
   });
 
   it("projects data with select", async () => {

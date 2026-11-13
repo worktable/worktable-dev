@@ -27,6 +27,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Comments:** An agent or API token that may read comments but not Docs or HTML Docs no longer gets the text a comment is about with it. Reading a comment leaves that out, and asking for it alone says which permission is missing.
 - **Comments:** A comment on a path with no Doc, such as `readme.md` for the Doc `readme`, now says the Doc was not found and that a Doc's path has no extension, instead of failing with "Something went wrong". Replying to or resolving a comment that is gone says so too.
 
 ## [0.1.47] - 2026-11-13

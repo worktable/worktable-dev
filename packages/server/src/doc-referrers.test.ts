@@ -127,6 +127,22 @@ describe("records and HTML Docs that point at a Doc", () => {
         (referrer) => referrer.kind === "record" && referrer.title
       )
     ).toEqual(["Reliability"])
+
+    // A deleted record leaves at once, its name with it, before the
+    // collection is read again.
+    const deleted = await app.fetch(
+      new Request("http://localhost/api/spaces/meta/records/okrs/activation", {
+        method: "DELETE",
+      })
+    )
+    expect(deleted.status).toBe(200)
+    expect(peekDocReferrers("meta", "okrs/q3")).toEqual([
+      { kind: "html", path: "pulse", label: "Open the plan" },
+    ])
+    expect(peekDocReferrers("meta", "notes/a")).toEqual([])
+    expect(await settled("okrs/q3")).toEqual([
+      { kind: "html", path: "pulse", label: "Open the plan" },
+    ])
   })
 
   it("reads literal paths from openDocument calls, labelled by what people click", async () => {

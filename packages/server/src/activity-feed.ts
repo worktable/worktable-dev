@@ -150,8 +150,11 @@ async function withCurrentNames(
             current = byPath?.get(moved)
           }
         }
+        // A comment's words leave with its Doc: a deleted Doc keeps its line
+        // in the feed, but not what was said in it.
+        const { quote, ...rest } = entry
         return {
-          ...entry,
+          ...(current && quote !== undefined ? { ...rest, quote } : rest),
           actor,
           target: {
             ...target,

@@ -596,6 +596,25 @@ describe("search excerpts", () => {
       results: [expect.objectContaining({ spaceId: "zulu", path: "kestrel" })],
       complete: true,
     });
+
+    // Deleted while a sync before its Space's stalls: the answer comes from
+    // the older index, without the deleted Doc or its excerpt.
+    expect((await req(app, "DELETE", "/api/spaces/zulu/docs/kestrel")).status).toBeLessThan(300);
+    invalidateSearchIndex({ spaceId: "meta" });
+    let releaseAgain!: () => void;
+    const heldAgain = new Promise<void>((resolve) => {
+      releaseAgain = resolve;
+    });
+    setSearchIndexRebuildHookForTests(async ({ spaceId }) => {
+      if (spaceId === "meta") await heldAgain;
+    });
+    setSearchWaitForTests(200);
+    for (const includeArchived of [false, true]) {
+      expect(
+        await searchWithStatus("kestrel", { documentAccess: "common", includeArchived }),
+      ).toEqual({ results: [], complete: false });
+    }
+    releaseAgain();
   });
 
   it("leaves records out while the record index builds, instead of reading their files", async () => {

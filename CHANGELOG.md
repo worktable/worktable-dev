@@ -12,6 +12,9 @@ infrastructure and personal context out of release notes.
 ### Fixed
 
 - **OpenClaw:** On Worktable Cloud, the command in **Settings → Agents → OpenClaw** works with plugin 0.0.20. Run it, then open the link it prints and approve OpenClaw.
+- **Search:** A Doc you just deleted no longer turns up in search, with its text, while the search index is still catching up.
+- **Docs:** A record you delete no longer shows under Used in on the Docs it pointed at.
+- **Activity:** Deleting a Doc removes what its comments said from Activity.
 
 ## [0.1.45] - 2026-11-12
 

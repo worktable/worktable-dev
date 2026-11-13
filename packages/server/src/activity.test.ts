@@ -236,6 +236,17 @@ describe("workspace activity", () => {
     )
     expect(rest.entries.map((entry) => entry.action)).toEqual(["doc.created"])
     expect(rest.nextCursor).toBeNull()
+
+    // A deleted Doc keeps its lines, but its comments' words leave with it.
+    await agentTool("worktable_delete", { action: "document", spaceId: "company", path: "pulse" })
+    const afterDelete = await request<ActivityPage>("/api/activity")
+    expect(
+      afterDelete.entries.map((entry) => [entry.action, entry.quote ?? null])
+    ).toEqual([
+      ["comment.resolved", null],
+      ["comment.created", null],
+      ["doc.created", null],
+    ])
   })
 
   it("names moved docs and record collections as they are called now", async () => {

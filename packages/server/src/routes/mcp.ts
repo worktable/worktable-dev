@@ -1,4 +1,8 @@
-import { requestAnalyticsContext, withAnalyticsContext } from "../analytics.ts"
+import {
+  mcpAnalyticsContext,
+  reportedToGateway,
+  withAnalyticsContext,
+} from "../analytics.ts"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
@@ -170,15 +174,21 @@ export async function handleRemoteMcpRequest(
   const modern = options.modernEra
     ? await modernMcpRequestBody(request)
     : undefined
+  const analytics = mcpAnalyticsContext(request, identity)
   if (modern) {
-    const response = await runWithTeamIdentity(identity, () =>
-      handleModernMcpRequest(request, modern.body, {
-        server: remoteMcpServerOptions(request, identity, origin),
-        stream: options.stream ?? false,
-        ...(options.link ? { link: options.link } : {}),
-      })
+    const response = await withAnalyticsContext(analytics, () =>
+      runWithTeamIdentity(identity, () =>
+        handleModernMcpRequest(request, modern.body, {
+          server: remoteMcpServerOptions(request, identity, origin),
+          stream: options.stream ?? false,
+          ...(options.link ? { link: options.link } : {}),
+        })
+      )
     )
-    return namedCall(response, callName(Array.isArray(modern.body) ? modern.body[0] : modern.body))
+    return reportedToGateway(
+      namedCall(response, callName(Array.isArray(modern.body) ? modern.body[0] : modern.body)),
+      analytics
+    )
   }
 
   const { bridgeId } = options
@@ -237,14 +247,14 @@ export async function handleRemoteMcpRequest(
 
   let response: Response
   try {
-    response = await withAnalyticsContext(requestAnalyticsContext(request, identity), () =>
+    response = await withAnalyticsContext(analytics, () =>
       runWithTeamIdentity(identity, () => transport.handleRequest(request))
     )
   } catch (error) {
     release()
     throw error
   }
-  response = namedCall(response, call)
+  response = reportedToGateway(namedCall(response, call), analytics)
   if (callKeys.length === 0) return response
   if (!response.body || !options.stream) {
     release()

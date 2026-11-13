@@ -185,8 +185,10 @@ export async function noteAppSetup(app: AppFamily): Promise<void> {
 export async function linkedAppChoices(
   clientId?: string
 ): Promise<AppChoices | null> {
+  // A team Worktable's apps are its members' own, not the Link owner's.
   if (
     isHosted() ||
+    currentTeamWorktable() ||
     status.enabled !== true ||
     ["locked", "error"].includes(status.state)
   )

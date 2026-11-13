@@ -91,7 +91,9 @@ export function useMoveHere() {
         method: "POST",
         body: JSON.stringify({ clientId: app.clientId }),
       }),
-    onSuccess: (choices, app) => {
+    onSuccess: async (choices, app) => {
+      // A read started before the move must not overwrite where it went.
+      await queryClient.cancelQueries({ queryKey: ["app-choices"] })
       queryClient.setQueryData(["app-choices"], choices)
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
       toast.success(`${app.name} now works here.`)

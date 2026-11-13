@@ -65,6 +65,11 @@ test("ChatGPT's steps say where it works, offer Move Here, and say where to past
   expect(here).toContain("Watch Worktable for comments")
   expect(here).toContain("a Work chat on chatgpt.com")
 
+  // A watching chat seen before ChatGPT moved away doesn't count here.
+  expect(
+    steps(choices({ id: "wt_studio", name: "Studio", here: false }), "on")
+  ).not.toContain("Auto-reply is on")
+
   // Once ChatGPT watches, the step is done.
   expect(steps(choices({ id: "wl_notes", name: "Notes", here: true }), "on")).toContain(
     "Auto-reply is on"

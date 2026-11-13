@@ -44,10 +44,13 @@ export function OfficialAppSteps({
   app,
   first,
   active = true,
+  offerOpen = false,
 }: {
   app: ChatApp
   first: number
   active?: boolean
+  /** Offer the app's link even when Cloud can't say where it works. */
+  offerOpen?: boolean
 }) {
   const choices = useAppChoices(active)
   const official = appOfFamily(choices.data, app)
@@ -66,7 +69,10 @@ export function OfficialAppSteps({
     queryFn: () => listAgentConnections({ workspaceAgentsOnCloud: cloud }),
     enabled: active && here && app === "chatgpt" && system.isFetched,
   })
-  const autoReply = connections.data?.connections.find(
+  // Only while it works here: a cached On from before a move says nothing now.
+  const autoReply = !here
+    ? undefined
+    : connections.data?.connections.find(
     (connection) =>
       connection.target.kind === "mcp-client" &&
       connection.target.clientId === official?.clientId
@@ -86,7 +92,7 @@ export function OfficialAppSteps({
     <>
       {!known || !official?.worktable ? (
         <SetupStep number={first} title={OFFICIAL_APP[app]}>
-          {known ? <div>{open}</div> : null}
+          {known || offerOpen ? <div>{open}</div> : null}
         </SetupStep>
       ) : official.worktable.here ? (
         <SetupStep number={first} title={`${name} works here`} complete />

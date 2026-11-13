@@ -294,7 +294,7 @@ function CloudNativeAppsPanel({
         <GrokBotSetupPanel connection={connection} open={active} />
       ) : app === "chatgpt" ? (
         <ol className="space-y-1">
-          <OfficialAppSteps app="chatgpt" first={1} active={active} />
+          <OfficialAppSteps app="chatgpt" first={1} active={active} offerOpen />
         </ol>
       ) : (
         <>

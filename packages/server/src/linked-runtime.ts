@@ -17,6 +17,7 @@ import {
   linkedWorktableIdFor,
   LinkedHostReply,
   GROK_LINKED_EMAIL_WAKE_PATH,
+  AppChoices,
   type AppFamily,
   type GrokEmailWake,
 } from "@worktable/hosted-contract"
@@ -173,6 +174,33 @@ export async function noteAppSetup(app: AppFamily): Promise<void> {
   } catch {
     // Signed out or offline: Cloud's Apps page still changes it.
   }
+}
+
+/**
+ * Where the owner's apps at Cloud's shared address work, with this device's
+ * Worktable marked `here`; with `clientId`, that app moves here first. Cloud
+ * knows the device by its link, so it can only ever choose this one. Null
+ * when Link isn't on here; a Cloud without app choices throws.
+ */
+export async function linkedAppChoices(
+  clientId?: string
+): Promise<AppChoices | null> {
+  // A team Worktable's apps are its members' own, not the Link owner's.
+  if (
+    isHosted() ||
+    currentTeamWorktable() ||
+    status.enabled !== true ||
+    ["locked", "error"].includes(status.state)
+  )
+    return null
+  const link = await readLink(path())
+  if (!link || link.disabled) return null
+  const answer = await cloudLinkRequest(link.cloudOrigin, {
+    action: clientId ? "choose" : "apps",
+    enrollment: enrollment(link),
+    ...(clientId ? { clientId } : {}),
+  })
+  return AppChoices.parse(answer)
 }
 
 /** The name Cloud knows this device by: its link's label, else the one a link would take. */

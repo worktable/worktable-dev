@@ -5,6 +5,7 @@ import { isHosted } from "../hosted.ts"
 import {
   beginLink,
   disconnectLink,
+  linkedAppChoices,
   linkedDeviceLabel,
   linkedStatus,
   noteAppSetup,
@@ -145,4 +146,53 @@ linkedRouter.post("/", async (c) => {
 linkedRouter.delete("/", async (c) => {
   await disconnectLink()
   return c.json(linkedStatus())
+})
+
+/**
+ * Settings → Agents: where the owner's Cloud apps work, and Move Here. Only
+ * the owner, and never on Cloud, whose gateway answers this path itself.
+ * Anything Cloud can't say is a 404, and Settings shows its steps without it.
+ */
+export const appChoicesRouter = new Hono()
+appChoicesRouter.use("*", trustedLocalIdentity())
+appChoicesRouter.use("*", async (c, next) =>
+  canOperateHost(c)
+    ? next()
+    : c.json({ error: "Operator authority is required" }, 403)
+)
+appChoicesRouter.use("*", async (c, next) => {
+  if (isHosted()) return c.json({ error: "Not found" }, 404)
+  c.header("Cache-Control", "no-store")
+  return next()
+})
+const appChoices = async (clientId?: string) => {
+  try {
+    const choices = await linkedAppChoices(clientId)
+    return choices ?? { error: "Not found", status: 404 as const }
+  } catch (error) {
+    // Signed out, an older Cloud, or this device no longer linked.
+    return error instanceof CloudLinkError &&
+      error.code !== "LINKED_CAPACITY" &&
+      error.code !== "AUTH_VERIFICATION_UNAVAILABLE"
+      ? { error: "Not found", status: 404 as const }
+      : { error: "Could not reach Worktable Cloud", status: 503 as const }
+  }
+}
+appChoicesRouter.get("/", async (c) => {
+  const answer = await appChoices()
+  return "status" in answer
+    ? c.json({ error: answer.error }, answer.status)
+    : c.json(answer)
+})
+appChoicesRouter.post("/", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    clientId?: unknown
+  } | null
+  const clientId = body?.clientId
+  if (typeof clientId !== "string" || !clientId || clientId.length > 512)
+    return c.json({ error: "Invalid request" }, 400)
+  const answer = await appChoices(clientId)
+  return "status" in answer
+    ? c.json({ error: answer.error }, answer.status)
+    : c.json(answer)
 })

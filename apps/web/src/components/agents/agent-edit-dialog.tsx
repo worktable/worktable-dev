@@ -28,6 +28,8 @@ import { threadQueryKeys } from "@/lib/threads-queries"
 import { AgentAvatar } from "./agent-avatar"
 import { AgentFields } from "./agent-fields"
 import { AutoReplySetting } from "./auto-reply"
+import { useConnectionApp, worksElsewhere } from "@/lib/app-choices"
+import { WorksInSetting } from "./works-in"
 import { CloudTaskSetup } from "./cloud-task-setup"
 
 function sameAccess(a: AgentAccess | null, b: AgentAccess | null): boolean {
@@ -64,6 +66,8 @@ export function AgentEditDialog({
   // The dialog shows a cloud task's setup steps in place of the agent's fields.
   const [settingUp, setSettingUp] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  // Where an app reached through Cloud works, when Cloud can say.
+  const app = useConnectionApp(connection)
 
   useEffect(() => {
     if (!connection) return
@@ -154,11 +158,17 @@ export function AgentEditDialog({
       <ResponsiveDialogContent>
         {header}
         <ResponsiveDialogBody>
+          {app?.worktable && (
+            <div className={autoReply ? "mb-3" : "mb-5"}>
+              <WorksInSetting app={app} />
+            </div>
+          )}
           {autoReply && (
             <div className="mb-5">
               <AutoReplySetting
                 connection={{ ...connection, autoReply }}
                 onSetUp={() => setSettingUp(true)}
+                elsewhere={worksElsewhere(app)}
               />
             </div>
           )}
@@ -217,6 +227,16 @@ export function AgentEditDialog({
           )}
         </ResponsiveDialogBody>
         <ResponsiveDialogFooter>
+          {connection.link && (
+            <a
+              href={connection.link.manageUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm text-muted-foreground hover:text-foreground sm:mr-auto sm:self-center"
+            >
+              Manage in Cloud
+            </a>
+          )}
           {onDisconnect && (
             <Button
               variant="destructive"

@@ -23,6 +23,10 @@ import { SetupStep } from "./setup-step"
 export const AUTO_REPLY_PROMPT =
   "Watch Worktable for comments and messages sent to you, and reply to each one there, following the Worktable skill."
 
+/** Where ChatGPT's account app can watch Worktable, as OpenAI offers events. */
+export const WORK_CHAT_HINT =
+  "Paste it into a Work chat on chatgpt.com, or in the desktop app with Work and Cloud selected."
+
 const DOT_LABEL = {
   on: "Auto-reply on",
   attention: "Auto-reply needs attention",
@@ -76,6 +80,10 @@ function About({ connection }: { connection: AgentConnection }) {
         <p>
           {name} answers comments and messages you send it, even when the chat
           is closed. To pause it, open Scheduled in ChatGPT.
+        </p>
+        <p>
+          Still Off? Check that it’s a Work chat, and that Cloud is selected in
+          the desktop app.
         </p>
         <a
           className="text-primary-text hover:underline"
@@ -172,14 +180,23 @@ function TurnOn({ connection }: { connection: AgentConnection }) {
   return (
     <Popover>
       <PopoverTrigger render={<Button variant="outline" size="sm" />}>
-        Turn on
+        Turn On
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-3">
         <ol className="space-y-1">
           <SetupStep number={1} title="Copy this">
             <CopyLine text={AUTO_REPLY_PROMPT} />
           </SetupStep>
-          <SetupStep number={2} title={pasteInto(connection, app)}>
+          <SetupStep
+            number={2}
+            title={chatgptWeb ? "Paste it into a Work chat" : pasteInto(connection, app)}
+          >
+            {chatgptWeb && (
+              <p className="text-sm text-muted-foreground">
+                On chatgpt.com, or in the desktop app with Work and Cloud
+                selected.
+              </p>
+            )}
             {chatgptWeb && (
               <a
                 href="https://chatgpt.com/"
@@ -193,7 +210,9 @@ function TurnOn({ connection }: { connection: AgentConnection }) {
           </SetupStep>
         </ol>
         <p className="pl-9 text-xs text-muted-foreground">
-          Replies appear in Worktable.
+          {chatgptWeb
+            ? "Auto-reply shows On once ChatGPT is watching."
+            : "Replies appear in Worktable."}
         </p>
       </PopoverContent>
     </Popover>
@@ -246,14 +265,18 @@ function TaskActions({
 export function AutoReplySetting({
   connection,
   onSetUp,
+  elsewhere = false,
 }: {
   connection: AgentConnection
   /** Opens a cloud task's setup steps. */
   onSetUp?: () => void
+  /** The app works in another Worktable, so turning it on here can't work. */
+  elsewhere?: boolean
 }) {
   const autoReply = connection.autoReply
   if (!autoReply) return null
   const canTurnOn =
+    !elsewhere &&
     autoReply.state === "off" &&
     (autoReply.kind === "chat" || autoReply.kind === "session")
   return (

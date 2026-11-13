@@ -76,7 +76,7 @@ test("connected identity and Edit, which holds Disconnect, remain available when
           platform: "other",
           icon: null,
           access: null,
-          target: { kind: "mcp-client", clientId: null },
+          target: { kind: "mcp-client", clientId: "grok-app" },
           mode: "on-demand",
           participant: { id: "grok-bot", kind: "agent", name: "Grok Bot" },
           machine: null,
@@ -99,6 +99,19 @@ test("connected identity and Edit, which holds Disconnect, remain available when
         },
       ],
     })
+    // Grok works in another of the person's Worktables.
+    client.setQueryData(["app-choices"], {
+      apps: [
+        {
+          clientId: "grok-app",
+          name: "Grok",
+          family: "grok",
+          changeUrl: "https://cloud.example/gateway/worktables/app?app=grok",
+          worktable: { id: "wt_studio", name: "Studio", here: false },
+        },
+      ],
+      appsUrl: "https://cloud.example/gateway/worktables/apps",
+    })
     try {
       const html = renderToStaticMarkup(
         <QueryClientProvider client={client}>
@@ -113,13 +126,14 @@ test("connected identity and Edit, which holds Disconnect, remain available when
         unavailableAuthKinds.length > 0
       )
       expect(html).toContain("Worktable Link")
-      expect(html).toContain(
-        'href="https://cloud.example/linked/agents?destinationId=d"'
-      )
-      // Disconnect lives in Edit; Cloud manages the Link apps.
+      // Where Grok's requests go outweighs its local routine status.
+      expect(html).toContain("Works in Studio")
+      // Disconnect lives in Edit. Link apps open it too, where Manage in
+      // Cloud replaces Disconnect, since Cloud holds their sign-in.
       expect(html).not.toContain(">Disconnect<")
-      expect(html.split(">Manage<").length - 1).toBe(2)
-      expect(html.split(">Edit<").length - 1).toBe(3)
+      expect(html).not.toContain(">Manage<")
+      // OpenClaw, the retired Harbor, ChatGPT through Link, and Grok Bot.
+      expect(html.split(">Edit<").length - 1).toBe(4)
     } finally {
       client.clear()
     }

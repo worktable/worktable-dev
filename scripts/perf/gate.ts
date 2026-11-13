@@ -271,12 +271,14 @@ export function compare(
   // group (a network and pass; the server is one group), is a screen the
   // base predates or the head renamed or removed: noted, not judged. The
   // results of several networks are judged together, so a side's runs are
-  // counted per group.
+  // counted per group: a click run belongs to the passes it timed, and every
+  // server run to `every`, whatever it measured.
   const pairKeys = (
     kind: string,
     left: Run[],
     right: Run[],
-    groupOf: (key: string) => string
+    groupOf: (key: string) => string,
+    every?: string
   ) => {
     const coverage = (runs: Run[]) => {
       const counts = new Map<string, number>()
@@ -284,8 +286,9 @@ export function compare(
       for (const run of runs) {
         for (const key of run.keys())
           counts.set(key, (counts.get(key) ?? 0) + 1)
-        for (const group of new Set([...run.keys()].map(groupOf)))
-          groups.set(group, (groups.get(group) ?? 0) + 1)
+        const own = new Set([...run.keys()].map(groupOf))
+        if (every !== undefined) own.add(every)
+        for (const group of own) groups.set(group, (groups.get(group) ?? 0) + 1)
       }
       return { counts, groups }
     }
@@ -443,7 +446,8 @@ export function compare(
   // spread, since a 1 ms route and a 30 ms one move differently.
   const baseServer = serverRuns(sides.base.io)
   const headServer = serverRuns(sides.head.io)
-  for (const endpoint of pairKeys("server", baseServer, headServer, () => "")) {
+  const routes = pairKeys("server", baseServer, headServer, () => "", "")
+  for (const endpoint of routes) {
     const baseLogs = logs(baseServer, endpoint)
     const headLogs = logs(headServer, endpoint)
     if (baseLogs.length === 0 || headLogs.length === 0) continue

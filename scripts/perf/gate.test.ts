@@ -164,6 +164,30 @@ describe("paired speed gate", () => {
         "bbbb"
       ).incomplete
     ).toEqual(["click phone:cold:general: 3 base runs, 2 head runs"])
+    // So does a route in only some of a side's server runs, even when the
+    // others measured nothing.
+    const route = (commit: string, endpoints: string[]) => ({
+      commit,
+      timing: {
+        timings: endpoints.map((endpoint) => ({
+          role: "solo",
+          endpoint,
+          p95: 5,
+        })),
+      },
+    })
+    expect(
+      compare(
+        [
+          route("aaaa", ["spaces"]),
+          route("aaaa", []),
+          route("bbbb", ["spaces", "recent"]),
+          route("bbbb", []),
+        ],
+        "aaaa",
+        "bbbb"
+      ).incomplete
+    ).toEqual(["server recent: 0 base runs, 1 head runs"])
 
     // A journey the base runs but can't show (it predates the screen) is
     // new in the head too, and the rest are still judged.

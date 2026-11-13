@@ -371,7 +371,7 @@ function SpaceOverview({
           </div>
         </aside>
 
-        {(folderCounts.size > 0 || (collections?.length ?? 0) > 0) && (
+        {folderCounts.size > 0 && (
           <section
             aria-labelledby="folders-heading"
             className="order-3 min-w-0 @4xl/page:col-span-2"
@@ -426,6 +426,19 @@ function SpaceOverview({
                   </button>
                 )
               })}
+            </div>
+          </section>
+        )}
+
+        {(collections?.length ?? 0) > 0 && (
+          <section
+            aria-labelledby="records-heading"
+            className="order-3 min-w-0 @4xl/page:col-span-2"
+          >
+            <h2 id="records-heading" className={cn(sectionHeading, "mb-2")}>
+              Records
+            </h2>
+            <div className="flex flex-wrap gap-2">
               {(collections ?? []).map((collection) => (
                 <Link
                   key={collection.id}

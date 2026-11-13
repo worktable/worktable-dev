@@ -123,17 +123,18 @@ export function PlaceCard({
         )}
       </span>
       <Tracker days={days} />
-      <span className="flex h-5 items-center justify-between gap-2">
-        <span className="flex items-center">
+      <span className="flex h-6 items-center justify-between gap-2">
+        <span className="-ml-0.5 flex items-center">
           {actors.map((actor, index) => (
-            <ActorAvatar
+            <span
               key={actor.id}
-              actor={actor}
               className={cn(
-                "size-5 text-[0.625rem] outline-2 outline-card",
+                "relative flex rounded-full bg-card p-0.5",
                 index > 0 && "-ml-1.5"
               )}
-            />
+            >
+              <ActorAvatar actor={actor} className="size-5 text-[0.625rem]" />
+            </span>
           ))}
         </span>
         {lastAt && (

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useSyncExternalStore } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { ArrowRight } from "lucide-react"
 import { toast } from "@worktable/ui/components/sonner"
@@ -46,19 +46,23 @@ function EmptyState() {
   )
 }
 
-/** A greeting for the reader's time of day, known only once mounted. */
+const noChange = () => () => {}
+
+function greetingNow(): string {
+  const hour = new Date().getHours()
+  return hour >= 5 && hour < 12
+    ? "Good morning"
+    : hour >= 12 && hour < 18
+      ? "Good afternoon"
+      : "Good evening"
+}
+
+/**
+ * A greeting for the reader's time of day. The prerendered page has none,
+ * since the server does not know the reader's clock.
+ */
 function useGreeting(name: string | undefined): string | null {
-  const [part, setPart] = useState<string | null>(null)
-  useEffect(() => {
-    const hour = new Date().getHours()
-    setPart(
-      hour >= 5 && hour < 12
-        ? "Good morning"
-        : hour >= 12 && hour < 18
-          ? "Good afternoon"
-          : "Good evening"
-    )
-  }, [])
+  const part = useSyncExternalStore(noChange, greetingNow, () => null)
   if (!part) return null
   // A Worktable whose owner has not named themselves greets no one by name.
   const first = name?.trim().split(/\s+/)[0]

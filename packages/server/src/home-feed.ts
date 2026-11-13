@@ -105,6 +105,9 @@ export async function readHomeFeed(
 
   const runs: HomeRun[] = []
   const openRuns = new Map<string, OpenRun>()
+  // A doc is listed once, in the newest run that touched it: Latest says who
+  // changed it last, not everyone who did.
+  const listedDocs = new Map<string, HomeRun>()
   const places = new Map<string, OpenPlace>()
   for (const event of events) {
     if (event.target.kind !== "doc" || !event.spaceId) continue
@@ -149,6 +152,7 @@ export async function readHomeFeed(
     if (!current || current.archived) continue
     if (options.folder !== undefined && placeId !== options.folder) continue
     const key = `${event.actor.id}|${event.spaceId}`
+    const docKey = `${event.spaceId}\n${path}`
     let open = openRuns.get(key)
     if (!open || open.oldest - time > RUN_GAP_MS) {
       const run: HomeRun = {
@@ -170,6 +174,7 @@ export async function readHomeFeed(
       if (created) listed.created = true
       continue
     }
+    if (listedDocs.has(docKey)) continue
     const doc: HomeRunDoc = {
       path,
       title: current.title,
@@ -179,14 +184,18 @@ export async function readHomeFeed(
     }
     open.docs.set(path, doc)
     open.run.docs.push(doc)
+    listedDocs.set(docKey, open.run)
   }
 
   return {
-    runs: runs.slice(0, options.limit).map((run) => ({
-      ...run,
-      docs: run.docs.slice(0, RUN_DOCS),
-      more: Math.max(0, run.docs.length - RUN_DOCS),
-    })),
+    runs: runs
+      .filter((run) => run.docs.length > 0)
+      .slice(0, options.limit)
+      .map((run) => ({
+        ...run,
+        docs: run.docs.slice(0, RUN_DOCS),
+        more: Math.max(0, run.docs.length - RUN_DOCS),
+      })),
     places: [...places]
       .map(
         ([id, place]): HomePlace => ({

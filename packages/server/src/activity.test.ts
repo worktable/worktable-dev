@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  setSystemTime,
+} from "bun:test"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import {
@@ -430,17 +437,21 @@ describe("workspace activity", () => {
     const agent: ActivityActor = { kind: "agent", id: codex.principal.id, name: "Codex" }
     const ago = (minutes: number) =>
       new Date(Date.now() - minutes * 60_000).toISOString()
-    // One sitting: the agent writes three docs.
+    // Three hours ago the agent wrote one doc; just now, three more.
+    setSystemTime(new Date(Date.now() - 180 * 60_000))
+    await writeDocAt("plans/old")
+    setSystemTime()
     await writeDocAt("plans/a")
     await writeDocAt("plans/b")
     await writeDocAt("notes/c")
-    // Earlier the same agent had revised one of them, and the owner another.
-    recordActivity({ spaceId: "company", action: "doc.edited", actor: agent, target: { kind: "doc", path: "plans/a" }, at: ago(180) })
-    recordActivity({ spaceId: "company", action: "doc.edited", actor: owner, target: { kind: "doc", path: "notes/c" }, at: ago(10) })
+    // It had revised one of them earlier, and the owner has since edited another.
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: agent, target: { kind: "doc", path: "plans/a" }, at: ago(170) })
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: owner, target: { kind: "doc", path: "notes/c" } })
     // Work on a doc that is gone, and work from long ago, list nothing.
     recordActivity({ spaceId: "company", action: "doc.edited", actor: agent, target: { kind: "doc", path: "gone" }, at: ago(1) })
     recordActivity({ spaceId: "company", action: "doc.edited", actor: agent, target: { kind: "doc", path: "plans/b" }, at: ago(60 * 24 * 20) })
 
+    // Each doc is listed once, with whoever changed it last.
     const home = await request<HomeFeed>("/api/home")
     expect(
       home.runs.map((run) => [
@@ -448,21 +459,21 @@ describe("workspace activity", () => {
         run.docs.map((doc) => [doc.path, doc.created]),
       ])
     ).toEqual([
-      ["agent", [["notes/c", true], ["plans/b", true], ["plans/a", true]]],
       ["person", [["notes/c", false]]],
-      ["agent", [["plans/a", false]]],
+      ["agent", [["plans/b", true], ["plans/a", true]]],
+      ["agent", [["plans/old", true]]],
     ])
     expect(home.runs[0]!.docs[0]!.title).toBe("Pulse")
     // Across Spaces a place is a Space: who worked there, most recent first.
     expect(home.places.map((place) => place.id)).toEqual(["company"])
     expect(home.places[0]!.days).toHaveLength(14)
     expect(home.places[0]!.days.at(-1)).toBeGreaterThanOrEqual(3)
-    expect(home.places[0]!.actors.map((actor) => actor.kind)).toEqual(["agent", "person"])
+    expect(home.places[0]!.actors.map((actor) => actor.kind)).toEqual(["person", "agent"])
 
     // In one Space the places are its top-level folders, and a folder narrows the runs.
     const inSpace = await request<HomeFeed>("/api/home?spaceId=company&folder=notes")
     expect(inSpace.places.map((place) => place.id).sort()).toEqual(["notes", "plans"])
-    expect(inSpace.runs.map((run) => run.docs.map((doc) => doc.path))).toEqual([["notes/c"], ["notes/c"]])
+    expect(inSpace.runs.map((run) => run.docs.map((doc) => doc.path))).toEqual([["notes/c"]])
     expect(inSpace.pins).toBeUndefined()
 
     // A person's own pins come with Home; a pin whose doc is gone says so.

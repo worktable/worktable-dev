@@ -126,10 +126,6 @@
       "why": "Asks again every 2 s only while the server says its search index is still building."
     },
     {
-      "site": "apps/web/src/routes/index.tsx#useToday.timer",
-      "why": "Updates Home's date heading each minute; no request."
-    },
-    {
       "site": "packages/ui/src/public-share-live.js#sleep",
       "why": "Bounded retry backoff: data calls stop within 25 seconds and waking checks stop within one minute; there is no unbounded retry loop."
     },

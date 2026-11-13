@@ -110,6 +110,7 @@ import {
   useAppChoices,
   worktableLabel,
 } from "@/lib/app-choices"
+import { WorksInSetting } from "@/components/agents/works-in"
 import { GROK_BOT_STATUS_LABELS, grokAutoReply } from "@/lib/grok-bot-status"
 import {
   AGENT_SETUP_CATEGORIES,
@@ -1377,6 +1378,11 @@ export function ConnectedAgentsGroup() {
   const editingConnection = connections.find(
     (connection) => botForConnection(connection)?.connectionId === editingGrok
   )
+  // Grok Bot is an app at Cloud's shared address too, so it can work elsewhere.
+  const editingGrokApp =
+    editingConnection?.target.kind === "mcp-client"
+      ? appForClient(appChoices.data, editingConnection.target.clientId)
+      : undefined
   const oauthInventoryUnavailable =
     (connectionsQuery.data?.unavailableAuthKinds?.length ?? 0) > 0
   return (
@@ -1451,10 +1457,10 @@ export function ConnectedAgentsGroup() {
                           : ""}
                         {connection?.machine ? `${connection.machine} · ` : ""}
                         {connection?.link ? "Worktable Link · " : ""}
-                        {grok
-                          ? GROK_BOT_STATUS_LABELS[grok.status]
-                          : elsewhere
-                            ? `Works in ${worktableLabel(elsewhere)}`
+                        {elsewhere
+                          ? `Works in ${worktableLabel(elsewhere)}`
+                          : grok
+                            ? GROK_BOT_STATUS_LABELS[grok.status]
                             : connection?.lastSeenAt
                             ? `Last seen ${timeAgo(connection.lastSeenAt)}`
                             : "Not used yet"}
@@ -1532,6 +1538,11 @@ export function ConnectedAgentsGroup() {
             <ResponsiveDialogDescription>Grok Bot</ResponsiveDialogDescription>
           </ResponsiveDialogHeader>
           <ResponsiveDialogBody>
+            {editingGrokApp?.worktable && (
+              <div className="mb-5">
+                <WorksInSetting app={editingGrokApp} />
+              </div>
+            )}
             {editingGrok && systemConnection.data && (
               <GrokBotSetupPanel
                 key={editingGrok}

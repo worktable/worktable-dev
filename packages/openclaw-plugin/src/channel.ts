@@ -239,10 +239,18 @@ const base = createChannelPluginBase<WorktableChannelAccount>({
         enabled: account.enabled,
         configured: accountIsConfigured(account),
         tokenStatus: accountIsConfigured(account) ? "available" : "missing",
+        // OpenClaw never starts an account that is not configured. Its
+        // channel status shows this as the reason.
+        ...(account.needsReconnect
+          ? { stateReason: reconnectMessage(account) }
+          : {}),
       }
     },
     isEnabled: (account) => account.enabled,
     isConfigured: accountIsConfigured,
+    // The same reason, where OpenClaw asks for it without an inspection.
+    unconfiguredReason: (account) =>
+      account.needsReconnect ? reconnectMessage(account) : "not configured",
   },
   setup: {
     applyAccountConfig({ cfg, input }) {
@@ -304,11 +312,12 @@ export const worktableChannel = createChatChannelPlugin({
     },
     gateway: {
       async startAccount(ctx) {
-        if (ctx.account.needsReconnect) {
-          throw new Error(reconnectMessage(ctx.account))
-        }
         if (!accountIsConfigured(ctx.account)) {
-          throw new Error("Worktable channel is not configured")
+          throw new Error(
+            ctx.account.needsReconnect
+              ? reconnectMessage(ctx.account)
+              : "Worktable channel is not configured"
+          )
         }
         const [
           { OpenClawAgentDispatcher },

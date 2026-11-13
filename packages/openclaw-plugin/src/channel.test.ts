@@ -52,7 +52,7 @@ describe("Worktable channel account setup", () => {
     })
   })
 
-  it("tells a connection made with Agent Registration to connect again, and setup clears it", async () => {
+  it("tells a connection made with Agent Registration to connect again, and setup clears it", () => {
     // What 0.0.19 and earlier saved for `--agent-registration`.
     const credential = {
       registrationId: "agent_reg_1",
@@ -74,16 +74,18 @@ describe("Worktable channel account setup", () => {
     const account = resolveWorktableAccount(cfg)
     expect(account).toMatchObject({ token: "", needsReconnect: true })
     expect(worktableChannel.config!.isConfigured!(account, cfg)).toBe(false)
-    // The Gateway says what to do instead of trying a credential Worktable
-    // refuses.
-    await expect(
-      worktableChannel.gateway!.startAccount!({
-        account,
-        accountId: "default",
-        cfg,
-      } as never)
-    ).rejects.toThrow(
+    // OpenClaw does not start it, and shows this as the reason in its
+    // channel status.
+    const reason =
       "This connection was made with Agent Registration, which Worktable no longer accepts. Connect again: openclaw worktable connect --server https://app.worktable.cloud"
+    expect(worktableChannel.config!.inspectAccount!(cfg, "default")).toEqual({
+      enabled: true,
+      configured: false,
+      tokenStatus: "missing",
+      stateReason: reason,
+    })
+    expect(worktableChannel.config!.unconfiguredReason!(account, cfg)).toBe(
+      reason
     )
 
     const updated = worktableChannel.setup!.applyAccountConfig({

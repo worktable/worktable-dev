@@ -436,14 +436,16 @@ against the Space's catalog snapshot, so a deleted Doc's excerpt never shows
 (`search-index.ts`). A record deleted or archived leaves the Docs it pointed
 at as the store says so (`doc-referrers.ts`). A comment's event in Activity
 names its Doc's id. Deleting a Doc erases what its comments said from the
-stored history, keeping each line, and the feed shows a comment's words only
-with that same Doc (`activity-log.ts`, `activity-feed.ts`, called from
-`share-lifecycle.ts` on every removal). An older event with only a path goes
-with the Doc deleted at that path.
+stored history, keeping each line, once the delete commits
+(`document-data-lifecycle-v2.ts`), and a deleted Space's when it leaves the
+folder (`deleted-items.ts`); the feed shows a comment's words only with that
+same Doc (`activity-feed.ts`). An older event with only a path goes with the
+Doc deleted at that path.
 
-**Gaps:** a Doc deleted on disk, outside Worktable, keeps its comments' words
-in the stored history; the feed hides them, but an older event with only a
-path shows again for a new Doc at that path. No test uses a download link
+**Gaps:** a Doc deleted on disk, outside Worktable, or in a workspace on the
+older document storage, keeps its comments' words in the stored history; the
+feed hides them, but an older event with only a path shows again for a new
+Doc at that path. No test uses a download link
 after its maker lost access to the Space.
 
 ## Safety

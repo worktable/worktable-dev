@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
+import { drainActivity, recordActivity } from "./activity-log.ts"
 import { spawnSync } from "node:child_process"
 import {
   copyFileSync,
@@ -442,7 +443,20 @@ describe("deleted items", () => {
     expect(readFileSync(join(folder, "docs", "roadmap.md"), "utf8")).toBe(
       "# roadmap\n"
     )
+    // What was said in it leaves its Activity once it is gone; a new Space
+    // with the same id keeps what is said in it.
+    const comment = (quote: string, at: string) =>
+      recordActivity({
+        spaceId: "plans",
+        action: "comment.created",
+        actor: { kind: "person", id: "local:owner" },
+        target: { kind: "doc", path: "roadmap" },
+        quote,
+        at,
+      })
+    comment("Cut the Q3 launch.", new Date(Date.now() - 1000).toISOString())
     expect(await deleteSpace("plans")).toEqual({ error: null })
+    comment("A new plan.", new Date(Date.now() + 60_000).toISOString())
     // A new Space with the same id starts without the old history.
     expect(existsSync(join(workspace, "versions", "plans"))).toBe(false)
     // A Space an older version deleted 40 days ago, still in the folder.
@@ -457,6 +471,14 @@ describe("deleted items", () => {
 
     const result = await runDeletedItemsPass()
     expect(result).toMatchObject({ moved: 2, removed: 1 })
+    await drainActivity()
+    const activityDir = join(app, "activity")
+    const said = readFileSync(
+      join(activityDir, readdirSync(activityDir)[0]!, "plans.jsonl"),
+      "utf8"
+    )
+    expect(said).not.toContain("Cut the Q3 launch.")
+    expect(said).toContain("A new plan.")
     for (const tree of ["spaces", "versions"]) {
       expect(readdirSync(join(workspace, tree, ".trash"))).toEqual([])
     }

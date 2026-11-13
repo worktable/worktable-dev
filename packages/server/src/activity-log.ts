@@ -329,10 +329,12 @@ export interface DeletedDocQuoteTarget {
  * Erase the words of comments on Docs that were deleted, keeping each line
  * of history. An event that names its Doc's id goes with that Doc only; one
  * recorded before ids were, with only a path, goes with the Doc deleted at
- * that path. Runs in the background and never fails the delete.
+ * that path. Called once a delete has committed; runs in the background and
+ * never fails it.
  */
 export function forgetDeletedDocQuotes(
-  targets: readonly DeletedDocQuoteTarget[]
+  targets: readonly DeletedDocQuoteTarget[],
+  deletedAt: number = Date.now()
 ): void {
   const bySpace = new Map<string, DeletedDocQuoteTarget[]>()
   for (const target of targets) {
@@ -345,22 +347,29 @@ export function forgetDeletedDocQuotes(
     const unnamed = new Set(
       inSpace.flatMap((target) => (target.documentId ? [] : [target.path]))
     )
-    forgetQuotes(spaceId, (target) =>
-      target.documentId !== undefined
-        ? ids.has(target.documentId) || unnamed.has(target.path)
-        : paths.has(target.path)
+    forgetQuotes(
+      spaceId,
+      (target) =>
+        target.documentId !== undefined
+          ? ids.has(target.documentId) || unnamed.has(target.path)
+          : paths.has(target.path),
+      deletedAt
     )
   }
 }
 
-/** Erase every comment's words in a deleted Space's history. */
-export function forgetSpaceQuotes(spaceId: string): void {
-  forgetQuotes(spaceId, () => true)
+/**
+ * Erase every comment's words in a deleted Space's history, from before it
+ * was deleted: a new Space can take the same id.
+ */
+export function forgetSpaceQuotes(spaceId: string, deletedAt: number): void {
+  forgetQuotes(spaceId, () => true, deletedAt)
 }
 
 function forgetQuotes(
   spaceId: string,
-  matches: (target: Extract<ActivityEvent["target"], { kind: "doc" }>) => boolean
+  matches: (target: Extract<ActivityEvent["target"], { kind: "doc" }>) => boolean,
+  deletedAt: number
 ): void {
   const path = logPath(spaceId)
   const work = withLogLock(path, async () => {
@@ -381,7 +390,8 @@ function forgetQuotes(
         return line
       }
       if (event.quote === undefined || event.target?.kind !== "doc") return line
-      if (!matches(event.target)) return line
+      // What was said after the delete belongs to something else.
+      if (!(Date.parse(event.at) <= deletedAt) || !matches(event.target)) return line
       const kept: Partial<ActivityEvent> = { ...event }
       delete kept.quote
       changed = true

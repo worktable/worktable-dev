@@ -74,6 +74,7 @@
 // and drops an `entry.json` whose item never left its place.
 // ============================================================
 
+import { forgetSpaceQuotes } from "./activity-log.ts"
 import { randomBytes } from "node:crypto"
 import {
   cp,
@@ -817,6 +818,10 @@ async function moveOutOfWorkspace(
             // Recorded for the next pass when the comment store refuses, so
             // the history still leaves the workspace folder now.
             await eraseVisitorCommentsOrRecord(await item.documentIds())
+            // A deleted Space's comments' words leave its Activity too.
+            if (item.retirementId === null) {
+              forgetSpaceQuotes(item.spaceId, item.deletedAt ?? now())
+            }
             const retiredAt = item.deletedAt ?? now()
             const id = newEntryId()
             const erase = window !== null && retiredAt + window <= now()

@@ -854,14 +854,18 @@ function launch(): void {
                   if (connector === child) connected = false
                 })
               }
+              const online = connected && reply.ready
               status = {
-                state: connected && reply.ready ? "online" : "connecting",
+                state: online ? "online" : "connecting",
                 enabled: true,
                 cloudOrigin: link.cloudOrigin,
                 billingWorkspaceId: link.billingWorkspaceId,
                 ...address,
                 label: link.label,
               }
+              // Auto-reply reads On, and held events go, only once agents
+              // can reach this device.
+              ingress.setOnline(online)
               setLinkedSharing(
                 reply.sharingEnabled
                   ? {
@@ -873,6 +877,7 @@ function launch(): void {
               )
             }
           } catch {
+            ingress?.setOnline(false)
             if (!controller.signal.aborted)
               status = {
                 ...status,

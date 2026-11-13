@@ -898,7 +898,7 @@ export async function listThreadParticipants(
           hasScope(ceiling, "threads:read") &&
           (!replyRequired || hasScope(ceiling, "threads:write")) &&
           bound.some((credential) =>
-            /^(oauth:|workos-agent:)/.test(credential.credential_key)
+            credential.credential_key.startsWith("oauth:")
           )
         )
       )

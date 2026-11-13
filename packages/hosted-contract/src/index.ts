@@ -537,8 +537,9 @@ export const AGENT_ROUTE_HEADERS = {
 export const AGENT_ROUTE_PREFIX = "/w/"
 
 /**
- * Optional self-presentation accepted only after Agent Registration verifies.
- * The gateway consumes and strips these before proxying to the tenant.
+ * Self-presentation an agent adapter may send. Nothing reads it since Agent
+ * Registration was retired; the gateway still strips these so a workspace
+ * never takes a caller's word for them.
  */
 export const AGENT_PRESENTATION_HEADERS = {
   ADAPTER: "x-worktable-agent-adapter",
@@ -622,21 +623,13 @@ export function scopesForHostedPermissionGroups(
   ]
 }
 
-/** Fixed hosted ceilings shared by admission, inventory, and audit records. */
-export const HOSTED_AGENT_REGISTRATION_PERMISSION_GROUPS = [
-  "conversations",
-] as const satisfies readonly HostedAgentPermissionGroup[]
-
+/** Fixed hosted ceiling shared by admission, inventory, and audit records. */
 export const HOSTED_OAUTH_PERMISSION_GROUPS = [
   "workspace-read",
   "workspace-write",
   "conversations",
   "export",
 ] as const satisfies readonly HostedAgentPermissionGroup[]
-
-export const HOSTED_AGENT_REGISTRATION_SCOPES = scopesForHostedPermissionGroups(
-  HOSTED_AGENT_REGISTRATION_PERMISSION_GROUPS
-)
 
 export const HOSTED_OAUTH_SCOPES = scopesForHostedPermissionGroups(
   HOSTED_OAUTH_PERMISSION_GROUPS

@@ -21,6 +21,10 @@ export type AgentConnectionTarget =
 export type AgentConnectionAuthKind =
   | "local-token"
   | "oauth"
+  /**
+   * WorkOS Agent Registration, retired. Still read from connections made
+   * with it: they list, and can only be disconnected.
+   */
   | "agent-registration"
 
 export type AgentPermissionGroup =

@@ -1,6 +1,4 @@
 import { name as packageName, version as packageVersion } from "../package.json"
-import { AGENT_PRESENTATION_HEADERS } from "./worktable-contract"
-import type { WorktableAgentCredentialProvider } from "./agent-auth.js"
 import type {
   ClaimedWorktableDelivery,
   WorktableClient,
@@ -50,53 +48,6 @@ export function claimWithThreadLocations(
     waitSeconds,
     threadLocationVersion: 2,
   })
-}
-
-function presentationHeaderValue(
-  value: string,
-  maxLength: number,
-  fallback: string
-): string {
-  const normalized = value
-    .normalize("NFKD")
-    .replace(/[^\x20-\x7e]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-  return (normalized || fallback).slice(0, maxLength)
-}
-
-export function worktableAgentPresentationHeaders(input: {
-  adapter: string
-  installationId: string
-  label: string
-  machine?: string
-}): Record<string, string> {
-  return {
-    [AGENT_PRESENTATION_HEADERS.ADAPTER]: presentationHeaderValue(
-      input.adapter,
-      64,
-      "agent"
-    ),
-    [AGENT_PRESENTATION_HEADERS.INSTALLATION]: presentationHeaderValue(
-      input.installationId,
-      256,
-      "unknown"
-    ),
-    [AGENT_PRESENTATION_HEADERS.LABEL]: presentationHeaderValue(
-      input.label,
-      160,
-      "OpenClaw"
-    ),
-    ...(input.machine
-      ? {
-          [AGENT_PRESENTATION_HEADERS.MACHINE]: presentationHeaderValue(
-            input.machine,
-            160,
-            "unknown"
-          ),
-        }
-      : {}),
-  }
 }
 
 // Worktable answers MCP POSTs with plain JSON (stateless, no sessions), so the
@@ -189,52 +140,12 @@ export class McpWorktableClient implements WorktableClient {
   #sessionId?: string
   #nextId = 1
 
-  constructor(
-    server: string,
-    auth:
-      | string
-      | {
-          provider: WorktableAgentCredentialProvider
-          adapter: string
-          installationId: string
-          label: string
-          machine?: string
-        }
-  ) {
-    this.#endpoint =
-      typeof auth === "string"
-        ? worktableMcpEndpoint(server)
-        : new URL(auth.provider.resource)
-    if (typeof auth === "string") {
-      this.#send = (init) => {
-        const headers = new Headers(init.headers)
-        headers.set("Authorization", `Bearer ${auth}`)
-        return fetch(this.#endpoint, { ...init, headers, redirect: "error" })
-      }
-      return
-    }
-    const presentationHeaders = worktableAgentPresentationHeaders(auth)
-    this.#send = async (init) => {
-      const run = async () => {
-        const headers = new Headers(init.headers)
-        headers.set(
-          "Authorization",
-          `Bearer ${await auth.provider.accessToken()}`
-        )
-        for (const [name, value] of Object.entries(presentationHeaders)) {
-          headers.set(name, value)
-        }
-        return fetch(this.#endpoint, { ...init, headers, redirect: "error" })
-      }
-      const response = await run()
-      if (response.status !== 401) return response
-      const problem = (await response
-        .clone()
-        .json()
-        .catch(() => null)) as { code?: unknown } | null
-      if (problem?.code === "AGENT_DISCONNECTED") return response
-      auth.provider.invalidate()
-      return run()
+  constructor(server: string, token: string) {
+    this.#endpoint = worktableMcpEndpoint(server)
+    this.#send = (init) => {
+      const headers = new Headers(init.headers)
+      headers.set("Authorization", `Bearer ${token}`)
+      return fetch(this.#endpoint, { ...init, headers, redirect: "error" })
     }
   }
 

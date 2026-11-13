@@ -1234,11 +1234,7 @@ function agentConnectionName(connection: AgentConnection): string {
   // This Worktable reports each of its agents under its canonical name.
   if (connection.authKind === "local-token") return connection.displayName
   return (
-    connection.participant?.name ??
-    (connection.target.kind === "agent-adapter"
-      ? connection.target.participantName
-      : undefined) ??
-    clientDisplayName(connection.displayName)
+    connection.participant?.name ?? clientDisplayName(connection.displayName)
   )
 }
 

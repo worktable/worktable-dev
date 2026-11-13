@@ -1679,42 +1679,42 @@ describe("thread service", () => {
   })
 
   it("does not merge distinct authenticated agents that share a display name", async () => {
-    const firstWorkosAgent: TokenIdentity = {
+    const firstSignedInAgent: TokenIdentity = {
       ...finn,
-      agent: "workos-subject-one",
+      agent: "client-one",
       principal: {
         ...finn.principal,
-        id: "workos-agent:subject-one",
+        id: "oauth:client-one:subject-one",
         displayName: "Connected agent",
       },
     }
-    const secondWorkosAgent: TokenIdentity = {
+    const secondSignedInAgent: TokenIdentity = {
       ...finn,
-      agent: "workos-subject-two",
+      agent: "client-two",
       principal: {
         ...finn.principal,
-        id: "workos-agent:subject-two",
+        id: "oauth:client-two:subject-two",
         displayName: "Connected agent",
       },
     }
-    const firstBinding = await resolveParticipant(firstWorkosAgent, {
+    const firstBinding = await resolveParticipant(firstSignedInAgent, {
       defaultSpaceId: "connected-agents",
     })
-    const secondBinding = await resolveParticipant(secondWorkosAgent, {
+    const secondBinding = await resolveParticipant(secondSignedInAgent, {
       defaultSpaceId: "connected-agents",
     })
     expect(secondBinding.participant.id).not.toBe(firstBinding.participant.id)
-    const sameNameThread = await postThreadMessage(firstWorkosAgent, {
+    const sameNameThread = await postThreadMessage(firstSignedInAgent, {
       to: secondBinding.participant.id,
       body: "Two distinct agents with one display name can still collaborate.",
       idempotencyKey: "same-display-name-thread",
     })
     expect(
       (
-        await readThreadMessages(firstWorkosAgent, sameNameThread.threadId)
+        await readThreadMessages(firstSignedInAgent, sameNameThread.threadId)
       ).thread.identities.map((identity) => identity.name)
     ).toEqual(["Connected agent", "Connected agent (2)"])
-    const thread = await postThreadMessage(firstWorkosAgent, {
+    const thread = await postThreadMessage(firstSignedInAgent, {
       to: "Atlas",
       body: "Only the first delegated agent owns this thread.",
       idempotencyKey: "same-display-name-owner",
@@ -1729,7 +1729,7 @@ describe("thread service", () => {
       responseIdentityId: null,
     })
     const expanded = (
-      await readThreadMessages(firstWorkosAgent, thread.threadId)
+      await readThreadMessages(firstSignedInAgent, thread.threadId)
     ).thread
     expect(expanded.identities.map((identity) => identity.name)).toEqual([
       "Connected agent",
@@ -1742,17 +1742,17 @@ describe("thread service", () => {
     )
     try {
       setAppDirOverride(replacementAppDir)
-      const secondRecovered = await resolveParticipant(secondWorkosAgent)
-      const firstRecovered = await resolveParticipant(firstWorkosAgent)
+      const secondRecovered = await resolveParticipant(secondSignedInAgent)
+      const firstRecovered = await resolveParticipant(firstSignedInAgent)
       expect(secondRecovered.participant.id).not.toBe(
         firstRecovered.participant.id
       )
       expect(firstRecovered.participant.id).toBe(firstBinding.participant.id)
       expect(
-        (await readThreadMessages(secondWorkosAgent, thread.threadId)).thread.id
+        (await readThreadMessages(secondSignedInAgent, thread.threadId)).thread.id
       ).toBe(thread.threadId)
       expect(
-        (await readThreadMessages(firstWorkosAgent, thread.threadId)).thread.id
+        (await readThreadMessages(firstSignedInAgent, thread.threadId)).thread.id
       ).toBe(thread.threadId)
     } finally {
       setAppDirOverride(appDir)

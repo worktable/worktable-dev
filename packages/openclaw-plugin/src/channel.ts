@@ -4,24 +4,13 @@ import {
   type OpenClawConfig,
 } from "openclaw/plugin-sdk/channel-core"
 import { getRuntimeConfig } from "openclaw/plugin-sdk/runtime-config-snapshot"
-import { hostname } from "node:os"
 import {
   accessSettingsToKeep,
   memberId,
   sameAddress,
   type WorktableAccess,
 } from "./access.js"
-import {
-  parseWorktableAgentAuth,
-  WorktableAgentCredentialProvider,
-} from "./agent-auth.js"
-import {
-  loadAgentCredential,
-  promotePendingAgentAuth,
-  saveAgentCredential,
-} from "./agent-auth-config.js"
 import type {
-  WorktableAgentAuth,
   WorktableChannelAccount,
   WorktableClient,
   WorktableThreadSummary,
@@ -42,17 +31,17 @@ export function resolveWorktableAccount(
   accountId?: string | null
 ): WorktableChannelAccount {
   const section = channelSection(cfg)
+  const token = typeof section.token === "string" ? section.token : ""
   return {
     accountId: accountId ?? "default",
     enabled: section.enabled !== false,
     server: typeof section.server === "string" ? section.server : "",
-    token: typeof section.token === "string" ? section.token : "",
-    authMode:
-      section.authMode === "agent-registration"
-        ? "agent-registration"
-        : "local-token",
-    agentAuth: parseWorktableAgentAuth(section.agentAuth),
-    pendingAgentAuth: parseWorktableAgentAuth(section.pendingAgentAuth),
+    token,
+    needsReconnect:
+      !token &&
+      (section.authMode === "agent-registration" ||
+        section.agentAuth !== undefined ||
+        section.pendingAgentAuth !== undefined),
     participantName:
       typeof section.participantName === "string"
         ? section.participantName
@@ -123,52 +112,21 @@ export async function isOnePersonWorktable(
   }
 }
 
-export function agentCredentialForConnection(
-  account: WorktableChannelAccount
-): WorktableAgentAuth | undefined {
-  return account.authMode === "agent-registration"
-    ? (account.pendingAgentAuth ?? account.agentAuth)
-    : undefined
-}
-
 function accountIsConfigured(account: WorktableChannelAccount): boolean {
-  if (!account.server) return false
-  return account.authMode === "agent-registration"
-    ? Boolean(account.pendingAgentAuth ?? account.agentAuth)
-    : Boolean(account.token)
+  return Boolean(account.server && account.token)
 }
 
-export function pendingAgentRegistrationToPromote(
-  account: WorktableChannelAccount,
-  connectedRegistrationId?: string
-): string | undefined {
-  return account.pendingAgentAuth?.registrationId === connectedRegistrationId
-    ? connectedRegistrationId
-    : undefined
+/**
+ * What to do about a connection made with Agent Registration. Worktable
+ * Cloud refuses its credential, so it has to be connected again.
+ */
+export function reconnectMessage(account: WorktableChannelAccount): string {
+  return `This connection was made with Agent Registration, which Worktable no longer accepts. Connect again: openclaw worktable connect --server ${account.server || "<address>"}`
 }
 
-async function worktableClient(
-  account: WorktableChannelAccount,
-  credential = agentCredentialForConnection(account)
-) {
+async function worktableClient(account: WorktableChannelAccount) {
   const { McpWorktableClient } = await import("./worktable-client.js")
-  if (!credential) {
-    return new McpWorktableClient(account.server, account.token)
-  }
-  const provider = new WorktableAgentCredentialProvider({
-    credential,
-    load: () => loadAgentCredential(credential.registrationId),
-    save: (next) => saveAgentCredential(credential.registrationId, next),
-  })
-  return new McpWorktableClient(account.server, {
-    provider,
-    adapter: "openclaw",
-    installationId: credential.registrationId,
-    label: account.participantName
-      ? `OpenClaw · ${account.participantName}`
-      : "OpenClaw",
-    machine: hostname(),
-  })
+  return new McpWorktableClient(account.server, account.token)
 }
 
 async function withClient<T>(
@@ -299,6 +257,8 @@ const base = createChannelPluginBase<WorktableChannelAccount>({
               ownerMemberId: section.ownerMemberId,
             })
           : {}
+      // What an Agent Registration connection left behind goes with it.
+      delete section.authMode
       delete section.agentAuth
       delete section.pendingAgentAuth
       delete section.ownerMemberId
@@ -312,7 +272,6 @@ const base = createChannelPluginBase<WorktableChannelAccount>({
           enabled: true,
           server,
           token: input.token,
-          authMode: "local-token",
         },
       }
       return { ...cfg, channels } as OpenClawConfig
@@ -345,6 +304,9 @@ export const worktableChannel = createChatChannelPlugin({
     },
     gateway: {
       async startAccount(ctx) {
+        if (ctx.account.needsReconnect) {
+          throw new Error(reconnectMessage(ctx.account))
+        }
         if (!accountIsConfigured(ctx.account)) {
           throw new Error("Worktable channel is not configured")
         }
@@ -357,7 +319,6 @@ export const worktableChannel = createChatChannelPlugin({
           import("./connector.js"),
           import("./reply-outbox.js"),
         ])
-        const connectedCredential = agentCredentialForConnection(ctx.account)
         const completePairing = pairingCompletionOnce(
           ctx.account.pendingPairingCode,
           async (pairingCode) => {
@@ -371,7 +332,7 @@ export const worktableChannel = createChatChannelPlugin({
           }
         )
         const connector = new WorktableConnector({
-          client: await worktableClient(ctx.account, connectedCredential),
+          client: await worktableClient(ctx.account),
           dispatcher: new OpenClawAgentDispatcher(ctx.cfg),
           access: () => savedWorktableAccess(ctx.accountId),
           isOnePersonWorktable: () =>
@@ -383,13 +344,6 @@ export const worktableChannel = createChatChannelPlugin({
           logger: ctx.log,
           async onConnected() {
             await completePairing()
-            const registrationId = pendingAgentRegistrationToPromote(
-              ctx.account,
-              connectedCredential?.registrationId
-            )
-            if (registrationId) {
-              await promotePendingAgentAuth(registrationId)
-            }
           },
           onConnectionState(state) {
             const now = Date.now()

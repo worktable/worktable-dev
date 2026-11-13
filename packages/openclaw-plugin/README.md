@@ -119,9 +119,10 @@ its approver was recorded at pairing (Worktable 0.1.44), and counts no agent as
 your own. Otherwise it refuses with "Update this Worktable to 0.1.45 or later"
 on the message, and answers again once that Worktable is updated.
 
-`--agent-registration` is gone: connect with
+`--agent-registration` is gone, and Worktable Cloud no longer accepts a
+connection made with it. Connect it again with
 `openclaw worktable connect --server <address>` and approve the agent in
-Worktable. A connection already made that way keeps working.
+Worktable. Until then the Gateway does not start the channel, and says so.
 
 ## What pairing sends and stores
 
@@ -132,11 +133,6 @@ in the browser, Worktable also answers with the address of the workspace you
 approved the agent into; the plugin accepts it only on the host you gave or on
 Worktable Cloud (`app.worktable.cloud`), and never a plain-HTTP address for an
 HTTPS one.
-
-A connection made by Agent Registration before 0.0.20 also sends its
-registration ID and this computer's hostname with each request, and refreshes
-its credential at the authorization endpoints that Worktable named when it
-registered.
 
 - The token, the approving member's ID and the three trust settings are under
   `channels.worktable` in OpenClaw's configuration.

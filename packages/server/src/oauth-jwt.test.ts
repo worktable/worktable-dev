@@ -160,11 +160,11 @@ interface SignOptions {
   sub?: string
   exp?: string | number
   key?: CryptoKey
-  act?: { sub: string }
+  act?: unknown
 }
 
 async function signJwt(options: SignOptions = {}): Promise<string> {
-  return new SignJWT(options.act ? { act: options.act } : {})
+  return new SignJWT("act" in options ? { act: options.act } : {})
     .setProtectedHeader({ alg: "RS256", kid: "test-key" })
     .setIssuer(options.iss ?? asUrl)
     .setAudience(options.aud ?? RESOURCE)
@@ -231,29 +231,21 @@ describe("verifyAuthServerJwt", () => {
     })
   })
 
-  it("maps a claimed agent registration to its agent and human delegator", async () => {
-    const agentSub = "agent_reg_01CLAUDE"
-    const identity = await verifyAuthServerJwt(
-      await signJwt({ sub: agentSub, act: { sub: OWNER_SUB } })
-    )
-    expect(identity?.agent).toBe(agentSub)
-    expect(identity?.principal).toEqual({
-      id: `workos-agent:${agentSub}`,
-      type: "agent",
-      displayName: "Connected agent",
-      authorizedBy: `workos:${OWNER_SUB}`,
-    })
-  })
-
-  it("rejects an agent delegated by another workspace owner", async () => {
-    expect(
-      await verifyAuthServerJwt(
-        await signJwt({
-          sub: "agent_reg_01OTHER",
-          act: { sub: "user_01SOMEONEELSE" },
-        })
-      )
-    ).toBeNull()
+  it("refuses a token that carries an act claim, and never reads its subject as a person", async () => {
+    // WorkOS Agent Registration issued these to an agent acting for a
+    // person. Retired: the subject is refused whoever the token names.
+    for (const token of [
+      // An agent acting for the owner.
+      { sub: "agent_reg_01CLAUDE", act: { sub: OWNER_SUB } },
+      // An agent acting for someone else.
+      { sub: "agent_reg_01OTHER", act: { sub: "user_01SOMEONEELSE" } },
+      // The owner's own subject beside an act claim that names nobody.
+      { sub: OWNER_SUB, act: {} },
+      { sub: OWNER_SUB, act: null },
+      { sub: OWNER_SUB, act: "agent_reg_01CLAUDE" },
+    ]) {
+      expect(await verifyAuthServerJwt(await signJwt(token))).toBeNull()
+    }
   })
 
   it("rejects a wrong issuer", async () => {

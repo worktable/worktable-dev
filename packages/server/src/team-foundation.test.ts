@@ -1,3 +1,4 @@
+import { withAutoReply } from "./auto-reply.ts"
 import { readPersonSetup } from "./personal-navigation-store.ts"
 import { completeSetupItem, OWNER_SETUP_KEY } from "./personal-setup.ts"
 import type { SetupItemId } from "@worktable/types/setup"
@@ -1454,6 +1455,31 @@ describe("team foundation", () => {
     )
     bindTeamAgentCredential(agent.id, "local-token:bob", member)
     bindTeamAgentCredential(agent.id, "oauth:bob", member, true)
+    // An agent left from WorkOS Agent Registration, which is retired, still
+    // lists as what it was. It answers nothing and can only be disconnected.
+    const retired = createTeamAgent(
+      { name: "Bob OpenClaw", platform: "openclaw", ownership: "personal" },
+      member
+    )
+    bindTeamAgentCredential(retired.id, "workos-agent:bob-openclaw", member, true)
+    const retiredListing = async () =>
+      (await runWithTeamIdentity(member, listTeamAgentConnections)).find(
+        (connection) => connection.id === retired.id
+      )
+    const inert = (await retiredListing())!
+    expect(inert).toMatchObject({
+      authKind: "agent-registration",
+      canReconnect: false,
+      canManage: true,
+    })
+    expect((await withAutoReply([inert]))[0]?.autoReply).toBeUndefined()
+    await runWithTeamIdentity(member, () =>
+      disconnectTeamAgentConnection(retired.id)
+    )
+    expect(await retiredListing()).toBeUndefined()
+    expect(() => reconnectCloudPersonalAgent(retired.id, member)).toThrow(
+      "Connect this agent again from Settings"
+    )
     const raw: TokenIdentity = {
       ...owner,
       team: undefined,

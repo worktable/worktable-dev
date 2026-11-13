@@ -3,8 +3,9 @@
 // ============================================================
 //
 // Only what is addressed to the reader: thread messages assigned to them,
-// comments sent to them, their messages that could not be delivered, and
-// visitor comments on links they can answer. Work sent to their agents is the
+// comments sent to them, their messages that could not be delivered,
+// visitor comments on links they can answer, and agents' proposed skill
+// library changes they may approve. Work sent to their agents is the
 // agents' to do, and an agent's reply that asks nothing is not a request.
 // Each source is read only when the reader has the scope that would let them
 // open it.
@@ -14,6 +15,7 @@ import { readDocumentIdentities } from "./document-query.ts"
 import { resolveParticipant } from "./participant-store.ts"
 import { pendingFor } from "./pending-list.ts"
 import { canAccessSpace } from "./team-policy.ts"
+import { isPerson, pendingSkillProposals } from "./skill-libraries.ts"
 import { getSpaceArchiveInfo, listSpaces } from "./store.ts"
 import {
   listPendingThreadWork,
@@ -36,20 +38,23 @@ export async function listPending(
   const canReadAnnotations =
     identity.principal.type === "human" &&
     hasScope(identity.scopes, "annotations:read")
-  if (!canReadThreads && !canReadAnnotations && !visitorAccess) {
+  const canReviewSkills = isPerson(identity)
+  if (!canReadThreads && !canReadAnnotations && !visitorAccess && !canReviewSkills) {
     return { items: [], total: 0 }
   }
   const spaces = await listSpaces()
-  const [threadWork, comments] = await Promise.all([
+  const [threadWork, comments, skills] = await Promise.all([
     canReadThreads
       ? listPendingThreadWork(identity, spaces, spaceId)
       : { requests: [], failures: [] },
     canReadAnnotations ? commentRequests(spaces, spaceId, identity) : [],
+    canReviewSkills ? pendingSkillProposals(identity, spaceId) : [],
   ])
   const all = [
     ...threadRequests(threadWork.requests),
     ...failedDeliveries(threadWork.failures),
     ...comments,
+    ...skills,
     // The private inbox is auxiliary to ordinary team work on Home.
     ...(visitorAccess
       ? await pendingVisitorComments(identity, spaces, spaceId, visitorAccess).catch(() => [])

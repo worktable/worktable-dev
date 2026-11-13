@@ -492,8 +492,9 @@ the type table allows), `packages/types/src/file-types.ts`,
 
 The one binary format Worktable decodes is AVIF, for agents on the MCP preview
 surface: the sandboxed preview browser converts it to PNG, with no network,
-within 15 seconds, for a file up to 5 MiB, a picture up to 8192 pixels a side
-and 40 million pixels, and a PNG up to 5 MiB (`agent-image-conversion.ts`).
+within 15 seconds, for a file up to 5 MiB whose container declares pictures up
+to 8192 pixels a side and 40 million pixels (read from its box headers before
+anything decodes it), and a PNG up to 5 MiB (`agent-image-conversion.ts`).
 Past any limit, or with `WORKTABLE_AGENT_IMAGE_CONVERSION=off`, the agent gets
 the file's bytes as before.
 

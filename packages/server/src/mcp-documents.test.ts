@@ -33,6 +33,7 @@ import {
 import { stringifyCanonicalYaml } from "./yaml.ts"
 import sharp from "sharp"
 import { withSyntheticPreview } from "./test-support/synthetic-preview.ts"
+import { avifDeclaredSizes } from "./agent-image-conversion.ts"
 
 let root = ""
 let client: Client | null = null
@@ -386,6 +387,13 @@ describe("files for agents on the preview surface", () => {
         .avif()
         .toBuffer()
       await writeFile(join(docs, "app", "shot.avif"), avif)
+      // A few hundred bytes that declare a picture past the limits.
+      const wide = await sharp({
+        create: { width: 9000, height: 10, channels: 3, background: { r: 0, g: 0, b: 0 } },
+      })
+        .avif()
+        .toBuffer()
+      await writeFile(join(docs, "app", "wide.avif"), wide)
       noteSpaceChanged(spaceId)
       const readWith = async (surface: "released" | "preview", path: string) => {
         const connected = await connect(["documents:read"], surface)
@@ -424,6 +432,12 @@ describe("files for agents on the preview surface", () => {
       expect(
         await sharp(Buffer.from(block!.data!, "base64")).metadata()
       ).toMatchObject({ format: "png", width: 3, height: 2 })
+      // One whose declared size is past the limits is never decoded: its
+      // size is read from its box headers, and it comes as its bytes.
+      expect(avifDeclaredSizes(new Uint8Array(wide))).toEqual([{ width: 9000, height: 10 }])
+      expect(
+        (await withSyntheticPreview(() => readWith("preview", "app/wide.avif"))).structuredContent
+      ).toMatchObject({ encoding: "base64" })
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES"]
       else process.env["WORKTABLE_FILES"] = previous

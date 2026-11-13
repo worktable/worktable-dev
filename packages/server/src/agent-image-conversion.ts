@@ -4,8 +4,10 @@
 //
 // Agents take images as PNG, JPEG, GIF or WebP. An AVIF is decoded in the
 // sandboxed preview browser, never in this process: a separate process with
-// no network, no workers and a deadline, limited here by the bytes it is
-// given, the size of the picture and the size of what comes back. When the
+// no network, no workers and a deadline. It is given only a file within the
+// byte limit whose container declares picture sizes within the pixel limits,
+// read here from its box headers before anything decodes it, and what comes
+// back is limited too. When the
 // browser can't run, conversion is off, or any limit is passed, nothing is
 // converted and the agent gets the file's bytes as before.
 
@@ -20,6 +22,75 @@ const CONVERSION_MAX_PIXELS = 40_000_000
 /** How long one conversion may take. */
 const CONVERSION_DEADLINE_MS = 15_000
 
+/**
+ * The picture sizes an AVIF declares, from the image spatial extents
+ * (`ispe`) in its `meta` box, read from the container's box headers without
+ * decoding anything. Null when it declares none or its boxes don't parse:
+ * such a file isn't converted, so the decoder never sees a size it wasn't
+ * told first.
+ */
+export function avifDeclaredSizes(
+  bytes: Uint8Array
+): Array<{ width: number; height: number }> | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const sizes: Array<{ width: number; height: number }> = []
+  const type = (at: number) =>
+    String.fromCharCode(bytes[at]!, bytes[at + 1]!, bytes[at + 2]!, bytes[at + 3]!)
+  // The boxes from `start` to `end`, each as [type, content start, end].
+  const boxes = (start: number, end: number): Array<[string, number, number]> | null => {
+    const found: Array<[string, number, number]> = []
+    for (let at = start; at < end; ) {
+      if (end - at < 8 || found.length > 4096) return null
+      let size = view.getUint32(at)
+      let header = 8
+      if (size === 1) {
+        if (end - at < 16) return null
+        const large = view.getBigUint64(at + 8)
+        if (large > BigInt(end - at)) return null
+        size = Number(large)
+        header = 16
+      } else if (size === 0) {
+        size = end - at
+      }
+      if (size < header || size > end - at) return null
+      found.push([type(at + 4), at + header, at + size])
+      at += size
+    }
+    return found
+  }
+  const child = (list: Array<[string, number, number]> | null, name: string) =>
+    list?.find(([kind]) => kind === name)
+  const meta = child(boxes(0, bytes.byteLength), "meta")
+  // meta, like ispe, is a full box: a version and flags come first.
+  if (!meta || meta[2] - meta[1] < 4) return null
+  const iprp = child(boxes(meta[1] + 4, meta[2]), "iprp")
+  const ipco = iprp && child(boxes(iprp[1], iprp[2]), "ipco")
+  const properties = ipco && boxes(ipco[1], ipco[2])
+  if (!properties) return null
+  for (const [kind, start, end] of properties) {
+    if (kind !== "ispe") continue
+    if (end - start < 12) return null
+    sizes.push({ width: view.getUint32(start + 4), height: view.getUint32(start + 8) })
+  }
+  return sizes.length > 0 ? sizes : null
+}
+
+/** Whether every size an AVIF declares is within what is converted. */
+function withinConversionLimits(bytes: Uint8Array): boolean {
+  const sizes = avifDeclaredSizes(bytes)
+  return (
+    sizes !== null &&
+    sizes.every(
+      ({ width, height }) =>
+        width > 0 &&
+        height > 0 &&
+        width <= CONVERSION_MAX_SIDE &&
+        height <= CONVERSION_MAX_SIDE &&
+        width * height <= CONVERSION_MAX_PIXELS
+    )
+  )
+}
+
 /** Whether converting is on; `WORKTABLE_AGENT_IMAGE_CONVERSION=off` turns it off. */
 function conversionEnabled(): boolean {
   return process.env["WORKTABLE_AGENT_IMAGE_CONVERSION"]?.trim().toLowerCase() !== "off"
@@ -30,7 +101,15 @@ function conversionEnabled(): boolean {
  * converted within the limits above.
  */
 export async function avifAsPng(bytes: Uint8Array): Promise<Uint8Array | null> {
-  if (!conversionEnabled() || bytes.byteLength > CONVERSION_MAX_BYTES) return null
+  if (
+    !conversionEnabled() ||
+    bytes.byteLength > CONVERSION_MAX_BYTES ||
+    // The decoder allocates for the size the file declares: one past the
+    // limits never reaches it.
+    !withinConversionLimits(bytes)
+  ) {
+    return null
+  }
   // Held by a timer this call owns: Bun 1.3 can collect an unreferenced
   // AbortSignal.timeout before it fires.
   const deadline = new AbortController()

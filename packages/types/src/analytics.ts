@@ -87,6 +87,35 @@ export interface AnalyticsGrant {
   trafficType?: "internal" | "verification"
   /** The app an agent connects through; people have none. */
   client?: AnalyticsClient
+  /**
+   * On an MCP request whose events the gateway sends: the Worktable reports
+   * them in ANALYTICS_REPORT_HEADER and sends none of them itself.
+   */
+  sender?: "gateway"
+}
+
+/**
+ * What an MCP request did, on its response from a hosted Worktable to the
+ * gateway, when the request's grant named the gateway as sender. The gateway
+ * sends the events and removes the header.
+ */
+export const ANALYTICS_REPORT_HEADER = "x-worktable-analytics-report"
+/** At most this many calls, and this many saves, per report. */
+export const ANALYTICS_REPORT_MAX = 20
+export const ANALYTICS_OUTCOMES = ["success", "error", "denied"] as const
+export const ANALYTICS_CONTENT_TYPES = ["document", "html", "record"] as const
+
+/** Names, outcomes and timings only: never arguments, results or content. */
+export interface AnalyticsReport {
+  calls: Array<{
+    tool: string
+    operation: string
+    outcome: (typeof ANALYTICS_OUTCOMES)[number]
+    durationMs: number
+  }>
+  saved: Array<(typeof ANALYTICS_CONTENT_TYPES)[number]>
+  protocolVersion?: string
+  release?: string
 }
 
 export function analyticsTrafficType(
@@ -119,10 +148,10 @@ export interface ProductAnalyticsProperties {
   worktable_id?: string
   actor_type: AnalyticsActorType
   surface?: AnalyticsSurface
-  content_type?: "document" | "html" | "record"
+  content_type?: (typeof ANALYTICS_CONTENT_TYPES)[number]
   operation?: string
   tool?: string
-  outcome?: "success" | "error" | "denied"
+  outcome?: (typeof ANALYTICS_OUTCOMES)[number]
   duration_ms?: number
   plan?: "solo" | "team" | "business"
   hosting?: "hosted" | "linked"

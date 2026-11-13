@@ -5,6 +5,7 @@ import { join } from "node:path"
 import {
   ACTOR_HEADERS,
   ANALYTICS_HEADER,
+  ANALYTICS_REPORT_HEADER,
   GATEWAY_HEADER,
   type AnalyticsGrant,
   ENV,
@@ -579,9 +580,11 @@ describe("consented committed-work analytics", () => {
       surface: "mcp",
       client: "chatgpt",
     }
+    let report: string | null = null
     const call = async (
       request: Record<string, unknown>,
-      tool = "worktable_records_write"
+      tool = "worktable_records_write",
+      grant = agentGrant
     ) => {
       const response = await handleRemoteMcpRequest(
         new Request("https://app.worktable.cloud/api/mcp", {
@@ -595,7 +598,7 @@ describe("consented committed-work analytics", () => {
             [ACTOR_HEADERS.TYPE]: "agent",
             [ACTOR_HEADERS.NAME]: "Private agent label",
             [ACTOR_HEADERS.AUTHORIZED_BY]: "workos:user_analytics",
-            [ANALYTICS_HEADER]: JSON.stringify(agentGrant),
+            [ANALYTICS_HEADER]: JSON.stringify(grant),
           },
           body: JSON.stringify({
             jsonrpc: "2.0",
@@ -614,6 +617,7 @@ describe("consented committed-work analytics", () => {
       expect(response.status).toBe(200)
       // The gateway counts calls by this name and removes it.
       expect(response.headers.get("x-worktable-mcp")).toBe(`tools/call ${tool}`)
+      report = response.headers.get(ANALYTICS_REPORT_HEADER)
       return await response.json()
     }
     expect(
@@ -652,6 +656,8 @@ describe("consented committed-work analytics", () => {
         })
       ).result.isError
     ).toBe(true)
+    // A gateway that does not say it sends the events gets no report.
+    expect(report).toBeNull()
     // Each call is sent as it happens, not held for a batch: a hosted
     // Worktable sleeps soon after its last request.
     const calls = () => events.filter((event) => event.event === "$mcp_tool_call")
@@ -691,6 +697,49 @@ describe("consented committed-work analytics", () => {
       "missing",
     ])
       expect(JSON.stringify(events)).not.toContain(secret)
+
+    // A hosted Worktable sleeps before an event sent after its answer can
+    // leave. When the gateway says it sends them, the call and its save ride
+    // the response, and nothing is sent from here.
+    const sent = events.length
+    const viaGateway: AnalyticsGrant = { ...agentGrant, sender: "gateway" }
+    expect(
+      (
+        await call(
+          {
+            action: "create",
+            spaceId: "test",
+            collectionId: "items",
+            data: { title: "Private reported argument" },
+          },
+          "worktable_records_write",
+          viaGateway
+        )
+      ).result.isError
+    ).not.toBe(true)
+    expect(JSON.parse(report!)).toEqual({
+      calls: [
+        {
+          tool: "worktable_records_write",
+          operation: calls().find(
+            (event) => event.properties.outcome === "success"
+          )!.properties.operation,
+          outcome: "success",
+          durationMs: expect.any(Number),
+        },
+      ],
+      saved: ["record"],
+      protocolVersion: "2025-06-18",
+    })
+    identity.scopes = []
+    await call({ query: "Private reported search" }, "search", viaGateway)
+    expect(JSON.parse(report!)).toMatchObject({
+      calls: [{ tool: "search", outcome: "denied" }],
+      saved: [],
+    })
+    expect(report).not.toContain("Private")
+    await flushAnalytics()
+    expect(events).toHaveLength(sent)
   })
   test("keeps collaborative saves out of person profiles and rejects spoofed actor grants", async () => {
     withAnalyticsContext(

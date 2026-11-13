@@ -1053,6 +1053,7 @@ fn desktop_mark_shell_ready(webview: Webview, app: AppHandle) -> Result<(), Stri
     app.state::<DesktopHostState>()
         .trusted_shell_ready
         .store(true, Ordering::SeqCst);
+    eprintln!("[Worktable Desktop] start-up page ready");
     if let Err(error) = complete_healthy_desktop_boot(&app) {
         eprintln!("[Worktable Desktop] failed to finish the healthy boot transition: {error}");
     }
@@ -1105,6 +1106,7 @@ fn complete_healthy_desktop_boot<R: Runtime>(app: &AppHandle<R>) -> Result<(), S
             .store(migration_pending, Ordering::SeqCst);
     }
     state.healthy_boot_completed.store(true, Ordering::SeqCst);
+    eprintln!("[Worktable Desktop] healthy boot completed");
     Ok(())
 }
 
@@ -7785,7 +7787,14 @@ fn build_window(app: &mut tauri::App) -> Result<(), String> {
     .devtools(cfg!(debug_assertions))
     .title("Worktable")
     .inner_size(1280.0, 820.0)
-    .min_inner_size(820.0, 600.0);
+    .min_inner_size(820.0, 600.0)
+    .on_page_load(|_webview, payload| {
+        let stage = match payload.event() {
+            PageLoadEvent::Started => "started loading",
+            PageLoadEvent::Finished => "finished loading",
+        };
+        eprintln!("[Worktable Desktop] start-up page {stage}");
+    });
     #[cfg(target_os = "macos")]
     let window_builder = window_builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)

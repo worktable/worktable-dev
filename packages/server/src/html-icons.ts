@@ -25,11 +25,11 @@
 
 import { Parser } from "htmlparser2"
 import library from "./html-icons.generated.json" with { type: "json" }
-import { htmlCodeIconsEnabled, htmlIconsEnabled } from "./mcp/surface.ts"
+import { htmlIconsEnabled } from "./mcp/surface.ts"
 import { applySpanEdits } from "./html-media-sources.ts"
 import type { WidgetValidationIssue } from "./widget-authoring.ts"
 
-export { htmlCodeIconsEnabled, htmlIconsEnabled }
+export { htmlIconsEnabled }
 
 /** Names the library a frame's icons come from. */
 export const HTML_ICONS_SOURCE: string = library.source
@@ -44,9 +44,7 @@ const CODE_ICONS_VERSION = "code-1"
  */
 export function htmlIconsRevision(): string | undefined {
   if (!htmlIconsEnabled()) return undefined
-  return htmlCodeIconsEnabled()
-    ? `${HTML_ICONS_SOURCE}\0${CODE_ICONS_VERSION}`
-    : HTML_ICONS_SOURCE
+  return `${HTML_ICONS_SOURCE}\0${CODE_ICONS_VERSION}`
 }
 
 const ICONS: Record<string, string> = library.icons
@@ -290,8 +288,6 @@ export function htmlIconWarnings(html: string): WidgetValidationIssue[] {
 //   clears an icon whose name it doesn't have, reporting that once. Shapes
 //   go into the page's own svg element, which keeps its attributes and
 //   listeners. Icons inside shadow roots aren't drawn.
-//
-// Held behind the MCP preview surface (htmlCodeIconsEnabled).
 
 /** Names page code may draw past this many stay empty. */
 export const HTML_CODE_ICONS_MAX = 64
@@ -409,7 +405,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
  * page as written, before Worktable adds anything.
  */
 export function htmlCodeIconsScript(html: string): string {
-  if (!htmlIconsEnabled() || !htmlCodeIconsEnabled()) return ""
+  if (!htmlIconsEnabled()) return ""
   const found = codeIcons(html)
   if (!found) return ""
   const shapes: Record<string, string> = {}
@@ -433,6 +429,6 @@ export function htmlCodeIconsScript(html: string): string {
 
 /** The data-icon names a page's scripts write that the library lacks. */
 function unknownCodeIcons(html: string): string[] {
-  if (!htmlIconsEnabled() || !htmlCodeIconsEnabled()) return []
+  if (!htmlIconsEnabled()) return []
   return codeIcons(html)?.unknown ?? []
 }

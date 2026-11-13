@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **HTML Docs:** Icons a page's own code adds, such as rows a Records tool draws with a status icon, are now drawn for everyone, not only with preview tools on.
+
 ### Fixed
 
 - **OpenClaw:** On Worktable Cloud, the command in **Settings → Agents → OpenClaw** works with plugin 0.0.20. Run it, then open the link it prints and approve OpenClaw.

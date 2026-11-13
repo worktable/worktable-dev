@@ -6,7 +6,6 @@ import { Hono } from "hono"
 import { JSDOM } from "jsdom"
 import { setAppDirOverride } from "./app-storage.ts"
 import { ownerIdentity } from "./auth.ts"
-import { htmlContentRevision } from "./document-content-revision.ts"
 import { dispatchOperation } from "./mcp/dispatcher.ts"
 import { renderPublicHtmlProjection } from "./public-share-renderer.ts"
 import { spacesRouter } from "./routes/spaces.ts"
@@ -17,13 +16,8 @@ import {
 } from "./workspace.ts"
 
 const SPACE = "meta"
-const previousPreview = process.env["WORKTABLE_MCP_PREVIEW"]
 let root = ""
 let app: Hono
-
-function preview(on: boolean): void {
-  process.env["WORKTABLE_MCP_PREVIEW"] = on ? "1" : "0"
-}
 
 const page = (body: string) =>
   `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${body}</body></html>`
@@ -71,12 +65,9 @@ beforeEach(async () => {
     body: JSON.stringify({ name: "Meta" }),
   })
   expect(created.status).toBe(201)
-  preview(true)
 })
 
 afterEach(() => {
-  if (previousPreview === undefined) delete process.env["WORKTABLE_MCP_PREVIEW"]
-  else process.env["WORKTABLE_MCP_PREVIEW"] = previousPreview
   setWorkspaceRootOverride(null)
   setAppDirOverride(null)
   rmSync(root, { recursive: true, force: true })
@@ -123,12 +114,6 @@ describe("Icons in HTML Docs", () => {
     const shared = renderPublicHtmlProjection(page(BODY))
     expect(shared).toMatch(
       /<svg data-icon="circle-check"[^>]*viewBox="0 0 24 24"[^>]*><circle cx="12" cy="12" r="10"><\/circle><path d="m9 12 2 2 4-4"><\/path><\/svg>/
-    )
-
-    // Drawn without the preview too.
-    preview(false)
-    expect(await frame("status")).not.toContain(
-      '<svg data-icon="circle-check" class="ok" width="20"></svg>'
     )
   })
 
@@ -221,8 +206,7 @@ const other = '<div metadata-icon="not-an-icon"></div>'
       "html_icon_not_on_page",
     ])
 
-    // A page whose code never says data-icon gets no script; nor does any
-    // page with the preview off.
+    // A page whose code never says data-icon gets no script.
     await dispatchOperation("html.create", {
       spaceId: SPACE,
       id: "plain",
@@ -230,13 +214,5 @@ const other = '<div metadata-icon="not-an-icon"></div>'
       html: page('<script>const mark = "circle-check"</script>'),
     })
     expect(await frame("plain")).not.toContain('data-worktable-runtime="icons"')
-    // Turning it off gives frames a new revision, so a browser never keeps
-    // one built the other way.
-    const revision = () =>
-      htmlContentRevision({ sourceSha256: "0".repeat(64), network: false })
-    const on = revision()
-    preview(false)
-    expect(revision()).not.toBe(on)
-    expect(await frame("tool")).not.toContain('data-worktable-runtime="icons"')
   })
 })

@@ -8,7 +8,11 @@ import {
   type ResolvedOperation,
   type WorktableToolName,
 } from "./operations.ts"
-import { PUBLIC_OPERATION_OUTPUT_VARIANTS } from "./output-schemas.ts"
+import {
+  PUBLIC_OPERATION_OUTPUT_VARIANTS,
+  RemovedSkillSchema,
+  SkillListingSchema,
+} from "./output-schemas.ts"
 import type { McpSurface } from "./surface.ts"
 import {
   LEGACY_INPUT_SCHEMAS,
@@ -210,6 +214,8 @@ const deleteDocument = fieldsOf("worktable_delete", "document")
 const deleteRecord = fieldsOf("worktable_delete", "record")
 const mermaidPreview = fieldsOf("worktable_mermaid", "preview")
 const htmlGuide = fieldsOf("worktable_html_read", "guide")
+const skillsRead = fieldsOf("worktable_skills", "read")
+const skillsPropose = fieldsOf("worktable_skills", "propose")
 
 const TOOLS: CatalogTool[] = [
   {
@@ -931,12 +937,52 @@ export const CATALOG_TOOLS: readonly CatalogTool[] = TOOLS
  * Listing changes held for the preview surface (mcp-tools.preview.json)
  * until agent directories review them. Each takes a released tool's place.
  */
-const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {}
+const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
+  worktable_state: (tool) => ({
+    ...tool,
+    description: `${tool.description} It also lists the skills from your team's libraries that apply to you.`,
+    outputFields: {
+      skills: z
+        .array(SkillListingSchema)
+        .optional()
+        .describe("The skills from your team's libraries that apply to you, up to 50. Read one with worktable_skills_read."),
+      moreSkills: z.number().int().positive().optional().describe("How many skills apply beyond those listed."),
+      removedSkills: z
+        .array(RemovedSkillSchema)
+        .optional()
+        .describe("Skills removed from those libraries in the last 30 days."),
+    },
+  }),
+}
+
+/** Tools listed only on the preview surface, after the released ones. */
+const PREVIEW_TOOLS: CatalogTool[] = [
+  {
+    name: "worktable_skills_read",
+    title: "Read a Worktable skill",
+    description:
+      "Read a skill from your team's libraries by name: its live version as Markdown, with its description, library and version. worktable_state lists the skills that apply to you.",
+    annotations: READ,
+    inputSchema: flatInput(["name"], [skillsRead]),
+    runs: [["worktable_skills", "read"]],
+    route: (args) => step("worktable_skills", "read", args),
+  },
+  {
+    name: "worktable_skills_write",
+    title: "Propose a Worktable skill change",
+    description:
+      "Propose a change to your team's skill libraries; it goes live only when a person approves it in Worktable. With spaceId, path, library and description, propose adding that Doc as a skill. With name, propose its Doc's current content as the skill's next version; with remove, propose removing it.",
+    annotations: writes(),
+    inputSchema: flatInput([], [skillsPropose]),
+    runs: [["worktable_skills", "propose"]],
+    route: (args) => step("worktable_skills", "propose", args),
+  },
+]
 
 /** The tools a surface lists, in order. */
 export function catalogTools(surface: McpSurface): readonly CatalogTool[] {
   return surface === "preview"
-    ? TOOLS.map((tool) => PREVIEW_CHANGES[tool.name]?.(tool) ?? tool)
+    ? [...TOOLS.map((tool) => PREVIEW_CHANGES[tool.name]?.(tool) ?? tool), ...PREVIEW_TOOLS]
     : TOOLS
 }
 

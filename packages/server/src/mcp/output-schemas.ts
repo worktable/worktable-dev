@@ -328,6 +328,39 @@ const SpaceDetailSchema = z.looseObject({
   documents: z.array(PortableDocumentListItemSchema).optional(),
 })
 
+/** Preview: one skill from a library that applies to the caller. */
+export const SkillListingSchema = z.looseObject({
+  name: z.string(),
+  description: z.string(),
+  library: z.string().describe('"Worktable", "Space: <name>" or "Yours".'),
+  version: z.string().describe("Changes whenever the skill's live version does."),
+})
+
+/** Preview: a skill removed from a library that applies to the caller. */
+export const RemovedSkillSchema = z.looseObject({
+  name: z.string(),
+  library: z.string(),
+  note: z.string(),
+})
+
+const SkillReadOutputSchema = SkillListingSchema.extend({
+  spaceId: PortableCanonicalIdSchema,
+  path: z.string().describe("The skill's Doc."),
+  content: z.string().describe("The skill's live version, as Markdown."),
+  note: z.string(),
+})
+
+const SkillProposalOutputSchema = z.looseObject({
+  ok: z.literal(true),
+  proposal: z.looseObject({
+    id: z.string(),
+    name: z.string(),
+    library: z.string(),
+    change: z.enum(["add", "update", "remove"]),
+  }),
+  message: z.string(),
+})
+
 const ListScopeSchema = z
   .looseObject({
     spaceId: z.string().optional(),
@@ -1104,6 +1137,8 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
   "guidance.drawings": [z.looseObject({ guide: z.string() })],
   "mermaid.validate": [MermaidValidationOutputSchema],
   "mermaid.preview": [MermaidPreviewOutputSchema],
+  "skills.read": [SkillReadOutputSchema],
+  "skills.propose": [SkillProposalOutputSchema],
 } satisfies Record<OperationId, readonly OutputVariant[]>
 
 const CompactSpaceSchema = z
@@ -1696,6 +1731,10 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     viewBox: forActions(z.string().nullable(), '"preview" when valid'),
     width: forActions(z.string().nullable(), '"preview" when valid'),
     height: forActions(z.string().nullable(), '"preview" when valid'),
+  }),
+  worktable_skills: resultSchema("worktable_skills", {
+    content: forActions(z.string(), '"read"'),
+    proposal: forActions(z.looseObject({}), '"propose"'),
   }),
 } satisfies Record<WorktableToolName, z.ZodObject>
 

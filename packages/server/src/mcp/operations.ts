@@ -25,6 +25,8 @@ export const WORKTABLE_TOOL_NAMES = [
   "worktable_delete",
   "worktable_guidance",
   "worktable_mermaid",
+  // Listed only on the preview surface (catalog.ts PREVIEW_TOOLS).
+  "worktable_skills",
 ] as const
 
 export type WorktableToolName = (typeof WORKTABLE_TOOL_NAMES)[number]
@@ -128,6 +130,9 @@ export const OPERATION_DEFINITIONS = {
   "guidance.drawings": tool(null, "none"),
   "mermaid.validate": tool(null, "none"),
   "mermaid.preview": tool(null, "none"),
+  // Preview only. A proposal saves a version of the Doc it proposes (see tools.ts).
+  "skills.read": tool("documents:read", "none"),
+  "skills.propose": tool("documents:write", "workspace"),
 } as const
 
 export type OperationId = keyof typeof OPERATION_DEFINITIONS
@@ -311,6 +316,10 @@ export const WORKTABLE_TOOL_ROUTES: Record<
   worktable_mermaid: {
     validate: "mermaid.validate",
     preview: "mermaid.preview",
+  },
+  worktable_skills: {
+    read: "skills.read",
+    propose: "skills.propose",
   },
 }
 

@@ -725,6 +725,23 @@ export async function getAnnotationContext(spaceId: string, annotationOrTarget: 
 }
 
 /**
+ * A comment as a reader may see it. What describes an element of an HTML
+ * Doc's page is taken from the page: its opening tag, its attributes and its
+ * place. It goes only to a reader who may read HTML Docs. The quoted text
+ * stays with the comment, as a passage's does.
+ */
+export function annotationForReader<T extends { target: AnnotationTarget }>(
+  annotation: T,
+  scopes: readonly string[]
+): T {
+  const target = annotation.target;
+  if (target.type !== "widget" || !target.element || hasScope([...scopes], "widgets:read")) return annotation;
+  const shown = { ...target };
+  delete shown.element;
+  return { ...annotation, target: shown };
+}
+
+/**
  * What a comment is about, for a reader who may read it. The context quotes
  * the Doc or the HTML Doc's page, so it takes the scope that reads those;
  * reading comments alone does not show what they are about.

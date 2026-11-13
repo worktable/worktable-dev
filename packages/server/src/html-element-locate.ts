@@ -35,6 +35,7 @@ export type HtmlElementPlace =
 const EXCERPT_LENGTH = 2000
 const CANDIDATE_LIMIT = 3000
 const UNREAD = new Set(["script", "style", "template", "noscript"])
+const IN_HEAD = new Set(["head", "title", "meta", "link", "base"])
 const NAMING_ATTRIBUTE =
   /^(data-(?!worktable)[\w-]+|role|aria-label|name|href|src|alt|title|type|placeholder|for)$/
 
@@ -96,6 +97,29 @@ function segment(element: ParsedElement): string {
   }`
 }
 
+function pathOf(element: ParsedElement, body: ParsedElement | null): string {
+  const path: string[] = []
+  for (
+    let node: ParsedNode | null = element;
+    isElement(node) && node !== body && node.name !== "html";
+    node = node.parent as ParsedNode | null
+  )
+    path.unshift(segment(node))
+  return path.slice(-12).join(" > ")
+}
+
+/**
+ * What a browser puts in the body of a page written without a body tag:
+ * everything but the head and what belongs in it.
+ */
+function bodyOf(nodes: ParsedNode[]): ParsedNode[] {
+  return nodes.flatMap((node) => {
+    if (!isElement(node)) return [node]
+    if (node.name === "html") return bodyOf(children(node))
+    return IN_HEAD.has(node.name) ? [] : [node]
+  })
+}
+
 function describe(
   { element, start, end, heading }: Read,
   page: string,
@@ -104,13 +128,6 @@ function describe(
   const text = page.slice(start, end).trim().slice(0, HTML_ELEMENT_QUOTE_LENGTH)
   const before = page.slice(0, start).slice(-HTML_ELEMENT_CONTEXT_LENGTH)
   const after = page.slice(end).trim().slice(0, HTML_ELEMENT_CONTEXT_LENGTH)
-  const path: string[] = []
-  for (
-    let node: ParsedNode | null = element;
-    isElement(node) && node !== body && node.name !== "html";
-    node = node.parent as ParsedNode | null
-  )
-    path.unshift(segment(node))
   const attrs: Record<string, string> = {}
   for (const [name, value] of Object.entries(element.attribs)) {
     if (Object.keys(attrs).length >= HTML_ELEMENT_ATTRIBUTES) break
@@ -129,7 +146,7 @@ function describe(
     ...(before ? { before } : {}),
     ...(after ? { after } : {}),
     ...(heading ? { heading } : {}),
-    path: path.slice(-12).join(" > "),
+    path: pathOf(element, body),
   }
 }
 
@@ -167,10 +184,16 @@ export function locateHtmlElement(
     else for (const child of children(node)) find(child)
   }
   for (const node of document.children) find(node)
-  const page = readPage(body ? children(body) : document.children)
+  const page = readPage(body ? children(body) : bodyOf(document.children))
+  // A page with more elements of one kind than are compared still keeps
+  // the one where the comment's element was.
   const tagged = page.elements
     .filter((read) => read.element.name === anchor.element.tag)
-    .slice(0, CANDIDATE_LIMIT)
+    .filter(
+      (read, at) =>
+        at < CANDIDATE_LIMIT ||
+        pathOf(read.element, body) === anchor.element.path
+    )
   const byId = new Map<string, ParsedElement>()
   for (const { element } of page.elements) {
     const id = element.attribs["id"]

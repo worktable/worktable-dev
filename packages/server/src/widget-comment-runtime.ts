@@ -228,8 +228,17 @@ function locate(now){
           const all=document.getElementsByTagName(element.tag);
           for(let at=0;at<all.length&&group.els.length<3000;at++){if(all[at]!==host){group.els.push(all[at]);group.described.push(describe(all[at],headings))}}
         }
-        const found=matchElement(target,group.described);
-        if(found)hit={el:group.els[found.index],match:found.match};
+        // A page with more elements of one kind than are compared still
+        // keeps the ones where the comment's element was.
+        let els=group.els,described=group.described;
+        if(els.length>=3000){
+          let placed=[];
+          try{placed=Array.from(document.body.querySelectorAll(element.path)).slice(0,8)}catch{}
+          placed=placed.filter(function(el){return el.localName===element.tag&&els.indexOf(el)<0});
+          if(placed.length){els=els.concat(placed);described=described.concat(placed.map(function(el){return describe(el,headings)}))}
+        }
+        const found=matchElement(target,described);
+        if(found)hit={el:els[found.index],match:found.match};
       }
     }
     pin.el=hit?hit.el:null;

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { AnnotationTargetSchema, WidgetIdSchema, type Annotation, type AnnotationAuthor, type AnnotationTarget } from "@worktable/types";
 import {
   createAnnotation,
+  annotationForReader,
   readAnnotationContext,
   listAnnotations,
   readAnnotation,
@@ -100,6 +101,11 @@ async function recipientsFor(c: Context, spaceId: string, names: string[] | unde
 }
 
 /** Open requests with when their recipient was shown and opened them. */
+/** A comment as the caller may see it. */
+function shown<T extends Annotation>(c: Context, annotation: T): T {
+  return annotationForReader(annotation, c.get("identity").scopes);
+}
+
 function withMarks<T extends Annotation>(annotation: T): T {
   if (!annotation.requests?.some((request) => request.status === "open")) return annotation;
   return {
@@ -165,7 +171,7 @@ annotationsRouter.get("/", requireScope("annotations:read"), async (c) => {
     limit: Number.isFinite(limit) ? limit : 100,
     offset: Number.isFinite(offset) ? offset : 0,
   });
-  return c.json({ ...result, annotations: result.annotations.map(withMarks) });
+  return c.json({ ...result, annotations: result.annotations.map((annotation) => shown(c, withMarks(annotation))) });
 });
 
 // People comment and reply on what they can read; changing or resolving a
@@ -198,7 +204,7 @@ annotationsRouter.post("/", requireScope("annotations:write", commentAccess), as
       : null,
   });
   broadcast(spaceId, result.annotation.id, { annotation: result.annotation, event: "created" });
-  return c.json({ ok: true, annotationId: result.annotation.id, annotation: result.annotation, created: result.created });
+  return c.json({ ok: true, annotationId: result.annotation.id, annotation: shown(c, result.annotation), created: result.created });
 });
 
 annotationsRouter.get("/:annotationId", requireScope("annotations:read"), async (c) => {
@@ -208,7 +214,7 @@ annotationsRouter.get("/:annotationId", requireScope("annotations:read"), async 
   const includeTargetContext = c.req.query("includeTargetContext") === "true";
   // Left out for a reader who may read comments but not what they are about.
   const read = includeTargetContext ? await readAnnotationContext(spaceId, annotationId, c.get("identity").scopes) : undefined;
-  return c.json({ annotation: withMarks(annotation), context: read && "context" in read ? read.context : undefined });
+  return c.json({ annotation: shown(c, withMarks(annotation)), context: read && "context" in read ? read.context : undefined });
 });
 
 annotationsRouter.patch("/:annotationId", requireScope("annotations:write"), async (c) => {
@@ -221,7 +227,7 @@ annotationsRouter.patch("/:annotationId", requireScope("annotations:write"), asy
   const { updatedBy, ...patch } = parsed.data;
   const annotation = await updateAnnotation(spaceId, annotationId, patch as never, restWriteActor(c, updatedBy));
   broadcast(spaceId, annotation.id, { annotation, event: "updated" });
-  return c.json({ ok: true, annotation });
+  return c.json({ ok: true, annotation: shown(c, annotation) });
 });
 
 annotationsRouter.post("/:annotationId/replies", requireScope("annotations:write", commentAccess), async (c) => {
@@ -238,7 +244,7 @@ annotationsRouter.post("/:annotationId/replies", requireScope("annotations:write
     byPerson: byPerson(c),
   });
   broadcast(spaceId, result.annotation.id, { annotation: result.annotation, event: "replied" });
-  return c.json({ ok: true, replyId: result.replyId, annotation: result.annotation });
+  return c.json({ ok: true, replyId: result.replyId, annotation: shown(c, result.annotation) });
 });
 
 annotationsRouter.post("/:annotationId/resolve", requireScope("annotations:write"), async (c) => {
@@ -249,7 +255,7 @@ annotationsRouter.post("/:annotationId/resolve", requireScope("annotations:write
   if (!parsed.success) return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
   const annotation = await resolveAnnotation(spaceId, annotationId, parsed.data.reason, restWriteActor(c, parsed.data.resolvedBy));
   broadcast(spaceId, annotation.id, { annotation, event: "resolved" });
-  return c.json({ ok: true, annotation });
+  return c.json({ ok: true, annotation: shown(c, annotation) });
 });
 
 annotationsRouter.get("/:annotationId/context", requireScope("annotations:read"), async (c) => {

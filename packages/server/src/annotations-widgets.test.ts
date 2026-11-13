@@ -9,7 +9,8 @@ import { setAppDirOverride } from "./app-storage.ts";
 import { spacesRouter } from "./routes/spaces.ts";
 import { widgetsRouter } from "./routes/widgets.ts";
 import { annotationsRouter } from "./routes/annotations.ts";
-import { getAnnotationContext, readAnnotationContext, listAnnotations } from "./annotation-store.ts";
+import { annotationForReader, getAnnotationContext, listAnnotations, readAnnotationContext } from "./annotation-store.ts";
+import { locateHtmlElement } from "./html-element-locate.ts";
 
 function buildTestApp() {
   const app = new Hono();
@@ -147,6 +148,15 @@ describe("HTML doc (widget) annotations", () => {
     });
     expect(crowded.status).toBe(400);
 
+    // What describes the element comes from the page, so a reader of
+    // comments who may not read HTML Docs gets the quote without it.
+    expect(annotationForReader(created.json.annotation, ["annotations:read"]).target).toEqual({
+      type: "widget",
+      widgetId: "pricing",
+      quote: "$49 per month",
+    });
+    expect(annotationForReader(created.json.annotation, ["annotations:read", "widgets:read"]).target).toEqual(target);
+
     // The context quotes the page: reading comments alone does not give it.
     const annotationId = created.json.annotation.id;
     expect(await readAnnotationContext("meta", annotationId, ["annotations:read"])).toEqual({ missingScope: "widgets:read" });
@@ -170,6 +180,15 @@ describe("HTML doc (widget) annotations", () => {
       endLine: 5,
       excerpt: '<ul id="rows"></ul>',
     });
+
+    // A page written without a body tag is read as a browser reads it: the
+    // title is not text beside its first element.
+    expect(
+      locateHtmlElement("<title>Plan</title>\n<div>49</div>\n<p>A sufficiently long explanation follows here.</p>", {
+        quote: "49",
+        element: { tag: "div", after: "A sufficiently long explanation follows here.", path: "div" },
+      })
+    ).toMatchObject({ kind: "element", match: "exact", startLine: 2 });
   });
 
   it("reports missing context when the widget is gone, and rejects malformed widget ids", async () => {

@@ -167,17 +167,25 @@ export function matchHtmlElement(
     if (names.length === 0) return 1
     return names.filter((name) => a[name] === b[name]).length / names.length
   }
+  /** What an element sits in, without the element's own words. */
+  const around = (element: HtmlElementCandidate) => {
+    const own = element.text ?? ""
+    const within = element.within ?? ""
+    return (own ? within.replace(own, " ") : within).replace(/\s+/g, " ").trim()
+  }
+  const anchorAround = around(anchor)
   // A word or a number says little about which element it is: "No" is in
   // every other cell. Short text counts for less, and less is then needed.
   const textWeight = 0.35 * Math.min(1, text.length / 12)
   const score = (candidate: HtmlElementCandidate) => {
-    const around = alike(anchor.within ?? "", candidate.within ?? "")
+    const near = around(candidate)
+    const nearby = alike(anchorAround, near)
     // What surrounds it tells look-alikes apart, as the text either side of
     // a quote does: the same button in another row is another element.
-    if (anchor.within && candidate.within && around < 0.75) return 0
+    if (anchorAround.length >= 8 && near.length >= 8 && nearby < 0.6) return 0
     return (
       textWeight * alike(text, candidate.text ?? "") +
-      0.2 * around +
+      0.2 * nearby +
       0.15 * samePlace(anchor.path, candidate.path) +
       0.1 * ((anchor.heading ?? "") === (candidate.heading ?? "") ? 1 : 0) +
       0.1 * sameSet(anchor.classes ?? [], candidate.classes ?? []) +
@@ -188,8 +196,15 @@ export function matchHtmlElement(
   let best = -1
   let bestScore = 0
   let nextScore = 0
+  let placed = -1
+  let wordedElsewhere = false
   for (let index = 0; index < candidates.length; index++) {
-    const value = score(candidates[index]!)
+    const candidate = candidates[index]!
+    const value = score(candidate)
+    if (value > 0) {
+      if (candidate.path === anchor.path) placed = index
+      else if (text && same(candidate)) wordedElsewhere = true
+    }
     if (value > bestScore) {
       nextScore = bestScore
       bestScore = value
@@ -204,6 +219,9 @@ export function matchHtmlElement(
     bestScore - nextScore < 0.05
   )
     return null
+  // The element in its place reads differently, and its words are on
+  // another element among the same things: either could be it.
+  if (placed >= 0 && !same(candidates[placed]!) && wordedElsewhere) return null
   return found(best)
 }
 

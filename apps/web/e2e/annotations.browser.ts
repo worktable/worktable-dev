@@ -373,3 +373,146 @@ test("a rich Doc marks commented text, and a comment whose text is gone shows it
     .toEqual(["launch date moves"])
 })
 
+
+for (const mobile of [true, false]) {
+  test.describe(mobile ? "HTML Doc on a phone" : "HTML Doc", () => {
+    test.use({
+      viewport: mobile
+        ? { width: 390, height: 844 }
+        : { width: 1280, height: 900 },
+      hasTouch: mobile,
+      isMobile: mobile,
+    })
+
+    test("a comment on an element of an HTML Doc follows it through a rewrite", async ({
+      page,
+    }) => {
+      test.setTimeout(120_000)
+      const id = mobile ? "pricing-phone" : "pricing"
+      const widgets = `${harness.apiUrl}/api/spaces/annotations/widgets`
+      const pageHtml = (price: string, note: string) =>
+        `<!doctype html><html><head><title>Pricing</title></head><body><main><h1>Pricing</h1>
+<section id="plans"><article><h3>Team</h3>
+<div class="price">${price}</div>
+<p>Up to 12 people.</p></article></section>
+${note}</main></body></html>`
+      expect(
+        (
+          await page.request.post(widgets, {
+            data: {
+              id,
+              name: "Pricing",
+              html: pageHtml(
+                "$49 per month",
+                '<p class="note">Prices exclude tax.</p>'
+              ),
+            },
+          })
+        ).ok()
+      ).toBe(true)
+
+      await page.goto(`${harness.webUrl}/spaces/annotations/documents/${id}`, {
+        waitUntil: "domcontentloaded",
+      })
+      const frame = page.frameLocator(
+        'iframe[data-worktable-widget-frame="true"]'
+      )
+      const price = frame.locator(".price")
+      await expect(price).toHaveText("$49 per month", { timeout: 60_000 })
+      const mode = page.getByRole("button", { name: "Comment", exact: true })
+      const composer = page.getByRole("dialog", { name: "Add Comment" })
+      const thread = page.getByRole("article", { name: /^Comment by / })
+      const choose = (element: Locator) =>
+        mobile ? element.tap() : element.click()
+      const commentOn = async (element: Locator, text: string) => {
+        await choose(element)
+        await expect(composer.getByRole("textbox")).toBeVisible()
+        if (mobile) await settled(composer)
+        await composer.getByRole("textbox").fill(text)
+        await composer
+          .getByRole("button", { name: "Send comment", exact: true })
+          .click()
+        await expect(composer).toBeHidden()
+      }
+
+      // The mode stays on from one comment to the next.
+      await mode.click()
+      await expect(mode).toHaveAttribute("aria-pressed", "true")
+      await commentOn(price, "Show the yearly price.")
+      await expect(mode).toHaveAttribute("aria-pressed", "true")
+      await commentOn(frame.locator(".note"), "Cut this line.")
+      // Escape leaves it, from inside the page too.
+      if (mobile) await mode.click()
+      else await frame.locator("body").press("Escape")
+      await expect(mode).toHaveAttribute("aria-pressed", "false")
+
+      // An agent rewrites the page: the price reads differently and the
+      // note is gone.
+      const source = await page.request.get(
+        `${widgets}/${id}/content?format=raw`
+      )
+      const revision = source.headers()["etag"]?.replace(/"/g, "")
+      expect(
+        (
+          await page.request.fetch(`${widgets}/${id}`, {
+            method: "PUT",
+            data: {
+              name: "Pricing",
+              html: pageHtml("$39 per month, billed yearly", ""),
+              expectedRevision: revision,
+            },
+          })
+        ).ok()
+      ).toBe(true)
+      await expect(price).toHaveText("$39 per month, billed yearly", {
+        timeout: 30_000,
+      })
+
+      // The price's comment is still pinned to it: its pin, where the
+      // element was pressed along its top edge, opens the comment.
+      await expect(async () => {
+        if (!(await thread.isVisible())) {
+          const box = (await price.boundingBox())!
+          const at = [box.x + box.width / 2, box.y] as const
+          if (mobile) await page.touchscreen.tap(...at)
+          else await page.mouse.click(...at)
+        }
+        await expect(thread).toContainText("Show the yearly price.", {
+          timeout: 2_000,
+        })
+      }).toPass({ timeout: 30_000 })
+
+      // The note's comment waits under Page Changed.
+      await page.getByRole("button", { name: "All Comments", exact: true }).click()
+      const changed = page.getByRole("region", { name: /Page Changed/ })
+      await expect(changed.getByText("Cut this line.")).toBeVisible()
+      await expect(changed.getByText("Show the yearly price.")).toHaveCount(0)
+
+      // An agent reading the price's comment is given its lines in the page.
+      const { annotations } = (await (
+        await page.request.get(
+          `${harness.apiUrl}/api/spaces/annotations/annotations?widgetId=${id}`
+        )
+      ).json()) as { annotations: Array<{ id: string; body: string }> }
+      const context = async (body: string) =>
+        (
+          (await (
+            await page.request.get(
+              `${harness.apiUrl}/api/spaces/annotations/annotations/${
+                annotations.find((annotation) => annotation.body === body)!.id
+              }/context`
+            )
+          ).json()) as { context: Record<string, unknown> }
+        ).context
+      expect(await context("Show the yearly price.")).toMatchObject({
+        selectorMatch: "fuzzy",
+        startLine: 3,
+        excerpt: '<div class="price">$39 per month, billed yearly</div>',
+      })
+      expect(await context("Cut this line.")).toMatchObject({
+        targetExists: false,
+        selectorMatch: "stale",
+      })
+    })
+  })
+}

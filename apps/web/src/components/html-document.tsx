@@ -271,7 +271,7 @@ function WidgetDetailPage({
   )
   const previewVersion = versionQuery.data
 
-  // Annotations (HTML docs are DOC-LEVEL only — no block anchoring). The query
+  // Comments on the HTML doc, or on an element of its page. The query
   // stays enabled so the floating button's open-count badge is always live;
   // live updates arrive via the space subscription above, which invalidates
   // the ["annotations", spaceId] prefix on annotation_update events.

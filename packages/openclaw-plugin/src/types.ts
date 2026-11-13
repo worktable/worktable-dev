@@ -174,9 +174,11 @@ export interface WorktableChannelAccount {
   enabled: boolean
   server: string
   token: string
-  authMode?: "local-token" | "agent-registration"
-  agentAuth?: WorktableAgentAuth
-  pendingAgentAuth?: WorktableAgentAuth
+  /**
+   * Connected with Agent Registration, which Worktable no longer accepts,
+   * and not connected again since: there is no token to connect with.
+   */
+  needsReconnect: boolean
   participantName?: string
   defaultSpaceId?: string
   pendingPairingCode?: string
@@ -185,16 +187,4 @@ export interface WorktableChannelAccount {
   trustOwnAgents: boolean
   trustAllMembers: boolean
   trustAllAgents: boolean
-}
-
-export interface WorktableAgentAuth {
-  registrationId: string
-  authorizationServer: string
-  identityEndpoint: string
-  tokenEndpoint: string
-  resource: string
-  assertion: string
-  assertionExpiresAt: string
-  refreshToken: string
-  refreshTokenExpiresAt: string
 }

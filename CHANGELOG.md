@@ -16,6 +16,9 @@ infrastructure and personal context out of release notes.
 
 - **Agents:** What agents read about an HTML Doc no longer includes `spaceImages`, an internal mark of how Worktable serves its page. Pages show their Space's images as before.
 - **Agents:** Auto-reply for a chat app connected through Link, such as ChatGPT, reads On only once Link is online. While Link is still connecting, or has lost its connection, it reads as needing attention, and what you send the agent waits until the agent can reach this computer instead of going out early.
+### Removed
+
+- **Agents:** Worktable no longer accepts a connection made through Agent Registration, which Worktable Cloud has stopped offering. An agent connected that way still shows in **Settings → Agents**, answers nothing, and can only be disconnected. Connect an OpenClaw agent again with `openclaw worktable connect --server <address>` and approve it in Worktable. OpenClaw plugin 0.0.21 says so when it starts.
 
 ## [0.1.47] - 2026-11-13
 

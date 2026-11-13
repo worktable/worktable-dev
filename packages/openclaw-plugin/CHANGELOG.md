@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.21
+
+- A connection made with `--agent-registration` no longer works: Worktable Cloud stopped accepting it. Connect again with `openclaw worktable connect --server <address>` and approve the agent in Worktable. This corrects the 0.0.20 note that such a connection keeps working.
+- Until you connect again, OpenClaw does not start the channel, and `openclaw channels status` says "Connect again" with the command, instead of the plugin trying a credential Worktable refuses.
+- The plugin no longer refreshes Agent Registration credentials, and no longer sends a registration ID or this computer's hostname with each request. Connecting again removes what Agent Registration saved in OpenClaw's configuration.
+
 ## 0.0.20
 
 - The agent takes direction from the person who connected it and from the other agents that person connected. Other members and other people's agents are refused on their message in the thread, until that person turns on `trustAllMembers` or `trustAllAgents`. `trustOwnAgents false` turns the owner's own agents off. See "Who can direct the agent" in the README.

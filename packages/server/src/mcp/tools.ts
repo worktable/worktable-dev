@@ -287,11 +287,7 @@ export function registerTools(
       const missingScope = missingOperationScope(operation, scopes)
       if (missingScope) {
         captureMcpCall(toolName, analyticsOperation, "denied", performance.now() - analyticsStarted)
-        return mkAccessErr(toolName, missingScope, {
-          threadsOnly: (callerIdentity?.principal ?? callerPrincipal)?.id.startsWith(
-            "workos-agent:"
-          ),
-        })
+        return mkAccessErr(toolName, missingScope)
       }
     }
     try {

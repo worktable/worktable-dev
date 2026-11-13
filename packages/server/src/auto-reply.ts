@@ -71,6 +71,9 @@ function autoReplyFor(
     tasks: Map<string, CloudTask> | null
   }
 ): AutoReply | undefined {
+  // Left from WorkOS Agent Registration (retired): it can't connect, so it
+  // answers nothing.
+  if (connection.authKind === "agent-registration") return undefined
   const platform = agentConnectionPlatform(connection)
   if (platform === "grok-bot") return undefined
   if (CALLED.has(platform)) return { kind: "called", state: "on" }

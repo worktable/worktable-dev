@@ -5407,7 +5407,9 @@ async fn run_remote_probe(app: AppHandle, generation: u64, verify_service: bool)
             .remote_probe_in_progress
             .swap(true, Ordering::SeqCst)
     {
-        eprintln!("[Worktable Desktop] self-hosted check skipped: another connection or check is current");
+        eprintln!(
+            "[Worktable Desktop] self-hosted check skipped: another connection or check is current"
+        );
         return;
     }
     let result = perform_remote_probe(&app, generation, verify_service).await;

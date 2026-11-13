@@ -21,6 +21,23 @@ const IMAGE_MAX_BYTES = 5 * 1024 * 1024
 /** Text up to this size travels as text. */
 const TEXT_MAX_BYTES = 1024 * 1024
 
+/**
+ * How a file of this name and size may read: as an image or as text when it
+ * is one and small enough, else null. Decided without its bytes, so a file
+ * that reads as neither needn't be loaded to find that out.
+ */
+export function fileReadsAs(
+  path: string,
+  byteLength: number
+): "image" | "text" | null {
+  const type = fileTypeFor(path)
+  const reads = fileTypePolicy(type, "agent")
+  if (type !== null && reads === "image") {
+    return byteLength <= IMAGE_MAX_BYTES ? "image" : null
+  }
+  return reads === "text" && byteLength <= TEXT_MAX_BYTES ? "text" : null
+}
+
 /** A file as an image or as text, when it is one and small enough. */
 export function readableFileSource(
   path: string,
@@ -29,14 +46,11 @@ export function readableFileSource(
   | { kind: "image"; mediaType: string }
   | { kind: "text"; text: string }
   | null {
-  const type = fileTypeFor(path)
-  const reads = fileTypePolicy(type, "agent")
-  if (type !== null && reads === "image") {
-    return bytes.byteLength <= IMAGE_MAX_BYTES
-      ? { kind: "image", mediaType: FILE_TYPES[type].mediaType }
-      : null
+  const reads = fileReadsAs(path, bytes.byteLength)
+  if (reads === null) return null
+  if (reads === "image") {
+    return { kind: "image", mediaType: FILE_TYPES[fileTypeFor(path)!].mediaType }
   }
-  if (reads !== "text" || bytes.byteLength > TEXT_MAX_BYTES) return null
   try {
     return {
       kind: "text",

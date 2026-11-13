@@ -1236,6 +1236,14 @@ describe("format-neutral document route", () => {
       expect(await readFile(join(docs, "design", "error.png"), "utf8")).toBe(
         "png bytes"
       )
+      // The move names the revision the file has at its new path, the one a
+      // replace is based on.
+      expect(await moved.json()).toMatchObject({
+        to: "design/error.png",
+        sourceRevision: (
+          await readRegisteredDocumentSource({ spaceId, path: "design/error.png" })
+        ).sourceRevision,
+      })
       expect(await fileEntry("notes/readme/error.png")).toBeUndefined()
       const entry = await fileEntry("design/error.png")
       expect(entry?.kind === "document" && entry.descriptor.format.id).toBe(
@@ -1580,6 +1588,34 @@ describe("format-neutral document route", () => {
           })
         ).status
       ).toBe(200)
+      // Restoring the first version puts its bytes back as a new version,
+      // copied from where it is kept, leaving nothing staged.
+      const firstVersion = (
+        (await (
+          await instance.request(
+            `/api/spaces/${spaceId}/documents/versions?path=design/error.png&all=true`
+          )
+        ).json()) as { versions: Array<{ id: string }> }
+      ).versions.at(-1)!.id
+      const restored = await instance.request(
+        `/api/spaces/${spaceId}/documents/restore-version`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            path: "design/error.png",
+            versionId: firstVersion,
+            expectedRevision: (
+              await readRegisteredDocumentSource({ spaceId, path: "design/error.png" })
+            ).sourceRevision,
+          }),
+        }
+      )
+      expect(restored.status).toBe(200)
+      expect(await (await instance.request(fileUrl("design/error.png"))).text()).toBe(
+        "first"
+      )
+      expect(await readdir(stagingDirectory())).toEqual([])
       expect((await upload("design/missing.png", "x", {}, "&replace=current")).status).toBe(404)
 
       // A Doc's path is not a file's, whatever revision is offered.
@@ -2162,10 +2198,10 @@ describe("format-neutral document route", () => {
         await recordExternalFileChanges({ spaceId, paths: ["data/feedback.csv"] })
       ).toEqual({ recorded: [], tooLarge: ["data/feedback.csv"] })
       expect((await versions("data/feedback.csv")).length).toBe(kept)
-      const page = async () =>
+      const page = async (path = "data/feedback.csv") =>
         (
           (await (
-            await instance.request(`/api/spaces/${spaceId}/documents/page?path=data/feedback.csv`)
+            await instance.request(`/api/spaces/${spaceId}/documents/page?path=${path}`)
           ).json()) as { page: { byteLength?: number; noHistory?: unknown } }
         ).page
       expect(await page()).toMatchObject({
@@ -2212,21 +2248,35 @@ describe("format-neutral document route", () => {
       })
       expect((await stat(onDisk)).size).toBe(size)
       expect(await readdir(stagingDirectory())).toEqual([])
+      // It still moves. With no version a replace could be based on, the
+      // move names no revision.
+      const away = await instance.request(`/api/spaces/${spaceId}/documents/move`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: "data/feedback.csv", to: "data/all-feedback.csv" }),
+      })
+      expect(away.status).toBe(200)
+      const moved = (await away.json()) as Record<string, unknown>
+      expect(moved).toMatchObject({ ok: true, to: "data/all-feedback.csv" })
+      expect(moved).not.toHaveProperty("sourceRevision")
+      const movedOnDisk = join(docs, "data", "all-feedback.csv")
+      expect((await stat(movedOnDisk)).size).toBe(size)
 
       // Back within the limit, its history resumes.
       setSystemTime(new Date("2026-10-20T10:00:00.000Z"))
-      await writeFile(onDisk, "id\n1\n")
+      await writeFile(movedOnDisk, "id\n1\n")
       noteSpaceChanged(spaceId)
       expect(
-        await recordExternalFileChanges({ spaceId, paths: ["data/feedback.csv"] })
-      ).toEqual({ recorded: ["data/feedback.csv"], tooLarge: [] })
-      expect((await versions("data/feedback.csv")).length).toBe(kept + 1)
-      expect(await page()).not.toHaveProperty("noHistory")
+        await recordExternalFileChanges({ spaceId, paths: ["data/all-feedback.csv"] })
+      ).toEqual({ recorded: ["data/all-feedback.csv"], tooLarge: [] })
+      expect((await versions("data/all-feedback.csv")).length).toBe(kept + 1)
+      expect(await page("data/all-feedback.csv")).not.toHaveProperty("noHistory")
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES"]
       else process.env["WORKTABLE_FILES"] = previous
     }
-  })
+    // It hashes a file past 64 MiB several times over.
+  }, 30_000)
 
   it("names the Docs that use a file on the file's page", async () => {
     const previous = process.env["WORKTABLE_FILES"]

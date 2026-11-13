@@ -39,7 +39,8 @@ export interface CurrentFileSource {
 
 /**
  * A plain file's sourceRevision, and its bytes with `bytes`, at one
- * revision; null when `path` names no plain file. With `revision`, a file's
+ * revision; null when `path` names no plain file. Without its bytes the
+ * file is hashed a chunk at a time and never held whole. With `revision`, a file's
  * on-disk version as its page gives it, only that version: one changed since,
  * or while it is read, throws FileRevisionError "changed". Throws
  * DocumentSourceReadError "too-large" for a file past what a version holds.
@@ -48,7 +49,8 @@ export async function readCurrentFileSource(options: {
   spaceId: string
   path: string
   revision?: string
-  bytes?: boolean
+  /** Whether to keep the bytes: decided for the file found, by its size. */
+  bytes?: boolean | ((current: CurrentFile) => boolean)
 }): Promise<CurrentFileSource | null> {
   assertSpaceAccess(options.spaceId)
   for (let attempt = 1; ; attempt += 1) {
@@ -81,7 +83,11 @@ export async function readCurrentFileSource(options: {
       )
     }
     try {
-      return { current, ...(await readPinned(current, options.bytes === true)) }
+      const keepBytes =
+        typeof options.bytes === "function"
+          ? options.bytes(current)
+          : options.bytes === true
+      return { current, ...(await readPinned(current, keepBytes)) }
     } catch (error) {
       if (!(error instanceof FileRevisionError) || error.reason !== "changed") {
         throw error

@@ -22,6 +22,8 @@ infrastructure and personal context out of release notes.
 - **Search:** A Doc you just deleted no longer turns up in search, with its text, while the search index is still catching up.
 - **Docs:** A record you delete no longer shows under Used in on the Docs it pointed at.
 - **Activity:** Deleting a Doc removes what its comments said from Activity.
+- **Files:** Moving or renaming a file larger than 64 MiB works instead of failing with an error after the file had already moved.
+- **Files:** Restoring an earlier version of a large file, moving a file, and an agent reading a large binary file no longer load the whole file into the server's memory.
 
 ## [0.1.45] - 2026-11-12
 

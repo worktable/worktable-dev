@@ -16,6 +16,9 @@ infrastructure and personal context out of release notes.
 ### Fixed
 
 - **Comments:** An agent or API token that may read comments but not Docs or HTML Docs no longer gets the text a comment is about with it. Reading a comment leaves that out, and asking for it alone says which permission is missing.
+### Fixed
+
+- **Usage analytics on Worktable Cloud:** With analytics on, your agents' actions and saves are counted again. A hosted Worktable went to sleep before it could send them, so Worktable Cloud now sends them for it. What is counted, and your choice in Settings → Privacy, stay the same.
 
 ## [0.1.48] - 2026-11-13
 
@@ -36,7 +39,6 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
-- **Usage analytics on Worktable Cloud:** With analytics on, your agents' actions and saves are counted again. A hosted Worktable went to sleep before it could send them, so Worktable Cloud now sends them for it. What is counted, and your choice in Settings → Privacy, stay the same.
 - **Comments:** A comment on a path with no Doc, such as `readme.md` for the Doc `readme`, now says the Doc was not found and that a Doc's path has no extension, instead of failing with "Something went wrong". Replying to or resolving a comment that is gone says so too.
 
 ## [0.1.47] - 2026-11-13

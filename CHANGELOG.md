@@ -15,6 +15,7 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **Agents:** What agents read about an HTML Doc no longer includes `spaceImages`, an internal mark of how Worktable serves its page. Pages show their Space's images as before.
+- **Agents:** Auto-reply for a chat app connected through Link, such as ChatGPT, reads On only once Link is online. While Link is still connecting, or has lost its connection, it reads as needing attention, and what you send the agent waits until the agent can reach this computer instead of going out early.
 
 ## [0.1.47] - 2026-11-13
 

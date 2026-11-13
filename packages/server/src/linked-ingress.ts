@@ -185,7 +185,6 @@ export async function createLinkedIngress(options: {
   )
   const consumed = new Map<string, number>()
   let active = true
-  setLinkServed(binding.destinationId, true)
   let inFlight = 0
   let shareInFlight = 0
 
@@ -430,6 +429,14 @@ export async function createLinkedIngress(options: {
           throw new Error("Expected a Cloud HTTPS origin")
       }
       shareOrigin = origin
+    },
+    /**
+     * Whether agents can reach this device through Cloud now. A new ingress
+     * is not online: Link is still connecting, so an event sent to a chat
+     * would bring it back to a device it can't reach yet.
+     */
+    setOnline(online: boolean) {
+      setLinkServed(binding.destinationId, active && online)
     },
     revoke() {
       active = false

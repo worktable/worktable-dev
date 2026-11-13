@@ -13,10 +13,10 @@ import { join } from "node:path"
 import { drainActivity } from "./activity-log.ts"
 import { setAppDirOverride } from "./app-storage.ts"
 import { createAnnotation } from "./annotation-store.ts"
+import { createLinkedIngress } from "./linked-ingress.ts"
 import {
   EventsError,
   privateAddress,
-  setLinkServed,
   startMcpEventsRuntime,
   subscribe,
   unsubscribe,
@@ -442,9 +442,19 @@ describe("MCP Events", () => {
     }
   })
 
-  it("holds a Link subscription's events while Link is off", async () => {
+  it("holds a Link subscription's events until Link is online", async () => {
     const destination = "d".repeat(32)
-    setLinkServed(destination, true)
+    const link = await createLinkedIngress({
+      key: new Uint8Array(32),
+      binding: {
+        installationId: "installation_one",
+        destinationId: destination,
+        ownerSubject: "user_owner",
+        generation: 1,
+      },
+      scopes: [],
+      publicOrigin: "https://app.example.test",
+    })
     try {
       const sent: Sent[] = []
       const transport = callback(sent)
@@ -452,18 +462,28 @@ describe("MCP Events", () => {
       await start(transport)
       const watching = async () =>
         (await watchingParticipants()).get(participantId)
-      expect(await watching()).toMatchObject({ attention: false })
-
-      setLinkServed(destination, false)
+      // Link is still connecting: the chat can't reach this device yet.
       expect(await watching()).toMatchObject({ attention: true })
-      await after(() => comment("pricing", "Sent while Link was off."))
+      await after(() => comment("pricing", "Sent while Link was connecting."))
       expect(events(sent)).toHaveLength(0)
 
-      await after(async () => setLinkServed(destination, true))
+      await after(async () => link.setOnline(true))
       expect(events(sent)).toHaveLength(1)
       expect(await watching()).toMatchObject({ attention: false })
+
+      // A missed heartbeat, then Link turned off.
+      link.setOnline(false)
+      expect(await watching()).toMatchObject({ attention: true })
+      link.setOnline(true)
+      expect(await watching()).toMatchObject({ attention: false })
+      link.revoke()
+      await after(() => comment("pricing", "Sent while Link was off."))
+      expect(events(sent)).toHaveLength(1)
+      // Nothing brings a turned-off Link back but a new connection.
+      link.setOnline(true)
+      expect(await watching()).toMatchObject({ attention: true })
     } finally {
-      setLinkServed(destination, false)
+      link.revoke()
     }
   })
 

@@ -1543,6 +1543,17 @@ export function ConnectedAgentsGroup() {
             )}
           </ResponsiveDialogBody>
           <ResponsiveDialogFooter>
+            {/* Cloud holds a Link sign-in, so it's managed there. */}
+            {editingConnection?.link && (
+              <a
+                href={editingConnection.link.manageUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm text-muted-foreground hover:text-foreground sm:mr-auto sm:self-center"
+              >
+                Manage in Cloud
+              </a>
+            )}
             {editingConnection &&
               !editingConnection.link &&
               editingConnection.canManage !== false && (

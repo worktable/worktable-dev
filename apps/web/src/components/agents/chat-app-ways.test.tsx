@@ -21,7 +21,9 @@ const choices = (worktable: NonNullable<AppChoices["apps"][number]["worktable"]>
 function steps(data: AppChoices | null, autoReply?: "on" | "off"): string {
   const client = new QueryClient()
   client.setQueryData(["app-choices"], data)
-  client.setQueryData(["agent-connections", "official-app"], {
+  client.setQueryData(["system", "connection"], { mcpAuthMode: "local-token" })
+  // The agent list's own query, which live participant changes refresh.
+  client.setQueryData(["agent-connections", false], {
     connections: autoReply
       ? [
           {

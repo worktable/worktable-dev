@@ -7,14 +7,15 @@ import {
   type ReactNode,
 } from "react"
 import { useQuery } from "@tanstack/react-query"
-import type { AgentConnectionInventory } from "@worktable/types"
 import { Button, buttonVariants } from "@worktable/ui/components/button"
 import {
   appOfFamily,
   useAppChoices,
   worktableLabel,
 } from "@/lib/app-choices"
+import { listAgentConnections } from "@/lib/agent-connections-api"
 import { fetchJSON } from "@/lib/http"
+import { getConnection } from "@/lib/system-api"
 import { AUTO_REPLY_PROMPT, CopyLine, WORK_CHAT_HINT } from "./auto-reply"
 import { SetupStep } from "./setup-step"
 import { MoveHereButton } from "./works-in"
@@ -52,12 +53,18 @@ export function OfficialAppSteps({
   const official = appOfFamily(choices.data, app)
   const known = choices.data != null
   const here = official?.worktable?.here === true
-  // Its row here, to show auto-reply on once the chat is watching.
-  const connections = useQuery({
-    queryKey: ["agent-connections", "official-app"],
-    queryFn: () =>
-      fetchJSON<AgentConnectionInventory>("/api/agent-connections"),
+  // Its row here, to show auto-reply on once the chat is watching. The
+  // agent list's own query, so live participant changes refresh it too.
+  const system = useQuery({
+    queryKey: ["system", "connection"],
+    queryFn: getConnection,
     enabled: active && here && app === "chatgpt",
+  })
+  const cloud = system.data?.mcpAuthMode === "oauth"
+  const connections = useQuery({
+    queryKey: ["agent-connections", cloud],
+    queryFn: () => listAgentConnections({ workspaceAgentsOnCloud: cloud }),
+    enabled: active && here && app === "chatgpt" && system.isFetched,
   })
   const autoReply = connections.data?.connections.find(
     (connection) =>

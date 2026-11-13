@@ -49,7 +49,9 @@ export function useAppChoices(active = true) {
     },
     enabled: active,
     retry: false,
-    staleTime: 15_000,
+    // Apps move on Cloud's own pages too, so coming back to Settings reads
+    // again; the app turns refetching on focus off everywhere else.
+    refetchOnWindowFocus: true,
   })
 }
 

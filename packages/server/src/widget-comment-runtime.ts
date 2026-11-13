@@ -86,6 +86,14 @@ function segment(el){
   if(el.parentElement)for(const child of el.parentElement.children){if(child.localName===el.localName){same++;if(child===el)at=same}}
   return el.localName+(el.id&&el.id.length<=40?'#'+el.id:'')+(same>1?':nth-of-type('+at+')':'');
 }
+// A path as a selector: an id is written as it is in the page, which is
+// not always a name a selector can hold.
+function selectorOf(path){
+  return path.split(' > ').map(function(part){
+    const parts=/^([^#:]+)(?:#(.+?))?(:nth-of-type\(\d+\))?$/.exec(part);
+    return parts?parts[1]+(parts[2]?'#'+CSS.escape(parts[2]):'')+(parts[3]||''):part;
+  }).join(' > ');
+}
 function headingsNow(){return Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6'))}
 function headingBefore(el,headings){
   let low=0,high=headings.length;
@@ -233,7 +241,7 @@ function locate(now){
         let els=group.els,described=group.described;
         if(els.length>=3000){
           let placed=[];
-          try{placed=Array.from(document.body.querySelectorAll(element.path)).slice(0,8)}catch{}
+          try{placed=Array.from(document.body.querySelectorAll(selectorOf(element.path))).slice(0,8)}catch{}
           placed=placed.filter(function(el){return el.localName===element.tag&&els.indexOf(el)<0});
           if(placed.length){els=els.concat(placed);described=described.concat(placed.map(function(el){return describe(el,headings)}))}
         }

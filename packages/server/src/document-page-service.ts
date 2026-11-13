@@ -1,7 +1,9 @@
 import { prunedHistoryFor, type PrunedItem } from "./storage-pruned.ts"
 import { teamsEnabled } from "./team-database.ts"
 import { canAccessSpace, commentAccess } from "./team-policy.ts"
+import { stat } from "node:fs/promises"
 import { extname, resolve } from "node:path"
+import { DOCUMENT_GENERATION_MAX_ENTRY_BYTES } from "@worktable/types"
 import type {
   Annotation,
   DocumentAnnotationV2,
@@ -53,6 +55,9 @@ import {
   readDocumentSource,
 } from "./document-source-reader.ts"
 import { inspectDocumentSource } from "./document-inventory.ts"
+import { FingerprintCache, fingerprintOf } from "./file-fingerprint.ts"
+import { readBoundedRegularFile } from "./bounded-file.ts"
+import { RICH_TEXT_SOURCE_BUDGET, richTextBlocksProblem } from "./rich-text-blocks.ts"
 import {
   currentFileRevision,
   FileRevisionError,
@@ -386,6 +391,58 @@ function fileMetadata(
   }
 }
 
+/** Why each unreadable Doc doesn't open, by its file's fingerprint. */
+const unreadableReasons = new FingerprintCache<string>(256)
+const NOT_DOC_BLOCKS_REASON = "Its contents aren’t Doc blocks."
+
+/**
+ * Why a Doc that doesn't open fails its check, read from its source only
+ * when its own page asks and kept until the file changes: an unknown field
+ * by name, or that it isn't Doc blocks. Undefined for any other Doc.
+ */
+async function unreadableReason(
+  spaceId: string,
+  handle: ResolvedDocumentHandle
+): Promise<string | undefined> {
+  if (
+    handle.document.health !== "invalid" ||
+    handle.sourceNotADoc !== true ||
+    handle.source.kind !== "file"
+  ) {
+    return undefined
+  }
+  try {
+    const inspected = await inspectDocumentSource(
+      resolve(getWorkspaceRoot(), "spaces", spaceId),
+      handle.source
+    )
+    if (!inspected.safe) return NOT_DOC_BLOCKS_REASON
+    const fingerprint = fingerprintOf(await stat(inspected.absolutePath, { bigint: true }))
+    const known = unreadableReasons.get(inspected.absolutePath, fingerprint.key)
+    if (known !== undefined) return known
+    const text = await readBoundedRegularFile(
+      inspected.absolutePath,
+      DOCUMENT_GENERATION_MAX_ENTRY_BYTES
+    )
+    let problem: string | null = null
+    try {
+      problem = richTextBlocksProblem(
+        JSON.parse(text.startsWith("\uFEFF") ? text.slice(1) : text),
+        RICH_TEXT_SOURCE_BUDGET
+      )
+    } catch {
+      // Not JSON at all: not Doc blocks.
+    }
+    const reason = problem ? `${problem}.` : NOT_DOC_BLOCKS_REASON
+    if (!fingerprint.racy) {
+      unreadableReasons.set(inspected.absolutePath, fingerprint.key, reason)
+    }
+    return reason
+  } catch {
+    return NOT_DOC_BLOCKS_REASON
+  }
+}
+
 async function pageForHandle(
   spaceId: string,
   handle: ResolvedDocumentHandle,
@@ -415,6 +472,7 @@ async function pageForHandle(
     !handle.document.archived
   )
   const renderer = rendererForHandle(handle, integration, storageV2)
+  const unreadable = await unreadableReason(spaceId, handle)
   const links = sharing
     ? sharingSummary(spaceId, handle, canCreateShareLinks)
     : undefined
@@ -468,6 +526,7 @@ async function pageForHandle(
     ...(metadata?.version ? { version: metadata.version } : {}),
     ...(metadata?.byteLength !== undefined ? { byteLength: metadata.byteLength } : {}),
     ...(metadata?.noHistory ? { noHistory: metadata.noHistory } : {}),
+    ...(unreadable ? { unreadable: { reason: unreadable } } : {}),
     ...(metadata?.networkRequested
       ? {
           networkRequested: true as const,

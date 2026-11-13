@@ -137,14 +137,21 @@ disk without reading the file), `document-page-service.ts`,
   working download link.
 - `mcp-documents.test.ts` "reads supported formats through one bounded inert
   projection": an invalid Doc reads as invalid instead of failing.
+- `routes-documents.test.ts` "keeps a Doc overwritten with plain JSON as the
+  same unreadable item, with its history": its page names the failed check,
+  data that isn't Doc blocks or an unknown field.
 - `document-catalog.test.ts` "keeps missing, newer, and unknown inventoried
   formats visible and inert".
 
+An unreadable Doc's page names the check it failed: an unknown field by name,
+or that its contents aren't Doc blocks (`document-page-service.ts`, read only
+for that page and kept until the file changes). A file whose type has no
+preview says so: "No preview for this file type".
+
 **Gaps:**
 
-- An unreadable Doc's page says only that it couldn't be opened safely, and
-  downloading its source is for the owner only and stops at 64 MiB.
-- The "No preview" card for an unknown type gives no reason.
+- Downloading an unreadable Doc's source is for the owner only and stops at
+  64 MiB.
 - The file page's preview states ("Too large to preview", "Couldn't load
   preview") have no test.
 
@@ -298,7 +305,8 @@ work without knowing it.
 
 **Enforced in:** `file-uploads.ts` (`FileReplaceRefused`), `staged-file.ts`
 (uploads stream to a staged file and publish whole), `routes/documents.ts`
-(`If-Match`), `routes/widgets.ts` (HTML Doc replace and restore),
+(`If-Match`), `routes/widgets.ts` (HTML Doc replace and restore), `routes/docs.ts` and
+`store.ts` (Doc restore),
 `mcp/dispatcher.ts` (`worktable_files_write`), `file-change-recorder.ts`
 (changes on disk, once they settle).
 
@@ -328,12 +336,14 @@ work without knowing it.
 - `widget-versions.test.ts` "restores a version round-trip including
   permissions, bypassing the validation gate": restoring an HTML Doc version
   with no revision gets 428 and a stale one 409.
+- `routes-docs.test.ts` "restores only versions owned by the active Doc
+  generation": restoring a Doc version with no revision gets 428 and a stale
+  one 409 with the current revision; the page's revision holds, checked
+  before open editors save. In the app, a changed Doc or HTML Doc asks before
+  restoring (`version-history.browser.ts`).
 
 **Gaps:**
 
-- Restoring a Doc version over HTTP (`routes/docs.ts`) names no revision.
-  Its open editors save first, and the restore keeps the current text as a
-  version.
 - The released MCP surface still describes `expectedRevision` as optional for
   `worktable_files_write`, though a replace without it is refused; the preview
   surface says it's required.

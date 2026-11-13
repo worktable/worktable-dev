@@ -167,6 +167,9 @@ const ResolveDocumentReferencesSchema = z.object({
   paths: z.array(z.unknown()).max(500),
 });
 
+
+const DOC_RESTORE_REVISION_REQUIRED =
+  "Restoring a version of a Doc needs the revision you read. Read it, then send its revision as expectedRevision.";
 export const docsRouter = new Hono();
 
 docsRouter.onError((error, c) => {
@@ -612,8 +615,26 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
   if (restoreVersionMatch) {
     const docPath = decodeURIComponent(restoreVersionMatch[1]);
     const versionId = restoreVersionMatch[2];
-    const restored = await restoreDocVersion(spaceId, docPath, versionId, { updatedBy: restWriteActor(c) });
+    // A restore replaces the Doc, so it names the revision it is based on,
+    // as a replace does: the one its page loaded.
+    const body = (await c.req.json().catch(() => null)) as { expectedRevision?: unknown } | null;
+    const expectedRevision = typeof body?.expectedRevision === "string" && body.expectedRevision
+      ? body.expectedRevision
+      : undefined;
+    if (expectedRevision === undefined) {
+      return c.json({ error: DOC_RESTORE_REVISION_REQUIRED, code: "REVISION_REQUIRED" }, 428);
+    }
+    const restored = await restoreDocVersion(spaceId, docPath, versionId, {
+      updatedBy: restWriteActor(c),
+      expectedRevision,
+    });
     if (!restored.ok) {
+      if (restored.errorCode === "REVISION_CHANGED") {
+        return c.json(
+          { error: restored.error, code: restored.errorCode, revision: restored.revision },
+          409
+        );
+      }
       return c.json(
         { error: restored.error, code: restored.errorCode },
         restored.errorCode === "NOT_FOUND" ? 404 : 409

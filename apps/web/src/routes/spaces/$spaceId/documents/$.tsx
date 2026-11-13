@@ -350,6 +350,9 @@ function unavailableDetail(page: DocumentPage): string {
   if (page.document.health === "unsupported-format") {
     return "This document format isn’t supported in this version of Worktable."
   }
+  if (page.unreadable) {
+    return `Worktable couldn’t open this document. ${page.unreadable.reason}`
+  }
   if (
     page.document.health === "invalid" ||
     page.document.health === "temporarily-unavailable"

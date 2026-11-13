@@ -3357,6 +3357,36 @@ async function writeDocTransaction(
   }
 }
 
+/**
+ * Whether a Doc has left the revision a restore names: the content revision
+ * its page loaded, or the revision a read of its source gives
+ * (`md:sha256:…`). Null while it is still there, else the revision it is at
+ * now, in the form the restore named.
+ */
+async function docRestoreRevisionChanged(
+  spaceId: string,
+  docPath: string,
+  expected: string
+): Promise<{ revision: string } | null> {
+  const snapshot = await readDocSourceSnapshot(spaceId, docPath);
+  const source = snapshot.revision;
+  if (!source) return null;
+  const [{ docContentRevision }, { docRevisionId }] = await Promise.all([
+    import("./document-content-revision.ts"),
+    import("./doc-markdown-projection.ts"),
+  ]);
+  const read = docRevisionId(source);
+  const page = docContentRevision({
+    storedAs: source.relativePath.endsWith(".md") ? "md" : "json",
+    sha256: source.sha256,
+  });
+  if (expected === read || expected === page) return null;
+  return { revision: /^(md|json):sha256:/.test(expected) ? read : page };
+}
+
+const DOC_RESTORE_REVISION_CHANGED =
+  "This Doc changed since you opened it. Open it again, then restore from its new revision.";
+
 export type DocVersionRestoreResult =
   | {
       ok: true;
@@ -3367,10 +3397,23 @@ export type DocVersionRestoreResult =
       ok: false;
       error: string;
       errorCode: "NOT_FOUND" | "CONFLICT";
+    }
+  | {
+      ok: false;
+      error: string;
+      errorCode: "REVISION_CHANGED";
+      /** The revision the Doc is at now. */
+      revision: string;
     };
 
 export interface RestoreDocVersionOptions {
   expectedSourceRevision?: DocSourceRevision;
+  /**
+   * The content revision the restorer loaded, as the Doc's page gives it
+   * (`md:sha256:…`). Checked before open editors save, so only a change
+   * someone else made since refuses the restore.
+   */
+  expectedRevision?: string;
   updatedBy?: string;
   source?: string;
   reason?: string;
@@ -3536,6 +3579,21 @@ async function restoreDocVersionWithRoom(
         error: "Document not found",
         errorCode: "NOT_FOUND",
       };
+    }
+    if (options.expectedRevision !== undefined) {
+      const changed = await docRestoreRevisionChanged(
+        spaceId,
+        owner.path,
+        options.expectedRevision
+      );
+      if (changed) {
+        return {
+          ok: false,
+          error: DOC_RESTORE_REVISION_CHANGED,
+          errorCode: "REVISION_CHANGED",
+          revision: changed.revision,
+        };
+      }
     }
     const candidateVersion = await withVersionKeyLock(
       spaceId,

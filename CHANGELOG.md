@@ -30,6 +30,8 @@ infrastructure and personal context out of release notes.
 
 ### Changed
 
+- **Docs:** Restoring an earlier version of a Doc or HTML Doc that someone changed after you opened it asks first, as Upload New Version does. **Restore Anyway** keeps their version in history.
+- **Docs:** A Doc that can't be opened says why, such as a field this version doesn't know. A file with no preview says it has none for its type.
 - **HTML Docs:** Icons a page's own code adds, such as rows a Records tool draws with a status icon, are now drawn for everyone, not only with preview tools on.
 
 ### Fixed

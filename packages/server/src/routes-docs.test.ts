@@ -1,4 +1,5 @@
 import { ownerIdentity } from "./auth.ts";
+import { currentDocContentRevision } from "./document-content-revision.ts";
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -665,16 +666,56 @@ describe("doc routes", () => {
       }
       expect(firstVersionId).toBeTruthy();
 
+      // A restore names the revision it is based on, the one the page
+      // loaded: without one it is refused, and so is one the Doc has left.
+      const revisionNow = async () =>
+        ((await req(app, "GET", "/api/spaces/test-space/docs/folder/doc")).json as {
+          revision: string;
+        }).revision;
+      const restore = async (path: string, expectedRevision?: string) =>
+        req(
+          app,
+          "POST",
+          `/api/spaces/test-space/docs/${path}/versions/${firstVersionId}/restore`,
+          ...(expectedRevision !== undefined ? [{ expectedRevision }] : [])
+        );
+      const unnamed = await restore("folder/doc");
+      expect(unnamed.status).toBe(428);
+      expect(unnamed.json).toMatchObject({ code: "REVISION_REQUIRED" });
+      const loaded = await revisionNow();
+      // Someone saves a newer version after the page loaded.
+      await req(app, "PUT", "/api/spaces/test-space/docs/folder/doc", {
+        content: [para("second")],
+        expectedRevision: loaded,
+      });
+      await req(app, "PUT", "/api/spaces/test-space/docs/folder/doc", {
+        content: [para("second, edited")],
+        expectedRevision: await revisionNow(),
+      });
+      const stale = await restore("folder/doc", loaded);
+      expect(stale.status).toBe(409);
+      expect(stale.json).toMatchObject({
+        code: "REVISION_CHANGED",
+        revision: await revisionNow(),
+      });
+      expect(
+        textOf(
+          ((await req(app, "GET", "/api/spaces/test-space/docs/folder/doc")).json as {
+            content: unknown[];
+          }).content
+        )
+      ).toBe("second, edited");
+      await req(app, "PUT", "/api/spaces/test-space/docs/folder/doc", {
+        content: [para("second")],
+        expectedRevision: await revisionNow(),
+      });
+
       const cacheEpoch = await getDocCollaborationCacheEpoch(
         "test-space",
         "folder/doc"
       );
       await yjsManager.getOrCreateDoc("test-space", "folder/doc");
-      const wrongOwnerRestore = await req(
-        app,
-        "POST",
-        `/api/spaces/test-space/docs/folder/Doc/versions/${firstVersionId}/restore`
-      );
+      const wrongOwnerRestore = await restore("folder/Doc", await revisionNow());
       expect(wrongOwnerRestore.status).toBe(409);
       expect(
         await getDocCollaborationCacheEpoch("test-space", "folder/doc")
@@ -700,11 +741,7 @@ describe("doc routes", () => {
       );
       mkdirSync(metadataTemporary);
       try {
-        const failedRestore = await req(
-          app,
-          "POST",
-          `/api/spaces/test-space/docs/folder/doc/versions/${firstVersionId}/restore`
-        );
+        const failedRestore = await restore("folder/doc", await revisionNow());
         expect(failedRestore.status).toBe(500);
       } finally {
         rmSync(metadataTemporary, { recursive: true, force: true });
@@ -724,10 +761,10 @@ describe("doc routes", () => {
         await getDocCollaborationCacheEpoch("test-space", "folder/doc")
       ).toBe(cacheEpoch);
 
-      const restoreRes = await req(
-        app,
-        "POST",
-        `/api/spaces/test-space/docs/folder/doc/versions/${firstVersionId}/restore`
+      // The page names the content revision it loaded, which holds as well.
+      const restoreRes = await restore(
+        "folder/doc",
+        await currentDocContentRevision("test-space", "folder/doc")
       );
       expect(restoreRes.status).toBe(200);
       // Restoring retires the room; browsers must also leave its old cache.
@@ -754,11 +791,7 @@ describe("doc routes", () => {
         { content: [para("new generation")] }
       );
       expect(recreated.status).toBe(200);
-      const staleRestore = await req(
-        app,
-        "POST",
-        `/api/spaces/test-space/docs/folder/doc/versions/${firstVersionId}/restore`
-      );
+      const staleRestore = await restore("folder/doc", await revisionNow());
       expect(staleRestore.status).toBe(404);
       const current = await req(
         app,

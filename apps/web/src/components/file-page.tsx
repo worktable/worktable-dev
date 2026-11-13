@@ -362,7 +362,9 @@ function FileContent({
     enabled: !tooLarge && (view === "table" || view === "text"),
     staleTime: Infinity,
   })
-  if (view === "card") return <FileCard name={name} status="No preview" />
+  if (view === "card") {
+    return <FileCard name={name} status="No preview for this file type" />
+  }
   if (tooLarge || text.data === null) {
     return <FileCard name={name} status="Too large to preview" />
   }

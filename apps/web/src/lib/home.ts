@@ -21,11 +21,15 @@ export const homeQueryKeys = {
     ["activity", "home", options.spaceId ?? null, options.folder ?? null] as const,
 }
 
+/** Rows Latest shows, so the sections under it stay on a smaller screen. */
+const LATEST_ROWS = 6
+
 export function homeFeedQueryOptions(options: HomeFeedOptions = {}) {
   return queryOptions({
     queryKey: homeQueryKeys.feed(options),
     queryFn: () => {
       const query = new URLSearchParams({
+        limit: String(LATEST_ROWS),
         timezoneOffset: String(new Date().getTimezoneOffset()),
         ...(options.spaceId ? { spaceId: options.spaceId } : {}),
         ...(options.folder ? { folder: options.folder } : {}),

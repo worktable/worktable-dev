@@ -4,6 +4,7 @@ import { ArrowUpRight, Plus, SquarePen, Trash2 } from "lucide-react"
 import { lazy, Suspense, useEffect, useState } from "react"
 import { savedSinceLive } from "@worktable/types"
 import { SkillFrame, SkillHead } from "@/components/library/skill-frame"
+import { loadDocCode, loadedDocCode } from "@/components/library/doc-code"
 import { SkillNameDialog } from "@/components/library/skill-name-dialog"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useStableCallback } from "@/hooks/use-stable-callback"
@@ -22,10 +23,8 @@ import { useLibraryActions, type LibraryAction } from "@/lib/library-actions"
 import { useSpaces } from "@/lib/queries"
 
 // The Doc's own page, with its editor, loads when a skill is opened.
-const DocRenderer = lazy(() =>
-  import("@/components/doc-document").then((module) => ({
-    default: module.DocDocumentRenderer,
-  }))
+const LazyDocRenderer = lazy(() =>
+  loadDocCode().then((module) => ({ default: module.DocDocumentRenderer }))
 )
 
 /** What a skill keeps of its Doc's page actions: its history and recovery. */
@@ -185,6 +184,7 @@ export function OpenSkill({
   // The title and head hold the Doc's place while nothing of it is known yet.
   const frame = <SkillFrame entry={entry}>{head}</SkillFrame>
   const formatId = page?.document.format.id ?? hint?.formatId
+  const DocRenderer = loadedDocCode()?.DocDocumentRenderer ?? LazyDocRenderer
 
   return (
     <>

@@ -1,4 +1,5 @@
 import {
+  linkedAnalyticsContext,
   mcpAnalyticsContext,
   reportedToGateway,
   withAnalyticsContext,
@@ -22,6 +23,7 @@ import { PUBLIC_TOOL_NAMES } from "../mcp/catalog.ts"
 import { earlierToolFor } from "../mcp/legacy-calls.ts"
 import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts"
 import type { TokenIdentity } from "../token-store.ts"
+import type { AnalyticsGrant } from "@worktable/hosted-contract"
 import { runWithTeamIdentity } from "../team-policy.ts"
 
 // ============================================================
@@ -136,6 +138,11 @@ export interface RemoteMcpRequestOptions {
   modernEra?: boolean
   /** The Link destination the request came through, when it did. */
   link?: string
+  /**
+   * The analytics grant Cloud signed into a linked request: the answer
+   * reports the request's calls and saves, and Cloud sends them.
+   */
+  analytics?: AnalyticsGrant
 }
 
 /** Tells the Cloud gateway which call it answered, for its request counts. */
@@ -174,7 +181,9 @@ export async function handleRemoteMcpRequest(
   const modern = options.modernEra
     ? await modernMcpRequestBody(request)
     : undefined
-  const analytics = mcpAnalyticsContext(request, identity)
+  const analytics = options.analytics
+    ? linkedAnalyticsContext(request, identity, options.analytics)
+    : mcpAnalyticsContext(request, identity)
   if (modern) {
     const response = await withAnalyticsContext(analytics, () =>
       runWithTeamIdentity(identity, () =>

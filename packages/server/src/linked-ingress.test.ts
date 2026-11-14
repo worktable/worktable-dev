@@ -7,6 +7,7 @@ import fc from "fast-check"
 import {
   HOSTED_OAUTH_SCOPES,
   LinkedHostReply,
+  ANALYTICS_REPORT_HEADER,
   LINKED_ASSERTION_HEADER,
   LINKED_ASSERTION_ISSUER,
   LINKED_ASSERTION_TYPE,
@@ -520,6 +521,61 @@ it("serves real MCP writes and read-only shares through a separate socket, with 
     (await listAgentConnections()).filter((connection) => connection.link)
   ).toEqual([])
 }, 20_000)
+
+it("reports a linked agent's calls and saves on its answer only under a grant Cloud signed", async () => {
+  const write = (docPath: string, analytics?: LinkedRequestGrant) =>
+    createLinkedRequest({
+      origin: server.url.origin,
+      key,
+      binding: ingress.binding,
+      grant: analytics ?? grant,
+      method: "POST",
+      path: "/api/mcp",
+      body: new TextEncoder().encode(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "worktable_docs_write",
+            arguments: {
+              request: { action: "write", lifetime: "durable", spaceId: "space", docPath, content: "# Local document" },
+            },
+          },
+        })
+      ),
+    })
+  const unmeasured = await fetch(await write("plain"))
+  expect(unmeasured.status).toBe(200)
+  expect(unmeasured.headers.get(ANALYTICS_REPORT_HEADER)).toBeNull()
+
+  const signed = {
+    ...grant,
+    analytics: {
+      distinctId: `${grant.principalId}:worktable:wl_${"a".repeat(32)}`,
+      consentSubject: "user_owner",
+      actorType: "agent" as const,
+      expiresAt: Date.now() + 60_000,
+      surface: "mcp" as const,
+      client: "chatgpt" as const,
+      sender: "gateway" as const,
+    },
+  }
+  const measured = await fetch(await write("measured", signed))
+  expect(measured.status).toBe(200)
+  expect((await measured.json()).result.isError).not.toBe(true)
+  expect(JSON.parse(measured.headers.get(ANALYTICS_REPORT_HEADER) ?? "null")).toMatchObject({
+    calls: [{ tool: "worktable_docs_write", operation: "docs.write", outcome: "success" }],
+    saved: ["document"],
+  })
+
+  // An expired grant measures nothing; the call itself still succeeds.
+  const stale = await fetch(
+    await write("stale", { ...signed, analytics: { ...signed.analytics, expiresAt: Date.now() - 60 * 60_000 } })
+  )
+  expect(stale.status).toBe(200)
+  expect(stale.headers.get(ANALYTICS_REPORT_HEADER)).toBeNull()
+})
 
 it("rejects any changed destination binding and altered request body before filesystem mutation", async () => {
   await fc.assert(

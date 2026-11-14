@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { ANALYTICS_CLIENTS } from "@worktable/types/analytics"
 import { LISTED_MARK_FIELDS } from "./listed-mark.ts"
 
 /** Separate from browser assertions and from the local owner's credentials. */
@@ -131,6 +132,11 @@ export const LINKED_CAPABILITIES = {
   FILE_LINKS: "file-links",
   /** `headers` on MCP grants, so the device serves MCP 2026-07-28. */
   MCP_HEADERS: "mcp-headers",
+  /**
+   * `analytics` on MCP grants: the device reports the request's tool calls
+   * and saves on its answer, and Cloud sends them.
+   */
+  ANALYTICS_REPORT: "analytics-report",
 } as const
 
 /**
@@ -327,6 +333,25 @@ export const LinkedDestinationBinding = z
   .strict()
 export type LinkedDestinationBinding = z.infer<typeof LinkedDestinationBinding>
 
+/**
+ * The consented account's analytics grant for an agent's MCP request, as the
+ * gateway issues it. The device reports what the request did and sends
+ * nothing itself.
+ */
+export const LinkedAnalyticsGrant = z
+  .object({
+    distinctId: z.string().min(1).max(512),
+    consentSubject: identifier,
+    actorType: z.literal("agent"),
+    expiresAt: z.number().int().positive(),
+    surface: z.literal("mcp"),
+    trafficType: z.enum(["internal", "verification"]).optional(),
+    client: z.enum(ANALYTICS_CLIENTS).optional(),
+    sender: z.literal("gateway"),
+  })
+  .strict()
+export type LinkedAnalyticsGrant = z.infer<typeof LinkedAnalyticsGrant>
+
 export const LinkedRequestGrant = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("health") }).strict(),
   z
@@ -338,6 +363,8 @@ export const LinkedRequestGrant = z.discriminatedUnion("kind", [
       scopes: z.array(z.string().min(1).max(128)).max(128),
       /** Only to a device whose current boot reported `mcp-headers`. */
       headers: LinkedMcpHeaders.optional(),
+      /** Only to a device whose current boot reported `analytics-report`. */
+      analytics: LinkedAnalyticsGrant.optional(),
     })
     .strict(),
   z

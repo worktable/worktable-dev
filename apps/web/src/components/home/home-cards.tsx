@@ -490,8 +490,8 @@ function daysUntil(iso: string): number {
 }
 
 /**
- * How many temporary docs archive on each of the next seven days. A day with
- * docs opens them, with Keep.
+ * How many temporary docs archive today and on each of the six days after.
+ * A day with docs opens them, with Keep.
  */
 export function ArchivingWeek({
   items,
@@ -502,14 +502,14 @@ export function ArchivingWeek({
   side?: boolean
 }) {
   const days = Array.from({ length: 7 }, (_, index) => ({
-    date: dayFromToday(index + 1),
+    date: dayFromToday(index),
     items: [] as ArchivingItem[],
   }))
   for (const item of items) {
     if (!item.document.archiveOn) continue
-    // A doc already due archives at the next sweep, so it counts tomorrow.
-    const index = Math.max(1, daysUntil(item.document.archiveOn)) - 1
-    days[index]?.items.push(item)
+    // Docs archive within the hour of coming due, so one already due leaves
+    // today.
+    days[Math.max(0, daysUntil(item.document.archiveOn))]?.items.push(item)
   }
   const [open, setOpen] = useState<{
     time: number
@@ -536,13 +536,9 @@ export function ArchivingWeek({
         Archiving
       </h2>
       <div className="flex gap-1.5">
-        {days.map((day) => {
+        {days.map((day, index) => {
           const count = day.items.length
-          const label = day.date.toLocaleDateString(undefined, {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-          })
+          const label = dayName(day.date, index === 0)
           const cell = cn(
             "flex size-7 items-center justify-center rounded-md text-[0.72rem] font-medium tabular-nums",
             count === 0

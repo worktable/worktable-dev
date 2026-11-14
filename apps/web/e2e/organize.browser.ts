@@ -206,6 +206,19 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
       .getByRole("link", { name: "Untitled" })
   ).toBeVisible()
 
+  // It archives a week from now; Home counts today and the six days after.
+  const sooner = await page.request.post(
+    `${harness.apiUrl}/api/spaces/organize/documents/lifetime`,
+    {
+      data: {
+        path: "untitled",
+        lifetime: "temporary",
+        archiveOn: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+      },
+    }
+  )
+  expect(sooner.ok()).toBe(true)
+
   await page.goto(`${harness.webUrl}/`)
   // One sitting reads as one row: its newest doc, with the rest behind More.
   const recent = page.getByRole("region", { name: "Latest" })

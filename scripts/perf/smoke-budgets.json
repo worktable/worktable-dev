@@ -58,11 +58,12 @@
       "max": 14
     },
     "cold js, open Space": {
-      "max": 22,
-      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
+      "max": 25,
+      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total. Space Home is rebuilt around the latest work (#485) and its page is now its own chunk, so documents, Threads and Settings no longer load it. A cold open of a Space fetches that chunk, the chunk of sections it shares with Home, and a 0.4 KB path helper that a pinned page's preview shares with the HTML Doc code: three more small files, preloaded in parallel. CI run 43560591047 on e6f0510 measured 25 against 22 on main bb09d44 (run 43557287192); the route is 4.7 KB gzip heavier in total, and every document route is lighter."
     },
     "requests, cold, open Markdown doc": {
-      "max": 14
+      "max": 15,
+      "why": "Main already measures 15 here (run 43557287192 on bb09d44): a late request from the load lands in this window, and the check let it pass while the cold pass stayed within its total. Space Home now asks for its Latest on a cold open (13 to 14 requests, within that click's own budget), which uses up the slack. The requests this load makes are the same as on main."
     },
     "cold js, open Markdown doc": {
       "max": 31,
@@ -101,8 +102,8 @@
       "why": "New journey (Plan 21): a file's page loads the Doc renderer's code and its own, 2 files more than a Markdown doc."
     },
     "requests, cold, open a Doc with images": {
-      "max": 16,
-      "why": "New journey (Plan 21): a deep link to a Markdown Doc that embeds two images. The Markdown doc's requests plus one per image."
+      "max": 17,
+      "why": "New journey (Plan 21): a deep link to a Markdown Doc that embeds two images. The Markdown doc's requests plus one per image. Main already measures 17 here (run 43557287192 on bb09d44): a late request from the load lands in this window, and the check let it pass while the cold pass stayed within its total. Space Home now asks for its Latest on a cold open (13 to 14 requests, within that click's own budget), which uses up the slack. The requests this load makes are the same as on main."
     },
     "requests, cold, open an HTML Doc with images": {
       "max": 17,
@@ -121,16 +122,16 @@
       "why": "Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
     },
     "cold js, open Threads": {
-      "max": 33,
-      "why": "Comments show their messages with the Threads Markdown renderer, so the bundler moves that renderer out of the Threads chunk into one both share: one more small chunk on a cold open of Threads, preloaded with the rest, and none on revisits. Before that, removing the single-link share dialog split its inputs, dialog shell and clipboard helper into five small shared chunks."
+      "max": 34,
+      "why": "Comments show their messages with the Threads Markdown renderer, so the bundler moves that renderer out of the Threads chunk into one both share: one more small chunk on a cold open of Threads, preloaded with the rest, and none on revisits. Before that, removing the single-link share dialog split its inputs, dialog shell and clipboard helper into five small shared chunks. A pinned page's preview on Home (#485) uses the HTML Doc path helper, so the bundler moves that 0.4 KB helper out of the chunk the HTML Doc code kept it in: one more small file before Threads shows on a cold open, preloaded with the rest, and none on revisits. CI run 43560591047 on e6f0510 measured 34 against 33 on main bb09d44; the scripts this load fetches in all are unchanged at 61."
     },
     "requests, cold, open a thread": {
       "max": 11,
       "why": "Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
     },
     "cold js, open a thread": {
-      "max": 33,
-      "why": "Comments show their messages with the Threads Markdown renderer, so the bundler moves that renderer out of the Threads chunk into one both share: one more small chunk on a cold open of Threads, preloaded with the rest, and none on revisits. Before that, removing the single-link share dialog split its inputs, dialog shell and clipboard helper into five small shared chunks."
+      "max": 34,
+      "why": "Comments show their messages with the Threads Markdown renderer, so the bundler moves that renderer out of the Threads chunk into one both share: one more small chunk on a cold open of Threads, preloaded with the rest, and none on revisits. Before that, removing the single-link share dialog split its inputs, dialog shell and clipboard helper into five small shared chunks. A pinned page's preview on Home (#485) uses the HTML Doc path helper, so the bundler moves that 0.4 KB helper out of the chunk the HTML Doc code kept it in: one more small file before Threads shows on a cold open, preloaded with the rest, and none on revisits. CI run 43560591047 on e6f0510 measured 34 against 33 on main bb09d44; the scripts this load fetches in all are unchanged at 61."
     },
     "requests, first, open the app at Home": {
       "max": 11

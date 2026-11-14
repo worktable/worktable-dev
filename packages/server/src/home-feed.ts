@@ -124,13 +124,28 @@ export async function readHomeFeed(
   const listedDocs = new Map<string, HomeRun>()
   const places = new Map<string, OpenPlace>()
   let listedRuns = 0
+  // When a listed run last grew: no run can grow once the events are a
+  // sitting's pause older than this.
+  let lastListed = Infinity
   for (const event of events) {
     if (event.target.kind !== "doc" || !event.spaceId) continue
     const time = Date.parse(event.at)
+    const key = `${event.actor.id}|${event.spaceId}`
     // Places count the last two weeks. Latest reaches further back only
-    // until it is full, so a quiet Space still shows its last work.
+    // until it is full, so a quiet Space still shows its last work; then it
+    // reads on just far enough to finish the sittings it lists.
     const recent = time >= since
-    if (!recent && listedRuns >= options.limit) break
+    if (!recent && listedRuns >= options.limit) {
+      if (lastListed - time > RUN_GAP_MS) break
+      const listed = openRuns.get(key)
+      if (
+        !listed ||
+        listed.run.docs.length === 0 ||
+        listed.oldest - time > RUN_GAP_MS
+      ) {
+        continue
+      }
+    }
     const byPath = await documentsIn(event.spaceId)
     let path = event.target.path
     let current = byPath.get(path)
@@ -179,7 +194,6 @@ export async function readHomeFeed(
 
     // A run lists docs a reader can open now.
     if (!current || current.archived) continue
-    const key = `${event.actor.id}|${event.spaceId}`
     const docKey = `${event.spaceId}\n${path}`
     let open = openRuns.get(key)
     if (!open || open.oldest - time > RUN_GAP_MS) {
@@ -196,6 +210,7 @@ export async function readHomeFeed(
       runs.push(run)
     }
     open.oldest = time
+    if (open.run.docs.length > 0) lastListed = time
     // One folder narrows what a run lists, never where the sitting begins
     // and ends: work elsewhere in between still joins its two halves.
     if (options.folder !== undefined && placeId !== options.folder) continue
@@ -213,7 +228,10 @@ export async function readHomeFeed(
       at: event.at,
       created,
     }
-    if (open.run.docs.length === 0) listedRuns += 1
+    if (open.run.docs.length === 0) {
+      listedRuns += 1
+      lastListed = time
+    }
     open.docs.set(path, doc)
     open.run.docs.push(doc)
     listedDocs.set(docKey, open.run)

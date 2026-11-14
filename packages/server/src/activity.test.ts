@@ -500,12 +500,18 @@ describe("workspace activity", () => {
     const alpha = await request<HomeFeed>("/api/home?spaceId=company&folder=alpha")
     expect(alpha.runs.map((run) => run.docs.map((doc) => doc.path))).toEqual([["alpha/z", "alpha/x"]])
 
-    // Work older than two weeks still fills Latest, and counts for no place.
-    setSystemTime(new Date(Date.now() - 20 * 24 * 60 * 60_000))
-    await writeDocAt("archive/long-ago")
+    // Work older than two weeks still fills Latest, as whole sittings, and
+    // counts for no place.
+    const longAgo = Date.now() - 20 * 24 * 60 * 60_000
+    for (const [index, name] of ["one", "two", "three"].entries()) {
+      setSystemTime(new Date(longAgo + index * 60_000))
+      await writeDocAt(`archive/${name}`)
+    }
     setSystemTime()
-    const quiet = await request<HomeFeed>("/api/home?spaceId=company")
-    expect(quiet.runs.at(-1)!.docs.map((doc) => doc.path)).toEqual(["archive/long-ago"])
+    const quiet = await request<HomeFeed>("/api/home?spaceId=company&folder=archive&limit=1")
+    expect(quiet.runs.map((run) => run.docs.map((doc) => doc.path))).toEqual([
+      ["archive/three", "archive/two", "archive/one"],
+    ])
     expect(quiet.places.map((place) => place.id)).not.toContain("archive")
 
     expect((await request<HomeFeed>("/api/home")).pins).toEqual([

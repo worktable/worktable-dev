@@ -19,6 +19,7 @@ import {
   REMOVED_MARK,
   REMOVED_SKILL_NOTE,
   readLibrary,
+  seenMark,
   skillsForAgent,
   skillVersion,
   type AgentSkill,
@@ -159,7 +160,7 @@ function noteCall(participantId: string, now: number): boolean {
 
 function marksOf(live: AgentSkill[], removed: Array<{ entry: LibraryEntry }>): Record<string, string> {
   const marks: Record<string, string> = {}
-  for (const skill of live) marks[skill.entry.id] = skill.live.generationId
+  for (const skill of live) marks[skill.entry.id] = seenMark(skill.entry, skill.live)
   for (const { entry } of removed) marks[entry.id] = REMOVED
   return marks
 }
@@ -241,7 +242,7 @@ export async function skillChangeNotice(
     for (const skill of live) {
       const last = before?.[skill.entry.id]
       if (last === undefined || last === REMOVED) added.push(skill)
-      else if (last !== skill.live.generationId) updated.push(skill)
+      else if (last !== seenMark(skill.entry, skill.live)) updated.push(skill)
     }
     const gone: LibraryEntry[] = []
     for (const { entry } of removed) {

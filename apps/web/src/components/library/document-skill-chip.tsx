@@ -41,12 +41,14 @@ export function DocumentSkillChip({
       // Saving is rare, so its code loads when Save is pressed.
       const { performLibraryAction } = await import("@/lib/library-actions")
       for (const entry of changed) {
-        const version = provenance?.versionId
+        // Every skill this Doc is goes live with the content on screen; a
+        // save leaves the content as it was, so each one matches it.
+        const contentHash = provenance?.contentHash
         if (
           !(await performLibraryAction(queryClient, {
             kind: "save",
             entry,
-            ...(version ? { version } : {}),
+            ...(contentHash ? { contentHash } : {}),
           }))
         )
           break

@@ -106,8 +106,8 @@ export type LibraryAction =
   | {
       kind: "save"
       entry: Pick<LibraryEntry, "id">
-      /** The Doc's last save the person looked at; a newer one is refused. */
-      version?: string
+      /** The content the person looked at; other content is refused. */
+      contentHash?: string
     }
   | {
       kind: "approve" | "discard"
@@ -123,8 +123,8 @@ function runAction(action: LibraryAction): Promise<unknown> {
     body: JSON.stringify(
       action.kind === "approve" || action.kind === "discard"
         ? { revision: action.entry.revision }
-        : action.kind === "save" && action.version
-          ? { version: action.version }
+        : action.kind === "save" && action.contentHash
+          ? { contentHash: action.contentHash }
           : {}
     ),
   })

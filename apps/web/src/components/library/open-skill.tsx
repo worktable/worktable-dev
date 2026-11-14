@@ -63,9 +63,12 @@ export function OpenSkill({
   const { pageQuery, page: checked } = useDocumentOpen(spaceId, path)
   const page = checked?.kind === "document" ? checked : null
   // After a move another Doc can hold the skill's old path; a Doc's page names
-  // the skills it is, so only this skill's own Doc opens under it.
+  // the skills it is, so only this skill's own Doc opens under it. A removed
+  // skill isn't among them, and stays open so it can be restored.
   const otherDoc =
-    page !== null && !page.skills?.some((skill) => skill.id === entry.id)
+    page !== null &&
+    !entry.removed &&
+    !page.skills?.some((skill) => skill.id === entry.id)
   useEffect(() => {
     if (!otherDoc) return
     void queryClient.invalidateQueries({
@@ -88,15 +91,17 @@ export function OpenSkill({
     : entry.draft
   const at = entry.proposal
     ? `proposal:${entry.revision}`
-    : `draft:${page?.provenance?.versionId ?? ""}`
+    : `draft:${page?.provenance?.contentHash ?? ""}`
 
   const act = useStableCallback(async (action: LibraryAction) => {
     if (pending) return
     setPending(true)
-    // Agents get what the person saw: Save names the Doc's save on screen.
-    const version = page?.provenance?.versionId
+    // Agents get what the person saw: Save names the content on screen.
+    const contentHash = page?.provenance?.contentHash
     const done = await run(
-      action.kind === "save" && version ? { ...action, version } : action
+      action.kind === "save" && contentHash
+        ? { ...action, contentHash }
+        : action
     )
     if (done && action.kind === "remove") {
       await navigate({

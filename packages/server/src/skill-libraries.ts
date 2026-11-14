@@ -494,8 +494,13 @@ async function readVersionText(entry: LibraryEntry, generationId: string): Promi
     maxBytes: SKILL_MAX_BYTES,
   })
   if (!bytes) throw new LibraryError("invalid", "This skill is too large to read.")
+  return sourceText(manifest.format.id, bytes)
+}
+
+/** A skill Doc's stored source as Markdown: as it is, or from its blocks. */
+async function sourceText(formatId: string, bytes: Uint8Array): Promise<string> {
   const text = new TextDecoder().decode(bytes)
-  if (manifest.format.id === BUILTIN_DOCUMENT_FORMATS.markdown) return text
+  if (formatId === BUILTIN_DOCUMENT_FORMATS.markdown) return text
   let blocks: unknown = null
   try {
     blocks = JSON.parse(text)
@@ -505,6 +510,21 @@ async function readVersionText(entry: LibraryEntry, generationId: string): Promi
   const markdown = Array.isArray(blocks) ? await blocksToMarkdownSafe(blocks) : null
   if (markdown === null) throw new LibraryError("invalid", "This skill's Doc can't be read as text.")
   return markdown
+}
+
+/**
+ * The skill's Doc as saved right now, or null when it can't be read. While
+ * someone edits, its saves land before a version names them, so a draft
+ * compares against this rather than the Doc's last version.
+ */
+async function currentDocText(entry: LibraryEntry, path: string): Promise<string | null> {
+  try {
+    const source = await currentSkillDoc(entry.doc.spaceId, path)
+    if (source.documentId !== entry.doc.documentId || source.bytes.byteLength > SKILL_MAX_BYTES) return null
+    return await sourceText(source.format.id, source.bytes)
+  } catch {
+    return null
+  }
 }
 
 // ---- Who may change a library ----
@@ -807,7 +827,7 @@ export async function addToLibrary(
 export async function saveLibrarySkill(
   identity: TokenIdentity,
   id: string,
-  input: { name?: string; description?: string; version?: string } = {}
+  input: { name?: string; description?: string; contentHash?: string } = {}
 ): Promise<LibraryEntryView> {
   const before = await entryPersonMayChange(id, identity)
   if (before.removed) throw new LibraryError("not_found", "This skill was removed from its library.")
@@ -815,8 +835,9 @@ export async function saveLibrarySkill(
   const description = input.description === undefined ? undefined : checkedDescription(input.description)
   const location = await docLocation(before.doc)
   if (!location) throw new LibraryError("not_found", "This skill's Doc no longer opens.")
-  // Agents get what the person saw: a save since they looked is theirs to see first.
-  if (input.version && location.lastSave?.versionId !== input.version) {
+  // Agents get what the person saw: content saved since they looked is
+  // theirs to see first. A version made of the same content changes nothing.
+  if (input.contentHash && location.lastSave?.contentHash !== input.contentHash) {
     throw new LibraryError("conflict", "This Doc changed since you looked at it. Look again, then save.")
   }
   const saved = await saveVersion({
@@ -991,14 +1012,15 @@ export async function librarySkillChange(
     throw new LibraryError("not_found", "No skill with that id is in a library.")
   }
   const proposal = entry.proposal
-  const waiting = proposal
-    ? proposal.kind === "remove"
-      ? undefined
-      : proposal.generationId
-    : (await docLocation(entry.doc))?.lastSave?.versionId
+  // What waits: an agent's proposed version, or the Doc as saved right now.
+  const location = proposal ? undefined : await docLocation(entry.doc)
   const [live, next] = await Promise.all([
     textAt(entry, entry.live?.generationId),
-    textAt(entry, waiting),
+    proposal
+      ? textAt(entry, proposal.kind === "remove" ? undefined : proposal.generationId)
+      : location
+        ? currentDocText(entry, location.path)
+        : null,
   ])
   return { revision: entry.revision, live, next, ...proposedDescription(entry) }
 }
@@ -1099,7 +1121,7 @@ export function applicableVersions(reader: SkillReader): Map<string, string> {
     if (entry.removed) {
       if (now - Date.parse(entry.removed.at) < REMOVED_VISIBLE_MS) versions.set(entry.id, REMOVED_MARK)
     } else if (entry.live) {
-      versions.set(entry.id, entry.live.generationId)
+      versions.set(entry.id, seenMark(entry, entry.live))
     }
   }
   return versions
@@ -1107,6 +1129,14 @@ export function applicableVersions(reader: SkillReader): Map<string, string> {
 
 /** The seen mark for a skill removed from its library. */
 export const REMOVED_MARK = "removed"
+
+/**
+ * What an agent has seen of a live skill: its version, name and when to use
+ * it, so a rename or a new description is a change to tell it about.
+ */
+export function seenMark(entry: Pick<LibraryEntry, "name" | "description">, live: { generationId: string }): string {
+  return `${live.generationId}\n${entry.name}\n${entry.description}`
+}
 
 function inScope(library: LibraryRef, spaceId: string | undefined): boolean {
   return !spaceId || library.kind !== "space" || library.spaceId === spaceId

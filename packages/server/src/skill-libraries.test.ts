@@ -196,13 +196,15 @@ describe("skill libraries", () => {
     expect(unchanged.version).toBe(first.version)
     expect(await draft()).toBe(true)
 
-    // Saving names the Doc's save the person looked at; one made since is refused.
-    const looked = (await getDocProvenance("ops", "release-checklist"))?.versionId
+    // Saving names the content the person looked at; content saved since is refused.
+    const looked = (await getDocProvenance("ops", "release-checklist"))?.contentHash
     await writeDoc("ops", "release-checklist", `${RELEASE}\nSkip the smoke test on Fridays.\nAnd on Mondays.\n`)
-    expect((await rest("POST", `/api/library/${entry.id}/save`, { version: looked })).status).toBe(409)
+    expect((await rest("POST", `/api/library/${entry.id}/save`, { contentHash: looked })).status).toBe(409)
     await writeDoc("ops", "release-checklist", `${RELEASE}\nSkip the smoke test on Fridays.\n`)
-    const current = (await getDocProvenance("ops", "release-checklist"))?.versionId
-    expect((await rest("POST", `/api/library/${entry.id}/save`, { version: current })).status).toBe(200)
+    const current = (await getDocProvenance("ops", "release-checklist"))?.contentHash
+    expect((await rest("POST", `/api/library/${entry.id}/save`, { contentHash: current })).status).toBe(200)
+    // A save keeps the content, so a second skill of the same Doc saves the same content.
+    expect((await rest("POST", `/api/library/${entry.id}/save`, { contentHash: current })).status).toBe(200)
     const saved = await call(agent, "worktable_skills_read", { name: "release-checklist" })
     expect(saved.content).toContain("Fridays")
     expect(saved.version).not.toBe(first.version)
@@ -511,6 +513,13 @@ describe("skill libraries", () => {
 
     await writeDoc("ops", "release-checklist", `${RELEASE}\nAnnounce in the channel.\n`)
     await rest("POST", `/api/library/${entry.id}/save`, {})
+    expect(await notices()).toBe(
+      "Your team's Library changed: updated release-checklist. worktable_skills_read returns the current ones."
+    )
+    expect(await notices()).toBeUndefined()
+
+    // A new description is a change too, with no new version of the Doc.
+    await rest("PATCH", `/api/library/${entry.id}`, { description: "Use before and after tagging a release." })
     expect(await notices()).toBe(
       "Your team's Library changed: updated release-checklist. worktable_skills_read returns the current ones."
     )

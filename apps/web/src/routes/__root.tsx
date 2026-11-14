@@ -102,6 +102,7 @@ import {
   usePageMeta,
 } from "@/hooks/use-page-meta"
 import { Breadcrumb } from "@/components/breadcrumb"
+import { useBreadcrumbs } from "@/hooks/use-breadcrumbs"
 import { PageMenu } from "@/components/page-menu"
 import type { PageMeta } from "@/hooks/use-page-meta"
 import { TraceProfiler } from "@/components/trace-profiler"
@@ -451,12 +452,14 @@ function PageMetaProvider({ children }: { children: ReactNode }) {
 }
 
 /**
- * Tab-title prefix for non-daily workspaces (cheapest unmistakable signal),
- * on every screen including onboarding and loading. Re-applied after each
+ * The tab title: the open page's name, or "Worktable" where no page is open,
+ * prefixed for non-daily workspaces (cheapest unmistakable signal). The root
+ * sets it on every screen, including onboarding and loading; the shell sets
+ * it again with the page's name, after the root. Re-applied after each
  * navigation, where TanStack's HeadContent resets the document title to the
  * static root "Worktable".
  */
-function WorkspaceTitle() {
+function WorkspaceTitle({ page }: { page?: string }) {
   const mode = useWorkspace().data?.mode
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   useEffect(() => {
@@ -468,9 +471,14 @@ function WorkspaceTitle() {
           : mode === "fixture"
             ? "Fixture · "
             : ""
-    document.title = `${prefix}Worktable`
-  }, [mode, pathname])
+    document.title = `${prefix}${page || "Worktable"}`
+  }, [mode, page, pathname])
   return null
+}
+
+/** Names the tab after the page, as the breadcrumb's last crumb names it. */
+function PageTitle() {
+  return <WorkspaceTitle page={useBreadcrumbs().at(-1)?.label} />
 }
 
 function RootLayout() {
@@ -764,6 +772,7 @@ function RootLayout() {
                 <div className="min-w-0 flex-1">
                   {isMobile ? <PageMenu /> : <Breadcrumb />}
                 </div>
+                <PageTitle />
 
                 <PageHeaderActions isMobile={isMobile} />
 

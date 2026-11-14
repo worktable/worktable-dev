@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks"
 import { PostHog } from "posthog-node"
-import { SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/sdk/types.js"
 import {
   MCP_CLIENTS,
   type SupportedMcpClientId,
@@ -21,6 +20,7 @@ import {
 import { gatewayAdmits, isHosted, trustedGatewayPrincipal } from "./hosted.ts"
 import type { TokenIdentity } from "./token-store.ts"
 import { isAccessRefusal } from "./mcp/helpers.ts"
+import { servesMcpProtocolVersion } from "./mcp/surface.ts"
 
 /**
  * Marks a hosted app page as sending no product analytics of its own, so the
@@ -148,8 +148,8 @@ export function requestAnalyticsContext(
         : undefined
     return {
       contributors: [grant],
-      ...(protocolVersion &&
-      SUPPORTED_PROTOCOL_VERSIONS.includes(protocolVersion)
+      // A client's header: only a revision Worktable serves is reported.
+      ...(protocolVersion && servesMcpProtocolVersion(protocolVersion)
         ? { protocolVersion }
         : {}),
       ...(clientName ? { clientName } : {}),

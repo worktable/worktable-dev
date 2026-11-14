@@ -15,6 +15,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Desktop:** On a busy Mac, opening straight into a self-hosted Worktable could leave Desktop without its automatic update checks and without saving the connection's current name. Desktop's start-up page now finishes loading before the workspace covers it.
 - **Usage analytics on Worktable Cloud:** With analytics on, your agents' actions and saves are counted again. A hosted Worktable went to sleep before it could send them, so Worktable Cloud now sends them for it. What is counted, and your choice in Settings → Privacy, stay the same.
 - **Comments:** An agent or API token that may read comments but not Docs or HTML Docs no longer gets the text a comment is about with it. Reading a comment leaves that out, and asking for it alone says which permission is missing.
 

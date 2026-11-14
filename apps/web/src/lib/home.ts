@@ -55,6 +55,9 @@ export function useHomeFeed(options: HomeFeedOptions = {}) {
   })
 }
 
+/** The pin save in flight, if any. */
+let pinSaves: Promise<unknown> = Promise.resolve()
+
 const samePin = (a: HomePinRef, b: HomePinRef) =>
   a.spaceId === b.spaceId && a.path === b.path
 
@@ -66,18 +69,24 @@ export function useHomePins() {
   const queryClient = useQueryClient()
   const options = homeFeedQueryOptions()
   const { data } = useQuery({ ...options, enabled: false })
-  const save = async (change: (pins: HomePinRef[]) => HomePinRef[]) => {
-    const current = await queryClient.ensureQueryData(options)
-    const next = change(
-      (current.pins ?? []).map(({ spaceId, path }) => ({ spaceId, path }))
-    )
-    const saved = await fetchJSON<{ pins: HomePin[] }>("/api/home/pins", {
-      method: "PUT",
-      body: JSON.stringify({ pins: next }),
+  const save = (change: (pins: HomePinRef[]) => HomePinRef[]) => {
+    // A save sends the whole list, so each waits for the one before it and
+    // starts from what that one left: two quick changes both hold.
+    const saved = pinSaves.then(async () => {
+      const current = await queryClient.ensureQueryData(options)
+      const next = change(
+        (current.pins ?? []).map(({ spaceId, path }) => ({ spaceId, path }))
+      )
+      const { pins } = await fetchJSON<{ pins: HomePin[] }>("/api/home/pins", {
+        method: "PUT",
+        body: JSON.stringify({ pins: next }),
+      })
+      queryClient.setQueryData(options.queryKey, (feed) =>
+        feed ? { ...feed, pins } : feed
+      )
     })
-    queryClient.setQueryData(options.queryKey, (feed) =>
-      feed ? { ...feed, pins: saved.pins } : feed
-    )
+    pinSaves = saved.catch(() => undefined)
+    return saved
   }
   return {
     pins: data?.pins,

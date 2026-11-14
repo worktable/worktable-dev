@@ -476,6 +476,14 @@ describe("workspace activity", () => {
     expect(inSpace.places.map((place) => place.id).sort()).toEqual(["notes", "plans"])
     expect(inSpace.runs.map((run) => run.docs.map((doc) => doc.path))).toEqual([["notes/c"]])
     expect(inSpace.pins).toBeUndefined()
+    // Rows are ordered by the work they list: the owner's sitting is the
+    // newest, but what it did in this folder came before the agent's work.
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: owner, target: { kind: "doc", path: "plans/old" }, at: ago(60) })
+    const plans = await request<HomeFeed>("/api/home?spaceId=company&folder=plans")
+    expect(plans.runs.map((run) => [run.actor.kind, run.docs.map((doc) => doc.path)])).toEqual([
+      ["agent", ["plans/b", "plans/a"]],
+      ["person", ["plans/old"]],
+    ])
 
     // A person's own pins come with Home; a pin whose doc is gone says so.
     await request("/api/home/pins", {

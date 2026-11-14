@@ -222,11 +222,13 @@ export async function readHomeFeed(
   return {
     runs: runs
       .filter((run) => run.docs.length > 0)
+      // A row's time is when it last touched a doc it lists, which a folder
+      // or a doc listed in a newer row can make earlier than its start.
+      .map((run) => ({ ...run, at: run.docs[0]!.at }))
+      .sort((a, b) => b.at.localeCompare(a.at))
       .slice(0, options.limit)
       .map((run) => ({
         ...run,
-        // When it last touched a doc it lists.
-        at: run.docs[0]!.at,
         docs: run.docs.slice(0, RUN_DOCS),
         more: Math.max(0, run.docs.length - RUN_DOCS),
       })),

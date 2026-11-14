@@ -157,6 +157,16 @@ export async function readHomeFeed(
       }
     }
 
+    // A doc made later at a deleted doc's path is not the doc this event
+    // is about.
+    if (
+      current?.documentId !== undefined &&
+      event.target.documentId !== undefined &&
+      event.target.documentId !== current.documentId
+    ) {
+      continue
+    }
+
     // In one Space, a place is the doc's top-level folder.
     const placeId = options.spaceId
       ? path.includes("/")

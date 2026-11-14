@@ -81,6 +81,8 @@ export function useHomePins() {
         method: "PUT",
         body: JSON.stringify({ pins: next }),
       })
+      // A refresh that started before the save still carries the old pins.
+      await queryClient.cancelQueries({ queryKey: options.queryKey, exact: true })
       queryClient.setQueryData(options.queryKey, (feed) =>
         feed ? { ...feed, pins } : feed
       )

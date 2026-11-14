@@ -1,7 +1,7 @@
 import type { SpaceView } from "@/lib/api"
 import { SpaceIcon } from "@/components/spaces/space-icon"
 import { Link } from "@tanstack/react-router"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { ArrowRight, Database, Folder, Plus } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 import type {
@@ -100,25 +100,45 @@ export function SpaceOverview({
   const chooseFolder = (name: string) =>
     setFolder((current) => (current === name ? null : name))
 
-  const unpin = async (path: string) => {
-    try {
-      await setPins(
-        spaceId,
-        shownPins
-          .filter((pin) => pin.path !== path)
-          .map((pin) => ({ path: pin.path, ...(pin.note ? { note: pin.note } : {}) }))
-      )
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: spaceQueryOptions(spaceId).queryKey,
-          exact: true,
-        }),
-        queryClient.invalidateQueries({ queryKey: activityQueryKeys.all }),
-      ])
-    } catch (error) {
-      console.error("Failed to unpin:", error)
-      toast.error("Couldn’t unpin. Try again.")
+  // A save sends the whole list, so saves run one at a time, and each sends
+  // the pins last shown without any being removed: two quick unpins both hold.
+  const unpinning = useRef({
+    paths: new Set<string>(),
+    pins: shownPins,
+    saves: Promise.resolve(),
+  })
+  useEffect(() => {
+    const state = unpinning.current
+    state.pins = pins ?? []
+    for (const path of [...state.paths]) {
+      if (!state.pins.some((pin) => pin.path === path)) state.paths.delete(path)
     }
+  }, [pins])
+  const unpin = (path: string) => {
+    const state = unpinning.current
+    state.paths.add(path)
+    state.saves = state.saves.then(async () => {
+      try {
+        await setPins(
+          spaceId,
+          state.pins
+            .filter((pin) => !state.paths.has(pin.path))
+            .map((pin) => ({ path: pin.path, ...(pin.note ? { note: pin.note } : {}) }))
+        )
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: spaceQueryOptions(spaceId).queryKey,
+            exact: true,
+          }),
+          queryClient.invalidateQueries({ queryKey: activityQueryKeys.all }),
+        ])
+      } catch (error) {
+        state.paths.delete(path)
+        console.error("Failed to unpin:", error)
+        toast.error("Couldn’t unpin. Try again.")
+      }
+    })
+    return state.saves
   }
   const folderOf = (path: string) =>
     path.includes("/") ? path.slice(0, path.indexOf("/")) : null
@@ -206,20 +226,29 @@ export function SpaceOverview({
               {folder ? "Nothing here yet." : "Nothing yet."}
             </p>
           ) : (
-            <LatestRuns
-              runs={runs}
-              place={(run) => {
-                const name = run.docs[0] ? folderOf(run.docs[0].path) : null
-                return name ? (
-                  <>
-                    <Folder className="size-3.5 shrink-0" />
-                    <span className="min-w-0 truncate">
-                      {humanizeSegment(name)}
-                    </span>
-                  </>
-                ) : null
-              }}
-            />
+            // Another folder's rows stay, dimmed, until this one's arrive.
+            <div
+              aria-busy={feed.isPlaceholderData}
+              className={cn(
+                "transition-opacity",
+                feed.isPlaceholderData && "opacity-50"
+              )}
+            >
+              <LatestRuns
+                runs={runs}
+                place={(run) => {
+                  const name = run.docs[0] ? folderOf(run.docs[0].path) : null
+                  return name ? (
+                    <>
+                      <Folder className="size-3.5 shrink-0" />
+                      <span className="min-w-0 truncate">
+                        {humanizeSegment(name)}
+                      </span>
+                    </>
+                  ) : null
+                }}
+              />
+            </div>
           )}
           </section>
         </div>

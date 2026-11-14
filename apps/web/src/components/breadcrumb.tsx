@@ -146,6 +146,8 @@ export function CrumbLink({
           {...props}
         />
       )
+    case "/library/$":
+      return <Link to={target.to} params={target.params} {...props} />
   }
 }
 

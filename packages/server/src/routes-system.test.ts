@@ -539,6 +539,7 @@ describe("GET /api/system/deployment", () => {
         shareLinks: false,
         files: true,
         commentRecipients: true,
+        skillLibraries: false,
       },
     };
     expect(getDeploymentInfo()).toEqual(expected);
@@ -569,6 +570,7 @@ describe("GET /api/system/deployment", () => {
         shareLinks: false,
         files: true,
         commentRecipients: true,
+        skillLibraries: false,
       },
     };
     expect(getDeploymentInfo()).toEqual(expected);

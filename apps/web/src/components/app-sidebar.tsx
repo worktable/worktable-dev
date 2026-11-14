@@ -31,6 +31,7 @@ import {
   FolderOpen,
   AlertTriangle,
   LayoutDashboard,
+  Library as LibraryIcon,
   Plus,
   Pin,
   Archive,
@@ -159,6 +160,7 @@ import {
 } from "@worktable/ui/components/dropdown-menu"
 import { RenameDialog } from "@/components/docs/rename-dialog"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
+import { useSkillLibrariesEnabled } from "@/hooks/use-deployment-info"
 import {
   renameDoc,
   retitleDoc,
@@ -2554,11 +2556,13 @@ function DocTreeItem({
 
 // ── Main Sidebar Component ───────────────────────────────────
 
-type ShellSection = "home" | "threads" | "activity" | null
+type ShellSection = "home" | "threads" | "activity" | "library" | null
 
 function shellSection(pathname: string): ShellSection {
   if (pathname === "/") return "home"
   if (pathname.startsWith("/threads")) return "threads"
+  if (pathname === "/library" || pathname.startsWith("/library/"))
+    return "library"
   return pathname === "/activity" ? "activity" : null
 }
 
@@ -2595,6 +2599,7 @@ export function AppSidebar() {
   const section = useRouterState({
     select: (s) => shellSection(s.location.pathname),
   })
+  const skillLibraries = useSkillLibrariesEnabled()
   const currentSpaceId = useRouterState({
     select: (s) => s.location.pathname.match(/^\/spaces\/([^/]+)/)?.[1] ?? null,
   })
@@ -2841,7 +2846,7 @@ export function AppSidebar() {
               onClick={() => {
                 if (isMobile) setOpen(false)
               }}
-              className={`mx-1 mb-3 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
+              className={`mx-1 ${skillLibraries ? "" : "mb-3"} flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
                 section === "activity"
                   ? "bg-sidebar-accent font-medium text-sidebar-primary"
                   : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
@@ -2850,6 +2855,24 @@ export function AppSidebar() {
               <History className="size-4 shrink-0" />
               <span>Activity</span>
             </Link>
+
+            {skillLibraries && (
+              <Link
+                to="/library/$"
+                params={{ _splat: "" }}
+                onClick={() => {
+                  if (isMobile) setOpen(false)
+                }}
+                className={`mx-1 mb-3 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
+                  section === "library"
+                    ? "bg-sidebar-accent font-medium text-sidebar-primary"
+                    : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+                }`}
+              >
+                <LibraryIcon className="size-4 shrink-0" />
+                <span>Library</span>
+              </Link>
+            )}
 
             {gettingStarted && (
               <GettingStartedRow

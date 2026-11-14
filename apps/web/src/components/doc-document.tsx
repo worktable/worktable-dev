@@ -7,6 +7,7 @@ import {
 import { RUNTIME_BASE_PATH } from "@/lib/runtime-path"
 import { browserTeamMemberId } from "@/lib/team-context"
 import {
+  lazy,
   Suspense,
   useCallback,
   useEffect,
@@ -15,6 +16,7 @@ import {
   useRef,
   useState,
   type ComponentProps,
+  type ReactNode,
 } from "react"
 import { useNavigate, useRouter } from "@tanstack/react-router"
 import { useQueryClient } from "@tanstack/react-query"
@@ -26,6 +28,7 @@ import {
   History,
   Printer,
   ArrowRightLeft,
+  Library as LibraryIcon,
   Pencil,
 } from "lucide-react"
 import { docQueryKeys } from "@/lib/docs-queries"
@@ -75,7 +78,10 @@ import { DocumentByline } from "@/components/document/document-byline"
 import { useBylineState, type BylineState } from "@/hooks/use-byline-state"
 import { useTemporaryArchiveLabel } from "@/hooks/use-document-organize"
 import { useEditorFiles } from "@/hooks/use-editor-files"
-import { useDeploymentInfo } from "@/hooks/use-deployment-info"
+import {
+  useDeploymentInfo,
+  useSkillLibrariesEnabled,
+} from "@/hooks/use-deployment-info"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
 import { MarkdownViewer } from "@/components/editor/markdown-viewer"
 import {
@@ -141,6 +147,7 @@ export function DocDocumentRenderer({
   formatId,
   page,
   preview,
+  afterTitle,
 }: DocumentRendererProps) {
   // This is a download hint only. The editor and its room wait for the
   // route's check of this path.
@@ -154,6 +161,7 @@ export function DocDocumentRenderer({
       docPath={documentPath}
       page={page}
       preview={preview ?? null}
+      afterTitle={afterTitle}
     />
   )
 }
@@ -268,6 +276,8 @@ function SyncStatusPill({ provider }: { provider: WebsocketProvider | null }) {
 function DocPageMeta({
   spaceId,
   docPath,
+  libraryTitle,
+  skillId,
   onVersionHistory,
   onConvertToMarkdown,
   onCopyMarkdown,
@@ -279,6 +289,10 @@ function DocPageMeta({
 }: {
   spaceId: string
   docPath: string
+  /** The Doc's title, when the reader can add it to a library. */
+  libraryTitle?: string
+  /** The skill the Doc is already, if any. */
+  skillId?: string
   onVersionHistory?: () => void
   onConvertToMarkdown?: () => void
   onCopyMarkdown?: () => void
@@ -290,8 +304,12 @@ function DocPageMeta({
   sharing?: DocumentSharingSummary
 }) {
   const setPageMeta = useSetPageMeta()
+  const navigate = useNavigate()
   const activeLinks = sharing?.activeLinks
   const canCreateLinks = sharing?.canCreate
+  const skillLibraries = useSkillLibrariesEnabled()
+  const [addingToLibrary, setAddingToLibrary] = useState(false)
+  const offerLibrary = skillLibraries && libraryTitle !== undefined
   const overflowActions = useMemo<PageOverflowAction[]>(() => {
     const actions: PageOverflowAction[] = []
 
@@ -346,14 +364,29 @@ function DocPageMeta({
         }
       )
     }
+    if (offerLibrary) {
+      actions.push({
+        id: "library",
+        label: skillId ? "In Library" : "Add to Library",
+        icon: LibraryIcon,
+        onSelect: skillId
+          ? () =>
+              void navigate({ to: "/library/$", params: { _splat: skillId } })
+          : () => setAddingToLibrary(true),
+        separatorBefore: actions.length > 0,
+      })
+    }
 
     return actions
   }, [
+    navigate,
+    offerLibrary,
     onConvertToMarkdown,
     onCopyMarkdown,
     onDownload,
     onRecoverOfflineEdits,
     onVersionHistory,
+    skillId,
   ])
 
   useEffect(() => {
@@ -382,20 +415,39 @@ function DocPageMeta({
     setPageMeta,
   ])
 
-  return null
+  if (!addingToLibrary || libraryTitle === undefined) return null
+  return (
+    <Suspense fallback={null}>
+      <AddToLibraryDialog
+        spaceId={spaceId}
+        docPath={docPath}
+        title={libraryTitle}
+        onClose={() => setAddingToLibrary(false)}
+      />
+    </Suspense>
+  )
 }
+
+const AddToLibraryDialog = lazy(() =>
+  import("@/components/library/add-to-library-dialog").then((module) => ({
+    default: module.AddToLibraryDialog,
+  }))
+)
 
 function DocEditorPage({
   spaceId,
   docPath,
   page,
   preview,
+  afterTitle,
 }: {
   spaceId: string
   docPath: string
   /** The route's check of this path; null while it opens as a preview. */
   page: DocumentPage | null
   preview: DocumentOpenHint | null
+  /** Takes the byline's place under the title. */
+  afterTitle?: ReactNode
 }) {
   const router = useRouter()
   const navigate = useNavigate()
@@ -676,6 +728,7 @@ function DocEditorPage({
         onCopyMarkdown={handleCopyMarkdown}
         onDownload={handleDownload}
         onRecoverOfflineEdits={recoverOfflineEditsAction}
+        afterTitle={afterTitle}
       />
     )
   }
@@ -688,7 +741,7 @@ function DocEditorPage({
       archived={archived}
       readOnly={!page || page.capabilities.edit === false}
       page={page}
-        fileVersions={fileVersions}
+      fileVersions={fileVersions}
       revision={revision}
       onRestore={handleRestore}
       restoring={restoring}
@@ -701,6 +754,7 @@ function DocEditorPage({
       onCopyMarkdown={handleCopyMarkdown}
       onDownload={handleDownload}
       onRecoverOfflineEdits={recoverOfflineEditsAction}
+      afterTitle={afterTitle}
     />
   )
 }
@@ -794,6 +848,7 @@ function MarkdownDocPage({
   onCopyMarkdown,
   onDownload,
   onRecoverOfflineEdits,
+  afterTitle,
 }: {
   readOnly?: boolean
   spaceId: string
@@ -811,6 +866,7 @@ function MarkdownDocPage({
   onCopyMarkdown?: () => void
   onDownload?: () => void
   onRecoverOfflineEdits?: () => void
+  afterTitle?: ReactNode
 }) {
   const contentQuery = useDocumentContent(spaceId, docPath, revision, validated)
   const content = contentQuery.data?.content
@@ -839,7 +895,12 @@ function MarkdownDocPage({
   const queryClient = useQueryClient()
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
-  useVisitorCommentsPanel(page?.sharing?.visitorComments, setAnnotationsOpen, setVersionsOpen, annotationsOpen)
+  useVisitorCommentsPanel(
+    page?.sharing?.visitorComments,
+    setAnnotationsOpen,
+    setVersionsOpen,
+    annotationsOpen
+  )
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
   const versionQuery = useVersionSnapshot(
     "doc",
@@ -857,7 +918,8 @@ function MarkdownDocPage({
     null
   )
   // The selected comment belongs to the open panel: closing it lets go.
-  if (!annotationsOpen && activeAnnotationId !== null) setActiveAnnotationId(null)
+  if (!annotationsOpen && activeAnnotationId !== null)
+    setActiveAnnotationId(null)
   const [belowXl, setBelowXl] = useState(false)
   const annotationsQuery = useDocAnnotations(spaceId, docPath, true)
   const annotationMutations = useAnnotationMutations(spaceId, docPath)
@@ -887,7 +949,10 @@ function MarkdownDocPage({
     setVersionsOpen(true)
     setAnnotationsOpen(false)
   }, [])
-  const clearActiveAnnotation = useCallback(() => setActiveAnnotationId(null), [])
+  const clearActiveAnnotation = useCallback(
+    () => setActiveAnnotationId(null),
+    []
+  )
   // Original: the version a comment was written on, its passage marked.
   const originalRef = useRef<HTMLDivElement>(null)
   const [original, setOriginal] = useState<PassageSelector | null>(null)
@@ -952,6 +1017,10 @@ function MarkdownDocPage({
       <DocPageMeta
         spaceId={spaceId}
         docPath={docPath}
+        libraryTitle={
+          validated && !archived && !readOnly ? page?.document.title : undefined
+        }
+        skillId={page?.skills?.[0]?.id}
         onCopyMarkdown={onCopyMarkdown}
         onDownload={onDownload}
         onRecoverOfflineEdits={validated ? onRecoverOfflineEdits : undefined}
@@ -982,16 +1051,19 @@ function MarkdownDocPage({
             // again with it: it waits for the check instead.
             fileVersionsPending={!page && fileVersions === undefined}
             afterTitle={
-              <DocumentByline
-                spaceId={spaceId}
-                docPath={docPath}
-                provenance={page?.provenance}
-                updatedAt={page?.document.updatedAt}
-                contributors={page?.contributors}
-                backlinks={page?.backlinks}
-                referrers={page?.referrers}
-                onVersionHistory={openVersions}
-              />
+              afterTitle ?? (
+                <DocumentByline
+                  spaceId={spaceId}
+                  docPath={docPath}
+                  provenance={page?.provenance}
+                  updatedAt={page?.document.updatedAt}
+                  skills={page?.skills}
+                  contributors={page?.contributors}
+                  backlinks={page?.backlinks}
+                  referrers={page?.referrers}
+                  onVersionHistory={openVersions}
+                />
+              )
             }
           />
         </div>
@@ -1022,29 +1094,29 @@ function MarkdownDocPage({
           >
             {(byline) => (
               <div ref={originalRef} className="contents">
-              <Suspense fallback={<EditorSkeleton />}>
-                {previewVersion &&
-                Array.isArray(previewVersion.after.content) ? (
-                  <Editor
-                    key={previewVersion.id}
-                    initialContent={previewVersion.after.content as never[]}
-                    editable={false}
-                    afterTitle={byline}
-                    files={readingFiles}
-                  />
-                ) : previewVersion &&
-                  typeof previewVersion.after.content === "string" ? (
-                  <MarkdownViewer
-                    filesAt={versionFilesAt(previewVersion)}
-                    content={previewVersion.after.content}
-                    afterTitle={byline}
-                    spaceId={spaceId}
-                    docPath={docPath}
-                  />
-                ) : (
-                  <EditorSkeleton />
-                )}
-              </Suspense>
+                <Suspense fallback={<EditorSkeleton />}>
+                  {previewVersion &&
+                  Array.isArray(previewVersion.after.content) ? (
+                    <Editor
+                      key={previewVersion.id}
+                      initialContent={previewVersion.after.content as never[]}
+                      editable={false}
+                      afterTitle={byline}
+                      files={readingFiles}
+                    />
+                  ) : previewVersion &&
+                    typeof previewVersion.after.content === "string" ? (
+                    <MarkdownViewer
+                      filesAt={versionFilesAt(previewVersion)}
+                      content={previewVersion.after.content}
+                      afterTitle={byline}
+                      spaceId={spaceId}
+                      docPath={docPath}
+                    />
+                  ) : (
+                    <EditorSkeleton />
+                  )}
+                </Suspense>
               </div>
             )}
           </VersionPreview>
@@ -1055,7 +1127,16 @@ function MarkdownDocPage({
           width={384}
         >
           <AnnotationPanel
-            visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
+            visitorComments={
+              page?.sharing?.visitorComments &&
+              page.sharing.visitorComments.available !== false
+                ? {
+                    spaceId,
+                    path: page.document.path,
+                    ...page.sharing.visitorComments,
+                  }
+                : undefined
+            }
             readOnly={readOnly}
             canReply={canComment}
             annotations={annotations}
@@ -1135,7 +1216,16 @@ function MarkdownDocPage({
                 Annotations for this doc.
               </DrawerDescription>
               <AnnotationPanel
-            visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
+                visitorComments={
+                  page?.sharing?.visitorComments &&
+                  page.sharing.visitorComments.available !== false
+                    ? {
+                        spaceId,
+                        path: page.document.path,
+                        ...page.sharing.visitorComments,
+                      }
+                    : undefined
+                }
                 readOnly={readOnly}
                 canReply={canComment}
                 annotations={annotations}
@@ -1168,7 +1258,10 @@ function MarkdownDocPage({
           docPath={docPath}
           context={commentContext}
           onCreate={async (input) => {
-            await annotationMutations.create.mutateAsync({ ...input, category: "comment" })
+            await annotationMutations.create.mutateAsync({
+              ...input,
+              category: "comment",
+            })
             // The comments open where they sit beside the Doc. Narrower, they
             // would cover it: the highlight confirms the comment instead, and
             // the next passage stays a tap away.
@@ -1237,6 +1330,7 @@ function BlockNoteDocPage({
   onCopyMarkdown,
   onDownload,
   onRecoverOfflineEdits,
+  afterTitle,
 }: {
   spaceId: string
   docPath: string
@@ -1256,6 +1350,7 @@ function BlockNoteDocPage({
   onCopyMarkdown?: () => void
   onDownload?: () => void
   onRecoverOfflineEdits?: () => void
+  afterTitle?: ReactNode
 }) {
   // The editor learns once whether files can be added, so it waits to know.
   const deploymentKnown = useDeploymentInfo().data !== undefined
@@ -1420,7 +1515,12 @@ function BlockNoteDocPage({
   const [collabDoc, setCollabDoc] = useState<Y.Doc | null>(null)
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
-  useVisitorCommentsPanel(page?.sharing?.visitorComments, setAnnotationsOpen, setVersionsOpen, annotationsOpen)
+  useVisitorCommentsPanel(
+    page?.sharing?.visitorComments,
+    setAnnotationsOpen,
+    setVersionsOpen,
+    annotationsOpen
+  )
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
   const versionQuery = useVersionSnapshot(
     "doc",
@@ -1438,7 +1538,8 @@ function BlockNoteDocPage({
     null
   )
   // The selected comment belongs to the open panel: closing it lets go.
-  if (!annotationsOpen && activeAnnotationId !== null) setActiveAnnotationId(null)
+  if (!annotationsOpen && activeAnnotationId !== null)
+    setActiveAnnotationId(null)
   const [composerDraft, setComposerDraft] = useState<AnnotationDraft | null>(
     null
   )
@@ -1591,11 +1692,17 @@ function BlockNoteDocPage({
         ws.connect()
       }
     }
-    window.addEventListener("worktable:analytics-enabled", refreshAnalyticsContext)
+    window.addEventListener(
+      "worktable:analytics-enabled",
+      refreshAnalyticsContext
+    )
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility)
-      window.removeEventListener("worktable:analytics-enabled", refreshAnalyticsContext)
+      window.removeEventListener(
+        "worktable:analytics-enabled",
+        refreshAnalyticsContext
+      )
 
       if (wsProviderRef.current) {
         wsProviderRef.current.destroy()
@@ -1617,7 +1724,10 @@ function BlockNoteDocPage({
     readOnly,
   ])
 
-  const clearActiveAnnotation = useCallback(() => setActiveAnnotationId(null), [])
+  const clearActiveAnnotation = useCallback(
+    () => setActiveAnnotationId(null),
+    []
+  )
   // Original: the version a comment was written on, its passage marked.
   const originalRef = useRef<HTMLDivElement>(null)
   const [original, setOriginal] = useState<PassageSelector | null>(null)
@@ -1734,23 +1844,30 @@ function BlockNoteDocPage({
       docPath={docPath}
       provenance={page?.provenance}
       updatedAt={page?.document.updatedAt}
+      skills={page?.skills}
       contributors={page?.contributors}
       backlinks={page?.backlinks}
       referrers={page?.referrers}
       onVersionHistory={openVersions}
     />
   )
-  const byline = bylineWith(bylineState)
-  const editorByline = bylineWith({
-    ...bylineState,
-    lifetimeOpen: bylineState.lifetimeOpen && editorReadable,
-  })
+  const byline = afterTitle ?? bylineWith(bylineState)
+  const editorByline =
+    afterTitle ??
+    bylineWith({
+      ...bylineState,
+      lifetimeOpen: bylineState.lifetimeOpen && editorReadable,
+    })
 
   return (
     <div className="flex h-full flex-col">
       <DocPageMeta
         spaceId={spaceId}
         docPath={docPath}
+        libraryTitle={
+          validated && !archived && !readOnly ? page?.document.title : undefined
+        }
+        skillId={page?.skills?.[0]?.id}
         onVersionHistory={openVersions}
         onConvertToMarkdown={
           convertingToMarkdown || !validated ? undefined : onConvertToMarkdown
@@ -1808,34 +1925,43 @@ function BlockNoteDocPage({
           >
             {/* Build the editor once its first usable Yjs state exists. Mounting an
                 empty editor first runs its normalization/plugins again on sync. */}
-            {provider && collabDoc && readyContent === provider && deploymentKnown && (
-              <Suspense fallback={<EditorSkeleton />}>
-                <Editor
-                  // The editor learns what it can do with files once; turning the files
-                  // preview on or off makes a new one that knows.
-                  key={editingFiles ? (editingFiles.upload ? "files" : "file-links") : "no-files"}
-                  onReady={handleEditorReady}
-                  collaboration={{
-                    ydoc: collabDoc,
-                    provider,
-                    fragmentName: "document-store",
-                    onLocalEdit: handleLocalEdit,
-                  }}
-                  editable={!convertingToMarkdown}
-                  title={editorTitle}
-                  afterTitle={editorByline}
-                  files={editingFiles}
-                  annotations={annotations}
-                  activeAnnotationId={activeAnnotationId}
-                  onSelectAnnotation={selectAnnotation}
-                  passages={editorPassages}
-                  onCreateAnnotation={(draft) => {
-                    setComposerDraft(draft)
-                    setComposerOpen(true)
-                  }}
-                />
-              </Suspense>
-            )}
+            {provider &&
+              collabDoc &&
+              readyContent === provider &&
+              deploymentKnown && (
+                <Suspense fallback={<EditorSkeleton />}>
+                  <Editor
+                    // The editor learns what it can do with files once; turning the files
+                    // preview on or off makes a new one that knows.
+                    key={
+                      editingFiles
+                        ? editingFiles.upload
+                          ? "files"
+                          : "file-links"
+                        : "no-files"
+                    }
+                    onReady={handleEditorReady}
+                    collaboration={{
+                      ydoc: collabDoc,
+                      provider,
+                      fragmentName: "document-store",
+                      onLocalEdit: handleLocalEdit,
+                    }}
+                    editable={!convertingToMarkdown}
+                    title={editorTitle}
+                    afterTitle={editorByline}
+                    files={editingFiles}
+                    annotations={annotations}
+                    activeAnnotationId={activeAnnotationId}
+                    onSelectAnnotation={selectAnnotation}
+                    passages={editorPassages}
+                    onCreateAnnotation={(draft) => {
+                      setComposerDraft(draft)
+                      setComposerOpen(true)
+                    }}
+                  />
+                </Suspense>
+              )}
           </div>
         </div>
 
@@ -1865,29 +1991,29 @@ function BlockNoteDocPage({
           >
             {(byline) => (
               <div ref={originalRef} className="contents">
-              <Suspense fallback={<EditorSkeleton />}>
-                {previewVersion &&
-                Array.isArray(previewVersion.after.content) ? (
-                  <Editor
-                    key={previewVersion.id}
-                    initialContent={previewVersion.after.content as never[]}
-                    editable={false}
-                    afterTitle={byline}
-                    files={readingFiles}
-                  />
-                ) : previewVersion &&
-                  typeof previewVersion.after.content === "string" ? (
-                  <MarkdownViewer
-                    filesAt={versionFilesAt(previewVersion)}
-                    content={previewVersion.after.content}
-                    afterTitle={byline}
-                    spaceId={spaceId}
-                    docPath={docPath}
-                  />
-                ) : (
-                  <EditorSkeleton />
-                )}
-              </Suspense>
+                <Suspense fallback={<EditorSkeleton />}>
+                  {previewVersion &&
+                  Array.isArray(previewVersion.after.content) ? (
+                    <Editor
+                      key={previewVersion.id}
+                      initialContent={previewVersion.after.content as never[]}
+                      editable={false}
+                      afterTitle={byline}
+                      files={readingFiles}
+                    />
+                  ) : previewVersion &&
+                    typeof previewVersion.after.content === "string" ? (
+                    <MarkdownViewer
+                      filesAt={versionFilesAt(previewVersion)}
+                      content={previewVersion.after.content}
+                      afterTitle={byline}
+                      spaceId={spaceId}
+                      docPath={docPath}
+                    />
+                  ) : (
+                    <EditorSkeleton />
+                  )}
+                </Suspense>
               </div>
             )}
           </VersionPreview>
@@ -1898,7 +2024,16 @@ function BlockNoteDocPage({
           width={384}
         >
           <AnnotationPanel
-            visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
+            visitorComments={
+              page?.sharing?.visitorComments &&
+              page.sharing.visitorComments.available !== false
+                ? {
+                    spaceId,
+                    path: page.document.path,
+                    ...page.sharing.visitorComments,
+                  }
+                : undefined
+            }
             readOnly={readOnly}
             canReply={canComment}
             annotations={annotations}
@@ -1978,7 +2113,16 @@ function BlockNoteDocPage({
                 Annotations for this doc.
               </DrawerDescription>
               <AnnotationPanel
-            visitorComments={page?.sharing?.visitorComments && page.sharing.visitorComments.available !== false ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
+                visitorComments={
+                  page?.sharing?.visitorComments &&
+                  page.sharing.visitorComments.available !== false
+                    ? {
+                        spaceId,
+                        path: page.document.path,
+                        ...page.sharing.visitorComments,
+                      }
+                    : undefined
+                }
                 readOnly={readOnly}
                 canReply={canComment}
                 annotations={annotations}
@@ -2035,15 +2179,16 @@ function BlockNoteDocPage({
           docPath={docPath}
           context={commentContext}
           onCreate={async (input) => {
-            await annotationMutations.create.mutateAsync({ ...input, category: "comment" })
+            await annotationMutations.create.mutateAsync({
+              ...input,
+              category: "comment",
+            })
             if (!belowXl) setAnnotationsOpen(true)
           }}
         />
       )}
 
-      {!readOnly && !previewVersionId && (
-        <SyncStatusPill provider={provider} />
-      )}
+      {!readOnly && !previewVersionId && <SyncStatusPill provider={provider} />}
     </div>
   )
 }

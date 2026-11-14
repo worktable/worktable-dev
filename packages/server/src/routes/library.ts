@@ -9,9 +9,12 @@ import {
   discardLibraryProposal,
   isPerson,
   LibraryError,
+    librarySkillChange,
   listLibraryForPerson,
   removeFromLibrary,
+  restoreLibrarySkill,
   saveLibrarySkill,
+  updateLibrarySkillDetails,
 } from "../skill-libraries.ts"
 
 // Skill libraries, for people. Their changes take effect at once; agents
@@ -106,6 +109,34 @@ libraryRouter.post("/:id/save", requireScope("documents:write"), async (c) => {
     entry: await saveLibrarySkill(c.get("identity"), c.req.param("id")!, input),
   }))
 })
+
+// GET /api/library/:id/change: what agents get now beside what waits.
+libraryRouter.get("/:id/change", (c) =>
+  answer(c, () => librarySkillChange(c.get("identity"), c.req.param("id")!))
+)
+
+// PATCH /api/library/:id: rename or redescribe a skill.
+const DetailsSchema = z
+  .strictObject({
+    name: z.string().min(1).max(64).optional(),
+    description: z.string().max(1000).optional(),
+  })
+  .refine((input) => input.name !== undefined || input.description !== undefined)
+
+libraryRouter.patch("/:id", requireScope("documents:write"), async (c) => {
+  const input = await body(c, DetailsSchema)
+  if (input instanceof Response) return input
+  return answer(c, async () => ({
+    entry: await updateLibrarySkillDetails(c.get("identity"), c.req.param("id")!, input),
+  }))
+})
+
+// POST /api/library/:id/restore: put a removed skill back.
+libraryRouter.post("/:id/restore", requireScope("documents:write"), (c) =>
+  answer(c, async () => ({
+    entry: await restoreLibrarySkill(c.get("identity"), c.req.param("id")!),
+  }))
+)
 
 // POST /api/library/:id/approve: an agent's proposal goes live.
 // The person names the revision they reviewed, so a proposal changed since

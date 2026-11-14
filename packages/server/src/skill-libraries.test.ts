@@ -11,9 +11,11 @@ import { ownerIdentity } from "./auth.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
 import { resolveParticipant } from "./participant-store.ts"
 import { pendingRouter } from "./routes/activity.ts"
+import { documentsRouter } from "./routes/documents.ts"
 import { libraryRouter } from "./routes/library.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import {
+  carrySkillHashAcrossConversion,
   REMOVED_SKILL_NOTE,
   SKILLS_NEVER_AUTHORIZE,
   readSkillForAgent,
@@ -21,7 +23,15 @@ import {
   type SkillReader,
 } from "./skill-libraries.ts"
 import { SESSION_GAP_MS } from "./skill-notices.ts"
-import { writeDoc, writeSpace } from "./store.ts"
+import { markdownToBlocks } from "./markdown.ts"
+import { documentGenerationV2Directory } from "./workspace-storage-v2.ts"
+import { activateLocalTeams } from "./team-activation.ts"
+import { clearTeamAuthInstances, getTeamAuth } from "./team-auth.ts"
+import { closeTeamDatabases, currentTeamWorktable } from "./team-database.ts"
+import { identityForTeamMember } from "./team-identity.ts"
+import { findTeamMember } from "./team-members.ts"
+import { setSpaceAccessPolicy } from "./team-policy.ts"
+import { getDocProvenance, writeDoc, writeSpace } from "./store.ts"
 import type { RequestPrincipal, TokenIdentity } from "./token-store.ts"
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
 
@@ -86,6 +96,7 @@ function app(identity: TokenIdentity): Hono {
   })
   server.route("/api/library", libraryRouter)
   server.route("/api/pending", pendingRouter)
+  server.route("/api/spaces/:spaceId/documents", documentsRouter)
   return server
 }
 
@@ -155,6 +166,8 @@ beforeEach(async () => {
 afterEach(async () => {
   delete process.env["WORKTABLE_MCP_PREVIEW"]
   await Promise.all(clients.splice(0).map((client) => client.close()))
+  clearTeamAuthInstances()
+  closeTeamDatabases()
   setWorkspaceRootOverride(null)
   setAppDirOverride(null)
   invalidateSearchIndex()
@@ -166,6 +179,12 @@ describe("skill libraries", () => {
   it("gives agents the saved version, never later edits, until a person saves again", async () => {
     const entry = await addRelease()
     expect(entry.name).toBe("release-checklist")
+    // People see whether the Doc moved on from what agents get.
+    const draft = async () =>
+      ((await rest("GET", "/api/library")).body.entries as Array<{ id: string; draft: boolean }>).find(
+        (listed) => listed.id === entry.id
+      )!.draft
+    expect(await draft()).toBe(false)
     const agent = await connect()
     const first = await call(agent, "worktable_skills_read", { name: "release-checklist" })
     expect(first).toMatchObject({ library: "Worktable", note: SKILLS_NEVER_AUTHORIZE })
@@ -175,11 +194,28 @@ describe("skill libraries", () => {
     const unchanged = await call(agent, "worktable_skills_read", { name: "release-checklist" })
     expect(unchanged.content).not.toContain("Fridays")
     expect(unchanged.version).toBe(first.version)
+    expect(await draft()).toBe(true)
 
     expect((await rest("POST", `/api/library/${entry.id}/save`, {})).status).toBe(200)
     const saved = await call(agent, "worktable_skills_read", { name: "release-checklist" })
     expect(saved.content).toContain("Fridays")
     expect(saved.version).not.toBe(first.version)
+    expect(await draft()).toBe(false)
+
+    // Another library's Save of the same content changes nothing here.
+    const mine = await addRelease({ kind: "agent", participantId: helperParticipant })
+    await rest("POST", `/api/library/${mine.id}/save`, {})
+    expect(await draft()).toBe(false)
+
+    // Opening a Doc in the editor stores it as rich text: the same content
+    // under another hash, which isn't a change to save.
+    const before = (await getDocProvenance("ops", "release-checklist"))?.contentHash
+    await writeDoc("ops", "release-checklist", await markdownToBlocks(`${RELEASE}\nSkip the smoke test on Fridays.\n`))
+    const after = (await getDocProvenance("ops", "release-checklist"))?.contentHash
+    expect(after).not.toBe(before)
+    expect(await draft()).toBe(true)
+    await carrySkillHashAcrossConversion("ops", "release-checklist", before, after)
+    expect(await draft()).toBe(false)
   })
 
   it("holds the tools and state's skills for the preview surface", async () => {
@@ -265,6 +301,149 @@ describe("skill libraries", () => {
     expect((await rest("POST", `/api/library/${mine.entryId}/discard`, await reviewed(mine.entryId))).status).toBe(200)
     const listed = (await rest("GET", "/api/library")).body.entries as Array<{ name: string }>
     expect(listed.map((entry) => entry.name)).toEqual(["release-checklist"])
+  })
+
+  it("shows a reviewer what would change, and lets a person redescribe, remove and restore a skill", async () => {
+    const { id } = await addRelease()
+    type Change = { live: string | null; next: string | null; nextDescription?: string }
+    const change = async () => (await rest<Change>("GET", `/api/library/${id}/change`)).body
+
+    // An agent's proposal: the text agents get now beside the proposed text.
+    const agent = await connect()
+    await writeDoc("ops", "release-checklist", `${RELEASE}\nAnnounce in the channel.\n`)
+    await call(agent, "worktable_skills_write", {
+      name: "release-checklist",
+      description: "Use when shipping or announcing a release.",
+    })
+    expect(await change()).toMatchObject({
+      live: RELEASE,
+      next: `${RELEASE}\nAnnounce in the channel.\n`,
+      nextDescription: "Use when shipping or announcing a release.",
+    })
+    expect((await rest("GET", `/api/library/${id}/change`, undefined, helperIdentity)).status).toBe(403)
+    await rest("POST", `/api/library/${id}/discard`, await reviewed(id))
+
+    // The Doc's own page names its skill, so opening it asks for nothing more.
+    type Page = { page: { skills?: Array<{ id: string; proposed: boolean; live: unknown }> } }
+    const page = async (path: string, identity?: TokenIdentity) =>
+      (await rest<Page>("GET", `/api/spaces/ops/documents/page?path=${path}`, undefined, identity)).body.page
+    expect((await page("release-checklist")).skills).toEqual([
+      { id, proposed: false, live: expect.objectContaining({ generationId: expect.any(String) }) },
+    ])
+    expect((await page("release-checklist", helperIdentity)).skills).toBeUndefined()
+
+    // Without a proposal, the Doc as last saved is what Save would make live.
+    expect((await change()).next).toContain("Announce in the channel.")
+
+    // New details change what agents are told, not the text they get.
+    const renamed = await rest("PATCH", `/api/library/${id}`, {
+      name: "release-steps",
+      description: "Use before tagging a release.",
+    })
+    expect(renamed.body.entry).toMatchObject({ name: "release-steps", draft: true, mayChange: true })
+    const read = await call(agent, "worktable_skills_read", { name: "release-steps" })
+    expect(read.description).toBe("Use before tagging a release.")
+    expect(read.content).not.toContain("Announce")
+    expect((await rest("PATCH", `/api/library/${id}`, { name: "Not A Name" })).status).toBe(400)
+    expect((await rest("PATCH", `/api/library/${id}`, { name: "x" }, helperIdentity)).status).toBe(403)
+
+    // A removed skill goes back as it was.
+    await rest("DELETE", `/api/library/${id}`)
+    expect((await call(agent, "worktable_state")).skills).toEqual([])
+    expect((await rest("POST", `/api/library/${id}/restore`, {}, helperIdentity)).status).toBe(403)
+    expect((await rest("POST", `/api/library/${id}/restore`, {})).status).toBe(200)
+    expect((await call(agent, "worktable_state")).skills).toEqual([
+      expect.objectContaining({ name: "release-steps" }),
+    ])
+    expect((await rest("POST", `/api/library/${id}/restore`, {})).status).toBe(409)
+  })
+
+  it("compares a draft, a proposed removal and a lost version with what agents have", async () => {
+    type Entry = { id: string; doc: { documentId: string }; live: { generationId: string } }
+    type Change = { live: string | null; next: string | null; nextDescription?: string }
+    const add = async (spaceId: string, path: string, library: Record<string, unknown>) =>
+      (await rest("POST", "/api/library", { spaceId, path, description: "Use it.", library })).body.entry as Entry
+    const change = async (id: string) => (await rest<Change>("GET", `/api/library/${id}/change`)).body
+    const HANDOVER = "# Handover\n\nName the open incidents.\n"
+    const PAY = "# Pay runbook\n\nApprove payroll.\n"
+    await writeDoc("ops", "handover", HANDOVER)
+    const inSpace = await add("ops", "handover", { kind: "space" })
+    const own = await add("private", "pay-runbook", { kind: "agent", participantId: helperParticipant })
+
+    // A person's draft: the Doc as last saved.
+    await writeDoc("ops", "handover", `${HANDOVER}\nName who is next.\n`)
+    expect(await change(inSpace.id)).toEqual({
+      revision: expect.any(Number),
+      live: HANDOVER,
+      next: `${HANDOVER}\nName who is next.\n`,
+    })
+    // A proposed removal has no text to come.
+    const agent = await connect()
+    await call(agent, "worktable_skills_write", { name: "pay-runbook", remove: true })
+    expect(await change(own.id)).toMatchObject({ live: PAY, next: null })
+
+    // A version that can't be read shows as none.
+    await writeDoc("ops", "lost", "# Lost\n\nGone.\n")
+    const lost = await add("ops", "lost", { kind: "worktable" })
+    await rm(documentGenerationV2Directory(root, "ops", lost.doc.documentId as never, lost.live.generationId), {
+      recursive: true,
+    })
+    expect(await change(lost.id)).toMatchObject({ live: null })
+  })
+
+  it("shows a person only the skills and texts of Spaces they can read", async () => {
+    const origin = "http://localhost:7481"
+    const password = "Synthetic-members-only-123"
+    const cookies = (headers: Headers) =>
+      new Headers({ Cookie: headers.getSetCookie().map((cookie) => cookie.split(";", 1)[0]).join("; ") })
+    const activated = await activateLocalTeams(
+      origin,
+      { name: "Owner", email: "owner@example.test", password },
+      { ...ownerIdentity(), credentialClass: "local" } as TokenIdentity
+    )
+    const owner = activated.identity
+    const auth = await getTeamAuth(origin)
+    const invitation = await auth.api.createInvitation({
+      headers: cookies(activated.headers),
+      body: {
+        organizationId: currentTeamWorktable()!.organizationId,
+        email: "member@example.test",
+        role: "member",
+      },
+    })
+    const joined = await auth.api.signUpEmail({
+      body: { name: "Member", email: "member@example.test", password },
+      returnHeaders: true,
+    })
+    await auth.api.acceptInvitation({ headers: cookies(joined.headers), body: { invitationId: invitation.id } })
+    const member = identityForTeamMember(findTeamMember(joined.response.user.id)!)
+    setSpaceAccessPolicy(
+      {
+        spaceId: "ops",
+        visibility: "restricted",
+        grants: [{ subjectType: "member", subjectId: member.team!.memberId!, access: "read" }],
+      },
+      owner
+    )
+    setSpaceAccessPolicy({ spaceId: "private", visibility: "restricted", grants: [] }, owner)
+
+    const add = async (spaceId: string, path: string, library: Record<string, unknown>) =>
+      (await rest("POST", "/api/library", { spaceId, path, description: "Use it.", library }, owner)).body
+        .entry as { id: string }
+    const readable = await add("ops", "release-checklist", { kind: "space" })
+    // Everywhere, from a Doc in a Space the member can't read.
+    const hidden = await add("private", "pay-runbook", { kind: "worktable" })
+
+    type Listed = { entries: Array<{ id: string; mayChange: boolean }> }
+    const read = async (identity: TokenIdentity) =>
+      (await rest<Listed>("GET", "/api/library", undefined, identity)).body.entries
+    expect((await read(owner)).map((entry) => entry.id).sort()).toEqual([readable.id, hidden.id].sort())
+    // Read access shows the skill and its text, and offers no changes.
+    expect(await read(member)).toEqual([expect.objectContaining({ id: readable.id, mayChange: false })])
+    expect((await rest("GET", `/api/library/${readable.id}/change`, undefined, member)).body).toMatchObject({
+      live: RELEASE,
+    })
+    expect((await rest("GET", `/api/library/${hidden.id}/change`, undefined, member)).status).toBe(404)
   })
 
   it("gives a skill only to agents its library applies to that can read its Doc", async () => {

@@ -1,12 +1,13 @@
 import { Link } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useId, useState, type ReactNode } from "react"
+import { lazy, Suspense, useId, useState, type ReactNode } from "react"
 import { ArrowDownLeft, ChevronDown, Database, History } from "lucide-react"
 import type {
   ActivityActor,
   ActivityEntry,
   DocumentBacklink,
   DocumentContributors,
+  DocumentPage,
   DocumentProvenance,
   DocumentReferrer,
 } from "@worktable/types"
@@ -46,6 +47,13 @@ import {
 
 const ACTIVITY_SHOWN = 6
 
+// Few Docs are skills, so the chip loads only on one that is.
+const DocumentSkillChip = lazy(() =>
+  import("@/components/library/document-skill-chip").then((module) => ({
+    default: module.DocumentSkillChip,
+  }))
+)
+
 /**
  * The line under a Doc's title: who last worked on it, what links here and
  * when it archives. Each part opens a short list in place, one at a time.
@@ -58,6 +66,7 @@ export function DocumentByline({
   contributors,
   backlinks,
   referrers,
+  skills,
   onVersionHistory,
   state,
 }: {
@@ -71,6 +80,8 @@ export function DocumentByline({
   backlinks?: DocumentBacklink[]
   /** Records and HTML Docs that point here. */
   referrers?: DocumentReferrer[]
+  /** The library skills this Doc is, from its page. */
+  skills?: DocumentPage["skills"]
   onVersionHistory?: () => void
   /** Shared with the page's other copy of this byline, if any. */
   state?: BylineState
@@ -194,6 +205,16 @@ export function DocumentByline({
           open={lifetimeOpen}
           onOpenChange={setLifetimeOpen}
         />
+        {skills && skills.length > 0 && (
+          <Suspense fallback={null}>
+            <DocumentSkillChip
+              spaceId={spaceId}
+              docPath={docPath}
+              skills={skills}
+              provenance={provenance}
+            />
+          </Suspense>
+        )}
       </div>
 
       <BylinePanel id={`${panelId}-activity`} open={open === "activity"}>

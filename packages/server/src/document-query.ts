@@ -13,6 +13,7 @@ import type {
   DocumentSpecializedView,
   DocumentSummary,
   DocumentRenderDisposition,
+  DocLastSave,
 } from "@worktable/types"
 import { CanonicalIdSchema } from "@worktable/types"
 import {
@@ -112,6 +113,8 @@ interface DocumentQueryContext {
   registry: DocumentFormatRegistry
   docArchives: ReadonlyMap<string, unknown>
   docLifetimes: ReadonlyMap<string, DocLifetimeFacts>
+  /** What each Doc's last save made, by path. */
+  docSaves: ReadonlyMap<string, DocLastSave>
   spaceArchived: boolean
 }
 
@@ -378,13 +381,17 @@ async function documentQueryContext(
       ? [claim.path]
       : []
   )
-  const { archives: docArchives, lifetimes: docLifetimes } =
-    await getDocMetaFactsMaps(spaceId, metadataPaths)
+  const {
+    archives: docArchives,
+    lifetimes: docLifetimes,
+    saves: docSaves,
+  } = await getDocMetaFactsMaps(spaceId, metadataPaths)
   return {
     catalog,
     registry,
     docArchives,
     docLifetimes,
+    docSaves,
     spaceArchived: Boolean(getSpaceArchiveInfo(space)),
   }
 }
@@ -454,14 +461,22 @@ export async function readDocumentCatalogSnapshot(
 }
 
 /** A Space's durable documents by id, as one read-model snapshot sees them. */
+export interface DocumentIdentity {
+  path: string
+  title: string
+  /** What its last save made, where that is recorded. */
+  lastSave?: DocLastSave
+}
+
 export interface DocumentIdentities {
   /** Whether the Space itself is archived. */
   spaceArchived: boolean
   /**
-   * Documents that open, with the path and title they have now. Archived
-   * documents and those whose path another claim also holds are left out.
+   * Documents that open, with the path and title they have now, and what
+   * their last save made where that is recorded. Archived documents and
+   * those whose path another claim also holds are left out.
    */
-  current: ReadonlyMap<string, { path: string; title: string }>
+  current: ReadonlyMap<string, DocumentIdentity>
   /** Documents that are archived. */
   archived: ReadonlySet<string>
 }
@@ -493,7 +508,7 @@ const identitiesByContext = new WeakMap<
 function documentIdentities(context: DocumentQueryContext): DocumentIdentities {
   const known = identitiesByContext.get(context)
   if (known) return known
-  const current = new Map<string, { path: string; title: string }>()
+  const current = new Map<string, DocumentIdentity>()
   const archived = new Set<string>()
   for (const entry of context.catalog.entries) {
     if (entry.kind !== "document") continue
@@ -502,7 +517,15 @@ function documentIdentities(context: DocumentQueryContext): DocumentIdentities {
       if (isArchived(claim, context.docArchives)) {
         archived.add(claim.documentId)
       } else {
-        current.set(claim.documentId, { path: claim.path, title: claim.title })
+        const lastSave =
+          claim.archiveProvider === "legacy-doc-metadata"
+            ? context.docSaves.get(claim.path)
+            : undefined
+        current.set(claim.documentId, {
+          path: claim.path,
+          title: claim.title,
+          ...(lastSave ? { lastSave } : {}),
+        })
       }
     }
   }

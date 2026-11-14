@@ -344,6 +344,25 @@ export const DocumentPageSchema = z.object({
    * is on. Absent otherwise; the page then shares through today's single link.
    */
   sharing: DocumentSharingSummarySchema.optional(),
+  /**
+   * The library skills this Doc is, for a person while skill libraries show:
+   * each one's live version, and whether an agent's proposal waits on it.
+   * Absent for a Doc in no library.
+   */
+  skills: z
+    .array(
+      z.object({
+        id: z.string(),
+        live: z
+          .object({
+            generationId: z.string(),
+            contentHash: z.string().optional(),
+          })
+          .nullable(),
+        proposed: z.boolean(),
+      })
+    )
+    .optional(),
   /** An HTML Doc whose network access an agent asked for and a person has not allowed. */
   networkRequested: z.literal(true).optional(),
   /** The name of the agent that asked, when known. */

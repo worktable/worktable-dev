@@ -1,5 +1,9 @@
 import { Link } from "@tanstack/react-router"
-import { CircleAlert, MessageSquareText } from "lucide-react"
+import {
+  CircleAlert,
+  Library as LibraryIcon,
+  MessageSquareText,
+} from "lucide-react"
 import { useState } from "react"
 import type { PendingItem } from "@worktable/types"
 import { cn } from "@worktable/ui/lib/utils"
@@ -17,11 +21,14 @@ const rowClass =
 
 // ── Pending ────────────────────────────────────────────────
 
-/** Skill library proposals get their own rows once the web shows libraries. */
-type ShownPendingItem = Exclude<PendingItem, { kind: "skillProposal" }>
-
-const shownPending = (item: PendingItem): item is ShownPendingItem =>
-  item.kind !== "skillProposal"
+const PROPOSED: Record<
+  Extract<PendingItem, { kind: "skillProposal" }>["change"],
+  string
+> = {
+  add: "proposed adding",
+  update: "proposed updating",
+  remove: "proposed removing",
+}
 
 /** Pending items shown before the rest fold behind More. */
 const PENDING_ROWS = 3
@@ -34,7 +41,7 @@ function PendingRow({
   item,
   spaceName,
 }: {
-  item: ShownPendingItem
+  item: PendingItem
   spaceName?: string
 }) {
   const nameOf = useActorName()
@@ -49,11 +56,15 @@ function PendingRow({
       ? item.threadTitle
       : item.kind === "visitorCommentsPaused"
         ? item.linkLabel || "Untitled link"
-        : (item.docTitle ?? item.docPath)
+        : item.kind === "skillProposal"
+          ? (item.skillTitle ?? item.skillName)
+          : (item.docTitle ?? item.docPath)
   const detail =
     item.kind === "visitorComments"
       ? item.linkLabel || "Untitled link"
-      : spaceName
+      : item.kind === "skillProposal"
+        ? (spaceName ?? item.libraryLabel)
+        : spaceName
   const what =
     item.kind === "threadRequest"
       ? "asked you"
@@ -63,9 +74,15 @@ function PendingRow({
           ? `Not delivered to ${item.agentName}`
           : item.kind === "visitorCommentsPaused"
             ? "Comments paused"
-            : `${item.count} visitor comment${item.count === 1 ? "" : "s"}`
+            : item.kind === "skillProposal"
+              ? `${item.agentName} ${PROPOSED[item.change]}`
+              : `${item.count} visitor comment${item.count === 1 ? "" : "s"}`
   const Icon =
-    item.kind === "deliveryFailed" ? CircleAlert : MessageSquareText
+    item.kind === "deliveryFailed"
+      ? CircleAlert
+      : item.kind === "skillProposal"
+        ? LibraryIcon
+        : MessageSquareText
   const className =
     "group grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3.5 gap-y-px rounded-xl px-2.5 py-3 transition-colors hover:bg-surface-hover"
   const children = (
@@ -108,6 +125,17 @@ function PendingRow({
       </span>
     </>
   )
+  if (item.kind === "skillProposal") {
+    return (
+      <Link
+        to="/library/$"
+        params={{ _splat: item.entryId }}
+        className={className}
+      >
+        {children}
+      </Link>
+    )
+  }
   return item.kind === "threadRequest" || item.kind === "deliveryFailed" ? (
     <ThreadLink
       spaceId={item.spaceId}
@@ -137,7 +165,7 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
   const { data: spaces } = useSpaces()
   const [showAll, setShowAll] = useState(false)
   const names = new Map((spaces ?? []).map((space) => [space.id, space.name]))
-  const items = (pending.data?.items ?? []).filter(shownPending)
+  const items = pending.data?.items ?? []
   const failed = pending.isError && !pending.data
   // Home points to Getting Started until the person is done or unpins it.
   const shortcut = useGettingStartedShortcut(spaces)

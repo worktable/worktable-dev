@@ -66,6 +66,8 @@ const SCREENS: Record<Exclude<keyof FileRoutesById, "__root__">, AppScreen | nul
   "/": "home",
   "/activity": "activity",
   "/connect": "connect",
+  // Preview only, until analytics names the screen.
+  "/library/$": null,
   "/login": null,
   "/spaces/$spaceId": "space",
   "/spaces/$spaceId/docs/$": "doc",

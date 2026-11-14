@@ -155,6 +155,8 @@ export interface DeploymentInfo {
     files: boolean
     /** Comments can be sent to people and agents. */
     commentRecipients?: boolean
+    /** People manage the skill libraries agents read (Preview agent tools). */
+    skillLibraries?: boolean
   }
 }
 

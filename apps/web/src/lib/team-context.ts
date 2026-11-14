@@ -129,7 +129,7 @@ function currentSpaceId(): string | null {
 }
 
 // Lists that gather items from every Space this member can read.
-const CROSS_SPACE_LISTS = new Set(["recent", "activity", "pending", "threads", "search"])
+const CROSS_SPACE_LISTS = new Set(["recent", "activity", "pending", "threads", "search", "library"])
 
 /**
  * Every spaces list carries this member's per-Space keys. Whichever request

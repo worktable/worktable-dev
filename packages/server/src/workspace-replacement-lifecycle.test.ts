@@ -318,6 +318,8 @@ describe("live workspace replacement", () => {
     expect(classifyWorkspaceRequest("POST", "/api/library/skl_x/approve")).toBe("write")
     expect(classifyWorkspaceRequest("DELETE", "/api/library/skl_x")).toBe("write")
     expect(classifyWorkspaceRequest("GET", "/api/library")).toBe("read")
+    expect(classifyWorkspaceRequest("GET", "/api/library/skl_x/change")).toBe("read")
+    expect(classifyWorkspaceRequest("PATCH", "/api/library/skl_x")).toBe("write")
     // File links move a file's bytes outside the sign-in: an upload is a write, a download a read.
     expect(classifyWorkspaceRequest("PUT", "/api/file-links/token")).toBe("write")
     expect(classifyWorkspaceRequest("GET", "/api/file-links/token")).toBe("read")

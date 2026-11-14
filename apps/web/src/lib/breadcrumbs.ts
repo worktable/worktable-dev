@@ -11,11 +11,14 @@ export type BreadcrumbTarget =
       params: { spaceId: string; _splat: string }
     }
   | { to: "/threads/$"; params: { _splat: string } }
+  | { to: "/library/$"; params: { _splat: string } }
 
 /** What a crumb names, for icons and narrow-screen presentation. */
 export type BreadcrumbRole =
   | "home"
   | "activity"
+  | "library"
+  | "skill"
   | "space"
   | "threads"
   | "thread"
@@ -120,6 +123,53 @@ export function buildBreadcrumbs({
   if (pathname === "/") return [{ kind: "text", role: "home", label: "Home" }]
   if (pathname === "/activity") {
     return [{ kind: "text", role: "activity", label: "Activity" }]
+  }
+  const libraryMatch = pathname.match(
+    /^\/library(?:\/([^/]+))?(?:\/([^/]+))?\/?$/
+  )
+  if (libraryMatch) {
+    const [, where, skill] = libraryMatch
+    // A library, or a skill in one, reads as a page in the Library; the page
+    // names them.
+    const library: Breadcrumb = where
+      ? {
+          kind: "link",
+          role: "library",
+          label: "Library",
+          target: { to: "/library/$", params: { _splat: "" } },
+        }
+      : { kind: "text", role: "library", label: "Library" }
+    if (!where) return [library]
+    if (!skill) {
+      return titleOverride
+        ? [library, { kind: "text", role: "library", label: titleOverride }]
+        : [library]
+    }
+    return [
+      library,
+      ...(parentTitleOverride
+        ? [
+            {
+              kind: "link" as const,
+              role: "library" as const,
+              label: parentTitleOverride,
+              target: {
+                to: "/library/$" as const,
+                params: { _splat: safeDecode(where) },
+              },
+            },
+          ]
+        : []),
+      ...(titleOverride
+        ? [
+            {
+              kind: "text" as const,
+              role: "skill" as const,
+              label: titleOverride,
+            },
+          ]
+        : []),
+    ]
   }
 
   const threadsMatch = pathname.match(/^\/threads(?:\/(.*))?$/)

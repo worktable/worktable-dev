@@ -140,5 +140,25 @@ describe("buildBreadcrumbs", () => {
       ["Threads", "/threads/$"],
       ["Launch plan"],
     ])
+    expect(summary(buildBreadcrumbs({ pathname: "/library" }))).toEqual([
+      ["Library"],
+    ])
+    expect(
+      summary(
+        buildBreadcrumbs({
+          pathname: "/library/space%3Aops",
+          titleOverride: "Ops",
+        })
+      )
+    ).toEqual([["Library", "/library/$"], ["Ops"]])
+    expect(
+      summary(
+        buildBreadcrumbs({
+          pathname: "/library/space%3Aops/skl_1",
+          parentTitleOverride: "Ops",
+          titleOverride: "Naming",
+        })
+      )
+    ).toEqual([["Library", "/library/$"], ["Ops", "/library/$"], ["Naming"]])
   })
 })

@@ -4,7 +4,7 @@ import { effectiveArchiveOn } from "./lifetime-rules.ts";
 import { constants, existsSync, lstatSync } from "node:fs";
 import crypto from "node:crypto";
 import { dirname, join, relative, sep } from "node:path";
-import type { ArchiveInfo, DocListEntry, DocSourceCategory, DocumentId, SpaceFile } from "@worktable/types";
+import type { ArchiveInfo, DocLastSave, DocListEntry, DocSourceCategory, DocumentId, SpaceFile } from "@worktable/types";
 import { SpaceFileSchema, sourceCategory } from "@worktable/types";
 import {
   isRecognitionColor,
@@ -1559,9 +1559,9 @@ export async function getDocArchiveInfoMap(spaceId: string, docPaths: Iterable<s
 }
 
 /**
- * Archive and lifetime facts for a set of document paths from one read of
- * docs.meta.json. Archive entries are keyed by sanitized path, lifetimes by
- * the path as given.
+ * Archive and lifetime facts, and what each Doc's last save made, for a set
+ * of document paths from one read of docs.meta.json. Archive entries are
+ * keyed by sanitized path, lifetimes and saves by the path as given.
  */
 export async function getDocMetaFactsMaps(
   spaceId: string,
@@ -1569,18 +1569,27 @@ export async function getDocMetaFactsMaps(
 ): Promise<{
   archives: Map<string, ArchiveInfo>;
   lifetimes: Map<string, DocLifetimeFacts>;
+  saves: Map<string, DocLastSave>;
 }> {
   const meta = await readDocMetaFile(spaceId);
   const archives = new Map<string, ArchiveInfo>();
   const lifetimes = new Map<string, DocLifetimeFacts>();
+  const saves = new Map<string, DocLastSave>();
   for (const rawPath of docPaths) {
     const path = sanitizeDocPath(rawPath);
     const archived = meta.docs[path]?.archived;
     if (archived) archives.set(path, ownedCopy(archived));
     const facts = lifetimeFacts(meta.docs[path]);
     if (Object.keys(facts).length > 0) lifetimes.set(rawPath, facts);
+    const provenance = meta.docs[path]?.provenance;
+    if (provenance) {
+      saves.set(rawPath, {
+        versionId: provenance.versionId,
+        contentHash: provenance.contentHash,
+      });
+    }
   }
-  return { archives, lifetimes };
+  return { archives, lifetimes, saves };
 }
 
 /** Everything a document read reports from docs.meta.json, from one read. */

@@ -1,3 +1,5 @@
+import { configuredMcpSurface } from "../mcp/surface.ts"
+import { skillsOfDoc } from "../skill-libraries.ts"
 import { teamsEnabled } from "../team-database.ts";
 import { commentReplier } from "../comment-recipients.ts"
 import { passageAuthor } from "../passage-author.ts"
@@ -378,6 +380,12 @@ documentsRouter.get("/page", requireScope("documents:read"), async (c) => {
       { error: "This document alias cannot be resolved.", code: "CONFLICT" },
       409
     )
+  }
+  // A Doc that is a skill says so on its own page, so opening a Doc asks
+  // for nothing more.
+  if (page.kind === "document" && configuredMcpSurface() === "preview") {
+    const skills = await skillsOfDoc(c.get("identity"), spaceId, page.document.path).catch(() => [])
+    if (skills.length > 0) return c.json({ page: { ...page, skills } })
   }
   return c.json({ page })
 })

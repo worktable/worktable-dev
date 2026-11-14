@@ -28,3 +28,8 @@ export function useDeploymentInfo() {
 export function useDocumentSharingAvailable(): boolean {
   return useDeploymentInfo().data?.capabilities.documentSharing === true
 }
+
+/** Whether this Worktable shows skill libraries: the preview agent tools are on. */
+export function useSkillLibrariesEnabled(): boolean {
+  return useDeploymentInfo().data?.capabilities.skillLibraries === true
+}

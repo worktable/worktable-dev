@@ -1,0 +1,170 @@
+import {
+  libraryKey,
+  skillTitle,
+  type LibraryEntry,
+  type LibraryRef,
+  type SkillTexts,
+} from "./library.ts"
+import { diffLines, foldUnchanged, type DiffLine } from "./line-diff.ts"
+
+// What the Library shows, worked out from what the server sent: the
+// libraries there are, what each holds, what is pending and what changed lately.
+
+/** A change that isn't live for agents yet: an agent's proposal or a draft. */
+export type Waiting = "proposal" | "draft" | null
+
+export const waitingOn = (
+  entry: Pick<LibraryEntry, "removed" | "proposal" | "draft">
+): Waiting =>
+  entry.removed
+    ? null
+    : entry.proposal
+      ? "proposal"
+      : entry.draft
+        ? "draft"
+        : null
+
+const byTitle = (a: LibraryEntry, b: LibraryEntry) =>
+  skillTitle(a).localeCompare(skillTitle(b))
+
+/** A library with skills in it: the Worktable's, a Space's or an agent's. */
+export interface Place {
+  key: string
+  library: LibraryRef
+  /** The Space's or agent's name; absent for the Worktable's, or when unknown. */
+  name?: string
+  count: number
+}
+
+const KIND_ORDER: Record<LibraryRef["kind"], number> = {
+  worktable: 0,
+  space: 1,
+  agent: 2,
+}
+
+/**
+ * Every library that holds a skill, the Worktable's first, then Spaces,
+ * then agents, each kind by name; with how many changes are pending and how many skills went.
+ */
+export function placesOf(entries: LibraryEntry[]): {
+  places: Place[]
+  pending: number
+  removed: number
+} {
+  const current = entries.filter((entry) => !entry.removed)
+  const places = new Map<string, Place>()
+  for (const entry of current) {
+    const key = libraryKey(entry.library)
+    const place = places.get(key) ?? {
+      key,
+      library: entry.library,
+      name: entry.libraryName,
+      count: 0,
+    }
+    place.count += 1
+    places.set(key, place)
+  }
+  return {
+    places: [...places.values()].sort(
+      (a, b) =>
+        KIND_ORDER[a.library.kind] - KIND_ORDER[b.library.kind] ||
+        (a.name ?? "").localeCompare(b.name ?? "")
+    ),
+    pending: current.filter((entry) => waitingOn(entry)).length,
+    removed: entries.length - current.length,
+  }
+}
+
+/** The skills in one library, by title. */
+export const skillsIn = (entries: LibraryEntry[], key: string) =>
+  entries
+    .filter((entry) => !entry.removed && libraryKey(entry.library) === key)
+    .sort(byTitle)
+
+/** Every change not yet live: agents' proposals, newest first, then drafts. */
+export const pendingOf = (entries: LibraryEntry[]) =>
+  entries
+    .filter((entry) => waitingOn(entry))
+    .sort(
+      (a, b) =>
+        Number(Boolean(b.proposal)) - Number(Boolean(a.proposal)) ||
+        (b.proposal?.at ?? "").localeCompare(a.proposal?.at ?? "") ||
+        byTitle(a, b)
+    )
+
+/** Skills removed lately, newest first. */
+export const removedOf = (entries: LibraryEntry[]) =>
+  entries
+    .filter((entry) => entry.removed)
+    .sort((a, b) => b.removed!.at.localeCompare(a.removed!.at))
+
+/** The skills whose live version was saved last, newest first. */
+export const recentOf = (entries: LibraryEntry[], count: number) =>
+  entries
+    .filter((entry) => !entry.removed && entry.live)
+    .sort((a, b) => b.live!.savedAt.localeCompare(a.live!.savedAt))
+    .slice(0, count)
+
+// ---- What a change does to a skill's text ----
+
+export type TextLine = DiffLine
+
+export type TextPart =
+  | { kind: "lines"; lines: TextLine[] }
+  /** Unchanged lines kept out of sight until asked for. */
+  | { kind: "fold"; lines: TextLine[] }
+
+/**
+ * A skill's text as lines: without the heading that repeats its title, and
+ * without the blank lines a Doc ends on.
+ */
+function body(text: string, keepHeading = false): string[] {
+  const lines = text.replace(/\r\n?/g, "\n").replace(/\s+$/, "").split("\n")
+  if (!keepHeading && /^#\s/.test(lines[0] ?? "")) {
+    lines.shift()
+    while (lines.length > 0 && lines[0]!.trim() === "") lines.shift()
+  }
+  return lines
+}
+
+const firstLine = (text: string) => text.replace(/\r\n?/g, "\n").split("\n")[0]
+
+const whole = (lines: string[], kind: TextLine["kind"]): TextPart[] => [
+  { kind: "lines", lines: lines.map((text) => ({ kind, text })) },
+]
+
+/**
+ * What a waiting change does to what agents have: the lines it drops and
+ * adds, with unchanged stretches folded, or the whole text struck through
+ * for a removal. Null when a text it needs can't be read.
+ */
+export function changeOf(
+  entry: Pick<LibraryEntry, "proposal">,
+  texts: SkillTexts
+): TextPart[] | null {
+  // A text shown whole keeps its heading: nothing else shows it.
+  if (entry.proposal?.kind === "remove")
+    return texts.live === null ? null : whole(body(texts.live, true), "removed")
+  if (texts.next === undefined)
+    return texts.live === null ? null : whole(body(texts.live, true), "same")
+  if (texts.next === null) return null
+  // A new skill's text is all new. One whose live text is lost, or too long
+  // to compare, has no comparison to show.
+  if (texts.live === null)
+    return entry.proposal?.kind === "add"
+      ? whole(body(texts.next, true), "added")
+      : null
+  // A heading both sides share repeats the title and is left out; a changed
+  // one is part of the change.
+  const keepHeading = firstLine(texts.live) !== firstLine(texts.next)
+  const lines = diffLines(
+    body(texts.live, keepHeading).join("\n"),
+    body(texts.next, keepHeading).join("\n")
+  )
+  if (!lines) return null
+  return foldUnchanged(lines).map((part) =>
+    part.kind === "unchanged"
+      ? { kind: "fold", lines: part.lines }
+      : { kind: "lines", lines: part.lines }
+  )
+}

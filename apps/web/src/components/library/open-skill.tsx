@@ -1,0 +1,263 @@
+import { useQueryClient } from "@tanstack/react-query"
+import { useNavigate } from "@tanstack/react-router"
+import { ArrowUpRight, Plus, SquarePen, Trash2 } from "lucide-react"
+import { lazy, Suspense, useCallback, useEffect, useState } from "react"
+import { savedSinceLive } from "@worktable/types"
+import { SkillFrame, SkillHead } from "@/components/library/skill-frame"
+import { loadDocCode, loadedDocCode } from "@/components/library/doc-code"
+import { SkillNameDialog } from "@/components/library/skill-name-dialog"
+import { useIsMobile } from "@/hooks/use-mobile"
+import { useLiveSpaceCatalog } from "@/hooks/use-live-space-catalog"
+import {
+  SetPageMetaContext,
+  useSetPageMeta,
+  type PageMeta,
+  type PageOverflowAction,
+} from "@/hooks/use-page-meta"
+import { documentRoute } from "@/lib/document-views"
+import { documentQueryKeys, useDocuments } from "@/lib/documents-queries"
+import { documentOpenHint } from "@/lib/document-rows"
+import { useDocumentOpen } from "@/lib/use-document-open"
+import {
+  libraryKey,
+  libraryQueryKey,
+  skillTitle,
+  type LibraryEntry,
+  type LibraryRef,
+} from "@/lib/library"
+import { useLibraryActions, type LibraryAction } from "@/lib/library-actions"
+import { useSpaces } from "@/lib/queries"
+
+// The Doc's own page, with its editor, loads when a skill is opened.
+const LazyDocRenderer = lazy(() =>
+  loadDocCode().then((module) => ({ default: module.DocDocumentRenderer }))
+)
+
+/** What a skill keeps of its Doc's page actions: its history and recovery. */
+const DOC_ACTIONS = new Set(["recover-offline-edits", "version-history"])
+
+/**
+ * One skill, open as its Doc: the Doc's own editor, with when to use it and
+ * what waits on it under the title. Its actions go in the app's header, as
+ * a Doc's do, with the skill's own in the header's menu.
+ */
+export function OpenSkill({
+  entry,
+  libraryName,
+  onAdd,
+}: {
+  entry: LibraryEntry
+  /** Its library's name, for the trail. */
+  libraryName: string
+  /** Opens adding a skill; stable, as the header keeps it. */
+  onAdd: (adding: { library: LibraryRef }) => void
+}) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
+  const setPageMeta = useSetPageMeta()
+  const { run } = useLibraryActions()
+  const { data: spaces } = useSpaces()
+  const spaceId = entry.doc.spaceId
+  const path = entry.docPath ?? ""
+  // The Doc opens as on its own page: what the tab knows shows read-only at
+  // once, and the editor takes over once a check validates this open.
+  const { pageQuery, page: checked } = useDocumentOpen(spaceId, path)
+  // The Space's catalog stays live, as a Doc page's breadcrumb keeps it, so
+  // a move or archive made elsewhere re-checks the open Doc.
+  useLiveSpaceCatalog(spaceId)
+  useDocuments(spaceId)
+  const page = checked?.kind === "document" ? checked : null
+  // After a move another Doc can hold the skill's old path; a Doc's page names
+  // the skills it is, removed ones included, so only this skill's own Doc
+  // opens under it.
+  const otherDoc =
+    page !== null && !page.skills?.some((skill) => skill.id === entry.id)
+  useEffect(() => {
+    if (!otherDoc) return
+    void queryClient.invalidateQueries({
+      queryKey: libraryQueryKey,
+      exact: true,
+    })
+  }, [otherDoc, queryClient])
+  const hint =
+    page || !path ? null : documentOpenHint(queryClient, spaceId, path)
+  // What the Doc's page offers its header; the skill keeps part of it.
+  const [docMeta, setDocMeta] = useState<PageMeta | null>(null)
+  const [renaming, setRenaming] = useState(false)
+  const [pending, setPending] = useState(false)
+
+  // The Doc's page keeps its last save current while it is open, so a draft
+  // shows as it is typed, without asking the server.
+  const skill = page?.skills?.find((candidate) => candidate.id === entry.id)
+  const draft = skill
+    ? !skill.proposed && savedSinceLive(skill.live, page?.provenance)
+    : entry.draft
+  const at = entry.proposal
+    ? `proposal:${entry.revision}`
+    : `draft:${page?.provenance?.contentHash ?? ""}`
+
+  // The header keeps these, so they change only with what they act on.
+  const contentHash = page?.provenance?.contentHash
+  const act = useCallback(
+    async (action: LibraryAction) => {
+      if (pending) return
+      // Save names the content on screen, so it waits for the Doc's page.
+      if (action.kind === "save" && !contentHash) return
+      setPending(true)
+      const done = await run(
+        action.kind === "save" && contentHash
+          ? { ...action, contentHash }
+          : action
+      )
+      if (done && action.kind === "remove") {
+        await navigate({
+          to: "/library/$",
+          params: { _splat: libraryKey(entry.library) },
+        })
+        return
+      }
+      // The Doc's page names the version now live.
+      if (done && path)
+        await queryClient.invalidateQueries({
+          queryKey: documentQueryKeys.page(spaceId, path),
+          exact: true,
+        })
+      setPending(false)
+    },
+    [contentHash, entry, navigate, path, pending, queryClient, run, spaceId]
+  )
+  const add = useCallback(
+    () => onAdd({ library: entry.library }),
+    [entry.library, onAdd]
+  )
+  const remove = useCallback(
+    () => void act({ kind: "remove", entry }),
+    [act, entry]
+  )
+
+  const title = skillTitle(entry)
+  const spaceName = spaces?.find((space) => space.id === spaceId)?.name
+  const docSecondary = docMeta?.secondaryAction
+  const docAnnotations = docMeta?.annotations
+  const docActions = docMeta?.overflowActions
+  const mayChange = entry.mayChange && !entry.removed
+  useEffect(() => {
+    const kept = (docActions ?? []).filter((action) =>
+      DOC_ACTIONS.has(action.id)
+    )
+    const actions: PageOverflowAction[] = [...kept]
+    if (path) {
+      actions.push({
+        id: "open-in-space",
+        label: `Open In ${spaceName ?? "Space"}`,
+        icon: ArrowUpRight,
+        onSelect: () => void navigate(documentRoute(spaceId, path)),
+        separatorBefore: kept.length > 0,
+      })
+    }
+    if (mayChange) {
+      actions.push(
+        {
+          id: "rename-skill",
+          label: "Rename",
+          icon: SquarePen,
+          onSelect: () => setRenaming(true),
+          separatorBefore: actions.length > 0,
+        },
+        {
+          id: "remove-skill",
+          label: "Remove",
+          icon: Trash2,
+          tone: "destructive",
+          onSelect: () => void remove(),
+        }
+      )
+    }
+    setPageMeta({
+      titleOverride: title,
+      parentTitleOverride: libraryName,
+      secondaryAction: docSecondary,
+      annotations: docAnnotations,
+      // A narrow screen keeps the header's one action for Edit.
+      primaryAction: isMobile
+        ? undefined
+        : {
+            label: "Add Skill",
+            displayLabel: "Skill",
+            icon: Plus,
+            onClick: add,
+          },
+      overflowActions: actions,
+    })
+  }, [
+    add,
+    docActions,
+    docAnnotations,
+    docSecondary,
+    isMobile,
+    libraryName,
+    mayChange,
+    navigate,
+    path,
+    remove,
+    setPageMeta,
+    spaceId,
+    spaceName,
+    title,
+  ])
+  useEffect(() => () => setPageMeta(null), [setPageMeta])
+
+  const head = (
+    <SkillHead
+      entry={{ ...entry, draft }}
+      at={at}
+      // Save waits for the Doc's page, which names the content on screen.
+      pending={
+        pending || (draft && !entry.proposal && !page?.provenance?.contentHash)
+      }
+      onAct={(action) => void act(action)}
+    />
+  )
+  const unavailable =
+    !path ||
+    otherDoc ||
+    (pageQuery.isError && !pageQuery.isFetching) ||
+    checked?.kind === "conflict" ||
+    (page !== null && page.renderer?.key !== "doc")
+  // The title and head hold the Doc's place while nothing of it is known yet.
+  const frame = <SkillFrame entry={entry}>{head}</SkillFrame>
+  const formatId = page?.document.format.id ?? hint?.formatId
+  const DocRenderer = loadedDocCode()?.DocDocumentRenderer ?? LazyDocRenderer
+
+  return (
+    <>
+      <div className="relative min-h-0 flex-1">
+        {unavailable ? (
+          <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">
+            Doc Missing
+          </div>
+        ) : formatId && (page || hint?.renderer === "doc") ? (
+          <Suspense fallback={frame}>
+            <SetPageMetaContext.Provider value={setDocMeta}>
+              <DocRenderer
+                spaceId={spaceId}
+                documentPath={page?.document.path ?? path}
+                formatId={formatId}
+                page={page}
+                preview={hint}
+                afterTitle={head}
+              />
+            </SetPageMetaContext.Provider>
+          </Suspense>
+        ) : (
+          frame
+        )}
+      </div>
+
+      {renaming && (
+        <SkillNameDialog entry={entry} onClose={() => setRenaming(false)} />
+      )}
+    </>
+  )
+}

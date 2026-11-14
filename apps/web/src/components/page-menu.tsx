@@ -12,6 +12,7 @@ import {
   FolderOpen,
   History,
   House,
+  Library as LibraryIcon,
   MessageCircle,
   MessageSquareText,
   Share2,
@@ -516,6 +517,8 @@ function CrumbIcon({
       ? House
       : crumb.role === "activity"
         ? History
+        : crumb.role === "library"
+        ? LibraryIcon
         : crumb.role === "collection"
         ? Database
         : crumb.role === "threads" || crumb.role === "thread"

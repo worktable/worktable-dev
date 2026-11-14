@@ -23,7 +23,7 @@ import {
   type ServerSettings,
   type ServerSettingsPatch,
 } from "../settings-store.ts";
-import { mcpPreviewEnvOverride } from "../mcp/surface.ts";
+import { configuredMcpSurface, mcpPreviewEnvOverride } from "../mcp/surface.ts";
 import { filesEnabled } from "../files-enabled.ts";
 import { noteAllSpacesChanged } from "../workspace-read-model.ts";
 import { invalidateLinkGraph } from "../link-graph.ts";
@@ -178,6 +178,8 @@ export interface DeploymentInfo {
     files: boolean;
     /** Comments can be sent to people and agents (Preview agent tools). */
     commentRecipients: boolean;
+    /** People manage the skill libraries agents read (Preview agent tools). */
+    skillLibraries: boolean;
   };
 }
 
@@ -205,6 +207,7 @@ export function getDeploymentInfo(): DeploymentInfo {
       shareLinks: documentSharing,
       files: filesEnabled(),
       commentRecipients: true,
+      skillLibraries: configuredMcpSurface() === "preview",
     },
   };
 }

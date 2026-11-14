@@ -154,6 +154,8 @@ export type PendingItem =
       /** The entry's revision; approving or discarding names it. */
       revision: number
       skillName: string
+      /** The Doc's title, which people know the skill by; absent when the Doc no longer opens. */
+      skillTitle?: string
       libraryLabel: string
       agentName: string
       change: "add" | "update" | "remove"

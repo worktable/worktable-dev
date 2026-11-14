@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as LibrarySplatRouteImport } from './routes/library/$'
 import { Route as SpacesSpaceIdRouteImport } from './routes/spaces/$spaceId'
 import { Route as ThreadsSplatRouteImport } from './routes/threads/$'
 import { Route as SpacesSpaceIdDocsSplatRouteImport } from './routes/spaces/$spaceId/docs/$'
@@ -40,6 +41,11 @@ const ConnectRoute = ConnectRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LibrarySplatRoute = LibrarySplatRouteImport.update({
+  id: '/library/$',
+  path: '/library/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SpacesSpaceIdRoute = SpacesSpaceIdRouteImport.update({
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/activity': typeof ActivityRoute
   '/connect': typeof ConnectRoute
   '/login': typeof LoginRoute
+  '/library/$': typeof LibrarySplatRoute
   '/spaces/$spaceId': typeof SpacesSpaceIdRouteWithChildren
   '/threads/$': typeof ThreadsSplatRoute
   '/spaces/$spaceId/docs/$': typeof SpacesSpaceIdDocsSplatRoute
@@ -107,6 +114,7 @@ export interface FileRoutesByTo {
   '/activity': typeof ActivityRoute
   '/connect': typeof ConnectRoute
   '/login': typeof LoginRoute
+  '/library/$': typeof LibrarySplatRoute
   '/spaces/$spaceId': typeof SpacesSpaceIdRouteWithChildren
   '/threads/$': typeof ThreadsSplatRoute
   '/spaces/$spaceId/docs/$': typeof SpacesSpaceIdDocsSplatRoute
@@ -122,6 +130,7 @@ export interface FileRoutesById {
   '/activity': typeof ActivityRoute
   '/connect': typeof ConnectRoute
   '/login': typeof LoginRoute
+  '/library/$': typeof LibrarySplatRoute
   '/spaces/$spaceId': typeof SpacesSpaceIdRouteWithChildren
   '/threads/$': typeof ThreadsSplatRoute
   '/spaces/$spaceId/docs/$': typeof SpacesSpaceIdDocsSplatRoute
@@ -138,6 +147,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/connect'
     | '/login'
+    | '/library/$'
     | '/spaces/$spaceId'
     | '/threads/$'
     | '/spaces/$spaceId/docs/$'
@@ -152,6 +162,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/connect'
     | '/login'
+    | '/library/$'
     | '/spaces/$spaceId'
     | '/threads/$'
     | '/spaces/$spaceId/docs/$'
@@ -166,6 +177,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/connect'
     | '/login'
+    | '/library/$'
     | '/spaces/$spaceId'
     | '/threads/$'
     | '/spaces/$spaceId/docs/$'
@@ -181,6 +193,7 @@ export interface RootRouteChildren {
   ActivityRoute: typeof ActivityRoute
   ConnectRoute: typeof ConnectRoute
   LoginRoute: typeof LoginRoute
+  LibrarySplatRoute: typeof LibrarySplatRoute
   SpacesSpaceIdRoute: typeof SpacesSpaceIdRouteWithChildren
   ThreadsSplatRoute: typeof ThreadsSplatRoute
 }
@@ -213,6 +226,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/library/$': {
+      id: '/library/$'
+      path: '/library/$'
+      fullPath: '/library/$'
+      preLoaderRoute: typeof LibrarySplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/spaces/$spaceId': {
@@ -302,6 +322,7 @@ const rootRouteChildren: RootRouteChildren = {
   ActivityRoute: ActivityRoute,
   ConnectRoute: ConnectRoute,
   LoginRoute: LoginRoute,
+  LibrarySplatRoute: LibrarySplatRoute,
   SpacesSpaceIdRoute: SpacesSpaceIdRouteWithChildren,
   ThreadsSplatRoute: ThreadsSplatRoute,
 }

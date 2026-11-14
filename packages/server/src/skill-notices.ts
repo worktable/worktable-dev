@@ -18,6 +18,8 @@ import {
   applicableVersions,
   REMOVED_MARK,
   REMOVED_SKILL_NOTE,
+  seenMark,
+  seenName,
   skillsForAgent,
   skillVersion,
   type AgentSkill,
@@ -25,6 +27,10 @@ import {
   type SkillReader,
 } from "./skill-libraries.ts"
 import { workspaceCacheKey } from "./workspace.ts"
+
+/** What the Library is, said once when an agent first learns its skills. */
+export const LIBRARY_FOR_AGENTS =
+  "The Library is your team's approved Docs: a person reviewed each one for agents to follow. Prefer a skill there over other Docs on the same work; Docs elsewhere may be drafts."
 
 /** The most skills worktable_state lists. */
 export const STATE_SKILL_LIMIT = 50
@@ -154,7 +160,7 @@ function noteCall(participantId: string, now: number): boolean {
 
 function marksOf(live: AgentSkill[], removed: Array<{ entry: LibraryEntry }>): Record<string, string> {
   const marks: Record<string, string> = {}
-  for (const skill of live) marks[skill.entry.id] = skill.live.generationId
+  for (const skill of live) marks[skill.entry.id] = seenMark(skill.entry, skill.live)
   for (const { entry } of removed) marks[entry.id] = REMOVED
   return marks
 }
@@ -194,6 +200,13 @@ function named(names: string[]): string {
   return names.length > NOTICE_NAMES ? `${listed} and ${names.length - NOTICE_NAMES} more` : listed
 }
 
+/** Skills an agent saw that no longer apply to it: its access or their library changed. */
+function lapsedPart(names: string[]): string[] {
+  if (names.length === 1) return [`${names[0]} no longer applies to you`]
+  if (names.length > 1) return [`${named(names)} no longer apply to you`]
+  return []
+}
+
 function removedPart(gone: LibraryEntry[]): string[] {
   if (gone.length === 1) return [`removed ${gone[0]!.name} (removed from its library, so it no longer applies)`]
   if (gone.length > 1) {
@@ -229,32 +242,41 @@ export async function skillChangeNotice(
     for (const skill of live) {
       const last = before?.[skill.entry.id]
       if (last === undefined || last === REMOVED) added.push(skill)
-      else if (last !== skill.live.generationId) updated.push(skill)
+      else if (last !== seenMark(skill.entry, skill.live)) updated.push(skill)
     }
     const gone: LibraryEntry[] = []
     for (const { entry } of removed) {
       const last = before?.[entry.id]
       if (last !== undefined && last !== REMOVED) gone.push(entry)
     }
+    // Seen, not removed, and no longer among the skills that apply. A Doc
+    // archived since still counts as applying until the next session's list.
+    // Named as the agent last saw them: what they are called now may be
+    // something it can no longer see.
+    const lapsed = Object.entries(before ?? {}).flatMap(([id, mark]) =>
+      mark !== REMOVED && !versions.has(id) ? [seenName(mark) ?? "A skill you had"] : []
+    )
     // Skills whose Doc no longer opens keep their version too, so the cheap
     // check keeps matching instead of resolving on every call.
     setMarks(participantId, { ...Object.fromEntries(versions), ...marksOf(live, removed) })
     if (sessionStart || !before) {
-      if (live.length === 0 && gone.length === 0) return null
+      if (live.length === 0 && gone.length === 0 && lapsed.length === 0) return null
       const parts = [
-        ...(live.length ? [`Skills from your team's Worktable libraries apply to you: ${named(live.map((skill) => skill.entry.name))}`] : []),
+        ...(live.length ? [`Skills in it that apply to you: ${named(live.map((skill) => skill.entry.name))}`] : []),
         ...(updated.length ? [`updated since you last saw them: ${named(updated.map((skill) => skill.entry.name))}`] : []),
         ...removedPart(gone),
+        ...lapsedPart(lapsed),
       ]
-      return `${parts.join("; ")}. worktable_skills_read returns the current ones.`
+      return `${LIBRARY_FOR_AGENTS} ${parts.join("; ")}. worktable_skills_read returns the current ones.`
     }
     const parts = [
       ...(updated.length ? [`updated ${named(updated.map((skill) => skill.entry.name))}`] : []),
       ...(added.length ? [`added ${named(added.map((skill) => skill.entry.name))}`] : []),
       ...removedPart(gone),
+      ...lapsedPart(lapsed),
     ]
     if (parts.length === 0) return null
-    return `Your team's Worktable skills changed: ${parts.join("; ")}. worktable_skills_read returns the current ones.`
+    return `Your team's Library changed: ${parts.join("; ")}. worktable_skills_read returns the current ones.`
   } catch (error) {
     console.error("[skills] could not add the skills notice:", logError(error))
     return null

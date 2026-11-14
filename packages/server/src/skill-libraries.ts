@@ -25,6 +25,9 @@ import { z } from "zod"
 import {
   DocumentGenerationIdSchema,
   DocumentIdSchema,
+  savedSinceLive,
+  skillNameFrom,
+  type DocLastSave,
   type PendingItem,
 } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
@@ -47,7 +50,7 @@ import {
   participantKey,
   participantsByKey,
 } from "./participant-store.ts"
-import { readSpace } from "./store.ts"
+import { getDocProvenance, readSpace } from "./store.ts"
 import { teamsEnabled } from "./team-database.ts"
 import {
   canAccessSpace,
@@ -98,6 +101,8 @@ const LibraryEntrySchema = z.looseObject({
   live: z
     .object({
       generationId: DocumentGenerationIdSchema,
+      /** The saved content's hash, as the Doc's last save records it. */
+      contentHash: z.string().optional(),
       savedAt: z.string(),
       savedBy: z.string(),
     })
@@ -106,6 +111,7 @@ const LibraryEntrySchema = z.looseObject({
     .object({
       kind: z.enum(["add", "update", "remove"]),
       generationId: DocumentGenerationIdSchema.optional(),
+      contentHash: z.string().optional(),
       description: z.string().optional(),
       by: z.object({ participantId: z.string(), displayName: z.string() }),
       at: z.string(),
@@ -248,19 +254,6 @@ function sameLibrary(a: LibraryRef, b: LibraryRef): boolean {
   return true
 }
 
-/** A Doc's name as a skill name: lowercase words joined by hyphens. */
-export function skillNameFrom(title: string): string {
-  const name = title
-    .normalize("NFKD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64)
-    .replace(/-+$/, "")
-  return name || "skill"
-}
-
 function checkedName(name: string): string {
   if (!NAME_PATTERN.test(name) || name.length > 64) {
     throw new LibraryError(
@@ -327,6 +320,8 @@ function touched(entry: LibraryEntry): void {
 interface DocLocation {
   path: string
   title: string
+  /** What the Doc's last save made, where that is recorded. */
+  lastSave?: DocLastSave
 }
 
 type Locate = (doc: LibraryEntry["doc"]) => Promise<DocLocation | null>
@@ -361,6 +356,14 @@ async function currentSkillDoc(spaceId: string, path: string) {
   return source
 }
 
+/** A version a skill goes live with, and the hash of what it holds when known. */
+interface SavedVersion {
+  documentId: string
+  generationId: string
+  path: string
+  contentHash?: string
+}
+
 /**
  * Save the Doc's current content as a version kept for good, the version a
  * skill goes live with. Saving a version needs Edit on the Doc's Space.
@@ -368,10 +371,12 @@ async function currentSkillDoc(spaceId: string, path: string) {
 async function saveVersion(options: {
   spaceId: string
   path: string
+  /** The Doc the version must be of, for a skill that has one already. */
+  documentId?: string
   createdBy: string
   source: string
   label: string
-}): Promise<{ documentId: string; generationId: string; path: string }> {
+}): Promise<SavedVersion> {
   if (!canAccessSpace(options.spaceId, "edit")) {
     throw new LibraryError("forbidden", "Saving a version of this Doc needs Edit on its Space.")
   }
@@ -384,11 +389,90 @@ async function saveVersion(options: {
     source: options.source,
     label: options.label,
   })
-  return { documentId: saved.documentId, generationId: saved.versionId, path: saved.path }
+  // A rename can hand the path to another Doc between finding the skill's Doc
+  // and saving it; that Doc's version is never the skill's.
+  if (options.documentId && saved.documentId !== options.documentId) {
+    throw new LibraryError("conflict", "This skill's Doc moved while it was being saved. Try again.")
+  }
+  // The Doc's last save names the content's hash. A save since makes it
+  // another version's, so it is left out and versions compare instead.
+  const after = await getDocProvenance(options.spaceId, saved.path)
+  return {
+    documentId: saved.documentId,
+    generationId: saved.versionId,
+    path: saved.path,
+    ...(after?.versionId === saved.versionId ? { contentHash: after.contentHash } : {}),
+  }
 }
 
-/** A live version's content, as Markdown. */
+/**
+ * A Doc that changes how it is stored (Markdown to rich text, or back) holds
+ * the same content under another hash. Skills whose live or proposed version
+ * is that content follow it, so opening a skill in the editor isn't shown as
+ * a change to save. Entry revisions stay, so a review under way still stands.
+ */
+export async function carrySkillHashAcrossConversion(
+  spaceId: string,
+  path: string,
+  before: string | undefined,
+  after: string | undefined
+): Promise<void> {
+  try {
+    if (!before || !after || before === after) return
+    const holds = (entry: LibraryEntry) =>
+      entry.doc.spaceId === spaceId &&
+      (entry.live?.contentHash === before || entry.proposal?.contentHash === before)
+    if (!readLibrary().entries.some(holds)) return
+    const { identities } = await readDocumentIdentities(spaceId)
+    const documentId = [...identities.current].find(([, doc]) => doc.path === path)?.[0]
+    if (!documentId) return
+    await changeLibrary((file) => {
+      for (const entry of file.entries) {
+        if (!holds(entry) || entry.doc.documentId !== documentId) continue
+        if (entry.live?.contentHash === before) entry.live.contentHash = after
+        if (entry.proposal?.contentHash === before) entry.proposal.contentHash = after
+      }
+    })
+  } catch (error) {
+    console.error("[library] could not carry a skill across its Doc's conversion:", logError(error))
+  }
+}
+
+/** A saved version as an entry records it. */
+function versionFields(saved: SavedVersion): { generationId: string; contentHash?: string } {
+  return {
+    generationId: saved.generationId,
+    ...(saved.contentHash ? { contentHash: saved.contentHash } : {}),
+  }
+}
+
+/** How much text of saved versions stays in memory between reads. */
+const VERSION_TEXT_CACHE_CHARS = 8 * 1024 * 1024
+const versionTexts = new Map<string, string>()
+let versionTextChars = 0
+
+/**
+ * A saved version's content, as Markdown. A version never changes, so its
+ * text is read once and kept while it fits; the oldest give way.
+ */
 async function liveContent(entry: LibraryEntry, generationId: string): Promise<string> {
+  const key = `${workspaceCacheKey()}\0${entry.doc.spaceId}\0${entry.doc.documentId}\0${generationId}`
+  const kept = versionTexts.get(key)
+  if (kept !== undefined) return kept
+  const text = await readVersionText(entry, generationId)
+  if (!versionTexts.has(key)) {
+    versionTexts.set(key, text)
+    versionTextChars += text.length
+    for (const [oldest, value] of versionTexts) {
+      if (versionTextChars <= VERSION_TEXT_CACHE_CHARS) break
+      versionTexts.delete(oldest)
+      versionTextChars -= value.length
+    }
+  }
+  return text
+}
+
+async function readVersionText(entry: LibraryEntry, generationId: string): Promise<string> {
   const workspaceRoot = getWorkspaceRoot()
   const manifest = await readDocumentGenerationManifestV2({
     workspaceRoot,
@@ -410,8 +494,13 @@ async function liveContent(entry: LibraryEntry, generationId: string): Promise<s
     maxBytes: SKILL_MAX_BYTES,
   })
   if (!bytes) throw new LibraryError("invalid", "This skill is too large to read.")
+  return sourceText(manifest.format.id, bytes)
+}
+
+/** A skill Doc's stored source as Markdown: as it is, or from its blocks. */
+async function sourceText(formatId: string, bytes: Uint8Array): Promise<string> {
   const text = new TextDecoder().decode(bytes)
-  if (manifest.format.id === BUILTIN_DOCUMENT_FORMATS.markdown) return text
+  if (formatId === BUILTIN_DOCUMENT_FORMATS.markdown) return text
   let blocks: unknown = null
   try {
     blocks = JSON.parse(text)
@@ -421,6 +510,21 @@ async function liveContent(entry: LibraryEntry, generationId: string): Promise<s
   const markdown = Array.isArray(blocks) ? await blocksToMarkdownSafe(blocks) : null
   if (markdown === null) throw new LibraryError("invalid", "This skill's Doc can't be read as text.")
   return markdown
+}
+
+/**
+ * The skill's Doc as saved right now, or null when it can't be read. While
+ * someone edits, its saves land before a version names them, so a draft
+ * compares against this rather than the Doc's last version.
+ */
+async function currentDocText(entry: LibraryEntry, path: string): Promise<string | null> {
+  try {
+    const source = await currentSkillDoc(entry.doc.spaceId, path)
+    if (source.documentId !== entry.doc.documentId || source.bytes.byteLength > SKILL_MAX_BYTES) return null
+    return await sourceText(source.format.id, source.bytes)
+  } catch {
+    return null
+  }
 }
 
 // ---- Who may change a library ----
@@ -472,6 +576,20 @@ async function requirePersonMayChange(
   }
 }
 
+/**
+ * The skill a person changes: one they can see, as the list shows it (its
+ * Doc's Space readable), in a library they may change. A skill they can't
+ * see is not found, so nothing about it comes back.
+ */
+async function entryPersonMayChange(id: string, identity: TokenIdentity): Promise<LibraryEntry> {
+  const entry = entryById(readLibrary(), id)
+  if (!canAccessSpace(entry.doc.spaceId, "read", identity)) {
+    throw new LibraryError("not_found", "No skill with that id is in a library.")
+  }
+  await requirePersonMayChange(entry.library, identity)
+  return entry
+}
+
 function attribution(identity: TokenIdentity): { createdBy: string; source: string } {
   // On a team, each person is their own author, as Doc writes record it.
   return { createdBy: teamsEnabled() ? identity.principal.id : "user", source: "rest-api" }
@@ -496,17 +614,31 @@ function agentLabel(library: LibraryRef, spaces: Map<string, string>): string {
   return "Yours"
 }
 
-async function personLabels(entries: LibraryEntry[]): Promise<(library: LibraryRef) => string> {
+interface PersonLabels {
+  /** How a person sees the library named, such as "Space: Ops". */
+  label: (library: LibraryRef) => string
+  /** The Space's or agent's own name; absent for the Worktable's library. */
+  name: (library: LibraryRef) => string | undefined
+}
+
+async function personLabels(entries: LibraryEntry[]): Promise<PersonLabels> {
   const spaces = await spaceNames(
     entries.flatMap((entry) => (entry.library.kind === "space" ? [entry.library.spaceId] : []))
   )
   const agents = entries.some((entry) => entry.library.kind === "agent")
     ? new Map([...(await participantsByKey()).values()].map((participant) => [participant.id, participant.name]))
     : new Map<string, string>()
-  return (library) =>
+  const name = (library: LibraryRef) =>
     library.kind === "agent"
-      ? `Agent: ${agents.get(library.participantId) ?? "Removed agent"}`
-      : agentLabel(library, spaces)
+      ? (agents.get(library.participantId) ?? "Removed agent")
+      : library.kind === "space"
+        ? (spaces.get(library.spaceId) ?? library.spaceId)
+        : undefined
+  return {
+    label: (library) =>
+      library.kind === "agent" ? `Agent: ${name(library)}` : agentLabel(library, spaces),
+    name,
+  }
 }
 
 // ---- People ----
@@ -525,23 +657,52 @@ export interface LibraryInput {
 
 export interface LibraryEntryView extends LibraryEntry {
   libraryLabel: string
+  /** The Space's or agent's name; absent for the Worktable's library. */
+  libraryName?: string
   /** The Doc's path and title now; absent when it no longer opens. */
   docPath?: string
   docTitle?: string
+  /** The Doc was saved since its live version, so Save would change what agents get. */
+  draft: boolean
+  /** Whether the person reading may change this skill's library. */
+  mayChange: boolean
+}
+
+/** Whether the person may change each library, asked once per library. */
+function changeRights(identity: TokenIdentity): (library: LibraryRef) => Promise<boolean> {
+  const rights = new Map<string, Promise<boolean>>()
+  return (library) => {
+    const key =
+      library.kind === "space"
+        ? `space:${library.spaceId}`
+        : library.kind === "agent"
+          ? `agent:${library.participantId}`
+          : "worktable"
+    if (!rights.has(key)) rights.set(key, personMayChange(library, identity))
+    return rights.get(key)!
+  }
 }
 
 async function viewOf(
-  entries: LibraryEntry[]
+  entries: LibraryEntry[],
+  identity: TokenIdentity
 ): Promise<LibraryEntryView[]> {
-  const label = await personLabels(entries)
+  const labels = await personLabels(entries)
   const locate = docLocator()
+  const mayChange = changeRights(identity)
   return Promise.all(
     entries.map(async (entry) => {
       const location = await locate(entry.doc)
+      const libraryName = labels.name(entry.library)
       return {
         ...entry,
-        libraryLabel: label(entry.library),
+        libraryLabel: labels.label(entry.library),
+        ...(libraryName ? { libraryName } : {}),
         ...(location ? { docPath: location.path, docTitle: location.title } : {}),
+        // The snapshot names what the Doc's last save made, so this reads
+        // nothing more.
+        draft: !entry.removed && savedSinceLive(entry.live, location?.lastSave),
+        mayChange: await mayChange(entry.library),
       }
     })
   )
@@ -562,7 +723,47 @@ export async function listLibraryForPerson(
         : library.kind === "worktable" || (await personMayChange(library, identity))
     if (sees) visible.push(entry)
   }
-  return { revision: file.revision, entries: await viewOf(visible) }
+  return { revision: file.revision, entries: await viewOf(visible, identity) }
+}
+
+/**
+ * The library skills a Doc is, as a person sees them on the Doc's own page.
+ * A Space with no skill Docs reads nothing.
+ */
+export async function skillsOfDoc(
+  identity: TokenIdentity,
+  spaceId: string,
+  path: string
+): Promise<
+  Array<{ id: string; live: { generationId: string; contentHash?: string } | null; proposed: boolean; removed?: true }>
+> {
+  if (!isPerson(identity)) return []
+  // Removed skills too, marked: the Library still opens their Doc to restore them.
+  const candidates = readLibrary().entries.filter((entry) => entry.doc.spaceId === spaceId)
+  if (candidates.length === 0) return []
+  const locate = docLocator()
+  const found = []
+  for (const entry of candidates) {
+    if ((await locate(entry.doc))?.path !== path) continue
+    const library = entry.library
+    const sees =
+      library.kind === "space"
+        ? canAccessSpace(library.spaceId, "read", identity)
+        : library.kind === "worktable" || (await personMayChange(library, identity))
+    if (!sees) continue
+    found.push({
+      id: entry.id,
+      live: entry.live
+        ? {
+            generationId: entry.live.generationId,
+            ...(entry.live.contentHash ? { contentHash: entry.live.contentHash } : {}),
+          }
+        : null,
+      proposed: Boolean(entry.proposal),
+      ...(entry.removed ? { removed: true as const } : {}),
+    })
+  }
+  return found
 }
 
 async function resolveLibrary(input: LibraryInput["library"], docSpaceId: string): Promise<LibraryRef> {
@@ -611,7 +812,7 @@ export async function addToLibrary(
       description,
       library,
       doc: { spaceId: input.spaceId, documentId: saved.documentId },
-      live: { generationId: saved.generationId, savedAt: now, savedBy: identity.principal.id },
+      live: { ...versionFields(saved), savedAt: now, savedBy: identity.principal.id },
       proposal: null,
       removed: null,
       revision: 1,
@@ -623,33 +824,42 @@ export async function addToLibrary(
     file.entries.push(created)
     return created
   })
-  return (await viewOf([entry]))[0]!
+  return (await viewOf([entry], identity))[0]!
 }
 
 /** Make the Doc's current content the live version, and optionally rename or redescribe it. */
 export async function saveLibrarySkill(
   identity: TokenIdentity,
   id: string,
-  input: { name?: string; description?: string } = {}
+  input: { name?: string; description?: string; contentHash?: string } = {}
 ): Promise<LibraryEntryView> {
-  const before = entryById(readLibrary(), id)
+  const before = await entryPersonMayChange(id, identity)
   if (before.removed) throw new LibraryError("not_found", "This skill was removed from its library.")
-  await requirePersonMayChange(before.library, identity)
   const name = input.name === undefined ? undefined : checkedName(input.name)
   const description = input.description === undefined ? undefined : checkedDescription(input.description)
   const location = await docLocation(before.doc)
   if (!location) throw new LibraryError("not_found", "This skill's Doc no longer opens.")
+  // Agents get what the person saw: content saved since they looked is
+  // theirs to see first. A version made of the same content changes nothing.
+  if (input.contentHash && location.lastSave?.contentHash !== input.contentHash) {
+    throw new LibraryError("conflict", "This Doc changed since you looked at it. Look again, then save.")
+  }
   const saved = await saveVersion({
     spaceId: before.doc.spaceId,
     path: location.path,
+    documentId: before.doc.documentId,
     ...attribution(identity),
     label: "Library skill",
   })
+  // Content saved between that check and the version is the person's to see first.
+  if (input.contentHash && saved.contentHash !== input.contentHash) {
+    throw new LibraryError("conflict", "This Doc changed since you looked at it. Look again, then save.")
+  }
   const entry = await changeLibrary((file, now) => {
     const entry = entryById(file, id)
     if (entry.removed) throw new LibraryError("not_found", "This skill was removed from its library.")
     if (name !== undefined) assertNameFree(file, entry.library, name, entry.id)
-    entry.live = { generationId: saved.generationId, savedAt: now, savedBy: identity.principal.id }
+    entry.live = { ...versionFields(saved), savedAt: now, savedBy: identity.principal.id }
     if (name !== undefined) entry.name = name
     if (description !== undefined) entry.description = description
     // A proposal to add it is answered: it is live.
@@ -657,7 +867,7 @@ export async function saveLibrarySkill(
     touched(entry)
     return entry
   })
-  return (await viewOf([entry]))[0]!
+  return (await viewOf([entry], identity))[0]!
 }
 
 /** Approve an agent's proposal: it goes live, or the skill is removed. */
@@ -673,11 +883,7 @@ export async function approveLibraryProposal(
   id: string,
   revision: number
 ): Promise<LibraryEntryView> {
-  const before = entryById(readLibrary(), id)
-  await requirePersonMayChange(before.library, identity)
-  if (!canAccessSpace(before.doc.spaceId, "read", identity)) {
-    throw new LibraryError("forbidden", "You can't read this skill's Doc, so you can't approve it.")
-  }
+  await entryPersonMayChange(id, identity)
   const entry = await changeLibrary((file, now) => {
     const entry = entryById(file, id)
     const proposal = entry.proposal
@@ -691,13 +897,18 @@ export async function approveLibraryProposal(
       if (!proposal.generationId) throw new LibraryError("conflict", "This proposal has no version to make live.")
       assertNameFree(file, entry.library, entry.name, entry.id)
       if (proposal.description) entry.description = proposal.description
-      entry.live = { generationId: proposal.generationId, savedAt: now, savedBy: identity.principal.id }
+      entry.live = {
+        generationId: proposal.generationId,
+        ...(proposal.contentHash ? { contentHash: proposal.contentHash } : {}),
+        savedAt: now,
+        savedBy: identity.principal.id,
+      }
     }
     entry.proposal = null
     touched(entry)
     return entry
   })
-  return (await viewOf([entry]))[0]!
+  return (await viewOf([entry], identity))[0]!
 }
 
 /** Discard an agent's proposal. A skill only proposed is gone with it. */
@@ -706,7 +917,7 @@ export async function discardLibraryProposal(
   id: string,
   revision: number
 ): Promise<{ entry: LibraryEntryView | null }> {
-  await requirePersonMayChange(entryById(readLibrary(), id).library, identity)
+  await entryPersonMayChange(id, identity)
   const entry = await changeLibrary((file) => {
     const entry = entryById(file, id)
     if (!entry.proposal) throw new LibraryError("conflict", "Nothing waits on approval for this skill.")
@@ -719,7 +930,7 @@ export async function discardLibraryProposal(
     touched(entry)
     return entry
   })
-  return { entry: entry ? (await viewOf([entry]))[0]! : null }
+  return { entry: entry ? (await viewOf([entry], identity))[0]! : null }
 }
 
 /** Remove a skill from its library at once. Agents are told for 30 days. */
@@ -727,7 +938,7 @@ export async function removeFromLibrary(
   identity: TokenIdentity,
   id: string
 ): Promise<{ entry: LibraryEntryView | null }> {
-  await requirePersonMayChange(entryById(readLibrary(), id).library, identity)
+  await entryPersonMayChange(id, identity)
   const entry = await changeLibrary((file, now) => {
     const entry = entryById(file, id)
     if (entry.removed) throw new LibraryError("not_found", "This skill was already removed.")
@@ -741,7 +952,85 @@ export async function removeFromLibrary(
     touched(entry)
     return entry
   })
-  return { entry: entry ? (await viewOf([entry]))[0]! : null }
+  return { entry: entry ? (await viewOf([entry], identity))[0]! : null }
+}
+
+/** Rename or redescribe a skill. What agents get from its Doc stays as it is. */
+export async function updateLibrarySkillDetails(
+  identity: TokenIdentity,
+  id: string,
+  input: { name?: string; description?: string }
+): Promise<LibraryEntryView> {
+  await entryPersonMayChange(id, identity)
+  const name = input.name === undefined ? undefined : checkedName(input.name)
+  const description = input.description === undefined ? undefined : checkedDescription(input.description)
+  const entry = await changeLibrary((file) => {
+    const entry = entryById(file, id)
+    if (entry.removed) throw new LibraryError("not_found", "This skill was removed from its library.")
+    if (name !== undefined) assertNameFree(file, entry.library, name, entry.id)
+    if (name !== undefined) entry.name = name
+    if (description !== undefined) entry.description = description
+    touched(entry)
+    return entry
+  })
+  return (await viewOf([entry], identity))[0]!
+}
+
+/** Put a removed skill back in its library, live at the version it had. */
+export async function restoreLibrarySkill(
+  identity: TokenIdentity,
+  id: string
+): Promise<LibraryEntryView> {
+  await entryPersonMayChange(id, identity)
+  const entry = await changeLibrary((file) => {
+    const entry = entryById(file, id)
+    if (!entry.removed) throw new LibraryError("conflict", "This skill is in its library.")
+    assertNameFree(file, entry.library, entry.name, entry.id)
+    entry.removed = null
+    touched(entry)
+    return entry
+  })
+  return (await viewOf([entry], identity))[0]!
+}
+
+/** A version's text, or null for one that can't be read: never a failure. */
+function textAt(entry: LibraryEntry, generationId: string | undefined): Promise<string | null> | null {
+  return generationId ? liveContent(entry, generationId).catch(() => null) : null
+}
+
+function proposedDescription(entry: LibraryEntry): { nextDescription?: string } {
+  const proposed = entry.proposal?.description
+  return proposed && proposed !== entry.description ? { nextDescription: proposed } : {}
+}
+
+/**
+ * What would change for agents: the text they get now beside the text that
+ * waits, an agent's proposal or, without one, the Doc as last saved.
+ */
+export async function librarySkillChange(
+  identity: TokenIdentity,
+  id: string
+): Promise<{ revision: number; live: string | null; next: string | null; nextDescription?: string }> {
+  const entry = entryById(readLibrary(), id)
+  const sees =
+    entry.library.kind === "space"
+      ? canAccessSpace(entry.library.spaceId, "read", identity)
+      : entry.library.kind === "worktable" || (await personMayChange(entry.library, identity))
+  if (!sees || !canAccessSpace(entry.doc.spaceId, "read", identity)) {
+    throw new LibraryError("not_found", "No skill with that id is in a library.")
+  }
+  const proposal = entry.proposal
+  // What waits: an agent's proposed version, or the Doc as saved right now.
+  const location = proposal ? undefined : await docLocation(entry.doc)
+  const [live, next] = await Promise.all([
+    textAt(entry, entry.live?.generationId),
+    proposal
+      ? textAt(entry, proposal.kind === "remove" ? undefined : proposal.generationId)
+      : location
+        ? currentDocText(entry, location.path)
+        : null,
+  ])
+  return { revision: entry.revision, live, next, ...proposedDescription(entry) }
 }
 
 /** Agents' proposals waiting on this person, for Pending. */
@@ -758,9 +1047,12 @@ export async function pendingSkillProposals(
     if (await personMayChange(entry.library, identity)) waiting.push(entry)
   }
   if (waiting.length === 0) return []
-  const label = await personLabels(waiting)
-  return waiting.map((entry) => {
+  const { label } = await personLabels(waiting)
+  const locate = docLocator()
+  const titles = await Promise.all(waiting.map(async (entry) => (await locate(entry.doc))?.title))
+  return waiting.map((entry, index) => {
     const proposal = entry.proposal!
+    const skillTitle = titles[index]
     return {
       kind: "skillProposal",
       id: `skill:${entry.id}:${entry.revision}`,
@@ -769,6 +1061,7 @@ export async function pendingSkillProposals(
       entryId: entry.id,
       revision: entry.revision,
       skillName: entry.name,
+      ...(skillTitle ? { skillTitle } : {}),
       libraryLabel: label(entry.library),
       agentName: proposal.by.displayName,
       change: proposal.kind,
@@ -836,7 +1129,7 @@ export function applicableVersions(reader: SkillReader): Map<string, string> {
     if (entry.removed) {
       if (now - Date.parse(entry.removed.at) < REMOVED_VISIBLE_MS) versions.set(entry.id, REMOVED_MARK)
     } else if (entry.live) {
-      versions.set(entry.id, entry.live.generationId)
+      versions.set(entry.id, seenMark(entry, entry.live))
     }
   }
   return versions
@@ -844,6 +1137,19 @@ export function applicableVersions(reader: SkillReader): Map<string, string> {
 
 /** The seen mark for a skill removed from its library. */
 export const REMOVED_MARK = "removed"
+
+/**
+ * What an agent has seen of a live skill: its version, name and when to use
+ * it, so a rename or a new description is a change to tell it about.
+ */
+export function seenMark(entry: Pick<LibraryEntry, "name" | "description">, live: { generationId: string }): string {
+  return `${live.generationId}\n${entry.name}\n${entry.description}`
+}
+
+/** The name a seen mark recorded, if it recorded one. */
+export function seenName(mark: string): string | undefined {
+  return mark.split("\n")[1] || undefined
+}
 
 function inScope(library: LibraryRef, spaceId: string | undefined): boolean {
   return !spaceId || library.kind !== "space" || library.spaceId === spaceId
@@ -1014,19 +1320,20 @@ export async function proposeSkillChange(reader: SkillReader, input: ProposalInp
   requireAgentMayPropose(target.library, reader, target.doc)
   const spaces = await spaceNames(target.library.kind === "space" ? [target.library.spaceId] : [])
   const description = input.description === undefined ? undefined : checkedDescription(input.description)
-  let generationId: string | undefined
+  let version: ReturnType<typeof versionFields> | undefined
   if (!input.remove) {
     const location = await docLocation(target.doc)
     if (!location) throw new LibraryError("not_found", "This skill's Doc no longer opens.")
-    generationId = (
+    version = versionFields(
       await saveVersion({
         spaceId: target.doc.spaceId,
         path: location.path,
+        documentId: target.doc.documentId,
         createdBy: reader.actorId,
         source: "mcp",
         label: "Proposed library skill",
       })
-    ).generationId
+    )
   }
   const entry = await changeLibrary((file, now) => {
     const entry = entryById(file, target.id)
@@ -1036,7 +1343,7 @@ export async function proposeSkillChange(reader: SkillReader, input: ProposalInp
     }
     entry.proposal = {
       kind: input.remove ? "remove" : entry.live ? "update" : "add",
-      ...(generationId ? { generationId } : {}),
+      ...version,
       ...(description ? { description } : {}),
       by,
       at: now,
@@ -1085,7 +1392,7 @@ async function proposeAdd(
       library,
       doc: { spaceId, documentId: saved.documentId },
       live: null,
-      proposal: { kind: "add", generationId: saved.generationId, by, at: now },
+      proposal: { kind: "add", ...versionFields(saved), by, at: now },
       removed: null,
       revision: 1,
     }

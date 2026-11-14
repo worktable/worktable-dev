@@ -1,6 +1,7 @@
 import { prunedDocumentHistoryV2 } from "../document-version-compatibility-v2.ts";
 import { keepEarlierImagesAfterRestore } from "../file-history.ts";
 import { requireScope, requireHumanWorkspaceOwner, restWriteActor } from "../auth.ts";
+import { carrySkillHashAcrossConversion } from "../skill-libraries.ts";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { DocumentLifetimeSchema } from "@worktable/types";
@@ -738,9 +739,12 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
 
     const { markdownToBlocks } = await import("../markdown.ts");
     const blocks = await markdownToBlocks(result.data as string);
+    const hashBefore = (await getDocProvenance(spaceId, docPath))?.contentHash;
 
     const filePath = await getDocPath(spaceId, docPath);
     suppressPath(filePath);
+    // The hash of what the conversion wrote, not of a save that followed it.
+    let convertedHash: string | undefined;
     try {
       const writeResult = await writeDoc(spaceId, docPath, blocks, {
         updatedBy: restWriteActor(c),
@@ -752,6 +756,7 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
       if (!writeResult.ok) {
         return c.json({ error: writeResult.error ?? "Write failed", code: "CONFLICT" }, 409);
       }
+      convertedHash = writeResult.provenance?.contentHash;
     } finally {
       setTimeout(() => unsuppressPath(filePath), 150);
     }
@@ -760,6 +765,7 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
 
     const statResult = await docStat(spaceId, docPath);
     const provenance = await getDocProvenance(spaceId, docPath);
+    await carrySkillHashAcrossConversion(spaceId, docPath, hashBefore, convertedHash ?? provenance?.contentHash);
     wsManager.broadcast(spaceId, {
       type: "doc_update",
       spaceId,
@@ -799,6 +805,7 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
       updatedAt: number;
       provenance: DocProvenance | undefined;
     } = { complete: false, updatedAt: 0, provenance: undefined };
+    const richHash = (await getDocProvenance(spaceId, docPath))?.contentHash;
     const conversion = await yjsManager
       .withDocFormatTransition(spaceId, docPath, () =>
         convertDocToMarkdownStorage(spaceId, docPath, {
@@ -840,6 +847,7 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
             const provenance = await getDocProvenance(spaceId, docPath);
             convertedState.updatedAt = statResult?.updatedAt ?? Date.now();
             convertedState.provenance = provenance;
+            await carrySkillHashAcrossConversion(spaceId, docPath, richHash, provenance?.contentHash);
             try {
               wsManager.broadcast(spaceId, {
                 type: "doc_update",

@@ -41,6 +41,8 @@ beforeEach(() => {
   delete process.env["WORKTABLE_LAUNCHER"];
   delete process.env["WORKTABLE_REQUIRE_AUTH"];
   delete process.env["HOST"];
+  // The matrix below is the released tool surface.
+  delete process.env["WORKTABLE_MCP_PREVIEW"];
 });
 
 afterEach(() => {
@@ -539,6 +541,7 @@ describe("GET /api/system/deployment", () => {
         shareLinks: false,
         files: true,
         commentRecipients: true,
+        skillLibraries: false,
       },
     };
     expect(getDeploymentInfo()).toEqual(expected);
@@ -569,6 +572,7 @@ describe("GET /api/system/deployment", () => {
         shareLinks: false,
         files: true,
         commentRecipients: true,
+        skillLibraries: false,
       },
     };
     expect(getDeploymentInfo()).toEqual(expected);

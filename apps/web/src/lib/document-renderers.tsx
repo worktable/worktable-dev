@@ -1,4 +1,4 @@
-import { lazy, type ComponentType } from "react"
+import { lazy, type ComponentType, type ReactNode } from "react"
 import { preloadableComponent } from "@worktable/ui/lib/preloadable-component"
 import type { DocumentPage, DocumentRenderer } from "@worktable/types"
 import type { DocumentOpenHint } from "./document-rows.ts"
@@ -14,6 +14,11 @@ export interface DocumentRendererProps {
    */
   page: DocumentPage | null
   preview?: DocumentOpenHint | null
+  /**
+   * Shown under the title in place of the Doc's byline, by a page that
+   * shows the Doc inside itself.
+   */
+  afterTitle?: ReactNode
 }
 
 interface BrowserDocumentRendererRegistration {

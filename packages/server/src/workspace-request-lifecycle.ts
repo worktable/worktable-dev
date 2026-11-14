@@ -62,6 +62,7 @@ export function classifyWorkspaceRequest(
       (pathname === "/api/profile" ||
         pathname === "/api/pending" ||
         pathname === "/api/library" ||
+        pathname.startsWith("/api/library/") ||
         pathname === "/api/threads" ||
         pathname.startsWith("/api/threads/") ||
         /^\/api\/spaces\/[^/]+\/threads(?:\/|$)/.test(pathname))

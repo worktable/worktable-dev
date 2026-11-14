@@ -66,8 +66,8 @@
       "why": "Main already measures 15 here (run 43557287192 on bb09d44): a late request from the load lands in this window, and the check let it pass while the cold pass stayed within its total. Space Home now asks for its Latest on a cold open (13 to 14 requests, within that click's own budget), which uses up the slack. The requests this load makes are the same as on main."
     },
     "cold js, open Markdown doc": {
-      "max": 31,
-      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
+      "max": 32,
+      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total. A Doc's opening (its page check, the read-only first frame and the catalog re-check) is shared with the Library's skill page, so the bundler emits it as one 1 KB file preloaded with the Doc route: the same code, one file more. CI run 43638319195 measured 32 for a Doc with images; a Markdown doc measured within 31 on the same build, the window's late files deciding which."
     },
     "requests, cold, open rich doc": {
       "max": 16,
@@ -110,8 +110,8 @@
       "why": "New journey: a deep link to an HTML Doc that names two Space images. The HTML doc's requests: the images come inside its frame. Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
     },
     "cold js, open a Doc with images": {
-      "max": 31,
-      "why": "New journey (Plan 21): the same code as a Markdown doc."
+      "max": 32,
+      "why": "New journey (Plan 21): the same code as a Markdown doc. A Doc's opening (its page check, the read-only first frame and the catalog re-check) is shared with the Library's skill page, so the bundler emits it as one 1 KB file preloaded with the Doc route: the same code, one file more. CI run 43638319195 measured 32 for a Doc with images; a Markdown doc measured within 31 on the same build, the window's late files deciding which."
     },
     "cold js, open an HTML Doc with images": {
       "max": 30,

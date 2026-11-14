@@ -7,6 +7,7 @@ import { SkillFrame, SkillHead } from "@/components/library/skill-frame"
 import { loadDocCode, loadedDocCode } from "@/components/library/doc-code"
 import { SkillNameDialog } from "@/components/library/skill-name-dialog"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useLiveSpaceCatalog } from "@/hooks/use-live-space-catalog"
 import {
   SetPageMetaContext,
   useSetPageMeta,
@@ -14,7 +15,7 @@ import {
   type PageOverflowAction,
 } from "@/hooks/use-page-meta"
 import { documentRoute } from "@/lib/document-views"
-import { documentQueryKeys } from "@/lib/documents-queries"
+import { documentQueryKeys, useDocuments } from "@/lib/documents-queries"
 import { documentOpenHint } from "@/lib/document-rows"
 import { useDocumentOpen } from "@/lib/use-document-open"
 import {
@@ -62,6 +63,10 @@ export function OpenSkill({
   // The Doc opens as on its own page: what the tab knows shows read-only at
   // once, and the editor takes over once a check validates this open.
   const { pageQuery, page: checked } = useDocumentOpen(spaceId, path)
+  // The Space's catalog stays live, as a Doc page's breadcrumb keeps it, so
+  // a move or archive made elsewhere re-checks the open Doc.
+  useLiveSpaceCatalog(spaceId)
+  useDocuments(spaceId)
   const page = checked?.kind === "document" ? checked : null
   // After a move another Doc can hold the skill's old path; a Doc's page names
   // the skills it is, removed ones included, so only this skill's own Doc

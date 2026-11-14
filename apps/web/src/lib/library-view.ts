@@ -142,16 +142,18 @@ export function changeOf(
   entry: Pick<LibraryEntry, "proposal">,
   texts: SkillTexts
 ): TextPart[] | null {
+  // A text shown whole keeps its heading: nothing else shows it.
   if (entry.proposal?.kind === "remove")
-    return texts.live === null ? null : whole(body(texts.live), "removed")
+    return texts.live === null ? null : whole(body(texts.live, true), "removed")
   if (texts.next === undefined)
-    return texts.live === null ? null : whole(body(texts.live), "same")
+    return texts.live === null ? null : whole(body(texts.live, true), "same")
   if (texts.next === null) return null
-  const next = body(texts.next)
   // A new skill's text is all new. One whose live text is lost, or too long
   // to compare, has no comparison to show.
   if (texts.live === null)
-    return entry.proposal?.kind === "add" ? whole(next, "added") : null
+    return entry.proposal?.kind === "add"
+      ? whole(body(texts.next, true), "added")
+      : null
   // A heading both sides share repeats the title and is left out; a changed
   // one is part of the change.
   const keepHeading = firstLine(texts.live) !== firstLine(texts.next)

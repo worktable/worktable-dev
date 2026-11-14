@@ -184,10 +184,20 @@ describe("what a change does to a skill's text", () => {
   it("strikes a removal, and marks a new skill's text all new", () => {
     expect(
       shown({ proposal: proposal("remove", "1") }, { live: LIVE })
-    ).toEqual(["removed:Tag the build.", "removed:Run the smoke test."])
+    ).toEqual([
+      "removed:# Release",
+      "removed:",
+      "removed:Tag the build.",
+      "removed:Run the smoke test.",
+    ])
     expect(
       shown({ proposal: proposal("add", "1") }, { live: null, next: NEXT })
-    ).toEqual(["added:Tag the build.", "added:Run the smoke test twice."])
+    ).toEqual([
+      "added:# Release",
+      "added:",
+      "added:Tag the build.",
+      "added:Run the smoke test twice.",
+    ])
   })
 
   it("has nothing to show for a text that can't be read", () => {

@@ -83,7 +83,8 @@ function Tip({
         role="tooltip"
         className={cn(
           tipClass,
-          "bottom-full mb-2 hidden group-hover/tip:flex",
+          // It eases in rather than appearing at once.
+          "invisible bottom-full mb-2 translate-y-1 opacity-0 transition-[opacity,translate,visibility] duration-150 ease-out group-hover/tip:visible group-hover/tip:translate-y-0 group-hover/tip:opacity-100",
           align === "start" ? "-left-1" : "left-1/2 -translate-x-1/2"
         )}
       >
@@ -130,20 +131,16 @@ function Tracker({
           role="tooltip"
           className={cn(
             tipClass,
-            // Under the row, so the place's name stays readable; and inside
-            // the card at either end of the row.
-            "top-full mt-2",
-            hovered < 3
-              ? "left-0"
-              : hovered > days.length - 4
-                ? "right-0"
-                : "-translate-x-1/2"
+            // Under the row, so the place's name stays readable. It fades in
+            // once, then glides along the row with the pointer.
+            "top-full mt-2 animate-in duration-150 ease-out fade-in-0 transition-[left,translate]"
           )}
-          style={
-            hovered >= 3 && hovered <= days.length - 4
-              ? { left: `${((hovered + 0.5) / days.length) * 100}%` }
-              : undefined
-          }
+          // Its own anchor moves with the day, so it stays inside the card
+          // at either end of the row.
+          style={{
+            left: `${((hovered + 0.5) / days.length) * 100}%`,
+            translate: `${-((hovered + 0.5) / days.length) * 100}% 0`,
+          }}
         >
           <span className="opacity-70">
             {dayName(
@@ -524,7 +521,7 @@ export function ArchivingWeek({
                       aria-label={`${label}: ${count} archiving`}
                       className={cn(
                         cell,
-                        "cursor-pointer outline-none hover:ring-2 hover:ring-ring focus-visible:ring-2 focus-visible:ring-ring"
+                        "cursor-pointer outline-1 outline-offset-1 outline-transparent transition-[outline-color] duration-200 ease-out hover:outline-foreground/30 focus-visible:outline-2 focus-visible:outline-ring data-[popup-open]:outline-foreground/40"
                       )}
                     >
                       {count}

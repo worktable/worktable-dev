@@ -73,6 +73,14 @@ function greetingNow(): string {
       : "Good evening"
 }
 
+function todayNow(): string {
+  return new Date().toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  })
+}
+
 /**
  * A greeting for the reader's time of day. The prerendered page has none,
  * since the server does not know the reader's clock.
@@ -89,6 +97,8 @@ function HomePage() {
   const { data: spaces } = useSpaces()
   const { data: workspace } = useWorkspace()
   const greeting = useGreeting(workspace?.person?.name)
+  // Read on each render, so it follows the day without a timer of its own.
+  const today = useSyncExternalStore(noChange, todayNow, () => null)
   const feed = useHomeFeed()
   const homePins = useHomePins()
   const navigate = useNavigate()
@@ -134,10 +144,15 @@ function HomePage() {
 
   return (
     <PageWithActivity wide>
-      <header className="flex items-start justify-between gap-4">
-        <h1 className="min-h-9 font-display text-[1.65rem] leading-tight font-semibold tracking-tight text-foreground sm:min-h-10 sm:text-[2rem]">
-          {greeting}
-        </h1>
+      <header className="flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <p className="mb-1.5 h-4 text-[0.6875rem] leading-4 font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+            {today}
+          </p>
+          <h1 className="min-h-9 font-display text-[1.65rem] leading-tight font-semibold tracking-tight text-foreground sm:min-h-10 sm:text-[2rem]">
+            {greeting}
+          </h1>
+        </div>
         <HomeNewMenu
           spaces={activeSpaces.filter((space) => !isGettingStartedSpace(space))}
         />

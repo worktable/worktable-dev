@@ -238,6 +238,8 @@
 }
 
 .bn-editor [data-content-type="heading"]:not([data-level]) {
+  /* BlockNote sizes headings from --level; a title takes the Doc's size. */
+  --level: var(--doc-h1-size, 3rem) !important;
   line-height: var(--doc-h1-line-height) !important;
 }
 

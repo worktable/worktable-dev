@@ -171,10 +171,37 @@ function commonDocumentUrl(
   return mcpContentUrl(origin, documentReferenceHref(spaceId, path))
 }
 
+type ToolResult = { content: Array<{ type: string; text?: string }>; structuredContent?: Record<string, unknown>; isError?: boolean }
+
+/** A line for the agent beside a result, as other tools carry it, in both forms. */
+async function withNotice<T extends ToolResult>(
+  result: T,
+  operationId: string,
+  notice: ((operationId: string) => Promise<string | null>) | undefined
+): Promise<T> {
+  if (!notice || result.isError) return result
+  const line = await notice(operationId)
+  if (!line) return result
+  return {
+    ...result,
+    ...(result.structuredContent ? { structuredContent: { ...result.structuredContent, notices: line } } : {}),
+    content: [...result.content, { type: "text", text: line }],
+  }
+}
+
 export function registerCompanyKnowledgeTools(
   server: McpServer,
-  options: { scopes: string[]; urlOrigin: string }
+  options: {
+    scopes: string[]
+    urlOrigin: string
+    /** The preview surface lists notices beside results. */
+    preview?: boolean
+    /** On the preview surface, for an identified caller: the skills line for this call, if any. */
+    notice?: (operationId: string) => Promise<string | null>
+  }
 ): void {
+  const searchOutput = options.preview ? SearchOutput.extend({ notices: z.string().optional() }) : SearchOutput
+  const fetchOutput = options.preview ? FetchOutput.extend({ notices: z.string().optional() }) : FetchOutput
   server.registerTool(
     "search",
     {
@@ -182,7 +209,7 @@ export function registerCompanyKnowledgeTools(
       description:
         "Search Worktable documents and records for matching knowledge.",
       inputSchema: SearchInput,
-      outputSchema: SearchOutput,
+      outputSchema: searchOutput,
       annotations: {
         title: "Search Worktable",
         readOnlyHint: true,
@@ -192,7 +219,7 @@ export function registerCompanyKnowledgeTools(
       },
       ...oauthToolMetadata(),
     },
-    async ({ query }) => measureMcpCall("search", "search.query", async () => {
+    async ({ query }) => measureMcpCall("search", "search.query", async () => withNotice(await (async () => {
       const denied = requireScope(options.scopes, "search:read", "search")
       if (denied) return denied
       try {
@@ -269,7 +296,7 @@ export function registerCompanyKnowledgeTools(
       } catch (error) {
         return mkErr(error instanceof Error ? error.message : String(error))
       }
-    })
+    })(), "search.query", options.notice))
   )
 
   server.registerTool(
@@ -279,7 +306,7 @@ export function registerCompanyKnowledgeTools(
       description:
         "Fetch the full text and URL of one Worktable document or record by opaque result ID.",
       inputSchema: FetchInput,
-      outputSchema: FetchOutput,
+      outputSchema: fetchOutput,
       annotations: {
         title: "Fetch Worktable item",
         readOnlyHint: true,
@@ -289,7 +316,7 @@ export function registerCompanyKnowledgeTools(
       },
       ...oauthToolMetadata(),
     },
-    async ({ id }) => measureMcpCall("fetch", "company_knowledge.fetch", async () => {
+    async ({ id }) => measureMcpCall("fetch", "company_knowledge.fetch", async () => withNotice(await (async () => {
       try {
         const target = decodeCompanyKnowledgeId(id)
         const requiredScope =
@@ -428,6 +455,6 @@ export function registerCompanyKnowledgeTools(
       } catch (error) {
         return mkErr(error instanceof Error ? error.message : String(error))
       }
-    })
+    })(), "company_knowledge.fetch", options.notice))
   )
 }

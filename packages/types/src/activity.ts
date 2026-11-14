@@ -143,6 +143,21 @@ export type PendingItem =
       threadTitle: string
       agentName: string
     }
+  | {
+      /** An agent's proposed change to a skill library, for a person who may approve it. */
+      kind: "skillProposal"
+      id: string
+      at: string
+      /** The library's Space; null for the Worktable's library and agents' own. */
+      spaceId: string | null
+      entryId: string
+      /** The entry's revision; approving or discarding names it. */
+      revision: number
+      skillName: string
+      libraryLabel: string
+      agentName: string
+      change: "add" | "update" | "remove"
+    }
 
 export interface PendingResult {
   /** The newest items, at most ten. */

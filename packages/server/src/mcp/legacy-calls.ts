@@ -18,6 +18,7 @@ import {
   MermaidInput,
   RecordsReadInput,
   RecordsWriteInputPreview,
+  SkillsInput,
   SpacesInputPreview,
   ThreadDeliveryInput,
   ThreadsReadInput,
@@ -54,6 +55,9 @@ export const LEGACY_INPUT_SCHEMAS: Record<WorktableToolName, z.ZodType> = {
   worktable_delete: DeleteInputPreview,
   worktable_guidance: GuidanceInput,
   worktable_mermaid: MermaidInput,
+  // Never released in the grouped shape; the dispatcher answers it only on
+  // the preview surface.
+  worktable_skills: SkillsInput,
 }
 
 /** Earlier names for the file tools, which took the document tools' requests. */

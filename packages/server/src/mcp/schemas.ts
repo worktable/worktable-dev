@@ -1529,6 +1529,50 @@ export const MermaidInput = z.strictObject({
   ]),
 })
 
+// ---- Skill libraries (preview only) ----
+
+const SkillLibraryInput = z.enum(["worktable", "space", "agent"])
+const SkillNameInput = z.string().min(1).max(64)
+
+export const ReadSkillInput = z.object({
+  name: SkillNameInput.describe("The skill's name, as worktable_state lists it."),
+  library: SkillLibraryInput.optional().describe(
+    "When skills in more than one library share the name: worktable, space, or agent for your own."
+  ),
+  spaceId: z.string().optional().describe("With library space: the Space whose library holds it."),
+})
+
+export const ProposeSkillInput = z.object({
+  name: SkillNameInput.optional().describe(
+    "The skill to update or remove. To add, the new skill's name in lowercase words joined by hyphens; the Doc's name when omitted."
+  ),
+  spaceId: z.string().optional().describe("To add: the Space holding the Doc."),
+  path: z
+    .string()
+    .min(1)
+    .max(4096)
+    .optional()
+    .describe("To add: the Doc's path. Its current content is what you propose."),
+  library: SkillLibraryInput.optional().describe(
+    "To add: worktable for every agent, space for agents that can work in the Doc's Space, or agent for only you. To update or remove, picks between skills that share a name."
+  ),
+  description: z
+    .string()
+    .min(1)
+    .max(280)
+    .optional()
+    .describe("One line saying when the skill applies. Required to add."),
+  remove: z.boolean().optional().describe("true proposes removing the named skill from its library."),
+})
+
+/** Grouped only so the preview tools route like the others (catalog.ts). */
+export const SkillsInput = z.strictObject({
+  request: z.discriminatedUnion("action", [
+    actionSchema("read", ReadSkillInput.shape),
+    actionSchema("propose", ProposeSkillInput.shape),
+  ]),
+})
+
 export type PublicCapabilityRequest =
   | z.infer<typeof DrawingsReadInput>
   | z.infer<typeof DrawingsWriteInput>

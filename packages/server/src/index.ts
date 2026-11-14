@@ -39,6 +39,7 @@ import { startMcpEventsRuntime } from "./mcp-events.ts"
 import { startCloudTaskRuntime } from "./cloud-task-runtime.ts"
 import { startAutoReplyNotices } from "./auto-reply.ts"
 import { pendingList, savePendingList } from "./pending-list.ts"
+import { saveSkillSeenMarks } from "./skill-notices.ts"
 import { grokBotRouter } from "./routes/grok-bot.ts"
 import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts"
 import { startStorageAccounting } from "./storage-usage.ts"
@@ -86,6 +87,7 @@ import { searchRouter } from "./routes/search.ts"
 import { recentRouter } from "./routes/recent.ts"
 import { activityRouter, pendingRouter } from "./routes/activity.ts"
 import { homeRouter } from "./routes/home.ts";
+import { libraryRouter } from "./routes/library.ts"
 import { tokensRouter } from "./routes/tokens.ts"
 import { wellKnownRouter } from "./routes/well-known.ts"
 import { mcpRouter } from "./routes/mcp.ts"
@@ -583,6 +585,7 @@ app.route("/api/recent", recentRouter);
 app.route("/api/activity", activityRouter);
 app.route("/api/pending", pendingRouter);
 app.route("/api/home", homeRouter);
+app.route("/api/library", libraryRouter);
 app.route("/.well-known", wellKnownRouter);
 app.route("/mcp", mcpRouter);
 // Version-matched, secret-free provider integration packages. Mounted before
@@ -2510,6 +2513,8 @@ export function startServer(
         await settle(() => yjsManager.shutdown());
         // Revisions only go up across restarts if the last ones are kept.
         await settle(() => savePendingList());
+        // What each agent last saw of its skills, so a change shows once.
+        await settle(() => saveSkillSeenMarks());
         await settle(() => shutdownAnalytics());
         await settle(async () => {
           await drainWorkspaceChanges();

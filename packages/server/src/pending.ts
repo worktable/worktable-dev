@@ -3,17 +3,20 @@
 // ============================================================
 //
 // Only what is addressed to the reader: thread messages assigned to them,
-// comments sent to them, their messages that could not be delivered, and
-// visitor comments on links they can answer. Work sent to their agents is the
+// comments sent to them, their messages that could not be delivered,
+// visitor comments on links they can answer, and agents' proposed skill
+// library changes they may approve. Work sent to their agents is the
 // agents' to do, and an agent's reply that asks nothing is not a request.
 // Each source is read only when the reader has the scope that would let them
 // open it.
 
+import { configuredMcpSurface } from "./mcp/surface.ts"
 import type { PendingItem, PendingResult, SpaceFile } from "@worktable/types"
 import { readDocumentIdentities } from "./document-query.ts"
 import { resolveParticipant } from "./participant-store.ts"
 import { pendingFor } from "./pending-list.ts"
 import { canAccessSpace } from "./team-policy.ts"
+import { isPerson, pendingSkillProposals } from "./skill-libraries.ts"
 import { getSpaceArchiveInfo, listSpaces } from "./store.ts"
 import {
   listPendingThreadWork,
@@ -36,15 +39,17 @@ export async function listPending(
   const canReadAnnotations =
     identity.principal.type === "human" &&
     hasScope(identity.scopes, "annotations:read")
-  if (!canReadThreads && !canReadAnnotations && !visitorAccess) {
+  const canReviewSkills = isPerson(identity) && configuredMcpSurface() === "preview"
+  if (!canReadThreads && !canReadAnnotations && !visitorAccess && !canReviewSkills) {
     return { items: [], total: 0 }
   }
   const spaces = await listSpaces()
-  const [threadWork, comments] = await Promise.all([
+  const [threadWork, comments, skills] = await Promise.all([
     canReadThreads
       ? listPendingThreadWork(identity, spaces, spaceId)
       : { requests: [], failures: [] },
     canReadAnnotations ? commentRequests(spaces, spaceId, identity) : [],
+    canReviewSkills ? pendingSkillProposals(identity, spaceId) : [],
   ])
   const all = [
     ...threadRequests(threadWork.requests),
@@ -57,7 +62,15 @@ export async function listPending(
   ]
     .filter((item) => !spaceId || item.spaceId === spaceId)
     .sort((a, b) => b.at.localeCompare(a.at) || a.id.localeCompare(b.id))
-  return { items: all.slice(0, PENDING_LIMIT), total: all.length }
+  // Skill proposals come after the rows Home shows, so they never push one
+  // out, and Home counts them on their own.
+  return {
+    items: [
+      ...all.slice(0, PENDING_LIMIT),
+      ...skills.sort((a, b) => b.at.localeCompare(a.at)),
+    ],
+    total: all.length,
+  }
 }
 
 function threadRequests(requests: ViewerThreadRequest[]): PendingItem[] {

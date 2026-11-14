@@ -61,6 +61,7 @@ export function classifyWorkspaceRequest(
       verb === "GET" &&
       (pathname === "/api/profile" ||
         pathname === "/api/pending" ||
+        pathname === "/api/library" ||
         pathname === "/api/threads" ||
         pathname.startsWith("/api/threads/") ||
         /^\/api\/spaces\/[^/]+\/threads(?:\/|$)/.test(pathname))
@@ -98,6 +99,8 @@ export function classifyWorkspaceRequest(
     pathname.startsWith("/api/tokens/") ||
     pathname === "/api/spaces" ||
     pathname.startsWith("/api/spaces/") ||
+    pathname === "/api/library" ||
+    pathname.startsWith("/api/library/") ||
     pathname === "/api/threads" ||
     pathname.startsWith("/api/threads/")
     ? "write"

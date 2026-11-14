@@ -437,17 +437,26 @@ describe("released tool surface", () => {
     }
   })
 
-  it("lists the same flat tools on both surfaces", async () => {
+  it("lists the released tools on both surfaces, and preview's own after them", async () => {
     const released = (await listTools()).tools
     const preview = (await listTools("preview")).tools
     const names = (tools: typeof released) => tools.map((tool) => tool.name)
-    expect(names(preview)).toEqual(names(released))
+    // Tools held for the preview come after every released one.
+    const previewOnly = ["worktable_skills_read", "worktable_skills_write"]
+    expect(names(preview)).toEqual([...names(released), ...previewOnly])
     // Preview holds changes until agent directories review them, each with
     // the inputs it adds. Every other tool is identical.
-    const held: Record<string, string[]> = {}
-    expect(preview.filter((tool) => !(tool.name in held))).toEqual(
-      released.filter((tool) => !(tool.name in held))
-    )
+    // search and fetch only add notices to their output on preview.
+    const held: Record<string, string[]> = { worktable_state: [], search: [], fetch: [] }
+    expect(
+      preview.filter((tool) => !(tool.name in held) && !previewOnly.includes(tool.name))
+    ).toEqual(released.filter((tool) => !(tool.name in held)))
+    // State on preview also describes the skills it lists.
+    const state = (tools: typeof released) =>
+      tools.find((tool) => tool.name === "worktable_state")!
+    expect(state(preview).outputSchema?.properties).toHaveProperty("skills")
+    expect(state(preview).outputSchema?.properties).toHaveProperty("removedSkills")
+    expect(state(released).outputSchema?.properties).not.toHaveProperty("skills")
     for (const [name, added] of Object.entries(held)) {
       const inputs = (tools: typeof released) =>
         Object.keys(

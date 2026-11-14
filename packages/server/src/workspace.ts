@@ -357,6 +357,9 @@ export function isIgnoredEmptyWorkspaceEntry(name: string): boolean {
 
 const MANIFEST_FILE = "worktable.workspace.json";
 
+/** The skill libraries (skill-libraries.ts), beside the manifest. */
+export const LIBRARY_FILE = "library.json";
+
 /**
  * Side-effect-free classification of a candidate workspace folder. Takes an
  * explicit path so callers can inspect a candidate before any config is

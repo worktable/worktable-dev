@@ -10,7 +10,7 @@ import {
   notePathEventIfSuppressed,
   PREPARED_SPACE_MARKER,
 } from "./store.ts"
-import { getWorkspaceRoot } from "./workspace.ts"
+import { getWorkspaceRoot, LIBRARY_FILE } from "./workspace.ts"
 import { noteStorageChange } from "./storage-usage.ts"
 import {
   notifyWorkspaceChange,
@@ -414,6 +414,13 @@ export class WorkspaceWatcher {
       // Atomic directory replacement may be reported only under the source
       // name, so every root-level rename rechecks the stable threads path.
       if (rootThreadParent && eventType !== "rename") return
+      // Except files saved atomically beside the threads, such as the skill
+      // libraries' (Bun reports that rename only under its temporary name).
+      if (
+        rootThreadParent &&
+        (changedPath === LIBRARY_FILE || isAtomicWriteTemporaryFileName(changedPath))
+      )
+        return
 
       // Ambiguous record activity is debounced PER COLLECTION, not per temp
       // file. A 60-record agent batch should cause one bounded scan, not 60.

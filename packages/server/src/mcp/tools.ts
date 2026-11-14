@@ -1,6 +1,8 @@
 import { captureMcpCall } from "../analytics.ts"
 import { takeResultMedia } from "./media.ts"
 import { ambientNotices } from "../pending-ambient.ts"
+import { skillReaderFor } from "../skill-libraries.ts"
+import { skillChangeNotice } from "../skill-notices.ts"
 import { currentRequestIdentity } from "../team-policy.ts"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { McpSurface } from "./surface.ts"
@@ -87,6 +89,8 @@ export function missingOperationScope(
     required.push("records:read")
   // An import reads a file in the Space: its proposal shows sample rows.
   if (id === "records.import") required.push("documents:read")
+  // A skill proposal reads the Doc it proposes.
+  if (id === "skills.propose") required.push("documents:read")
   return required.find((scope) => !hasScope(scopes, scope)) ?? null
 }
 
@@ -354,16 +358,25 @@ export function registerTools(
         last = { operation, result: publicResult }
       }
       const response = ok(data)
-      // What waits on the agent rides beside the result.
+      // What waits on the agent rides beside the result, and on the preview
+      // surface, a line when its skills changed.
+      const reader = identity ? { ...identity, ...sameCaller(identity), scopes } : null
       const notices =
-        identity && last
-          ? await ambientNotices(
-              // The request's whole identity: Teams access needs its binding.
-              { ...identity, ...sameCaller(identity), scopes },
-              last.operation.id,
-              last.operation.args,
-              last.result
-            )
+        reader && last
+          ? [
+              await ambientNotices(
+                // The request's whole identity: Teams access needs its binding.
+                reader,
+                last.operation.id,
+                last.operation.args,
+                last.result
+              ),
+              surface === "preview"
+                ? await skillChangeNotice(skillReaderFor(reader), last.operation.id)
+                : null,
+            ]
+              .filter(Boolean)
+              .join("\n\n") || null
           : null
       captureMcpCall(toolName, analyticsOperation, "success", performance.now() - analyticsStarted)
       // Some clients show the model only the structured content, others
@@ -400,6 +413,17 @@ export function registerTools(
   registerCompanyKnowledgeTools(server, {
     scopes,
     urlOrigin: urlOriginFor(),
+    preview: surface === "preview",
+    // Agents often start with search, so it carries the skills line too.
+    ...(surface === "preview" && callerIdentity
+      ? {
+          notice: (operationId: string) =>
+            skillChangeNotice(
+              skillReaderFor({ ...callerIdentity, ...sameCaller(callerIdentity), scopes }),
+              operationId
+            ),
+        }
+      : {}),
   })
 
   for (const tool of catalogTools(surface)) {

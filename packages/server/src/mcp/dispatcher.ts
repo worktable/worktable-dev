@@ -319,9 +319,17 @@ import {
   RestoreDocumentFolderInput,
   DeleteDocumentFolderInput,
   RECORD_BATCH_LIMIT,
+  ReadSkillInput,
+  ProposeSkillInput,
 } from "./schemas.ts"
 
 import { ensureParticipant, resolveParticipant } from "../participant-store.ts"
+import {
+  proposeSkillChange,
+  readSkillForAgent,
+  skillReaderFor,
+} from "../skill-libraries.ts"
+import { stateSkills } from "../skill-notices.ts"
 import {
   isGettingStartedSpace,
   isGettingStartedSpaceId,
@@ -2705,6 +2713,12 @@ async function _dispatchOperationInner(
       const spaceId = args["spaceId"] as string | undefined
       const includeArchived =
         (args["includeArchived"] as boolean | undefined) ?? false
+      // Skill libraries are held for the preview surface. Listed last, so
+      // a state that fails never counts as the agent seeing them.
+      const skills = async () =>
+        context.surface === "preview"
+          ? await stateSkills(skillReaderFor(identity), spaceId)
+          : {}
       if (!spaceId) {
         const spaces = (await listSpaces()).filter(
           (space) => includeArchived || !getSpaceArchiveInfo(space)
@@ -2739,6 +2753,7 @@ async function _dispatchOperationInner(
             spaces.length === 1 && isGettingStartedSpace(spaces[0]!)
               ? FIRST_SPACE_HINT
               : "List a Space's files in every format with worktable_files_read, or search with worktable_search. Drawing previews and objects are available through worktable_drawings_read.",
+          ...(await skills()),
         }
       }
       const { data: space, error: spaceErr } = await readSpace(spaceId)
@@ -2762,6 +2777,7 @@ async function _dispatchOperationInner(
         ...(hasScope(identity.scopes, "documents:read")
           ? { documents: await listDocuments({ spaceId, includeArchived }) }
           : {}),
+        ...(await skills()),
       }
     }
     case "workspace.search": {
@@ -3497,6 +3513,16 @@ async function _dispatchOperationInner(
       const index = await buildSpaceIndex(parsed.spaceId)
       if (!index) throw new Error(`Space not found: ${parsed.spaceId}`)
       return { index }
+    }
+    case "skills.read":
+    case "skills.propose": {
+      if (context.surface !== "preview") {
+        throw new Error("Skill libraries aren't available on this connection.")
+      }
+      const reader = skillReaderFor(identity)
+      return operationId === "skills.read"
+        ? await readSkillForAgent(reader, ReadSkillInput.parse(args))
+        : await proposeSkillChange(reader, ProposeSkillInput.parse(args))
     }
     case "mermaid.validate": {
       return await validateMermaid(args["source"] as string)

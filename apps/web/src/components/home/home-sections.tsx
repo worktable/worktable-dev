@@ -17,6 +17,12 @@ const rowClass =
 
 // ── Pending ────────────────────────────────────────────────
 
+/** Skill library proposals get their own rows once the web shows libraries. */
+type ShownPendingItem = Exclude<PendingItem, { kind: "skillProposal" }>
+
+const shownPending = (item: PendingItem): item is ShownPendingItem =>
+  item.kind !== "skillProposal"
+
 /** Pending items shown before the rest fold behind More. */
 const PENDING_ROWS = 3
 
@@ -28,7 +34,7 @@ function PendingRow({
   item,
   spaceName,
 }: {
-  item: PendingItem
+  item: ShownPendingItem
   spaceName?: string
 }) {
   const nameOf = useActorName()
@@ -131,7 +137,7 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
   const { data: spaces } = useSpaces()
   const [showAll, setShowAll] = useState(false)
   const names = new Map((spaces ?? []).map((space) => [space.id, space.name]))
-  const items = pending.data?.items ?? []
+  const items = (pending.data?.items ?? []).filter(shownPending)
   const failed = pending.isError && !pending.data
   // Home points to Getting Started until the person is done or unpins it.
   const shortcut = useGettingStartedShortcut(spaces)

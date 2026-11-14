@@ -913,5 +913,9 @@ try {
 } finally {
   keepAwake.kill()
   await keepAwake.exited
-  if (!keep && succeeded) rmSync(root, { recursive: true, force: true })
+  // A failed run's root is kept for a look on a local Mac. CI has already
+  // printed what matters, and on a self-hosted Mac kept roots fill its disk.
+  if (!keep && (succeeded || process.env.CI)) {
+    rmSync(root, { recursive: true, force: true })
+  }
 }

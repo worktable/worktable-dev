@@ -22,7 +22,7 @@ import {
   SkillRow,
 } from "@/components/library/library-parts"
 import { LibraryMark } from "@/components/library/library-mark"
-import { loadDocCode } from "@/components/library/doc-code"
+import { loadSkillCode, loadedSkillCode } from "@/components/library/doc-code"
 import { SkillFrame } from "@/components/library/skill-frame"
 import {
   useDeploymentInfo,
@@ -53,17 +53,8 @@ import {
 import { useSpaces } from "@/lib/queries"
 
 // The open skill's code, loaded with its Doc, so a skill shows whole.
-// Once loaded it renders directly, as a lazy component suspends once even
-// when its code is in.
-let openSkillModule:
-  | typeof import("@/components/library/open-skill")
-  | undefined
-const loadOpenSkill = () =>
-  Promise.all([import("@/components/library/open-skill"), loadDocCode()]).then(
-    ([module]) => (openSkillModule = module)
-  )
 const LazyOpenSkill = lazy(() =>
-  loadOpenSkill().then((module) => ({ default: module.OpenSkill }))
+  loadSkillCode().then((module) => ({ default: module.OpenSkill }))
 )
 
 export const Route = createFileRoute("/library/$")({
@@ -80,7 +71,7 @@ export const Route = createFileRoute("/library/$")({
       .getQueryData<Library>(libraryQueryKey)
       ?.entries.find((candidate) => candidate.id === skillId)
     await Promise.all([
-      loadOpenSkill(),
+      loadSkillCode(),
       entry?.docPath
         ? openDocument(context.queryClient, entry.doc.spaceId, entry.docPath, {
             preload,
@@ -213,7 +204,7 @@ function LibraryPage() {
   const add = () => setAdding({ library: shownLibrary })
 
   let pane: React.ReactNode = null
-  const OpenSkill = openSkillModule?.OpenSkill ?? LazyOpenSkill
+  const OpenSkill = loadedSkillCode()?.OpenSkill ?? LazyOpenSkill
   if (opened) {
     pane = (
       <Suspense fallback={<SkillFrame entry={opened} />}>

@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query"
 import type { HomeFeed, HomePin, HomePinRef } from "@worktable/types"
 import { fetchJSON } from "./http.ts"
+import { pollUnlessLive } from "./space-observation.ts"
 
 export interface HomeFeedOptions {
   /** One Space: its runs, and its folders as places. */
@@ -40,11 +41,17 @@ export function homeFeedQueryOptions(options: HomeFeedOptions = {}) {
   })
 }
 
-/** The newest runs of work and how busy each place was. Read when the page opens. */
+/**
+ * The newest runs of work and how busy each place was, kept current by the
+ * Space's socket where there is one.
+ */
 export function useHomeFeed(options: HomeFeedOptions = {}) {
   return useQuery({
     ...homeFeedQueryOptions(options),
     placeholderData: keepPreviousData,
+    // Home has no workspace-wide change feed yet, so it checks once a minute
+    // while on screen, as Recent did before it.
+    refetchInterval: pollUnlessLive(options.spaceId),
   })
 }
 

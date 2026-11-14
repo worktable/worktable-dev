@@ -22,7 +22,6 @@ import { PageWithActivity } from "@/components/home/page-with-activity"
 import { SpaceIcon } from "@/components/spaces/space-icon"
 import type { SpaceView } from "@/lib/api"
 import { useHomeFeed, useHomePins } from "@/lib/home"
-import { useRecentDocuments } from "@/lib/lifetime"
 import { useSpaces, useWorkspace } from "@/lib/queries"
 import { recognitionChip } from "@/lib/recognition"
 import { isGettingStartedSpace } from "@/lib/setup"
@@ -103,15 +102,6 @@ function HomePage() {
       // The page still loads; it only moves once when pins arrive.
     }
   }, [pinCount])
-  // Home's temporary docs, soonest to archive first; the docs themselves
-  // are listed by Latest.
-  const recent = useRecentDocuments({
-    sort: "updated",
-    includeTemporary: false,
-    limit: 1,
-    temporaryLimit: 100,
-  })
-
   if (spaces?.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
@@ -131,7 +121,7 @@ function HomePage() {
     .filter((place) => byId.has(place.id))
     .slice(0, SPACE_CARDS)
   const pins = feed.data?.pins ?? []
-  const temporary = recent.data?.temporary ?? []
+  const temporary = feed.data?.temporary ?? []
   // Pins make the side column; Archiving alone sits under the page.
   const loadingPins = feed.isPending && expectedPins > 0
   const hasSide = pins.length > 0 || loadingPins

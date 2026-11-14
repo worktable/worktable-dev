@@ -512,10 +512,10 @@ export function installInstrumentation(): void {
   const recentRows = () =>
     all('section[aria-labelledby="recent-heading"] a[href*="/documents/"]')
   const predicates: Record<string, (args: Rec) => boolean> = {
-    // Home: Recent rows under the Home-only Space filter.
+    // Home: Latest's rows under the greeting only Home has.
     home: () =>
       location.pathname === "/" &&
-      document.querySelector('[aria-label="Filter by Space"]') !== null &&
+      all("main h1").some((h1) => /^Good /.test(text(h1))) &&
       recentRows().length > 0,
     // A Space overview: its name as the page title and its Recent rows.
     space: (args) =>

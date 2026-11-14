@@ -1,20 +1,13 @@
 import { Link } from "@tanstack/react-router"
-import { CircleAlert, Clock3, MessageSquareText } from "lucide-react"
+import { CircleAlert, MessageSquareText } from "lucide-react"
 import { useState } from "react"
-import type { DocumentSummary, PendingItem } from "@worktable/types"
-import { Button } from "@worktable/ui/components/button"
+import type { PendingItem } from "@worktable/types"
 import { cn } from "@worktable/ui/lib/utils"
-import {
-  DocLocation,
-  DocumentFormatIcon,
-} from "@/components/document-format-icon"
 import { ThreadLink } from "@/components/home/activity-feed"
 import { ActorAvatar } from "@/components/home/home-latest"
-import { useLifetimeActions } from "@/hooks/use-document-organize"
 import { usePending } from "@/lib/activity"
 import { shortWhen } from "@/lib/activity-format"
 import { useActorName } from "@/lib/use-actor-name"
-import { formatArchiveDate } from "@/lib/lifetime"
 import { useSpaces } from "@/lib/queries"
 import { ProgressRing } from "@/components/getting-started/progress-ring"
 import { useGettingStartedShortcut } from "@/lib/setup"
@@ -206,174 +199,6 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
           )}
         </div>
       )}
-    </section>
-  )
-}
-
-// ── Recent ─────────────────────────────────────────────────
-
-export interface RecentItem {
-  spaceId: string
-  spaceName?: string
-  document: DocumentSummary
-}
-
-export function RecentRows({ items }: { items: RecentItem[] }) {
-  return (
-    <div className="-mx-2.5">
-      {items.map(({ spaceId, spaceName, document }) => {
-        return (
-          <Link
-            key={`${spaceId}/${document.path}`}
-            to="/spaces/$spaceId/documents/$"
-            params={{ spaceId, _splat: document.path }}
-            className={rowClass}
-          >
-            <DocumentFormatIcon
-              formatId={document.format.id}
-              name={document.path}
-              className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
-            />
-            <span className="min-w-0 truncate font-medium text-foreground">
-              {document.title}
-            </span>
-            <DocLocation spaceName={spaceName} path={document.path} />
-            {document.updatedAt && (
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {shortWhen(document.updatedAt)}
-              </span>
-            )}
-          </Link>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── Temporary ──────────────────────────────────────────────
-
-/** Calendar days from today to the archive date, in the reader's time zone. */
-function daysUntil(archiveOn: string, now: number): number {
-  const day = (time: number) => {
-    const date = new Date(time)
-    return (
-      Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000
-    )
-  }
-  return day(Date.parse(archiveOn)) - day(now)
-}
-
-function archiveLabel(archiveOn: string, days: number): string {
-  if (days <= 0) return "Archives today"
-  if (days === 1) return "Archives tomorrow"
-  if (days < 7) {
-    return `Archives ${new Date(archiveOn).toLocaleDateString(undefined, { weekday: "short" })}`
-  }
-  return `Archives ${formatArchiveDate(archiveOn)}`
-}
-
-function TemporaryRow({ item }: { item: RecentItem }) {
-  const { spaceId, spaceName, document } = item
-  const { keep } = useLifetimeActions(spaceId, document.path)
-  const [keeping, setKeeping] = useState(false)
-  const [now] = useState(() => Date.now())
-  const archiveOn = document.archiveOn!
-  const days = daysUntil(archiveOn, now)
-  const soon = days <= 1
-  return (
-    <div className={cn(rowClass, "relative")}>
-      <Link
-        to="/spaces/$spaceId/documents/$"
-        params={{ spaceId, _splat: document.path }}
-        className="absolute inset-0 rounded-lg"
-        aria-label={document.title}
-      />
-      <DocumentFormatIcon
-        formatId={document.format.id}
-        name={document.path}
-        className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
-      />
-      <span className="min-w-0 truncate font-medium text-foreground">
-        {document.title}
-      </span>
-      <DocLocation
-        spaceName={spaceName}
-        path={document.path}
-        className="hidden sm:inline"
-      />
-      <span className="flex-1 sm:hidden" />
-      <Button
-        size="xs"
-        variant="outline"
-        disabled={keeping}
-        onClick={() => {
-          setKeeping(true)
-          void keep().finally(() => setKeeping(false))
-        }}
-        className="relative shrink-0 opacity-100 transition-opacity focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-      >
-        Keep
-      </Button>
-      <span
-        className={cn(
-          "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2 text-xs font-medium",
-          soon
-            ? "bg-warning/12 text-foreground"
-            : "bg-surface-tint text-muted-foreground"
-        )}
-      >
-        <Clock3 className={cn("size-3", soon && "text-warning")} />
-        <span className="hidden sm:inline">
-          {archiveLabel(archiveOn, days)}
-        </span>
-        <span className="sm:hidden">
-          {archiveLabel(archiveOn, days).replace(
-            /^Archives (.)/,
-            (_, first: string) => first.toUpperCase()
-          )}
-        </span>
-      </span>
-    </div>
-  )
-}
-
-/** The temporary docs that archive soonest; they disappear unless kept. */
-export function TemporaryGroup({ items }: { items: RecentItem[] }) {
-  const [expanded, setExpanded] = useState(false)
-  const sorted = items
-    .filter((item) => item.document.archiveOn)
-    .sort((a, b) => a.document.archiveOn!.localeCompare(b.document.archiveOn!))
-  if (sorted.length === 0) return null
-  const shown = expanded ? sorted : sorted.slice(0, 3)
-  const more = sorted.length - shown.length
-  return (
-    <section id="temporary" aria-labelledby="temporary-heading">
-      <h2
-        id="temporary-heading"
-        className="mb-2 text-sm font-semibold text-foreground"
-      >
-        Temporary
-      </h2>
-      <div className="rounded-xl card-surface p-1">
-        {shown.map((item) => (
-          <TemporaryRow
-            key={`${item.spaceId}/${item.document.path}`}
-            item={item}
-          />
-        ))}
-        {more > 0 && (
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            className={cn(
-              rowClass,
-              "w-full text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Show {more} more
-          </button>
-        )}
-      </div>
     </section>
   )
 }

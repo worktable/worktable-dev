@@ -3,6 +3,7 @@ import { HOME_PIN_LIMIT, HomePinRefSchema, type HomeFeed } from "@worktable/type
 import { z } from "zod"
 import { requireScope } from "../auth.ts"
 import { readHomeFeed, resolveHomePins } from "../home-feed.ts"
+import { listRecentDocuments } from "../recent-documents.ts"
 import { canReadSpaceFor, personalPreferencesKey } from "../personal-identity.ts"
 import {
   PreferencesUnreadableError,
@@ -16,13 +17,13 @@ homeRouter.use("*", requireScope("documents:read"))
 
 // GET /api/home — the newest runs of work and how busy each Space was, or in
 // one Space, its runs and folders. Across Spaces it carries the reader's own
-// pins, so Home needs no request of its own for them.
+// pins and the temporary docs that archive soonest, so Home is one request.
 homeRouter.get("/", async (c) => {
   const spaceId = c.req.query("spaceId") || undefined
   const limitRaw = Number(c.req.query("limit"))
   const offsetRaw = Number(c.req.query("timezoneOffset"))
   const person = spaceId ? null : personalPreferencesKey(c)
-  const [feed, pins] = await Promise.all([
+  const [feed, pins, temporary] = await Promise.all([
     readHomeFeed({
       ...(spaceId ? { spaceId } : {}),
       ...(spaceId && c.req.query("folder")
@@ -36,8 +37,17 @@ homeRouter.get("/", async (c) => {
     person
       ? resolveHomePins(readHomePins(person), canReadSpaceFor(c))
       : undefined,
+    spaceId
+      ? undefined
+      : listRecentDocuments({ onlyTemporary: true, limit: 100 }).then(
+          (recent) => recent.items
+        ),
   ])
-  const body: HomeFeed = { ...feed, ...(pins ? { pins } : {}) }
+  const body: HomeFeed = {
+    ...feed,
+    ...(pins ? { pins } : {}),
+    ...(temporary ? { temporary } : {}),
+  }
   return c.json(body)
 })
 

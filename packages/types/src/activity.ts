@@ -1,4 +1,5 @@
 import { z } from "zod"
+import type { DocumentSummary } from "./documents"
 
 // ============================================================
 // Workspace activity
@@ -210,4 +211,10 @@ export interface HomeFeed {
   places: HomePlace[]
   /** The reader's own Home pins; absent in one Space, and for agents. */
   pins?: HomePin[]
+  /** Across Spaces: temporary docs, soonest to archive first. */
+  temporary?: Array<{
+    spaceId: string
+    spaceName: string
+    document: DocumentSummary
+  }>
 }

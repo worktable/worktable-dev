@@ -114,6 +114,10 @@
       "why": "Pending: 60 s check only while its Space has no live socket."
     },
     {
+      "site": "apps/web/src/lib/home.ts#useHomeFeed",
+      "why": "Home has no workspace-wide change feed, so its digest checks once a minute while on screen; a Space's socket replaces the check on Space Home."
+    },
+    {
       "site": "apps/web/src/lib/lifetime.ts#useRecentDocuments",
       "why": "Recent: 60 s check only while its Space has no live socket."
     },

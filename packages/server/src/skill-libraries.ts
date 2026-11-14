@@ -371,6 +371,8 @@ interface SavedVersion {
 async function saveVersion(options: {
   spaceId: string
   path: string
+  /** The Doc the version must be of, for a skill that has one already. */
+  documentId?: string
   createdBy: string
   source: string
   label: string
@@ -387,6 +389,11 @@ async function saveVersion(options: {
     source: options.source,
     label: options.label,
   })
+  // A rename can hand the path to another Doc between finding the skill's Doc
+  // and saving it; that Doc's version is never the skill's.
+  if (options.documentId && saved.documentId !== options.documentId) {
+    throw new LibraryError("conflict", "This skill's Doc moved while it was being saved. Try again.")
+  }
   // The Doc's last save names the content's hash. A save since makes it
   // another version's, so it is left out and versions compare instead.
   const after = await getDocProvenance(options.spaceId, saved.path)
@@ -547,6 +554,20 @@ async function requirePersonMayChange(
   if (!(await personMayChange(library, identity))) {
     throw new LibraryError("forbidden", "You can't change this library.")
   }
+}
+
+/**
+ * The skill a person changes: one they can see, as the list shows it (its
+ * Doc's Space readable), in a library they may change. A skill they can't
+ * see is not found, so nothing about it comes back.
+ */
+async function entryPersonMayChange(id: string, identity: TokenIdentity): Promise<LibraryEntry> {
+  const entry = entryById(readLibrary(), id)
+  if (!canAccessSpace(entry.doc.spaceId, "read", identity)) {
+    throw new LibraryError("not_found", "No skill with that id is in a library.")
+  }
+  await requirePersonMayChange(entry.library, identity)
+  return entry
 }
 
 function attribution(identity: TokenIdentity): { createdBy: string; source: string } {
@@ -788,9 +809,8 @@ export async function saveLibrarySkill(
   id: string,
   input: { name?: string; description?: string } = {}
 ): Promise<LibraryEntryView> {
-  const before = entryById(readLibrary(), id)
+  const before = await entryPersonMayChange(id, identity)
   if (before.removed) throw new LibraryError("not_found", "This skill was removed from its library.")
-  await requirePersonMayChange(before.library, identity)
   const name = input.name === undefined ? undefined : checkedName(input.name)
   const description = input.description === undefined ? undefined : checkedDescription(input.description)
   const location = await docLocation(before.doc)
@@ -798,6 +818,7 @@ export async function saveLibrarySkill(
   const saved = await saveVersion({
     spaceId: before.doc.spaceId,
     path: location.path,
+    documentId: before.doc.documentId,
     ...attribution(identity),
     label: "Library skill",
   })
@@ -829,11 +850,7 @@ export async function approveLibraryProposal(
   id: string,
   revision: number
 ): Promise<LibraryEntryView> {
-  const before = entryById(readLibrary(), id)
-  await requirePersonMayChange(before.library, identity)
-  if (!canAccessSpace(before.doc.spaceId, "read", identity)) {
-    throw new LibraryError("forbidden", "You can't read this skill's Doc, so you can't approve it.")
-  }
+  await entryPersonMayChange(id, identity)
   const entry = await changeLibrary((file, now) => {
     const entry = entryById(file, id)
     const proposal = entry.proposal
@@ -867,7 +884,7 @@ export async function discardLibraryProposal(
   id: string,
   revision: number
 ): Promise<{ entry: LibraryEntryView | null }> {
-  await requirePersonMayChange(entryById(readLibrary(), id).library, identity)
+  await entryPersonMayChange(id, identity)
   const entry = await changeLibrary((file) => {
     const entry = entryById(file, id)
     if (!entry.proposal) throw new LibraryError("conflict", "Nothing waits on approval for this skill.")
@@ -888,7 +905,7 @@ export async function removeFromLibrary(
   identity: TokenIdentity,
   id: string
 ): Promise<{ entry: LibraryEntryView | null }> {
-  await requirePersonMayChange(entryById(readLibrary(), id).library, identity)
+  await entryPersonMayChange(id, identity)
   const entry = await changeLibrary((file, now) => {
     const entry = entryById(file, id)
     if (entry.removed) throw new LibraryError("not_found", "This skill was already removed.")
@@ -911,7 +928,7 @@ export async function updateLibrarySkillDetails(
   id: string,
   input: { name?: string; description?: string }
 ): Promise<LibraryEntryView> {
-  await requirePersonMayChange(entryById(readLibrary(), id).library, identity)
+  await entryPersonMayChange(id, identity)
   const name = input.name === undefined ? undefined : checkedName(input.name)
   const description = input.description === undefined ? undefined : checkedDescription(input.description)
   const entry = await changeLibrary((file) => {
@@ -931,7 +948,7 @@ export async function restoreLibrarySkill(
   identity: TokenIdentity,
   id: string
 ): Promise<LibraryEntryView> {
-  await requirePersonMayChange(entryById(readLibrary(), id).library, identity)
+  await entryPersonMayChange(id, identity)
   const entry = await changeLibrary((file) => {
     const entry = entryById(file, id)
     if (!entry.removed) throw new LibraryError("conflict", "This skill is in its library.")
@@ -1264,6 +1281,7 @@ export async function proposeSkillChange(reader: SkillReader, input: ProposalInp
       await saveVersion({
         spaceId: target.doc.spaceId,
         path: location.path,
+        documentId: target.doc.documentId,
         createdBy: reader.actorId,
         source: "mcp",
         label: "Proposed library skill",

@@ -22,7 +22,7 @@ import {
   skillsForAgent,
   type SkillReader,
 } from "./skill-libraries.ts"
-import { LIBRARY_FOR_AGENTS, SESSION_GAP_MS } from "./skill-notices.ts"
+import { LIBRARY_FOR_AGENTS, SESSION_GAP_MS, skillChangeNotice } from "./skill-notices.ts"
 import { markdownToBlocks } from "./markdown.ts"
 import { documentGenerationV2Directory } from "./workspace-storage-v2.ts"
 import { activateLocalTeams } from "./team-activation.ts"
@@ -444,6 +444,9 @@ describe("skill libraries", () => {
       live: RELEASE,
     })
     expect((await rest("GET", `/api/library/${hidden.id}/change`, undefined, member)).status).toBe(404)
+    // Nor can they change it, and nothing about it comes back.
+    expect((await rest("DELETE", `/api/library/${hidden.id}`, undefined, member)).status).toBe(404)
+    expect((await rest("PATCH", `/api/library/${hidden.id}`, { description: "Mine now." }, member)).status).toBe(404)
   })
 
   it("gives a skill only to agents its library applies to that can read its Doc", async () => {
@@ -524,6 +527,25 @@ describe("skill libraries", () => {
       "Your team's Library changed: removed release-checklist (removed from its library, so it no longer applies). worktable_skills_read returns the current ones."
     )
     expect(await notices()).toBeUndefined()
+  })
+
+  it("tells an agent when a skill it saw stops applying to it", async () => {
+    await addRelease({ kind: "space" })
+    let canRead = true
+    const reader: SkillReader = {
+      participantId: "ptc_lapse_test",
+      displayName: "Helper",
+      actorId: "agent:lapse",
+      scopes: ["*"],
+      canAccess: () => canRead,
+    }
+    expect(await skillChangeNotice(reader, "documents.read")).toContain("Skills in it that apply to you: release-checklist")
+    // It loses access to the skill's Space.
+    canRead = false
+    expect(await skillChangeNotice(reader, "documents.read")).toBe(
+      "Your team's Library changed: release-checklist no longer applies to you. worktable_skills_read returns the current ones."
+    )
+    expect(await skillChangeNotice(reader, "documents.read")).toBeNull()
   })
 
   it("keeps libraries off while the preview tools are off", async () => {

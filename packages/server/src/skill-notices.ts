@@ -18,6 +18,7 @@ import {
   applicableVersions,
   REMOVED_MARK,
   REMOVED_SKILL_NOTE,
+  readLibrary,
   skillsForAgent,
   skillVersion,
   type AgentSkill,
@@ -198,6 +199,13 @@ function named(names: string[]): string {
   return names.length > NOTICE_NAMES ? `${listed} and ${names.length - NOTICE_NAMES} more` : listed
 }
 
+/** Skills an agent saw that no longer apply to it: its access or their library changed. */
+function lapsedPart(names: string[]): string[] {
+  if (names.length === 1) return [`${names[0]} no longer applies to you`]
+  if (names.length > 1) return [`${named(names)} no longer apply to you`]
+  return []
+}
+
 function removedPart(gone: LibraryEntry[]): string[] {
   if (gone.length === 1) return [`removed ${gone[0]!.name} (removed from its library, so it no longer applies)`]
   if (gone.length > 1) {
@@ -240,15 +248,23 @@ export async function skillChangeNotice(
       const last = before?.[entry.id]
       if (last !== undefined && last !== REMOVED) gone.push(entry)
     }
+    // Seen, not removed, and no longer among the skills that apply. A Doc
+    // archived since still counts as applying until the next session's list.
+    const entries = new Map(readLibrary().entries.map((entry) => [entry.id, entry]))
+    const lapsed = Object.entries(before ?? {}).flatMap(([id, mark]) => {
+      const entry = mark !== REMOVED && !versions.has(id) ? entries.get(id) : undefined
+      return entry && !entry.removed ? [entry.name] : []
+    })
     // Skills whose Doc no longer opens keep their version too, so the cheap
     // check keeps matching instead of resolving on every call.
     setMarks(participantId, { ...Object.fromEntries(versions), ...marksOf(live, removed) })
     if (sessionStart || !before) {
-      if (live.length === 0 && gone.length === 0) return null
+      if (live.length === 0 && gone.length === 0 && lapsed.length === 0) return null
       const parts = [
         ...(live.length ? [`Skills in it that apply to you: ${named(live.map((skill) => skill.entry.name))}`] : []),
         ...(updated.length ? [`updated since you last saw them: ${named(updated.map((skill) => skill.entry.name))}`] : []),
         ...removedPart(gone),
+        ...lapsedPart(lapsed),
       ]
       return `${LIBRARY_FOR_AGENTS} ${parts.join("; ")}. worktable_skills_read returns the current ones.`
     }
@@ -256,6 +272,7 @@ export async function skillChangeNotice(
       ...(updated.length ? [`updated ${named(updated.map((skill) => skill.entry.name))}`] : []),
       ...(added.length ? [`added ${named(added.map((skill) => skill.entry.name))}`] : []),
       ...removedPart(gone),
+      ...lapsedPart(lapsed),
     ]
     if (parts.length === 0) return null
     return `Your team's Library changed: ${parts.join("; ")}. worktable_skills_read returns the current ones.`

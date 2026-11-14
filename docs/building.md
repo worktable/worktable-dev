@@ -43,7 +43,9 @@ tenants install. Run `bun run release:local` for the full release matrix in
 Archive packaging also requires Python 3 and unzip. Release builds write phase
 timings to `dist/release-timings-<profile>.json`, outside the published assets.
 `release:lab` already builds and verifies the OpenClaw package; callers should
-not repeat that packaging command.
+not repeat that packaging command. Both profiles run each CLI they build for
+the host's own platform and architecture with `--version` and fail unless it
+prints the build's version; a CLI for another target is reported as not run.
 
 Archives identify the exact source commit, retain application and dependency
 notices, and omit build-runner links. A private build runner does not make its

@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router"
 import { ChevronDown } from "lucide-react"
-import { useState, type ReactNode } from "react"
+import { useRef, useState, type ReactNode } from "react"
 import type { ActivityActor, HomeRun } from "@worktable/types"
 import { cn } from "@worktable/ui/lib/utils"
 import { DocumentFormatIcon } from "@/components/document-format-icon"
@@ -29,10 +29,19 @@ export function ActorAvatar({
 }
 
 /** A short time that says the full one when pointed at. */
-export function When({ at, className }: { at: string; className?: string }) {
+export function When({
+  at,
+  className,
+  onClick,
+}: {
+  at: string
+  className?: string
+  onClick?: () => void
+}) {
   return (
     <time
       dateTime={at}
+      onClick={onClick}
       title={new Date(at).toLocaleString(undefined, {
         dateStyle: "medium",
         timeStyle: "short",
@@ -59,6 +68,7 @@ function RunRow({
 }) {
   const nameOf = useActorName()
   const [open, setOpen] = useState(false)
+  const link = useRef<HTMLAnchorElement>(null)
   const [lead, ...rest] = run.docs
   if (!lead) return null
   const others = rest.length + run.more
@@ -81,6 +91,7 @@ function RunRow({
           between rows than inside one, so each row reads as one thing. */}
       <div className="group relative grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3.5 gap-y-px rounded-xl px-2.5 py-3 transition-colors has-[a:focus-visible]:bg-surface-hover has-[a:hover]:bg-surface-hover">
         <Link
+          ref={link}
           to="/spaces/$spaceId/documents/$"
           params={{ spaceId: run.spaceId, _splat: lead.path }}
           className="absolute inset-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
@@ -93,9 +104,11 @@ function RunRow({
         <span className="line-clamp-2 min-w-0 text-[0.9375rem] leading-6 font-medium text-foreground @lg/page:line-clamp-none @lg/page:truncate">
           {lead.title}
         </span>
+        {/* Over the link so it can say its full date; a click still opens. */}
         <When
           at={run.at}
-          className="relative self-start pt-1 @lg/page:row-span-2"
+          onClick={() => link.current?.click()}
+          className="relative cursor-pointer self-start pt-1 @lg/page:row-span-2"
         />
         {/* On a phone the line runs under the time, so the place fits. */}
         <div className="col-span-2 col-start-2 flex min-w-0 items-center gap-1.5 text-[0.8125rem] leading-5 text-muted-foreground @lg/page:col-span-1">

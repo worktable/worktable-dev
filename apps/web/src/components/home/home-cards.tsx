@@ -350,7 +350,8 @@ function PagePreview({
     <span
       ref={frame}
       aria-hidden
-      className="relative flex aspect-[16/10] items-center justify-center overflow-hidden rounded-lg"
+      // Above the tile's link, so it must let clicks through to it.
+      className="pointer-events-none relative flex aspect-[16/10] items-center justify-center overflow-hidden rounded-lg"
       style={loaded ? undefined : tint}
     >
       {!loaded && children}
@@ -454,7 +455,9 @@ export function PinTile({
         {disabled ?? place}
       </span>
       {onUnpin && (
-        <span className="absolute top-3.5 right-3.5 hidden opacity-0 transition-opacity group-hover:opacity-100 has-[:focus-visible]:opacity-100 [@media(hover:hover)]:flex">
+        // Shown on hover where a pointer can hover, and always elsewhere: a
+        // pin whose doc is gone has no other way to be removed.
+        <span className="absolute top-3.5 right-3.5 flex transition-opacity group-hover:opacity-100 has-[:focus-visible]:opacity-100 [@media(hover:hover)]:opacity-0">
           <Tip label="Unpin">
             <button
               type="button"

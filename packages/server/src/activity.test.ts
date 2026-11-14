@@ -482,6 +482,16 @@ describe("workspace activity", () => {
       method: "PUT",
       body: { pins: [{ spaceId: "company", path: "plans/a" }, { spaceId: "company", path: "gone" }] },
     })
+    // One sitting that moves between folders stays one row in either folder.
+    setSystemTime(new Date(Date.now() - 140 * 60_000))
+    await writeDocAt("alpha/x")
+    setSystemTime(new Date(Date.now() + 70 * 60_000))
+    await writeDocAt("beta/y")
+    setSystemTime()
+    await writeDocAt("alpha/z")
+    const alpha = await request<HomeFeed>("/api/home?spaceId=company&folder=alpha")
+    expect(alpha.runs.map((run) => run.docs.map((doc) => doc.path))).toEqual([["alpha/z", "alpha/x"]])
+
     expect((await request<HomeFeed>("/api/home")).pins).toEqual([
       { spaceId: "company", path: "plans/a", status: "active", title: "Pulse", formatId: "worktable.markdown", revision: expect.any(String) },
       { spaceId: "company", path: "gone", status: "missing" },

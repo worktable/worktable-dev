@@ -161,7 +161,6 @@ export async function readHomeFeed(
 
     // A run lists docs a reader can open now.
     if (!current || current.archived) continue
-    if (options.folder !== undefined && placeId !== options.folder) continue
     const key = `${event.actor.id}|${event.spaceId}`
     const docKey = `${event.spaceId}\n${path}`
     let open = openRuns.get(key)
@@ -179,6 +178,9 @@ export async function readHomeFeed(
       runs.push(run)
     }
     open.oldest = time
+    // One folder narrows what a run lists, never where the sitting begins
+    // and ends: work elsewhere in between still joins its two halves.
+    if (options.folder !== undefined && placeId !== options.folder) continue
     const created = event.action === "doc.created"
     const listed = open.docs.get(path)
     if (listed) {
@@ -204,6 +206,8 @@ export async function readHomeFeed(
       .slice(0, options.limit)
       .map((run) => ({
         ...run,
+        // When it last touched a doc it lists.
+        at: run.docs[0]!.at,
         docs: run.docs.slice(0, RUN_DOCS),
         more: Math.max(0, run.docs.length - RUN_DOCS),
       })),

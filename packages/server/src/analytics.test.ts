@@ -54,6 +54,7 @@ const names = [
   "WORKTABLE_ANALYTICS_RUNTIME_ID",
   "WORKTABLE_CLOUD_WORKSPACE_ID",
   "WORKTABLE_GATEWAY_SECRET",
+  "WORKTABLE_MCP_MODERN",
   ENV.OWNER_SUBJECT,
   ENV.RESOURCE_URL,
   ENV.BROWSER_ASSERTION_KEYRING,
@@ -740,6 +741,37 @@ describe("consented committed-work analytics", () => {
     expect(report).not.toContain("Private")
     await flushAnalytics()
     expect(events).toHaveLength(sent)
+  })
+  test("names an MCP request's revision only when Worktable serves it", () => {
+    const identity = ownerIdentity()
+    identity.principal = {
+      id: "workos:user_analytics",
+      type: "human",
+      displayName: "Private name",
+    }
+    const named = (version: string) =>
+      requestAnalyticsContext(
+        new Request("https://app.worktable.cloud/api/mcp", {
+          headers: {
+            [GATEWAY_HEADER]: "gateway_test",
+            [ACTOR_HEADERS.ID]: identity.principal.id,
+            [ACTOR_HEADERS.TYPE]: "human",
+            [ACTOR_HEADERS.NAME]: "Private name",
+            [ANALYTICS_HEADER]: JSON.stringify(grant()),
+            "mcp-protocol-version": version,
+          },
+        }),
+        identity
+      )?.protocolVersion
+    // The stateless revision Claude and Codex send, and an earlier one.
+    expect(named("2026-07-28")).toBe("2026-07-28")
+    expect(named("2025-06-18")).toBe("2025-06-18")
+    // The header is the client's, so nothing else reaches analytics.
+    expect(named("2099-01-01")).toBeUndefined()
+    expect(named("Private client text")).toBeUndefined()
+    process.env["WORKTABLE_MCP_MODERN"] = "0"
+    expect(named("2026-07-28")).toBeUndefined()
+    expect(named("2025-06-18")).toBe("2025-06-18")
   })
   test("keeps collaborative saves out of person profiles and rejects spoofed actor grants", async () => {
     withAnalyticsContext(

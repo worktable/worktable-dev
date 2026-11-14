@@ -9,6 +9,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
 import { setAppDirOverride } from "./app-storage.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
+import { MCP_MODERN_PROTOCOL_VERSIONS } from "./mcp/surface.ts"
 import { resolveParticipant } from "./participant-store.ts"
 import { mcpRouter } from "./routes/mcp.ts"
 import { drainActivity } from "./activity-log.ts"
@@ -381,7 +382,7 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
     const discover = await modernPost("server/discover")
     expect(discover.status).toBe(200)
     expect(discover.reply.result).toMatchObject({
-      supportedVersions: ["2026-07-28"],
+      supportedVersions: [...MCP_MODERN_PROTOCOL_VERSIONS],
       capabilities: { tools: {} },
       instructions: legacy.getInstructions(),
       resultType: "complete",
@@ -428,7 +429,9 @@ describe("MCP 2026-07-28 beside the legacy revisions", () => {
     )
     expect(unsupported.status).toBe(400)
     expect(unsupported.reply.error?.code).toBe(-32022)
-    expect(unsupported.reply.error?.data?.supported).toEqual(["2026-07-28"])
+    expect(unsupported.reply.error?.data?.supported).toEqual([
+      ...MCP_MODERN_PROTOCOL_VERSIONS,
+    ])
   })
 
   it("answers a wait with what the agent hasn't seen, then with what arrives", async () => {

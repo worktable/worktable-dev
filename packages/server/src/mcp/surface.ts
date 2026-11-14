@@ -1,3 +1,4 @@
+import { SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/sdk/types.js"
 import { filesEnabled } from "../files-enabled.ts"
 import { isHosted } from "../hosted.ts"
 import { getServerSettings } from "../settings-store.ts"
@@ -35,6 +36,21 @@ export function mcpPreviewEnvOverride(): boolean | null {
  */
 export function mcpModernEraEnabled(): boolean {
   return envSwitch("WORKTABLE_MCP_MODERN") ?? true
+}
+
+/**
+ * The revisions the modern path answers. The SDK's handler owns that list
+ * and doesn't export it, so routes-mcp-bridge.test.ts holds this one to what
+ * the handler says it serves.
+ */
+export const MCP_MODERN_PROTOCOL_VERSIONS: readonly string[] = ["2026-07-28"]
+
+/** Whether this Worktable answers MCP requests of a revision. */
+export function servesMcpProtocolVersion(version: string): boolean {
+  return (
+    SUPPORTED_PROTOCOL_VERSIONS.includes(version) ||
+    (mcpModernEraEnabled() && MCP_MODERN_PROTOCOL_VERSIONS.includes(version))
+  )
 }
 
 /**

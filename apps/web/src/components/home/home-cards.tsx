@@ -270,27 +270,77 @@ export const sideColumn = "@3xl/page:flex @3xl/page:flex-col @3xl/page:gap-9"
 const PREVIEW_WIDTH = 1100
 const PREVIEW_HEIGHT = 688
 
-/** The page itself, drawn small. It cannot be clicked or focused. */
+// Previews load one at a time, and only once the rest of the page has
+// settled, so a row of pinned pages never competes with the page itself.
+let previewTurns: Promise<void> = Promise.resolve()
+
+function whenIdle(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(() => resolve(), { timeout: 1500 })
+    } else {
+      window.setTimeout(resolve, 300)
+    }
+  })
+}
+
+/**
+ * The page itself, drawn small. It cannot be clicked or focused. It waits
+ * for its tile to come on screen and for its turn, and shows the doc's icon
+ * until it has loaded.
+ */
 function PagePreview({
   spaceId,
   path,
   revision,
+  tint,
+  children,
 }: {
   spaceId: string
   path: string
   revision: string
+  tint: CSSProperties
+  /** The doc's icon, shown until the page has loaded. */
+  children: ReactNode
 }) {
   const { resolvedTheme } = useTheme()
   const frame = useRef<HTMLSpanElement>(null)
+  const done = useRef<(() => void) | null>(null)
   const [scale, setScale] = useState<number | null>(null)
+  const [turn, setTurn] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   useEffect(() => {
     const element = frame.current
     if (!element) return
     const fit = () => setScale(element.clientWidth / PREVIEW_WIDTH)
     fit()
-    const observer = new ResizeObserver(fit)
-    observer.observe(element)
-    return () => observer.disconnect()
+    const resize = new ResizeObserver(fit)
+    resize.observe(element)
+    let gone = false
+    const seen = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        seen.disconnect()
+        previewTurns = previewTurns.then(whenIdle).then(
+          () =>
+            new Promise<void>((next) => {
+              if (gone) return next()
+              done.current = next
+              setTurn(true)
+              // A page that never finishes must not hold the others back.
+              window.setTimeout(next, 4000)
+            })
+        )
+      },
+      { rootMargin: "200px" }
+    )
+    seen.observe(element)
+    return () => {
+      gone = true
+      resize.disconnect()
+      seen.disconnect()
+      done.current?.()
+    }
   }, [])
   const accessKey = spaceAccessKey(spaceId)
   const src = `${widgetContentUrl(spaceId, path)}?theme=${resolvedTheme}&rev=${encodeURIComponent(revision)}${
@@ -300,23 +350,34 @@ function PagePreview({
     <span
       ref={frame}
       aria-hidden
-      className="relative block aspect-[16/10] overflow-hidden rounded-lg border border-card-border bg-background"
+      className="relative flex aspect-[16/10] items-center justify-center overflow-hidden rounded-lg"
+      style={loaded ? undefined : tint}
     >
-      {scale !== null && (
+      {!loaded && children}
+      {turn && scale !== null && (
         <iframe
           src={src}
           title=""
           tabIndex={-1}
-          loading="lazy"
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
-          className="pointer-events-none absolute top-0 left-0 origin-top-left border-0"
+          onLoad={() => {
+            setLoaded(true)
+            done.current?.()
+          }}
+          className={cn(
+            "pointer-events-none absolute top-0 left-0 origin-top-left border-0 bg-background transition-opacity duration-300",
+            loaded ? "opacity-100" : "opacity-0"
+          )}
           style={{
             width: PREVIEW_WIDTH,
             height: PREVIEW_HEIGHT,
             transform: `scale(${scale})`,
           }}
         />
+      )}
+      {loaded && (
+        <span className="pointer-events-none absolute inset-0 rounded-lg border border-card-border" />
       )}
     </span>
   )
@@ -351,6 +412,13 @@ export function PinTile({
   /** An archived or missing doc: shown, not opened. */
   disabled?: string
 }) {
+  const icon = (
+    <DocumentFormatIcon
+      formatId={formatId}
+      name={path}
+      className="size-6 stroke-[1.6]"
+    />
+  )
   return (
     <div className="group card-surface card-surface-interactive relative flex min-w-0 flex-col rounded-xl p-2 pb-3">
       {!disabled && (
@@ -362,18 +430,21 @@ export function PinTile({
         />
       )}
       {formatId === "worktable.html" && revision && !disabled ? (
-        <PagePreview spaceId={spaceId} path={path} revision={revision} />
+        <PagePreview
+          spaceId={spaceId}
+          path={path}
+          revision={revision}
+          tint={tint}
+        >
+          {icon}
+        </PagePreview>
       ) : (
         <span
           aria-hidden
           className="flex aspect-[16/10] items-center justify-center rounded-lg"
           style={tint}
         >
-          <DocumentFormatIcon
-            formatId={formatId}
-            name={path}
-            className="size-6 stroke-[1.6]"
-          />
+          {icon}
         </span>
       )}
       <span className="mt-3 line-clamp-2 px-1 text-[0.8125rem] leading-[1.125rem] font-medium text-foreground">

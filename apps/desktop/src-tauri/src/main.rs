@@ -720,7 +720,7 @@ struct DesktopHostState {
     trusted_shell_ready: AtomicBool,
     /// The workspace is showing over a start-up page that has not reported
     /// ready yet; the page is hidden once it does.
-    shell_hide_deferred: AtomicBool,
+    shell_hide_deferred: DeferredShellHide,
     connections_loaded: AtomicBool,
     connections_migration_pending: AtomicBool,
     healthy_boot_completed: AtomicBool,
@@ -761,7 +761,7 @@ impl Default for DesktopHostState {
             cloud_connection_commit: Mutex::new(()),
             cloud_connection_started_with_profile: AtomicBool::new(false),
             trusted_shell_ready: AtomicBool::new(false),
-            shell_hide_deferred: AtomicBool::new(false),
+            shell_hide_deferred: DeferredShellHide::default(),
             connections_loaded: AtomicBool::new(false),
             connections_migration_pending: AtomicBool::new(false),
             healthy_boot_completed: AtomicBool::new(false),
@@ -6573,7 +6573,7 @@ fn reveal_cloud_workspace_if_ready<R: Runtime>(app: &AppHandle<R>) {
 fn show_updater_surface<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     app.state::<DesktopHostState>()
         .shell_hide_deferred
-        .store(false, Ordering::SeqCst);
+        .shell_revealed();
     if let Some(shell) = app.get_webview(TRUSTED_WEBVIEW_LABEL) {
         shell
             .show()
@@ -7671,10 +7671,9 @@ fn close_workspace_webview<R: Runtime>(app: &AppHandle<R>) {
 }
 
 fn show_trusted_shell_surface<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    // The start-up page is wanted on screen now, so nothing hides it later.
     app.state::<DesktopHostState>()
         .shell_hide_deferred
-        .store(false, Ordering::SeqCst);
+        .shell_revealed();
     if let Some(shell) = app.get_webview(TRUSTED_WEBVIEW_LABEL) {
         shell
             .show()
@@ -7696,11 +7695,10 @@ fn show_workspace_surface<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> 
         .show()
         .map_err(|error| format!("failed to show the workspace surface: {error}"))?;
     let state = app.state::<DesktopHostState>();
-    if !shell_hides_with_workspace(state.trusted_shell_ready.load(Ordering::SeqCst)) {
-        // A hidden page may never load. The start-up page has to run once to
-        // report Desktop ready (the healthy boot, update checks), so it stays
-        // under the workspace until it has.
-        state.shell_hide_deferred.store(true, Ordering::SeqCst);
+    if !state
+        .shell_hide_deferred
+        .workspace_shown(state.trusted_shell_ready.load(Ordering::SeqCst))
+    {
         return Ok(());
     }
     if let Some(shell) = app.get_webview(TRUSTED_WEBVIEW_LABEL) {
@@ -7714,10 +7712,30 @@ fn show_workspace_surface<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> 
     Ok(())
 }
 
-/// Whether showing the workspace hides the start-up page at once: only after
-/// that page has reported ready.
-fn shell_hides_with_workspace(trusted_shell_ready: bool) -> bool {
-    trusted_shell_ready
+/// When the start-up page is hidden behind the workspace. A hidden page may
+/// never load, and the start-up page has to run once to report Desktop ready
+/// (the healthy boot, update checks). So a workspace shown before that leaves
+/// the page underneath it, and the page is hidden once it reports ready,
+/// unless it was brought back on purpose meanwhile.
+#[derive(Default)]
+struct DeferredShellHide(AtomicBool);
+
+impl DeferredShellHide {
+    /// The workspace is now showing. True when the start-up page hides now.
+    fn workspace_shown(&self, shell_ready: bool) -> bool {
+        self.0.store(!shell_ready, Ordering::SeqCst);
+        shell_ready
+    }
+
+    /// The start-up page reported ready. True when it hides now.
+    fn shell_ready(&self) -> bool {
+        self.0.swap(false, Ordering::SeqCst)
+    }
+
+    /// The start-up page was shown on purpose; nothing hides it later.
+    fn shell_revealed(&self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
 }
 
 /// Hide the start-up page left under the workspace while it loaded.
@@ -7725,7 +7743,7 @@ fn hide_shell_deferred_behind_workspace<R: Runtime>(app: &AppHandle<R>) {
     if !app
         .state::<DesktopHostState>()
         .shell_hide_deferred
-        .swap(false, Ordering::SeqCst)
+        .shell_ready()
     {
         return;
     }
@@ -8526,10 +8544,26 @@ mod tests {
 
     #[test]
     fn the_start_up_page_stays_until_it_has_reported_ready() {
-        // Showing the workspace hides the start-up page only once that page
-        // has run; a page hidden before it loads may never report ready.
-        assert!(!shell_hides_with_workspace(false));
-        assert!(shell_hides_with_workspace(true));
+        // A workspace shown before the start-up page ran leaves the page
+        // under it; the page hides when it reports ready, once.
+        let hide = DeferredShellHide::default();
+        assert!(!hide.workspace_shown(false));
+        assert!(hide.shell_ready());
+        assert!(!hide.shell_ready());
+
+        // After the page has run, showing the workspace hides it at once and
+        // leaves nothing for later.
+        assert!(hide.workspace_shown(true));
+        assert!(!hide.shell_ready());
+
+        // Brought back on purpose while it was still loading (changing
+        // connection, an update), the page is not hidden when it reports.
+        assert!(!hide.workspace_shown(false));
+        hide.shell_revealed();
+        assert!(!hide.shell_ready());
+
+        // Ready with no workspace showing hides nothing.
+        assert!(!DeferredShellHide::default().shell_ready());
     }
 
     #[test]

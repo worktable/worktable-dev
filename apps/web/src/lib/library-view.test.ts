@@ -154,6 +154,23 @@ describe("what a change does to a skill's text", () => {
     )
   })
 
+  it("keeps a changed heading in the comparison", () => {
+    expect(
+      shown(
+        { proposal: proposal("update", "1") },
+        {
+          live: "# Require approval\n\nDeploy.\n",
+          next: "# Skip approval\n\nDeploy.\n",
+        }
+      )
+    ).toEqual([
+      "removed:# Require approval",
+      "added:# Skip approval",
+      "same:",
+      "same:Deploy.",
+    ])
+  })
+
   it("folds long unchanged stretches", () => {
     const steps = Array.from({ length: 12 }, (_, n) => `Step ${n}`)
     const next = [...steps.slice(0, 11), "Step 11, twice"].join("\n")

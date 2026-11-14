@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import type { DocumentPageResult } from "@worktable/types"
 import {
   documentPageValidated,
+  documentQueryKeys,
+  documentsQueryOptions,
   ensureDocumentOpen,
   forgetDocumentOpen,
   useDocumentPage,
@@ -53,5 +57,59 @@ export function useDocumentOpen(spaceId: string, path: string) {
     void refetch()
   }, [checkFailed, checking, path, refetch, validated])
 
+  useRecheckPageAgainstCatalog(
+    spaceId,
+    path,
+    pageQuery.data,
+    pageQuery.dataUpdatedAt
+  )
+
   return { pageQuery, page: validated ? pageQuery.data : undefined }
+}
+
+/**
+ * A change the server reports without a path (a move, archive, deletion or
+ * write in the format-neutral store) reaches this page as a newer Space
+ * catalog. When the catalog no longer agrees with this page's check,
+ * including on the content's revision, check the path again; otherwise the
+ * open document needs nothing.
+ */
+function useRecheckPageAgainstCatalog(
+  spaceId: string,
+  path: string,
+  page: DocumentPageResult | undefined,
+  pageUpdatedAt: number
+) {
+  const queryClient = useQueryClient()
+  // Watch the catalog the breadcrumb already keeps loaded, without reading it.
+  const { data: documents, dataUpdatedAt: documentsUpdatedAt } = useQuery({
+    ...documentsQueryOptions(spaceId),
+    enabled: false,
+  })
+  useEffect(() => {
+    if (!documents || !page || page.kind === "conflict") return
+    if (page.document.path !== path || documentsUpdatedAt <= pageUpdatedAt)
+      return
+    const listed = documents.find(
+      (item) => item.kind === "document" && item.path === path
+    )
+    const agrees =
+      listed?.kind === "document" &&
+      !!listed.archived === !!page.document.archived &&
+      listed.format.id === page.document.format.id &&
+      (listed.revision === undefined || listed.revision === page.revision)
+    if (agrees) return
+    void queryClient.invalidateQueries(
+      { queryKey: documentQueryKeys.page(spaceId, path), exact: true },
+      { cancelRefetch: false }
+    )
+  }, [
+    documents,
+    documentsUpdatedAt,
+    page,
+    pageUpdatedAt,
+    path,
+    queryClient,
+    spaceId,
+  ])
 }

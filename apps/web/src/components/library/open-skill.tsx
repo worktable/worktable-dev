@@ -1,13 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { ArrowUpRight, Plus, SquarePen, Trash2 } from "lucide-react"
-import { lazy, Suspense, useEffect, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useState } from "react"
 import { savedSinceLive } from "@worktable/types"
 import { SkillFrame, SkillHead } from "@/components/library/skill-frame"
 import { loadDocCode, loadedDocCode } from "@/components/library/doc-code"
 import { SkillNameDialog } from "@/components/library/skill-name-dialog"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useStableCallback } from "@/hooks/use-stable-callback"
 import {
   SetPageMetaContext,
   useSetPageMeta,
@@ -23,6 +22,7 @@ import {
   libraryQueryKey,
   skillTitle,
   type LibraryEntry,
+  type LibraryRef,
 } from "@/lib/library"
 import { useLibraryActions, type LibraryAction } from "@/lib/library-actions"
 import { useSpaces } from "@/lib/queries"
@@ -48,7 +48,8 @@ export function OpenSkill({
   entry: LibraryEntry
   /** Its library's name, for the trail. */
   libraryName: string
-  onAdd: () => void
+  /** Opens adding a skill; stable, as the header keeps it. */
+  onAdd: (adding: { library: LibraryRef }) => void
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -63,12 +64,10 @@ export function OpenSkill({
   const { pageQuery, page: checked } = useDocumentOpen(spaceId, path)
   const page = checked?.kind === "document" ? checked : null
   // After a move another Doc can hold the skill's old path; a Doc's page names
-  // the skills it is, so only this skill's own Doc opens under it. A removed
-  // skill isn't among them, and stays open so it can be restored.
+  // the skills it is, removed ones included, so only this skill's own Doc
+  // opens under it.
   const otherDoc =
-    page !== null &&
-    !entry.removed &&
-    !page.skills?.some((skill) => skill.id === entry.id)
+    page !== null && !page.skills?.some((skill) => skill.id === entry.id)
   useEffect(() => {
     if (!otherDoc) return
     void queryClient.invalidateQueries({
@@ -93,33 +92,44 @@ export function OpenSkill({
     ? `proposal:${entry.revision}`
     : `draft:${page?.provenance?.contentHash ?? ""}`
 
-  const act = useStableCallback(async (action: LibraryAction) => {
-    if (pending) return
-    setPending(true)
-    // Agents get what the person saw: Save names the content on screen.
-    const contentHash = page?.provenance?.contentHash
-    const done = await run(
-      action.kind === "save" && contentHash
-        ? { ...action, contentHash }
-        : action
-    )
-    if (done && action.kind === "remove") {
-      await navigate({
-        to: "/library/$",
-        params: { _splat: libraryKey(entry.library) },
-      })
-      return
-    }
-    // The Doc's page names the version now live.
-    if (done && path)
-      await queryClient.invalidateQueries({
-        queryKey: documentQueryKeys.page(spaceId, path),
-        exact: true,
-      })
-    setPending(false)
-  })
-  const add = useStableCallback(onAdd)
-  const remove = useStableCallback(() => act({ kind: "remove", entry }))
+  // The header keeps these, so they change only with what they act on.
+  const contentHash = page?.provenance?.contentHash
+  const act = useCallback(
+    async (action: LibraryAction) => {
+      if (pending) return
+      // Save names the content on screen, so it waits for the Doc's page.
+      if (action.kind === "save" && !contentHash) return
+      setPending(true)
+      const done = await run(
+        action.kind === "save" && contentHash
+          ? { ...action, contentHash }
+          : action
+      )
+      if (done && action.kind === "remove") {
+        await navigate({
+          to: "/library/$",
+          params: { _splat: libraryKey(entry.library) },
+        })
+        return
+      }
+      // The Doc's page names the version now live.
+      if (done && path)
+        await queryClient.invalidateQueries({
+          queryKey: documentQueryKeys.page(spaceId, path),
+          exact: true,
+        })
+      setPending(false)
+    },
+    [contentHash, entry, navigate, path, pending, queryClient, run, spaceId]
+  )
+  const add = useCallback(
+    () => onAdd({ library: entry.library }),
+    [entry.library, onAdd]
+  )
+  const remove = useCallback(
+    () => void act({ kind: "remove", entry }),
+    [act, entry]
+  )
 
   const title = skillTitle(entry)
   const spaceName = spaces?.find((space) => space.id === spaceId)?.name
@@ -197,7 +207,10 @@ export function OpenSkill({
     <SkillHead
       entry={{ ...entry, draft }}
       at={at}
-      pending={pending}
+      // Save waits for the Doc's page, which names the content on screen.
+      pending={
+        pending || (draft && !entry.proposal && !page?.provenance?.contentHash)
+      }
       onAct={(action) => void act(action)}
     />
   )

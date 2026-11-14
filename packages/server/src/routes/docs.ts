@@ -743,6 +743,8 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
 
     const filePath = await getDocPath(spaceId, docPath);
     suppressPath(filePath);
+    // The hash of what the conversion wrote, not of a save that followed it.
+    let convertedHash: string | undefined;
     try {
       const writeResult = await writeDoc(spaceId, docPath, blocks, {
         updatedBy: restWriteActor(c),
@@ -754,6 +756,7 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
       if (!writeResult.ok) {
         return c.json({ error: writeResult.error ?? "Write failed", code: "CONFLICT" }, 409);
       }
+      convertedHash = writeResult.provenance?.contentHash;
     } finally {
       setTimeout(() => unsuppressPath(filePath), 150);
     }
@@ -762,7 +765,7 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
 
     const statResult = await docStat(spaceId, docPath);
     const provenance = await getDocProvenance(spaceId, docPath);
-    await carrySkillHashAcrossConversion(spaceId, docPath, hashBefore, provenance?.contentHash);
+    await carrySkillHashAcrossConversion(spaceId, docPath, hashBefore, convertedHash ?? provenance?.contentHash);
     wsManager.broadcast(spaceId, {
       type: "doc_update",
       spaceId,

@@ -41,6 +41,8 @@ beforeEach(() => {
   delete process.env["WORKTABLE_LAUNCHER"];
   delete process.env["WORKTABLE_REQUIRE_AUTH"];
   delete process.env["HOST"];
+  // The matrix below is the released tool surface.
+  delete process.env["WORKTABLE_MCP_PREVIEW"];
 });
 
 afterEach(() => {

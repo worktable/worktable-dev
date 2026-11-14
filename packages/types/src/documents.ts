@@ -360,6 +360,8 @@ export const DocumentPageSchema = z.object({
           })
           .nullable(),
         proposed: z.boolean(),
+        /** Taken out of its library; listed so it can still be restored. */
+        removed: z.literal(true).optional(),
       })
     )
     .optional(),

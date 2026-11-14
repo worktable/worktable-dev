@@ -734,9 +734,12 @@ export async function skillsOfDoc(
   identity: TokenIdentity,
   spaceId: string,
   path: string
-): Promise<Array<{ id: string; live: { generationId: string; contentHash?: string } | null; proposed: boolean }>> {
+): Promise<
+  Array<{ id: string; live: { generationId: string; contentHash?: string } | null; proposed: boolean; removed?: true }>
+> {
   if (!isPerson(identity)) return []
-  const candidates = readLibrary().entries.filter((entry) => !entry.removed && entry.doc.spaceId === spaceId)
+  // Removed skills too, marked: the Library still opens their Doc to restore them.
+  const candidates = readLibrary().entries.filter((entry) => entry.doc.spaceId === spaceId)
   if (candidates.length === 0) return []
   const locate = docLocator()
   const found = []
@@ -757,6 +760,7 @@ export async function skillsOfDoc(
           }
         : null,
       proposed: Boolean(entry.proposal),
+      ...(entry.removed ? { removed: true as const } : {}),
     })
   }
   return found
@@ -847,6 +851,10 @@ export async function saveLibrarySkill(
     ...attribution(identity),
     label: "Library skill",
   })
+  // Content saved between that check and the version is the person's to see first.
+  if (input.contentHash && saved.contentHash !== input.contentHash) {
+    throw new LibraryError("conflict", "This Doc changed since you looked at it. Look again, then save.")
+  }
   const entry = await changeLibrary((file, now) => {
     const entry = entryById(file, id)
     if (entry.removed) throw new LibraryError("not_found", "This skill was removed from its library.")
@@ -1136,6 +1144,11 @@ export const REMOVED_MARK = "removed"
  */
 export function seenMark(entry: Pick<LibraryEntry, "name" | "description">, live: { generationId: string }): string {
   return `${live.generationId}\n${entry.name}\n${entry.description}`
+}
+
+/** The name a seen mark recorded, if it recorded one. */
+export function seenName(mark: string): string | undefined {
+  return mark.split("\n")[1] || undefined
 }
 
 function inScope(library: LibraryRef, spaceId: string | undefined): boolean {

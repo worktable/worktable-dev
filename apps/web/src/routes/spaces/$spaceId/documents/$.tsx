@@ -1,14 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react"
 import { createFileRoute, Navigate } from "@tanstack/react-router"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, Download, FileQuestion } from "lucide-react"
-import type { DocumentPage, DocumentPageResult } from "@worktable/types"
+import type { DocumentPage } from "@worktable/types"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
 import { pageShareTarget, useSetPageMeta } from "@/hooks/use-page-meta"
-import {
-  documentQueryKeys,
-  documentsQueryOptions,
-} from "@/lib/documents-queries"
 import { downloadDocumentSource } from "@/lib/documents-api"
 import {
   browserDocumentRenderer,
@@ -58,12 +54,6 @@ function DocumentPageRoute() {
   const path = _splat ?? ""
   const queryClient = useQueryClient()
   const { pageQuery, page } = useDocumentOpen(spaceId, path)
-  useRecheckPageAgainstCatalog(
-    spaceId,
-    path,
-    pageQuery.data,
-    pageQuery.dataUpdatedAt
-  )
   if (!path) {
     return <Navigate to="/spaces/$spaceId" params={{ spaceId }} replace />
   }
@@ -154,53 +144,6 @@ function DocumentPageRoute() {
       />
     </Suspense>
   )
-}
-
-/**
- * A change the server reports without a path (a move, archive, deletion or
- * write in the format-neutral store) reaches this page as a newer Space
- * catalog. When the catalog no longer agrees with this page's check,
- * including on the content's revision, check the path again; otherwise the
- * open document needs nothing.
- */
-function useRecheckPageAgainstCatalog(
-  spaceId: string,
-  path: string,
-  page: DocumentPageResult | undefined,
-  pageUpdatedAt: number
-) {
-  const queryClient = useQueryClient()
-  // Watch the catalog the breadcrumb already keeps loaded, without reading it.
-  const { data: documents, dataUpdatedAt: documentsUpdatedAt } = useQuery({
-    ...documentsQueryOptions(spaceId),
-    enabled: false,
-  })
-  useEffect(() => {
-    if (!documents || !page || page.kind === "conflict") return
-    if (page.document.path !== path || documentsUpdatedAt <= pageUpdatedAt)
-      return
-    const listed = documents.find(
-      (item) => item.kind === "document" && item.path === path
-    )
-    const agrees =
-      listed?.kind === "document" &&
-      !!listed.archived === !!page.document.archived &&
-      listed.format.id === page.document.format.id &&
-      (listed.revision === undefined || listed.revision === page.revision)
-    if (agrees) return
-    void queryClient.invalidateQueries(
-      { queryKey: documentQueryKeys.page(spaceId, path), exact: true },
-      { cancelRefetch: false }
-    )
-  }, [
-    documents,
-    documentsUpdatedAt,
-    page,
-    pageUpdatedAt,
-    path,
-    queryClient,
-    spaceId,
-  ])
 }
 
 /** The breadcrumb names the conflicted path from the catalog, like the sidebar. */

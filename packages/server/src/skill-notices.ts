@@ -18,8 +18,8 @@ import {
   applicableVersions,
   REMOVED_MARK,
   REMOVED_SKILL_NOTE,
-  readLibrary,
   seenMark,
+  seenName,
   skillsForAgent,
   skillVersion,
   type AgentSkill,
@@ -251,11 +251,11 @@ export async function skillChangeNotice(
     }
     // Seen, not removed, and no longer among the skills that apply. A Doc
     // archived since still counts as applying until the next session's list.
-    const entries = new Map(readLibrary().entries.map((entry) => [entry.id, entry]))
-    const lapsed = Object.entries(before ?? {}).flatMap(([id, mark]) => {
-      const entry = mark !== REMOVED && !versions.has(id) ? entries.get(id) : undefined
-      return entry && !entry.removed ? [entry.name] : []
-    })
+    // Named as the agent last saw them: what they are called now may be
+    // something it can no longer see.
+    const lapsed = Object.entries(before ?? {}).flatMap(([id, mark]) =>
+      mark !== REMOVED && !versions.has(id) ? [seenName(mark) ?? "A skill you had"] : []
+    )
     // Skills whose Doc no longer opens keep their version too, so the cheap
     // check keeps matching instead of resolving on every call.
     setMarks(participantId, { ...Object.fromEntries(versions), ...marksOf(live, removed) })

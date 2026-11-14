@@ -219,9 +219,26 @@ function LibraryPage() {
             library: opened.library,
             name: opened.libraryName,
           })}
-          onAdd={() => setAdding({ library: opened.library })}
+          onAdd={setAdding}
         />
       </Suspense>
+    )
+  } else if (library.isError && !library.data) {
+    pane = (
+      <Empty className="min-h-full">
+        <EmptyHeader>
+          <EmptyTitle>Couldn’t load the Library</EmptyTitle>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void library.refetch()}
+          >
+            Try Again
+          </Button>
+        </EmptyContent>
+      </Empty>
     )
   } else if (!library.data) {
     pane = null

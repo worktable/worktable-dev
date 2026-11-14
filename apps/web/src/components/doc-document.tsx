@@ -128,6 +128,12 @@ type LoadedEditorProps = ComponentProps<
 >
 type EditorHandle = import("@/components/editor/editor").EditorHandle
 type EditorPassages = import("@/components/editor/editor").EditorPassages
+
+/** The skills a Doc is now; its page also lists removed ones, for the Library. */
+const inLibrary = (
+  page: { skills?: DocumentPage["skills"] } | null | undefined
+) => page?.skills?.filter((skill) => !skill.removed)
+
 const editor = preloadableComponent<LoadedEditorProps>(() =>
   import("@/components/editor/editor").then((module) => ({
     default: module.Editor,
@@ -1020,7 +1026,7 @@ function MarkdownDocPage({
         libraryTitle={
           validated && !archived && !readOnly ? page?.document.title : undefined
         }
-        skillId={page?.skills?.[0]?.id}
+        skillId={inLibrary(page)?.[0]?.id}
         onCopyMarkdown={onCopyMarkdown}
         onDownload={onDownload}
         onRecoverOfflineEdits={validated ? onRecoverOfflineEdits : undefined}
@@ -1057,7 +1063,7 @@ function MarkdownDocPage({
                   docPath={docPath}
                   provenance={page?.provenance}
                   updatedAt={page?.document.updatedAt}
-                  skills={page?.skills}
+                  skills={inLibrary(page)}
                   contributors={page?.contributors}
                   backlinks={page?.backlinks}
                   referrers={page?.referrers}
@@ -1844,7 +1850,7 @@ function BlockNoteDocPage({
       docPath={docPath}
       provenance={page?.provenance}
       updatedAt={page?.document.updatedAt}
-      skills={page?.skills}
+      skills={inLibrary(page)}
       contributors={page?.contributors}
       backlinks={page?.backlinks}
       referrers={page?.referrers}
@@ -1867,7 +1873,7 @@ function BlockNoteDocPage({
         libraryTitle={
           validated && !archived && !readOnly ? page?.document.title : undefined
         }
-        skillId={page?.skills?.[0]?.id}
+        skillId={inLibrary(page)?.[0]?.id}
         onVersionHistory={openVersions}
         onConvertToMarkdown={
           convertingToMarkdown || !validated ? undefined : onConvertToMarkdown

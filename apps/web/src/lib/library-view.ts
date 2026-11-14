@@ -118,14 +118,16 @@ export type TextPart =
  * A skill's text as lines: without the heading that repeats its title, and
  * without the blank lines a Doc ends on.
  */
-function body(text: string): string[] {
+function body(text: string, keepHeading = false): string[] {
   const lines = text.replace(/\r\n?/g, "\n").replace(/\s+$/, "").split("\n")
-  if (/^#\s/.test(lines[0] ?? "")) {
+  if (!keepHeading && /^#\s/.test(lines[0] ?? "")) {
     lines.shift()
     while (lines.length > 0 && lines[0]!.trim() === "") lines.shift()
   }
   return lines
 }
+
+const firstLine = (text: string) => text.replace(/\r\n?/g, "\n").split("\n")[0]
 
 const whole = (lines: string[], kind: TextLine["kind"]): TextPart[] => [
   { kind: "lines", lines: lines.map((text) => ({ kind, text })) },
@@ -150,7 +152,13 @@ export function changeOf(
   // to compare, has no comparison to show.
   if (texts.live === null)
     return entry.proposal?.kind === "add" ? whole(next, "added") : null
-  const lines = diffLines(body(texts.live).join("\n"), next.join("\n"))
+  // A heading both sides share repeats the title and is left out; a changed
+  // one is part of the change.
+  const keepHeading = firstLine(texts.live) !== firstLine(texts.next)
+  const lines = diffLines(
+    body(texts.live, keepHeading).join("\n"),
+    body(texts.next, keepHeading).join("\n")
+  )
   if (!lines) return null
   return foldUnchanged(lines).map((part) =>
     part.kind === "unchanged"

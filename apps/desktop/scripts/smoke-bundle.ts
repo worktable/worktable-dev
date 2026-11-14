@@ -891,6 +891,14 @@ try {
       await running.process.exited
     }
     await finishLogs("Failed launch", running, true)
+  } else if (launchNumber > 0) {
+    // The launch failed before Desktop's process appeared; its logs are only
+    // in the root, which cleanup may remove.
+    for (const stream of ["stdout", "stderr"]) {
+      const log = join(root, `launch-${launchNumber}.${stream}.log`)
+      const text = existsSync(log) ? readFileSync(log, "utf8").trim() : ""
+      if (text) console.error(`Failed launch ${stream}:\n${text}`)
+    }
   }
   if (cliOwner) {
     cliOwner.process.kill("SIGTERM")

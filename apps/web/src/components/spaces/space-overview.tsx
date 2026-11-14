@@ -208,7 +208,7 @@ export function SpaceOverview({
               <ArrowRight className="size-3.5" />
             </Link>
           </div>
-          {feed.isPending ? (
+          {feed.isPending || (feed.isPlaceholderData && runs.length === 0) ? (
             <LatestSkeleton />
           ) : feed.isError && !feed.data ? (
             <p className="text-sm text-muted-foreground">

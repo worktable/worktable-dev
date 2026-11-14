@@ -15,10 +15,10 @@
       "publishedAt": "2026-11-14T06:42:53.337Z",
       "held": false,
       "desktop": {
-        "version": "0.1.49-dev.464+c613516",
-        "tag": "v0.1.49-dev.464",
-        "commit": "c613516589de92f9e416c73122bce5ad94d84d2d",
-        "publishedAt": "2026-11-14T04:15:52.414Z"
+        "version": "0.1.50-dev.467+7598e8f",
+        "tag": "v0.1.50-dev.467",
+        "commit": "7598e8f4177f80cf9e17404a7ef730355d7f6c96",
+        "publishedAt": "2026-11-14T07:41:17.260Z"
       }
     }
   }

@@ -20,6 +20,8 @@ import type {
 import { AnnotationFileSchema, WidgetIdSchema, findPassageBlock } from "@worktable/types";
 import { getSpacesBaseDir, readDoc } from "./store.ts";
 import { readWidget, readWidgetHtml } from "./widget-store.ts";
+import { locateHtmlElement } from "./html-element-locate.ts";
+import { hasScope } from "./token-store.ts";
 import { locateMarkdownPassage, markdownPassageLines } from "./markdown-passage.ts";
 import { withDocPathLock } from "./doc-path-lock.ts";
 import { assertWorkspaceAvailable } from "./workspace-safety.ts"
@@ -656,6 +658,16 @@ export async function getAnnotationContext(spaceId: string, annotationOrTarget: 
     const { data: widget } = await readWidget(spaceId, target.widgetId);
     if (!widget) return { targetExists: false, selectorMatch: "missing" };
     const { data: html } = await readWidgetHtml(spaceId, target.widgetId);
+    if (target.element) {
+      // The element's own lines in the page as written, numbered as
+      // worktable_html_read returns them.
+      const place = locateHtmlElement(html ?? "", { element: target.element, quote: target.quote });
+      if (!place) return { targetExists: false, selectorMatch: "stale" };
+      const { kind, ...lines } = place;
+      return kind === "element"
+        ? { targetExists: true, selectorMatch: place.match, startLine: lines.startLine, endLine: lines.endLine, excerpt: lines.excerpt }
+        : { targetExists: false, selectorMatch: "stale", ...lines };
+    }
     const excerpt = [widget.name, widget.description, (html ?? "").slice(0, 4000)]
       .filter(Boolean)
       .join("\n");
@@ -710,6 +722,43 @@ export async function getAnnotationContext(spaceId: string, annotationOrTarget: 
     return { targetExists: false, selectorMatch: "stale", docPath: target.docPath };
   }
   return { targetExists: false, selectorMatch: "missing", docPath: target.docPath };
+}
+
+/**
+ * A comment as a reader may see it. What describes an element of an HTML
+ * Doc's page is taken from the page: its opening tag, its attributes and its
+ * place. It goes only to a reader who may read HTML Docs. The quoted text
+ * stays with the comment, as a passage's does.
+ */
+export function annotationForReader<T extends { target: AnnotationTarget }>(
+  annotation: T,
+  scopes: readonly string[]
+): T {
+  const target = annotation.target;
+  if (target.type !== "widget" || !target.element || hasScope([...scopes], "widgets:read")) return annotation;
+  const shown = { ...target };
+  delete shown.element;
+  return { ...annotation, target: shown };
+}
+
+/**
+ * What a comment is about, for a reader who may read it. The context quotes
+ * the Doc or the HTML Doc's page, so it takes the scope that reads those;
+ * reading comments alone does not show what they are about.
+ */
+export async function readAnnotationContext(
+  spaceId: string,
+  annotationId: string,
+  scopes: readonly string[]
+): Promise<{ context: AnnotationContext } | { missingScope: string }> {
+  const { target } = await readAnnotation(spaceId, annotationId);
+  const granted = [...scopes];
+  if (target.type === "widget") {
+    if (!hasScope(granted, "widgets:read")) return { missingScope: "widgets:read" };
+  } else if ("docPath" in target && !hasScope(granted, "docs:read") && !hasScope(granted, "documents:read")) {
+    return { missingScope: "docs:read" };
+  }
+  return { context: await getAnnotationContext(spaceId, target) };
 }
 
 export class AnnotationPathMoveConflictError extends Error {}

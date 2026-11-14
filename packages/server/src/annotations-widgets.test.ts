@@ -9,7 +9,8 @@ import { setAppDirOverride } from "./app-storage.ts";
 import { spacesRouter } from "./routes/spaces.ts";
 import { widgetsRouter } from "./routes/widgets.ts";
 import { annotationsRouter } from "./routes/annotations.ts";
-import { getAnnotationContext, listAnnotations } from "./annotation-store.ts";
+import { annotationForReader, getAnnotationContext, listAnnotations, readAnnotationContext } from "./annotation-store.ts";
+import { locateHtmlElement } from "./html-element-locate.ts";
 
 function buildTestApp() {
   const app = new Hono();
@@ -93,6 +94,101 @@ describe("HTML doc (widget) annotations", () => {
     expect(context.excerpt).toContain("Q3 Plan");
     expect(context.excerpt).toContain("Phases");
     expect(context.excerpt).toContain("<h2>Burndown</h2>");
+  });
+
+  it("keeps a comment on an element of the page and gives its lines in the page as written", async () => {
+    const html = [
+      "<!doctype html><html><head><title>Plan</title></head><body><main>",
+      '<section id="plans"><h2>Plans</h2>',
+      '<div class="price">$49 <small>per month</small></div>',
+      "</section>",
+      '<ul id="rows"></ul>',
+      "<script>rows.innerHTML = '<li>Drawn later</li>'</script>",
+      "</main></body></html>",
+    ].join("\n");
+    await req(app, "POST", "/api/spaces/meta/widgets", { id: "pricing", name: "Pricing", html });
+    const target = {
+      type: "widget",
+      widgetId: "pricing",
+      quote: "$49 per month",
+      element: {
+        tag: "div",
+        classes: ["price"],
+        attrs: {},
+        before: "Plans",
+        heading: "Plans",
+        path: "main > section#plans > div",
+        html: '<div class="price">',
+        pin: 0.25,
+      },
+    };
+    const created = await req(app, "POST", "/api/spaces/meta/annotations", { target, category: "comment", body: "Yearly price" });
+    expect(created.status).toBe(200);
+    const listed = await req(app, "GET", "/api/spaces/meta/annotations?widgetId=pricing");
+    expect(listed.json.annotations[0].target).toEqual(target);
+    expect(await getAnnotationContext("meta", created.json.annotation.id)).toEqual({
+      targetExists: true,
+      selectorMatch: "exact",
+      startLine: 3,
+      endLine: 3,
+      excerpt: '<div class="price">$49 <small>per month</small></div>',
+    });
+
+    // A description holds no more attributes than a page's runtime keeps.
+    const crowded = await req(app, "POST", "/api/spaces/meta/annotations", {
+      target: {
+        ...target,
+        element: {
+          ...target.element,
+          attrs: Object.fromEntries(Array.from({ length: 9 }, (_, at) => [`data-n${at}`, "x"])),
+        },
+      },
+      category: "comment",
+      body: "Too many",
+    });
+    expect(crowded.status).toBe(400);
+
+    // What describes the element comes from the page, so a reader of
+    // comments who may not read HTML Docs gets the quote without it.
+    expect(annotationForReader(created.json.annotation, ["annotations:read"]).target).toEqual({
+      type: "widget",
+      widgetId: "pricing",
+      quote: "$49 per month",
+    });
+    expect(annotationForReader(created.json.annotation, ["annotations:read", "widgets:read"]).target).toEqual(target);
+
+    // The context quotes the page: reading comments alone does not give it.
+    const annotationId = created.json.annotation.id;
+    expect(await readAnnotationContext("meta", annotationId, ["annotations:read"])).toEqual({ missingScope: "widgets:read" });
+    expect(await readAnnotationContext("meta", annotationId, ["annotations:read", "widgets:read"])).toMatchObject({
+      context: { startLine: 3 },
+    });
+
+    // An element a script draws is not in the page as written: the agent is
+    // shown what holds it.
+    const drawn = await getAnnotationContext("meta", {
+      type: "widget",
+      widgetId: "pricing",
+      quote: "Drawn later",
+      element: { tag: "li", path: "main > ul#rows > li" },
+    });
+    expect(drawn).toEqual({
+      targetExists: false,
+      selectorMatch: "stale",
+      container: "ul#rows",
+      startLine: 5,
+      endLine: 5,
+      excerpt: '<ul id="rows"></ul>',
+    });
+
+    // A page written without a body tag is read as a browser reads it: the
+    // title is not text beside its first element.
+    expect(
+      locateHtmlElement("<title>Plan</title>\n<div>49</div>\n<p>A sufficiently long explanation follows here.</p>", {
+        quote: "49",
+        element: { tag: "div", after: "A sufficiently long explanation follows here.", path: "div" },
+      })
+    ).toMatchObject({ kind: "element", match: "exact", startLine: 2 });
   });
 
   it("reports missing context when the widget is gone, and rejects malformed widget ids", async () => {

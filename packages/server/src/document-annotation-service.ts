@@ -801,13 +801,15 @@ export async function createLegacyCompatibleAnnotationV2(
     }
     const annotation = newAnnotation(spaceId, owner, input)
     annotation.target = target
+    // A selector this kind of document can't show, such as an element of a
+    // page named on a Doc, is refused before anything is saved.
+    const projected = legacyAnnotation(owner, annotation)
+    if (!projected) {
+      throw new Error("Annotation target does not match its document")
+    }
     owner.annotations.push(annotation)
     await writeOwner(spaceId, owner, beforeWrite)
     noteChanged(spaceId, owner, annotation)
-    const projected = legacyAnnotation(owner, annotation)
-    if (!projected) {
-      throw new Error("Annotation selector requires the common API")
-    }
     return { annotation: projected, created: true, documentId: owner.document.documentId }
     // The first comment on a Doc gives it its ID; commenting needs no more.
   }, { materializeIdentity: true, identityAccess: commentAccess() })

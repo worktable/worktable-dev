@@ -15,6 +15,7 @@ import {
   Info,
   Loader2,
   Maximize,
+  MessageSquarePlus,
   Minimize,
   Pencil,
   RotateCcw,
@@ -55,6 +56,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -80,6 +82,7 @@ import {
 import { Input } from "@worktable/ui/components/input"
 import { AnnotationPanel } from "@/components/annotations/annotation-panel"
 import { CommentBox } from "@/components/annotations/comment-box"
+import { useElementComments } from "@/components/annotations/element-commenting"
 import { docContributors } from "@/lib/comment-recipients"
 import { DesktopContextPanel } from "@/components/desktop-context-panel"
 import {
@@ -268,7 +271,7 @@ function WidgetDetailPage({
   )
   const previewVersion = versionQuery.data
 
-  // Annotations (HTML docs are DOC-LEVEL only — no block anchoring). The query
+  // Comments on the HTML doc, or on an element of its page. The query
   // stays enabled so the floating button's open-count badge is always live;
   // live updates arrive via the space subscription above, which invalidates
   // the ["annotations", spaceId] prefix on annotation_update events.
@@ -312,12 +315,40 @@ function WidgetDetailPage({
     [annotationsOpen, openAnnotationCount, toggleAnnotations]
   )
 
-  const selectAnnotation = useCallback((annotation: Annotation) => {
-    setActiveAnnotationId(annotation.id)
-    setAnnotationsOpen(true)
-    setVersionsOpen(false)
-    setPreviewVersionId(null)
-  }, [])
+  // Comments on elements of the page: the mode, the draft and the marks.
+  const elementComments = useElementComments({
+    frameRef: iframeRef,
+    frameKey: frameSrc !== null && loadedFrameSrc === frameSrc ? frameSrc : null,
+    enabled: validated && !readOnly && !previewVersionId,
+    annotations,
+    activeAnnotationId,
+    composing: composerOpen,
+    // The comment box and the comments panel are beside the page, not in
+    // it: a page filling the screen gives it back for them.
+    onPick: () => {
+      leaveFullscreen()
+      setComposerOpen(true)
+    },
+    onOpenComment: (annotationId) => {
+      const annotation = annotations.find((item) => item.id === annotationId)
+      if (!annotation) return
+      leaveFullscreen()
+      selectAnnotation(annotation)
+    },
+  })
+  const onFrameComment = useEffectEvent(elementComments.onFrameMessage)
+  const revealElement = elementComments.reveal
+
+  const selectAnnotation = useCallback(
+    (annotation: Annotation) => {
+      setActiveAnnotationId(annotation.id)
+      setAnnotationsOpen(true)
+      setVersionsOpen(false)
+      setPreviewVersionId(null)
+      revealElement(annotation.id)
+    },
+    [revealElement]
+  )
 
   useEffect(() => {
     setDiagnostics([])
@@ -456,6 +487,10 @@ function WidgetDetailPage({
       // WindowProxy survives navigation. A replacement page must not inherit
       // the original document's broker, including requests waiting for validation.
       if (!isCurrentFrame()) return
+      if (data?.type?.startsWith("worktable.comment.")) {
+        onFrameComment(data)
+        return
+      }
       // Track the widget's record subscriptions so the parent's space socket can
       // relay change events back to it (see the space events above).
       if (
@@ -638,6 +673,11 @@ function WidgetDetailPage({
     return () => window.removeEventListener("keydown", onKey)
   }, [overlayFullscreen])
 
+  const leaveFullscreen = useCallback(() => {
+    if (document.fullscreenElement) void document.exitFullscreen()
+    setOverlayFullscreen(false)
+  }, [])
+
   const toggleFullscreen = useCallback(() => {
     const el = wrapperRef.current
     if (!el) return
@@ -810,6 +850,8 @@ function WidgetDetailPage({
     validated,
   ])
 
+  const elementDraft = elementComments.draft
+
   return (
     <div
       data-document-ready={
@@ -850,6 +892,19 @@ function WidgetDetailPage({
         >
           <WidgetDiagnostics diagnostics={importantDiagnostics} />
           <div className="overlay-floating absolute top-2 right-2 z-10 flex items-center gap-0.5 rounded-lg bg-popover p-0.5">
+            {validated && !readOnly && !previewVersionId && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`size-8 ${elementComments.mode ? "bg-surface-selected text-primary-text" : ""}`}
+                onClick={elementComments.toggle}
+                aria-pressed={elementComments.mode}
+                aria-label="Comment"
+                title="Comment"
+              >
+                <MessageSquarePlus className="size-4" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -941,9 +996,12 @@ function WidgetDetailPage({
             }
             onClose={() => setAnnotationsOpen(false)}
             onCompose={(trigger) => {
+              elementComments.clearDraft()
               setComposerAnchor(trigger)
               setComposerOpen(true)
             }}
+            detachedIds={elementComments.detachedIds}
+            detachedLabel="Page Changed"
             emptyHint="Leave a comment for this HTML doc."
             className="bg-transparent"
           />
@@ -1022,9 +1080,12 @@ function WidgetDetailPage({
                 }
                 onClose={() => setAnnotationsOpen(false)}
                 onCompose={(trigger) => {
+              elementComments.clearDraft()
               setComposerAnchor(trigger)
               setComposerOpen(true)
             }}
+                detachedIds={elementComments.detachedIds}
+                detachedLabel="Page Changed"
                     emptyHint="Leave a comment for this HTML doc."
                 className="max-h-[min(calc(86dvh-1.5rem),calc(var(--app-visual-viewport-height,100dvh)-2.5rem))]"
               />
@@ -1034,13 +1095,25 @@ function WidgetDetailPage({
       )}
 
       <CommentBox
-        draft={{ anchor: composerAnchor }}
+        draft={elementDraft ?? { anchor: composerAnchor }}
         open={composerOpen && !readOnly}
-        onOpenChange={setComposerOpen}
+        onOpenChange={(open) => {
+          setComposerOpen(open)
+          if (!open) elementComments.clearDraft()
+        }}
         context={{ spaceId, contributors: docContributors(page) }}
         onSubmit={async (body, to, idempotencyKey) => {
           await annotationMutations.create.mutateAsync({
-            target: { type: "widget", widgetId },
+            target: {
+              type: "widget",
+              widgetId,
+              ...(elementDraft
+                ? {
+                    ...(elementDraft.quote ? { quote: elementDraft.quote } : {}),
+                    element: elementDraft.element,
+                  }
+                : {}),
+            },
             category: "comment",
             body,
             to,

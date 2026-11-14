@@ -284,7 +284,7 @@ import {
 import { previewMermaid, validateMermaid } from "../mermaid.ts"
 import {
   createAnnotation,
-  getAnnotationContext,
+  readAnnotationContext,
   listAnnotations,
   readAnnotation,
   replyAnnotation,
@@ -2834,11 +2834,20 @@ async function _dispatchOperationInner(
         parsed.spaceId,
         parsed.annotationId
       )
-      const context = parsed.includeTargetContext
-        ? await getAnnotationContext(parsed.spaceId, parsed.annotationId)
+      // Left out for an agent that may read comments but not what they
+      // are about.
+      const read = parsed.includeTargetContext
+        ? await readAnnotationContext(
+            parsed.spaceId,
+            parsed.annotationId,
+            identity.scopes
+          )
         : undefined
       await markOpened(identity, { kind: "comment", annotationId: annotation.id })
-      return { annotation, context }
+      return {
+        annotation,
+        context: read && "context" in read ? read.context : undefined,
+      }
     }
     case "annotations.create": {
       const parsed = CreateAnnotationInputPreview.parse(args)
@@ -2946,15 +2955,21 @@ async function _dispatchOperationInner(
     }
     case "annotations.context": {
       const parsed = GetAnnotationContextInput.parse(args)
-      const context = await getAnnotationContext(
+      const read = await readAnnotationContext(
         parsed.spaceId,
-        parsed.annotationId
+        parsed.annotationId,
+        identity.scopes
       )
+      if ("missingScope" in read) {
+        throw new Error(
+          `Reading what a comment is about needs the ${read.missingScope} scope.`
+        )
+      }
       await markOpened(identity, {
         kind: "comment",
         annotationId: parsed.annotationId,
       })
-      return { context }
+      return { context: read.context }
     }
     case "docs.read": {
       const spaceId = args["spaceId"] as string

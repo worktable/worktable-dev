@@ -26,19 +26,25 @@ const CommentRecipientSelect = lazy(() =>
   }))
 );
 
+/** Somewhere on screen that isn't an element here, such as one inside a frame. */
+export interface CommentAnchor {
+  getBoundingClientRect: () => DOMRect;
+  contextElement?: Element;
+}
+
 export interface AnnotationDraft {
   blockId: string;
   blockType?: string;
   quote?: string;
   /** What the comment box opens next to: the selection, or what was pressed. */
-  anchor?: Range | Element;
+  anchor?: Range | Element | CommentAnchor;
 }
 
 const DRAFT_HIGHLIGHT = "worktable-comment-draft";
 
 /** Floating UI's view of a range, which keeps up as the page scrolls. */
-function anchorFor(anchor: Range | Element | undefined) {
-  if (!anchor || anchor instanceof Element) return anchor ?? null;
+function anchorFor(anchor: Range | Element | CommentAnchor | undefined) {
+  if (!anchor || !(anchor instanceof Range)) return anchor ?? null;
   const context =
     anchor.startContainer instanceof Element
       ? anchor.startContainer

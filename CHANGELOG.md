@@ -9,9 +9,14 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **HTML Docs:** Comment on one part of a page. Press **Comment** on the page, point at a heading, a number, a chart or a table cell, and write. The comment stays pinned to that part when an agent rewrites the page, moves to **Page Changed** when the part is gone, and tells the agent which lines of the page it is about.
+
 ### Fixed
 
 - **Usage analytics on Worktable Cloud:** With analytics on, your agents' actions and saves are counted again. A hosted Worktable went to sleep before it could send them, so Worktable Cloud now sends them for it. What is counted, and your choice in Settings → Privacy, stay the same.
+- **Comments:** An agent or API token that may read comments but not Docs or HTML Docs no longer gets the text a comment is about with it. Reading a comment leaves that out, and asking for it alone says which permission is missing.
 
 ## [0.1.48] - 2026-11-13
 

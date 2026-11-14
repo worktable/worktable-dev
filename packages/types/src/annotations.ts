@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  HTML_ELEMENT_ATTRIBUTES,
+  HTML_ELEMENT_CONTEXT_LENGTH,
+  HTML_ELEMENT_QUOTE_LENGTH,
+  type HtmlElement,
+} from "./html-element";
 
 export const AnnotationCategorySchema = z.enum(["comment", "instruction"]);
 
@@ -8,6 +14,27 @@ export const AnnotationAuthorSchema = z.object({
   type: z.enum(["user", "agent", "system"]),
   id: z.string(),
   name: z.string().optional(),
+});
+
+/** An element of an HTML Doc's page, as a comment keeps it: see HtmlElement. */
+export const HtmlElementSchema: z.ZodType<HtmlElement> = z.object({
+  tag: z.string().min(1).max(40),
+  id: z.string().min(1).max(200).optional(),
+  classes: z.array(z.string().min(1).max(80)).max(6).optional(),
+  // As many as the page's runtime keeps: finding the element again compares
+  // each with every element of its kind.
+  attrs: z
+    .record(z.string().max(40), z.string().max(160))
+    .refine((attrs) => Object.keys(attrs).length <= HTML_ELEMENT_ATTRIBUTES, {
+      message: `At most ${HTML_ELEMENT_ATTRIBUTES} attributes`,
+    })
+    .optional(),
+  before: z.string().max(HTML_ELEMENT_CONTEXT_LENGTH).optional(),
+  after: z.string().max(HTML_ELEMENT_CONTEXT_LENGTH).optional(),
+  heading: z.string().max(120).optional(),
+  path: z.string().min(1).max(600),
+  html: z.string().max(300).optional(),
+  pin: z.number().min(0).max(1).optional(),
 });
 
 export const AnnotationTargetSchema = z.discriminatedUnion("type", [
@@ -42,11 +69,15 @@ export const AnnotationTargetSchema = z.discriminatedUnion("type", [
     suffix: z.string().optional(),
   }),
   z.object({
-    // HTML doc (widget) annotations are DOC-LEVEL only: the sandboxed iframe's
-    // cross-origin wall makes block/span anchoring impossible, so the target
-    // carries just the widget id (slash-joined segments, like the storage id).
+    // An HTML doc (widget), by its id (slash-joined segments, like the
+    // storage id), or one element of its page: the page's runtime describes
+    // the element from inside the sandboxed frame. Readers that don't know
+    // elements still show the comment as one on the whole HTML doc.
     type: z.literal("widget"),
     widgetId: z.string().min(1),
+    /** The element's text, as a passage's quote is the selected text. */
+    quote: z.string().min(1).max(HTML_ELEMENT_QUOTE_LENGTH).optional(),
+    element: HtmlElementSchema.optional(),
   }),
   z.object({
     type: z.literal("view"),
@@ -176,7 +207,16 @@ export interface AnnotationContext {
   beforeBlocks?: unknown[];
   afterBlocks?: unknown[];
   excerpt?: string;
-  /** For a passage in a Markdown file: the source lines it spans, from 1. */
+  /**
+   * For a passage in a Markdown file or an element of an HTML Doc: the
+   * source lines it spans, from 1.
+   */
   startLine?: number;
   endLine?: number;
+  /**
+   * For an element that is not in an HTML Doc's page as written, because it
+   * was removed or a script draws it: the nearest thing around it that is,
+   * which the lines and excerpt then show.
+   */
+  container?: string;
 }

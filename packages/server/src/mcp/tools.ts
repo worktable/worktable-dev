@@ -119,7 +119,7 @@ function sameCaller(identity: {
   return full?.principal.id === identity.principal.id ? full : undefined
 }
 
-function publicizeAnnotation(annotation: unknown): unknown {
+function publicizeAnnotation(annotation: unknown, readsHtml: boolean): unknown {
   if (
     !annotation ||
     typeof annotation !== "object" ||
@@ -140,21 +140,29 @@ function publicizeAnnotation(annotation: unknown): unknown {
     publicTarget.type = "html"
     publicTarget.htmlId = publicTarget.widgetId
     delete publicTarget.widgetId
+    // What describes an element is taken from the page, so it goes only
+    // to an agent that may read HTML Docs; see annotationForReader.
+    if (!readsHtml) delete publicTarget.element
   }
   output.target = publicTarget
   return output
 }
 
-function publicizeAnnotationResult(result: unknown): unknown {
+function publicizeAnnotationResult(
+  result: unknown,
+  readsHtml: boolean
+): unknown {
   if (!result || typeof result !== "object" || Array.isArray(result)) {
     return result
   }
   const output = { ...(result as Record<string, unknown>) }
   if (Array.isArray(output.annotations)) {
-    output.annotations = output.annotations.map(publicizeAnnotation)
+    output.annotations = output.annotations.map((annotation) =>
+      publicizeAnnotation(annotation, readsHtml)
+    )
   }
   if ("annotation" in output) {
-    output.annotation = publicizeAnnotation(output.annotation)
+    output.annotation = publicizeAnnotation(output.annotation, readsHtml)
   }
   return output
 }
@@ -175,10 +183,11 @@ function publicizeHtmlDoc(widget: unknown): unknown {
 
 function publicizeResult(
   operationId: keyof typeof OPERATION_DEFINITIONS,
-  result: unknown
+  result: unknown,
+  scopes: string[]
 ): unknown {
   if (operationId.startsWith("annotations.")) {
-    return publicizeAnnotationResult(result)
+    return publicizeAnnotationResult(result, hasScope(scopes, "widgets:read"))
   }
   if (
     (operationId === "spaces.update" || operationId === "workspace.state") &&
@@ -338,7 +347,7 @@ export function registerTools(
           resultData,
           urlOrigin
         )
-        const publicResult = publicizeResult(operation.id, linked)
+        const publicResult = publicizeResult(operation.id, linked, scopes)
         assertPublicOperationOutput(operation.id, publicResult)
         data = { ...data, ...publicResult }
         media.push(...content)

@@ -940,12 +940,14 @@ export const CATALOG_TOOLS: readonly CatalogTool[] = TOOLS
 const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
   worktable_state: (tool) => ({
     ...tool,
-    description: `${tool.description} It also lists the skills from your team's libraries that apply to you.`,
+    description: `${tool.description} It also lists the skills in your team's Library that apply to you: Docs a person approved for agents to follow.`,
     outputFields: {
       skills: z
         .array(SkillListingSchema)
         .optional()
-        .describe("The skills from your team's libraries that apply to you, up to 50. Read one with worktable_skills_read."),
+        .describe(
+          "The skills in your team's Library that apply to you, up to 50. The Library is your team's approved Docs: a person reviewed each one for agents to follow. Prefer a skill there over other Docs on the same work; Docs elsewhere may be drafts. Read one with worktable_skills_read."
+        ),
       moreSkills: z.number().int().positive().optional().describe("How many skills apply beyond those listed."),
       removedSkills: z
         .array(RemovedSkillSchema)
@@ -961,7 +963,7 @@ const PREVIEW_TOOLS: CatalogTool[] = [
     name: "worktable_skills_read",
     title: "Read a Worktable skill",
     description:
-      "Read a skill from your team's libraries by name: its live version as Markdown, with its description, library and version. worktable_state lists the skills that apply to you.",
+      "Read an approved skill from your team's Library by name: its live version, the one a person approved, as Markdown, with its description, library and version. worktable_state lists the skills that apply to you.",
     annotations: READ,
     inputSchema: flatInput(["name"], [skillsRead]),
     runs: [["worktable_skills", "read"]],
@@ -971,7 +973,7 @@ const PREVIEW_TOOLS: CatalogTool[] = [
     name: "worktable_skills_write",
     title: "Propose a Worktable skill change",
     description:
-      "Propose a change to your team's skill libraries; it goes live only when a person approves it in Worktable. With spaceId, path, library and description, propose adding that Doc as a skill. With name, propose its Doc's current content as the skill's next version; with remove, propose removing it.",
+      "Propose a change to your team's Library. Nothing changes until a person approves it in Worktable; until then, keep following the live version. With spaceId, path, library and description, propose adding that Doc as a skill. With name, propose its Doc's current content as the skill's next version; with remove, propose removing it.",
     annotations: writes(),
     inputSchema: flatInput([], [skillsPropose]),
     runs: [["worktable_skills", "propose"]],

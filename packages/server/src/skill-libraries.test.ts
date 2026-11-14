@@ -22,7 +22,7 @@ import {
   skillsForAgent,
   type SkillReader,
 } from "./skill-libraries.ts"
-import { SESSION_GAP_MS } from "./skill-notices.ts"
+import { LIBRARY_FOR_AGENTS, SESSION_GAP_MS } from "./skill-notices.ts"
 import { markdownToBlocks } from "./markdown.ts"
 import { documentGenerationV2Directory } from "./workspace-storage-v2.ts"
 import { activateLocalTeams } from "./team-activation.ts"
@@ -360,7 +360,7 @@ describe("skill libraries", () => {
 
   it("compares a draft, a proposed removal and a lost version with what agents have", async () => {
     type Entry = { id: string; doc: { documentId: string }; live: { generationId: string } }
-    type Change = { live: string | null; next: string | null; nextDescription?: string }
+    type Change = { revision: number; live: string | null; next: string | null; nextDescription?: string }
     const add = async (spaceId: string, path: string, library: Record<string, unknown>) =>
       (await rest("POST", "/api/library", { spaceId, path, description: "Use it.", library })).body.entry as Entry
     const change = async (id: string) => (await rest<Change>("GET", `/api/library/${id}/change`)).body
@@ -496,14 +496,14 @@ describe("skill libraries", () => {
         | string
         | undefined
     expect(await notices()).toBe(
-      "Skills from your team's Worktable libraries apply to you: release-checklist. worktable_skills_read returns the current ones."
+      `${LIBRARY_FOR_AGENTS} Skills in it that apply to you: release-checklist. worktable_skills_read returns the current ones.`
     )
     expect(await notices()).toBeUndefined()
 
     await writeDoc("ops", "release-checklist", `${RELEASE}\nAnnounce in the channel.\n`)
     await rest("POST", `/api/library/${entry.id}/save`, {})
     expect(await notices()).toBe(
-      "Your team's Worktable skills changed: updated release-checklist. worktable_skills_read returns the current ones."
+      "Your team's Library changed: updated release-checklist. worktable_skills_read returns the current ones."
     )
     expect(await notices()).toBeUndefined()
 
@@ -512,7 +512,7 @@ describe("skill libraries", () => {
     setSystemTime(new Date(Date.now() + SESSION_GAP_MS + 1000))
     try {
       expect((await call(agent, "search", { query: "release" })).notices).toBe(
-        "Skills from your team's Worktable libraries apply to you: release-checklist. worktable_skills_read returns the current ones."
+        `${LIBRARY_FOR_AGENTS} Skills in it that apply to you: release-checklist. worktable_skills_read returns the current ones.`
       )
       expect(await notices()).toBeUndefined()
     } finally {
@@ -521,7 +521,7 @@ describe("skill libraries", () => {
 
     await rest("DELETE", `/api/library/${entry.id}`)
     expect(await notices()).toBe(
-      "Your team's Worktable skills changed: removed release-checklist (removed from its library, so it no longer applies). worktable_skills_read returns the current ones."
+      "Your team's Library changed: removed release-checklist (removed from its library, so it no longer applies). worktable_skills_read returns the current ones."
     )
     expect(await notices()).toBeUndefined()
   })

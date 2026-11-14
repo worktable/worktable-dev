@@ -157,7 +157,7 @@
   {
     "name": "worktable_state",
     "title": "Read Worktable state",
-    "description": "Orient to the workspace or a Space. Read its pinned docs first; they explain where to start. With spaceId, set index for the Space's full document and Record index. It also lists the skills from your team's libraries that apply to you.",
+    "description": "Orient to the workspace or a Space. Read its pinned docs first; they explain where to start. With spaceId, set index for the Space's full document and Record index. It also lists the skills in your team's Library that apply to you: Docs a person approved for agents to follow.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -455,7 +455,7 @@
           "additionalProperties": {}
         },
         "skills": {
-          "description": "The skills from your team's libraries that apply to you, up to 50. Read one with worktable_skills_read.",
+          "description": "The skills in your team's Library that apply to you, up to 50. The Library is your team's approved Docs: a person reviewed each one for agents to follow. Prefer a skill there over other Docs on the same work; Docs elsewhere may be drafts. Read one with worktable_skills_read.",
           "type": "array",
           "items": {
             "type": "object",
@@ -14386,7 +14386,7 @@
   {
     "name": "worktable_skills_read",
     "title": "Read a Worktable skill",
-    "description": "Read a skill from your team's libraries by name: its live version as Markdown, with its description, library and version. worktable_state lists the skills that apply to you.",
+    "description": "Read an approved skill from your team's Library by name: its live version, the one a person approved, as Markdown, with its description, library and version. worktable_state lists the skills that apply to you.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -14497,7 +14497,7 @@
   {
     "name": "worktable_skills_write",
     "title": "Propose a Worktable skill change",
-    "description": "Propose a change to your team's skill libraries; it goes live only when a person approves it in Worktable. With spaceId, path, library and description, propose adding that Doc as a skill. With name, propose its Doc's current content as the skill's next version; with remove, propose removing it.",
+    "description": "Propose a change to your team's Library. Nothing changes until a person approves it in Worktable; until then, keep following the live version. With spaceId, path, library and description, propose adding that Doc as a skill. With name, propose its Doc's current content as the skill's next version; with remove, propose removing it.",
     "inputSchema": {
       "type": "object",
       "properties": {

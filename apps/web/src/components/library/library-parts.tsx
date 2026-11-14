@@ -346,7 +346,7 @@ function AddSkill({
             Add Skill
           </h2>
           <p className="text-[0.8125rem] leading-5 text-muted-foreground">
-            Pick a Doc for agents to follow, then say when they use it.
+            Turn a Doc into an approved skill for agents to follow.
           </p>
         </div>
       </div>
@@ -383,7 +383,7 @@ export function LibraryHome({
   return (
     <LibraryColumn
       title="Library"
-      subtitle="Skills your agents follow, kept where they work."
+      subtitle="Your curated and approved knowledge that agents can rely on."
     >
       <AddSkill skills={skills} onPick={onPick} />
       {pending.length > 0 && (

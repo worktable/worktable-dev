@@ -26,6 +26,10 @@ import {
 } from "./skill-libraries.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 
+/** What the Library is, said once when an agent first learns its skills. */
+export const LIBRARY_FOR_AGENTS =
+  "The Library is your team's approved Docs: a person reviewed each one for agents to follow. Prefer a skill there over other Docs on the same work; Docs elsewhere may be drafts."
+
 /** The most skills worktable_state lists. */
 export const STATE_SKILL_LIMIT = 50
 /** The most names a notice names for each kind of change. */
@@ -242,11 +246,11 @@ export async function skillChangeNotice(
     if (sessionStart || !before) {
       if (live.length === 0 && gone.length === 0) return null
       const parts = [
-        ...(live.length ? [`Skills from your team's Worktable libraries apply to you: ${named(live.map((skill) => skill.entry.name))}`] : []),
+        ...(live.length ? [`Skills in it that apply to you: ${named(live.map((skill) => skill.entry.name))}`] : []),
         ...(updated.length ? [`updated since you last saw them: ${named(updated.map((skill) => skill.entry.name))}`] : []),
         ...removedPart(gone),
       ]
-      return `${parts.join("; ")}. worktable_skills_read returns the current ones.`
+      return `${LIBRARY_FOR_AGENTS} ${parts.join("; ")}. worktable_skills_read returns the current ones.`
     }
     const parts = [
       ...(updated.length ? [`updated ${named(updated.map((skill) => skill.entry.name))}`] : []),
@@ -254,7 +258,7 @@ export async function skillChangeNotice(
       ...removedPart(gone),
     ]
     if (parts.length === 0) return null
-    return `Your team's Worktable skills changed: ${parts.join("; ")}. worktable_skills_read returns the current ones.`
+    return `Your team's Library changed: ${parts.join("; ")}. worktable_skills_read returns the current ones.`
   } catch (error) {
     console.error("[skills] could not add the skills notice:", logError(error))
     return null

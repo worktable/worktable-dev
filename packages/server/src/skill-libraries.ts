@@ -733,18 +733,17 @@ export async function listLibraryForPerson(
 export async function skillsOfDoc(
   identity: TokenIdentity,
   spaceId: string,
-  path: string
+  documentId: string
 ): Promise<
   Array<{ id: string; live: { generationId: string; contentHash?: string } | null; proposed: boolean; removed?: true }>
 > {
   if (!isPerson(identity)) return []
   // Removed skills too, marked: the Library still opens their Doc to restore them.
-  const candidates = readLibrary().entries.filter((entry) => entry.doc.spaceId === spaceId)
-  if (candidates.length === 0) return []
-  const locate = docLocator()
+  const candidates = readLibrary().entries.filter(
+    (entry) => entry.doc.spaceId === spaceId && entry.doc.documentId === documentId
+  )
   const found = []
   for (const entry of candidates) {
-    if ((await locate(entry.doc))?.path !== path) continue
     const library = entry.library
     const sees =
       library.kind === "space"

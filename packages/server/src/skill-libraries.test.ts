@@ -339,6 +339,10 @@ describe("skill libraries", () => {
       { id, proposed: false, live: expect.objectContaining({ generationId: expect.any(String) }) },
     ])
     expect((await page("release-checklist", helperIdentity)).skills).toBeUndefined()
+    // Archived, it is the same Doc, and still the skill.
+    expect((await rest("POST", "/api/spaces/ops/documents/archive", { path: "release-checklist" })).status).toBe(200)
+    expect((await page("release-checklist")).skills).toEqual([expect.objectContaining({ id })])
+    expect((await rest("POST", "/api/spaces/ops/documents/restore", { path: "release-checklist" })).status).toBe(200)
 
     // Without a proposal, the Doc as last saved is what Save would make live.
     expect((await change()).next).toContain("Announce in the channel.")

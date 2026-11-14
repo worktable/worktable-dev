@@ -66,20 +66,26 @@ export function OpenSkill({
   // The Space's catalog stays live, as a Doc page's breadcrumb keeps it, so
   // a move or archive made elsewhere re-checks the open Doc.
   useLiveSpaceCatalog(spaceId)
-  useDocuments(spaceId)
+  const { data: documents } = useDocuments(spaceId)
   const page = checked?.kind === "document" ? checked : null
   // After a move another Doc can hold the skill's old path; a Doc's page names
-  // the skills it is, removed ones included, so only this skill's own Doc
-  // opens under it.
+  // the skills it is, archived or not and removed ones included, so only
+  // this skill's own Doc opens under it.
   const otherDoc =
     page !== null && !page.skills?.some((skill) => skill.id === entry.id)
+  // A Doc moved away from the path: the Library names where it went.
+  const moved =
+    !!path &&
+    documents !== undefined &&
+    !documents.some((item) => item.kind === "document" && item.path === path)
+  const lost = otherDoc || moved
   useEffect(() => {
-    if (!otherDoc) return
+    if (!lost) return
     void queryClient.invalidateQueries({
       queryKey: libraryQueryKey,
       exact: true,
     })
-  }, [otherDoc, queryClient])
+  }, [lost, queryClient])
   const hint =
     page || !path ? null : documentOpenHint(queryClient, spaceId, path)
   // What the Doc's page offers its header; the skill keeps part of it.

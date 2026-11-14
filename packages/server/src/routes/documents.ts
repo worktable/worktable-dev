@@ -371,6 +371,11 @@ documentsRouter.get("/page", requireScope("documents:read"), async (c) => {
     sharingAuthorized: sharing !== null,
     canCreateShareLinks: sharing?.canCreate ?? false,
     ...(visitorCommentReader(c, spaceId) ? {visitorComments: (documentId: string) => visitorCommentPageSummary(c, spaceId, documentId)} : {}),
+    // A Doc that is a skill says so on its own page, so opening a Doc asks
+    // for nothing more.
+    ...(configuredMcpSurface() === "preview"
+      ? { skillsOf: (documentId: string) => skillsOfDoc(c.get("identity"), spaceId, documentId).catch(() => []) }
+      : {}),
   })
   if (!page) {
     return c.json({ error: "Document not found.", code: "NOT_FOUND" }, 404)
@@ -380,12 +385,6 @@ documentsRouter.get("/page", requireScope("documents:read"), async (c) => {
       { error: "This document alias cannot be resolved.", code: "CONFLICT" },
       409
     )
-  }
-  // A Doc that is a skill says so on its own page, so opening a Doc asks
-  // for nothing more.
-  if (page.kind === "document" && configuredMcpSurface() === "preview") {
-    const skills = await skillsOfDoc(c.get("identity"), spaceId, page.document.path).catch(() => [])
-    if (skills.length > 0) return c.json({ page: { ...page, skills } })
   }
   return c.json({ page })
 })

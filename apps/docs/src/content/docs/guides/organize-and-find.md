@@ -22,11 +22,13 @@ stays in one place.
 
 ## Pinned docs
 
-Click a Space name to open Space Home: pinned docs, recent docs, temporary docs
-with their archive dates, and the Space's activity.
+Click a Space name to open Space Home: the latest work, pinned docs, the
+Space's folders, and what archives in the next week.
 
 Choose **Pin** from a document's menu for entry points such as the project brief
 or current plan. Pinned docs also appear at the top of the Space in the sidebar.
+**Pin To Home** puts a document on your own Home, for you alone. A pinned HTML
+Doc shows itself small.
 
 ## Document lifetimes
 
@@ -48,9 +50,13 @@ Archived documents are never deleted automatically.
 
 - **Search** covers documents and records across Spaces, and can include
   archived results. Drawings match on typed text only.
-- **Home** shows what is pending for you, recent durable docs, and temporary
-  docs that archive soonest. Getting Started's guides appear there only when
-  you filter by that Space. Space Home does the same for one Space.
+- **Home** opens on **Latest**: one row for each sitting of work, saying who
+  created or edited what, and where. Open **More** on a row for the other
+  docs from that sitting. Beside it are the docs you pinned to Home and
+  **Archiving**, which counts the temporary docs leaving on each of the next
+  seven days; open a day to **Keep** one. **Spaces** shows your busiest
+  Spaces with their last two weeks. **Pending** appears only when something
+  waits on you. Space Home does the same for one Space, with its folders.
 - **Activity** lists what people and agents did, newest first. Filter by Space,
   by you, or by agent.
 - **Threads** lists conversations across Worktable; each Space has its own.

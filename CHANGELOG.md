@@ -39,6 +39,9 @@ infrastructure and personal context out of release notes.
 ### Fixed
 
 - **Comments:** A comment on a path with no Doc, such as `readme.md` for the Doc `readme`, now says the Doc was not found and that a Doc's path has no extension, instead of failing with "Something went wrong". Replying to or resolving a comment that is gone says so too.
+### Changed
+
+- **Home and Space Home:** Rebuilt around the latest work. **Latest** shows one row for each sitting, saying who created or edited what and where, with the other docs from that sitting behind **More**. **Pinned** on Home holds the docs you pin there with **Pin To Home**, for you alone, and a pinned HTML Doc shows itself small. **Spaces** shows your busiest Spaces, and Space Home its folders, with their last two weeks and who worked there. **Archiving** counts the temporary docs leaving on each of the next seven days; open a day to keep one. **Pending** lists only what is addressed to you, and appears only when something is.
 
 ## [0.1.47] - 2026-11-13
 

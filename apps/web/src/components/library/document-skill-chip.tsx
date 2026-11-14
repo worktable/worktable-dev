@@ -41,7 +41,14 @@ export function DocumentSkillChip({
       // Saving is rare, so its code loads when Save is pressed.
       const { performLibraryAction } = await import("@/lib/library-actions")
       for (const entry of changed) {
-        if (!(await performLibraryAction(queryClient, { kind: "save", entry })))
+        const version = provenance?.versionId
+        if (
+          !(await performLibraryAction(queryClient, {
+            kind: "save",
+            entry,
+            ...(version ? { version } : {}),
+          }))
+        )
           break
       }
       // The page names the versions now live.

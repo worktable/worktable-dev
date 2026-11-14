@@ -146,10 +146,12 @@ export function changeOf(
     return texts.live === null ? null : whole(body(texts.live), "same")
   if (texts.next === null) return null
   const next = body(texts.next)
-  // A new skill, or one whose live text is lost, has nothing to compare with.
-  if (texts.live === null) return whole(next, "same")
+  // A new skill's text is all new. One whose live text is lost, or too long
+  // to compare, has no comparison to show.
+  if (texts.live === null)
+    return entry.proposal?.kind === "add" ? whole(next, "added") : null
   const lines = diffLines(body(texts.live).join("\n"), next.join("\n"))
-  if (!lines) return whole(next, "same")
+  if (!lines) return null
   return foldUnchanged(lines).map((part) =>
     part.kind === "unchanged"
       ? { kind: "fold", lines: part.lines }

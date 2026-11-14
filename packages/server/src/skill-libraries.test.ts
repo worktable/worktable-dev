@@ -196,7 +196,13 @@ describe("skill libraries", () => {
     expect(unchanged.version).toBe(first.version)
     expect(await draft()).toBe(true)
 
-    expect((await rest("POST", `/api/library/${entry.id}/save`, {})).status).toBe(200)
+    // Saving names the Doc's save the person looked at; one made since is refused.
+    const looked = (await getDocProvenance("ops", "release-checklist"))?.versionId
+    await writeDoc("ops", "release-checklist", `${RELEASE}\nSkip the smoke test on Fridays.\nAnd on Mondays.\n`)
+    expect((await rest("POST", `/api/library/${entry.id}/save`, { version: looked })).status).toBe(409)
+    await writeDoc("ops", "release-checklist", `${RELEASE}\nSkip the smoke test on Fridays.\n`)
+    const current = (await getDocProvenance("ops", "release-checklist"))?.versionId
+    expect((await rest("POST", `/api/library/${entry.id}/save`, { version: current })).status).toBe(200)
     const saved = await call(agent, "worktable_skills_read", { name: "release-checklist" })
     expect(saved.content).toContain("Fridays")
     expect(saved.version).not.toBe(first.version)

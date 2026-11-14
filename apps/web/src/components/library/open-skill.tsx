@@ -18,7 +18,12 @@ import { documentRoute } from "@/lib/document-views"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { documentOpenHint } from "@/lib/document-rows"
 import { useDocumentOpen } from "@/lib/use-document-open"
-import { libraryKey, skillTitle, type LibraryEntry } from "@/lib/library"
+import {
+  libraryKey,
+  libraryQueryKey,
+  skillTitle,
+  type LibraryEntry,
+} from "@/lib/library"
 import { useLibraryActions, type LibraryAction } from "@/lib/library-actions"
 import { useSpaces } from "@/lib/queries"
 
@@ -57,6 +62,17 @@ export function OpenSkill({
   // once, and the editor takes over once a check validates this open.
   const { pageQuery, page: checked } = useDocumentOpen(spaceId, path)
   const page = checked?.kind === "document" ? checked : null
+  // After a move another Doc can hold the skill's old path; a Doc's page names
+  // the skills it is, so only this skill's own Doc opens under it.
+  const otherDoc =
+    page !== null && !page.skills?.some((skill) => skill.id === entry.id)
+  useEffect(() => {
+    if (!otherDoc) return
+    void queryClient.invalidateQueries({
+      queryKey: libraryQueryKey,
+      exact: true,
+    })
+  }, [otherDoc, queryClient])
   const hint =
     page || !path ? null : documentOpenHint(queryClient, spaceId, path)
   // What the Doc's page offers its header; the skill keeps part of it.
@@ -77,7 +93,11 @@ export function OpenSkill({
   const act = useStableCallback(async (action: LibraryAction) => {
     if (pending) return
     setPending(true)
-    const done = await run(action)
+    // Agents get what the person saw: Save names the Doc's save on screen.
+    const version = page?.provenance?.versionId
+    const done = await run(
+      action.kind === "save" && version ? { ...action, version } : action
+    )
     if (done && action.kind === "remove") {
       await navigate({
         to: "/library/$",
@@ -178,6 +198,7 @@ export function OpenSkill({
   )
   const unavailable =
     !path ||
+    otherDoc ||
     (pageQuery.isError && !pageQuery.isFetching) ||
     checked?.kind === "conflict" ||
     (page !== null && page.renderer?.key !== "doc")

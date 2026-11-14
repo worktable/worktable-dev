@@ -177,8 +177,12 @@ function LibraryPage() {
   if (deployment.data && !enabled) return <Navigate to="/" replace />
 
   if (library.data) {
-    // A link names a skill alone; its address names its library too.
-    const misplaced = skillId && (!opened || libraryKey(opened.library) !== key)
+    // A link names a skill alone; its address names its library too. A
+    // skill missing from the list counts only once the list is fresh: one an
+    // agent just proposed can be newer than the list the tab had.
+    const misplaced =
+      skillId &&
+      (opened ? libraryKey(opened.library) !== key : !library.isFetching)
     if (misplaced) {
       return (
         <Navigate

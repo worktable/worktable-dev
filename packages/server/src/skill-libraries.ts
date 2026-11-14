@@ -807,7 +807,7 @@ export async function addToLibrary(
 export async function saveLibrarySkill(
   identity: TokenIdentity,
   id: string,
-  input: { name?: string; description?: string } = {}
+  input: { name?: string; description?: string; version?: string } = {}
 ): Promise<LibraryEntryView> {
   const before = await entryPersonMayChange(id, identity)
   if (before.removed) throw new LibraryError("not_found", "This skill was removed from its library.")
@@ -815,6 +815,10 @@ export async function saveLibrarySkill(
   const description = input.description === undefined ? undefined : checkedDescription(input.description)
   const location = await docLocation(before.doc)
   if (!location) throw new LibraryError("not_found", "This skill's Doc no longer opens.")
+  // Agents get what the person saw: a save since they looked is theirs to see first.
+  if (input.version && location.lastSave?.versionId !== input.version) {
+    throw new LibraryError("conflict", "This Doc changed since you looked at it. Look again, then save.")
+  }
   const saved = await saveVersion({
     spaceId: before.doc.spaceId,
     path: location.path,

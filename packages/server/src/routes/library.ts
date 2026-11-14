@@ -89,6 +89,8 @@ const AddSchema = z.strictObject({
 const SaveSchema = z.strictObject({
   name: z.string().min(1).max(64).optional(),
   description: z.string().max(1000).optional(),
+  /** The Doc's last save the person looked at; a newer one is refused. */
+  version: z.string().min(1).optional(),
 })
 
 // GET /api/library: the skills in the libraries this person may see.

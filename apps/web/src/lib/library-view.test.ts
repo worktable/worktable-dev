@@ -164,17 +164,19 @@ describe("what a change does to a skill's text", () => {
     expect(parts.map((part) => part.kind)).toEqual(["fold", "lines"])
   })
 
-  it("strikes a removal, and has nothing to mark on a new skill", () => {
+  it("strikes a removal, and marks a new skill's text all new", () => {
     expect(
       shown({ proposal: proposal("remove", "1") }, { live: LIVE })
     ).toEqual(["removed:Tag the build.", "removed:Run the smoke test."])
     expect(
       shown({ proposal: proposal("add", "1") }, { live: null, next: NEXT })
-    ).toEqual(["same:Tag the build.", "same:Run the smoke test twice."])
+    ).toEqual(["added:Tag the build.", "added:Run the smoke test twice."])
   })
 
   it("has nothing to show for a text that can't be read", () => {
     expect(changeOf({ proposal: null }, { live: null })).toBeNull()
+    // A draft of a skill whose live text is lost has nothing to compare with.
+    expect(changeOf({ proposal: null }, { live: null, next: NEXT })).toBeNull()
     expect(
       changeOf(
         { proposal: proposal("update", "1") },

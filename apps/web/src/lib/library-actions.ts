@@ -103,7 +103,12 @@ export function useSkillChange(id: string, at: string, enabled: boolean) {
 
 /** A library change the person makes; each answers with what it changed. */
 export type LibraryAction =
-  | { kind: "save"; entry: Pick<LibraryEntry, "id"> }
+  | {
+      kind: "save"
+      entry: Pick<LibraryEntry, "id">
+      /** The Doc's last save the person looked at; a newer one is refused. */
+      version?: string
+    }
   | {
       kind: "approve" | "discard"
       entry: Pick<LibraryEntry, "id" | "revision">
@@ -118,7 +123,9 @@ function runAction(action: LibraryAction): Promise<unknown> {
     body: JSON.stringify(
       action.kind === "approve" || action.kind === "discard"
         ? { revision: action.entry.revision }
-        : {}
+        : action.kind === "save" && action.version
+          ? { version: action.version }
+          : {}
     ),
   })
 }

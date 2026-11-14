@@ -447,7 +447,7 @@ describe("workspace activity", () => {
     // It had revised one of them earlier, and the owner has since edited another.
     recordActivity({ spaceId: "company", action: "doc.edited", actor: agent, target: { kind: "doc", path: "plans/a" }, at: ago(170) })
     recordActivity({ spaceId: "company", action: "doc.edited", actor: owner, target: { kind: "doc", path: "notes/c" } })
-    // Work on a doc that is gone, and work from long ago, list nothing.
+    // Work on a doc that is gone, and older work on a listed doc, list nothing.
     recordActivity({ spaceId: "company", action: "doc.edited", actor: agent, target: { kind: "doc", path: "gone" }, at: ago(1) })
     recordActivity({ spaceId: "company", action: "doc.edited", actor: agent, target: { kind: "doc", path: "plans/b" }, at: ago(60 * 24 * 20) })
 
@@ -491,6 +491,14 @@ describe("workspace activity", () => {
     await writeDocAt("alpha/z")
     const alpha = await request<HomeFeed>("/api/home?spaceId=company&folder=alpha")
     expect(alpha.runs.map((run) => run.docs.map((doc) => doc.path))).toEqual([["alpha/z", "alpha/x"]])
+
+    // Work older than two weeks still fills Latest, and counts for no place.
+    setSystemTime(new Date(Date.now() - 20 * 24 * 60 * 60_000))
+    await writeDocAt("archive/long-ago")
+    setSystemTime()
+    const quiet = await request<HomeFeed>("/api/home?spaceId=company")
+    expect(quiet.runs.at(-1)!.docs.map((doc) => doc.path)).toEqual(["archive/long-ago"])
+    expect(quiet.places.map((place) => place.id)).not.toContain("archive")
 
     expect((await request<HomeFeed>("/api/home")).pins).toEqual([
       { spaceId: "company", path: "plans/a", status: "active", title: "Pulse", formatId: "worktable.markdown", revision: expect.any(String) },

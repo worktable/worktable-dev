@@ -776,13 +776,12 @@ export async function listActivity(
 }
 
 /**
- * Doc creations and edits by people and agents since a time, newest first,
- * for Home's digest of recent work.
+ * Doc creations and edits by people and agents, newest first, for Home's
+ * digest of recent work.
  */
 export async function listDocEvents(options: {
   spaces: (string | null)[]
   visibleSpaces: ReadonlySet<string>
-  since: string
 }): Promise<ActivityEvent[]> {
   await drainWrites()
   return (await Promise.all(options.spaces.map(readLog)))
@@ -793,8 +792,7 @@ export async function listDocEvents(options: {
         event.target.kind === "doc" &&
         event.actor.kind !== "system" &&
         event.spaceId !== null &&
-        options.visibleSpaces.has(event.spaceId) &&
-        event.at >= options.since
+        options.visibleSpaces.has(event.spaceId)
     )
     .sort(newestFirst)
 }

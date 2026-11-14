@@ -17,7 +17,11 @@ import type {
   HomeRun,
   HomeRunDoc,
 } from "@worktable/types"
-import { movedPathResolver, namedDocuments } from "./activity-feed.ts"
+import {
+  movedPathResolver,
+  namedDocuments,
+  type NamedDocument,
+} from "./activity-feed.ts"
 import { listDocEvents } from "./activity-log.ts"
 import { agentNamesByPrincipal } from "./agent-connection-store.ts"
 import { createDocAliasResolver } from "./doc-aliases.ts"
@@ -84,20 +88,29 @@ export async function readHomeFeed(
   const offsetMs = (options.timezoneOffset ?? 0) * 60_000
   const dayOf = (time: number) => Math.floor((time - offsetMs) / DAY_MS)
   const today = dayOf(options.now ?? Date.now())
-  const since = new Date(
-    (today - (HOME_DAYS - 1)) * DAY_MS + offsetMs
-  ).toISOString()
+  const since = (today - (HOME_DAYS - 1)) * DAY_MS + offsetMs
   const events = await listDocEvents({
     spaces: spaceIds,
     visibleSpaces: new Set(spaceIds),
-    since,
   })
   if (events.length === 0) return { runs: [], places: [] }
 
-  const [agentNames, documents] = await Promise.all([
-    agentNamesByPrincipal().catch(() => new Map<string, string>()),
-    namedDocuments([...new Set(events.map((event) => event.spaceId!))]),
-  ])
+  const agentNames = await agentNamesByPrincipal().catch(
+    () => new Map<string, string>()
+  )
+  // Read a Space's docs when its first event comes up: a busy Worktable
+  // fills Latest from a few Spaces and never reads the rest.
+  const documents = new Map<string, Promise<Map<string, NamedDocument>>>()
+  const documentsIn = (spaceId: string) => {
+    let loading = documents.get(spaceId)
+    if (!loading) {
+      loading = namedDocuments([spaceId]).then(
+        (named) => named.get(spaceId) ?? new Map<string, NamedDocument>()
+      )
+      documents.set(spaceId, loading)
+    }
+    return loading
+  }
   const movedPath = movedPathResolver()
   const named = (actor: ActivityActor): ActivityActor =>
     actor.kind === "agent" && agentNames.has(actor.id)
@@ -110,17 +123,22 @@ export async function readHomeFeed(
   // changed it last, not everyone who did.
   const listedDocs = new Map<string, HomeRun>()
   const places = new Map<string, OpenPlace>()
+  let listedRuns = 0
   for (const event of events) {
     if (event.target.kind !== "doc" || !event.spaceId) continue
     const time = Date.parse(event.at)
-    const byPath = documents.get(event.spaceId)
+    // Places count the last two weeks. Latest reaches further back only
+    // until it is full, so a quiet Space still shows its last work.
+    const recent = time >= since
+    if (!recent && listedRuns >= options.limit) break
+    const byPath = await documentsIn(event.spaceId)
     let path = event.target.path
-    let current = byPath?.get(path)
+    let current = byPath.get(path)
     if (!current) {
       const moved = await movedPath(event.spaceId, path)
       if (moved) {
         path = moved
-        current = byPath?.get(moved)
+        current = byPath.get(moved)
       }
     }
 
@@ -130,7 +148,7 @@ export async function readHomeFeed(
         ? path.slice(0, path.indexOf("/"))
         : null
       : event.spaceId
-    if (placeId !== null) {
+    if (placeId !== null && recent) {
       let place = places.get(placeId)
       if (!place) {
         place = {
@@ -195,6 +213,7 @@ export async function readHomeFeed(
       at: event.at,
       created,
     }
+    if (open.run.docs.length === 0) listedRuns += 1
     open.docs.set(path, doc)
     open.run.docs.push(doc)
     listedDocs.set(docKey, open.run)

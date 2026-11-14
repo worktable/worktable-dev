@@ -203,7 +203,7 @@ export function SpaceOverview({
             </p>
           ) : runs.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {folder ? "Nothing here in two weeks." : "Nothing in two weeks."}
+              {folder ? "Nothing here yet." : "Nothing yet."}
             </p>
           ) : (
             <LatestRuns

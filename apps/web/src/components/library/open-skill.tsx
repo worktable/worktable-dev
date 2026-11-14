@@ -69,12 +69,10 @@ export function OpenSkill({
   const { data: documents } = useDocuments(spaceId)
   const page = checked?.kind === "document" ? checked : null
   // After a move another Doc can hold the skill's old path; a Doc's page names
-  // the skills it is, removed ones included, so only this skill's own Doc
-  // opens under it. An archived Doc's page names none, and is still its own.
+  // the skills it is, archived or not and removed ones included, so only
+  // this skill's own Doc opens under it.
   const otherDoc =
-    page !== null &&
-    !page.document.archived &&
-    !page.skills?.some((skill) => skill.id === entry.id)
+    page !== null && !page.skills?.some((skill) => skill.id === entry.id)
   // A Doc moved away from the path: the Library names where it went.
   const moved =
     !!path &&

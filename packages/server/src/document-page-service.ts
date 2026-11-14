@@ -451,7 +451,8 @@ async function pageForHandle(
   sharingAuthorized: boolean,
   recordsAuthorized = false,
   canCreateShareLinks = true,
-  visitorComments?: (documentId: string) => Promise<DocumentSharingSummary["visitorComments"]>
+  visitorComments?: (documentId: string) => Promise<DocumentSharingSummary["visitorComments"]>,
+  skillsOf?: (documentId: string) => Promise<DocumentPage["skills"]>
 ): Promise<DocumentPage> {
   const integration = await pageIntegration(handle)
   const storageV2 = await usesDocumentStorageV2()
@@ -479,10 +480,16 @@ async function pageForHandle(
   const visitorSummary = visitorComments && handle.identity === "durable" && !handle.document.archived
     ? await visitorComments(handle.documentId)
     : undefined
+  // A Doc that is a skill says so on its own page, archived or not, by the
+  // Doc's identity rather than its path.
+  const skills = skillsOf && handle.identity === "durable"
+    ? await skillsOf(handle.documentId)
+    : undefined
   return {
     kind: "document",
     document: handle.document,
     ...(handle.resolvedFrom ? { resolvedFrom: handle.resolvedFrom } : {}),
+    ...(skills && skills.length > 0 ? { skills } : {}),
     renderer,
     capabilities: {
       ...(teamsEnabled()
@@ -596,6 +603,8 @@ export async function readDocumentPage(options: {
    */
   canCreateShareLinks?: boolean
   visitorComments?: (documentId: string) => Promise<DocumentSharingSummary["visitorComments"]>
+  /** The skills a Doc is, for a reader who sees the Library. */
+  skillsOf?: (documentId: string) => Promise<DocumentPage["skills"]>
 }): Promise<DocumentPageResult | { kind: "alias-error" } | null> {
   const resolution = await useResolvedDocumentHandle(
     { ...options, snapshot: true },
@@ -608,7 +617,8 @@ export async function readDocumentPage(options: {
         options.sharingAuthorized,
         options.recordsAuthorized ?? false,
         options.canCreateShareLinks ?? true,
-        options.visitorComments
+        options.visitorComments,
+        options.skillsOf
       )
   )
   if (resolution.kind === "not-found") return null

@@ -68,18 +68,18 @@ function PendingRow({
   const Icon =
     item.kind === "deliveryFailed" ? CircleAlert : MessageSquareText
   const className =
-    "group grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 rounded-xl px-2.5 py-2 transition-colors hover:bg-surface-hover"
+    "group grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3.5 gap-y-px rounded-xl px-2.5 py-3 transition-colors hover:bg-surface-hover"
   const children = (
     <>
       {from ? (
         <ActorAvatar
           actor={from}
-          className="row-span-2 size-7 self-start text-xs @lg/page:self-center"
+          className="row-span-2 size-8 self-start text-xs @lg/page:self-center"
         />
       ) : (
         <span
           className={cn(
-            "row-span-2 flex size-7 items-center justify-center self-start rounded-full bg-surface-tint @lg/page:self-center",
+            "row-span-2 flex size-8 items-center justify-center self-start rounded-full bg-surface-tint @lg/page:self-center",
             item.kind === "deliveryFailed"
               ? "text-destructive"
               : "text-muted-foreground"
@@ -88,19 +88,16 @@ function PendingRow({
           <Icon className="size-3.5" />
         </span>
       )}
-      <span className="line-clamp-2 min-w-0 text-sm leading-5 font-medium text-foreground @lg/page:line-clamp-none @lg/page:truncate">
+      <span className="line-clamp-2 min-w-0 text-[0.9375rem] leading-6 font-medium text-foreground @lg/page:line-clamp-none @lg/page:truncate">
         {title}
       </span>
-      <span className="row-span-2 shrink-0 self-start pt-0.5 text-xs text-muted-foreground tabular-nums">
+      <span className="shrink-0 self-start pt-1 text-xs text-muted-foreground tabular-nums @lg/page:row-span-2">
         {shortWhen(item.at)}
       </span>
-      <span className="col-start-2 flex min-w-0 items-center gap-1.5 text-[0.8rem] leading-5 text-muted-foreground">
-        {from && (
-          <span className="shrink-0 font-medium text-reading-foreground">
-            {nameOf(from)}
-          </span>
-        )}
-        <span className="shrink-0">{what}</span>
+      <span className="col-span-2 col-start-2 flex min-w-0 items-center gap-1.5 text-[0.8125rem] leading-5 text-muted-foreground @lg/page:col-span-1">
+        <span className="shrink-0">
+          {from ? `${nameOf(from)} ${what}` : what}
+        </span>
         {detail && (
           <>
             <span aria-hidden className="shrink-0 opacity-50">
@@ -182,7 +179,7 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
             <button
               type="button"
               onClick={() => setShowAll(true)}
-              className="ml-[3.125rem] flex h-8 items-center text-[0.8125rem] text-muted-foreground hover:text-foreground"
+              className="ml-[3.5rem] flex h-8 items-center text-[0.8125rem] text-muted-foreground hover:text-foreground"
             >
               {items.length - shown.length} More
             </button>

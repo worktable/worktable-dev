@@ -67,7 +67,7 @@ function RunRow({
       type="button"
       aria-expanded={open}
       onClick={() => setOpen((value) => !value)}
-      className="relative inline-flex h-5 shrink-0 cursor-pointer items-center gap-0.5 rounded-md bg-surface-tint pr-1 pl-1.5 text-[0.72rem] font-medium text-muted-foreground tabular-nums outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
+      className="relative inline-flex h-5 shrink-0 cursor-pointer items-center gap-0.5 rounded-md text-[0.8125rem] text-muted-foreground tabular-nums outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:text-foreground"
     >
       {others} More
       <ChevronDown
@@ -77,7 +77,9 @@ function RunRow({
   )
   return (
     <li className={className}>
-      <div className="group relative grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 rounded-xl px-2.5 py-2 transition-colors has-[a:focus-visible]:bg-surface-hover has-[a:hover]:bg-surface-hover">
+      {/* The title leads and the line under it stays quiet, with more room
+          between rows than inside one, so each row reads as one thing. */}
+      <div className="group relative grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3.5 gap-y-px rounded-xl px-2.5 py-3 transition-colors has-[a:focus-visible]:bg-surface-hover has-[a:hover]:bg-surface-hover">
         <Link
           to="/spaces/$spaceId/documents/$"
           params={{ spaceId: run.spaceId, _splat: lead.path }}
@@ -86,31 +88,36 @@ function RunRow({
         />
         <ActorAvatar
           actor={run.actor}
-          className="row-span-2 size-7 self-start text-xs @lg/page:self-center"
+          className="row-span-2 size-8 self-start text-xs @lg/page:self-center"
         />
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="line-clamp-2 min-w-0 text-sm leading-5 font-medium text-foreground @lg/page:line-clamp-none @lg/page:truncate">
-            {lead.title}
+        <span className="line-clamp-2 min-w-0 text-[0.9375rem] leading-6 font-medium text-foreground @lg/page:line-clamp-none @lg/page:truncate">
+          {lead.title}
+        </span>
+        <When
+          at={run.at}
+          className="relative self-start pt-1 @lg/page:row-span-2"
+        />
+        {/* On a phone the line runs under the time, so the place fits. */}
+        <div className="col-span-2 col-start-2 flex min-w-0 items-center gap-1.5 text-[0.8125rem] leading-5 text-muted-foreground @lg/page:col-span-1">
+          <span className="shrink-0">
+            {nameOf(run.actor)} {lead.created ? "created" : "edited"}
           </span>
-          <span className="hidden shrink-0 @lg/page:inline-flex">{more}</span>
-        </div>
-        <When at={run.at} className="relative row-span-2 self-start pt-0.5" />
-        <div className="col-start-2 flex min-w-0 items-center gap-1.5 text-[0.8rem] leading-5 text-muted-foreground">
-          <span className="shrink-0 font-medium text-reading-foreground">
-            {nameOf(run.actor)}
-          </span>
-          <span className="shrink-0">{lead.created ? "created" : "edited"}</span>
           <span aria-hidden className="shrink-0 opacity-50">
             ·
           </span>
           {place}
+          {more && (
+            <>
+              <span aria-hidden className="shrink-0 opacity-50">
+                ·
+              </span>
+              {more}
+            </>
+          )}
         </div>
-        {more && (
-          <div className="col-start-2 pt-1 @lg/page:hidden">{more}</div>
-        )}
       </div>
       {open && others > 0 && (
-        <ul className="pb-1.5 pl-[2.625rem]">
+        <ul className="pb-2 pl-[3.25rem]">
           {rest.map((doc) => (
             <li key={doc.path}>
               <Link
@@ -166,9 +173,9 @@ export function LatestRuns({
 
 export function LatestSkeleton() {
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {Array.from({ length: 4 }).map((_, index) => (
-        <div key={index} className="h-12 animate-pulse rounded-xl bg-muted" />
+        <div key={index} className="h-[3.875rem] animate-pulse rounded-xl bg-muted" />
       ))}
     </div>
   )

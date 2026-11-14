@@ -7544,9 +7544,15 @@ fn create_workspace_webview(
                 record_workspace_boundary(webview.app_handle(), &title);
             })
             .on_page_load(move |_webview, payload| {
-                if payload.event() != PageLoadEvent::Finished
-                    || !same_workspace_origin(payload.url(), &page_load_origin)
-                {
+                if !same_workspace_origin(payload.url(), &page_load_origin) {
+                    return;
+                }
+                let stage = match payload.event() {
+                    PageLoadEvent::Started => "started loading",
+                    PageLoadEvent::Finished => "finished loading",
+                };
+                eprintln!("[Worktable Desktop] workspace page {stage}");
+                if payload.event() != PageLoadEvent::Finished {
                     return;
                 }
                 let should_probe = page_load_app

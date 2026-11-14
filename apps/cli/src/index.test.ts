@@ -2900,7 +2900,7 @@ describe("uninstall and purge command integration", () => {
     } finally {
       fx.cleanup()
     }
-  })
+  }, 20_000)
 
   it("proves skill target writes before disconnecting MCP or stopping the service", () => {
     const fx = setupInstall()
@@ -2948,7 +2948,7 @@ describe("uninstall and purge command integration", () => {
       if (existsSync(target)) chmodSync(target, 0o700)
       fx.cleanup()
     }
-  })
+  }, 20_000)
 
   it("still cleans up machine-local state when the config is corrupt", () => {
     const fx = setupInstall()

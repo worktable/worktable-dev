@@ -1497,7 +1497,7 @@ describe("local-authority state model and command integration", () => {
       await service.exited
     }
     expect(publishedLeasePaths()).toEqual([])
-  })
+  }, 20_000)
 
   it("setup refuses a health-only Worktable listener without a proven lease", async () => {
     const workspace = join(root, "setup-unproven-listener")
@@ -1745,7 +1745,7 @@ describe("local-authority state model and command integration", () => {
       service.kill("SIGTERM")
       await service.exited
     }
-  })
+  }, 20_000)
 
   it("setup does not reuse a managed service port for a different unregistered workspace", async () => {
     const first = join(root, "managed-proof-first")

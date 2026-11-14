@@ -16,6 +16,7 @@ import { resolveSourceMetadata } from "./release-source.ts"
 import { resolveBuildVersion } from "./release-version.ts"
 import { WORKTABLE_SKILLS, skillSourcePath } from "./skill-inventory.ts"
 import { copyReleaseLicenses } from "./release-licenses.ts"
+import { assertReportsVersion } from "./release-executable.ts"
 import { writeCompiledJsNotices } from "./compiled-js-notices.ts"
 import {
   assertReviewedBunRuntime,
@@ -265,6 +266,7 @@ for (const target of selectedTargets.cli) {
   await buildExecutable(target, executable)
   const assemblyStarted = performance.now()
   assertPortableExecutable(executable)
+  assertReportsVersion({ executable, target, version })
 
   await stagePreviewRuntime(
     target,

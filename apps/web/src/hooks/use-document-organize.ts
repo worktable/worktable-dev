@@ -1,10 +1,20 @@
 import { useNavigate } from "@tanstack/react-router"
 import { useQueryClient } from "@tanstack/react-query"
-import { Clock3, Pin, PinOff, Infinity as InfinityIcon } from "lucide-react"
-import { START_HERE_LIMIT } from "@worktable/types/constants"
+import {
+  Clock3,
+  House,
+  Infinity as InfinityIcon,
+  Pin,
+  PinOff,
+} from "lucide-react"
+import {
+  HOME_PIN_LIMIT,
+  START_HERE_LIMIT,
+} from "@worktable/types/constants"
 import { toast } from "@worktable/ui/components/sonner"
 import type { PageOverflowAction } from "@/hooks/use-page-meta"
 import { activityQueryKeys } from "@/lib/activity"
+import { useHomePins } from "@/lib/home"
 import { mutateDocument } from "@/lib/documents-api"
 import {
   formatArchiveDate,
@@ -70,7 +80,34 @@ export function useDocumentOrganizeActions(
   const queryClient = useQueryClient()
   const pins = space?.pins ?? []
   const pinned = pins.some((pin) => pin.path === path)
-  if (!summary || summary.archived || !summary.lifetime || space?.space.permissions?.edit === false) return []
+  // A person's own Home pin; it changes nothing for anyone else, so reading
+  // the Space is enough.
+  const home = useHomePins()
+  const onHome = home.isPinned({ spaceId, path })
+  const changeHomePin = (change: Promise<void>) =>
+    void change.then(
+      () => toast.success(onHome ? "Unpinned From Home" : "Pinned To Home"),
+      (error: unknown) => {
+        console.error("Failed to update Home pins:", error)
+        toast.error(onHome ? "Couldn’t unpin." : "Couldn’t pin.")
+      }
+    )
+  const homeAction: PageOverflowAction = onHome
+    ? {
+        id: "unpin-home",
+        label: "Unpin From Home",
+        icon: PinOff,
+        onSelect: () => changeHomePin(home.unpin({ spaceId, path })),
+      }
+    : {
+        id: "pin-home",
+        label: "Pin To Home",
+        icon: House,
+        disabled: (home.pins?.length ?? 0) >= HOME_PIN_LIMIT,
+        onSelect: () => changeHomePin(home.pin({ spaceId, path })),
+      }
+  if (!summary || summary.archived || !summary.lifetime) return []
+  if (space?.space.permissions?.edit === false) return [homeAction]
 
   const updatePins = async (next: Array<{ path: string; note?: string }>) => {
     try {
@@ -122,5 +159,6 @@ export function useDocumentOrganizeActions(
           disabled: pins.length >= START_HERE_LIMIT,
           onSelect: () => void updatePins([...currentPins, { path }]),
         },
+    homeAction,
   ]
 }

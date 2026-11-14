@@ -261,7 +261,8 @@ for (const appearance of [
         await page.goto(harness.webUrl, { waitUntil: "networkidle" })
         const pending = page
           .getByRole("link")
-          .filter({ hasText: "Comments paused on Audit comments" })
+          .filter({ hasText: "Audit comments" })
+          .filter({ hasText: "Comments paused" })
         await expect(pending).toBeVisible()
         await pending.click()
         const resume = page.getByRole("button", {

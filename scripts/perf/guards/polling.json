@@ -114,6 +114,10 @@
       "why": "Pending: 60 s check only while its Space has no live socket."
     },
     {
+      "site": "apps/web/src/lib/home.ts#useHomeFeed",
+      "why": "Home has no workspace-wide change feed, so its digest checks once a minute while on screen; a Space's socket replaces the check on Space Home."
+    },
+    {
       "site": "apps/web/src/lib/lifetime.ts#useRecentDocuments",
       "why": "Recent: 60 s check only while its Space has no live socket."
     },
@@ -124,10 +128,6 @@
     {
       "site": "apps/web/src/lib/queries.ts#searchQueryOptions",
       "why": "Asks again every 2 s only while the server says its search index is still building."
-    },
-    {
-      "site": "apps/web/src/routes/index.tsx#useToday.timer",
-      "why": "Updates Home's date heading each minute; no request."
     },
     {
       "site": "packages/ui/src/public-share-live.js#sleep",

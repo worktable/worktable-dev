@@ -9,6 +9,9 @@ export const THREAD_TITLE_MAX_LENGTH = 160
 /** A Space shows at most this many pinned starting points. */
 export const START_HERE_LIMIT = 7
 
+/** A person pins at most this many docs to their own Home. */
+export const HOME_PIN_LIMIT = 8
+
 /** The longest label a share link takes. */
 export const SHARE_LINK_LABEL_MAX_LENGTH = 80
 

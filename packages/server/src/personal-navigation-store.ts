@@ -3,7 +3,10 @@ import { chmod, mkdir, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import {
   EMPTY_PERSONAL_NAVIGATION,
+  HOME_PIN_LIMIT,
+  HomePinRefSchema,
   PersonalNavigationSchema,
+  type HomePinRef,
   type PersonalNavigation,
 } from "@worktable/types"
 import type { PersonalSetup } from "@worktable/types/setup"
@@ -27,7 +30,11 @@ interface PreferencesFile {
 interface PersonEntry {
   navigation?: PersonalNavigation
   setup?: PersonalSetup
+  /** Docs this person pinned to their own Home, in the order pinned. */
+  homePins?: HomePinRef[]
 }
+
+const HomePinsSchema = HomePinRefSchema.array().max(HOME_PIN_LIMIT)
 
 function emptyFile(): PreferencesFile {
   return { type: "worktable.personal-preferences", version: 1, people: {} }
@@ -51,9 +58,13 @@ function parsePreferences(text: string): PreferencesFile {
   for (const [key, entry] of Object.entries(parsed.people)) {
     const navigation = PersonalNavigationSchema.safeParse(entry?.navigation)
     const setup = parsePersonalSetup(entry?.setup)
+    const homePins = HomePinsSchema.safeParse(entry?.homePins)
     people[key] = {
       ...(navigation.success ? { navigation: navigation.data } : {}),
       ...(setup ? { setup } : {}),
+      ...(homePins.success && homePins.data.length > 0
+        ? { homePins: homePins.data }
+        : {}),
     }
   }
   return { type: "worktable.personal-preferences", version: 1, people }
@@ -214,6 +225,43 @@ export function savePersonalNavigation(
     file.people[personKey] = { ...file.people[personKey], navigation }
     await savePreferences(file)
     return { saved: true, navigation: visible(navigation, canRead) }
+  })
+}
+
+/** The docs a person pinned to their Home, from memory after the first read. */
+export function readHomePins(personKey: string): HomePinRef[] {
+  try {
+    return readPreferences().people[personKey]?.homePins ?? []
+  } catch (error) {
+    console.warn("[preferences] personal preferences are unreadable:", logError(error))
+    return []
+  }
+}
+
+/** Replace a person's Home pins. */
+export function saveHomePins(
+  personKey: string,
+  pins: readonly HomePinRef[]
+): Promise<HomePinRef[]> {
+  return serialized(async () => {
+    const path = preferencesPath()
+    const file = readFromDisk(path)
+    cached = { path, file }
+    const seen = new Set<string>()
+    const homePins = pins.filter((pin) => {
+      const key = `${pin.spaceId}\n${pin.path}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    const { homePins: _previous, ...rest } = file.people[personKey] ?? {}
+    void _previous
+    file.people[personKey] = {
+      ...rest,
+      ...(homePins.length > 0 ? { homePins } : {}),
+    }
+    await savePreferences(file)
+    return homePins
   })
 }
 

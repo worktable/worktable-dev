@@ -1,4 +1,5 @@
 import { z } from "zod"
+import type { DocumentSummary } from "./documents"
 
 // ============================================================
 // Workspace activity
@@ -122,21 +123,8 @@ export type PendingItem =
       excerpt: string
     }
   | {
-      /** A comment sent to the reader, or to one of their agents. */
+      /** A comment sent to the reader. */
       kind: "commentRequest"
-      id: string
-      at: string
-      spaceId: string
-      annotationId: string
-      docPath: string
-      docTitle?: string
-      from: ActivityActor
-      /** The reader's agent it was sent to; absent when sent to the reader. */
-      agent?: { name: string }
-      excerpt: string
-    }
-  | {
-      kind: "commentReply"
       id: string
       at: string
       spaceId: string
@@ -157,5 +145,75 @@ export type PendingItem =
     }
 
 export interface PendingResult {
+  /** The newest items, at most ten. */
   items: PendingItem[]
+  /** How many items wait in all, including those past the first ten. */
+  total: number
+}
+
+// ============================================================
+// Home: the newest work, and where it happened
+// ============================================================
+
+/** One doc a run of work touched. */
+export interface HomeRunDoc {
+  path: string
+  title: string
+  formatId: string
+  at: string
+  /** Created in this run; otherwise edited. */
+  created: boolean
+}
+
+/** One sitting by one person or agent in one Space, newest doc first. */
+export interface HomeRun {
+  id: string
+  actor: ActivityActor
+  spaceId: string
+  /** When the run last touched a doc. */
+  at: string
+  docs: HomeRunDoc[]
+  /** Docs the run touched beyond the ones listed. */
+  more: number
+}
+
+/** The last two weeks of a Space, or of a top-level folder in one Space. */
+export interface HomePlace {
+  /** The Space's id; in one Space, the folder's name in its path. */
+  id: string
+  /** Docs touched on each of the last 14 days, oldest first; the last is today. */
+  days: number[]
+  /** Who touched them on each of those days, most recent first. */
+  who: ActivityActor[][]
+  /** Who worked there, most recent first. */
+  actors: ActivityActor[]
+  lastAt: string
+}
+
+/** A doc one person pinned to their own Home. */
+export const HomePinRefSchema = z.object({
+  spaceId: z.string().min(1).max(200),
+  path: z.string().min(1).max(4096),
+})
+export type HomePinRef = z.infer<typeof HomePinRefSchema>
+
+export interface HomePin extends HomePinRef {
+  status: "active" | "archived" | "missing"
+  title?: string
+  formatId?: string
+  /** The content revision, which addresses a page's preview. */
+  revision?: string
+}
+
+export interface HomeFeed {
+  runs: HomeRun[]
+  places: HomePlace[]
+  /** The reader's own Home pins; absent in one Space, and for agents. */
+  pins?: HomePin[]
+  /** Across Spaces: temporary docs, soonest to archive first. */
+  temporary?: Array<{
+    spaceId: string
+    spaceName: string
+    document: DocumentSummary
+  }>
 }

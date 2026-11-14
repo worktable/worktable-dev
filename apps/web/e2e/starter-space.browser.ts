@@ -65,7 +65,7 @@ test("every discovered document opens through the common page", async ({
   await page.goto(new URL("/spaces/welcome", harness.webUrl).href, {
     waitUntil: "domcontentloaded",
   })
-  // The sidebar tree; Space Home also has a "Diagrams" folder filter.
+  // The sidebar tree; Space Home also has a "Diagrams" folder.
   const diagrams = page
     .getByRole("navigation", { name: "Active documents" })
     .getByRole("button", { name: "Diagrams", exact: true })
@@ -275,7 +275,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await page.goto(new URL("/spaces/welcome", harness.webUrl).href, {
     waitUntil: "domcontentloaded",
   })
-  // Space Home also links docs from Recent and Activity; use the sidebar tree.
+  // Space Home also links docs from Latest and Activity; use the sidebar tree.
   const tree = page.getByRole("navigation", { name: "Active documents" })
   await expect(
     tree.getByRole("link", { name: "What Agents Can Make", exact: true })

@@ -86,7 +86,7 @@ export function HomeNewMenu({ spaces }: { spaces: SpaceFile[] }) {
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <Button variant="outline" size="sm">
+            <Button size="sm">
               <Plus className="size-4" />
               New
             </Button>

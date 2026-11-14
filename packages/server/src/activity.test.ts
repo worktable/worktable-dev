@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  setSystemTime,
+} from "bun:test"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import {
@@ -6,6 +13,7 @@ import {
   defaultConversationIdentityId,
   type ActivityActor,
   type ActivityPage,
+  type HomeFeed,
   type PendingResult,
   type SpaceFile,
 } from "@worktable/types"
@@ -26,6 +34,7 @@ import { createWorktableMcpServer } from "./mcp/server.ts"
 import { resolveParticipant } from "./participant-store.ts"
 import { activityRouter, pendingRouter } from "./routes/activity.ts"
 import { annotationsRouter } from "./routes/annotations.ts"
+import { homeRouter } from "./routes/home.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import { setSpaceArchived, writeSpace } from "./store.ts"
 import { postThreadMessage } from "./thread-service.ts"
@@ -78,6 +87,7 @@ function app(identity: TokenIdentity = ownerIdentity()): Hono {
   )
   server.route("/api/activity", activityRouter)
   server.route("/api/pending", pendingRouter)
+  server.route("/api/home", homeRouter)
   server.route("/api/spaces/:spaceId/annotations", annotationsRouter)
   return server
 }
@@ -421,5 +431,92 @@ describe("workspace activity", () => {
       expectsReply: false,
     })
     expect((await request<PendingResult>("/api/pending")).items).toEqual([])
+  })
+  it("gives Home one row per sitting, and each place its two weeks", async () => {
+    const owner: ActivityActor = { kind: "person", id: "local:owner" }
+    const agent: ActivityActor = { kind: "agent", id: codex.principal.id, name: "Codex" }
+    const ago = (minutes: number) =>
+      new Date(Date.now() - minutes * 60_000).toISOString()
+    // Three hours ago the agent wrote one doc; just now, three more.
+    setSystemTime(new Date(Date.now() - 180 * 60_000))
+    await writeDocAt("plans/old")
+    setSystemTime()
+    await writeDocAt("plans/a")
+    await writeDocAt("plans/b")
+    await writeDocAt("notes/c")
+    // It had revised one of them earlier, and the owner has since edited another.
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: agent, target: { kind: "doc", path: "plans/a" }, at: ago(170) })
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: owner, target: { kind: "doc", path: "notes/c" } })
+    // Work on a doc that is gone, and older work on a listed doc, list nothing.
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: agent, target: { kind: "doc", path: "gone" }, at: ago(1) })
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: agent, target: { kind: "doc", path: "plans/b" }, at: ago(60 * 24 * 20) })
+
+    // Each doc is listed once, with whoever changed it last.
+    const home = await request<HomeFeed>("/api/home")
+    expect(
+      home.runs.map((run) => [
+        run.actor.kind,
+        run.docs.map((doc) => [doc.path, doc.created]),
+      ])
+    ).toEqual([
+      ["person", [["notes/c", false]]],
+      ["agent", [["plans/b", true], ["plans/a", true]]],
+      ["agent", [["plans/old", true]]],
+    ])
+    expect(home.runs[0]!.docs[0]!.title).toBe("Pulse")
+    // Across Spaces a place is a Space: who worked there, most recent first.
+    expect(home.places.map((place) => place.id)).toEqual(["company"])
+    expect(home.places[0]!.days).toHaveLength(14)
+    expect(home.places[0]!.who.at(-1)!.map((actor) => actor.kind)).toEqual(["person", "agent"])
+    expect(home.places[0]!.days.at(-1)).toBeGreaterThanOrEqual(3)
+    expect(home.places[0]!.actors.map((actor) => actor.kind)).toEqual(["person", "agent"])
+
+    // In one Space the places are its top-level folders, and a folder narrows the runs.
+    const inSpace = await request<HomeFeed>("/api/home?spaceId=company&folder=notes")
+    expect(inSpace.places.map((place) => place.id).sort()).toEqual(["notes", "plans"])
+    expect(inSpace.runs.map((run) => run.docs.map((doc) => doc.path))).toEqual([["notes/c"]])
+    expect(inSpace.pins).toBeUndefined()
+    // Rows are ordered by the work they list: the owner's sitting is the
+    // newest, but what it did in this folder came before the agent's work.
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: owner, target: { kind: "doc", path: "plans/old" }, at: ago(60) })
+    const plans = await request<HomeFeed>("/api/home?spaceId=company&folder=plans")
+    expect(plans.runs.map((run) => [run.actor.kind, run.docs.map((doc) => doc.path)])).toEqual([
+      ["agent", ["plans/b", "plans/a"]],
+      ["person", ["plans/old"]],
+    ])
+
+    // A person's own pins come with Home; a pin whose doc is gone says so.
+    await request("/api/home/pins", {
+      method: "PUT",
+      body: { pins: [{ spaceId: "company", path: "plans/a" }, { spaceId: "company", path: "gone" }] },
+    })
+    // One sitting that moves between folders stays one row in either folder.
+    setSystemTime(new Date(Date.now() - 140 * 60_000))
+    await writeDocAt("alpha/x")
+    setSystemTime(new Date(Date.now() + 70 * 60_000))
+    await writeDocAt("beta/y")
+    setSystemTime()
+    await writeDocAt("alpha/z")
+    const alpha = await request<HomeFeed>("/api/home?spaceId=company&folder=alpha")
+    expect(alpha.runs.map((run) => run.docs.map((doc) => doc.path))).toEqual([["alpha/z", "alpha/x"]])
+
+    // Work older than two weeks still fills Latest, as whole sittings, and
+    // counts for no place.
+    const longAgo = Date.now() - 20 * 24 * 60 * 60_000
+    for (const [index, name] of ["one", "two", "three"].entries()) {
+      setSystemTime(new Date(longAgo + index * 60_000))
+      await writeDocAt(`archive/${name}`)
+    }
+    setSystemTime()
+    const quiet = await request<HomeFeed>("/api/home?spaceId=company&folder=archive&limit=1")
+    expect(quiet.runs.map((run) => run.docs.map((doc) => doc.path))).toEqual([
+      ["archive/three", "archive/two", "archive/one"],
+    ])
+    expect(quiet.places.map((place) => place.id)).not.toContain("archive")
+
+    expect((await request<HomeFeed>("/api/home")).pins).toEqual([
+      { spaceId: "company", path: "plans/a", status: "active", title: "Pulse", formatId: "worktable.markdown", revision: expect.any(String) },
+      { spaceId: "company", path: "gone", status: "missing" },
+    ])
   })
 })

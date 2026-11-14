@@ -86,6 +86,9 @@ export function AgentAvatar({
   )
 }
 
+/** Logos this tab has drawn: the next place one appears shows it at once. */
+const drawnLogos = new Set<string>()
+
 /** Keep initials visible until the local logo loads, or if it cannot load. */
 function AgentLogo({
   src,
@@ -96,7 +99,9 @@ function AgentLogo({
   fallback: ReactNode
   className: string
 }) {
-  const [state, setState] = useState<"loading" | "loaded" | "failed">("loading")
+  const [state, setState] = useState<"loading" | "loaded" | "failed">(() =>
+    drawnLogos.has(src) ? "loaded" : "loading"
+  )
   return (
     <>
       {state !== "loaded" && fallback}
@@ -106,8 +111,14 @@ function AgentLogo({
           alt=""
           className={cn("absolute inset-0 size-full", className)}
           hidden={state !== "loaded"}
-          onLoad={() => setState("loaded")}
-          onError={() => setState("failed")}
+          onLoad={() => {
+            drawnLogos.add(src)
+            setState("loaded")
+          }}
+          onError={() => {
+            drawnLogos.delete(src)
+            setState("failed")
+          }}
         />
       )}
     </>

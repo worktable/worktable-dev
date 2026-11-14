@@ -1598,7 +1598,7 @@ function goHome(pass: Pass): Action {
     target: "/",
     expect: [{ name: "home", key: "content", args: {} }],
     contentKey: "content",
-    gate: /\/api\/recent/,
+    gate: /\/api\/home/,
     prepare: showSidebar,
     act: (session) =>
       press(
@@ -1813,7 +1813,7 @@ function coldLoads(targets: Targets): ColdLoad[] {
       path: "/",
       expect: [{ name: "home", key: "content", args: {} }],
       contentKey: "content",
-      gate: /\/api\/recent/,
+      gate: /\/api\/home/,
     },
     {
       journey: "open Space",

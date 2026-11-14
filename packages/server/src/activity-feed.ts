@@ -182,13 +182,14 @@ async function withCurrentNames(
   )
 }
 
-interface NamedDocument {
+export interface NamedDocument {
   title: string
   formatId: string
   documentId?: string
+  archived?: true
 }
 
-async function namedDocuments(
+export async function namedDocuments(
   spaceIds: string[]
 ): Promise<Map<string, Map<string, NamedDocument>>> {
   const pairs = await Promise.all(
@@ -211,6 +212,7 @@ async function namedDocuments(
             title: item.title,
             formatId: item.format.id,
             ...(documentId ? { documentId } : {}),
+            ...(item.archived ? { archived: true as const } : {}),
           })
         }
       }
@@ -221,7 +223,7 @@ async function namedDocuments(
 }
 
 /** Where a moved doc lives now, reading each Space's aliases at most once. */
-function movedPathResolver(): (
+export function movedPathResolver(): (
   spaceId: string,
   path: string
 ) => Promise<string | null> {

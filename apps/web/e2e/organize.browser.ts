@@ -168,8 +168,9 @@ test("folder creation keeps Docs, drawings, and HTML docs in the chosen folder",
 })
 
 // Owns the organization journey a person relies on: new documents start
-// temporary and stay out of everyday browsing, Home shows them aside until
-// kept, Activity records what happened, and a pinned document leads its Space.
+// temporary and stay out of everyday browsing, Home counts them on the day
+// they archive until kept, Activity records what happened, and a pinned
+// document leads its Space.
 test("temporary documents stay aside until kept, and pinned documents lead the Space", async ({
   page,
 }, testInfo) => {
@@ -205,19 +206,33 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
       .getByRole("link", { name: "Untitled" })
   ).toBeVisible()
 
-  await page.goto(`${harness.webUrl}/`)
-  const recent = page.getByRole("region", { name: "Recent" })
-  const temporary = page.getByRole("region", { name: "Temporary" })
-  await expect(
-    recent.getByRole("link", { name: /^Product brief/i })
-  ).toBeVisible()
-  await expect(recent.getByRole("link", { name: /^Untitled/ })).toHaveCount(0)
-  await expect(temporary.getByRole("link", { name: "Untitled" })).toBeVisible()
+  // It archives a week from now; Home counts today and the six days after.
+  const sooner = await page.request.post(
+    `${harness.apiUrl}/api/spaces/organize/documents/lifetime`,
+    {
+      data: {
+        path: "untitled",
+        lifetime: "temporary",
+        archiveOn: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+      },
+    }
+  )
+  expect(sooner.ok()).toBe(true)
 
-  await temporary.getByRole("link", { name: "Untitled" }).hover()
-  await temporary.getByRole("button", { name: "Keep", exact: true }).click()
-  await expect(recent.getByRole("link", { name: /^Untitled/ })).toBeVisible()
-  await expect(temporary).toHaveCount(0)
+  await page.goto(`${harness.webUrl}/`)
+  // One sitting reads as one row: its newest doc, with the rest behind More.
+  const recent = page.getByRole("region", { name: "Latest" })
+  await expect(recent.getByRole("link", { name: "Untitled" })).toBeVisible()
+  await recent.getByRole("button", { name: "1 More" }).click()
+  await expect(
+    recent.getByRole("link", { name: /Product brief/i })
+  ).toBeVisible()
+  // The temporary doc waits on the day it archives, where it can be kept.
+  const archiving = page.getByRole("region", { name: "Archiving" })
+  await archiving.getByRole("button", { name: /: 1 archiving$/ }).click()
+  await page.getByRole("button", { name: "Keep", exact: true }).click()
+  await expect(archiving).toHaveCount(0)
+  await expect(recent.getByRole("link", { name: "Untitled" })).toBeVisible()
   // Activity starts collapsed beside Home; once opened it stays open.
   await expect(page.getByRole("region", { name: "Activity" })).toHaveCount(0)
   await page.getByRole("button", { name: "Expand activity" }).click()
@@ -245,7 +260,7 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
       }
     }).observe(document.body, { childList: true, subtree: true })
   })
-  await recent.getByRole("link", { name: /^Untitled/ }).click()
+  await recent.getByRole("link", { name: "Untitled", exact: true }).click()
   await expect(page).toHaveURL(/\/spaces\/organize\/documents\/untitled$/)
   await expect(
     page.getByRole("button", { name: /^Temporary\. Archives / })
@@ -311,7 +326,7 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
   // idle; without it, as before that lands, the Space loads its own.
   await page.route(/\/api\/sidebar(\?.*)?$/, (route) => route.abort())
   await page.goto(`${harness.webUrl}/`)
-  await expect(page.getByRole("region", { name: "Recent" })).toBeVisible()
+  await expect(page.getByRole("region", { name: "Latest" })).toBeVisible()
   let releaseDetails!: () => void
   const detailsHeld = new Promise<void>((resolve) => {
     releaseDetails = resolve

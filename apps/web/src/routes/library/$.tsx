@@ -42,7 +42,6 @@ import {
 } from "@/lib/library"
 import { useLibraryName } from "@/lib/library-actions"
 import {
-  parseLibraryPath,
   placesOf,
   recentOf,
   removedOf,
@@ -50,6 +49,7 @@ import {
   pendingOf,
   type Place,
 } from "@/lib/library-view"
+import { parseLibraryPath } from "@/lib/library-path"
 import { useSpaces } from "@/lib/queries"
 
 // The open skill's code, loaded with its Doc, so a skill shows whole.

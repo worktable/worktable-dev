@@ -2,13 +2,13 @@ import { describe, expect, it } from "bun:test"
 import type { LibraryEntry, LibraryRef } from "./library"
 import {
   changeOf,
-  parseLibraryPath,
   placesOf,
   recentOf,
   removedOf,
   skillsIn,
   pendingOf,
 } from "./library-view"
+import { parseLibraryPath } from "./library-path"
 
 const WORKTABLE: LibraryRef = { kind: "worktable" }
 const OPS: LibraryRef = { kind: "space", spaceId: "ops" }

@@ -27,29 +27,6 @@ export const waitingOn = (
 const byTitle = (a: LibraryEntry, b: LibraryEntry) =>
   skillTitle(a).localeCompare(skillTitle(b))
 
-/** The views of the Library that aren't one library. */
-export const VIEWS = ["pending", "removed"] as const
-export type View = (typeof VIEWS)[number]
-
-/** Where the Library is, from its address: `/library/<where>/<skill>`. */
-export type LibraryPath =
-  | { kind: "home" }
-  | { kind: "view"; view: View }
-  | { kind: "library"; key: string; skillId?: string }
-  /** A skill named without its library, as links from elsewhere do. */
-  | { kind: "skill"; skillId: string }
-
-const LIBRARY_KEY = /^(worktable|space:.+|agent:.+)$/
-
-export function parseLibraryPath(splat: string | undefined): LibraryPath {
-  const [where, skillId] = (splat ?? "").split("/").filter(Boolean)
-  if (!where) return { kind: "home" }
-  if ((VIEWS as readonly string[]).includes(where) && !skillId)
-    return { kind: "view", view: where as View }
-  if (LIBRARY_KEY.test(where)) return { kind: "library", key: where, skillId }
-  return { kind: "skill", skillId: where }
-}
-
 /** A library with skills in it: the Worktable's, a Space's or an agent's. */
 export interface Place {
   key: string

@@ -14,13 +14,9 @@ import {
 } from "@/components/library/add-skill-dialog"
 import { LibraryMark } from "@/components/library/library-mark"
 import { libraryKey, skillTitle, type LibraryEntry } from "@/lib/library"
+import { type View } from "@/lib/library-path"
 import { useLibraryName, when } from "@/lib/library-actions"
-import {
-  waitingOn,
-  type Place,
-  type View,
-  type Waiting,
-} from "@/lib/library-view"
+import { waitingOn, type Place, type Waiting } from "@/lib/library-view"
 
 /** A filled dot where an agent's proposal waits; a ring where a draft does. */
 export function WaitingDot({

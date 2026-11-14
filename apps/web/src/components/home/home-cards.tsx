@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router"
 import { Clock3, PinOff } from "lucide-react"
 import {
+  lazy,
+  Suspense,
   useEffect,
   useRef,
   useState,
@@ -8,22 +10,20 @@ import {
   type ReactNode,
 } from "react"
 import type { ActivityActor, DocumentSummary } from "@worktable/types"
-import { Button } from "@worktable/ui/components/button"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@worktable/ui/components/popover"
 import { cn } from "@worktable/ui/lib/utils"
 import { DocumentFormatIcon } from "@/components/document-format-icon"
 import { ActorAvatar, When } from "@/components/home/home-latest"
 import { useTheme } from "@/components/theme-provider"
-import { useLifetimeActions } from "@/hooks/use-document-organize"
 import { useActorName } from "@/lib/use-actor-name"
 import { spaceAccessKey } from "@/lib/team-access"
-import { widgetContentUrl } from "@/lib/widgets-api"
+import { BASE_URL } from "@/lib/http"
+import { htmlDocumentApiPath } from "@/lib/html-document-api-path"
 
 export const sectionHeading = "text-sm font-semibold text-foreground"
+
+// A day's docs with Keep, loaded when a day is first pointed at or opened,
+// so Home does not carry the list and its popover for everyone.
+const ArchivingDay = lazy(() => import("./archiving-day"))
 
 // ── Two weeks at a glance ──────────────────────────────────
 
@@ -343,7 +343,7 @@ function PagePreview({
     }
   }, [])
   const accessKey = spaceAccessKey(spaceId)
-  const src = `${widgetContentUrl(spaceId, path)}?theme=${resolvedTheme}&rev=${encodeURIComponent(revision)}${
+  const src = `${BASE_URL}${htmlDocumentApiPath(spaceId, path)}/content?theme=${resolvedTheme}&rev=${encodeURIComponent(revision)}${
     accessKey ? `&a=${encodeURIComponent(accessKey)}` : ""
   }`
   return (
@@ -479,38 +479,6 @@ export interface ArchivingItem {
   document: Pick<DocumentSummary, "path" | "title" | "format" | "archiveOn">
 }
 
-function ArchivingRow({ item }: { item: ArchivingItem }) {
-  const { keep } = useLifetimeActions(item.spaceId, item.document.path)
-  const [keeping, setKeeping] = useState(false)
-  return (
-    <li className="group flex h-9 min-w-0 items-center gap-2.5">
-      <DocumentFormatIcon
-        formatId={item.document.format.id}
-        name={item.document.path}
-        className="size-3.5 shrink-0 text-muted-foreground"
-      />
-      <Link
-        to="/spaces/$spaceId/documents/$"
-        params={{ spaceId: item.spaceId, _splat: item.document.path }}
-        className="min-w-0 flex-1 truncate text-[0.8125rem] text-foreground hover:text-primary-text"
-      >
-        {item.document.title}
-      </Link>
-      <Button
-        size="xs"
-        variant="outline"
-        disabled={keeping}
-        onClick={() => {
-          setKeeping(true)
-          void keep().finally(() => setKeeping(false))
-        }}
-      >
-        Keep
-      </Button>
-    </li>
-  )
-}
-
 /** Calendar days from today to a date, in the reader's time zone. */
 function daysUntil(iso: string): number {
   const date = new Date(iso)
@@ -540,6 +508,10 @@ export function ArchivingWeek({
     const index = Math.max(1, daysUntil(item.document.archiveOn)) - 1
     days[index]?.items.push(item)
   }
+  const [open, setOpen] = useState<{
+    time: number
+    anchor: HTMLElement
+  } | null>(null)
   if (days.every((day) => day.items.length === 0)) return null
   return (
     <section
@@ -586,32 +558,37 @@ export function ArchivingWeek({
                   <span className={cell} />
                 </Tip>
               ) : (
-                <Popover>
-                  <Tip label={`${label} · ${count} ${count === 1 ? "doc" : "docs"}`}>
-                    <PopoverTrigger
-                      aria-label={`${label}: ${count} archiving`}
-                      className={cn(
-                        cell,
-                        "cursor-pointer outline-1 outline-offset-1 outline-transparent transition-[outline-color] duration-200 ease-out hover:outline-foreground/30 focus-visible:outline-2 focus-visible:outline-ring data-[popup-open]:outline-foreground/40"
-                      )}
-                    >
-                      {count}
-                    </PopoverTrigger>
-                  </Tip>
-                  <PopoverContent align="end" className="w-80 gap-1">
-                    <p className="px-0.5 text-xs font-medium text-muted-foreground">
-                      {label}
-                    </p>
-                    <ul className="max-h-72 overflow-y-auto">
-                      {day.items.map((item) => (
-                        <ArchivingRow
-                          key={`${item.spaceId}/${item.document.path}`}
-                          item={item}
-                        />
-                      ))}
-                    </ul>
-                  </PopoverContent>
-                </Popover>
+                <Tip label={`${label} · ${count} ${count === 1 ? "doc" : "docs"}`}>
+                  <button
+                    type="button"
+                    aria-label={`${label}: ${count} archiving`}
+                    aria-expanded={open?.time === day.date.getTime()}
+                    // The list loads when a day is first pointed at or opened.
+                    onPointerEnter={() => void import("./archiving-day")}
+                    onClick={(event) =>
+                      setOpen({
+                        time: day.date.getTime(),
+                        anchor: event.currentTarget,
+                      })
+                    }
+                    className={cn(
+                      cell,
+                      "cursor-pointer outline-1 outline-offset-1 outline-transparent transition-[outline-color] duration-200 ease-out hover:outline-foreground/30 focus-visible:outline-2 focus-visible:outline-ring aria-expanded:outline-foreground/40"
+                    )}
+                  >
+                    {count}
+                  </button>
+                </Tip>
+              )}
+              {open?.time === day.date.getTime() && (
+                <Suspense fallback={null}>
+                  <ArchivingDay
+                    label={label}
+                    items={day.items}
+                    anchor={open.anchor}
+                    onClose={() => setOpen(null)}
+                  />
+                </Suspense>
               )}
               <span className="text-[0.66rem] leading-none text-muted-foreground">
                 {day.date.toLocaleDateString(undefined, { weekday: "narrow" })}

@@ -26,11 +26,16 @@ type Manifest = Record<string, Chunk>
 /**
  * Source modules each route loads before it renders, besides the entry. The
  * sidebar loads lazily on every app route; a document route also loads the
- * space layout and its renderer.
+ * space layout and its renderer. Space Home's page is its own chunk, which
+ * only a Space's own page loads.
  */
 const ROUTES: Record<string, string[]> = {
   home: ["src/routes/index.tsx", "src/components/app-sidebar.tsx"],
-  space: ["src/routes/spaces/$spaceId.tsx", "src/components/app-sidebar.tsx"],
+  space: [
+    "src/routes/spaces/$spaceId.tsx",
+    "src/components/spaces/space-overview.tsx",
+    "src/components/app-sidebar.tsx",
+  ],
   "rich document": [
     "src/routes/spaces/$spaceId.tsx",
     "src/routes/spaces/$spaceId/documents/$.tsx",

@@ -196,7 +196,6 @@ export const HomePinRefSchema = z.object({
   path: z.string().min(1).max(4096),
 })
 export type HomePinRef = z.infer<typeof HomePinRefSchema>
-export const HOME_PIN_LIMIT = 8
 
 export interface HomePin extends HomePinRef {
   status: "active" | "archived" | "missing"

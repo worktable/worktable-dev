@@ -7,8 +7,10 @@ import {
   Pin,
   PinOff,
 } from "lucide-react"
-import { HOME_PIN_LIMIT } from "@worktable/types"
-import { START_HERE_LIMIT } from "@worktable/types/constants"
+import {
+  HOME_PIN_LIMIT,
+  START_HERE_LIMIT,
+} from "@worktable/types/constants"
 import { toast } from "@worktable/ui/components/sonner"
 import type { PageOverflowAction } from "@/hooks/use-page-meta"
 import { activityQueryKeys } from "@/lib/activity"

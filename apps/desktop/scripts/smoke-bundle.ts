@@ -63,6 +63,34 @@ interface RunningCliHost {
 
 let launchNumber = 0
 
+/**
+ * Prints where a stuck Desktop's main thread is. Page load and title events
+ * reach Desktop on that thread, so a launch whose pages never report is
+ * either blocked there or waiting on WebKit, and the stack says which.
+ */
+function printMainThreadSample(pid: number): void {
+  if (process.platform !== "darwin") return
+  const result = Bun.spawnSync(["sample", String(pid), "2"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const lines = result.stdout.toString().split("\n")
+  const start = lines.findIndex((line) =>
+    line.includes("com.apple.main-thread")
+  )
+  if (start < 0) {
+    console.error(
+      `Desktop main thread sample unavailable: ${result.stderr.toString().trim()}`
+    )
+    return
+  }
+  const end = lines.findIndex(
+    (line, index) => index > start && /^\s{4}\d+ Thread_/.test(line)
+  )
+  const block = lines.slice(start, end < 0 ? undefined : end).slice(0, 150)
+  console.error(`Desktop main thread sample:\n${block.join("\n")}`)
+}
+
 function fail(message: string): never {
   throw new Error(message)
 }
@@ -884,6 +912,7 @@ try {
   succeeded = true
 } catch (error) {
   if (running) {
+    printMainThreadSample(running.appPid)
     try {
       await stopDesktop(running)
     } catch {

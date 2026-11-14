@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router"
+import { Pencil } from "lucide-react"
 import { useState } from "react"
+import { Button } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
 import { ChangeBar } from "@/components/library/change-bar"
 import { LibraryMark } from "@/components/library/library-mark"
@@ -12,54 +14,100 @@ import {
   type LibraryAction,
 } from "@/lib/library-actions"
 
+const WHEN_LABEL = "mb-0.5 block text-xs font-medium text-muted-foreground"
+const WHEN_TEXT = "text-[0.9375rem] leading-6 text-foreground"
+
 /**
- * When agents use the skill, typed in place under its title, as a Space's
- * description is under its name. Enter or leaving the line keeps it; Escape
- * puts back what it said.
+ * When agents use the skill: a labeled field under the title, as an agent
+ * reads it beside the skill's name. Pointing at it shows it can change; a
+ * click opens it for typing, Save or Enter keeps it, Cancel or Escape puts
+ * back what it said.
  */
 function WhenToUse({ entry }: { entry: LibraryEntry }) {
   const { describe } = useLibraryActions()
+  const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(entry.description)
-  const [shown, setShown] = useState(entry.description)
-  // Someone else's change, or this one once saved, is what the line says.
-  if (entry.description !== shown) {
-    setShown(entry.description)
+  const [saving, setSaving] = useState(false)
+  const label = <span className={WHEN_LABEL}>When to use</span>
+  if (!entry.mayChange || entry.removed) {
+    // Not a paragraph: the Doc's paragraph spacing would move the line below.
+    return (
+      <div className="pb-3">
+        {label}
+        <div className={WHEN_TEXT}>{entry.description}</div>
+      </div>
+    )
+  }
+  const cancel = () => {
     setValue(entry.description)
+    setEditing(false)
   }
   const keep = async () => {
     const next = value.replace(/\s+/g, " ").trim()
-    if (!next || next === entry.description) return setValue(entry.description)
+    if (!next || next === entry.description) return cancel()
+    setSaving(true)
     const refused = await describe(entry.id, { description: next })
-    if (refused) {
-      toast.error(refused)
-      setValue(entry.description)
-    }
+    setSaving(false)
+    if (refused) return toast.error(refused)
+    setEditing(false)
   }
-  const className = "block w-full pb-3 text-[0.9375rem] leading-6"
-  if (!entry.mayChange || entry.removed) {
-    // Not a paragraph: the Doc's paragraph spacing would move the line below.
-    return <div className={className}>{entry.description}</div>
+  if (editing) {
+    return (
+      <div className="pb-3">
+        <label htmlFor={`when-${entry.id}`} className={WHEN_LABEL}>
+          When to use
+        </label>
+        <textarea
+          id={`when-${entry.id}`}
+          rows={1}
+          value={value}
+          maxLength={280}
+          autoFocus
+          disabled={saving}
+          className={`${WHEN_TEXT} block field-sizing-content w-full resize-none rounded-lg border border-input bg-transparent px-2.5 py-1.5 outline-none focus:border-primary`}
+          onFocus={(event) =>
+            event.currentTarget.setSelectionRange(value.length, value.length)
+          }
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault()
+              void keep()
+            } else if (event.key === "Escape") {
+              event.stopPropagation()
+              cancel()
+            }
+          }}
+        />
+        <div className="mt-2 flex gap-2">
+          <Button size="xs" disabled={saving} onClick={() => void keep()}>
+            Save
+          </Button>
+          <Button size="xs" variant="ghost" disabled={saving} onClick={cancel}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    )
   }
   return (
-    <textarea
-      rows={1}
-      value={value}
-      maxLength={280}
-      aria-label="When To Use"
-      placeholder="When to use this"
-      className={`${className} field-sizing-content resize-none bg-transparent text-muted-foreground transition-colors outline-none placeholder:text-muted-foreground/60 hover:text-foreground focus:text-foreground`}
-      onChange={(event) => setValue(event.target.value)}
-      onBlur={() => void keep()}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          event.preventDefault()
-          event.currentTarget.blur()
-        } else if (event.key === "Escape") {
+    <div className="pb-3">
+      <button
+        type="button"
+        aria-label={`When to use: ${entry.description}. Edit`}
+        className="group/when -mx-2.5 flex w-[calc(100%+1.25rem)] items-start gap-3 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:outline-none"
+        onClick={() => {
           setValue(entry.description)
-          event.currentTarget.blur()
-        }
-      }}
-    />
+          setEditing(true)
+        }}
+      >
+        <span className="min-w-0 flex-1">
+          {label}
+          <span className={`${WHEN_TEXT} block`}>{entry.description}</span>
+        </span>
+        <Pencil className="mt-0.5 size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/when:opacity-100 group-focus-visible/when:opacity-100 max-md:opacity-100" />
+      </button>
+    </div>
   )
 }
 

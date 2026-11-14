@@ -18,6 +18,7 @@ import {
   LibraryHome,
   LibraryPanel,
   RECENT_ROWS,
+  SectionHeading,
   SkillRow,
 } from "@/components/library/library-parts"
 import { LibraryMark } from "@/components/library/library-mark"
@@ -29,9 +30,12 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useSetPageMeta } from "@/hooks/use-page-meta"
+import { openDocument } from "@/lib/document-open"
 import {
   libraryKey,
+  libraryQueryKey,
   useLibrary,
+  type Library,
   type LibraryEntry,
   type LibraryRef,
 } from "@/lib/library"
@@ -47,14 +51,38 @@ import {
 } from "@/lib/library-view"
 import { useSpaces } from "@/lib/queries"
 
-// The open skill brings the Doc's editor, so it loads when one is opened.
+// The open skill's code, loaded with its Doc, so a skill shows whole.
+const loadOpenSkill = () => import("@/components/library/open-skill")
 const OpenSkill = lazy(() =>
-  import("@/components/library/open-skill").then((module) => ({
-    default: module.OpenSkill,
-  }))
+  loadOpenSkill().then((module) => ({ default: module.OpenSkill }))
 )
 
 export const Route = createFileRoute("/library/$")({
+  // A hover or a click on a skill starts its Doc's check, content and editor
+  // as a Doc's own link does; the screen changes once they can show it.
+  beforeLoad: async ({ context, params, preload, cause }) => {
+    const path = parseLibraryPath(params._splat)
+    const skillId =
+      path.kind === "library" || path.kind === "skill"
+        ? path.skillId
+        : undefined
+    if (!skillId) return
+    const entry = context.queryClient
+      .getQueryData<Library>(libraryQueryKey)
+      ?.entries.find((candidate) => candidate.id === skillId)
+    await Promise.all([
+      loadOpenSkill(),
+      entry?.docPath
+        ? openDocument(context.queryClient, entry.doc.spaceId, entry.docPath, {
+            preload,
+            cause,
+          })
+        : undefined,
+    ])
+  },
+  // Keep the screen up while the next one gets ready, as the Doc route does.
+  pendingMs: Infinity,
+  pendingMinMs: 0,
   component: LibraryPage,
 })
 
@@ -83,6 +111,7 @@ function LibraryPage() {
   const library = useLibrary()
   const { data: spaces } = useSpaces()
   const libraryName = useLibraryName()
+  const worktableName = libraryName({ library: { kind: "worktable" } })
   // Adding starts from a library, from a Doc already found, or from nothing.
   const [adding, setAdding] = useState<{
     library?: LibraryRef
@@ -194,7 +223,14 @@ function LibraryPage() {
   } else if (view) {
     const shown = view === "pending" ? pendingOf(entries) : removedOf(entries)
     pane = (
-      <LibraryColumn title={view === "pending" ? "Pending" : "Removed"}>
+      <LibraryColumn
+        title={view === "pending" ? "Pending" : "Removed"}
+        subtitle={
+          view === "pending"
+            ? "Changes agents proposed, and edits not yet saved for agents."
+            : "Skills taken out lately. Open one to restore it."
+        }
+      >
         <div className="-mx-2.5">
           {shown.map((entry) => (
             <SkillRow key={entry.id} entry={entry} marked />
@@ -207,6 +243,13 @@ function LibraryPage() {
     pane = (
       <LibraryColumn
         title={shownName}
+        subtitle={
+          shownLibrary.kind === "worktable"
+            ? `Every agent in ${shownName} follows these.`
+            : shownLibrary.kind === "space"
+              ? `Agents working in ${shownName} follow these, with ${worktableName}'s.`
+              : `Only ${shownName} follows these.`
+        }
         mark={
           <LibraryMark
             library={shownLibrary}
@@ -216,11 +259,18 @@ function LibraryPage() {
         }
       >
         {shown.length > 0 ? (
-          <div className="-mx-2.5">
-            {shown.map((entry) => (
-              <SkillRow key={entry.id} entry={entry} />
-            ))}
-          </div>
+          <section aria-labelledby="library-skills">
+            <SectionHeading
+              id="library-skills"
+              title="Skills"
+              count={shown.length}
+            />
+            <div className="-mx-2.5">
+              {shown.map((entry) => (
+                <SkillRow key={entry.id} entry={entry} />
+              ))}
+            </div>
+          </section>
         ) : (
           <Empty className="min-h-60">
             <EmptyHeader>

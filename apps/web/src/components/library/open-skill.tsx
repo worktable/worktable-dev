@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { ArrowUpRight, Plus, SquarePen, Trash2 } from "lucide-react"
 import { lazy, Suspense, useEffect, useState } from "react"
@@ -14,10 +14,9 @@ import {
   type PageOverflowAction,
 } from "@/hooks/use-page-meta"
 import { documentRoute } from "@/lib/document-views"
-import {
-  documentPageQueryOptions,
-  documentQueryKeys,
-} from "@/lib/documents-queries"
+import { documentQueryKeys } from "@/lib/documents-queries"
+import { documentOpenHint } from "@/lib/document-rows"
+import { useDocumentOpen } from "@/lib/use-document-open"
 import { libraryKey, skillTitle, type LibraryEntry } from "@/lib/library"
 import { useLibraryActions, type LibraryAction } from "@/lib/library-actions"
 import { useSpaces } from "@/lib/queries"
@@ -55,16 +54,12 @@ export function OpenSkill({
   const { data: spaces } = useSpaces()
   const spaceId = entry.doc.spaceId
   const path = entry.docPath ?? ""
-  // The Doc is edited only from a check made for this open.
-  const check = useQuery({
-    ...documentPageQueryOptions(spaceId, path),
-    staleTime: 0,
-    enabled: path !== "",
-  })
-  const page =
-    check.isFetchedAfterMount && check.data?.kind === "document"
-      ? check.data
-      : null
+  // The Doc opens as on its own page: what the tab knows shows read-only at
+  // once, and the editor takes over once a check validates this open.
+  const { pageQuery, page: checked } = useDocumentOpen(spaceId, path)
+  const page = checked?.kind === "document" ? checked : null
+  const hint =
+    page || !path ? null : documentOpenHint(queryClient, spaceId, path)
   // What the Doc's page offers its header; the skill keeps part of it.
   const [docMeta, setDocMeta] = useState<PageMeta | null>(null)
   const [renaming, setRenaming] = useState(false)
@@ -184,11 +179,12 @@ export function OpenSkill({
   )
   const unavailable =
     !path ||
-    (check.isError && !check.isFetching) ||
-    check.data?.kind === "conflict" ||
+    (pageQuery.isError && !pageQuery.isFetching) ||
+    checked?.kind === "conflict" ||
     (page !== null && page.renderer?.key !== "doc")
-  // The title and head stay in the Doc's own frame until its page is ready.
+  // The title and head hold the Doc's place while nothing of it is known yet.
   const frame = <SkillFrame entry={entry}>{head}</SkillFrame>
+  const formatId = page?.document.format.id ?? hint?.formatId
 
   return (
     <>
@@ -197,14 +193,15 @@ export function OpenSkill({
           <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">
             Doc Missing
           </div>
-        ) : page ? (
+        ) : formatId && (page || hint?.renderer === "doc") ? (
           <Suspense fallback={frame}>
             <SetPageMetaContext.Provider value={setDocMeta}>
               <DocRenderer
                 spaceId={spaceId}
-                documentPath={page.document.path}
-                formatId={page.document.format.id}
+                documentPath={page?.document.path ?? path}
+                formatId={formatId}
                 page={page}
+                preview={hint}
                 afterTitle={head}
               />
             </SetPageMetaContext.Provider>

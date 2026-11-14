@@ -43,6 +43,7 @@ export function DocPicker({
   autoFocus = false,
   className,
   listClassName,
+  recentLabel = false,
   onPick,
 }: {
   library?: LibraryRef
@@ -53,6 +54,8 @@ export function DocPicker({
   className?: string
   /** Where the found Docs sit, under the field. */
   listClassName?: string
+  /** Name the Docs offered before a search as recent ones. */
+  recentLabel?: boolean
   onPick: (doc: DocChoice) => void
 }) {
   const { data: spaces } = useSpaces()
@@ -112,7 +115,7 @@ export function DocPicker({
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={query}
-          placeholder="Find a Doc for agents to follow"
+          placeholder="Find a Doc"
           aria-label="Find a Doc"
           autoFocus={autoFocus}
           autoComplete="off"
@@ -127,6 +130,11 @@ export function DocPicker({
         />
       </div>
       <div className={cn("mt-1", listClassName)}>
+        {recentLabel && !asked && choices.length > 0 && (
+          <p className="px-2.5 pt-2 pb-1 text-xs text-muted-foreground">
+            Recent Docs
+          </p>
+        )}
         {choices.length === 0
           ? asked &&
             !found.isFetching && (

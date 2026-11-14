@@ -1,5 +1,11 @@
 import { Link } from "@tanstack/react-router"
-import { Hourglass, Trash2, type LucideIcon } from "lucide-react"
+import {
+  ArrowRight,
+  BookPlus,
+  Hourglass,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react"
 import { memo, type ReactNode } from "react"
 import { cn } from "@worktable/ui/lib/utils"
 import {
@@ -237,27 +243,78 @@ export const SkillRow = memo(function SkillRow({
 export function LibraryColumn({
   title,
   mark,
+  subtitle,
   children,
 }: {
   title: string
   mark?: ReactNode
+  /** One line under the title, as a Space's description sits under its name. */
+  subtitle?: ReactNode
   children: ReactNode
 }) {
   return (
     // The same column as a Doc opened beside the panel, so nothing shifts.
     <div className="@container/page mx-auto max-w-3xl space-y-9 px-6 py-8 sm:px-8 md:px-12 lg:py-10">
-      <header className="flex min-w-0 items-center gap-3">
-        {mark}
-        <h1 className="min-w-0 truncate font-display text-[1.65rem] leading-tight font-semibold tracking-tight text-foreground sm:text-[2rem]">
-          {title}
-        </h1>
+      <header className="min-w-0">
+        <div className="flex min-w-0 items-center gap-3">
+          {mark}
+          <h1 className="min-w-0 truncate font-display text-[1.65rem] leading-tight font-semibold tracking-tight text-foreground sm:text-[2rem]">
+            {title}
+          </h1>
+        </div>
+        {subtitle && (
+          <p className="mt-1.5 text-[0.9375rem] leading-6 text-muted-foreground">
+            {subtitle}
+          </p>
+        )}
       </header>
       {children}
     </div>
   )
 }
 
-const SECTION_TITLE = "mb-2.5 text-sm font-semibold text-foreground"
+const SECTION_TITLE = "text-sm font-semibold text-foreground"
+
+/**
+ * A section's heading, with a count where it lists things, and a link to
+ * the whole list on the right where the section shows only part of it, as
+ * Home's Latest links to Activity.
+ */
+export function SectionHeading({
+  id,
+  title,
+  count,
+  all,
+}: {
+  id: string
+  title: string
+  count?: number
+  /** The view that lists everything, when the section shows only part. */
+  all?: View
+}) {
+  return (
+    <div className="mb-2.5 flex items-baseline justify-between gap-3">
+      <h2 id={id} className={SECTION_TITLE}>
+        {title}
+        {count !== undefined && (
+          <span className="ml-1.5 font-normal text-muted-foreground tabular-nums">
+            {count}
+          </span>
+        )}
+      </h2>
+      {all && (
+        <Link
+          to="/library/$"
+          params={{ _splat: all }}
+          className="inline-flex items-center gap-1 text-[0.8125rem] text-muted-foreground hover:text-foreground"
+        >
+          View All
+          <ArrowRight className="size-3.5" />
+        </Link>
+      )}
+    </div>
+  )
+}
 
 /** Pending changes the Library's Home shows before the rest. */
 const PENDING_ROWS = 3
@@ -265,8 +322,49 @@ const PENDING_ROWS = 3
 export const RECENT_ROWS = 6
 
 /**
- * Where the Library opens: a way to add a skill, what is pending across
- * every library, and the skills saved lately.
+ * Adding a skill, from where the Library opens: what a skill is made of, in
+ * one line, then the Docs likely to become one and a search for the rest.
+ */
+function AddSkill({
+  skills,
+  onPick,
+}: {
+  skills: LibraryEntry[]
+  onPick: (doc: DocChoice) => void
+}) {
+  return (
+    <section
+      aria-labelledby="library-add"
+      className="rounded-xl card-surface p-4 sm:p-5"
+    >
+      <div className="flex items-start gap-3">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-tint text-primary-text">
+          <BookPlus className="size-4" />
+        </span>
+        <div className="min-w-0">
+          <h2 id="library-add" className={SECTION_TITLE}>
+            Add Skill
+          </h2>
+          <p className="text-[0.8125rem] leading-5 text-muted-foreground">
+            Pick a Doc for agents to follow, then say when they use it.
+          </p>
+        </div>
+      </div>
+      <DocPicker
+        skills={skills}
+        shown={3}
+        className="mt-4"
+        listClassName="-mx-2.5"
+        recentLabel
+        onPick={onPick}
+      />
+    </section>
+  )
+}
+
+/**
+ * Where the Library opens: adding a skill, what is pending across every
+ * library, and the skills saved lately.
  */
 export function LibraryHome({
   pending,
@@ -282,46 +380,29 @@ export function LibraryHome({
   /** What follows, where the panel isn't beside it. */
   children?: ReactNode
 }) {
-  const more = pending.length - PENDING_ROWS
   return (
-    <LibraryColumn title="Library">
-      <section aria-labelledby="library-add">
-        <h2 id="library-add" className={SECTION_TITLE}>
-          Add
-        </h2>
-        <DocPicker
-          skills={skills}
-          shown={3}
-          listClassName="-mx-2.5"
-          onPick={onPick}
-        />
-      </section>
+    <LibraryColumn
+      title="Library"
+      subtitle="Skills your agents follow, kept where they work."
+    >
+      <AddSkill skills={skills} onPick={onPick} />
       {pending.length > 0 && (
         <section aria-labelledby="library-pending">
-          <h2 id="library-pending" className={SECTION_TITLE}>
-            Pending
-          </h2>
+          <SectionHeading
+            id="library-pending"
+            title="Pending"
+            all={pending.length > PENDING_ROWS ? "pending" : undefined}
+          />
           <div className="-mx-2.5">
             {pending.slice(0, PENDING_ROWS).map((entry) => (
               <SkillRow key={entry.id} entry={entry} marked />
             ))}
-            {more > 0 && (
-              <Link
-                to="/library/$"
-                params={{ _splat: "pending" satisfies View }}
-                className="ml-[3.5rem] flex h-8 w-fit items-center text-[0.8125rem] text-muted-foreground hover:text-foreground"
-              >
-                {more} More
-              </Link>
-            )}
           </div>
         </section>
       )}
       {recent.length > 0 && (
         <section aria-labelledby="library-recent">
-          <h2 id="library-recent" className={SECTION_TITLE}>
-            Recent
-          </h2>
+          <SectionHeading id="library-recent" title="Recent Skills" />
           <div className="-mx-2.5">
             {recent.map((entry) => (
               <SkillRow key={entry.id} entry={entry} marked />

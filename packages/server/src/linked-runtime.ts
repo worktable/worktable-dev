@@ -725,6 +725,7 @@ function launch(): void {
                     LINKED_CAPABILITIES.SHARE_READ_HINTS,
                     LINKED_CAPABILITIES.SHARE_COMMENTS,
                     LINKED_CAPABILITIES.FILE_LINKS,
+                    LINKED_CAPABILITIES.ANALYTICS_REPORT,
                     ...(mcpModernEraOverLink()
                       ? [LINKED_CAPABILITIES.MCP_HEADERS]
                       : []),

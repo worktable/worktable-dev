@@ -411,7 +411,11 @@ export async function createLinkedIngress(options: {
         }),
         identity,
         `${publicOrigin}/api/mcp/d/${binding.destinationId}`,
-        { modernEra, link: binding.destinationId }
+        {
+          modernEra,
+          link: binding.destinationId,
+          ...(grant.analytics ? { analytics: grant.analytics } : {}),
+        }
       )
     } finally {
       inFlight--

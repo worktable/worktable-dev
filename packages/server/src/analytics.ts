@@ -138,25 +138,54 @@ export function requestAnalyticsContext(
       grant.expiresAt > Date.now() + ANALYTICS_GRANT_TTL_MS + GRANT_CLOCK_SKEW_MS
     )
       return null
-    const protocolVersion = request.headers.get("mcp-protocol-version")
-    const clientId = identity.agent?.replace(/^managed:/, "")
-    // The gateway names the app from the verified OAuth client.
-    const clientName = isAnalyticsClient(grant.client)
-      ? ANALYTICS_CLIENT_NAMES[grant.client]
-      : clientId && Object.hasOwn(MCP_CLIENTS, clientId)
-        ? MCP_CLIENTS[clientId as SupportedMcpClientId].label
-        : undefined
-    return {
-      contributors: [grant],
-      // A client's header: only a revision Worktable serves is reported.
-      ...(protocolVersion && servesMcpProtocolVersion(protocolVersion)
-        ? { protocolVersion }
-        : {}),
-      ...(clientName ? { clientName } : {}),
-    }
+    return grantContext(request, identity, grant)
   } catch {
     return null
   }
+}
+
+function grantContext(
+  request: Request,
+  identity: TokenIdentity,
+  grant: AnalyticsGrant
+): SaveAnalyticsContext {
+  const protocolVersion = request.headers.get("mcp-protocol-version")
+  const clientId = identity.agent?.replace(/^managed:/, "")
+  // The gateway names the app from the verified OAuth client.
+  const clientName = isAnalyticsClient(grant.client)
+    ? ANALYTICS_CLIENT_NAMES[grant.client]
+    : clientId && Object.hasOwn(MCP_CLIENTS, clientId)
+      ? MCP_CLIENTS[clientId as SupportedMcpClientId].label
+      : undefined
+  return {
+    contributors: [grant],
+    // A client's header: only a revision Worktable serves is reported.
+    ...(protocolVersion && servesMcpProtocolVersion(protocolVersion)
+      ? { protocolVersion }
+      : {}),
+    ...(clientName ? { clientName } : {}),
+  }
+}
+
+/**
+ * A linked request's context. Cloud signed the grant into the request, so it
+ * needs no further check than its age; the answer reports the request's
+ * calls and saves, and Cloud sends them. A linked Worktable has no analytics
+ * of its own.
+ */
+export function linkedAnalyticsContext(
+  request: Request,
+  identity: TokenIdentity,
+  grant: AnalyticsGrant
+): SaveAnalyticsContext | null {
+  if (
+    grant.sender !== "gateway" ||
+    !Number.isSafeInteger(grant.expiresAt) ||
+    grant.expiresAt <= Date.now() - GRANT_CLOCK_SKEW_MS ||
+    grant.expiresAt > Date.now() + ANALYTICS_GRANT_TTL_MS + GRANT_CLOCK_SKEW_MS
+  )
+    return null
+  return { ...grantContext(request, identity, grant), report: { calls: [], saved: [] } }
 }
 
 /**

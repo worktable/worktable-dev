@@ -322,14 +322,18 @@ export function SidebarSearchResults({
     [debouncedQuery]
   )
 
-  // Skills come first, as the Library; the rest group by Space, preserving
-  // the server's relevance order: groups appear in the order of their best
-  // hit, rows keep their rank within the group.
+  // The skills the server ranks first (found by their name or when to use
+  // them) lead, as the Library; the rest group by Space, preserving the
+  // server's relevance order: groups appear in the order of their best hit,
+  // rows keep their rank within the group. A skill found only by its text
+  // stays with its Space, so it never outranks a better Doc.
   const groups = useMemo(() => {
     const bySpace = new Map<string, SearchResult[]>()
     const skills: SearchResult[] = []
+    let leading = true
     for (const result of results ?? []) {
-      if (result.skill) {
+      leading = leading && result.skill !== undefined
+      if (leading) {
         skills.push(result)
         continue
       }

@@ -617,18 +617,18 @@ describe("skill libraries", () => {
       clients.push(client)
       await client.connect(
         new StreamableHTTPClientTransport(new URL("http://127.0.0.1/mcp"), {
-          fetch: (input, init) => server.fetch(new Request(input, init)),
+          fetch: async (input, init) => server.fetch(new Request(input, init)),
         })
       )
       return client.getInstructions() ?? ""
     }
-    expect(await instructions()).not.toContain("Your team keeps approved skills")
+    expect(await instructions()).not.toContain("approved skills")
 
     await addRelease()
     const brief = await instructions()
-    // The rule leads, within what agents' apps read most closely.
-    expect(brief.indexOf("Before you start a task")).toBeGreaterThan(-1)
-    expect(brief.indexOf("Before you start a task")).toBeLessThan(512)
+    // The whole rule leads: some apps show only the first 300 or so characters.
+    expect(brief).toStartWith("Before any task, check your team's approved skills")
+    expect(brief.indexOf("follow it.")).toBeLessThan(300)
     expect(brief).toContain("- release-checklist: Use when shipping a release.")
 
     process.env["WORKTABLE_MCP_PREVIEW"] = "0"

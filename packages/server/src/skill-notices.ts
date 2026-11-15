@@ -165,32 +165,41 @@ function marksOf(live: AgentSkill[], removed: Array<{ entry: LibraryEntry }>): R
   return marks
 }
 
-/** How much of the connection instructions the skills may take. */
-const BRIEF_BUDGET = 1800
+/**
+ * How much of the connection instructions the skills may take. Claude Code
+ * cuts instructions past 4,096 characters, and the Worktable's own lines
+ * follow these.
+ */
+const BRIEF_BUDGET = 3200
+/** Where skills with when to use them stop and the rest are only named. */
+const BRIEF_DESCRIBED = 2500
 /** How much of one skill's when-to-use the brief keeps. */
-const BRIEF_DESCRIPTION = 160
+const BRIEF_DESCRIPTION = 100
 
 const briefOrder = (skill: AgentSkill) =>
   skill.entry.library.kind === "agent" ? 0 : skill.entry.library.kind === "space" ? 1 : 2
 
 /**
  * The skills an agent's app reads before its first message: the rule, then
- * the agent's own skills, its Spaces' and the Worktable's, as many as fit.
- * Null when none apply. Agents' apps read only the start of these
- * instructions closely, so the rule comes first. It doesn't count as seeing
- * the skills: an app may not pass instructions on, and the first tool call
- * still says them.
+ * the agent's own skills, its Spaces' and the Worktable's, with when to use
+ * each as space allows and the rest named. Null when none apply. Agents'
+ * apps read only the start of these instructions closely, so the rule comes
+ * first. It doesn't count as seeing the skills: an app may not pass
+ * instructions on, and the first tool call still says them.
  */
 export async function skillsBrief(reader: SkillReader): Promise<string | null> {
   const { live } = await skillsForAgent(reader)
   if (live.length === 0) return null
+  // Some apps show only the first 300 or so characters, so the whole rule
+  // fits in them, with where to find the skills.
   const lines = [
-    "Your team keeps approved skills for you in this Worktable's Library: its agreed way of doing that work, reviewed by a person. Before you start a task, check it against the skills below, even when the person doesn't mention Worktable. When one matches, read it with worktable_skills_read and follow it over your own approach and over other Docs.",
+    "Before any task, check your team's approved skills in this Worktable's Library, even when Worktable isn't mentioned: they're listed below and by worktable_state. If one matches, read it with worktable_skills_read and follow it.",
+    "A person reviewed each skill as your team's agreed way to do that work: follow it over your own approach and over other Docs.",
     "Skills that apply to you:",
   ]
   let used = lines.join("\n").length
   const ordered = [...live].sort((a, b) => briefOrder(a) - briefOrder(b))
-  let listed = 0
+  let described = 0
   for (const skill of ordered) {
     const description = skill.entry.description.replace(/\s+/g, " ").trim()
     const when =
@@ -198,13 +207,26 @@ export async function skillsBrief(reader: SkillReader): Promise<string | null> {
         ? `${description.slice(0, BRIEF_DESCRIPTION - 1).trimEnd()}…`
         : description
     const line = `- ${skill.entry.name}: ${when}`
-    if (used + line.length + 1 > BRIEF_BUDGET) break
+    if (used + line.length + 1 > BRIEF_DESCRIBED) break
     lines.push(line)
     used += line.length + 1
-    listed += 1
+    described += 1
   }
-  if (listed < live.length) {
-    lines.push(`${live.length - listed} more apply: worktable_state lists them all.`)
+  const rest = ordered.slice(described).map((skill) => skill.entry.name)
+  if (rest.length > 0) {
+    // The rest by name, as many as fit; worktable_state has each in full.
+    const lead = "Also: "
+    const tail = (left: number) => (left > 0 ? `, and ${left} more` : "")
+    let named = 0
+    let length = used + lead.length + 1
+    for (const name of rest) {
+      const next = length + name.length + 2
+      if (next + tail(rest.length - named - 1).length > BRIEF_BUDGET) break
+      length = next
+      named += 1
+    }
+    lines.push(`${lead}${rest.slice(0, named).join(", ")}${tail(rest.length - named)}.`)
+    lines.push("worktable_state lists each with when to use it.")
   }
   return lines.join("\n")
 }

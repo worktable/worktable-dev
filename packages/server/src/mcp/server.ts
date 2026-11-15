@@ -62,9 +62,10 @@ function worktableName(): string | null {
 export function serverInstructions(skillsBrief?: string | null): string {
   const name = worktableName()
   return [
-    name ? `You are connected to the Worktable ${JSON.stringify(name)}.` : null,
-    // Apps read the start of these closely: the team's skills come first.
+    // Apps read the start of these closely, and some show only the start:
+    // the team's skills come first.
     skillsBrief || null,
+    name ? `You are connected to the Worktable ${JSON.stringify(name)}.` : null,
     SERVER_INSTRUCTIONS,
     SOURCE_URL ? `Worktable source code: ${SOURCE_URL}` : null,
   ]

@@ -25,10 +25,42 @@ import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts"
 import type { TokenIdentity } from "../token-store.ts"
 import type { AnalyticsGrant } from "@worktable/hosted-contract"
 import { runWithTeamIdentity } from "../team-policy.ts"
+import { logError } from "../debug-log.ts"
+import { skillReaderFor } from "../skill-libraries.ts"
+import { skillsBrief } from "../skill-notices.ts"
+import { DEFAULT_AGENT_PRINCIPAL } from "../mcp/helpers.ts"
 
 // ============================================================
 // Server factory — creates a fresh server per request (stateless)
 // ============================================================
+
+/**
+ * The agent's skills for its connection instructions: built only for the
+ * message that opens a connection (initialize, or a modern server/discover),
+ * never for its tool calls, and as the agent, so its access applies.
+ */
+async function connectionSkills(
+  identity: TokenIdentity,
+  messages: JsonRpcMessage[]
+): Promise<string | null> {
+  if (configuredMcpSurface() !== "preview") return null
+  if (!messages.some((message) => message.method === "initialize" || message.method === "server/discover")) {
+    return null
+  }
+  // As the tools see the caller: the loopback bridge and the legacy token
+  // authorize as the owner but act as the default agent.
+  const agent =
+    identity.principal.id === "local:owner"
+      ? { agent: DEFAULT_AGENT_PRINCIPAL.displayName, principal: DEFAULT_AGENT_PRINCIPAL, scopes: identity.scopes }
+      : identity
+  try {
+    return await runWithTeamIdentity(identity, () => skillsBrief(skillReaderFor(agent)))
+  } catch (error) {
+    // A connection never fails over its skills.
+    console.error("[mcp] could not list skills for the connection:", logError(error))
+    return null
+  }
+}
 
 function remoteMcpServerOptions(
   request: Request,
@@ -185,10 +217,14 @@ export async function handleRemoteMcpRequest(
     ? linkedAnalyticsContext(request, identity, options.analytics)
     : mcpAnalyticsContext(request, identity)
   if (modern) {
+    const brief = await connectionSkills(
+      identity,
+      (Array.isArray(modern.body) ? modern.body : [modern.body]) as JsonRpcMessage[]
+    )
     const response = await withAnalyticsContext(analytics, () =>
       runWithTeamIdentity(identity, () =>
         handleModernMcpRequest(request, modern.body, {
-          server: remoteMcpServerOptions(request, identity, origin),
+          server: { ...remoteMcpServerOptions(request, identity, origin), skillsBrief: brief },
           stream: options.stream ?? false,
           ...(options.link ? { link: options.link } : {}),
         })
@@ -202,8 +238,12 @@ export async function handleRemoteMcpRequest(
 
   const { bridgeId } = options
   const callKeys: string[] = []
+  // Parsed once for the bridge's cancellation and the connection's skills,
+  // only when either needs it.
+  let parsed: JsonRpcMessage[] | undefined
+  const messagesOf = async () => (parsed ??= await jsonRpcMessages(request))
   if (bridgeId && request.method === "POST") {
-    const messages = await jsonRpcMessages(request)
+    const messages = await messagesOf()
     const cancels = messages.filter(
       (message) => message.method === "notifications/cancelled"
     )
@@ -236,9 +276,13 @@ export async function handleRemoteMcpRequest(
     // unreachable.
     enableJsonResponse: !options.stream,
   })
-  const server = createWorktableMcpServer(
-    remoteMcpServerOptions(request, identity, origin)
-  )
+  const server = createWorktableMcpServer({
+    ...remoteMcpServerOptions(request, identity, origin),
+    skillsBrief:
+      request.method === "POST" && configuredMcpSurface() === "preview"
+        ? await connectionSkills(identity, await messagesOf())
+        : null,
+  })
   await server.connect(transport)
   // Read the call from the message the transport already parsed.
   let call: string | null = null

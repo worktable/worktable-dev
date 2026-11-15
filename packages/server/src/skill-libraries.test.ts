@@ -14,6 +14,9 @@ import { pendingRouter } from "./routes/activity.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { libraryRouter } from "./routes/library.ts"
 import { searchRouter } from "./routes/search.ts"
+import { mcpRouter } from "./routes/mcp.ts"
+import { DEFAULT_AGENT_PRINCIPAL } from "./mcp/helpers.ts"
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { invalidateSearchIndex, warmSearchIndex } from "./search-index.ts"
 import {
   carrySkillHashAcrossConversion,
@@ -603,6 +606,55 @@ describe("skill libraries", () => {
       "Your team's Library changed: release-checklist no longer applies to you. worktable_skills_read returns the current ones."
     )
     expect(await skillChangeNotice(reader, "documents.read")).toBeNull()
+  })
+
+  it("gives a connecting agent its skills first in the connection's instructions", async () => {
+    // What an agent's app reads before the first message: the connection's
+    // instructions, as an app connects over HTTP.
+    const instructions = async () => {
+      const server = new Hono()
+      server.route("/mcp", mcpRouter)
+      const client = new Client({ name: "skills-brief", version: "1" })
+      clients.push(client)
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL("http://127.0.0.1/mcp"), {
+          fetch: async (input, init) => server.fetch(new Request(input, init)),
+        })
+      )
+      return client.getInstructions() ?? ""
+    }
+    expect(await instructions()).not.toContain("approved skills")
+
+    await addRelease()
+    const brief = await instructions()
+    // The whole rule leads: some apps show only the first 300 or so characters.
+    expect(brief).toStartWith("Before any task, check your team's approved skills")
+    expect(brief.indexOf("follow it.")).toBeLessThan(300)
+    expect(brief).toContain("- release-checklist: Use when shipping a release.")
+
+    // A local connection's tools act as the default agent, and so does its
+    // brief: that agent's own skills are in it.
+    const local = (
+      await resolveParticipant({ agent: DEFAULT_AGENT_PRINCIPAL.displayName, principal: DEFAULT_AGENT_PRINCIPAL })
+    ).participant.id
+    await writeDoc("ops", "pay-guide", "# Pay guide\n\nPay contractors on Fridays.\n")
+    const own = await rest("POST", "/api/library", {
+      spaceId: "ops",
+      path: "pay-guide",
+      description: "Use when paying contractors.",
+      library: { kind: "agent", participantId: local },
+    })
+    expect(own.status).toBe(201)
+    expect(await instructions()).toContain("Use when paying contractors.")
+
+    // A name two libraries share says which library each is, as reading it asks.
+    await addRelease({ kind: "agent", participantId: local })
+    const shared = await instructions()
+    expect(shared).toContain("- release-checklist (library: agent):")
+    expect(shared).toContain("- release-checklist (library: worktable):")
+
+    process.env["WORKTABLE_MCP_PREVIEW"] = "0"
+    expect(await instructions()).not.toContain("release-checklist")
   })
 
   it("keeps libraries off while the preview tools are off", async () => {

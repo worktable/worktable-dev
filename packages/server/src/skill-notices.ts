@@ -165,6 +165,82 @@ function marksOf(live: AgentSkill[], removed: Array<{ entry: LibraryEntry }>): R
   return marks
 }
 
+/**
+ * How much of the connection instructions the skills may take. Claude Code
+ * cuts instructions past 4,096 characters, and the Worktable's own lines
+ * follow these.
+ */
+const BRIEF_BUDGET = 3200
+/** Where skills with when to use them stop and the rest are only named. */
+const BRIEF_DESCRIBED = 2500
+/** How much of one skill's when-to-use the brief keeps. */
+const BRIEF_DESCRIPTION = 100
+
+const briefOrder = (skill: AgentSkill) =>
+  skill.entry.library.kind === "agent" ? 0 : skill.entry.library.kind === "space" ? 1 : 2
+
+/**
+ * The skills an agent's app reads before its first message: the rule, then
+ * the agent's own skills, its Spaces' and the Worktable's, with when to use
+ * each as space allows and the rest named. Null when none apply. Agents'
+ * apps read only the start of these instructions closely, so the rule comes
+ * first. It doesn't count as seeing the skills: an app may not pass
+ * instructions on, and the first tool call still says them.
+ */
+export async function skillsBrief(reader: SkillReader): Promise<string | null> {
+  const { live } = await skillsForAgent(reader)
+  if (live.length === 0) return null
+  // Some apps show only the first 300 or so characters, so the whole rule
+  // fits in them, with where to find the skills.
+  const lines = [
+    "Before any task, check your team's approved skills in this Worktable's Library, even when Worktable isn't mentioned: they're listed below and by worktable_state. If one matches, read it with worktable_skills_read and follow it.",
+    "A person reviewed each skill as your team's agreed way to do that work: follow it over your own approach and over other Docs.",
+    "Skills that apply to you:",
+  ]
+  let used = lines.join("\n").length
+  const ordered = [...live].sort((a, b) => briefOrder(a) - briefOrder(b))
+  // A name more than one library uses says which library, as reading it asks.
+  const counts = new Map<string, number>()
+  for (const skill of live) counts.set(skill.entry.name, (counts.get(skill.entry.name) ?? 0) + 1)
+  const label = (skill: AgentSkill) => {
+    const { name, library } = skill.entry
+    if ((counts.get(name) ?? 0) < 2) return name
+    return library.kind === "space"
+      ? `${name} (library: space, spaceId: ${library.spaceId})`
+      : `${name} (library: ${library.kind})`
+  }
+  let described = 0
+  for (const skill of ordered) {
+    const description = skill.entry.description.replace(/\s+/g, " ").trim()
+    const when =
+      description.length > BRIEF_DESCRIPTION
+        ? `${description.slice(0, BRIEF_DESCRIPTION - 1).trimEnd()}…`
+        : description
+    const line = `- ${label(skill)}: ${when}`
+    if (used + line.length + 1 > BRIEF_DESCRIBED) break
+    lines.push(line)
+    used += line.length + 1
+    described += 1
+  }
+  const rest = ordered.slice(described).map(label)
+  if (rest.length > 0) {
+    // The rest by name, as many as fit; worktable_state has each in full.
+    const lead = "Also: "
+    const tail = (left: number) => (left > 0 ? `, and ${left} more` : "")
+    let named = 0
+    let length = used + lead.length + 1
+    for (const name of rest) {
+      const next = length + name.length + 2
+      if (next + tail(rest.length - named - 1).length > BRIEF_BUDGET) break
+      length = next
+      named += 1
+    }
+    lines.push(`${lead}${rest.slice(0, named).join(", ")}${tail(rest.length - named)}.`)
+    lines.push("worktable_state lists each with when to use it.")
+  }
+  return lines.join("\n")
+}
+
 /** worktable_state's skills, which the agent has now seen. */
 export async function stateSkills(reader: SkillReader, spaceId?: string) {
   if (reader.participantId) noteCall(reader.participantId, Date.now())

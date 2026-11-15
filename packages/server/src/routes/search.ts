@@ -39,9 +39,11 @@ searchRouter.get("/", async (c) => {
     documentAccess: commonDocuments ? "common" : "legacy",
   });
 
-  // Skills ride with the preview agent tools until they are released.
+  // Skills ride with the preview agent tools until they are released, and
+  // show only to a reader the Library itself would admit.
   const found =
-    configuredMcpSurface() === "preview"
+    configuredMcpSurface() === "preview" &&
+    hasScope(c.get("identity")?.scopes ?? [], "documents:read")
       ? await withSkills(c.get("identity"), query, results, { spaceId, maxResults })
       : results;
 

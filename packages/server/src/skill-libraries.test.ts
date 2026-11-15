@@ -246,6 +246,22 @@ describe("skill libraries", () => {
     ])
     // Agents read skills through their own tools; their search is the Docs'.
     expect((await search("shipping", helperIdentity)).some((result) => result.skill)).toBe(false)
+    // Library details need what the Library itself needs: reading Docs.
+    const searchOnly = { ...ownerIdentity(), scopes: ["search:read"] }
+    expect((await search("smoke", searchOnly)).some((result) => result.skill)).toBe(false)
+
+    // The same Doc in another library, told apart by when to use it.
+    const tagging = await rest("POST", "/api/library", {
+      spaceId: "ops",
+      path: "release-checklist",
+      description: "Use when tagging builds.",
+      library: { kind: "agent", participantId: helperParticipant },
+    })
+    expect(tagging.status).toBe(201)
+    const tagged = await search("tagging")
+    expect(tagged.filter((result) => result.path === "release-checklist")).toEqual([
+      expect.objectContaining({ skill: expect.objectContaining({ id: (tagging.body.entry as { id: string }).id }) }),
+    ])
   })
 
   it("holds the tools and state's skills for the preview surface", async () => {

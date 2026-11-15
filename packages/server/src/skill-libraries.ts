@@ -29,6 +29,7 @@ import {
   skillNameFrom,
   type DocLastSave,
   type PendingItem,
+  type SearchResult,
 } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
 import { atomicWriteText } from "./atomic-file.ts"
@@ -763,6 +764,97 @@ export async function skillsOfDoc(
     })
   }
   return found
+}
+
+/** Lowercase words of a skill's name, when to use it, or its Doc's title. */
+const wordsOf = (text: string) => text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+
+/**
+ * A person's search, with the Library in it. A Doc hit that is a skill they
+ * see says so. A skill whose name or when to use it matches comes first,
+ * found even when its Doc's text does not match. Only skills that are live
+ * count: a proposed one isn't approved yet.
+ */
+export async function withSkills(
+  identity: TokenIdentity,
+  query: string,
+  results: SearchResult[],
+  options: { spaceId?: string; maxResults: number }
+): Promise<SearchResult[]> {
+  if (!isPerson(identity)) return results
+  const live: LibraryEntry[] = []
+  for (const entry of readLibrary().entries) {
+    if (entry.removed || !entry.live) continue
+    if (options.spaceId && entry.doc.spaceId !== options.spaceId) continue
+    if (!canAccessSpace(entry.doc.spaceId, "read", identity)) continue
+    const library = entry.library
+    const sees =
+      library.kind === "space"
+        ? canAccessSpace(library.spaceId, "read", identity)
+        : library.kind === "worktable" || (await personMayChange(library, identity))
+    if (sees) live.push(entry)
+  }
+  if (live.length === 0) return results
+
+  // Where each skill's Doc is now; an archived or missing Doc is not found.
+  const locate = docLocator()
+  const skills = new Map<string, { entry: LibraryEntry; path: string; title: string }>()
+  for (const entry of live) {
+    const location = await locate(entry.doc)
+    if (!location) continue
+    const key = `${entry.doc.spaceId}\0${location.path}`
+    // A Doc in two libraries shows as the first.
+    if (!skills.has(key)) skills.set(key, { entry, path: location.path, title: location.title })
+  }
+  if (skills.size === 0) return results
+
+  const tokens = wordsOf(query)
+  const matches = (skill: { entry: LibraryEntry; title: string }) =>
+    tokens.length > 0 &&
+    tokens.every((token) => {
+      const words = wordsOf(`${skill.entry.name} ${skill.entry.description} ${skill.title}`)
+      return words.some((word) => word.startsWith(token))
+    })
+
+  const shown = new Map<string, LibraryEntry>()
+  const first: SearchResult[] = []
+  const rest: SearchResult[] = []
+  for (const result of results) {
+    const skill = result.type === "doc" && result.path ? skills.get(`${result.spaceId}\0${result.path}`) : undefined
+    if (!skill) {
+      rest.push(result)
+      continue
+    }
+    skills.delete(`${result.spaceId}\0${result.path}`)
+    shown.set(skill.entry.id, skill.entry)
+    const marked = { ...result, skill: { id: skill.entry.id, library: skill.entry.library } }
+    ;(matches(skill) ? first : rest).push(marked)
+  }
+  // Skills found by their name or when to use them, beyond the Docs' text.
+  const top = Math.max(0, ...results.map((result) => result.score)) + 1
+  for (const skill of skills.values()) {
+    if (!matches(skill)) continue
+    shown.set(skill.entry.id, skill.entry)
+    first.push({
+      spaceId: skill.entry.doc.spaceId,
+      type: "doc",
+      path: skill.path,
+      title: skill.title,
+      score: top,
+      documentKind: "document",
+      documentView: "doc",
+      excerpt: skill.entry.description,
+      skill: { id: skill.entry.id, library: skill.entry.library },
+    })
+  }
+  if (shown.size === 0) return results
+
+  const labels = await personLabels([...shown.values()])
+  return [...first, ...rest].slice(0, options.maxResults).map((result) => {
+    if (!result.skill) return result
+    const libraryName = labels.name(result.skill.library)
+    return libraryName ? { ...result, skill: { ...result.skill, libraryName } } : result
+  })
 }
 
 async function resolveLibrary(input: LibraryInput["library"], docSpaceId: string): Promise<LibraryRef> {

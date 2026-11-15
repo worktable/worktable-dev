@@ -13,7 +13,8 @@ import { resolveParticipant } from "./participant-store.ts"
 import { pendingRouter } from "./routes/activity.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { libraryRouter } from "./routes/library.ts"
-import { invalidateSearchIndex } from "./search-index.ts"
+import { searchRouter } from "./routes/search.ts"
+import { invalidateSearchIndex, warmSearchIndex } from "./search-index.ts"
 import {
   carrySkillHashAcrossConversion,
   REMOVED_SKILL_NOTE,
@@ -97,6 +98,7 @@ function app(identity: TokenIdentity): Hono {
   server.route("/api/library", libraryRouter)
   server.route("/api/pending", pendingRouter)
   server.route("/api/spaces/:spaceId/documents", documentsRouter)
+  server.route("/api/search", searchRouter)
   return server
 }
 
@@ -224,6 +226,26 @@ describe("skill libraries", () => {
     expect(await draft()).toBe(true)
     await carrySkillHashAcrossConversion("ops", "release-checklist", before, after)
     expect(await draft()).toBe(false)
+  })
+
+  it("finds a skill in search by its name and when to use it, and opens it in the Library", async () => {
+    const { id } = await addRelease()
+    await warmSearchIndex()
+    type Found = { results: Array<{ path?: string; skill?: { id: string; library: unknown } }> }
+    const search = async (query: string, identity?: TokenIdentity) =>
+      (await rest<Found>("GET", `/api/search?query=${encodeURIComponent(query)}`, undefined, identity)).body.results
+    // The Doc never says "shipping"; when to use it does.
+    expect((await search("shipping"))[0]).toMatchObject({
+      path: "release-checklist",
+      skill: { id, library: { kind: "worktable" } },
+    })
+    // A match in the Doc's text is marked as the skill it is, once.
+    const smoke = await search("smoke")
+    expect(smoke.filter((result) => result.path === "release-checklist")).toEqual([
+      expect.objectContaining({ skill: expect.objectContaining({ id }) }),
+    ])
+    // Agents read skills through their own tools; their search is the Docs'.
+    expect((await search("shipping", helperIdentity)).some((result) => result.skill)).toBe(false)
   })
 
   it("holds the tools and state's skills for the preview surface", async () => {

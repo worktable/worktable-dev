@@ -8,8 +8,17 @@ import {
 } from "react"
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { Archive, Database, FileSearch, FileText, Search, X } from "lucide-react"
+import {
+  Archive,
+  Database,
+  FileSearch,
+  FileText,
+  Library as LibraryIcon,
+  Search,
+  X,
+} from "lucide-react"
 import { Input } from "@worktable/ui/components/input"
+import { libraryKey } from "@/lib/library"
 import { searchQueryOptions, useSpaces, useWorkspace } from "@/lib/queries"
 import { SpaceIcon } from "@/components/spaces/space-icon"
 import type { SearchResult, SpaceFile } from "@worktable/types"
@@ -96,6 +105,10 @@ export function SidebarSearchInput({
   )
 }
 
+/** Where a skill opens: in the Library, under its library. */
+const skillSplat = (skill: NonNullable<SearchResult["skill"]>) =>
+  `${libraryKey(skill.library)}/${skill.id}`
+
 function resultKey(result: SearchResult): string {
   return `${result.type}:${result.spaceId}:${result.path ?? `${result.collectionId}/${result.recordId}`}`
 }
@@ -113,14 +126,22 @@ function ResultRow({
   currentRecordId: string | undefined
   onNavigate: () => void
 }) {
+  const worktableName = useWorkspace().data?.name ?? "Worktable"
   const isDoc = result.type === "doc"
-  const folder =
-    isDoc && result.path && result.path.includes("/")
+  const skill = result.skill
+  // A skill names its library where a Doc names its folder.
+  const folder = skill
+    ? skill.library.kind === "worktable"
+      ? worktableName
+      : (skill.libraryName ?? null)
+    : isDoc && result.path && result.path.includes("/")
       ? result.path.slice(0, result.path.lastIndexOf("/"))
       : null
-  const targetPath = isDoc
-    ? `/spaces/${result.spaceId}/documents/${result.path ?? ""}`
-    : `/spaces/${result.spaceId}/records/${result.collectionId ?? ""}`
+  const targetPath = skill
+    ? `/library/${skillSplat(skill)}`
+    : isDoc
+      ? `/spaces/${result.spaceId}/documents/${result.path ?? ""}`
+      : `/spaces/${result.spaceId}/records/${result.collectionId ?? ""}`
   // Record results share a collection route; only the peeked record is active.
   const active =
     currentPath === targetPath && (isDoc || currentRecordId === result.recordId)
@@ -134,7 +155,9 @@ function ResultRow({
       }`}
     >
       <div className="flex min-w-0 items-center gap-2">
-        {isDoc ? (
+        {skill ? (
+          <LibraryIcon className="size-3.5 shrink-0 opacity-70" />
+        ) : isDoc ? (
           <FileText className="size-3.5 shrink-0 opacity-70" />
         ) : (
           <Database className="size-3.5 shrink-0 opacity-70" />
@@ -160,6 +183,17 @@ function ResultRow({
     </div>
   )
 
+  if (skill) {
+    return (
+      <Link
+        to="/library/$"
+        params={{ _splat: skillSplat(skill) }}
+        onClick={onNavigate}
+      >
+        {body}
+      </Link>
+    )
+  }
   if (isDoc && result.path) {
     return (
       <Link
@@ -249,7 +283,12 @@ export function SidebarSearchResults({
         if (debouncedQuery !== query.trim() || isPlaceholderData) return
         const top = results?.[0]
         if (!top) return
-        if (top.type === "doc" && top.path) {
+        if (top.skill) {
+          void navigate({
+            to: "/library/$",
+            params: { _splat: skillSplat(top.skill) },
+          })
+        } else if (top.type === "doc" && top.path) {
           void navigate({
             to: "/spaces/$spaceId/documents/$",
             params: { spaceId: top.spaceId, _splat: top.path },

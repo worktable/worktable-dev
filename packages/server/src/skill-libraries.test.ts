@@ -647,6 +647,12 @@ describe("skill libraries", () => {
     expect(own.status).toBe(201)
     expect(await instructions()).toContain("Use when paying contractors.")
 
+    // A name two libraries share says which library each is, as reading it asks.
+    await addRelease({ kind: "agent", participantId: local })
+    const shared = await instructions()
+    expect(shared).toContain("- release-checklist (library: agent):")
+    expect(shared).toContain("- release-checklist (library: worktable):")
+
     process.env["WORKTABLE_MCP_PREVIEW"] = "0"
     expect(await instructions()).not.toContain("release-checklist")
   })

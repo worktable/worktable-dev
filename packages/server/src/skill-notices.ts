@@ -199,6 +199,16 @@ export async function skillsBrief(reader: SkillReader): Promise<string | null> {
   ]
   let used = lines.join("\n").length
   const ordered = [...live].sort((a, b) => briefOrder(a) - briefOrder(b))
+  // A name more than one library uses says which library, as reading it asks.
+  const counts = new Map<string, number>()
+  for (const skill of live) counts.set(skill.entry.name, (counts.get(skill.entry.name) ?? 0) + 1)
+  const label = (skill: AgentSkill) => {
+    const { name, library } = skill.entry
+    if ((counts.get(name) ?? 0) < 2) return name
+    return library.kind === "space"
+      ? `${name} (library: space, spaceId: ${library.spaceId})`
+      : `${name} (library: ${library.kind})`
+  }
   let described = 0
   for (const skill of ordered) {
     const description = skill.entry.description.replace(/\s+/g, " ").trim()
@@ -206,13 +216,13 @@ export async function skillsBrief(reader: SkillReader): Promise<string | null> {
       description.length > BRIEF_DESCRIPTION
         ? `${description.slice(0, BRIEF_DESCRIPTION - 1).trimEnd()}…`
         : description
-    const line = `- ${skill.entry.name}: ${when}`
+    const line = `- ${label(skill)}: ${when}`
     if (used + line.length + 1 > BRIEF_DESCRIBED) break
     lines.push(line)
     used += line.length + 1
     described += 1
   }
-  const rest = ordered.slice(described).map((skill) => skill.entry.name)
+  const rest = ordered.slice(described).map(label)
   if (rest.length > 0) {
     // The rest by name, as many as fit; worktable_state has each in full.
     const lead = "Also: "

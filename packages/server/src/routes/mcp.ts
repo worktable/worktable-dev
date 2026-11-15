@@ -28,6 +28,7 @@ import { runWithTeamIdentity } from "../team-policy.ts"
 import { logError } from "../debug-log.ts"
 import { skillReaderFor } from "../skill-libraries.ts"
 import { skillsBrief } from "../skill-notices.ts"
+import { DEFAULT_AGENT_PRINCIPAL } from "../mcp/helpers.ts"
 
 // ============================================================
 // Server factory — creates a fresh server per request (stateless)
@@ -46,8 +47,14 @@ async function connectionSkills(
   if (!messages.some((message) => message.method === "initialize" || message.method === "server/discover")) {
     return null
   }
+  // As the tools see the caller: the loopback bridge and the legacy token
+  // authorize as the owner but act as the default agent.
+  const agent =
+    identity.principal.id === "local:owner"
+      ? { agent: DEFAULT_AGENT_PRINCIPAL.displayName, principal: DEFAULT_AGENT_PRINCIPAL, scopes: identity.scopes }
+      : identity
   try {
-    return await runWithTeamIdentity(identity, () => skillsBrief(skillReaderFor(identity)))
+    return await runWithTeamIdentity(identity, () => skillsBrief(skillReaderFor(agent)))
   } catch (error) {
     // A connection never fails over its skills.
     console.error("[mcp] could not list skills for the connection:", logError(error))

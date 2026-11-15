@@ -15,6 +15,7 @@ import { documentsRouter } from "./routes/documents.ts"
 import { libraryRouter } from "./routes/library.ts"
 import { searchRouter } from "./routes/search.ts"
 import { mcpRouter } from "./routes/mcp.ts"
+import { DEFAULT_AGENT_PRINCIPAL } from "./mcp/helpers.ts"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { invalidateSearchIndex, warmSearchIndex } from "./search-index.ts"
 import {
@@ -630,6 +631,21 @@ describe("skill libraries", () => {
     expect(brief).toStartWith("Before any task, check your team's approved skills")
     expect(brief.indexOf("follow it.")).toBeLessThan(300)
     expect(brief).toContain("- release-checklist: Use when shipping a release.")
+
+    // A local connection's tools act as the default agent, and so does its
+    // brief: that agent's own skills are in it.
+    const local = (
+      await resolveParticipant({ agent: DEFAULT_AGENT_PRINCIPAL.displayName, principal: DEFAULT_AGENT_PRINCIPAL })
+    ).participant.id
+    await writeDoc("ops", "pay-guide", "# Pay guide\n\nPay contractors on Fridays.\n")
+    const own = await rest("POST", "/api/library", {
+      spaceId: "ops",
+      path: "pay-guide",
+      description: "Use when paying contractors.",
+      library: { kind: "agent", participantId: local },
+    })
+    expect(own.status).toBe(201)
+    expect(await instructions()).toContain("Use when paying contractors.")
 
     process.env["WORKTABLE_MCP_PREVIEW"] = "0"
     expect(await instructions()).not.toContain("release-checklist")

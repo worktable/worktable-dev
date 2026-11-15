@@ -17,6 +17,8 @@ export interface WorktableMcpServerOptions {
   surface?: McpSurface
   /** On Cloud, where the gateway forwards this workspace's file links. */
   fileLinkBase?: string | null
+  /** The agent's skills, built only when it connects (skillsBrief). */
+  skillsBrief?: string | null
 }
 
 let namedWorktable: {
@@ -57,10 +59,12 @@ function worktableName(): string | null {
  * Instructions an agent reads on connecting, naming the Worktable so an agent
  * connected to several can tell them apart.
  */
-export function serverInstructions(): string {
+export function serverInstructions(skillsBrief?: string | null): string {
   const name = worktableName()
   return [
     name ? `You are connected to the Worktable ${JSON.stringify(name)}.` : null,
+    // Apps read the start of these closely: the team's skills come first.
+    skillsBrief || null,
     SERVER_INSTRUCTIONS,
     SOURCE_URL ? `Worktable source code: ${SOURCE_URL}` : null,
   ]
@@ -70,11 +74,11 @@ export function serverInstructions(): string {
 
 /** The name, version and instructions the server gives agents in either era. */
 export function serverIdentity(
-  options: Pick<WorktableMcpServerOptions, "version" | "surface">
+  options: Pick<WorktableMcpServerOptions, "version" | "surface" | "skillsBrief">
 ) {
   return {
     info: { name: "worktable", version: options.version },
-    instructions: serverInstructions(),
+    instructions: serverInstructions(options.skillsBrief),
   }
 }
 

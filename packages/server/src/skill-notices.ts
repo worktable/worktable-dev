@@ -165,6 +165,50 @@ function marksOf(live: AgentSkill[], removed: Array<{ entry: LibraryEntry }>): R
   return marks
 }
 
+/** How much of the connection instructions the skills may take. */
+const BRIEF_BUDGET = 1800
+/** How much of one skill's when-to-use the brief keeps. */
+const BRIEF_DESCRIPTION = 160
+
+const briefOrder = (skill: AgentSkill) =>
+  skill.entry.library.kind === "agent" ? 0 : skill.entry.library.kind === "space" ? 1 : 2
+
+/**
+ * The skills an agent's app reads before its first message: the rule, then
+ * the agent's own skills, its Spaces' and the Worktable's, as many as fit.
+ * Null when none apply. Agents' apps read only the start of these
+ * instructions closely, so the rule comes first. It doesn't count as seeing
+ * the skills: an app may not pass instructions on, and the first tool call
+ * still says them.
+ */
+export async function skillsBrief(reader: SkillReader): Promise<string | null> {
+  const { live } = await skillsForAgent(reader)
+  if (live.length === 0) return null
+  const lines = [
+    "Your team keeps approved skills for you in this Worktable's Library: its agreed way of doing that work, reviewed by a person. Before you start a task, check it against the skills below, even when the person doesn't mention Worktable. When one matches, read it with worktable_skills_read and follow it over your own approach and over other Docs.",
+    "Skills that apply to you:",
+  ]
+  let used = lines.join("\n").length
+  const ordered = [...live].sort((a, b) => briefOrder(a) - briefOrder(b))
+  let listed = 0
+  for (const skill of ordered) {
+    const description = skill.entry.description.replace(/\s+/g, " ").trim()
+    const when =
+      description.length > BRIEF_DESCRIPTION
+        ? `${description.slice(0, BRIEF_DESCRIPTION - 1).trimEnd()}…`
+        : description
+    const line = `- ${skill.entry.name}: ${when}`
+    if (used + line.length + 1 > BRIEF_BUDGET) break
+    lines.push(line)
+    used += line.length + 1
+    listed += 1
+  }
+  if (listed < live.length) {
+    lines.push(`${live.length - listed} more apply: worktable_state lists them all.`)
+  }
+  return lines.join("\n")
+}
+
 /** worktable_state's skills, which the agent has now seen. */
 export async function stateSkills(reader: SkillReader, spaceId?: string) {
   if (reader.participantId) noteCall(reader.participantId, Date.now())

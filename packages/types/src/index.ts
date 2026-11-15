@@ -3,6 +3,7 @@ import type {
   DocumentFormatClaim,
   DocumentHealth,
 } from "./documents";
+import type { SearchSkill } from "./skills";
 
 export * from "./constants";
 export * from "./mermaid";
@@ -111,6 +112,8 @@ export interface SearchResult {
   excerpt?: string;
   /** Present on temporary documents: when the document archives itself. */
   archiveOn?: string;
+  /** The Library skill this Doc is, when the reader sees the Library. */
+  skill?: SearchSkill;
 }
 
 export interface DocFile {

@@ -2,7 +2,9 @@ import { Hono } from "hono";
 import type { SearchResult, WithContentRevision } from "@worktable/types";
 import { requireScope } from "../auth.ts";
 import { withContentRevisions } from "../document-content-revision.ts";
+import { configuredMcpSurface } from "../mcp/surface.ts";
 import { searchWithStatus } from "../search-index.ts";
+import { withSkills } from "../skill-libraries.ts";
 import { hasScope } from "../token-store.ts";
 
 export const searchRouter = new Hono();
@@ -37,9 +39,17 @@ searchRouter.get("/", async (c) => {
     documentAccess: commonDocuments ? "common" : "legacy",
   });
 
+  // Skills ride with the preview agent tools until they are released, and
+  // show only to a reader the Library itself would admit.
+  const found =
+    configuredMcpSurface() === "preview" &&
+    hasScope(c.get("identity")?.scopes ?? [], "documents:read")
+      ? await withSkills(c.get("identity"), query, results, { spaceId, maxResults })
+      : results;
+
   // Document results open by content revision.
   const rows = await withContentRevisions(
-    results,
+    found,
     (result) =>
       result.type === "doc" && result.path && result.documentView
         ? { spaceId: result.spaceId, path: result.path }

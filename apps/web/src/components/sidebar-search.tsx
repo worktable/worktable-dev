@@ -8,8 +8,17 @@ import {
 } from "react"
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { Archive, Database, FileSearch, FileText, Search, X } from "lucide-react"
+import {
+  Archive,
+  Database,
+  FileSearch,
+  FileText,
+  Library as LibraryIcon,
+  Search,
+  X,
+} from "lucide-react"
 import { Input } from "@worktable/ui/components/input"
+import { libraryKey } from "@/lib/library"
 import { searchQueryOptions, useSpaces, useWorkspace } from "@/lib/queries"
 import { SpaceIcon } from "@/components/spaces/space-icon"
 import type { SearchResult, SpaceFile } from "@worktable/types"
@@ -96,6 +105,13 @@ export function SidebarSearchInput({
   )
 }
 
+/** Where a skill opens: in the Library, under its library. */
+const skillSplat = (skill: NonNullable<SearchResult["skill"]>) =>
+  `${libraryKey(skill.library)}/${skill.id}`
+
+/** The Library's group of results; no Space id is empty. */
+const LIBRARY_GROUP = ""
+
 function resultKey(result: SearchResult): string {
   return `${result.type}:${result.spaceId}:${result.path ?? `${result.collectionId}/${result.recordId}`}`
 }
@@ -113,14 +129,22 @@ function ResultRow({
   currentRecordId: string | undefined
   onNavigate: () => void
 }) {
+  const worktableName = useWorkspace().data?.name ?? "Worktable"
   const isDoc = result.type === "doc"
-  const folder =
-    isDoc && result.path && result.path.includes("/")
+  const skill = result.skill
+  // A skill names its library where a Doc names its folder.
+  const folder = skill
+    ? skill.library.kind === "worktable"
+      ? worktableName
+      : (skill.libraryName ?? null)
+    : isDoc && result.path && result.path.includes("/")
       ? result.path.slice(0, result.path.lastIndexOf("/"))
       : null
-  const targetPath = isDoc
-    ? `/spaces/${result.spaceId}/documents/${result.path ?? ""}`
-    : `/spaces/${result.spaceId}/records/${result.collectionId ?? ""}`
+  const targetPath = skill
+    ? `/library/${skillSplat(skill)}`
+    : isDoc
+      ? `/spaces/${result.spaceId}/documents/${result.path ?? ""}`
+      : `/spaces/${result.spaceId}/records/${result.collectionId ?? ""}`
   // Record results share a collection route; only the peeked record is active.
   const active =
     currentPath === targetPath && (isDoc || currentRecordId === result.recordId)
@@ -134,7 +158,9 @@ function ResultRow({
       }`}
     >
       <div className="flex min-w-0 items-center gap-2">
-        {isDoc ? (
+        {skill ? (
+          <LibraryIcon className="size-3.5 shrink-0 opacity-70" />
+        ) : isDoc ? (
           <FileText className="size-3.5 shrink-0 opacity-70" />
         ) : (
           <Database className="size-3.5 shrink-0 opacity-70" />
@@ -160,6 +186,17 @@ function ResultRow({
     </div>
   )
 
+  if (skill) {
+    return (
+      <Link
+        to="/library/$"
+        params={{ _splat: skillSplat(skill) }}
+        onClick={onNavigate}
+      >
+        {body}
+      </Link>
+    )
+  }
   if (isDoc && result.path) {
     return (
       <Link
@@ -249,7 +286,12 @@ export function SidebarSearchResults({
         if (debouncedQuery !== query.trim() || isPlaceholderData) return
         const top = results?.[0]
         if (!top) return
-        if (top.type === "doc" && top.path) {
+        if (top.skill) {
+          void navigate({
+            to: "/library/$",
+            params: { _splat: skillSplat(top.skill) },
+          })
+        } else if (top.type === "doc" && top.path) {
           void navigate({
             to: "/spaces/$spaceId/documents/$",
             params: { spaceId: top.spaceId, _splat: top.path },
@@ -280,16 +322,29 @@ export function SidebarSearchResults({
     [debouncedQuery]
   )
 
-  // Group by space, preserving the server's relevance order: groups appear in
-  // the order of their best hit, rows keep their rank within the group.
+  // The skills the server ranks first (found by their name or when to use
+  // them) lead, as the Library; the rest group by Space, preserving the
+  // server's relevance order: groups appear in the order of their best hit,
+  // rows keep their rank within the group. A skill found only by its text
+  // stays with its Space, so it never outranks a better Doc.
   const groups = useMemo(() => {
     const bySpace = new Map<string, SearchResult[]>()
+    const skills: SearchResult[] = []
+    let leading = true
     for (const result of results ?? []) {
+      leading = leading && result.skill !== undefined
+      if (leading) {
+        skills.push(result)
+        continue
+      }
       const group = bySpace.get(result.spaceId)
       if (group) group.push(result)
       else bySpace.set(result.spaceId, [result])
     }
-    return [...bySpace.entries()]
+    return [
+      ...(skills.length > 0 ? [[LIBRARY_GROUP, skills] as const] : []),
+      ...bySpace.entries(),
+    ]
   }, [results])
 
   const archivedToggle = (
@@ -340,13 +395,18 @@ export function SidebarSearchResults({
     <div className="space-y-3">
       {archivedToggle}
       {groups.map(([spaceId, spaceResults]) => {
-        const space = spacesById.get(spaceId)
+        const library = spaceId === LIBRARY_GROUP
+        const space = library ? undefined : spacesById.get(spaceId)
         return (
           <div key={spaceId}>
             <div className="mb-1 flex items-center gap-1.5 px-3 text-sidebar-foreground/40">
-              {space ? <SpaceIcon space={space} size="xs" /> : null}
+              {library ? (
+                <LibraryIcon className="size-3.5 shrink-0" />
+              ) : space ? (
+                <SpaceIcon space={space} size="xs" />
+              ) : null}
               <TruncatedText
-                text={space?.name ?? spaceId}
+                text={library ? "Library" : (space?.name ?? spaceId)}
                 className="text-[10px] font-semibold tracking-wider uppercase"
               />
             </div>

@@ -29,6 +29,7 @@ import {
   skillNameFrom,
   type DocLastSave,
   type PendingItem,
+  type SearchResult,
 } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
 import { atomicWriteText } from "./atomic-file.ts"
@@ -683,6 +684,19 @@ function changeRights(identity: TokenIdentity): (library: LibraryRef) => Promise
   }
 }
 
+/**
+ * Whether a person sees a library: a Space's when they can read the Space,
+ * the Worktable's always, an agent's when they may change it. Each library is
+ * asked once per request.
+ */
+function libraryVisibility(identity: TokenIdentity): (library: LibraryRef) => Promise<boolean> {
+  const mayChange = changeRights(identity)
+  return async (library) =>
+    library.kind === "space"
+      ? canAccessSpace(library.spaceId, "read", identity)
+      : library.kind === "worktable" || (await mayChange(library))
+}
+
 async function viewOf(
   entries: LibraryEntry[],
   identity: TokenIdentity
@@ -713,15 +727,11 @@ export async function listLibraryForPerson(
   identity: TokenIdentity
 ): Promise<{ revision: number; entries: LibraryEntryView[] }> {
   const file = readLibrary()
+  const sees = libraryVisibility(identity)
   const visible: LibraryEntry[] = []
   for (const entry of file.entries) {
     if (!canAccessSpace(entry.doc.spaceId, "read", identity)) continue
-    const library = entry.library
-    const sees =
-      library.kind === "space"
-        ? canAccessSpace(library.spaceId, "read", identity)
-        : library.kind === "worktable" || (await personMayChange(library, identity))
-    if (sees) visible.push(entry)
+    if (await sees(entry.library)) visible.push(entry)
   }
   return { revision: file.revision, entries: await viewOf(visible, identity) }
 }
@@ -742,14 +752,10 @@ export async function skillsOfDoc(
   const candidates = readLibrary().entries.filter(
     (entry) => entry.doc.spaceId === spaceId && entry.doc.documentId === documentId
   )
+  const sees = libraryVisibility(identity)
   const found = []
   for (const entry of candidates) {
-    const library = entry.library
-    const sees =
-      library.kind === "space"
-        ? canAccessSpace(library.spaceId, "read", identity)
-        : library.kind === "worktable" || (await personMayChange(library, identity))
-    if (!sees) continue
+    if (!(await sees(entry.library))) continue
     found.push({
       id: entry.id,
       live: entry.live
@@ -763,6 +769,97 @@ export async function skillsOfDoc(
     })
   }
   return found
+}
+
+/** Lowercase words of a skill's name, when to use it, or its Doc's title. */
+const wordsOf = (text: string) => text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+
+/**
+ * A person's search, with the Library in it. A Doc hit that is a skill they
+ * see says so. A skill whose name or when to use it matches comes first,
+ * found even when its Doc's text does not match. Only skills that are live
+ * count: a proposed one isn't approved yet.
+ */
+export async function withSkills(
+  identity: TokenIdentity,
+  query: string,
+  results: SearchResult[],
+  options: { spaceId?: string; maxResults: number }
+): Promise<SearchResult[]> {
+  if (!isPerson(identity)) return results
+  const sees = libraryVisibility(identity)
+  const live: LibraryEntry[] = []
+  for (const entry of readLibrary().entries) {
+    if (entry.removed || !entry.live) continue
+    if (options.spaceId && entry.doc.spaceId !== options.spaceId) continue
+    if (!canAccessSpace(entry.doc.spaceId, "read", identity)) continue
+    if (await sees(entry.library)) live.push(entry)
+  }
+  if (live.length === 0) return results
+
+  const tokens = wordsOf(query)
+  const matches = (entry: LibraryEntry, title: string) =>
+    tokens.length > 0 &&
+    tokens.every((token) =>
+      wordsOf(`${entry.name} ${entry.description} ${title}`).some((word) => word.startsWith(token))
+    )
+
+  // Each Doc once, where it is now (an archived or missing Doc is not
+  // found), as the first of its skills that matches, or else its first.
+  const locate = docLocator()
+  const skills = new Map<string, { entry: LibraryEntry; path: string; title: string; matched: boolean }>()
+  for (const entry of live) {
+    const location = await locate(entry.doc)
+    if (!location) continue
+    const key = `${entry.doc.spaceId}\0${location.path}`
+    const matched = matches(entry, location.title)
+    const held = skills.get(key)
+    if (!held || (matched && !held.matched)) {
+      skills.set(key, { entry, path: location.path, title: location.title, matched })
+    }
+  }
+  if (skills.size === 0) return results
+
+  const shown = new Map<string, LibraryEntry>()
+  const first: SearchResult[] = []
+  const rest: SearchResult[] = []
+  for (const result of results) {
+    const key = result.type === "doc" && result.path ? `${result.spaceId}\0${result.path}` : undefined
+    const skill = key ? skills.get(key) : undefined
+    if (!key || !skill) {
+      rest.push(result)
+      continue
+    }
+    skills.delete(key)
+    shown.set(skill.entry.id, skill.entry)
+    const marked = { ...result, skill: { id: skill.entry.id, library: skill.entry.library } }
+    ;(skill.matched ? first : rest).push(marked)
+  }
+  // Skills found by their name or when to use them, beyond the Docs' text.
+  const top = Math.max(0, ...results.map((result) => result.score)) + 1
+  for (const skill of skills.values()) {
+    if (!skill.matched) continue
+    shown.set(skill.entry.id, skill.entry)
+    first.push({
+      spaceId: skill.entry.doc.spaceId,
+      type: "doc",
+      path: skill.path,
+      title: skill.title,
+      score: top,
+      documentKind: "document",
+      documentView: "doc",
+      excerpt: skill.entry.description,
+      skill: { id: skill.entry.id, library: skill.entry.library },
+    })
+  }
+  if (shown.size === 0) return results
+
+  const labels = await personLabels([...shown.values()])
+  return [...first, ...rest].slice(0, options.maxResults).map((result) => {
+    if (!result.skill) return result
+    const libraryName = labels.name(result.skill.library)
+    return libraryName ? { ...result, skill: { ...result.skill, libraryName } } : result
+  })
 }
 
 async function resolveLibrary(input: LibraryInput["library"], docSpaceId: string): Promise<LibraryRef> {
@@ -1038,12 +1135,13 @@ export async function pendingSkillProposals(
   spaceId?: string
 ): Promise<PendingItem[]> {
   if (!isPerson(identity)) return []
+  const mayChange = changeRights(identity)
   const waiting: LibraryEntry[] = []
   for (const entry of readLibrary().entries) {
     if (!entry.proposal || entry.removed) continue
     if (spaceId && (entry.library.kind !== "space" || entry.library.spaceId !== spaceId)) continue
     if (!canAccessSpace(entry.doc.spaceId, "read", identity)) continue
-    if (await personMayChange(entry.library, identity)) waiting.push(entry)
+    if (await mayChange(entry.library)) waiting.push(entry)
   }
   if (waiting.length === 0) return []
   const { label } = await personLabels(waiting)

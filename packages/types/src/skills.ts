@@ -32,3 +32,17 @@ export function savedSinceLive(
     ? lastSave.contentHash !== live.contentHash
     : lastSave.versionId !== live.generationId
 }
+
+/** A skill library: the Worktable's, a Space's, or an agent's. */
+export type SkillLibraryRef =
+  | { kind: "worktable" }
+  | { kind: "space"; spaceId: string }
+  | { kind: "agent"; participantId: string }
+
+/** What a search result shows of a Doc that is a Library skill. */
+export interface SearchSkill {
+  id: string
+  library: SkillLibraryRef
+  /** The Space's or agent's name; absent for the Worktable's library. */
+  libraryName?: string
+}

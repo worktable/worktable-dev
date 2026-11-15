@@ -109,6 +109,9 @@ export function SidebarSearchInput({
 const skillSplat = (skill: NonNullable<SearchResult["skill"]>) =>
   `${libraryKey(skill.library)}/${skill.id}`
 
+/** The Library's group of results; no Space id is empty. */
+const LIBRARY_GROUP = ""
+
 function resultKey(result: SearchResult): string {
   return `${result.type}:${result.spaceId}:${result.path ?? `${result.collectionId}/${result.recordId}`}`
 }
@@ -319,16 +322,25 @@ export function SidebarSearchResults({
     [debouncedQuery]
   )
 
-  // Group by space, preserving the server's relevance order: groups appear in
-  // the order of their best hit, rows keep their rank within the group.
+  // Skills come first, as the Library; the rest group by Space, preserving
+  // the server's relevance order: groups appear in the order of their best
+  // hit, rows keep their rank within the group.
   const groups = useMemo(() => {
     const bySpace = new Map<string, SearchResult[]>()
+    const skills: SearchResult[] = []
     for (const result of results ?? []) {
+      if (result.skill) {
+        skills.push(result)
+        continue
+      }
       const group = bySpace.get(result.spaceId)
       if (group) group.push(result)
       else bySpace.set(result.spaceId, [result])
     }
-    return [...bySpace.entries()]
+    return [
+      ...(skills.length > 0 ? [[LIBRARY_GROUP, skills] as const] : []),
+      ...bySpace.entries(),
+    ]
   }, [results])
 
   const archivedToggle = (
@@ -379,13 +391,18 @@ export function SidebarSearchResults({
     <div className="space-y-3">
       {archivedToggle}
       {groups.map(([spaceId, spaceResults]) => {
-        const space = spacesById.get(spaceId)
+        const library = spaceId === LIBRARY_GROUP
+        const space = library ? undefined : spacesById.get(spaceId)
         return (
           <div key={spaceId}>
             <div className="mb-1 flex items-center gap-1.5 px-3 text-sidebar-foreground/40">
-              {space ? <SpaceIcon space={space} size="xs" /> : null}
+              {library ? (
+                <LibraryIcon className="size-3.5 shrink-0" />
+              ) : space ? (
+                <SpaceIcon space={space} size="xs" />
+              ) : null}
               <TruncatedText
-                text={space?.name ?? spaceId}
+                text={library ? "Library" : (space?.name ?? spaceId)}
                 className="text-[10px] font-semibold tracking-wider uppercase"
               />
             </div>

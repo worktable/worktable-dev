@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.23
+
+- A connection made with 0.0.21 or earlier gets Worktable's tools and your team's Library skills when the Gateway starts, without connecting again. The plugin adds them once, with the address and token the channel already uses, so a server you remove afterwards stays removed.
+
 ## 0.0.22
 
 - The README says what connecting adds to OpenClaw's configuration and state for the tools and the Library skills, and how often the plugin asks Worktable for them. It no longer describes Agent Registration, which 0.0.21 removed.

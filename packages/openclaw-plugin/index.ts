@@ -4,6 +4,7 @@ import {
   pairWorktableChannel,
   requestWorktablePairing,
   type PairedWorktable,
+  upgradeAgentConfig,
 } from "./src/pairing.js"
 import { worktableChannel } from "./src/channel.js"
 import { setWorktableRuntime } from "./src/runtime.js"
@@ -33,6 +34,28 @@ function registerLibrary(api: {
       await client.close()
     }
   }).start()
+}
+
+/**
+ * A connection made before 0.0.22 gets the agent's tools and the Library
+ * skills folder without connecting again.
+ */
+function upgradeConnection(api: {
+  config: Parameters<typeof resolveWorktableAccount>[0]
+}): void {
+  const account = resolveWorktableAccount(api.config)
+  if (!account.enabled || !account.server || !account.token) return
+  void upgradeAgentConfig(account)
+    .then((changed) => {
+      if (changed) {
+        console.log(
+          "Worktable: added Worktable's tools and your team's Library skills to this agent. Restart the Gateway if the tools don't show."
+        )
+      }
+    })
+    .catch((error: unknown) => {
+      console.error("Worktable: couldn't add Worktable's tools to this agent:", error)
+    })
 }
 
 /** Say what was connected and who it now takes direction from. */
@@ -146,5 +169,6 @@ export default defineChannelPluginEntry({
   },
   registerFull(api) {
     registerLibrary(api)
+    upgradeConnection(api)
   },
 })

@@ -37,7 +37,8 @@ Then start or restart the OpenClaw Gateway. Connecting also adds the Worktable
 to OpenClaw's MCP servers, so the agent can read and change Docs, Records and
 threads with Worktable's tools. The agent answers thread messages from the
 person who approved it; see [Who can direct the agent](#who-can-direct-the-agent).
-If you connected with 0.0.21 or earlier, connect again to get the tools.
+A connection made with 0.0.21 or earlier gets the tools the next time the
+Gateway starts with this version.
 Learn more in the Worktable docs for
 [connections](https://docs.worktable.dev/agents/connections/) and
 [threads](https://docs.worktable.dev/guides/threads/).
@@ -148,7 +149,9 @@ HTTPS one.
   `channels.worktable` in OpenClaw's configuration.
 - The Worktable's MCP address and the same token are under
   `mcp.servers.worktable`, and the folder of Library skill pointers is added to
-  `skills.load.extraDirs`.
+  `skills.load.extraDirs`. For a connection made with 0.0.21 or earlier, the
+  plugin adds both when the Gateway starts, once, and records that in
+  `channels.worktable.agentConfig`.
 - The Library skill pointers are in `plugins/worktable/library/` under
   OpenClaw's state directory. They hold each skill's name and when to use it,
   never its text.

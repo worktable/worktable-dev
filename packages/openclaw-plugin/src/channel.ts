@@ -305,6 +305,7 @@ export const worktableChannel = createChatChannelPlugin({
       // The trust settings are read from storage for every message instead.
       noopPrefixes: [
         `channels.${CHANNEL_ID}.pendingPairingCode`,
+        `channels.${CHANNEL_ID}.agentConfig`,
         `channels.${CHANNEL_ID}.trustOwnAgents`,
         `channels.${CHANNEL_ID}.trustAllMembers`,
         `channels.${CHANNEL_ID}.trustAllAgents`,

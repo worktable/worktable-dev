@@ -36,7 +36,7 @@ describe("Worktable channel account setup", () => {
     expect(unpaired).toEqual([])
   })
 
-  it("keeps running when it clears its pairing code or its owner changes whom to trust, and restarts for other channel settings", () => {
+  it("keeps running when it clears its pairing code, marks its tools added, or its owner changes whom to trust, and restarts for other channel settings", () => {
     // The channel removes the code itself once Worktable confirms pairing.
     // OpenClaw used to replace the plugin for that write, which left the
     // channel stopped until the next Gateway restart. The trust settings are
@@ -45,6 +45,7 @@ describe("Worktable channel account setup", () => {
       configPrefixes: ["channels.worktable"],
       noopPrefixes: [
         "channels.worktable.pendingPairingCode",
+        "channels.worktable.agentConfig",
         "channels.worktable.trustOwnAgents",
         "channels.worktable.trustAllMembers",
         "channels.worktable.trustAllAgents",

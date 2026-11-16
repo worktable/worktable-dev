@@ -5,12 +5,12 @@
  * cold fetches ten small help files. Keep them in one.
  *
  * Only modules no page imports up front belong here: one that a page does
- * import would put this whole chunk on that page.
+ * import would put this whole chunk on that page. Nor Home's Next Steps,
+ * whose menus and dialogs would then load wherever a tip shows.
  */
 const HELP_MODULES = [
   /\/apps\/web\/src\/lib\/help\/(?:registry|rules|state|fill|settings-help|try-next|welcome-content)\.ts$/,
   /\/apps\/web\/src\/components\/help\/help-tip\.tsx$/,
-  /\/apps\/web\/src\/components\/home\/try-next\.tsx$/,
   /\/packages\/ui\/src\/components\/help-band\.tsx$/,
 ]
 

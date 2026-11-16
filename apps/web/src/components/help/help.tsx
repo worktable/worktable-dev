@@ -1,7 +1,11 @@
 import { lazy, Suspense, type ComponentProps, type ReactNode } from "react"
 import { useHelpEnabled } from "@/hooks/use-deployment-info"
+import { WorktableAppIcon } from "@/components/worktable-app-icon"
 
-export { HelpMark } from "@/components/help/help-mark"
+/** The Worktable mark in a help band. */
+export function HelpMark() {
+  return <WorktableAppIcon className="size-4" />
+}
 
 /*
  * What screens import to show help. Outside Preview these render nothing (or

@@ -77,9 +77,9 @@ import {
   resolveReplyTarget,
   threadExcerpt,
   threadMentionRequestsResponse,
+  threadPlaceholder,
   type ConversationIdentityOption,
 } from "@/lib/thread-presentation"
-import { threadPlaceholder } from "@/lib/composer-placeholders"
 import {
   clearCompletedThreadDraft,
   retainThreadSubmission,

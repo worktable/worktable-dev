@@ -117,3 +117,16 @@ export function useCommentRecipients(
     }
   }, [enabled, participants.data, presentations, contributors, author.data, author.isLoading, person])
 }
+
+/** Someone a comment or message can go to. */
+interface PlaceholderRecipient {
+  kind: "human" | "agent" | "system"
+  name: string
+}
+
+/** A comment box's placeholder, by who the comment goes to. */
+export function commentPlaceholder(recipient: PlaceholderRecipient | undefined): string {
+  if (recipient?.kind === "agent") return `Ask ${recipient.name}…`
+  if (recipient?.kind === "human") return `Write to ${recipient.name}…`
+  return "Leave a note…"
+}

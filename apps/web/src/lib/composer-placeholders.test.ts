@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { commentPlaceholder, threadPlaceholder } from "./composer-placeholders"
+import { commentPlaceholder } from "./comment-recipients"
+import { threadPlaceholder } from "./thread-presentation"
 
 describe("commentPlaceholder", () => {
   test("names who the comment goes to", () => {

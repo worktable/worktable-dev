@@ -247,3 +247,16 @@ export function deliveryPresentation(
     failed: false,
   }
 }
+
+/**
+ * A thread composer's placeholder. Just you and one agent: that agent.
+ * With more in the thread, a reply comes from the agent you @mention.
+ */
+export function threadPlaceholder(
+  memberCount: number,
+  directAgentName: string | undefined
+): string {
+  if (directAgentName) return `Message ${directAgentName}…`
+  if (memberCount > 2) return "@mention an agent to get a reply"
+  return "Reply in this thread…"
+}

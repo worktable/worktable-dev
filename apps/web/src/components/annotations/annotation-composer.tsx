@@ -11,8 +11,11 @@ import {
 } from "@worktable/ui/components/responsive-dialog";
 import { createClientId } from "@/lib/client-id";
 import { clearNote, noteFor } from "@/lib/help/note-draft";
-import { NO_RECIPIENT, useCommentRecipients } from "@/lib/comment-recipients";
-import { commentPlaceholder } from "@/lib/composer-placeholders";
+import {
+  commentPlaceholder,
+  NO_RECIPIENT,
+  useCommentRecipients,
+} from "@/lib/comment-recipients";
 import { setHighlight } from "./passage-text";
 import { Quote } from "@/components/quote";
 import { useIsMobile } from "@/hooks/use-mobile";

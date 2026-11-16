@@ -72,6 +72,7 @@ jobs:
       - name: Check source contracts
         run: |-
           bun run check:tools
+          bun run check:guides
           bun run check:theme
           bun run check:icons
           bun run check:brand

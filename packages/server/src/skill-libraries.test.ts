@@ -757,6 +757,22 @@ describe("skill libraries", () => {
     }
   })
 
+  it("serves the current guide behind each of the plugin's skills on the preview tools", async () => {
+    // A copy of the plugin an app froze at install reads the current guide here.
+    const guide = await call(await connect(), "worktable_guidance", {
+      topic: "workflow",
+      name: "worktable-create-or-update-docs",
+    })
+    expect(guide.guide).toStartWith("# ")
+    expect(guide.guide).not.toContain("description:")
+    expect(
+      await refusal(await connect("released"), "worktable_guidance", {
+        topic: "workflow",
+        name: "worktable-create-or-update-docs",
+      })
+    ).toContain("topic")
+  })
+
   it("keeps libraries off while the preview tools are off", async () => {
     delete process.env["WORKTABLE_MCP_PREVIEW"]
     process.env["WORKTABLE_MCP_PREVIEW"] = "0"

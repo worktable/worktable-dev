@@ -823,6 +823,8 @@ const FILE_DOWNLOAD_FIELDS = {
   byteLength: z.number().int().nonnegative(),
 }
 
+const GUIDE_OUTPUT = z.looseObject({ guide: z.string() })
+
 export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
   "workspace.state": [WorkspaceOverviewSchema, SpaceDetailSchema],
   "workspace.search": [
@@ -1143,7 +1145,9 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
     z.looseObject({ activity: PortableThreadActivitySchema }),
   ],
   "guidance.format_spec": [z.looseObject({ spec: z.string() })],
-  "guidance.drawings": [z.looseObject({ guide: z.string() })],
+  "guidance.drawings": [GUIDE_OUTPUT],
+  // The same shape, so the released listing's result is unchanged.
+  "guidance.workflow": [GUIDE_OUTPUT],
   "mermaid.validate": [MermaidValidationOutputSchema],
   "mermaid.preview": [MermaidPreviewOutputSchema],
   "skills.read": [SkillReadOutputSchema, SkillListOutputSchema],

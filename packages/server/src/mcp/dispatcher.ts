@@ -1,3 +1,4 @@
+import { WORKFLOW_GUIDES, type WorkflowGuideName } from "./workflow-guides.generated.ts"
 import { runAsActivityActor } from "../activity-log.ts"
 import { commentReplier, commentRecipients } from "../comment-recipients.ts"
 import { markOpened, readPending } from "../pending-read.ts"
@@ -3537,6 +3538,13 @@ async function _dispatchOperationInner(
       return {
         guide: DRAWING_GUIDE,
       }
+    case "guidance.workflow": {
+      if (context.surface !== "preview") {
+        throw new Error("Workflow guides aren't available on this connection.")
+      }
+      const { name } = args as { name: WorkflowGuideName }
+      return { guide: WORKFLOW_GUIDES[name] }
+    }
     case "guidance.format_spec": {
       const spec = `${FORMAT_SPEC.trim()}\n\n${FILES_SPEC}`
       return {

@@ -447,7 +447,13 @@ describe("released tool surface", () => {
     // Preview holds changes until agent directories review them, each with
     // the inputs it adds. Every other tool is identical.
     // search and fetch only add notices to their output on preview.
-    const held: Record<string, string[]> = { worktable_state: [], search: [], fetch: [] }
+    // Guidance on preview also serves the plugin skills' current guides.
+    const held: Record<string, string[]> = {
+      worktable_state: [],
+      search: [],
+      fetch: [],
+      worktable_guidance: ["name"],
+    }
     expect(
       preview.filter((tool) => !(tool.name in held) && !previewOnly.includes(tool.name))
     ).toEqual(released.filter((tool) => !(tool.name in held)))

@@ -1,3 +1,4 @@
+import { WORKFLOW_GUIDE_NAMES } from "./workflow-guides.generated.ts"
 import { z } from "zod"
 import { FileNoHistorySchema } from "@worktable/types"
 import { ChatGptFileInput } from "./schemas.ts"
@@ -938,6 +939,17 @@ export const CATALOG_TOOLS: readonly CatalogTool[] = TOOLS
  * until agent directories review them. Each takes a released tool's place.
  */
 const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
+  worktable_guidance: (tool) => ({
+    ...tool,
+    description:
+      "Read Worktable authoring guidance by topic: format_spec for Doc and file formats, drawings for drawing operations with examples, html for the HTML Doc runtime contract, or workflow with a skill's name for the current guide behind one of the Worktable plugin's skills.",
+    inputSchema: flatInput(["topic"], [htmlGuide], {
+      topic: z.enum(["format_spec", "drawings", "html", "workflow"]).describe("The guidance to read."),
+      profile: described(htmlGuide.profile!, "html only: the runtime profile."),
+      name: z.enum(WORKFLOW_GUIDE_NAMES).describe("workflow only: the skill whose current guide to read."),
+    }),
+    runs: [...tool.runs, ["worktable_guidance", "workflow"]],
+  }),
   worktable_state: (tool) => ({
     ...tool,
     description: `${tool.description} It also lists the skills in your team's Library that apply to you: Docs a person approved for agents to follow.`,

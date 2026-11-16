@@ -111,6 +111,7 @@ describe("the listed tools", () => {
       ["worktable_guidance", { topic: "format_spec" }, ["guidance.format_spec"]],
       ["worktable_guidance", { topic: "drawings" }, ["guidance.drawings"]],
       ["worktable_guidance", { topic: "html" }, ["html.guide"]],
+      ["worktable_guidance", { topic: "workflow", name: "worktable-create-or-update-docs" }, ["guidance.workflow"]],
       ["worktable_mermaid", { source: "flowchart TD\nA-->B" }, ["mermaid.validate"]],
       ["worktable_mermaid", { source: "flowchart TD\nA-->B", preview: true }, ["mermaid.preview"]],
     ]

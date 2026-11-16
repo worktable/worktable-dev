@@ -23,7 +23,7 @@ export function libraryFolder(env?: NodeJS.ProcessEnv): string {
   return join(resolveStateDir(env), "plugins", "worktable", "library")
 }
 
-/** Skills as worktable_state lists them, keeping only what a pointer needs. */
+/** Skills as worktable_skills_read lists them, keeping only what a pointer needs. */
 export function librarySkillsFrom(state: Record<string, unknown>): LibrarySkill[] {
   const skills = Array.isArray(state.skills) ? state.skills : []
   const named = new Map<string, LibrarySkill>()

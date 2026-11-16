@@ -28,7 +28,7 @@ function registerLibrary(api: {
     const { McpWorktableClient } = await import("./src/worktable-client.js")
     const client = new McpWorktableClient(account.server, account.token)
     try {
-      return librarySkillsFrom(await client.libraryState())
+      return librarySkillsFrom(await client.librarySkills())
     } finally {
       await client.close()
     }

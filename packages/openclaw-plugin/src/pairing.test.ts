@@ -357,6 +357,13 @@ describe("OpenClaw Worktable pairing completion", () => {
 
     // A first connection takes direction from its approver alone.
     expect((await pair()).access).toEqual({ ownerMemberId: owner })
+    // Connecting also gives the agent this Worktable's tools, as an MCP
+    // server in OpenClaw's own config with the same token.
+    expect(JSON.parse(await readFile(configPath, "utf8")).mcp.servers.worktable).toEqual({
+      url: `http://127.0.0.1:${server.port}/mcp`,
+      transport: "streamable-http",
+      headers: { Authorization: "Bearer wtb_bearer" },
+    })
     expect(await saved()).toMatchObject({ ownerMemberId: owner })
     expect((await saved()).trustAllMembers).toBeUndefined()
 

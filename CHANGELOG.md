@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Getting Started:** The step that adds Worktable to your agent's rules points to where Claude keeps them now, **Settings → Your Claude → Instructions**.
+
 ## [0.1.50] - 2026-11-16
 
 ### Added

@@ -319,25 +319,31 @@ export function SpaceNewActions({
         </DropdownMenuItem>
       )}
       <DropdownMenuSeparator />
-      <div className="flex items-center gap-1">
-        <DropdownMenuCheckboxItem
-          checked={lifetime === "temporary"}
-          closeOnClick={false}
-          onCheckedChange={(checked) => {
-            setLifetime(checked ? "temporary" : "durable")
-          }}
-          className="min-w-0 flex-1"
+      <DropdownMenuCheckboxItem
+        checked={lifetime === "temporary"}
+        closeOnClick={false}
+        onCheckedChange={(checked) => {
+          setLifetime(checked ? "temporary" : "durable")
+        }}
+      >
+        <Clock3 className="mr-2 h-4 w-4" />
+        Start as Temporary
+        {/* Its own button: opening it leaves the choice as it is. */}
+        <span
+          className="flex"
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+          onPointerUp={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
         >
-          <Clock3 className="mr-2 h-4 w-4" />
-          Start as Temporary
-        </DropdownMenuCheckboxItem>
-        <HelpIcon
-          entry="startAsTemporary"
-          label="About Temporary Docs"
-          side="right"
-          className="m-0 mr-0.5 size-7"
-        />
-      </div>
+          <HelpIcon
+            entry="startAsTemporary"
+            label="About Temporary Docs"
+            align="end"
+            className="-my-1 size-6"
+          />
+        </span>
+      </DropdownMenuCheckboxItem>
     </>
   )
 

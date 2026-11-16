@@ -10,14 +10,25 @@
 //   skill://space/<spaceId>/<name>/SKILL.md
 //   skill://yours/<name>/SKILL.md
 // The skills worktable_skills_read lists are the same ones, read the same way.
+//
+// Only a client that declares the extension is offered it when it connects:
+// Worktable's own stdio bridges, including ones installed long ago, accept a
+// server that offers tools and nothing else.
 
 import { createHash } from "node:crypto"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { McpError } from "@modelcontextprotocol/sdk/types.js"
 import { z } from "zod"
+import { logError } from "../debug-log.ts"
 import { liveSkillText, skillsForAgent, type AgentSkill, type SkillReader } from "../skill-libraries.ts"
 
 export const SKILLS_EXTENSION = "io.modelcontextprotocol/skills"
+
+/** Whether a client's capabilities declare the extension. */
+export function declaresSkills(capabilities: unknown): boolean {
+  const extensions = (capabilities as { extensions?: unknown } | null | undefined)?.extensions
+  return Boolean(extensions && typeof extensions === "object" && SKILLS_EXTENSION in extensions)
+}
 
 /** The JSON-RPC code for a skill or resource this server doesn't serve. */
 const INVALID_PARAMS = -32602
@@ -36,8 +47,9 @@ function frontmatter(skill: AgentSkill) {
 /** A skill's SKILL.md: its frontmatter, then its live version. */
 async function skillFile(skill: AgentSkill): Promise<string> {
   const { name, description } = frontmatter(skill)
-  // A JSON string is a YAML double-quoted scalar, so any description parses back as itself.
-  return `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n\n${await liveSkillText(skill)}`
+  // A JSON string is a YAML double-quoted scalar, so each parses back as the
+  // same string, even a name like "true" or "123".
+  return `---\nname: ${JSON.stringify(name)}\ndescription: ${JSON.stringify(description)}\n---\n\n${await liveSkillText(skill)}`
 }
 
 async function entryOf(skill: AgentSkill) {
@@ -66,7 +78,14 @@ export function skillsMethods(reader: () => Promise<SkillReader>) {
   return {
     async list() {
       const { live } = await skillsForAgent(await reader())
-      return { resultType: "complete", skills: await Promise.all(live.map(entryOf)) }
+      // A skill whose saved version can't be read is left out, not the rest.
+      const entries = await Promise.allSettled(live.map(entryOf))
+      const skills = entries.flatMap((entry, index) => {
+        if (entry.status === "fulfilled") return [entry.value]
+        console.error(`[mcp] skill ${live[index]!.entry.name} left out of skills/list:`, logError(entry.reason))
+        return []
+      })
+      return { resultType: "complete", skills }
     },
     async get(params: { uri?: unknown } | undefined) {
       return { resultType: "complete", skill: await entryOf(await skillAt(await reader(), params?.uri)) }

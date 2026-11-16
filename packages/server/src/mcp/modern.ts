@@ -113,7 +113,7 @@ export async function handleModernMcpRequest(
 
 function createModernServer(exchange: ModernMcpExchange): Server {
   const { info, instructions } = serverIdentity(exchange.server)
-  const preview = exchange.server.surface === "preview"
+  const preview = exchange.server.surface === "preview" && exchange.server.skillsExtension === true
   // Pending waits are released. Both tool surfaces use the same task path.
   const server = new Server(info, {
     capabilities: {

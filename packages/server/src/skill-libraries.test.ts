@@ -665,8 +665,22 @@ describe("skill libraries", () => {
   it("serves the skills over MCP to apps that load them, as both protocol eras ask", async () => {
     const { z } = await import("zod")
     await addRelease()
-    expect((await connect("released")).getServerCapabilities()?.["extensions"]).toBeUndefined()
-    const agent = await connect()
+    // Over HTTP, as apps connect: only a client that declares the extension
+    // is offered it, so Worktable's bridges, which accept tools alone, still connect.
+    const over = async (capabilities: Record<string, unknown>) => {
+      const server = new Hono()
+      server.route("/mcp", mcpRouter)
+      const client = new Client({ name: "skills-app", version: "1" }, { capabilities })
+      clients.push(client)
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL("http://127.0.0.1/mcp"), {
+          fetch: async (input, init) => server.fetch(new Request(input, init)),
+        })
+      )
+      return client
+    }
+    expect(Object.keys((await over({})).getServerCapabilities() ?? {})).toEqual(["tools"])
+    const agent = await over({ extensions: { "io.modelcontextprotocol/skills": {} } })
     expect(agent.getServerCapabilities()?.["extensions"]).toEqual({ "io.modelcontextprotocol/skills": {} })
     const Skills = z.looseObject({ skills: z.array(z.looseObject({ uri: z.string() })) })
     const listed = (await agent.request({ method: "skills/list", params: {} }, Skills)).skills
@@ -682,7 +696,7 @@ describe("skill libraries", () => {
     // The file is what the listing promised: its digest and size.
     const read = await agent.readResource({ uri: "skill://worktable/release-checklist/SKILL.md" })
     const text = (read.contents[0] as { text: string }).text
-    expect(text).toStartWith('---\nname: release-checklist\ndescription: "Use when shipping a release."\n---\n\n# Release checklist')
+    expect(text).toStartWith('---\nname: "release-checklist"\ndescription: "Use when shipping a release."\n---\n\n# Release checklist')
     const bytes = Buffer.from(text, "utf8")
     const { createHash } = await import("node:crypto")
     const resource = (listed[0] as unknown as { resources: Array<{ digest: string; size: number }> }).resources[0]!
@@ -702,7 +716,7 @@ describe("skill libraries", () => {
         const meta = {
           "io.modelcontextprotocol/protocolVersion": "2026-07-28",
           "io.modelcontextprotocol/clientInfo": { name: "modern", version: "1" },
-          "io.modelcontextprotocol/clientCapabilities": {},
+          "io.modelcontextprotocol/clientCapabilities": { extensions: { "io.modelcontextprotocol/skills": {} } },
         }
         const response = await app.fetch(
           new Request("http://127.0.0.1/mcp", {

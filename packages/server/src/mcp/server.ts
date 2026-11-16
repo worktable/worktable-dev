@@ -23,6 +23,12 @@ export interface WorktableMcpServerOptions {
   fileLinkBase?: string | null
   /** The agent's skills, built only when it connects (skillsBrief). */
   skillsBrief?: string | null
+  /**
+   * Preview: serve skills over MCP (skills-extension.ts). Callers pass true
+   * unless the request opens a connection for a client that doesn't declare
+   * the extension, which then sees tools only.
+   */
+  skillsExtension?: boolean
 }
 
 let namedWorktable: {
@@ -91,7 +97,7 @@ export function createWorktableMcpServer(
   options: WorktableMcpServerOptions
 ): McpServer {
   const { info, instructions } = serverIdentity(options)
-  const preview = options.surface === "preview"
+  const preview = options.surface === "preview" && options.skillsExtension === true
   const server = new McpServer(info, {
     // Preview: the team's skills over MCP too, for apps that load them.
     capabilities: preview

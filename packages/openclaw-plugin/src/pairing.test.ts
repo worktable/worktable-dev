@@ -304,6 +304,43 @@ describe("OpenClaw Worktable pairing completion", () => {
     })
   }, OPENCLAW_RUNTIME_TIMEOUT_MS)
 
+  it("sends the token to the MCP address only on the Worktable it paired with", async () => {
+    const configDir = await mkdtemp(join(tmpdir(), "worktable-mcp-host-"))
+    tempDirs.push(configDir)
+    const configPath = join(configDir, "openclaw.json")
+    const pluginDir = await createDiscoveredPluginFixture(configDir)
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        plugins: { allow: ["worktable"], load: { paths: [pluginDir] } },
+      })
+    )
+    process.env.OPENCLAW_CONFIG_PATH = configPath
+    process.env.OPENCLAW_STATE_DIR = configDir
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        if (!request.url.endsWith("/api/pairing/redeem")) {
+          return Response.json({ ok: true })
+        }
+        return Response.json({
+          mcpUrl: "http://elsewhere.example/mcp",
+          token: "wtb_bearer",
+          scopes: ["threads:read"],
+          workspaceName: "Worktable",
+        })
+      },
+    })
+    servers.push(server)
+    await expect(
+      pairWorktableChannel({
+        server: `http://127.0.0.1:${server.port}`,
+        pairingCode: "PAIR1-CODE2",
+      })
+    ).rejects.toThrow("somewhere else")
+    expect(JSON.parse(await readFile(configPath, "utf8")).mcp).toBeUndefined()
+  }, OPENCLAW_RUNTIME_TIMEOUT_MS)
+
   it("records who approved the connection, and keeps what that person trusted only for the same Worktable and approver", async () => {
     const configDir = await mkdtemp(join(tmpdir(), "worktable-owner-"))
     tempDirs.push(configDir)
@@ -364,6 +401,10 @@ describe("OpenClaw Worktable pairing completion", () => {
       transport: "streamable-http",
       headers: { Authorization: "Bearer wtb_bearer" },
     })
+    // And the folder of the team's Library skills to the ones OpenClaw loads.
+    expect(
+      JSON.parse(await readFile(configPath, "utf8")).skills.load.extraDirs
+    ).toEqual([join(configDir, "plugins", "worktable", "library")])
     expect(await saved()).toMatchObject({ ownerMemberId: owner })
     expect((await saved()).trustAllMembers).toBeUndefined()
 

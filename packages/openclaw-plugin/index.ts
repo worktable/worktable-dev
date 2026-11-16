@@ -7,6 +7,33 @@ import {
 } from "./src/pairing.js"
 import { worktableChannel } from "./src/channel.js"
 import { setWorktableRuntime } from "./src/runtime.js"
+import { resolveWorktableAccount } from "./src/channel.js"
+import {
+  LibrarySkillFolder,
+  libraryFolder,
+  librarySkillsFrom,
+} from "./src/library.js"
+
+/**
+ * The team's Library skills among OpenClaw's skills, once this OpenClaw is
+ * connected to Worktable: pointers in the folder connecting adds to
+ * skills.load.extraDirs, kept current in the background.
+ */
+function registerLibrary(api: {
+  config: Parameters<typeof resolveWorktableAccount>[0]
+}): void {
+  const account = resolveWorktableAccount(api.config)
+  if (!account.enabled || !account.server || !account.token) return
+  new LibrarySkillFolder(libraryFolder(), async () => {
+    const { McpWorktableClient } = await import("./src/worktable-client.js")
+    const client = new McpWorktableClient(account.server, account.token)
+    try {
+      return librarySkillsFrom(await client.librarySkills())
+    } finally {
+      await client.close()
+    }
+  }).start()
+}
 
 /** Say what was connected and who it now takes direction from. */
 function reportPaired(result: PairedWorktable): void {
@@ -116,5 +143,8 @@ export default defineChannelPluginEntry({
         ],
       }
     )
+  },
+  registerFull(api) {
+    registerLibrary(api)
   },
 })

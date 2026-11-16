@@ -308,14 +308,8 @@ function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {
             </SettingRow>
           ) : null}
           <SpacesSetting policy={policy} onChange={update} />
-          <SettingRow label="Live tools" description="Run shared HTML Docs with the Records access saved on each link.">
-            <Switch aria-label="Live tools" checked={policy.liveLinks} onCheckedChange={liveLinks => update({liveLinks})} />
-          </SettingRow>
-          <SettingRow label="Records access" description="What a live link may show from Records.">
-            <Select value={policy.records} onValueChange={records => {if (records) update({records})}}>
-              <SelectTrigger className="w-48" aria-label="Records access"><SelectValue>{{none: "No Records", scoped: "Chosen collections"}[policy.records]}</SelectValue></SelectTrigger>
-              <SelectContent><SelectItem value="none">No Records</SelectItem><SelectItem value="scoped">Chosen collections</SelectItem></SelectContent>
-            </Select>
+          <SettingRow label="Live data" description="Let links show the Records their page reads.">
+            <Switch aria-label="Live data" checked={policy.liveLinks && policy.records === "scoped"} onCheckedChange={on => update(on ? {liveLinks: true, records: "scoped"} : {liveLinks: false})} />
           </SettingRow>
           <SettingRow label="Records link expiry" description="The default for a new link that reads Records. The longest expiry still applies.">
             <Select value={policy.recordsDefaultExpiryDays === null ? "none" : String(policy.recordsDefaultExpiryDays)} onValueChange={value => {const choice = LONGEST_EXPIRY.find(choice => choice.value === value); if (choice) update({recordsDefaultExpiryDays: choice.days})}}>

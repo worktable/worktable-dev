@@ -47,7 +47,7 @@ import { useCopy } from "@worktable/ui/hooks/use-copy"
 import { cn } from "@worktable/ui/lib/utils"
 import { HelpIcon } from "@/components/help/help"
 import { LIVE_DATA_OFF, LiveDataPanel } from "@/components/share-link-access"
-import { HtmlSafetyNote, InlineError } from "@/components/share-document-action"
+import { InlineError } from "@/components/share-document-action"
 import { useBreadcrumbs } from "@/hooks/use-breadcrumbs"
 import type { PageShareTarget } from "@/hooks/use-page-meta"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
@@ -174,20 +174,30 @@ export function ShareLinksDialog({
   const canCreate = list.data?.canCreate ?? summary.canCreate
   const passwordRequired = policy?.requirePassword ?? false
   const liveAllowed = target.kind === "html" && policy?.liveLinks === true
+  // A page runs for its visitors either way; live data is its Records and
+  // the team's saved state, and a link that shows neither has it off.
+  const readsRecords =
+    (list.data?.toolReads?.length ?? 0) > 0 || list.data?.toolReadsAny === true
+  const liveData =
+    defaultLink?.grant &&
+    (Object.keys(defaultLink.grant.collections).length > 0 ||
+      defaultLink.grant.state === "team-read")
+      ? defaultLink.grant
+      : null
   const liveShown =
     target.kind === "html" &&
     defaultLink !== null &&
-    (policy?.liveLinks === true || defaultLink.grant !== undefined)
+    ((liveAllowed && readsRecords) || liveData !== null)
   const commentsAllowed = policy?.levels.includes("comment") === true
   const commentsShown =
     defaultLink !== null && (commentsAllowed || defaultLink.level === "comment")
   const checked =
     defaultLink && access?.linkId === defaultLink.id ? access.access : null
-  const recordsOpen = policy?.records === "scoped"
+  const recordsOpen = liveAllowed && policy?.records === "scoped"
   const unshared = unsharedCollections(list.data?.toolReads ?? [], {
     recordsOpen,
     shared: defaultLink
-      ? Object.keys(defaultLink.grant?.collections ?? {})
+      ? Object.keys(liveData?.collections ?? {})
       : draft.live && liveAllowed
         ? null
         : [],
@@ -394,7 +404,8 @@ export function ShareLinksDialog({
     setLiveOpen(next)
     if (
       next &&
-      defaultLink?.grant &&
+      defaultLink &&
+      liveData &&
       liveAllowed &&
       !checked &&
       !check.isPending
@@ -405,7 +416,7 @@ export function ShareLinksDialog({
   const editingLink = editing?.kind === "edit" ? editing.link : null
   const choices = shareLinkExpiryChoices(policy, editingLink)
   // Other links take the first link's live data access, as it is now.
-  const liveGrant = (liveAllowed && defaultLink?.grant) || null
+  const liveGrant = (liveAllowed && liveData) || null
 
   function submit() {
     if (busy || !editing) return
@@ -495,7 +506,7 @@ export function ShareLinksDialog({
       <UnsharedRecordsNote
         count={unshared}
         action={
-          liveAllowed && recordsOpen && !defaultLink?.grant
+          recordsOpen && !liveData
             ? {
                 label: "Show",
                 onClick: () => {
@@ -508,7 +519,7 @@ export function ShareLinksDialog({
                     })
                 },
               }
-            : (!liveAllowed || !recordsOpen) && owner
+            : !recordsOpen && owner
               ? {
                   label: "Settings",
                   onClick: () => {
@@ -656,7 +667,7 @@ export function ShareLinksDialog({
                     />
                   </Disclosure>
                 ) : null}
-                {liveAllowed ? (
+                {liveAllowed && readsRecords ? (
                   <Disclosure
                     variant="row"
                     title="Live data"
@@ -775,12 +786,12 @@ export function ShareLinksDialog({
                 <Disclosure
                   variant="row"
                   title="Live data"
-                  status={liveStatus(defaultLink.grant ?? null, checked)}
+                  status={liveStatus(liveData, checked)}
                   open={liveOpen}
                   onOpenChange={openLive}
                 >
                   <LiveDataPanel
-                    grant={defaultLink.grant ?? null}
+                    grant={liveData}
                     access={checked}
                     checking={check.isPending || turnOn.isPending}
                     checkFailed={check.isError}
@@ -851,10 +862,6 @@ export function ShareLinksDialog({
                 </Disclosure>
               ) : null}
             </div>
-          ) : null}
-
-          {target.kind === "html" && list.data && !liveAllowed && !unshared ? (
-            <HtmlSafetyNote />
           ) : null}
 
           <p className="sr-only" aria-live="polite" aria-atomic="true">

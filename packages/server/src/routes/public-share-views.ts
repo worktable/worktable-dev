@@ -145,7 +145,7 @@ export function createPublicShareViewsRouter(): Hono {
   return router
 }
 
-/** Whether a link counts views: a live HTML link on Worktable Cloud, for now. */
-export function countsViews(link: { kind: string; grant: unknown }): boolean {
-  return isHosted() && link.kind === "html" && link.grant !== null
+/** Whether a link counts views: an HTML Doc's link on Worktable Cloud, for now. */
+export function countsViews(link: { kind: string }): boolean {
+  return isHosted() && link.kind === "html"
 }

@@ -115,7 +115,8 @@ async function documentLinks(artifact: Artifact): Promise<DocumentShareLinks> {
 async function writeHtml(
   artifactKey: string,
   html: string,
-  name = "Report"
+  name = "Report",
+  records: Record<string, { read: boolean }> = {}
 ): Promise<Artifact> {
   const manifestPath = join(workspaceDir, "worktable.workspace.json")
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"))
@@ -131,7 +132,7 @@ async function writeHtml(
     createdBy: "test",
     permissions: {
       network: true,
-      records: {},
+      records,
       state: { read: true, write: true },
     },
     versionSource: "test",
@@ -361,7 +362,6 @@ describe("Cloud document share HTTP boundary", () => {
     })
     expect(outer.status).toBe(200)
     const projection = (await outer.json()) as { contentTicket?: string }
-    expect(projection).not.toHaveProperty("live")
     const frame = await publicRequest(
       projection.contentTicket!,
       "/public/share/content"
@@ -442,7 +442,7 @@ describe("Cloud document share HTTP boundary", () => {
     expect(reshared.url).not.toBe(link.url)
   })
 
-  it("preserves an HTML link across display-name edits and serves a sanitized projection", async () => {
+  it("preserves an HTML link across display-name edits and runs its page for visitors", async () => {
     const artifact = await writeHtml(
       "status",
       `<style>.card{color:tomato}</style><main class="card"><h1>Operational</h1><script>fetch("https://attacker.test")</script><a href="https://attacker.test">leave</a></main>`,
@@ -454,11 +454,14 @@ describe("Cloud document share HTTP boundary", () => {
       kind: string
       title: string
       contentTicket: string
+      live?: { rev: string; poll: number }
     }
+    // Nothing was saved on the link: the page runs all the same.
     expect(outer).toEqual({
       kind: "html",
       title: "Status board",
       contentTicket: expect.any(String),
+      live: { rev: expect.any(String), poll: 30 },
     })
 
     // The frame opens with its ticket, never with the link itself.
@@ -473,16 +476,15 @@ describe("Cloud document share HTTP boundary", () => {
     expect(content.status).toBe(200)
     expect(contentHtml).toContain("Operational")
     expect(contentHtml).toContain("color:tomato")
-    expect(contentHtml).not.toContain("<script")
-    const contentPage = new JSDOM(contentHtml).window.document
-    const externalLink = contentPage.querySelector("a")
-    expect(externalLink?.getAttribute("href")).toBe("https://attacker.test/")
-    expect(externalLink?.getAttribute("target")).toBe("_blank")
-    expect(externalLink?.getAttribute("rel")).toBe("noopener noreferrer")
-    expect(externalLink?.getAttribute("referrerpolicy")).toBe("no-referrer")
-    expect(content.headers.get("Content-Security-Policy")).toContain(
-      "sandbox allow-popups allow-popups-to-escape-sandbox; default-src 'none'; script-src 'none'"
+    // Its own script is there, in a frame that runs scripts and reaches
+    // nothing: no network, no forms, no pop-ups, no origin of its own.
+    expect(contentHtml).toContain('fetch("https://attacker.test")')
+    const policy = content.headers.get("Content-Security-Policy") ?? ""
+    expect(policy).toStartWith(
+      "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'"
     )
+    expect(policy).toContain("connect-src 'none'")
+    expect(policy).toContain("form-action 'none'")
     expect(content.headers.get("Cross-Origin-Resource-Policy")).toBe(
       "cross-origin"
     )
@@ -500,6 +502,24 @@ describe("Cloud document share HTTP boundary", () => {
 
     expect((await setWidgetArchived("space", "status", true)).error).toBeNull()
     expect((await publicRequest(token)).status).toBe(404)
+
+    // A page that reads Records the sharer can show: one names them, one
+    // may read any collection it computes, and this one reads none.
+    expect(await documentLinks(artifact)).not.toHaveProperty("toolReadsAny")
+    const named = await writeHtml(
+      "deals",
+      `<script>worktable.records.query("deals")</script>`,
+      "Deals",
+      { deals: { read: true } }
+    )
+    expect((await documentLinks(named)).toolReads).toEqual(["deals"])
+    const computed = await writeHtml(
+      "explorer",
+      `<script>worktable.records.query(location.hash.slice(1))</script>`,
+      "Explorer",
+      { "*": { read: true } }
+    )
+    expect(await documentLinks(computed)).toMatchObject({ toolReadsAny: true })
   })
 
   it("rejects direct tenant requests and keeps HEAD bodies empty", async () => {

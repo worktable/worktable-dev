@@ -744,12 +744,15 @@ describe("share links", () => {
     process.env["WORKTABLE_RECORDS_INDEX"] = "1"
     recordIndex.start()
     await recordIndex.whenReady()
+    // A link with nothing saved on it runs its page and reads no Records.
     const plain = await createLink("board", {}, "html")
     const unavailable = await bridge("X".repeat(43))
     expect(unavailable.status).toBe(404)
-    expect(await (await bridge(plain.token)).text()).toBe(
-      await unavailable.text()
-    )
+    const unshared = await bridge(plain.token)
+    expect(unshared.status).toBe(403)
+    expect(await unshared.json()).toMatchObject({
+      error: { code: "LINK_FORBIDDEN" },
+    })
     const stalled = await app().fetch(
       new Request("https://runtime.example.test/public/share/bridge", {
         method: "POST",
@@ -974,7 +977,13 @@ describe("share links", () => {
       (await send("PUT", "/api/shares/policy", { ...policy, liveLinks: false }))
         .status
     ).toBe(200)
-    expect((await bridge(created.token)).status).toBe(404)
+    // Live data off closes the Records and the team's state, not the link:
+    // its page still runs.
+    expect((await bridge(created.token)).status).toBe(403)
+    expect(
+      (await bridge(created.token, { v: 1, op: "state.read" })).status
+    ).toBe(403)
+    expect((await bridge(created.token, { v: 1, op: "ping" })).status).toBe(200)
     // Two real 1.5s timeout paths plus filesystem fixture setup and recovery.
   }, 10_000)
 
@@ -2008,7 +2017,7 @@ describe("share links", () => {
     expect(content.status).toBe(200)
     const html = await content.text()
     expect(html).toContain("Operational")
-    expect(html).not.toContain("<script")
+    expect(html).toContain("fetch('/x')")
 
     const renamed = await updateWidgetMetadata("space", "boards/status", {
       name: "Live status",

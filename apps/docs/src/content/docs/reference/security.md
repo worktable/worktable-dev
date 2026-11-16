@@ -127,10 +127,10 @@ signal through DNS or WebRTC. Network permission allows direct transmission of
 anything the document can read. Review generated content and its data access
 before using it or sharing it.
 
-## Live tools and visitor comments
+## Shared pages and visitor comments
 
-Live tools read data only through explicit, human-chosen access, and only when
-the owner allows live tools in Settings → Sharing. A link grants only the selected Records rows and fields, further
+A shared HTML Doc reads data only through explicit, human-chosen access, and
+only when the owner allows live data in Settings → Sharing. A link grants only the selected Records rows and fields, further
 restricted by the document's current permissions and owner policy. It does not
 give the reader a member account or the maker's credentials. Visitor Records
 access is read only, and interface preferences stay local to the tab.
@@ -139,18 +139,17 @@ Record rules constrain Records API reads. The complete tool program, including
 any text or data embedded in it, is shared with every reader of the link.
 Review that content before sharing; a Record rule does not hide it.
 
-A live tool supports JavaScript in a sandboxed frame on a separate origin for
-each Worktable. Its policy blocks external data requests, assets and forms even
-if the document has network permission in the member app. It cannot read member
-cookies or persistent browser storage. Static share views disable scripts and
-remove interactive content. The frame is not
+A shared HTML Doc runs its JavaScript in a sandboxed frame on a separate origin
+for each Worktable. Its policy blocks external data requests, assets and forms
+even if the document has network permission in the member app. It cannot read
+member cookies or persistent browser storage. The frame is not
 the data boundary: browsers still let a script signal out through DNS lookups
 or WebRTC. Worktable therefore limits what a link exposes on the server, and
 treats everything a link can read as visible to its readers.
 
 Visitor comments are stored outside the portable workspace. Agents cannot read
 them until a member passes them to the team as quoted outside input. See
-[Sharing](/guides/sharing/#live-tools-and-visitor-comments) for link access,
+[Sharing](/guides/sharing/#live-data-and-visitor-comments) for link access,
 owner controls and recovery behavior.
 
 ## Cloud access

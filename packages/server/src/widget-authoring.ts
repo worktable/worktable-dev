@@ -98,7 +98,7 @@ export type HtmlGuideProfile = "runtime"
 /** The theme Worktable serves every HTML Doc (html-doc-theme.ts). */
 export const HTML_GUIDE_THEME = `## Theme
 
-Worktable themes every HTML Doc for light and dark mode and sets html[data-theme] to the one shown; a share link viewed without scripts follows the visitor's system theme and applies html[data-theme="dark"] rules to match. Use its variables instead of fixed colors; don't define a palette or add a theme switch.
+Worktable themes every HTML Doc for light and dark mode and sets html[data-theme] to the one shown; on a share link, that is the visitor's. Use its variables instead of fixed colors; don't define a palette or add a theme switch.
 - Surfaces: --background (the page), --card, --popover, --muted, --surface-hover, --surface-selected
 - Text: --foreground, --muted-foreground, --primary-text (links and accents)
 - Lines: --border, --card-border, --input

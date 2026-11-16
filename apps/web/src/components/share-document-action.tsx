@@ -106,11 +106,3 @@ export function InlineError({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function HtmlSafetyNote() {
-  return (
-    <p className="px-1 text-xs leading-5 text-muted-foreground">
-      Records and links to other Worktable content aren’t available in shared
-      HTML docs.
-    </p>
-  )
-}

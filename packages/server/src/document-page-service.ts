@@ -570,7 +570,9 @@ function sharingSummary(
           policy.maxExpiryDays,
           (creator) => creatorMayShare(creator, spaceId, policy),
           policy.requirePassword,
-          policy.liveLinks,
+          // A link that shows Records still opens when the owner turns
+          // them off: its page runs without them.
+          true,
           policy.levels
         )
       : { activeLinks: 0, nextExpiry: null }

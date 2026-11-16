@@ -24,7 +24,7 @@ import { stringifyCanonicalYaml } from "./yaml.ts";
 const SHOP = "shop";
 const OTHER = "other";
 const TOOL = "board";
-const POLICY = defaultSharingPolicy();
+const POLICY = { ...defaultSharingPolicy(), liveLinks: true };
 const GRANT = LinkGrantSchema.parse({
   version: 1,
   collections: {
@@ -121,6 +121,7 @@ describe("a link's records reads", () => {
 
     // An owner policy without Records closes every collection.
     expect(await read("deals", { ...POLICY, records: "none" })).toEqual(closed);
+    expect(await read("deals", { ...POLICY, liveLinks: false })).toEqual(closed);
     // A link pinned to a version reads that version's permissions...
     const readPinned = () => queryRecordsForLink(link({ pinnedVersion: pinned!.id }), "notes", {}, { policy: POLICY, budgets: new LinkBudgets() });
     expect(await readPinned()).toEqual(before[1]!);

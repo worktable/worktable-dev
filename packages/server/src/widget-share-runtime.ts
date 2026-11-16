@@ -6,13 +6,17 @@ const cfg={mode:'share',runtimeVersion:'1.0-share'};
 const post=window.parent.postMessage.bind(window.parent);
 const navigationToken=Array.from(crypto.getRandomValues(new Uint32Array(4)),v=>v.toString(16).padStart(8,'0')).join('-');
 const media=window.matchMedia('(prefers-color-scheme: dark)');
-const theme=()=>document.documentElement.setAttribute('data-theme',media.matches?'dark':'light');
+// The visitor's choice on the share page, named on the frame before this
+// runs and sent when it changes; until then, the system's.
+let chosen=(/^worktable-theme:(light|dark)$/.exec(window.name)||[])[1]||null;
+const theme=()=>document.documentElement.setAttribute('data-theme',chosen||(media.matches?'dark':'light'));
 theme();media.addEventListener('change',theme);
 let sequence=0;
 const pending=new Map();
 window.addEventListener('message',event=>{
   if(event.source!==window.parent)return;
   const value=event.data;
+  if(value&&value.type==='worktable.theme'&&(value.theme==='light'||value.theme==='dark')){chosen=value.theme;theme();return}
   if(!value||value.type!=='worktable.api.response'||typeof value.id!=='string')return;
   const done=pending.get(value.id);
   if(done){pending.delete(value.id);done(value)}

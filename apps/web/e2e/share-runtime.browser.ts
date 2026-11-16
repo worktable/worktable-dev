@@ -46,16 +46,27 @@ test("a live share SDK starts first in an opaque frame and uses only the visitor
         event.source.postMessage({ type:'worktable.api.response', id:request.id, ok:true, status:200, body:{records:[{id:'opaque',data:{name:'Granted data'}}]} }, '*');
       }
     });
-  </script><iframe title="Live tool" sandbox="allow-scripts" src="https://html.example.test/frame"></iframe>`,
+  </script><iframe title="Live tool" name="worktable-theme:light" sandbox="allow-scripts" src="https://html.example.test/frame"></iframe>`,
     })
   )
   await page.goto("https://share.example.test/preview")
   const frame = page.frameLocator('iframe[title="Live tool"]')
-  await expect(frame.locator("#theme")).toHaveText("dark")
+  // The visitor chose light on the share page, over a dark system, before
+  // the tool's own scripts ran; a later choice reaches the tool too.
+  await expect(frame.locator("#theme")).toHaveText("light")
   await expect(frame.locator("#records")).toHaveText("Granted data")
   const authored = page
     .frames()
     .find((candidate) => candidate !== page.mainFrame())!
+  await page.evaluate(() =>
+    document
+      .querySelector("iframe")!
+      .contentWindow!.postMessage(
+        { type: "worktable.theme", theme: "dark" },
+        "*"
+      )
+  )
+  await expect(frame.locator("html")).toHaveAttribute("data-theme", "dark")
   await authored.evaluate(() =>
     (document.querySelector("a") as HTMLAnchorElement).click()
   )

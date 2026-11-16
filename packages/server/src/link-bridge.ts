@@ -12,7 +12,7 @@ import {
 } from "./share-link-views.ts"
 import { ShareLinksStoreError } from "./share-links-store.ts"
 import { canonicalJson } from "./link-grant-view.ts"
-import { effectiveLinkGrant } from "./link-grant.ts"
+import { effectiveLinkGrant, linkGrantOf } from "./link-grant.ts"
 import { queryRecordsForLink } from "./link-query.ts"
 import { linkReadPool } from "./link-read-pool.ts"
 import { linkReadMemo } from "./link-read-memo.ts"
@@ -160,11 +160,11 @@ export function linkBridge(getShareOrigin: () => string | null) {
           401,
           "This document needs a password."
         )
-      if (!view || typeof view === "string" || !view.link.grant)
-        return unavailable()
+      const savedGrant =
+        view && typeof view !== "string" ? linkGrantOf(view.link) : null
+      if (!view || typeof view === "string" || !savedGrant) return unavailable()
       release = await linkReadPool.acquire(view.link.id)
       if (!release) return busy()
-      const savedGrant = view.link.grant
       const deadline = Date.now() + 1500
       let expired = false
       const admitted = async (): Promise<Response> => {

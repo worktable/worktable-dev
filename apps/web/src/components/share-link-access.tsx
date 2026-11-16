@@ -141,7 +141,7 @@ function CollectionSentence({
  * access the server suggests for the tool.
  */
 /** What a visitor gets from a page whose link shows no live data. */
-export const LIVE_DATA_OFF = "Visitors see the page but can't use it."
+export const LIVE_DATA_OFF = "Visitors see the page without its Records."
 
 export function LiveDataPanel({
   grant,

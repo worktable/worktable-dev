@@ -7,6 +7,7 @@ import { writeJsonFileAtomically } from "openclaw/plugin-sdk/json-store"
 import { readJsonFileWithFallback } from "./json-store.js"
 import { resolveStateDir } from "openclaw/plugin-sdk/state-paths"
 import { libraryFolder } from "./library.js"
+import { worktableMcpEndpoint } from "./worktable-client.js"
 import { accessSettingsToKeep, type WorktableAccess } from "./access.js"
 
 interface RedeemResult {
@@ -196,6 +197,79 @@ export function worktableMcpServer(
     transport: "streamable-http",
     headers: { Authorization: `Bearer ${token}` },
   }
+}
+
+type ConfigDraft = Parameters<
+  Parameters<typeof mutateConfigFile>[0]["mutate"]
+>[0]
+
+/**
+ * What a connection gives the agent beyond the channel: Worktable's tools
+ * (OpenClaw lists an MCP server's tools only from its own config, so this
+ * Worktable goes there with the channel's token and access) and the team's
+ * Library skills (OpenClaw lists skills from the folders it loads, and the
+ * plugin keeps pointers to them in this one). Marked on the channel, so a
+ * server the person later removes stays removed.
+ */
+function addAgentConfig(
+  draft: ConfigDraft,
+  mcpUrl: string,
+  token: string,
+  { replace }: { replace: boolean }
+): void {
+  const mcp = (draft.mcp ?? {}) as { servers?: Record<string, unknown> }
+  if (replace || !mcp.servers?.worktable) {
+    mcp.servers = { ...(mcp.servers ?? {}), worktable: worktableMcpServer(mcpUrl, token) }
+    draft.mcp = mcp as typeof draft.mcp
+  }
+  const skills = (draft.skills ?? {}) as { load?: { extraDirs?: string[] } }
+  const extraDirs = skills.load?.extraDirs ?? []
+  if (!extraDirs.includes(libraryFolder())) {
+    skills.load = { ...skills.load, extraDirs: [...extraDirs, libraryFolder()] }
+    draft.skills = skills as typeof draft.skills
+  }
+  const channels = (draft.channels ?? {}) as Record<string, unknown>
+  const section = channels.worktable as Record<string, unknown> | undefined
+  if (section) {
+    channels.worktable = { ...section, agentConfig: AGENT_CONFIG_VERSION }
+    draft.channels = channels as typeof draft.channels
+  }
+}
+
+/** Raised when a connection gains more than the channel. 1: tools and Library skills (0.0.22). */
+export const AGENT_CONFIG_VERSION = 1
+
+/**
+ * A connection made before 0.0.22 has the channel but not the agent's tools
+ * or the Library skills folder. Add them from the address and token the
+ * channel already uses, once, so nobody has to connect again. True when it
+ * changed the config.
+ */
+export async function upgradeAgentConfig(account: {
+  server: string
+  token: string
+}): Promise<boolean> {
+  let changed = false
+  await mutateConfigFile({
+    mutate: (draft) => {
+      const channels = (draft.channels ?? {}) as Record<string, unknown>
+      const section = channels.worktable as Record<string, unknown> | undefined
+      if (
+        !section ||
+        section.server !== account.server ||
+        section.token !== account.token ||
+        (typeof section.agentConfig === "number" &&
+          section.agentConfig >= AGENT_CONFIG_VERSION)
+      ) {
+        return
+      }
+      addAgentConfig(draft, worktableMcpEndpoint(account.server).href, account.token, {
+        replace: false,
+      })
+      changed = true
+    },
+  })
+  return changed
 }
 
 async function clearPendingPairing(input: {
@@ -421,25 +495,7 @@ export async function pairWorktableChannel(options: {
           pendingPairingCode: options.pairingCode,
         }
         draft.channels = channels as typeof draft.channels
-        // The agent's Worktable tools: OpenClaw lists an MCP server's tools
-        // only from its own config, so connecting adds this Worktable there,
-        // with the same token and access.
-        const mcp = (draft.mcp ?? {}) as { servers?: Record<string, unknown> }
-        mcp.servers = {
-          ...(mcp.servers ?? {}),
-          worktable: worktableMcpServer(mcpUrl, redeemed.token),
-        }
-        draft.mcp = mcp as typeof draft.mcp
-        // The team's Library skills: OpenClaw lists skills from the folders
-        // it loads, and the plugin keeps pointers to them in this one.
-        const skills = (draft.skills ?? {}) as {
-          load?: { extraDirs?: string[] }
-        }
-        const extraDirs = skills.load?.extraDirs ?? []
-        if (!extraDirs.includes(libraryFolder())) {
-          skills.load = { ...skills.load, extraDirs: [...extraDirs, libraryFolder()] }
-        }
-        draft.skills = skills as typeof draft.skills
+        addAgentConfig(draft, mcpUrl, redeemed.token, { replace: true })
       },
     })
   } catch (error) {

@@ -21,6 +21,7 @@ import {
   pairWorktableChannel,
   requestWorktablePairing,
   resumePendingPairingCompletion,
+  upgradeAgentConfig,
 } from "./pairing.js"
 
 const servers: Array<ReturnType<typeof Bun.serve>> = []
@@ -555,5 +556,39 @@ describe("OpenClaw Worktable pairing completion", () => {
       )
     ).rejects.toThrow("Still unavailable")
     expect(cleared).toBe(0)
+  })
+
+  it("gives a connection made before the tools its tools and Library skills once, without connecting again", async () => {
+    const configDir = await mkdtemp(join(tmpdir(), "worktable-upgrade-"))
+    tempDirs.push(configDir)
+    const configPath = join(configDir, "openclaw.json")
+    const pluginDir = await createDiscoveredPluginFixture(configDir)
+    const channel = { enabled: true, server: "https://wt.example.com", token: "wt_abc123def456_secret" }
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        plugins: { allow: ["worktable"], load: { paths: [pluginDir] } },
+        channels: { worktable: channel },
+      })
+    )
+    process.env.OPENCLAW_CONFIG_PATH = configPath
+    process.env.OPENCLAW_STATE_DIR = configDir
+    const read = async () => JSON.parse(await readFile(configPath, "utf8"))
+
+    expect(await upgradeAgentConfig(channel)).toBe(true)
+    const upgraded = await read()
+    // The same address and token the channel uses.
+    expect(upgraded.mcp.servers.worktable).toEqual({
+      url: "https://wt.example.com/mcp",
+      transport: "streamable-http",
+      headers: { Authorization: `Bearer ${channel.token}` },
+    })
+    expect(upgraded.skills.load.extraDirs).toEqual([join(configDir, "plugins", "worktable", "library")])
+
+    // Once: a server the person removes afterwards stays removed.
+    delete upgraded.mcp.servers.worktable
+    await writeFile(configPath, JSON.stringify(upgraded))
+    expect(await upgradeAgentConfig(channel)).toBe(false)
+    expect((await read()).mcp.servers.worktable).toBeUndefined()
   })
 })

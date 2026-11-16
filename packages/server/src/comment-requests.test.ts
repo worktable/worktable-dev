@@ -10,6 +10,7 @@ import { apiErrorResponse } from "./api-error-response.ts"
 import { setAppDirOverride } from "./app-storage.ts"
 import { ownerIdentity } from "./auth.ts"
 import { resolveParticipant } from "./participant-store.ts"
+import { OWNER_SETUP_KEY, setupSummary } from "./personal-setup.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
 import { listPending } from "./pending.ts"
 import {
@@ -241,6 +242,29 @@ for (const layout of ["Storage V1", "Storage V2"] as const) {
       })
       expect(plain.status).toBe(200)
       expect(plain.json.annotation.requests).toBeUndefined()
+    })
+
+    it("finishes Leave a Note when a person sends a comment to an agent", async () => {
+      const noted = () => setupSummary(OWNER_SETUP_KEY).helpEvidence?.["note-to-agent"]
+      // A note left for nobody, and an agent writing to a person, don't count.
+      await post("", { target: { type: "doc", docPath: "explorer" }, category: "comment", body: "Just a note." })
+      caller = finn
+      const owner = (await resolveParticipant(ownerIdentity())).participant
+      await post("", { target: { type: "doc", docPath: "explorer" }, category: "comment", body: "For you.", to: [owner.id] })
+      caller = ownerIdentity()
+      expect(noted()).toBeUndefined()
+
+      await post("", {
+        target: { type: "block", docPath: "explorer", blockId: "tiers" },
+        category: "comment",
+        body: "What's missing here?",
+        to: ["Finn"],
+      })
+      for (let attempt = 0; attempt < 200 && !noted(); attempt++) {
+        // test-policy: external-readiness-backoff (help evidence saves off the write path)
+        await Bun.sleep(5)
+      }
+      expect(noted()).toMatchObject({ spaceId: "pricing", path: "explorer" })
     })
 
     it("waits in the recipient's pending list, and keeps its place across a restart", async () => {

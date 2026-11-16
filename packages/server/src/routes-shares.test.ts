@@ -10,6 +10,7 @@ import type { CreatedShareLink, DocumentShareLinks } from "@worktable/types"
 import { setAppDirOverride } from "./app-storage.ts"
 import { renameDocAndSync } from "./doc-rename.ts"
 import { ownerIdentity } from "./auth.ts"
+import { OWNER_SETUP_KEY, setupSummary } from "./personal-setup.ts"
 import { gatewayAdmits } from "./hosted.ts"
 import { publicSharesRouter } from "./routes/public-shares.ts"
 import { sharesRouter } from "./routes/shares.ts"
@@ -219,9 +220,17 @@ describe("Cloud document share HTTP boundary", () => {
     )
     expect(forbidden.status).toBe(403)
 
+    const linkMade = () => setupSummary(OWNER_SETUP_KEY).helpEvidence?.["link-made"]
+    expect(linkMade()).toBeUndefined()
     const response = await createLink(artifact)
     expect(response.status).toBe(201)
     expect(response.headers.get("Cache-Control")).toBe("no-store")
+    // The first link finishes Try Next's Share a Link.
+    for (let attempt = 0; attempt < 200 && !linkMade(); attempt++) {
+      // test-policy: external-readiness-backoff (help evidence saves off the write path)
+      await Bun.sleep(5)
+    }
+    expect(linkMade()).toMatchObject({ spaceId: "space", path: "launch-plan" })
     const link = (await response.json()) as CreatedShareLink
     expect(link.url).toMatch(
       /^https:\/\/share\.worktable\.cloud\/s\/workspace_cloud_123\/[A-Za-z0-9_-]{43}$/

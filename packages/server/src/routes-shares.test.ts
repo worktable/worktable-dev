@@ -453,6 +453,7 @@ describe("Cloud document share HTTP boundary", () => {
       kind: string
       title: string
       contentTicket: string
+      live?: { rev: string; poll: number }
     }
     // Nothing was saved on the link: the page runs all the same.
     expect(outer).toEqual({

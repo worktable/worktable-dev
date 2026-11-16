@@ -236,11 +236,12 @@ test("recovers committed creation and direct replies after participant refresh f
   })
   let participantRouteMode: "hold" | "fail" | "pass" = "hold"
   let participantRequestCount = 0
-  const composer = page.getByPlaceholder("Reply in this thread…")
   const composerGroup = page.getByRole("group", {
     name: "Write a message",
     exact: true,
   })
+  // Its placeholder names who replies, which changes with who is here.
+  const composer = composerGroup.locator("textarea")
   await expect(composer).toBeEnabled()
   await page.route("**/api/threads/participants", async (route) => {
     participantRequestCount += 1
@@ -340,11 +341,12 @@ test("mentions, response requests and live messages preserve the reader’s inte
     waitUntil: "domcontentloaded",
   })
   await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 30_000 })
-  const composer = page.getByPlaceholder("Reply in this thread…")
   const composerGroup = page.getByRole("group", {
     name: "Write a message",
     exact: true,
   })
+  // Its placeholder names who replies, which changes with who is here.
+  const composer = composerGroup.locator("textarea")
   await expect(composer).toBeEnabled()
   consoleErrors.length = 0
 

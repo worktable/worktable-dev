@@ -3,6 +3,13 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { htmlDocumentApiPath } from "../src/lib/html-document-api-path"
 import { startWebHarness, type WebHarness } from "./harness"
 
+// The box's placeholder names who the comment goes to, so find it by its name.
+function commentBox(page: Page) {
+  return page
+    .getByRole("group", { name: "Add Comment", exact: true })
+    .locator("textarea")
+}
+
 let harness: WebHarness
 
 // The block handle follows the pointer, and a closing dialog returns focus to
@@ -227,12 +234,12 @@ test("rich-doc block handles remain usable after annotation composer closes", as
 
   await openBlockMenu(page, firstBlock)
   await page.getByRole("menuitem", { name: "Comment" }).click()
-  await page.getByPlaceholder("Write a comment…").waitFor()
+  await commentBox(page).waitFor()
   await page.keyboard.press("Escape")
 
   await openBlockMenu(page, secondBlock)
   await page.getByRole("menuitem", { name: "Comment" }).click()
-  await page.getByPlaceholder("Write a comment…").fill("Second block note")
+  await commentBox(page).fill("Second block note")
   const secondCreate = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
@@ -252,7 +259,7 @@ test("rich-doc block handles remain usable after annotation composer closes", as
 
   await openBlockMenu(page, thirdBlock)
   await page.getByRole("menuitem", { name: "Comment" }).click()
-  await page.getByPlaceholder("Write a comment…").fill("Third block note")
+  await commentBox(page).fill("Third block note")
   const thirdCreate = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&

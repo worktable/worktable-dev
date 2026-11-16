@@ -12,8 +12,16 @@ infrastructure and personal context out of release notes.
 ### Added
 
 - **Views of live share links on Worktable Cloud:** Each view now also notes the region or state, operating system, browser language, screen size, how far down the page was read, and whether the visitor came from LinkedIn, email or straight to the link. It also notes whether that browser had viewed the link on an earlier day, and, outside the EEA, UK, Switzerland and Quebec, the name of the network's organization. The share dialog shows where the latest view came from and how many people came back; agents see the rest. Nothing records an IP address or ties a view to a person.
+- **Help (Preview):** Worktable explains itself as you go. A short welcome shows what Worktable gives you before you connect your first agent. **Next Steps** on Home suggests what to try next, such as a second agent or a page you can share, and ticks each one off when it happens. The first time you open Records, a Drawing, a File, a thread or the Library, a tip says what it's for, and help icons explain the idea behind a label. **Settings → Help** shows the welcome again, brings tips back, and lists How Worktable Works.
 
 ### Changed
+
+- **Comments and threads:** The comment box says who it goes to, such as "Ask Claude Code…" or "Leave a note…", and a thread with one agent says "Message Claude Code…".
+- **Getting Started:** Each step says when it's done. Copying the line for your agent's rules no longer finishes that step; **I Added It** does.
+- **Sharing:** Sharing a temporary Doc says when its link stops working, with **Keep**, and turning off live data says what visitors still get.
+- **Docs:** **Edit** on a Markdown Doc asks first, since it becomes a Worktable Doc. Keeping a temporary Doc confirms it won't archive. The shared pin is **Pin in Space**.
+- **HTML Docs:** The comment button is labelled **Comment**.
+- **Agents:** Auto-reply's button is **Copy Prompt**, which says where to paste it.
 
 - **Home and Space Home:** Rebuilt around the latest work. **Latest** shows one row for each sitting, saying who created or edited what and where, with the other docs from that sitting behind **More**. **Pinned** on Home holds the docs you pin there with **Pin To Home**, for you alone, and a pinned HTML Doc shows itself small. **Spaces** shows your busiest Spaces, and Space Home its folders, with their last two weeks and who worked there. **Archiving** counts the temporary docs leaving on each of the next seven days; open a day to keep one. **Pending** lists only what is addressed to you, and appears only when something is.
 - **Browser tabs:** A tab is named after the page it shows, such as a Doc's title, a Space or **Activity**, and shows the Worktable icon again in place of the Worktable's logo.

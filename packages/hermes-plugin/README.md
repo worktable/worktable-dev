@@ -11,7 +11,9 @@ With the plugin, Hermes:
   per thread;
 - uses the Worktable tools in any of its conversations;
 - has Worktable's skills for finding context, writing Docs, building HTML Docs,
-  organizing Records, reviewing with annotations, and collaborating in threads.
+  organizing Records, reviewing with annotations, and collaborating in threads;
+- lists your team's Library skills from Worktable with its own, each read from
+  Worktable when used, so Hermes follows the approved version.
 
 Requires Hermes 0.21.5 or later.
 
@@ -125,8 +127,11 @@ HTTPS one.
   under `plugins.entries.worktable.settings` in `config.yaml`.
 - Delivery state (replies not yet posted and recently answered messages) is in
   the plugin's data directory.
+- Library skill pointers are in `library/` in the plugin's data directory. They
+  hold each skill's name and when to use it, never its text.
 
-After pairing, the plugin talks only to that Worktable address. With a
+After pairing, the plugin talks only to that Worktable address: for thread
+messages, and every 15 minutes for the list of Library skills. With a
 Worktable older than 0.1.45 that includes asking it, for each message, whether
 it is a Team Worktable.
 

@@ -100,6 +100,7 @@ function mockLink(
     url: index === 0 ? SHARED_URL : `${SHARED_URL.slice(0, -1)}${index}`,
     canManage: true,
     comments: { ...COMMENTS },
+    ...(body.grant ? { grant: body.grant as ShareLink["grant"] } : {}),
   }
 }
 
@@ -130,7 +131,8 @@ async function mockSharing(
     toolReads?: string[]
   } = {}
 ) {
-  const state = { links: options.links ?? [], made: 0 }
+  // Made links are numbered after the ones a journey starts with.
+  const state = { links: options.links ?? [], made: options.links?.length ?? 0 }
   const mutations: Mutation[] = []
 
   await page.route("**/api/system/deployment", (route) =>
@@ -762,6 +764,30 @@ for (const appearance of [
     expect(
       (mutations[1]?.body.grant as typeof suggested).collections.deals.fields
     ).toEqual(["name", "amount"])
+
+    // A link for one audience shows the same live data, and can stop.
+    await dialog.getByRole("button", { name: /^More links/ }).click()
+    await dialog.getByRole("button", { name: "New Link", exact: true }).click()
+    const otherLive = dialog
+      .getByRole("switch", { name: "Show live data", exact: true })
+      .last()
+    await expect(otherLive).toBeChecked()
+    await dialog.getByLabel("Label", { exact: true }).fill("Prospect")
+    await dialog.getByRole("button", { name: "Create Link", exact: true }).click()
+    const others = dialog.getByRole("list", { name: "Other links" })
+    await expect(others.getByRole("listitem")).toHaveText([/^Prospect/])
+    expect(mutations[2]?.body).toMatchObject({
+      label: "Prospect",
+      grant: { collections: { deals: { fields: ["name", "amount"] } } },
+    })
+    await others
+      .getByRole("button", { name: "Actions for Prospect", exact: true })
+      .click()
+    await page.getByRole("menuitem", { name: "Edit Link", exact: true }).click()
+    await expect(otherLive).toBeChecked()
+    await otherLive.click()
+    await dialog.getByRole("button", { name: "Save", exact: true }).click()
+    await expect.poll(() => mutations[3]?.body).toMatchObject({ grant: null })
 
     // Opened again, the saved access is checked once its section opens.
     await dialog.getByRole("button", { name: "Done", exact: true }).click()

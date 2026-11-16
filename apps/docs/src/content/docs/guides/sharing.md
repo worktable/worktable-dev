@@ -89,6 +89,10 @@ company or internet provider. **Share** says where the latest view came from
 and how many people came back on another day; agents reading the HTML Doc see
 each view.
 
+Links made under **More links** show the same live data as the main link, so
+each audience can have its own link and its own views. **Edit Link** turns a
+link's live data off or back on.
+
 ### Visitor comments
 
 Open **Comments** in **Share** and turn on **Allow comments**. Each visitor sees

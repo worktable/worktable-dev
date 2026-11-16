@@ -19,6 +19,9 @@ import {
 import { hasScope } from "../token-store.ts"
 import { z } from "zod"
 import {
+  HELP_EVENTS,
+  HELP_ID_PATTERN,
+  SELF_REPORTED_HELP_EVIDENCE_IDS,
   SELF_REPORTED_SETUP_ITEM_IDS,
   SKIPPABLE_SETUP_ITEM_IDS,
 } from "@worktable/types/setup"
@@ -39,6 +42,8 @@ import { occupiedSpaceIds } from "../store.ts"
 import {
   changeSetup,
   setupKeyForPerson,
+  withHelpEvent,
+  withHelpReset,
   withSetupItem,
 } from "../personal-setup.ts"
 import { wsManager } from "../ws.ts"
@@ -214,6 +219,53 @@ const SaveSetupSchema = z
     done: z.enum(SELF_REPORTED_SETUP_ITEM_IDS).optional(),
   })
   .strict()
+
+const SaveHelpSchema = z
+  .object({
+    id: z.string().regex(HELP_ID_PATTERN).optional(),
+    event: z.enum(HELP_EVENTS).optional(),
+    version: z.number().int().min(0).max(1000).optional(),
+    /** Show every tip again from the start. */
+    resetAll: z.literal(true).optional(),
+    /** Evidence only the browser sees, such as the rules line added. */
+    evidence: z.enum(SELF_REPORTED_HELP_EVIDENCE_IDS).optional(),
+    tryNextHidden: z.boolean().optional(),
+  })
+  .strict()
+  .refine((body) => (body.id === undefined) === (body.event === undefined), {
+    message: "id and event go together",
+  })
+
+// What the person has seen of the help, and what only their browser saw.
+// Reads arrive with the workspace summary, like setup.
+profileRouter.put("/help", async (c) => {
+  const person = personalPreferencesKey(c)
+  if (!person) return c.json(forbidden(), 403)
+  const parsed = SaveHelpSchema.safeParse(await c.req.json().catch(() => null))
+  if (!parsed.success) return c.json({ error: "Invalid help" }, 400)
+  const { id, event, version, resetAll, evidence, tryNextHidden } = parsed.data
+  try {
+    const saved = await changeSetup(setupKeyForPerson(person), (current) => {
+      let next = resetAll ? withHelpReset(current) : current
+      if (id && event) next = withHelpEvent(next, id, event, version)
+      if (evidence && !next.helpEvidence?.[evidence])
+        next = {
+          ...next,
+          helpEvidence: {
+            ...next.helpEvidence,
+            [evidence]: { at: new Date().toISOString() },
+          },
+        }
+      if (tryNextHidden !== undefined) next = { ...next, tryNextHidden }
+      return next
+    })
+    return c.json({ setup: saved })
+  } catch (error) {
+    if (error instanceof PreferencesUnreadableError)
+      return c.json({ error: error.message, code: error.code }, 503)
+    throw error
+  }
+})
 
 // The person's own choices about their first steps, and the steps only their
 // browser sees. Other progress is recorded by the server as things happen;

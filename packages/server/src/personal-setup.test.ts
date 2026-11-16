@@ -147,3 +147,73 @@ it("keeps stored progress when an earlier version listed other items", () => {
     })
   ).toEqual({ items: { "connect-agent": { at } } })
 })
+
+function help(body: Record<string, unknown>) {
+  return app().fetch(
+    new Request("http://localhost/api/profile/help", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  )
+}
+
+it("remembers each tip a person met, and finishes help from what happens", async () => {
+  // A tip shown twice, then closed, keeps its count; a rewrite starts over.
+  expect((await help({ id: "records-meet", event: "shown", version: 1 })).status).toBe(200)
+  expect((await help({ id: "records-meet", event: "shown", version: 1 })).status).toBe(200)
+  expect((await help({ id: "records-meet", event: "closed" })).status).toBe(200)
+  let current = await setup()
+  expect(current.help?.["records-meet"]).toMatchObject({ shown: 2, version: 1 })
+  expect(current.help?.["records-meet"]?.closedAt).toBeDefined()
+  await help({ id: "records-meet", event: "shown", version: 2 })
+  expect((await setup()).help?.["records-meet"]).toMatchObject({ shown: 1, version: 2 })
+
+  // Only the rules line is the browser's to report; ids are slugs.
+  expect((await help({ evidence: "rules-added" })).status).toBe(200)
+  expect((await help({ evidence: "link-made" })).status).toBe(400)
+  expect((await help({ id: "Not A Slug", event: "shown" })).status).toBe(400)
+  expect((await help({ id: "records-meet" })).status).toBe(400)
+
+  // The person keeping a Doc and an agent making a page finish their help.
+  recordActivity({
+    spaceId: "atlas",
+    action: "doc.kept",
+    actor: { kind: "person", id: "local:owner" },
+    target: { kind: "doc", path: "brief" },
+  })
+  recordActivity({
+    spaceId: "atlas",
+    action: "doc.created",
+    actor: { kind: "agent", id: "local-token:codex" },
+    target: { kind: "doc", path: "plan", formatId: "worktable.html" },
+  })
+  current = await eventually(
+    (value) =>
+      Boolean(value.helpEvidence?.["temporary-kept"]) &&
+      Boolean(value.helpEvidence?.["html-doc-made"])
+  )
+  expect(current.helpEvidence?.["html-doc-made"]).toMatchObject({ path: "plan" })
+  expect(current.helpEvidence?.["rules-added"]).toBeDefined()
+
+  // Show Tips Again forgets what was seen, not what happened.
+  expect((await help({ resetAll: true })).status).toBe(200)
+  current = await setup()
+  expect(current.help).toBeUndefined()
+  expect(current.helpEvidence?.["temporary-kept"]).toBeDefined()
+})
+
+it("drops help entries it can't read instead of losing the setup", () => {
+  const at = "2026-11-01T00:00:00.000Z"
+  expect(
+    parsePersonalSetup({
+      items: {},
+      help: { "records-meet": { shown: 1 }, "Bad Id": { shown: 1 }, x: { shown: "no" } },
+      helpEvidence: { "link-made": { at }, "made-up": { at } },
+    })
+  ).toEqual({
+    items: {},
+    help: { "records-meet": { shown: 1 } },
+    helpEvidence: { "link-made": { at } },
+  })
+})

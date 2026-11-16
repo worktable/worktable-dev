@@ -33,3 +33,8 @@ export function useDocumentSharingAvailable(): boolean {
 export function useSkillLibrariesEnabled(): boolean {
   return useDeploymentInfo().data?.capabilities.skillLibraries === true
 }
+
+/** Whether this Worktable shows the welcome, Try Next and tips (Preview). */
+export function useHelpEnabled(): boolean {
+  return useDeploymentInfo().data?.capabilities.help === true
+}

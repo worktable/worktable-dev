@@ -1,5 +1,9 @@
 import type { ActivityEvent } from "@worktable/types"
 import {
+  HELP_STATE_MAX,
+  type HelpEvent,
+  type HelpEvidenceId,
+  type HelpState,
   type PersonalSetup,
   type SetupEvidence,
   type SetupItemId,
@@ -157,6 +161,111 @@ export async function completeSetupItem(
   })
 }
 
+/**
+ * Record help evidence the first time it happens, like completeSetupItem:
+ * checked in memory first and never rejects, so write paths needn't wait.
+ */
+export async function completeHelpEvidence(
+  key: string | null,
+  id: HelpEvidenceId,
+  details?: Omit<SetupEvidence, "at">
+): Promise<void> {
+  if (!key || storedSetup(key)?.helpEvidence?.[id]) return
+  await changeSetup(key, (setup) =>
+    setup.helpEvidence?.[id]
+      ? null
+      : {
+          ...setup,
+          helpEvidence: { ...setup.helpEvidence, [id]: evidence(details) },
+        }
+  ).catch((error) => {
+    console.warn("[setup] could not save help progress:", logError(error))
+  })
+}
+
+/** The help map after one event from the person's browser. */
+export function withHelpEvent(
+  setup: PersonalSetup,
+  id: string,
+  event: HelpEvent,
+  version: number | undefined,
+  now = new Date().toISOString()
+): PersonalSetup {
+  const help = { ...setup.help }
+  const current: HelpState = help[id] ?? { shown: 0 }
+  let next: HelpState | null
+  switch (event) {
+    case "shown":
+      // A rewritten tip starts over.
+      next =
+        version !== undefined && current.version !== version
+          ? { shown: 1, lastShownAt: now, version }
+          : { ...current, shown: current.shown + 1, lastShownAt: now }
+      break
+    case "closed":
+      next = { ...current, closedAt: now }
+      break
+    case "done":
+      next = current.doneAt ? current : { ...current, doneAt: now }
+      break
+    case "optOut":
+      next = { ...current, optedOut: true, closedAt: current.closedAt ?? now }
+      break
+    case "reset":
+      next = null
+      break
+  }
+  if (next) {
+    delete help[id]
+    help[id] = next
+  } else delete help[id]
+  // The oldest entries go first when the map is full.
+  const ids = Object.keys(help)
+  for (const old of ids.slice(0, Math.max(0, ids.length - HELP_STATE_MAX)))
+    delete help[old]
+  return { ...setup, help }
+}
+
+/** Every help entry forgotten, so tips show again from the start. */
+export function withHelpReset(setup: PersonalSetup): PersonalSetup {
+  const { help: _help, tryNextHidden: _hidden, ...rest } = setup
+  return rest
+}
+
+/**
+ * A second agent working for the same person. The first ids seen are kept,
+ * so the second distinct one marks Try Next's Add Another Agent done.
+ */
+async function noteAgentForHelp(
+  key: string | null,
+  agentId: string | undefined
+): Promise<void> {
+  if (!key || !agentId) return
+  const stored = storedSetup(key)
+  if (stored?.helpEvidence?.["another-agent"]) return
+  if (stored?.agentsSeen?.includes(agentId)) return
+  await changeSetup(key, (setup) => {
+    const seen = setup.agentsSeen ?? []
+    if (seen.includes(agentId) || setup.helpEvidence?.["another-agent"])
+      return null
+    const agentsSeen = [...seen, agentId].slice(0, 5)
+    return {
+      ...setup,
+      agentsSeen,
+      ...(agentsSeen.length >= 2
+        ? {
+            helpEvidence: {
+              ...setup.helpEvidence,
+              "another-agent": evidence(),
+            },
+          }
+        : {}),
+    }
+  }).catch((error) => {
+    console.warn("[setup] could not save agents seen:", logError(error))
+  })
+}
+
 /** The person behind the current request, as far as setup is concerned. */
 function currentSetupKey(): string | null {
   return setupKeyForIdentity(currentRequestIdentity())
@@ -164,7 +273,17 @@ function currentSetupKey(): string | null {
 
 /** An agent connected and made its first call. */
 export function noteAgentCallForSetup(identity: TokenIdentity | undefined): void {
-  void completeSetupItem(setupKeyForIdentity(identity), "connect-agent")
+  const key = setupKeyForIdentity(identity)
+  void completeSetupItem(key, "connect-agent")
+  void noteAgentForHelp(key, agentIdentityId(identity))
+}
+
+/**
+ * Which agent made a call, by its app ("claude-code", "chatgpt"), so a
+ * second app counts as another agent and a reconnect of the same one doesn't.
+ */
+function agentIdentityId(identity: TokenIdentity | undefined): string | undefined {
+  return identity?.agent ?? undefined
 }
 
 /** A person paired an agent, or a member's agent first signed in. */
@@ -177,6 +296,7 @@ export function noteAgentPairedForSetup(key: string | null): Promise<void> {
  * Getting Started doesn't count: the task is a Space of the person's own.
  */
 export function observeActivityForSetup(event: ActivityEvent): void {
+  observeActivityForHelp(event)
   if (event.actor.kind !== "agent") return
   if (event.action !== "doc.created" && event.action !== "doc.edited") return
   if (event.spaceId && isGettingStartedSpaceId(event.spaceId)) return
@@ -184,6 +304,43 @@ export function observeActivityForSetup(event: ActivityEvent): void {
     ...(event.spaceId ? { spaceId: event.spaceId } : {}),
     ...(event.target.kind === "doc" ? { path: event.target.path } : {}),
   })
+}
+
+/**
+ * What finishes help: the person's own actions, and an agent's HTML Doc made
+ * for them. Each is recorded once; later events cost a memory check.
+ */
+function observeActivityForHelp(event: ActivityEvent): void {
+  const key = currentSetupKey()
+  if (!key) return
+  const where = {
+    ...(event.spaceId ? { spaceId: event.spaceId } : {}),
+    ...(event.target.kind === "doc" ? { path: event.target.path } : {}),
+  }
+  const html =
+    event.target.kind === "doc" && event.target.formatId === "worktable.html"
+  if (event.actor.kind === "agent") {
+    if (event.action === "doc.created" && html)
+      void completeHelpEvidence(key, "html-doc-made", where)
+    return
+  }
+  if (event.actor.kind !== "person") return
+  switch (event.action) {
+    case "doc.kept":
+      void completeHelpEvidence(key, "temporary-kept", where)
+      return
+    case "comment.created":
+      if (html) void completeHelpEvidence(key, "html-commented", where)
+      return
+    case "thread.started":
+    case "thread.replied":
+      void completeHelpEvidence(key, "thread-message")
+      return
+    case "records.added":
+    case "records.updated":
+      void completeHelpEvidence(key, "records-edited", where)
+      return
+  }
 }
 
 /** When Teams turns on, the owner's setup moves to their member key. */

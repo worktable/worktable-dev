@@ -157,6 +157,8 @@ export interface DeploymentInfo {
     commentRecipients?: boolean
     /** People manage the skill libraries agents read (Preview agent tools). */
     skillLibraries?: boolean
+    /** The welcome, Try Next, tips and How Worktable Works (Preview). */
+    help?: boolean
   }
 }
 

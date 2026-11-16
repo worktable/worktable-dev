@@ -43,6 +43,59 @@ export interface PersonalSetup {
   hidden?: boolean
   /** A member has seen the welcome in the Space they joined. */
   welcomed?: boolean
+  /** What the person has seen of each piece of help, by its id. */
+  help?: Record<string, HelpState>
+  /** Things Worktable saw happen that finish help, such as a link made. */
+  helpEvidence?: Partial<Record<HelpEvidenceId, SetupEvidence>>
+  /** The first agents seen working for this person, to notice a second one. */
+  agentsSeen?: string[]
+  /** Try Next is hidden from Home; Settings > Help brings it back. */
+  tryNextHidden?: boolean
 }
+
+/**
+ * Things that finish a piece of help when they happen. Each is recorded once,
+ * by the server where it sees it, or by the browser where only it can.
+ */
+export const HELP_EVIDENCE_IDS = [
+  "another-agent",
+  "html-doc-made",
+  "html-commented",
+  "link-made",
+  "note-to-agent",
+  "records-edited",
+  "rules-added",
+  "temporary-kept",
+  "thread-message",
+  "skill-added",
+] as const
+
+export type HelpEvidenceId = (typeof HELP_EVIDENCE_IDS)[number]
+
+/** Evidence only the person's browser can see, so they report it. */
+export const SELF_REPORTED_HELP_EVIDENCE_IDS = ["rules-added"] as const
+
+/** One piece of help as this person has met it. */
+export interface HelpState {
+  /** How many times it showed on its own. */
+  shown: number
+  /** When it last showed, to keep a closed tip away until a later session. */
+  lastShownAt?: string
+  closedAt?: string
+  doneAt?: string
+  /** Don't Show Again. */
+  optedOut?: boolean
+  /** The version of the tip they saw; a rewritten tip shows again. */
+  version?: number
+}
+
+/** What a browser can say about a piece of help. */
+export const HELP_EVENTS = ["shown", "closed", "done", "optOut", "reset"] as const
+export type HelpEvent = (typeof HELP_EVENTS)[number]
+
+/** Help ids are short slugs, so a stored setup stays small. */
+export const HELP_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/
+/** At most this many help entries are kept per person. */
+export const HELP_STATE_MAX = 200
 
 export const EMPTY_PERSONAL_SETUP: PersonalSetup = { items: {} }

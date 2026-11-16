@@ -9,27 +9,14 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
-### Added
-
-- **Light or dark on shared pages:** A page shared by link starts in the visitor's light or dark choice from its header, and follows it when they switch.
-- **Connecting agents on Worktable Cloud:** Claude Code and Codex now install Worktable's plugin, which brings Worktable's skills as well as its tools, and Gemini CLI has its own step. Antigravity, Gemini and Perplexity have their own steps in Getting Started and **Settings → Agents**. Claude on the web and desktop installs the Worktable plugin too; on Claude's Free plan, one click opens Claude's connector dialog with Worktable filled in.
-
-### Changed
-
-- **Shared pages work for visitors:** A link to an HTML Doc now runs the page, so its buttons and scripts work for anyone who opens it. Links you already made do too. Before, visitors got a still copy unless the link had **Live data** on. **Live data** now decides only whether visitors see the Records a page reads: **Share** offers it for pages that read Records, and **Settings → Sharing** has one **Live data** switch for it. Turning that switch off hides Records on every link and leaves the pages running.
-- **Agent logos:** The Goose logo loads faster.
-- **Home screen icon:** Adding Worktable to an iPhone or Android home screen shows the full blue icon, without black or white corners.
-
-### Fixed
-
-- **Getting Started:** The step that adds Worktable to your agent's rules points to where Claude keeps them now, **Settings → Your Claude → Instructions**.
-
 ## [0.1.50] - 2026-11-16
 
 ### Added
 
 - **Views of live share links on Worktable Cloud:** Each view now also notes the region or state, operating system, browser language, screen size, how far down the page was read, and whether the visitor came from LinkedIn, email or straight to the link. It also notes whether that browser had viewed the link on an earlier day, and, outside the EEA, UK, Switzerland and Quebec, the name of the network's organization. The share dialog shows where the latest view came from and how many people came back; agents see the rest. Nothing records an IP address or ties a view to a person.
 - **Help (Preview):** Worktable explains itself as you go. A short welcome shows what Worktable gives you before you connect your first agent. **Next Steps** on Home suggests what to try next, such as a second agent or a page you can share, and ticks each one off when it happens. The first time you open Records, a Drawing, a File, a thread or the Library, a tip says what it's for, and help icons explain the idea behind a label. **Settings → Help** shows the welcome again, brings tips back, and lists How Worktable Works.
+- **Light or dark on shared pages:** A page shared by link starts in the visitor's light or dark choice from its header, and follows it when they switch.
+- **Connecting agents on Worktable Cloud:** Claude Code and Codex now install Worktable's plugin, which brings Worktable's skills as well as its tools, and Gemini CLI has its own step. Antigravity, Gemini and Perplexity have their own steps in Getting Started and **Settings → Agents**. Claude on the web and desktop installs the Worktable plugin too; on Claude's Free plan, one click opens Claude's connector dialog with Worktable filled in.
 
 ### Changed
 
@@ -39,13 +26,16 @@ infrastructure and personal context out of release notes.
 - **Docs:** **Edit** on a Markdown Doc asks first, since it becomes a Worktable Doc. Keeping a temporary Doc confirms it won't archive. The shared pin is **Pin in Space**.
 - **HTML Docs:** The comment button is labelled **Comment**.
 - **Agents:** Auto-reply's button is **Copy Prompt**, which says where to paste it.
-
 - **Home and Space Home:** Rebuilt around the latest work. **Latest** shows one row for each sitting, saying who created or edited what and where, with the other docs from that sitting behind **More**. **Pinned** on Home holds the docs you pin there with **Pin To Home**, for you alone, and a pinned HTML Doc shows itself small. **Spaces** shows your busiest Spaces, and Space Home its folders, with their last two weeks and who worked there. **Archiving** counts the temporary docs leaving on each of the next seven days; open a day to keep one. **Pending** lists only what is addressed to you, and appears only when something is.
 - **Browser tabs:** A tab is named after the page it shows, such as a Doc's title, a Space or **Activity**, and shows the Worktable icon again in place of the Worktable's logo.
+- **Shared pages work for visitors:** A link to an HTML Doc now runs the page, so its buttons and scripts work for anyone who opens it. Links you already made do too. Before, visitors got a still copy unless the link had **Live data** on. **Live data** now decides only whether visitors see the Records a page reads: **Share** offers it for pages that read Records, and **Settings → Sharing** has one **Live data** switch for it. Turning that switch off hides Records on every link and leaves the pages running.
+- **Agent logos:** The Goose logo loads faster.
+- **Home screen icon:** Adding Worktable to an iPhone or Android home screen shows the full blue icon, without black or white corners.
 
 ### Fixed
 
 - **Share links:** A link made under **More links** for a live HTML Doc now shows the same live data as the Doc's main link, where it used to say it couldn't load. **Edit Link** can turn its live data off and on again.
+- **Getting Started:** The step that adds Worktable to your agent's rules points to where Claude keeps them now, **Settings → Your Claude → Instructions**.
 
 ## [0.1.49] - 2026-11-14
 

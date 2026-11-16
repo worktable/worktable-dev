@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.10] - 2026-11-16
+
+### Changed
+
+- The plugin's logo fills its square, so apps that show it on a tile of their own, such as ChatGPT's plugin list, show the Worktable mark without white corners.
+
 ## [0.1.9] - 2026-11-16
 
 ### Added

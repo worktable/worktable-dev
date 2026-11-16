@@ -1535,7 +1535,9 @@ const SkillLibraryInput = z.enum(["worktable", "space", "agent"])
 const SkillNameInput = z.string().min(1).max(64)
 
 export const ReadSkillInput = z.object({
-  name: SkillNameInput.describe("The skill's name, as worktable_state lists it."),
+  name: SkillNameInput.optional().describe(
+    "The skill's name, as worktable_state lists it. Omit to list the skills that apply to you, each with when to use it."
+  ),
   library: SkillLibraryInput.optional().describe(
     "When skills in more than one library share the name: worktable, space, or agent for your own."
   ),

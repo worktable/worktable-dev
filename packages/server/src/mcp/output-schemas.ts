@@ -350,6 +350,11 @@ const SkillReadOutputSchema = SkillListingSchema.extend({
   note: z.string(),
 })
 
+/** Preview: the skills that apply to the caller, read without a name. */
+const SkillListOutputSchema = z.looseObject({
+  skills: z.array(SkillListingSchema),
+})
+
 const SkillProposalOutputSchema = z.looseObject({
   ok: z.literal(true),
   proposal: z.looseObject({
@@ -1137,7 +1142,7 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
   "guidance.drawings": [z.looseObject({ guide: z.string() })],
   "mermaid.validate": [MermaidValidationOutputSchema],
   "mermaid.preview": [MermaidPreviewOutputSchema],
-  "skills.read": [SkillReadOutputSchema],
+  "skills.read": [SkillReadOutputSchema, SkillListOutputSchema],
   "skills.propose": [SkillProposalOutputSchema],
 } satisfies Record<OperationId, readonly OutputVariant[]>
 

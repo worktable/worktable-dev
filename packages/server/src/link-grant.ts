@@ -40,7 +40,8 @@ const recordKeyIssue = (name: string) => `Field "${name}" has a name records use
  * - Fields and row conditions come only from the grant.
  * - Writes are reserved, so a collection that sets them is unavailable.
  * - Limits are the grant's: the policy sets none yet.
- * - The team's saved state shows only if the tool may read state.
+ * - The team's saved state shows only if the tool may read state and the
+ *   policy lets links show live data.
  */
 export function effectiveLinkGrant(
   grant: LinkGrant,
@@ -57,7 +58,7 @@ export function effectiveLinkGrant(
     // fromEntries defines own keys, so no id can reach the prototype.
     collections: Object.fromEntries(collections),
     limits: grant.limits,
-    state: grant.state === "team-read" && (permissions === undefined || permissions.state?.read === false) ? "visitor" : grant.state,
+    state: grant.state === "team-read" && (!policy.liveLinks || permissions === undefined || permissions.state?.read === false) ? "visitor" : grant.state,
   };
 }
 

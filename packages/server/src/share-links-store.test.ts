@@ -977,8 +977,12 @@ describe("share links", () => {
       (await send("PUT", "/api/shares/policy", { ...policy, liveLinks: false }))
         .status
     ).toBe(200)
-    // Live data off closes the Records, not the link: its page still runs.
+    // Live data off closes the Records and the team's state, not the link:
+    // its page still runs.
     expect((await bridge(created.token)).status).toBe(403)
+    expect(
+      (await bridge(created.token, { v: 1, op: "state.read" })).status
+    ).toBe(403)
     expect((await bridge(created.token, { v: 1, op: "ping" })).status).toBe(200)
     // Two real 1.5s timeout paths plus filesystem fixture setup and recovery.
   }, 10_000)

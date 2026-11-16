@@ -174,12 +174,13 @@ export function ShareLinksDialog({
   const canCreate = list.data?.canCreate ?? summary.canCreate
   const passwordRequired = policy?.requirePassword ?? false
   const liveAllowed = target.kind === "html" && policy?.liveLinks === true
-  // A page runs for its visitors either way; live data is its Records, and
-  // a link that shows none has it off.
+  // A page runs for its visitors either way; live data is its Records and
+  // the team's saved state, and a link that shows neither has it off.
   const readsRecords = (list.data?.toolReads?.length ?? 0) > 0
   const liveData =
     defaultLink?.grant &&
-    Object.keys(defaultLink.grant.collections).length > 0
+    (Object.keys(defaultLink.grant.collections).length > 0 ||
+      defaultLink.grant.state === "team-read")
       ? defaultLink.grant
       : null
   const liveShown =

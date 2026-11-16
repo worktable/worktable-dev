@@ -11,10 +11,15 @@ import { browserTeamMemberId } from "@/lib/team-context"
 import { Button } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
 import { restoreSpace } from "@/lib/api"
+import { homeFeedQueryOptions } from "@/lib/home"
 import { spaceQueryOptions, useSpace, useSpaces } from "@/lib/queries"
 import { RelativeTime } from "@/lib/time"
 import { useSpaceSubscription } from "@/lib/ws"
 import { gettingStartedSpace } from "@/lib/setup"
+import {
+  loadSpaceOverview,
+  spaceOverviewComponent,
+} from "@/components/spaces/space-overview-loader"
 
 const isGettingStarted = (space: SpaceView) => gettingStartedSpace([space]) !== null
 
@@ -26,23 +31,23 @@ const GettingStartedHome = lazy(() =>
   }))
 )
 
-// Space Home's page. A document opens in this layout without it, so it is
-// its own chunk, asked for as the navigation starts and not after this
-// layout renders.
-const loadSpaceOverview = () => import("@/components/spaces/space-overview")
-const SpaceOverview = lazy(() =>
-  loadSpaceOverview().then((module) => ({ default: module.SpaceOverview }))
-)
 
 export const Route = createFileRoute("/spaces/$spaceId")({
   ssr: false,
-  // Warm space details without delaying SPA-shell hydration. Overview-only
-  // document/collection queries start when the overview actually mounts.
-  // Awaiting here makes the first client tree contain live data while the static
-  // shell still contains its pending UI, which React correctly rejects.
+  // Warm space details without delaying SPA-shell hydration. For Space Home,
+  // also its page's code and its Latest feed, which its content waits for, so
+  // a hover has them in before the click; its other document and collection
+  // queries start when the overview mounts. Awaiting here makes the first
+  // client tree contain live data while the static shell still contains its
+  // pending UI, which React correctly rejects.
   beforeLoad: ({ context, params, location }) => {
     void context.queryClient.prefetchQuery(spaceQueryOptions(params.spaceId))
-    if (/^\/spaces\/[^/]+\/?$/.test(location.pathname)) void loadSpaceOverview()
+    if (/^\/spaces\/[^/]+\/?$/.test(location.pathname)) {
+      void loadSpaceOverview()
+      void context.queryClient.prefetchQuery(
+        homeFeedQueryOptions({ spaceId: params.spaceId })
+      )
+    }
   },
   component: SpaceDetailPage,
 })
@@ -105,6 +110,8 @@ function SpaceDetailPage() {
   const space = data?.space ?? spaces?.find((entry) => entry.id === spaceId)
   const router = useRouter()
   const [restoring, setRestoring] = useState(false)
+  // Space Home's page, chosen once so a chunk landing later never remounts it.
+  const [SpaceOverview] = useState(spaceOverviewComponent)
   const reconcileRouteAfterReconnect = useCallback(
     () => router.invalidate(),
     [router]

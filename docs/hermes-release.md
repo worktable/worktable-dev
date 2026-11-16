@@ -37,5 +37,11 @@ that adds or updates `plugin-catalog/worktable.yaml` following its
 
 Catalog CI runs `hermes plugins validate --install-deps` on the current Hermes
 release, while the `Hermes plugin` check here uses the oldest supported one. Run
-it on the tagged commit with the current release first. Once the entry is merged, switch the install command in
-Settings and the documentation to `hermes plugins install worktable`.
+it on the tagged commit with the current release first.
+
+Hermes reads the catalog shipped with each Hermes release, so
+`hermes plugins install worktable` works only on releases made after the entry
+merged (v0.23.1 has it; v0.22.6 answers that `worktable` is not in the
+catalog). Settings and the documentation keep the
+`worktable/worktable-dev#packages/hermes-plugin` form while the plugin supports
+older Hermes releases.

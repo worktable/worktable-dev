@@ -100,6 +100,7 @@ function mockLink(
     url: index === 0 ? SHARED_URL : `${SHARED_URL.slice(0, -1)}${index}`,
     canManage: true,
     comments: { ...COMMENTS },
+    ...(body.grant ? { grant: body.grant as ShareLink["grant"] } : {}),
   }
 }
 
@@ -130,7 +131,8 @@ async function mockSharing(
     toolReads?: string[]
   } = {}
 ) {
-  const state = { links: options.links ?? [], made: 0 }
+  // Made links are numbered after the ones a journey starts with.
+  const state = { links: options.links ?? [], made: options.links?.length ?? 0 }
   const mutations: Mutation[] = []
 
   await page.route("**/api/system/deployment", (route) =>

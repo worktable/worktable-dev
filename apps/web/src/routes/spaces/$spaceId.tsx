@@ -15,6 +15,10 @@ import { spaceQueryOptions, useSpace, useSpaces } from "@/lib/queries"
 import { RelativeTime } from "@/lib/time"
 import { useSpaceSubscription } from "@/lib/ws"
 import { gettingStartedSpace } from "@/lib/setup"
+import {
+  loadSpaceOverview,
+  spaceOverviewComponent,
+} from "@/components/spaces/space-overview-loader"
 
 const isGettingStarted = (space: SpaceView) => gettingStartedSpace([space]) !== null
 
@@ -26,13 +30,6 @@ const GettingStartedHome = lazy(() =>
   }))
 )
 
-// Space Home's page. A document opens in this layout without it, so it is
-// its own chunk, asked for as the navigation starts and not after this
-// layout renders.
-const loadSpaceOverview = () => import("@/components/spaces/space-overview")
-const SpaceOverview = lazy(() =>
-  loadSpaceOverview().then((module) => ({ default: module.SpaceOverview }))
-)
 
 export const Route = createFileRoute("/spaces/$spaceId")({
   ssr: false,
@@ -105,6 +102,8 @@ function SpaceDetailPage() {
   const space = data?.space ?? spaces?.find((entry) => entry.id === spaceId)
   const router = useRouter()
   const [restoring, setRestoring] = useState(false)
+  // Space Home's page, chosen once so a chunk landing later never remounts it.
+  const [SpaceOverview] = useState(spaceOverviewComponent)
   const reconcileRouteAfterReconnect = useCallback(
     () => router.invalidate(),
     [router]

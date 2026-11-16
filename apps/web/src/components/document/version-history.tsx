@@ -28,7 +28,7 @@ import {
   ContextPanelRail,
   DesktopContextPanel,
 } from "@/components/desktop-context-panel"
-import { HelpIcon } from "@/components/help/help-tip"
+import { HelpIcon } from "@/components/help/help"
 import { RelativeTime } from "@/lib/time"
 import { ActorBadge } from "@/components/home/activity-feed"
 import { useScrollFade } from "@/hooks/use-scroll-fade"

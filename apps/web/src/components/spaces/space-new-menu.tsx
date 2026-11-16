@@ -45,7 +45,7 @@ import {
 import { toast } from "@worktable/ui/components/sonner"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useNewDoc } from "@/hooks/use-new-doc"
-import { HelpIcon } from "@/components/help/help-tip"
+import { HelpIcon } from "@/components/help/help"
 import { useNewDocumentLifetime } from "@/lib/lifetime"
 import {
   queryKeys,

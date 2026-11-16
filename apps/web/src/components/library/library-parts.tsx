@@ -13,8 +13,7 @@ import {
   type DocChoice,
 } from "@/components/library/add-skill-dialog"
 import { LibraryMark } from "@/components/library/library-mark"
-import { TipCard } from "@/components/help/help-tip"
-import { TIPS } from "@/lib/help/registry"
+import { TipCard } from "@/components/help/help"
 import { libraryKey, skillTitle, type LibraryEntry } from "@/lib/library"
 import { type View } from "@/lib/library-path"
 import { useLibraryName, when } from "@/lib/library-actions"
@@ -266,7 +265,7 @@ export function LibraryColumn({
           </p>
         )}
       </header>
-      <TipCard tip={TIPS.libraryMeet} />
+      <TipCard tip="libraryMeet" />
       {children}
     </div>
   )

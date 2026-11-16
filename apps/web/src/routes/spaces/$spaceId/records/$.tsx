@@ -73,10 +73,7 @@ import { FilterButton, FilterChips } from "@/components/records/filter-bar"
 import { NewRecordDialog } from "@/components/records/new-record-dialog"
 import { RecordPeek, type RecordPeekActions, type RecordPeekNavigation } from "@/components/records/record-peek"
 import { SchemaEditorDialog } from "@/components/records/schema-editor"
-import { TipCard, TipHint } from "@/components/help/help-tip"
-import { TIPS } from "@/lib/help/registry"
-import { tipMayShow } from "@/lib/help/rules"
-import { useHelpContext } from "@/lib/help/state"
+import { TipCard, TipHint } from "@/components/help/help"
 
 /** URL-carried table state (shareable); column prefs stay in localStorage. */
 interface RecordsSearch {
@@ -212,8 +209,6 @@ function RecordsPage() {
   // view lives is worth a word, once the first-meeting card is out of the way.
   const [viewChangedIn, setViewChangedIn] = useState<string | null>(null)
   const [viewAnchor, setViewAnchor] = useState<HTMLDivElement | null>(null)
-  const help = useHelpContext()
-  const meetingRecords = tipMayShow(TIPS.recordsMeet, help.setup.help?.[TIPS.recordsMeet.id], help)
 
   /** Patch the URL-carried table state (undefined removes a key). */
   const setTableState = (patch: Partial<Pick<RecordsSearch, "filters" | "groupBy" | "sort">>) => {
@@ -741,7 +736,7 @@ function RecordsPage() {
         <div
           className={`flex min-w-0 flex-1 flex-col px-4 pt-4 transition-[padding-right] duration-300 ease-out sm:px-6 ${peekRecordId && !detailDrawer ? "xl:pr-0" : ""}`}
         >
-          <TipCard tip={TIPS.recordsMeet} className="mb-3 max-w-xl shrink-0" />
+          <TipCard tip="recordsMeet" className="mb-3 max-w-xl shrink-0" />
           {/* Toolbar */}
           <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2">
             <div className="relative min-w-40 flex-1 sm:max-w-64">
@@ -800,9 +795,10 @@ function RecordsPage() {
                     onChange={(next) => setTableState({ filters: next.length > 0 ? next : undefined })}
                   />
                   <TipHint
-                    tip={TIPS.recordsView}
+                    tip="recordsView"
                     anchor={viewAnchor}
-                    active={viewChangedIn === collectionId && !meetingRecords}
+                    active={viewChangedIn === collectionId}
+                    waitFor="recordsMeet"
                   />
                   <GroupByPicker
                     columns={queryableColumns}

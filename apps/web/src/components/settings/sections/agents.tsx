@@ -31,7 +31,7 @@ import { SettingRow } from "@worktable/ui/components/setting-row"
 import { Switch } from "@worktable/ui/components/switch"
 import { useServerSettings } from "@/hooks/use-server-settings"
 import { useHelpEnabled } from "@/hooks/use-deployment-info"
-import { HelpIcon } from "@/components/help/help-tip"
+import { HelpIcon } from "@/components/help/help"
 import { useSettingsPatch } from "../use-settings-patch"
 import { Checkbox } from "@worktable/ui/components/checkbox"
 import {

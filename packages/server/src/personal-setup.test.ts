@@ -13,6 +13,7 @@ import {
   OWNER_SETUP_KEY,
 } from "./personal-setup.ts"
 import { parsePersonalSetup } from "./personal-setup-shape.ts"
+import { createHtmlDocument } from "./html-document-create.ts"
 import { profileRouter } from "./routes/profile.ts"
 import { writeSpace } from "./store.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
@@ -216,4 +217,61 @@ it("drops help entries it can't read instead of losing the setup", () => {
     help: { "records-meet": { shown: 1 } },
     helpEvidence: { "link-made": { at } },
   })
+})
+
+it("finishes HTML help from events that don't name the Doc's format", async () => {
+  const now = new Date().toISOString()
+  await writeSpace({
+    type: "worktable.space",
+    version: 1,
+    id: "atlas",
+    name: "Atlas",
+    createdAt: now,
+    updatedAt: now,
+    createdBy: "test",
+  })
+  const created = await createHtmlDocument({
+    spaceId: "atlas",
+    explicitId: "pricing",
+    name: "Pricing",
+    metadata: {},
+    permissions: { network: false, records: {}, state: { read: true, write: true } },
+    html: "<h1>Pricing</h1>",
+    createdBy: "test",
+    versionSource: "rest-api",
+    versionUpdatedBy: "user",
+  })
+  expect(created.error).toBeUndefined()
+  // Producers name only the path, as document and comment activity do.
+  recordActivity({
+    spaceId: "atlas",
+    action: "doc.created",
+    actor: { kind: "agent", id: "local-token:codex" },
+    target: { kind: "doc", path: "pricing" },
+  })
+  recordActivity({
+    spaceId: "atlas",
+    action: "comment.created",
+    actor: { kind: "person", id: "local:owner" },
+    target: { kind: "doc", path: "pricing" },
+  })
+  const current = await eventually(
+    (value) =>
+      Boolean(value.helpEvidence?.["html-doc-made"]) &&
+      Boolean(value.helpEvidence?.["html-commented"])
+  )
+  expect(current.helpEvidence?.["html-doc-made"]).toMatchObject({ path: "pricing" })
+})
+
+it("keeps a tip that comes back showing until it's closed again", async () => {
+  await help({ id: "temporary-doc", event: "shown", version: 2 })
+  await help({ id: "temporary-doc", event: "closed" })
+  // A later session shows it once more: that showing is open, not closed.
+  await help({ id: "temporary-doc", event: "shown", version: 2 })
+  let state = (await setup()).help?.["temporary-doc"]
+  expect(state).toMatchObject({ shown: 2, version: 2 })
+  expect(state?.closedAt).toBeUndefined()
+  await help({ id: "temporary-doc", event: "closed" })
+  state = (await setup()).help?.["temporary-doc"]
+  expect(state?.closedAt).toBeDefined()
 })

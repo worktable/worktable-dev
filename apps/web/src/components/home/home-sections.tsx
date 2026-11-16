@@ -5,8 +5,7 @@ import {
   MessageSquareText,
 } from "lucide-react"
 import { useState } from "react"
-import { HelpIcon, TipHint } from "@/components/help/help-tip"
-import { TIPS } from "@/lib/help/registry"
+import { HelpIcon, TipHint } from "@/components/help/help"
 import type { PendingItem } from "@worktable/types"
 import { cn } from "@worktable/ui/lib/utils"
 import { ThreadLink } from "@/components/home/activity-feed"
@@ -190,7 +189,7 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
       </div>
       {!spaceId && (
         <TipHint
-          tip={TIPS.pendingMeet}
+          tip="pendingMeet"
           anchor={heading}
           active={items.length > 0}
           // Above the heading, so it never covers what landed.

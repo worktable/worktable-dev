@@ -1,5 +1,4 @@
-import { HelpIcon, TipCard } from "@/components/help/help-tip"
-import { TIPS } from "@/lib/help/registry"
+import { HelpIcon, TipCard } from "@/components/help/help"
 import {
   lazy,
   Suspense,
@@ -236,7 +235,7 @@ export function ChatAppWays({
   }, [linkSetup, linkOn])
   return (
     <div className="flex flex-col gap-5">
-      <TipCard tip={TIPS.linkWhy} active={active && link.isSuccess && !linkOn} />
+      <TipCard tip="linkWhy" active={active && link.isSuccess && !linkOn} />
       <section
         aria-labelledby={`chat-anywhere-${app}`}
         className="flex flex-col gap-1"

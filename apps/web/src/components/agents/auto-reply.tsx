@@ -12,9 +12,9 @@ import {
 } from "@worktable/ui/components/tooltip"
 import { useCopy } from "@worktable/ui/hooks/use-copy"
 import { cn } from "@worktable/ui/lib/utils"
-import { HelpIcon } from "@/components/help/help-tip"
+import { HelpIcon } from "@/components/help/help"
 import { removeCloudTask } from "@/lib/agent-connections-api"
-import { agentReplyLine } from "@/lib/help/registry"
+import { agentReplyLine } from "@/lib/help/agent-reply-line"
 
 /** What a person pastes into their agent to turn auto-reply on. */
 export const AUTO_REPLY_PROMPT =

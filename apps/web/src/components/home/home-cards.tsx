@@ -12,7 +12,7 @@ import {
 import type { ActivityActor, DocumentSummary } from "@worktable/types"
 import { cn } from "@worktable/ui/lib/utils"
 import { DocumentFormatIcon } from "@/components/document-format-icon"
-import { HelpIcon } from "@/components/help/help-tip"
+import { HelpIcon } from "@/components/help/help"
 import { ActorAvatar, When } from "@/components/home/home-latest"
 import { useTheme } from "@/components/theme-provider"
 import { useActorName } from "@/lib/use-actor-name"

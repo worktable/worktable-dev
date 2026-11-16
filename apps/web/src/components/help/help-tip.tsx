@@ -12,22 +12,24 @@ import {
   PopoverTrigger,
 } from "@worktable/ui/components/popover"
 import { cn } from "@worktable/ui/lib/utils"
-import { WorktableAppIcon } from "@/components/worktable-app-icon"
+import { HelpMark } from "@/components/help/help-mark"
 import {
   HELP_ICONS,
+  TIPS,
   concept as conceptById,
   docsUrl,
   type HelpIconKey,
   type Tip,
+  type TipKey,
 } from "@/lib/help/registry"
 import { fillTip } from "@/lib/help/fill"
-import { useTip } from "@/lib/help/state"
-import { useHelpEnabled } from "@/hooks/use-deployment-info"
+import { tipMayShow } from "@/lib/help/rules"
+import { useHelpContext, useTip } from "@/lib/help/state"
 
-/** The Worktable mark in a help band. */
-export function HelpMark() {
-  return <WorktableAppIcon className="size-4" />
-}
+/*
+ * The help components themselves. They carry every line of help, so they load
+ * only where help is on: import the wrappers in ./help instead.
+ */
 
 
 function LearnMore({ path }: { path: string }) {
@@ -39,8 +41,8 @@ function LearnMore({ path }: { path: string }) {
   )
 }
 
-interface TipProps {
-  tip: Tip
+export interface TipProps {
+  tip: TipKey
   /** The place's own condition, such as "this Doc is temporary". */
   active?: boolean
   /** Values for the tip's {placeholders}. */
@@ -52,12 +54,13 @@ interface TipProps {
 
 /** A tip in the page. Renders nothing until it's this screen's turn. */
 export function TipCard({
-  tip,
+  tip: key,
   active = true,
   values,
   actions,
   className,
 }: TipProps) {
+  const tip: Tip = TIPS[key]
   const { open, close, done } = useTip(tip, active)
   if (!open) return null
   const Display = tip.display === "inline" ? HelpInline : HelpCard
@@ -87,21 +90,29 @@ export function TipCard({
 
 /** A tip pointing at one control, such as a button. */
 export function TipHint({
-  tip,
+  tip: key,
   anchor,
   active = true,
   values,
   side,
   align,
   closeWhen = false,
+  waitFor,
 }: TipProps & {
   anchor: Element | null
   side?: "top" | "bottom" | "left" | "right"
   align?: "start" | "center" | "end"
   /** The person used the control it points at: it closes, as if closed. */
   closeWhen?: boolean
+  /** A tip that goes first here: this one waits until that one can't show. */
+  waitFor?: TipKey
 }) {
-  const { open, close } = useTip(tip, active && anchor !== null)
+  const tip: Tip = TIPS[key]
+  const context = useHelpContext()
+  const first: Tip | null = waitFor ? TIPS[waitFor] : null
+  const waiting =
+    first !== null && tipMayShow(first, context.setup.help?.[first.id], context)
+  const { open, close } = useTip(tip, active && !waiting && anchor !== null)
   useEffect(() => {
     if (open && closeWhen) close()
   }, [open, closeWhen, close])
@@ -133,7 +144,6 @@ export function HelpIcon({
   className,
   side = "bottom",
   align = "start",
-  fallback = null,
 }: {
   entry: HelpIconKey
   /** Names the button, e.g. "About Auto-reply". */
@@ -143,14 +153,10 @@ export function HelpIcon({
   className?: string
   side?: "top" | "bottom" | "left" | "right"
   align?: "start" | "center" | "end"
-  /** What shows while help is off (outside Preview), such as today's InfoTip. */
-  fallback?: ReactNode
 }) {
-  const enabled = useHelpEnabled()
   const icon = HELP_ICONS[entry]
   const about = conceptById(icon.concept)
   const placeLine = line ?? ("line" in icon ? icon.line : undefined)
-  if (!enabled) return <>{fallback}</>
   return (
     <Popover>
       <PopoverTrigger

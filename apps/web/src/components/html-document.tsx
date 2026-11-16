@@ -83,8 +83,7 @@ import { Input } from "@worktable/ui/components/input"
 import { AnnotationPanel } from "@/components/annotations/annotation-panel"
 import { CommentBox } from "@/components/annotations/comment-box"
 import { useElementComments } from "@/components/annotations/element-commenting"
-import { TipHint } from "@/components/help/help-tip"
-import { TIPS } from "@/lib/help/registry"
+import { TipHint } from "@/components/help/help"
 import { docContributors } from "@/lib/comment-recipients"
 import { DesktopContextPanel } from "@/components/desktop-context-panel"
 import {
@@ -936,7 +935,7 @@ function WidgetDetailPage({
             </Button>
           </div>
           <TipHint
-            tip={TIPS.htmlComment}
+            tip="htmlComment"
             anchor={validated && !readOnly && !previewVersionId ? commentButton : null}
             active={frameSrc !== null && loadedFrameSrc === frameSrc}
             closeWhen={elementComments.mode}

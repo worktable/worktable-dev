@@ -9,6 +9,7 @@ import {
   type SetupItemId,
 } from "@worktable/types/setup"
 import { logError } from "./debug-log.ts"
+import { readDocumentInventory } from "./document-inventory.ts"
 import { isGettingStartedSpaceId } from "./getting-started.ts"
 import { participantKey } from "./participant-store.ts"
 import {
@@ -200,7 +201,13 @@ export function withHelpEvent(
       next =
         version !== undefined && current.version !== version
           ? { shown: 1, lastShownAt: now, version }
-          : { ...current, shown: current.shown + 1, lastShownAt: now }
+          : {
+              ...current,
+              shown: current.shown + 1,
+              lastShownAt: now,
+              // Showing again is current: the earlier close no longer holds.
+              closedAt: undefined,
+            }
       break
     case "closed":
       next = { ...current, closedAt: now }
@@ -309,6 +316,39 @@ export function observeActivityForSetup(event: ActivityEvent): void {
 }
 
 /**
+ * Whether an event's Doc is an HTML Doc. Events carry the format only
+ * sometimes, so the Space's inventory answers when they don't; callers ask
+ * only until the evidence is recorded, so this read happens once per person.
+ */
+async function isHtmlDoc(event: ActivityEvent): Promise<boolean> {
+  if (event.target.kind !== "doc") return false
+  if (event.target.formatId) return event.target.formatId === "worktable.html"
+  if (!event.spaceId) return false
+  const path = event.target.path
+  try {
+    const inventory = await readDocumentInventory(event.spaceId)
+    for (const entry of inventory.entries.values())
+      if (entry.path === path) return entry.format.id === "worktable.html"
+  } catch {
+    // An unreadable inventory only delays the evidence to a later event.
+  }
+  return false
+}
+
+/** Record evidence about an HTML Doc, checking its format only when needed. */
+function completeHtmlEvidence(
+  key: string,
+  id: "html-doc-made" | "html-commented",
+  event: ActivityEvent,
+  where: Omit<SetupEvidence, "at">
+): void {
+  if (storedSetup(key)?.helpEvidence?.[id]) return
+  void isHtmlDoc(event).then((html) =>
+    html ? completeHelpEvidence(key, id, where) : undefined
+  )
+}
+
+/**
  * What finishes help: the person's own actions, and an agent's HTML Doc made
  * for them. Each is recorded once; later events cost a memory check.
  */
@@ -319,11 +359,9 @@ function observeActivityForHelp(event: ActivityEvent): void {
     ...(event.spaceId ? { spaceId: event.spaceId } : {}),
     ...(event.target.kind === "doc" ? { path: event.target.path } : {}),
   }
-  const html =
-    event.target.kind === "doc" && event.target.formatId === "worktable.html"
   if (event.actor.kind === "agent") {
-    if (event.action === "doc.created" && html)
-      void completeHelpEvidence(key, "html-doc-made", where)
+    if (event.action === "doc.created")
+      completeHtmlEvidence(key, "html-doc-made", event, where)
     return
   }
   if (event.actor.kind !== "person") return
@@ -332,7 +370,7 @@ function observeActivityForHelp(event: ActivityEvent): void {
       void completeHelpEvidence(key, "temporary-kept", where)
       return
     case "comment.created":
-      if (html) void completeHelpEvidence(key, "html-commented", where)
+      completeHtmlEvidence(key, "html-commented", event, where)
       return
     case "thread.started":
     case "thread.replied":

@@ -38,7 +38,7 @@ import {
   Waypoints,
   type LucideIcon,
 } from "lucide-react"
-import { HelpMark } from "@/components/help/help-tip"
+import { HelpMark } from "@/components/help/help"
 import { useDeploymentInfo, useHelpEnabled } from "@/hooks/use-deployment-info"
 import {
   docsUrl,

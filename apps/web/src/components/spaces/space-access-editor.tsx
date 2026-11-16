@@ -31,7 +31,7 @@ import {
   inviteTeamMember,
   setSpaceAccess,
 } from "@/lib/team-api"
-import { HelpIcon } from "@/components/help/help-tip"
+import { HelpIcon } from "@/components/help/help"
 import { PlanFullNotice } from "@/components/billing/plan-full-notice"
 import { LinkToSend } from "@/components/settings/link-to-send"
 import { copyText } from "@/lib/clipboard"

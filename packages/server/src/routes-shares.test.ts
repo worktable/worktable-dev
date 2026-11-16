@@ -115,7 +115,8 @@ async function documentLinks(artifact: Artifact): Promise<DocumentShareLinks> {
 async function writeHtml(
   artifactKey: string,
   html: string,
-  name = "Report"
+  name = "Report",
+  records: Record<string, { read: boolean }> = {}
 ): Promise<Artifact> {
   const manifestPath = join(workspaceDir, "worktable.workspace.json")
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"))
@@ -131,7 +132,7 @@ async function writeHtml(
     createdBy: "test",
     permissions: {
       network: true,
-      records: {},
+      records,
       state: { read: true, write: true },
     },
     versionSource: "test",
@@ -501,6 +502,24 @@ describe("Cloud document share HTTP boundary", () => {
 
     expect((await setWidgetArchived("space", "status", true)).error).toBeNull()
     expect((await publicRequest(token)).status).toBe(404)
+
+    // A page that reads Records the sharer can show: one names them, one
+    // may read any collection it computes, and this one reads none.
+    expect(await documentLinks(artifact)).not.toHaveProperty("toolReadsAny")
+    const named = await writeHtml(
+      "deals",
+      `<script>worktable.records.query("deals")</script>`,
+      "Deals",
+      { deals: { read: true } }
+    )
+    expect((await documentLinks(named)).toolReads).toEqual(["deals"])
+    const computed = await writeHtml(
+      "explorer",
+      `<script>worktable.records.query(location.hash.slice(1))</script>`,
+      "Explorer",
+      { "*": { read: true } }
+    )
+    expect(await documentLinks(computed)).toMatchObject({ toolReadsAny: true })
   })
 
   it("rejects direct tenant requests and keeps HEAD bodies empty", async () => {

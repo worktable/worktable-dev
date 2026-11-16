@@ -343,10 +343,13 @@ shareLinksRouter.get("/", async (c) => {
   }))
   const urls = manageableUrls(managed)
   const views = viewsOf(links)
-  const toolReads =
+  const { collections: toolReads, any: toolReadsAny } =
     kind === "html" && resolution.shareable
-      ? await toolReadCollections(spaceId, path).catch(() => [])
-      : []
+      ? await toolReadCollections(spaceId, path).catch(() => ({
+          collections: [],
+          any: false,
+        }))
+      : { collections: [], any: false }
   const body: DocumentShareLinks = {
     links: managed.map(({ link, canManage }) =>
       publicLink(
@@ -366,6 +369,7 @@ shareLinksRouter.get("/", async (c) => {
       : {}),
     policy: sharerPolicy(policy),
     ...(toolReads.length ? { toolReads } : {}),
+    ...(toolReadsAny ? { toolReadsAny: true as const } : {}),
   }
   return c.json(body)
 })

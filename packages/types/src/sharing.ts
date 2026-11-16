@@ -192,6 +192,8 @@ export interface DocumentShareLinks {
   policy: SharerPolicy
   /** For an HTML tool, the collections it reads, by id, as its source names them. */
   toolReads?: string[]
+  /** For an HTML tool that may read any collection, so its source can't name them all. */
+  toolReadsAny?: true
 }
 
 /** Private, human-only preparation of the access a live link would open. */

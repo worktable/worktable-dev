@@ -176,7 +176,8 @@ export function ShareLinksDialog({
   const liveAllowed = target.kind === "html" && policy?.liveLinks === true
   // A page runs for its visitors either way; live data is its Records and
   // the team's saved state, and a link that shows neither has it off.
-  const readsRecords = (list.data?.toolReads?.length ?? 0) > 0
+  const readsRecords =
+    (list.data?.toolReads?.length ?? 0) > 0 || list.data?.toolReadsAny === true
   const liveData =
     defaultLink?.grant &&
     (Object.keys(defaultLink.grant.collections).length > 0 ||

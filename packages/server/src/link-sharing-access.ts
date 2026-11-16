@@ -24,25 +24,30 @@ class CountsPending extends Error {}
 
 /**
  * The collections an HTML tool reads, as its source and permissions name
- * them, without running it. Read when the share dialog opens.
+ * them, without running it, and whether it may read any collection, which
+ * a tool that computes collection ids needs. Read when the share dialog
+ * opens.
  */
 export async function toolReadCollections(
   spaceId: string,
   path: string
-): Promise<string[]> {
+): Promise<{ collections: string[]; any: boolean }> {
   const { data } = await readWidgetDocument(spaceId, path)
-  if (!data || data.widget.archive) return []
+  if (!data || data.widget.archive) return { collections: [], any: false }
   const { permissions } = data.widget
-  return [
-    ...new Set([
-      ...Object.keys(inferWidgetRecordPermissions(data.html)),
-      ...Object.keys(permissions.records),
-    ]),
-  ].filter(
-    (id) =>
-      CanonicalIdSchema.safeParse(id).success &&
-      canWidgetRecord({ permissions }, id, "read")
-  )
+  return {
+    collections: [
+      ...new Set([
+        ...Object.keys(inferWidgetRecordPermissions(data.html)),
+        ...Object.keys(permissions.records),
+      ]),
+    ].filter(
+      (id) =>
+        CanonicalIdSchema.safeParse(id).success &&
+        canWidgetRecord({ permissions }, id, "read")
+    ),
+    any: permissions.records["*"]?.read === true,
+  }
 }
 
 /** One explicit sharer action, outside the visitor and member-page hot paths. */

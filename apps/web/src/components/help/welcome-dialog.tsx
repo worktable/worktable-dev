@@ -7,7 +7,7 @@ import {
   DialogContent,
   DialogDescription,
   DialogTitle,
-} from "@worktable/ui/components/dialog"
+} from "@worktable/ui/components/responsive-dialog"
 import { cn } from "@worktable/ui/lib/utils"
 import { DocumentFormatIcon } from "@/components/document-format-icon"
 import {

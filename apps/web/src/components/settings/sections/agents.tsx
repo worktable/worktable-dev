@@ -30,6 +30,8 @@ import { Card, CardContent } from "@worktable/ui/components/card"
 import { SettingRow } from "@worktable/ui/components/setting-row"
 import { Switch } from "@worktable/ui/components/switch"
 import { useServerSettings } from "@/hooks/use-server-settings"
+import { useHelpEnabled } from "@/hooks/use-deployment-info"
+import { HelpIcon } from "@/components/help/help-tip"
 import { useSettingsPatch } from "../use-settings-patch"
 import { Checkbox } from "@worktable/ui/components/checkbox"
 import {
@@ -105,11 +107,7 @@ import {
   LocalChatSteps,
   OfficialAppSteps,
 } from "@/components/agents/chat-app-ways"
-import {
-  appForClient,
-  useAppChoices,
-  worktableLabel,
-} from "@/lib/app-choices"
+import { appForClient, useAppChoices, worktableLabel } from "@/lib/app-choices"
 import { WorksInSetting } from "@/components/agents/works-in"
 import { GROK_BOT_STATUS_LABELS, grokAutoReply } from "@/lib/grok-bot-status"
 import {
@@ -340,6 +338,7 @@ type AlwaysOnChoice = AlwaysOnAgent["adapter"] | "grok-bot"
 
 function AgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
   const active = useSettingsSectionActive()
+  const helpEnabled = useHelpEnabled()
   const cloud = connection.mcpAuthMode === "oauth"
   const [open, setOpen] = useState<AgentSetupCategoryId | null>(null)
   const [provider, setProvider] = useState<AlwaysOnChoice>("openclaw")
@@ -373,7 +372,14 @@ function AgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
             />
           )}
         </AgentSetupCategory>
-        <AgentSetupCategory {...categoryProps("always")}>
+        <AgentSetupCategory
+          {...categoryProps("always")}
+          help={
+            helpEnabled ? (
+              <HelpIcon entry="alwaysOn" label="About Agent Replies" />
+            ) : undefined
+          }
+        >
           <AgentSetupTabs
             value={provider}
             onValueChange={(value) => {
@@ -1458,13 +1464,12 @@ export function ConnectedAgentsGroup() {
                           : grok
                             ? GROK_BOT_STATUS_LABELS[grok.status]
                             : connection?.lastSeenAt
-                            ? `Last seen ${timeAgo(connection.lastSeenAt)}`
-                            : "Not used yet"}
+                              ? `Last seen ${timeAgo(connection.lastSeenAt)}`
+                              : "Not used yet"}
                       </p>
                     </div>
                     {/* Edit holds everything else, Disconnect included. */}
-                    {connection?.canManage !== false &&
-                    (grok || connection) ? (
+                    {connection?.canManage !== false && (grok || connection) ? (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1488,7 +1493,6 @@ export function ConnectedAgentsGroup() {
                         Reconnect
                       </Button>
                     )}
-
                   </li>
                 )
               })}

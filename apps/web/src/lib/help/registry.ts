@@ -214,6 +214,12 @@ export function concept(id: ConceptId): Concept {
   return CONCEPTS_BY_ID.get(id)!
 }
 
+/** The two groups in How Worktable Works, in order. */
+export const CONCEPT_GROUPS = [
+  { id: "parts", title: "What's in Worktable" },
+  { id: "behaviour", title: "How It Behaves" },
+] as const satisfies readonly { id: Concept["group"]; title: string }[]
+
 // ============================================================
 // Tips that show on their own
 // ============================================================

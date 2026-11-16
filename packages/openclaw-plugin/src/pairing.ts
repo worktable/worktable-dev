@@ -394,6 +394,9 @@ export async function pairWorktableChannel(options: {
     }
   )
 
+  // The token goes to this address too: only the Worktable the person named
+  // (or Worktable Cloud), and never plain HTTP when they asked for HTTPS.
+  const mcpUrl = knownWorktableAddress(origin, redeemed.mcpUrl)
   let access: Partial<WorktableAccess> = {}
   try {
     await mutateConfigFile({
@@ -424,7 +427,7 @@ export async function pairWorktableChannel(options: {
         const mcp = (draft.mcp ?? {}) as { servers?: Record<string, unknown> }
         mcp.servers = {
           ...(mcp.servers ?? {}),
-          worktable: worktableMcpServer(redeemed.mcpUrl, redeemed.token),
+          worktable: worktableMcpServer(mcpUrl, redeemed.token),
         }
         draft.mcp = mcp as typeof draft.mcp
         // The team's Library skills: OpenClaw lists skills from the folders

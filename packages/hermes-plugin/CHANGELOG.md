@@ -2,6 +2,7 @@
 
 ## 0.1.4
 
+- The README says where the Library skill pointers are kept and how often the plugin asks Worktable for them.
 - Your team's Library skills are listed among Hermes's skills, each with when to use it, and read from Worktable when used, so the approved version is the one followed. The list refreshes in the background and stays listed across restarts. Needs a Worktable that serves the Library. A skill name that more than one library uses is listed once for each, named with its library.
 - The plugin's own skills are listed with their descriptions, which is how Hermes picks a skill.
 

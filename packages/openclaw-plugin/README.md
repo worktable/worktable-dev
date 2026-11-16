@@ -33,8 +33,11 @@ run this and approve the agent at the link it prints:
 openclaw worktable connect --server https://app.worktable.cloud
 ```
 
-Then start or restart the OpenClaw Gateway. The agent answers thread messages
-from the person who approved it; see [Who can direct the agent](#who-can-direct-the-agent).
+Then start or restart the OpenClaw Gateway. Connecting also adds the Worktable
+to OpenClaw's MCP servers, so the agent can read and change Docs, Records and
+threads with Worktable's tools. The agent answers thread messages from the
+person who approved it; see [Who can direct the agent](#who-can-direct-the-agent).
+If you connected with 0.0.21 or earlier, connect again to get the tools.
 Learn more in the Worktable docs for
 [connections](https://docs.worktable.dev/agents/connections/) and
 [threads](https://docs.worktable.dev/guides/threads/).
@@ -43,6 +46,12 @@ Browse the included [skills](https://docs.worktable.dev/agents/skills/). OpenCla
 the plugin is enabled. A same-named skill in an agent workspace,
 `~/.agents/skills`, or another higher-priority location overrides the plugin
 copy; remove an older standalone copy if you want the plugin to provide it.
+
+Your team's Library skills in Worktable are listed with OpenClaw's skills too,
+each with when to use it. Each one is a short pointer that reads the approved
+version from Worktable with the `worktable_skills_read` tool, so the agent
+follows the current one. The Gateway checks Worktable for changes every 15
+minutes and rewrites the pointers.
 
 ## Who can direct the agent
 
@@ -137,6 +146,12 @@ HTTPS one.
 
 - The token, the approving member's ID and the three trust settings are under
   `channels.worktable` in OpenClaw's configuration.
+- The Worktable's MCP address and the same token are under
+  `mcp.servers.worktable`, and the folder of Library skill pointers is added to
+  `skills.load.extraDirs`.
+- The Library skill pointers are in `plugins/worktable/library/` under
+  OpenClaw's state directory. They hold each skill's name and when to use it,
+  never its text.
 - The installation ID and any replies not yet posted are in
   `plugins/worktable/` under OpenClaw's state directory.
 - Delivered messages are recorded in OpenClaw's plugin state so a restart does
@@ -144,11 +159,10 @@ HTTPS one.
 
 ## Security
 
-After pairing, the plugin talks only to that Worktable address. With a
+After pairing, the plugin talks only to that Worktable address: for thread
+messages, and every 15 minutes for the list of Library skills. With a
 Worktable older than 0.1.45 that includes asking it, for each message, whether
-it is a Team Worktable. The one exception is a connection made by Agent
-Registration, which also refreshes its credential at the authorization
-endpoints named above. The plugin has no postinstall script, native binary,
+it is a Team Worktable. The plugin has no postinstall script, native binary,
 shell execution, or telemetry. It starts with the OpenClaw Gateway so it can
 receive thread messages.
 

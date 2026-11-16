@@ -20,6 +20,7 @@ import {
   type HelpIconKey,
   type Tip,
 } from "@/lib/help/registry"
+import { fillTip } from "@/lib/help/fill"
 import { useTip } from "@/lib/help/state"
 import { useHelpEnabled } from "@/hooks/use-deployment-info"
 
@@ -28,10 +29,6 @@ export function HelpMark() {
   return <WorktableAppIcon className="size-4" />
 }
 
-/** A tip's text with its {placeholders} filled in. */
-export function fillTip(text: string, values: Record<string, string> = {}) {
-  return text.replace(/\{(\w+)\}/g, (match, key: string) => values[key] ?? match)
-}
 
 function LearnMore({ path }: { path: string }) {
   return (

@@ -228,7 +228,9 @@ export function withHelpEvent(
 
 /** Every help entry forgotten, so tips show again from the start. */
 export function withHelpReset(setup: PersonalSetup): PersonalSetup {
-  const { help: _help, tryNextHidden: _hidden, ...rest } = setup
+  const rest = { ...setup }
+  delete rest.help
+  delete rest.tryNextHidden
   return rest
 }
 

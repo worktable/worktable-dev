@@ -113,7 +113,10 @@ function HelpGuide() {
   const { setup, conditions } = useHelpContext()
   const { person } = usePersonalSetup()
   const progress = tryNextProgress(
-    tryNextStatus(setup, { canInvite: canInvite(person) })
+    tryNextStatus(setup, {
+      canInvite: canInvite(person),
+      links: conditions.links === true,
+    })
   )
   const showTryNext = useMutation({
     mutationFn: () => saveHelp(queryClient, { tryNextHidden: false }),

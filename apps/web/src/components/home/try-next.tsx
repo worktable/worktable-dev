@@ -31,7 +31,8 @@ import {
 } from "@worktable/ui/components/select"
 import { toast } from "@worktable/ui/components/sonner"
 import { cn } from "@worktable/ui/lib/utils"
-import { fillTip, HelpMark } from "@/components/help/help-tip"
+import { HelpMark } from "@/components/help/help-tip"
+import { fillTip } from "@/lib/help/fill"
 import { sectionHeading } from "@/components/home/home-cards"
 import { copyText } from "@/lib/clipboard"
 import {

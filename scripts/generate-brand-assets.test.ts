@@ -22,6 +22,20 @@ describe("brand asset generation", () => {
     }
   })
 
+  test("a square icon has no transparent corners, and a circle keeps them", async () => {
+    for (const spec of generatedBrandRasterSpecs) {
+      const { data, info } = await sharp(await readFile(resolve(repoRoot, spec.path)))
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true })
+      const cornerAlpha = data[info.channels - 1]
+      expect({ path: spec.path, opaque: cornerAlpha === 255 }).toEqual({
+        path: spec.path,
+        opaque: spec.shape === "square",
+      })
+    }
+  })
+
   test("favicon.ico contains one 48px 32-bit PNG entry", async () => {
     const ico = await readFile(resolve(repoRoot, "apps/web/public/favicon.ico"))
     expect(ico.readUInt16LE(0)).toBe(0)

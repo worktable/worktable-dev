@@ -18,11 +18,19 @@ const generatedNote =
 export const WORKTABLE_FILLED_ICON_MARK_PATH =
   "M1500.02 764C1589.34 764 1661.75 836.409 1661.75 925.729C1661.75 1015.05 1589.34 1087.46 1500.02 1087.46H1419.97V1249.19C1419.97 1338.51 1347.56 1410.92 1258.24 1410.92C1168.92 1410.92 1096.51 1338.51 1096.51 1249.19V1087.46H904.052V1249.19C904.052 1338.51 831.643 1410.92 742.322 1410.92C653.002 1410.92 580.594 1338.51 580.594 1249.19V1087.46H499.729C410.408 1087.46 338 1015.05 338 925.729C338 836.409 410.408 764 499.729 764H1500.02Z"
 
-export function renderWorktableFilledIconSvg(): string {
+/**
+ * The brand circle wherever the icon is shown as it is. Where an app puts it
+ * on a tile of its own, or crops it to its own shape (iOS, maskable icons,
+ * plugin listings), a full square: the circle's transparent corners would
+ * show as the tile's color, often white.
+ */
+export type IconShape = "circle" | "square"
+
+export function renderWorktableFilledIconSvg(shape: IconShape = "circle"): string {
   const brand = themeConfig.brand
   return `<svg width="2000" height="2000" viewBox="0 0 2000 2000" fill="none" xmlns="http://www.w3.org/2000/svg">
 <!-- ${generatedNote} -->
-<rect width="2000" height="2000" rx="1000" fill="url(#worktable-field)"/>
+<rect width="2000" height="2000" rx="${shape === "square" ? 0 : 1000}" fill="url(#worktable-field)"/>
 <path d="${WORKTABLE_FILLED_ICON_MARK_PATH}" fill="${brand.appIconMark}"/>
 <defs>
 <linearGradient id="worktable-field" x1="79" y1="258" x2="1782.5" y2="1961.5" gradientUnits="userSpaceOnUse">
@@ -63,19 +71,30 @@ export const generatedBrandTextOutputs = new Map<string, string>([
   ...targets.favicons.map((path): [string, string] => [path, filledIconSvg]),
 ])
 
-export const generatedBrandRasterSpecs = [
-  { path: "plugins/worktable/assets/composer-icon.png", size: 128 },
-  { path: "plugins/worktable/assets/logo.png", size: 512 },
-  { path: "plugins/worktable/assets/logo-dark.png", size: 512 },
-  { path: "apps/web/public/apple-touch-icon-180x180.png", size: 180 },
-  { path: "apps/web/public/pwa-64x64.png", size: 64 },
-  { path: "apps/web/public/pwa-192x192.png", size: 192 },
-  { path: "apps/web/public/pwa-512x512.png", size: 512 },
-  { path: "apps/web/public/maskable-icon-512x512.png", size: 512 },
-] as const
+export const generatedBrandRasterSpecs: readonly {
+  path: string
+  size: number
+  shape: IconShape
+}[] = [
+  // ChatGPT's composer shows this one as it is.
+  { path: "plugins/worktable/assets/composer-icon.png", size: 128, shape: "circle" },
+  // Plugin listings (ChatGPT and Codex, Cursor, Antigravity) put the logo on their own tile.
+  { path: "plugins/worktable/assets/logo.png", size: 512, shape: "square" },
+  { path: "plugins/worktable/assets/logo-dark.png", size: 512, shape: "square" },
+  // iOS rounds the corners itself and fills transparency with black.
+  { path: "apps/web/public/apple-touch-icon-180x180.png", size: 180, shape: "square" },
+  { path: "apps/web/public/pwa-64x64.png", size: 64, shape: "circle" },
+  { path: "apps/web/public/pwa-192x192.png", size: 192, shape: "circle" },
+  { path: "apps/web/public/pwa-512x512.png", size: 512, shape: "circle" },
+  // A maskable icon must fill its square; the platform crops it.
+  { path: "apps/web/public/maskable-icon-512x512.png", size: 512, shape: "square" },
+]
 
-export async function renderBrandPng(size: number): Promise<Buffer> {
-  return sharp(Buffer.from(filledIconSvg))
+export async function renderBrandPng(
+  size: number,
+  shape: IconShape = "circle"
+): Promise<Buffer> {
+  return sharp(Buffer.from(shape === "square" ? renderWorktableFilledIconSvg("square") : filledIconSvg))
     .resize(size, size, { fit: "fill" })
     .png()
     .toBuffer()
@@ -124,7 +143,7 @@ export async function generatedBrandBinaryOutputs(): Promise<
 > {
   const outputs = new Map<string, Buffer>()
   for (const spec of generatedBrandRasterSpecs) {
-    outputs.set(spec.path, await renderBrandPng(spec.size))
+    outputs.set(spec.path, await renderBrandPng(spec.size, spec.shape))
   }
   outputs.set(
     "apps/web/public/favicon.ico",

@@ -200,14 +200,13 @@ export async function skillsBrief(reader: SkillReader): Promise<string | null> {
   let used = lines.join("\n").length
   const ordered = [...live].sort((a, b) => briefOrder(a) - briefOrder(b))
   // A name more than one library uses says which library, as reading it asks.
-  const counts = new Map<string, number>()
-  for (const skill of live) counts.set(skill.entry.name, (counts.get(skill.entry.name) ?? 0) + 1)
+  const selector = selectorFor(live)
   const label = (skill: AgentSkill) => {
-    const { name, library } = skill.entry
-    if ((counts.get(name) ?? 0) < 2) return name
-    return library.kind === "space"
-      ? `${name} (library: space, spaceId: ${library.spaceId})`
-      : `${name} (library: ${library.kind})`
+    const read = selector(skill)
+    if (!read) return skill.entry.name
+    return read.library === "space"
+      ? `${skill.entry.name} (library: space, spaceId: ${read.spaceId})`
+      : `${skill.entry.name} (library: ${read.library})`
   }
   let described = 0
   for (const skill of ordered) {
@@ -242,20 +241,39 @@ export async function skillsBrief(reader: SkillReader): Promise<string | null> {
 }
 
 /**
+ * Which library to read a skill from, for names more than one library uses:
+ * the arguments worktable_skills_read takes beside the name.
+ */
+function selectorFor(live: AgentSkill[]) {
+  const counts = new Map<string, number>()
+  for (const skill of live) counts.set(skill.entry.name, (counts.get(skill.entry.name) ?? 0) + 1)
+  return (skill: AgentSkill): { library: "worktable" | "space" | "agent"; spaceId?: string } | undefined => {
+    if ((counts.get(skill.entry.name) ?? 0) < 2) return undefined
+    const { library } = skill.entry
+    return library.kind === "space" ? { library: "space", spaceId: library.spaceId } : { library: library.kind }
+  }
+}
+
+function listing(skill: AgentSkill, selector: ReturnType<typeof selectorFor>) {
+  const read = selector(skill)
+  return {
+    name: skill.entry.name,
+    description: skill.entry.description,
+    library: skill.library,
+    version: skillVersion(skill.live.generationId),
+    ...(read ? { read } : {}),
+  }
+}
+
+/**
  * The skills that apply, for an agent's own app to list among its skills
  * (worktable_skills_read without a name). Unlike worktable_state, the agent
  * hasn't seen them: the model still hears of a change on its next call.
  */
 export async function listSkills(reader: SkillReader) {
   const { live } = await skillsForAgent(reader)
-  return {
-    skills: live.map((skill) => ({
-      name: skill.entry.name,
-      description: skill.entry.description,
-      library: skill.library,
-      version: skillVersion(skill.live.generationId),
-    })),
-  }
+  const selector = selectorFor(live)
+  return { skills: live.map((skill) => listing(skill, selector)) }
 }
 
 /** worktable_state's skills, which the agent has now seen. */
@@ -263,18 +281,14 @@ export async function stateSkills(reader: SkillReader, spaceId?: string) {
   if (reader.participantId) noteCall(reader.participantId, Date.now())
   const { live, removed } = await skillsForAgent(reader, { spaceId })
   const shown = live.slice(0, STATE_SKILL_LIMIT)
+  const selector = selectorFor(live)
   if (reader.participantId && (shown.length > 0 || removed.length > 0)) {
     // Merged after the wait, so a change seen meanwhile isn't undone.
     const marks = { ...marksFor(reader.participantId), ...marksOf(shown, removed) }
     setMarks(reader.participantId, marks)
   }
   return {
-    skills: shown.map((skill) => ({
-      name: skill.entry.name,
-      description: skill.entry.description,
-      library: skill.library,
-      version: skillVersion(skill.live.generationId),
-    })),
+    skills: shown.map((skill) => listing(skill, selector)),
     ...(live.length > shown.length ? { moreSkills: live.length - shown.length } : {}),
     ...(removed.length > 0
       ? {

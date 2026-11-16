@@ -66,3 +66,16 @@ def test_a_removed_skill_says_so_until_hermes_restarts_and_a_failed_refresh_chan
     assert "Removed from your team's Worktable Library" in hermes.listed["release-checklist"]
     skills.refresh()
     assert not (tmp_path / "library" / "release-checklist").exists()
+
+
+def test_a_name_two_libraries_share_lists_once_per_library_read_from_its_own(tmp_path: Path) -> None:
+    hermes = FakeHermes(tmp_path)
+    spaces = {**RELEASE, "library": "Space: Ops", "read": {"library": "space", "spaceId": "ops"}}
+    worktable = {**RELEASE, "read": {"library": "worktable"}}
+    assert library(hermes, [{"skills": [worktable, spaces]}]).refresh()
+
+    assert sorted(hermes.listed) == ["release-checklist-space-ops", "release-checklist-worktable"]
+    assert (
+        '`worktable_skills_read` {"name": "release-checklist", "library": "space", "spaceId": "ops"}'
+        in hermes.listed["release-checklist-space-ops"]
+    )

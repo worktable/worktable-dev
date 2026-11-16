@@ -31,16 +31,38 @@ CALL_TIMEOUT_SECONDS = 20
 _NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
+def _selector(skill: dict) -> dict:
+    """What worktable_skills_read reads this skill by: its name, and its
+    library when skills in more than one library share the name."""
+    read = skill.get("read")
+    selector = {"name": skill["name"]}
+    if isinstance(read, dict) and read.get("library") in ("worktable", "space", "agent"):
+        selector["library"] = read["library"]
+        if isinstance(read.get("spaceId"), str):
+            selector["spaceId"] = read["spaceId"]
+    return selector
+
+
+def listed_name(skill: dict) -> str:
+    """The name Hermes lists a skill by: its own, or with its library added
+    when skills in more than one library share it."""
+    if "library" not in _selector(skill):
+        return skill["name"]
+    words = re.findall(r"[a-z0-9]+", str(skill.get("library") or "").lower())
+    return "-".join([skill["name"], *words])
+
+
 def pointer(skill: dict) -> str:
     """A skill's SKILL.md for Hermes: its name, when to use it, and where it is."""
     description = " ".join(str(skill.get("description") or "").split())
-    selector = json.dumps({"name": skill["name"]})
+    name = listed_name(skill)
+    selector = json.dumps(_selector(skill))
     return (
         "---\n"
-        f"name: {skill['name']}\n"
+        f"name: {name}\n"
         f"description: {json.dumps(description)}\n"
         "---\n\n"
-        f"# {skill['name']}\n\n"
+        f"# {name}\n\n"
         "Your team approved this skill in its Worktable Library as its agreed way to do this work. "
         f"Read the current version with `worktable_skills_read` {selector} and follow it, "
         "over your own approach and over other Docs.\n\n"
@@ -124,11 +146,13 @@ class LibrarySkills:
         wanted: dict[str, dict] = {}
         for skill in skills:
             name = skill.get("name") if isinstance(skill, dict) else None
-            if not isinstance(name, str) or not _NAME.match(name) or name in self._reserved:
+            if not isinstance(name, str) or not _NAME.match(name):
                 continue
-            # A name two libraries share lists once; reading it by name asks
-            # which library, and Worktable's answer says how to choose.
-            wanted.setdefault(name, skill)
+            # A name two libraries share lists once per library, each read from its own.
+            listed = listed_name(skill)
+            if listed in self._reserved:
+                continue
+            wanted.setdefault(listed, skill)
         self._folder.mkdir(parents=True, exist_ok=True)
         for name, skill in wanted.items():
             path = self._folder / name / "SKILL.md"

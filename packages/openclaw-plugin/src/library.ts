@@ -14,6 +14,10 @@ import { resolveStateDir } from "openclaw/plugin-sdk/state-paths"
 export interface LibrarySkill {
   name: string
   description: string
+  /** Its library, when skills in more than one library share the name. */
+  read?: { library: "worktable" | "space" | "agent"; spaceId?: string }
+  /** The library's name, as Worktable lists it. */
+  library?: string
 }
 
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
@@ -23,15 +27,44 @@ export function libraryFolder(env?: NodeJS.ProcessEnv): string {
   return join(resolveStateDir(env), "plugins", "worktable", "library")
 }
 
+const LIBRARIES = new Set(["worktable", "space", "agent"])
+
+/** What worktable_skills_read reads a skill by. */
+function selector(skill: LibrarySkill): Record<string, string> {
+  return { name: skill.name, ...(skill.read ?? {}) }
+}
+
+/**
+ * The name OpenClaw lists a skill by: its own, or with its library added
+ * when skills in more than one library share it.
+ */
+export function listedName(skill: LibrarySkill): string {
+  if (!skill.read) return skill.name
+  const words = (skill.library ?? "").toLowerCase().match(/[a-z0-9]+/g) ?? []
+  return [skill.name, ...words].join("-")
+}
+
 /** Skills as worktable_skills_read lists them, keeping only what a pointer needs. */
 export function librarySkillsFrom(state: Record<string, unknown>): LibrarySkill[] {
   const skills = Array.isArray(state.skills) ? state.skills : []
   const named = new Map<string, LibrarySkill>()
-  for (const skill of skills) {
-    const name = (skill as Partial<LibrarySkill> | null)?.name
-    if (typeof name !== "string" || !NAME.test(name) || named.has(name)) continue
-    const description = (skill as Partial<LibrarySkill>).description
-    named.set(name, { name, description: typeof description === "string" ? description : "" })
+  for (const listed of skills) {
+    const skill = (listed ?? {}) as Partial<LibrarySkill>
+    if (typeof skill.name !== "string" || !NAME.test(skill.name)) continue
+    const read = skill.read && LIBRARIES.has(skill.read.library) ? skill.read : undefined
+    const kept: LibrarySkill = {
+      name: skill.name,
+      description: typeof skill.description === "string" ? skill.description : "",
+      ...(read
+        ? {
+            read: { library: read.library, ...(typeof read.spaceId === "string" ? { spaceId: read.spaceId } : {}) },
+            library: typeof skill.library === "string" ? skill.library : "",
+          }
+        : {}),
+    }
+    // A name two libraries share lists once per library, each read from its own.
+    const name = listedName(kept)
+    if (!named.has(name)) named.set(name, kept)
   }
   return [...named.values()]
 }
@@ -39,15 +72,19 @@ export function librarySkillsFrom(state: Record<string, unknown>): LibrarySkill[
 /** A skill's SKILL.md for OpenClaw: its name, when to use it, and where it is. */
 export function pointer(skill: LibrarySkill): string {
   const description = skill.description.replace(/\s+/g, " ").trim()
+  const name = listedName(skill)
+  const args = Object.entries(selector(skill))
+    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+    .join(", ")
   return [
     "---",
-    `name: ${skill.name}`,
+    `name: ${name}`,
     `description: ${JSON.stringify(description)}`,
     "---",
     "",
-    `# ${skill.name}`,
+    `# ${name}`,
     "",
-    `Your team approved this skill in its Worktable Library as its agreed way to do this work. Read the current version with the worktable_skills_read tool (name: ${JSON.stringify(skill.name)}) and follow it, over your own approach and over other Docs.`,
+    `Your team approved this skill in its Worktable Library as its agreed way to do this work. Read the current version with the worktable_skills_read tool (${args}) and follow it, over your own approach and over other Docs.`,
     "",
     "This file only points there. Propose a change in Worktable with worktable_skills_write; editing this file changes nothing.",
     "",
@@ -79,13 +116,13 @@ export class LibrarySkillFolder {
       return false
     }
     await mkdir(this.#folder, { recursive: true })
-    const wanted = new Set(skills.map((skill) => skill.name))
+    const wanted = new Set(skills.map(listedName))
     for (const skill of skills) {
-      const path = join(this.#folder, skill.name, "SKILL.md")
+      const path = join(this.#folder, listedName(skill), "SKILL.md")
       const text = pointer(skill)
       // Unchanged pointers aren't rewritten, so OpenClaw's watcher stays quiet.
       if ((await readFile(path, "utf8").catch(() => null)) === text) continue
-      await mkdir(join(this.#folder, skill.name), { recursive: true })
+      await mkdir(join(this.#folder, listedName(skill)), { recursive: true })
       await writeFile(path, text, "utf8")
     }
     for (const entry of await readdir(this.#folder, { withFileTypes: true })) {

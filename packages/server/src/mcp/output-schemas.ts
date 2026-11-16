@@ -334,6 +334,10 @@ export const SkillListingSchema = z.looseObject({
   description: z.string(),
   library: z.string().describe('"Worktable", "Space: <name>" or "Yours".'),
   version: z.string().describe("Changes whenever the skill's live version does."),
+  read: z
+    .looseObject({ library: z.enum(["worktable", "space", "agent"]), spaceId: z.string().optional() })
+    .optional()
+    .describe("Only when skills in more than one library share the name: pass these with the name to worktable_skills_read."),
 })
 
 /** Preview: a skill removed from a library that applies to the caller. */

@@ -1,9 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.0.22
 
 - Connecting gives the agent Worktable's tools: `openclaw worktable connect` adds the Worktable to OpenClaw's MCP servers (`mcp.servers.worktable`), with the same token and the access you chose. Until now the agent could answer threads but couldn't read or change anything unless you added the server yourself. To get the tools on an existing connection, connect again, then restart the Gateway.
-- Your team's Library skills are listed among OpenClaw's skills, each with when to use it, and read from Worktable when used, so the approved version is the one followed. Connecting adds the plugin's skill folder to `skills.load.extraDirs`, and the Gateway keeps it current in the background. Needs a Worktable that serves the Library; connect again to get it on an existing connection.
+- Your team's Library skills are listed among OpenClaw's skills, each with when to use it, and read from Worktable when used, so the approved version is the one followed. Connecting adds the plugin's skill folder to `skills.load.extraDirs`, and the Gateway keeps it current in the background. Needs a Worktable that serves the Library; connect again to get it on an existing connection. A skill name that more than one library uses is listed once for each, named with its library.
 
 ## 0.0.21
 

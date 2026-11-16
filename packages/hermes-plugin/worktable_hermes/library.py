@@ -31,16 +31,62 @@ CALL_TIMEOUT_SECONDS = 20
 _NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
-def pointer(skill: dict) -> str:
-    """A skill's SKILL.md for Hermes: its name, when to use it, and where it is."""
+def _selector(skill: dict) -> dict:
+    """What worktable_skills_read reads this skill by: its name, and its
+    library when skills in more than one library share the name."""
+    read = skill.get("read")
+    selector = {"name": skill["name"]}
+    if isinstance(read, dict) and read.get("library") in ("worktable", "space", "agent"):
+        selector["library"] = read["library"]
+        if isinstance(read.get("spaceId"), str):
+            selector["spaceId"] = read["spaceId"]
+    return selector
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def listed_names(skills: Iterable[dict], reserved: Iterable[str] = ()) -> dict[str, dict]:
+    """Each skill by the name Hermes lists it by, unique and never a reserved one.
+
+    A name more than one library uses lists once per library, named with its
+    library, and with its Space's id or a number if that is taken too.
+    """
+    taken = set(reserved)
+    listed: dict[str, dict] = {}
+    shared = []
+    for skill in skills:
+        if "library" in _selector(skill):
+            shared.append(skill)
+        elif skill["name"] not in taken:
+            taken.add(skill["name"])
+            listed[skill["name"]] = skill
+    for skill in shared:
+        selector = _selector(skill)
+        base = "-".join([skill["name"], *_words(str(skill.get("library") or selector["library"]))])
+        tries = [base, "-".join([base, *_words(selector.get("spaceId", ""))])]
+        name = next((n for n in tries if n not in taken), None)
+        count = 2
+        while name is None:
+            if f"{base}-{count}" not in taken:
+                name = f"{base}-{count}"
+            count += 1
+        taken.add(name)
+        listed[name] = skill
+    return listed
+
+
+def pointer(skill: dict, name: str) -> str:
+    """A skill's SKILL.md for Hermes, listed as name: when to use it, and where it is."""
     description = " ".join(str(skill.get("description") or "").split())
-    selector = json.dumps({"name": skill["name"]})
+    selector = json.dumps(_selector(skill))
     return (
         "---\n"
-        f"name: {skill['name']}\n"
+        f"name: {name}\n"
         f"description: {json.dumps(description)}\n"
         "---\n\n"
-        f"# {skill['name']}\n\n"
+        f"# {name}\n\n"
         "Your team approved this skill in its Worktable Library as its agreed way to do this work. "
         f"Read the current version with `worktable_skills_read` {selector} and follow it, "
         "over your own approach and over other Docs.\n\n"
@@ -121,19 +167,19 @@ class LibrarySkills:
         skills = state.get("skills")
         if not isinstance(skills, list):
             skills = []
-        wanted: dict[str, dict] = {}
-        for skill in skills:
-            name = skill.get("name") if isinstance(skill, dict) else None
-            if not isinstance(name, str) or not _NAME.match(name) or name in self._reserved:
-                continue
-            # A name two libraries share lists once; reading it by name asks
-            # which library, and Worktable's answer says how to choose.
-            wanted.setdefault(name, skill)
+        wanted = listed_names(
+            (
+                skill
+                for skill in skills
+                if isinstance(skill, dict) and isinstance(skill.get("name"), str) and _NAME.match(skill["name"])
+            ),
+            self._reserved,
+        )
         self._folder.mkdir(parents=True, exist_ok=True)
         for name, skill in wanted.items():
             path = self._folder / name / "SKILL.md"
             path.parent.mkdir(exist_ok=True)
-            text = pointer(skill)
+            text = pointer(skill, name)
             if not path.is_file() or path.read_text(encoding="utf-8") != text:
                 path.write_text(text, encoding="utf-8")
             self._register(name, path)

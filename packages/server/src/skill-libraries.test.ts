@@ -657,6 +657,15 @@ describe("skill libraries", () => {
     const shared = await instructions()
     expect(shared).toContain("- release-checklist (library: agent):")
     expect(shared).toContain("- release-checklist (library: worktable):")
+    // So do the lists of skills, with what to read each by.
+    await addRelease({ kind: "space" })
+    const agent = await connect()
+    const listed = (await call(agent, "worktable_skills_read", {})).skills as Array<Record<string, unknown>>
+    const inSpace = listed.find((skill) => skill.library === "Space: Ops")!
+    expect(inSpace.read).toEqual({ library: "space", spaceId: "ops" })
+    expect(listed.find((skill) => skill.library === "Worktable")!.read).toEqual({ library: "worktable" })
+    const read = await call(agent, "worktable_skills_read", { name: "release-checklist", ...(inSpace.read as object) })
+    expect(read.library).toBe("Space: Ops")
 
     process.env["WORKTABLE_MCP_PREVIEW"] = "0"
     expect(await instructions()).not.toContain("release-checklist")

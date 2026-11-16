@@ -473,6 +473,27 @@
               "version": {
                 "type": "string",
                 "description": "Changes whenever the skill's live version does."
+              },
+              "read": {
+                "description": "Only when skills in more than one library share the name: pass these with the name to worktable_skills_read.",
+                "type": "object",
+                "properties": {
+                  "library": {
+                    "type": "string",
+                    "enum": [
+                      "worktable",
+                      "space",
+                      "agent"
+                    ]
+                  },
+                  "spaceId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "library"
+                ],
+                "additionalProperties": {}
               }
             },
             "required": [
@@ -14430,6 +14451,26 @@
           "type": "string",
           "description": "Changes whenever the skill's live version does."
         },
+        "read": {
+          "type": "object",
+          "properties": {
+            "library": {
+              "type": "string",
+              "enum": [
+                "worktable",
+                "space",
+                "agent"
+              ]
+            },
+            "spaceId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "library"
+          ],
+          "additionalProperties": {}
+        },
         "spaceId": {
           "allOf": [
             {
@@ -14466,6 +14507,27 @@
               "version": {
                 "type": "string",
                 "description": "Changes whenever the skill's live version does."
+              },
+              "read": {
+                "description": "Only when skills in more than one library share the name: pass these with the name to worktable_skills_read.",
+                "type": "object",
+                "properties": {
+                  "library": {
+                    "type": "string",
+                    "enum": [
+                      "worktable",
+                      "space",
+                      "agent"
+                    ]
+                  },
+                  "spaceId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "library"
+                ],
+                "additionalProperties": {}
               }
             },
             "required": [

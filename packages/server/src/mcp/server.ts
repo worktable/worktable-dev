@@ -6,6 +6,10 @@ import type { RequestPrincipal, TokenIdentity } from "../token-store.ts"
 import { SERVER_INSTRUCTIONS } from "./instructions.ts"
 import type { McpSurface } from "./surface.ts"
 import { registerTools } from "./tools.ts"
+import { registerSkillsExtension, SKILLS_EXTENSION } from "./skills-extension.ts"
+import { DEFAULT_AGENT_PRINCIPAL } from "./helpers.ts"
+import { ensureParticipant } from "../participant-store.ts"
+import { skillReaderFor } from "../skill-libraries.ts"
 
 export interface WorktableMcpServerOptions {
   version: string
@@ -87,10 +91,15 @@ export function createWorktableMcpServer(
   options: WorktableMcpServerOptions
 ): McpServer {
   const { info, instructions } = serverIdentity(options)
+  const preview = options.surface === "preview"
   const server = new McpServer(info, {
-    capabilities: { tools: {} },
+    // Preview: the team's skills over MCP too, for apps that load them.
+    capabilities: preview
+      ? { tools: {}, resources: {}, extensions: { [SKILLS_EXTENSION]: {} } }
+      : { tools: {} },
     instructions,
   })
+  if (preview) registerSkillsExtension(server, () => skillReader(options))
   registerTools(server, {
     scopes: options.scopes,
     urlOrigin: options.urlOrigin,
@@ -100,4 +109,17 @@ export function createWorktableMcpServer(
     fileLinkBase: options.fileLinkBase,
   })
   return server
+}
+
+/** The skills reader for the agent a connection's tools act as. */
+async function skillReader(options: WorktableMcpServerOptions) {
+  // The loopback bridge and the legacy token act as the default agent.
+  const principal = options.identity?.principal ?? options.principal ?? DEFAULT_AGENT_PRINCIPAL
+  const identity = options.identity ?? {
+    agent: principal.type === "agent" ? principal.displayName : null,
+    principal,
+  }
+  // An agent's own library needs its participant, which its first call records.
+  if (principal.type === "agent") await ensureParticipant(identity)
+  return skillReaderFor({ ...identity, scopes: options.scopes ?? ["*"] })
 }

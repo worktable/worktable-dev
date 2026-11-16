@@ -662,6 +662,73 @@ describe("skill libraries", () => {
     expect(await instructions()).not.toContain("release-checklist")
   })
 
+  it("serves the skills over MCP to apps that load them, as both protocol eras ask", async () => {
+    const { z } = await import("zod")
+    await addRelease()
+    expect((await connect("released")).getServerCapabilities()?.["extensions"]).toBeUndefined()
+    const agent = await connect()
+    expect(agent.getServerCapabilities()?.["extensions"]).toEqual({ "io.modelcontextprotocol/skills": {} })
+    const Skills = z.looseObject({ skills: z.array(z.looseObject({ uri: z.string() })) })
+    const listed = (await agent.request({ method: "skills/list", params: {} }, Skills)).skills
+    expect(listed).toEqual([
+      {
+        uri: "skill://worktable/release-checklist/SKILL.md",
+        frontmatter: { name: "release-checklist", description: "Use when shipping a release." },
+        resources: [
+          { uri: "skill://worktable/release-checklist/SKILL.md", digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/), size: expect.any(Number) },
+        ],
+      },
+    ])
+    // The file is what the listing promised: its digest and size.
+    const read = await agent.readResource({ uri: "skill://worktable/release-checklist/SKILL.md" })
+    const text = (read.contents[0] as { text: string }).text
+    expect(text).toStartWith('---\nname: release-checklist\ndescription: "Use when shipping a release."\n---\n\n# Release checklist')
+    const bytes = Buffer.from(text, "utf8")
+    const { createHash } = await import("node:crypto")
+    const resource = (listed[0] as unknown as { resources: Array<{ digest: string; size: number }> }).resources[0]!
+    expect(resource).toEqual({ ...resource, digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`, size: bytes.length })
+    // A skill that doesn't apply, or isn't there, is an invalid URI.
+    await expect(agent.request({ method: "skills/get", params: { uri: "skill://yours/release-checklist/SKILL.md" } }, z.unknown())).rejects.toThrow("No skill at")
+    expect((await agent.listResources()).resources.map((resource) => resource.uri)).toEqual([
+      "skill://worktable/release-checklist/SKILL.md",
+    ])
+
+    // The 2026-07-28 revision gets the same answers from the same server.
+    process.env["WORKTABLE_MCP_MODERN"] = "1"
+    try {
+      const modern = async (method: string, params: Record<string, unknown>) => {
+        const app = new Hono()
+        app.route("/mcp", mcpRouter)
+        const meta = {
+          "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+          "io.modelcontextprotocol/clientInfo": { name: "modern", version: "1" },
+          "io.modelcontextprotocol/clientCapabilities": {},
+        }
+        const response = await app.fetch(
+          new Request("http://127.0.0.1/mcp", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              accept: "application/json, text/event-stream",
+              "mcp-protocol-version": "2026-07-28",
+              "mcp-method": method,
+              ...(typeof params["uri"] === "string" ? { "mcp-name": params["uri"] } : {}),
+            },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: { ...params, _meta: meta } }),
+          })
+        )
+        return ((await response.json()) as { result?: Record<string, unknown> }).result
+      }
+      expect((await modern("server/discover", {}))?.["capabilities"]).toMatchObject({
+        resources: {},
+        extensions: { "io.modelcontextprotocol/skills": {} },
+      })
+      expect((await modern("skills/get", { uri: "skill://worktable/release-checklist/SKILL.md" }))?.["skill"]).toEqual(listed[0])
+    } finally {
+      delete process.env["WORKTABLE_MCP_MODERN"]
+    }
+  })
+
   it("keeps libraries off while the preview tools are off", async () => {
     delete process.env["WORKTABLE_MCP_PREVIEW"]
     process.env["WORKTABLE_MCP_PREVIEW"] = "0"

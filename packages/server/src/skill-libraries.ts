@@ -1321,6 +1321,11 @@ function pickOne<T extends { entry: LibraryEntry }>(found: T[], name: string): T
   return found[0]!
 }
 
+/** A skill's live version as Markdown, for one skillsForAgent returned. */
+export function liveSkillText(skill: AgentSkill): Promise<string> {
+  return liveContent(skill.entry, skill.live.generationId)
+}
+
 /** A live skill's content, for an agent it applies to. */
 export async function readSkillForAgent(
   reader: SkillReader,

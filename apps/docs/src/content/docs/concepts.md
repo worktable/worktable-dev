@@ -236,3 +236,19 @@ A Record can point to the Doc about it, and a page can show your Records.
 See [Links and backlinks](/guides/docs-and-versions/#links-and-backlinks),
 [Define fields](/guides/records/#define-fields) and
 [Use records](/guides/widgets/#use-records).
+
+### Worktable Link
+
+**Reach this Worktable from any device.** Worktable Link is for a Worktable that
+runs on your own computer or server. It lets Claude, ChatGPT and other AI apps
+reach it from any device, and turns on share links.
+
+- **Your files stay put.** Link passes approved requests through your Cloud
+  account to your computer. Nothing is copied to Cloud.
+- **Keep it running.** The computer has to be on with Worktable running.
+  Worktable Desktop keeps a linked Worktable running in the background until
+  you quit it.
+- **Turn it on** in **Settings → Remote**, or with **Set Up** when you connect
+  a chat app.
+
+See [Worktable Link](/guides/remote-access/#worktable-link).

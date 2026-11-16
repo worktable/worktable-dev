@@ -33,7 +33,6 @@ import { toast } from "@worktable/ui/components/sonner"
 import { cn } from "@worktable/ui/lib/utils"
 import { HelpMark } from "@/components/help/help-tip"
 import { fillTip } from "@/lib/help/fill"
-import { sectionHeading } from "@/components/home/home-cards"
 import { copyText } from "@/lib/clipboard"
 import {
   AGENT_RULES_LINE,
@@ -114,12 +113,12 @@ export default function TryNext({
   return (
     <section
       aria-labelledby="try-next-heading"
-      className="order-3 min-w-0 @3xl/page:col-span-2"
+      className="help-surface order-3 min-w-0 overflow-hidden rounded-2xl bg-popover @3xl/page:col-span-2"
     >
-      <div className="mb-2.5 flex items-center justify-between gap-3">
+      <div className="help-band flex items-center justify-between gap-3 py-2 pr-2 pl-4">
         <h2
           id="try-next-heading"
-          className={cn(sectionHeading, "flex min-w-0 items-center gap-2")}
+          className="flex min-w-0 items-center gap-2 text-sm font-semibold text-primary-text"
         >
           <HelpMark />
           {TRY_NEXT_COPY.title}
@@ -133,7 +132,7 @@ export default function TryNext({
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label="More"
-            className="-my-1 flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md text-primary-text transition-colors hover:bg-surface-hover"
             render={<button type="button" />}
           >
             <MoreVertical className="size-4" />
@@ -146,7 +145,7 @@ export default function TryNext({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <ul className="grid grid-cols-1 gap-3 @xl/page:grid-cols-2 @3xl/page:grid-cols-3">
+      <ul className="grid grid-cols-1 gap-3 p-3 @xl/page:grid-cols-2 @3xl/page:grid-cols-3">
         {shown.map((card) => (
           <li key={card.id} className="flex min-w-0">
             {card.kind === "setup" ? (
@@ -291,15 +290,12 @@ function TryCard({
     <div className="flex w-full min-w-0 flex-col gap-3 rounded-xl card-surface p-4">
       <span
         aria-hidden
-        className={cn(
-          "flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-tint",
-          done ? "text-primary" : "text-muted-foreground"
-        )}
+        className="help-icon-tile flex size-8 shrink-0 items-center justify-center rounded-lg"
       >
         {done ? (
-          <CircleCheck className="size-4" />
+          <CircleCheck className="size-4" strokeWidth={2.25} />
         ) : (
-          <Icon className="size-4" />
+          <Icon className="size-4" strokeWidth={2.25} />
         )}
       </span>
       <div className="min-w-0">

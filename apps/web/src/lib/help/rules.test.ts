@@ -16,9 +16,10 @@ function context(overrides: Partial<HelpContext> = {}): HelpContext {
   }
 }
 
-const once: Tip = TIPS.temporaryDoc
-const never: Tip = TIPS.recordsMeet
-const always: Tip = { ...TIPS.recordsView, comesBack: "always" }
+// Version 1 throughout, so these test the rules rather than the copy's version.
+const once: Tip = { ...TIPS.temporaryDoc, version: 1 }
+const never: Tip = { ...TIPS.recordsMeet, version: 1 }
+const always: Tip = { ...TIPS.recordsView, version: 1, comesBack: "always" }
 
 it("shows a tip until it's closed, then once more in a later session at most", () => {
   expect(tipMayShow(once, undefined, context())).toBe(true)

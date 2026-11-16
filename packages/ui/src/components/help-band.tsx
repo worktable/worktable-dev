@@ -8,8 +8,8 @@ import { cn } from "@worktable/ui/lib/utils"
 
 /**
  * The look every piece of Worktable help shares: the normal popover surface
- * with a cobalt band across the top that carries the Worktable mark, "Tip" or
- * "Concept", and close. Cards sit in the page, hints point at one control, and
+ * with a cobalt band across the top that carries the Worktable mark, "Tip", and
+ * close. Cards sit in the page, hints point at one control, and
  * inline help sits inside a dialog or box.
  */
 export function HelpBand({
@@ -18,7 +18,7 @@ export function HelpBand({
   onClose,
   closeLabel = "Close",
 }: {
-  label: "Tip" | "Concept"
+  label: "Tip"
   /** The Worktable mark, supplied by the app. */
   mark?: React.ReactNode
   onClose?: () => void
@@ -47,7 +47,7 @@ export function HelpBand({
 }
 
 export interface HelpContentProps {
-  label: "Tip" | "Concept"
+  label: "Tip"
   mark?: React.ReactNode
   title?: React.ReactNode
   children?: React.ReactNode

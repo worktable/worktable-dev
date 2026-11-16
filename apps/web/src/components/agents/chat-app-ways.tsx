@@ -1,3 +1,5 @@
+import { HelpIcon, TipCard } from "@/components/help/help-tip"
+import { TIPS } from "@/lib/help/registry"
 import {
   lazy,
   Suspense,
@@ -234,15 +236,17 @@ export function ChatAppWays({
   }, [linkSetup, linkOn])
   return (
     <div className="flex flex-col gap-5">
+      <TipCard tip={TIPS.linkWhy} active={active && link.isSuccess && !linkOn} />
       <section
         aria-labelledby={`chat-anywhere-${app}`}
         className="flex flex-col gap-1"
       >
         <h3
           id={`chat-anywhere-${app}`}
-          className="text-sm font-medium text-foreground"
+          className="flex items-center gap-1.5 text-sm font-medium text-foreground"
         >
           Any device
+          <HelpIcon entry="worktableLink" label="About Worktable Link" />
         </h3>
         <ol className="space-y-1">
           <SetupStep

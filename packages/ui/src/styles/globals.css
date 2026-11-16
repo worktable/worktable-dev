@@ -511,6 +511,15 @@
   background: var(--help-paper);
   border-bottom: 1px solid var(--help-line);
 }
+/* An icon on help, such as a Next Steps card's, sits on a cobalt tile so the
+   card reads as Worktable's, not the person's own content. */
+.help-icon-tile {
+  background: color-mix(in oklch, var(--primary) 16%, transparent);
+  color: var(--primary-text);
+}
+.dark .help-icon-tile {
+  background: color-mix(in oklch, var(--primary) 28%, transparent);
+}
 
 /* Sonner injects its behavioral stylesheet at runtime. This higher-specificity
    adapter keeps keyboard focus on the same semantic overlay elevation instead

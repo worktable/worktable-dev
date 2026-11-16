@@ -50,10 +50,6 @@ interface TipProps {
   className?: string
 }
 
-function tipLabel(tip: Tip) {
-  return tip.concept ? "Concept" : "Tip"
-}
-
 /** A tip in the page. Renders nothing until it's this screen's turn. */
 export function TipCard({
   tip,
@@ -67,7 +63,7 @@ export function TipCard({
   const Display = tip.display === "inline" ? HelpInline : HelpCard
   return (
     <Display
-      label={tipLabel(tip)}
+      label="Tip"
       mark={<HelpMark />}
       title={tip.title}
       onClose={close}
@@ -115,7 +111,7 @@ export function TipHint({
       open={open}
       side={side}
       align={align}
-      label={tipLabel(tip)}
+      label="Tip"
       mark={<HelpMark />}
       title={tip.title}
       onClose={close}
@@ -173,7 +169,7 @@ export function HelpIcon({
       >
         <div className="help-band flex items-center gap-2 py-1.5 pl-3 text-xs font-semibold text-primary-text">
           <HelpMark />
-          Concept
+          Tip
         </div>
         <div className="flex flex-col gap-1 px-3 pt-2.5 pb-3 text-sm">
           <p className="font-semibold text-foreground">{about.name}</p>

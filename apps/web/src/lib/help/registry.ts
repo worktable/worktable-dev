@@ -37,12 +37,13 @@ export const CONCEPT_IDS = [
   "who-can-see-it",
   "agent-replies",
   "linked-work",
+  "worktable-link",
 ] as const
 
 export type ConceptId = (typeof CONCEPT_IDS)[number]
 
 /** What a concept needs to be shown at all. */
-export type HelpCondition = "teams" | "links" | "files" | "library"
+export type HelpCondition = "teams" | "links" | "files" | "library" | "local"
 
 export interface Concept {
   id: ConceptId
@@ -206,6 +207,15 @@ export const CONCEPTS: readonly Concept[] = [
     full: "Link one Doc from another. A Record can point to the Doc about it, and a page can show your Records.",
     docs: "concepts/#linked-work",
   },
+  {
+    id: "worktable-link",
+    name: "Worktable Link",
+    group: "behaviour",
+    short: "Reach this Worktable from any device.",
+    full: "This Worktable runs on your computer. Worktable Link lets Claude, ChatGPT and other AI apps reach it from any device, and turns on share links. Your files stay on this computer, so keep it on with Worktable running.",
+    docs: "concepts/#worktable-link",
+    onlyIf: "local",
+  },
 ]
 
 const CONCEPTS_BY_ID = new Map(CONCEPTS.map((concept) => [concept.id, concept]))
@@ -214,11 +224,6 @@ export function concept(id: ConceptId): Concept {
   return CONCEPTS_BY_ID.get(id)!
 }
 
-/** The two groups in How Worktable Works, in order. */
-export const CONCEPT_GROUPS = [
-  { id: "parts", title: "What's in Worktable" },
-  { id: "behaviour", title: "How It Behaves" },
-] as const satisfies readonly { id: Concept["group"]; title: string }[]
 
 // ============================================================
 // Tips that show on their own
@@ -238,7 +243,7 @@ export interface Tip {
   version: number
   reason: TipReason
   display: TipDisplay
-  /** "Concept" in the band when it teaches one; "Tip" otherwise. */
+  /** The idea it teaches, which its help icon and How Worktable Works share. */
   concept?: ConceptId
   title?: string
   text: string
@@ -260,26 +265,27 @@ export interface Tip {
 export const TIPS = {
   temporaryDoc: {
     id: "temporary-doc",
-    version: 1,
+    version: 2,
     reason: "must-know",
     display: "card",
     concept: "temporary-docs",
     title: "Temporary Docs",
     // {date} is the Doc's archive date.
-    text: "This archives on {date} if no one touches it. Your agents can still read it, and you can restore it.",
+    text: "This archives on {date} if no one touches it, so your Space stays tidy. Your agents can still read it after, and you can restore it any time.",
     doneWhen: "temporary-kept",
     comesBack: 1,
     priority: 30,
+    learnMore: "concepts/#temporary-docs",
     where: "A temporary Doc",
   },
   recordsMeet: {
     id: "records-meet",
-    version: 1,
+    version: 2,
     reason: "first-meeting",
     display: "card",
     concept: "records",
     title: "Records",
-    text: "Records are rows that change one by one. Agents can add and update them, and pages can use them.",
+    text: "Records are rows that change one by one, like tasks, leads or sources. Ask an agent to start a list and keep it current. A page can show your Records, and a row can link to the Doc it's about.",
     doneWhen: "records-edited",
     comesBack: 0,
     priority: 20,
@@ -309,50 +315,53 @@ export const TIPS = {
   },
   drawingMeet: {
     id: "drawing-meet",
-    version: 1,
+    version: 2,
     reason: "first-meeting",
     display: "card",
     concept: "drawings",
     title: "Drawings",
-    text: "Your agents can read and edit this. Ask one to add a diagram.",
+    text: "Sketch, map or plan here. Your agents can read a Drawing and add to it, so you can ask one to turn a Doc into a diagram.",
     comesBack: 0,
     priority: 20,
+    learnMore: "concepts/#drawings",
     where: "Drawings",
   },
   fileMeet: {
     id: "file-meet",
-    version: 1,
+    version: 2,
     reason: "first-meeting",
     display: "card",
     concept: "files",
     title: "Files",
-    text: "Your agents can open files in this Space.",
+    text: "Images, PDFs and spreadsheets live here with your Docs. Your agents can open them, so you can point an agent at a file instead of pasting it into a chat.",
     comesBack: 0,
     priority: 20,
     onlyIf: "files",
+    learnMore: "concepts/#files",
     where: "Files",
   },
   threadsMeet: {
     id: "threads-meet",
-    version: 1,
+    version: 2,
     reason: "first-meeting",
     display: "card",
     concept: "threads",
     title: "Threads",
-    text: "Talk with people and agents here. In a group, @mention the agent you want.",
+    text: "Talk with people and agents here. In a group, @mention the agent you want. Always-on agents answer right away, and the rest see it next time they're open.",
     doneWhen: "thread-message",
     comesBack: 0,
     priority: 20,
+    learnMore: "concepts/#threads",
     where: "Threads",
   },
   libraryMeet: {
     id: "library-meet",
-    version: 1,
+    version: 2,
     reason: "first-meeting",
     display: "card",
     concept: "library",
     title: "Library",
-    text: "What's here is approved for your team's agents to use, like skills.",
+    text: "Skills are instructions your team approved. Every agent with access follows them, so you explain things once. When an agent suggests a change, someone approves it first.",
     doneWhen: "skill-added",
     comesBack: 0,
     priority: 20,
@@ -360,12 +369,26 @@ export const TIPS = {
     learnMore: "agents/skills/",
     where: "Library",
   },
+  linkWhy: {
+    id: "link-why",
+    version: 1,
+    reason: "must-know",
+    display: "inline",
+    concept: "worktable-link",
+    title: "Why Worktable Link",
+    text: "Claude and ChatGPT run in the cloud. Worktable Link gives them a way in to this Worktable from any device, your phone too. Your files stay on this computer, so keep it on with Worktable running.",
+    comesBack: 0,
+    priority: 30,
+    onlyIf: "local",
+    learnMore: "concepts/#worktable-link",
+    where: "Connecting a chat app",
+  },
   pendingMeet: {
     id: "pending-meet",
-    version: 1,
+    version: 2,
     reason: "first-meeting",
     display: "hint",
-    text: "Anything that needs you lands here.",
+    text: "Anything that needs you lands here, like a request sent to you or a message that didn't get through.",
     comesBack: 0,
     priority: 15,
     where: "Home, Pending",
@@ -400,6 +423,7 @@ export const HELP_ICONS = {
   spaceAccess: { concept: "who-can-see-it" },
   agentReplies: { concept: "agent-replies" },
   alwaysOn: { concept: "agent-replies" },
+  worktableLink: { concept: "worktable-link" },
 } as const satisfies Record<string, HelpIconEntry>
 
 export type HelpIconKey = keyof typeof HELP_ICONS
@@ -434,15 +458,15 @@ export const WELCOME = {
     screens: [
       {
         title: "Your agents share one place",
-        line: "What ChatGPT saves, Claude can open and build on.",
+        line: "What ChatGPT saves, Claude can open and build on. Connect each agent once, and they all work from the same Docs.",
       },
       {
         title: "Work stays after the chat",
-        line: "Plans and research land in Spaces, where you and your agents find them later.",
+        line: "Plans and research land in Spaces, where you and your agents find them later. The next chat picks up where the last one left off.",
       },
       {
         title: "Pages you can share",
-        line: "Ask for a mockup, a comparison or an explainer, and send it to anyone with a link.",
+        line: "Ask for a mockup, a comparison or an explainer, and send it to anyone with a link. They can comment on any part, and the comments come back here.",
       },
     ],
   },
@@ -452,15 +476,15 @@ export const WELCOME = {
     screens: [
       {
         title: "Your team's work is here",
-        line: "Open a Space to catch up.",
+        line: "Docs, pages and Records your team and its agents made. Open a Space to catch up.",
       },
       {
         title: "Bring your own agents",
-        line: "Connect yours and it can read and add to the team's work.",
+        line: "Connect the agents you already use. They read the team's work and add to it, so you start with what the team knows.",
       },
       {
         title: "Pages you can share",
-        line: "Mockups, comparisons and explainers your team made. Send any of them with a link.",
+        line: "Mockups, comparisons and explainers your team made. Send any of them with a link, and comments come back here.",
       },
     ],
   },
@@ -607,11 +631,11 @@ export const AGENT_RULES_LINE =
 
 /** Words around Try Next's cards on Home. */
 export const TRY_NEXT_COPY = {
-  title: "Try Next",
+  title: "Next Steps",
   // {done} and {total} count Try Next's cards.
   progress: "{done} of {total} done",
-  hide: "Hide Try Next",
-  hideTitle: "Hide Try Next?",
+  hide: "Hide Next Steps",
+  hideTitle: "Hide Next Steps?",
   hideText: "You can bring it back in Settings > Help.",
   hideConfirm: "Hide",
   done: "Done",

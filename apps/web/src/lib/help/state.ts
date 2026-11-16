@@ -77,6 +77,7 @@ export function useHelpContext(): HelpContext & { setup: PersonalSetup } {
       links: deployment?.capabilities.documentSharing === true,
       files: deployment?.capabilities.files === true,
       library: deployment?.capabilities.skillLibraries === true,
+      local: deployment != null && deployment.mode !== "cloud",
     }),
     [deployment, workspace?.teamContext]
   )

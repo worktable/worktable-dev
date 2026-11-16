@@ -20,10 +20,12 @@ import {
   ExternalLink,
   FileText,
   Folder,
+  Globe,
   History,
   Inbox,
   LayoutDashboard,
   Library,
+  Lightbulb,
   Link,
   ListChecks,
   Mail,
@@ -40,11 +42,11 @@ import { HelpMark } from "@/components/help/help-tip"
 import { useDeploymentInfo, useHelpEnabled } from "@/hooks/use-deployment-info"
 import {
   docsUrl,
+  TRY_NEXT_COPY,
   type Concept,
   type ConceptId,
-  type Tip,
 } from "@/lib/help/registry"
-import { conceptGroups, tipSeen, visibleTips } from "@/lib/help/settings-help"
+import { visibleConcepts } from "@/lib/help/settings-help"
 import { saveHelp, useHelpContext } from "@/lib/help/state"
 import { tryNextProgress, tryNextStatus } from "@/lib/help/try-next"
 import { openWelcome } from "@/lib/help/welcome-open"
@@ -107,7 +109,7 @@ function ListCard({ children }: { children: ReactNode }) {
   )
 }
 
-/** Welcome, Try Next, How Worktable Works and Tips (Preview only). */
+/** Welcome, Next Steps, tips and How Worktable Works (Preview only). */
 function HelpGuide() {
   const queryClient = useQueryClient()
   const { setup, conditions } = useHelpContext()
@@ -118,22 +120,19 @@ function HelpGuide() {
       links: conditions.links === true,
     })
   )
-  const showTryNext = useMutation({
+  const showNextSteps = useMutation({
     mutationFn: () => saveHelp(queryClient, { tryNextHidden: false }),
-    onError: () => toast.error("Couldn’t show Try Next."),
+    onError: () => toast.error("Couldn’t show Next Steps."),
   })
   const resetTips = useMutation({
     mutationFn: () => saveHelp(queryClient, { resetAll: true }),
     onSuccess: () => toast.success("Tips will show again."),
-    onError: () => toast.error("Couldn’t reset tips."),
+    onError: () => toast.error("Couldn’t show tips again."),
   })
 
   return (
     <>
-      <section
-        className="flex flex-col gap-3"
-        aria-label="Welcome and Try Next"
-      >
+      <section className="flex flex-col gap-3" aria-label="Getting help">
         <ListCard>
           <Row
             icon={<HelpMark />}
@@ -146,19 +145,33 @@ function HelpGuide() {
           </Row>
           <Row
             icon={<ListChecks aria-hidden className="size-4" />}
-            name="Try Next"
+            name={TRY_NEXT_COPY.title}
             line={`${progress.done} of ${progress.total} done`}
           >
             {setup.tryNextHidden ? (
               <Button
                 variant="outline"
                 size="sm"
-                disabled={showTryNext.isPending}
-                onClick={() => showTryNext.mutate()}
+                disabled={showNextSteps.isPending}
+                onClick={() => showNextSteps.mutate()}
               >
                 Show on Home
               </Button>
             ) : null}
+          </Row>
+          <Row
+            icon={<Lightbulb aria-hidden className="size-4" />}
+            name="Tips"
+            line="Each tip shows where it helps."
+          >
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={resetTips.isPending}
+              onClick={() => resetTips.mutate()}
+            >
+              Show All Tips
+            </Button>
           </Row>
         </ListCard>
       </section>
@@ -167,39 +180,9 @@ function HelpGuide() {
         <h3 className="text-sm font-medium text-foreground">
           How Worktable Works
         </h3>
-        {conceptGroups(conditions).map((group) => (
-          <div key={group.id} className="flex flex-col gap-2">
-            <h4 className="text-xs font-medium text-muted-foreground">
-              {group.title}
-            </h4>
-            <ListCard>
-              {group.concepts.map((concept) => (
-                <ConceptRow key={concept.id} concept={concept} />
-              ))}
-            </ListCard>
-          </div>
-        ))}
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-medium text-foreground">Tips</h3>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={resetTips.isPending}
-            onClick={() => resetTips.mutate()}
-          >
-            Show Tips Again
-          </Button>
-        </div>
         <ListCard>
-          {visibleTips(conditions).map((tip) => (
-            <Row key={tip.id} icon={<TipIcon tip={tip} />} name={tip.where}>
-              {tipSeen(setup.help?.[tip.id]) ? (
-                <span className="text-xs text-muted-foreground">Seen</span>
-              ) : null}
-            </Row>
+          {visibleConcepts(conditions).map((concept) => (
+            <ConceptRow key={concept.id} concept={concept} />
           ))}
         </ListCard>
       </section>
@@ -251,19 +234,9 @@ const CONCEPT_ICONS: Record<ConceptId, LucideIcon> = {
   "who-can-see-it": Users,
   "agent-replies": Reply,
   "linked-work": Waypoints,
+  "worktable-link": Globe,
 }
 
-/** Tips that teach no concept take the icon of the part they're about. */
-const TIP_PLACES: Record<string, ConceptId> = {
-  "records-view": "records",
-  "html-comment": "html-docs",
-  "pending-meet": "pending",
-}
-
-function TipIcon({ tip }: { tip: Tip }) {
-  const Icon = CONCEPT_ICONS[tip.concept ?? TIP_PLACES[tip.id] ?? "worktable"]
-  return <Icon aria-hidden className="size-4" />
-}
 
 function ConceptRow({ concept }: { concept: Concept }) {
   const Icon = CONCEPT_ICONS[concept.id]

@@ -87,8 +87,9 @@ interface LinkDraft {
   expiry: ShareLinkExpiry
   passwordEnabled: boolean
   password: string
-  /** Only the first link is made with comments or live data. */
+  /** Only the first link is made with comments. */
   comments: boolean
+  /** Other links show live data with the first link's access. */
   live: boolean
 }
 
@@ -213,17 +214,22 @@ export function ShareLinksDialog({
   }
 
   const create = useMutation({
-    mutationFn: (input: LinkDraft) =>
-      createShareLink({
-        target: shareTarget,
-        label: input.label.trim(),
-        level: input.comments ? "comment" : "view",
-        comments: DEFAULT_SHARE_LINK_COMMENT_SETTINGS,
-        expiresAt: shareLinkExpiresAt(input.expiry) ?? null,
-        ...(input.passwordEnabled || passwordRequired
-          ? { password: input.password }
-          : {}),
-      }),
+    mutationFn: (input: LinkDraft & { grant?: LinkGrant }) => {
+      const make = () =>
+        createShareLink({
+          target: shareTarget,
+          label: input.label.trim(),
+          level: input.comments ? "comment" : "view",
+          comments: DEFAULT_SHARE_LINK_COMMENT_SETTINGS,
+          expiresAt: shareLinkExpiresAt(input.expiry) ?? null,
+          ...(input.passwordEnabled || passwordRequired
+            ? { password: input.password }
+            : {}),
+          ...(input.grant ? { grant: input.grant } : {}),
+        })
+      // Saving access is refused while the tool changes; ask once more.
+      return input.grant ? retryOnPreviewChange(make) : make()
+    },
     onSuccess: (result, input) => {
       const link = { ...result.link, url: result.link.url ?? result.url }
       writeLinks((current) => [
@@ -233,7 +239,7 @@ export function ShareLinksDialog({
       setEditing(null)
       setDraft(newDraft(policy))
       setAnnouncement("Link created")
-      if (!input.live) return
+      if (!input.live || input.grant) return
       // Open, so what visitors will see shows as soon as it's checked.
       setLiveOpen(true)
       turnOn.mutate({ link, session: session.current })
@@ -354,9 +360,9 @@ export function ShareLinksDialog({
             passwordEnabled: next.link.hasPassword,
             password: "",
             comments: false,
-            live: false,
+            live: Boolean(next.link.grant),
           }
-        : newDraft(policy)
+        : { ...newDraft(policy), live: Boolean(liveGrant) }
     )
   }
 
@@ -395,16 +401,29 @@ export function ShareLinksDialog({
 
   const editingLink = editing?.kind === "edit" ? editing.link : null
   const choices = shareLinkExpiryChoices(policy, editingLink)
+  // Other links take the first link's live data access, as it is now.
+  const liveGrant = (liveAllowed && defaultLink?.grant) || null
 
   function submit() {
     if (busy || !editing) return
     const expiry = allowedShareLinkExpiry(draft.expiry, choices)
+    const live = draft.live && liveGrant !== null
     if (editing.kind === "new") {
-      create.mutate({ ...draft, expiry, comments: false, live: false })
+      create.mutate({
+        ...draft,
+        expiry,
+        comments: false,
+        live,
+        ...(live ? { grant: liveGrant } : {}),
+      })
       return
     }
     const link = editing.link
     const expiresAt = shareLinkExpiresAt(expiry)
+    const liveChange =
+      draft.live === Boolean(link.grant)
+        ? {}
+        : { grant: draft.live ? liveGrant : null }
     update.mutate({
       link,
       said: "Link saved",
@@ -421,6 +440,7 @@ export function ShareLinksDialog({
           : draft.password
             ? { password: draft.password }
             : {}),
+        ...liveChange,
       },
     })
   }
@@ -437,6 +457,7 @@ export function ShareLinksDialog({
         withLabel={kind === "new" || Boolean(editingLink?.label)}
         passwordRequired={passwordRequired}
         hasPassword={editingLink?.hasPassword ?? false}
+        withLive={liveGrant !== null || Boolean(editingLink?.grant)}
         busy={busy}
         submitLabel={kind === "new" ? "Create Link" : "Save"}
         onSubmit={submit}
@@ -1394,7 +1415,7 @@ function LinkMenu({
   )
 }
 
-/** A compact form for a link's label, expiry and password. */
+/** A compact form for a link's label, expiry, password and live data. */
 function LinkForm({
   draft,
   onChange,
@@ -1402,6 +1423,7 @@ function LinkForm({
   withLabel,
   passwordRequired,
   hasPassword,
+  withLive,
   busy,
   submitLabel,
   onSubmit,
@@ -1414,6 +1436,8 @@ function LinkForm({
   withLabel: boolean
   passwordRequired: boolean
   hasPassword: boolean
+  /** Shows live data with the first link's access; off removes it. */
+  withLive: boolean
   busy: boolean
   submitLabel: string
   onSubmit: () => void
@@ -1471,6 +1495,13 @@ function LinkForm({
         }
         onValueChange={(password) => onChange({ ...draft, password })}
       />
+      {withLive ? (
+        <LiveSwitch
+          checked={draft.live}
+          disabled={busy}
+          onChange={(live) => onChange({ ...draft, live })}
+        />
+      ) : null}
       <div className="flex gap-2">
         <Button
           type="submit"

@@ -7,7 +7,7 @@
 // a generated Gemini CLI manifest, a note on where the source lives, and the
 // workflow that pulls each change and releases each new plugin version.
 
-import { lstat, mkdir, readdir, writeFile } from "node:fs/promises"
+import { lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { readPublicPluginFiles } from "./export-worktable-plugin.ts"
 
@@ -71,6 +71,52 @@ function geminiExtension(files: Map<string, Uint8Array>): string {
     mcpServers: { worktable: { httpUrl: server.url } },
   }
   return `${JSON.stringify(manifest, null, 2)}\n`
+}
+
+/**
+ * Antigravity reads `.antigravity-plugin/plugin.json` ahead of the root
+ * manifest, whose Agent Plugins `$schema` its native schema rejects, and its
+ * MCP servers only from `mcp_config.json`.
+ */
+function antigravity(files: Map<string, Uint8Array>): { manifest: string; mcp: string } {
+  const plugin = json(files.get("plugin.json"), "plugin.json")
+  const claude = json(files.get(".claude-plugin/plugin.json"), ".claude-plugin/plugin.json")
+  const server = json(files.get("mcp.json"), "mcp.json").mcpServers?.worktable
+  const prompts = plugin.extensions?.["com.openai"]?.interface?.defaultPrompt
+  if (typeof claude.displayName !== "string" || !Array.isArray(prompts) || typeof server?.url !== "string") {
+    throw new Error("The plugin manifests must give a display name, prompts and the Worktable server")
+  }
+  const manifest = {
+    name: plugin.name,
+    displayName: claude.displayName,
+    description: plugin.description,
+    version: plugin.version,
+    logo: "assets/logo.png",
+    author: plugin.author,
+    homepage: plugin.homepage,
+    repository: `https://github.com/${PLUGIN_REPOSITORY}`,
+    license: plugin.license,
+    keywords: plugin.keywords,
+    suggestedPrompts: prompts.slice(0, 3),
+  }
+  const mcp = { mcpServers: { worktable: { serverUrl: server.url } } }
+  return {
+    manifest: `${JSON.stringify(manifest, null, 2)}\n`,
+    mcp: `${JSON.stringify(mcp, null, 2)}\n`,
+  }
+}
+
+/**
+ * Claude's Add marketplace takes a repository whose root has a marketplace
+ * manifest; here the one plugin is the repository itself.
+ */
+function claudeMarketplace(marketplace: any): string {
+  const plugins = marketplace.plugins.map((plugin: Record<string, unknown>) => ({
+    ...plugin,
+    source: "./",
+    repository: `https://github.com/${PLUGIN_REPOSITORY}`,
+  }))
+  return `${JSON.stringify({ ...marketplace, plugins }, null, 2)}\n`
 }
 
 function readme(files: Map<string, Uint8Array>): string {
@@ -187,6 +233,15 @@ export async function buildPluginRepositoryTree(
   if (!changelog.split("\n").some((line) => line.startsWith(`## [${version}]`)))
     throw new Error(`CHANGELOG.md needs a section for ${version}`)
   files.set("gemini-extension.json", gemini)
+  const google = antigravity(source)
+  files.set(".antigravity-plugin/plugin.json", google.manifest)
+  files.set("mcp_config.json", google.mcp)
+  files.set(
+    ".claude-plugin/marketplace.json",
+    claudeMarketplace(
+      JSON.parse(await readFile(join(sourceDirectory, "distribution/claude-marketplace.json"), "utf8"))
+    )
+  )
   files.set("README.md", readme(source))
   files.set(".github/workflows/sync.yml", SYNC_WORKFLOW)
   return { version, files }

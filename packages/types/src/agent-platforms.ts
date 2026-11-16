@@ -18,6 +18,8 @@ export const AGENT_PLATFORM_IDS = [
   "vscode",
   "goose",
   "antigravity",
+  // Before gemini, so a "Gemini CLI ..." sign-in name finds it first.
+  "gemini-cli",
   "gemini",
   "perplexity",
   "other",
@@ -116,6 +118,12 @@ export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
     name: "Antigravity",
     mode: "on-demand",
     logo: "antigravity.svg",
+  },
+  "gemini-cli": {
+    id: "gemini-cli",
+    name: "Gemini CLI",
+    mode: "on-demand",
+    logo: "gemini.png",
   },
   gemini: { id: "gemini", name: "Gemini", mode: "on-demand", logo: "gemini.png" },
   perplexity: {

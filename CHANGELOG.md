@@ -12,7 +12,7 @@ infrastructure and personal context out of release notes.
 ### Added
 
 - **Light or dark on shared pages:** A page shared by link starts in the visitor's light or dark choice from its header, and follows it when they switch.
-- **Connecting agents on Worktable Cloud:** Antigravity, Gemini and Perplexity have their own steps in Getting Started and **Settings → Agents**. Claude on the web and desktop now installs the Worktable plugin, which brings Worktable's skills; on Claude's Free plan, one click opens Claude's connector dialog with Worktable filled in.
+- **Connecting agents on Worktable Cloud:** Claude Code and Codex now install Worktable's plugin, which brings Worktable's skills as well as its tools, and Gemini CLI has its own step. Antigravity, Gemini and Perplexity have their own steps in Getting Started and **Settings → Agents**. Claude on the web and desktop installs the Worktable plugin too; on Claude's Free plan, one click opens Claude's connector dialog with Worktable filled in.
 
 ### Changed
 

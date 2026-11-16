@@ -43,7 +43,7 @@ separately if your client supports them.
 For Claude Code:
 
 ```sh
-claude plugin marketplace add worktable/worktable-dev
+claude plugin marketplace add worktable/worktable-plugin
 claude plugin install worktable@worktable
 ```
 
@@ -53,8 +53,7 @@ Worktable. See [Claude's plugin instructions](https://code.claude.com/docs/en/di
 For Codex:
 
 ```sh
-codex plugin marketplace add worktable/worktable-dev
-codex plugin add worktable@worktable
+codex plugin add worktable@openai-curated-remote
 ```
 
 Then complete the client's sign-in. See the

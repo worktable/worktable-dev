@@ -4,6 +4,10 @@ import {
   CLAUDE_PLUGIN_STEP,
   appValue,
   claudeConnectorLink,
+  ADDRESS_STEP,
+  CLAUDE_CONNECTOR_STEP,
+  codingPluginStep,
+  pluginReaches,
   type PluginApp,
 } from "@/lib/agent-app-steps"
 import { useEffect, useRef, useState } from "react"
@@ -90,6 +94,7 @@ const ON_DEMAND: Row[] = [
       { kind: "cli", tab: "Codex CLI", client: "codex" },
       { kind: "cli", tab: "Cursor", client: "cursor" },
       { kind: "app", tab: "Antigravity", app: "antigravity" },
+      { kind: "app", tab: "Gemini CLI", app: "gemini-cli" },
       { kind: "cli", tab: "Other", client: null },
     ],
   },
@@ -119,14 +124,17 @@ const ALWAYS_ON: Row = {
 const ANY_MCP: Option = { kind: "mcp", tab: "Other" }
 
 /**
- * Gemini and Perplexity connect from their own servers, which reach Worktable
- * Cloud but not a Worktable on this computer.
+ * The Gemini app and Perplexity connect from their own servers, which reach
+ * Worktable Cloud but not a Worktable on this computer.
  */
 function onThisComputer(row: Row): Row {
   return {
     ...row,
     options: row.options.filter(
-      (option) => option.kind !== "app" || option.app === "antigravity"
+      (option) =>
+        option.kind !== "app" ||
+        option.app === "antigravity" ||
+        option.app === "gemini-cli"
     ),
   }
 }
@@ -616,8 +624,23 @@ function SignInPanel({
     accept.mutate(arrived)
   }, [arrived, connected, accept])
 
-  const instruction =
-    option.kind === "cli"
+  // Coding agents with a plugin install it: it brings Worktable's skills too.
+  // The plugins sign in to the account's default Worktable, so another
+  // Worktable's agents add its own address instead.
+  const reaches = pluginReaches(url)
+  const plugin =
+    reaches && option.kind === "cli" ? codingPluginStep(option.client) : null
+  const byAddress =
+    !reaches &&
+    ((option.kind === "chat" && option.app === "claude") ||
+      (option.kind === "app" && option.app !== "gemini"))
+  const instruction = plugin
+    ? plugin.step
+    : byAddress
+      ? option.kind === "chat"
+        ? CLAUDE_CONNECTOR_STEP
+        : ADDRESS_STEP
+    : option.kind === "cli"
       ? option.client === "cursor"
         ? "Run this in your terminal, then open Cursor and sign in."
         : option.client
@@ -632,8 +655,11 @@ function SignInPanel({
           : option.kind === "always-on"
           ? `Run this on the machine where ${option.agent.name} runs, then ${option.agent.cloudAuth === "oauth" ? "sign in" : "open the link it prints to approve it"}.`
             : "Add this address as a custom connector or MCP server, then sign in."
-  const value =
-    option.kind === "cli"
+  const value = plugin
+    ? plugin.command
+    : byAddress
+      ? url
+    : option.kind === "cli"
       ? cloudConnectorCommand(url, option.client ?? "auto")
       : option.kind === "chat" && option.app === "claude"
         ? CLAUDE_MARKETPLACE
@@ -652,7 +678,7 @@ function SignInPanel({
     <>
       <Instruction>{instruction}</Instruction>
       <CommandBlock value={value} />
-      {option.kind === "chat" && option.app === "claude" ? (
+      {option.kind === "chat" && option.app === "claude" && reaches ? (
         <p className="mt-2 text-xs text-muted-foreground">
           On Claude’s Free plan,{" "}
           <a

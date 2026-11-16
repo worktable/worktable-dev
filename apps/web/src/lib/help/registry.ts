@@ -466,6 +466,30 @@ export const WELCOME = {
   },
 } as const
 
+/** The words inside the welcome's still pictures. */
+export const WELCOME_PICTURES = {
+  agents: {
+    more: "+ more",
+    doc: "Launch plan",
+    wrote: "wrote this · Mon",
+    added: "added Pricing · Tue",
+  },
+  space: {
+    chat: "Here's a summary of the five competitors…",
+    closed: "Closed · last week",
+    name: "Atlas",
+    rows: ["Overview", "Competitor research"],
+    kept: "Still here",
+  },
+  page: {
+    title: "Launch explainer",
+    link: "Anyone with the link",
+    copied: "Copied",
+    commenter: "Lena",
+    comment: "Can we see yearly too?",
+  },
+} as const
+
 // ============================================================
 // Try Next
 // ============================================================

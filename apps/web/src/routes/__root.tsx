@@ -110,6 +110,7 @@ import { onBrowserLogout } from "@/lib/auth-events"
 import { rendererPreloads } from "@/lib/document-renderers"
 import { preloadWhenIdle, whenQuiet } from "@/lib/idle-preload"
 import { useUpdateWaiting } from "@/hooks/use-update-availability"
+import { WelcomeHost } from "@/components/help/welcome-host"
 // Only Worktable Desktop offers to move agents, so browsers never load it.
 // Desktop injects its bridge before any page script runs.
 const inDesktop = typeof window !== "undefined" && "__TAURI__" in window
@@ -804,6 +805,7 @@ function RootLayout() {
           </Suspense>
         ) : null}
         <Toaster theme={theme} />
+        <WelcomeHost />
         {/* After the login guard above, so an unauthenticated page never polls. */}
         <UpdateNudge />
         {inDesktop ? (

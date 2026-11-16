@@ -79,8 +79,8 @@ export interface HelpChange {
   id?: string
   event?: HelpEvent
   version?: number
-  /** When this tab's session started, with a showing. */
-  since?: string
+  /** With a showing: the close it follows, as the summary had it. */
+  follows?: string
   resetAll?: true
   evidence?: "rules-added"
   tryNextHidden?: boolean
@@ -211,6 +211,7 @@ export function useTip(tip: Tip, active: boolean): UseTip {
   }, [allowed, tip.id, tip.priority])
 
   const open = allowed && current === tip.id
+  const closedAt = state?.closedAt
   useEffect(() => {
     if (!open || reported.has(tip.id)) return
     reported.add(tip.id)
@@ -220,10 +221,10 @@ export function useTip(tip: Tip, active: boolean): UseTip {
         id: tip.id,
         event: "shown",
         version: tip.version,
-        since: sessionStartedAt(),
+        follows: closedAt,
       }).catch(() => undefined)
     )
-  }, [open, queryClient, tip.id, tip.version])
+  }, [open, queryClient, tip.id, tip.version, closedAt])
 
   const close = useCallback(() => {
     setSettled(true)

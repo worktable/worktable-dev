@@ -272,18 +272,27 @@ it("finishes HTML help from events that don't name the Doc's format", async () =
 })
 
 it("keeps a tip that comes back showing until it's closed again", async () => {
-  const earlier = new Date(Date.now() - 60_000).toISOString()
-  await help({ id: "temporary-doc", event: "shown", version: 2, since: earlier })
+  await help({ id: "temporary-doc", event: "shown", version: 2 })
   await help({ id: "temporary-doc", event: "closed" })
-  // Another tab's showing from a session already open arrives late: closed.
-  await help({ id: "temporary-doc", event: "shown", version: 2, since: earlier })
   let state = (await setup()).help?.["temporary-doc"]
-  expect(state?.closedAt).toBeDefined()
-  // A later session shows it once more: that showing is open, not closed.
-  const later = new Date(Date.now() + 1000).toISOString()
-  await help({ id: "temporary-doc", event: "shown", version: 2, since: later })
+  const closedAt = state?.closedAt
+  // Another tab's showing, made before that close, arrives late: still closed.
+  await help({ id: "temporary-doc", event: "shown", version: 2 })
   state = (await setup()).help?.["temporary-doc"]
-  expect(state).toMatchObject({ shown: 3, version: 2 })
+  expect(state?.closedAt).toBe(closedAt)
+  // However far apart the clocks, only the server's close time counts: a
+  // showing that names an older close leaves the newer one in place.
+  await help({
+    id: "temporary-doc",
+    event: "shown",
+    version: 2,
+    follows: "2020-01-01T00:00:00.000Z",
+  })
+  expect((await setup()).help?.["temporary-doc"]?.closedAt).toBe(closedAt)
+  // A later session shows it after the close it knew of: open, not closed.
+  await help({ id: "temporary-doc", event: "shown", version: 2, follows: closedAt })
+  state = (await setup()).help?.["temporary-doc"]
+  expect(state).toMatchObject({ shown: 4, version: 2 })
   expect(state?.closedAt).toBeUndefined()
   await help({ id: "temporary-doc", event: "closed" })
   state = (await setup()).help?.["temporary-doc"]

@@ -10,6 +10,7 @@ import {
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog";
 import { createClientId } from "@/lib/client-id";
+import { clearNote, noteFor } from "@/lib/help/note-draft";
 import { NO_RECIPIENT, useCommentRecipients } from "@/lib/comment-recipients";
 import { commentPlaceholder } from "@/lib/composer-placeholders";
 import { setHighlight } from "./passage-text";
@@ -96,7 +97,9 @@ export function AnnotationComposer({
   /** Names the box for assistive technology, and on a phone, its sheet. */
   label?: string;
 }) {
-  const [body, setBody] = useState("");
+  const [body, setBody] = useState(() =>
+    open ? (noteFor(context?.spaceId, context?.docPath) ?? "") : ""
+  );
   const [sending, setSending] = useState(false);
   const [failed, setFailed] = useState(false);
   // One key per draft, kept current for a send that finishes late.
@@ -141,7 +144,8 @@ export function AnnotationComposer({
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open) {
-      setBody("");
+      // A note started from Home's Try Next fills the first box on its Doc.
+      setBody(noteFor(context?.spaceId, context?.docPath) ?? "");
       setPicked(null);
       setFailed(false);
       setSending(false);
@@ -149,6 +153,7 @@ export function AnnotationComposer({
   }
   useEffect(() => {
     if (!open) return;
+    clearNote(context?.spaceId, context?.docPath);
     draftKey.current = createClientId("comment");
     inFlight.current = false;
     sendCount.current += 1;

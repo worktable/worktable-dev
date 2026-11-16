@@ -604,3 +604,38 @@ export type NoteStarterId = (typeof NOTE_STARTERS)[number]["id"]
 /** The line people paste into their agent's own rules. */
 export const AGENT_RULES_LINE =
   "I keep my work in Worktable. When I ask you to write, plan, research or track something, save it in Worktable without me saying so, and look there for context before asking me."
+
+/** Words around Try Next's cards on Home. */
+export const TRY_NEXT_COPY = {
+  title: "Try Next",
+  // {done} and {total} count Try Next's cards.
+  progress: "{done} of {total} done",
+  hide: "Hide Try Next",
+  hideTitle: "Hide Try Next?",
+  hideText: "You can bring it back in Settings > Help.",
+  hideConfirm: "Hide",
+  done: "Done",
+  copied: "Copied. Paste it into your agent.",
+  rulesAdded: "I Added It",
+  // Shown as the Doc opens with the note ready in its comment box.
+  noteNext: "Select any text to leave your note.",
+} as const
+
+/** Each Try Next card's button. */
+export const TRY_NEXT_ACTIONS: Record<TryNextId, string> = {
+  "another-agent": "Add Agent",
+  "interactive-page": "Copy Prompt",
+  "share-link": "Share",
+  "note-to-agent": "Leave Note",
+  "agent-rules": "Copy",
+  "invite-team": "Invite",
+}
+
+/** The Getting Started step that leads Try Next until it's done. */
+export const TRY_NEXT_SETUP = {
+  "connect-agent": {
+    title: "Connect Your Agent",
+    line: "So it can read and write here.",
+    action: "Connect",
+  },
+} as const

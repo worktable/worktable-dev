@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react"
+import { lazy, Suspense, useEffect, useSyncExternalStore } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { ArrowRight } from "lucide-react"
 import { toast } from "@worktable/ui/components/sonner"
@@ -24,13 +24,26 @@ import type { SpaceView } from "@/lib/api"
 import { useHomeFeed, useHomePins } from "@/lib/home"
 import { useSpaces, useWorkspace } from "@/lib/queries"
 import { recognitionChip } from "@/lib/recognition"
-import { isGettingStartedSpace } from "@/lib/setup"
+import {
+  useDocumentSharingAvailable,
+  useHelpEnabled,
+} from "@/hooks/use-deployment-info"
+import { homeTryNext, recentOwnWork } from "@/lib/help/try-next"
+import {
+  canInvite,
+  gettingStartedSpace,
+  isGettingStartedSpace,
+  usePersonalSetup,
+} from "@/lib/setup"
 import { getSpaceArchiveInfo } from "@/lib/spaces"
 import { recognitionColor } from "@worktable/types/recognition"
 
 export const Route = createFileRoute("/")({
   component: HomePage,
 })
+
+// Try Next shows only with help on (Preview), so it loads only then.
+const TryNext = lazy(() => import("@/components/home/try-next"))
 
 /** Spaces shown as cards; the sidebar lists the rest. */
 const SPACE_CARDS = 4
@@ -103,6 +116,9 @@ function HomePage() {
   const homePins = useHomePins()
   const navigate = useNavigate()
   const expectedPins = useSyncExternalStore(noChange, rememberedPinCount, () => 0)
+  const helpEnabled = useHelpEnabled()
+  const sharing = useDocumentSharingAvailable()
+  const { setup, person } = usePersonalSetup()
   const pinCount = feed.data?.pins?.length
   useEffect(() => {
     if (pinCount === undefined) return
@@ -135,6 +151,31 @@ function HomePage() {
   // Pins make the side column; Archiving alone sits under the page.
   const loadingPins = feed.isPending && expectedPins > 0
   const hasSide = pins.length > 0 || loadingPins
+
+  // After setup, until every card is done or the person hides it. It waits
+  // for the feed, which says which Doc its cards name.
+  const own = recentOwnWork(runs, {
+    self: person?.activityId,
+    skipSpace: (spaceId) => {
+      const space = byId.get(spaceId)
+      return (
+        !space ||
+        isGettingStartedSpace(space) ||
+        Boolean(getSpaceArchiveInfo(space))
+      )
+    },
+  })
+  const tryNext =
+    helpEnabled &&
+    workspace?.onboarding?.status !== "pending" &&
+    !setup.tryNextHidden &&
+    feed.data
+      ? homeTryNext(setup, {
+          canInvite: canInvite(person ?? undefined),
+          links: sharing,
+          doc: Boolean(own.doc),
+        })
+      : null
 
   const unpin = (pin: { spaceId: string; path: string }) =>
     void homePins.unpin(pin).catch((error: unknown) => {
@@ -268,6 +309,19 @@ function HomePage() {
             <ArchivingWeek items={temporary} side={hasSide} />
           </div>
         </aside>
+
+        {tryNext && (
+          <Suspense fallback={null}>
+            <TryNext
+              cards={tryNext.cards}
+              done={tryNext.done}
+              total={tryNext.total}
+              space={own.spaceId ? byId.get(own.spaceId)?.name : undefined}
+              doc={own.doc}
+              gettingStartedSpaceId={gettingStartedSpace(spaces)?.id}
+            />
+          </Suspense>
+        )}
 
         {feed.isPending && (
           <section aria-hidden className="order-3 min-w-0 @3xl/page:col-span-2">

@@ -229,6 +229,7 @@ it("finishes HTML help from events that don't name the Doc's format", async () =
     createdAt: now,
     updatedAt: now,
     createdBy: "test",
+    settings: {},
   })
   const created = await createHtmlDocument({
     spaceId: "atlas",

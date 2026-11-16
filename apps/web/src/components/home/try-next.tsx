@@ -465,10 +465,11 @@ function RulesLine({ card }: { card: CardText }) {
   const added = async () => {
     setSaving(true)
     try {
-      await saveHelp(queryClient, { evidence: "rules-added" })
-      // Getting Started's rules step is the same one.
+      // Getting Started's rules step is the same one. It saves first, so a
+      // failure leaves this card's tick to try again.
       if (!setup.items["agent-instructions"])
         await saveSetup(queryClient, { done: "agent-instructions" })
+      await saveHelp(queryClient, { evidence: "rules-added" })
     } catch {
       toast.error("Couldn’t save. Try again.")
     } finally {

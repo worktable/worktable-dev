@@ -408,7 +408,6 @@ export interface HelpIconEntry {
 }
 
 export const HELP_ICONS = {
-  startAsTemporary: { concept: "temporary-docs" },
   archiving: {
     concept: "temporary-docs",
     line: "How many Docs archive each day. Click a day to keep one.",

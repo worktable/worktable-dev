@@ -119,8 +119,18 @@ export async function changeSetup(
   return saved
 }
 
+/** The stored setup's own limits, so a long path can't make it unreadable. */
+const EVIDENCE_PATH_MAX = 1000
+const EVIDENCE_SPACE_MAX = 200
+
 function evidence(details: Omit<SetupEvidence, "at"> = {}): SetupEvidence {
-  return { at: new Date().toISOString(), ...details }
+  const { path, spaceId, ...rest } = details
+  return {
+    at: new Date().toISOString(),
+    ...rest,
+    ...(spaceId && spaceId.length <= EVIDENCE_SPACE_MAX ? { spaceId } : {}),
+    ...(path && path.length <= EVIDENCE_PATH_MAX ? { path } : {}),
+  }
 }
 
 /** The setup with an item completed, unless it already was. */
@@ -184,6 +194,16 @@ export async function completeHelpEvidence(
   })
 }
 
+/**
+ * A close or done that arrives before its showing names the version too, so
+ * the showing that follows doesn't take it for a rewrite and reopen the tip.
+ */
+function withVersion(state: HelpState, version: number | undefined): HelpState {
+  return state.version === undefined && version !== undefined
+    ? { ...state, version }
+    : state
+}
+
 /** The help map after one event from the person's browser. */
 export function withHelpEvent(
   setup: PersonalSetup,
@@ -210,10 +230,12 @@ export function withHelpEvent(
             }
       break
     case "closed":
-      next = { ...current, closedAt: now }
+      next = { ...withVersion(current, version), closedAt: now }
       break
     case "done":
-      next = current.doneAt ? current : { ...current, doneAt: now }
+      next = current.doneAt
+        ? current
+        : { ...withVersion(current, version), doneAt: now }
       break
     case "optOut":
       next = { ...current, optedOut: true, closedAt: current.closedAt ?? now }
@@ -252,12 +274,15 @@ async function noteAgentForHelp(
   if (!key || !agentId) return
   const stored = storedSetup(key)
   if (stored?.helpEvidence?.["another-agent"]) return
-  if (stored?.agentsSeen?.includes(agentId)) return
+  if (stored?.agentsSeen?.includes(agentId.slice(0, 200))) return
   await changeSetup(key, (setup) => {
     const seen = setup.agentsSeen ?? []
-    if (seen.includes(agentId) || setup.helpEvidence?.["another-agent"])
+    if (
+      seen.includes(agentId.slice(0, 200)) ||
+      setup.helpEvidence?.["another-agent"]
+    )
       return null
-    const agentsSeen = [...seen, agentId].slice(0, 5)
+    const agentsSeen = [...seen, agentId.slice(0, 200)].slice(0, 5)
     return {
       ...setup,
       agentsSeen,

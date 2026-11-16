@@ -171,6 +171,7 @@ export function HelpIcon({
       <PopoverContent
         side={side}
         align={align}
+        aria-label={about.name}
         className="help-surface w-80 gap-0 overflow-hidden rounded-xl p-0"
       >
         <div className="help-band flex items-center gap-2 py-1.5 pl-3 text-xs font-semibold text-primary-text">

@@ -134,13 +134,25 @@ export function HelpHint({
   align?: "start" | "center" | "end"
   className?: string
 }) {
+  // A hint that closes while focused hands focus back to what it points at,
+  // so a keyboard user isn't left on nothing.
+  const close = () => {
+    const popup = document.activeElement?.closest('[data-slot="help-hint"]')
+    content.onClose?.()
+    if (!popup || !(anchor instanceof HTMLElement)) return
+    const focusable = "button, [href], input, select, textarea, [tabindex]"
+    const target = anchor.matches(focusable)
+      ? anchor
+      : anchor.querySelector<HTMLElement>(focusable)
+    target?.focus()
+  }
   return (
     <PopoverPrimitive.Root
       open={open && anchor !== null}
       modal={false}
       onOpenChange={(next, details) => {
         // Only the close button closes a hint.
-        if (!next && details?.reason === "escape-key") content.onClose?.()
+        if (!next && details?.reason === "escape-key") close()
       }}
     >
       <PopoverPrimitive.Portal>
@@ -153,6 +165,9 @@ export function HelpHint({
         >
           <PopoverPrimitive.Popup
             data-slot="help-hint"
+            aria-label={
+              typeof content.title === "string" ? content.title : content.label
+            }
             initialFocus={false}
             finalFocus={false}
             className={cn(
@@ -163,7 +178,7 @@ export function HelpHint({
             <HelpBand
               label={content.label}
               mark={content.mark}
-              onClose={content.onClose}
+              onClose={content.onClose ? close : undefined}
             />
             <HelpBody title={content.title} actions={content.actions}>
               {content.children}

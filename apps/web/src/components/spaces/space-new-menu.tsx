@@ -45,7 +45,6 @@ import {
 import { toast } from "@worktable/ui/components/sonner"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useNewDoc } from "@/hooks/use-new-doc"
-import { HelpIcon } from "@/components/help/help"
 import { useNewDocumentLifetime } from "@/lib/lifetime"
 import {
   queryKeys,
@@ -328,21 +327,6 @@ export function SpaceNewActions({
       >
         <Clock3 className="mr-2 h-4 w-4" />
         Start as Temporary
-        {/* Its own button: opening it leaves the choice as it is. */}
-        <span
-          className="flex"
-          onClick={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-          onPointerUp={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <HelpIcon
-            entry="startAsTemporary"
-            label="About Temporary Docs"
-            align="end"
-            className="-my-1 size-6"
-          />
-        </span>
       </DropdownMenuCheckboxItem>
     </>
   )

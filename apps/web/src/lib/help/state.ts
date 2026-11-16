@@ -38,6 +38,42 @@ function sessionStartedAt(): string {
 }
 const SESSION_STARTED_FALLBACK = new Date().toISOString()
 
+/**
+ * Shown counts are written once per tip per tab session, kept with the
+ * session itself so a reload in the same tab doesn't count a showing twice.
+ */
+const REPORTED_KEY = "worktable.help.reported"
+const reported = {
+  has(id: string): boolean {
+    try {
+      return (sessionStorage.getItem(REPORTED_KEY) ?? "").split(" ").includes(id)
+    } catch {
+      return reportedHere.has(id)
+    }
+  },
+  add(id: string): void {
+    reportedHere.add(id)
+    try {
+      const ids = new Set((sessionStorage.getItem(REPORTED_KEY) ?? "").split(" "))
+      ids.add(id)
+      sessionStorage.setItem(REPORTED_KEY, [...ids].filter(Boolean).join(" "))
+    } catch {
+      // Without session storage, this page's memory still counts it once.
+    }
+  },
+  clear(): void {
+    reportedHere.clear()
+    try {
+      sessionStorage.removeItem(REPORTED_KEY)
+    } catch {
+      // Nothing to clear.
+    }
+  },
+}
+const reportedHere = new Set<string>()
+/** Each tip's showing being saved, which its close or done waits for. */
+const showing = new Map<string, Promise<unknown>>()
+
 export interface HelpChange {
   id?: string
   event?: HelpEvent
@@ -63,6 +99,8 @@ export async function saveHelp(
   queryClient.setQueryData<WorkspaceInfo>(queryKeys.workspace, (current) =>
     current ? { ...current, setup } : current
   )
+  // Every tip starts over, so each counts its next showing again.
+  if (change.resetAll) reported.clear()
   return setup
 }
 
@@ -135,8 +173,6 @@ export function claim(id: string, priority: number): () => void {
   }
 }
 
-/** Shown counts are written once per tip per tab session. */
-const reported = new Set<string>()
 
 export interface UseTip {
   /** Show it now. */
@@ -174,25 +210,41 @@ export function useTip(tip: Tip, active: boolean): UseTip {
   useEffect(() => {
     if (!open || reported.has(tip.id)) return
     reported.add(tip.id)
-    void saveHelp(queryClient, {
-      id: tip.id,
-      event: "shown",
-      version: tip.version,
-    }).catch(() => undefined)
+    showing.set(
+      tip.id,
+      saveHelp(queryClient, {
+        id: tip.id,
+        event: "shown",
+        version: tip.version,
+      }).catch(() => undefined)
+    )
   }, [open, queryClient, tip.id, tip.version])
 
   const close = useCallback(() => {
     setSettled(true)
-    void saveHelp(queryClient, { id: tip.id, event: "closed" }).catch(
-      () => undefined
-    )
-  }, [queryClient, tip.id])
+    // After its showing is saved: a late showing would reopen it.
+    void (showing.get(tip.id) ?? Promise.resolve())
+      .then(() =>
+        saveHelp(queryClient, {
+          id: tip.id,
+          event: "closed",
+          version: tip.version,
+        })
+      )
+      .catch(() => undefined)
+  }, [queryClient, tip.id, tip.version])
   const done = useCallback(() => {
     setSettled(true)
-    void saveHelp(queryClient, { id: tip.id, event: "done" }).catch(
-      () => undefined
-    )
-  }, [queryClient, tip.id])
+    void (showing.get(tip.id) ?? Promise.resolve())
+      .then(() =>
+        saveHelp(queryClient, {
+          id: tip.id,
+          event: "done",
+          version: tip.version,
+        })
+      )
+      .catch(() => undefined)
+  }, [queryClient, tip.id, tip.version])
   return { open, close, done }
 }
 

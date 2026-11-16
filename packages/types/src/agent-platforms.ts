@@ -145,7 +145,9 @@ const CLIENT_PLATFORMS: Record<string, AgentPlatformId> = {
   opencode: "opencode",
   vscode: "vscode",
   goose: "goose",
-  // Names these apps may sign in with.
+  // Names these apps sign in with. The Gemini app registers as "Google"
+  // (seen Nov 16, 2026).
+  google: "gemini",
   "google-antigravity": "antigravity",
   "google-gemini": "gemini",
 }

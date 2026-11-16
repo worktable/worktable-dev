@@ -14,6 +14,9 @@ describe("agent platforms", () => {
     expect(clientIdForAgentLabel("managed:claude-code")).toBe("claude-code")
     expect(platformForName("Hermes Agent")).toBe("hermes")
     expect(platformForName("ChatGPT")).toBe("chatgpt")
+    // The Gemini app signs in to Worktable Cloud as "Google".
+    expect(platformForName("Google")).toBe("gemini")
+    expect(platformForName("Perplexity")).toBe("perplexity")
   })
 
   it("knows a sign-in's app from its signed client id, not its name", () => {

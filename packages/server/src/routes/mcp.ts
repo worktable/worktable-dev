@@ -28,6 +28,8 @@ import { runWithTeamIdentity } from "../team-policy.ts"
 import { logError } from "../debug-log.ts"
 import { skillReaderFor } from "../skill-libraries.ts"
 import { skillsBrief } from "../skill-notices.ts"
+import { declaresSkills } from "../mcp/skills-extension.ts"
+import { CLIENT_CAPABILITIES_META_KEY } from "@modelcontextprotocol/server"
 import { DEFAULT_AGENT_PRINCIPAL } from "../mcp/helpers.ts"
 
 // ============================================================
@@ -141,7 +143,20 @@ function bridgeCallKey(bridgeId: string, id: unknown): string {
 interface JsonRpcMessage {
   id?: unknown
   method?: unknown
-  params?: { requestId?: unknown }
+  params?: { requestId?: unknown; capabilities?: unknown; _meta?: Record<string, unknown> }
+}
+
+/**
+ * Whether to serve skills over MCP for these messages: a request that opens
+ * a connection offers them only to a client that declares the extension, so
+ * Worktable's stdio bridges, which accept tools alone, keep connecting. A
+ * 2026-07-28 request says its client's capabilities every time.
+ */
+function offersSkills(messages: JsonRpcMessage[], modern: boolean): boolean {
+  if (configuredMcpSurface() !== "preview") return false
+  if (modern) return messages.some((message) => declaresSkills(message.params?._meta?.[CLIENT_CAPABILITIES_META_KEY]))
+  const opening = messages.filter((message) => message.method === "initialize")
+  return opening.length === 0 || opening.some((message) => declaresSkills(message.params?.capabilities))
 }
 
 async function jsonRpcMessages(request: Request): Promise<JsonRpcMessage[]> {
@@ -217,14 +232,16 @@ export async function handleRemoteMcpRequest(
     ? linkedAnalyticsContext(request, identity, options.analytics)
     : mcpAnalyticsContext(request, identity)
   if (modern) {
-    const brief = await connectionSkills(
-      identity,
-      (Array.isArray(modern.body) ? modern.body : [modern.body]) as JsonRpcMessage[]
-    )
+    const messages = (Array.isArray(modern.body) ? modern.body : [modern.body]) as JsonRpcMessage[]
+    const brief = await connectionSkills(identity, messages)
     const response = await withAnalyticsContext(analytics, () =>
       runWithTeamIdentity(identity, () =>
         handleModernMcpRequest(request, modern.body, {
-          server: { ...remoteMcpServerOptions(request, identity, origin), skillsBrief: brief },
+          server: {
+            ...remoteMcpServerOptions(request, identity, origin),
+            skillsBrief: brief,
+            skillsExtension: offersSkills(messages, true),
+          },
           stream: options.stream ?? false,
           ...(options.link ? { link: options.link } : {}),
         })
@@ -282,6 +299,9 @@ export async function handleRemoteMcpRequest(
       request.method === "POST" && configuredMcpSurface() === "preview"
         ? await connectionSkills(identity, await messagesOf())
         : null,
+    skillsExtension:
+      configuredMcpSurface() === "preview" &&
+      (request.method !== "POST" || offersSkills(await messagesOf(), false)),
   })
   await server.connect(transport)
   // Read the call from the message the transport already parsed.

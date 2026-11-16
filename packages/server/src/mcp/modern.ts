@@ -30,6 +30,7 @@ import {
   unsubscribe,
   type EventsCaller,
 } from "../mcp-events.ts"
+import { SKILLS_EXTENSION } from "./skills-extension.ts"
 import {
   createWorktableMcpServer,
   serverIdentity,
@@ -112,15 +113,28 @@ export async function handleModernMcpRequest(
 
 function createModernServer(exchange: ModernMcpExchange): Server {
   const { info, instructions } = serverIdentity(exchange.server)
+  const preview = exchange.server.surface === "preview" && exchange.server.skillsExtension === true
   // Pending waits are released. Both tool surfaces use the same task path.
   const server = new Server(info, {
     capabilities: {
       tools: {},
       events: {},
-      extensions: { [TASKS_EXTENSION]: {} },
+      ...(preview ? { resources: {} } : {}),
+      extensions: { [TASKS_EXTENSION]: {}, ...(preview ? { [SKILLS_EXTENSION]: {} } : {}) },
     } as ServerCapabilities,
     instructions,
   })
+  if (preview) {
+    // The shared server answers these as it does on the earlier revisions.
+    for (const method of ["resources/list", "resources/read"] as const) {
+      server.setRequestHandler(method, (request, ctx) => relay(exchange, request, ctx))
+    }
+    for (const method of ["skills/list", "skills/get"]) {
+      server.setRequestHandler(method, { params: z.unknown() }, (params, ctx) =>
+        relay<Record<string, unknown>>(exchange, { method, params: (params ?? {}) as Record<string, unknown> }, ctx)
+      )
+    }
+  }
   server.setRequestHandler("tools/list", (request, ctx) =>
     relay(exchange, request, ctx)
   )

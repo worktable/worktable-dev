@@ -27,7 +27,8 @@ device, Worktable must stay running, online and linked for readers to reach it.
 ## What readers see
 
 A shared document shows its latest saved content. Mermaid diagrams render
-without their links.
+without their links. Readers can switch it between light and dark from its
+header.
 
 A shared HTML Doc runs for readers as it does for you: its buttons, scripts
 and layout work. It runs in a locked frame with no network access, forms or

@@ -31,6 +31,7 @@ import {
   inviteTeamMember,
   setSpaceAccess,
 } from "@/lib/team-api"
+import { HelpIcon } from "@/components/help/help"
 import { PlanFullNotice } from "@/components/billing/plan-full-notice"
 import { LinkToSend } from "@/components/settings/link-to-send"
 import { copyText } from "@/lib/clipboard"
@@ -137,7 +138,10 @@ export function SpaceAccessEditor({
     >
       <ResponsiveDialogContent>
         <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>Space access</ResponsiveDialogTitle>
+          <div className="flex items-center gap-2">
+            <ResponsiveDialogTitle>Space access</ResponsiveDialogTitle>
+            <HelpIcon entry="spaceAccess" label="About Who Can See It" />
+          </div>
           <ResponsiveDialogDescription>
             Owners can always read and administer this Space.
           </ResponsiveDialogDescription>

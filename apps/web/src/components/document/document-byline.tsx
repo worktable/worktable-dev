@@ -69,6 +69,7 @@ export function DocumentByline({
   skills,
   onVersionHistory,
   state,
+  tip,
 }: {
   spaceId: string
   docPath: string
@@ -85,6 +86,8 @@ export function DocumentByline({
   onVersionHistory?: () => void
   /** Shared with the page's other copy of this byline, if any. */
   state?: BylineState
+  /** Help about this page, under the byline. */
+  tip?: ReactNode
 }) {
   const local = useBylineState()
   const { open, setOpen, lifetimeOpen, setLifetimeOpen } = state ?? local
@@ -231,6 +234,7 @@ export function DocumentByline({
           html={linkedHtml}
         />
       </BylinePanel>
+      {tip}
     </div>
   )
 }

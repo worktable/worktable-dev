@@ -75,6 +75,7 @@ import { DocumentPreview } from "@/components/editor/document-preview"
 import { useDocName, useNameFromTitleOnLeave } from "@/hooks/use-doc-name"
 import { takeJustCreated } from "@/hooks/use-new-doc"
 import { DocumentByline } from "@/components/document/document-byline"
+import { TemporaryDocTip } from "@/components/help/temporary-doc-tip"
 import { useBylineState, type BylineState } from "@/hooks/use-byline-state"
 import { useTemporaryArchiveLabel } from "@/hooks/use-document-organize"
 import { useEditorFiles } from "@/hooks/use-editor-files"
@@ -84,6 +85,7 @@ import {
 } from "@/hooks/use-deployment-info"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
 import { MarkdownViewer } from "@/components/editor/markdown-viewer"
+import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import {
   readingPlace,
   restoreReadingPlace,
@@ -877,6 +879,8 @@ function MarkdownDocPage({
   const contentQuery = useDocumentContent(spaceId, docPath, revision, validated)
   const content = contentQuery.data?.content
   const readingRef = useRef<HTMLDivElement>(null)
+  // Edit makes this a rich Doc, so it asks first; this is where it was.
+  const [confirmingEdit, setConfirmingEdit] = useState<DocOpening | null>(null)
   const secondaryAction = useMemo<PageSecondaryAction | undefined>(
     () =>
       validated && onConvert && typeof content === "string"
@@ -889,7 +893,7 @@ function MarkdownDocPage({
               const root = readingRef.current?.querySelector(
                 "[data-document-scroll-root]"
               )
-              onConvert({
+              setConfirmingEdit({
                 markdown: content,
                 place: root ? readingPlace(root) : null,
               })
@@ -1035,6 +1039,20 @@ function MarkdownDocPage({
         annotations={validated ? annotationsAction : undefined}
         sharing={page?.sharing}
       />
+      <ConfirmDialog
+        open={confirmingEdit !== null}
+        onOpenChange={(next) => {
+          if (!next) setConfirmingEdit(null)
+        }}
+        title="Edit this Doc?"
+        description="This becomes a Worktable Doc. Save Markdown changes it back."
+        confirmLabel="Edit"
+        icon={<Pencil className="size-5 text-primary" />}
+        onConfirm={() => {
+          if (confirmingEdit) onConvert?.(confirmingEdit)
+          setConfirmingEdit(null)
+        }}
+      />
       <ArchivedDocBanner
         readOnly={readOnly}
         archived={archived}
@@ -1068,6 +1086,7 @@ function MarkdownDocPage({
                   backlinks={page?.backlinks}
                   referrers={page?.referrers}
                   onVersionHistory={openVersions}
+                  tip={<TemporaryDocTip spaceId={spaceId} path={docPath} />}
                 />
               )
             }
@@ -1855,6 +1874,7 @@ function BlockNoteDocPage({
       backlinks={page?.backlinks}
       referrers={page?.referrers}
       onVersionHistory={openVersions}
+      tip={<TemporaryDocTip spaceId={spaceId} path={docPath} />}
     />
   )
   const byline = afterTitle ?? bylineWith(bylineState)

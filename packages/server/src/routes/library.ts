@@ -3,6 +3,7 @@ import { z } from "zod"
 import { requireScope } from "../auth.ts"
 import { DocumentWriteError } from "../document-write-service.ts"
 import { configuredMcpSurface } from "../mcp/surface.ts"
+import { completeHelpEvidence, setupKeyForIdentity } from "../personal-setup.ts"
 import {
   addToLibrary,
   approveLibraryProposal,
@@ -100,7 +101,18 @@ libraryRouter.get("/", (c) => answer(c, () => listLibraryForPerson(c.get("identi
 libraryRouter.post("/", requireScope("documents:write"), async (c) => {
   const input = await body(c, AddSchema)
   if (input instanceof Response) return input
-  return answer(c, async () => ({ entry: await addToLibrary(c.get("identity"), input) }), 201)
+  return answer(
+    c,
+    async () => {
+      const identity = c.get("identity")
+      const entry = await addToLibrary(identity, input)
+      // The person's first skill finishes the Library's help. Once recorded,
+      // later adds cost a memory check.
+      await completeHelpEvidence(setupKeyForIdentity(identity), "skill-added", { spaceId: input.spaceId })
+      return { entry }
+    },
+    201
+  )
 })
 
 // POST /api/library/:id/save: make the Doc's current content the live version.

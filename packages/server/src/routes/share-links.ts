@@ -72,6 +72,7 @@ import {
   type ShareDecision,
 } from "../share-policy.ts"
 import { ShareArtifactInput } from "../shared-artifact.ts"
+import { completeHelpEvidence, setupKeyForIdentity } from "../personal-setup.ts"
 import { getSpaceArchiveInfo, listSpaces, readSpace } from "../store.ts"
 import { teamsEnabled } from "../team-database.ts"
 import { canAccessSpace } from "../team-policy.ts"
@@ -639,6 +640,11 @@ shareLinksRouter.post("/", async (c) => {
       created.link.documentId,
       created.link.id
     )
+  // The person's first link finishes Try Next's Share a Link.
+  void completeHelpEvidence(setupKeyForIdentity(identity), "link-made", {
+    spaceId: target.spaceId,
+    path: created.place.path,
+  })
   return c.json(body, 201)
 })
 

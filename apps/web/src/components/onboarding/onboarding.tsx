@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { lazy, Suspense, useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useRouter } from "@tanstack/react-router"
 import { Button } from "@worktable/ui/components/button"
@@ -28,6 +28,14 @@ import {
 } from "@/lib/invite-people"
 import { StepHeading } from "./onboarding-shared"
 import { isSetupRecord, type SetupRecord } from "@/lib/onboarding-setups"
+import { useHelpEnabled } from "@/hooks/use-deployment-info"
+import { welcomeRole, welcomesOnItsOwn } from "@/lib/help/welcome"
+
+const WelcomeDialog = lazy(() =>
+  import("@/components/help/welcome-dialog").then((module) => ({
+    default: module.WelcomeDialog,
+  }))
+)
 
 type Step = "create" | "connect" | "invite"
 
@@ -383,9 +391,12 @@ export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
   const router = useRouter()
   const { plan } = useCloudPlan()
   const queryClient = useQueryClient()
-  const { person } = usePersonalSetup()
+  const { person, setup } = usePersonalSetup()
   const { data: spaces } = useSpaces()
   const [draft, setDraft] = useState(() => readDraft(workspace.id))
+  const helpEnabled = useHelpEnabled()
+  // Closed now, before the saved choice comes back.
+  const [welcomed, setWelcomed] = useState(false)
 
   useEffect(() => writeDraft(workspace.id, draft), [draft, workspace.id])
 
@@ -448,6 +459,16 @@ export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
   }
 
   const position = Math.max(0, steps.indexOf(step))
+  // The welcome opens over Connect Your Agent, so closing it lands there.
+  const welcoming =
+    step === "connect" &&
+    !welcomed &&
+    welcomesOnItsOwn({
+      enabled: helpEnabled,
+      welcomed: setup.welcomed,
+      role: person?.role,
+      where: "setup",
+    })
 
   return (
     <div className="min-h-dvh overflow-y-auto bg-background text-foreground">
@@ -516,6 +537,20 @@ export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
         )}
         <ErrorNote error={finish.error} />
       </main>
+      {welcoming ? (
+        <Suspense fallback={null}>
+          <WelcomeDialog
+            role={welcomeRole(person?.role)}
+            team={workspace.name}
+            finishLabel="Connect Your Agent"
+            onFinish={() => {
+              setWelcomed(true)
+              // A failed save only means it opens once more another time.
+              void saveSetup(queryClient, { welcomed: true }).catch(() => {})
+            }}
+          />
+        </Suspense>
+      ) : null}
     </div>
   )
 }

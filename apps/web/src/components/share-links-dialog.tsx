@@ -45,13 +45,16 @@ import { Skeleton } from "@worktable/ui/components/skeleton"
 import { Switch } from "@worktable/ui/components/switch"
 import { useCopy } from "@worktable/ui/hooks/use-copy"
 import { cn } from "@worktable/ui/lib/utils"
-import { LiveDataPanel } from "@/components/share-link-access"
+import { HelpIcon } from "@/components/help/help"
+import { LIVE_DATA_OFF, LiveDataPanel } from "@/components/share-link-access"
 import { HtmlSafetyNote, InlineError } from "@/components/share-document-action"
 import { useBreadcrumbs } from "@/hooks/use-breadcrumbs"
 import type { PageShareTarget } from "@/hooks/use-page-meta"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { notePageLinks } from "@/lib/sharing-cache"
-import { useWorkspace } from "@/lib/queries"
+import { useLifetimeActions } from "@/hooks/use-document-organize"
+import { formatArchiveDate, useDocumentSummary } from "@/lib/lifetime"
+import { useSpace, useWorkspace } from "@/lib/queries"
 import { openSettings } from "@/lib/settings-open"
 import {
   allowedShareLinkExpiry,
@@ -538,9 +541,12 @@ export function ShareLinksDialog({
         className="overflow-clip sm:max-w-md"
       >
         <ResponsiveDialogHeader className="pb-2">
-          <ResponsiveDialogTitle className="truncate">
-            {title ? `Share “${title}”` : "Share"}
-          </ResponsiveDialogTitle>
+          <div className="flex min-w-0 items-center gap-2">
+            <ResponsiveDialogTitle className="truncate">
+              {title ? `Share “${title}”` : "Share"}
+            </ResponsiveDialogTitle>
+            <HelpIcon entry="shareLinks" label="About Share Links" />
+          </div>
           <ResponsiveDialogDescription>
             {`Anyone with the link${
               (
@@ -580,6 +586,8 @@ export function ShareLinksDialog({
               </span>
             </Callout>
           ) : null}
+
+          <ArchiveNote spaceId={spaceId} path={path} />
 
           {list.isError ? (
             <InlineError>Couldn’t load this document’s links.</InlineError>
@@ -912,6 +920,46 @@ export function ShareLinksDialog({
   )
 }
 
+/** A temporary Doc's links stop when it archives, unless it's kept. */
+function ArchiveNote({ spaceId, path }: { spaceId: string; path: string }) {
+  const summary = useDocumentSummary(spaceId, path)
+  const { data: space } = useSpace(spaceId)
+  const { keep } = useLifetimeActions(spaceId, path)
+  const [keeping, setKeeping] = useState(false)
+  // Kept here: says so in its place, rather than the dialog jumping.
+  const [kept, setKept] = useState(false)
+  if (kept && summary?.lifetime === "durable")
+    return <Callout variant="success">Kept. It won't archive.</Callout>
+  if (summary?.lifetime !== "temporary" || !summary.archiveOn) return null
+  return (
+    <Callout>
+      <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span>
+          This Doc archives on {formatArchiveDate(summary.archiveOn)} and the
+          link stops for good.
+        </span>
+        {space?.space.permissions?.edit !== false ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={keeping}
+            onClick={() => {
+              setKeeping(true)
+              void keep().then((done) => {
+                setKeeping(false)
+                setKept(done)
+              })
+            }}
+          >
+            Keep
+          </Button>
+        ) : null}
+      </span>
+    </Callout>
+  )
+}
+
 /** "Off", "42 Opportunities" for one collection, "57 records" for several. */
 function liveStatus(
   grant: LinkGrant | null,
@@ -1019,7 +1067,11 @@ function LiveSwitch({
 }) {
   const id = useId()
   return (
-    <SettingRow label="Show live data" htmlFor={id}>
+    <SettingRow
+      label="Show live data"
+      description={checked ? undefined : LIVE_DATA_OFF}
+      htmlFor={id}
+    >
       <Switch
         id={id}
         checked={checked}

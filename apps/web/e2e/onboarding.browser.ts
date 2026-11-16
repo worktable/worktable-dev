@@ -539,20 +539,23 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     page.getByRole("link", { name: /Getting Started\s*1\/3/ })
   ).toBeVisible()
 
-  // Copying the instructions finishes that step, and where to paste them
-  // stays on show until the owner moves on.
+  // Copying the instructions doesn't add them anywhere: the step finishes
+  // when the owner says they added them, and the next step opens.
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
     origin: new URL(page.url()).origin,
   })
   await page.getByRole("button", { name: "Copy", exact: true }).click()
-  await expect(
-    page.getByRole("link", { name: /Getting Started\s*2\/3/ })
-  ).toBeVisible()
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
     "I keep my work in Worktable."
   )
   await expect(page.getByText("~/.codex/AGENTS.md")).toBeVisible()
-  await page.getByRole("button", { name: /Set up your first Space/ }).click()
+  await expect(
+    page.getByRole("link", { name: /Getting Started\s*1\/3/ })
+  ).toBeVisible()
+  await page.getByRole("button", { name: "I Added It", exact: true }).click()
+  await expect(
+    page.getByRole("link", { name: /Getting Started\s*2\/3/ })
+  ).toBeVisible()
   await expect(
     page.getByText(/^Research \[topic\] and set up a Space in Worktable/)
   ).toBeVisible()

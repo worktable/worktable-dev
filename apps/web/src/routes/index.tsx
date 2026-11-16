@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react"
+import { lazy, Suspense, useEffect, useSyncExternalStore } from "react"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { ArrowRight } from "lucide-react"
 import { toast } from "@worktable/ui/components/sonner"
@@ -24,13 +24,22 @@ import type { SpaceView } from "@/lib/api"
 import { useHomeFeed, useHomePins } from "@/lib/home"
 import { useSpaces, useWorkspace } from "@/lib/queries"
 import { recognitionChip } from "@/lib/recognition"
-import { isGettingStartedSpace } from "@/lib/setup"
+import {
+  useDocumentSharingAvailable,
+  useHelpEnabled,
+} from "@/hooks/use-deployment-info"
+import { isGettingStartedSpace, usePersonalSetup } from "@/lib/setup"
 import { getSpaceArchiveInfo } from "@/lib/spaces"
 import { recognitionColor } from "@worktable/types/recognition"
 
 export const Route = createFileRoute("/")({
   component: HomePage,
 })
+
+// Next Steps shows only with help on (Preview), so it and the help it
+// carries load only then.
+const loadTryNext = () => import("@/components/home/try-next")
+const TryNext = lazy(loadTryNext)
 
 /** Spaces shown as cards; the sidebar lists the rest. */
 const SPACE_CARDS = 4
@@ -103,6 +112,13 @@ function HomePage() {
   const homePins = useHomePins()
   const navigate = useNavigate()
   const expectedPins = useSyncExternalStore(noChange, rememberedPinCount, () => 0)
+  const helpEnabled = useHelpEnabled()
+  // Fetched alongside Home's own data, not after it.
+  useEffect(() => {
+    if (helpEnabled) void loadTryNext()
+  }, [helpEnabled])
+  const sharing = useDocumentSharingAvailable()
+  const { setup } = usePersonalSetup()
   const pinCount = feed.data?.pins?.length
   useEffect(() => {
     if (pinCount === undefined) return
@@ -135,6 +151,14 @@ function HomePage() {
   // Pins make the side column; Archiving alone sits under the page.
   const loadingPins = feed.isPending && expectedPins > 0
   const hasSide = pins.length > 0 || loadingPins
+
+  // After setup, until every card is done or the person hides it. It waits
+  // for the feed, which says which Doc its cards name.
+  const tryNext =
+    helpEnabled &&
+    workspace?.onboarding?.status !== "pending" &&
+    !setup.tryNextHidden &&
+    feed.data !== undefined
 
   const unpin = (pin: { spaceId: string; path: string }) =>
     void homePins.unpin(pin).catch((error: unknown) => {
@@ -268,6 +292,12 @@ function HomePage() {
             <ArchivingWeek items={temporary} side={hasSide} />
           </div>
         </aside>
+
+        {tryNext && (
+          <Suspense fallback={null}>
+            <TryNext runs={runs} spaces={spaces ?? []} links={sharing} />
+          </Suspense>
+        )}
 
         {feed.isPending && (
           <section aria-hidden className="order-3 min-w-0 @3xl/page:col-span-2">

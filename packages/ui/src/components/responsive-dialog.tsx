@@ -290,6 +290,10 @@ function ResponsiveDialogClose(props: React.ComponentProps<"button">) {
   return isMobile ? <DrawerClose {...props} /> : <DialogClose {...props} />
 }
 
+// The plain dialog, for one that stays a dialog on a phone too. Importing it
+// from here keeps it in the file pages already load with this one.
+export { Dialog, DialogContent, DialogDescription, DialogTitle }
+
 export {
   ResponsiveDialog,
   ResponsiveDialogContent,

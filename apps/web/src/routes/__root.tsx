@@ -76,6 +76,7 @@ const SettingsDialog = lazy(() =>
 )
 import type { SettingsSectionId } from "@/components/settings/sections"
 import { onOpenSettings } from "@/lib/settings-open"
+import { onOpenWelcome } from "@/lib/help/welcome-open"
 import { UpdateNudge } from "@/components/update-nudge"
 import { BillingRoot } from "@/components/billing/billing-root"
 import { UpdateIndicatorDot } from "@/components/update-indicator"
@@ -110,6 +111,7 @@ import { onBrowserLogout } from "@/lib/auth-events"
 import { rendererPreloads } from "@/lib/document-renderers"
 import { preloadWhenIdle, whenQuiet } from "@/lib/idle-preload"
 import { useUpdateWaiting } from "@/hooks/use-update-availability"
+import { WelcomeHost } from "@/components/help/welcome-host"
 // Only Worktable Desktop offers to move agents, so browsers never load it.
 // Desktop injects its bridge before any page script runs.
 const inDesktop = typeof window !== "undefined" && "__TAURI__" in window
@@ -522,6 +524,9 @@ function RootLayout() {
       }),
     []
   )
+  // Settings > Help's Show Again: the welcome takes the screen, and
+  // Settings closes so it can't sit over the welcome on a phone.
+  useEffect(() => onOpenWelcome(() => setSettingsOpen(false)), [])
 
   // Mark body as loaded
   useEffect(() => {
@@ -804,6 +809,7 @@ function RootLayout() {
           </Suspense>
         ) : null}
         <Toaster theme={theme} />
+        <WelcomeHost />
         {/* After the login guard above, so an unauthenticated page never polls. */}
         <UpdateNudge />
         {inDesktop ? (

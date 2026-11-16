@@ -23,6 +23,7 @@ import {
   commentRecipients,
   commentReplier,
 } from "../comment-recipients.ts";
+import { completeHelpEvidence, setupKeyForIdentity } from "../personal-setup.ts";
 import { assertSpaceAccess, commentAccess } from "../team-policy.ts";
 import {
   isHtmlDocumentPath,
@@ -204,6 +205,13 @@ annotationsRouter.post("/", requireScope("annotations:write", commentAccess), as
       : null,
   });
   broadcast(spaceId, result.annotation.id, { annotation: result.annotation, event: "created" });
+  // A person's first note to an agent finishes Try Next's Leave a Note.
+  if (result.created && byPerson(c) && to.some((recipient) => recipient.kind === "agent")) {
+    void completeHelpEvidence(setupKeyForIdentity(c.get("identity")), "note-to-agent", {
+      spaceId,
+      ...("docPath" in target ? { path: target.docPath } : target.type === "widget" ? { path: target.widgetId } : {}),
+    });
+  }
   return c.json({ ok: true, annotationId: result.annotation.id, annotation: shown(c, result.annotation), created: result.created });
 });
 

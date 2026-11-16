@@ -494,6 +494,33 @@
   box-shadow: var(--overlay-floating-shadow);
 }
 
+/* Help: tips, concepts and the welcome wear a cobalt band across the top so
+   they read as help at a glance, on the normal popover surface. The tint mixes
+   from the primary role, a step stronger in dark mode, where a light mix
+   disappears into the dark surface. */
+.help-surface {
+  --help-paper: color-mix(in oklch, var(--primary) 9%, var(--popover));
+  --help-line: color-mix(in oklch, var(--primary) 34%, transparent);
+  border: 1px solid var(--help-line);
+}
+.dark .help-surface {
+  --help-paper: color-mix(in oklch, var(--primary) 20%, var(--popover));
+  --help-line: color-mix(in oklch, var(--primary) 55%, transparent);
+}
+.help-band {
+  background: var(--help-paper);
+  border-bottom: 1px solid var(--help-line);
+}
+/* An icon on help, such as a Next Steps card's, sits on a cobalt tile so the
+   card reads as Worktable's, not the person's own content. */
+.help-icon-tile {
+  background: color-mix(in oklch, var(--primary) 16%, transparent);
+  color: var(--primary-text);
+}
+.dark .help-icon-tile {
+  background: color-mix(in oklch, var(--primary) 28%, transparent);
+}
+
 /* Sonner injects its behavioral stylesheet at runtime. This higher-specificity
    adapter keeps keyboard focus on the same semantic overlay elevation instead
    of falling back to Sonner's hard-coded black focus shadow. */

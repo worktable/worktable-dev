@@ -1,4 +1,5 @@
-import { lazy, useState } from "react"
+import { lazy, useEffect, useState } from "react"
+import { useLocation, useNavigate } from "@tanstack/react-router"
 import { AlertCircle, Check, Share2 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
@@ -42,6 +43,16 @@ function ShareLinksAction({
     onOpenChange?.(next)
   }
   const active = summary.activeLinks
+  // Home's Try Next arrives with #share to open this dialog once.
+  const hash = useLocation({ select: (location) => location.hash })
+  const navigate = useNavigate()
+  useEffect(() => {
+    if (hash !== "share") return
+    setOpen(true)
+    void navigate({ hash: "", replace: true, resetScroll: false })
+    // Opened once on arrival; setOpen changes every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hash, navigate])
 
   return (
     <>

@@ -73,6 +73,7 @@ import { FilterButton, FilterChips } from "@/components/records/filter-bar"
 import { NewRecordDialog } from "@/components/records/new-record-dialog"
 import { RecordPeek, type RecordPeekActions, type RecordPeekNavigation } from "@/components/records/record-peek"
 import { SchemaEditorDialog } from "@/components/records/schema-editor"
+import { TipCard, TipHint } from "@/components/help/help"
 
 /** URL-carried table state (shareable); column prefs stay in localStorage. */
 interface RecordsSearch {
@@ -204,9 +205,15 @@ function RecordsPage() {
   // over the collection's remembered default.
   const tableStateTouchedRef = useRef(false)
 
+  // The person sorted or filtered this collection on this visit: where that
+  // view lives is worth a word, once the first-meeting card is out of the way.
+  const [viewChangedIn, setViewChangedIn] = useState<string | null>(null)
+  const [viewAnchor, setViewAnchor] = useState<HTMLDivElement | null>(null)
+
   /** Patch the URL-carried table state (undefined removes a key). */
   const setTableState = (patch: Partial<Pick<RecordsSearch, "filters" | "groupBy" | "sort">>) => {
     tableStateTouchedRef.current = true
+    if (("filters" in patch && patch.filters) || ("sort" in patch && patch.sort)) setViewChangedIn(collectionId)
     void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false })
   }
 
@@ -729,6 +736,7 @@ function RecordsPage() {
         <div
           className={`flex min-w-0 flex-1 flex-col px-4 pt-4 transition-[padding-right] duration-300 ease-out sm:px-6 ${peekRecordId && !detailDrawer ? "xl:pr-0" : ""}`}
         >
+          <TipCard tip="recordsMeet" className="mb-3 max-w-xl shrink-0" />
           {/* Toolbar */}
           <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2">
             <div className="relative min-w-40 flex-1 sm:max-w-64">
@@ -762,7 +770,7 @@ function RecordsPage() {
                 </Popover>
               )}
               {(schema || fieldColumns.length > 0 || filters.length > 0 || groupBy || staleSortFields.length > 0) && (
-                <div className="flex items-center gap-1">
+                <div ref={setViewAnchor} className="flex items-center gap-1">
                   {/* One control for both states keeps keyboard focus on it. */}
                   <Tooltip disabled={editCells}>
                     <TooltipTrigger
@@ -785,6 +793,12 @@ function RecordsPage() {
                     columns={queryableColumns}
                     filters={filters}
                     onChange={(next) => setTableState({ filters: next.length > 0 ? next : undefined })}
+                  />
+                  <TipHint
+                    tip="recordsView"
+                    anchor={viewAnchor}
+                    active={viewChangedIn === collectionId}
+                    waitFor="recordsMeet"
                   />
                   <GroupByPicker
                     columns={queryableColumns}

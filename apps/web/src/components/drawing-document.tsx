@@ -8,6 +8,7 @@ import { installDrawingFonts } from "@/lib/drawing-theme"
 import "@/styles/drawing-theme.css"
 import { Download, Image, RotateCw, Copy } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
+import { TipCard } from "@/components/help/help"
 import { toast } from "@worktable/ui/components/sonner"
 import {
   parseQuickdrawDocument,
@@ -671,6 +672,11 @@ function DrawingEditor({
         ref={container}
         className="worktable-drawing relative min-h-96 flex-1"
         aria-label="Drawing canvas"
+      />
+      <TipCard
+        tip="drawingMeet"
+        active={!error}
+        className="overlay-floating absolute top-3 left-3 z-40 w-80 max-w-[calc(100%-1.5rem)]"
       />
     </section>
   )

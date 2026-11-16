@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
 import { Link } from "@tanstack/react-router"
+import { useHelpEnabled } from "@/hooks/use-deployment-info"
 import {
   GETTING_STARTED_SPACE_ID,
   saveSetup,
@@ -10,7 +11,8 @@ import {
 
 /**
  * A new member's welcome in the Space they were invited to, shown once.
- * Their own first steps live in Getting Started.
+ * Their own first steps live in Getting Started. With help on, the welcome
+ * dialog greets them instead.
  */
 export function MemberWelcome({ spaceId }: { spaceId: string }) {
   const queryClient = useQueryClient()
@@ -19,8 +21,10 @@ export function MemberWelcome({ spaceId }: { spaceId: string }) {
     mutationFn: () => saveSetup(queryClient, { welcomed: true }),
     onError: () => toast.error("Couldn’t save. Try again."),
   })
+  const helpEnabled = useHelpEnabled()
   const joined = setup.items["join-space"]
   if (
+    helpEnabled ||
     person?.role !== "member" ||
     setup.welcomed ||
     !joined ||

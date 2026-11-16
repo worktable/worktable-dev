@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it } from "bun:test"
+import { afterEach, beforeEach, expect, it, spyOn } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -13,8 +13,10 @@ import {
   OWNER_SETUP_KEY,
 } from "./personal-setup.ts"
 import { parsePersonalSetup } from "./personal-setup-shape.ts"
+import { createHtmlDocument } from "./html-document-create.ts"
 import { profileRouter } from "./routes/profile.ts"
 import { writeSpace } from "./store.ts"
+import { wsManager } from "./ws.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
 import {
   prepareWorkspaceTarget,
@@ -146,4 +148,154 @@ it("keeps stored progress when an earlier version listed other items", () => {
       watch: { since: at },
     })
   ).toEqual({ items: { "connect-agent": { at } } })
+})
+
+function help(body: Record<string, unknown>) {
+  return app().fetch(
+    new Request("http://localhost/api/profile/help", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  )
+}
+
+it("remembers each tip a person met, and finishes help from what happens", async () => {
+  // A tip shown twice, then closed, keeps its count; a rewrite starts over.
+  // Only the window it was in needs to know, and it gets the result back.
+  const notices = spyOn(wsManager, "sendToPeople")
+  expect((await help({ id: "records-meet", event: "shown", version: 1 })).status).toBe(200)
+  expect((await help({ id: "records-meet", event: "shown", version: 1 })).status).toBe(200)
+  expect((await help({ id: "records-meet", event: "closed" })).status).toBe(200)
+  let current = await setup()
+  expect(current.help?.["records-meet"]).toMatchObject({ shown: 2, version: 1 })
+  expect(current.help?.["records-meet"]?.closedAt).toBeDefined()
+  await help({ id: "records-meet", event: "shown", version: 2 })
+  expect((await setup()).help?.["records-meet"]).toMatchObject({ shown: 1, version: 2 })
+  expect(notices).not.toHaveBeenCalled()
+
+  // Only the rules line is the browser's to report; ids are slugs.
+  expect((await help({ evidence: "rules-added" })).status).toBe(200)
+  // What happened changes Next Steps, so every window hears it.
+  expect(notices).toHaveBeenCalledTimes(1)
+  notices.mockRestore()
+  expect((await help({ evidence: "link-made" })).status).toBe(400)
+  expect((await help({ id: "Not A Slug", event: "shown" })).status).toBe(400)
+  expect((await help({ id: "records-meet" })).status).toBe(400)
+
+  // The person keeping a Doc and an agent making a page finish their help.
+  recordActivity({
+    spaceId: "atlas",
+    action: "doc.kept",
+    actor: { kind: "person", id: "local:owner" },
+    target: { kind: "doc", path: "brief" },
+  })
+  recordActivity({
+    spaceId: "atlas",
+    action: "doc.created",
+    actor: { kind: "agent", id: "local-token:codex" },
+    target: { kind: "doc", path: "plan", formatId: "worktable.html" },
+  })
+  current = await eventually(
+    (value) =>
+      Boolean(value.helpEvidence?.["temporary-kept"]) &&
+      Boolean(value.helpEvidence?.["html-doc-made"])
+  )
+  expect(current.helpEvidence?.["html-doc-made"]).toMatchObject({ path: "plan" })
+  expect(current.helpEvidence?.["rules-added"]).toBeDefined()
+
+  // Show Tips Again forgets what was seen, not what happened.
+  expect((await help({ resetAll: true })).status).toBe(200)
+  current = await setup()
+  expect(current.help).toBeUndefined()
+  expect(current.helpEvidence?.["temporary-kept"]).toBeDefined()
+})
+
+it("drops help entries it can't read instead of losing the setup", () => {
+  const at = "2026-11-01T00:00:00.000Z"
+  expect(
+    parsePersonalSetup({
+      items: {},
+      help: { "records-meet": { shown: 1 }, "Bad Id": { shown: 1 }, x: { shown: "no" } },
+      helpEvidence: { "link-made": { at }, "made-up": { at } },
+    })
+  ).toEqual({
+    items: {},
+    help: { "records-meet": { shown: 1 } },
+    helpEvidence: { "link-made": { at } },
+  })
+})
+
+it("finishes HTML help from events that don't name the Doc's format", async () => {
+  const now = new Date().toISOString()
+  await writeSpace({
+    type: "worktable.space",
+    version: 1,
+    id: "atlas",
+    name: "Atlas",
+    createdAt: now,
+    updatedAt: now,
+    createdBy: "test",
+    settings: {},
+  })
+  const created = await createHtmlDocument({
+    spaceId: "atlas",
+    explicitId: "pricing",
+    name: "Pricing",
+    metadata: {},
+    permissions: { network: false, records: {}, state: { read: true, write: true } },
+    html: "<h1>Pricing</h1>",
+    createdBy: "test",
+    versionSource: "rest-api",
+    versionUpdatedBy: "user",
+  })
+  expect(created.error).toBeUndefined()
+  // Producers name only the path, as document and comment activity do.
+  recordActivity({
+    spaceId: "atlas",
+    action: "doc.created",
+    actor: { kind: "agent", id: "local-token:codex" },
+    target: { kind: "doc", path: "pricing" },
+  })
+  recordActivity({
+    spaceId: "atlas",
+    action: "comment.created",
+    actor: { kind: "person", id: "local:owner" },
+    target: { kind: "doc", path: "pricing" },
+  })
+  const current = await eventually(
+    (value) =>
+      Boolean(value.helpEvidence?.["html-doc-made"]) &&
+      Boolean(value.helpEvidence?.["html-commented"])
+  )
+  expect(current.helpEvidence?.["html-doc-made"]).toMatchObject({ path: "pricing" })
+  expect(current.helpEvidence?.["html-commented"]).toMatchObject({ path: "pricing" })
+})
+
+it("keeps a tip that comes back showing until it's closed again", async () => {
+  await help({ id: "temporary-doc", event: "shown", version: 2 })
+  await help({ id: "temporary-doc", event: "closed" })
+  let state = (await setup()).help?.["temporary-doc"]
+  const closedAt = state?.closedAt
+  // Another tab's showing, made before that close, arrives late: still closed.
+  await help({ id: "temporary-doc", event: "shown", version: 2 })
+  state = (await setup()).help?.["temporary-doc"]
+  expect(state?.closedAt).toBe(closedAt)
+  // However far apart the clocks, only the server's close time counts: a
+  // showing that names an older close leaves the newer one in place.
+  await help({
+    id: "temporary-doc",
+    event: "shown",
+    version: 2,
+    follows: "2020-01-01T00:00:00.000Z",
+  })
+  expect((await setup()).help?.["temporary-doc"]?.closedAt).toBe(closedAt)
+  // A later session shows it after the close it knew of: open, not closed.
+  await help({ id: "temporary-doc", event: "shown", version: 2, follows: closedAt })
+  state = (await setup()).help?.["temporary-doc"]
+  expect(state).toMatchObject({ shown: 4, version: 2 })
+  expect(state?.closedAt).toBeUndefined()
+  await help({ id: "temporary-doc", event: "closed" })
+  state = (await setup()).help?.["temporary-doc"]
+  expect(state?.closedAt).toBeDefined()
 })

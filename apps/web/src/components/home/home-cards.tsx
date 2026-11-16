@@ -12,6 +12,7 @@ import {
 import type { ActivityActor, DocumentSummary } from "@worktable/types"
 import { cn } from "@worktable/ui/lib/utils"
 import { DocumentFormatIcon } from "@/components/document-format-icon"
+import { HelpIcon } from "@/components/help/help"
 import { ActorAvatar, When } from "@/components/home/home-latest"
 import { useTheme } from "@/components/theme-provider"
 import { useActorName } from "@/lib/use-actor-name"
@@ -534,6 +535,11 @@ export function ArchivingWeek({
       >
         <Clock3 className={cn("size-4", side && "@3xl/page:hidden")} />
         Archiving
+        <HelpIcon
+          entry="archiving"
+          label="About Archiving"
+          className="-my-1.5 -ml-1"
+        />
       </h2>
       <div className="flex gap-1.5">
         {days.map((day, index) => {

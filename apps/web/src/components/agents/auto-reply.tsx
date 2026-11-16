@@ -1,14 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { AgentConnection, AutoReply } from "@worktable/types"
 import { AGENT_PLATFORMS, agentConnectionPlatform } from "@worktable/types"
-import { Button, buttonVariants } from "@worktable/ui/components/button"
+import { Copy } from "lucide-react"
+import { Button } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
 import { InfoTip } from "@worktable/ui/components/info-tip"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@worktable/ui/components/popover"
 import {
   Tooltip,
   TooltipContent,
@@ -16,8 +12,9 @@ import {
 } from "@worktable/ui/components/tooltip"
 import { useCopy } from "@worktable/ui/hooks/use-copy"
 import { cn } from "@worktable/ui/lib/utils"
+import { HelpIcon } from "@/components/help/help"
 import { removeCloudTask } from "@/lib/agent-connections-api"
-import { SetupStep } from "./setup-step"
+import { agentReplyLine } from "@/lib/help/agent-reply-line"
 
 /** What a person pastes into their agent to turn auto-reply on. */
 export const AUTO_REPLY_PROMPT =
@@ -164,58 +161,24 @@ export function CopyLine({ text }: { text: string }) {
   )
 }
 
-/** Where to paste the line: Claude Code runs in a terminal; other names say where. */
-function pasteInto(connection: AgentConnection, app: string): string {
-  return connection.autoReply?.kind === "session" &&
-    agentConnectionPlatform(connection) === "claude-code"
-    ? `Paste it into ${app} in your terminal`
-    : `Paste it into ${app}`
+/** Where to paste the prompt; ChatGPT watches only from a Work chat. */
+function pasteLine(connection: AgentConnection): string {
+  const platform = agentConnectionPlatform(connection)
+  if (platform === "chatgpt") return "Paste it into a Work chat"
+  return `Paste it into ${AGENT_PLATFORMS[platform].name}`
 }
 
-function TurnOn({ connection }: { connection: AgentConnection }) {
-  const platform = agentConnectionPlatform(connection)
-  // Open ChatGPT goes to the web, which doesn't use the desktop app's MCP servers.
-  const chatgptWeb = platform === "chatgpt"
-  const app = AGENT_PLATFORMS[platform].name
+function CopyPrompt() {
+  const copy = useCopy(() => toast.success("Copied"))
   return (
-    <Popover>
-      <PopoverTrigger render={<Button variant="outline" size="sm" />}>
-        Turn On
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-3">
-        <ol className="space-y-1">
-          <SetupStep number={1} title="Copy this">
-            <CopyLine text={AUTO_REPLY_PROMPT} />
-          </SetupStep>
-          <SetupStep
-            number={2}
-            title={chatgptWeb ? "Paste it into a Work chat" : pasteInto(connection, app)}
-          >
-            {chatgptWeb && (
-              <p className="text-sm text-muted-foreground">
-                On chatgpt.com, or in the desktop app with Work and Cloud
-                selected.
-              </p>
-            )}
-            {chatgptWeb && (
-              <a
-                href="https://chatgpt.com/"
-                target="_blank"
-                rel="noreferrer"
-                className={cn(buttonVariants({ size: "sm" }), "self-start")}
-              >
-                Open ChatGPT
-              </a>
-            )}
-          </SetupStep>
-        </ol>
-        <p className="pl-9 text-xs text-muted-foreground">
-          {chatgptWeb
-            ? "Auto-reply shows On once ChatGPT is watching."
-            : "Replies appear in Worktable."}
-        </p>
-      </PopoverContent>
-    </Popover>
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => void copy.copy(AUTO_REPLY_PROMPT)}
+    >
+      <Copy aria-hidden className="size-4" />
+      Copy Prompt
+    </Button>
   )
 }
 
@@ -284,9 +247,16 @@ export function AutoReplySetting({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5 text-sm font-medium">
           Auto-reply
-          <InfoTip label="About auto-reply">
-            <About connection={connection} />
-          </InfoTip>
+          <HelpIcon
+            entry="agentReplies"
+            label="About Agent Replies"
+            line={agentReplyLine(connection.displayName, autoReply.kind)}
+            fallback={
+              <InfoTip label="About auto-reply">
+                <About connection={connection} />
+              </InfoTip>
+            }
+          />
         </div>
         <p
           className={cn(
@@ -296,10 +266,10 @@ export function AutoReplySetting({
               : "text-muted-foreground"
           )}
         >
-          {stateLine(autoReply)}
+          {canTurnOn ? pasteLine(connection) : stateLine(autoReply)}
         </p>
       </div>
-      {canTurnOn && <TurnOn connection={connection} />}
+      {canTurnOn && <CopyPrompt />}
       {autoReply.kind === "task" && (
         <TaskActions connection={connection} onSetUp={onSetUp} />
       )}

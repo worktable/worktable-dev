@@ -5,6 +5,7 @@ import react from "@vitejs/plugin-react"
 import { defineConfig, type Plugin } from "vite"
 import { precompressAssets } from "./precompress-assets"
 import { sharedIconChunk } from "./shared-icon-chunk"
+import { helpChunk } from "./help-chunk"
 import { blocknoteHoverRule } from "./blocknote-hover-rule"
 import { tanstackStart } from "@tanstack/react-start/plugin/vite"
 import { THEME_SHELL_COLORS } from "@worktable/ui/theme"
@@ -83,6 +84,8 @@ function webAppManifest(): Plugin {
 // Vite evaluates this file again for each environment it builds. Each build
 // takes its define from its own evaluation but shares the plugins of the
 // first, so the id is kept in process.env for every later evaluation to reuse.
+const iconChunk = sharedIconChunk()
+
 const buildId =
   process.env["WORKTABLE_BUILD_ID"]?.trim() ||
   process.env["WORKTABLE_PUBLIC_SOURCE_COMMIT"]?.trim() ||
@@ -111,7 +114,7 @@ export default defineConfig({
     manifest: true,
     rollupOptions: {
       output: {
-        manualChunks: sharedIconChunk(),
+        manualChunks: (id, graph) => helpChunk(id) ?? iconChunk(id, graph),
         onlyExplicitManualChunks: true,
       },
     },

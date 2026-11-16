@@ -47,6 +47,7 @@ export function AgentSetupCategory({
   onOpenChange,
   connectedName,
   keepMounted,
+  help,
   children,
 }: {
   title: string
@@ -56,6 +57,8 @@ export function AgentSetupCategory({
   onOpenChange: (open: boolean) => void
   connectedName?: string
   keepMounted?: boolean
+  /** A help icon beside the chevron, outside the trigger it sits over. */
+  help?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -64,42 +67,50 @@ export function AgentSetupCategory({
       onOpenChange={onOpenChange}
       className="border-border not-first:border-t"
     >
-      <CollapsibleTrigger className="flex min-h-16 w-full items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
-        <span className="flex w-14 shrink-0" aria-hidden>
-          {platforms.map((platform, index) => (
-            <AgentAvatar
-              key={platform}
-              name={AGENT_PLATFORMS[platform].name}
-              platform={platform}
-              className={cn(
-                "size-6 rounded-md ring-2 ring-card",
-                index > 0 && "-ml-1.5"
-              )}
-            />
-          ))}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium text-foreground">
-            {title}
+      <div className="relative">
+        <CollapsibleTrigger className="flex min-h-16 w-full items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+          <span className="flex w-14 shrink-0" aria-hidden>
+            {platforms.map((platform, index) => (
+              <AgentAvatar
+                key={platform}
+                name={AGENT_PLATFORMS[platform].name}
+                platform={platform}
+                className={cn(
+                  "size-6 rounded-md ring-2 ring-card",
+                  index > 0 && "-ml-1.5"
+                )}
+              />
+            ))}
           </span>
-          <span className="block text-xs text-muted-foreground">
-            {description}
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium text-foreground">
+              {title}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {description}
+            </span>
           </span>
-        </span>
-        {connectedName && (
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Check className="size-4 text-success" aria-hidden />
-            <span className="max-w-24 truncate">{connectedName}</span>
-          </span>
-        )}
-        <ChevronRight
-          aria-hidden
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform duration-300 motion-reduce:transition-none",
-            open && "rotate-90"
+          {connectedName && (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Check className="size-4 text-success" aria-hidden />
+              <span className="max-w-24 truncate">{connectedName}</span>
+            </span>
           )}
-        />
-      </CollapsibleTrigger>
+          {help ? <span aria-hidden className="w-5 shrink-0" /> : null}
+          <ChevronRight
+            aria-hidden
+            className={cn(
+              "size-4 shrink-0 text-muted-foreground transition-transform duration-300 motion-reduce:transition-none",
+              open && "rotate-90"
+            )}
+          />
+        </CollapsibleTrigger>
+        {help ? (
+          <span className="absolute top-1/2 right-12 flex -translate-y-1/2">
+            {help}
+          </span>
+        ) : null}
+      </div>
       <CollapsibleContent keepMounted={keepMounted}>
         <div className="px-3.5 pt-3 pb-5 sm:pl-[5rem]">{children}</div>
       </CollapsibleContent>

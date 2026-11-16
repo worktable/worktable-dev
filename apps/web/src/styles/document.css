@@ -28,6 +28,11 @@
   text-decoration: none !important;
 }
 
+/* Help under the byline is app UI too: no document paragraph spacing. */
+.worktable-document-content .worktable-doc-byline [data-slot="help-card"] p {
+  margin: 0;
+}
+
 .worktable-document-status {
   position: fixed;
   bottom: calc(1rem + env(safe-area-inset-bottom, 0px));

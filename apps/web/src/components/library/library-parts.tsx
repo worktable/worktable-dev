@@ -13,6 +13,7 @@ import {
   type DocChoice,
 } from "@/components/library/add-skill-dialog"
 import { LibraryMark } from "@/components/library/library-mark"
+import { TipCard } from "@/components/help/help"
 import { libraryKey, skillTitle, type LibraryEntry } from "@/lib/library"
 import { type View } from "@/lib/library-path"
 import { useLibraryName, when } from "@/lib/library-actions"
@@ -264,6 +265,7 @@ export function LibraryColumn({
           </p>
         )}
       </header>
+      <TipCard tip="libraryMeet" />
       {children}
     </div>
   )
@@ -342,7 +344,9 @@ function AddSkill({
             Add Skill
           </h2>
           <p className="text-[0.8125rem] leading-5 text-muted-foreground">
-            Turn a Doc into an approved skill for agents to follow.
+            {skills.length === 0
+              ? "Add a skill and your agents use it."
+              : "Turn a Doc into an approved skill for agents to follow."}
           </p>
         </div>
       </div>

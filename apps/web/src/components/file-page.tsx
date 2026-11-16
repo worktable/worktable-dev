@@ -24,6 +24,7 @@ import { mergeRefs, usePaneWidth } from "@/hooks/use-pane-width"
 import { useSetPageMeta } from "@/hooks/use-page-meta"
 import { DocTable } from "@/components/document/doc-table"
 import { DocumentByline } from "@/components/document/document-byline"
+import { TipCard } from "@/components/help/help"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { documentRoute } from "@/lib/document-views"
 import { authenticatedFetch, fetchJSON } from "@/lib/http"
@@ -314,6 +315,7 @@ export function FilePage({
               : {})}
             {...(page.backlinks ? { backlinks: page.backlinks } : {})}
             {...(page.referrers ? { referrers: page.referrers } : {})}
+            tip={<TipCard tip="fileMeet" className="mt-3" />}
           />
           <FileContent
             key={url}

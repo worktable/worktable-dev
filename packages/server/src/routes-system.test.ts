@@ -542,6 +542,7 @@ describe("GET /api/system/deployment", () => {
         files: true,
         commentRecipients: true,
         skillLibraries: false,
+        help: false,
       },
     };
     expect(getDeploymentInfo()).toEqual(expected);
@@ -573,6 +574,7 @@ describe("GET /api/system/deployment", () => {
         files: true,
         commentRecipients: true,
         skillLibraries: false,
+        help: false,
       },
     };
     expect(getDeploymentInfo()).toEqual(expected);

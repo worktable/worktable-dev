@@ -101,6 +101,7 @@ import {
   CLAUDE_PLUGIN_STEP,
   appValue,
   claudeConnectorLink,
+  codingPluginStep,
 } from "@/lib/agent-app-steps"
 import { timeAgo } from "@/lib/time"
 import { AgentAccessFields } from "@/components/agents/agent-access-fields"
@@ -216,19 +217,27 @@ function CloudQuickConnectPanel({
   connection: ConnectionInfo
 }) {
   const [clientChoice, setClientChoice] = useState<
-    RemoteClientChoice | "antigravity"
+    RemoteClientChoice | "antigravity" | "gemini-cli"
   >("auto")
-  // Antigravity takes the plugin, which carries the skills and updates itself.
-  const command =
-    clientChoice === "antigravity"
-      ? appValue("antigravity", connection.remoteMcpUrl)
-      : cloudConnectorCommand(connection.remoteMcpUrl, clientChoice)
+  // Agents with a plugin install it: it carries Worktable's skills too.
+  const app =
+    clientChoice === "antigravity" || clientChoice === "gemini-cli"
+      ? clientChoice
+      : null
+  const plugin = app ? null : codingPluginStep(clientChoice)
+  const step = app ? APP_STEPS[app] : plugin?.step
+  const command = app
+    ? appValue(app, connection.remoteMcpUrl)
+    : (plugin?.command ??
+      cloudConnectorCommand(connection.remoteMcpUrl, clientChoice))
   return (
     <div className="flex flex-col gap-4">
       <Select
         value={clientChoice}
         onValueChange={(value) =>
-          setClientChoice(value as RemoteClientChoice | "antigravity")
+          setClientChoice(
+            value as RemoteClientChoice | "antigravity" | "gemini-cli"
+          )
         }
       >
         <SelectTrigger
@@ -238,8 +247,8 @@ function CloudQuickConnectPanel({
           <SelectValue>
             {clientChoice === "auto"
               ? "Detect installed agents"
-              : clientChoice === "antigravity"
-                ? AGENT_PLATFORMS.antigravity.name
+              : clientChoice === "antigravity" || clientChoice === "gemini-cli"
+                ? AGENT_PLATFORMS[clientChoice].name
                 : MCP_CLIENTS[clientChoice].label}
           </SelectValue>
         </SelectTrigger>
@@ -250,14 +259,14 @@ function CloudQuickConnectPanel({
               {client.label}
             </SelectItem>
           ))}
-          <SelectItem value="antigravity">
-            {AGENT_PLATFORMS.antigravity.name}
-          </SelectItem>
+          {(["antigravity", "gemini-cli"] as const).map((id) => (
+            <SelectItem key={id} value={id}>
+              {AGENT_PLATFORMS[id].name}
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
-      {clientChoice === "antigravity" ? (
-        <p className="text-sm text-muted-foreground">{APP_STEPS.antigravity}</p>
-      ) : null}
+      {step ? <p className="text-sm text-muted-foreground">{step}</p> : null}
       <Snippet code={command} onCopied={() => toast.success("Copied")} />
     </div>
   )

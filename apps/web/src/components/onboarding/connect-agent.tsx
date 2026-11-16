@@ -4,6 +4,7 @@ import {
   CLAUDE_PLUGIN_STEP,
   appValue,
   claudeConnectorLink,
+  codingPluginStep,
   type PluginApp,
 } from "@/lib/agent-app-steps"
 import { useEffect, useRef, useState } from "react"
@@ -90,6 +91,7 @@ const ON_DEMAND: Row[] = [
       { kind: "cli", tab: "Codex CLI", client: "codex" },
       { kind: "cli", tab: "Cursor", client: "cursor" },
       { kind: "app", tab: "Antigravity", app: "antigravity" },
+      { kind: "app", tab: "Gemini CLI", app: "gemini-cli" },
       { kind: "cli", tab: "Other", client: null },
     ],
   },
@@ -119,14 +121,17 @@ const ALWAYS_ON: Row = {
 const ANY_MCP: Option = { kind: "mcp", tab: "Other" }
 
 /**
- * Gemini and Perplexity connect from their own servers, which reach Worktable
- * Cloud but not a Worktable on this computer.
+ * The Gemini app and Perplexity connect from their own servers, which reach
+ * Worktable Cloud but not a Worktable on this computer.
  */
 function onThisComputer(row: Row): Row {
   return {
     ...row,
     options: row.options.filter(
-      (option) => option.kind !== "app" || option.app === "antigravity"
+      (option) =>
+        option.kind !== "app" ||
+        option.app === "antigravity" ||
+        option.app === "gemini-cli"
     ),
   }
 }
@@ -616,8 +621,11 @@ function SignInPanel({
     accept.mutate(arrived)
   }, [arrived, connected, accept])
 
-  const instruction =
-    option.kind === "cli"
+  // Coding agents with a plugin install it: it brings Worktable's skills too.
+  const plugin = option.kind === "cli" ? codingPluginStep(option.client) : null
+  const instruction = plugin
+    ? plugin.step
+    : option.kind === "cli"
       ? option.client === "cursor"
         ? "Run this in your terminal, then open Cursor and sign in."
         : option.client
@@ -632,8 +640,9 @@ function SignInPanel({
           : option.kind === "always-on"
           ? `Run this on the machine where ${option.agent.name} runs, then ${option.agent.cloudAuth === "oauth" ? "sign in" : "open the link it prints to approve it"}.`
             : "Add this address as a custom connector or MCP server, then sign in."
-  const value =
-    option.kind === "cli"
+  const value = plugin
+    ? plugin.command
+    : option.kind === "cli"
       ? cloudConnectorCommand(url, option.client ?? "auto")
       : option.kind === "chat" && option.app === "claude"
         ? CLAUDE_MARKETPLACE

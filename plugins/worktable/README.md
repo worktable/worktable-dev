@@ -43,7 +43,7 @@ Uploading the plugin as a file works too, but an uploaded copy never updates.
 ### Claude Code
 
 ```text
-claude plugin marketplace add worktable/worktable-dev
+claude plugin marketplace add worktable/worktable-plugin
 claude plugin install worktable@worktable
 ```
 
@@ -53,8 +53,7 @@ Worktable is not already connected.
 ### Codex
 
 ```text
-codex plugin marketplace add worktable/worktable-dev
-codex plugin add worktable@worktable
+codex plugin add worktable@openai-curated-remote
 ```
 
 ### Antigravity

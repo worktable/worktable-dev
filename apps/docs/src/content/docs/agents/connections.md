@@ -62,8 +62,10 @@ Then complete the client's sign-in. See the
 
 In Claude on the web, on desktop and in Cowork (Pro plans and up), open
 **Plugins**, choose **Add**, then **Add marketplace**, and enter
-`worktable/worktable-plugin`. Install Worktable, turn on **Sync automatically**,
-then connect Worktable on the plugin's **Connectors** tab. Skills need
+`worktable/worktable-plugin`. Add Worktable, then connect it on the plugin's
+**Connectors** tab. Claude updates it from the repository with **Check for
+updates**, or by itself with **Sync automatically** once the Claude GitHub App
+has access. Skills need
 **Code execution** on in Claude's settings; on Team and Enterprise plans an
 owner turns it on for the organization. An uploaded plugin file works too but
 never updates.

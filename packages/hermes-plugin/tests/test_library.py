@@ -71,10 +71,19 @@ def test_a_removed_skill_says_so_until_hermes_restarts_and_a_failed_refresh_chan
 def test_a_name_two_libraries_share_lists_once_per_library_read_from_its_own(tmp_path: Path) -> None:
     hermes = FakeHermes(tmp_path)
     spaces = {**RELEASE, "library": "Space: Ops", "read": {"library": "space", "spaceId": "ops"}}
+    east = {**RELEASE, "library": "Space: Ops", "read": {"library": "space", "spaceId": "east"}}
     worktable = {**RELEASE, "read": {"library": "worktable"}}
-    assert library(hermes, [{"skills": [worktable, spaces]}]).refresh()
+    # Never in place of another skill, even one with the name a shared one would get.
+    other = {**RELEASE, "name": "release-checklist-worktable"}
+    assert library(hermes, [{"skills": [worktable, spaces, east, other]}]).refresh()
 
-    assert sorted(hermes.listed) == ["release-checklist-space-ops", "release-checklist-worktable"]
+    assert sorted(hermes.listed) == [
+        "release-checklist-space-ops",
+        "release-checklist-space-ops-east",
+        "release-checklist-worktable",
+        "release-checklist-worktable-2",
+    ]
+    assert '"library": "worktable"' in hermes.listed["release-checklist-worktable-2"]
     assert (
         '`worktable_skills_read` {"name": "release-checklist", "library": "space", "spaceId": "ops"}'
         in hermes.listed["release-checklist-space-ops"]

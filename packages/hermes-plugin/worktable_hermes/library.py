@@ -43,19 +43,43 @@ def _selector(skill: dict) -> dict:
     return selector
 
 
-def listed_name(skill: dict) -> str:
-    """The name Hermes lists a skill by: its own, or with its library added
-    when skills in more than one library share it."""
-    if "library" not in _selector(skill):
-        return skill["name"]
-    words = re.findall(r"[a-z0-9]+", str(skill.get("library") or "").lower())
-    return "-".join([skill["name"], *words])
+def _words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", text.lower())
 
 
-def pointer(skill: dict) -> str:
-    """A skill's SKILL.md for Hermes: its name, when to use it, and where it is."""
+def listed_names(skills: Iterable[dict], reserved: Iterable[str] = ()) -> dict[str, dict]:
+    """Each skill by the name Hermes lists it by, unique and never a reserved one.
+
+    A name more than one library uses lists once per library, named with its
+    library, and with its Space's id or a number if that is taken too.
+    """
+    taken = set(reserved)
+    listed: dict[str, dict] = {}
+    shared = []
+    for skill in skills:
+        if "library" in _selector(skill):
+            shared.append(skill)
+        elif skill["name"] not in taken:
+            taken.add(skill["name"])
+            listed[skill["name"]] = skill
+    for skill in shared:
+        selector = _selector(skill)
+        base = "-".join([skill["name"], *_words(str(skill.get("library") or selector["library"]))])
+        tries = [base, "-".join([base, *_words(selector.get("spaceId", ""))])]
+        name = next((n for n in tries if n not in taken), None)
+        count = 2
+        while name is None:
+            if f"{base}-{count}" not in taken:
+                name = f"{base}-{count}"
+            count += 1
+        taken.add(name)
+        listed[name] = skill
+    return listed
+
+
+def pointer(skill: dict, name: str) -> str:
+    """A skill's SKILL.md for Hermes, listed as name: when to use it, and where it is."""
     description = " ".join(str(skill.get("description") or "").split())
-    name = listed_name(skill)
     selector = json.dumps(_selector(skill))
     return (
         "---\n"
@@ -143,21 +167,19 @@ class LibrarySkills:
         skills = state.get("skills")
         if not isinstance(skills, list):
             skills = []
-        wanted: dict[str, dict] = {}
-        for skill in skills:
-            name = skill.get("name") if isinstance(skill, dict) else None
-            if not isinstance(name, str) or not _NAME.match(name):
-                continue
-            # A name two libraries share lists once per library, each read from its own.
-            listed = listed_name(skill)
-            if listed in self._reserved:
-                continue
-            wanted.setdefault(listed, skill)
+        wanted = listed_names(
+            (
+                skill
+                for skill in skills
+                if isinstance(skill, dict) and isinstance(skill.get("name"), str) and _NAME.match(skill["name"])
+            ),
+            self._reserved,
+        )
         self._folder.mkdir(parents=True, exist_ok=True)
         for name, skill in wanted.items():
             path = self._folder / name / "SKILL.md"
             path.parent.mkdir(exist_ok=True)
-            text = pointer(skill)
+            text = pointer(skill, name)
             if not path.is_file() or path.read_text(encoding="utf-8") != text:
                 path.write_text(text, encoding="utf-8")
             self._register(name, path)

@@ -22,6 +22,9 @@ describe("the team's Library skills as OpenClaw skills", () => {
           // A name two libraries share lists once per library, each read from its own.
           { name: "pay-guide", description: "Use when paying.", library: "Space: Ops", read: { library: "space", spaceId: "ops" } },
           { name: "pay-guide", description: "Use when paying.", library: "Yours", read: { library: "agent" } },
+          // Never in place of another skill, even one with the name a shared one would get.
+          { name: "pay-guide", description: "Use when paying.", library: "Space: Ops", read: { library: "space", spaceId: "east" } },
+          { name: "pay-guide-yours", description: "Use when paying yourself.", library: "Worktable" },
         ],
       },
       new Error("unreachable"),
@@ -39,10 +42,17 @@ describe("the team's Library skills as OpenClaw skills", () => {
     expect(listed).toContain('worktable_skills_read tool (name: "release-checklist")')
     const shared = await readFile(join(folder, "pay-guide-space-ops", "SKILL.md"), "utf8")
     expect(shared).toContain('(name: "pay-guide", library: "space", spaceId: "ops")')
-    expect((await readdir(folder)).sort()).toEqual(["pay-guide-space-ops", "pay-guide-yours", "release-checklist"])
+    expect((await readdir(folder)).sort()).toEqual([
+      "pay-guide-space-ops",
+      "pay-guide-space-ops-east",
+      "pay-guide-yours",
+      "pay-guide-yours-2",
+      "release-checklist",
+    ])
+    expect(await readFile(join(folder, "pay-guide-yours-2", "SKILL.md"), "utf8")).toContain('library: "agent"')
 
     expect(await skills.refresh()).toBe(false)
-    expect(await readdir(folder)).toHaveLength(3)
+    expect(await readdir(folder)).toHaveLength(5)
 
     expect(await skills.refresh()).toBe(true)
     expect(await readdir(folder)).toEqual([])

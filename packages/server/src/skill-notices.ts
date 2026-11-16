@@ -281,7 +281,9 @@ export async function stateSkills(reader: SkillReader, spaceId?: string) {
   if (reader.participantId) noteCall(reader.participantId, Date.now())
   const { live, removed } = await skillsForAgent(reader, { spaceId })
   const shown = live.slice(0, STATE_SKILL_LIMIT)
-  const selector = selectorFor(live)
+  // A name is shared whether or not the other skill is in this Space, since
+  // reading by name looks in every library.
+  const selector = selectorFor(spaceId ? (await skillsForAgent(reader)).live : live)
   if (reader.participantId && (shown.length > 0 || removed.length > 0)) {
     // Merged after the wait, so a change seen meanwhile isn't undone.
     const marks = { ...marksFor(reader.participantId), ...marksOf(shown, removed) }

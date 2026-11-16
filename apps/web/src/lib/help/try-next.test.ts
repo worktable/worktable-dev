@@ -16,7 +16,7 @@ it("leads with the Getting Started steps still open, then the cards in order", (
     "connect-agent",
     "agent-rules",
     "invite-team",
-    "another-agent",
+    // "Another" agent waits for the first.
     "interactive-page",
     "share-link",
     "note-to-agent",

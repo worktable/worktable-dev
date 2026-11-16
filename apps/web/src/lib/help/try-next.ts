@@ -76,15 +76,19 @@ export function homeTryNext(
     doc: boolean
   }
 ): { cards: HomeTryNextCard[]; done: number; total: number } | null {
+  const connected = Boolean(setup.items["connect-agent"])
   const statuses = tryNextStatus(setup, options).filter(
     ({ card }) =>
-      options.doc || (card.id !== "share-link" && card.id !== "note-to-agent")
+      (options.doc ||
+        (card.id !== "share-link" && card.id !== "note-to-agent")) &&
+      // "Another" agent only means something once there's a first one.
+      (connected || card.id !== "another-agent")
   )
   const progress = tryNextProgress(statuses)
   if (progress.done === progress.total) return null
   const leading: HomeTryNextCard[] = []
   const rest: HomeTryNextCard[] = []
-  if (!setup.items["connect-agent"])
+  if (!connected)
     leading.push({ kind: "setup", id: "connect-agent", done: false })
   for (const { card, done } of statuses) {
     const entry: HomeTryNextCard = { kind: "card", id: card.id, card, done }

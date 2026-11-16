@@ -38,7 +38,8 @@ export const Route = createFileRoute("/")({
 
 // Next Steps shows only with help on (Preview), so it and the help it
 // carries load only then.
-const TryNext = lazy(() => import("@/components/home/try-next"))
+const loadTryNext = () => import("@/components/home/try-next")
+const TryNext = lazy(loadTryNext)
 
 /** Spaces shown as cards; the sidebar lists the rest. */
 const SPACE_CARDS = 4
@@ -112,6 +113,10 @@ function HomePage() {
   const navigate = useNavigate()
   const expectedPins = useSyncExternalStore(noChange, rememberedPinCount, () => 0)
   const helpEnabled = useHelpEnabled()
+  // Fetched alongside Home's own data, not after it.
+  useEffect(() => {
+    if (helpEnabled) void loadTryNext()
+  }, [helpEnabled])
   const sharing = useDocumentSharingAvailable()
   const { setup } = usePersonalSetup()
   const pinCount = feed.data?.pins?.length

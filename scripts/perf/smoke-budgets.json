@@ -47,8 +47,8 @@
       "max": 11
     },
     "cold js, open the app at Home": {
-      "max": 24,
-      "why": "The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file. Configured avatars share one additional 1.1 KB gzip graphics module; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
+      "max": 30,
+      "why": "The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file. Configured avatars share one additional 1.1 KB gzip graphics module; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total. Help, behind Preview (#507): with help on, Home loads Next Steps, its menus' select and checkbox, and the tips' one help file, fetched alongside Home's own data so Home's content doesn't wait on them."
     },
     "dom, cold, open the app at Home": {
       "max": 1478,
@@ -58,16 +58,16 @@
       "max": 14
     },
     "cold js, open Space": {
-      "max": 25,
-      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total. Space Home is rebuilt around the latest work (#485) and its page is now its own chunk, so documents, Threads and Settings no longer load it. A cold open of a Space fetches that chunk, the chunk of sections it shares with Home, and a 0.4 KB path helper that a pinned page's preview shares with the HTML Doc code: three more small files, preloaded in parallel. CI run 43560591047 on e6f0510 measured 25 against 22 on main bb09d44 (run 43557287192); the route is 4.7 KB gzip heavier in total, and every document route is lighter."
+      "max": 26,
+      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total. Space Home is rebuilt around the latest work (#485) and its page is now its own chunk, so documents, Threads and Settings no longer load it. A cold open of a Space fetches that chunk, the chunk of sections it shares with Home, and a 0.4 KB path helper that a pinned page's preview shares with the HTML Doc code: three more small files, preloaded in parallel. CI run 43560591047 on e6f0510 measured 25 against 22 on main bb09d44 (run 43557287192); the route is 4.7 KB gzip heavier in total, and every document route is lighter. Help, behind Preview (#507): a page where a tip can show loads the help wrappers and, while help is on, the tips' one help file."
     },
     "requests, cold, open Markdown doc": {
       "max": 15,
       "why": "Main already measures 15 here (run 43557287192 on bb09d44): a late request from the load lands in this window, and the check let it pass while the cold pass stayed within its total. Space Home now asks for its Latest on a cold open (13 to 14 requests, within that click's own budget), which uses up the slack. The requests this load makes are the same as on main."
     },
     "cold js, open Markdown doc": {
-      "max": 32,
-      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total. A Doc's opening (its page check, the read-only first frame and the catalog re-check) is shared with the Library's skill page, so the bundler emits it as one 1 KB file preloaded with the Doc route: the same code, one file more. CI run 43638319195 measured 32 for a Doc with images; a Markdown doc measured within 31 on the same build, the window's late files deciding which."
+      "max": 33,
+      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total. A Doc's opening (its page check, the read-only first frame and the catalog re-check) is shared with the Library's skill page, so the bundler emits it as one 1 KB file preloaded with the Doc route: the same code, one file more. CI run 43638319195 measured 32 for a Doc with images; a Markdown doc measured within 31 on the same build, the window's late files deciding which. Help, behind Preview (#507): a page where a tip can show loads the help wrappers and, while help is on, the tips' one help file."
     },
     "requests, cold, open rich doc": {
       "max": 16,
@@ -86,32 +86,32 @@
       "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk. The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file. Configured avatars share one additional 1.1 KB gzip graphics module; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
     },
     "requests, cold, open HTML doc": {
-      "max": 15,
-      "why": "Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
+      "max": 16,
+      "why": "Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run. Help, behind Preview (#507): the first time a tip shows, it saves that it was shown, once per tip; this fixture is new to every tip. With help off, nothing is sent."
     },
     "cold js, open HTML doc": {
       "max": 30,
       "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response. Removing the earlier single-link share dialog took its inputs, dialog shell and clipboard helper out of the always-loaded share button chunk. The sidebar and other eager screens still use them, so the bundler now emits them as five small shared chunks preloaded in parallel: the same code, 4 KB more in total."
     },
     "requests, cold, open a file page": {
-      "max": 13,
-      "why": "New journey (Plan 21): a deep link to an image's file page. The page check, the app's boot reads and the image. Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
+      "max": 14,
+      "why": "New journey (Plan 21): a deep link to an image's file page. The page check, the app's boot reads and the image. Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run. Help, behind Preview (#507): the first time a tip shows, it saves that it was shown, once per tip; this fixture is new to every tip. With help off, nothing is sent."
     },
     "cold js, open a file page": {
-      "max": 33,
-      "why": "New journey (Plan 21): a file's page loads the Doc renderer's code and its own, 2 files more than a Markdown doc."
+      "max": 35,
+      "why": "New journey (Plan 21): a file's page loads the Doc renderer's code and its own, 2 files more than a Markdown doc. Help, behind Preview (#507): a page where a tip can show loads the help wrappers and, while help is on, the tips' one help file."
     },
     "requests, cold, open a Doc with images": {
       "max": 17,
       "why": "New journey (Plan 21): a deep link to a Markdown Doc that embeds two images. The Markdown doc's requests plus one per image. Main already measures 17 here (run 43557287192 on bb09d44): a late request from the load lands in this window, and the check let it pass while the cold pass stayed within its total. Space Home now asks for its Latest on a cold open (13 to 14 requests, within that click's own budget), which uses up the slack. The requests this load makes are the same as on main."
     },
     "requests, cold, open an HTML Doc with images": {
-      "max": 17,
-      "why": "New journey: a deep link to an HTML Doc that names two Space images. The HTML doc's requests: the images come inside its frame. Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
+      "max": 18,
+      "why": "New journey: a deep link to an HTML Doc that names two Space images. The HTML doc's requests: the images come inside its frame. Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run. Help, behind Preview (#507): the first time a tip shows, it saves that it was shown, once per tip; this fixture is new to every tip. With help off, nothing is sent."
     },
     "cold js, open a Doc with images": {
-      "max": 32,
-      "why": "New journey (Plan 21): the same code as a Markdown doc. A Doc's opening (its page check, the read-only first frame and the catalog re-check) is shared with the Library's skill page, so the bundler emits it as one 1 KB file preloaded with the Doc route: the same code, one file more. CI run 43638319195 measured 32 for a Doc with images; a Markdown doc measured within 31 on the same build, the window's late files deciding which."
+      "max": 34,
+      "why": "New journey (Plan 21): the same code as a Markdown doc. A Doc's opening (its page check, the read-only first frame and the catalog re-check) is shared with the Library's skill page, so the bundler emits it as one 1 KB file preloaded with the Doc route: the same code, one file more. CI run 43638319195 measured 32 for a Doc with images; a Markdown doc measured within 31 on the same build, the window's late files deciding which. Help, behind Preview (#507): a page where a tip can show loads the help wrappers and, while help is on, the tips' one help file."
     },
     "cold js, open an HTML Doc with images": {
       "max": 30,
@@ -122,16 +122,16 @@
       "why": "Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
     },
     "cold js, open Threads": {
-      "max": 34,
-      "why": "Comments show their messages with the Threads Markdown renderer, so the bundler moves that renderer out of the Threads chunk into one both share: one more small chunk on a cold open of Threads, preloaded with the rest, and none on revisits. Before that, removing the single-link share dialog split its inputs, dialog shell and clipboard helper into five small shared chunks. A pinned page's preview on Home (#485) uses the HTML Doc path helper, so the bundler moves that 0.4 KB helper out of the chunk the HTML Doc code kept it in: one more small file before Threads shows on a cold open, preloaded with the rest, and none on revisits. CI run 43560591047 on e6f0510 measured 34 against 33 on main bb09d44; the scripts this load fetches in all are unchanged at 61."
+      "max": 35,
+      "why": "Comments show their messages with the Threads Markdown renderer, so the bundler moves that renderer out of the Threads chunk into one both share: one more small chunk on a cold open of Threads, preloaded with the rest, and none on revisits. Before that, removing the single-link share dialog split its inputs, dialog shell and clipboard helper into five small shared chunks. A pinned page's preview on Home (#485) uses the HTML Doc path helper, so the bundler moves that 0.4 KB helper out of the chunk the HTML Doc code kept it in: one more small file before Threads shows on a cold open, preloaded with the rest, and none on revisits. CI run 43560591047 on e6f0510 measured 34 against 33 on main bb09d44; the scripts this load fetches in all are unchanged at 61. Help, behind Preview (#507): a page where a tip can show loads the help wrappers and, while help is on, the tips' one help file."
     },
     "requests, cold, open a thread": {
-      "max": 11,
-      "why": "Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run."
+      "max": 12,
+      "why": "Once the first screen settles, the app asks for every Space's sidebar contents in one request (GET /api/sidebar), so opening any Space shows its tree in the frame of the press; a cold load whose window is still open counts it, and a Space the page opens may refresh its own contents behind it. Measured on the PR's perf-smoke run. Help, behind Preview (#507): the first time a tip shows, it saves that it was shown, once per tip; this fixture is new to every tip. With help off, nothing is sent."
     },
     "cold js, open a thread": {
-      "max": 34,
-      "why": "Comments show their messages with the Threads Markdown renderer, so the bundler moves that renderer out of the Threads chunk into one both share: one more small chunk on a cold open of Threads, preloaded with the rest, and none on revisits. Before that, removing the single-link share dialog split its inputs, dialog shell and clipboard helper into five small shared chunks. A pinned page's preview on Home (#485) uses the HTML Doc path helper, so the bundler moves that 0.4 KB helper out of the chunk the HTML Doc code kept it in: one more small file before Threads shows on a cold open, preloaded with the rest, and none on revisits. CI run 43560591047 on e6f0510 measured 34 against 33 on main bb09d44; the scripts this load fetches in all are unchanged at 61."
+      "max": 36,
+      "why": "Comments show their messages with the Threads Markdown renderer, so the bundler moves that renderer out of the Threads chunk into one both share: one more small chunk on a cold open of Threads, preloaded with the rest, and none on revisits. Before that, removing the single-link share dialog split its inputs, dialog shell and clipboard helper into five small shared chunks. A pinned page's preview on Home (#485) uses the HTML Doc path helper, so the bundler moves that 0.4 KB helper out of the chunk the HTML Doc code kept it in: one more small file before Threads shows on a cold open, preloaded with the rest, and none on revisits. CI run 43560591047 on e6f0510 measured 34 against 33 on main bb09d44; the scripts this load fetches in all are unchanged at 61. Help, behind Preview (#507): a page where a tip can show loads the help wrappers and, while help is on, the tips' one help file."
     },
     "requests, first, open the app at Home": {
       "max": 11
@@ -193,7 +193,8 @@
       "max": 12313
     },
     "requests, first, open HTML doc": {
-      "max": 3
+      "max": 4,
+      "why": "Help, behind Preview (#507): the first time a tip shows, it saves that it was shown, once per tip; this fixture is new to every tip. With help off, nothing is sent."
     },
     "chain, first, open HTML doc": {
       "max": 1
@@ -203,8 +204,8 @@
       "why": "The sidebar shows each Space row's pin button (hover-revealed on desktop) and the person's group labels."
     },
     "requests, first, open a file page": {
-      "max": 2,
-      "why": "New journey (Plan 21): the page check and the image."
+      "max": 3,
+      "why": "New journey (Plan 21): the page check and the image. Help, behind Preview (#507): the first time a tip shows, it saves that it was shown, once per tip; this fixture is new to every tip. With help off, nothing is sent."
     },
     "chain, first, open a file page": {
       "max": 1,
@@ -259,7 +260,8 @@
       "why": "Each Space icon and person avatar sits on its recognition color, one more element per Space row and avatar."
     },
     "requests, first, open a thread": {
-      "max": 2
+      "max": 3,
+      "why": "Help, behind Preview (#507): the first time a tip shows, it saves that it was shown, once per tip; this fixture is new to every tip. With help off, nothing is sent."
     },
     "chain, first, open a thread": {
       "max": 0
@@ -568,8 +570,8 @@
       "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
     },
     "requests, first, open Settings Agents": {
-      "max": 5,
-      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+      "max": 6,
+      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness). Help, behind Preview (#507): the first time a tip shows, it saves that it was shown, once per tip; this fixture is new to every tip. With help off, nothing is sent."
     },
     "chain, first, open Settings Agents": {
       "max": 0,

@@ -6,6 +6,7 @@ import { withFileLock } from "openclaw/plugin-sdk/file-lock"
 import { writeJsonFileAtomically } from "openclaw/plugin-sdk/json-store"
 import { readJsonFileWithFallback } from "./json-store.js"
 import { resolveStateDir } from "openclaw/plugin-sdk/state-paths"
+import { libraryFolder } from "./library.js"
 import { accessSettingsToKeep, type WorktableAccess } from "./access.js"
 
 interface RedeemResult {
@@ -426,6 +427,16 @@ export async function pairWorktableChannel(options: {
           worktable: worktableMcpServer(redeemed.mcpUrl, redeemed.token),
         }
         draft.mcp = mcp as typeof draft.mcp
+        // The team's Library skills: OpenClaw lists skills from the folders
+        // it loads, and the plugin keeps pointers to them in this one.
+        const skills = (draft.skills ?? {}) as {
+          load?: { extraDirs?: string[] }
+        }
+        const extraDirs = skills.load?.extraDirs ?? []
+        if (!extraDirs.includes(libraryFolder())) {
+          skills.load = { ...skills.load, extraDirs: [...extraDirs, libraryFolder()] }
+        }
+        draft.skills = skills as typeof draft.skills
       },
     })
   } catch (error) {

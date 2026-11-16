@@ -288,6 +288,18 @@ export class McpWorktableClient implements WorktableClient {
     this.#initialized = false
   }
 
+  /** The Library skills that apply to this agent, as worktable_state lists them. */
+  async libraryState(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    // worktable_state takes its arguments flat, not in a request wrapper.
+    await this.#ensureInitialized(signal)
+    const { result } = await this.#request(
+      "tools/call",
+      { name: "worktable_state", arguments: {} },
+      signal
+    )
+    return textResult(result)
+  }
+
   async participants(signal?: AbortSignal): Promise<WorktableParticipant[]> {
     const result = await this.#call(
       "worktable_threads_read",

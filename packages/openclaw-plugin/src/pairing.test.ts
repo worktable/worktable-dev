@@ -364,6 +364,10 @@ describe("OpenClaw Worktable pairing completion", () => {
       transport: "streamable-http",
       headers: { Authorization: "Bearer wtb_bearer" },
     })
+    // And the folder of the team's Library skills to the ones OpenClaw loads.
+    expect(
+      JSON.parse(await readFile(configPath, "utf8")).skills.load.extraDirs
+    ).toEqual([join(configDir, "plugins", "worktable", "library")])
     expect(await saved()).toMatchObject({ ownerMemberId: owner })
     expect((await saved()).trustAllMembers).toBeUndefined()
 

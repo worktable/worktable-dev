@@ -21,6 +21,7 @@ import {
   type Tip,
 } from "@/lib/help/registry"
 import { useTip } from "@/lib/help/state"
+import { useHelpEnabled } from "@/hooks/use-deployment-info"
 
 /** The Worktable mark in a help band. */
 export function HelpMark() {
@@ -133,6 +134,7 @@ export function HelpIcon({
   className,
   side = "bottom",
   align = "start",
+  fallback = null,
 }: {
   entry: HelpIconKey
   /** Names the button, e.g. "About Auto-reply". */
@@ -142,10 +144,14 @@ export function HelpIcon({
   className?: string
   side?: "top" | "bottom" | "left" | "right"
   align?: "start" | "center" | "end"
+  /** What shows while help is off (outside Preview), such as today's InfoTip. */
+  fallback?: ReactNode
 }) {
+  const enabled = useHelpEnabled()
   const icon = HELP_ICONS[entry]
   const about = conceptById(icon.concept)
   const placeLine = line ?? ("line" in icon ? icon.line : undefined)
+  if (!enabled) return <>{fallback}</>
   return (
     <Popover>
       <PopoverTrigger

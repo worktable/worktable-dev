@@ -105,11 +105,22 @@ window.addEventListener('click',event=>{
 window.addEventListener('submit',event=>event.preventDefault());
 window.addEventListener('pagehide',()=>post({type:'worktable.navigation.frame-leaving',navigationToken},'*'));
 // How far down the page has been read, for its owner's view counts: the page
-// itself, or a scrolling area at least half the window tall.
+// itself or, when it doesn't scroll, its largest scrolling area at least half
+// the window tall.
 let readDepth=0,depthTimer=0,scrolled=null;
+const tall=node=>node instanceof Element&&node.clientHeight>=innerHeight/2&&node.scrollHeight>node.clientHeight+1;
+function scrollingArea(root){
+  if(scrolled!==root&&tall(scrolled))return scrolled;
+  if(root.scrollHeight>innerHeight+1)return root;
+  let best=null;const walker=document.createTreeWalker(document.body||root,NodeFilter.SHOW_ELEMENT);
+  for(let node=walker.nextNode(),seen=0;node&&seen<5000;node=walker.nextNode(),seen++){
+    if(tall(node)&&/auto|scroll/.test(getComputedStyle(node).overflowY)&&(!best||node.clientHeight>best.clientHeight))best=node;
+  }
+  return best||root;
+}
 function noteDepth(){
   const root=document.scrollingElement||document.documentElement;
-  const area=scrolled instanceof Element&&scrolled!==root&&scrolled.clientHeight>=innerHeight/2?scrolled:root;
+  const area=scrollingArea(root);
   const seen=area===root?root.scrollTop+innerHeight:area.scrollTop+area.clientHeight;
   if(!area.scrollHeight)return;
   const depth=Math.min(100,Math.round(seen/area.scrollHeight*100));

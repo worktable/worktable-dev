@@ -194,7 +194,11 @@ function readableDatabase(): Database | null {
 const utcDay = (at: number): string => new Date(at).toISOString().slice(0, 10)
 
 /** The SQL condition for a view that looks automated (see AUTOMATED_UNDER_SECONDS). */
-const AUTOMATED = `(webdriver = 1 OR (COALESCE(network, '') = 'cloud' AND had_input = 0 AND visible_s < ${AUTOMATED_UNDER_SECONDS}))`
+const automated = (table?: string): string => {
+  const column = (name: string) => (table ? `${table}.${name}` : name)
+  return `(${column("webdriver")} = 1 OR (COALESCE(${column("network")}, '') = 'cloud' AND ${column("had_input")} = 0 AND ${column("visible_s")} < ${AUTOMATED_UNDER_SECONDS}))`
+}
+const AUTOMATED = automated()
 
 /**
  * Record a page's start or update. The first message for a load creates its
@@ -431,6 +435,7 @@ export function shareViewDetail(
            SELECT 1 FROM share_views AS earlier
            WHERE earlier.link_id = this.link_id AND earlier.visitor = this.visitor
              AND earlier.counted = 1 AND earlier.day < this.day
+             AND NOT ${automated("earlier")}
          ) AS came_back
        FROM share_views AS this WHERE link_id = ? ORDER BY started_at DESC LIMIT ?`
     )

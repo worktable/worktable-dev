@@ -3082,9 +3082,35 @@ describe("share link views", () => {
       "x-worktable-view-source": "https://www.linkedin.com/feed/",
       "x-worktable-view-screen": "watch",
     })
-    // Two days on, the first browser comes back.
+    // A scanner's quick load is no earlier visit for the browser it shares.
+    await report(token, start("c-scan"), {
+      "x-worktable-view-visitor": digest("browser c"),
+      "x-worktable-view-network": "cloud",
+    })
+    // Two days on, the first browser comes back, and the third reads it.
     const { recordShareView, shareViewSummaries } = await import(
       "./share-views.ts"
+    )
+    const later = Date.now() + 2 * 24 * 60 * 60 * 1000
+    recordShareView(
+      id,
+      { kind: "start", load: "c-reading".padEnd(16, "x"), visible: 90, input: true, webdriver: false },
+      {
+        visitor: digest("browser c"),
+        day: null,
+        country: null,
+        network: "cloud",
+        browser: "chrome",
+        device: "desktop",
+        region: null,
+        system: null,
+        language: null,
+        organization: null,
+        scroll: null,
+        source: null,
+        screen: null,
+      },
+      later - 60_000
     )
     recordShareView(
       id,
@@ -3104,12 +3130,12 @@ describe("share link views", () => {
         source: "email",
         screen: "phone",
       },
-      Date.now() + 2 * 24 * 60 * 60 * 1000
+      later
     )
 
     expect(shareViewSummaries([id]).get(id)).toMatchObject({
-      views: 3,
-      people: 2,
+      views: 4,
+      people: 3,
       returning: 1,
       latest: { country: "US", region: "NY", organization: null, source: "email" },
     })
@@ -3126,6 +3152,8 @@ describe("share link views", () => {
         scrolledPercent: null,
         returning: true,
       }),
+      expect.objectContaining({ browserId: "Browser 3", returning: false }),
+      expect.objectContaining({ browserId: "Browser 3", automated: true }),
       expect.objectContaining({
         browserId: "Browser 2",
         region: null,

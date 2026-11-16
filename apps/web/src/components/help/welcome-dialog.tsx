@@ -104,7 +104,7 @@ export function WelcomeDialog({
           <div
             className={cn(
               "sm:[zoom:1.4]",
-              picture === "agents" ? "[zoom:0.9]" : "[zoom:1.05]"
+              picture === "agents" ? "[zoom:0.9]" : "[zoom:1]"
             )}
           >
             <Picture picture={picture} role={role} />
@@ -136,17 +136,13 @@ export function WelcomeDialog({
             )
           })}
         </div>
-        {/* Three columns, so the dots stay put when the last button is wider. */}
-        <div className="mt-7 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-          <Button
-            variant="ghost"
-            className={cn("justify-self-start", at === 0 && "invisible")}
-            tabIndex={at === 0 ? -1 : undefined}
-            onClick={() => step("back")}
+        {/* The dots stay put when the last button is wider: between the
+            buttons in three columns, and on their own row on phones. */}
+        <div className="mt-6 flex flex-col gap-4 sm:mt-7 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:gap-3">
+          <span
+            aria-hidden
+            className="flex gap-1.5 self-center sm:col-start-2 sm:row-start-1"
           >
-            Back
-          </Button>
-          <span aria-hidden className="flex gap-1.5">
             {content.screens.map((screen, index) => (
               <i
                 key={screen.title}
@@ -157,12 +153,26 @@ export function WelcomeDialog({
               />
             ))}
           </span>
-          <Button
-            ref={next}
-            className="justify-self-end"
-            onClick={() => step(last ? "finish" : "next")}>
-            {last ? finishLabel : "Next"}
-          </Button>
+          <div className="flex items-center justify-between gap-3 sm:contents">
+            <Button
+              variant="ghost"
+              className={cn(
+                "sm:col-start-1 sm:row-start-1 sm:justify-self-start",
+                at === 0 && "invisible"
+              )}
+              tabIndex={at === 0 ? -1 : undefined}
+              onClick={() => step("back")}
+            >
+              Back
+            </Button>
+            <Button
+              ref={next}
+              className="sm:col-start-3 sm:row-start-1 sm:justify-self-end"
+              onClick={() => step(last ? "finish" : "next")}
+            >
+              {last ? finishLabel : "Next"}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -296,6 +306,9 @@ function SpacePicture({ chat }: { chat: boolean }) {
           agent={chat ? undefined : "chatgpt"}
           tag={chat ? words.kept : undefined}
         />
+        {chat ? null : (
+          <Row name={WELCOME_PICTURES.agents.doc} agent="grok-bot" />
+        )}
       </div>
     </div>
   )

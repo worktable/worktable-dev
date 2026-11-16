@@ -7,7 +7,7 @@
 // a generated Gemini CLI manifest, a note on where the source lives, and the
 // workflow that pulls each change and releases each new plugin version.
 
-import { lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises"
+import { lstat, mkdir, readdir, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { readPublicPluginFiles } from "./export-worktable-plugin.ts"
 
@@ -236,12 +236,13 @@ export async function buildPluginRepositoryTree(
   const google = antigravity(source)
   files.set(".antigravity-plugin/plugin.json", google.manifest)
   files.set("mcp_config.json", google.mcp)
-  files.set(
-    ".claude-plugin/marketplace.json",
-    claudeMarketplace(
-      JSON.parse(await readFile(join(sourceDirectory, "distribution/claude-marketplace.json"), "utf8"))
-    )
-  )
+  // The catalog stays in worktable-dev but passes the same publication checks.
+  const catalogPath = "distribution/claude-marketplace.json"
+  const catalog = await readPublicPluginFiles([catalogPath], {
+    sourceDirectory,
+    publicationPolicyPath: options.publicationPolicyPath,
+  })
+  files.set(".claude-plugin/marketplace.json", claudeMarketplace(json(catalog.get(catalogPath), catalogPath)))
   files.set("README.md", readme(source))
   files.set(".github/workflows/sync.yml", SYNC_WORKFLOW)
   return { version, files }

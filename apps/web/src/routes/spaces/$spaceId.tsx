@@ -11,6 +11,7 @@ import { browserTeamMemberId } from "@/lib/team-context"
 import { Button } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
 import { restoreSpace } from "@/lib/api"
+import { homeFeedQueryOptions } from "@/lib/home"
 import { spaceQueryOptions, useSpace, useSpaces } from "@/lib/queries"
 import { RelativeTime } from "@/lib/time"
 import { useSpaceSubscription } from "@/lib/ws"
@@ -33,13 +34,20 @@ const GettingStartedHome = lazy(() =>
 
 export const Route = createFileRoute("/spaces/$spaceId")({
   ssr: false,
-  // Warm space details without delaying SPA-shell hydration. Overview-only
-  // document/collection queries start when the overview actually mounts.
-  // Awaiting here makes the first client tree contain live data while the static
-  // shell still contains its pending UI, which React correctly rejects.
+  // Warm space details without delaying SPA-shell hydration. For Space Home,
+  // also its page's code and its Latest feed, which its content waits for, so
+  // a hover has them in before the click; its other document and collection
+  // queries start when the overview mounts. Awaiting here makes the first
+  // client tree contain live data while the static shell still contains its
+  // pending UI, which React correctly rejects.
   beforeLoad: ({ context, params, location }) => {
     void context.queryClient.prefetchQuery(spaceQueryOptions(params.spaceId))
-    if (/^\/spaces\/[^/]+\/?$/.test(location.pathname)) void loadSpaceOverview()
+    if (/^\/spaces\/[^/]+\/?$/.test(location.pathname)) {
+      void loadSpaceOverview()
+      void context.queryClient.prefetchQuery(
+        homeFeedQueryOptions({ spaceId: params.spaceId })
+      )
+    }
   },
   component: SpaceDetailPage,
 })

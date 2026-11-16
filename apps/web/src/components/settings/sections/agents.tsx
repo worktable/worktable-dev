@@ -95,6 +95,13 @@ import {
   listAgentConnections,
 } from "@/lib/agent-connections-api"
 import { ALWAYS_ON_AGENTS, type AlwaysOnAgent } from "@/lib/always-on-agents"
+import {
+  APP_STEPS,
+  CLAUDE_MARKETPLACE,
+  CLAUDE_PLUGIN_STEP,
+  appValue,
+  claudeConnectorLink,
+} from "@/lib/agent-app-steps"
 import { timeAgo } from "@/lib/time"
 import { AgentAccessFields } from "@/components/agents/agent-access-fields"
 import { AgentAvatar } from "@/components/agents/agent-avatar"
@@ -208,13 +215,21 @@ function CloudQuickConnectPanel({
 }: {
   connection: ConnectionInfo
 }) {
-  const [clientChoice, setClientChoice] = useState<RemoteClientChoice>("auto")
-  const command = cloudConnectorCommand(connection.remoteMcpUrl, clientChoice)
+  const [clientChoice, setClientChoice] = useState<
+    RemoteClientChoice | "antigravity"
+  >("auto")
+  // Antigravity takes the plugin, which carries the skills and updates itself.
+  const command =
+    clientChoice === "antigravity"
+      ? appValue("antigravity", connection.remoteMcpUrl)
+      : cloudConnectorCommand(connection.remoteMcpUrl, clientChoice)
   return (
     <div className="flex flex-col gap-4">
       <Select
         value={clientChoice}
-        onValueChange={(value) => setClientChoice(value as RemoteClientChoice)}
+        onValueChange={(value) =>
+          setClientChoice(value as RemoteClientChoice | "antigravity")
+        }
       >
         <SelectTrigger
           aria-label="Cloud quick connect agent"
@@ -223,7 +238,9 @@ function CloudQuickConnectPanel({
           <SelectValue>
             {clientChoice === "auto"
               ? "Detect installed agents"
-              : MCP_CLIENTS[clientChoice].label}
+              : clientChoice === "antigravity"
+                ? AGENT_PLATFORMS.antigravity.name
+                : MCP_CLIENTS[clientChoice].label}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
@@ -233,8 +250,14 @@ function CloudQuickConnectPanel({
               {client.label}
             </SelectItem>
           ))}
+          <SelectItem value="antigravity">
+            {AGENT_PLATFORMS.antigravity.name}
+          </SelectItem>
         </SelectContent>
       </Select>
+      {clientChoice === "antigravity" ? (
+        <p className="text-sm text-muted-foreground">{APP_STEPS.antigravity}</p>
+      ) : null}
       <Snippet code={command} onCopied={() => toast.success("Copied")} />
     </div>
   )
@@ -280,13 +303,16 @@ function CloudNativeAppsPanel({
   connection: ConnectionInfo
   active: boolean
 }) {
-  const [app, setApp] = useState<"claude" | "chatgpt" | "grok-bot">("claude")
+  const [app, setApp] = useState<
+    "claude" | "chatgpt" | "grok-bot" | "gemini" | "perplexity"
+  >("claude")
+  const copied = () => toast.success("Copied")
   return (
     <div className="flex flex-col gap-3">
       <AgentSetupTabs
         value={app}
         onValueChange={setApp}
-        options={CHAT_APP_OPTIONS}
+        options={CLOUD_CHAT_APP_OPTIONS}
       />
       {app === "grok-bot" ? (
         <GrokBotSetupPanel connection={connection} open={active} />
@@ -294,23 +320,51 @@ function CloudNativeAppsPanel({
         <ol className="space-y-1">
           <OfficialAppSteps app="chatgpt" first={1} active={active} offerOpen />
         </ol>
+      ) : app === "claude" ? (
+        <>
+          <p className="text-sm text-muted-foreground">{CLAUDE_PLUGIN_STEP}</p>
+          <CopyField
+            label="Marketplace"
+            value={CLAUDE_MARKETPLACE}
+            onCopied={copied}
+          />
+          <p className="text-xs text-muted-foreground">
+            On Claude’s Free plan,{" "}
+            <a
+              href={claudeConnectorLink(connection.remoteMcpUrl)}
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-primary-text hover:underline"
+            >
+              add Worktable as a connector
+            </a>{" "}
+            instead.
+          </p>
+        </>
       ) : (
         <>
-          <p className="text-sm text-muted-foreground">
-            {app === "claude"
-              ? "In Claude, add a custom connector in Settings → Connectors. Paste this address and sign in."
-              : "In ChatGPT on the web, create an app in Settings → Apps. Paste this address and sign in."}
-          </p>
+          <p className="text-sm text-muted-foreground">{APP_STEPS[app]}</p>
           <CopyField
-            label="MCP endpoint"
-            value={connection.remoteMcpUrl}
-            onCopied={() => toast.success("Copied")}
+            label={app === "gemini" ? "MCP endpoint" : "Plugin"}
+            value={appValue(app, connection.remoteMcpUrl)}
+            onCopied={copied}
           />
         </>
       )}
     </div>
   )
 }
+
+/** On Cloud, Gemini and Perplexity join, before Grok Bot. */
+const CLOUD_CHAT_APP_OPTIONS = [
+  ...CHAT_APP_OPTIONS.filter((option) => option.value !== "grok-bot"),
+  ...(["gemini", "perplexity"] as const).map((platform) => ({
+    value: platform,
+    label: AGENT_PLATFORMS[platform].name,
+    platform,
+  })),
+  ...CHAT_APP_OPTIONS.filter((option) => option.value === "grok-bot"),
+]
 
 function CloudManualInstallPanel({
   connection,

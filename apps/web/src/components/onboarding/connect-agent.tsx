@@ -1,3 +1,11 @@
+import {
+  APP_STEPS,
+  CLAUDE_MARKETPLACE,
+  CLAUDE_PLUGIN_STEP,
+  appValue,
+  claudeConnectorLink,
+  type PluginApp,
+} from "@/lib/agent-app-steps"
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Check, Loader2 } from "lucide-react"
@@ -60,6 +68,7 @@ type RowId = "code" | "chat" | "always" | "mcp"
 type Option =
   | { kind: "cli"; tab: string; client: ConnectorInstallableMcpClientId | null }
   | { kind: "chat"; tab: string; app: "claude" | "chatgpt" }
+  | { kind: "app"; tab: string; app: PluginApp }
   | { kind: "always-on"; tab: string; agent: AlwaysOnAgent }
   | { kind: "mcp"; tab: string }
   | { kind: "grok"; tab: string }
@@ -80,6 +89,7 @@ const ON_DEMAND: Row[] = [
       { kind: "cli", tab: "Claude Code", client: "claude-code" },
       { kind: "cli", tab: "Codex CLI", client: "codex" },
       { kind: "cli", tab: "Cursor", client: "cursor" },
+      { kind: "app", tab: "Antigravity", app: "antigravity" },
       { kind: "cli", tab: "Other", client: null },
     ],
   },
@@ -89,6 +99,8 @@ const ON_DEMAND: Row[] = [
     options: [
       { kind: "chat", tab: "Claude", app: "claude" },
       { kind: "chat", tab: "ChatGPT", app: "chatgpt" },
+      { kind: "app", tab: "Gemini", app: "gemini" },
+      { kind: "app", tab: "Perplexity", app: "perplexity" },
       { kind: "grok", tab: "Grok Bot" },
     ],
   },
@@ -106,6 +118,19 @@ const ALWAYS_ON: Row = {
 
 const ANY_MCP: Option = { kind: "mcp", tab: "Other" }
 
+/**
+ * Gemini and Perplexity connect from their own servers, which reach Worktable
+ * Cloud but not a Worktable on this computer.
+ */
+function onThisComputer(row: Row): Row {
+  return {
+    ...row,
+    options: row.options.filter(
+      (option) => option.kind !== "app" || option.app === "antigravity"
+    ),
+  }
+}
+
 /** Labels an app's credential carries, so the agent shows its platform. */
 const CHAT_LABELS = {
   claude: "claude-desktop",
@@ -120,6 +145,7 @@ function agentName(option: Option): string {
         ? AGENT_PLATFORMS[option.client].name
         : "Agents on my computer"
     case "chat":
+    case "app":
       return AGENT_PLATFORMS[option.app].name
     case "always-on":
       return option.agent.name
@@ -140,6 +166,7 @@ function platformOf(option: Option): AgentPlatformId {
     case "cli":
       return option.client ?? "other"
     case "chat":
+    case "app":
       return option.app
     case "always-on":
       return option.agent.adapter
@@ -542,9 +569,12 @@ function signedInHere(option: Option, connection: AgentConnection): boolean {
   if (connection.authKind !== "oauth") return false
   // A named tab waits for its own agent; Other takes any that signs in.
   const expected = platformOf(option)
+  const platform = agentConnectionPlatform(connection)
   return (
     expected === "other" ||
-    agentConnectionPlatform(connection) === expected ||
+    platform === expected ||
+    // These apps sign in under names we may not know yet.
+    (option.kind === "app" && platform === "other") ||
     // Codex CLI signs in as the Codex client, which ChatGPT Desktop shares.
     (expected === "codex" && agentConnectionOnCodexHost(connection))
   )
@@ -595,27 +625,47 @@ function SignInPanel({
           : "Run this in your terminal and sign in when asked. It adds Worktable to the coding agents it finds, such as OpenCode and VS Code."
       : option.kind === "chat"
         ? option.app === "claude"
-          ? "In Claude, open Settings, then Connectors, and add a custom connector. Paste this address and sign in."
+          ? CLAUDE_PLUGIN_STEP
           : "In ChatGPT on the web, open Settings, then Apps, and create an app. Paste this address and sign in."
-        : option.kind === "always-on"
+        : option.kind === "app"
+          ? APP_STEPS[option.app]
+          : option.kind === "always-on"
           ? `Run this on the machine where ${option.agent.name} runs, then ${option.agent.cloudAuth === "oauth" ? "sign in" : "open the link it prints to approve it"}.`
-          : "Add this address as a custom connector or MCP server, then sign in."
+            : "Add this address as a custom connector or MCP server, then sign in."
   const value =
     option.kind === "cli"
       ? cloudConnectorCommand(url, option.client ?? "auto")
-      : option.kind === "always-on"
+      : option.kind === "chat" && option.app === "claude"
+        ? CLAUDE_MARKETPLACE
+        : option.kind === "app"
+          ? appValue(option.app, url)
+          : option.kind === "always-on"
         ? shellLines([
             option.agent.installCommand,
             option.agent.restartBeforeConnect && option.agent.restartCommand,
             option.agent.cloudConnectCommand(url, agentName(option)),
             !option.agent.restartBeforeConnect && option.agent.restartCommand,
           ])
-        : url
+          : url
 
   return (
     <>
       <Instruction>{instruction}</Instruction>
       <CommandBlock value={value} />
+      {option.kind === "chat" && option.app === "claude" ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          On Claude’s Free plan,{" "}
+          <a
+            href={claudeConnectorLink(url)}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-primary-text hover:underline"
+          >
+            add Worktable as a connector
+          </a>{" "}
+          instead.
+        </p>
+      ) : null}
       {connected ? (
         <StatusLine connected>
           {connectedLine(connected.name, connected.mode === "always-on")}
@@ -837,7 +887,7 @@ export function AgentConnectOptions({
     <div>
       <div className="overflow-hidden rounded-xl card-surface">
         {ON_DEMAND.map((row) => (
-          <RowItem key={row.id} {...rowProps(row)} />
+          <RowItem key={row.id} {...rowProps(cloud ? row : onThisComputer(row))} />
         ))}
         <RowItem {...rowProps(ALWAYS_ON)} />
       </div>

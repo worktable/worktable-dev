@@ -38,7 +38,8 @@ vscode.svg    Visual Studio Code stable icon, unmodified, from
               https://code.visualstudio.com/brand (visual-studio-code-icons.zip).
               Visual Studio Code and its icon are trademarks of Microsoft.
 
-goose.png     Goose logo, unmodified, from the official documentation site
+goose.png     Goose logo, scaled from 3370 px to 128 px, from the official
+              documentation site
               https://goose-docs.ai/img/logo_light.png.
               https://github.com/aaif-goose/goose
 
@@ -50,3 +51,18 @@ claude-code.svg  Claude Code pixel mark from Simple Icons
 grok.svg      Legacy Grok app icon from https://grok.com/images/favicon.svg,
               retained at its existing asset URL. Grok and its mark belong
               to SpaceXAI LLC. https://x.ai/legal/brand-guidelines
+
+gemini.png    Gemini sparkle from gemini.google.com's own icon
+              (gstatic.com/lamda/images/gemini_sparkle_4g_512_lt_...png),
+              scaled to 128 px. Gemini is a trademark of Google LLC.
+
+antigravity.svg
+              Antigravity mark from https://antigravity.google/favicon.svg,
+              with its theme background circle removed.
+              Antigravity is a trademark of Google LLC.
+
+perplexity.svg
+              Perplexity mark (path from Simple Icons, CC0, sourced from
+              perplexity.ai) in Perplexity's turquoise, #1FB8CD.
+              Perplexity is a trademark of Perplexity AI, Inc.
+

@@ -272,12 +272,18 @@ it("finishes HTML help from events that don't name the Doc's format", async () =
 })
 
 it("keeps a tip that comes back showing until it's closed again", async () => {
-  await help({ id: "temporary-doc", event: "shown", version: 2 })
+  const earlier = new Date(Date.now() - 60_000).toISOString()
+  await help({ id: "temporary-doc", event: "shown", version: 2, since: earlier })
   await help({ id: "temporary-doc", event: "closed" })
-  // A later session shows it once more: that showing is open, not closed.
-  await help({ id: "temporary-doc", event: "shown", version: 2 })
+  // Another tab's showing from a session already open arrives late: closed.
+  await help({ id: "temporary-doc", event: "shown", version: 2, since: earlier })
   let state = (await setup()).help?.["temporary-doc"]
-  expect(state).toMatchObject({ shown: 2, version: 2 })
+  expect(state?.closedAt).toBeDefined()
+  // A later session shows it once more: that showing is open, not closed.
+  const later = new Date(Date.now() + 1000).toISOString()
+  await help({ id: "temporary-doc", event: "shown", version: 2, since: later })
+  state = (await setup()).help?.["temporary-doc"]
+  expect(state).toMatchObject({ shown: 3, version: 2 })
   expect(state?.closedAt).toBeUndefined()
   await help({ id: "temporary-doc", event: "closed" })
   state = (await setup()).help?.["temporary-doc"]

@@ -214,7 +214,9 @@ export function withHelpEvent(
   id: string,
   event: HelpEvent,
   version: number | undefined,
-  now = new Date().toISOString()
+  now = new Date().toISOString(),
+  /** When the browser session that showed it started. */
+  since?: string
 ): PersonalSetup {
   const help = { ...setup.help }
   const current: HelpState = help[id] ?? { shown: 0 }
@@ -229,8 +231,13 @@ export function withHelpEvent(
               ...current,
               shown: current.shown + 1,
               lastShownAt: now,
-              // Showing again is current: the earlier close no longer holds.
-              closedAt: undefined,
+              // A showing in a later session is current: the earlier close
+              // no longer holds. One from a session that was already open
+              // when it was closed, such as another tab's, arrived late.
+              closedAt:
+                current.closedAt && since && current.closedAt >= since
+                  ? current.closedAt
+                  : undefined,
             }
       break
     case "closed":

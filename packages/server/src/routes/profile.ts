@@ -225,6 +225,8 @@ const SaveHelpSchema = z
     id: z.string().regex(HELP_ID_PATTERN).optional(),
     event: z.enum(HELP_EVENTS).optional(),
     version: z.number().int().min(0).max(1000).optional(),
+    /** When the browser session that showed a tip started. */
+    since: z.iso.datetime().optional(),
     /** Show every tip again from the start. */
     resetAll: z.literal(true).optional(),
     /** Evidence only the browser sees, such as the rules line added. */
@@ -243,7 +245,8 @@ profileRouter.put("/help", async (c) => {
   if (!person) return c.json(forbidden(), 403)
   const parsed = SaveHelpSchema.safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) return c.json({ error: "Invalid help" }, 400)
-  const { id, event, version, resetAll, evidence, tryNextHidden } = parsed.data
+  const { id, event, version, since, resetAll, evidence, tryNextHidden } =
+    parsed.data
   // A tip shown or closed matters only to the window it was in, which gets
   // the result back; telling every window would make each reload its summary.
   const notify =
@@ -251,7 +254,8 @@ profileRouter.put("/help", async (c) => {
   try {
     const saved = await changeSetup(setupKeyForPerson(person), (current) => {
       let next = resetAll ? withHelpReset(current) : current
-      if (id && event) next = withHelpEvent(next, id, event, version)
+      if (id && event)
+        next = withHelpEvent(next, id, event, version, undefined, since)
       if (evidence && !next.helpEvidence?.[evidence])
         next = {
           ...next,

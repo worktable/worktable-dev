@@ -10,10 +10,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react"
-import type {
-  HelpEvent,
-  PersonalSetup,
-} from "@worktable/types/setup"
+import type { HelpEvent, PersonalSetup } from "@worktable/types/setup"
 import { useDeploymentInfo, useHelpEnabled } from "@/hooks/use-deployment-info"
 import type { WorkspaceInfo } from "../api"
 import { fetchJSON } from "../http.ts"
@@ -46,7 +43,9 @@ const REPORTED_KEY = "worktable.help.reported"
 const reported = {
   has(id: string): boolean {
     try {
-      return (sessionStorage.getItem(REPORTED_KEY) ?? "").split(" ").includes(id)
+      return (sessionStorage.getItem(REPORTED_KEY) ?? "")
+        .split(" ")
+        .includes(id)
     } catch {
       return reportedHere.has(id)
     }
@@ -54,7 +53,9 @@ const reported = {
   add(id: string): void {
     reportedHere.add(id)
     try {
-      const ids = new Set((sessionStorage.getItem(REPORTED_KEY) ?? "").split(" "))
+      const ids = new Set(
+        (sessionStorage.getItem(REPORTED_KEY) ?? "").split(" ")
+      )
       ids.add(id)
       sessionStorage.setItem(REPORTED_KEY, [...ids].filter(Boolean).join(" "))
     } catch {
@@ -78,6 +79,8 @@ export interface HelpChange {
   id?: string
   event?: HelpEvent
   version?: number
+  /** When this tab's session started, with a showing. */
+  since?: string
   resetAll?: true
   evidence?: "rules-added"
   tryNextHidden?: boolean
@@ -175,7 +178,6 @@ export function claim(id: string, priority: number): () => void {
   }
 }
 
-
 export interface UseTip {
   /** Show it now. */
   open: boolean
@@ -218,6 +220,7 @@ export function useTip(tip: Tip, active: boolean): UseTip {
         id: tip.id,
         event: "shown",
         version: tip.version,
+        since: sessionStartedAt(),
       }).catch(() => undefined)
     )
   }, [open, queryClient, tip.id, tip.version])

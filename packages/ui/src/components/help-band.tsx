@@ -63,9 +63,7 @@ function HelpBody({
 }: Pick<HelpContentProps, "title" | "children" | "actions">) {
   return (
     <div className="flex flex-col gap-1 px-3 pt-2.5 pb-3 text-sm">
-      {title ? (
-        <p className="font-semibold text-foreground">{title}</p>
-      ) : null}
+      {title ? <p className="font-semibold text-foreground">{title}</p> : null}
       {children ? (
         <div className="leading-relaxed text-muted-foreground [&_p+p]:mt-1.5">
           {children}
@@ -141,10 +139,15 @@ export function HelpHint({
     content.onClose?.()
     if (!popup || !(anchor instanceof HTMLElement)) return
     const focusable = "button, [href], input, select, textarea, [tabindex]"
-    const target = anchor.matches(focusable)
+    let target = anchor.matches(focusable)
       ? anchor
       : anchor.querySelector<HTMLElement>(focusable)
-    target?.focus()
+    // A tip on a heading: the heading takes focus, though not a tab stop.
+    if (!target) {
+      target = anchor
+      target.setAttribute("tabindex", "-1")
+    }
+    target.focus()
   }
   return (
     <PopoverPrimitive.Root
@@ -171,7 +174,7 @@ export function HelpHint({
             initialFocus={false}
             finalFocus={false}
             className={cn(
-              "help-surface overlay-floating w-72 origin-(--transform-origin) overflow-hidden rounded-xl bg-popover text-popover-foreground outline-hidden duration-150 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 motion-reduce:animate-none",
+              "help-surface overlay-floating w-72 origin-(--transform-origin) overflow-hidden rounded-xl bg-popover text-popover-foreground outline-hidden duration-150 motion-reduce:animate-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
               className
             )}
           >

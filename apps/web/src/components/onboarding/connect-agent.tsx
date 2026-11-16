@@ -4,7 +4,10 @@ import {
   CLAUDE_PLUGIN_STEP,
   appValue,
   claudeConnectorLink,
+  ADDRESS_STEP,
+  CLAUDE_CONNECTOR_STEP,
   codingPluginStep,
+  pluginReaches,
   type PluginApp,
 } from "@/lib/agent-app-steps"
 import { useEffect, useRef, useState } from "react"
@@ -622,9 +625,21 @@ function SignInPanel({
   }, [arrived, connected, accept])
 
   // Coding agents with a plugin install it: it brings Worktable's skills too.
-  const plugin = option.kind === "cli" ? codingPluginStep(option.client) : null
+  // The plugins sign in to the account's default Worktable, so another
+  // Worktable's agents add its own address instead.
+  const reaches = pluginReaches(url)
+  const plugin =
+    reaches && option.kind === "cli" ? codingPluginStep(option.client) : null
+  const byAddress =
+    !reaches &&
+    ((option.kind === "chat" && option.app === "claude") ||
+      (option.kind === "app" && option.app !== "gemini"))
   const instruction = plugin
     ? plugin.step
+    : byAddress
+      ? option.kind === "chat"
+        ? CLAUDE_CONNECTOR_STEP
+        : ADDRESS_STEP
     : option.kind === "cli"
       ? option.client === "cursor"
         ? "Run this in your terminal, then open Cursor and sign in."
@@ -642,6 +657,8 @@ function SignInPanel({
             : "Add this address as a custom connector or MCP server, then sign in."
   const value = plugin
     ? plugin.command
+    : byAddress
+      ? url
     : option.kind === "cli"
       ? cloudConnectorCommand(url, option.client ?? "auto")
       : option.kind === "chat" && option.app === "claude"
@@ -661,7 +678,7 @@ function SignInPanel({
     <>
       <Instruction>{instruction}</Instruction>
       <CommandBlock value={value} />
-      {option.kind === "chat" && option.app === "claude" ? (
+      {option.kind === "chat" && option.app === "claude" && reaches ? (
         <p className="mt-2 text-xs text-muted-foreground">
           On Claude’s Free plan,{" "}
           <a

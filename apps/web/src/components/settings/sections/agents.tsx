@@ -102,6 +102,9 @@ import {
   appValue,
   claudeConnectorLink,
   codingPluginStep,
+  ADDRESS_STEP,
+  CLAUDE_CONNECTOR_STEP,
+  pluginReaches,
 } from "@/lib/agent-app-steps"
 import { timeAgo } from "@/lib/time"
 import { AgentAccessFields } from "@/components/agents/agent-access-fields"
@@ -219,17 +222,22 @@ function CloudQuickConnectPanel({
   const [clientChoice, setClientChoice] = useState<
     RemoteClientChoice | "antigravity" | "gemini-cli"
   >("auto")
-  // Agents with a plugin install it: it carries Worktable's skills too.
+  // Agents with a plugin install it: it carries Worktable's skills too. The
+  // plugins sign in to the account's default Worktable, so another
+  // Worktable's agents add its own address instead.
+  const url = connection.remoteMcpUrl
+  const reaches = pluginReaches(url)
   const app =
     clientChoice === "antigravity" || clientChoice === "gemini-cli"
       ? clientChoice
       : null
-  const plugin = app ? null : codingPluginStep(clientChoice)
-  const step = app ? APP_STEPS[app] : plugin?.step
+  const plugin = app || !reaches ? null : codingPluginStep(clientChoice)
+  const step = app ? (reaches ? APP_STEPS[app] : ADDRESS_STEP) : plugin?.step
   const command = app
-    ? appValue(app, connection.remoteMcpUrl)
-    : (plugin?.command ??
-      cloudConnectorCommand(connection.remoteMcpUrl, clientChoice))
+    ? reaches
+      ? appValue(app, url)
+      : url
+    : (plugin?.command ?? cloudConnectorCommand(url, clientChoice))
   return (
     <div className="flex flex-col gap-4">
       <Select
@@ -329,6 +337,17 @@ function CloudNativeAppsPanel({
         <ol className="space-y-1">
           <OfficialAppSteps app="chatgpt" first={1} active={active} offerOpen />
         </ol>
+      ) : app !== "gemini" && !pluginReaches(connection.remoteMcpUrl) ? (
+        <>
+          <p className="text-sm text-muted-foreground">
+            {app === "claude" ? CLAUDE_CONNECTOR_STEP : ADDRESS_STEP}
+          </p>
+          <CopyField
+            label="MCP endpoint"
+            value={connection.remoteMcpUrl}
+            onCopied={copied}
+          />
+        </>
       ) : app === "claude" ? (
         <>
           <p className="text-sm text-muted-foreground">{CLAUDE_PLUGIN_STEP}</p>

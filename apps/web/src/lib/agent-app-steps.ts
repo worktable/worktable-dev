@@ -49,7 +49,7 @@ export function appValue(app: PluginApp, mcpUrl: string): string {
  */
 export const CODING_PLUGIN_STEPS = {
   "claude-code": {
-    step: "Run this in your terminal. Then in Claude Code, run /mcp and sign in to Worktable.",
+    step: "Run this in your terminal. Then in Claude Code, run /reload-plugins and /mcp, and sign in to Worktable.",
     command: "claude plugin marketplace add worktable/worktable-plugin\nclaude plugin install worktable@worktable",
   },
   codex: {
@@ -75,3 +75,24 @@ export function claudeConnectorLink(mcpUrl: string): string {
   })
   return `https://claude.ai/customize/connectors?${query}`
 }
+
+/**
+ * Whether the plugin reaches this Worktable. Every plugin uses Worktable
+ * Cloud's shared address, which signs in to the account's default Worktable;
+ * another Worktable has its own address (/api/mcp/w/<id>), so its agents add
+ * that address instead, without the plugin's skills.
+ */
+export function pluginReaches(mcpUrl: string): boolean {
+  try {
+    return new URL(mcpUrl).pathname.replace(/\/+$/, "") === "/api/mcp"
+  } catch {
+    return false
+  }
+}
+
+/** Claude's step when the plugin can't reach this Worktable. */
+export const CLAUDE_CONNECTOR_STEP =
+  "In Claude, open Settings, then Connectors, and add a custom connector. Paste this address and sign in."
+
+/** Any app's step when the plugin can't reach this Worktable. */
+export const ADDRESS_STEP = "Add this address as a custom connector or MCP server, then sign in."

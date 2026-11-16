@@ -174,6 +174,8 @@ function publicLink(
             count: views?.views ?? 0,
             people: views?.people ?? 0,
             lastViewAt: iso(views?.lastViewAt ?? null),
+            returning: views?.returning ?? 0,
+            latest: views?.latest ?? null,
           },
         }
       : {}),

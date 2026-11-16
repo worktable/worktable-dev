@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Views of live share links on Worktable Cloud:** Each view now also notes the region or state, operating system, browser language, screen size, how far down the page was read, and whether the visitor came from LinkedIn, email or straight to the link. It also notes whether that browser had viewed the link on an earlier day, and, outside the EEA, UK, Switzerland and Quebec, the name of the network's organization. The share dialog shows where the latest view came from and how many people came back; agents see the rest. Nothing records an IP address or ties a view to a person.
+
 ### Changed
 
 - **Home and Space Home:** Rebuilt around the latest work. **Latest** shows one row for each sitting, saying who created or edited what and where, with the other docs from that sitting behind **More**. **Pinned** on Home holds the docs you pin there with **Pin To Home**, for you alone, and a pinned HTML Doc shows itself small. **Spaces** shows your busiest Spaces, and Space Home its folders, with their last two weeks and who worked there. **Archiving** counts the temporary docs leaving on each of the next seven days; open a day to keep one. **Pending** lists only what is addressed to you, and appears only when something is.

@@ -72,23 +72,42 @@ test("a link that counts views says how many people viewed it, not when anything
       .join(" · ")
   // Only a scanner fetched it: no views yet, whatever the last fetch says.
   expect(
-    text({ lastUsedAt: fetched, views: { count: 0, people: 0, lastViewAt: null } })
+    text({ lastUsedAt: fetched, views: { count: 0, people: 0, lastViewAt: null, returning: 0, latest: null } })
   ).toBe("Never expires · No views yet")
   expect(
     text({
       lastUsedAt: fetched,
-      views: { count: 4, people: 2, lastViewAt: fetched },
+      views: {
+        count: 4,
+        people: 2,
+        lastViewAt: fetched,
+        returning: 1,
+        latest: { country: "US", region: "CA", organization: null, source: "direct" },
+      },
     })
-  ).toBe("Never expires · 4 views · 2 people · Viewed today")
+  ).toBe("Never expires · 4 views · 2 people · 1 came back · Viewed today · CA, United States")
   // A link that doesn't count views keeps when it was last opened.
   expect(text({ lastUsedAt: fetched })).toBe("Never expires · Opened today")
   // The default link says it on its own line.
   expect(
     shareLinkViewsLine(
-      link("live", 1, { views: { count: 1, people: 1, lastViewAt: fetched } }),
+      link("live", 1, {
+        views: {
+          count: 1,
+          people: 1,
+          lastViewAt: fetched,
+          returning: 0,
+          latest: {
+            country: "US",
+            region: "CA",
+            organization: "Acme Corp",
+            source: "linkedin",
+          },
+        },
+      }),
       now
     ).map((part) => part.text)
-  ).toEqual(["1 view", "1 person", "Viewed today"])
+  ).toEqual(["1 view", "1 person", "Viewed today", "Acme Corp", "From LinkedIn"])
 })
 
 test("a refused link change says the server's reason; a failure says none", () => {

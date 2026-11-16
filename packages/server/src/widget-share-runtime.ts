@@ -104,6 +104,20 @@ window.addEventListener('click',event=>{
 },true);
 window.addEventListener('submit',event=>event.preventDefault());
 window.addEventListener('pagehide',()=>post({type:'worktable.navigation.frame-leaving',navigationToken},'*'));
+// How far down the page has been read, for its owner's view counts: the page
+// itself, or a scrolling area at least half the window tall.
+let readDepth=0,depthTimer=0,scrolled=null;
+function noteDepth(){
+  const root=document.scrollingElement||document.documentElement;
+  const area=scrolled instanceof Element&&scrolled!==root&&scrolled.clientHeight>=innerHeight/2?scrolled:root;
+  const seen=area===root?root.scrollTop+innerHeight:area.scrollTop+area.clientHeight;
+  if(!area.scrollHeight)return;
+  const depth=Math.min(100,Math.round(seen/area.scrollHeight*100));
+  if(depth<readDepth+5&&!(depth===100&&readDepth<100))return;
+  readDepth=depth;post({type:'worktable.view.scroll',navigationToken,depth},'*');
+}
+window.addEventListener('scroll',event=>{scrolled=event.target;if(!depthTimer)depthTimer=setTimeout(()=>{depthTimer=0;noteDepth()},250)},{passive:true,capture:true});
+window.addEventListener('load',noteDepth);
 post({type:'worktable.navigation.handshake',navigationToken},'*');
 })();`
   return `<script data-worktable-runtime="sdk">${script.replace(/<\/script/gi, "<\\/script")}</script>`

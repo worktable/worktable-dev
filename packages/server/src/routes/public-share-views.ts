@@ -7,6 +7,10 @@ import {
   SHARE_VIEW_DEVICES,
   SHARE_VIEW_HEADERS,
   SHARE_VIEW_NETWORKS,
+  SHARE_VIEW_ORGANIZATION_MAX,
+  SHARE_VIEW_SCREENS,
+  SHARE_VIEW_SOURCES,
+  SHARE_VIEW_SYSTEMS,
   ShareViewMessage,
 } from "@worktable/hosted-contract"
 import { cameThroughGateway, isHosted } from "../hosted.ts"
@@ -20,10 +24,30 @@ import {
 
 const DIGEST = /^[a-f0-9]{32,64}$/
 const COUNTRY = /^[A-Z]{2}$/
+const REGION = /^[A-Z0-9]{1,3}$/
+const LANGUAGE = /^[a-z]{2,3}$/
+const SCROLL = /^(?:100|[1-9]?[0-9])$/
 const MAX_BODY_BYTES = 512
 const UNAVAILABLE = {
   error: "This link isn't available.",
   code: "LINK_UNAVAILABLE",
+}
+
+/** The network's organization name, decoded, or null when it isn't one. */
+function organization(value: string | undefined): string | null {
+  if (!value || value.length > SHARE_VIEW_ORGANIZATION_MAX * 9) return null
+  let name: string
+  try {
+    name = decodeURIComponent(value)
+  } catch {
+    return null
+  }
+  name = name.replace(/\s+/g, " ").trim()
+  return name &&
+    name.length <= SHARE_VIEW_ORGANIZATION_MAX &&
+    !/[\p{Cc}\p{Cf}]/u.test(name)
+    ? name
+    : null
 }
 
 function oneOf<T extends string>(
@@ -95,6 +119,9 @@ export function createPublicShareViewsRouter(): Hono {
     const visitor = c.req.header(SHARE_VIEW_HEADERS.VISITOR)
     const day = c.req.header(SHARE_VIEW_HEADERS.DAY)
     const country = c.req.header(SHARE_VIEW_HEADERS.COUNTRY)
+    const region = c.req.header(SHARE_VIEW_HEADERS.REGION)
+    const language = c.req.header(SHARE_VIEW_HEADERS.LANGUAGE)
+    const scroll = c.req.header(SHARE_VIEW_HEADERS.SCROLL)
     const seen: ShareViewVisitor = {
       visitor: visitor && DIGEST.test(visitor) ? visitor : null,
       day: day && DIGEST.test(day) ? day : null,
@@ -102,6 +129,15 @@ export function createPublicShareViewsRouter(): Hono {
       network: oneOf(SHARE_VIEW_NETWORKS, c.req.header(SHARE_VIEW_HEADERS.NETWORK)),
       browser: oneOf(SHARE_VIEW_BROWSERS, c.req.header(SHARE_VIEW_HEADERS.BROWSER)),
       device: oneOf(SHARE_VIEW_DEVICES, c.req.header(SHARE_VIEW_HEADERS.DEVICE)),
+      region: region && REGION.test(region) ? region : null,
+      system: oneOf(SHARE_VIEW_SYSTEMS, c.req.header(SHARE_VIEW_HEADERS.SYSTEM)),
+      language: language && LANGUAGE.test(language) ? language : null,
+      organization: organization(
+        c.req.header(SHARE_VIEW_HEADERS.ORGANIZATION)
+      ),
+      scroll: scroll && SCROLL.test(scroll) ? Number(scroll) : null,
+      source: oneOf(SHARE_VIEW_SOURCES, c.req.header(SHARE_VIEW_HEADERS.SOURCE)),
+      screen: oneOf(SHARE_VIEW_SCREENS, c.req.header(SHARE_VIEW_HEADERS.SCREEN)),
     }
     return c.json(recordShareView(view.link.id, message.data, seen))
   })

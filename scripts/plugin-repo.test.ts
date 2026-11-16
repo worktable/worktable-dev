@@ -27,7 +27,7 @@ const text = (contents: Uint8Array | string | undefined) =>
   typeof contents === "string" ? contents : new TextDecoder().decode(contents)
 
 describe("plugin repository tree", () => {
-  test("carries every plugin file, including new ones, and a matching Gemini manifest", async () => {
+  test("carries every plugin file, including new ones, and matching Gemini, Antigravity and Claude marketplace manifests", async () => {
     const source = await sourceCopy()
     await mkdir(join(source, ".example-host-plugin"))
     await writeFile(join(source, ".example-host-plugin/plugin.json"), "{}\n")
@@ -53,6 +53,21 @@ describe("plugin repository tree", () => {
       mcpServers: { worktable: { httpUrl: mcp.mcpServers.worktable.url } },
     })
     expect(tree.version).toBe(plugin.version)
+    // Antigravity loads servers only from mcp_config.json, under its own manifest.
+    expect(JSON.parse(text(tree.files.get("mcp_config.json")))).toEqual({
+      mcpServers: { worktable: { serverUrl: mcp.mcpServers.worktable.url } },
+    })
+    expect(JSON.parse(text(tree.files.get(".antigravity-plugin/plugin.json")))).toMatchObject({
+      name: "worktable",
+      version: plugin.version,
+      logo: "assets/logo.png",
+    })
+    expect(paths).toContain("assets/logo.png")
+    // Claude's Add marketplace installs the repository itself.
+    const marketplace = JSON.parse(text(tree.files.get(".claude-plugin/marketplace.json")))
+    expect(marketplace.plugins).toEqual([
+      expect.objectContaining({ name: "worktable", source: "./", version: plugin.version }),
+    ])
   })
 
   test("refuses credential-shaped content in any carried file", async () => {

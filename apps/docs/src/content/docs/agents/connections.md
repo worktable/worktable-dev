@@ -60,6 +60,24 @@ codex plugin add worktable@worktable
 Then complete the client's sign-in. See the
 [Codex command reference](https://learn.chatgpt.com/docs/developer-commands#codex-plugin).
 
+In Claude on the web, on desktop and in Cowork (Pro plans and up), open
+**Plugins**, choose **Add**, then **Add marketplace**, and enter
+`worktable/worktable-plugin`. Install Worktable, turn on **Sync automatically**,
+then connect Worktable on the plugin's **Connectors** tab. Skills need
+**Code execution** on in Claude's settings; on Team and Enterprise plans an
+owner turns it on for the organization. An uploaded plugin file works too but
+never updates.
+
+For Antigravity, install Worktable from the app's plugins, or run
+`agy plugin install https://github.com/worktable/worktable-plugin`, then sign
+in from `/plugin`. For Gemini CLI, run
+`gemini extensions install https://github.com/worktable/worktable-plugin --auto-update`.
+
+In Perplexity, open **Plugins**, choose **Add custom**, then
+**Import plugin from GitHub**, and enter
+`https://github.com/worktable/worktable-plugin`. Perplexity keeps its own copy:
+for a newer version, remove the plugin and import it again.
+
 An installed plugin is not proof of sign-in. Check access in the client before
 reading or writing workspace content.
 

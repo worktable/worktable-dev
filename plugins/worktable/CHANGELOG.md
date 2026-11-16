@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.9] - 2026-11-16
+
+### Added
+
+- Antigravity installs the plugin with Worktable's server and skills: `agy plugin install https://github.com/worktable/worktable-plugin`, or from the plugin folder in the Antigravity app.
+- In Claude, Plugins can add `worktable/worktable-plugin` as a marketplace, so the plugin updates itself.
+
 ## [0.1.8] - 2026-11-07
 
 ### Changed

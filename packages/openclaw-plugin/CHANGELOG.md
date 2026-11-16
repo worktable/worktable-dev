@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Connecting gives the agent Worktable's tools: `openclaw worktable connect` adds the Worktable to OpenClaw's MCP servers (`mcp.servers.worktable`), with the same token and the access you chose. Until now the agent could answer threads but couldn't read or change anything unless you added the server yourself. To get the tools on an existing connection, connect again, then restart the Gateway.
+
 ## 0.0.21
 
 - A connection made with `--agent-registration` no longer works: Worktable Cloud stopped accepting it. Connect again with `openclaw worktable connect --server <address>` and approve the agent in Worktable. This corrects the 0.0.20 note that such a connection keeps working.

@@ -185,6 +185,18 @@ export async function completePairingWithRetry(
   throw lastError
 }
 
+/** The paired Worktable as an OpenClaw MCP server. */
+export function worktableMcpServer(
+  mcpUrl: string,
+  token: string
+): Record<string, unknown> {
+  return {
+    url: mcpUrl,
+    transport: "streamable-http",
+    headers: { Authorization: `Bearer ${token}` },
+  }
+}
+
 async function clearPendingPairing(input: {
   origin: string
   token: string
@@ -405,6 +417,15 @@ export async function pairWorktableChannel(options: {
           pendingPairingCode: options.pairingCode,
         }
         draft.channels = channels as typeof draft.channels
+        // The agent's Worktable tools: OpenClaw lists an MCP server's tools
+        // only from its own config, so connecting adds this Worktable there,
+        // with the same token and access.
+        const mcp = (draft.mcp ?? {}) as { servers?: Record<string, unknown> }
+        mcp.servers = {
+          ...(mcp.servers ?? {}),
+          worktable: worktableMcpServer(redeemed.mcpUrl, redeemed.token),
+        }
+        draft.mcp = mcp as typeof draft.mcp
       },
     })
   } catch (error) {

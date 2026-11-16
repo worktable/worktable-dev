@@ -20,7 +20,7 @@ export const APP_STEPS: Record<PluginApp, string> = {
   antigravity:
     "In Antigravity, install Worktable from Plugins, or run this. Then open /plugin, expand Worktable and sign in.",
   gemini:
-    "In Gemini on the web, open Settings, then Connected Apps, and add a custom app. Paste this address and sign in.",
+    "In Gemini, open Customize, then Connectors, and choose Custom. Paste this address and sign in.",
   perplexity:
     "In Perplexity, open Plugins, choose Add custom, then Import plugin from GitHub, and paste this. Then connect Worktable and sign in.",
 }

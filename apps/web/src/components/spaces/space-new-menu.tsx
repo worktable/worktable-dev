@@ -45,6 +45,7 @@ import {
 import { toast } from "@worktable/ui/components/sonner"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useNewDoc } from "@/hooks/use-new-doc"
+import { HelpIcon } from "@/components/help/help-tip"
 import { useNewDocumentLifetime } from "@/lib/lifetime"
 import {
   queryKeys,
@@ -318,16 +319,25 @@ export function SpaceNewActions({
         </DropdownMenuItem>
       )}
       <DropdownMenuSeparator />
-      <DropdownMenuCheckboxItem
-        checked={lifetime === "temporary"}
-        closeOnClick={false}
-        onCheckedChange={(checked) => {
-          setLifetime(checked ? "temporary" : "durable")
-        }}
-      >
-        <Clock3 className="mr-2 h-4 w-4" />
-        Start as Temporary
-      </DropdownMenuCheckboxItem>
+      <div className="flex items-center gap-1">
+        <DropdownMenuCheckboxItem
+          checked={lifetime === "temporary"}
+          closeOnClick={false}
+          onCheckedChange={(checked) => {
+            setLifetime(checked ? "temporary" : "durable")
+          }}
+          className="min-w-0 flex-1"
+        >
+          <Clock3 className="mr-2 h-4 w-4" />
+          Start as Temporary
+        </DropdownMenuCheckboxItem>
+        <HelpIcon
+          entry="startAsTemporary"
+          label="About Temporary Docs"
+          side="right"
+          className="m-0 mr-0.5 size-7"
+        />
+      </div>
     </>
   )
 

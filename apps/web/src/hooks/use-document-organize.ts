@@ -157,7 +157,7 @@ export function useDocumentOrganizeActions(
         }
       : {
           id: "pin",
-          label: "Pin",
+          label: "Pin in Space",
           icon: Pin,
           disabled: pins.length >= START_HERE_LIMIT,
           onSelect: () => void updatePins([...currentPins, { path }]),

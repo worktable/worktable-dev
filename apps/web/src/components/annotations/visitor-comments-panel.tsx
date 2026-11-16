@@ -20,6 +20,11 @@ import {
   DropdownMenuTrigger,
 } from "@worktable/ui/components/dropdown-menu"
 import { Textarea } from "@worktable/ui/components/textarea"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@worktable/ui/components/tooltip"
 import { toast } from "@worktable/ui/components/sonner"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { annotationQueryKeys } from "@/lib/annotations-queries"
@@ -302,14 +307,21 @@ function VisitorRow({
       ) : (
         comment.body && (
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() => setForm(form === "pass" ? null : "pass")}
-            >
-              Pass to Team
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => setForm(form === "pass" ? null : "pass")}
+                  />
+                }
+              >
+                Pass to Team
+              </TooltipTrigger>
+              <TooltipContent>Your team and agents will see it.</TooltipContent>
+            </Tooltip>
             {comment.status === "done" && (
               <Badge variant="secondary">Done</Badge>
             )}

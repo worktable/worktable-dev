@@ -11,6 +11,7 @@ import {
 } from "@worktable/ui/components/responsive-dialog";
 import { createClientId } from "@/lib/client-id";
 import { NO_RECIPIENT, useCommentRecipients } from "@/lib/comment-recipients";
+import { commentPlaceholder } from "@/lib/composer-placeholders";
 import { setHighlight } from "./passage-text";
 import { Quote } from "@/components/quote";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -119,6 +120,9 @@ export function AnnotationComposer({
   // Until the writer picks, the comment goes to whoever is suggested.
   const [picked, setPicked] = useState<string | null>(null);
   const recipient = picked ?? recipients?.suggested ?? NO_RECIPIENT;
+  const placeholder = commentPlaceholder(
+    recipients?.options.find((option) => option.id === recipient)
+  );
   // A suggestion waits for who wrote the selection; a choice doesn't.
   const awaitingRecipient = picked === null && Boolean(recipients?.settling);
   const [wasOpen, setWasOpen] = useState(open);
@@ -211,7 +215,7 @@ export function AnnotationComposer({
         error={failed ? "Couldn't send the comment." : undefined}
         disabled={!draft}
         canSubmit={!awaitingRecipient}
-        placeholder="Write a comment…"
+        placeholder={placeholder}
         label={label}
         sendLabel="Send comment"
         size={isMobile ? "regular" : "compact"}

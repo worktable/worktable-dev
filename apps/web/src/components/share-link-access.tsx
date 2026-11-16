@@ -140,6 +140,9 @@ function CollectionSentence({
  * can read, and which fields stay hidden. Turning it on starts from the
  * access the server suggests for the tool.
  */
+/** What a visitor gets from a page whose link shows no live data. */
+export const LIVE_DATA_OFF = "Visitors see the page but can't use it."
+
 export function LiveDataPanel({
   grant,
   access,
@@ -206,7 +209,11 @@ export function LiveDataPanel({
 
   return (
     <div className="space-y-3">
-      <SettingRow label="Show live data" htmlFor={switchId}>
+      <SettingRow
+        label="Show live data"
+        description={on ? undefined : LIVE_DATA_OFF}
+        htmlFor={switchId}
+      >
         <Switch
           id={switchId}
           checked={on}

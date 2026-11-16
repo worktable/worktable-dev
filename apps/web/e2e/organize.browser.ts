@@ -278,7 +278,7 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
   ).toBe(false)
 
   await page.getByRole("button", { name: "More actions" }).click()
-  await page.getByRole("menuitem", { name: "Pin", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Pin in Space", exact: true }).click()
   await expect(
     page
       .getByRole("navigation", { name: "Pinned" })

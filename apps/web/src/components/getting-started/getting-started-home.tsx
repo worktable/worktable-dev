@@ -36,6 +36,7 @@ import {
   type SetupEvidence,
   type SetupItemId,
 } from "@/lib/setup"
+import { saveHelp } from "@/lib/help/state"
 import { getTeamInvitations } from "@/lib/team-api"
 import { humanizeSegment } from "@/lib/tree"
 import { ProgressRing } from "./progress-ring"
@@ -100,8 +101,8 @@ function taskPrompts(joinedSpaceName: string | undefined): string[] {
   ]
 }
 
-function Prompt({ text, onCopied }: { text: string; onCopied?: () => void }) {
-  const copy = useCopy(onCopied)
+function Prompt({ text }: { text: string }) {
+  const copy = useCopy()
   return (
     <li className="flex items-start gap-3 rounded-lg border border-border bg-surface-inset py-2 pr-2 pl-3 text-sm leading-6 text-foreground">
       <span className="min-w-0 flex-1">{text}</span>
@@ -117,13 +118,23 @@ function Prompt({ text, onCopied }: { text: string; onCopied?: () => void }) {
   )
 }
 
+/** What finishes a step, under what the step asks for. */
+function DoneWhen({ children }: { children: React.ReactNode }) {
+  return <p className="text-xs text-muted-foreground">{children}</p>
+}
+
 function TaskBody({ joinedSpaceName }: { joinedSpaceName?: string }) {
   return (
-    <ul className="space-y-2">
-      {taskPrompts(joinedSpaceName).map((text) => (
-        <Prompt key={text} text={text} />
-      ))}
-    </ul>
+    <>
+      <ul className="space-y-2">
+        {taskPrompts(joinedSpaceName).map((text) => (
+          <Prompt key={text} text={text} />
+        ))}
+      </ul>
+      <div className="mt-3">
+        <DoneWhen>Done when your agent adds a Doc to a Space.</DoneWhen>
+      </div>
+    </>
   )
 }
 
@@ -145,11 +156,17 @@ const INSTRUCTION_PLACES: { agent: string; file?: string; place?: string }[] = [
   { agent: "Other agents", place: "Their global rules or custom instructions" },
 ]
 
-function InstructionsBody({ onCopied }: { onCopied: () => void }) {
+function InstructionsBody({
+  onAdded,
+  adding,
+}: {
+  onAdded: () => void
+  adding: boolean
+}) {
   return (
     <>
       <ul>
-        <Prompt text={AGENT_INSTRUCTIONS} onCopied={onCopied} />
+        <Prompt text={AGENT_INSTRUCTIONS} />
       </ul>
       <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
         {INSTRUCTION_PLACES.map(({ agent, file, place }) => (
@@ -165,13 +182,26 @@ function InstructionsBody({ onCopied }: { onCopied: () => void }) {
           </div>
         ))}
       </dl>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <DoneWhen>Done when you tick it.</DoneWhen>
+        <Button size="sm" disabled={adding} onClick={onAdded}>
+          I Added It
+        </Button>
+      </div>
     </>
   )
 }
 
 function ConnectBody() {
   const [setups, setSetups] = useState<SetupRecord[]>([])
-  return <AgentConnectOptions setups={setups} onSetupsChange={setSetups} />
+  return (
+    <>
+      <AgentConnectOptions setups={setups} onSetupsChange={setSetups} />
+      <div className="mt-3">
+        <DoneWhen>Done when your agent makes its first call.</DoneWhen>
+      </div>
+    </>
+  )
 }
 
 function SkipButton({
@@ -308,9 +338,7 @@ function InviteBody({
         </ul>
       ) : null}
       <div className="mt-3 flex flex-wrap items-baseline justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          Done when someone joins.
-        </p>
+        <DoneWhen>Done when someone joins.</DoneWhen>
         <SkipButton onSkip={onSkip} skipping={skipping} />
       </div>
     </form>
@@ -356,7 +384,6 @@ function StepRow({
   evidence,
   evidenceSpaceName,
   open,
-  kept = false,
   onOpenChange,
   children,
 }: {
@@ -366,23 +393,21 @@ function StepRow({
   /** The Space a done row names, for steps about a Space. */
   evidenceSpaceName?: string
   open: boolean
-  /** Finished here just now, so it stays open until the person moves on. */
-  kept?: boolean
   onOpenChange: (open: boolean) => void
   children: React.ReactNode
 }) {
   const done = Boolean(evidence)
   return (
     <Collapsible
-      open={open && (!done || kept)}
+      open={open && !done}
       onOpenChange={onOpenChange}
-      disabled={done && !kept}
+      disabled={done}
       className="border-border not-first:border-t"
     >
       <CollapsibleTrigger
         className={cn(
           "flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors focus-visible:bg-surface-hover focus-visible:outline-none",
-          (!done || kept) && "hover:bg-surface-hover"
+          !done && "hover:bg-surface-hover"
         )}
       >
         <span
@@ -414,7 +439,7 @@ function StepRow({
         </span>
         {evidence?.skipped ? (
           <span className="text-sm text-muted-foreground">Skipped</span>
-        ) : done && !kept ? (
+        ) : done ? (
           evidence && (
             <Evidence evidence={evidence} spaceName={evidenceSpaceName} />
           )
@@ -452,21 +477,22 @@ export function GettingStartedHome() {
   const progress = checklistProgress(items, setup.items)
   // Null follows the next step; "none" means the person closed it.
   const [chosen, setChosen] = useState<SetupItemId | "none" | null>(null)
-  // Copying the instructions finishes that step, but where to paste them
-  // stays on show until the person moves on.
-  const [kept, setKept] = useState<SetupItemId | null>(null)
   const openId =
     chosen === "none"
       ? null
-      : chosen && (!setup.items[chosen] || chosen === kept)
+      : chosen && !setup.items[chosen]
         ? chosen
         : (progress.next?.id ?? null)
   const unpin = useMutation({
     mutationFn: () => saveSetup(queryClient, { hidden: true }),
     onError: () => toast.error("Couldn’t save. Try again."),
   })
-  const copied = useMutation({
-    mutationFn: () => saveSetup(queryClient, { done: "agent-instructions" }),
+  // Copying alone doesn't add the rules; the person says when they have.
+  const rulesAdded = useMutation({
+    mutationFn: async () => {
+      await saveSetup(queryClient, { done: "agent-instructions" })
+      await saveHelp(queryClient, { evidence: "rules-added" })
+    },
     onError: () => toast.error("Couldn’t save. Try again."),
   })
   const skip = useMutation({
@@ -483,11 +509,8 @@ export function GettingStartedHome() {
       case "agent-instructions":
         return (
           <InstructionsBody
-            onCopied={() => {
-              setChosen("agent-instructions")
-              setKept("agent-instructions")
-              if (!setup.items["agent-instructions"]) copied.mutate()
-            }}
+            onAdded={() => rulesAdded.mutate()}
+            adding={rulesAdded.isPending}
           />
         )
       case "first-task":
@@ -547,11 +570,7 @@ export function GettingStartedHome() {
                   : undefined
               }
               open={openId === item.id}
-              kept={kept === item.id}
-              onOpenChange={(next) => {
-                setChosen(next ? item.id : "none")
-                if (kept !== item.id || !next) setKept(null)
-              }}
+              onOpenChange={(next) => setChosen(next ? item.id : "none")}
             >
               {body(item.id)}
             </StepRow>

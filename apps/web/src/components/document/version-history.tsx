@@ -28,6 +28,7 @@ import {
   ContextPanelRail,
   DesktopContextPanel,
 } from "@/components/desktop-context-panel"
+import { HelpIcon } from "@/components/help/help-tip"
 import { RelativeTime } from "@/lib/time"
 import { ActorBadge } from "@/components/home/activity-feed"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
@@ -281,6 +282,7 @@ export function VersionHistoryPanel({
       <ContextPanelHeader
         title="Version history"
         icon={<History className="size-4 shrink-0 text-primary" />}
+        meta={<HelpIcon entry="versions" label="About Versions" />}
         actions={
           <>
             {selectedVersionId && !drawerMode && (

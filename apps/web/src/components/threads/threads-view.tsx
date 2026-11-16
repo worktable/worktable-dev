@@ -79,6 +79,7 @@ import {
   threadMentionRequestsResponse,
   type ConversationIdentityOption,
 } from "@/lib/thread-presentation"
+import { threadPlaceholder } from "@/lib/composer-placeholders"
 import {
   clearCompletedThreadDraft,
   retainThreadSubmission,
@@ -799,7 +800,10 @@ function ThreadDetail({
           pending={pending}
           disabled={Boolean(threadId && participantsQuery.isFetching)}
           error={activeSendError}
-          placeholder="Reply in this thread…"
+          placeholder={threadPlaceholder(
+            threadMembers.length,
+            directAgent?.name
+          )}
           replyContext={composerReplyContext}
           onClearReply={clearReplyTarget}
           mentionTargets={otherIdentities.map((identity) => ({

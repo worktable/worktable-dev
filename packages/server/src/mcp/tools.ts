@@ -239,6 +239,8 @@ const CATALOG_OUTPUT_SCHEMAS = Object.fromEntries(
   ])
 ) as Record<McpSurface, Map<string, ReturnType<typeof withNotices>>>
 
+const SKILLS_READ_TOOL = "worktable_skills_read"
+
 export function registerTools(
   server: McpServer,
   options?: {
@@ -248,6 +250,8 @@ export function registerTools(
     identity?: Pick<TokenIdentity, "agent" | "credentialClass" | "principal">
     surface?: McpSurface
     fileLinkBase?: string | null
+    /** The agent's skills, built only when it lists its tools (skillsBrief). */
+    skillsBrief?: string | null
   }
 ): void {
   const scopes = options?.scopes ?? ["*"]
@@ -428,11 +432,15 @@ export function registerTools(
 
   for (const tool of catalogTools(surface)) {
     const metadata = oauthToolMetadata()
+    // Apps that keep tools behind a search, and may not pass instructions
+    // on, still show the model a tool marked to load upfront: the skills
+    // tool carries the agent's skills when it has any.
+    const brief = tool.name === SKILLS_READ_TOOL ? options?.skillsBrief : null
     server.registerTool(
       tool.name,
       {
         title: tool.title,
-        description: tool.description,
+        description: brief ? `${tool.description}\n\n${brief}` : tool.description,
         // Directory checks such as Anthropic's read the display name from
         // annotations.title, so it repeats the top-level title.
         annotations: { title: tool.title, ...tool.annotations },
@@ -441,6 +449,7 @@ export function registerTools(
           ...metadata._meta,
           // ChatGPT passes a file the user attached as a link to it.
           ...(tool.fileParams ? { "openai/fileParams": tool.fileParams } : {}),
+          ...(brief ? { "anthropic/alwaysLoad": true } : {}),
         },
         inputSchema: tool.inputSchema,
         outputSchema: CATALOG_OUTPUT_SCHEMAS[surface].get(tool.name),

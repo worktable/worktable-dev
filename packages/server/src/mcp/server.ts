@@ -17,7 +17,7 @@ export interface WorktableMcpServerOptions {
   surface?: McpSurface
   /** On Cloud, where the gateway forwards this workspace's file links. */
   fileLinkBase?: string | null
-  /** The agent's skills, built only when it connects (skillsBrief). */
+  /** The agent's skills, built only when it connects or lists its tools (skillsBrief). */
   skillsBrief?: string | null
 }
 
@@ -98,6 +98,7 @@ export function createWorktableMcpServer(
     identity: options.identity,
     surface: options.surface,
     fileLinkBase: options.fileLinkBase,
+    skillsBrief: options.skillsBrief,
   })
   return server
 }

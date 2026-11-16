@@ -11,10 +11,12 @@ infrastructure and personal context out of release notes.
 
 ### Added
 
+- **Light or dark on shared pages:** A page shared by link starts in the visitor's light or dark choice from its header, and follows it when they switch.
 - **Connecting agents on Worktable Cloud:** Antigravity, Gemini and Perplexity have their own steps in Getting Started and **Settings → Agents**. Claude on the web and desktop now installs the Worktable plugin, which brings Worktable's skills and keeps itself up to date; on Claude's Free plan, one click opens Claude's connector dialog with Worktable filled in.
 
 ### Changed
 
+- **Shared pages work for visitors:** A link to an HTML Doc now runs the page, so its buttons and scripts work for anyone who opens it. Links you already made do too. Before, visitors got a still copy unless the link had **Live data** on. **Live data** now decides only whether visitors see the Records a page reads: **Share** offers it for pages that read Records, and **Settings → Sharing** has one **Live data** switch for it. Turning that switch off hides Records on every link and leaves the pages running.
 - **Agent logos:** The Goose logo loads faster.
 
 ### Fixed

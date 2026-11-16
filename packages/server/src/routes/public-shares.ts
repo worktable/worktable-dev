@@ -4,7 +4,6 @@ import {
   type EmbeddedFile,
 } from "../share-images.ts"
 import { htmlIconsEnabled } from "../html-icons.ts"
-import { inlineHtmlSpaceImages } from "../html-space-images.ts"
 import { createPublicVisitorCommentsRouter } from "./public-visitor-comments.ts"
 import { createPublicShareViewsRouter } from "./public-share-views.ts"
 import { visitorCommentNamespace } from "../visitor-comment-access.ts"
@@ -263,64 +262,37 @@ async function withRenderSlot<T>(
   }
 }
 
-async function renderLinkBody(
-  view: ShareLinkView,
-  surface: "projection" | "content"
-): Promise<RenderedPage | null> {
-  const document = await readShareLinkDocument(view, surface)
+/** A Doc link's page. */
+async function renderLinkBody(view: ShareLinkView): Promise<RenderedPage | null> {
+  const document = await readShareLinkDocument(view)
   if (!document) return null
-  let body: string
-  let revision: string | null
-  let embeds: EmbeddedFile[] = []
-  if (document.kind === "html-title") {
-    body = JSON.stringify(
-      PublicShareProjection.parse({
-        kind: "html",
-        sourceUrl: SOURCE_URL,
-        title: document.title,
-      })
-    )
-    revision = view.revision
-  } else if (document.kind === "html") {
-    // The images the HTML Doc names from its Space show in the page itself,
-    // when its writer could read them.
-    const inlined = document.spaceImages
-      ? await inlineHtmlSpaceImages(view.link.spaceId, view.path, document.html)
-      : { html: document.html }
-    body = renderPublicHtmlProjection(inlined.html)
-    revision = document.revision
-  } else {
-    // The images the Doc embeds from its Space show in the page itself.
-    const inlined = await inlineSharedImages(
-      view.link.spaceId,
-      view.path,
-      document.content
-    )
-    embeds = inlined.embeds
-    body = JSON.stringify(
-      PublicShareProjection.parse({
-        kind: "doc",
-        sourceUrl: SOURCE_URL,
-        format: document.format,
-        title: document.title,
-        projectionHtml: await renderPublicDocProjection(
-          inlined.content,
-          document.format
-        ),
-      })
-    )
-    revision = document.revision
-  }
+  // The images the Doc embeds from its Space show in the page itself.
+  const inlined = await inlineSharedImages(
+    view.link.spaceId,
+    view.path,
+    document.content
+  )
+  const embeds = inlined.embeds
+  const body = JSON.stringify(
+    PublicShareProjection.parse({
+      kind: "doc",
+      sourceUrl: SOURCE_URL,
+      format: document.format,
+      title: document.title,
+      projectionHtml: await renderPublicDocProjection(
+        inlined.content,
+        document.format
+      ),
+    })
+  )
+  const revision = document.revision
   // Rendering takes a while: a link revoked or held back meanwhile gets
   // neither this page nor a cached one. One statement, on a miss only.
   if (!shareLinkStillOpens(view.link)) return null
   // Kept under the revision that was read, which may be newer than the one
   // the request looked up.
-  if (revision === null) {
-    return { revision: "", body, bytes: Buffer.byteLength(body) }
-  }
   return rememberPage(
-    linkPageKey(view.link.id, surface, view.path, revision, view.title),
+    linkPageKey(view.link.id, "projection", view.path, revision, view.title),
     revision,
     body,
     embeds
@@ -332,7 +304,8 @@ async function renderLinkPage(
   view: ShareLinkView,
   surface: "projection" | "content"
 ): Promise<RenderedPage | null | "busy"> {
-  if (view.link.grant)
+  // An HTML Doc runs for its visitors: its page is the tool itself.
+  if (view.link.kind === "html")
     return withRenderSlot(async () => {
       const tool = await readLinkTool(view)
       if (!tool) return null
@@ -356,7 +329,7 @@ async function renderLinkPage(
       return rememberPage(key, tool.revision, body)
     })
   if (view.revision === null) {
-    return withRenderSlot(() => renderLinkBody(view, surface))
+    return withRenderSlot(() => renderLinkBody(view))
   }
   const key = linkPageKey(
     view.link.id,
@@ -379,7 +352,7 @@ async function renderLinkPage(
   // Requests for the same page wait for one render.
   let rendering = renderingLinkPages.get(key)
   if (!rendering) {
-    rendering = withRenderSlot(() => renderLinkBody(view, surface))
+    rendering = withRenderSlot(() => renderLinkBody(view))
     renderingLinkPages.set(key, rendering)
     void rendering
       .finally(() => renderingLinkPages.delete(key))
@@ -583,7 +556,7 @@ export function createPublicSharesRouter(
         )
         if (!ticket) return unavailable(c.req.raw)
         projection.contentTicket = ticket.ticket
-        if (view.link.grant) projection.live = { rev: page.revision, poll: 30 }
+        projection.live = { rev: page.revision, poll: 30 }
       }
       // Tickets are minted per response; cached projections contain no ticket
       // that could expire while the document's content revision stays current.
@@ -591,7 +564,7 @@ export function createPublicSharesRouter(
         c.req.method === "HEAD" ? null : JSON.stringify(projection),
         { headers: projectionHeaders() }
       )
-    } else if (content && view.link.grant) {
+    } else if (content) {
       const headers = contentHeaders(shareOrigin, true)
       const etag = `"${page.revision}"`
       headers.set("ETag", etag)
@@ -600,13 +573,7 @@ export function createPublicSharesRouter(
           ? new Response(null, { status: 304, headers })
           : await pageResponse(c.req.raw, page, headers)
     } else {
-      response = await pageResponse(
-        c.req.raw,
-        page,
-        content
-          ? contentHeaders(shareOrigin, Boolean(view.link.grant))
-          : projectionHeaders()
-      )
+      response = await pageResponse(c.req.raw, page, projectionHeaders())
     }
     // Covers cached pages, compression and password changes during rendering.
     if (

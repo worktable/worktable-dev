@@ -361,7 +361,6 @@ describe("Cloud document share HTTP boundary", () => {
     })
     expect(outer.status).toBe(200)
     const projection = (await outer.json()) as { contentTicket?: string }
-    expect(projection).not.toHaveProperty("live")
     const frame = await publicRequest(
       projection.contentTicket!,
       "/public/share/content"
@@ -442,7 +441,7 @@ describe("Cloud document share HTTP boundary", () => {
     expect(reshared.url).not.toBe(link.url)
   })
 
-  it("preserves an HTML link across display-name edits and serves a sanitized projection", async () => {
+  it("preserves an HTML link across display-name edits and runs its page for visitors", async () => {
     const artifact = await writeHtml(
       "status",
       `<style>.card{color:tomato}</style><main class="card"><h1>Operational</h1><script>fetch("https://attacker.test")</script><a href="https://attacker.test">leave</a></main>`,
@@ -455,10 +454,12 @@ describe("Cloud document share HTTP boundary", () => {
       title: string
       contentTicket: string
     }
+    // Nothing was saved on the link: the page runs all the same.
     expect(outer).toEqual({
       kind: "html",
       title: "Status board",
       contentTicket: expect.any(String),
+      live: { rev: expect.any(String), poll: 30 },
     })
 
     // The frame opens with its ticket, never with the link itself.
@@ -473,16 +474,15 @@ describe("Cloud document share HTTP boundary", () => {
     expect(content.status).toBe(200)
     expect(contentHtml).toContain("Operational")
     expect(contentHtml).toContain("color:tomato")
-    expect(contentHtml).not.toContain("<script")
-    const contentPage = new JSDOM(contentHtml).window.document
-    const externalLink = contentPage.querySelector("a")
-    expect(externalLink?.getAttribute("href")).toBe("https://attacker.test/")
-    expect(externalLink?.getAttribute("target")).toBe("_blank")
-    expect(externalLink?.getAttribute("rel")).toBe("noopener noreferrer")
-    expect(externalLink?.getAttribute("referrerpolicy")).toBe("no-referrer")
-    expect(content.headers.get("Content-Security-Policy")).toContain(
-      "sandbox allow-popups allow-popups-to-escape-sandbox; default-src 'none'; script-src 'none'"
+    // Its own script is there, in a frame that runs scripts and reaches
+    // nothing: no network, no forms, no pop-ups, no origin of its own.
+    expect(contentHtml).toContain('fetch("https://attacker.test")')
+    const policy = content.headers.get("Content-Security-Policy") ?? ""
+    expect(policy).toStartWith(
+      "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'"
     )
+    expect(policy).toContain("connect-src 'none'")
+    expect(policy).toContain("form-action 'none'")
     expect(content.headers.get("Cross-Origin-Resource-Policy")).toBe(
       "cross-origin"
     )

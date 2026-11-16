@@ -13,7 +13,7 @@ import {
 } from "./html-space-images.ts"
 import type { WidgetFile, RecordCollectionSchema } from "@worktable/types"
 import { readWidgetDocument } from "./widget-store.ts"
-import { readLinkGrantSchemas } from "./link-grant.ts"
+import { linkGrantOf, readLinkGrantSchemas } from "./link-grant.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { publicShareKind } from "./document-page-service.ts"
 import { workspaceCacheKey } from "./workspace.ts"
@@ -97,7 +97,7 @@ export async function readLinkTool(
   }
   entry.value = runAsLinkVisitor(() =>
     withLinkGrantRead(view.link.spaceId, async () => {
-      const grant = view.link.grant
+      const grant = linkGrantOf(view.link)
       if (!grant) return null
       const resolved = await useResolvedDocumentHandle(
         { spaceId: view.link.spaceId, path: view.path, snapshot: true },

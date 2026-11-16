@@ -485,10 +485,12 @@ test("creates, copies, edits and revokes Doc links from the header action", asyn
   await expect(url).toHaveValue(SHARED_URL)
 })
 
-test("explains the inert shared-HTML boundary before creating a link", async ({
+test("shares a page that reads no Records with no live data to choose", async ({
   page,
 }) => {
-  const { mutations } = await mockSharing(page)
+  const { mutations } = await mockSharing(page, {
+    policy: () => ({ liveLinks: true }),
+  })
   await page.goto(appUrl("/spaces/share-browser/documents/status-card"), {
     waitUntil: "domcontentloaded",
   })
@@ -500,9 +502,10 @@ test("explains the inert shared-HTML boundary before creating a link", async ({
   await expect(
     dialog.getByText("Anyone with the link can use this tool")
   ).toBeVisible()
-  await expect(
-    dialog.getByText(/Records and links to other Worktable content/i)
-  ).toBeVisible()
+  // The page runs for visitors as it is; live data is only its Records.
+  await expect(dialog.getByRole("button", { name: /^Live data/ })).toHaveCount(
+    0
+  )
   await dialog.getByRole("button", { name: "Create Link", exact: true }).click()
 
   await expect
@@ -656,6 +659,7 @@ for (const appearance of [
     const checks: Array<Record<string, unknown>> = []
     const { mutations } = await mockSharing(page, {
       policy: () => ({ liveLinks: true }),
+      toolReads: ["deals"],
       links: [
         mockLink(
           0,

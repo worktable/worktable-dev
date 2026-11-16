@@ -10,7 +10,6 @@ import {
   docContentRevision,
   docStoredAs,
   documentContentRevisions,
-  htmlContentRevisionOf,
   sha256Hex,
 } from "./document-content-revision.ts"
 import { publicShareKind } from "./document-page-service.ts"
@@ -30,7 +29,6 @@ import {
   type StoredShareLink,
 } from "./share-links-store.ts"
 import { effectiveExpiresAt, linkBlockedBy } from "./share-policy.ts"
-import { readWidgetDocument } from "./widget-store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 
 // ============================================================
@@ -124,7 +122,7 @@ export async function resolveShareLinkView(
   const target = identities.current.get(link.documentId)
   if (identities.spaceArchived || !target) return "unavailable"
   const revisions =
-    options.revision === false || link.grant
+    options.revision === false || link.kind === "html"
       ? null
       : await documentContentRevisions(link.spaceId, [target.path], catalog)
   return {
@@ -171,33 +169,21 @@ export function shareLinkStillOpens(
   )
 }
 
-export type ShareLinkDocument =
-  | {
-      kind: "doc"
-      title: string
-      revision: string
-      format: "markdown" | "blocknote"
-      content: unknown[] | string
-    }
-  | {
-      kind: "html"
-      title: string
-      revision: string
-      html: string
-      /** Whether its writer could read the Space's files, so it shows their images. */
-      spaceImages: boolean
-    }
-  /** An HTML Doc's outer page needs only its title. */
-  | { kind: "html-title"; title: string }
+export interface ShareLinkDocument {
+  title: string
+  revision: string
+  format: "markdown" | "blocknote"
+  content: unknown[] | string
+}
 
 /**
- * Read the link's document for rendering. Null when the path now holds
- * another document, the document can no longer be shared this way, or its
- * source cannot be read.
+ * Read a Doc link's document for rendering; an HTML Doc's link serves the
+ * tool itself (link-tool.ts). Null when the path now holds another document,
+ * the document can no longer be shared this way, or its source cannot be
+ * read.
  */
 export async function readShareLinkDocument(
-  view: ShareLinkView,
-  surface: "projection" | "content"
+  view: ShareLinkView
 ): Promise<ShareLinkDocument | null> {
   const { link } = view
   const result = await useResolvedDocumentHandle(
@@ -211,35 +197,11 @@ export async function readShareLinkDocument(
         return { document: null }
       }
       const title = handle.document.title
-      if (link.kind === "html") {
-        if (surface === "projection") {
-          return { document: { kind: "html-title", title } }
-        }
-        const { data } = await readWidgetDocument(
-          link.spaceId,
-          handle.document.path
-        )
-        if (!data || data.widget.archive) return { document: null }
-        return {
-          document: {
-            kind: "html",
-            title,
-            revision: await htmlContentRevisionOf(
-              link.spaceId,
-              handle.document.path,
-              data,
-              { lockHeld: true }
-            ),
-            html: data.html,
-            spaceImages: data.widget.spaceImages === true,
-          },
-        }
-      }
       const storedAs =
-        handle.source.kind === "file"
+        link.kind === "doc" && handle.source.kind === "file"
           ? docStoredAs(handle.source.relativePath)
           : null
-      if (surface !== "projection" || !storedAs) return { document: null }
+      if (!storedAs) return { document: null }
       let bytes: Uint8Array
       try {
         bytes = await readDocumentSource({
@@ -262,7 +224,6 @@ export async function readShareLinkDocument(
       if (storedAs === "md") {
         return {
           document: {
-            kind: "doc",
             title,
             revision,
             format: "markdown",
@@ -279,7 +240,6 @@ export async function readShareLinkDocument(
       if (!Array.isArray(blocks)) return { document: null }
       return {
         document: {
-          kind: "doc",
           title,
           revision,
           format: "blocknote",

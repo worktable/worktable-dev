@@ -3,7 +3,7 @@
 // granted field that disappears, or turns into something a link can't show,
 // closes the collection rather than widening it.
 
-import { isReservedRecordFieldKey, normalizeRecordFieldType, RecordFieldTypeSchema, type LinkGrant, type RecordCollectionSchema, type RecordPredicate, type SharingPolicy, type WidgetFile } from "@worktable/types";
+import { isReservedRecordFieldKey, LinkGrantSchema, normalizeRecordFieldType, RecordFieldTypeSchema, type LinkGrant, type RecordCollectionSchema, type RecordPredicate, type SharingPolicy, type WidgetFile } from "@worktable/types";
 import { readRecordCollectionSchema } from "./record-store.ts";
 import { parsePredicate, RecordQueryShapeError } from "./record-query.ts";
 import { canWidgetRecord } from "./widget-runtime-policy.ts";
@@ -13,6 +13,21 @@ export interface LinkGrantIssue {
   message: string;
 }
 
+/**
+ * What a link to an HTML Doc opens when nothing more was saved for it: the
+ * page runs, with no Records and each visitor's own state.
+ */
+const PAGE_ONLY_GRANT: LinkGrant = LinkGrantSchema.parse({ version: 1 });
+
+/**
+ * A link's access. An HTML Doc always runs for its visitors, so its link
+ * always has one; the access saved on a link only adds Records to it. A Doc's
+ * link has none.
+ */
+export function linkGrantOf(link: { kind: string; grant: LinkGrant | null }): LinkGrant | null {
+  return link.grant ?? (link.kind === "html" ? PAGE_ONLY_GRANT : null);
+}
+
 const recordKeyIssue = (name: string) => `Field "${name}" has a name records use for themselves, so links can't show it.`;
 
 /**
@@ -20,7 +35,8 @@ const recordKeyIssue = (name: string) => `Field "${name}" has a name records use
  * read now and by the owner policy, so a republish or a tighter policy
  * narrows a link and never widens it.
  * - A collection stays only if the tool may read it (a `*` entry counts) and
- *   the policy lets links open Records. Otherwise it is unavailable.
+ *   the policy lets links show Records. Otherwise it is unavailable, and the
+ *   page still runs.
  * - Fields and row conditions come only from the grant.
  * - Writes are reserved, so a collection that sets them is unavailable.
  * - Limits are the grant's: the policy sets none yet.
@@ -29,9 +45,10 @@ const recordKeyIssue = (name: string) => `Field "${name}" has a name records use
 export function effectiveLinkGrant(
   grant: LinkGrant,
   permissions: WidgetFile["permissions"] | undefined,
-  policy: Pick<SharingPolicy, "records">,
+  policy: Pick<SharingPolicy, "liveLinks" | "records">,
 ): LinkGrant {
   const collections = Object.entries(grant.collections).filter(([collectionId, collection]) =>
+    policy.liveLinks &&
     policy.records === "scoped" &&
     canWidgetRecord({ permissions }, collectionId, "read") &&
     !collection.writes);

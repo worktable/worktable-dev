@@ -29,10 +29,12 @@ device, Worktable must stay running, online and linked for readers to reach it.
 A shared document shows its latest saved content. Mermaid diagrams render
 without their links.
 
-Shared HTML docs keep their layout and safe external links. Scripts, forms,
-record access, saved interface state and links to private Worktable content are
-off. To share a working tool, give its link live data; see
-[Live tools](#live-tools).
+A shared HTML Doc runs for readers as it does for you: its buttons, scripts
+and layout work. It runs in a locked frame with no network access, forms or
+pop-ups. Readers can't change Records, their interface choices stay in their
+tab, and links to private Worktable content don't open. Readers see the
+Records a page reads only when its link shows them; see
+[Live data](#live-data).
 
 ## Owner controls
 
@@ -40,7 +42,7 @@ Owners manage sharing in **Settings → Sharing**:
 
 - **Pause all links** stops every link until you turn it off.
 - Choose who can share, which Spaces can be shared, whether every link needs a
-  password, the longest expiry, and whether links can have live tools or
+  password, the longest expiry, and whether links can show live data or take
   visitor comments.
 - The link table lists links across Spaces. Open a link's menu to copy or
   revoke it.
@@ -50,17 +52,17 @@ These settings apply to existing links as well as new ones.
 Operator backups keep owner policy and visitor comments, but not working links
 after a full machine recovery. Make new links after a recovery.
 
-## Live tools and visitor comments
+## Live data and visitor comments
 
-Owners first turn on **Live tools** and **Comment links** in
-**Settings → Sharing**. Both are off by default. Live tools also need a
-compatible share host.
+Owners first turn on **Live data** and **Comment links** in
+**Settings → Sharing**. Both are off by default.
 
-### Live tools
+### Live data
 
-For an HTML Doc, open **Live data** in **Share** and turn on
+For an HTML Doc that reads Records, open **Live data** in **Share** and turn on
 **Show live data**. Worktable shows which Records collections the tool reads,
-how many records visitors can read, and which fields are hidden.
+how many records visitors can read, and which fields are hidden. Without it,
+the page still runs, and its Records reads are refused.
 
 - **Hide Fields** changes which fields visitors see.
 - **View as Visitor** shows the link as a reader sees it.
@@ -68,12 +70,13 @@ how many records visitors can read, and which fields are hidden.
 Readers see current data but cannot change Records or open other documents.
 Filters and other interface choices stay in their tab. Tightening the
 document's permissions or the sharing policy can reduce what an existing link
-can read.
+can read. Turning **Live data** off in Settings hides Records on every link;
+the pages keep running.
 
 Record rules filter Records reads only. Text or data written into the tool
 itself is visible to every reader.
 
-On Worktable Cloud, a live tool's link counts its views, and **Share** shows
+On Worktable Cloud, an HTML Doc's link counts its views, and **Share** shows
 them under the link, such as "4 views · 2 people". A view is a reader's
 browser showing the page for a few seconds, so link scanners and chat previews
 don't count, and neither do reloads within half an hour or visits that look

@@ -32,9 +32,10 @@ self-hosted workspace, follow
 ### Claude (web, desktop and Cowork)
 
 On a Pro, Max, Team or Enterprise plan, open **Plugins**, choose **Add**, then
-**Add marketplace**, and enter `worktable/worktable-plugin`. Install
-Worktable and turn on **Sync automatically** so it stays current. Then open the
-plugin's **Connectors** tab, connect Worktable and sign in. Skills need
+**Add marketplace**, and enter `worktable/worktable-plugin`. Add Worktable,
+then open the plugin's **Connectors** tab, connect Worktable and sign in. Claude
+updates it from this repository: choose **Check for updates**, or turn on
+**Sync automatically** once the Claude GitHub App has access. Skills need
 **Code execution** on in Claude's settings.
 
 Uploading the plugin as a file works too, but an uploaded copy never updates.

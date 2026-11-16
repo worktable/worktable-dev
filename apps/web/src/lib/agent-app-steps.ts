@@ -1,9 +1,10 @@
 // How apps that take the Worktable plugin, or a custom app with Worktable
 // Cloud's address, connect. Onboarding and Settings show the same steps.
 //
-// The plugin comes from worktable/worktable-plugin, which updates itself in
-// Claude (Add marketplace with Sync automatically) and Antigravity. Uploaded
-// copies and Perplexity's imports keep the version they started with.
+// The plugin comes from worktable/worktable-plugin. Claude updates it from
+// there (Check for updates, or Sync automatically once the Claude GitHub App
+// has access) and so does Antigravity. Uploaded copies and Perplexity's
+// imports keep the version they started with.
 
 /** Apps that take the plugin or a custom app, besides Claude and ChatGPT. */
 export type PluginApp = "antigravity" | "gemini" | "perplexity"
@@ -14,7 +15,7 @@ export const PLUGIN_REPOSITORY = "https://github.com/worktable/worktable-plugin"
 export const CLAUDE_MARKETPLACE = "worktable/worktable-plugin"
 
 export const CLAUDE_PLUGIN_STEP =
-  "In Claude, open Plugins, choose Add, then Add marketplace, and paste this. Install Worktable and turn on Sync automatically, then connect Worktable on its Connectors tab and sign in."
+  "In Claude, open Plugins, choose Add, then Add marketplace, and paste this. Add Worktable, then connect it on its Connectors tab and sign in."
 
 export const APP_STEPS: Record<PluginApp, string> = {
   antigravity:

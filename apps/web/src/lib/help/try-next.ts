@@ -24,10 +24,13 @@ export function tryNextStatus(
     links?: boolean
   }
 ): TryNextStatus[] {
+  const connected = Boolean(setup.items["connect-agent"])
   return TRY_NEXT.filter(
     (card) =>
       (card.id !== "invite-team" || options.canInvite) &&
-      (card.id !== "share-link" || options.links !== false)
+      (card.id !== "share-link" || options.links !== false) &&
+      // "Another" agent only means something once there's a first one.
+      (card.id !== "another-agent" || connected)
   ).map((card) => ({
     card,
     done:
@@ -79,10 +82,8 @@ export function homeTryNext(
   const connected = Boolean(setup.items["connect-agent"])
   const statuses = tryNextStatus(setup, options).filter(
     ({ card }) =>
-      (options.doc ||
-        (card.id !== "share-link" && card.id !== "note-to-agent")) &&
-      // "Another" agent only means something once there's a first one.
-      (connected || card.id !== "another-agent")
+      options.doc ||
+      (card.id !== "share-link" && card.id !== "note-to-agent")
   )
   const progress = tryNextProgress(statuses)
   if (progress.done === progress.total) return null

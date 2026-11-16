@@ -360,7 +360,6 @@ export const TIPS = {
     reason: "first-meeting",
     display: "card",
     concept: "library",
-    title: "Library",
     text: "Skills are instructions your team approved. Every agent with access follows them, so you explain things once. When an agent suggests a change, someone approves it first.",
     doneWhen: "skill-added",
     comesBack: 0,

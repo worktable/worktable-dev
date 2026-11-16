@@ -558,6 +558,11 @@ describe("skill libraries", () => {
 
     await writeDoc("ops", "release-checklist", `${RELEASE}\nAnnounce in the channel.\n`)
     await rest("POST", `/api/library/${entry.id}/save`, {})
+    // The agent's own app lists its skills without the model seeing them,
+    // so the model still hears of the change on its next call.
+    const listed = await call(agent, "worktable_skills_read", {})
+    expect(listed.skills).toEqual([expect.objectContaining({ name: "release-checklist" })])
+    expect(listed.notices).toBeUndefined()
     expect(await notices()).toBe(
       "Your team's Library changed: updated release-checklist. worktable_skills_read returns the current ones."
     )

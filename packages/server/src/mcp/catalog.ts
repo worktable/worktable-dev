@@ -963,9 +963,9 @@ const PREVIEW_TOOLS: CatalogTool[] = [
     name: "worktable_skills_read",
     title: "Read a Worktable skill",
     description:
-      "Read an approved skill from your team's Library by name: its live version, the one a person approved, as Markdown, with its description, library and version. worktable_state lists the skills that apply to you.",
+      "Read an approved skill from your team's Library by name: its live version, the one a person approved, as Markdown, with its description, library and version. Without a name, list the skills that apply to you, each with when to use it.",
     annotations: READ,
-    inputSchema: flatInput(["name"], [skillsRead]),
+    inputSchema: flatInput([], [skillsRead]),
     runs: [["worktable_skills", "read"]],
     route: (args) => step("worktable_skills", "read", args),
   },

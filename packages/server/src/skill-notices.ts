@@ -241,6 +241,23 @@ export async function skillsBrief(reader: SkillReader): Promise<string | null> {
   return lines.join("\n")
 }
 
+/**
+ * The skills that apply, for an agent's own app to list among its skills
+ * (worktable_skills_read without a name). Unlike worktable_state, the agent
+ * hasn't seen them: the model still hears of a change on its next call.
+ */
+export async function listSkills(reader: SkillReader) {
+  const { live } = await skillsForAgent(reader)
+  return {
+    skills: live.map((skill) => ({
+      name: skill.entry.name,
+      description: skill.entry.description,
+      library: skill.library,
+      version: skillVersion(skill.live.generationId),
+    })),
+  }
+}
+
 /** worktable_state's skills, which the agent has now seen. */
 export async function stateSkills(reader: SkillReader, spaceId?: string) {
   if (reader.participantId) noteCall(reader.participantId, Date.now())
@@ -298,10 +315,14 @@ function removedPart(gone: LibraryEntry[]): string[] {
  */
 export async function skillChangeNotice(
   reader: SkillReader,
-  operationId: string
+  operationId: string,
+  args: Record<string, unknown> = {}
 ): Promise<string | null> {
   try {
     if (!reader.participantId || QUIET_OPERATIONS.has(operationId)) return null
+    // Listing skills without a name is an agent's app keeping its skill list,
+    // not the model: it neither sees a change nor starts a session.
+    if (operationId === "skills.read" && !args["name"]) return null
     const participantId = reader.participantId
     const sessionStart = noteCall(participantId, Date.now())
     // The cheap check: nothing changed and no session starts, so no file is read.

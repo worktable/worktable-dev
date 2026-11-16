@@ -372,7 +372,7 @@ export function registerTools(
                 last.result
               ),
               surface === "preview"
-                ? await skillChangeNotice(skillReaderFor(reader), last.operation.id)
+                ? await skillChangeNotice(skillReaderFor(reader), last.operation.id, last.operation.args)
                 : null,
             ]
               .filter(Boolean)

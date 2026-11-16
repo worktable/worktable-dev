@@ -324,6 +324,7 @@ import {
 } from "./schemas.ts"
 
 import { ensureParticipant, resolveParticipant } from "../participant-store.ts"
+import { listSkills } from "../skill-notices.ts"
 import {
   proposeSkillChange,
   readSkillForAgent,
@@ -3520,9 +3521,10 @@ async function _dispatchOperationInner(
         throw new Error("Skill libraries aren't available on this connection.")
       }
       const reader = skillReaderFor(identity)
-      return operationId === "skills.read"
-        ? await readSkillForAgent(reader, ReadSkillInput.parse(args))
-        : await proposeSkillChange(reader, ProposeSkillInput.parse(args))
+      if (operationId === "skills.propose") return await proposeSkillChange(reader, ProposeSkillInput.parse(args))
+      const input = ReadSkillInput.parse(args)
+      // Without a name, the list an agent's own app keeps among its skills.
+      return input.name ? await readSkillForAgent(reader, { ...input, name: input.name }) : await listSkills(reader)
     }
     case "mermaid.validate": {
       return await validateMermaid(args["source"] as string)

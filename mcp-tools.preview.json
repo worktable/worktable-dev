@@ -14386,15 +14386,15 @@
   {
     "name": "worktable_skills_read",
     "title": "Read a Worktable skill",
-    "description": "Read an approved skill from your team's Library by name: its live version, the one a person approved, as Markdown, with its description, library and version. worktable_state lists the skills that apply to you.",
+    "description": "Read an approved skill from your team's Library by name: its live version, the one a person approved, as Markdown, with its description, library and version. Without a name, list the skills that apply to you, each with when to use it.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "name": {
+          "description": "The skill's name, as worktable_state lists it. Omit to list the skills that apply to you, each with when to use it.",
           "type": "string",
           "minLength": 1,
-          "maxLength": 64,
-          "description": "The skill's name, as worktable_state lists it."
+          "maxLength": 64
         },
         "library": {
           "description": "When skills in more than one library share the name: worktable, space, or agent for your own.",
@@ -14410,9 +14410,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "name"
-      ],
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false
     },
@@ -14434,7 +14431,11 @@
           "description": "Changes whenever the skill's live version does."
         },
         "spaceId": {
-          "$ref": "#/definitions/CanonicalId"
+          "allOf": [
+            {
+              "$ref": "#/definitions/CanonicalId"
+            }
+          ]
         },
         "path": {
           "type": "string",
@@ -14447,21 +14448,40 @@
         "note": {
           "type": "string"
         },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "library": {
+                "type": "string",
+                "description": "\"Worktable\", \"Space: <name>\" or \"Yours\"."
+              },
+              "version": {
+                "type": "string",
+                "description": "Changes whenever the skill's live version does."
+              }
+            },
+            "required": [
+              "name",
+              "description",
+              "library",
+              "version"
+            ],
+            "additionalProperties": {}
+          }
+        },
         "notices": {
           "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
           "type": "string"
         }
       },
-      "required": [
-        "name",
-        "description",
-        "library",
-        "version",
-        "spaceId",
-        "path",
-        "content",
-        "note"
-      ],
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
       "definitions": {

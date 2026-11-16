@@ -1,3 +1,4 @@
+import { WORKFLOW_GUIDE_NAMES } from "./workflow-guides.generated.ts"
 import { DrawingsReadInput, DrawingsWriteInput } from "@worktable/types"
 export { DrawingsReadInput, DrawingsWriteInput }
 // ============================================================
@@ -1519,6 +1520,10 @@ export const GuidanceInput = z.strictObject({
   request: z.discriminatedUnion("action", [
     actionSchema("format_spec", {}),
     actionSchema("drawings", {}),
+    // Preview only: the current guide behind one of the plugin's skills.
+    actionSchema("workflow", {
+      name: z.enum(WORKFLOW_GUIDE_NAMES).describe("The skill whose current guide to read."),
+    }),
   ]),
 })
 

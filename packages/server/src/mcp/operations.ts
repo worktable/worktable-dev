@@ -129,6 +129,8 @@ export const OPERATION_DEFINITIONS = {
   "thread_delivery.fail": tool("threads:participate", "none"),
   "guidance.format_spec": tool(null, "none"),
   "guidance.drawings": tool(null, "none"),
+  // Preview only.
+  "guidance.workflow": tool(null, "none"),
   "mermaid.validate": tool(null, "none"),
   "mermaid.preview": tool(null, "none"),
   // Preview only. A proposal saves a version of the Doc it proposes (see tools.ts).
@@ -313,6 +315,7 @@ export const WORKTABLE_TOOL_ROUTES: Record<
   worktable_guidance: {
     format_spec: "guidance.format_spec",
     drawings: "guidance.drawings",
+    workflow: "guidance.workflow",
   },
   worktable_mermaid: {
     validate: "mermaid.validate",

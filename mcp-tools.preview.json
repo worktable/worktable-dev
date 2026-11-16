@@ -14211,7 +14211,7 @@
   {
     "name": "worktable_guidance",
     "title": "Read Worktable guidance",
-    "description": "Read Worktable authoring guidance by topic: format_spec for Doc and file formats, drawings for drawing operations with examples, or html for the HTML Doc runtime contract.",
+    "description": "Read Worktable authoring guidance by topic: format_spec for Doc and file formats, drawings for drawing operations with examples, html for the HTML Doc runtime contract, or workflow with a skill's name for the current guide behind one of the Worktable plugin's skills.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -14225,9 +14225,22 @@
           "enum": [
             "format_spec",
             "drawings",
-            "html"
+            "html",
+            "workflow"
           ],
           "description": "The guidance to read."
+        },
+        "name": {
+          "description": "workflow only: the skill whose current guide to read.",
+          "type": "string",
+          "enum": [
+            "worktable-collaborate-threads",
+            "worktable-create-or-manage-interactive-html",
+            "worktable-create-or-manage-records",
+            "worktable-create-or-update-docs",
+            "worktable-find-and-synthesize-context",
+            "worktable-review-with-annotations"
+          ]
         }
       },
       "required": [

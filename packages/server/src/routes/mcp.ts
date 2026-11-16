@@ -35,18 +35,16 @@ import { DEFAULT_AGENT_PRINCIPAL } from "../mcp/helpers.ts"
 // ============================================================
 
 /**
- * The agent's skills for its connection instructions and its skills tool:
- * built only for the message that opens a connection (initialize, or a
- * modern server/discover) and for listing tools, never for tool calls, and
- * as the agent, so its access applies.
+ * The agent's skills for its connection instructions: built only for the
+ * message that opens a connection (initialize, or a modern server/discover),
+ * never for its tool calls, and as the agent, so its access applies.
  */
 async function connectionSkills(
   identity: TokenIdentity,
   messages: JsonRpcMessage[]
 ): Promise<string | null> {
   if (configuredMcpSurface() !== "preview") return null
-  const lists = new Set(["initialize", "server/discover", "tools/list"])
-  if (!messages.some((message) => typeof message.method === "string" && lists.has(message.method))) {
+  if (!messages.some((message) => message.method === "initialize" || message.method === "server/discover")) {
     return null
   }
   // As the tools see the caller: the loopback bridge and the legacy token

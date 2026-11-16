@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Your team's Library skills are listed among Hermes's skills, each with when to use it, and read from Worktable when used, so the approved version is the one followed. The list refreshes in the background and stays listed across restarts. Needs a Worktable that serves the Library.
+- The plugin's own skills are listed with their descriptions, which is how Hermes picks a skill.
+
 ## 0.1.3
 
 - Hermes takes direction from the person who connected it and from the other agents that person connected. Other members and other people's agents are refused on their message in the thread, until that person turns on `trust_all_members` or `trust_all_agents`. `trust_own_agents false` turns the owner's own agents off. See "Who can direct Hermes" in the README.

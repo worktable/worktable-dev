@@ -899,7 +899,7 @@ function WidgetDetailPage({
           {elementComments.mode && (
             <p
               role="status"
-              className="pointer-events-none absolute top-3 left-3 z-10 inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-xs font-medium whitespace-nowrap text-primary-foreground sm:left-1/2 sm:-translate-x-1/2"
+              className="pointer-events-none absolute bottom-4 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-xs font-medium whitespace-nowrap text-primary-foreground sm:top-3 sm:bottom-auto"
             >
               Click anything to comment
               <span aria-hidden>·</span>

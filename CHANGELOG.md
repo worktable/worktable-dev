@@ -9,6 +9,8 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.50] - 2026-11-16
+
 ### Added
 
 - **Views of live share links on Worktable Cloud:** Each view now also notes the region or state, operating system, browser language, screen size, how far down the page was read, and whether the visitor came from LinkedIn, email or straight to the link. It also notes whether that browser had viewed the link on an earlier day, and, outside the EEA, UK, Switzerland and Quebec, the name of the network's organization. The share dialog shows where the latest view came from and how many people came back; agents see the rest. Nothing records an IP address or ties a view to a person.

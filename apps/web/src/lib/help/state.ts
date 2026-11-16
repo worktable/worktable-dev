@@ -72,8 +72,6 @@ const reported = {
   },
 }
 const reportedHere = new Set<string>()
-/** Each tip's showing being saved, which its close or done waits for. */
-const showing = new Map<string, Promise<unknown>>()
 
 export interface HelpChange {
   id?: string
@@ -86,8 +84,23 @@ export interface HelpChange {
   tryNextHidden?: boolean
 }
 
+/**
+ * Saves go one at a time: each answer is the whole setup, so an earlier
+ * save answering late would undo a later one, such as Hide Next Steps.
+ */
+let saving: Promise<unknown> = Promise.resolve()
+
 /** Save what the person did with help; the summary carries the result. */
-export async function saveHelp(
+export function saveHelp(
+  queryClient: QueryClient,
+  change: HelpChange
+): Promise<PersonalSetup> {
+  const saved = saving.then(() => sendHelp(queryClient, change))
+  saving = saved.catch(() => undefined)
+  return saved
+}
+
+async function sendHelp(
   queryClient: QueryClient,
   change: HelpChange
 ): Promise<PersonalSetup> {
@@ -215,41 +228,30 @@ export function useTip(tip: Tip, active: boolean): UseTip {
   useEffect(() => {
     if (!open || reported.has(tip.id)) return
     reported.add(tip.id)
-    showing.set(
-      tip.id,
-      saveHelp(queryClient, {
-        id: tip.id,
-        event: "shown",
-        version: tip.version,
-        follows: closedAt,
-      }).catch(() => undefined)
-    )
+    void saveHelp(queryClient, {
+      id: tip.id,
+      event: "shown",
+      version: tip.version,
+      follows: closedAt,
+    }).catch(() => undefined)
   }, [open, queryClient, tip.id, tip.version, closedAt])
 
+  // Saves go in order, so a close never lands before its showing.
   const close = useCallback(() => {
     setSettled(true)
-    // After its showing is saved: a late showing would reopen it.
-    void (showing.get(tip.id) ?? Promise.resolve())
-      .then(() =>
-        saveHelp(queryClient, {
-          id: tip.id,
-          event: "closed",
-          version: tip.version,
-        })
-      )
-      .catch(() => undefined)
+    void saveHelp(queryClient, {
+      id: tip.id,
+      event: "closed",
+      version: tip.version,
+    }).catch(() => undefined)
   }, [queryClient, tip.id, tip.version])
   const done = useCallback(() => {
     setSettled(true)
-    void (showing.get(tip.id) ?? Promise.resolve())
-      .then(() =>
-        saveHelp(queryClient, {
-          id: tip.id,
-          event: "done",
-          version: tip.version,
-        })
-      )
-      .catch(() => undefined)
+    void saveHelp(queryClient, {
+      id: tip.id,
+      event: "done",
+      version: tip.version,
+    }).catch(() => undefined)
   }, [queryClient, tip.id, tip.version])
   return { open, close, done }
 }

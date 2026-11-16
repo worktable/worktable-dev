@@ -269,6 +269,7 @@ it("finishes HTML help from events that don't name the Doc's format", async () =
       Boolean(value.helpEvidence?.["html-commented"])
   )
   expect(current.helpEvidence?.["html-doc-made"]).toMatchObject({ path: "pricing" })
+  expect(current.helpEvidence?.["html-commented"]).toMatchObject({ path: "pricing" })
 })
 
 it("keeps a tip that comes back showing until it's closed again", async () => {

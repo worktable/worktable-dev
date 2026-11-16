@@ -17,11 +17,12 @@ import {
 } from "@/components/identity-icons"
 import { WorktableAppIcon } from "@/components/worktable-app-icon"
 import { WELCOME_PICTURES } from "@/lib/help/registry"
-import { welcomeKey, type WelcomeRole, type WelcomeStep } from "@/lib/help/welcome"
 import {
-  welcomeContent,
-  type WelcomePicture,
-} from "@/lib/help/welcome-content"
+  welcomeKey,
+  type WelcomeRole,
+  type WelcomeStep,
+} from "@/lib/help/welcome"
+import { welcomeContent, type WelcomePicture } from "@/lib/help/welcome-content"
 
 /**
  * What Worktable gives you, in three screens with still pictures. There is
@@ -90,7 +91,9 @@ export function WelcomeDialog({
       <DialogContent
         showCloseButton={false}
         initialFocus={next}
-        className="gap-0 p-5 sm:max-w-[38rem] sm:p-7 sm:pb-6"
+        // Scrolls when large text outgrows a short screen, so its buttons
+        // stay reachable.
+        className="gap-0 overflow-y-auto p-5 sm:max-w-[38rem] sm:p-7 sm:pb-6"
       >
         <p className="flex items-center gap-2 text-[0.8125rem] font-semibold text-primary-text">
           <WorktableAppIcon className="size-5" />
@@ -121,10 +124,7 @@ export function WelcomeDialog({
               <div
                 key={screen.title}
                 aria-hidden={!shown}
-                className={cn(
-                  "[grid-area:1/1]",
-                  !shown && "invisible"
-                )}
+                className={cn("[grid-area:1/1]", !shown && "invisible")}
               >
                 <Title className="font-display text-2xl leading-tight font-semibold tracking-tight text-foreground sm:text-3xl">
                   {screen.title}
@@ -243,7 +243,7 @@ function AgentsPicture() {
           />
         ))}
       </svg>
-      <div className="card-surface w-60 rounded-lg px-3 py-2.5">
+      <div className="w-60 rounded-lg card-surface px-3 py-2.5">
         <p className="flex items-center gap-1.5 text-[0.8125rem] font-semibold text-foreground">
           <DocumentFormatIcon className="size-3.5 text-muted-foreground" />
           {words.doc}
@@ -279,7 +279,7 @@ function SpacePicture({ chat }: { chat: boolean }) {
     <div className="flex w-64 flex-col items-stretch">
       {chat ? (
         <>
-          <div className="card-surface rounded-lg px-2.5 py-2 opacity-60">
+          <div className="rounded-lg card-surface px-2.5 py-2 opacity-60">
             <p className="flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
               <Agent id="chatgpt" className="size-4" />
               {agentName("chatgpt")}
@@ -294,7 +294,7 @@ function SpacePicture({ chat }: { chat: boolean }) {
           <ArrowDown className="mx-auto my-1.5 size-4 text-muted-foreground" />
         </>
       ) : null}
-      <div className="card-surface rounded-lg p-1.5">
+      <div className="rounded-lg card-surface p-1.5">
         <p className="flex items-center gap-1.5 px-1.5 pt-0.5 pb-1.5 text-[0.75rem] font-semibold text-foreground">
           <SpaceIcon space={{ id: words.name }} size="xs" />
           {words.name}
@@ -353,7 +353,7 @@ function Row({
 function PagePicture() {
   const words = WELCOME_PICTURES.page
   return (
-    <div className="card-surface w-64 rounded-xl p-1.5">
+    <div className="w-64 rounded-xl card-surface p-1.5">
       <div className="relative aspect-[16/10] overflow-hidden rounded-lg border border-card-border bg-background">
         <div className="flex items-center gap-1.5 border-b border-border px-2.5 py-1.5">
           <i className="size-2 rounded-sm bg-primary" />

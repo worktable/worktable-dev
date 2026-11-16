@@ -101,6 +101,7 @@ export default defineConfig({
           label: "Get started",
           items: [
             { slug: "index" },
+            { slug: "concepts" },
             { slug: "start/desktop" },
             { slug: "start/install" },
             { slug: "guides/worktable-cloud" },

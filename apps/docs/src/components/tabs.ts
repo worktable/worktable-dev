@@ -16,7 +16,7 @@ export const TABS: DocsTab[] = [
     id: "docs",
     label: "User guide",
     href: "/",
-    prefixes: ["/start", "/guides", "/workflows"],
+    prefixes: ["/start", "/concepts", "/guides", "/workflows"],
     groups: ["Get started", "Workflows", "Use Worktable", "Manage Worktable"],
   },
   {

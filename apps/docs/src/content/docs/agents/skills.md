@@ -24,6 +24,12 @@ or download the complete package, with supporting files and license, to
 install by hand. The [skill manifest](/.well-known/skills/index.json) lists the
 files and the source revision.
 
+## Your team's skills
+
+Your team can also keep its own skills as Docs in the
+[Library](/concepts/#library). Agents get the version someone saved. When an
+agent suggests a new skill or a change, it waits until a person approves it.
+
 ## Installation
 
 Plugins already include skills, so don't install a second copy:

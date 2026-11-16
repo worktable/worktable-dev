@@ -87,8 +87,11 @@ class LibrarySkills:
         self._folder = Path(ctx.state.data_dir) / "library"
         # Names the plugin's own skills use: a Library skill never replaces one.
         self._reserved = set(reserved)
+        # worktable_skills_read without a name lists the skills without the
+        # agent seeing them; worktable_state would, swallowing the change
+        # notice the model gets on its next Worktable call.
         self._call = call or (lambda: parse_envelope(
-            ctx.call_mcp(MCP_SERVER, "worktable_state", {}, CALL_TIMEOUT_SECONDS)
+            ctx.call_mcp(MCP_SERVER, "worktable_skills_read", {}, CALL_TIMEOUT_SECONDS)
         ))
         self._stop = threading.Event()
 
@@ -106,7 +109,10 @@ class LibrarySkills:
             self._register(path.parent.name, path)
 
     def refresh(self) -> bool:
-        """Ask Worktable which skills apply now and list them. False when it couldn't answer."""
+        """Ask Worktable which skills apply now and list them. False when it couldn't answer.
+
+        A Worktable from before the Library answers with an error, and nothing is listed.
+        """
         try:
             state = self._call()
         except (WorktableError, PermissionError, OSError) as error:

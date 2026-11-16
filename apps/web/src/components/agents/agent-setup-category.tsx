@@ -18,7 +18,7 @@ export const AGENT_SETUP_CATEGORIES = {
   },
   chat: {
     title: "Chat apps",
-    description: "Claude, ChatGPT and Grok Bot, on desktop, phone and the web",
+    description: "Claude, ChatGPT and more, on desktop, phone and the web",
     platforms: ["claude", "chatgpt", "grok-bot"],
   },
   always: {
@@ -129,7 +129,7 @@ export function AgentSetupTabs<T extends string | number>({
 }) {
   return (
     <Tabs value={value} onValueChange={(value) => onValueChange(value as T)}>
-      <TabsList className="mb-4 max-w-full flex-wrap justify-start gap-1 group-data-horizontal/tabs:h-auto">
+      <TabsList className="mb-4 grid w-full grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-1 group-data-horizontal/tabs:h-auto">
         {options.map((option) => (
           <TabsTrigger
             key={option.value}

@@ -17,6 +17,9 @@ export const AGENT_PLATFORM_IDS = [
   "opencode",
   "vscode",
   "goose",
+  "antigravity",
+  "gemini",
+  "perplexity",
   "other",
 ] as const
 
@@ -108,6 +111,19 @@ export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
     logo: "vscode.svg",
   },
   goose: { id: "goose", name: "Goose", mode: "on-demand", logo: "goose.png" },
+  antigravity: {
+    id: "antigravity",
+    name: "Antigravity",
+    mode: "on-demand",
+    logo: "antigravity.svg",
+  },
+  gemini: { id: "gemini", name: "Gemini", mode: "on-demand", logo: "gemini.png" },
+  perplexity: {
+    id: "perplexity",
+    name: "Perplexity",
+    mode: "on-demand",
+    logo: "perplexity.svg",
+  },
   other: { id: "other", name: "Agent", mode: "on-demand", logo: null },
 }
 
@@ -129,6 +145,9 @@ const CLIENT_PLATFORMS: Record<string, AgentPlatformId> = {
   opencode: "opencode",
   vscode: "vscode",
   goose: "goose",
+  // Names these apps may sign in with.
+  "google-antigravity": "antigravity",
+  "google-gemini": "gemini",
 }
 
 /** The platform of an always-on adapter, such as `openclaw` or `hermes`. */

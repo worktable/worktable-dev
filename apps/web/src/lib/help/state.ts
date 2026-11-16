@@ -97,6 +97,11 @@ interface Candidate {
   id: string
   priority: number
   order: number
+  /**
+   * How many places want it now: a page can show the same tip in two copies
+   * of one part, such as a Doc's byline before and after its editor loads.
+   */
+  holders: number
 }
 
 let order = 0
@@ -117,11 +122,14 @@ function subscribe(listener: () => void) {
 }
 
 /** Ask to show a tip; returns a release for when it no longer wants to. */
-function claim(id: string, priority: number): () => void {
-  candidates.set(id, { id, priority, order: order++ })
+export function claim(id: string, priority: number): () => void {
+  const held = candidates.get(id)
+  if (held) held.holders += 1
+  else candidates.set(id, { id, priority, order: order++, holders: 1 })
   recompute()
   return () => {
-    candidates.delete(id)
+    const current = candidates.get(id)
+    if (current && --current.holders === 0) candidates.delete(id)
     recompute()
   }
 }
@@ -185,6 +193,11 @@ export function useTip(tip: Tip, active: boolean): UseTip {
     )
   }, [queryClient, tip.id])
   return { open, close, done }
+}
+
+/** The tip this screen shows now, if any. */
+export function currentTip(): string | null {
+  return winner
 }
 
 /** For tests: forget the screen and the session's reports. */

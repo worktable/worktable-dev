@@ -28,6 +28,8 @@ import {
 } from "./skill-libraries.ts"
 import { LIBRARY_FOR_AGENTS, SESSION_GAP_MS, skillChangeNotice } from "./skill-notices.ts"
 import { markdownToBlocks } from "./markdown.ts"
+import { readPersonSetup } from "./personal-navigation-store.ts"
+import { OWNER_SETUP_KEY } from "./personal-setup.ts"
 import { documentGenerationV2Directory } from "./workspace-storage-v2.ts"
 import { activateLocalTeams } from "./team-activation.ts"
 import { clearTeamAuthInstances, getTeamAuth } from "./team-auth.ts"
@@ -182,8 +184,11 @@ afterEach(async () => {
 
 describe("skill libraries", () => {
   it("gives agents the saved version, never later edits, until a person saves again", async () => {
+    expect(readPersonSetup(OWNER_SETUP_KEY)?.helpEvidence?.["skill-added"]).toBeUndefined()
     const entry = await addRelease()
     expect(entry.name).toBe("release-checklist")
+    // The person's first skill finishes the Library's help.
+    expect(readPersonSetup(OWNER_SETUP_KEY)?.helpEvidence?.["skill-added"]).toMatchObject({ spaceId: "ops" })
     // People see whether the Doc moved on from what agents get.
     const draft = async () =>
       ((await rest("GET", "/api/library")).body.entries as Array<{ id: string; draft: boolean }>).find(

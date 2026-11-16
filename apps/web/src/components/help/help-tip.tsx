@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { useEffect, type ReactNode } from "react"
 import { ArrowUpRight, CircleHelp } from "lucide-react"
 import {
   HelpCard,
@@ -100,12 +100,18 @@ export function TipHint({
   values,
   side,
   align,
+  closeWhen = false,
 }: TipProps & {
   anchor: Element | null
   side?: "top" | "bottom" | "left" | "right"
   align?: "start" | "center" | "end"
+  /** The person used the control it points at: it closes, as if closed. */
+  closeWhen?: boolean
 }) {
   const { open, close } = useTip(tip, active && anchor !== null)
+  useEffect(() => {
+    if (open && closeWhen) close()
+  }, [open, closeWhen, close])
   return (
     <HelpHint
       anchor={anchor}

@@ -40,11 +40,14 @@ export function useLifetimeActions(spaceId: string, path: string) {
     }
   }
   return {
-    keep: () =>
-      run(
+    keep: async () => {
+      const kept = await run(
         () => setDocumentLifetime(spaceId, path, "durable"),
         "Couldn’t keep this document."
-      ),
+      )
+      if (kept) toast.success("Kept. It won't archive.")
+      return kept
+    },
     makeTemporary: (archiveOn?: string) =>
       run(
         () => setDocumentLifetime(spaceId, path, "temporary", archiveOn),

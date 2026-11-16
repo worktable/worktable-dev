@@ -90,6 +90,8 @@ import { useThreadRename } from "@/lib/thread-naming"
 import { RenameDialog } from "@/components/docs/rename-dialog"
 import { NewThreadPanel } from "./new-thread-panel"
 import { Composer } from "@/components/composer"
+import { TipCard } from "@/components/help/help-tip"
+import { TIPS } from "@/lib/help/registry"
 import { ParticipantRow } from "@/components/participant-select"
 import { ThreadList, type ThreadLink } from "./thread-list"
 import { ThreadParticipantAvatar } from "./thread-participant-avatar"
@@ -786,6 +788,9 @@ function ThreadDetail({
           />
         </div>
 
+        <div className="shrink-0 px-4 sm:px-6">
+          <TipCard tip={TIPS.threadsMeet} className="mx-auto mb-3 max-w-3xl" />
+        </div>
         <Composer
           ref={composerRef}
           value={draft}

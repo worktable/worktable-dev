@@ -83,6 +83,8 @@ import { Input } from "@worktable/ui/components/input"
 import { AnnotationPanel } from "@/components/annotations/annotation-panel"
 import { CommentBox } from "@/components/annotations/comment-box"
 import { useElementComments } from "@/components/annotations/element-commenting"
+import { TipHint } from "@/components/help/help-tip"
+import { TIPS } from "@/lib/help/registry"
 import { docContributors } from "@/lib/comment-recipients"
 import { DesktopContextPanel } from "@/components/desktop-context-panel"
 import {
@@ -258,6 +260,9 @@ function WidgetDetailPage({
             page?.provenance?.contentHash ?? page?.document.updatedAt ?? ""
           )}`
   const [loadedFrameSrc, setLoadedFrameSrc] = useState<string | null>(null)
+  const [commentButton, setCommentButton] = useState<HTMLButtonElement | null>(
+    null
+  )
   const [diagnostics, setDiagnostics] = useState<WidgetDiagnostic[]>([])
 
   // Version history rail state (mirrors the doc route).
@@ -891,18 +896,28 @@ function WidgetDetailPage({
           } ${previewVersionId ? "hidden xl:flex xl:flex-[1_1_50%] xl:border-r xl:border-border print:block print:flex-1 print:border-r-0" : "flex flex-1"}`}
         >
           <WidgetDiagnostics diagnostics={importantDiagnostics} />
+          {elementComments.mode && (
+            <p
+              role="status"
+              className="pointer-events-none absolute top-3 left-3 z-10 inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-xs font-medium whitespace-nowrap text-primary-foreground sm:left-1/2 sm:-translate-x-1/2"
+            >
+              Click anything to comment
+              <span aria-hidden>·</span>
+              <kbd className="font-sans">Esc</kbd>
+            </p>
+          )}
           <div className="overlay-floating absolute top-2 right-2 z-10 flex items-center gap-0.5 rounded-lg bg-popover p-0.5">
             {validated && !readOnly && !previewVersionId && (
               <Button
+                ref={setCommentButton}
                 variant="ghost"
-                size="icon"
-                className={`size-8 ${elementComments.mode ? "bg-surface-selected text-primary-text" : ""}`}
+                size="xs"
+                className={`h-8 gap-1.5 px-2.5 ${elementComments.mode ? "bg-surface-selected text-primary-text" : ""}`}
                 onClick={elementComments.toggle}
                 aria-pressed={elementComments.mode}
-                aria-label="Comment"
-                title="Comment"
               >
                 <MessageSquarePlus className="size-4" />
+                Comment
               </Button>
             )}
             <Button
@@ -920,6 +935,12 @@ function WidgetDetailPage({
               )}
             </Button>
           </div>
+          <TipHint
+            tip={TIPS.htmlComment}
+            anchor={validated && !readOnly && !previewVersionId ? commentButton : null}
+            active={frameSrc !== null && loadedFrameSrc === frameSrc}
+            closeWhen={elementComments.mode}
+          />
           {(frameSrc === null || loadedFrameSrc !== frameSrc) && (
             <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden bg-background">
               <EditorSkeleton />

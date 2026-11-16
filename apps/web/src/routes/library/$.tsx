@@ -5,6 +5,7 @@ import { Button } from "@worktable/ui/components/button"
 import {
   Empty,
   EmptyContent,
+  EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
@@ -299,12 +300,14 @@ function LibraryPage() {
               <EmptyMedia variant="icon">
                 <LibraryIcon />
               </EmptyMedia>
-              <EmptyTitle>No skills yet</EmptyTitle>
+              <EmptyDescription>
+                Add a skill and your agents use it.
+              </EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
               <Button variant="outline" size="sm" onClick={add}>
                 <Plus />
-                Skill
+                Add Skill
               </Button>
             </EmptyContent>
           </Empty>

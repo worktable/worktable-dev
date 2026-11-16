@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it } from "bun:test"
+import { afterEach, beforeEach, expect, it, spyOn } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -16,6 +16,7 @@ import { parsePersonalSetup } from "./personal-setup-shape.ts"
 import { createHtmlDocument } from "./html-document-create.ts"
 import { profileRouter } from "./routes/profile.ts"
 import { writeSpace } from "./store.ts"
+import { wsManager } from "./ws.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
 import {
   prepareWorkspaceTarget,
@@ -161,6 +162,8 @@ function help(body: Record<string, unknown>) {
 
 it("remembers each tip a person met, and finishes help from what happens", async () => {
   // A tip shown twice, then closed, keeps its count; a rewrite starts over.
+  // Only the window it was in needs to know, and it gets the result back.
+  const notices = spyOn(wsManager, "sendToPeople")
   expect((await help({ id: "records-meet", event: "shown", version: 1 })).status).toBe(200)
   expect((await help({ id: "records-meet", event: "shown", version: 1 })).status).toBe(200)
   expect((await help({ id: "records-meet", event: "closed" })).status).toBe(200)
@@ -169,9 +172,13 @@ it("remembers each tip a person met, and finishes help from what happens", async
   expect(current.help?.["records-meet"]?.closedAt).toBeDefined()
   await help({ id: "records-meet", event: "shown", version: 2 })
   expect((await setup()).help?.["records-meet"]).toMatchObject({ shown: 1, version: 2 })
+  expect(notices).not.toHaveBeenCalled()
 
   // Only the rules line is the browser's to report; ids are slugs.
   expect((await help({ evidence: "rules-added" })).status).toBe(200)
+  // What happened changes Next Steps, so every window hears it.
+  expect(notices).toHaveBeenCalledTimes(1)
+  notices.mockRestore()
   expect((await help({ evidence: "link-made" })).status).toBe(400)
   expect((await help({ id: "Not A Slug", event: "shown" })).status).toBe(400)
   expect((await help({ id: "records-meet" })).status).toBe(400)

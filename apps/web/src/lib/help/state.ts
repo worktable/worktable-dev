@@ -109,6 +109,8 @@ export function useHelpContext(): HelpContext & { setup: PersonalSetup } {
   const enabled = useHelpEnabled()
   const deployment = useDeploymentInfo().data
   const { setup, workspace } = usePersonalSetup()
+  // Until the summary arrives, the person's help is unknown: nothing shows.
+  const known = workspace !== undefined
   const conditions = useMemo<Partial<Record<HelpCondition, boolean>>>(
     () => ({
       teams: workspace?.teamContext != null,
@@ -120,7 +122,7 @@ export function useHelpContext(): HelpContext & { setup: PersonalSetup } {
     [deployment, workspace?.teamContext]
   )
   return {
-    enabled,
+    enabled: enabled && known,
     sessionStartedAt: sessionStartedAt(),
     conditions,
     evidence: setup.helpEvidence,

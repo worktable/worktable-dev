@@ -244,6 +244,10 @@ profileRouter.put("/help", async (c) => {
   const parsed = SaveHelpSchema.safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) return c.json({ error: "Invalid help" }, 400)
   const { id, event, version, resetAll, evidence, tryNextHidden } = parsed.data
+  // A tip shown or closed matters only to the window it was in, which gets
+  // the result back; telling every window would make each reload its summary.
+  const notify =
+    resetAll === true || evidence !== undefined || tryNextHidden !== undefined
   try {
     const saved = await changeSetup(setupKeyForPerson(person), (current) => {
       let next = resetAll ? withHelpReset(current) : current
@@ -258,7 +262,7 @@ profileRouter.put("/help", async (c) => {
         }
       if (tryNextHidden !== undefined) next = { ...next, tryNextHidden }
       return next
-    })
+    }, { notify })
     return c.json({ setup: saved })
   } catch (error) {
     if (error instanceof PreferencesUnreadableError)

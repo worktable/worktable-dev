@@ -12,7 +12,8 @@ import {
   PopoverTrigger,
 } from "@worktable/ui/components/popover"
 import { cn } from "@worktable/ui/lib/utils"
-import { HelpMark } from "@/components/help/help-mark"
+// From the wrappers, which every page with help has already loaded.
+import { HelpMark } from "@/components/help/help"
 import {
   HELP_ICONS,
   TIPS,

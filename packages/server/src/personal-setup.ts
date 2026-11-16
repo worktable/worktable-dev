@@ -107,15 +107,19 @@ function notifySetupChanged(key: string): void {
   else wsManager.sendToPerson(key, message)
 }
 
-/** Save a change to one person's setup and tell their open windows. */
+/**
+ * Save a change to one person's setup and tell their open windows, unless
+ * only the window that made it needs to know.
+ */
 export async function changeSetup(
   key: string,
-  change: (current: PersonalSetup) => PersonalSetup | null
+  change: (current: PersonalSetup) => PersonalSetup | null,
+  options: { notify?: boolean } = {}
 ): Promise<PersonalSetup | null> {
   const saved = await updatePersonSetup(key, (stored) =>
     change(stored ?? { items: {} })
   )
-  if (saved) notifySetupChanged(key)
+  if (saved && options.notify !== false) notifySetupChanged(key)
   return saved
 }
 

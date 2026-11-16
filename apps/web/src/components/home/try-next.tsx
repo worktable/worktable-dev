@@ -46,11 +46,23 @@ import {
   type PageKind,
   type TryNextId,
 } from "@/lib/help/registry"
-import { startNote } from "@/lib/help/note-draft"
 import { saveHelp } from "@/lib/help/state"
-import type { HomeTryNextCard } from "@/lib/help/try-next"
+import {
+  homeTryNext,
+  recentOwnWork,
+  type HomeTryNextCard,
+} from "@/lib/help/try-next"
+import type { HomeRun } from "@worktable/types"
+import type { SpaceView } from "@/lib/api"
 import { openSettings } from "@/lib/settings-open"
-import { saveSetup, usePersonalSetup } from "@/lib/setup"
+import {
+  canInvite,
+  gettingStartedSpace,
+  isGettingStartedSpace,
+  saveSetup,
+  usePersonalSetup,
+} from "@/lib/setup"
+import { getSpaceArchiveInfo } from "@/lib/spaces"
 
 const ICONS: Record<TryNextId, LucideIcon> = {
   "another-agent": Plug,
@@ -71,7 +83,48 @@ export interface TryNextDoc {
  * Things to do next on Home, each a benefit the person sees happen. A card
  * is done when Worktable sees it happen; done cards stay ticked until all are.
  */
+/** Next Steps on Home, from the person's setup and recent work. */
 export default function TryNext({
+  runs,
+  spaces,
+  links,
+}: {
+  runs: readonly HomeRun[]
+  spaces: readonly SpaceView[]
+  links: boolean
+}) {
+  const { setup, person } = usePersonalSetup()
+  const byId = new Map(spaces.map((space) => [space.id, space]))
+  const own = recentOwnWork(runs, {
+    self: person?.activityId,
+    skipSpace: (spaceId) => {
+      const space = byId.get(spaceId)
+      return (
+        !space ||
+        isGettingStartedSpace(space) ||
+        Boolean(getSpaceArchiveInfo(space))
+      )
+    },
+  })
+  const steps = homeTryNext(setup, {
+    canInvite: canInvite(person ?? undefined),
+    links,
+    doc: Boolean(own.doc),
+  })
+  if (!steps) return null
+  return (
+    <TryNextPanel
+      cards={steps.cards}
+      done={steps.done}
+      total={steps.total}
+      space={own.spaceId ? byId.get(own.spaceId)?.name : undefined}
+      doc={own.doc}
+      gettingStartedSpaceId={gettingStartedSpace([...spaces])?.id}
+    />
+  )
+}
+
+function TryNextPanel({
   cards,
   done,
   total,
@@ -442,12 +495,15 @@ function NoteStarter({ card, doc }: { card: CardText; doc: TryNextDoc }) {
         size="sm"
         variant="outline"
         onClick={() => {
-          startNote(doc.spaceId, doc.path, text)
           toast(TRY_NEXT_COPY.noteNext)
-          void navigate({
-            to: "/spaces/$spaceId/documents/$",
-            params: { spaceId: doc.spaceId, _splat: doc.path },
-            hash: "comments",
+          // Shared with the comment box, which Home doesn't load.
+          void import("@/lib/help/note-draft").then(({ startNote }) => {
+            startNote(doc.spaceId, doc.path, text)
+            return navigate({
+              to: "/spaces/$spaceId/documents/$",
+              params: { spaceId: doc.spaceId, _splat: doc.path },
+              hash: "comments",
+            })
           })
         }}
       >

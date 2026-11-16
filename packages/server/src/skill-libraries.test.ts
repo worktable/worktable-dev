@@ -611,7 +611,7 @@ describe("skill libraries", () => {
   it("gives a connecting agent its skills first in the connection's instructions", async () => {
     // What an agent's app reads before the first message: the connection's
     // instructions, as an app connects over HTTP.
-    const instructions = async () => {
+    const connected = async () => {
       const server = new Hono()
       server.route("/mcp", mcpRouter)
       const client = new Client({ name: "skills-brief", version: "1" })
@@ -621,9 +621,15 @@ describe("skill libraries", () => {
           fetch: async (input, init) => server.fetch(new Request(input, init)),
         })
       )
-      return client.getInstructions() ?? ""
+      return client
     }
+    const instructions = async () => (await connected()).getInstructions() ?? ""
+    // Apps that keep tools behind a search still show a tool marked to load
+    // upfront: the skills tool, with the agent's skills, when it has any.
+    const skillsTool = async () =>
+      (await (await connected()).listTools()).tools.find((tool) => tool.name === "worktable_skills_read")!
     expect(await instructions()).not.toContain("approved skills")
+    expect((await skillsTool())._meta?.["anthropic/alwaysLoad"]).toBeUndefined()
 
     await addRelease()
     const brief = await instructions()
@@ -631,6 +637,9 @@ describe("skill libraries", () => {
     expect(brief).toStartWith("Before any task, check your team's approved skills")
     expect(brief.indexOf("follow it.")).toBeLessThan(300)
     expect(brief).toContain("- release-checklist: Use when shipping a release.")
+    const tool = await skillsTool()
+    expect(tool._meta?.["anthropic/alwaysLoad"]).toBe(true)
+    expect(tool.description).toContain("- release-checklist: Use when shipping a release.")
 
     // A local connection's tools act as the default agent, and so does its
     // brief: that agent's own skills are in it.

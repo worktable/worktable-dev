@@ -247,7 +247,8 @@ The server instructions name the Worktable, so an
 agent connected to several can tell them apart. Team Worktables leave the name
 out. With preview agent tools, they also list the skills in the Library that
 apply to the connecting agent, first, so its app has them before the first
-message.
+message. `worktable_skills_read` then carries the same list and asks Claude's
+apps to load it upfront, for apps that don't pass instructions on.
 MCP revision 2026-07-28 is enabled over HTTP by default, beside the earlier
 revisions on the same endpoint. `WORKTABLE_MCP_MODERN=0` turns it off. Over 2026-07-28, an agent such as ChatGPT can subscribe to
 the event `item.sent_to_you`: Worktable posts each comment or thread message

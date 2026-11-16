@@ -3016,6 +3016,8 @@ describe("share link views", () => {
       views: 4,
       people: 3,
       lastViewAt: expect.any(Number),
+      returning: 0,
+      latest: { country: null, region: null, organization: null, source: null },
     })
     // Off Cloud, where nothing reports views yet, links say only when they
     // were last opened.
@@ -3036,6 +3038,145 @@ describe("share link views", () => {
     ).toBe("Browser 1")
     expect(forAgent[0]!.previews.map((p) => p.app)).toEqual(["slack"])
     expect(JSON.stringify(forAgent)).not.toContain(digest("browser a"))
+  })
+
+  it("keeps where a view came from, how far it was read, and who came back", async () => {
+    const { id, token } = await liveLink()
+    // A store from before these fields gets them on its next use.
+    const db = new Database(shareLinksDatabasePath())
+    db.exec(`CREATE TABLE share_views (
+      link_id TEXT NOT NULL, load_id TEXT NOT NULL, started_at INTEGER NOT NULL,
+      counted INTEGER NOT NULL, visible_s INTEGER NOT NULL DEFAULT 0,
+      had_input INTEGER NOT NULL DEFAULT 0, webdriver INTEGER NOT NULL DEFAULT 0,
+      visitor TEXT, day_digest TEXT, day TEXT NOT NULL, country TEXT,
+      network TEXT, browser TEXT, device TEXT, PRIMARY KEY (link_id, load_id))`)
+    db.close()
+
+    const a = { "x-worktable-view-visitor": digest("browser a") }
+    const place = {
+      "x-worktable-view-country": "US",
+      "x-worktable-view-region": "CA",
+      "x-worktable-view-system": "macos",
+      "x-worktable-view-language": "en",
+      "x-worktable-view-organization": encodeURIComponent("Acme Ünited"),
+      "x-worktable-view-source": "linkedin",
+      "x-worktable-view-screen": "desktop",
+      "x-worktable-view-scroll": "40",
+    }
+    await report(token, start("a-monday"), { ...a, ...place })
+    // Updates raise how far it was read, never lower it.
+    for (const scroll of ["90", "20"])
+      await report(
+        token,
+        { ...start("a-monday"), kind: "update", visible: 60 },
+        { ...a, ...place, "x-worktable-view-scroll": scroll }
+      )
+    // Anything that isn't a known value is dropped, never stored as sent.
+    await report(token, start("odd"), {
+      "x-worktable-view-visitor": digest("browser b"),
+      "x-worktable-view-region": "California",
+      "x-worktable-view-system": "beos",
+      "x-worktable-view-language": "en-US",
+      "x-worktable-view-organization": "%E0%A4%A",
+      "x-worktable-view-scroll": "101",
+      "x-worktable-view-source": "https://www.linkedin.com/feed/",
+      "x-worktable-view-screen": "watch",
+    })
+    // A scanner's quick load is no earlier visit for the browser it shares.
+    await report(token, start("c-scan"), {
+      "x-worktable-view-visitor": digest("browser c"),
+      "x-worktable-view-network": "cloud",
+    })
+    // Two days on, the first browser comes back, and the third reads it.
+    const { recordShareView, shareViewSummaries } = await import(
+      "./share-views.ts"
+    )
+    const later = Date.now() + 2 * 24 * 60 * 60 * 1000
+    recordShareView(
+      id,
+      { kind: "start", load: "c-reading".padEnd(16, "x"), visible: 90, input: true, webdriver: false },
+      {
+        visitor: digest("browser c"),
+        day: null,
+        country: null,
+        network: "cloud",
+        browser: "chrome",
+        device: "desktop",
+        region: null,
+        system: null,
+        language: null,
+        organization: null,
+        scroll: null,
+        source: null,
+        screen: null,
+      },
+      later - 60_000
+    )
+    recordShareView(
+      id,
+      { kind: "start", load: "a-wednesday".padEnd(16, "x"), visible: 5, input: false, webdriver: false },
+      {
+        visitor: digest("browser a"),
+        day: null,
+        country: "US",
+        network: "other",
+        browser: "safari",
+        device: "phone",
+        region: "NY",
+        system: "ios",
+        language: "en",
+        organization: null,
+        scroll: null,
+        source: "email",
+        screen: "phone",
+      },
+      later
+    )
+
+    expect(shareViewSummaries([id]).get(id)).toMatchObject({
+      views: 4,
+      people: 3,
+      returning: 1,
+      latest: { country: "US", region: "NY", organization: null, source: "email" },
+    })
+    const { htmlShareLinkViews } = await import("./mcp/share-link-views.ts")
+    const [forAgent] = await htmlShareLinkViews("space", "board/signals")
+    expect(forAgent?.returningBrowsers).toBe(1)
+    expect(forAgent?.recentViews).toEqual([
+      expect.objectContaining({
+        browserId: "Browser 1",
+        region: "US-NY",
+        os: "ios",
+        source: "email",
+        screen: "phone",
+        scrolledPercent: null,
+        returning: true,
+      }),
+      expect.objectContaining({ browserId: "Browser 3", returning: false }),
+      expect.objectContaining({ browserId: "Browser 3", automated: true }),
+      expect.objectContaining({
+        browserId: "Browser 2",
+        region: null,
+        os: null,
+        language: null,
+        organization: null,
+        scrolledPercent: null,
+        source: null,
+        screen: null,
+        returning: false,
+      }),
+      expect.objectContaining({
+        browserId: "Browser 1",
+        region: "US-CA",
+        os: "macos",
+        language: "en",
+        organization: "Acme Ünited",
+        scrolledPercent: 90,
+        source: "linkedin",
+        screen: "desktop",
+        returning: false,
+      }),
+    ])
   })
 
   it("keeps keyless visitors as a daily count once their digests are gone", async () => {

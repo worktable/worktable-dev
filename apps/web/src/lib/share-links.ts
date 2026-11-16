@@ -100,10 +100,7 @@ export function shareLinkViewsLine(
   now = Date.now()
 ): ShareLinkDetail[] {
   if (!link.views || link.status === "revoked") return []
-  const parts = viewParts(link.views)
-  if (link.views.lastViewAt)
-    parts.push({ text: `Viewed ${openedWhen(link.views.lastViewAt, now)}` })
-  return parts
+  return [...viewParts(link.views), ...viewedParts(link.views, now)]
 }
 
 /** "4 views · 2 people", or "No views yet", for a link that counts views. */
@@ -112,7 +109,44 @@ function viewParts(views: NonNullable<ShareLink["views"]>): ShareLinkDetail[] {
   return [
     { text: views.count === 1 ? "1 view" : `${views.count} views` },
     { text: views.people === 1 ? "1 person" : `${views.people} people` },
+    ...(views.returning ? [{ text: `${views.returning} came back` }] : []),
   ]
+}
+
+const SOURCE_NAMES = { linkedin: "LinkedIn", email: "email" } as const
+
+/** "Viewed today · Acme · From LinkedIn": the latest view, as far as known. */
+function viewedParts(
+  views: NonNullable<ShareLink["views"]>,
+  now: number
+): ShareLinkDetail[] {
+  if (!views.lastViewAt) return []
+  const parts = [{ text: `Viewed ${openedWhen(views.lastViewAt, now)}` }]
+  const latest = views.latest
+  const place = latest?.organization ?? countryAndRegion(latest)
+  if (place) parts.push({ text: place })
+  const source =
+    latest?.source === "linkedin" || latest?.source === "email"
+      ? SOURCE_NAMES[latest.source]
+      : null
+  if (source) parts.push({ text: `From ${source}` })
+  return parts
+}
+
+/** "CA, United States", or "United States" without a region. */
+function countryAndRegion(
+  place: { country: string | null; region: string | null } | null | undefined
+): string | null {
+  if (!place?.country) return null
+  let country = place.country
+  try {
+    country =
+      new Intl.DisplayNames(undefined, { type: "region" }).of(country) ??
+      country
+  } catch {
+    // An unknown code shows as it is.
+  }
+  return place.region ? `${place.region}, ${country}` : country
 }
 
 export interface ShareLinkDetail {
@@ -238,9 +272,7 @@ export function shareLinkSummary(
   if (link.level === "comment" && link.comments.autoPaused)
     parts.push({ text: "Comments paused", stopped: true })
   if (opened && link.views) {
-    parts.push(...viewParts(link.views))
-    if (link.views.lastViewAt)
-      parts.push({ text: `Viewed ${openedWhen(link.views.lastViewAt, now)}` })
+    parts.push(...viewParts(link.views), ...viewedParts(link.views, now))
   } else if (opened && link.lastUsedAt) {
     const when = openedWhen(link.lastUsedAt, now)
     parts.push({ text: `Opened ${when}` })

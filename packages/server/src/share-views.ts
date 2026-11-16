@@ -1,5 +1,9 @@
 import type { Database } from "bun:sqlite"
-import type { ShareViewMessage, ShareViewReply } from "@worktable/hosted-contract"
+import type {
+  SHARE_VIEW_SOURCES,
+  ShareViewMessage,
+  ShareViewReply,
+} from "@worktable/hosted-contract"
 import { openShareLinksDatabase } from "./share-links-store.ts"
 
 // ============================================================
@@ -38,6 +42,25 @@ export interface ShareViewVisitor {
   network: "cloud" | "other" | null
   browser: string | null
   device: "phone" | "desktop" | null
+  /** The part of an ISO 3166-2 code after the dash, such as "CA". */
+  region: string | null
+  system: string | null
+  language: string | null
+  /** Only outside consent regions; see SHARE_VIEW_HEADERS.ORGANIZATION. */
+  organization: string | null
+  /** What the page reported: how far down it was read, 0 to 100. */
+  scroll: number | null
+  source: string | null
+  screen: string | null
+}
+
+/** Where a link's latest view came from, as its share dialog shows it. */
+export interface ShareViewPlace {
+  country: string | null
+  region: string | null
+  organization: string | null
+  /** Checked against SHARE_VIEW_SOURCES when it was written. */
+  source: (typeof SHARE_VIEW_SOURCES)[number] | null
 }
 
 /** A link's views as its share dialog and agents see them. */
@@ -46,6 +69,9 @@ export interface ShareViewSummary {
   /** An estimate: distinct browsers with a key, plus the most keyless visitors on one day. */
   people: number
   lastViewAt: number | null
+  /** Browsers with a key that viewed the link on more than one day. */
+  returning: number
+  latest: ShareViewPlace | null
 }
 
 export interface ShareViewRow {
@@ -60,6 +86,15 @@ export interface ShareViewRow {
   browser: string | null
   device: string | null
   network: string | null
+  region: string | null
+  system: string | null
+  language: string | null
+  organization: string | null
+  scroll: number | null
+  source: string | null
+  screen: string | null
+  /** This browser had a counted view of the link on an earlier day. */
+  returning: boolean
 }
 
 export interface SharePreviewRow {
@@ -88,6 +123,13 @@ function ensureTables(db: Database): void {
       network TEXT,
       browser TEXT,
       device TEXT,
+      region TEXT,
+      system TEXT,
+      language TEXT,
+      organization TEXT,
+      scroll INTEGER,
+      source TEXT,
+      screen TEXT,
       PRIMARY KEY (link_id, load_id)
     );
     CREATE INDEX IF NOT EXISTS share_views_by_link
@@ -106,7 +148,31 @@ function ensureTables(db: Database): void {
       PRIMARY KEY (link_id, app, day)
     );
   `)
+  addViewColumns(db)
   tablesReady.add(db)
+}
+
+/** Columns added after share_views first shipped, for stores made before them. */
+const ADDED_VIEW_COLUMNS = [
+  "region TEXT",
+  "system TEXT",
+  "language TEXT",
+  "organization TEXT",
+  "scroll INTEGER",
+  "source TEXT",
+  "screen TEXT",
+] as const
+
+function addViewColumns(db: Database): void {
+  const present = new Set(
+    db
+      .query<{ name: string }, []>("PRAGMA table_info(share_views)")
+      .all()
+      .map((column) => column.name)
+  )
+  for (const column of ADDED_VIEW_COLUMNS)
+    if (!present.has(column.split(" ")[0]!))
+      db.exec(`ALTER TABLE share_views ADD COLUMN ${column}`)
 }
 
 /** The store with its view tables, or null when nothing was ever recorded. */
@@ -120,6 +186,7 @@ function readableDatabase(): Database | null {
     )
     .get()
   if (!present?.n) return null
+  addViewColumns(db)
   tablesReady.add(db)
   return db
 }
@@ -127,7 +194,11 @@ function readableDatabase(): Database | null {
 const utcDay = (at: number): string => new Date(at).toISOString().slice(0, 10)
 
 /** The SQL condition for a view that looks automated (see AUTOMATED_UNDER_SECONDS). */
-const AUTOMATED = `(webdriver = 1 OR (COALESCE(network, '') = 'cloud' AND had_input = 0 AND visible_s < ${AUTOMATED_UNDER_SECONDS}))`
+const automated = (table?: string): string => {
+  const column = (name: string) => (table ? `${table}.${name}` : name)
+  return `(${column("webdriver")} = 1 OR (COALESCE(${column("network")}, '') = 'cloud' AND ${column("had_input")} = 0 AND ${column("visible_s")} < ${AUTOMATED_UNDER_SECONDS}))`
+}
+const AUTOMATED = automated()
 
 /**
  * Record a page's start or update. The first message for a load creates its
@@ -150,13 +221,19 @@ export function recordShareView(
     if (existing) {
       db.query(
         `UPDATE share_views SET
-           visible_s = MAX(visible_s, ?), had_input = MAX(had_input, ?),
-           webdriver = MAX(webdriver, ?)
-         WHERE link_id = ? AND load_id = ?`
+           visible_s = MAX(visible_s, ?1), had_input = MAX(had_input, ?2),
+           webdriver = MAX(webdriver, ?3),
+           scroll = CASE WHEN ?4 IS NULL THEN scroll
+             ELSE MAX(COALESCE(scroll, 0), ?4) END,
+           source = COALESCE(source, ?5), screen = COALESCE(screen, ?6)
+         WHERE link_id = ?7 AND load_id = ?8`
       ).run(
         message.visible,
         message.input ? 1 : 0,
         message.webdriver ? 1 : 0,
+        seen.scroll,
+        seen.source,
+        seen.screen,
         linkId,
         message.load
       )
@@ -189,8 +266,9 @@ export function recordShareView(
     db.query(
       `INSERT INTO share_views (link_id, load_id, started_at, counted,
          visible_s, had_input, webdriver, visitor, day_digest, day, country,
-         network, browser, device)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         network, browser, device, region, system, language, organization,
+         scroll, source, screen)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       linkId,
       message.load,
@@ -205,7 +283,14 @@ export function recordShareView(
       seen.country,
       seen.network,
       seen.browser,
-      seen.device
+      seen.device,
+      seen.region,
+      seen.system,
+      seen.language,
+      seen.organization,
+      seen.scroll,
+      seen.source,
+      seen.screen
     )
     return { counted, first: counted && first }
   })()
@@ -257,7 +342,34 @@ export function shareViewSummaries(
       views: row.views,
       people: row.keys,
       lastViewAt: row.last,
+      returning: 0,
+      latest: null,
     })
+  }
+  if (!summaries.size) return summaries
+  for (const row of db
+    .query<{ link_id: string; came_back: number }, string[]>(
+      `SELECT link_id, COUNT(*) AS came_back FROM (
+         SELECT link_id FROM share_views
+         WHERE ${counted} AND visitor IS NOT NULL
+         GROUP BY link_id, visitor HAVING COUNT(DISTINCT day) > 1
+       ) GROUP BY link_id`
+    )
+    .all(...linkIds))
+    summaries.get(row.link_id)!.returning = row.came_back
+  for (const row of db
+    .query<ShareViewPlace & { link_id: string }, string[]>(
+      `SELECT link_id, country, region, organization, source FROM (
+         SELECT link_id, country, region, organization, source,
+           ROW_NUMBER() OVER (
+             PARTITION BY link_id ORDER BY started_at DESC
+           ) AS latest
+         FROM share_views WHERE ${counted}
+       ) WHERE latest = 1`
+    )
+    .all(...linkIds)) {
+    const { link_id: id, ...place } = row
+    summaries.get(id)!.latest = place
   }
   // Keyless visitors: the most on any one day, from digests still kept and
   // from days already folded into counts. Never added across days.
@@ -305,12 +417,27 @@ export function shareViewDetail(
         browser: string | null
         device: string | null
         network: string | null
+        region: string | null
+        system: string | null
+        language: string | null
+        organization: string | null
+        scroll: number | null
+        source: string | null
+        screen: string | null
+        came_back: number
       },
       [string, number]
     >(
       `SELECT started_at, counted, visible_s, had_input, ${AUTOMATED} AS automated,
-         visitor, country, browser, device, network
-       FROM share_views WHERE link_id = ? ORDER BY started_at DESC LIMIT ?`
+         visitor, country, browser, device, network, region, system, language,
+         organization, scroll, source, screen,
+         visitor IS NOT NULL AND EXISTS (
+           SELECT 1 FROM share_views AS earlier
+           WHERE earlier.link_id = this.link_id AND earlier.visitor = this.visitor
+             AND earlier.counted = 1 AND earlier.day < this.day
+             AND NOT ${automated("earlier")}
+         ) AS came_back
+       FROM share_views AS this WHERE link_id = ? ORDER BY started_at DESC LIMIT ?`
     )
     .all(linkId, limit)
     .map(
@@ -325,6 +452,14 @@ export function shareViewDetail(
         browser: row.browser,
         device: row.device,
         network: row.network,
+        region: row.region,
+        system: row.system,
+        language: row.language,
+        organization: row.organization,
+        scroll: row.scroll,
+        source: row.source,
+        screen: row.screen,
+        returning: row.came_back === 1,
       })
     )
   const previews = db
@@ -387,6 +522,17 @@ export function shareViewsForAgent(linkId: string): {
     browser: string | null
     device: string | null
     network: string | null
+    /** ISO 3166-2, such as "US-CA". */
+    region: string | null
+    os: string | null
+    language: string | null
+    organization: string | null
+    screen: string | null
+    /** How far down the page was read, 0 to 100. */
+    scrolledPercent: number | null
+    source: string | null
+    /** The same browser viewed the link on an earlier day. */
+    returning: boolean
   }>
   previews: Array<{ app: string; at: string }>
 } {
@@ -413,6 +559,15 @@ export function shareViewsForAgent(linkId: string): {
       browser: view.browser,
       device: view.device,
       network: view.network,
+      region:
+        view.country && view.region ? `${view.country}-${view.region}` : null,
+      os: view.system,
+      language: view.language,
+      organization: view.organization,
+      screen: view.screen,
+      scrolledPercent: view.scroll,
+      source: view.source,
+      returning: view.returning,
     })),
     previews: previews.map((preview) => ({
       app: preview.app,

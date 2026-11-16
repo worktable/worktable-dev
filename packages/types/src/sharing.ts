@@ -128,6 +128,20 @@ export interface ShareLinkViews {
   count: number
   people: number
   lastViewAt: string | null
+  /** Browsers that viewed it on more than one day. */
+  returning: number
+  /** Where the latest view came from, as far as the gateway could tell. */
+  latest: ShareLinkViewPlace | null
+}
+
+export interface ShareLinkViewPlace {
+  /** Two-letter country code. */
+  country: string | null
+  /** The part of an ISO 3166-2 code after the dash, such as "CA". */
+  region: string | null
+  /** The network's organization, outside consent regions. */
+  organization: string | null
+  source: "linkedin" | "email" | "direct" | "other" | null
 }
 
 export interface ShareLink {

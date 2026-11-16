@@ -81,6 +81,14 @@ automated. People is an estimate. Views are kept for 90 days, never with the
 reader's address. Readers who send Do Not Track or Global Privacy Control are
 counted without anything that tells them apart.
 
+Each view also notes its country and region, browser, operating system,
+language and screen size, how far down the page was read, and whether the
+reader came from LinkedIn, email or straight to the link. Outside the EEA, the
+UK, Switzerland and Quebec it also notes the network's organization, such as a
+company or internet provider. **Share** says where the latest view came from
+and how many people came back on another day; agents reading the HTML Doc see
+each view.
+
 ### Visitor comments
 
 Open **Comments** in **Share** and turn on **Allow comments**. Each visitor sees

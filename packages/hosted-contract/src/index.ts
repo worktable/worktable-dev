@@ -294,8 +294,9 @@ export const PUBLIC_SHARE_STATUS = {
 /**
  * What the gateway knows about a view of a shared page, sent to the
  * Worktable's `POST /public/share/visit` beside a ShareViewMessage. Set only
- * by the gateway, never copied from the visitor; a Worktable reads them only
- * on requests the gateway admitted. None carries an address or a full user
+ * by the gateway, never copied from the visitor's headers; SCROLL, SOURCE and
+ * SCREEN pass on what the page's message said. A Worktable reads them only on
+ * requests the gateway admitted. None carries an address or a full user
  * agent.
  */
 export const SHARE_VIEW_HEADERS = {
@@ -311,6 +312,23 @@ export const SHARE_VIEW_HEADERS = {
   BROWSER: "x-worktable-view-browser",
   /** `phone` or `desktop`. */
   DEVICE: "x-worktable-view-device",
+  /** The region or state within the country: ISO 3166-2's part after the dash. */
+  REGION: "x-worktable-view-region",
+  /** An operating system from SHARE_VIEW_SYSTEMS. */
+  SYSTEM: "x-worktable-view-system",
+  /** The browser's first language, as its primary subtag ("en"). */
+  LANGUAGE: "x-worktable-view-language",
+  /**
+   * The network's organization name, percent-encoded. Never sent for a
+   * consent region, after a Decline, or with Do Not Track or GPC.
+   */
+  ORGANIZATION: "x-worktable-view-organization",
+  /** How far down the page was read, 0 to 100. */
+  SCROLL: "x-worktable-view-scroll",
+  /** Where the visitor came from, from SHARE_VIEW_SOURCES. */
+  SOURCE: "x-worktable-view-source",
+  /** The screen's size class, from SHARE_VIEW_SCREENS. */
+  SCREEN: "x-worktable-view-screen",
   /**
    * The app whose link preview fetched the page, from SHARE_PREVIEW_APPS: on
    * a preview message, and on the page fetch itself so it isn't noted as a
@@ -334,6 +352,25 @@ export const SHARE_PREVIEW_APPS = [
 ] as const
 export const SHARE_VIEW_NETWORKS = ["cloud", "other"] as const
 export const SHARE_VIEW_DEVICES = ["phone", "desktop"] as const
+export const SHARE_VIEW_SYSTEMS = [
+  "ios",
+  "android",
+  "macos",
+  "windows",
+  "linux",
+  "chromeos",
+  "other",
+] as const
+/** From the referrer's site, never its address; no referrer is `direct`. */
+export const SHARE_VIEW_SOURCES = [
+  "linkedin",
+  "email",
+  "direct",
+  "other",
+] as const
+export const SHARE_VIEW_SCREENS = ["phone", "tablet", "desktop"] as const
+/** The longest organization name kept, in characters. */
+export const SHARE_VIEW_ORGANIZATION_MAX = 80
 
 /** One page load, named by a random id the page keeps only in memory. */
 const ShareViewLoad = z.string().regex(/^[A-Za-z0-9_-]{16,32}$/)
@@ -345,6 +382,13 @@ const ShareViewMeasure = {
   input: z.boolean(),
   /** What `navigator.webdriver` reported. */
   webdriver: z.boolean(),
+  /**
+   * The page's own measures, which the gateway passes on as headers. A page
+   * from before them leaves them out.
+   */
+  scroll: z.number().int().min(0).max(100).optional(),
+  source: z.enum(SHARE_VIEW_SOURCES).optional(),
+  screen: z.enum(SHARE_VIEW_SCREENS).optional(),
 }
 
 /**

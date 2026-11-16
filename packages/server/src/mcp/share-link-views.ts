@@ -26,6 +26,8 @@ export async function htmlShareLinkViews(
       viewCount: number
       people: number
       lastViewAt: string | null
+      /** Browsers that came back on another day. */
+      returningBrowsers: number
       lastFetchedAt: string | null
       recentViews: ReturnType<typeof shareViewsForAgent>["views"]
       previews: ReturnType<typeof shareViewsForAgent>["previews"]
@@ -57,6 +59,7 @@ export async function htmlShareLinkViews(
       lastViewAt: summary?.lastViewAt
         ? new Date(summary.lastViewAt).toISOString()
         : null,
+      returningBrowsers: summary?.returning ?? 0,
       lastFetchedAt:
         link.lastUsedAt === null ? null : new Date(link.lastUsedAt).toISOString(),
       recentViews: detail.views,

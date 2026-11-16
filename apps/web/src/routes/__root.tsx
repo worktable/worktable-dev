@@ -76,6 +76,7 @@ const SettingsDialog = lazy(() =>
 )
 import type { SettingsSectionId } from "@/components/settings/sections"
 import { onOpenSettings } from "@/lib/settings-open"
+import { onOpenWelcome } from "@/lib/help/welcome-open"
 import { UpdateNudge } from "@/components/update-nudge"
 import { BillingRoot } from "@/components/billing/billing-root"
 import { UpdateIndicatorDot } from "@/components/update-indicator"
@@ -523,6 +524,9 @@ function RootLayout() {
       }),
     []
   )
+  // Settings > Help's Show Again: the welcome takes the screen, and
+  // Settings closes so it can't sit over the welcome on a phone.
+  useEffect(() => onOpenWelcome(() => setSettingsOpen(false)), [])
 
   // Mark body as loaded
   useEffect(() => {

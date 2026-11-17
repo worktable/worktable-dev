@@ -9,7 +9,10 @@ import {
   TabsTrigger,
 } from "@worktable/ui/components/tabs"
 import type { AnnotationPanelProps } from "./annotation-panel"
-import { AnnotationPanelContent } from "./annotation-panel-content"
+import {
+  AnnotationPanelContent,
+  CommentComposeButton,
+} from "./annotation-panel-content"
 import { VisitorCommentsPanel } from "./visitor-comments-panel"
 
 export function DocumentCommentsPanel(props: AnnotationPanelProps) {
@@ -35,9 +38,13 @@ export function DocumentCommentsPanel(props: AnnotationPanelProps) {
     <Tabs
       value={tab}
       onValueChange={(value) => setTab(String(value))}
-      className="h-full min-h-0 gap-0"
+      className={`h-full min-h-0 gap-0 ${tab === "comments" ? "[&:has([data-annotation-thread])>[data-comments-header]]:hidden" : ""}`}
     >
-      <div className="flex shrink-0 items-center justify-between gap-2 p-4 pb-2">
+      {/* Preserve the tab list and its keyboard state when a thread replaces the heading. */}
+      <div
+        data-comments-header
+        className="flex shrink-0 items-center justify-between gap-2 p-4 pb-2"
+      >
         <TabsList aria-label="Document comments">
           <TabsTrigger value="comments">
             Comments{" "}
@@ -50,16 +57,25 @@ export function DocumentCommentsPanel(props: AnnotationPanelProps) {
             </span>
           </TabsTrigger>
         </TabsList>
-        {props.onClose && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Close comments"
-            onClick={props.onClose}
-          >
-            <X className="size-4" />
-          </Button>
-        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {tab === "comments" && props.onCompose && !props.readOnly && (
+            <CommentComposeButton
+              iconOnly
+              onCompose={props.onCompose}
+              label={props.composeLabel}
+            />
+          )}
+          {props.onClose && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Close comments"
+              onClick={props.onClose}
+            >
+              <X className="size-4" />
+            </Button>
+          )}
+        </div>
       </div>
       <TabsContent value="comments" className="min-h-0">
         <AnnotationPanelContent {...props} header={false} />

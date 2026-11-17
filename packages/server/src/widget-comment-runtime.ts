@@ -10,11 +10,13 @@ import { themeConfig } from "@worktable/ui/theme"
 const COLORS = JSON.stringify({
   light: {
     pick: HTML_DOC_THEME.light.primary,
+    ink: HTML_DOC_THEME.light.foreground,
     mark: themeConfig.accents.bronze.light,
     edge: HTML_DOC_THEME.light.background,
   },
   dark: {
     pick: HTML_DOC_THEME.dark.primary,
+    ink: HTML_DOC_THEME.dark.foreground,
     mark: themeConfig.accents.bronze.dark,
     edge: HTML_DOC_THEME.dark.background,
   },
@@ -139,7 +141,8 @@ function ensure(){
     const shadow=host.attachShadow({mode:'closed'});
     shadow.innerHTML='<style>'
       +'div,button{position:absolute;top:0;left:0;box-sizing:border-box;margin:0;padding:0}'
-      +'.box{display:none;border-radius:4px;pointer-events:none;outline-offset:1px}'
+      // Four extra pixels around the target, without extending the page's scroll bounds.
+      +'.box{display:none;border-radius:4px;pointer-events:none;outline-offset:5px}'
       +'.hover{outline:2px solid '+colors.pick+';background:color-mix(in oklch,'+colors.pick+' 8%,transparent)}'
       +'.mark{outline:2px solid '+colors.mark+';background:color-mix(in oklch,'+colors.mark+' 14%,transparent)}'
       +'button{width:18px;height:18px;margin:-9px 0 0 -9px;border:2px solid '+colors.edge+';border-radius:50%;cursor:pointer;pointer-events:auto;'
@@ -152,7 +155,8 @@ function ensure(){
     hoverBox=shadow.querySelector('.hover');markBox=shadow.querySelector('.mark');pinLayer=shadow.querySelector('.pins');
     // In the page, not the shadow: the pointer over the page shows the mode.
     cursor=document.createElement('style');
-    cursor.textContent='*{cursor:crosshair !important}';
+    const bubble='<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="'+colors.edge+'" stroke="'+colors.ink+'" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/></svg>';
+    cursor.textContent='*{cursor:url("data:image/svg+xml,'+encodeURIComponent(bubble)+'") 3 21,pointer !important}';
     cursor.media='not all';
     host.appendChild(cursor);
   }

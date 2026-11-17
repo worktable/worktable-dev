@@ -158,6 +158,20 @@ for (const appearance of [
           path: info.outputPath("visitors.png"),
           fullPage: true,
         })
+        // Switching panels replaces their headings; keyboard focus stays in the tabs.
+        const commentsTab = page.getByRole("tab", { name: /^Comments/ })
+        const visitorsTab = page.getByRole("tab", { name: /^Visitors/ })
+        await visitorsTab.focus()
+        await visitorsTab.press("ArrowLeft")
+        await expect(commentsTab).toBeFocused()
+        await commentsTab.press("Enter")
+        await expect(commentsTab).toHaveAttribute("aria-selected", "true")
+        await expect(commentsTab).toBeFocused()
+        await commentsTab.press("ArrowRight")
+        await expect(visitorsTab).toBeFocused()
+        await visitorsTab.press("Space")
+        await expect(visitorsTab).toHaveAttribute("aria-selected", "true")
+        await expect(visitorsTab).toBeFocused()
         await page.getByRole("button", { name: "Close comments" }).click()
         await expect(page).toHaveURL(url)
         await page.goto(`${url}#visitors`, { waitUntil: "networkidle" })
@@ -205,11 +219,15 @@ for (const appearance of [
           .getByRole("button", { name: "View comment", exact: true })
           .click()
         await expect(
-          page.getByRole("tab", { name: /^Comments/ })
-        ).toHaveAttribute("aria-selected", "true")
+          page.getByRole("button", { name: "All Comments", exact: true })
+        ).toBeVisible()
         await expect(
           page.getByText(/Please check the forecast before publishing\./).last()
         ).toBeVisible()
+        await page.getByRole("button", { name: "All Comments", exact: true }).click()
+        await expect(
+          page.getByRole("tab", { name: /^Comments/ })
+        ).toHaveAttribute("aria-selected", "true")
         const retainedBefore = await (await page.request.get(listUrl)).json()
         const annotationId = retainedBefore.comments[0].passed.annotationId
         const teamUrl = `${harness.apiUrl}/api/spaces/visitor-review/annotations/${annotationId}?includeTargetContext=true`

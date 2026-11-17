@@ -74,6 +74,7 @@ function recipientsLine(annotation: Annotation, selfId?: string): string | null 
 }
 
 export interface AnnotationPanelContentProps {
+  /** Replaces the list heading; false lets a surrounding panel own it. */
   header?: ReactNode
   /** Can't resolve, reopen or add comments from the panel. */
   readOnly?: boolean
@@ -89,7 +90,7 @@ export interface AnnotationPanelContentProps {
   /** Sends a reply; the box keeps the text until it's saved. */
   onReply: (annotationId: string, body: string) => Promise<unknown>
   onClose?: () => void
-  /** When provided, renders a compose button under the header (used where there
+  /** When provided, renders a compose button in the header (used where there
    *  is no editor to attach annotations from — e.g. the HTML doc route). */
   onCompose?: (trigger: HTMLElement) => void;
   composeLabel?: string;
@@ -163,27 +164,87 @@ export function AnnotationPanelContent({
       />
     </li>
   );
-  const openCount = annotations.filter((annotation) => annotation.status !== "resolved").length;
+  const openCount = annotations.filter(
+    (annotation) => annotation.status !== "resolved"
+  ).length
+
+  const closeAction = onClose && (
+    <Button size="icon-sm" variant="ghost" onClick={onClose} aria-label="Close comments">
+      <X className="size-4" />
+    </Button>
+  );
+  const listActions = (
+    <>
+      {onCompose && !readOnly && (
+        <CommentComposeButton onCompose={onCompose} label={composeLabel} />
+      )}
+      {closeAction}
+    </>
+  )
 
   return (
-    <aside className={cn("flex h-full min-h-0 w-full flex-col bg-transparent", className)}>
-      {header !== undefined ? header : <ContextPanelHeader
-        title="Comments"
-        icon={<MessageSquareText className="size-4 shrink-0 text-primary" />}
-        meta={<Badge variant="secondary">{openCount} open</Badge>}
-        actions={
-          onClose && (
+    <aside
+      data-annotation-thread={thread ? "" : undefined}
+      className={cn(
+        "flex h-full min-h-0 w-full flex-col bg-transparent",
+        className
+      )}
+    >
+      {thread ? (
+        <ContextPanelHeader
+          title={
             <Button
-              size="icon-sm"
+              size="sm"
               variant="ghost"
-              onClick={onClose}
-              aria-label="Close comments"
+              className="-ms-2"
+              onClick={() => {
+                setOpenId(null)
+                onDeselectAnnotation?.()
+              }}
             >
-              <X className="size-4" />
+              <ChevronLeft className="size-4" />
+              All Comments
             </Button>
-          )
-        }
-      />}
+          }
+          actions={
+            <>
+              {!readOnly &&
+                (thread.status === "resolved" ? (
+                  <IconAction
+                    label="Reopen"
+                    onClick={() => onReopen(thread.id)}
+                  >
+                    <RotateCcw />
+                  </IconAction>
+                ) : (
+                  <IconAction
+                    label="Resolve"
+                    onClick={() => onResolve(thread.id)}
+                  >
+                    <Check />
+                  </IconAction>
+                ))}
+              {closeAction}
+            </>
+          }
+        />
+      ) : header !== undefined ? (
+        header
+      ) : (
+        <ContextPanelHeader
+          title="Comments"
+          icon={<MessageSquareText className="size-4 shrink-0 text-primary" />}
+          meta={
+            <Badge
+              variant="secondary"
+              aria-label={`${openCount} open comments`}
+            >
+              {openCount}
+            </Badge>
+          }
+          actions={listActions}
+        />
+      )}
       {thread ? (
         <CommentThread
           key={thread.id}
@@ -191,36 +252,17 @@ export function AnnotationPanelContent({
           readOnly={readOnly}
           canReply={canReply}
           detached={detachedIds?.has(thread.id) ?? false}
-          onBack={() => {
-            setOpenId(null);
-            onDeselectAnnotation?.();
-          }}
           onSelect={() => onSelectAnnotation(thread)}
-          onResolve={() => onResolve(thread.id)}
           onReopen={() => onReopen(thread.id)}
           onReply={(body) => onReply(thread.id, body)}
           onOriginal={onOriginal && (() => onOriginal(thread))}
         />
       ) : (
         <>
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 pb-2">
-            <Button
-              size="xs"
-              variant="ghost"
-              aria-pressed={showResolved}
-              onClick={() => setShowResolved((value) => !value)}
-            >
-              {showResolved ? "Hide Resolved" : "Show Resolved"}
-            </Button>
-            {onCompose && !readOnly && (
-              <Button size="xs" variant="outline" onClick={(event) => onCompose(event.currentTarget)}>
-                <MessageSquareText className="size-3.5" />
-                {composeLabel ?? "Add Comment"}
-              </Button>
-            )}
-          </div>
-
-          <div ref={scrollRef} className="scroll-fade min-h-0 flex-1 overflow-auto px-2 pb-3">
+          <div
+            ref={scrollRef}
+            className="scroll-fade min-h-0 flex-1 overflow-auto px-2 pb-3"
+          >
             {visible.length === 0 && changed.length === 0 ? (
               <div className="flex h-full min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border p-6 text-center">
                 <MessageSquareText className="mb-3 h-8 w-8 text-muted-foreground/50" />
@@ -252,10 +294,47 @@ export function AnnotationPanelContent({
               </>
             )}
           </div>
+          <div className="flex shrink-0 items-center border-t border-border px-3 py-2">
+            <Button
+              size="xs"
+              variant="ghost"
+              aria-pressed={showResolved}
+              onClick={() => setShowResolved((value) => !value)}
+            >
+              {showResolved ? "Hide Resolved" : "Show Resolved"}
+            </Button>
+          </div>
         </>
       )}
     </aside>
   );
+}
+
+export function CommentComposeButton({
+  onCompose,
+  label = "Add Comment",
+  iconOnly = false,
+}: {
+  onCompose: (trigger: HTMLElement) => void
+  label?: string
+  iconOnly?: boolean
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={
+        <Button
+          size={iconOnly ? "icon-sm" : "xs"}
+          variant="outline"
+          aria-label={label}
+          onClick={(event) => onCompose(event.currentTarget)}
+        />
+      }>
+        <MessageSquareText className="size-3.5" />
+        {!iconOnly && label}
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
 }
 
 interface ThreadMessageLike {
@@ -405,9 +484,7 @@ function CommentThread({
   readOnly,
   canReply,
   detached,
-  onBack,
   onSelect,
-  onResolve,
   onReopen,
   onReply,
   onOriginal,
@@ -417,9 +494,7 @@ function CommentThread({
   canReply: boolean
   detached: boolean
   onOriginal?: () => void
-  onBack: () => void
   onSelect: () => void
-  onResolve: () => void
   onReopen: () => void
   onReply: (body: string) => Promise<unknown>
 }) {
@@ -464,25 +539,6 @@ function CommentThread({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-1 px-2 pb-1">
-        <Button size="xs" variant="ghost" onClick={onBack}>
-          <ChevronLeft className="size-4" />
-          All Comments
-        </Button>
-        {!readOnly && (
-          <span className="ms-auto">
-            {isResolved ? (
-              <IconAction label="Reopen" onClick={onReopen}>
-                <RotateCcw />
-              </IconAction>
-            ) : (
-              <IconAction label="Resolve" onClick={onResolve}>
-                <Check />
-              </IconAction>
-            )}
-          </span>
-        )}
-      </div>
       <ThreadMarkdownProvider location={location} mentionNames={NO_MENTIONS}>
       <article
         ref={scrollRef}

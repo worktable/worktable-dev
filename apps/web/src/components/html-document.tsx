@@ -22,6 +22,7 @@ import {
   Trash,
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
+import { HTML_DOC_THEME } from "@worktable/ui/lib/html-doc-theme.generated"
 import { queryKeys } from "@/lib/queries"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { isSpaceLive } from "@/lib/space-observation"
@@ -861,8 +862,14 @@ function WidgetDetailPage({
       data-document-ready={
         frameSrc !== null && loadedFrameSrc === frameSrc ? "true" : undefined
       }
-      data-surface="html-doc"
       className="flex h-full min-h-0 flex-col bg-background"
+      // Continue the HTML canvas behind floating panels without scoping their card roles.
+      style={{
+        backgroundColor:
+          resolvedTheme === "dark"
+            ? HTML_DOC_THEME.dark.background
+            : HTML_DOC_THEME.light.background,
+      }}
     >
       <WidgetPageMeta
         spaceId={spaceId}
@@ -890,6 +897,7 @@ function WidgetDetailPage({
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
           ref={wrapperRef}
+          data-surface="html-doc"
           className={`relative min-h-0 min-w-0 flex-col bg-background ${
             overlayFullscreen ? "fixed inset-0 z-50" : ""
           } ${previewVersionId ? "hidden xl:flex xl:flex-[1_1_50%] xl:border-r xl:border-border print:block print:flex-1 print:border-r-0" : "flex flex-1"}`}
@@ -905,7 +913,7 @@ function WidgetDetailPage({
               <kbd className="font-sans">Esc</kbd>
             </p>
           )}
-          <div className="overlay-floating absolute top-2 right-2 z-10 flex items-center gap-0.5 rounded-lg bg-popover p-0.5">
+          <div className="overlay-floating absolute top-3 right-3 z-10 flex items-center gap-0.5 rounded-lg bg-popover p-0.5">
             {validated && !readOnly && !previewVersionId && (
               <Button
                 ref={setCommentButton}
@@ -1123,6 +1131,7 @@ function WidgetDetailPage({
         }}
         context={{ spaceId, contributors: docContributors(page) }}
         onSubmit={async (body, to, idempotencyKey) => {
+          const finish = elementComments.finishWhenSaved()
           await annotationMutations.create.mutateAsync({
             target: {
               type: "widget",
@@ -1139,6 +1148,7 @@ function WidgetDetailPage({
             to,
             idempotencyKey,
           })
+          if (!finish()) return
           // Beside the HTML Doc only; narrower, the list would cover it.
           if (belowXl) return
           setAnnotationsOpen(true)

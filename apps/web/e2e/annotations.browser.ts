@@ -386,7 +386,7 @@ for (const mobile of [true, false]) {
 
     test("a comment on an element of an HTML Doc follows it through a rewrite", async ({
       page,
-    }) => {
+    }, info) => {
       test.setTimeout(120_000)
       const id = mobile ? "pricing-phone" : "pricing"
       const widgets = `${harness.apiUrl}/api/spaces/annotations/widgets`
@@ -419,12 +419,19 @@ ${note}</main></body></html>`
       )
       const price = frame.locator(".price")
       await expect(price).toHaveText("$49 per month", { timeout: 60_000 })
-      const mode = page.getByRole("button", { name: "Comment", exact: true })
+      const mode = page.getByRole("button", { name: "Comment", exact: true, includeHidden: true })
       const composer = page.getByRole("dialog", { name: "Add Comment" })
       const thread = page.getByRole("article", { name: /^Comment by / })
+      const panel = page.locator("[data-worktable-context-panel]").filter({
+        has: page.getByRole("button", { name: "Close comments", exact: true }),
+      })
       const choose = (element: Locator) =>
         mobile ? element.tap() : element.click()
-      const commentOn = async (element: Locator, text: string) => {
+      const commentOn = async (
+        element: Locator,
+        text: string,
+        retry = false
+      ) => {
         await choose(element)
         await expect(composer.getByRole("textbox")).toBeVisible()
         if (mobile) await settled(composer)
@@ -432,19 +439,102 @@ ${note}</main></body></html>`
         // replaces the element; the comment is still about it.
         await element.evaluate((node) => node.replaceWith(node.cloneNode(true)))
         await composer.getByRole("textbox").fill(text)
+        if (retry) {
+          await page.route(
+            "**/api/spaces/annotations/annotations",
+            async (route) => {
+              if (route.request().method() === "POST") {
+                await route.fulfill({
+                  status: 503,
+                  json: { error: "Try again" },
+                })
+              } else await route.continue()
+            }
+          )
+          await composer
+            .getByRole("button", { name: "Send comment", exact: true })
+            .click()
+          await expect(composer.getByRole("textbox")).toHaveValue(text)
+          await expect(composer.getByRole("alert")).toBeVisible()
+          await expect(mode).toHaveAttribute("aria-pressed", "true")
+          await page.unroute("**/api/spaces/annotations/annotations")
+        }
         await composer
-          .getByRole("button", { name: "Send comment", exact: true })
+          .getByRole("button", { name: retry ? "Try sending again" : "Send comment", exact: true })
           .click()
         await expect(composer).toBeHidden()
       }
 
-      // The mode stays on from one comment to the next.
+      // A saved response from a closed composer must not end a newer selection session.
+      let releaseSave!: () => void
+      let noteSaved!: () => void
+      const heldSave = new Promise<void>((resolve) => { releaseSave = resolve })
+      const saved = new Promise<void>((resolve) => { noteSaved = resolve })
+      const annotationsRoute = "**/api/spaces/annotations/annotations"
+      await page.route(annotationsRoute, async (route) => {
+        if (route.request().method() !== "POST") return route.continue()
+        const response = await route.fetch()
+        noteSaved()
+        await heldSave
+        await route.fulfill({ response })
+      })
+      try {
+        await mode.click()
+        await choose(frame.getByText("Up to 12 people.", { exact: true }))
+        await expect(composer.getByRole("textbox")).toBeVisible()
+        if (mobile) await settled(composer)
+        await composer.getByRole("textbox").fill("Confirm the included seats.")
+        await composer.getByRole("button", { name: "Send comment", exact: true }).click()
+        await saved
+        await page.keyboard.press("Escape")
+        await expect(composer).toBeHidden()
+        if (await mode.getAttribute("aria-pressed") === "true") await mode.click()
+        await expect(mode).toHaveAttribute("aria-pressed", "false")
+        await mode.click()
+        await expect(mode).toHaveAttribute("aria-pressed", "true")
+        const refreshed = page.waitForResponse((response) => {
+          const url = new URL(response.url())
+          return response.request().method() === "GET" &&
+            url.pathname === "/api/spaces/annotations/annotations" &&
+            url.searchParams.get("widgetId") === id
+        })
+        releaseSave()
+        await (await refreshed).finished()
+        // Let the completed save's React updates and effects reach the next paint.
+        await page.evaluate(() => new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+        ))
+        await expect(mode).toHaveAttribute("aria-pressed", "true")
+        await expect(price).toHaveCSS("cursor", /data:image\/svg\+xml/)
+      } finally {
+        releaseSave()
+        await page.unrouteAll({ behavior: "wait" })
+      }
+
+      // A failed send keeps the draft and mode; a saved comment returns to browsing.
+      await expect(mode).toHaveAttribute("aria-pressed", "true")
+      await expect(price).toHaveCSS("cursor", /data:image\/svg\+xml/)
+      await commentOn(price, "Show the yearly price.", true)
+      await expect(mode).toHaveAttribute("aria-pressed", "false")
+      await expect(price).not.toHaveCSS("cursor", /data:image\/svg\+xml/)
+      if (!mobile) {
+        // The canvas continues behind the floating panel, whose card keeps the app's roles.
+        const canvasBackground = await frame.locator("body").evaluate((element) =>
+          getComputedStyle(element).backgroundColor
+        )
+        await expect(page.locator('[data-document-ready="true"]')).toHaveCSS("background-color", canvasBackground)
+        await expect.poll(() => panel.evaluate((element) =>
+          getComputedStyle(element).getPropertyValue("--card").trim() ===
+          getComputedStyle(document.documentElement).getPropertyValue("--card").trim()
+        )).toBe(true)
+        await panel.screenshot({ path: info.outputPath("comments-list-dark.png") })
+        await page.screenshot({ path: info.outputPath("comments-canvas-dark.png") })
+      }
       await mode.click()
-      await expect(mode).toHaveAttribute("aria-pressed", "true")
-      await commentOn(price, "Show the yearly price.")
-      await expect(mode).toHaveAttribute("aria-pressed", "true")
       await commentOn(frame.locator(".note"), "Cut this line.")
-      // Escape leaves it, from inside the page too.
+      await expect(mode).toHaveAttribute("aria-pressed", "false")
+      // Escape also leaves it, from inside the page.
+      await mode.click()
       if (mobile) await mode.click()
       else await frame.locator("body").press("Escape")
       await expect(mode).toHaveAttribute("aria-pressed", "false")
@@ -485,8 +575,20 @@ ${note}</main></body></html>`
         })
       }).toPass({ timeout: 30_000 })
 
+      await expect(page.getByRole("button", { name: "All Comments", exact: true })).toBeVisible()
+      await expect(
+        page.getByRole("complementary").filter({ has: thread })
+          .getByRole("heading", { name: "Comments", exact: true })
+      ).toHaveCount(0)
+      await expect(page.getByRole("button", { name: "Add Comment", exact: true })).toHaveCount(0)
+      if (!mobile) {
+        await panel.screenshot({ path: info.outputPath("comment-thread-dark.png") })
+      }
+
       // The note's comment waits under Page Changed.
-      await page.getByRole("button", { name: "All Comments", exact: true }).click()
+      await page
+        .getByRole("button", { name: "All Comments", exact: true })
+        .click()
       const changed = page.getByRole("region", { name: /Page Changed/ })
       await expect(changed.getByText("Cut this line.")).toBeVisible()
       await expect(changed.getByText("Show the yearly price.")).toHaveCount(0)
@@ -505,7 +607,7 @@ ${note}</main></body></html>`
       }
       expect(
         annotations.map((annotation) => annotation.target.quote).sort()
-      ).toEqual(["$49 per month", "Prices exclude tax."])
+      ).toEqual(["$49 per month", "Prices exclude tax.", "Up to 12 people."])
       const context = async (body: string) =>
         (
           (await (

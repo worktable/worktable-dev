@@ -908,7 +908,7 @@ function WidgetDetailPage({
               <kbd className="font-sans">Esc</kbd>
             </p>
           )}
-          <div className="overlay-floating absolute top-2 right-2 z-10 flex items-center gap-0.5 rounded-lg bg-popover p-0.5">
+          <div className="overlay-floating absolute top-3 right-3 z-10 flex items-center gap-0.5 rounded-lg bg-popover p-0.5">
             {validated && !readOnly && !previewVersionId && (
               <Button
                 ref={setCommentButton}

@@ -1,5 +1,5 @@
 import { useVisitorCommentsPanel } from "@/hooks/use-visitor-comments-panel"
-import { useDocumentCheckFailed } from "@/components/document/document-check-status"
+import { useDocumentCheckFailed } from "@/hooks/use-document-check-status"
 import { useVersionSnapshot } from "@/lib/version-history"
 import {
   VersionHistoryPanel,
